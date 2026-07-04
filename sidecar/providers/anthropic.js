@@ -16,6 +16,16 @@
   const RETRY_DELAYS = [400, 1200];
   const REWARM_MIN_MS = 5 * 60 * 1000;
   const DEFAULT_CONTEXT = 200000;
+  const FALLBACK_MAX_TOKENS = 32000;   // Anthropic requires max_tokens; when the model's real ceiling is unknown, cap here
+                                       // (well above the old 4096 so long deliverables aren't silently truncated) — decided 2026-07-04.
+  // resolve the env override once, tolerant of a garbage value (a typo must never wedge generation).
+  const ENV_MAX_TOKENS = (function () {
+    try {
+      const raw = (typeof process !== 'undefined' && process.env) ? process.env.SKYNET_ANTHROPIC_MAX_TOKENS : '';
+      const n = Number(String(raw == null ? '' : raw).trim());
+      return (Number.isFinite(n) && n > 0) ? Math.floor(n) : 0;
+    } catch (_) { return 0; }
+  })();
 
   function isAbort(e, signal) { return !!((signal && signal.aborted) || (e && e.name === 'AbortError')); }
   function abortError() { const e = new Error('aborted'); e.name = 'AbortError'; return e; }
@@ -193,11 +203,28 @@
       Promise.resolve().then(() => loadCatalog()).catch(() => {});
     }
 
+    // The output-token ceiling for this request. Precedence (first defined wins):
+    //   explicit per-request max_tokens  →  the model's real catalog max (when the catalog is warm)  →
+    //   opts.maxTokens (composition-root override)  →  SKYNET_ANTHROPIC_MAX_TOKENS env  →  32000 fallback.
+    // Callers that pass max_tokens explicitly keep working unchanged; everyone else gets the model's true
+    // ceiling instead of a silent 4096 truncation.
+    function resolveMaxTokens(req) {
+      const explicit = Number(req.max_tokens || req.maxTokens || 0);
+      if (explicit > 0) return explicit;
+      const m = findModel(req.model);   // hoisted decl; null until the catalog warms
+      const catMax = Number(m && m.max_completion_tokens);
+      if (Number.isFinite(catMax) && catMax > 0) return catMax;
+      const optMax = Number(opts.maxTokens || 0);
+      if (optMax > 0) return optMax;
+      if (ENV_MAX_TOKENS > 0) return ENV_MAX_TOKENS;
+      return FALLBACK_MAX_TOKENS;
+    }
+
     function buildBody(req) {
       const converted = messagesToAnthropic(req.messages || []);
       const body = {
         model: req.model,
-        max_tokens: Number(req.max_tokens || req.maxTokens || opts.maxTokens || 4096) || 4096,
+        max_tokens: resolveMaxTokens(req),
         messages: converted.messages,
         stream: true
       };

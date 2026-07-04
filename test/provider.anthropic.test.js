@@ -87,6 +87,38 @@ async function collect(provider, req) { const out = []; for await (const e of pr
     A.eq(models[0].supportsTools, true, 'Anthropic native models are marked tool-capable');
   }
 
+  // E. max_tokens default is bumped high (no silent 4096 truncation); explicit + catalog ceilings honored.
+  {
+    // E1: no explicit max_tokens, cold catalog -> the 32000 fallback (NOT the old 4096).
+    let captured = null;
+    const fetchImpl = async (url, init) => {
+      if (/\/models$/.test(url)) return new Response(JSON.stringify({ data: [{ id: 'claude-cap', display_name: 'X', max_output_tokens: 8192 }] }), { status: 200 });
+      captured = { body: JSON.parse(init.body) };
+      return new Response([line({ type: 'message_stop' }), ''].join('\n'), { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
+    };
+    const p1 = makeAnthropicProvider({ fetch: fetchImpl, key: 'k' });
+    await collect(p1, { model: 'claude-unknown', messages: [{ role: 'user', content: 'hi' }] });
+    A.eq(captured.body.max_tokens, 32000, 'cold catalog + no explicit -> 32000 fallback (not 4096)');
+
+    // E2: explicit per-request max_tokens still wins unchanged.
+    captured = null;
+    await collect(p1, { model: 'claude-unknown', max_tokens: 512, messages: [{ role: 'user', content: 'hi' }] });
+    A.eq(captured.body.max_tokens, 512, 'explicit max_tokens is honored verbatim');
+
+    // E3: once the catalog is warm, the model's real ceiling is used.
+    const p2 = makeAnthropicProvider({ fetch: fetchImpl, key: 'k' });
+    await p2.listModels();   // warm the catalog
+    captured = null;
+    await collect(p2, { model: 'claude-cap', messages: [{ role: 'user', content: 'hi' }] });
+    A.eq(captured.body.max_tokens, 8192, "warm catalog -> the model's real max_output_tokens");
+
+    // E4: opts.maxTokens override applies when no explicit/catalog value is available.
+    const p3 = makeAnthropicProvider({ fetch: async (url, init) => { if (/\/models$/.test(url)) return new Response('{"data":[]}', { status: 200 }); captured = { body: JSON.parse(init.body) }; return new Response([line({ type: 'message_stop' }), ''].join('\n'), { status: 200, headers: { 'Content-Type': 'text/event-stream' } }); }, key: 'k', maxTokens: 16000 });
+    captured = null;
+    await collect(p3, { model: 'claude-unknown', messages: [{ role: 'user', content: 'hi' }] });
+    A.eq(captured.body.max_tokens, 16000, 'opts.maxTokens override applied when no explicit/catalog ceiling');
+  }
+
   A.eq(_internals.normalizeUsage({ input_tokens: 1, cache_read_input_tokens: 2, output_tokens: 3 }).prompt_tokens, 3, 'cache read tokens are included in prompt total');
   A.report('provider.anthropic.test');
 })().catch(e => { console.log('FAIL: provider.anthropic.test threw -- ' + (e && e.stack || e)); process.exit(1); });
