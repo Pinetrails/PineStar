@@ -4,7 +4,6 @@ slug: codebase-inspection
 description: Measure a repo — lines of code, language breakdown, and code-vs-comment ratios — with pygount.
 category: Engineering
 requires: [workbench]
-author: Nous Research
 license: MIT
 default: false
 ---

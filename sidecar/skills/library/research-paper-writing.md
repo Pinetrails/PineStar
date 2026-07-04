@@ -4,7 +4,6 @@ slug: research-paper-writing
 description: End-to-end ML/AI paper pipeline — literature review, experiment design, analysis, drafting, and revision as an iterative loop.
 category: Research
 requires: [workbench, dish]
-author: Orchestra Research
 license: MIT
 default: false
 ---
@@ -25,4 +24,4 @@ Produce a publication-ready ML/AI research paper (NeurIPS/ICML/ICLR/ACL style). 
 - **Report negative results honestly** — they belong in limitations, not the trash.
 - **Reproducibility:** every number regenerates from a committed script + fixed seed.
 
-*Ported from Orchestra Research's research-paper-writing (MIT). Needs WORKBENCH (run experiments) + DISH (literature search).*
+*Needs WORKBENCH (run experiments) + DISH (literature search).*

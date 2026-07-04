@@ -4,7 +4,6 @@ slug: ui-sketch
 description: Explore a design direction as 2-3 disposable HTML mockups to compare side by side before committing to one.
 category: Creative
 requires: [cabinet]
-author: gsd-build/get-shit-done
 license: MIT
 default: false
 ---
@@ -35,4 +34,4 @@ fs.write each as `sketch-<name>-a.html` / `-b.html` / `-c.html`. Present a one-l
 ### 4. Pick / iterate
 Once they pick, either iterate that one variant further or hand off the direction to a real build. Delete the losers — sketches are disposable.
 
-*Adapted from gsd-build/get-shit-done (MIT). Needs the CABINET (write files) object to save the mockups.*
+*Needs the CABINET (write files) object to save the mockups.*

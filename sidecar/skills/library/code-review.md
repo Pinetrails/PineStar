@@ -4,7 +4,6 @@ slug: code-review
 description: Review a diff for correctness bugs first, then clarity — concrete, cited, and honest.
 category: Engineering
 requires: [cabinet]
-author: Nous Research
 license: MIT
 default: false
 ---

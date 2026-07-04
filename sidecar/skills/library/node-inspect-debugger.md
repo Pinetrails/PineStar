@@ -4,7 +4,6 @@ slug: node-inspect-debugger
 description: Drive Node's V8 inspector for real breakpoints, stepping, and scope inspection when console.log isn't enough.
 category: Engineering
 requires: [workbench]
-author: Nous Research
 license: MIT
 default: false
 ---

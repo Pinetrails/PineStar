@@ -4,7 +4,6 @@ slug: concept-diagrams
 description: Flat, minimal, light/dark-aware SVG diagrams for education and physical subjects — saved as a standalone HTML file.
 category: Creative
 requires: [cabinet]
-author: v1k22
 license: MIT
 default: false
 ---
@@ -29,4 +28,4 @@ Physics setups, chemistry mechanisms, math curves, biology, physical objects (ai
 ## Flow
 Ask for the subject and its parts/relationships → lay it out on the grid → write the full HTML (`:root` vars + `@media` dark override + inline `<svg>`) → fs.write to `<subject>-diagram.html` → tell the Commander to open it.
 
-*Ported from v1k22's concept-diagrams (MIT). Needs the CABINET (write files) object.*
+*Needs the CABINET (write files) object.*

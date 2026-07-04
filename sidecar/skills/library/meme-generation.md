@@ -4,7 +4,6 @@ slug: meme-generation
 description: Turn a topic into an actual meme image — pick a template, write tight captions, render the picture.
 category: Creative
 requires: [studio]
-author: adanaleycio
 license: MIT
 default: false
 ---
@@ -33,4 +32,4 @@ Short, punchy, specific to the topic. Meme text is compressed — cut every non-
 ## Step 4 — render
 Call `image_generate` with a prompt that describes the chosen template composition AND places your exact caption text in each slot (e.g. "'This Is Fine' meme format, cartoon dog at a table in a burning room, top caption 'shipping on friday', bottom caption 'this is fine'"). Request a clean, legible, bold caption font. Save the .png to the workspace and show it to the Commander; offer one alternate caption if the first is soft.
 
-*Ported from adanaleycio's meme-generation (MIT). Uses StarNet's `image_generate` — needs the STUDIO object.*
+*Uses StarNet's `image_generate` — needs the STUDIO object.*

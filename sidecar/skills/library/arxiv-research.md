@@ -4,7 +4,6 @@ slug: arxiv-research
 description: Search and retrieve academic papers from arXiv's free API — by keyword, author, category, or paper ID.
 category: Research
 requires: [dish]
-author: Nous Research
 license: MIT
 default: false
 ---

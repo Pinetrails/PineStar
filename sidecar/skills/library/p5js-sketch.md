@@ -4,7 +4,6 @@ slug: p5js-sketch
 description: Build browser-based generative art, data viz, and interactive sketches as a single self-contained p5.js HTML file.
 category: Creative
 requires: [cabinet]
-author: Nous Research
 license: MIT
 default: false
 ---

@@ -4,7 +4,6 @@ slug: pdf-document-extraction
 description: Pull clean text, tables, and structure out of PDFs and scanned documents — web-first, then local extractors.
 category: Productivity
 requires: [workbench]
-author: Nous Research
 license: MIT
 default: false
 ---

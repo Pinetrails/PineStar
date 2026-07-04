@@ -4,7 +4,6 @@ slug: requesting-code-review
 description: Verify your own changes before committing — static security scan, quality gates, an independent review pass, then fix.
 category: Engineering
 requires: [workbench]
-author: obra/superpowers + MorAlekss
 license: MIT
 default: false
 ---
@@ -28,4 +27,4 @@ Re-read the diff as if someone else wrote it. Correctness first (off-by-one, nul
 ## Step 5 — Fix loop
 Fix the blockers, re-run the gates until green, re-scan. Then report a short verdict: safe to commit? blockers remaining? what you changed.
 
-*Adapted from obra/superpowers + MorAlekss (MIT). Needs the WORKBENCH object to run git, linters, and tests.*
+*Needs the WORKBENCH object to run git, linters, and tests.*

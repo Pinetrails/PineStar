@@ -4,7 +4,6 @@ slug: excalidraw
 description: Write hand-drawn-style .excalidraw JSON diagrams (architecture, flow, sequence) that open at excalidraw.com — no libraries.
 category: Creative
 requires: [cabinet]
-author: Nous Research
 license: MIT
 default: false
 ---

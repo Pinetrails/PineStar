@@ -4,7 +4,6 @@ slug: web-research
 description: Research a question across multiple sources, cross-check claims, and save a cited brief.
 category: Research
 requires: [dish, cabinet]
-author: Nous Research
 license: MIT
 default: false
 ---

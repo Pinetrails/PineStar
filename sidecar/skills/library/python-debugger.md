@@ -4,7 +4,6 @@ slug: python-debugger
 description: Step through Python with pdb and debugpy — breakpoints, scope inspection, and post-mortem on the crash site.
 category: Engineering
 requires: [workbench]
-author: Nous Research
 license: MIT
 default: false
 ---

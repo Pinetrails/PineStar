@@ -4,7 +4,6 @@ slug: simplify-code
 description: Make code smaller and clearer — reuse, delete, flatten — without changing behavior.
 category: Engineering
 requires: [cabinet]
-author: Nous Research
 license: MIT
 default: false
 ---

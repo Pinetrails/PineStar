@@ -4,13 +4,11 @@ slug: humanizer
 description: Strip AI-isms from writing and give it a real human voice.
 category: Writing
 requires: []
-author: Siqi Chen (@blader)
 license: MIT
-source: https://github.com/blader/humanizer
 default: true
 ---
 
-Identify and remove the signs of AI-generated text so writing sounds natural and human. Based on Wikipedia's "Signs of AI writing" guide (WikiProject AI Cleanup).
+Identify and remove the signs of AI-generated text so writing sounds natural and human.
 
 **Key insight:** LLMs guess the most statistically likely next words, which is how the telltale patterns below get baked in. Removing them is only half the job — voiceless writing is just as obviously AI. Add a real human behind the words.
 
@@ -58,4 +56,4 @@ If the Commander gives a writing **sample**, read it first and match its sentenc
 4. Revise once more against those tells. Present the final version.
 5. If it came from a file, apply the edit with `fs.edit` (targeted) or `fs.write`, and show what changed — never silently overwrite.
 
-*Ported from [blader/humanizer](https://github.com/blader/humanizer) (MIT), based on [Wikipedia: Signs of AI writing](https://en.wikipedia.org/wiki/Wikipedia:Signs_of_AI_writing). Condensed for in-prompt use; the 29 patterns are preserved.*
+*Condensed for in-prompt use; the 29 patterns are preserved.*

@@ -4,7 +4,6 @@ slug: domain-intel
 description: Passive domain reconnaissance — subdomains, SSL certs, WHOIS, DNS, and availability — with Python stdlib, no API keys.
 category: Research
 requires: [workbench]
-author: Nous Research
 license: MIT
 default: false
 ---
