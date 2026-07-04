@@ -125,6 +125,23 @@ function freshStore() {
     const fs = s._durable; A.ok(fs, 'durable handle exposed');
   }
 
+  // ---- 5b. COMPLETE (kept): retires the item WITHOUT denylisting — a kept build never resurrects as pending,
+  //          but the same work may legitimately be queued again later (unlike discard) ----
+  {
+    const s = freshStore();
+    await s.queue('hero', { id: 'k1', title: 'good tool' }, 1);
+    await s.claimNext('hero', 'run-k');
+    await s.markBuilt('hero', 'k1', 'run-k');
+    await s.complete('hero', 'k1');
+    A.eq(s.backlogOf('hero').length, 0, 'complete removes the kept item from the backlog');
+    A.ok(s.itemForRun('hero', 'run-k') === null, 'a kept build no longer maps to a backlog item (pending cannot re-list it)');
+    A.ok(s.isDenied('hero', 'k1') === false, 'complete does NOT denylist the id (kept ≠ discarded)');
+    const again = await s.queue('hero', { id: 'k2', title: 'good tool' }, 9);
+    A.ok(again.reason === 'added', 'the same title CAN be queued again after a keep (only discard denies the title)');
+    await s.complete('hero', 'missing-id');   // unknown id → silent no-op, never throws
+    A.eq(s.backlogOf('hero').length, 1, 'complete on an unknown id is a no-op');
+  }
+
   // ---- 6. denylist persists across a fresh store instance ----
   {
     const fs = memFs();

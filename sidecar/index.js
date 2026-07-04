@@ -3221,6 +3221,9 @@ async function handleWorkshopDecide(req, res) {
       copied++;
     }
   } catch (e) { return json(500, { error: 'could not copy the files: ' + ((e && e.message) || e) }); }
+  // kept = decided: retire the backlog item so /pending never re-lists (and the card never resurrects) a kept
+  // build. The run dir stays in the workshop as an archive; unlike discard, the title is NOT denylisted.
+  if (item) { try { await workshopStore.complete(agentId, item.id); } catch (_) {} }
   try { chanEmit('workshop.decided', { agentId, runId, decision: 'keep', destPath: destPath }); } catch (_) {}
   json(200, { ok: true, decision: 'keep', destPath: destPath, copied: copied });
 }

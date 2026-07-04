@@ -172,6 +172,20 @@ function makeWorkshopStore(deps) {
     });
   }
 
+  // COMPLETE (kept): the Commander kept the deliverable — the work is DONE, so the item leaves the backlog and
+  // its manifest stops being "pending" (the return-card must never resurrect a kept build on the next session).
+  // Unlike discard, the title is NOT denylisted: kept work was good work and may legitimately be asked for again.
+  function complete(agentId, backlogId) {
+    const id = String(backlogId || '');
+    if (!id) return Promise.resolve();
+    return durable.update(keyOf(agentId), (cur) => {
+      const rec = normalize(cur);
+      if (!rec.backlog.some(b => b.id === id)) return undefined;   // unknown id → no change, no write
+      rec.backlog = rec.backlog.filter(b => b.id !== id);
+      return rec;
+    });
+  }
+
   // find the backlog item a given build run produced (by builtRunId or buildingRunId) — used on decide.
   function itemForRun(agentId, runId) {
     const rid = String(runId || '');
@@ -180,7 +194,7 @@ function makeWorkshopStore(deps) {
 
   return {
     read, hasGrant, setGrant, backlogOf, isDenied,
-    queue, claimNext, markBuilt, releaseClaim, discard, itemForRun,
+    queue, claimNext, markBuilt, releaseClaim, discard, complete, itemForRun,
     _durable: durable
   };
 }
