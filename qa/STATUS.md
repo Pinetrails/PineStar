@@ -118,3 +118,4 @@ node scripts/qa/ledger.mjs --status
 - 2026-07-03 agent/env-depth-bake -> e28d17f0 : baked Andrew's live-tuned FX defaults (curve 0.09, grain 0.24, wall.up 9, wallShadow 0.5, sheen 0.14), test:fast GREEN
 - 2026-07-03 agent/comms-polish -> e2630472 (ff from 02114dce): COMMS turn-in letter-spill/giant-card fix + per-theme gold accents + rail unread dots; test:fast GREEN (worktree tree == merged tree), live-verified on dev seed :8817
 - 2026-07-03 agent/recruit-presets -> f70a4f05 (ff): desktop zero-class-presets fix (shared catalog via API origin + CSP) + summon-flow rec shelf w/ honest cold-start lineup; test:fast green (worktree + trunk)
+- 2026-07-03 agent/chan-routing -> trunk 451f05c2: channel-agnostic /agents /talk /model at hub layer; gate test:fast + test:http GREEN
