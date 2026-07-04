@@ -386,6 +386,8 @@ function rotateJsonl(file) { try { rotateIfLarge({ fs: fs }, file, LOG_MAX_BYTES
    unintended headroom after restart. The budget governs the soft cross-run pools; the host injects the wall clock
    at this composition boundary. */
 const LEDGER_FILE = path.join(WORKSPACES, 'ledger.jsonl');
+let ledgerAppendFails = 0;                 // consecutive ledger append failures; reset on any success
+const LEDGER_FAIL_ALERT = 5;               // after this many in a row, surface ONCE into the diagnostics ring
 const ledgerIo = {
   readAll() {
     try { return readBoundedJsonl(LEDGER_FILE); } catch (e) { return []; }   // P3: bounded boot-load
@@ -398,7 +400,17 @@ const ledgerIo = {
       fd = fs.openSync(LEDGER_FILE, 'a');
       fs.writeSync(fd, JSON.stringify(entry) + '\n');
       fs.fsyncSync(fd);
-    } catch (e) { console.warn('[ledger] append failed:', (e && e.message) || e); }
+      ledgerAppendFails = 0;   // a successful append clears the streak (transient blips don't accumulate)
+    } catch (e) {
+      console.warn('[ledger] append failed:', (e && e.message) || e);
+      // SUSTAINED failure is a real durability problem — spend recorded in RAM this session won't survive a
+      // restart. After N consecutive failures, surface ONCE into the diagnostics ring (fires exactly on the Nth
+      // so it isn't spammed every append). recordDiagError is hoisted (defined below) + redacts on write.
+      ledgerAppendFails++;
+      if (ledgerAppendFails === LEDGER_FAIL_ALERT) {
+        try { recordDiagError('ledger append failing (' + ledgerAppendFails + ' consecutive): spend is recorded in memory but not persisting to disk — restart would lose it. ' + ((e && e.message) || e)); } catch (_) {}
+      }
+    }
     finally { if (fd != null) { try { fs.closeSync(fd); } catch (_) {} } }
     rotateJsonl(LEDGER_FILE);   // P3: roll to <file>.1 once the live segment passes the cap (bounds disk)
   }
