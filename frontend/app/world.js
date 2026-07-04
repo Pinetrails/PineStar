@@ -3026,8 +3026,13 @@ const World = (() => {
         // (token/tool-driven, heatFor) + a task-progress fraction ONLY when a real one was published
         // (deskProgFor — a live harness run has none and renders none).
         const live = (p.agentId && workstationLit(p)) ? { heat: heatFor(p.agentId), prog: deskProgFor(p.agentId) } : null;
-        // a couch with a seated agent sorts JUST BEHIND the sitter, so the agent renders ON it (v7's sitPy trick)
-        const sy = (agent && agent.seated && agent.usingProp === p.id) ? agent.seatPy - 1 : (p.y + (p.h || 1)) * T;
+        // a couch with a seated agent (hero OR crew) sorts JUST BEHIND its sitter, so EVERY sitter renders ON it
+        // (v7's sitPy trick). Any body lounging on THIS prop counts — a crew sitter was previously left to sort by
+        // the couch's own foot, so it rendered BEHIND the couch whenever it approached from the far/side. All
+        // cushions share one seatPy ((couch.y+h)*T-2), so any sitter's seatPy-1 places the couch behind them all.
+        const sitter = (agent && agent.seated && agent.usingProp === p.id) ? agent
+          : crew.find(b => b.seated && b.usingProp === p.id);
+        const sy = sitter ? sitter.seatPy - 1 : (p.y + (p.h || 1)) * T;
         items.push({ y: sy, draw: () => PropSprites.draw(p, work, live) });
         // an ASSIGNED workstation is the hero's desk with another name: give it the same chair, in front,
         // y-sorted exactly like the hero's (one row below the desk) so its agent reads as sitting IN it. Scoped
@@ -3055,7 +3060,7 @@ const World = (() => {
     } });
     if (seat && !deskPropId) items.push({ y: (seat.ty + 1) * T, draw: () => drawSeatChair(seat.tx, seat.ty) });   // a PLACED hero desk's chair is drawn by the workstation loop above; draw here only for the synthetic auto-desk
     if (agent && !agent.unplaced) items.push({ y: rposY(), draw: () => drawAgent(now) });
-    for (const b of crew) items.push({ y: b.py, draw: () => drawAgent(now, b) });   // the other agents, at their bays
+    for (const b of crew) items.push({ y: (b.seated ? b.seatPy : b.py), draw: () => drawAgent(now, b) });   // the other agents, at their bays (seated → sort by the cushion pos like the hero's rposY, so a couch-lounging crew body renders ON the couch, not behind it)
     items.sort((a, b) => a.y - b.y);
     for (const it of items) it.draw();
     if (convey) convey.drawBoxes(ctx, now, T);   // boxes ride on top of the belts
