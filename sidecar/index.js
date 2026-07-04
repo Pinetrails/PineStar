@@ -3078,8 +3078,10 @@ async function runWorkshopShift(agentId, opts) {
   // VALIDATE the manifest against the real files. Only a proven manifest emits workshop.built (truthful telemetry).
   const manifest = await validateWorkshopManifest(id, runId);
   if (!manifest) {
-    await workshopStore.releaseClaim(id, runId);   // no deliverable produced → item stays queued for a later shift
-    return { fired: true, runId: runId, reason: threw ? 'run-failed' : 'no-manifest' };
+    // failed build → count the attempt; at the cap the item PARKS so a doomed item can't burn a run every shift.
+    const rel = await workshopStore.releaseClaim(id, runId, { failed: true });
+    if (rel && rel.parked) console.warn('[workshop] parked "' + (rel.parked.title || rel.parked.id) + '" for ' + id + ' after ' + rel.parked.attempts + ' failed builds — it will not be retried; re-queue it to try again.');
+    return { fired: true, runId: runId, reason: threw ? 'run-failed' : 'no-manifest', parked: !!(rel && rel.parked) };
   }
   await workshopStore.markBuilt(id, item.id, runId);
   try { chanEmit('workshop.built', { agentId: id, runId: runId, manifest: manifest }); } catch (_) {}
