@@ -109,4 +109,34 @@ A.eq(ch.map(c => c.value), ['yes', 'no'], 'approval is schedule-it / skip');
 A.ok(/anytime/i.test(J.doneLine(0)), 'declining-all points them at ROUTINES for later');
 A.ok(/schedule/i.test(J.doneLine(2)), 'scheduling a couple confirms it');
 
+/* ---------- cadenceLabel(): timezone-honest wall-clock labels (item #4) ---------- */
+A.eq(J.cadenceLabel('morning'), 'every morning · 9:00', 'a wall-clock cadence names the hour (no tz claim without localTz)');
+A.eq(J.cadenceLabel('morning', { localTz: true }), 'every morning · 9:00 (your local time)', 'with a persisted device tz it claims "your local time"');
+A.eq(J.cadenceLabel('weekly', { localTz: true }), 'every Monday morning · 9:00 (your local time)', 'the weekly wall-clock cadence too');
+A.eq(J.cadenceLabel('sixhourly', { localTz: true }), 'every 6 hours', 'an INTERVAL cadence names no hour — never a fabricated time, even asked for local');
+A.eq(J.cadenceLabel('hourly'), 'every hour', 'the hourly interval label is unchanged');
+A.eq(J.cadenceLabel('nope', { localTz: true }), 'every morning · 9:00 (your local time)', 'an unknown id falls back to the default cadence label');
+
+/* ---------- toCronBody(): persists the device tz for a wall-clock cadence (item #4) ---------- */
+// deviceTz() resolves from Intl at author time; in this node test it returns a real zone or '' — either is honest.
+const tz = J.deviceTz();
+const bodyM = J.toCronBody({ title: 'Morning brief', prompt: 'x', cadenceId: 'morning' });
+if (tz) { A.eq(bodyM.tz, tz, 'a wall-clock cadence body carries the resolved device tz so it fires on LOCAL 9:00'); }
+else { A.ok(!('tz' in bodyM), 'no resolvable tz → the body stays tz-less (host default applies), never a fake tz'); }
+const bodyI = J.toCronBody({ title: 'Six-hourly', prompt: 'x', cadenceId: 'sixhourly' });
+A.ok(!('tz' in bodyI), 'an INTERVAL cadence never carries a tz (no local wall-clock anchor to honor)');
+
+/* ---------- armStateLine(): the routines-disarmed truth keys on the SCHEDULER, not autonomy (item #1) ---------- */
+A.eq(J.armStateLine(true), null, 'scheduler armed → no disarmed line (nothing to warn about)');
+const dis = J.armStateLine(false);
+A.ok(dis && /scheduler is off/i.test(dis.text), 'scheduler off → an honest "scheduler is off" line');
+A.ok(dis && !/autonomy/i.test(dis.text), 'the disarmed line NEVER blames Autonomy (cron firing does not gate on the autonomy dial)');
+A.ok(dis && dis.cta && dis.cta.panel === 'routines', 'the disarmed CTA routes to the ROUTINES panel (where scheduling is armed)');
+A.ok(J.armStateLine(undefined) && /scheduler is off/i.test(J.armStateLine(undefined).text), 'unknown arm-state defaults to the honest disarmed warning');
+
+/* ---------- doneLine(): honest when the scheduler that fires the job is OFF ---------- */
+A.ok(/won'?t run|OFF/i.test(J.doneLine(1, false)), 'scheduler off → the done-line admits it won\'t run yet');
+A.ok(/enable scheduling/i.test(J.doneLine(2, false)), 'scheduler off → the done-line points at enabling scheduling');
+A.ok(!/won'?t run/i.test(J.doneLine(1, true)), 'scheduler armed → the normal, confident done-line');
+
 A.report('autojobs.test');

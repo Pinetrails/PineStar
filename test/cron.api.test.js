@@ -97,6 +97,15 @@ function boot(port, workspaces, attemptsLeft) {
     A.ok(cronExpr.body.job.nextRunAt, 'an enabled cron job is armed with a nextRunAt');
     const cronId = cronExpr.body.job.id;
 
+    // ---- create: an optional IANA tz is HONORED so a wall-clock cadence fires on LOCAL time (item #4, additive) ----
+    const tzCreate = await j('POST', '/api/cron', { name: 'Local morning', prompt: 'brief', schedule: '0 9 * * *', agentId: 'cron_brief', provider: 'codex', tz: 'America/New_York' });
+    A.eq(tzCreate.status, 200, 'a create carrying a valid IANA tz -> 200');
+    A.eq(tzCreate.body.job.schedule.tz, 'America/New_York', 'the created cron schedule persists the caller tz (fires on local 9:00, not UTC)');
+    const tzBad = await j('POST', '/api/cron', { name: 'x', prompt: 'y', schedule: '0 9 * * *', tz: 'Mars/Olympus' });
+    A.eq(tzBad.status, 400, 'an INVALID tz is rejected at create (never a silent UTC fallback that lies about fire time)');
+    // remove the tz job so the persistence/removal counts below (which pin an exact job total) stay stable.
+    await j('POST', '/api/cron/remove', { id: tzCreate.body.job.id });
+
     // ---- create: bad inputs are refused (not silently stored as un-fireable) ----
     const badSched = await j('POST', '/api/cron', { name: 'x', prompt: 'y', schedule: 'whenever i feel like it' });
     A.eq(badSched.status, 400, 'unparseable schedule -> 400');
