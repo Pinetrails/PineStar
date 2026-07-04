@@ -18,29 +18,39 @@ Loop:
 
 ## Release Endpoint
 
-The desktop build currently checks:
+The desktop build checks the **public GitHub Releases** channel:
 
 ```text
-https://updates.starnet.app/desktop/latest.json
+https://github.com/nonfungiblefunyuns-ship-it/starnet-releases/releases/latest/download/latest.json
 ```
 
-The endpoint should serve the static Tauri updater JSON:
+`starnet-releases` is a dedicated PUBLIC repo (the source repo stays private). GitHub
+redirects the `latest/download` path to the newest published release, so the endpoint never
+changes between versions — only the release contents do. The native Tauri updater fetches
+this directly (it is not subject to the webview CSP).
+
+> Historical note: earlier builds pointed at `https://updates.starnet.app/...`, a host that
+> never resolved, so no shipped install ever updated. That endpoint is retired.
+
+The endpoint serves the static Tauri updater JSON:
 
 ```json
 {
-  "version": "0.2.0",
+  "version": "0.1.8",
   "notes": "Release notes shown inside StarNet.",
-  "pub_date": "2026-06-24T12:00:00Z",
+  "pub_date": "2026-07-03T12:00:00Z",
   "platforms": {
     "windows-x86_64": {
       "signature": "contents of the .sig file",
-      "url": "https://updates.starnet.app/desktop/StarNet_0.2.0_x64-setup.exe"
+      "url": "https://github.com/nonfungiblefunyuns-ship-it/starnet-releases/releases/download/v0.1.8/StarNet_0.1.8_x64-setup.exe"
     }
   }
 }
 ```
 
-Optional top-level `critical: true` is understood by StarNet's UI and notification loop.
+The per-platform `url` is pinned to the versioned release tag `v<version>`, so the release
+tag MUST be exactly `v<version>`. Optional top-level `critical: true` is understood by
+StarNet's UI and notification loop.
 
 ## Signing Key
 
@@ -50,41 +60,58 @@ The public updater key is embedded in `src-tauri/tauri.conf.json`. The matching 
 C:\Users\andro\.tauri\starnet-updater.key
 ```
 
-Do not commit the private key. Back it up in a password manager or release vault before shipping a public build. If that private key is lost after release, existing users will not be able to install future signed updates from this update channel.
+It is an **rsign encrypted secret key with an empty password**. Do not commit it. Back it up
+in a password manager or release vault before shipping a public build. If that private key is
+lost after release, existing users will not be able to install future signed updates.
 
-For production signing:
+### The signing stall (why 0.1.7 shipped without updater artifacts)
+
+`tauri build` invokes minisign to produce the `.sig`. Because the key is encrypted, the CLI
+**blocks on an interactive password prompt** unless the password is supplied via env — even
+though the password is empty. That interactive stall is why an earlier build set
+`createUpdaterArtifacts: false` to get unblocked (which silently disabled the updater, since
+the updater REQUIRES the `.sig`). The fix is to set BOTH env vars so signing is
+non-interactive:
 
 ```powershell
-$env:TAURI_SIGNING_PRIVATE_KEY_PATH = "$env:USERPROFILE\.tauri\starnet-updater.key"
-npm run desktop:build
+$env:TAURI_SIGNING_PRIVATE_KEY = (Get-Content "$env:USERPROFILE\.tauri\starnet-updater.key" -Raw)
+$env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = ""
 ```
 
-## Build And Publish
+The bare `TAURI_SIGNING_PRIVATE_KEY` var accepts the key contents directly (not just a path).
+`createUpdaterArtifacts` is `true` in `tauri.conf.json` and stays that way.
 
-1. Bump both desktop versions:
+## Build And Publish — one command
+
+```powershell
+npm run release:cut
+```
+
+`scripts/release-cut.mjs` does the whole thing from trunk: it verifies the versions match,
+pre-builds the `ctor` crates (dodging the E0463 parallel-build race), runs a signed
+`desktop:build` with the non-interactive signing env above, stages the installer + `.sig` +
+`latest.json` into `release/`, and prints the exact upload checklist. Then, after Andrew
+uploads the release, prove the channel is live:
+
+```powershell
+npm run release:verify-host
+```
+
+`scripts/verify-update-host.mjs` fetches the live `latest.json`, validates its schema and
+signature fields, and confirms the referenced installer asset is reachable.
+
+### Manual steps (what only Andrew can do)
+
+1. Bump both desktop versions in lockstep (`release:cut` refuses to run if they disagree):
    - `src-tauri/Cargo.toml` -> `[package].version`
    - `src-tauri/tauri.conf.json` -> top-level `version`
-2. Build the desktop app with the signing key environment variable set:
-
-   ```powershell
-   $env:TAURI_SIGNING_PRIVATE_KEY_PATH = "$env:USERPROFILE\.tauri\starnet-updater.key"
-   npm run desktop:build
-   ```
-
-3. Upload the generated NSIS installer and its `.sig` file from `src-tauri/target/release/bundle/nsis/`.
-4. Generate `latest.json`:
-
-   ```powershell
-   node scripts/starnet-release-manifest.mjs `
-     --version 0.2.0 `
-     --url https://updates.starnet.app/desktop/StarNet_0.2.0_x64-setup.exe `
-     --signature-file src-tauri/target/release/bundle/nsis/StarNet_0.2.0_x64-setup.exe.sig `
-     --notes-file RELEASE_NOTES.md `
-     --out release/latest.json
-   ```
-
-5. Upload `release/latest.json` to `https://updates.starnet.app/desktop/latest.json`.
-6. Test with an older installed StarNet build and confirm System -> Updates sees the new version, downloads it, verifies it, and launches the installer.
+2. Run `npm run release:cut`.
+3. On the PUBLIC `starnet-releases` repo, create a GitHub Release tagged **exactly**
+   `v<version>` and attach all three staged assets: the installer, its `.sig`, and
+   `latest.json`. Publish it (a draft does not resolve via `latest/download`).
+4. `npm run release:verify-host` to prove the endpoint is live.
+5. Launch an older installed StarNet build and confirm System -> Updates sees the new
+   version, downloads it, verifies the signature, and launches the installer.
 
 ## Files
 
@@ -92,4 +119,7 @@ npm run desktop:build
 - `frontend/app/updatecore.js`: pure autonomous goal/loop planner.
 - `frontend/app/updates.js`: Update Center UI and Tauri command bridge.
 - `test/updatecore.test.js`: planner regression tests.
-- `scripts/starnet-release-manifest.mjs`: release manifest generator.
+- `scripts/starnet-release-manifest.mjs`: low-level release manifest generator.
+- `scripts/release-cut.mjs`: one-command release cutter (build + sign + stage + checklist).
+- `scripts/verify-update-host.mjs`: live endpoint verifier (run after upload).
+- `INSTALL.md`: public install instructions for the unsigned installer.

@@ -79,7 +79,10 @@
     "desktop:prepare": "node scripts/prepare-node.mjs",
     "desktop:dev": "node scripts/prepare-node.mjs && tauri dev",
     "desktop:build": "node scripts/prepare-node.mjs && tauri build",
-    "desktop:icon": "tauri icon src-tauri/icon-source.png"
+    "desktop:icon": "tauri icon src-tauri/icon-source.png",
+    "release:cut": "node scripts/release-cut.mjs",
+    "release:cut:dry": "node scripts/release-cut.mjs --dry-run",
+    "release:verify-host": "node scripts/verify-update-host.mjs"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2"
