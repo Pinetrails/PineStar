@@ -3990,9 +3990,13 @@ async function runOnce(o) {
   const artifactLedger = makeArtifactCollector();
   const dispatch = async (c, ctx) => {
     if (fromWire.has(c.name)) c = Object.assign({}, c, { name: fromWire.get(c.name) });   // wire -> real (dotted) name
-    const sig = (c.name + '|' + (c.argsRaw || '')).slice(0, 400);
-    const n = (seen.get(sig) || 0) + 1; seen.set(sig, n);
-    if (n > CAPS.maxRepeat) return { ok: false, isError: true, content: 'repeated identical call blocked (loop guard)', summary: 'loop-break' };
+    // LOOP GUARD (mirrors loop.js semantics): key on the FULL argsRaw via a sha1 digest (the old .slice(0,400)
+    // collided two DIFFERENT long payloads sharing a 400-char prefix — a false positive), and count only FAILING
+    // calls — a byte-identical call that keeps SUCCEEDING (e.g. many fs_write to the same path with different
+    // content is a different argsRaw anyway; a legitimately-repeated identical success is not a stuck loop) is
+    // never blocked, and any success RESETS the streak. Only a run stuck repeating the SAME failing call is broken.
+    const sig = c.name + '|' + crypto.createHash('sha1').update(String(c.argsRaw || '')).digest('hex');
+    if ((seen.get(sig) || 0) > CAPS.maxRepeat) return { ok: false, isError: true, content: 'repeated identical FAILING call blocked (loop guard)', summary: 'loop-break' };
     // CHECKPOINT NET: snapshot the workspace BEFORE a mutating tool so the turn is one rollback away. The general
     // fs.* net is opt-in (SKYNET_CHECKPOINTS); a shell.* call is ALWAYS snapshotted (the safety coupling that makes
     // command execution undo-able, independent of the flag). Content-deduped + fail-open: an unchanged workspace
@@ -4016,6 +4020,10 @@ async function runOnce(o) {
       }
       toolBytes += r.content.length;
     }
+    // loop-guard bookkeeping: a FAILING result advances this signature's streak; ANY success clears it (so an
+    // intermittently-failing call that eventually works never trips the guard). Matches loop.js's reset-on-success.
+    if (r && r.isError) seen.set(sig, (seen.get(sig) || 0) + 1);
+    else seen.delete(sig);
     return r;
   };
 
