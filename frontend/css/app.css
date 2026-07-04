@@ -656,6 +656,11 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
   transition: background .1s, color .1s, border-color .1s;
 }
 .choice:hover, .choice:focus-visible { color: var(--ph-bright); border-color: var(--ph); background: var(--ph-faint); outline: none; }
+/* T3.9 — the SECONDARY bug-report affordance under a failed turn: subdued so it never competes with the primary
+   recovery chip (dashed, dimmer, smaller). Brightens to a normal chip on hover so it stays discoverable. */
+.choice.quiet { font-size: 12px; letter-spacing: 0.3px; border-style: dashed; border-color: var(--ph-faint); color: var(--ph-dim); text-shadow: none; padding: 3px 8px; }
+.choice.quiet:hover, .choice.quiet:focus-visible { color: var(--ph-bright); border-color: var(--ph-dim); border-style: solid; }
+.choice.quiet:disabled { cursor: default; opacity: 0.7; }
 
 /* ===== THE DIALOGUE MODE (dialogue.js) — Fallout-style focused first-run conversation =====
    Mounts as a child overlay of #chat-panel, covering COMMS while the awakening/tutorial runs. One short

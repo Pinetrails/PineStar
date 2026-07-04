@@ -2375,6 +2375,23 @@ const StationUI = (() => {
   // P1-7 STATION BACKUP — export/import the whole station config to one JSON file. Export bundles the browser-owned
   // slices (settings/autonomy/notifyPrefs) with the server-side stores; import applies server sections + restores
   // the browser slices locally, then surfaces "re-enter your key" states the server flags. Secrets never travel.
+  // T3.9 — COPY DIAGNOSTICS: fetch the sidecar-assembled, secret-free report and put it on the clipboard. The
+  // Diag module (frontend/app/diagnostics.js) owns the fetch/copy/notify; here we just wire the button + flash it.
+  function wireDiagnostics(body) {
+    const btn = body.querySelector('#diag-copy');
+    const msgEl = body.querySelector('#diag-msg');
+    if (!btn) return;
+    const setMsg = (t, ok) => { if (msgEl) { msgEl.textContent = t || ''; msgEl.className = 'msg' + (ok ? ' ok' : ''); } };
+    btn.addEventListener('click', () => {
+      if (typeof Diag === 'undefined' || !Diag.copy) { setMsg('diagnostics unavailable', false); return; }
+      btn.disabled = true; sfx('click');
+      Diag.copy({ notify: false }).then(ok => {
+        btn.disabled = false;
+        setMsg(ok ? '✓ copied — paste it into an email to ' + (Diag.SUPPORT_EMAIL || 'support') : 'copy failed — try again', ok);
+      });
+    });
+  }
+
   function wireBackup(body) {
     const msgEl = body.querySelector('#bk-msg');
     const setMsg = (t, ok) => { if (msgEl) { msgEl.textContent = t || ''; msgEl.className = 'msg' + (ok ? ' ok' : ''); } };
@@ -2588,6 +2605,16 @@ const StationUI = (() => {
       '</div>' +
       '<div id="bk-msg" class="msg"></div>' +
       ((typeof Updates !== 'undefined' && Updates.settingsHtml) ? Updates.settingsHtml() : '') +
+      // DIAGNOSTICS (T3.9) — one click copies a paste-ready, SECRET-FREE report to email in a bug report. The sidecar
+      // assembles + sanitizes it (GET /api/diagnostics); this button just fetches + copies. Destination is ONE constant
+      // (Diag.SUPPORT_EMAIL) so it's a one-line swap when the support address is picked. Copy stays honest about where it goes.
+      '<h4 class="ms-h">DIAGNOSTICS <span class="dim">— for a bug report</span></h4>' +
+      '<p class="set-about">If something breaks, copy a <b>diagnostic readout</b> and paste it into an email to ' +
+        '<b>' + esc((typeof Diag !== 'undefined' && Diag.SUPPORT_EMAIL) ? Diag.SUPPORT_EMAIL : 'ANDREW_SUPPORT_EMAIL') + '</b>. ' +
+        'It carries your app version, platform, provider &amp; model, and the tail of recent errors — ' +
+        '<b>never your keys, tokens, messages, or prompts</b>. Assembled and scrubbed by the local sidecar.</p>' +
+      '<div class="set-save"><button class="bb sm" id="diag-copy">📋 COPY DIAGNOSTICS</button></div>' +
+      '<div id="diag-msg" class="msg"></div>' +
       '<h4 class="ms-h">STATION DATA</h4>' +
       '<div class="set-save"><button class="bb sm danger" id="set-clear">CLEAR NOTIFICATIONS</button></div>' +
       '<p class="set-about">STARNET — gamified AI-agent harness.<br>Theme, display & audio preferences are saved locally on this machine. Manage workstreams from the TASK BOARD or the COMMS rail.</p>';
@@ -2613,6 +2640,7 @@ const StationUI = (() => {
     wireNotifyPrefs(host);
     wireAdvanced(host);
     wireBackup(host);
+    wireDiagnostics(host);
     // switch theme in place — applySettings repaints via the body class; do NOT rerender (it would wipe an open key editor).
     host.querySelectorAll('[data-t]').forEach(b => b.addEventListener('click', () => {
       s.theme = b.dataset.t; applySettings(); save(); sfx('click');
