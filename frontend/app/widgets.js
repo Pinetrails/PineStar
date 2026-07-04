@@ -15,6 +15,14 @@
      - ROUTINES     — /api/cron {jobs, enabled} polled ≤1/60s + a value pulse on cron.fire.
      - TOKENS       — /api/insights totalTokens (all-time, whole station).
 
+   AGENT-FED widgets (Phase 2) — any agent can publish a named readout via the widget.set
+   tool (app revenue, AI news, anything); records live in the sidecar's station store and
+   are polled from GET /api/widgets (≤1/30s). Their pinned ids are 'feed:<slug>'.
+   PROVENANCE LAW: an agent-fed instrument always shows WHO fed it and WHEN ("NOVA · 3m")
+   — the app never asserts the value is true, only that that agent reported it, then. A
+   pinned feed whose record disappears paints an honest "no signal", never a stale number
+   dressed as fresh.
+
    This module OWNS no data and NEVER emits a bus event (read-only consumer, same contract
    as topbar.js — the frozen shared/events.js stays untouched). Its only writes are to its
    OWN localStorage key (rail layout), never to another module's state.
@@ -27,6 +35,9 @@ const Widgets = (() => {
   const KEY = 'starnet.widgets.v1';
   const POLL_INSIGHTS_MS = 30000;
   const POLL_CRON_MS = 60000;
+  const POLL_FEED_MS = 30000;
+  const TICKER_MS = 4000;
+  const FEED_RE = /^feed:[a-z0-9][a-z0-9-]{0,23}$/;   // pinned-layout id for an agent-fed record: 'feed:' + its widget.set slug
 
   let wired = false;
   let layout = { top: ['runs24'], bot: [] };   // first-run default: one instrument, discoverable ＋ on both rails
@@ -37,6 +48,8 @@ const Widgets = (() => {
   let cron = null;            // last good /api/cron {jobs, enabled}
   const queueMap = new Map(); // queueId -> latest depth (event-driven)
   let queueSeen = false;      // stays honest: "—" until the first queue.status arrives
+  const feed = new Map();     // slug -> agent-fed record (each /api/widgets poll rebuilds it whole)
+  let tickerStep = 0;         // shared ticker phase — every list widget cycles in step
 
   const $ = sel => document.querySelector(sel);
 
@@ -66,14 +79,43 @@ const Widgets = (() => {
     return String(Math.round(n));
   }
 
-  // sanitize a persisted layout: known ids only, no dupes across rails, always both arrays.
+  // sanitize a persisted layout: known ids (or well-formed feed:* ids) only, no dupes across
+  // rails, always both arrays. A pinned feed id whose record is gone SURVIVES sanitize — the
+  // record may simply not have polled in yet; it paints "no signal" until it does.
   function sanitizeLayout(raw, known) {
     const out = { top: [], bot: [] }, seen = new Set();
     for (const rail of ['top', 'bot']) {
       const ids = (raw && Array.isArray(raw[rail])) ? raw[rail] : [];
-      for (const id of ids) if (known.indexOf(id) >= 0 && !seen.has(id)) { seen.add(id); out[rail].push(id); }
+      for (const id of ids) if ((known.indexOf(id) >= 0 || FEED_RE.test(id)) && !seen.has(id)) { seen.add(id); out[rail].push(id); }
     }
     return out;
+  }
+
+  // sanitize ONE /api/widgets record: trust nothing, truncate everything, null on a bad id.
+  function sanitizeFeedRecord(raw) {
+    if (!raw || typeof raw !== 'object') return null;
+    const slug = String(raw.id || '').toLowerCase();
+    if (!/^[a-z0-9][a-z0-9-]{0,23}$/.test(slug)) return null;
+    const s = (v, n) => { if (v === undefined || v === null) return null; v = String(v); return v.length > n ? v.slice(0, n - 1) + '…' : v; };
+    const list = Array.isArray(raw.list) ? raw.list.slice(0, 5).map(x => s(x, 90)).filter(Boolean) : [];
+    const value = s(raw.value, 24);
+    if (value === null && !list.length) return null;   // nothing to show — never render an empty gauge
+    return {
+      slug: slug,
+      label: s(raw.label, 28) || slug.toUpperCase(),
+      value: value, sub: s(raw.sub, 28), list: list,
+      agentId: s(raw.agentId, 40) || 'agent',
+      updatedAt: Number(raw.updatedAt) || 0
+    };
+  }
+
+  // provenance age: how long since the agent set it. Coarse on purpose — it's a trust cue, not a stopwatch.
+  function fmtAge(nowMs, ts) {
+    const d = Math.max(0, (Number(nowMs) || 0) - (Number(ts) || 0));
+    if (d < 45000) return 'now';
+    if (d < 90 * 60000) return Math.max(1, Math.round(d / 60000)) + 'm';
+    if (d < 36 * 3600000) return Math.round(d / 3600000) + 'h';
+    return Math.round(d / 86400000) + 'd';
   }
 
   /* ================= the catalog ================= */
@@ -117,6 +159,36 @@ const Widgets = (() => {
   };
   const KNOWN = Object.keys(CATALOG);
 
+  // resolve an id to its definition — the static catalog, or a dynamic agent-fed def.
+  // paint() for a feed widget returns {tick} (ticker line) OR {val,sub}, plus {prov} — the
+  // provenance line ("NOVA · 3m") that REPLACES the static widgets' plain "live" source tag.
+  function agentNameOf(aid) {
+    try {
+      if (typeof App !== 'undefined' && App.agents && typeof App.agents.get === 'function') {
+        const a = App.agents.get(aid);
+        if (a && a.name) return String(a.name);
+      }
+    } catch (_) {}
+    return aid;
+  }
+  function defOf(id) {
+    if (CATALOG[id]) return CATALOG[id];
+    if (!FEED_RE.test(id)) return null;
+    const slug = id.slice(5);
+    return {
+      lbl: (feed.get(slug) || {}).label || slug.toUpperCase(),
+      fed: true,
+      tip: 'Agent-fed readout "' + slug + '" — an agent publishes this via widget.set. The station only asserts WHO reported it and WHEN (the name · age line), never that the figure itself is true.',
+      paint() {
+        const rec = feed.get(slug);
+        if (!rec) return { val: null, sub: 'no signal', prov: null };
+        const prov = agentNameOf(rec.agentId) + ' · ' + fmtAge(Date.now(), rec.updatedAt);
+        if (rec.list.length) return { tick: rec.list[tickerStep % rec.list.length], prov: prov };
+        return { val: rec.value, sub: rec.sub || '', prov: prov };
+      }
+    };
+  }
+
   /* ================= persistence (own key only) ================= */
   function load() {
     try {
@@ -142,16 +214,19 @@ const Widgets = (() => {
   }
 
   function makeWidget(id) {
-    const def = CATALOG[id];
+    const def = defOf(id); if (!def) return document.createElement('span');
     const el = document.createElement('div');
-    el.className = 'wg';
+    el.className = 'wg' + (def.fed ? ' wg-fed' : '');
     el.dataset.wg = id;
     el.title = def.tip;
+    // NOTE label/name text lands via textContent below — feed strings are agent-authored, never innerHTML'd.
     el.innerHTML =
-      '<span class="wg-meta"><span class="wg-lbl">' + def.lbl + '</span>'
-      + '<span class="wg-src"><i class="wg-dot" aria-hidden="true"></i>live</span></span>'
+      '<span class="wg-meta"><span class="wg-lbl"></span>'
+      + '<span class="wg-src"><i class="wg-dot' + (def.fed ? ' wg-dot-fed' : '') + '" aria-hidden="true"></i><span class="wg-srctext"></span></span></span>'
       + '<b class="wg-val">—</b><span class="wg-sub"></span><span class="wg-sparkslot"></span>'
-      + '<button class="wg-x" title="remove widget" aria-label="Remove ' + def.lbl + ' widget">✕</button>';
+      + '<button class="wg-x" title="remove widget" aria-label="Remove widget">✕</button>';
+    el.querySelector('.wg-lbl').textContent = def.lbl;
+    el.querySelector('.wg-srctext').textContent = def.fed ? '…' : 'live';
     el.querySelector('.wg-x').addEventListener('click', (e) => { e.stopPropagation(); removeWidget(id); });
     el.addEventListener('pointerdown', (e) => {
       if (e.target && e.target.closest('.wg-x')) return;
@@ -162,12 +237,22 @@ const Widgets = (() => {
   }
 
   function paintWidget(el, id) {
-    const p = CATALOG[id].paint();
+    const def = defOf(id); if (!def) return;
+    const p = def.paint();
     const val = el.querySelector('.wg-val'), sub = el.querySelector('.wg-sub'), slot = el.querySelector('.wg-sparkslot');
-    if (val) { val.textContent = p.val == null ? '—' : p.val; }
-    el.setAttribute('data-empty', p.val == null ? '1' : '0');
-    if (sub) sub.textContent = p.sub || '';
-    if (slot) slot.innerHTML = p.val == null ? '' : sparkSvg(p.series);
+    const lbl = el.querySelector('.wg-lbl'), srct = el.querySelector('.wg-srctext');
+    if (lbl) lbl.textContent = def.lbl;                       // a feed label can change on any poll
+    if (p.tick != null) {                                     // ticker form: one cycling line instead of a big figure
+      if (val) { val.textContent = ''; val.style.display = 'none'; }
+      if (sub) { sub.textContent = p.tick; sub.classList.add('wg-ticktext'); }
+      el.setAttribute('data-empty', '0');
+    } else {
+      if (val) { val.style.display = ''; val.textContent = p.val == null ? '—' : p.val; }
+      if (sub) { sub.classList.remove('wg-ticktext'); sub.textContent = p.sub || ''; }
+      el.setAttribute('data-empty', p.val == null ? '1' : '0');
+    }
+    if (slot) slot.innerHTML = (p.val == null || p.tick != null) ? '' : sparkSvg(p.series);
+    if (def.fed && srct) srct.textContent = p.prov || 'no signal';   // provenance: who fed it · how long ago
   }
 
   function paintAll(pulseId) {
@@ -216,12 +301,14 @@ const Widgets = (() => {
     popEl = document.createElement('div');
     popEl.className = 'wg-pop';
     popEl.setAttribute('role', 'menu');
-    for (const id of KNOWN) {
-      const def = CATALOG[id], has = placed.indexOf(id) >= 0;
+    const addItem = (id, def) => {
+      const has = placed.indexOf(id) >= 0;
       const item = document.createElement('button');
       item.setAttribute('role', 'menuitem');
       item.className = 'wg-pop-item' + (has ? ' on' : '');
-      item.innerHTML = '<span>' + def.lbl + '</span><i>' + (has ? '✓ shown' : '+ add') + '</i>';
+      const nameEl = document.createElement('span'); nameEl.textContent = def.lbl;   // agent-authored labels: textContent only
+      const tagEl = document.createElement('i'); tagEl.textContent = has ? '✓ shown' : '+ add';
+      item.appendChild(nameEl); item.appendChild(tagEl);
       item.title = def.tip;
       item.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -229,6 +316,20 @@ const Widgets = (() => {
         closePop();
       });
       popEl.appendChild(item);
+    };
+    for (const id of KNOWN) addItem(id, CATALOG[id]);
+    // AGENT-FED section: every record the sidecar knows, pinnable like any instrument.
+    const head = document.createElement('div');
+    head.className = 'wg-pop-head';
+    head.textContent = 'AGENT-FED';
+    popEl.appendChild(head);
+    if (!feed.size) {
+      const none = document.createElement('div');
+      none.className = 'wg-pop-none';
+      none.textContent = 'none yet — ask an agent to keep one (it can publish a readout with widget.set)';
+      popEl.appendChild(none);
+    } else {
+      for (const slug of feed.keys()) addItem('feed:' + slug, defOf('feed:' + slug));
     }
     document.body.appendChild(popEl);
     const r = btn.getBoundingClientRect();
@@ -328,6 +429,24 @@ const Widgets = (() => {
       .then(st => { if (st && Array.isArray(st.jobs)) { cron = st; paintAll(); } })
       .catch(() => {});
   }
+  function pollFeed() {
+    fetch('/api/widgets', { cache: 'no-store' })
+      .then(r => (r && r.ok) ? r.json() : null)
+      .then(st => {
+        if (!st || !Array.isArray(st.widgets)) return;
+        feed.clear();
+        for (const raw of st.widgets) { const rec = sanitizeFeedRecord(raw); if (rec) feed.set(rec.slug, rec); }
+        paintAll();   // repaints values AND provenance ages
+      })
+      .catch(() => { /* sidecar absent: pinned feeds keep their honest "no signal" */ });
+  }
+  // the shared ticker: every list-widget shows its next line, in step. Text-swap only — no layout motion.
+  function tickTicker() {
+    tickerStep++;
+    let any = false;
+    for (const rec of feed.values()) if (rec.list.length > 1) { any = true; break; }
+    if (any) paintAll();
+  }
 
   function init() {
     if (wired) return;
@@ -350,6 +469,8 @@ const Widgets = (() => {
 
     pollInsights(); setInterval(pollInsights, POLL_INSIGHTS_MS);
     pollCron(); setInterval(pollCron, POLL_CRON_MS);
+    pollFeed(); setInterval(pollFeed, POLL_FEED_MS);
+    setInterval(tickTicker, TICKER_MS);
   }
 
   // browser boot only — under node (the pure-fold tests require this file) there is no DOM
@@ -360,7 +481,8 @@ const Widgets = (() => {
 
   // read-only dev/verification surface (mirrors topbar.js; inert otherwise)
   return { init, _layout: () => ({ top: layout.top.slice(), bot: layout.bot.slice() }), _paintAll: paintAll,
-           _foldRuns: foldRuns, _foldTokens: foldTokens, _fmtCount: fmtCount, _sanitizeLayout: sanitizeLayout };
+           _foldRuns: foldRuns, _foldTokens: foldTokens, _fmtCount: fmtCount, _sanitizeLayout: sanitizeLayout,
+           _sanitizeFeedRecord: sanitizeFeedRecord, _fmtAge: fmtAge, _FEED_RE: FEED_RE, _pollFeed: pollFeed };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = { Widgets };

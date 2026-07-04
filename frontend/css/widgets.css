@@ -50,11 +50,17 @@
   color: var(--ph-dim); line-height: 1; white-space: nowrap; }
 .wg-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--ok);
   box-shadow: 0 0 4px var(--ok); animation: wg-breathe 2.4s ease-in-out infinite; }
+/* AGENT-FED provenance: gold dot + "who · when" — the station asserts the reporter, never the figure */
+.wg-dot-fed { background: var(--gold); box-shadow: 0 0 4px var(--gold); animation: none; }
+.wg-fed .wg-src { color: var(--ph-dim); max-width: 150px; overflow: hidden; text-overflow: ellipsis; }
 
 .wg-val { font-size: 15px; letter-spacing: 1px; color: var(--ph-bright); line-height: 1;
   text-shadow: 0 0 8px var(--ph-glow2); white-space: nowrap; font-weight: normal; }
 .wg[data-empty="1"] .wg-val { color: var(--ph-dim); text-shadow: none; }   /* honest "—" sits quiet */
 .wg-sub { font-size: 9px; letter-spacing: 1px; color: var(--ph-dim); white-space: nowrap; }
+/* ticker form (agent-fed list): one cycling line at reading size instead of a big figure */
+.wg-sub.wg-ticktext { font-size: 12px; letter-spacing: 0.5px; color: var(--text, var(--ph-bright));
+  max-width: 300px; overflow: hidden; text-overflow: ellipsis; }
 
 .wg-spark { width: 46px; height: 16px; flex: 0 0 auto; }
 .wg-spark polyline { stroke: var(--ph); stroke-width: 1.2; }
@@ -116,6 +122,10 @@
 .wg-pop-item:hover { background: rgba(0,0,0,0.4); color: var(--ph-bright); }
 .wg-pop-item i { font-style: normal; font-size: 10px; letter-spacing: 1px; color: var(--ph-dim); }
 .wg-pop-item.on i { color: var(--ok); }
+/* the popover's AGENT-FED section: a milled divider + an honest empty-state hint */
+.wg-pop-head { margin: 6px 6px 2px; padding-top: 6px; border-top: 1px solid var(--ph-faint);
+  font-size: 9px; letter-spacing: 2px; color: var(--gold); opacity: 0.85; }
+.wg-pop-none { padding: 4px 9px 6px; font-size: 11px; line-height: 1.35; color: var(--ph-dim); max-width: 230px; }
 
 /* ---- responsive: the rails are the FIRST thing to shrink; never crowd the real instruments ---- */
 @media (max-width: 1280px) { .wg-sub { display: none; } .wg-spark { display: none; } }
