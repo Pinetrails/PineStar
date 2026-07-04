@@ -220,8 +220,10 @@ const WORKSPACES = ENV('WORKSPACES') ? path.resolve(ENV('WORKSPACES')) : default
    loadResilient/num are defined); a torn/absent file → no overrides (fail-soft to env/default). */
 const RUNTIME_KNOBS_FILE = path.join(WORKSPACES, 'runtime.knobs.json');
 let runtimeKnobs = (function loadRuntimeKnobsAtBoot() {
-  try {
-    const raw = JSON.parse(fs.readFileSync(RUNTIME_KNOBS_FILE, 'utf8'));
+  // saveResilient writes a <file>.bak last-known-good snapshot; if the main file is torn/corrupt at boot, fall
+  // back to that .bak instead of silently dropping every saved knob to env/default. (Inline .bak recovery — this
+  // runs before loadResilient/readJsonResilient are usable due to declaration order, per the hardening plan.)
+  function parseKnobs(raw) {
     const k = (raw && typeof raw === 'object' && raw.knobs && typeof raw.knobs === 'object') ? raw.knobs : {};
     const out = {};
     for (const key of ['maxIters', 'maxConcurrentAgents', 'consentTimeoutMs', 'cronTickMs']) {
@@ -229,7 +231,15 @@ let runtimeKnobs = (function loadRuntimeKnobsAtBoot() {
       if (typeof v === 'number' && isFinite(v) && v >= 0) out[key] = Math.floor(v);
     }
     return out;
-  } catch (_) { return {}; }
+  }
+  try { return parseKnobs(JSON.parse(fs.readFileSync(RUNTIME_KNOBS_FILE, 'utf8'))); }
+  catch (_) {
+    try {
+      const knobs = parseKnobs(JSON.parse(fs.readFileSync(RUNTIME_KNOBS_FILE + '.bak', 'utf8')));
+      try { console.warn('[runtime-knobs] main file unreadable/corrupt at boot — recovered saved knobs from .bak'); } catch (__) {}
+      return knobs;
+    } catch (__) { return {}; }   // no usable main or .bak -> no overrides (fail-soft to env/default)
+  }
 })();
 // resolve a knob: explicit env (via ENV suffix) > saved override > built-in default. envSuffix null = no env for it.
 function resolveKnob(envSuffix, savedKey, def) {
