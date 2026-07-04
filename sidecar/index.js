@@ -4349,7 +4349,15 @@ async function runOnce(o) {
   // low-value run yields nothing and raises no beat (§5.6). REFLECT_MODEL optionally points reflection at a cheaper
   // aux model; it defaults to the run's own model (no behaviour change unless configured).
   const reflectModel = String(ENV('REFLECT_MODEL') || '').trim();
-  if (o.reflect && memoryConfig.reflectEnabled && isTask && result && result.reason === 'done' && !signal.aborted && reflectSalient(result.messages, o.recurring)
+  // finishReason gate (Lane A plumbs result.finishReason from loop.js): a run TRUNCATED by the provider ('length'
+  // = hit max_tokens mid-thought; 'content_filter' = the model's output was cut) produced INCOMPLETE work — its
+  // dialogue shouldn't seed memory/study/skills as if it were a clean finish. Excluded from the reason==='done'
+  // reflection/study/skill gates below. Guarded so it's a NO-OP when the field is absent (their branch may merge
+  // before or after this one) — only a KNOWN-truncated reason disqualifies.
+  const _fr = result && result.finishReason;
+  const _truncated = _fr === 'length' || _fr === 'content_filter';
+  const _qualifies = !_truncated;   // true when finishReason is absent or a clean value
+  if (o.reflect && memoryConfig.reflectEnabled && isTask && result && result.reason === 'done' && _qualifies && !signal.aborted && reflectSalient(result.messages, o.recurring)
       && !reflectingNow.has(agentId) && (Date.now() - (lastReflectAt.get(agentId) || 0) >= memoryConfig.reflectCooldownMs)) {
     // NB: the cooldown is ARMED inside runReflection only when proposals actually survive (a beat fires), not here —
     // so a run that yields nothing never blocks the next substantive run's turn-in. reflectingNow closes the window
@@ -4361,17 +4369,17 @@ async function runOnce(o) {
   // GROWTH Tier 1: the STUDY pass (dossier Phase B) rides the SAME salience gate as reflection but on its OWN,
   // longer cooldown (studyCooldownMs) — so the station proposes belief updates RARELY, never every few minutes.
   // Same fire-and-forget / in-flight-guard discipline as reflection. Fail-open: if Study didn't load, this no-ops.
-  if (Study && o.reflect && memoryConfig.studyEnabled && isTask && result && result.reason === 'done' && !signal.aborted && Study.studySalient(result.messages, o.recurring)
+  if (Study && o.reflect && memoryConfig.studyEnabled && isTask && result && result.reason === 'done' && _qualifies && !signal.aborted && Study.studySalient(result.messages, o.recurring)
       && !studyingNow.has(agentId) && (Date.now() - (lastStudyAt.get(agentId) || 0) >= memoryConfig.studyCooldownMs)) {
     studyingNow.add(agentId);
     let studyDirective = '';
     for (let i = result.messages.length - 1; i >= 0; i--) { const m = result.messages[i]; if (m && m.role === 'user' && typeof m.content === 'string') { studyDirective = m.content; break; } }
     runStudy({ agentId, runId, messages: result.messages.slice(), directive: studyDirective, provider, model: reflectModel || resolveEffectiveModel({ result, requestedModel: o.model, usingCodex, codexDefaultModel: CODEX_DEFAULT_MODEL, defaultModel: CRON_DEFAULT_MODEL }), cost, unmetered: providerUnmetered }).catch(() => {}).finally(() => { studyingNow.delete(agentId); });
   }
-  if (process.env.SKYNET_SKILL_REVIEW !== '0' && result && result.reason === 'done' && !signal.aborted && skillReview.shouldReviewRun(result)) {
+  if (process.env.SKYNET_SKILL_REVIEW !== '0' && result && result.reason === 'done' && _qualifies && !signal.aborted && skillReview.shouldReviewRun(result)) {
     runBackgroundSkillReview({ agentId, runId, messages: result.messages.slice(), provider, model, cost, loadedSkills, managedSkills }).catch(() => {});
   }
-  if (process.env.SKYNET_SKILL_CURATOR !== '0' && result && result.reason === 'done' && !signal.aborted) {
+  if (process.env.SKYNET_SKILL_CURATOR !== '0' && result && result.reason === 'done' && _qualifies && !signal.aborted) {
     runSkillCurator({ agentId, runId, provider, model, cost }).catch(() => {});
   }
   return result;
