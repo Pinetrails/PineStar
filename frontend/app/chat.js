@@ -1429,7 +1429,11 @@ const Chat = (() => {
   function updateTurninQueueNote() {
     if (!activeTurnin || !activeTurnin.queueNote) return;
     const waiting = turninQueue.length;
-    activeTurnin.queueNote.textContent = waiting ? waiting + ' more review ' + (waiting > 1 ? 'batches' : 'batch') + ' waiting' : '';
+    // A passive counter (NOT a second beat — one-beat-at-a-time is untouched): naming that another
+    // follow-up is queued keeps the ~1-2s inter-beat gap from reading as a hang/crash to a beginner.
+    activeTurnin.queueNote.textContent = waiting
+      ? (waiting === 1 ? '1 more follow-up after this…' : waiting + ' more follow-ups after this…')
+      : '';
     activeTurnin.queueNote.hidden = !waiting;
   }
 
