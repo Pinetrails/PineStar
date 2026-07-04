@@ -5020,10 +5020,13 @@ async function handleStt(req, res) {
 }
 
 function readBody(req, max) {
+  // Accumulate raw Buffers and decode ONCE at the end. The old `b += c` did a per-chunk toString(), which
+  // mangles a multi-byte UTF-8 char (emoji, CJK, accented) that happens to be SPLIT across two TCP chunks —
+  // each half decodes to replacement chars. Byte-counting for the cap stays correct (Buffer.length is bytes).
   return new Promise((resolve, reject) => {
-    let b = '', n = 0;
-    req.on('data', c => { n += c.length; if (n > max) { reject(new Error('body too large')); req.destroy(); } else b += c; });
-    req.on('end', () => resolve(b));
+    const chunks = []; let n = 0;
+    req.on('data', c => { n += c.length; if (n > max) { reject(new Error('body too large')); req.destroy(); } else chunks.push(c); });
+    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
     req.on('error', reject);
   });
 }
