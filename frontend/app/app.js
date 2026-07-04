@@ -2239,5 +2239,6 @@ const App = (() => {
     currentAgent: () => agent,
     agents: () => liveAgents().map(serializeAgentLite),
     selectAgent: selectAgent,   // COMMS top-bar agent selector: switch to (or mint) a workstream bound to agentId
+    openSummonBay: openSummonBay,   // adaptive-recruitment beat: accepting the recruit nudge deep-links into the bay's summon flow
     applyConfig: applyAgentConfig };
 })();

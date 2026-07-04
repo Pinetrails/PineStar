@@ -812,6 +812,13 @@ const Marketplace = (() => {
   }
   function recShelfHTML() {
     if (typeof Specialties === 'undefined' || !Specialties.builtins().length) return '';
+    // ADAPTIVE RECRUITMENT: when the station has a WARM read of the Commander's real workflow (the capability
+    // histogram past its floor), the shelf becomes a CURATED next-hire pick — the class whose kit covers the work
+    // the Commander actually does, with a why derived from a real persisted counter. The curated list already
+    // excludes rostered classes and only surfaces classes the work TOUCHES, so it never fabricates a pick. When the
+    // signal is cold/thin (or learning is off), fall through to today's honest rankSpecs shelf UNCHANGED.
+    const curated = recruiterShelf();
+    if (curated) return curated;
     const res = rankSpecs(Specialties.builtins(), ctx && ctx.currentSpecialtyId);
     if (!res.items.length) return '';
     const head = res.personalized
@@ -819,6 +826,20 @@ const Marketplace = (() => {
       : '◈ STARTING LINEUP — one per lane while the station learns what you work on';
     return '<div class="mkt-sect-h mkt-rec-sect">' + head + '</div><div class="mkt-rec-rail">' +
       res.items.map(x => recCardHTML(x.s, x.why)).join('') + '</div>';
+  }
+  // the CURATED-FOR-YOUR-WORKFLOW shelf: returns the shelf HTML when Recruiter has a warm read, else '' (so the
+  // caller falls back to the honest lineup). Excludes the currently-focused class (deploy re-spec) like rankSpecs.
+  function recruiterShelf() {
+    if (typeof RecruiterStore === 'undefined' || !RecruiterStore.recommend) return '';
+    let res; try { res = RecruiterStore.recommend(); } catch (_) { return ''; }
+    if (!res || !res.warm || !res.items || !res.items.length) return '';
+    const excludeId = ctx && ctx.currentSpecialtyId;
+    const cards = res.items
+      .map(it => ({ s: Specialties.get(it.classId), why: it.why }))
+      .filter(x => x.s && x.s.id !== excludeId);
+    if (!cards.length) return '';
+    return '<div class="mkt-sect-h mkt-rec-sect mkt-curated-sect">◆ CURATED FOR YOUR WORKFLOW — the next hire your real work points to</div>' +
+      '<div class="mkt-rec-rail">' + cards.map(x => recCardHTML(x.s, x.why)).join('') + '</div>';
   }
   /* ---------- R6: the "FOR YOU" row (ranked by dossier interest lanes + goal-text keyword match) ----------
      The plan's discovery-front recommender. Distinct from the profile-affinity "RECOMMENDED FOR YOU" shelf above:

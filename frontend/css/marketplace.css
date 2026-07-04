@@ -340,6 +340,13 @@
 /* ---- "RECOMMENDED FOR YOU" / "SUGGESTED" shelves (affinity-ranked, pinned above the catalog) ---- */
 .mkt-sect-h.mkt-rec-sect { color: var(--ink); background: var(--gold); }
 .mkt-sect-h.mkt-suggest-sect { color: var(--ink); background: var(--gold); }
+/* CURATED FOR YOUR WORKFLOW — the earned adaptive-recruitment shelf. The strongest gold read on the surface (it
+   only ever appears once the station has a warm read of real work), lifted by a phosphor-gold glow so it stands
+   apart from the affinity RECOMMENDED shelf. Accent uses the --gold-rgb triplet, never a literal amber. */
+.mkt-sect-h.mkt-curated-sect { box-shadow: 0 0 12px rgba(var(--gold-rgb), .45); }
+.mkt-curated-sect + .mkt-rec-rail .mkt-rec { border-color: rgba(var(--gold-rgb), .55); }
+.mkt-curated-sect + .mkt-rec-rail .mkt-rec::before { background: linear-gradient(90deg, var(--gold), transparent 80%); opacity: .9; }
+.mkt-curated-sect + .mkt-rec-rail .mkt-rec:hover { border-color: var(--gold); box-shadow: 0 0 15px rgba(var(--gold-rgb), .5); }
 .mkt-rec-rail { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px; margin-bottom: 4px; }
 .mkt-rec { position: relative; display: flex; flex-direction: column; gap: 7px; padding: 10px; border-radius: 8px; background: var(--panel2);
   border: 1px solid var(--ph-dim); cursor: pointer; text-align: left; font-family: inherit;
