@@ -2464,7 +2464,10 @@ const StationUI = (() => {
       btn.disabled = true; sfx('click');
       Diag.copy({ notify: false }).then(ok => {
         btn.disabled = false;
-        setMsg(ok ? '✓ copied — paste it into an email to ' + (Diag.SUPPORT_EMAIL || 'support') : 'copy failed — try again', ok);
+        // Name the support address only when one is really configured (Diag.supportEmail() gates out the unset/
+        // placeholder case); otherwise just confirm the copy — never point a user at a fake/placeholder address.
+        const diagDest = (typeof Diag !== 'undefined' && Diag.supportEmail) ? Diag.supportEmail() : '';
+        setMsg(ok ? (diagDest ? ('✓ copied — paste it into an email to ' + diagDest) : '✓ copied — paste it into a bug report') : 'copy failed — try again', ok);
         // Clipboard-failure fallback: if Lane A's on-screen renderer is present, show the report block so the user can
         // select-and-copy it by hand. Defensive: the helper may not exist in this build yet — keep current behavior then.
         // (Orchestrator reconciles the exact API at merge.)
@@ -2693,10 +2696,17 @@ const StationUI = (() => {
       // assembles + sanitizes it (GET /api/diagnostics); this button just fetches + copies. Destination is ONE constant
       // (Diag.SUPPORT_EMAIL) so it's a one-line swap when the support address is picked. Copy stays honest about where it goes.
       '<h4 class="ms-h">DIAGNOSTICS <span class="dim">— for a bug report</span></h4>' +
-      '<p class="set-about">If something breaks, copy a <b>diagnostic readout</b> and paste it into an email to ' +
-        '<b>' + esc((typeof Diag !== 'undefined' && Diag.SUPPORT_EMAIL) ? Diag.SUPPORT_EMAIL : 'nonfungiblefunyuns@gmail.com') + '</b>. ' +
-        'It carries your app version, platform, provider &amp; model, and the tail of recent errors — ' +
-        '<b>never your keys, tokens, messages, or prompts</b>. Assembled and scrubbed by the local sidecar.</p>' +
+      // Name the support address only when Diag reports one is configured; when it's unset/placeholder we omit
+      // the "email to X" clause entirely (no placeholder, no fake address) — the copy button still works.
+      ((function () {
+        const dest = (typeof Diag !== 'undefined' && Diag.supportEmail) ? Diag.supportEmail() : '';
+        const lead = dest
+          ? ('If something breaks, copy a <b>diagnostic readout</b> and paste it into an email to <b>' + esc(dest) + '</b>. ')
+          : 'If something breaks, copy a <b>diagnostic readout</b> and paste it into your bug report. ';
+        return '<p class="set-about">' + lead +
+          'It carries your app version, platform, provider &amp; model, and the tail of recent errors — ' +
+          '<b>never your keys, tokens, messages, or prompts</b>. Assembled and scrubbed by the local sidecar.</p>';
+      })()) +
       '<div class="set-save"><button class="bb sm" id="diag-copy">📋 COPY DIAGNOSTICS</button></div>' +
       '<div id="diag-msg" class="msg"></div>' +
       '<h4 class="ms-h">STATION DATA</h4>' +
