@@ -1244,11 +1244,12 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 #status-pill.thinking { color: var(--ph-bright); }
 
 /* ============================================================
-   GROUPED BOTTOM-BAR DOCKS (navdock.js) — the 13 flat panel
+   GROUPED BOTTOM-BAR DOCKS (navdock.js) — the flat panel
    buttons folded into 4 labelled triggers (CREW/WORK/BUILD/SYSTEM),
    each opening an upward popover of its items. Kills the cryptic
-   one-row glyph wall; the collapsed trigger still surfaces "a panel
-   is open here" (gold dot) and "you have a notification" (warn dot).
+   one-row glyph wall. Two DISTINCT trigger signals (never one
+   overloaded dot): a gold underline = "a panel from this group is
+   open"; the SYSTEM trigger's warn chip = the unread NOTIFS count.
    ============================================================ */
 #bottombar { gap: 4px; }
 .bb-group { position: relative; display: flex; align-items: center; }
@@ -1261,12 +1262,19 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 .bb-grp:hover { color: var(--ph-bright); border-color: var(--ph); background: var(--ph-faint); }
 .bb-group.open .bb-grp { color: var(--ink); background: var(--ph); border-color: var(--ph); text-shadow: none; }
 
-/* status dot on the collapsed trigger */
-.bb-grp-dot { width: 6px; height: 6px; border-radius: 50%; background: transparent; flex: 0 0 auto; transition: background .15s; }
-.bb-group.has-active .bb-grp-dot { background: var(--gold); box-shadow: 0 0 7px rgba(var(--gold-rgb),.75); }
-.bb-group.open.has-active .bb-grp-dot { background: var(--ink); box-shadow: none; }
-.bb-group.has-alert .bb-grp-dot { background: var(--warn); box-shadow: 0 0 8px var(--warn); animation: bb-alert 1.4s ease-in-out infinite; }
-@keyframes bb-alert { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
+/* "panel open here" = gold underline engraved into the trigger's bottom edge */
+.bb-group.has-active .bb-grp { box-shadow: inset 0 -3px 0 var(--gold), 0 0 10px rgba(var(--gold-rgb),.25); }
+.bb-group.open.has-active .bb-grp { box-shadow: inset 0 -3px 0 var(--ink); }
+
+/* unread NOTIFS count mirrored onto the SYSTEM trigger (navdock.syncGroupState) */
+.bb-grp-badge {
+  min-width: 16px; padding: 0 4px; border-radius: 8px; flex: 0 0 auto;
+  font-size: 11px; line-height: 15px; letter-spacing: 0; text-align: center;
+  color: var(--ink); background: var(--warn); text-shadow: none;
+  box-shadow: 0 0 8px var(--warn); animation: bb-alert 1.4s ease-in-out infinite;
+}
+.bb-group.open .bb-grp-badge { animation: none; box-shadow: none; }
+@keyframes bb-alert { 0%,100% { opacity: 1; } 50% { opacity: .45; } }
 
 /* the popover: opens UPWARD from the trigger, styled as a small CRT panel */
 .bb-menu {
