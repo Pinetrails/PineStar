@@ -143,6 +143,49 @@ async function run() {
     await a.disconnect();
   }
 
+  // ---- B4b. dropPendingOnConnect posts a ONE-LINE "I was offline" notice per chat whose backlog was discarded
+  //           (honesty: the message arrived and was NOT processed) — best-effort, counted, admitted-only. ----
+  {
+    const inbox = [];
+    const t = fakeTransport([
+      // prime poll (offset:-1) returns the whole discarded backlog: 2 from the owner's DM, 1 stranger DM (never
+      // admitted -> no apology, no key spend), 1 from a whitelisted group.
+      [
+        { id: 200, chat: 'c', type: 'dm', user: 'u', text: 'stale1', mid: '1' },
+        { id: 201, chat: 'c', type: 'dm', user: 'u', text: 'stale2', mid: '2' },
+        { id: 202, chat: 'evil', type: 'dm', user: 'stranger', text: 'stale', mid: '3' },
+        { id: 203, chat: 'g', type: 'group', user: 'u', text: 'stale', mid: '4' }
+      ],
+      []   // first real poll: nothing new
+    ]);
+    const a = makeChannelAdapter({ transport: t, normalize, name: 'telegram', ownerUserId: 'u',
+      allowedChats: ['g'], dropPendingOnConnect: true,
+      onInbound: m => inbox.push(m), clock: CLOCK, sleep: () => Promise.resolve() });
+    await a.connect();
+    for (let i = 0; i < 8 && t.sends.length < 2; i++) await tick();
+    A.eq(inbox.length, 0, 'backlog is discarded, not dispatched');
+    const byChat = {}; for (const s of t.sends) byChat[s.chatId] = s.text;
+    A.eq(Object.keys(byChat).sort(), ['c', 'g'], 'notice goes to the owner DM + whitelisted group only (stranger DM skipped)');
+    A.ok(/I was offline — 2 messages arrived/.test(byChat['c']), 'owner DM notice carries the real count (2, plural)');
+    A.ok(/I was offline — 1 message arrived/.test(byChat['g']), 'group notice carries the real count (1, singular)');
+    await a.disconnect();
+  }
+  {
+    // a throwing send must NOT stop connect — the notice is best-effort; the real poll still runs.
+    const inbox = [];
+    const t = fakeTransport([
+      [{ id: 300, chat: 'c', type: 'dm', user: 'u', text: 'stale', mid: '1' }],
+      [{ id: 301, chat: 'c', type: 'dm', user: 'u', text: 'fresh', mid: '2' }]
+    ]);
+    t.send = () => Promise.reject(new Error('boom'));   // every notice send throws
+    const a = makeChannelAdapter({ transport: t, normalize, name: 'telegram', ownerUserId: 'u', dropPendingOnConnect: true,
+      onInbound: m => inbox.push(m), clock: CLOCK, sleep: () => Promise.resolve() });
+    await a.connect();
+    for (let i = 0; i < 8 && !inbox.length; i++) await tick();
+    A.eq(inbox.map(m => m.text), ['fresh'], 'a throwing offline-notice send does not stop connect; fresh still delivered');
+    await a.disconnect();
+  }
+
   // ---- C. offset advances past processed update ids (each update fetched once) ----
   {
     const inbox = [];

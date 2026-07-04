@@ -165,8 +165,35 @@
             try {
               const raw = await transport.getUpdates({ offset: -1, timeoutSec: 0, signal: ac.signal });
               const ups = Array.isArray(raw) ? raw : (raw && Array.isArray(raw.updates) ? raw.updates : []);
-              for (const ru of ups) { let n; try { n = normalize(ru); } catch (_) {} if (n && Number.isFinite(n.offset)) offset = Math.max(offset, n.offset + 1); }
+              // Count the backlog we're about to DISCARD and remember which chat(s) it came from, so we can post a
+              // one-line "I was offline" notice per chat (honesty: the message arrived and was NOT processed). We
+              // only count messages that WOULD have been admitted (owner DM / whitelisted group) — a stranger's DM
+              // or an off-list group was never going to run, so its drop needs no apology and no key spend.
+              const droppedByChat = new Map();   // chatId -> count of admitted-but-discarded backlog messages
+              for (const ru of ups) {
+                let n; try { n = normalize(ru); } catch (_) {}
+                if (n && Number.isFinite(n.offset)) offset = Math.max(offset, n.offset + 1);
+                // Pure admission peek — must NOT mutate owner state. ownerOk() claims ownership as a side effect,
+                // so we can't call it here (that would let a STALE backlog DM claim the account). A DM counts only
+                // when the owner is already known and matches; if the owner is still unclaimed we discard silently
+                // (claiming from stale backlog is exactly the anti-stale-directive behavior we're preserving).
+                const m = n && n.message;
+                const admit = m && (m.chatType === 'dm'
+                  ? (!!owner && String(m.userId == null ? '' : m.userId) === owner)
+                  : allowed.has(String(m.chatId)));
+                if (admit) {
+                  const cid = String(m.chatId);
+                  droppedByChat.set(cid, (droppedByChat.get(cid) || 0) + 1);
+                }
+              }
               // the next poll uses `offset` (= last backlog id + 1), which confirms+discards the backlog; we did NOT dispatch it.
+              // Best-effort notice: never throw (a failed notice must not stop connect); the loop below still starts.
+              for (const [cid, count] of droppedByChat) {
+                if (stopped) break;
+                const plural = count === 1 ? 'message' : 'messages';
+                try { await transport.send(cid, 'I was offline — ' + count + ' ' + plural + ' arrived while I was away and were not processed.', {}); }
+                catch (e) { try { console.error('[' + name + '] offline-notice send failed for chat ' + cid + ':', (e && e.message) || e); } catch (_) {} }
+              }
             } catch (e) { if (stopped || isAbort(e)) return; /* fatal/transient handled by the loop below */ }
           }
           if (!stopped) await loop();
