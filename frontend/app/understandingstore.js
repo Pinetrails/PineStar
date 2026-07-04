@@ -103,6 +103,25 @@ const UnderstandingStore = (() => {
   // R3: a suggestion aimed at a specific dimension is a silent belief probe — accepting corroborates the
   // dimension it was aimed at; declining is counter-evidence. Zero new asks; drift detection as a byproduct.
   function noteProbe(dim, accepted) { return noteEvidence(dim, accepted ? +1 : -1); }
+  // R3: the probe target — among the north-star-critical dims that HOLD beliefs but whose confidence has
+  // SAGGED (staleness decay or 👎 counter-evidence), the lowest-confidence one, with its leading belief text
+  // for the directive to aim at. null when all are well-grounded (a normal suggestion — most sessions) or
+  // none hold beliefs (nothing to probe; blank dims belong to curiosity). 0.45 sits just under a single
+  // fresh authored belief (≈0.51), so a probe only fires once real doubt exists — never as a tic.
+  function probeTarget() {
+    const u = read();
+    if (!u || !u.dims) return null;
+    let best = null;
+    for (const k of ['goals', 'ambition', 'pain']) {
+      const d = u.dims[k];
+      if (!d || d.blank || d.conf >= 0.45) continue;
+      if (!best || d.conf < best.conf) best = { dim: k, conf: d.conf };
+    }
+    if (!best) return null;
+    let text = '';
+    try { const arr = (typeof DossierStore !== 'undefined' && DossierStore.beliefs) ? (DossierStore.beliefs(best.dim) || []) : []; if (arr[0] && arr[0].text) text = String(arr[0].text); } catch (_) {}
+    return text ? { dim: best.dim, text } : null;
+  }
 
   // compose the full read (understanding + the goal it points at). null only if the engine isn't loaded.
   function compute() {
@@ -154,7 +173,7 @@ const UnderstandingStore = (() => {
   // a brand-new hero starts with no learned corroboration (own key; mirrors the sibling growth stores).
   function reset() { corrob = {}; try { localStorage.removeItem(KEY); } catch (_) {} prevOverall = 0; refresh(false); }
 
-  return { init, reset, read, refresh, subscribe, noteRating, noteProbe, noteEvidence, _onRunEnd: onRunEnd, _compute: compute };
+  return { init, reset, read, refresh, subscribe, noteRating, noteProbe, noteEvidence, probeTarget, _onRunEnd: onRunEnd, _compute: compute };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = { UnderstandingStore };

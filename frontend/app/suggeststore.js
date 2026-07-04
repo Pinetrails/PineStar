@@ -140,7 +140,12 @@ const SuggestStore = (() => {
       const recipes = (typeof Recipes !== 'undefined' && Recipes.list)
         ? Recipes.list().map(r => ({ id: r.id, name: r.name, tagline: r.tagline })) : [];
       const caps = deps.getCaps ? deps.getCaps() : [];
-      const directive = Pitch.buildDirective({ recipes, capabilities: caps, recentTask: deps.getRecentTask ? deps.getRecentTask() : '', unlockedCapability: chain || '' });
+      // R3 BELIEF PROBE: when a north-star-critical belief's confidence has sagged, aim this idea at it —
+      // the accept/decline below then silently corroborates or counter-evidences that belief (drift detection
+      // with zero new asks). Fail-open: no UnderstandingStore / no sagging belief → the normal un-aimed idea.
+      let probe = null;
+      try { if (typeof UnderstandingStore !== 'undefined' && UnderstandingStore.probeTarget) probe = UnderstandingStore.probeTarget(); } catch (_) {}
+      const directive = Pitch.buildDirective({ recipes, capabilities: caps, recentTask: deps.getRecentTask ? deps.getRecentTask() : '', unlockedCapability: chain || '', probe: probe });
       const system = deps.getSystem ? deps.getSystem() : '';
       const res = await Harness.chat({ system, messages: [{ role: 'user', content: directive }], agentId: 'agent', isTask: false, placed: [], internal: true });
       const parsed = (res && !res.error) ? Pitch.parsePitch(res.text) : null;
@@ -164,7 +169,11 @@ const SuggestStore = (() => {
       const line = '✦ a fresh idea — ' + Pitch.titleSentence(parsed.title) + why + credit + gap;   // shared title→sentence join (no double period)
       if (typeof SFX !== 'undefined' && SFX.idea) { try { SFX.idea(); } catch (_) {} }   // G3a: the idea beat gets its soft chime (was mute)
       Chat.nudge(line, [{ label: 'let’s build it', value: 'build' }, { label: 'not now', value: 'no', skip: true }], choice => {
-        if (choice && choice.value === 'build') doBuild(parsed);
+        const accepted = !!(choice && choice.value === 'build');
+        // R3: settle the probe — the choice on an AIMED idea is evidence about the belief it was aimed at
+        // (accept corroborates, decline counter-evidences). An un-aimed idea settles nothing.
+        if (probe) { try { if (typeof UnderstandingStore !== 'undefined' && UnderstandingStore.noteProbe) UnderstandingStore.noteProbe(probe.dim, accepted); } catch (_) {} }
+        if (accepted) doBuild(parsed);
       });
 
       sessionShown++;                                   // spend this session's single idea (anti-nag)

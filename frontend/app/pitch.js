@@ -106,11 +106,17 @@
     // pitch is the natural "what's next" follow-up grounded in that fresh capability ("the dish is live —
     // want NOVA to build the price-watcher?"). Same strict reply format, so parsePitch reads it unchanged.
     const unlocked = String(ctx.unlockedCapability == null ? '' : ctx.unlockedCapability).trim();
+    // R3 BELIEF PROBE (additive): when the understanding layer flags a north-star-critical belief whose
+    // confidence has sagged (stale or counter-evidenced), aim THIS idea straight at it. The Commander's
+    // accept/decline then silently corroborates or counter-evidences that belief — drift detection with
+    // zero questions asked. { dim, text } or absent (the normal, un-aimed idea — most sessions).
+    const probe = (ctx.probe && typeof ctx.probe === 'object' && ctx.probe.dim && ctx.probe.text) ? ctx.probe : null;
 
     const lines = [];
     lines.push('INTERNAL — THE FIRST PITCH. Do not run any tools. Reason only, then reply in the exact format below.');
     if (unlocked) lines.push('Your bay just gained a new capability: ' + unlocked + '. Propose the SINGLE most valuable thing to build for your Commander that USES this new capability — the natural next step now that it is live.');
     else lines.push('You now know your Commander (see what you know about them, above). Propose the SINGLE most valuable thing to build for THEM next — a real use case they would actually want, not a generic suggestion.');
+    if (probe) lines.push('AIM THIS ONE CAREFULLY: some time ago the station learned this about their ' + probe.dim + ': "' + probe.text + '". It may still be true, or their world may have moved on. Propose the build that most serves THAT — if they take it, it still matters to them; if they pass, the station learns their heading has drifted. Do not mention this aiming or ask whether it is still true; just build the best pitch for it.');
     lines.push('Hard rules:');
     lines.push('- Exactly ONE proposal. Never a list, never options. Pick the best and commit to it.');
     lines.push('- It MUST be buildable here: either it maps to one of the recipes below, or it is achievable with the capabilities you actually have. Never propose something you cannot deliver.');

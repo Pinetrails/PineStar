@@ -143,4 +143,14 @@ A.eq(sch.length, 2, 'starter is exactly two choices — commit or a soft out, ne
 A.eq(sch[0].value, 'run', 'first choice runs it');
 A.ok(sch[1].skip === true, 'the out is a skip');
 
+/* ---------- R3: the belief-probe aim is additive + optional ---------- */
+const dvNorm = P.buildDirective({ recipes: [], capabilities: [] });
+A.ok(dvNorm.indexOf('AIM THIS ONE CAREFULLY') < 0, 'no probe → the normal un-aimed directive (most sessions)');
+const dvProbe = P.buildDirective({ recipes: [], capabilities: [], probe: { dim: 'ambition', text: 'launch the newsletter' } });
+A.ok(dvProbe.indexOf('AIM THIS ONE CAREFULLY') >= 0, 'a probe aims the directive');
+A.ok(dvProbe.indexOf('launch the newsletter') >= 0, 'the probe carries the sagging belief text');
+A.ok(dvProbe.indexOf('Do not mention this aiming') >= 0, 'the probe is silent — the agent never asks "is this still true"');
+A.ok(dvProbe.indexOf('PITCH: <one line') >= 0, 'the strict reply format is unchanged (parsePitch reads an aimed reply identically)');
+A.ok(P.buildDirective({ probe: { dim: 'ambition' } }).indexOf('AIM THIS') < 0, 'a malformed probe (no text) is ignored, never a broken line');
+
 A.report('pitch.test');

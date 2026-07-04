@@ -116,4 +116,27 @@ A.eq(US2.noteEvidence('nonsense', 1), null, 'an unknown dimension is rejected');
 US2.reset();
 A.eq(lsMap['starnet.understanding.v1'], undefined, 'reset clears the persisted corroboration (new-hero path)');
 
+/* ---------- R3: probeTarget aims at a SAGGING north-star-critical belief ---------- */
+const DAY = 24 * 60 * 60 * 1000;
+US2.init({ now: () => 1000 + 90 * DAY });   // 90 days on: the t=1000 beliefs have decayed well below the 0.45 floor
+dims.goals = [belief('ship the harness to a thousand builders')];
+dims.ambition = []; dims.pain = []; dims.identity = []; dims.stack = []; dims.style = []; dims.standing_orders = [];
+US2.refresh(false);
+const pt = US2.probeTarget();
+A.ok(pt && pt.dim === 'goals', 'probeTarget aims at the stale goals belief');
+A.eq(pt.text, 'ship the harness to a thousand builders', 'probeTarget carries the belief text for the directive');
+// the probe outcome moves the aimed dim (the full R3 loop in one line)
+const sagged = US2.read().dims.goals.conf;
+US2.noteProbe('goals', true);
+A.ok(US2.read().dims.goals.conf > sagged, 'an accepted probe re-corroborates the sagging belief');
+US2.reset();
+// a FRESH belief is never probed
+dims.goals = [{ id: 'cd_y', text: 'ship it', source: 'commander', createdAt: 1000 + 90 * DAY, updatedAt: 1000 + 90 * DAY, pinned: false }];
+US2.refresh(false);
+A.eq(US2.probeTarget(), null, 'a fresh well-grounded belief is never probed (no tic)');
+// blank criticals are never probed (blanks belong to curiosity)
+dims.goals = [];
+US2.refresh(false);
+A.eq(US2.probeTarget(), null, 'blank dims are never probed — curiosity owns blanks');
+
 A.report('understandingstore.test');
