@@ -231,9 +231,28 @@ const Conveyor = (() => {
     const pending = [];                                    // enqueueAt() work-items, born inside tick() (live nowMs + dir)
     const rr = new Map();                                  // per-junction round-robin counter (deterministic splitter routing)
     const mbuf = new Map();                                // per-merge-tile absorbed payloads (combined on the K-th box)
+    const mergeSig = new Map();                            // per-merge-tile config signature (kind:bufferSize) — detects junction re-wiring
     const mergeFx = [];                                    // G0.10: {x, y, t0, carrier} — combine flashes at merge junctions
 
-    function reset() { boxes = []; pending.length = 0; rr.clear(); mbuf.clear(); mergeFx.length = 0; }
+    function reset() { boxes = []; pending.length = 0; rr.clear(); mbuf.clear(); mergeSig.clear(); mergeFx.length = 0; }
+
+    /* Lane E6a — junction re-wire hygiene: a merge tile absorbs K-1 payloads into mbuf before the K-th box carries
+       them out. If that tile's junction is edited (removed, retyped, or its bufferSize K changed) while a partial
+       buffer sits there, those absorbed payloads would later combine against a config that no longer applies — a
+       silent stale-buffer bug. reconcileJunctions() diffs the live junctions Map against the last-seen per-tile
+       signature and CLEARS mbuf for any merge tile whose config changed or disappeared, so a partial buffer never
+       survives a re-wire. Kept inside the conveyor's API (called at the top of tick) so callers stay unchanged. */
+    function reconcileJunctions(junctions) {
+      for (const k of Array.from(mbuf.keys())) {                       // tiles no longer a merge junction: drop the buffer
+        const jt = junctions && junctions.get(k);
+        if (!jt || jt.kind !== 'merge') { mbuf.delete(k); mergeSig.delete(k); }
+      }
+      if (junctions) for (const [k, jt] of junctions) {               // live merge tiles: clear if the config changed
+        if (!jt || jt.kind !== 'merge') continue;
+        const sig = 'merge:' + Math.max(2, (jt.bufferSize | 0) || 2);
+        if (mergeSig.get(k) !== sig) { mbuf.delete(k); mergeSig.set(k, sig); }
+      }
+    }
 
     /* a junction overrides a box's exit at its tile. Three kinds, all deterministic (per-tile state + the
        fixed LANE_ORDER, no RNG/clock):
@@ -308,6 +327,7 @@ const Conveyor = (() => {
     }
 
     function tick(dtMs, nowMs, belts, junctions) {
+      reconcileJunctions(junctions);   // E6a: drop stale merge buffers when a junction is re-wired this tick
       const map = buildMap(belts || []);
       const dt = Math.min(64, dtMs) / 1000;
 

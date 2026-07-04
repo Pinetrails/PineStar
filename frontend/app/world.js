@@ -4080,6 +4080,13 @@ const World = (() => {
   // after a DISCONNECT they kept polling /api/connectors every 5s and the EventSource self-reconnected forever
   // from the title screen. Hoisted here so pauseBridge() (on disconnect) can release them and resumeBridge()
   // (on re-entry) can re-arm them. The U.bus.on(...) subscriptions stay put (idempotent under `bridged`).
+  // E6f — API base consistency: the SSE bridge already prefixes window.__STARNET_API__ (the sidecar's loopback
+  // origin) so it resolves in the desktop build, where the page origin is the Tauri asset host, NOT the sidecar.
+  // Bare /api/* fetches (routing POST, connectors poll) skipped that prefix and would hit the wrong origin there.
+  // apiUrl() is the single source of truth so all three use the same base. (Auth token is attached by harness.js's
+  // window.fetch monkey-patch for /api/ URLs; the SSE path can't send a header so it appends ?token= separately.)
+  function apiBase() { return (typeof window !== 'undefined' && window.__STARNET_API__) ? window.__STARNET_API__ : ''; }
+  function apiUrl(path) { return apiBase() + path; }
   let chanES = null, connPollTimer = null, connPollFn = null, connOpenFn = null, bridgePaused = false;
   // LINK-DOWN HONESTY (Lane E1): the live station telemetry (queue gauges, run clocks) is only truthful while
   // the SSE bridge is actually delivering events. Track the last DATA event's wall-clock and the socket's
@@ -4152,7 +4159,7 @@ const World = (() => {
     const hash = plan ? ((plan.hash || '') + '|' + (plan.bays || []).map(b => b.agentId + ':' + ((b.objects || []).map(objKey).join(','))).join(';')) : '';
     if (hash === lastPlanHash) return;
     lastPlanHash = hash;
-    try { fetch('/api/routing', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(plan || {}) }).catch(() => {}); } catch (_) {}
+    try { fetch(apiUrl('/api/routing'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(plan || {}) }).catch(() => {}); } catch (_) {}
   }
   // junction props (splitter/filter/merger) keyed by tile — derived from the compiled plan so the VISUAL engine
   // animates filters + mergers (not just splitters) using the SAME config the dispatch router routes by.
@@ -4263,7 +4270,7 @@ const World = (() => {
   function syncCrewFromPlan() {
     // No bound bays (or no geo yet): drop the plan-derived crew, but KEEP summoned bodies — a summoned-but-unbound
     // agent has no bay, so an empty plan must NOT wipe it (else it vanishes on the next rederive, e.g. a build toggle).
-    if (!routingPlan || !routingPlan.bays || !routingPlan.bays.length || !geo) { crew = crew.filter(b => b.summoned); return; }
+    if (!routingPlan || !routingPlan.bays || !routingPlan.bays.length || !geo) { crew = crew.filter(b => b.summoned); sweepAgentMaps(); return; }
     const want = new Map();
     for (const bay of routingPlan.bays) {
       if (agent && bay.agentId === agent.id) continue;                 // the hero already represents its own bay
@@ -4284,6 +4291,25 @@ const World = (() => {
       if (!b.summoned) continue;
       const t = tileOf(b.px, b.py);
       if (!geo.walkable(t.x, t.y, blocked)) { const f = workerFoot(); b.px = f.x; b.py = f.y; b.home = tileOf(f.x, f.y); }   // re-foot AND re-pin the leash home: the spawn spot genuinely moved (A2 stays centred on the new home)
+    }
+    sweepAgentMaps();   // E6b: an agent dropped from the roster leaves per-agent map entries — evict them here
+  }
+  /* Lane E6b — roster-change map sweep. The per-agent maps (heat/deskProg/xp/computeOk) and the pairwise social
+     cooldown accumulate an entry per agent id that appears; a roster removal (a bay unbound, a summoned worker
+     retired) used to leave those entries behind to grow unbounded on a 24/7 station. Called from the one place
+     roster membership is reconciled (syncCrewFromPlan), it clears entries for ids no longer present (hero + live
+     crew are always kept). NOTE: `seenCount` is deliberately EXCLUDED — it is keyed by prop-id/belt studyKey, not
+     agentId (see its set/get sites), so sweeping it here by agent id would wrongly drop prop-familiarity state. */
+  function sweepAgentMaps() {
+    const live = new Set();
+    if (agent && agent.id) live.add(agent.id);
+    for (const b of crew) if (b && b.agentId) live.add(b.agentId);
+    for (const m of [heatByAgent, deskProg, xpByAgent, computeOkCache]) {
+      for (const k of Array.from(m.keys())) if (!live.has(k)) m.delete(k);
+    }
+    for (const k of Array.from(socialPairCd.keys())) {      // "idA|idB" — drop the pair if EITHER side is gone
+      const parts = String(k).split('|');
+      if (!live.has(parts[0]) || !live.has(parts[1])) socialPairCd.delete(k);
     }
   }
   // the body that runs a given agentId: the hero, a crew body, or null (caller falls back to the hero)
@@ -4739,19 +4765,20 @@ const World = (() => {
     const connIds = [];
     function pollConnectors() {
       if (typeof fetch === 'undefined' || typeof PropSprites === 'undefined') return;
-      fetch('/api/connectors').then(r => r.json()).then(j => {
+      fetch(apiUrl('/api/connectors')).then(r => { if (!r.ok) throw new Error('http ' + r.status); return r.json(); }).then(j => {
         const list = (j && j.connectors) || []; connIds.length = 0;
         for (const c of list) {
           connIds.push(c.id);
           PropSprites.setConnectorState(c.id, c.state === 'up' ? 'connected' : (c.state === 'error' ? 'error' : 'offline'), c.toolCount);
         }
-      }).catch(() => {});
+      }).catch(() => {});   // E4/E6f: on failure keep the last-known portal states — never blank them from an error body
     }
     connPollFn = pollConnectors; pollConnectors(); connPollTimer = setInterval(pollConnectors, 5000);
     U.bus.on('agent.tool_call', p => {            // chat.js re-emits the hero's tool calls here; routed agents arrive via SSE
       const n = p && p.name;
       if (!n) return;
       heatBump(p.agentId, 0.35);                  // G0.3: any real tool fire is activity — stoke the desk heat
+      if (typeof PropSprites === 'undefined') return;   // E6e: prop layer not loaded — heat still stoked, no throw
       if (n.indexOf('mcp__') === 0) {             // connector portals: pulse the BOUND portal (unchanged)
         if (!PropSprites.pulseConnector) return;
         for (const cid of connIds) if (n.indexOf('mcp__' + cid + '__') === 0) { PropSprites.pulseConnector(cid); break; }
@@ -4767,8 +4794,8 @@ const World = (() => {
       if (tgt) PropSprites.pulseProp(tgt.id, cap);
     });
     // workbench pulse: a shell command running glows the bench green; a verify result glows green/red by outcome.
-    U.bus.on('shell.exec', () => { if (PropSprites.pulseWorkbench) PropSprites.pulseWorkbench(true); });
-    U.bus.on('verify.result', p => { if (PropSprites.pulseWorkbench) PropSprites.pulseWorkbench(!!(p && p.passed)); });
+    U.bus.on('shell.exec', () => { if (typeof PropSprites !== 'undefined' && PropSprites.pulseWorkbench) PropSprites.pulseWorkbench(true); });
+    U.bus.on('verify.result', p => { if (typeof PropSprites !== 'undefined' && PropSprites.pulseWorkbench) PropSprites.pulseWorkbench(!!(p && p.passed)); });
     // G0.3 TOKEN HEAT: every streamed token stokes the acting agent's desk heat (audio.js already rides this
     // same event for music intensity) — the working screens burn by REAL token flow, never a faked flicker.
     U.bus.on('agent.token', p => heatBump(p && p.agentId, 0.06));
@@ -4796,9 +4823,8 @@ const World = (() => {
       try {
         // EventSource can't send the custom auth header, so pass the per-launch token as ?token=… and
         // prefix the sidecar base in the desktop build (where the page origin isn't the loopback http origin).
-        const _base = (typeof window !== 'undefined' && window.__STARNET_API__) ? window.__STARNET_API__ : '';
         const _tok = (typeof window !== 'undefined' && window.__STARNET_API_TOKEN__) ? encodeURIComponent(String(window.__STARNET_API_TOKEN__)) : '';
-        chanES = new EventSource(_base + '/api/channels/events' + (_tok ? ('?token=' + _tok) : ''));
+        chanES = new EventSource(apiUrl('/api/channels/events') + (_tok ? ('?token=' + _tok) : ''));
       } catch (_) { return; }
       chanES.onopen = () => { backoff = 1000; lastSseEventAt = (typeof performance !== 'undefined') ? performance.now() : fnow; };
       chanES.onmessage = ev => { lastSseEventAt = (typeof performance !== 'undefined') ? performance.now() : fnow; try { const m = JSON.parse(ev.data); if (m && m.name) U.bus.emit(m.name, m.payload); } catch (_) {} };

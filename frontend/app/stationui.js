@@ -3590,10 +3590,19 @@ const StationUI = (() => {
         window.open(j.url, '_blank', 'noopener');
         msgEl.textContent = 'Approve access in the window that opened, then return here — this updates automatically.';
         sfx('click');
-        let n = 0; clearInterval(pollTimer);
+        let n = 0, fails = 0; clearInterval(pollTimer);
         pollTimer = setInterval(async () => {
-          n++; const s = await refreshStatus();
-          if ((s && s.connected) || n > 60) { clearInterval(pollTimer); if (s && s.connected) { msgEl.textContent = '✓ Spotify connected'; notify('Spotify connected', 'good'); sfx('click'); } }
+          // E6d: guard the poll body so a throw can't leak an unhandled rejection AND never stops the timer.
+          // Count consecutive failures toward an EARLY bail so a persistently-broken poll gives up instead of
+          // spinning the full ~120s window; a success resets the streak.
+          n++;
+          let s = null;
+          try { s = await refreshStatus(); fails = 0; }
+          catch (_) { fails++; }
+          if ((s && s.connected) || n > 60 || fails >= 5) {
+            clearInterval(pollTimer);
+            if (s && s.connected) { msgEl.textContent = '✓ Spotify connected'; notify('Spotify connected', 'good'); sfx('click'); }
+          }
         }, 2000);
       } catch (e) { msgEl.textContent = '✕ ' + ((e && e.message) || 'failed to reach the sidecar'); sfx('bad'); }
     });
