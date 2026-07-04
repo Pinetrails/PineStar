@@ -696,7 +696,7 @@ const App = (() => {
     // surface the REAL concurrency ceiling in the bay so "summon as many as you like" doesn't imply they all
     // run at once (the gate refuses excess parallel workers). Fetch once; open immediately thereafter.
     if (concurrentCap != null) return go();
-    fetch('/api/limits').then(r => r.json()).then(j => { concurrentCap = (j && +j.maxConcurrentAgents) || null; }).catch(() => {}).then(go);
+    fetch('/api/limits').then(r => { if (!r.ok) throw new Error('http ' + r.status); return r.json(); }).then(j => { concurrentCap = (j && +j.maxConcurrentAgents) || null; }).catch(() => {}).then(go);
   }
 
   // LAUNCH a recipe (from the Recipe library's RECIPES tab): mint a fresh workstream named after the mission, then
