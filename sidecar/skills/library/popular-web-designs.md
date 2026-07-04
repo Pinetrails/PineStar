@@ -4,7 +4,7 @@ slug: popular-web-designs
 description: Style a page after a known brand's visual language (Stripe, Linear, Vercel, Notion...) with concrete color, type, and spacing values.
 category: Creative
 requires: [cabinet]
-author: Hermes Agent + Teknium
+author: Teknium
 license: MIT
 default: false
 ---
@@ -29,4 +29,4 @@ For any brand not listed, derive its tokens from what you know of the site: prim
 - Consistency beats feature count — one shadow recipe, one radius scale, one accent used sparingly.
 - Pair with the UI Sketch skill when they want multiple directions to compare.
 
-*Ported from Hermes Agent + Teknium's popular-web-designs (design systems via VoltAgent/awesome-design-md, MIT). Needs the CABINET (write files) object.*
+*Ported from Teknium's popular-web-designs (design systems via VoltAgent/awesome-design-md, MIT). Needs the CABINET (write files) object.*

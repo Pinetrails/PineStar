@@ -4,7 +4,7 @@ slug: decision-1-3-1
 description: Frame a hard technical choice as one problem, three options with trade-offs, and one clear recommendation.
 category: Communication
 requires: []
-author: Willard Moore, ported via Hermes Agent
+author: Willard Moore
 license: MIT
 default: false
 ---
@@ -28,4 +28,4 @@ If the Commander picks a different option, revise the recommendation, done-crite
 ## Check yourself
 Exactly one problem sentence. Exactly three options, each with pros AND cons. One recommendation that commits. Done-criteria and plan align with the recommended option.
 
-*Ported from Willard Moore's one-three-one-rule (MIT) via Hermes Agent. Pure reasoning — needs no workstation objects.*
+*Ported from Willard Moore's one-three-one-rule (MIT). Pure reasoning — needs no workstation objects.*

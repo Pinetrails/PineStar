@@ -4,7 +4,7 @@ slug: excalidraw
 description: Write hand-drawn-style .excalidraw JSON diagrams (architecture, flow, sequence) that open at excalidraw.com — no libraries.
 category: Creative
 requires: [cabinet]
-author: Hermes Agent
+author: Nous Research
 license: MIT
 default: false
 ---
@@ -34,4 +34,4 @@ Each element is an object. Common fields: `id` (unique string), `x`, `y`, `width
 3. Bind arrows to the boxes they connect so the diagram stays coherent when the Commander drags things.
 4. fs.write the file, then tell them to open excalidraw.com and drop it in.
 
-*Ported from Hermes Agent (MIT). Needs the CABINET (write files) object to save the .excalidraw file.*
+*Needs the CABINET (write files) object to save the .excalidraw file.*

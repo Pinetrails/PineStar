@@ -4,7 +4,7 @@ slug: web-research
 description: Research a question across multiple sources, cross-check claims, and save a cited brief.
 category: Research
 requires: [dish, cabinet]
-author: Hermes Agent
+author: Nous Research
 license: MIT
 default: false
 ---
@@ -26,4 +26,4 @@ Answer a research question properly: gather from several independent sources, cr
 ## Output
 A cited brief: a 2–3 sentence answer, then bullet points each ending with their source link, then a short "what I couldn't confirm" list.
 
-*Ported from Hermes Agent's research skills (MIT). Needs the DISH (web) + CABINET (files) objects.*
+*Needs the DISH (web) + CABINET (files) objects.*

@@ -4,7 +4,7 @@ slug: simplify-code
 description: Make code smaller and clearer — reuse, delete, flatten — without changing behavior.
 category: Engineering
 requires: [cabinet]
-author: Hermes Agent
+author: Nous Research
 license: MIT
 default: false
 ---
@@ -29,4 +29,4 @@ Reduce code to the simplest version that still does the job. Simpler code has fe
 ## Flow
 Read the target (fs.read) → spot the simplifications above → apply with fs.edit (targeted) → state what shrank and confirm behavior is unchanged.
 
-*Ported from Hermes Agent's simplify-code skill (MIT). Needs the CABINET (read/write files) object.*
+*Needs the CABINET (read/write files) object.*

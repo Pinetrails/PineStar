@@ -4,7 +4,6 @@ slug: source-triangulation
 description: Confirm a load-bearing claim against multiple independent sources before you assert it.
 category: Research
 requires: [dish, cabinet]
-author: Hermes Agent
 license: MIT
 default: false
 ---

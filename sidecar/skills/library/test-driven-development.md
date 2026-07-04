@@ -4,7 +4,7 @@ slug: test-driven-development
 description: Enforce RED-GREEN-REFACTOR — write the failing test before any production code.
 category: Engineering
 requires: [workbench]
-author: Hermes Agent (adapted from obra/superpowers)
+author: obra/superpowers
 license: MIT
 default: false
 ---
@@ -51,4 +51,4 @@ Never fix a bug without first writing a failing test that reproduces it. The tes
 ## Done means
 Every new function has a test, you watched each one fail for the right reason, you wrote minimal code to pass, the full suite is green, and the output is pristine (no stray warnings). Can't check all of those? You skipped TDD — start over.
 
-*Adapted from obra/superpowers via Hermes Agent (MIT). Uses StarNet's `verify.run` / `shell.exec` (the WORKBENCH capability) to run tests.*
+*Adapted from obra/superpowers (MIT). Uses StarNet's `verify.run` / `shell.exec` (the WORKBENCH capability) to run tests.*

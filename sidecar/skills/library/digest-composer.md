@@ -4,7 +4,6 @@ slug: digest-composer
 description: Compose a recurring digest — gather the period's items, distill to signal, cite every claim.
 category: Research
 requires: [dish, cabinet]
-author: Hermes Agent
 license: MIT
 default: false
 ---

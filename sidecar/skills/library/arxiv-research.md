@@ -4,7 +4,7 @@ slug: arxiv-research
 description: Search and retrieve academic papers from arXiv's free API — by keyword, author, category, or paper ID.
 category: Research
 requires: [dish]
-author: Hermes Agent
+author: Nous Research
 license: MIT
 default: false
 ---
@@ -39,4 +39,4 @@ Combine with `+AND+`, `+OR+`, `+ANDNOT+`; exact phrase with quotes (`ti:"chain o
 ## Present it
 For each result: `[id] Title — Authors — date — categories`, a two-line summary, and the PDF link. When the Commander picks one, fetch the PDF and pull the specific claims they need, citing the id.
 
-*Ported from Hermes Agent (MIT). Needs the DISH (web) object to query arXiv and fetch papers.*
+*Needs the DISH (web) object to query arXiv and fetch papers.*

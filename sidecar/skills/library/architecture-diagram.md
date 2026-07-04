@@ -4,7 +4,7 @@ slug: architecture-diagram
 description: Dark-themed SVG architecture / cloud / infra diagrams saved as a standalone HTML file.
 category: Creative
 requires: [cabinet]
-author: Cocoon AI, ported via Hermes Agent
+author: Cocoon AI
 license: MIT
 default: false
 ---
@@ -32,4 +32,4 @@ Software system layers (frontend / backend / database), cloud infra (VPC, region
 ## Flow
 Ask for components + connections → build the HTML → `fs.write` to `<project>-architecture.html` → tell the Commander to open it.
 
-*Based on [Cocoon AI's architecture-diagram-generator](https://github.com/Cocoon-AI/architecture-diagram-generator) (MIT), ported via Hermes. Needs the CABINET (write files) object.*
+*Based on [Cocoon AI's architecture-diagram-generator](https://github.com/Cocoon-AI/architecture-diagram-generator) (MIT). Needs the CABINET (write files) object.*

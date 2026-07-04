@@ -4,7 +4,6 @@ slug: translation-pass
 description: Translate a document for meaning and register, localize idiom, keep terminology consistent.
 category: Writing
 requires: [cabinet]
-author: Hermes Agent
 license: MIT
 default: false
 ---

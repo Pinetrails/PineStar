@@ -4,7 +4,6 @@ slug: adversarial-review-pass
 description: Try to break the work, then try to refute your own finding, before reporting anything.
 category: Engineering
 requires: [cabinet, workbench]
-author: Hermes Agent
 license: MIT
 default: false
 ---

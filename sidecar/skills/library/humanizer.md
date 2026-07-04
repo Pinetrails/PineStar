@@ -4,7 +4,7 @@ slug: humanizer
 description: Strip AI-isms from writing and give it a real human voice.
 category: Writing
 requires: []
-author: Siqi Chen (@blader), ported via Hermes Agent
+author: Siqi Chen (@blader)
 license: MIT
 source: https://github.com/blader/humanizer
 default: true

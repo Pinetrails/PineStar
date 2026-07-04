@@ -4,7 +4,6 @@ slug: announcement-kit
 description: Turn a launch into channel-shaped copy that leads with the hook and gets the facts right.
 category: Writing
 requires: [dish, cabinet]
-author: Hermes Agent
 license: MIT
 default: false
 ---

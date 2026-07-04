@@ -4,7 +4,7 @@ slug: code-review
 description: Review a diff for correctness bugs first, then clarity — concrete, cited, and honest.
 category: Engineering
 requires: [cabinet]
-author: Hermes Agent
+author: Nous Research
 license: MIT
 default: false
 ---
@@ -27,4 +27,4 @@ Review code the way a careful senior engineer does: correctness first, clarity s
 ## Output
 A short verdict (is it safe to merge?), then findings grouped blockers → nits, each with file:line and a fix. If you found nothing real, say so plainly rather than inventing nits.
 
-*Ported from Hermes Agent's code-review skills (MIT). Needs the CABINET (read files) object.*
+*Needs the CABINET (read files) object.*
