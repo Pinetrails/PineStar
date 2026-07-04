@@ -703,6 +703,37 @@ const App = (() => {
     });
   }
 
+  // P3.1 "RUN IT AGAIN?" — the honest facts ResummonStore gates on, read from chat.js's RUN_META (directive +
+  // isTask + the run's agent, recorded at run start) plus Chat.runDidWork (real tool-work / delivery). Adds the
+  // agent's display NAME (resolved from the roster) so the beat can address it by name. A run with no meta reports
+  // nothing re-runnable. cron/unattended runs never flow through the interactive rateWork path (cron:false honest).
+  function runResummonInfo(runId) {
+    const m = (typeof Chat !== 'undefined' && Chat.runMeta) ? Chat.runMeta(runId) : null;
+    if (!m) return null;
+    const aid = m.agentId || 'agent';
+    const a = agents.get(aid);
+    return {
+      isTask: !!m.isTask,
+      cron: false,
+      directive: m.directive || m.title || '',
+      didWork: (typeof Chat !== 'undefined' && Chat.runDidWork) ? Chat.runDidWork(runId) : false,
+      agentId: aid,
+      agentName: (a && a.name) || (aid === 'agent' && agent ? agent.name : '') || ''
+    };
+  }
+  // P3.1 — PRE-FILL a fresh run from a re-summoned one: switch to (or mint) the run's AGENT stream, then seed the
+  // composer with its directive. NOTHING auto-runs — the Commander edits and hits send (Chat.prefill only scaffolds
+  // the input). Mirrors the COMMS agent-selector hand-off (selectAgent → switchWorkstream → Chat.load), then prefill.
+  function prefillResummon(opts) {
+    opts = opts || {};
+    const aid = String(opts.agentId || 'agent');
+    const directive = String(opts.directive || '');
+    if (!directive.trim()) return;
+    try { if (aid && aid !== 'agent' && agents.has(aid)) selectAgent(aid); } catch (_) {}   // hero runs stay on the current/General stream
+    try { if (typeof SFX !== 'undefined' && SFX.click) SFX.click(); } catch (_) {}
+    try { if (typeof Chat !== 'undefined' && Chat.prefill) Chat.prefill(directive); } catch (_) {}
+  }
+
   // push the live agent identity (the run agentId + composed system prompt) to the sidecar so any connected
   // messaging channel (Telegram) runs as the SAME agent. Fire-and-forget; a no-op if no channel is connected.
   function syncChannels() {
@@ -1476,6 +1507,7 @@ const App = (() => {
     if (typeof SeedReuseStore !== 'undefined') SeedReuseStore.reset();   // …and no inherited seed-usage tally — a fresh Commander's living-tools shelf starts empty; the 5×/week callout is re-earned (own key)
     if (typeof ConfBeats !== 'undefined') ConfBeats.reset();   // …and both confidence narrative moments re-arm — a fresh hero's meter starts over, so its calibration/TRUSTED beats must be re-earned, never inherited (own key)
     if (typeof BottleStore !== 'undefined') BottleStore.reset();   // …and R5's per-run bottle-decision denylist clears — a fresh hero re-earns every "bottle it?" offer (own key)
+    if (typeof ResummonStore !== 'undefined') ResummonStore.reset();   // …and P3.1's per-run re-summon-decision denylist clears — a fresh hero re-earns every "run it again?" offer (own key)
     if (typeof TrustStore !== 'undefined') TrustStore.reset();   // GROWTH Tier 3: …and a fresh EARNED-AUTONOMY track record — a new Commander never inherits the prior hero's earned rungs / declined-offer state / streak (own key); the earned dial rung must be re-earned from scratch
     if (typeof PermissionsStore !== 'undefined') await PermissionsStore.reset();   // …and LOCK DOWN the standing grants (AWAIT so the revoke lands before the new agent enters — no inherit-window) — a new Commander never inherits the previous one's autonomous file-write permission (server-side grant; re-grant via the Permissions panel)
     if (typeof Harness !== 'undefined' && Harness.memoryReset) Harness.memoryReset(agent.id);   // …and wipe SERVER-SIDE memory (notebook/declined/todo) so no prior Commander's kept or rejected beliefs bleed into the fresh hero
@@ -1735,6 +1767,11 @@ const App = (() => {
     // verdict from chat.js rateWork (like ConfBeats); reads each run's honest facts via runBottleInfo and opens the
     // R2 editor pre-filled on "bottle it". Shares the one post-run beat slot (Chat.nudge) — never stacks an ask.
     if (typeof BottleStore !== 'undefined') BottleStore.init({ openEditor: openBottleEditor, runInfo: runBottleInfo });
+    // P3.1 "RUN IT AGAIN?": the post-run offer to re-run a 👍-rated run's shape. Fed the SAME direct verdict from
+    // chat.js rateWork; reads the run's honest facts via runResummonInfo and, on accept, PRE-FILLS a fresh run
+    // (selects the run's agent stream + seeds the composer with its directive) — never auto-running. Shares the one
+    // post-run beat slot; chat.js gates it so it never co-fires with a bottle offer on the same run.
+    if (typeof ResummonStore !== 'undefined') ResummonStore.init({ runInfo: runResummonInfo, prefillRun: prefillResummon });
     // SELF-INITIATION (Slice 2): the agent proposes recurring standing JOBS grounded in the dossier → the Commander
     // approves → each becomes a scheduled cron routine (POST /api/cron, the same endpoint the ROUTINES panel uses).
     if (typeof AutoJobStore !== 'undefined') AutoJobStore.init({
