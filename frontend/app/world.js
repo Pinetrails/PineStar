@@ -4884,8 +4884,8 @@ const World = (() => {
     // workbench pulse: a shell command running glows the bench green; a verify result glows green/red by outcome.
     U.bus.on('shell.exec', () => { if (typeof PropSprites !== 'undefined' && PropSprites.pulseWorkbench) PropSprites.pulseWorkbench(true); });
     U.bus.on('verify.result', p => { if (typeof PropSprites !== 'undefined' && PropSprites.pulseWorkbench) PropSprites.pulseWorkbench(!!(p && p.passed)); });
-    // G0.3 TOKEN HEAT: every streamed token stokes the acting agent's desk heat (audio.js already rides this
-    // same event for music intensity) — the working screens burn by REAL token flow, never a faked flicker.
+    // G0.3 TOKEN HEAT: every streamed token stokes the acting agent's desk heat —
+    // the working screens burn by REAL token flow, never a faked flicker.
     U.bus.on('agent.token', p => { heatBump(p && p.agentId, 0.06); stampRun(p && p.agentId); });   // E2: a token reinforces the run TTL
     // G0.2 RUN CLOCK: elapsed-time bookkeeping keyed to the REAL run lifecycle (a run.error is always
     // followed by run.end reason 'error', so end is the one cleanup point). Internal reason-only runs

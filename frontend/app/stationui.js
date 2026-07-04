@@ -30,7 +30,7 @@ const StationUI = (() => {
   let started = false;
 
   /* ---------- persistence (user-owned UI state) ---------- */
-  function defaults() { return { theme: 'amber', scanlines: true, flicker: true, sound: true, music: true, keepComputerAwake: false, notifyPrefs: notifyDefaults() }; }
+  function defaults() { return { theme: 'amber', scanlines: true, flicker: true, sound: true, keepComputerAwake: false, notifyPrefs: notifyDefaults() }; }
   // P1-8 notification preferences: per-category on/off + a notification sound toggle. Every category defaults ON
   // (no silent regression); each is HONORED at emit time in notify() below (a decorative toggle would be a bug).
   function notifyDefaults() { return { runComplete: true, needsApproval: true, cronDigest: true, sound: true }; }
@@ -60,7 +60,6 @@ const StationUI = (() => {
     document.body.classList.toggle('no-scan', !s.scanlines);
     document.body.classList.toggle('no-flicker', !s.flicker);
     if (typeof SFX === 'object') SFX.on = !!s.sound;
-    if (typeof MUSIC === 'object') MUSIC.on = (s.music !== false);   // default-on adaptive score; arms on first gesture
     syncKeepAwake(!!s.keepComputerAwake);
   }
 
@@ -2488,7 +2487,7 @@ const StationUI = (() => {
     const browserSections = () => {
       const out = { settings: {
         theme: store.settings.theme, scanlines: store.settings.scanlines, flicker: store.settings.flicker,
-        sound: store.settings.sound, music: store.settings.music, keepComputerAwake: store.settings.keepComputerAwake
+        sound: store.settings.sound, keepComputerAwake: store.settings.keepComputerAwake
       }, notifyPrefs: Object.assign({}, store.settings.notifyPrefs || notifyDefaults()) };
       try { if (typeof AutonomyStore !== 'undefined' && AutonomyStore.exportState) out.autonomy = AutonomyStore.exportState(); } catch (_) {}
       return out;
@@ -2660,8 +2659,7 @@ const StationUI = (() => {
       '<h4 class="ms-h">DISPLAY</h4>' +
       '<label class="set-row"><input type="checkbox" id="set-scan" ' + (s.scanlines ? 'checked' : '') + '> CRT SCANLINES</label>' +
       '<label class="set-row"><input type="checkbox" id="set-flicker" ' + (s.flicker ? 'checked' : '') + '> SCREEN FLICKER</label>' +
-      '<label class="set-row"><input type="checkbox" id="set-sound" ' + (s.sound ? 'checked' : '') + '> TERMINAL AUDIO</label>' +
-      '<label class="set-row"><input type="checkbox" id="set-music" ' + (s.music !== false ? 'checked' : '') + '> STATION MUSIC <span class="dim">— adaptive score</span></label>';
+      '<label class="set-row"><input type="checkbox" id="set-sound" ' + (s.sound ? 'checked' : '') + '> TERMINAL AUDIO <span class="dim">— UI &amp; notification sounds</span></label>';
     const secNotifs =
       // NOTIFICATIONS — per-category on/off + a notification sound toggle (P1-8). Each is HONORED at emit time in
       // notify(): a muted category is dropped before it ever reaches the panel/toast (not decorative).
@@ -2741,7 +2739,7 @@ const StationUI = (() => {
       host.querySelectorAll('[data-t]').forEach(x => x.classList.toggle('sel', x === b));
     }));
     const bind = (id, key) => host.querySelector(id).addEventListener('change', ev => { s[key] = ev.target.checked; applySettings(); save(); });
-    bind('#set-scan', 'scanlines'); bind('#set-flicker', 'flicker'); bind('#set-sound', 'sound'); bind('#set-music', 'music');
+    bind('#set-scan', 'scanlines'); bind('#set-flicker', 'flicker'); bind('#set-sound', 'sound');
     const awakeToggle = host.querySelector('#set-awake');
     if (awakeToggle) awakeToggle.addEventListener('change', ev => {
       const desired = !!ev.target.checked;

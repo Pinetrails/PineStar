@@ -103,11 +103,32 @@ const U = {
    sets SFX.on=false) stays happy. The public API is a backward-compatible
    superset of the old tiny synth — boot / tone / click / open / close / notify
    / sale / bad / level / type all still exist; they just sound designed now
-   instead of like a buzzy PC speaker. New stings (chime/ship/alarm/msg) feed
-   the adaptive music director in audio.js, which shares this master bus.
+   instead of like a buzzy PC speaker. The event stings (chime/ship/alarm/msg)
+   are fired by the sound Director in audio.js off real colony bus events.
+
+   The palette is ONE coherent console voice: every cue is a breath of filtered
+   noise for TOUCH + a warm tonal body around A minor (the station's key —
+   celebrations run its relative major) with a small pitch glide for MOTION,
+   sharing one reverb for the room. Per-cue gates keep event storms from
+   machine-gunning a sting into mud.
    ========================================================================== */
 const SFX = {
-  ctx: null, master: null, fx: null, on: true, vol: 0.35, _noise: null,
+  ctx: null, master: null, fx: null, on: true, vol: 0.35, _noise: null, _lastAt: {},
+
+  // per-sound gate: repeats inside the window are dropped; the FIRST one always sounds.
+  _gate(name, ms) {
+    const now = Date.now();
+    if (SFX._lastAt[name] && now - SFX._lastAt[name] < ms) return false;
+    SFX._lastAt[name] = now; return true;
+  },
+
+  // destination picker: an optional stereo nudge (pan −1..1) gives UI cues a touch of width;
+  // falls back to the mono master when StereoPanner is missing (old WebKit).
+  _out(c, pan) {
+    if (!pan || !c.createStereoPanner) return SFX.master;
+    const p = c.createStereoPanner(); p.pan.value = Math.max(-1, Math.min(1, pan)); p.connect(SFX.master);
+    return p;
+  },
 
   boot() {
     if (SFX.ctx) { try { if (SFX.ctx.state === 'suspended') SFX.ctx.resume(); } catch (e) { } return; }
@@ -164,7 +185,7 @@ const SFX = {
       osc.connect(f); osc.start(t0); osc.stop(t0 + dur + 0.05);
     };
     mk(0); if (det) { mk(det); mk(-det); }                      // detuned stack = warmth, not a thin beep
-    f.connect(g); g.connect(SFX.master);
+    f.connect(g); g.connect(SFX._out(c, o.pan));
     if (o.verb && SFX.fx) { const s = c.createGain(); s.gain.value = o.verb; g.connect(s); s.connect(SFX.fx); }
   },
 
@@ -182,7 +203,7 @@ const SFX = {
     g.gain.setValueAtTime(0.0001, t0);
     g.gain.linearRampToValueAtTime((o.vol != null ? o.vol : 0.3) * SFX.vol, t0 + 0.003);
     g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-    src.connect(f); f.connect(g); g.connect(SFX.master);
+    src.connect(f); f.connect(g); g.connect(SFX._out(c, o.pan));
     if (o.verb && SFX.fx) { const s = c.createGain(); s.gain.value = o.verb; g.connect(s); s.connect(SFX.fx); }
     src.start(t0); src.stop(t0 + dur + 0.05);
   },
@@ -194,36 +215,89 @@ const SFX = {
     SFX.voice({ freq, dur: dur || 0.1, type: type || 'square', vol, when, cut, verb: (dur || 0) > 0.06 ? 0.1 : 0 });
   },
 
-  /* ---- designed UI / event sounds (warm, not beepy) ---- */
-  click() { SFX.noise({ dur: 0.035, cut: 2600, cut2: 1100, vol: 0.16 }); SFX.voice({ freq: 760, dur: 0.04, type: 'sine', vol: 0.08 }); },
+  /* ---- designed UI / event sounds — the coherent console voice (see header) ---- */
+  // click: a tactile key "thock" — a pinched noise transient falling into a tiny sine drop. A hair of
+  // random stereo drift so runs of clicks feel like a real mechanical panel, never a repeated sample.
+  click() {
+    if (!SFX._gate('click', 40)) return;
+    const pan = (Math.random() - 0.5) * 0.16;
+    SFX.noise({ dur: 0.028, cut: 2300, cut2: 850, vol: 0.15, q: 1.2, pan });
+    SFX.voice({ freq: 660, glide: 495, dur: 0.055, type: 'sine', vol: 0.11, atk: 0.002, pan });
+  },
   // "got it, thinking…" — a soft descending two-note sine, distinct from click (send) and open (listen-start),
   // so a hands-free user gets instant confirmation their words landed before the agent starts speaking.
-  think() { SFX.voice({ freq: 740, dur: 0.07, type: 'sine', vol: 0.18, verb: 0.12 }); SFX.voice({ freq: 560, dur: 0.10, type: 'sine', vol: 0.14, when: 0.05, verb: 0.12 }); },
-  open() { SFX.voice({ freq: 523, dur: 0.10, type: 'triangle', vol: 0.22, verb: 0.16 }); SFX.voice({ freq: 784, dur: 0.13, type: 'triangle', vol: 0.16, when: 0.05, verb: 0.16 }); },
-  close() { SFX.voice({ freq: 523, dur: 0.09, type: 'triangle', vol: 0.20 }); SFX.voice({ freq: 349, dur: 0.13, type: 'triangle', vol: 0.16, when: 0.04 }); },
-  notify() { SFX.voice({ freq: 880, dur: 0.18, type: 'sine', vol: 0.22, detune: 4, verb: 0.3 }); SFX.voice({ freq: 1318, dur: 0.22, type: 'sine', vol: 0.15, when: 0.07, detune: 4, verb: 0.3 }); },
-  sale() { [523, 659, 784, 1046].forEach((f, i) => SFX.voice({ freq: f, dur: 0.20, type: 'triangle', vol: 0.2, when: i * 0.05, verb: 0.25 })); },
-  bad() { SFX.voice({ freq: 196, dur: 0.20, type: 'sawtooth', vol: 0.18, glide: 110, cut: 900 }); SFX.voice({ freq: 146, dur: 0.28, type: 'sawtooth', vol: 0.14, when: 0.08, glide: 90, cut: 700 }); },
-  level() { [523, 659, 784, 1046, 1318].forEach((f, i) => SFX.voice({ freq: f, dur: 0.18, type: 'triangle', vol: 0.22, when: i * 0.07, verb: 0.25 })); },
+  think() { SFX.voice({ freq: 659, dur: 0.09, type: 'sine', vol: 0.16, atk: 0.01, verb: 0.18 }); SFX.voice({ freq: 494, dur: 0.14, type: 'sine', vol: 0.12, when: 0.06, atk: 0.01, verb: 0.22 }); },
+  // open/close: a panel physically SLIDING — an air whoosh sweeping up (open) or down (close) under a
+  // rising/falling pair on A. The whoosh is what makes the window feel like it moved, not appeared.
+  open() {
+    if (!SFX._gate('open', 80)) return;
+    SFX.noise({ dur: 0.13, cut: 520, cut2: 2900, vol: 0.07, q: 0.6, verb: 0.15 });
+    SFX.voice({ freq: 440, glide: 452, dur: 0.11, type: 'triangle', vol: 0.17, atk: 0.008, verb: 0.2 });
+    SFX.voice({ freq: 659, dur: 0.16, type: 'triangle', vol: 0.13, when: 0.045, atk: 0.008, detune: 4, verb: 0.28 });
+  },
+  close() {
+    if (!SFX._gate('close', 80)) return;
+    SFX.noise({ dur: 0.11, cut: 2400, cut2: 640, vol: 0.06, q: 0.6 });
+    SFX.voice({ freq: 659, dur: 0.09, type: 'triangle', vol: 0.15, atk: 0.006 });
+    SFX.voice({ freq: 440, glide: 430, dur: 0.15, type: 'triangle', vol: 0.13, when: 0.04, atk: 0.006, verb: 0.15 });
+  },
+  // notify: the station bell — a warm detuned A5/E6 pair with a long room tail. Gated so a burst of
+  // pings reads as ONE bell, not a carillon.
+  notify() {
+    if (!SFX._gate('notify', 300)) return;
+    SFX.voice({ freq: 880, dur: 0.34, type: 'sine', vol: 0.2, detune: 5, atk: 0.012, verb: 0.45 });
+    SFX.voice({ freq: 1318, dur: 0.46, type: 'sine', vol: 0.12, when: 0.09, atk: 0.015, detune: 5, verb: 0.55 });
+  },
+  sale() { [523, 659, 784, 1046].forEach((f, i) => SFX.voice({ freq: f, dur: 0.22, type: 'triangle', vol: 0.19, when: i * 0.05, atk: 0.008, detune: 3, verb: 0.3 })); },
+  // bad: a dark exhale — low saw slide with a falling noise wash underneath; heavy, not buzzy.
+  bad() {
+    if (!SFX._gate('bad', 250)) return;
+    SFX.noise({ dur: 0.16, cut: 900, cut2: 300, vol: 0.07, q: 0.8 });
+    SFX.voice({ freq: 196, glide: 110, dur: 0.22, type: 'sawtooth', vol: 0.16, cut: 800, atk: 0.01 });
+    SFX.voice({ freq: 147, glide: 92, dur: 0.3, type: 'sawtooth', vol: 0.12, when: 0.08, cut: 620, atk: 0.01 });
+  },
+  level() { [523, 659, 784, 1046, 1318].forEach((f, i) => SFX.voice({ freq: f, dur: 0.2, type: 'triangle', vol: 0.21, when: i * 0.065, atk: 0.008, detune: 3, verb: 0.3 })); SFX.voice({ freq: 2093, dur: 0.5, type: 'sine', vol: 0.07, when: 0.33, atk: 0.03, verb: 0.6 }); },
   // quest-complete sting (G1a): a shorter, brighter cousin of level() — three quick gold steps + one high
   // shimmer. A MOMENT, deliberately smaller than a level-up: quests pay out in real work, not fanfare.
-  quest() { [659, 880, 1318].forEach((f, i) => SFX.voice({ freq: f, dur: 0.15, type: 'triangle', vol: 0.2, when: i * 0.055, verb: 0.3 })); SFX.voice({ freq: 1976, dur: 0.32, type: 'sine', vol: 0.09, when: 0.19, verb: 0.5 }); },
+  quest() { [659, 880, 1318].forEach((f, i) => SFX.voice({ freq: f, dur: 0.16, type: 'triangle', vol: 0.19, when: i * 0.055, atk: 0.008, detune: 3, verb: 0.32 })); SFX.voice({ freq: 1976, dur: 0.36, type: 'sine', vol: 0.08, when: 0.19, atk: 0.02, verb: 0.55 }); },
   // idea sting (G3a): a pitch / fresh suggestion / spoken notice slots into the feed — SOFT, two warm sine
   // steps up, quieter and rounder than notify() so a proactive aside lands gently, never startles.
-  idea() { SFX.voice({ freq: 587, dur: 0.12, type: 'sine', vol: 0.12, verb: 0.25 }); SFX.voice({ freq: 880, dur: 0.16, type: 'sine', vol: 0.10, when: 0.07, verb: 0.3 }); },
+  idea() { SFX.voice({ freq: 587, dur: 0.13, type: 'sine', vol: 0.11, atk: 0.012, verb: 0.28 }); SFX.voice({ freq: 880, dur: 0.18, type: 'sine', vol: 0.09, when: 0.07, atk: 0.012, verb: 0.35 }); },
   // seed-saved sting (G3a): PLANTING — one warm low tuck + two high sparkles settling over it; deliberately
   // distinct from chime() (one held bell) and sale() (major run) so "saved to your shelf" has its own signature.
-  seed() { SFX.voice({ freq: 262, dur: 0.16, type: 'triangle', vol: 0.18, verb: 0.2 }); SFX.voice({ freq: 1568, dur: 0.09, type: 'sine', vol: 0.10, when: 0.10, verb: 0.4 }); SFX.voice({ freq: 2093, dur: 0.22, type: 'sine', vol: 0.08, when: 0.16, verb: 0.5 }); },
+  seed() { SFX.voice({ freq: 262, dur: 0.17, type: 'triangle', vol: 0.17, atk: 0.01, verb: 0.22 }); SFX.voice({ freq: 1568, dur: 0.1, type: 'sine', vol: 0.09, when: 0.10, verb: 0.45 }); SFX.voice({ freq: 2093, dur: 0.24, type: 'sine', vol: 0.07, when: 0.16, verb: 0.55 }); },
   // milestone sting (G3a): grander than quest() (3 steps), smaller than level() (5 steps) — four rising gold
   // steps under a long high shimmer. A milestone is PERMANENT, so its sting carries a little more weight.
-  milestone() { [523, 659, 880, 1318].forEach((f, i) => SFX.voice({ freq: f, dur: 0.17, type: 'triangle', vol: 0.21, when: i * 0.06, verb: 0.28 })); SFX.voice({ freq: 2637, dur: 0.4, type: 'sine', vol: 0.08, when: 0.26, verb: 0.55 }); },
-  type() { SFX.noise({ dur: 0.018, cut: 3200, vol: 0.05, type: 'highpass' }); },
+  milestone() { [523, 659, 880, 1318].forEach((f, i) => SFX.voice({ freq: f, dur: 0.18, type: 'triangle', vol: 0.2, when: i * 0.06, atk: 0.008, detune: 3, verb: 0.3 })); SFX.voice({ freq: 2637, dur: 0.44, type: 'sine', vol: 0.07, when: 0.26, atk: 0.03, verb: 0.6 }); },
+  type() { if (!SFX._gate('type', 24)) return; SFX.noise({ dur: 0.016, cut: 3400, vol: 0.045, type: 'highpass', pan: (Math.random() - 0.5) * 0.2 }); },
 
-  /* ---- new stings the music director (audio.js) plays on real colony events ---- */
-  chime() { SFX.voice({ freq: 1046, dur: 0.5, type: 'sine', vol: 0.15, detune: 3, verb: 0.4 }); SFX.voice({ freq: 1568, dur: 0.6, type: 'sine', vol: 0.10, when: 0.04, verb: 0.4 }); },
-  ship() { SFX.voice({ freq: 659, dur: 0.12, type: 'triangle', vol: 0.2, verb: 0.3 }); SFX.voice({ freq: 988, dur: 0.18, type: 'triangle', vol: 0.16, when: 0.06, verb: 0.3 }); },
-  alarm() { SFX.voice({ freq: 330, dur: 0.16, type: 'sawtooth', vol: 0.16, cut: 1100 }); SFX.voice({ freq: 247, dur: 0.24, type: 'sawtooth', vol: 0.14, when: 0.14, cut: 900 }); },
-  msg() { SFX.voice({ freq: 988, dur: 0.10, type: 'sine', vol: 0.16, verb: 0.25 }); SFX.voice({ freq: 1318, dur: 0.14, type: 'sine', vol: 0.12, when: 0.05, verb: 0.25 }); },
+  /* ---- event stings the sound Director (audio.js) plays on real colony events ---- */
+  // chime: one held glass bell — memory writes, permission asks. Slow attack so it blooms.
+  chime() {
+    if (!SFX._gate('chime', 400)) return;
+    SFX.voice({ freq: 1046, dur: 0.55, type: 'sine', vol: 0.14, detune: 4, atk: 0.015, verb: 0.5 });
+    SFX.voice({ freq: 1568, dur: 0.7, type: 'sine', vol: 0.09, when: 0.05, atk: 0.02, verb: 0.6 });
+  },
+  // ship: something REAL left the station — a small launch whoosh under a rising pair.
+  ship() {
+    if (!SFX._gate('ship', 200)) return;
+    SFX.noise({ dur: 0.1, cut: 700, cut2: 2400, vol: 0.05, q: 0.7 });
+    SFX.voice({ freq: 659, dur: 0.12, type: 'triangle', vol: 0.18, atk: 0.006, verb: 0.3 });
+    SFX.voice({ freq: 988, dur: 0.2, type: 'triangle', vol: 0.14, when: 0.06, atk: 0.006, detune: 3, verb: 0.38 });
+  },
+  // alarm: two low filtered square pulses (A3→E3) — a machine heartbeat gone wrong, dark not shrill.
+  // Widest gate of all: an error cascade must read as one alarm, never a siren wall.
+  alarm() {
+    if (!SFX._gate('alarm', 700)) return;
+    SFX.voice({ freq: 220, dur: 0.16, type: 'square', vol: 0.13, cut: 950, q: 1.2, atk: 0.006 });
+    SFX.voice({ freq: 165, dur: 0.26, type: 'square', vol: 0.11, when: 0.15, cut: 780, q: 1.2, atk: 0.006, verb: 0.12 });
+  },
+  // msg: a soft two-note ping for inbound traffic — quieter kin of notify().
+  msg() {
+    if (!SFX._gate('msg', 250)) return;
+    SFX.voice({ freq: 988, dur: 0.11, type: 'sine', vol: 0.15, atk: 0.008, verb: 0.3 });
+    SFX.voice({ freq: 1318, dur: 0.16, type: 'sine', vol: 0.11, when: 0.05, atk: 0.008, verb: 0.35 });
+  },
 
   /* ---- soft-envelope voices for THE AWAKENING (fade-in tones, breath, chimes) — routed through the
      master bus so they pass the limiter; self-terminating so nothing leaks. ---- */
