@@ -16,6 +16,7 @@
 const NorthStar = (() => {
   let root = null, cv = null, cx = null, plate = null;
   let cur = null;              // the latest read
+  let seeded = false;          // first read snaps clarity to target (so the first paint is correct without waiting for the ease)
   let clarityShown = 0;        // eased display clarity (smooths jumps between reads)
   let pulse = 0;               // 0..1 decaying "just got clearer" flash
   let raf = 0, t = 0;
@@ -162,7 +163,12 @@ const NorthStar = (() => {
   function onRead(u) {
     cur = u;
     if (u && u.rose) pulse = 1;                              // the "you just got clearer" flash
+    const target = u ? clamp01(u.overall || 0) : 0;
+    if (!seeded) { clarityShown = target; seeded = true; }   // first read: no easing, paint the real value
     if (!plate.hidden) updatePlate();
+    // paint immediately on every read so a state change is reflected even when rAF is throttled (hidden tab);
+    // the rAF loop then only smooths the transition + runs the shimmer/pulse decay when the tab is visible.
+    draw();
   }
 
   function init() {
