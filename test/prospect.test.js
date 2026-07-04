@@ -46,6 +46,18 @@ A.ok(good.draft.manual.indexOf('- Fetch real listings') >= 0, 'MANUAL splits on 
 A.ok(good.why.length > 0, 'parse carries the grounded WHY');
 A.eq(good.draft.custom, true, 'the draft is a custom spec');
 
+/* an EMPTY field (SKILLS:) followed by another field must NOT swallow the next line — a common real LLM shape */
+const emptySkills = [
+  'NAME: Cold Caller', 'EMOJI: ☎', 'TAGLINE: outbound sales outreach drafts',
+  'PURPOSE: Drafts outbound outreach the Commander can send.', 'MANUAL: keep it short',
+  'KIT: cabinet, notebook', 'SKILLS:',   // deliberately empty, immediately before WHY
+  'WHY: your work leaned on files with no outreach role rostered'
+].join('\n');
+const es = P.parse(emptySkills, opts);
+A.ok(es && es.draft, 'a draft with an EMPTY SKILLS field still parses (empty field does not swallow the next line)');
+A.eq(es.draft.skills, [], 'an empty SKILLS field yields no skills (not the WHY line miscaptured)');
+A.ok(/outreach/.test(es.why), 'WHY is captured correctly even when the preceding field was empty');
+
 /* ---------- NONE handling ---------- */
 A.eq(P.parse('NONE', opts).none, true, 'a bare NONE reply parses to the no-mint sentinel');
 A.eq(P.parse('  none  ', opts).none, true, 'NONE is case/space tolerant');

@@ -92,7 +92,10 @@
     const raw = String(text == null ? '' : text);
     if (/^\s*NONE\s*$/im.test(raw) && !/^\s*NAME\s*:/im.test(raw)) return { none: true };   // explicit no-mint
 
-    const grab = label => { const m = new RegExp('^\\s*' + label + '\\s*:\\s*(.+?)\\s*$', 'im').exec(raw); return m ? m[1].trim() : ''; };
+    // capture the value ON THE SAME LINE only. Horizontal-whitespace classes ([^\S\r\n]) around the value stop the
+    // trailing \s* from swallowing the newline and grabbing the NEXT field's text when a field is EMPTY (e.g. an
+    // empty "SKILLS:" line followed by "WHY: …" must yield '' for SKILLS, not the WHY line).
+    const grab = label => { const m = new RegExp('^[^\\S\\r\\n]*' + label + '[^\\S\\r\\n]*:[^\\S\\r\\n]*([^\\r\\n]*?)[^\\S\\r\\n]*$', 'im').exec(raw); return m ? m[1].trim() : ''; };
     const name = grab('NAME');
     const tagline = grab('TAGLINE');
     const purpose = grab('PURPOSE');
