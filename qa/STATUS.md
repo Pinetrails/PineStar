@@ -131,3 +131,4 @@ node scripts/qa/ledger.mjs --status
 - 2026-07-03 agent/couch-backside → 8dad4503 — couch redrawn as sofa BACK (faces TV/north) + sitter y-sort flip; test:fast green
 - 2026-07-03 agent/comms-reply-name -> 8c723efd (merged onto ffffaf53): COMMS reply name chip follows the selected agent (load() re-resolves speaker name via App.agentName) - fixes chip showing overseer after switching agents; test:fast GREEN, live-verified on dev seed :8835
 - 2026-07-03 agent/diagnostics -> trunk (test:fast+test:http GREEN): COPY DIAGNOSTICS - token-gated /api/diagnostics, secret-free block (8-secret leak test), SETTINGS button + error-chip affordance, ANDREW_SUPPORT_EMAIL single-constant swap
+- 2026-07-04 agent/retention-p3 -> trunk (test:fast GREEN): P3.1 re-summon beat (bottle mutual-exclusion, defer-not-stack, dismiss=stop-forever) + P3.2 crew XP cost-proportional split (no-proof-no-credit)
