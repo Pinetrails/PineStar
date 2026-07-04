@@ -3073,6 +3073,7 @@ async function handleCronRun(req, res) {
     try { emit('agent.run.error', { agentId: job.agentId, runId: runId, message: state.errMsg, transient: false }); } catch (_) {}
   } finally {
     runs.delete(runId);
+    steerBuffers.delete(runId);      // drop any un-drained steering notes so they can't leak to a later run (mirror handleRun)
     const ok = !state.errMsg;
     try {
       // G4.3: record the manual run's outcome as a re-read-modify-write under the lock (don't clobber a
@@ -3189,7 +3190,7 @@ async function runWorkshopShift(agentId, opts) {
       runId: runId, streamId: 'workshop-' + runId, surface: 'autonomous', trigger: 'schedule', provider: provider, broadcast: !!o.broadcast
     });
   } catch (e) { threw = e; }
-  finally { if (ac) runs.delete(runId); }
+  finally { if (ac) runs.delete(runId); steerBuffers.delete(runId); }   // drop un-drained steering notes (mirror handleRun)
 
   // VALIDATE the manifest against the real files. Only a proven manifest emits workshop.built (truthful telemetry).
   const manifest = await validateWorkshopManifest(id, runId);
