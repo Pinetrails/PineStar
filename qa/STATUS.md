@@ -138,3 +138,4 @@ node scripts/qa/ledger.mjs --status
 - 2026-07-04 merge(ux-hints): Lane P hint/glossary tooltip layer + ArmConfirm helper -> trunk cc93f0b1; test:fast green (full suite)
 - 2026-07-04 merge(ux-recruit-doors): Lane D recruitment bay UX doors (dismiss confirm, kit blurbs, de-jargon, truthful summon copy) -> trunk b71b780a; test:fast green; 19/19 CDP checks in-lane
 - 2026-07-04 merge(ux-error-doors): Lane A error doors (capdenied->REFIT w/ named capability, auth key buttons, modelpicker door, Diag.showBlock) -> trunk 78708c8f; test:fast green; chat.js adoption pending in Lane B
+- 2026-07-04 merge(ux-settings-truth): Lane C settings truth (key-save names real store, inline provider key entry, budget source badges) -> trunk bc535e8a; test:fast + test:http green
