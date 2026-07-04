@@ -87,6 +87,25 @@ const base = U.understanding(dCorr, { now: 1000 }).dims.ambition.conf;
 const corrd = U.understanding(dCorr, { now: 1000, corroboration: { ambition: 3 } }).dims.ambition.conf;
 A.ok(corrd > base, 'corroboration from real work raises a dimension confidence (implicit signal, no new belief)');
 
+/* SIGNED corroboration (R2): counter-evidence (a 👎 rating) LOWERS a dimension, floored at zero ---------- */
+const counter = U.understanding(dCorr, { now: 1000, corroboration: { ambition: -1 } }).dims.ambition.conf;
+A.ok(counter < base, 'negative corroboration (counter-evidence) lowers a dimension confidence');
+const floored = U.understanding(dCorr, { now: 1000, corroboration: { ambition: -99 } }).dims.ambition;
+A.eq(floored.conf, 0, 'counter-evidence floors at 0 — never negative certainty');
+A.eq(floored.evidence, 0, 'dim evidence itself floors at 0');
+// counter-evidence re-aims the VOI target: heavy 👎 on style makes style the weakest among same-weight dims
+const dRe = D.fresh();
+for (const k of U.DIM_KEYS) D.upsert(dRe, k, { text: 'k ' + k, source: 'commander' }, 1000);
+const reAim = U.understanding(dRe, { now: 1000, corroboration: { style: -3 } });
+A.eq(reAim.weakest.dim, 'goals', 'weight still dominates the VOI target: a half-known goals (w3) outranks even a fully-drained style (w1)');
+const dRe2 = D.fresh();
+for (const k of U.DIM_KEYS) { D.upsert(dRe2, k, { text: 'k ' + k, source: 'commander' }, 1000); D.upsert(dRe2, k, { text: 'k2 ' + k, source: 'commander' }, 1000); }
+D.upsert(dRe2, 'goals', { text: 'k3', source: 'commander' }, 1000); D.upsert(dRe2, 'ambition', { text: 'k3', source: 'commander' }, 1000); D.upsert(dRe2, 'pain', { text: 'k3', source: 'commander' }, 1000);
+const before2 = U.understanding(dRe2, { now: 1000 });
+const after2 = U.understanding(dRe2, { now: 1000, corroboration: { style: -2 } });
+A.ok(after2.dims.style.conf < before2.dims.style.conf, 'a 👎-drained style dim reads lower than before');
+A.ok(after2.overall < before2.overall, 'counter-evidence honestly lowers the overall read');
+
 /* ---------- weakest = the value-of-information target (highest weight × remaining gap) ---------- */
 // fill every dim EXCEPT pain and standing_orders; pain (weight 2) must beat standing_orders (weight 1).
 const dVOI = D.fresh();

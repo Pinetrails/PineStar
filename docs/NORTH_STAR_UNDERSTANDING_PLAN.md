@@ -97,7 +97,19 @@ isolation via `test/understanding.test.js`.
 | **P3** | **Value-of-information** question targeting — `Curiosity.pick()` takes a VOI `order`; the one earned question targets the weakest dim. Gates unchanged; fail-open. | ✅ SHIPPED (197301b1; live-verified: picks 'pain' where canonical asked 'stack') |
 | **Meter** | COMMANDER panel familiarity DISPLAY prefers `understanding.overall` (display-only; `Dossier.summary().familiarity` untouched — pitch/suggest gates still read it) | ✅ SHIPPED (197301b1; live: renders 34% = the read) |
 | **P2** | Implicit **corroboration** (each salient run quietly nudges confidence in consistent beliefs) + **workshop keep/discard→model** loop | next — may need 1 additive event (request from `cortex-memory` owner) |
-| **P4** | **Drift trigger** — the engine already decays stale beliefs; wire a stale high-weight dim to re-open its ask (clear the asked tally) / bump study salience | next |
+| **P4** | **Drift trigger** — realized as R3 below (suggestions as belief probes), NOT as a re-ask | superseded by R3 |
+
+## Approved roadmap (Andrew, 2026-07-03) — context handover inside the work, never beside it
+
+Build order **R2 → R5 → R3 → R4**. (R1 "mid-task questions that are work" = PARKED, Andrew unsure —
+do not build without his go.)
+
+| # | Build | Shape |
+|---|---|---|
+| **R2** | **Ratings → preference signal.** The shipped 👍/👌/👎 rate-the-work verdicts feed the understanding layer: positive ratings corroborate the current style/standing-orders model; a 👎 is counter-evidence that LOWERS style confidence — which re-aims the earned VOI question at style ("how do you actually want this done?"). Truthful: a downvote honestly means "our model of how you like work done is less certain." Engine needs SIGNED corroboration (currently clamps negatives). | this branch |
+| **R5** | **Rhythm → routine offers.** A pure engine over run history (task tag × time-of-day × recurrence) detects honest patterns ("standup prep every morning") and surfaces ONE one-tap routine offer through the existing seeds/cron path + the same earned-beat gates. Big enough for its own lane/worktree. | own lane |
+| **R3** | **Suggestions as silent belief probes (the P4 realization).** When a high-weight belief goes stale (engine freshness already computes this), the next earned suggestion aims at it; accept = corroboration, decline = counter-evidence. Drift detection with ZERO new asks. Needs beliefId threading through the suggestion directive + outcome capture. | this branch |
+| **R4** | **Payoff receipts.** When an answer/observation lands in the dossier, one provable "◈ briefing updated: …" line in the existing receipt style at the commit site (chat.js) — no new event, no meter. Teaches that feeding the station is never wasted. | this branch, rides with R2/R3 |
 
 ## Verification (per doctrine)
 - **P1 done** = `node test/understanding.test.js` green + the module appended to `test:fast:raw` and

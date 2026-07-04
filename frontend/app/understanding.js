@@ -74,16 +74,18 @@
     return Math.pow(0.5, dt / HALF_LIFE_MS);
   }
 
-  // total EVIDENCE for one dimension = Σ (sourceWeight × freshness) over its beliefs, plus any corroboration from
-  // real work (P2 hook — 0 today). Pure; reads the same belief shape dossier.js stores.
+  // total EVIDENCE for one dimension = Σ (sourceWeight × freshness) over its beliefs, plus SIGNED corroboration
+  // from real work (R2: a 👍 rating corroborates the current model; a 👎 is honest counter-evidence — "our model
+  // of how they like work done is less certain" — which LOWERS confidence and re-aims the VOI question there).
+  // Floored at 0 for the whole dim: counter-evidence can erase confidence, never mint negative certainty.
   function dimEvidence(beliefs, corrob, now) {
     let ev = 0;
     for (const b of (Array.isArray(beliefs) ? beliefs : [])) {
       if (!b || typeof b.text !== 'string' || !b.text) continue;
       ev += sourceWeight(b.source) * freshness(b, now);
     }
-    ev += Math.max(0, num(corrob)) * CORROB_UNIT;
-    return ev;
+    ev += num(corrob) * CORROB_UNIT;
+    return Math.max(0, ev);
   }
 
   // evidence → confidence ∈ [0,1): saturating, so more (or fresher, or Commander-confirmed) evidence always helps
