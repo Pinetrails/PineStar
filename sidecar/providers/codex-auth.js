@@ -41,6 +41,19 @@
     return f;
   }
 
+  // Every OAuth leg is a short JSON POST — none should hang the sidecar. Cap each fetch with a connect timeout
+  // (env SKYNET_PROVIDER_CONNECT_MS, default 30s). Returns undefined on old platforms (no AbortSignal.timeout),
+  // which leaves the fetch un-timed rather than erroring — the same graceful degrade the stream adapters use.
+  function authTimeoutSignal() {
+    try {
+      const v = (typeof process !== 'undefined' && process.env && process.env.SKYNET_PROVIDER_CONNECT_MS);
+      const n = v != null && String(v).trim() !== '' ? parseInt(v, 10) : NaN;
+      const ms = (isFinite(n) && n > 0) ? n : 30000;
+      if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') return AbortSignal.timeout(ms);
+    } catch (_) {}
+    return undefined;
+  }
+
   // A failure the caller can branch on: `relogin` => the stored refresh token is dead, ask the user to
   // sign in again; otherwise it's transient (quota/network) and the existing credentials still stand.
   function authError(message, code, relogin) {
@@ -82,7 +95,8 @@
       resp = await doFetch(CODEX_ISSUER + '/api/accounts/deviceauth/usercode', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ client_id: CODEX_OAUTH_CLIENT_ID })
+        body: JSON.stringify({ client_id: CODEX_OAUTH_CLIENT_ID }),
+        signal: authTimeoutSignal()
       });
     } catch (e) {
       throw authError('Failed to request device code: ' + ((e && e.message) || e), 'device_code_request_failed');
@@ -105,7 +119,8 @@
       resp = await doFetch(CODEX_ISSUER + '/api/accounts/deviceauth/token', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ device_auth_id, user_code })
+        body: JSON.stringify({ device_auth_id, user_code }),
+        signal: authTimeoutSignal()
       });
     } catch (e) {
       throw authError('Device auth polling failed: ' + ((e && e.message) || e), 'device_code_poll_failed');
@@ -136,7 +151,8 @@
       resp = await doFetch(CODEX_OAUTH_TOKEN_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: form.toString()
+        body: form.toString(),
+        signal: authTimeoutSignal()
       });
     } catch (e) {
       throw authError('Token exchange failed: ' + ((e && e.message) || e), 'token_exchange_failed');
@@ -168,7 +184,8 @@
       resp = await doFetch(CODEX_OAUTH_TOKEN_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json' },
-        body: form.toString()
+        body: form.toString(),
+        signal: authTimeoutSignal()
       });
     } catch (e) {
       throw authError('Codex token refresh failed: ' + ((e && e.message) || e), 'codex_refresh_failed', false);
