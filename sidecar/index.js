@@ -1699,7 +1699,11 @@ function armCron() {
   // G4.3: wrap BOTH the resume reconcile and every timer tick in the cross-process lock so two sidecars (or
   // this reconcile racing the first timer tick) can never both fire — whoever holds the lock ticks, the other
   // no-ops this pass. The reconcile runs BEFORE the interval arms so a catch-up never overlaps the first tick.
-  try { cronLock.withLock(() => cronDriver.applyTick(Date.now())); } catch (e) { console.warn('[cron] reconcile error:', (e && e.message) || e); }
+  // boot reconcile UNDER the lock. If we do NOT acquire, another live sidecar (or a not-yet-reclaimed lock) holds
+  // it — surface that instead of silently muting the boot catch-up (the pid-check now reclaims a crash-dead holder
+  // immediately, so a persistent not-acquired here means a genuinely LIVE peer, which is worth a log line).
+  try { const r = cronLock.withLock(() => cronDriver.applyTick(Date.now())); if (r && !r.ran) console.warn('[cron] boot reconcile skipped — cron.lock held by another live process (no catch-up tick this boot)'); }
+  catch (e) { console.warn('[cron] reconcile error:', (e && e.message) || e); }
   cronTimer = setInterval(() => { try { cronLock.withLock(() => cronDriver.applyTick(Date.now())); } catch (e) { console.warn('[cron] tick error:', (e && e.message) || e); } }, CRON_TICK_MS);
   if (cronTimer.unref) cronTimer.unref();   // the http server keeps the process alive; the ticker alone shouldn't
   console.log('  · cron tick armed (' + Math.round(CRON_TICK_MS / 1000) + 's)');

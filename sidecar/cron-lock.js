@@ -51,6 +51,21 @@ function defaultNonce() {
   catch (_) { try { return require('crypto').randomBytes(8).toString('hex'); } catch (__) { return 'x'; } }
 }
 
+// isPidAlive — default liveness probe: process.kill(pid, 0) throws ESRCH when the pid is gone (reclaimable),
+// but EPERM means the process EXISTS under another owner (alive — do NOT reclaim). A non-numeric/zero/self pid,
+// or any environment without process.kill, is treated conservatively as ALIVE so we never steal a live lock.
+function defaultPidAlive(pid) {
+  const n = Number(pid);
+  if (!Number.isInteger(n) || n <= 0) return true;               // no/garbage pid stamp -> can't prove dead -> alive
+  if (typeof process === 'undefined' || typeof process.kill !== 'function') return true;
+  if (typeof process.pid === 'number' && n === process.pid) return true;   // our own pid is obviously alive
+  try { process.kill(n, 0); return true; }                        // signal 0 = existence probe; no throw -> alive
+  catch (e) {
+    if (e && e.code === 'EPERM') return true;                     // exists but not ours -> alive (guard EPERM)
+    return false;                                                 // ESRCH (or anything else) -> not alive -> reclaimable
+  }
+}
+
 function makeCronLock(deps) {
   const d = deps || {};
   const fs = d.fs;
@@ -59,6 +74,9 @@ function makeCronLock(deps) {
   const maxRunMs = d.maxRunMs || (8 * 60 * 1000);
   const pid = (d.pid != null) ? d.pid : (typeof process !== 'undefined' && process.pid) || 0;
   const nonceFn = typeof d.nonce === 'function' ? d.nonce : defaultNonce;
+  // injected for tests; defaults to the process.kill(pid,0) probe. Returns true when the holder pid is (or may be)
+  // alive, false only when we can PROVE the holder process is gone.
+  const pidAlive = typeof d.pidAlive === 'function' ? d.pidAlive : defaultPidAlive;
   if (!fs || typeof fs.openSync !== 'function' || typeof fs.renameSync !== 'function') {
     throw new Error('cron-lock: an injected fs with openSync/renameSync is required');
   }
@@ -105,6 +123,20 @@ function makeCronLock(deps) {
     } catch (_) { return false; }
   }
 
+  // deadHolder — is the CURRENT lockfile held by a pid we can prove is no longer alive? Reads the stamp
+  // (pid:nonce), parses the pid, and probes it. A missing/unreadable/malformed lockfile, OR a live/unprovable
+  // pid, returns false (fall back to the mtime stale break — never reclaim a lock we can't prove is dead).
+  // This closes the gap where a crash-killed sidecar's lock would otherwise mute cron for the full maxRunMs.
+  function deadHolder() {
+    let raw = '';
+    try { raw = String(fs.readFileSync(lockfile, 'utf8')); } catch (_) { return false; }
+    const i = raw.indexOf(':');
+    if (i <= 0) return false;                       // no pid segment -> can't prove dead
+    const holderPid = Number(raw.slice(0, i));
+    if (!Number.isInteger(holderPid) || holderPid <= 0) return false;
+    return !pidAlive(holderPid);                    // proven-dead pid -> reclaimable NOW (don't wait for mtime)
+  }
+
   // claimStaleRename — the SINGLE atomic mutual-exclusion step of a stale reclaim: rename the stale
   // lockfile OUT of the way to OUR uniquely-stamped reclaim name. renameSync of the ORIGINAL stale
   // inode can succeed for exactly ONE racer; every other racer's rename of that same source gets ENOENT
@@ -138,8 +170,10 @@ function makeCronLock(deps) {
     if (heldStamp) { depth++; return true; }   // already held by this instance -> re-entrant (depth-counted)
     let mine = tryCreateOwn();
     if (!mine) {
-      // the lock exists. Reclaim it iff it is stale; a LIVE holder is respected (we no-op).
-      if (isStale()) mine = tryReclaimStale();
+      // the lock exists. Reclaim it iff it is stale by mtime OR its holder pid is PROVABLY dead (a crash-killed
+      // sidecar leaves a fresh-mtime lock that would otherwise mute cron for the whole maxRunMs window). A LIVE
+      // (or unprovable) holder is respected — we no-op this pass.
+      if (isStale() || deadHolder()) mine = tryReclaimStale();
     }
     if (mine) { heldStamp = mine; depth = 1; return true; }
     return false;
@@ -171,7 +205,7 @@ function makeCronLock(deps) {
     return { ran: true, result: result };
   }
 
-  return { withLock: withLock, release: release, _internals: { acquire: acquire, release: release, tryCreateOwn: tryCreateOwn, claimStaleRename: claimStaleRename, tryReclaimStale: tryReclaimStale, isStale: isStale } };
+  return { withLock: withLock, release: release, _internals: { acquire: acquire, release: release, tryCreateOwn: tryCreateOwn, claimStaleRename: claimStaleRename, tryReclaimStale: tryReclaimStale, isStale: isStale, deadHolder: deadHolder } };
 }
 
-module.exports = { makeCronLock };
+module.exports = { makeCronLock, _internals: { defaultPidAlive } };

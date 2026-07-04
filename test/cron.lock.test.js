@@ -265,8 +265,10 @@ function tmpFile(name) { const f = path.join(tmpRoot, name); cleanup.push(f); re
     const lockfile = tmpFile('cron-fresh.lock');
     const clock = makeClock(T0);
     const maxRunMs = 8 * 60 * 1000;
-    const holderA = makeCronLock({ fs: realFs, path, lockfile, now: () => clock.now(), maxRunMs, pid: 101, nonce: () => 'AAA' });
-    const holderB = makeCronLock({ fs: realFs, path, lockfile, now: () => clock.now(), maxRunMs, pid: 202, nonce: () => 'BBB' });
+    // pidAlive: () => true — these holders MODEL genuinely-live cross-process peers (the synthetic pids 101/202
+    // don't map to real OS processes, so without this the dead-pid reclaim would treat a "live" holder as dead).
+    const holderA = makeCronLock({ fs: realFs, path, lockfile, now: () => clock.now(), maxRunMs, pid: 101, nonce: () => 'AAA', pidAlive: () => true });
+    const holderB = makeCronLock({ fs: realFs, path, lockfile, now: () => clock.now(), maxRunMs, pid: 202, nonce: () => 'BBB', pidAlive: () => true });
 
     A.ok(holderA._internals.acquire(), 'holder A acquires a free lock');
     // B attempts while A holds it FRESH (now is barely past) -> must NOT acquire.
@@ -289,8 +291,8 @@ function tmpFile(name) { const f = path.join(tmpRoot, name); cleanup.push(f); re
   {
     const lockfile = tmpFile('cron-reentrant.lock');
     const clock = makeClock(T0);
-    const lock = makeCronLock({ fs: realFs, path, lockfile, now: () => clock.now(), maxRunMs: 480000, pid: 101, nonce: () => 'L' });
-    const other = makeCronLock({ fs: realFs, path, lockfile, now: () => clock.now(), maxRunMs: 480000, pid: 202, nonce: () => 'O' });
+    const lock = makeCronLock({ fs: realFs, path, lockfile, now: () => clock.now(), maxRunMs: 480000, pid: 101, nonce: () => 'L', pidAlive: () => true });
+    const other = makeCronLock({ fs: realFs, path, lockfile, now: () => clock.now(), maxRunMs: 480000, pid: 202, nonce: () => 'O', pidAlive: () => true });
     let innerRan = false, otherRanInside = false;
     let lockPresentAfterInner = false;
     lock.withLock(() => {
@@ -304,6 +306,43 @@ function tmpFile(name) { const f = path.join(tmpRoot, name); cleanup.push(f); re
     A.ok(lockPresentAfterInner, 'the lockfile is STILL held after the inner (nested) release — re-entrant, not dropped mid-scope');
     A.ok(!otherRanInside, 'a DIFFERENT holder could not acquire while the re-entrant outer scope still holds the lock');
     A.ok(!realFs.existsSync(lockfile), 'the lockfile is released after the OUTERMOST scope exits');
+  }
+
+  /* ---- 7. DEAD-PID RECLAIM: a lock stamped with a pid that is NOT alive is reclaimed IMMEDIATELY, even when
+     its mtime is fresh (not yet stale). A crash-killed sidecar leaves a fresh-mtime lock; the mtime break alone
+     would mute cron for the whole maxRunMs window. The pid probe (injected here) closes that gap. An ALIVE
+     (or unprovable/EPERM) holder must still be RESPECTED — no reclaim. ---- */
+  {
+    const lockfile = tmpFile('cron-deadpid.lock');
+    // stamp a lock by a "dead" pid holder (pid 999) with a FRESH mtime (T0 == now, so isStale() is false).
+    const dead = makeCronLock({ fs: realFs, path, lockfile, now: () => T0, maxRunMs: 480000, pid: 999, nonce: () => 'D', pidAlive: () => true });
+    A.ok(dead._internals.acquire(), 'the dead-pid holder acquires + HOLDS its lock (fresh mtime, not released)');
+    // a NEW instance whose pid probe reports 999 as DEAD reclaims immediately despite the fresh mtime.
+    const reclaimer = makeCronLock({ fs: realFs, path, lockfile, now: () => T0, maxRunMs: 480000, pid: 42, nonce: () => 'R', pidAlive: (p) => p !== 999 });
+    A.ok(reclaimer._internals.deadHolder(), 'deadHolder() sees the 999-pid lock as reclaimable (proven-dead pid)');
+    let ran = false;
+    const r = reclaimer.withLock(() => { ran = true; });
+    A.ok(r.ran && ran, 'a fresh-mtime lock held by a PROVABLY DEAD pid is reclaimed and acquired immediately');
+    reclaimer.release();
+
+    // ALIVE holder is respected: re-stamp, then a reclaimer whose probe says the pid is alive must NOT reclaim.
+    const lockfile2 = tmpFile('cron-alivepid.lock');
+    const live = makeCronLock({ fs: realFs, path, lockfile: lockfile2, now: () => T0, maxRunMs: 480000, pid: 1234, nonce: () => 'L', pidAlive: () => true });
+    live._internals.acquire();   // hold it (do not release), fresh mtime
+    const contender = makeCronLock({ fs: realFs, path, lockfile: lockfile2, now: () => T0, maxRunMs: 480000, pid: 77, nonce: () => 'C', pidAlive: () => true });
+    A.ok(!contender._internals.deadHolder(), 'deadHolder() respects a lock whose holder pid probes ALIVE');
+    let ranAlive = false;
+    A.ok(!contender.withLock(() => { ranAlive = true; }).ran && !ranAlive, 'a live-pid holder is NOT reclaimed (no acquire this pass)');
+    live.release();
+
+    // EPERM guard: a probe that throws EPERM (exists, other owner) via the DEFAULT probe reads as ALIVE.
+    const { _internals: LI } = require('../sidecar/cron-lock.js');
+    const savedKill = process.kill;
+    try {
+      process.kill = function (p, sig) { if (sig === 0) { const e = new Error('eperm'); e.code = 'EPERM'; throw e; } return savedKill.call(process, p, sig); };
+      A.ok(LI.defaultPidAlive(424242) === true, 'defaultPidAlive treats EPERM (exists, not ours) as ALIVE');
+    } finally { process.kill = savedKill; }
+    A.ok(LI.defaultPidAlive(0) === true && LI.defaultPidAlive(-1) === true, 'defaultPidAlive treats a garbage/zero pid conservatively as ALIVE');
   }
 
   // tidy up the temp dir (best-effort).
