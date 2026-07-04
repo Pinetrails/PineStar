@@ -5,7 +5,7 @@ _Last updated: 2026-07-03._
 StarNet is a free desktop application that runs AI agents on your own computer. By downloading,
 installing, or using StarNet, you agree to these terms. They are intentionally short.
 
-Questions: `ANDREW_SUPPORT_EMAIL`.
+Questions: nonfungiblefunyuns@gmail.com.
 
 ## 1. The app is provided "as is"
 
@@ -47,7 +47,7 @@ provider through StarNet is governed by that provider's own terms and privacy po
 StarNet may update itself through its built-in updater (see `INSTALL.md`). We may change,
 suspend, or discontinue the app — or these terms — at any time. There is no guarantee of
 continued availability or support. Support is best-effort and offered by email only at
-`ANDREW_SUPPORT_EMAIL`.
+nonfungiblefunyuns@gmail.com.
 
 ## 6. Privacy
 
@@ -78,4 +78,4 @@ source-code license has not been finalized; see the `LICENSE-DECISION` note abov
 
 ## 8. Contact
 
-Everything else: `ANDREW_SUPPORT_EMAIL`.
+Everything else: nonfungiblefunyuns@gmail.com.

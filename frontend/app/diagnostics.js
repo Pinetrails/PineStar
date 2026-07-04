@@ -19,9 +19,7 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
 
-  // PLACEHOLDER — swap for the real address when Andrew picks it. Kept as a visible token so nothing ships a fake
-  // "support@…" that would silently drop a user's report. The UI shows it verbatim so the copy stays honest.
-  const SUPPORT_EMAIL = 'ANDREW_SUPPORT_EMAIL';
+  const SUPPORT_EMAIL = 'nonfungiblefunyuns@gmail.com';
 
   // clipboard write — mirrors chat.js copyText (Clipboard API with a legacy execCommand fallback). Local so this
   // module has no cross-file dependency and works even if chat.js hasn't loaded (e.g. very early boot).

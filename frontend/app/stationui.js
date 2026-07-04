@@ -2694,7 +2694,7 @@ const StationUI = (() => {
       // (Diag.SUPPORT_EMAIL) so it's a one-line swap when the support address is picked. Copy stays honest about where it goes.
       '<h4 class="ms-h">DIAGNOSTICS <span class="dim">— for a bug report</span></h4>' +
       '<p class="set-about">If something breaks, copy a <b>diagnostic readout</b> and paste it into an email to ' +
-        '<b>' + esc((typeof Diag !== 'undefined' && Diag.SUPPORT_EMAIL) ? Diag.SUPPORT_EMAIL : 'ANDREW_SUPPORT_EMAIL') + '</b>. ' +
+        '<b>' + esc((typeof Diag !== 'undefined' && Diag.SUPPORT_EMAIL) ? Diag.SUPPORT_EMAIL : 'nonfungiblefunyuns@gmail.com') + '</b>. ' +
         'It carries your app version, platform, provider &amp; model, and the tail of recent errors — ' +
         '<b>never your keys, tokens, messages, or prompts</b>. Assembled and scrubbed by the local sidecar.</p>' +
       '<div class="set-save"><button class="bb sm" id="diag-copy">📋 COPY DIAGNOSTICS</button></div>' +

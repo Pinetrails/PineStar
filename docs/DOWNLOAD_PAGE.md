@@ -67,7 +67,7 @@ every running agent immediately.
 
 ## Support
 
-Email only, best-effort: `ANDREW_SUPPORT_EMAIL`.
+Email only, best-effort: nonfungiblefunyuns@gmail.com.
 
 ## Legal
 
