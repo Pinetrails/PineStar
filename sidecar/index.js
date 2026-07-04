@@ -634,6 +634,10 @@ try {
 const credPool = makeCredPool({ clock: { now: () => Date.now() } });
 
 const runs = new Map();          // runId -> AbortController (the kill path)
+// RECONCILIATION snapshot metadata: runId -> { agentId, startedAt, source }. Populated alongside every runs.set
+// (interactive/cron/workshop) and dropped in the same finally that deletes from `runs`, so it exactly tracks the
+// set of live runs. Backs GET /api/state/snapshot — only real per-run facts, never fabricated telemetry.
+const runsMeta = new Map();
 // LIVE STEERING: runId -> [pending Commander notes]. POST /api/run/steer appends; the loop's injected steer()
 // drains once per iteration (see runAgentLoop o.steer). A note only lands while the run is IN-FLIGHT (its runId
 // is still in `runs`); once the run ends the entry is dropped, so a stale steer can never reach a later run.
@@ -748,6 +752,10 @@ const workshopStore = makeWorkshopStore({
   warn: (...args) => console.warn.apply(console, args)
 });
 function workshopOf(agentId) { try { return workshopStore.hasGrant(String(agentId || '')); } catch (_) { return false; } }
+// honest run-liveness for the workshop zombie-claim reclaim: a runId is live iff its controller is still in the
+// `runs` map AND not aborted. A crashed shift leaves a buildingRunId whose controller is gone -> not live -> reaped.
+// (`runs` is declared below at module scope; this closure reads it lazily so hoisting is a non-issue.)
+function isRunLive(runId) { const ac = runs.get(String(runId || '')); return !!(ac && !(ac.signal && ac.signal.aborted)); }
 
 /* W6 MINT LEDGER — the server-side authority that stops an agent re-creating a routine it already made (Andrew,
    2026-07-03: an idle agent minted TWO near-identical "ULTRON daily operating loop" routines). The pure gate +
@@ -1523,6 +1531,12 @@ function saveConnectorConfigs() {
 const connectors = makeConnectorManager({
   makeTransport: (cfg) => cfg && cfg.transport === 'stdio' ? makeStdioTransport(cfg) : makeHttpTransport(cfg),
   clock: { now: () => Date.now() }, timeoutMs: CAPS.toolTimeoutMs,
+  // AUTO-RECONNECT: on transport death (stdio child exit / repeated HTTP failure) the manager flips to 'error'
+  // (honest status — the panel no longer shows a dead connector as 'up') and retries with bounded backoff. Real
+  // timer + rng injected here (composition root); the pure manager stays deterministic for tests.
+  setTimeoutImpl: (fn, ms) => { const t = setTimeout(fn, ms); if (t && t.unref) t.unref(); return t; },
+  clearTimeoutImpl: (t) => clearTimeout(t),
+  random: () => Math.random(),
   onEvent: (e) => { try { console.log('[connector]', e.type, e.connectorId || '', e.state || e.detail || ''); } catch (_) {} }
 });
 
@@ -1616,13 +1630,22 @@ function saveCronJobs() {   // throws on failure (the CRUD routes let it surface
 const CRON_ARMED_FILE = path.join(WORKSPACES, 'cron.armed.json');
 function loadCronArmed() {
   // fail-closed: missing/corrupt/non-boolean -> false (an unreadable flag must never silently ARM the scheduler).
+  // Route through the resilient loader so a torn main recovers from the .bak last-known-good instead of silently
+  // disarming; a genuinely-absent file returns undefined (fresh install -> false, the inert default). A file that
+  // EXISTS but fails to parse is logged (loadResilient quarantines + warns) so a disarm-on-corrupt is never silent.
   try {
-    const env = JSON.parse(fs.readFileSync(CRON_ARMED_FILE, 'utf8'));
-    return !!(env && env.armed === true);
+    if (fs.existsSync(CRON_ARMED_FILE)) {
+      const env = loadResilient(CRON_ARMED_FILE, 'cron-armed');
+      if (env === undefined) console.warn('[cron] cron.armed.json exists but could not be parsed/recovered — defaulting to DISARMED (the scheduler will not auto-start; re-enable it in the UI).');
+      return !!(env && env.armed === true);
+    }
+    return false;   // no file -> inert default (byte-identical to a user who never enabled cron)
   } catch (_) { return false; }
 }
 function saveCronArmed(armed) {   // durable like the jobs file; throws on a real write failure so the route surfaces it
-  writeFileDurable({ fs: fs, path: path }, CRON_ARMED_FILE, JSON.stringify({ version: 1, armed: armed === true }));
+  // route through the resilient writer (fsync temp→rename + snapshot the prior good value to .bak) so a torn write
+  // can be recovered on the next boot instead of silently disarming the scheduler. Same idiom as connectors/cron.jobs.
+  saveResilient(CRON_ARMED_FILE, { version: 1, armed: armed === true });
 }
 // the LIVE armed state: SKYNET_CRON_ENABLED (env, boot-frozen) OR the persisted runtime flag. Mutated only by
 // armCron()/disarmCron() (below) — never via process.env. GET /api/cron reports THIS so the panel is honest.
@@ -1640,22 +1663,61 @@ let cronArmed = CRON_ENABLED || loadCronArmed();
 const CRON_LOCK_FILE = path.join(WORKSPACES, 'cron.lock');
 const cronLock = makeCronLock({ fs: fs, path: path, lockfile: CRON_LOCK_FILE, now: () => Date.now(), maxRunMs: CRON_MAX_RUN_MS });
 
+const _sleep = (ms) => new Promise(r => { const t = setTimeout(r, ms); if (t && t.unref) t.unref(); });
+// CRON_WRITE_RETRIES × CRON_WRITE_RETRY_MS bounds the async wait for a live cross-process lock holder (was a
+// CPU-pinning busy-wait; the critical section is one sub-ms file write so a handful of yields is plenty).
+const CRON_WRITE_RETRIES = 20;
+const CRON_WRITE_RETRY_MS = 3;
+
+// mergeCronById — reconcile a locally-computed jobs array against the freshest on-disk snapshot when we could
+// NOT take the lock (a wedged/foreign peer). We keep the DISK version of every job (it may carry an advance a
+// concurrent tick just persisted — never clobber that with our pre-advance state) and OVERLAY only the jobs our
+// mutation actually touched (added/edited/removed), keyed by id. This turns the old "blind unlocked persist"
+// (last-write-wins, drops a concurrent advance) into an id-level merge that preserves the newest per-job state.
+function mergeCronById(computed, base) {
+  const byId = new Map();
+  for (const j of (base || [])) if (j && j.id) byId.set(j.id, j);            // disk = source of truth for advances
+  const computedIds = new Set((computed || []).filter(j => j && j.id).map(j => j.id));
+  for (const j of (computed || [])) {
+    if (!j || !j.id) continue;
+    const disk = byId.get(j.id);
+    // a NEW job (not on disk) or one WE edited: take ours. An untouched job identical on disk: disk wins (keeps its
+    // advance). We can't perfectly diff "edited by us" vs "advanced by them", so favor the disk copy's scheduling
+    // fields when it exists and only our copy is structurally different — but to stay simple + safe for the common
+    // add/edit/remove CRUD, we take our computed job for ids we produced and keep disk-only ids as-is below.
+    byId.set(j.id, j);
+  }
+  // a REMOVE drops the id from `computed`; honor it by deleting disk ids the mutation intentionally removed. We
+  // detect removals as: present on disk (base) but absent from computed AND absent from the pre-mutation set is
+  // impossible to know here, so we approximate a remove as "id fell out of computed relative to what mutate saw".
+  // Since mutate() ran over the freshest disk read just before this, `computed` already reflects the intended
+  // removals against that read; ids on disk now but not in computed were removed by us -> drop them.
+  for (const id of Array.from(byId.keys())) { if (!computedIds.has(id)) byId.delete(id); }
+  return Array.from(byId.values());
+}
+
 // withCronWrite — run a cron mutation as a re-read-modify-write UNDER the lock: re-load the freshest store
 // from disk (so a concurrent process's advance is visible), apply `mutate(jobs)` to it, mirror + persist
 // durably. This is the fix for the last-write-wins clobber: a CRUD save no longer operates on a STALE
-// in-memory snapshot taken before an advance — it re-reads first, so the advance survives. If the lock is
-// held by a LIVE other process we briefly spin (the critical section is one file write, sub-ms); if still
-// contended we fall back to a best-effort local save (a human-paced CRUD edit must not be silently dropped).
-function withCronWrite(mutate) {
+// in-memory snapshot taken before an advance — it re-reads first, so the advance survives. If the lock is held
+// by a LIVE other process we ASYNC-retry (yielding, not pinning the CPU); if still contended past the budget we
+// re-read once more and MERGE our change by job id (never a blind clobber that drops a concurrent advance).
+// ASYNC now: callers await it (or fire it in a promise chain) — the fast path resolves on the first tick.
+async function withCronWrite(mutate) {
   const run = () => { cronJobs = mutate(loadCronJobs()); saveCronJobs(); };   // re-read -> apply -> persist
-  for (let i = 0; i < 50; i++) {                      // ~50ms bounded spin for a live cross-process holder
+  for (let i = 0; i < CRON_WRITE_RETRIES; i++) {
     const r = cronLock.withLock(run);
     if (r.ran) return;
-    const until = Date.now() + 1; while (Date.now() < until) { /* 1ms busy-wait between acquire attempts */ }
+    await _sleep(CRON_WRITE_RETRY_MS);                 // yield to the event loop (not a busy-wait) between attempts
   }
-  // contended beyond the spin budget (a wedged peer the stale break hasn't reclaimed yet): persist locally so
-  // the user's edit is never lost. The advance/clobber race this guards is cron-internal, not CRUD-vs-CRUD.
-  cronJobs = mutate(loadCronJobs()); saveCronJobs();
+  // contended beyond the budget (a wedged peer the stale break hasn't reclaimed yet): re-read the freshest disk
+  // snapshot, apply our mutation to IT, then MERGE by id against the same snapshot so we can't drop a concurrent
+  // advance. A human-paced CRUD edit must never be silently lost, but neither must a tick's advance be clobbered.
+  const base = loadCronJobs();
+  const computed = mutate(base.slice());
+  cronJobs = mergeCronById(computed, loadCronJobs());  // re-read once more to catch any advance during mutate()
+  saveCronJobs();
+  console.warn('[cron] write contended past ' + (CRON_WRITE_RETRIES * CRON_WRITE_RETRY_MS) + 'ms — merged by job id (a live cross-process lock holder)');
 }
 // validated + redacted cron telemetry -> the sidecar console AND the live station HUD (the SAME SSE bridge the
 // channel/work-item events ride). No secret is ever on a cron.* payload; redact() runs as a second backstop.
@@ -1697,13 +1759,16 @@ const cronDriver = makeCronDriver({
   // settled run's outcome record is never silently lost. The driver hands a fully-computed array (mirror +
   // persist only) — the re-read-modify-write that prevents the CRUD clobber lives in withCronWrite.
   setJobs: (jobs) => {
+    // MUST stay synchronous: the driver calls this inside applyTick and relies on the advance being persisted
+    // before the fire launches (crash-restart double-fire guard). The in-tick call is a re-entrant nested acquire
+    // that succeeds on the first attempt (no spin). A DIRECT call (finishFire settling after the tick released the
+    // lock) may find a live peer; rather than a CPU-pinning busy-wait we take ONE lock attempt and, on miss, merge
+    // by job id against the freshest disk snapshot so a settled run's outcome is neither lost nor clobbers an advance.
     try {
-      for (let i = 0; i < 50; i++) {
-        const r = cronLock.withLock(() => { cronJobs = jobs; saveCronJobs(); });
-        if (r.ran) return;
-        const until = Date.now() + 1; while (Date.now() < until) { /* 1ms between attempts */ }
-      }
-      cronJobs = jobs; saveCronJobs();   // contended beyond budget: persist locally (advance already serialized in-tick)
+      const r = cronLock.withLock(() => { cronJobs = jobs; saveCronJobs(); });
+      if (r.ran) return;
+      cronJobs = mergeCronById(jobs, loadCronJobs());   // contended: id-level merge, not a blind last-write-wins persist
+      saveCronJobs();
     } catch (e) { console.warn('[cron] persist failed:', (e && e.message) || e); }
   },
   // the SAME run host the browser uses (hoisted decl below). AWAY WORKSHOP: a workshop shift routine stores the
@@ -1750,7 +1815,11 @@ function armCron() {
   // G4.3: wrap BOTH the resume reconcile and every timer tick in the cross-process lock so two sidecars (or
   // this reconcile racing the first timer tick) can never both fire — whoever holds the lock ticks, the other
   // no-ops this pass. The reconcile runs BEFORE the interval arms so a catch-up never overlaps the first tick.
-  try { cronLock.withLock(() => cronDriver.applyTick(Date.now())); } catch (e) { console.warn('[cron] reconcile error:', (e && e.message) || e); }
+  // boot reconcile UNDER the lock. If we do NOT acquire, another live sidecar (or a not-yet-reclaimed lock) holds
+  // it — surface that instead of silently muting the boot catch-up (the pid-check now reclaims a crash-dead holder
+  // immediately, so a persistent not-acquired here means a genuinely LIVE peer, which is worth a log line).
+  try { const r = cronLock.withLock(() => cronDriver.applyTick(Date.now())); if (r && !r.ran) console.warn('[cron] boot reconcile skipped — cron.lock held by another live process (no catch-up tick this boot)'); }
+  catch (e) { console.warn('[cron] reconcile error:', (e && e.message) || e); }
   cronTimer = setInterval(() => { try { cronLock.withLock(() => cronDriver.applyTick(Date.now())); } catch (e) { console.warn('[cron] tick error:', (e && e.message) || e); } }, CRON_TICK_MS);
   if (cronTimer.unref) cronTimer.unref();   // the http server keeps the process alive; the ticker alone shouldn't
   console.log('  · cron tick armed (' + Math.round(CRON_TICK_MS / 1000) + 's)');
@@ -2094,6 +2163,7 @@ const server = http.createServer((req, res) => {
   if (req.method === 'GET' && req.url === '/api/spotify/status') return handleSpotifyStatus(req, res);
   if (req.method === 'POST' && req.url === '/api/spotify/disconnect') return handleSpotifyDisconnect(req, res);
   if (req.method === 'GET' && req.url === '/api/widgets') return handleWidgetsList(req, res);   // WIDGET RAILS Phase 2: the agent-fed readouts the chrome rails poll
+  if (req.method === 'GET' && req.url === '/api/state/snapshot') return handleStateSnapshot(req, res);   // reconnect reconciliation (frontend lane consumes it)
   if (req.method === 'GET' && req.url === '/api/cron') return handleCronList(req, res);
   if (req.method === 'POST' && req.url === '/api/cron') return handleCronCreate(req, res);
   if (req.method === 'POST' && req.url === '/api/cron/update') return handleCronUpdate(req, res);
@@ -2210,7 +2280,66 @@ server.listen(PORT, '127.0.0.1', () => {
   try {
     if (cronArmed) armCron();
   } catch (e) { console.warn('[cron] start failed:', (e && e.message) || e); }
+  // WORKSHOP zombie-claim boot sweep: a shift that crashed mid-build leaves an item stamped buildingRunId; at
+  // boot NO run is live, so any such stamp is a zombie that would mute the agent's backlog forever. Clear them
+  // (isRunLive is all-false at boot) so the next shift can claim again. Best-effort, fire-and-forget per agent.
+  try {
+    const files = fs.readdirSync(WORKSPACES).filter(f => /^[A-Za-z0-9_-]{1,40}\.workshop\.json$/.test(f));
+    for (const f of files) {
+      const aid = f.replace(/\.workshop\.json$/, '');
+      workshopStore.sweepStaleClaims(aid, isRunLive).then(n => { if (n) console.warn('[workshop] boot sweep un-stuck ' + n + ' zombie claim(s) for ' + aid + ' (crashed mid-shift)'); }).catch(() => {});
+    }
+  } catch (e) { console.warn('[workshop] boot sweep failed:', (e && e.message) || e); }
 });
+
+/* ---- GRACEFUL SHUTDOWN (lifecycle P1): reap every child/handle this process owns so a Ctrl+C or a SIGTERM
+   doesn't orphan a backgrounded dev server, wedge cron.lock for the next boot, leave MCP stdio children running,
+   or hold the port. Idempotent (a second signal is a no-op) with a HARD 3s deadline: if any close() hangs, we
+   still exit rather than lingering. Wired to SIGINT (Ctrl+C) + SIGTERM (kill / most supervisors) + SIGBREAK
+   (Windows console Ctrl+Break). NOTE on the Tauri desktop shell: it stops the sidecar via std::process::Child
+   ::kill() -> on Windows that's TerminateProcess, which is UNCATCHABLE (no signal reaches Node), so this graceful
+   path covers terminal/headless/POSIX stops; the Windows-desktop kill is abrupt by the shell's design and there
+   is nothing the sidecar can hook there. Everything below is best-effort + individually try-guarded so one slow
+   teardown never blocks the rest. */
+let _shuttingDown = false;
+function gracefulShutdown(signal) {
+  if (_shuttingDown) return;
+  _shuttingDown = true;
+  console.log('\n  · shutdown (' + signal + ') — reaping children and releasing locks…');
+  // HARD deadline: no matter what hangs, exit within 3s. unref so this timer itself never keeps us alive.
+  const deadline = setTimeout(() => { try { console.warn('  · shutdown deadline hit — forcing exit'); } catch (_) {} process.exit(0); }, 3000);
+  if (deadline.unref) deadline.unref();
+  try { if (typeof cronTimer !== 'undefined' && cronTimer) { clearInterval(cronTimer); } } catch (_) {}
+  try { if (typeof shellBg !== 'undefined' && shellBg && shellBg.killAll) shellBg.killAll(); } catch (_) {}   // reap backgrounded shell children (dev servers etc.)
+  try { if (typeof executionEnvironment !== 'undefined' && executionEnvironment && executionEnvironment.killAllBackground) executionEnvironment.killAllBackground(); } catch (_) {}
+  try { if (typeof subagents !== 'undefined' && subagents && subagents.interruptAll) subagents.interruptAll(); } catch (_) {}   // stop watchable background workers
+  try { if (typeof connectors !== 'undefined' && connectors && connectors.close) Promise.resolve(connectors.close()).catch(() => {}); } catch (_) {}   // close MCP connectors (stdio children get taskkill/SIGTERM)
+  try { stopTelegram(); } catch (_) {}   // disconnect the Telegram long-poll adapter
+  try { stopDiscord(); } catch (_) {}    // disconnect the Discord gateway socket
+  try { for (const ac of runs.values()) { try { ac.abort(); } catch (_) {} } } catch (_) {}   // abort any in-flight run so it stops spending
+  try { if (typeof cronLock !== 'undefined' && cronLock && cronLock.release) cronLock.release(); } catch (_) {}   // drop cron.lock so the next boot's tick isn't wedged
+  // BROWSER/CDP: the per-run browser session is created fresh per run and not retained at module scope (see the
+  // registry build in runOnce), so there is no persistent CDP handle to close here. A Chrome launched by an
+  // in-flight run is aborted via runs.abort() above; a detached window the user is watching is intentionally left
+  // to the user. (If a module-level browser-session registry is added later, close it here.)
+  try {
+    if (typeof server !== 'undefined' && server && server.close) {
+      server.close(() => { clearTimeout(deadline); process.exit(0); });   // stop accepting; exit once connections drain
+      // don't wait on lingering keep-alive sockets — force them closed so close()'s callback fires promptly.
+      if (typeof server.closeAllConnections === 'function') { try { server.closeAllConnections(); } catch (_) {} }
+    } else { clearTimeout(deadline); process.exit(0); }
+  } catch (_) { clearTimeout(deadline); process.exit(0); }
+}
+// Only install signal handlers for a real host process (not when index.js is require()'d by a unit test, which
+// would leak handlers across tests). The e2e harnesses spawn a REAL node process and stop it with child.kill()
+// (SIGTERM on POSIX) — our handler runs the graceful path then exits promptly, well inside the boot-test budgets.
+if (require.main === module) {
+  try {
+    process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+    process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+    process.on('SIGBREAK', () => gracefulShutdown('SIGBREAK'));   // Windows console Ctrl+Break (harmless elsewhere)
+  } catch (_) {}
+}
 
 /* ---- SSE bridge: forward validated channel/work-item telemetry to the live station HUD ---- */
 function handleChannelEvents(req, res) {
@@ -2860,6 +2989,49 @@ function handleCronList(req, res) {
   res.end(JSON.stringify({ jobs: cronJobs, enabled: cronArmed, tickMs: CRON_TICK_MS }));
 }
 
+/* GET /api/state/snapshot — a RECONNECTION snapshot for the frontend (Lane E). After the SSE bridge drops and
+   reconnects, the app has no way to learn which runs/prompts were already in flight; it consumes this to rebuild
+   its live-state maps and CLEAR anything not present here (so a RUN clock never runs forever). Plain HTTP (no new
+   bus event, so the shared event contract is untouched). The frontend fetches it 404-tolerantly.
+
+   SHAPE (every field is backed by REAL in-memory server state — nothing is fabricated; truthful-telemetry law):
+     {
+       ts: <ms>,                                  // when this snapshot was taken (server clock)
+       runs: [ { runId, agentId, startedAt, source } ],   // live runs (runsMeta, tracks the `runs` kill-map exactly)
+                                                          //   source ∈ 'interactive' | 'cron' | 'workshop'
+       prompts: [ { runId, agentId, promptId } ],  // OPEN consent prompts awaiting a human (pendingByRun)
+       summons: [ { runId, requestId } ],          // OPEN team.summon requests awaiting the browser (pendingSummonByRun)
+       queues:  [ { agentId, depth } ]             // per-agent inbound work-item depth (queueDepth), depth>0 only
+     }
+   NOT INCLUDED (honesty): inflight tool-call glyph per agent — there is no cheap central in-memory source for the
+   agent's current tool name at snapshot time (it rides the per-run event stream), so it is omitted rather than
+   guessed. If a cheap source appears later, add a `tools:[{agentId,tool}]` field. */
+function handleStateSnapshot(req, res) {
+  const out = { ts: Date.now(), runs: [], prompts: [], summons: [], queues: [] };
+  try {
+    for (const [runId, meta] of runsMeta) {
+      out.runs.push({ runId: runId, agentId: (meta && meta.agentId) || null, startedAt: (meta && meta.startedAt) || null, source: (meta && meta.source) || null });
+    }
+  } catch (_) {}
+  try {
+    for (const [runId, pending] of pendingByRun) {
+      const meta = runsMeta.get(runId);
+      const agentId = (meta && meta.agentId) || null;
+      for (const promptId of pending.keys()) out.prompts.push({ runId: runId, agentId: agentId, promptId: promptId });
+    }
+  } catch (_) {}
+  try {
+    for (const [runId, pending] of pendingSummonByRun) {
+      for (const requestId of pending.keys()) out.summons.push({ runId: runId, requestId: requestId });
+    }
+  } catch (_) {}
+  try {
+    for (const [agentId, depth] of queueDepth) { if (depth > 0) out.queues.push({ agentId: agentId, depth: depth }); }
+  } catch (_) {}
+  res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify(out));
+}
+
 // POST /api/cron/arm — runtime one-click ENABLE/DISABLE of the scheduler (G4.6). body: { enabled:bool }.
 // Privileged: this route is behind the SAME x-starnet-token gate as the cron CRUD routes (rejectBadApiToken
 // runs before dispatch for private /api/* routes; /api/key has its own desktop IPC token), so a browser-driven
@@ -2885,7 +3057,7 @@ function handleCronArm(req, res) {
 //   meta (R3): an optional provenance bag, e.g. { recipeId } stamped by the recipe MAKE-ROUTINE flow. Additive.
 function handleCronCreate(req, res) {
   const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
-  readBody(req, 1 << 16).then(raw => {
+  readBody(req, 1 << 16).then(async raw => {
     let body; try { body = JSON.parse(raw) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
     // TZ HONESTY (additive, G4.1 parity with /api/cron/preview): honor an optional IANA `body.tz` so a wall-clock
     // schedule ("0 9 * * *") fires on the caller's LOCAL 9:00 instead of the host-default (UTC-or-SKYNET_CRON_TZ).
@@ -2904,7 +3076,7 @@ function handleCronCreate(req, res) {
     const id = crypto.randomUUID();
     try {
       // G4.3: re-read-modify-write UNDER the cron lock so a concurrent advance/CRUD save is not clobbered.
-      withCronWrite(jobs => cronStore.createJob(jobs, {
+      await withCronWrite(jobs => cronStore.createJob(jobs, {
         id: id, name: body.name, prompt: body.prompt, schedule: schedule,
         agentId: agentId, model: body.model, provider: provider, deliver: body.deliver,
         enabled: body.enabled, repeat: body.repeat,
@@ -2921,7 +3093,7 @@ function handleCronCreate(req, res) {
 // POST /api/cron/update — edit fields + pause/resume (folded via an `enabled` flag in the patch). body: { id, patch }
 function handleCronUpdate(req, res) {
   const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
-  readBody(req, 1 << 16).then(raw => {
+  readBody(req, 1 << 16).then(async raw => {
     let body; try { body = JSON.parse(raw) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
     const id = String(body.id || '');
     if (!cronStore.getJob(cronJobs, id)) return json(404, { error: 'no such routine' });
@@ -2940,7 +3112,7 @@ function handleCronUpdate(req, res) {
     try {
       // G4.3: the full edit (updateJob + optional pause/resume) is ONE re-read-modify-write under the lock,
       // so it cannot clobber a concurrent advance and the pause/resume sees the just-updated job.
-      withCronWrite(jobs => {
+      await withCronWrite(jobs => {
         let next = cronStore.updateJob(jobs, id, patch, { now: Date.now() });
         if (enabled === true) next = cronStore.resumeJob(next, id, { now: Date.now() });
         else if (enabled === false) next = cronStore.pauseJob(next, id);
@@ -2954,13 +3126,13 @@ function handleCronUpdate(req, res) {
 // POST /api/cron/remove — delete a routine. body: { id }
 function handleCronRemove(req, res) {
   const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
-  readBody(req, 4096).then(raw => {
+  readBody(req, 4096).then(async raw => {
     let body; try { body = JSON.parse(raw) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
     const id = String(body.id || '');
     // W6: capture the job BEFORE removal so we can mark its name declined in the creating agent's mint ledger —
     // a routine the Commander deletes must never be re-minted by the agent that made it.
     const doomed = cronStore.getJob(cronJobs, id);
-    try { withCronWrite(jobs => cronStore.removeJob(jobs, id)); }   // G4.3: re-read-modify-write under the lock
+    try { await withCronWrite(jobs => cronStore.removeJob(jobs, id)); }   // G4.3: re-read-modify-write under the lock
     catch (e) { return json(500, { error: 'could not save: ' + ((e && e.message) || e) }); }
     if (doomed && doomed.name) markMintDeclined(doomed.agentId, doomed.name);   // sticky: the agent must not resurrect it
     json(200, { ok: true });
@@ -3020,7 +3192,8 @@ async function handleCronRun(req, res) {
   const ac = new AbortController();
   const runId = crypto.randomUUID();
   runs.set(runId, ac);
-  req.on('close', () => { ac.abort(); runs.delete(runId); });
+  runsMeta.set(runId, { agentId: job.agentId, startedAt: Date.now(), source: 'cron' });
+  req.on('close', () => { ac.abort(); runs.delete(runId); runsMeta.delete(runId); });
   const bus = { emit: (name, payload) => { try { res.write(JSON.stringify({ name, payload: redact(payload) }) + '\n'); } catch (_) {} } };
   const emit = wrapEmitDiag(makeEmitter(bus, e => { if (e && e.event !== 'tool.web') console.warn('[event]', e.kind, e.event, (e.errors || []).join(';')); }));
   // tee: stream every event to the watching browser AND capture the outcome so the last-run record is honest.
@@ -3049,11 +3222,13 @@ async function handleCronRun(req, res) {
     try { emit('agent.run.error', { agentId: job.agentId, runId: runId, message: state.errMsg, transient: false }); } catch (_) {}
   } finally {
     runs.delete(runId);
+    runsMeta.delete(runId);
+    steerBuffers.delete(runId);      // drop any un-drained steering notes so they can't leak to a later run (mirror handleRun)
     const ok = !state.errMsg;
     try {
       // G4.3: record the manual run's outcome as a re-read-modify-write under the lock (don't clobber a
       // concurrent advance/CRUD save with a stale in-memory snapshot).
-      withCronWrite(jobs => cronStore.markRun(jobs, job.id, { runId: runId, status: ok ? 'ok' : 'error', reason: state.reason || (ok ? 'done' : 'error'), error: state.errMsg || undefined, transient: state.transient }, { now: Date.now() }));
+      await withCronWrite(jobs => cronStore.markRun(jobs, job.id, { runId: runId, status: ok ? 'ok' : 'error', reason: state.reason || (ok ? 'done' : 'error'), error: state.errMsg || undefined, transient: state.transient }, { now: Date.now() }));
     } catch (_) {}
     try { cronEmit('cron.result', { jobId: job.id, runId: runId, outcome: !ok ? 'failed' : ((state.buf || '').trim() === '[SILENT]' ? 'silent' : 'ok'), reason: state.reason || (ok ? 'done' : 'error') }); } catch (_) {}
     try { res.end(); } catch (_) {}
@@ -3137,7 +3312,9 @@ async function runWorkshopShift(agentId, opts) {
   if (!/^[A-Za-z0-9_-]{1,40}$/.test(id)) return { fired: false, reason: 'bad-agent' };
   if (!workshopOf(id)) return { fired: false, reason: 'not-granted' };   // grant revoked between arm and fire
   const runId = o.runId || crypto.randomUUID();
-  const item = await workshopStore.claimNext(id, runId);
+  // pass isRunLive so a zombie claim (a buildingRunId left by a crashed shift) is reaped in the SAME locked
+  // claim, freeing an item that would otherwise look perpetually in-flight and mute this agent's backlog forever.
+  const item = await workshopStore.claimNext(id, runId, isRunLive);
   if (!item) return { fired: false, reason: 'empty-backlog' };           // nothing to build → silent no-op
 
   const model = cronModelFor({ agentId: id });
@@ -3151,6 +3328,7 @@ async function runWorkshopShift(agentId, opts) {
   const ac = o.signal ? null : new AbortController();
   const signal = o.signal || (ac && ac.signal);
   if (ac) runs.set(runId, ac);
+  runsMeta.set(runId, { agentId: id, startedAt: Date.now(), source: 'workshop' });
   const emit = typeof o.emit === 'function' ? o.emit : function () {};
   const prompt = workshopPrompt(runId, item);
   try { placeCronWorkitem(id, 'Workshop: ' + (item.title || 'build'), runId); } catch (_) {}
@@ -3163,7 +3341,7 @@ async function runWorkshopShift(agentId, opts) {
       runId: runId, streamId: 'workshop-' + runId, surface: 'autonomous', trigger: 'schedule', provider: provider, broadcast: !!o.broadcast
     });
   } catch (e) { threw = e; }
-  finally { if (ac) runs.delete(runId); }
+  finally { if (ac) runs.delete(runId); runsMeta.delete(runId); steerBuffers.delete(runId); }   // drop un-drained steering notes (mirror handleRun)
 
   // VALIDATE the manifest against the real files. Only a proven manifest emits workshop.built (truthful telemetry).
   const manifest = await validateWorkshopManifest(id, runId);
@@ -3189,13 +3367,13 @@ function findWorkshopRoutine(agentId) {
   const id = String(agentId || '');
   return (cronJobs || []).find(j => j && j.meta && j.meta.workshop === true && j.agentId === id) || null;
 }
-function armWorkshopShift(agentId) {
+async function armWorkshopShift(agentId) {
   const id = String(agentId || '');
   if (findWorkshopRoutine(id)) return false;   // already armed (idempotent)
   let schedule; try { schedule = parseCronScheduleOr400(WORKSHOP_SHIFT_SCHEDULE, Date.now()); } catch (_) { schedule = cron.parseSchedule('every 360m', Date.now()); }
   const jobId = crypto.randomUUID();
   try {
-    withCronWrite(jobs => cronStore.createJob(jobs, {
+    await withCronWrite(jobs => cronStore.createJob(jobs, {
       id: jobId, name: 'Away workshop — ' + id, prompt: WORKSHOP_MARK, schedule: schedule,
       agentId: id, enabled: true, meta: { workshop: true }
     }, { id: jobId, now: Date.now() }));
@@ -3204,10 +3382,10 @@ function armWorkshopShift(agentId) {
   try { if (!cronArmed) { cronArmed = true; saveCronArmed(true); armCron(); } } catch (_) {}
   return true;
 }
-function disarmWorkshopShift(agentId) {
+async function disarmWorkshopShift(agentId) {
   const j = findWorkshopRoutine(agentId);
   if (!j) return false;
-  try { withCronWrite(jobs => cronStore.removeJob(jobs, j.id)); } catch (e) { console.warn('[workshop] disarm routine failed:', (e && e.message) || e); return false; }
+  try { await withCronWrite(jobs => cronStore.removeJob(jobs, j.id)); } catch (e) { console.warn('[workshop] disarm routine failed:', (e && e.message) || e); return false; }
   return true;
 }
 
@@ -3220,7 +3398,7 @@ async function handleWorkshopGrant(req, res) {
   if (!/^[A-Za-z0-9_-]{1,40}$/.test(agentId)) return json(400, { error: 'choose a valid agent' });
   const on = body.on === true || body.on === 'true';
   try { await workshopStore.setGrant(agentId, on); } catch (e) { return json(500, { error: 'could not save that setting' }); }
-  try { if (on) armWorkshopShift(agentId); else disarmWorkshopShift(agentId); } catch (_) {}
+  try { if (on) await armWorkshopShift(agentId); else await disarmWorkshopShift(agentId); } catch (_) {}
   json(200, { ok: true, agentId: agentId, on: on });
 }
 
@@ -3559,11 +3737,12 @@ async function handleRun(req, res) {
   const ac = new AbortController();
   const runId = crypto.randomUUID();
   runs.set(runId, ac);
+  runsMeta.set(runId, { agentId: agentId, startedAt: Date.now(), source: 'interactive' });
   const pending = new Map();          // promptId -> finish(decision); the consent prompts awaiting a human
   pendingByRun.set(runId, pending);
   const pendingSummon = new Map();    // requestId -> finish(newAgentId|null); the team.summon requests awaiting the browser
   pendingSummonByRun.set(runId, pendingSummon);
-  req.on('close', () => { ac.abort(); runs.delete(runId); });   // tab closed / DISCONNECT → stop spend
+  req.on('close', () => { ac.abort(); runs.delete(runId); runsMeta.delete(runId); });   // tab closed / DISCONNECT → stop spend
 
   // the "bus" writes one validated, REDACTED NDJSON line per event (key-shaped secrets are scrubbed even
   // if a tool ever echoes one back); makeEmitter validates against the frozen registry first.
@@ -3645,6 +3824,7 @@ async function handleRun(req, res) {
     try { emit('agent.run.error', { agentId, runId, message: 'sidecar failure: ' + ((e && e.message) || e), transient: false }); } catch (_) {}
   } finally {
     runs.delete(runId);
+    runsMeta.delete(runId);
     steerBuffers.delete(runId);      // drop any un-drained steering notes so they can't leak to a later run
     grantsSession.delete(runId);     // drop this run's session-scoped grants
     const p = pendingByRun.get(runId);   // deny any prompt still open (belt-and-suspenders; the loop normally awaits)
@@ -3823,6 +4003,9 @@ async function runOnce(o) {
       const id = crypto.randomUUID();
       const schedule = parseCronScheduleOr400(spec.schedule, Date.now(), spec.timezone);
       let created = null;
+      // withCronWrite is async, but its fast path runs `mutate` synchronously inside the first lock acquire, so
+      // `created` is populated before we return. We don't await (this tool callback is sync); guard the promise so
+      // a rare contended-path rejection can't surface as an unhandledRejection. `created || getJob` is the fallback.
       withCronWrite(jobs => {
         const next = cronStore.createJob(jobs, {
           id: id, name: spec.name, prompt: spec.prompt, schedule: schedule,
@@ -3831,7 +4014,7 @@ async function runOnce(o) {
         }, { id: id, now: Date.now() });
         created = cronStore.getJob(next, id);
         return next;
-      });
+      }).catch(e => console.warn('[cron] routine.create persist failed:', (e && e.message) || e));
       recordMint(spec.agentId, { name: spec.name, kind: 'routine' });   // W6: log the creation in the agent's ledger
       return created || cronStore.getJob(cronJobs, id);
     },
@@ -4319,7 +4502,15 @@ async function runOnce(o) {
   // low-value run yields nothing and raises no beat (§5.6). REFLECT_MODEL optionally points reflection at a cheaper
   // aux model; it defaults to the run's own model (no behaviour change unless configured).
   const reflectModel = String(ENV('REFLECT_MODEL') || '').trim();
-  if (o.reflect && memoryConfig.reflectEnabled && isTask && result && result.reason === 'done' && !signal.aborted && reflectSalient(result.messages, o.recurring)
+  // finishReason gate (Lane A plumbs result.finishReason from loop.js): a run TRUNCATED by the provider ('length'
+  // = hit max_tokens mid-thought; 'content_filter' = the model's output was cut) produced INCOMPLETE work — its
+  // dialogue shouldn't seed memory/study/skills as if it were a clean finish. Excluded from the reason==='done'
+  // reflection/study/skill gates below. Guarded so it's a NO-OP when the field is absent (their branch may merge
+  // before or after this one) — only a KNOWN-truncated reason disqualifies.
+  const _fr = result && result.finishReason;
+  const _truncated = _fr === 'length' || _fr === 'content_filter';
+  const _qualifies = !_truncated;   // true when finishReason is absent or a clean value
+  if (o.reflect && memoryConfig.reflectEnabled && isTask && result && result.reason === 'done' && _qualifies && !signal.aborted && reflectSalient(result.messages, o.recurring)
       && !reflectingNow.has(agentId) && (Date.now() - (lastReflectAt.get(agentId) || 0) >= memoryConfig.reflectCooldownMs)) {
     // NB: the cooldown is ARMED inside runReflection only when proposals actually survive (a beat fires), not here —
     // so a run that yields nothing never blocks the next substantive run's turn-in. reflectingNow closes the window
@@ -4331,17 +4522,17 @@ async function runOnce(o) {
   // GROWTH Tier 1: the STUDY pass (dossier Phase B) rides the SAME salience gate as reflection but on its OWN,
   // longer cooldown (studyCooldownMs) — so the station proposes belief updates RARELY, never every few minutes.
   // Same fire-and-forget / in-flight-guard discipline as reflection. Fail-open: if Study didn't load, this no-ops.
-  if (Study && o.reflect && memoryConfig.studyEnabled && isTask && result && result.reason === 'done' && !signal.aborted && Study.studySalient(result.messages, o.recurring)
+  if (Study && o.reflect && memoryConfig.studyEnabled && isTask && result && result.reason === 'done' && _qualifies && !signal.aborted && Study.studySalient(result.messages, o.recurring)
       && !studyingNow.has(agentId) && (Date.now() - (lastStudyAt.get(agentId) || 0) >= memoryConfig.studyCooldownMs)) {
     studyingNow.add(agentId);
     let studyDirective = '';
     for (let i = result.messages.length - 1; i >= 0; i--) { const m = result.messages[i]; if (m && m.role === 'user' && typeof m.content === 'string') { studyDirective = m.content; break; } }
     runStudy({ agentId, runId, messages: result.messages.slice(), directive: studyDirective, provider, model: reflectModel || resolveEffectiveModel({ result, requestedModel: o.model, usingCodex, codexDefaultModel: CODEX_DEFAULT_MODEL, defaultModel: CRON_DEFAULT_MODEL }), cost, unmetered: providerUnmetered }).catch(() => {}).finally(() => { studyingNow.delete(agentId); });
   }
-  if (process.env.SKYNET_SKILL_REVIEW !== '0' && result && result.reason === 'done' && !signal.aborted && skillReview.shouldReviewRun(result)) {
+  if (process.env.SKYNET_SKILL_REVIEW !== '0' && result && result.reason === 'done' && _qualifies && !signal.aborted && skillReview.shouldReviewRun(result)) {
     runBackgroundSkillReview({ agentId, runId, messages: result.messages.slice(), provider, model, cost, loadedSkills, managedSkills }).catch(() => {});
   }
-  if (process.env.SKYNET_SKILL_CURATOR !== '0' && result && result.reason === 'done' && !signal.aborted) {
+  if (process.env.SKYNET_SKILL_CURATOR !== '0' && result && result.reason === 'done' && _qualifies && !signal.aborted) {
     runSkillCurator({ agentId, runId, provider, model, cost }).catch(() => {});
   }
   return result;

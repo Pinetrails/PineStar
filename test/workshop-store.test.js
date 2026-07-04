@@ -209,5 +209,52 @@ function freshStore() {
     A.ok(threw, 'setGrant rejects a bad agentId (fileFor throws before any write)');
   }
 
+  // ---- 9. ZOMBIE-CLAIM RECLAIM: a buildingRunId whose run is NOT live is reaped so the item is claimable again ----
+  {
+    const s = freshStore();
+    await s.queue('hero', { id: 'w1', title: 'build a thing' }, 1);
+    // shift 1 claims it (stamps buildingRunId), then the sidecar "crashes" — the run is never marked built/released.
+    const first = await s.claimNext('hero', 'run-dead', () => false);
+    A.eq(first.id, 'w1', 'first shift claims the item');
+    A.eq(s.read('hero').backlog[0].buildingRunId, 'run-dead', 'the item is stamped in-flight');
+
+    // WITHOUT reclaim (no predicate), the next shift skips it forever — it still looks in-flight.
+    A.eq(await s.claimNext('hero', 'run-2'), null, 'without a liveness predicate the stuck item is NOT re-claimed');
+
+    // WITH the liveness predicate reporting run-dead as NOT live, the zombie stamp is cleared and the item is re-claimed.
+    const reclaimed = await s.claimNext('hero', 'run-3', (rid) => rid === 'run-3');
+    A.ok(reclaimed && reclaimed.id === 'w1', 'a zombie claim (dead run) is reaped and the item is re-claimed by the live shift');
+    A.eq(s.read('hero').backlog[0].buildingRunId, 'run-3', 'the item is now stamped with the LIVE run');
+
+    // a LIVE buildingRunId is respected — it is NOT reaped, so a second concurrent claim still skips it.
+    A.eq(await s.claimNext('hero', 'run-4', (rid) => rid === 'run-3' || rid === 'run-4'), null, 'a LIVE claim is respected (not reaped)');
+  }
+
+  // ---- 10. sweepStaleClaims: the boot sweep clears every dead-run stamp; a fresh boot (all-dead) frees them all ----
+  {
+    const s = freshStore();
+    await s.queue('hero', { id: 'a', title: 'A' }, 1);
+    await s.queue('hero', { id: 'b', title: 'B' }, 2);
+    // stamp a as in-flight under a live probe (a stays, b skipped), then stamp b similarly — two crashed shifts.
+    await s.claimNext('hero', 'ra', (rid) => rid === 'ra');   // claims a, stamps buildingRunId=ra
+    await s.claimNext('hero', 'rb', (rid) => rid === 'ra' || rid === 'rb');   // a is live -> skipped; b claimed, stamped rb
+    const before = s.read('hero').backlog.filter(x => x.buildingRunId).length;
+    A.eq(before, 2, 'both items are stamped in-flight (two shifts)');
+    // boot sweep: no run is live -> both stamps cleared.
+    const n = await s.sweepStaleClaims('hero', () => false);
+    A.eq(n, 2, 'boot sweep un-stuck both zombie claims');
+    A.eq(s.read('hero').backlog.filter(x => x.buildingRunId).length, 0, 'no stamps remain after the boot sweep');
+    // idempotent: a second sweep with nothing stuck is a no-op (no write, count 0).
+    A.eq(await s.sweepStaleClaims('hero', () => false), 0, 'a second boot sweep is a no-op');
+    // a builtRunId item is NEVER touched by the sweep (it is done, not in-flight). Fresh store so the only
+    // claimable item is 'c' (claimNext pops the TOP un-built item).
+    const s2 = freshStore();
+    await s2.queue('cap', { id: 'c', title: 'C' }, 3);
+    const built = await s2.claimNext('cap', 'rc', (rid) => rid === 'rc');
+    A.eq(built.id, 'c', 'the only queued item is claimed');
+    await s2.markBuilt('cap', 'c', 'rc');
+    A.eq(await s2.sweepStaleClaims('cap', () => false), 0, 'a built item is not swept (has builtRunId, not buildingRunId)');
+  }
+
   A.report('workshop-store.test');
 })();

@@ -640,6 +640,20 @@ function boot(port, workspaces, attemptsLeft) {
     const sttRawBody = await sttRaw.json();
     A.eq(sttRawBody.text, '', 'raw-bytes STT with no key returns an empty transcript');
 
+    // ---- reconnect reconciliation snapshot: GET /api/state/snapshot returns the documented shape, token-gated ----
+    const snapNoTok = await fetch(B + '/api/state/snapshot');
+    A.eq(snapNoTok.status, 403, 'GET /api/state/snapshot WITHOUT a token -> 403 (gated like sibling GETs)');
+    const snap = await j('GET', '/api/state/snapshot');
+    A.eq(snap.status, 200, 'GET /api/state/snapshot -> 200');
+    A.ok(snap.body && typeof snap.body.ts === 'number', 'snapshot carries a numeric server ts');
+    A.ok(Array.isArray(snap.body.runs), 'snapshot.runs is an array');
+    A.ok(Array.isArray(snap.body.prompts), 'snapshot.prompts is an array');
+    A.ok(Array.isArray(snap.body.summons), 'snapshot.summons is an array');
+    A.ok(Array.isArray(snap.body.queues), 'snapshot.queues is an array');
+    // an idle boot has no live runs — the endpoint must report EMPTY, not a fabricated placeholder (truthful telemetry).
+    A.eq(snap.body.runs.length, 0, 'an idle boot reports zero live runs (honest, not fabricated)');
+    A.eq(JSON.stringify(snap.body).indexOf(apiToken), -1, 'the snapshot never echoes the API token');
+
   } finally {
     try { child.kill(); } catch (_) {}
     await sleep(150);

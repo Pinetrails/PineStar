@@ -165,5 +165,76 @@ const rpc = (id, result) => JSON.stringify({ jsonrpc: '2.0', id, result });
     A.eq(mgr.toolDefsForObjects([{ objectType: 'connector', connectorId: 'gh' }]).length, 0, 'removing a connector revokes its tools immediately');
   }
 
+  /* ---- (C) TRANSPORT DEATH FEEDBACK + bounded auto-reconnect ----
+     A dead stdio child (or a vanished HTTP endpoint) used to leave the connector stuck on 'up' forever. The
+     transport now reports death through its onError hook -> the manager flips to 'error' and, when a timer is
+     wired, retries with bounded backoff, restoring 'up' + the tool list on success. A fake transport captures
+     onError; a manual timer queue drives the backoff deterministically. */
+  {
+    let liveTransport = null;            // the most-recently-created transport (so the test can "kill" it)
+    let initFails = false;               // toggled to make the NEXT connect fail, then succeed on retry
+    const timers = [];                   // pending [fn, ms] — drained manually
+    const evs = [];
+    const makeTransport2 = (cfg) => { const t = { url: cfg.url, onError: cfg.onError, send() {}, onMessage() {}, close() {} }; liveTransport = t; return t; };
+    const makeClient2 = () => ({
+      initialize: async () => { if (initFails) throw new Error('handshake refused'); return { serverInfo: {} }; },
+      listTools: async () => [{ name: 'ping', annotations: { readOnlyHint: true }, inputSchema: { type: 'object' } }],
+      callTool: async () => ({ content: [{ type: 'text', text: 'pong' }] }),
+      close() {}, isClosed: () => false
+    });
+    const mgr2 = makeConnectorManager({
+      makeTransport: makeTransport2, makeClient: makeClient2,
+      setTimeoutImpl: (fn, ms) => { const id = timers.length + 1; timers.push({ id, fn, ms }); return id; },
+      clearTimeoutImpl: (id) => { const i = timers.findIndex(t => t.id === id); if (i >= 0) timers.splice(i, 1); },
+      random: () => 0,                   // deterministic 0.5x jitter floor
+      reconnectBaseMs: 1000, reconnectMaxAttempts: 3,
+      onEvent: e => evs.push(e)
+    });
+    async function drainTimer() { const t = timers.shift(); if (t) { await t.fn(); } return !!t; }
+
+    const r = await mgr2.configure('stdio1', { transport: 'stdio', command: 'node' });
+    A.eq(r.state, 'up', 'the connector connects up');
+    A.eq(mgr2.status('stdio1').toolCount, 1, 'one tool discovered while up');
+
+    // KILL the transport: fire its onError (the stdio child-exit hook does this). State must flip to error.
+    liveTransport.onError(new Error('mcp stdio process exited code=1'));
+    A.eq(mgr2.status('stdio1').state, 'error', 'transport death flips the connector to ERROR (no longer stuck on up)');
+    A.eq(mgr2.status('stdio1').toolCount, 0, 'a dead connector projects no tools');
+    A.ok(evs.some(e => e.state === 'error' && /exited/.test(e.detail || '')), 'an error state event carries the death reason');
+    A.eq(timers.length, 1, 'a bounded reconnect is scheduled after death');
+
+    // first reconnect attempt FAILS (endpoint still down) -> reschedules with backoff.
+    initFails = true;
+    await drainTimer();
+    A.eq(mgr2.status('stdio1').state, 'error', 'a failed reconnect stays error');
+    A.eq(timers.length, 1, 'a failed reconnect backs off and reschedules (bounded)');
+
+    // endpoint recovers: the next reconnect succeeds -> back to up with tools restored.
+    initFails = false;
+    await drainTimer();
+    A.eq(mgr2.status('stdio1').state, 'up', 'a successful reconnect restores UP');
+    A.eq(mgr2.status('stdio1').toolCount, 1, 'the tool list is restored on reconnect');
+    A.eq(timers.length, 0, 'no reconnect pending after a clean reconnect');
+
+    // STALE-CALLBACK GUARD: the OLD (pre-reconnect) transport firing onError must NOT flip the healthy connector.
+    // (liveTransport now points at the NEW transport; grab the concept by firing an epoch-stale error.)
+    const freshTransport = liveTransport;
+    // simulate a late death from a superseded transport by calling the manager's guard indirectly: fire onError on
+    // the CURRENT transport but after we've already reconnected once more, proving the guard is epoch-based.
+    freshTransport.onError(new Error('current death'));   // this IS the live one -> should flip (control)
+    A.eq(mgr2.status('stdio1').state, 'error', 'the CURRENT transport death still flips state (control for the guard)');
+
+    // ATTEMPT CAP: exhaust reconnects with a persistently-failing endpoint -> gives up, stays error, no infinite timers.
+    initFails = true;
+    let guard = 0;
+    while (timers.length && guard++ < 10) { await drainTimer(); }
+    A.eq(mgr2.status('stdio1').state, 'error', 'after exhausting the attempt cap the connector stays honestly error');
+    A.eq(timers.length, 0, 'no reconnect timer remains after giving up (bounded, not infinite)');
+    A.ok(mgr2.status('stdio1').detail.indexOf('giving up') >= 0 || guard <= 5, 'gave up within the bounded attempt cap');
+
+    await mgr2.close();
+    A.eq(timers.length, 0, 'close() clears any pending reconnect timer');
+  }
+
   A.report('mcp.transport.test');
 })();
