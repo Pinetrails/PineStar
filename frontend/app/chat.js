@@ -42,6 +42,9 @@ const Chat = (() => {
   const aborters = new Map();   // workstreamId -> AbortController for that stream's in-flight run
   const interrupted = new Set();   // wsIds the Commander deliberately STOPPED this turn — send()'s catch reads this as a
                                    // graceful stop (keep the partial reply, log no error) rather than a disconnect. Consumed in finally.
+  const interruptedStreams = new Set();   // CRASH HONESTY: wsIds whose in-flight run died on a NETWORK drop (sidecar
+                                   // crash / lost connection). On a proven reconnect we tell the Commander the run can't resume.
+  let reconnectTimer = 0;          // the single reconnect health-probe poll (armed only while interruptedStreams is non-empty)
   const queued = new Map();        // TYPE-AHEAD: wsId -> [text,…] follow-ups typed while the stream was busy; auto-sent in order as it frees
   let activeLiveRow = null;     // streaming text controller for the DISPLAYED stream's in-flight run; rebound by replayChannel on switch
                                 // CLASSIC HARNESS FLOW: prose and the agent's actions (tool ▶/◀ lines, deliverables, approval
@@ -247,6 +250,32 @@ const Chat = (() => {
     card.textContent = label + (bits.length ? ' · ' + bits.join(' · ') : '');
     card.setAttribute('role', 'note');
     autoscroll();
+  }
+
+  // CRASH HONESTY (Theme 2) — after a run stream died on a network drop, poll /api/health until the sidecar is
+  // PROVABLY back, then tell the Commander their interrupted run can't resume. Truthful telemetry: the
+  // "connection restored" line renders ONLY after a real 200 from the respawned sidecar, never on hope. The
+  // probe self-arms on the drop and self-clears once every interrupted stream has been reported.
+  async function probeReconnect() {
+    if (!interruptedStreams.size) { reconnectTimer = 0; return; }
+    let alive = false;
+    try { const r = await fetch('/api/health', { cache: 'no-store' }); alive = !!(r && r.ok); } catch (_) { alive = false; }
+    if (alive) {
+      // report each interrupted stream once. Only the DISPLAYED stream draws a line (same rule as tool/error
+      // lines); a background stream's flag is cleared quietly — its error row already recorded the failure.
+      const wasActive = activeWs && interruptedStreams.has(activeWs.id);
+      interruptedStreams.clear();
+      reconnectTimer = 0;
+      if (wasActive) toolLine('⏹ connection restored — your last run was interrupted and can\'t resume; start it again.', true);
+    } else {
+      reconnectTimer = setTimeout(probeReconnect, 3000);   // still down — keep watching
+    }
+  }
+  function armReconnectWatch() {
+    if (reconnectTimer) return;
+    // if the browser signals it's back online, probe immediately; otherwise poll on a slow cadence.
+    reconnectTimer = setTimeout(probeReconnect, 2000);
+    try { if (typeof window !== 'undefined' && !window.__runtruthOnlineHook) { window.__runtruthOnlineHook = true; window.addEventListener('online', () => { if (interruptedStreams.size && !reconnectTimer) probeReconnect(); }); } } catch (_) {}
   }
 
   // RETIRE A SETTLED BEAT: a decided memory card / answered nudge fades + collapses, then drops out of the
@@ -3725,6 +3754,11 @@ const Chat = (() => {
         // PLAIN-LANGUAGE: lead with the beginner-facing message, keep the raw error as a dim sub-line; persist
         // the friendly text (not the plumbing) so a switch-back / replay shows the same readable failure.
         const v = (typeof Friendly !== 'undefined') ? Friendly.friendlyError(error) : { userMessage: error, retryable: true, action: null, raw: error };
+        // CRASH HONESTY: a network-kind failure on an in-flight run = the stream to the sidecar dropped (the
+        // sidecar crashed / the app lost the connection). The run can't be resumed — the sidecar respawns fresh.
+        // Flag this stream so that WHEN the sidecar is provably back (health probe on reconnect) we tell the
+        // Commander their run was interrupted and must be restarted, instead of leaving a silent dead run.
+        if (v.kind === 'network' && thisRunId) { interruptedStreams.add(ws.id); armReconnectWatch(); }
         if (isActiveWs(ws)) { if (activeLiveRow) activeLiveRow.error(v.userMessage, v.raw); if (!isTask) World.say('…' + (v.userMessage.length > 40 ? v.userMessage.slice(0, 40) + '…' : v.userMessage)); }
         ws.history.push({ role: 'assistant', content: '⚠ ' + v.userMessage, error: true });   // so the failure survives a switch-back, not just a transient notify
         if (typeof StationUI !== 'undefined') StationUI.notify(brief(v.userMessage), 'warn');
