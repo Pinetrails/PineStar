@@ -125,5 +125,41 @@ function fakeFetch(seed) {
     A.eq(h.entries.length, 1, 'history surfaces the backend rows for the STORE activity list');
   }
 
+  // ---- DRIFT GUARD: a failed debit/credit POST INVALIDATES the optimistic cache so it can't drift; the next
+  //      managed admission then fail-closes (until refresh() reconciles) instead of spending a fictional balance.
+  {
+    let debitOk = true;   // flip to make the /v1/debit POST fail
+    const book = { acct: 10 };
+    const errors = [];
+    const json = (obj, ok) => Promise.resolve({ ok, status: ok ? 200 : 500, json: () => Promise.resolve(obj) });
+    const fetchImpl = (url, init) => {
+      const u = String(url);
+      if (u.indexOf('/v1/balance') >= 0) return json({ balanceUsd: book.acct }, true);
+      if (u.indexOf('/v1/debit') >= 0) { if (!debitOk) return json({ ok: false, reason: 'backend down' }, false); book.acct -= (JSON.parse(init.body).usd || 0); return json({ ok: true, balanceUsd: book.acct }, true); }
+      return json({}, true);
+    };
+    const c = makeCredits({ url: 'https://credits.example', accountId: 'acct', fetch: fetchImpl, onError: (stage, e) => errors.push({ stage, status: e && e.status }) });
+    await c.refresh('acct');
+    A.eq(c.snapshot().balanceUsd, 10, 'cache warmed to the authoritative balance');
+
+    // a managed run reserves capUsd=4 via a debit whose POST will FAIL
+    debitOk = false;
+    const adm = c.beginRun({ runId: 'run-drift', agentId: 'a', capUsd: 4 });
+    A.eq(adm.ok, true, 'admission passed the preflight (balance covered the cap) before the debit POST');
+    await flush();
+    A.eq(c.snapshot().balanceUsd, null, 'a failed debit POST invalidates the cache (no silent drift)');
+    A.ok(errors.some(e => e.stage === 'debit'), 'onError is still notified of the debit failure');
+
+    // the NEXT admission now fails CLOSED against the unknown balance instead of spending a fictional cache value
+    const adm2 = c.beginRun({ runId: 'run-drift-2', agentId: 'a', capUsd: 2 });
+    A.eq(adm2.ok, false, 'the next managed run fail-closes on the invalidated balance');
+    A.eq(adm2.reason, 'managed_credit_unavailable', 'unknown balance surfaces as unavailable, never a false success');
+
+    // and a refresh() self-heals: the cache reconciles to the authoritative backend value again
+    const healed = await c.refresh('acct');
+    A.eq(healed, 10, 'refresh() re-reads the authoritative balance and heals the cache');
+    A.eq(c.snapshot().balanceUsd, 10, 'cache is trustworthy again after refresh');
+  }
+
   A.report('credits.test');
 })();

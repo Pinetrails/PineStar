@@ -72,6 +72,18 @@
     // run refuses rather than spending against an unknown balance). refresh() populates/reconciles it.
     const cache = { balanceUsd: null, at: 0 };
 
+    // A background debit/credit POST FAILED, so the optimistic cache no longer reflects a state we can trust
+    // (the debit may or may not have landed on the backend). Rather than let the cache DRIFT — and admit later
+    // runs against a fictional balance — INVALIDATE it (null). The next admission then fail-closes cleanly
+    // (payment.balance() throws -> billing returns managed_credit_unavailable) and refresh() re-reads the
+    // authoritative backend balance right before that admission, self-healing the drift. Loud on the way out.
+    function onPostFailure(stage, e) {
+      cache.balanceUsd = null;   // fail-closed until the next authoritative refresh reconciles
+      cache.at = clock.now();
+      try { console.warn('[credits] ' + stage + ' POST failed (status ' + ((e && e.status) || '?') + '); invalidating cached balance -> next managed run fail-closes until refresh reconciles'); } catch (_) {}
+      onError(stage, e);
+    }
+
     function headers(extra) {
       const h = Object.assign({ 'Content-Type': 'application/json' }, extra || {});
       if (apiKey) h['Authorization'] = 'Bearer ' + apiKey;
@@ -116,7 +128,7 @@
         if (cache.balanceUsd != null) cache.balanceUsd = Math.max(0, cache.balanceUsd - amt);   // optimistic hold
         postJson('/v1/debit', { account: acct(id), usd: amt, meta: meta || {} })
           .then(body => { if (body && body.balanceUsd != null) { cache.balanceUsd = num(body.balanceUsd); cache.at = clock.now(); } })
-          .catch(e => onError('debit', e));
+          .catch(e => onPostFailure('debit', e));
         return { ok: true };
       },
       credit(id, usd, meta) {
@@ -124,7 +136,7 @@
         if (cache.balanceUsd != null) cache.balanceUsd = cache.balanceUsd + amt;   // optimistic refund
         postJson('/v1/credit', { account: acct(id), usd: amt, meta: meta || {} })
           .then(body => { if (body && body.balanceUsd != null) { cache.balanceUsd = num(body.balanceUsd); cache.at = clock.now(); } })
-          .catch(e => onError('credit', e));
+          .catch(e => onPostFailure('credit', e));
         return { ok: true };
       }
     };
