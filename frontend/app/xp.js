@@ -43,6 +43,49 @@
     return 'small';
   }
 
+  // P3.2 CREW-RUN ATTRIBUTION — split ONE 👍 verdict's size-weighted mint across a lead and its dispatched
+  // crew, HONESTLY. The only per-worker signal the harness can actually PROVE for an in-stream crew run is each
+  // worker's reconciled spend (their forwarded agent.run.end usd) — token/tool-call streams are deliberately not
+  // forwarded onto the lead's bus (see orchestration.js FORWARD). So the split weight is cost, and the rule is:
+  //   • the LEAD always gets the full-size rating event (it owns the run + synthesized the result);
+  //   • a worker earns a PROPORTIONAL share of the mint ONLY when its own cost is provable (usd > 0);
+  //   • if NO worker cost is provable, the lead is credited alone and nothing is fabricated (truthful telemetry
+  //     overrides symmetry — an unprovable split is simply not made).
+  // Returns { lead: { delta, size }, workers: [{ agentId, delta, size }] } — deltas feed the SAME memory.feedback
+  // mint path (xp.js scoreEvent), so a worker's share rides the identical, node-tested XP curve. Pure + exported.
+  //   args: { leadDelta (the whole-run size delta 1..10), leadCost (usd), workers: [{ agentId, usd }] }
+  function crewSplit(args) {
+    args = args || {};
+    const leadDelta = Math.max(1, Math.min(10, Math.round(num(args.leadDelta, 1)) || 1));
+    const leadCost = Math.max(0, num(args.leadCost, 0));
+    const raw = Array.isArray(args.workers) ? args.workers : [];
+    // keep only workers with a PROVABLE, real cost (usd > 0) and a real agentId — an unprovable contributor
+    // earns nothing (never a fabricated equal split). Ephemeral spawn clones (no persistent identity) are
+    // filtered by the caller before we get here; this is the honesty floor on top of that.
+    const proven = [];
+    for (const w of raw) {
+      const aid = w && typeof w.agentId === 'string' ? w.agentId.trim() : '';
+      const usd = Math.max(0, num(w && w.usd, 0));
+      if (aid && usd > 0) proven.push({ agentId: aid, usd });
+    }
+    const out = { lead: { delta: leadDelta, size: null }, workers: [] };
+    if (!proven.length) return out;   // nothing provable → lead credited alone, no false split
+    // proportional by cost over the WHOLE run's cost (lead's own spend + every proven worker's spend), so a
+    // worker's share honestly reflects how much of the run it actually did. The lead keeps its full delta (it
+    // still owns + synthesized the run); workers earn ON TOP, scaled down by their cost fraction — never more
+    // than the lead's own delta each. A worker's minimum minted delta is 1 (a proven contributor always earns
+    // something), capped at the lead's delta.
+    const workerTotal = proven.reduce((s, w) => s + w.usd, 0);
+    const runTotal = Math.max(leadCost, 0) + workerTotal;   // denominator = the whole run's provable spend
+    const denom = runTotal > 0 ? runTotal : workerTotal;    // defensive: if the lead cost is unknown, split over worker spend
+    for (const w of proven) {
+      const frac = denom > 0 ? (w.usd / denom) : 0;
+      const delta = Math.max(1, Math.min(leadDelta, Math.round(leadDelta * frac) || 1));
+      out.workers.push({ agentId: w.agentId, delta: delta, size: workSize({ usd: w.usd }) });
+    }
+    return out;
+  }
+
   function feedbackReason(p) {
     return String((p && p.reason) || '').trim().toLowerCase();
   }
@@ -225,5 +268,5 @@
     return MILESTONES.map(m => ({ id: m.id, label: m.label, hint: m.hint, earned: earned.indexOf(m.id) !== -1 }));
   }
 
-  return { fresh, clone, applyEvent, compute, scoreEvent, levelForXp, xpForLevel, milestones, MILESTONES, LEVEL_K, MIN_SAMPLES, workSize };
+  return { fresh, clone, applyEvent, compute, scoreEvent, levelForXp, xpForLevel, milestones, MILESTONES, LEVEL_K, MIN_SAMPLES, workSize, crewSplit };
 });

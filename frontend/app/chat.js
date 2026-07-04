@@ -69,6 +69,14 @@ const Chat = (() => {
   const receiptRunsSeen = new Set();    // runIds whose SILENT auto-saved receipts already rendered (memory.write triggers once per run)
   const runWork = new Map();    // runId -> { toolsOk, delivered, cost, agentId } captured at run end → the "rate the work"
                                 // beat's HONEST, un-farmable size + the delivery gate (real tools/deliverables only). FIFO-capped.
+  // P3.2 CREW ATTRIBUTION: a lead run that dispatched crew gets each worker's PROVABLE spend so a 👍 on the run
+  // can split its XP mint honestly. Fed by wireCrewCapture (below): every forwarded worker agent.run.end lands in
+  // a rolling buffer keyed by the worker's OWN runId; at the lead's run.end we CLAIM the workers whose run fell
+  // inside this lead run's live window (start→end). Only NAMED roster workers (team.dispatch) are attributable —
+  // ephemeral team.spawn clones (sub-* ids, no persistent identity) are filtered out (crediting a vanished clone
+  // would be a lie). runCrew: leadRunId -> [{ agentId, usd }]. crewSeen: the rolling worker buffer.
+  const crewSeen = [];          // [{ agentId, usd, runId, at }] — recent forwarded worker run-ends (FIFO, time-windowed)
+  const runCrew = new Map();    // leadRunId -> [{ agentId, usd }] claimed at lead run.end. FIFO-capped alongside runWork.
   const workRatedRuns = new Set();   // runIds already given a 👍/👌/👎 work verdict → one rating per run, never double-mint
   const RUN_META = new Map();   // runId -> { isTask, title } recorded at run START. The bus agent.run.end payload
                                 // carries neither flag, so the post-run advice beats (the First Pitch graduation gate)
@@ -322,6 +330,7 @@ const Chat = (() => {
     wireStudy();       // GROWTH Tier 1: after a salient run, offer ≤1 dossier belief-update at turn-in priority (registers once)
     wireArc();         // GROWTH Tier 2: after a clean run, offer ONE goal-decomposition confirm at the LOWEST beat priority (registers once)
     wireTrust();       // GROWTH Tier 3: after a clean run, offer ONE earned-autonomy raise at the LOWEST beat priority — below the arc (registers once)
+    wireCrewCapture(); // P3.2: record each dispatched worker's forwarded run-end spend so a 👍 on a crew run splits XP honestly (registers once)
     wireCuriosity();   // Commander Dossier: one gentle "tell me about X" nudge after a clean run (registers once)
     wireSkillAside();  // A2: after a background review distills a skill, ONE quiet "distilled this run…" aside (registers once)
     wireIdBar();       // COMMS agent selector: a change switches to (or mints) a workstream bound to that agent (registers once)
@@ -950,6 +959,23 @@ const Chat = (() => {
     // DIRECT call — never U.bus.emit / never /api/memory/turnin. The 'work:'+runId id resolves to NO memory
     // record, so the sidecar memcore trust path is never touched (delta here is an XP size only).
     if (typeof XpStore !== 'undefined' && XpStore.onEvent) XpStore.onEvent('memory.feedback', { agentId: agentId || 'agent', id: 'work:' + runId, runId: runId, delta: delta, reason: reason, size: size });
+    // P3.2 CREW-RUN RATEABILITY — if this LEAD run dispatched crew whose spend is provable, split the SAME verdict
+    // across them HONESTLY: each worker earns a cost-proportional share of the size-weighted mint (crewSplit), riding
+    // the identical direct memory.feedback path into ITS OWN XpStore identity. Truthful attribution: a worker earns
+    // only when the harness proved its contribution (usd > 0); if no split is provable, no worker is credited and
+    // nothing false is said. The LEAD keeps its full delta above (it owns + synthesized the run). Only hero-lead runs
+    // carry crew (runCrew is populated only for agentId 'agent'). Fail-open — a missing split never blocks the rating.
+    try {
+      const crew = (agentId || 'agent') === 'agent' ? runCrew.get(runId) : null;
+      if (crew && crew.length && typeof Xp !== 'undefined' && Xp.crewSplit && typeof XpStore !== 'undefined' && XpStore.onEvent) {
+        const split = Xp.crewSplit({ leadDelta: delta, leadCost: (w && w.cost) || 0, workers: crew });
+        for (const wk of split.workers) {
+          if (!wk || !wk.agentId) continue;
+          // a worker's share rides the SAME synthetic-id mint path — its own agentId resolves to its roster stats.
+          XpStore.onEvent('memory.feedback', { agentId: wk.agentId, id: 'work:' + runId + ':' + wk.agentId, runId: runId, delta: wk.delta, reason: reason, size: wk.size });
+        }
+      }
+    } catch (_) {}
     // G3a confidence narrative: the same DIRECT hand-off (this verdict never rides the bus, so the fire-once
     // calibration/TRUSTED beats must be told here, AFTER the meter folded). Speaks at most twice, ever; mints nothing.
     if (typeof ConfBeats !== 'undefined' && ConfBeats.onFeedback) { try { ConfBeats.onFeedback({ agentId: agentId || 'agent', id: 'work:' + runId, delta: delta, reason: reason }); } catch (_) {} }
@@ -964,6 +990,23 @@ const Chat = (() => {
     // AFTER the taste beat so this verdict's other one-beat consumers keep their precedence; BottleStore's own slot
     // guards (busy / a live rate|turn-in control) already stop it from stacking on any beat still on screen.
     if (typeof BottleStore !== 'undefined' && BottleStore.onVerdict) { try { BottleStore.onVerdict(runId, verdict, agentId || 'agent'); } catch (_) {} }
+    // P3.1 RE-SUMMON SIGNAL: a 👍 on a real interactive run may earn a one-time "run it again?" beat — SAME direct
+    // hand-off, SAME shared gold-inset slot + defer-not-stack discipline as BottleStore. Bottle and re-summon are
+    // BOTH 👍-triggered offers competing for the ONE post-run beat, so they must be MUTUALLY EXCLUSIVE per run:
+    // BottleStore keeps priority (the marketplace-growth signal). We fire re-summon ONLY when bottle will NOT offer
+    // for this run — computed synchronously via BottleStore's pure gate on the run's honest info — so a given 👍
+    // run shows at most ONE of the two (never a bottle→re-summon double-ask, never a slot clobber). A recipe-launched
+    // run (bottle stands down: it already IS a recipe) is exactly where re-summon shines. Fail-open.
+    if (typeof ResummonStore !== 'undefined' && ResummonStore.onVerdict) {
+      try {
+        let bottleWillOffer = false;
+        if (typeof BottleStore !== 'undefined' && BottleStore.shouldOffer && typeof App !== 'undefined' && App.runBottleInfo && BottleStore.isDecided && BottleStore._state) {
+          const bs = BottleStore._state(); const bi = App.runBottleInfo(runId);
+          bottleWillOffer = !!(bi && !BottleStore.isDecided(bs, runId) && BottleStore.shouldOffer(bs, verdict, bi));
+        }
+        if (!bottleWillOffer) ResummonStore.onVerdict(runId, verdict, agentId || 'agent');
+      } catch (_) {}
+    }
   }
   // render the rate-the-work control into `host` (a span/div). onSettle fires after the verdict flashes.
   function workRateControl(host, agentId, runId, onSettle) {
@@ -2079,6 +2122,41 @@ const Chat = (() => {
       if (!onAgent || skillBeatBusy()) return;
       skillAside(p.title, agentId);
     });
+  }
+  // P3.2 — CAPTURE FORWARDED CREW SPEND. A team.dispatch worker runs its own agent loop and its agent.run.end is
+  // forwarded onto the lead's stream (orchestration.js FORWARD) → it reaches U.bus with the worker's OWN runId,
+  // agentId, and reconciled usd. We record every such worker end into a rolling, time-stamped buffer; the lead's
+  // own run.end (handled in the Harness.chat block) CLAIMS the workers that fired inside its live window. Only a
+  // NAMED roster worker is attributable: an ephemeral team.spawn clone (sub-* id, no persistent identity) vanishes,
+  // so crediting it would be a lie — filtered here. Hero self-runs (agentId 'agent') are never crew. Read-only.
+  let crewCaptureWired = false;
+  function wireCrewCapture() {
+    if (crewCaptureWired || typeof U === 'undefined' || !U.bus) return;
+    crewCaptureWired = true;
+    U.bus.on('agent.run.end', p => {
+      if (!p) return;
+      const aid = String(p.agentId || 'agent');
+      if (aid === 'agent') return;                      // the hero's own run, not a delegated worker
+      if (/^sub-/.test(aid)) return;                    // ephemeral team.spawn clone — no persistent XP identity, never credited
+      const usd = Math.max(0, (typeof p.usd === 'number' && isFinite(p.usd)) ? p.usd : 0);
+      crewSeen.push({ agentId: aid, usd: usd, runId: String(p.runId || p.id || ''), at: Date.now() });
+      if (crewSeen.length > 80) crewSeen.shift();       // rolling window — a long session can't grow it forever
+    });
+  }
+  // claim the crew workers that ran inside a lead run's live window [startedAt, now]. Returns [{ agentId, usd }],
+  // aggregated per worker (a worker dispatched twice in one run sums its spend). Consumes matched entries so a
+  // later lead run can't re-claim them. Pure-ish (mutates crewSeen); the honest attribution list for crewSplit.
+  function claimCrew(startedAt) {
+    if (!(startedAt > 0) || !crewSeen.length) return [];
+    const lo = startedAt - 250;   // small slop: a worker's forwarded end can arrive a beat before the lead's onRunId lands
+    const byAgent = new Map();
+    for (let i = crewSeen.length - 1; i >= 0; i--) {
+      const e = crewSeen[i];
+      if (e.at < lo) break;        // buffer is time-ordered; older than this window → stop scanning
+      byAgent.set(e.agentId, { agentId: e.agentId, usd: (byAgent.get(e.agentId) || { usd: 0 }).usd + e.usd });
+      crewSeen.splice(i, 1);       // consumed — never double-attributed to a second lead run
+    }
+    return Array.from(byAgent.values());
   }
   function wireCuriosity() {
     if (curiosityWired || typeof U === 'undefined' || !U.bus) return;
@@ -3350,6 +3428,7 @@ const Chat = (() => {
     const callNames = {};   // callId -> tool name (the frozen agent.tool_result has no name field)
     const seenDeliv = {};   // title -> true (one openable row per produced file)
     let runToolsOk = 0, runDeliv = 0, thisRunId = null;   // per-run work tally → the "rate the work" beat's size + delivery gate
+    let runStartedAt = 0;   // P3.2: this lead run's start wall-clock → the window claimCrew uses to attribute forwarded worker spend
     activeLiveRow = streamingAgent();
     let acc = '';
     // VOICE STREAMING: when the agent will speak (🔊 on), hand each COMPLETE sentence to Voice as it
@@ -3387,7 +3466,7 @@ const Chat = (() => {
         system: sys, messages: ws.history, agentId: ws.agentId || 'agent', isTask, recurring, signal: ac.signal, streamId: ws.id,
         placed: (typeof World !== 'undefined' && World.heroCaps) ? World.heroCaps(ws.agentId || 'agent') : [],   // THE MOAT: this run's TOOL reach = the agent's REAL placed props (dish→web · cabinet→files · workbench→terminal · …); compute is the freebie
         stationPlaced: (typeof World !== 'undefined' && World.stationCaps) ? World.stationCaps() : [],   // Class Loadouts (shared-gear): station-wide gear for SKILL availability — a desk-only specialist still gets its class skills when the STATION has the gear (tools stay room-scoped via `placed`)
-        onRunId: id => { thisRunId = id; try { RUN_META.set(id, { isTask: !!isTask, title: (ws && ws.title) || '', directive: String(text || ''), fromRecipe: fromRecipe }); if (RUN_META.size > 60) RUN_META.delete(RUN_META.keys().next().value); } catch (_) {} Channels.setRunId(ws.id, id); if (typeof Workstreams !== 'undefined') { Workstreams.appendRun(ws.id, id); if (typeof App !== 'undefined' && App.refreshRail) App.refreshRail(); } },
+        onRunId: id => { thisRunId = id; runStartedAt = Date.now(); try { RUN_META.set(id, { isTask: !!isTask, title: (ws && ws.title) || '', directive: String(text || ''), fromRecipe: fromRecipe, agentId: ws.agentId || 'agent' }); if (RUN_META.size > 60) RUN_META.delete(RUN_META.keys().next().value); } catch (_) {} Channels.setRunId(ws.id, id); if (typeof Workstreams !== 'undefined') { Workstreams.appendRun(ws.id, id); if (typeof App !== 'undefined' && App.refreshRail) App.refreshRail(); } },
         onToken: d => { acc += d; Channels.appendToken(ws.id, d); if (isActiveWs(ws)) { if (activeLiveRow) activeLiveRow.append(d); if (!isTask) World.say(acc); } if (willSpeak) pushSpeech(false); App.refreshUsage(); },
         onUsage: () => App.refreshUsage(),
         // COMMS-PREMIUM: the Channels store still records the pre-formatted STRING (replay/switch-survival is
@@ -3465,6 +3544,10 @@ const Chat = (() => {
         // stash this run's REAL work so the post-run "rate the work" beat can size the XP honestly + gate on real work.
         let runCost = 0;
         if (thisRunId) { runCost = Math.max(0, (Harness.totals().cost || 0) - (before.cost || 0)); runWork.set(thisRunId, { toolsOk: runToolsOk, delivered: runDeliv, cost: runCost, agentId: ws.agentId || 'agent' }); if (runWork.size > 60) runWork.delete(runWork.keys().next().value); }
+        // P3.2 — CLAIM this lead run's dispatched crew (workers whose forwarded run.end fell inside its live window)
+        // so a 👍 verdict can split its XP mint honestly. A run that dispatched no crew records nothing (empty list),
+        // and the split falls back to lead-only — no fabricated attribution. Only a HERO lead run has crew to claim.
+        if (thisRunId && (ws.agentId || 'agent') === 'agent') { const crew = claimCrew(runStartedAt); if (crew.length) { runCrew.set(thisRunId, crew); if (runCrew.size > 60) runCrew.delete(runCrew.keys().next().value); } }
         // COMMS-PREMIUM: resolve the presence card into a compact summary. steps = real successful tool rounds,
         // cost = this run's REAL usd delta — both truthful (shown only when > 0), never fabricated.
         if (isActiveWs(ws)) resolvePresence(ws, { endReason: endReason, steps: runToolsOk, cost: runCost });

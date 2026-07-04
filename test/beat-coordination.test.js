@@ -134,4 +134,26 @@ const iFinish = chatSrc.indexOf('function finishBatch');
 A.ok(iFinish > 0 && /maybeStandaloneRate\(batch\.agentId \|\| 'agent', batch\.runId\)/.test(chatSrc.slice(iFinish, iFinish + 600)),
   'a turn-in deck that vanishes unrated hands the rating to the standalone beat');
 
+/* ---------- 5. P3.1 RE-SUMMON + P3.2 CREW RATEABILITY (source guards, same idiom as §1/§4) ----------
+   Both are 👍-triggered post-run consumers riding the SAME rateWork direct hand-off + the SAME one beat slot. */
+// P3.1: re-summon rides rateWork like BottleStore, and is MUTUALLY EXCLUSIVE with bottle on a given run — it fires
+// ONLY when a bottle offer will NOT (so a single 👍 shows at most one of the two; never a clobber/double-ask).
+const iRate = chatSrc.indexOf('function rateWork');
+A.ok(iRate > 0, 'chat.js defines rateWork (the 👍/👌/👎 direct mint hand-off)');
+const rateBody = chatSrc.slice(iRate, iRate + 6000);
+const iBottleCall = rateBody.indexOf('BottleStore.onVerdict');
+const iResummonCall = rateBody.indexOf('ResummonStore.onVerdict');
+A.ok(iBottleCall > 0 && iResummonCall > 0, 'rateWork hands the verdict to BOTH BottleStore and ResummonStore');
+A.ok(iBottleCall < iResummonCall, 'BottleStore is consulted BEFORE ResummonStore (bottle keeps priority for the shared slot)');
+A.ok(/bottleWillOffer/.test(rateBody) && /if \(!bottleWillOffer\) ResummonStore\.onVerdict/.test(rateBody),
+  're-summon fires ONLY when a bottle offer will NOT (mutually exclusive per 👍 run — never both, never a slot clobber)');
+// P3.2: the crew capture is wired at init, and the split rides the SAME memory.feedback mint path per worker.
+A.ok(chatSrc.indexOf('wireCrewCapture()') > 0, 'chat.js wires wireCrewCapture at init (records forwarded worker spend)');
+A.ok(/function claimCrew/.test(chatSrc), 'chat.js defines claimCrew (attributes forwarded worker ends to a lead run window)');
+A.ok(/\/\^sub-\//.test(chatSrc), 'ephemeral team.spawn clones (sub-* ids) are filtered from crew attribution (no persistent identity → never credited)');
+const iSplit = rateBody.indexOf('Xp.crewSplit');
+A.ok(iSplit > 0, 'rateWork splits a crew run\'s mint via Xp.crewSplit');
+A.ok(/XpStore\.onEvent\('memory\.feedback', \{ agentId: wk\.agentId/.test(rateBody),
+  'each proven worker\'s share rides the SAME direct memory.feedback mint path under ITS OWN agentId');
+
 A.report('beat-coordination.test');
