@@ -56,16 +56,25 @@
     return out;
   }
 
+  // RAM mirror ceiling: the largest served query is list({ limit: 1000 }) (insights) / 500 (run list), so keep
+  // generous headroom (~3x) and splice the oldest off when the in-process mirror grows past it. On-disk history
+  // stays complete (the append-only log + its rotated segment); only the RAM mirror is bounded so a 24/7 process
+  // can't grow it without limit. Disk boot-load is already bounded (readBoundedJsonl), so this matches behavior:
+  // the whole-station insights fold already reads only the most-recent bounded window, never lifetime history.
+  const RAM_ROWS_MAX = 3000;
+
   function makeRunStore(opts) {
     opts = opts || {};
     const io = opts.io || { readAll() { return []; }, append() {} };
     const clock = opts.clock || { now() { return 0; } };
     const cap = num(opts.limit) || DEFAULT_LIMIT;
+    const ramMax = num(opts.ramMax) > 0 ? num(opts.ramMax) : RAM_ROWS_MAX;
 
     // in-memory mirror loaded once; append keeps RAM + disk in lockstep so list() is O(n) over RAM.
     let rows = [];
     try { const raw = io.readAll(); if (Array.isArray(raw)) rows = raw.filter(r => r && typeof r === 'object'); }
     catch (e) { rows = []; }
+    if (rows.length > ramMax) rows = rows.slice(rows.length - ramMax);   // bound even a large bounded-boot load
 
     function record(e) {
       e = e || {};
@@ -81,6 +90,10 @@
         ts: num(e.ts) || clock.now()
       };
       rows.push(entry);
+      // bound the RAM mirror: splice the oldest off past the ceiling. Disk keeps the full append-only log; only
+      // this in-process array is capped so a long-lived process doesn't leak. The cap is well above every served
+      // query horizon (≤1000), so no list()/insights query is ever short-changed within the window it reads.
+      if (rows.length > ramMax) rows.splice(0, rows.length - ramMax);
       try { io.append(entry); } catch (_) { /* persistence failure must never crash the run; RAM mirror still answers */ }
       return entry;
     }

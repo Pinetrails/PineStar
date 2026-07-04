@@ -162,4 +162,26 @@ const redact = (s) => String(s).replace(/sk-[A-Za-z0-9]{8,}/g, '[redacted]');
   A.ok(!m[m.length - 1].tool_calls, 'a trailing assistant with cut-off results has its tool_calls stripped');
 }
 
+// ---- PER-STREAM RAM fairness: a firehose stream self-trims WITHOUT evicting a quiet stream's turns ----
+{
+  const io = memIo();
+  const s = makeTranscriptStore({ io, clock, redact, ramPerStream: 20 });   // tiny per-stream cap for the test
+  // a quiet stream logs a handful of turns FIRST (oldest in the global array)
+  for (let i = 0; i < 5; i++) s.append({ streamId: 'quiet', agentId: 'a', role: 'user', content: 'q' + i });
+  // then a firehose stream floods far past the per-stream cap
+  for (let i = 0; i < 200; i++) s.append({ streamId: 'loud', agentId: 'a', role: 'user', content: 'L' + i });
+  // the loud stream is bounded to the per-stream cap...
+  A.eq(s.history('loud', { limit: 1000 }).length, 20, 'the firehose stream is bounded to ramPerStream');
+  // ...but the quiet stream's turns were NOT evicted (per-stream fairness — global trim would have lost them)
+  const quiet = s.history('quiet', { limit: 1000 });
+  A.eq(quiet.length, 5, 'the quiet stream kept ALL its turns despite the firehose (fairness)');
+  A.eq(quiet[0].content, 'q0', 'the quiet stream oldest turn survived');
+  // disk kept every append; only RAM was trimmed
+  A.eq(io.lines.length, 205, 'disk kept every appended turn (only RAM trimmed)');
+  // the loud stream retained its NEWEST turns
+  const loud = s.history('loud', { limit: 1000 });
+  A.eq(loud[loud.length - 1].content, 'L199', 'the firehose kept its newest turn');
+  A.eq(loud[0].content, 'L180', 'the firehose dropped only its oldest turns');
+}
+
 A.report('transcript.test');
