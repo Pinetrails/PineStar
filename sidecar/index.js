@@ -2241,6 +2241,55 @@ server.listen(PORT, '127.0.0.1', () => {
   } catch (e) { console.warn('[workshop] boot sweep failed:', (e && e.message) || e); }
 });
 
+/* ---- GRACEFUL SHUTDOWN (lifecycle P1): reap every child/handle this process owns so a Ctrl+C or a SIGTERM
+   doesn't orphan a backgrounded dev server, wedge cron.lock for the next boot, leave MCP stdio children running,
+   or hold the port. Idempotent (a second signal is a no-op) with a HARD 3s deadline: if any close() hangs, we
+   still exit rather than lingering. Wired to SIGINT (Ctrl+C) + SIGTERM (kill / most supervisors) + SIGBREAK
+   (Windows console Ctrl+Break). NOTE on the Tauri desktop shell: it stops the sidecar via std::process::Child
+   ::kill() -> on Windows that's TerminateProcess, which is UNCATCHABLE (no signal reaches Node), so this graceful
+   path covers terminal/headless/POSIX stops; the Windows-desktop kill is abrupt by the shell's design and there
+   is nothing the sidecar can hook there. Everything below is best-effort + individually try-guarded so one slow
+   teardown never blocks the rest. */
+let _shuttingDown = false;
+function gracefulShutdown(signal) {
+  if (_shuttingDown) return;
+  _shuttingDown = true;
+  console.log('\n  · shutdown (' + signal + ') — reaping children and releasing locks…');
+  // HARD deadline: no matter what hangs, exit within 3s. unref so this timer itself never keeps us alive.
+  const deadline = setTimeout(() => { try { console.warn('  · shutdown deadline hit — forcing exit'); } catch (_) {} process.exit(0); }, 3000);
+  if (deadline.unref) deadline.unref();
+  try { if (typeof cronTimer !== 'undefined' && cronTimer) { clearInterval(cronTimer); } } catch (_) {}
+  try { if (typeof shellBg !== 'undefined' && shellBg && shellBg.killAll) shellBg.killAll(); } catch (_) {}   // reap backgrounded shell children (dev servers etc.)
+  try { if (typeof executionEnvironment !== 'undefined' && executionEnvironment && executionEnvironment.killAllBackground) executionEnvironment.killAllBackground(); } catch (_) {}
+  try { if (typeof subagents !== 'undefined' && subagents && subagents.interruptAll) subagents.interruptAll(); } catch (_) {}   // stop watchable background workers
+  try { if (typeof connectors !== 'undefined' && connectors && connectors.close) Promise.resolve(connectors.close()).catch(() => {}); } catch (_) {}   // close MCP connectors (stdio children get taskkill/SIGTERM)
+  try { stopTelegram(); } catch (_) {}   // disconnect the Telegram long-poll adapter
+  try { stopDiscord(); } catch (_) {}    // disconnect the Discord gateway socket
+  try { for (const ac of runs.values()) { try { ac.abort(); } catch (_) {} } } catch (_) {}   // abort any in-flight run so it stops spending
+  try { if (typeof cronLock !== 'undefined' && cronLock && cronLock.release) cronLock.release(); } catch (_) {}   // drop cron.lock so the next boot's tick isn't wedged
+  // BROWSER/CDP: the per-run browser session is created fresh per run and not retained at module scope (see the
+  // registry build in runOnce), so there is no persistent CDP handle to close here. A Chrome launched by an
+  // in-flight run is aborted via runs.abort() above; a detached window the user is watching is intentionally left
+  // to the user. (If a module-level browser-session registry is added later, close it here.)
+  try {
+    if (typeof server !== 'undefined' && server && server.close) {
+      server.close(() => { clearTimeout(deadline); process.exit(0); });   // stop accepting; exit once connections drain
+      // don't wait on lingering keep-alive sockets — force them closed so close()'s callback fires promptly.
+      if (typeof server.closeAllConnections === 'function') { try { server.closeAllConnections(); } catch (_) {} }
+    } else { clearTimeout(deadline); process.exit(0); }
+  } catch (_) { clearTimeout(deadline); process.exit(0); }
+}
+// Only install signal handlers for a real host process (not when index.js is require()'d by a unit test, which
+// would leak handlers across tests). The e2e harnesses spawn a REAL node process and stop it with child.kill()
+// (SIGTERM on POSIX) — our handler runs the graceful path then exits promptly, well inside the boot-test budgets.
+if (require.main === module) {
+  try {
+    process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+    process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+    process.on('SIGBREAK', () => gracefulShutdown('SIGBREAK'));   // Windows console Ctrl+Break (harmless elsewhere)
+  } catch (_) {}
+}
+
 /* ---- SSE bridge: forward validated channel/work-item telemetry to the live station HUD ---- */
 function handleChannelEvents(req, res) {
   // SSE can't carry a custom header (EventSource), so the live HUD passes the token as ?token=… instead.
