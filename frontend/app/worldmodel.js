@@ -93,7 +93,13 @@ const WorldModel = (() => {
   function grantLabelForProp(propType) { const c = CAP_PROP_MAP[propType]; return c ? (CAP_LABEL[c] || c) : null; }   // prop -> plain power word (or null = inert decor)
 
   /* the paint palette — each is a floor BASE colour; every other floor detail
-     (seams / rivets / vents / hatches) is derived from it via U.shade in the bake. */
+     (seams / rivets / vents / hatches) is derived from it via U.shade in the bake.
+     The COLOURED bases stay in a dark low-value SUBSTRATE band (floor, not accent light) so the
+     CRT phosphor + warm room-light pools read on top — their variety comes from spreading the HUE
+     across the wheel, not from brightness. bone + onyx are the deliberate exceptions: the bright
+     and near-black ends of the value range, for decks that want stark contrast. This catalog is the
+     sole source: add a colour here and it appears in the DECK PAINT palette AND as a room floor
+     style automatically. */
   const FLOOR_STYLES = {
     hull:     { base: '#33302a', label: 'HULL' },
     corridor: { base: '#2c2924', label: 'DECKING' },
@@ -102,6 +108,17 @@ const WorldModel = (() => {
     sterile:  { base: '#34383a', label: 'STERILE' },
     crimson:  { base: '#3a2b2b', label: 'CRIMSON' },
     verdant:  { base: '#2c3a2e', label: 'VERDANT' },
+    // extended spectrum — warm → cool, same dark substrate band, each a distinct hue
+    ember:    { base: '#402a1c', label: 'EMBER' },
+    amber:    { base: '#3c3420', label: 'AMBER' },
+    moss:     { base: '#34391f', label: 'MOSS' },
+    teal:     { base: '#213a3c', label: 'TEAL' },
+    indigo:   { base: '#282a48', label: 'INDIGO' },
+    violet:   { base: '#332941', label: 'VIOLET' },
+    orchid:   { base: '#3e2a3a', label: 'ORCHID' },
+    // value poles — the bright + near-black ends of the range (stark, deliberate)
+    bone:     { base: '#e7e3d9', label: 'BONE' },
+    onyx:     { base: '#0e0e12', label: 'ONYX' },
   };
 
   /* room categories — a capability-zone label + a default floor. kind drives nothing
