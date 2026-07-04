@@ -1396,6 +1396,7 @@ const App = (() => {
     if (typeof StationQuestStore !== 'undefined') StationQuestStore.reset();   // …and no inherited station-gap fix-it quests — a new Commander never sees the prior hero's capdenied backlog / dismissals (own key)
     if (typeof WorkQuestStore !== 'undefined') WorkQuestStore.reset();   // …and no inherited accepted-build work quests — a new Commander never inherits the prior hero's in-flight builds (own key)
     if (typeof GoalStore !== 'undefined') GoalStore.reset();   // …and a fresh goal tree — a new Commander never inherits the prior hero's goals/milestones/progress (own key)
+    if (typeof UnderstandingStore !== 'undefined' && UnderstandingStore.reset) UnderstandingStore.reset();   // …and no inherited rating corroboration — a new Commander never inherits the prior hero's 👍/👎 confidence signal (own key)
     if (typeof MaintQuestStore !== 'undefined') MaintQuestStore.reset();   // …and no inherited maintenance quests — a new Commander never sees the prior hero's slag/jam backlog (own key)
     if (typeof MintStore !== 'undefined') MintStore.reset();   // …no inherited recurring-task shapes — these feed the seed shelf, so a leak would offer a prior Commander's chores (own key)
     if (typeof AutonomyStore !== 'undefined') AutonomyStore.reset();   // …and a fresh autonomy posture (safe floor) — a new Commander is never handed the previous one's free-range grant (own key)

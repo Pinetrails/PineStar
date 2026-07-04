@@ -29,6 +29,14 @@ const handlers = {};
 global.U = { bus: { on: (name, fn) => { (handlers[name] = handlers[name] || []).push(fn); } } };
 function emit(name, p) { for (const fn of (handlers[name] || [])) fn(p); }
 
+// a tiny localStorage stub so the R2 corroboration persistence is locked by this test too
+const lsMap = {};
+global.localStorage = {
+  getItem: (k) => (k in lsMap ? lsMap[k] : null),
+  setItem: (k, v) => { lsMap[k] = String(v); },
+  removeItem: (k) => { delete lsMap[k]; }
+};
+
 const { UnderstandingStore } = require('../frontend/app/understandingstore.js');
 
 /* ---------- init: baseline read, no pulse on resume ---------- */
@@ -80,5 +88,32 @@ A.eq(calls, 2, 'a subscriber is notified on every refresh');
 unsub();
 UnderstandingStore.refresh(false);
 A.eq(calls, 2, 'an unsubscribed listener stops receiving reads');
+
+/* ---------- R2: ratings feed the style-model confidence (signed, persisted, clamped) ---------- */
+dims.style = [belief('terse, run-with-it', 'study')];
+UnderstandingStore.refresh(false);
+const styleBase = UnderstandingStore.read().dims.style.conf;
+A.eq(UnderstandingStore.noteRating('great'), 1, 'a 👍 verdict adds +1 style corroboration');
+A.ok(UnderstandingStore.read().dims.style.conf > styleBase, 'a 👍 raises the style-model confidence');
+A.eq(UnderstandingStore.noteRating('ok'), null, 'a 👌 is a shrug, not evidence');
+A.eq(UnderstandingStore.noteRating('miss'), 0, 'a 👎 subtracts (back to net 0)');
+A.eq(UnderstandingStore.noteRating('miss'), -1, 'a second 👎 goes negative (counter-evidence)');
+A.ok(UnderstandingStore.read().dims.style.conf < styleBase, 'net counter-evidence drags style confidence below its belief-only base');
+// clamped: a pile of downvotes can drain, never pin the model at -∞
+for (let i = 0; i < 20; i++) UnderstandingStore.noteRating('miss');
+A.eq(UnderstandingStore.noteRating('miss'), -6, 'corroboration clamps at ±6');
+// persisted: a reload (fresh require) rehydrates the signed count
+A.ok(lsMap['starnet.understanding.v1'] && lsMap['starnet.understanding.v1'].indexOf('style') >= 0, 'corroboration persists to its own key');
+delete require.cache[require.resolve('../frontend/app/understandingstore.js')];
+const US2 = require('../frontend/app/understandingstore.js').UnderstandingStore;
+US2.init({ now: () => 6000 });
+A.ok(US2.read().dims.style.conf < styleBase, 'a reload rehydrates the drained style confidence (the doubt survives)');
+
+/* R3 probes share the mechanism; reset() clears the learned corroboration */
+A.eq(US2.noteProbe('ambition', true), 1, 'an accepted probe corroborates its aimed dimension');
+A.eq(US2.noteProbe('ambition', false), 0, 'a declined probe is counter-evidence');
+A.eq(US2.noteEvidence('nonsense', 1), null, 'an unknown dimension is rejected');
+US2.reset();
+A.eq(lsMap['starnet.understanding.v1'], undefined, 'reset clears the persisted corroboration (new-hero path)');
 
 A.report('understandingstore.test');

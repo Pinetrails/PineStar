@@ -902,6 +902,11 @@ const Chat = (() => {
     // G3a confidence narrative: the same DIRECT hand-off (this verdict never rides the bus, so the fire-once
     // calibration/TRUSTED beats must be told here, AFTER the meter folded). Speaks at most twice, ever; mints nothing.
     if (typeof ConfBeats !== 'undefined' && ConfBeats.onFeedback) { try { ConfBeats.onFeedback({ agentId: agentId || 'agent', id: 'work:' + runId, delta: delta, reason: reason }); } catch (_) {} }
+    // R2 RATINGS → UNDERSTANDING: the same DIRECT hand-off feeds the style-model confidence — 👍 corroborates
+    // "we know how they want work done", 👎 is honest counter-evidence (confidence sags; the earned VOI question
+    // re-aims at style). Complements the taste beat below: this moves continuous CONFIDENCE, that mints a discrete
+    // belief proposal on a 3-streak. Fail-open; mints nothing.
+    if (typeof UnderstandingStore !== 'undefined' && UnderstandingStore.noteRating) { try { UnderstandingStore.noteRating(verdict); } catch (_) {} }
     // GROWTH Tier 1 §4 — RATINGS → TASTE: fold this verdict into the per-archetype streak; a fresh 3-streak mints
     // ONE style-dim study proposal (Commander consistently likes/dislikes <archetype> work), surfaced at the same
     // one beat. The archetype is classified from the run's directive (RUN_META.title). Fail-open.

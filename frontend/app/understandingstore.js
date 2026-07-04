@@ -13,10 +13,15 @@
    injection edge); the engine stays clock-pure. node-exportable for its test. */
 'use strict';
 const UnderstandingStore = (() => {
+  const KEY = 'starnet.understanding.v1';
+  const CORROB_CLAMP = 6;   // signed per-dim corroboration is bounded (±): a run of 👍 can warm a dim, a run of
+                            // 👎 can drain it, but neither can pin the model forever — beliefs stay the substrate.
   let bound = false;
   let last = null;          // the last composed read (the surface reads this)
   let prevOverall = 0;      // baseline to detect a post-run RISE
   let deps = {};
+  let corrob = {};          // R2: SIGNED per-dim corroboration from real usage (ratings now, probes next) —
+                            // the ONLY state this store owns; persisted so a 👎's honest doubt survives reload.
   const listeners = [];     // surfaces subscribe here; notified on every refresh
 
   const now = () => { try { if (typeof deps.now === 'function') return deps.now(); } catch (_) {} return (typeof Date !== 'undefined' && Date.now) ? Date.now() : 0; };
@@ -61,11 +66,49 @@ const UnderstandingStore = (() => {
     return null;
   }
 
+  /* ---------- R2: signed corroboration from real usage (persisted; the store's only owned state) ---------- */
+  function loadCorrob() {
+    try { const raw = localStorage.getItem(KEY); if (raw) { const s = JSON.parse(raw); if (s && s.corrob && typeof s.corrob === 'object') return hydrateCorrob(s.corrob); } } catch (_) {}
+    return {};
+  }
+  function saveCorrob() { try { localStorage.setItem(KEY, JSON.stringify({ v: 1, corrob })); } catch (_) {} }
+  function hydrateCorrob(raw) {
+    const out = {};
+    const keys = hasEngine() ? Understanding.DIM_KEYS : Object.keys(raw);
+    for (const k of keys) {
+      const n = Number(raw[k]);
+      if (Number.isFinite(n) && n !== 0) out[k] = Math.max(-CORROB_CLAMP, Math.min(CORROB_CLAMP, n));
+    }
+    return out;
+  }
+  // fold one piece of signed evidence into a dimension (+ corroborates, − is counter-evidence), clamped,
+  // persisted, and folded into the next read. The shared mechanism behind ratings (R2) and probes (R3).
+  function noteEvidence(dim, delta) {
+    if (!hasEngine() || Understanding.DIM_KEYS.indexOf(dim) < 0 || !Number.isFinite(delta) || !delta) return null;
+    corrob[dim] = Math.max(-CORROB_CLAMP, Math.min(CORROB_CLAMP, (Number(corrob[dim]) || 0) + delta));
+    if (!corrob[dim]) delete corrob[dim];
+    saveCorrob();
+    refresh(true);
+    return corrob[dim] || 0;
+  }
+  // R2: a rate-the-work verdict is honest signal about the STYLE model ("how they want work done").
+  // 👍 corroborates it; 👎 is counter-evidence (confidence sags → the VOI question re-aims at style);
+  // 👌 is a shrug, not evidence. Called DIRECTLY from chat.rateWork (the established sibling-store idiom —
+  // the verdict never rides the frozen event contract).
+  function noteRating(verdict) {
+    if (verdict === 'great') return noteEvidence('style', +1);
+    if (verdict === 'miss') return noteEvidence('style', -1);
+    return null;
+  }
+  // R3: a suggestion aimed at a specific dimension is a silent belief probe — accepting corroborates the
+  // dimension it was aimed at; declining is counter-evidence. Zero new asks; drift detection as a byproduct.
+  function noteProbe(dim, accepted) { return noteEvidence(dim, accepted ? +1 : -1); }
+
   // compose the full read (understanding + the goal it points at). null only if the engine isn't loaded.
   function compute() {
     if (!hasEngine()) return null;
     let u;
-    try { u = Understanding.understanding(dossierShape(), { now: now(), workSamples: workSamples() }); }
+    try { u = Understanding.understanding(dossierShape(), { now: now(), workSamples: workSamples(), corroboration: corrob }); }
     catch (_) { return null; }
     u.goal = goalRead();
     return u;
@@ -104,11 +147,14 @@ const UnderstandingStore = (() => {
   function init(opts) {
     deps = opts || {};
     prevOverall = 0;
+    corrob = (typeof localStorage !== 'undefined') ? loadCorrob() : {};
     refresh(false);   // baseline on enter/resume — never pulses on a resumed save
     bind();
   }
+  // a brand-new hero starts with no learned corroboration (own key; mirrors the sibling growth stores).
+  function reset() { corrob = {}; try { localStorage.removeItem(KEY); } catch (_) {} prevOverall = 0; refresh(false); }
 
-  return { init, read, refresh, subscribe, _onRunEnd: onRunEnd, _compute: compute };
+  return { init, reset, read, refresh, subscribe, noteRating, noteProbe, noteEvidence, _onRunEnd: onRunEnd, _compute: compute };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = { UnderstandingStore };
