@@ -111,6 +111,45 @@ function freshStore() {
     A.ok(again && again.id === 'c1', 'releaseClaim returns an un-built item to the queue for a later shift');
   }
 
+  // ---- 4b. RETRY CAP: a FAILED build counts an attempt; at MAX_BUILD_ATTEMPTS (2) the item PARKS and is never
+  //          silently re-claimed (the token-leak guard). A no-capability release is NOT an attempt. An explicit
+  //          re-queue (same id or same normalized title) un-parks — a human re-ask means try again. ----
+  {
+    const s = freshStore();
+    await s.queue('hero', { id: 'f1', title: 'doomed build' }, 1);
+    // failed build #1 → attempt counted, still claimable
+    await s.claimNext('hero', 'run-1');
+    const r1 = await s.releaseClaim('hero', 'run-1', { failed: true });
+    A.ok(r1.parked === null, 'one failed build does not park (attempts below the cap)');
+    const c2 = await s.claimNext('hero', 'run-2');
+    A.ok(c2 && c2.id === 'f1', 'the item is retried once');
+    // failed build #2 → PARKED, reported to the caller, never re-claimed
+    const r2 = await s.releaseClaim('hero', 'run-2', { failed: true });
+    A.ok(r2.parked && r2.parked.id === 'f1' && r2.parked.attempts === 2, 'the second failed build PARKS the item (reported to the caller)');
+    A.ok((await s.claimNext('hero', 'run-3')) === null, 'a parked item is never silently re-claimed');
+    A.eq(s.backlogOf('hero').length, 1, 'the parked item stays VISIBLE in the backlog (not silently dropped)');
+    // an explicit re-ask (idempotent re-queue by id) un-parks it
+    const re = await s.queue('hero', { id: 'f1', title: 'doomed build' }, 9);
+    A.ok(re.reason === 'exists', 're-queue by id is still idempotent');
+    const c4 = await s.claimNext('hero', 'run-4');
+    A.ok(c4 && c4.id === 'f1', 'an explicit re-queue clears the attempts (human re-ask = try again)');
+    // a NO-CAPABILITY release (no failed flag) never counts an attempt
+    const s2 = freshStore();
+    await s2.queue('hero', { id: 'n1', title: 'fine build' }, 1);
+    for (let i = 0; i < 5; i++) { await s2.claimNext('hero', 'run-' + i); await s2.releaseClaim('hero', 'run-' + i); }
+    const still = await s2.claimNext('hero', 'run-final');
+    A.ok(still && still.id === 'n1', 'no-capability releases never park an item (the build never started)');
+    // re-queue by TITLE (fresh id) also un-parks
+    const s3 = freshStore();
+    await s3.queue('hero', { id: 't1', title: 'Tricky Tool' }, 1);
+    await s3.claimNext('hero', 'ra'); await s3.releaseClaim('hero', 'ra', { failed: true });
+    await s3.claimNext('hero', 'rb'); await s3.releaseClaim('hero', 'rb', { failed: true });
+    A.ok((await s3.claimNext('hero', 'rc')) === null, 'parked by title-case too');
+    await s3.queue('hero', { id: 't2', title: '  tricky   tool ' }, 5);   // same normalized title, fresh id
+    const c5 = await s3.claimNext('hero', 'rd');
+    A.ok(c5 && c5.id === 't1', 'a same-title re-ask un-parks the ORIGINAL item (no duplicate minted)');
+  }
+
   // ---- 5. DISCARD removes the item AND denylists its id forever (never re-queued) — the core invariant ----
   {
     const s = freshStore();
@@ -123,6 +162,23 @@ function freshStore() {
     A.eq(s.backlogOf('hero').length, 0, 'the denylisted item never re-enters the backlog');
     // denylist survives a fresh store
     const fs = s._durable; A.ok(fs, 'durable handle exposed');
+  }
+
+  // ---- 5b. COMPLETE (kept): retires the item WITHOUT denylisting — a kept build never resurrects as pending,
+  //          but the same work may legitimately be queued again later (unlike discard) ----
+  {
+    const s = freshStore();
+    await s.queue('hero', { id: 'k1', title: 'good tool' }, 1);
+    await s.claimNext('hero', 'run-k');
+    await s.markBuilt('hero', 'k1', 'run-k');
+    await s.complete('hero', 'k1');
+    A.eq(s.backlogOf('hero').length, 0, 'complete removes the kept item from the backlog');
+    A.ok(s.itemForRun('hero', 'run-k') === null, 'a kept build no longer maps to a backlog item (pending cannot re-list it)');
+    A.ok(s.isDenied('hero', 'k1') === false, 'complete does NOT denylist the id (kept ≠ discarded)');
+    const again = await s.queue('hero', { id: 'k2', title: 'good tool' }, 9);
+    A.ok(again.reason === 'added', 'the same title CAN be queued again after a keep (only discard denies the title)');
+    await s.complete('hero', 'missing-id');   // unknown id → silent no-op, never throws
+    A.eq(s.backlogOf('hero').length, 1, 'complete on an unknown id is a no-op');
   }
 
   // ---- 6. denylist persists across a fresh store instance ----

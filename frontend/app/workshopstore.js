@@ -66,9 +66,40 @@ const WorkshopStore = (() => {
     return list.filter(m => m && m.runId && !state.later[m.runId] && state.seen.indexOf(m.runId) === -1);
   }
 
+  // ---- away-mode truth (item #2) ----
+  // HOW "AWAY" ACTUALLY WORKS (verified against sidecar/index.js, not the audit's guess):
+  //   • A queued idea lands in the agent's durable backlog (POST /api/workshop/queue). The queue does NOT check
+  //     the grant — it succeeds even with the grant OFF (the item just sits there, never built). That silent
+  //     dead-end is the real bug the audit half-saw ("fails quietly"); it doesn't fail, it succeeds-and-stalls.
+  //   • The BUILD is a per-agent WORKSHOP SHIFT: a recurring cron routine (~every 6h) that the "build while away"
+  //     GRANT arms (handleWorkshopGrant → armWorkshopShift, which also arms the scheduler). It fires on that
+  //     cadence while the STATION IS RUNNING — it is NOT gated on the app being closed. So the honest condition is
+  //     "grant on + station running", NOT "app closed". The return DIGEST (returnstore.js heartbeat) is the part
+  //     that's about the app being closed — a different subsystem the audit conflated with the build.
+  // The confirm copy therefore states the grant + recurring-shift truth, and never the false "runs while closed".
+  function queueConfirmLine(name) {
+    const who = String(name || 'it').trim() || 'it';
+    return '◈ queued for the away workshop — ' + who + ' will build this in its private sandbox on its next away shift '
+      + '(a recurring build that runs on its own while the station is up). you’ll review the result on return.';
+  }
+
+  // read the agent's live "build while away" grant (GET /api/workshop/backlog returns { granted }). Fail-open to
+  // null (unknown) so a render site degrades to neutral copy rather than asserting a grant state it couldn't read.
+  async function grantOf(agentId) {
+    try {
+      const r = await fetch('/api/workshop/backlog?agent=' + encodeURIComponent(agentId || 'agent'), { cache: 'no-store' });
+      if (!r.ok) return null;
+      const j = await r.json().catch(() => null);
+      return j && typeof j.granted === 'boolean' ? j.granted : null;
+    } catch (_) { return null; }
+  }
+
   // ---- writes ----
   // queue an idea for an agent to build while away. item: { agentId, text, sourceType, sourceId? }.
-  // Returns { ok, error? }. Never throws — the caller shows a one-line notice off the result.
+  // Returns { ok, error?, warn?, needsGrant?, agentId }. Never throws — the caller shows a one-line notice off the
+  // result. On a successful queue we probe the grant: if it's OFF the item will NEVER be built until the Commander
+  // turns "build while away" on, so we return a VISIBLE warn + needsGrant so the render site can offer that toggle
+  // (openGrant below) — turning the old silent stall into an honest, actionable state.
   async function queue(item) {
     const text = String((item && item.text) || '').trim();
     // PINNED-contract → live backend shape: the sidecar's /api/workshop/queue takes { agentId, title,
@@ -81,15 +112,38 @@ const WorkshopStore = (() => {
     };
     if (item && item.sourceId) body.id = String(item.sourceId).replace(/[^A-Za-z0-9_-]/g, '-').slice(0, 64);
     if (!text) return { ok: false, error: 'nothing to build' };
+    const aid = body.agentId;
     try {
       const r = await fetch('/api/workshop/queue', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       const j = await r.json().catch(() => null);
-      // ok:true → added/exists (already-queued is a benign success). ok:false → duplicate/discarded/not-granted:
+      // ok:true → added/exists (already-queued is a benign success). ok:false → duplicate/discarded:
       // surface the backend's own plain, anti-retry message so we never re-queue the same thing.
-      if (r.ok && j && j.ok === true) return { ok: true, reason: j.reason };
+      if (r.ok && j && j.ok === true) {
+        // GRANT PROBE (item #2): the queue succeeded, but the item only ever BUILDS if the away grant is on. If it's
+        // OFF, say so with a way to fix it — never let it stall silently. `granted:null` (couldn't read) → no warn,
+        // rather than a maybe-wrong claim.
+        const granted = await grantOf(aid);
+        if (granted === false) {
+          const who = String((item && item.name) || aid || 'this agent');   // display name if the caller passed one, else the id
+          return { ok: true, reason: j.reason, agentId: aid, needsGrant: true,
+            warn: 'saved to the build list — but “build while away” is OFF for ' + who + ', so it won’t be built yet. turn it on to let the away shift build it.' };
+        }
+        return { ok: true, reason: j.reason, agentId: aid };
+      }
       if (r.ok && j && j.ok === false) return { ok: false, error: j.message || 'already handled' };
       return { ok: false, error: (j && (j.error || j.message)) || 'queue failed' };
     } catch (_) { return { ok: false, error: 'queue error' }; }
+  }
+
+  // turn the "build while away" grant ON for an agent (POST /api/workshop/grant) — the action the queue's
+  // needsGrant warning offers. Arms the workshop shift server-side. Returns { ok, error? }; never throws.
+  async function openGrant(agentId) {
+    try {
+      const r = await fetch('/api/workshop/grant', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ agentId: agentId || 'agent', on: true }) });
+      const j = await r.json().catch(() => null);
+      if (r.ok && j && j.ok) return { ok: true };
+      return { ok: false, error: (j && (j.error || j.message)) || 'could not enable it' };
+    } catch (_) { return { ok: false, error: 'could not reach the station' }; }
   }
 
   // decide a return card. decision: 'keep' (destPath required) | 'later' | 'discard'.
@@ -156,7 +210,7 @@ const WorkshopStore = (() => {
   // S2/new-hero: a fresh Commander inherits no prior "later" list.
   function reset() { state = hydrate(null); fired = false; try { localStorage.removeItem(KEY); } catch (_) {} }
 
-  return { init, queue, decide, readFile, desktopDefault, fetchPending, reset, _hydrate: hydrate };
+  return { init, queue, decide, readFile, desktopDefault, fetchPending, reset, queueConfirmLine, grantOf, openGrant, _hydrate: hydrate };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = { WorkshopStore };

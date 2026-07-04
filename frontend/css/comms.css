@@ -59,13 +59,13 @@
    app.css treatment (equal specificity + later load would otherwise stomp the gold beat fills). */
 .cmsg.agent:not(.tool):not(.consent):not(.turnin):not(.nudge):not(.deliverable):not(.reply) {
   padding: 1px 10px 5px 11px; border-radius: 0 4px 4px 0;
-  background: linear-gradient(180deg, rgba(255,170,51,.028), transparent 62%);
-  box-shadow: inset 0 1px 0 rgba(255,228,180,.035);
+  background: linear-gradient(180deg, rgba(var(--ph-rgb),.028), transparent 62%);
+  box-shadow: inset 0 1px 0 rgba(var(--ph-bright-rgb),.035);
 }
 /* user card: gold right rail, a whisper of gold fill so the Commander's side is visually distinct */
 .cmsg.user {
   padding: 1px 11px 5px 10px; border-radius: 4px 0 0 4px;
-  background: linear-gradient(180deg, rgba(255,211,74,.05), transparent 60%);
+  background: linear-gradient(180deg, rgba(var(--gold-rgb),.05), transparent 60%);
 }
 
 /* copy button sits inside the padded card — nudge it clear of the header chip */
@@ -99,12 +99,12 @@
 }
 .tool-chip {
   border: 1px solid var(--ph-faint); border-radius: var(--r-sm);
-  background: rgba(255,170,51,.03);
+  background: rgba(var(--ph-rgb),.03);
   overflow: hidden;
   animation: comms-msg-in var(--t-fast) var(--ease-out) backwards;
   transition: border-color var(--t-fast) var(--ease-soft), background-color var(--t-fast) var(--ease-soft);
 }
-.tool-chip:hover { border-color: var(--ph-dim); background: rgba(255,170,51,.055); }
+.tool-chip:hover { border-color: var(--ph-dim); background: rgba(var(--ph-rgb),.055); }
 /* the one-line head — a button so it's keyboard-operable; ellipsis-clamps the args */
 .tool-chip .tc-head {
   display: flex; align-items: baseline; gap: 6px; width: 100%;
@@ -158,7 +158,7 @@
   margin: 6px 0 2px; padding: 6px 11px;
   border-left: 2px solid var(--ph); border-radius: 0 4px 4px 0;
   background: linear-gradient(180deg, var(--ph-faint), rgba(0,0,0,.25));
-  box-shadow: inset 0 1px 0 rgba(255,228,180,.05), 0 0 12px var(--ph-glow2);
+  box-shadow: inset 0 1px 0 rgba(var(--ph-bright-rgb),.05), 0 0 12px var(--ph-glow2);
   font-size: 13px; letter-spacing: .5px; color: var(--ph-bright);
   animation: comms-msg-in var(--t-med) var(--ease-out);
 }
@@ -179,6 +179,20 @@
   flex: 0 0 auto; margin-left: auto; color: var(--ph-dim);
   font-size: 12px; font-variant-numeric: tabular-nums; opacity: .9;
 }
+/* PAUSED-ON-APPROVAL — the run is stopped on the sidecar waiting for the Commander.
+   Reads as a deliberate hold, NOT a working state: the ▮ stops blinking (steady, dim) and
+   the whole card takes the gold "attention" accent so a beginner never mistakes it for a
+   crash. Truthful telemetry: this only renders while Channels.pendingOf() is a live consent. */
+#comms-presence.comms-presence.paused {
+  border-left-color: var(--gold);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--gold) 14%, transparent), rgba(0,0,0,.25));
+  box-shadow: inset 0 1px 0 rgba(var(--ph-bright-rgb),.05), 0 0 12px color-mix(in srgb, var(--gold) 30%, transparent);
+}
+#comms-presence.paused .cp-dot { animation: none; color: var(--gold); text-shadow: 0 0 6px color-mix(in srgb, var(--gold) 55%, transparent); opacity: .9; }
+#comms-presence.paused .cp-verb { color: var(--gold); text-shadow: 0 0 5px color-mix(in srgb, var(--gold) 45%, transparent); }
+#comms-presence .cp-tool.paused-note { color: var(--gold); flex: 1 1 auto; white-space: normal; opacity: .95; }
+#comms-presence .cp-tool.paused-note::before { content: ''; }
+
 /* RESOLVED — the card collapses to a single quiet summary line, no blink, no live glow */
 #comms-presence.resolved {
   display: block; color: var(--ph-dim); font-size: 12px; letter-spacing: 1px;
@@ -318,3 +332,46 @@
    so it keeps floating above the whole composer — this wrapper is a static parent and doesn't reparent it. */
 .chat-tools { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .chat-tools #voice-toggle { margin-left: auto; }
+
+/* ============================================================
+   AGENT LINE — the top-of-panel identity row: who's on the line
+   (a native <select> dressed as a phosphor plate) + a truthful
+   readout of that agent's model. Sits between the ▮ COMMS title
+   and the transcript. Amber phosphor / VT323, themed tokens only.
+   ============================================================ */
+.comms-idbar {
+  display: flex; align-items: baseline; gap: 8px; min-width: 0;
+  margin: 2px 0 6px; padding-bottom: 6px;
+  border-bottom: 1px solid var(--ph-faint);
+}
+.comms-idbar[hidden] { display: none; }
+.comms-agent-wrap {
+  display: inline-flex; align-items: baseline; gap: 5px; min-width: 0; cursor: pointer;
+}
+.comms-agent-wrap .comms-agent-sigil { flex: 0 0 auto; color: var(--ph-dim); font-size: 12px; }
+/* the selector reads as a title chip, not a form control: no browser chrome, phosphor text, VT323 inherited */
+.comms-agent-select {
+  flex: 0 1 auto; min-width: 0; max-width: 60%;
+  font-family: inherit; font-size: 14px; letter-spacing: .5px; text-transform: uppercase;
+  color: var(--ph-bright); background: transparent;
+  border: 1px solid transparent; border-radius: 3px;
+  padding: 1px 18px 1px 5px; margin: 0; cursor: pointer;
+  -webkit-appearance: none; appearance: none;
+  /* a small phosphor chevron drawn as a themed background caret (SVG data-uri would hardcode a colour, so
+     we use a text triangle via ::after on the wrapper instead) */
+  text-overflow: ellipsis; white-space: nowrap; overflow: hidden;
+  text-shadow: 0 0 5px var(--ph-glow);
+}
+.comms-agent-wrap::after {
+  content: '▾'; flex: 0 0 auto; margin-left: -14px; color: var(--ph-dim); font-size: 10px; pointer-events: none;
+}
+.comms-agent-select:hover { border-color: var(--ph-faint); background: var(--ph-faint); }
+.comms-agent-select:focus-visible { outline: none; border-color: var(--ph-dim); }
+/* the native option list can't inherit phosphor everywhere, but set what browsers honour */
+.comms-agent-select option { color: var(--text); background: var(--panel2, var(--panel)); text-transform: none; }
+/* the model readout: dim, quiet, tabular — a fact, not a control */
+.comms-agent-model {
+  flex: 1 1 auto; min-width: 0;
+  font-size: 11px; letter-spacing: .8px; color: var(--ph-dim); opacity: .82;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: right;
+}

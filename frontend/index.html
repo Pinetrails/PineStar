@@ -17,6 +17,7 @@
 <!-- motion.css last: the Phase-1 premium motion + feedback layer builds ON TOP of every screen's styles -->
 <link rel="stylesheet" href="css/motion.css">
 <link rel="stylesheet" href="css/topbar.css"><!-- topbar instrument cluster: builds on motion.css's premium component vocabulary -->
+<link rel="stylesheet" href="css/widgets.css"><!-- widget rails: pinnable telemetry instruments in the chrome's dead space (widgets.js) -->
 
 </head>
 <body class="theme-amber">
@@ -179,10 +180,20 @@
 </section>
 
 <!-- ============ GAME ============ -->
+<!-- BRAND MARK — deliberately OUTSIDE the .screen sections: it must paint ABOVE the CRT glass
+     overlays (body::before/::after at z 940/950) so the amber wordmark stays crisp instead of
+     being tinted by the themed top-glow and striped by the scanlines. A .screen is a z-index:10
+     stacking context, so nothing inside one can ever out-stack the glass. #logo-anchor below
+     reserves its seat in the topbar; app.js positionLogo() keeps the two aligned. -->
+<div id="logo"><img class="logo-img" src="assets/brand/starnet-logo.png" alt="STARNET"><span class="logo-sub">AI-AGENT HARNESS</span></div>
+
 <section id="screen-game" class="screen">
 
   <header id="topbar">
-    <div id="logo"><img class="logo-img" src="assets/brand/starnet-logo.png" alt="STARNET"><span class="logo-sub">AI-AGENT HARNESS</span></div>
+    <div id="logo-anchor" aria-hidden="true"></div>
+    <!-- WIDGET RAIL (widgets.js) — user-pinnable telemetry instruments in the bar's dead middle;
+         flex-fills between the logo and the instrument cluster, scrolls thin if over-stuffed -->
+    <div id="wr-top" class="widget-rail" data-rail="top" role="group" aria-label="Pinned widgets (top rail)"></div>
     <div class="tb-stats">
       <!-- AGENT/MODEL are intentionally NOT shown in the HUD: a station runs many agents, so a single
            name+model here misrepresents the crew. Kept hidden as the focused-agent data source that
@@ -236,6 +247,16 @@
   <aside id="chat-panel">
     <div id="comms-resizer" class="col-resizer" title="drag to resize COMMS" role="separator" aria-orientation="vertical" aria-label="Resize COMMS panel"><span class="col-resizer-grip"></span></div>
     <h3>▮ COMMS<span class="h3-right"><span class="dim" id="chat-status" role="status" aria-live="polite" aria-atomic="true">offline</span><span class="chat-elapsed" id="chat-elapsed" aria-hidden="true"></span></span></h3>
+    <!-- AGENT LINE (chat.js): pick which roster agent you're talking to + a truthful readout of that agent's
+         current model. The <select> options + the model text are filled from the LIVE roster (App.agents),
+         never hardcoded — the header is honest about who's on the line and what they run on. -->
+    <div id="comms-idbar" class="comms-idbar">
+      <label class="comms-agent-wrap" title="Who you're talking to">
+        <span class="comms-agent-sigil" aria-hidden="true">▸</span>
+        <select id="comms-agent-select" class="comms-agent-select" aria-label="Select agent on the line"></select>
+      </label>
+      <span id="comms-agent-model" class="comms-agent-model" title="the model this agent runs on" aria-live="polite"></span>
+    </div>
     <div id="chat-log" class="scrolly"></div>
     <!-- TYPE-AHEAD: follow-ups typed while the agent is working queue here as pills, auto-sent in order (chat.js) -->
     <div id="chat-queued" class="chat-queued" aria-live="polite"></div>
@@ -283,7 +304,7 @@
       <div class="bb-menu" role="menu">
         <button class="bb" data-term="agents">☻ AGENTS</button>
         <button class="bb" id="bb-roster" title="RECRUITMENT BAY — browse specialist presets and deploy one to your agent">☰ ROSTER</button>
-        <button class="bb" id="bb-summon" title="SUMMON — wake a NEW agent onto your crew; task it in its own workstream">＋ SUMMON</button>
+        <button class="bb" id="bb-summon" data-hint="workstream" title="SUMMON — wake a NEW agent onto your crew; task it in its own workstream">＋ SUMMON</button>
         <button class="bb" data-term="commander" title="COMMANDER DOSSIER — what the station has learned about you (local-first; you own it)">◈ COMMANDER</button>
       </div>
     </div>
@@ -291,8 +312,8 @@
       <button class="bb-grp" aria-haspopup="true" aria-expanded="false">▤ WORK<span class="bb-grp-dot"></span></button>
       <div class="bb-menu" role="menu">
         <button class="bb" data-term="tasks">▤ TASKS</button>
-        <button class="bb" id="bb-missions" title="RECIPE LIBRARY — launch a ready-made recipe into a fresh workstream">❒ RECIPES</button>
-        <button class="bb" data-term="routines">⏱ ROUTINES</button>
+        <button class="bb" id="bb-missions" data-hint="recipe" title="RECIPE LIBRARY — launch a ready-made recipe into a fresh workstream">❒ RECIPES</button>
+        <button class="bb" data-term="routines" data-hint="routine">⏱ ROUTINES</button>
         <button class="bb" data-term="quests" title="QUEST LOG — your real progress as quests: get-to-know-you, achievements, and any waiting idea (nothing is gated)">⚑ QUESTS</button>
       </div>
     </div>
@@ -301,7 +322,7 @@
       <div class="bb-menu" role="menu">
         <button class="bb" id="bb-build" title="BUILD — lay out your station: place rooms, run corridors, paint decks">⚒ BUILD STATION</button>
         <button class="bb" data-term="manual" title="FIELD MANUAL — every prop and mechanic: what's real, what's for show, and how to wire work">▦ MANUAL</button>
-        <button class="bb" data-term="skills">✦ SKILLS</button>
+        <button class="bb" data-term="skills" data-hint="skill">✦ SKILLS</button>
         <button class="bb" data-term="connectors">⇄ TOOLSETS</button>
       </div>
     </div>
@@ -316,6 +337,9 @@
         <button class="bb" data-term="notifs">▣ NOTIFS<span id="nf-badge" class="badge"></span></button>
       </div>
     </div>
+    <!-- WIDGET RAIL (widgets.js) — the bottom bar's dead middle; #term-strip (stationui.js) docks
+         AFTER this, just before .bb-right, so minimized-window chips keep their own room -->
+    <div id="wr-bot" class="widget-rail" data-rail="bot" role="group" aria-label="Pinned widgets (bottom rail)"></div>
     <div class="bb-right">
       <!-- CONTEXT-WINDOW gauge, engraved into the bar (replaces the per-desk memory core).
            Fills toward the current agent's REAL context ceiling: latest prompt tokens /
@@ -366,6 +390,9 @@
 <script src="app/returns.js"></script><!-- pure return-ritual engine: while-away digest rows + the pending OUTBOX-crate ledger -->
 <script src="app/pride.js"></script><!-- pure lifetime-record engine (G3a): durable station pride counters (tasks/deliverables/routines/work-minutes/founded) -->
 <script src="app/profile.js"></script>
+<script src="app/worksignal.js"></script><!-- pure capability-usage histogram (adaptive recruitment): tool-lane EWMA read + per-lane task-tag volume -->
+<script src="app/recruiter.js"></script><!-- pure adaptive-recruitment matcher: worksignal+profile+dossier+roster → which NEW class to recruit + honest why -->
+<script src="app/prospect.js"></script><!-- pure prospect generator: constrained draft directive + hard-validating parse (station authors bespoke new specs) -->
 <script src="app/dossier.js"></script>
 <script src="app/understanding.js"></script><!-- NORTH STAR: pure "how well the station understands its Commander" read-model over the dossier (per-dim + overall confidence, weakest = the VOI question target) -->
 <script src="app/fork.js"></script><!-- R1 MID-TASK FORK: pure engine for the earned preference-fork (directive + FORK-marker parser + confidence gate); self-retiring once style is well-grounded -->
@@ -385,6 +412,7 @@
 <script src="app/seedreuse.js"></script><!-- pure seed-reuse AGGREGATE engine (G3b): per-seed 7-day + lifetime run counts; window-crest callout at N=5 -->
 <script src="app/trophies.js"></script><!-- pure trophy-surface projection (G3b): completed quests+milestones (honest dates) + the living-tools shelf -->
 <script src="app/postcard.js"></script><!-- shareable POSTCARD engine (G5 spectacle): pure honest-stat reducer + in-browser canvas capture → draggable/saveable run PNG -->
+<script src="app/clip.js"></script><!-- shareable CLIP engine (G5 spectacle slice 2): pure honest-overlay reducer + bounded #stage ring-buffer + vendored in-page GIF89a encoder → draggable/saveable ~10s run GIF -->
 <script src="app/autonomy.js"></script>
 <script src="app/autojobs.js"></script>
 <script src="app/autopilot.js"></script>
@@ -397,11 +425,22 @@
 <script src="app/testapi.js"></script><!-- DEV-only: window.__SKYNET_TEST__ (inert unless __STARNET_DEV__) -->
 <script src="app/classify.js"></script>
 <script src="app/friendlyerror.js"></script>
+<script src="app/diagnostics.js"></script><!-- T3.9: one-click COPY DIAGNOSTICS (paste-ready, secret-free bug report) -->
+<script src="app/glossary.js"></script><!-- UX Wave-0: term -> one-sentence beginner map (data source for the hint layer) -->
+<script src="app/hint.js"></script><!-- UX Wave-0: shared data-hint tooltip layer (delegation → late-rendered windows work); loads after glossary.js -->
+<script src="app/armconfirm.js"></script><!-- UX Wave-0: reusable 2-step arm/confirm helper (opt-in; existing call sites unchanged) -->
 <script src="app/agentid.js"></script>
 <script src="app/workstreams.js"></script>
 <script src="app/channels.js"></script>
 <script src="app/personas.js"></script>
-<script src="/shared/specialties.js"></script><!-- Class Loadouts S1: the SHARED specialty catalog (loadout data) — MUST load before specialties.js, which wraps it (served via the /shared/*.js allowlist, jailed to shared/) -->
+<script>
+/* Class Loadouts S1: the SHARED specialty catalog (loadout data) — MUST load before app/specialties.js,
+   which wraps it. In the browser the page is same-origin with the sidecar's /shared/*.js allowlist; in the
+   DESKTOP shell the page is served from the Tauri app origin where /shared/ doesn't exist, so the tag must
+   point at the sidecar explicitly (window.__STARNET_API__, injected by the shell before any page script).
+   document.write during parse keeps the load order guarantee a static tag had. */
+document.write('<script src="' + ((window.__STARNET_API__ || '') + '/shared/specialties.js') + '"><\/script>');
+</script>
 <script src="app/specialties.js"></script>
 <script src="app/recipe-catalog/core.js"></script><!-- Recipe Marketplace R1: the DATA catalog of built-in recipes — MUST load before recipe-catalog/index.js (persona files register here too) -->
 <script src="app/recipe-catalog/dev.js"></script><!-- R4 persona catalogs — pure data, load before the aggregator -->
@@ -435,6 +474,9 @@
 <script src="app/marketplace.js"></script>
 <script src="app/xpstore.js"></script>
 <script src="app/profilestore.js"></script>
+<script src="app/worksignalstore.js"></script><!-- adaptive-recruitment wiring: agent.tool_call → capability lane (ToolProps/CAP_REGISTRY) → decayed histogram; rides the save envelope, never emits -->
+<script src="app/recruiterstore.js"></script><!-- adaptive-recruitment read surface: joins worksignal+profile+dossier+live roster → the bay's CURATED shelf + the recruit beat -->
+<script src="app/prospectstore.js"></script><!-- prospect generator wiring: growth-gated async mint (reason-only), denylist, staging → the bay's DRAFTED FOR YOU row; never emits -->
 <script src="app/dossierstore.js"></script>
 <script src="app/studystore.js"></script><!-- GROWTH Tier 1: STUDY wiring (dossier Phase B) — fetch belief-update proposals, session cap + denylist, ratings→taste; self-persists (own key), never emits -->
 <script src="app/curiositystore.js"></script>
@@ -461,8 +503,11 @@
 <script src="app/seedreusestore.js"></script><!-- seed-reuse aggregate wiring (G3b): tallies provenance-matched digest rows; the living-tools shelf + the 5×-this-week callout (own key, never emits) -->
 <script src="app/confbeats.js"></script><!-- confidence narrative beats (G3a): fire-once calibration-complete + TRUSTED spoken moments (own key) -->
 <script src="app/bottlestore.js"></script><!-- R5 "bottle a run": post-run offer to save a 👍-rated interactive run as a custom recipe (own key, one beat slot, dismiss=stop-forever) -->
+<script src="app/resummonstore.js"></script><!-- P3.1 "run it again?": post-run offer to re-run a 👍-rated run's shape — pre-fills a fresh run (agent + directive), never auto-runs (own key, one beat slot, dismiss=stop-forever) -->
 <script src="app/app.js"></script>
+<script src="app/keycta.js"></script><!-- cold-start honesty: after a KEYLESS awakening, one standing world banner "agent is awake but has no key" → SETTINGS; pure projection of Harness.hasStoredCredential, vanishes the instant a key lands (after app.js so App/Harness/StationUI exist) -->
 <script src="app/topbar.js"></script><!-- topbar instrument cluster: read-only STATION-XP + live SPEND-TODAY wiring (after app.js so Harness/Xp/XpStore/U exist) -->
+<script src="app/widgets.js"></script><!-- widget rails: pinnable read-only telemetry instruments (insights/cron polls + run.end/queue.status/cron.fire folds); own localStorage key, never emits -->
 <script src="app/autosessions.js"></script><!-- surface an unattended cron/routine run as a readable SESSION: cron.fire → adopt a 'cron-<runId>' workstream (busy, no focus-steal), cron.result → fold its durable transcript; boot backfill for runs finished while closed. Read-only on U.bus (after app.js so App/Workstreams/Channels/Chat/U exist) -->
 <script src="app/safety.js"></script>
 <script src="app/warroom.js"></script>

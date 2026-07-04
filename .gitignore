@@ -29,6 +29,9 @@ dev/.scratch-workspace/
 src-tauri/target/
 src-tauri/gen/
 
+# cut release artifacts (installer + sig + updater manifest; distributed via GitHub Releases, never committed)
+release/
+
 # bundled Node runtime fetched by scripts/prepare-node.mjs (large build input, never committed)
 src-tauri/binaries/
 
@@ -39,6 +42,7 @@ src-tauri/binaries/
 .qa_tmp/
 .tmpshot/
 .postcard-verify/
+.clip-verify/
 .uiplay/
 .uiresidue/
 .uisummon/

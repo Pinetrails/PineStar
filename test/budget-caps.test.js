@@ -121,7 +121,7 @@ const ENV = { perRun: 3, perAgent: 5, perDay: 40, global: 100 };   // the shippe
   A.ok(/\/api\/budget\/caps/.test(station), 'the panel posts to the caps endpoint');
   A.ok(/\/api\/budget\/status/.test(station), 'the panel reads live status');
   A.ok(/id="budget-spend"/.test(station) && /SPENT TODAY/.test(station) && /LIFETIME/.test(station), 'spend readout (today + lifetime) present');
-  A.ok(/0 = no cap/.test(station) && /0 or blank = no cap/i.test(station), 'the "0/blank = no cap" semantics are surfaced to the user');
+  A.ok(/blank or 0 = no cap/i.test(station) && /leave blank or 0 for no cap/i.test(station), 'the "blank/0 = no cap" semantics are surfaced to the user');
   A.ok(/class="mc-hint"/.test(station), 'one-line inline help under each cap field (reuses the connector-form idiom)');
   A.ok(/#budget-form .set-row/.test(css) && /input\[type=number\]\.key-input/.test(css), 'budget panel styles present (number-input phosphor + row layout)');
 }

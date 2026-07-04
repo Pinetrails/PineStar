@@ -42,6 +42,9 @@ const Chat = (() => {
   const aborters = new Map();   // workstreamId -> AbortController for that stream's in-flight run
   const interrupted = new Set();   // wsIds the Commander deliberately STOPPED this turn — send()'s catch reads this as a
                                    // graceful stop (keep the partial reply, log no error) rather than a disconnect. Consumed in finally.
+  const interruptedStreams = new Set();   // CRASH HONESTY: wsIds whose in-flight run died on a NETWORK drop (sidecar
+                                   // crash / lost connection). On a proven reconnect we tell the Commander the run can't resume.
+  let reconnectTimer = 0;          // the single reconnect health-probe poll (armed only while interruptedStreams is non-empty)
   const queued = new Map();        // TYPE-AHEAD: wsId -> [text,…] follow-ups typed while the stream was busy; auto-sent in order as it frees
   let activeLiveRow = null;     // streaming text controller for the DISPLAYED stream's in-flight run; rebound by replayChannel on switch
                                 // CLASSIC HARNESS FLOW: prose and the agent's actions (tool ▶/◀ lines, deliverables, approval
@@ -61,6 +64,7 @@ const Chat = (() => {
   let trustRunsSeen = new Set();// GROWTH Tier 3: runIds already trust-offered (agent.run.end can re-fire; offer once per run)
   let activeTrust = null;       // GROWTH Tier 3: the single visible trust offer card { node, offer, decided }
   let activeNudge = null;       // the live curiosity nudge { row, choiceRow, dim } — retired if a turn-in claims the post-run beat
+  let recruitShown = false;     // adaptive recruitment: the ONE recruit beat is offered at most once per session (in-memory, resets each app run)
   let activeTurnin = null;      // the single visible memory-review deck; later batches queue behind it
   const turninQueue = [];       // memory-review batches waiting for the visible deck to finish
   const activeChoiceRows = new Set();   // one-shot chip rows; cleared when a typed answer supersedes them
@@ -68,11 +72,35 @@ const Chat = (() => {
   const receiptRunsSeen = new Set();    // runIds whose SILENT auto-saved receipts already rendered (memory.write triggers once per run)
   const runWork = new Map();    // runId -> { toolsOk, delivered, cost, agentId } captured at run end → the "rate the work"
                                 // beat's HONEST, un-farmable size + the delivery gate (real tools/deliverables only). FIFO-capped.
+  // P3.2 CREW ATTRIBUTION: a lead run that dispatched crew gets each worker's PROVABLE spend so a 👍 on the run
+  // can split its XP mint honestly. Fed by wireCrewCapture (below): every forwarded worker agent.run.end lands in
+  // a rolling buffer keyed by the worker's OWN runId; at the lead's run.end we CLAIM the workers whose run fell
+  // inside this lead run's live window (start→end). Only NAMED roster workers (team.dispatch) are attributable —
+  // ephemeral team.spawn clones (sub-* ids, no persistent identity) are filtered out (crediting a vanished clone
+  // would be a lie). runCrew: leadRunId -> [{ agentId, usd }]. crewSeen: the rolling worker buffer.
+  const crewSeen = [];          // [{ agentId, usd, runId, at }] — recent forwarded worker run-ends (FIFO, time-windowed)
+  const runCrew = new Map();    // leadRunId -> [{ agentId, usd }] claimed at lead run.end. FIFO-capped alongside runWork.
   const workRatedRuns = new Set();   // runIds already given a 👍/👌/👎 work verdict → one rating per run, never double-mint
   const RUN_META = new Map();   // runId -> { isTask, title } recorded at run START. The bus agent.run.end payload
                                 // carries neither flag, so the post-run advice beats (the First Pitch graduation gate)
                                 // read this to tell a real TASK from casual chat AND to name the run that actually just
                                 // finished. Capped FIFO so a long session can't leak runIds.
+  // G5 SPECTACLE slice 2 — the shareable CLIP recorder. ONE shared bounded ring buffer that quietly samples the
+  // live #stage during a TASK run's active beat (armed at run start, disarmed at run end) so "the last ~10 seconds"
+  // of the floor are always grabbable when the recap card lands. Decoupled from the world rAF loop (its own timer),
+  // so arming never tanks the render loop. Absent module (older bundle) = a null recorder = no clip button. Lazy so
+  // it constructs only when first needed.
+  let clipRecorder = null;
+  const runClip = new Map();   // runId -> [{canvas,t}] the ring-tail snapshot taken at that run's end (FIFO-capped, ≤8 runs)
+  function clipRec() {
+    if (clipRecorder) return clipRecorder;
+    if (typeof Clip === 'undefined' || !Clip.recorder) return null;
+    try { clipRecorder = Clip.recorder({ fps: Clip.DEFAULT_FPS, seconds: Clip.DEFAULT_SECONDS }); } catch (_) { clipRecorder = null; }
+    return clipRecorder;
+  }
+  function armClip() { const r = clipRec(); if (r && !r.armed()) { try { r.arm(); } catch (_) {} } }
+  function disarmClip() { const r = clipRecorder; if (r && r.armed()) { try { r.disarm(); } catch (_) {} } }
+
   const el = id => document.getElementById(id);
   let stick = true;   // STICKY-BOTTOM: auto-scroll only fires when the Commander is already at/near the bottom,
                       // so scrolling UP to re-read history mid-stream isn't yanked back down by every token.
@@ -170,9 +198,26 @@ const Chat = (() => {
     const started = (activeWs && typeof Channels !== 'undefined') ? Channels.startedAtOf(activeWs.id) : 0;
     if (!isBusy() || !started) return;   // teardown resolves/removes it; never draw an idle presence card
     const card = presenceCard(); if (!card) return;
+    // PAUSED-ON-APPROVAL: the run is stopped on the sidecar waiting for the Commander. Restyle the card so it
+    // reads as a deliberate pause (no working pulse) and NAME the pending action — truth source is the same
+    // Channels.pendingOf payload that renders the approval prompt, so this can never claim a pause that isn't real.
+    const pend = (activeWs && typeof Channels !== 'undefined') ? Channels.pendingOf(activeWs.id) : null;
+    const paused = !!pend;
+    card.classList.toggle('paused', paused);
     const verb = card.querySelector('.cp-verb'); if (verb) verb.textContent = presenceVerb();
     const tool = card.querySelector('.cp-tool');
-    if (tool) { const t = presenceCurTool ? shortName(presenceCurTool) : ''; if (tool.textContent !== t) tool.textContent = t; tool.classList.toggle('has', !!t); }
+    if (tool) {
+      if (paused) {
+        // e.g. "paused — waiting for you to approve fs.write"
+        const t = 'paused — waiting for you to approve ' + shortName(pend.tool);
+        if (tool.textContent !== t) tool.textContent = t;
+        tool.classList.add('has'); tool.classList.add('paused-note');
+      } else {
+        tool.classList.remove('paused-note');
+        const t = presenceCurTool ? shortName(presenceCurTool) : '';
+        if (tool.textContent !== t) tool.textContent = t; tool.classList.toggle('has', !!t);
+      }
+    }
     const time = card.querySelector('.cp-time'); const txt = fmtElapsed(Date.now() - started);
     if (time && time.textContent !== txt) time.textContent = txt;
   }
@@ -205,6 +250,32 @@ const Chat = (() => {
     card.textContent = label + (bits.length ? ' · ' + bits.join(' · ') : '');
     card.setAttribute('role', 'note');
     autoscroll();
+  }
+
+  // CRASH HONESTY (Theme 2) — after a run stream died on a network drop, poll /api/health until the sidecar is
+  // PROVABLY back, then tell the Commander their interrupted run can't resume. Truthful telemetry: the
+  // "connection restored" line renders ONLY after a real 200 from the respawned sidecar, never on hope. The
+  // probe self-arms on the drop and self-clears once every interrupted stream has been reported.
+  async function probeReconnect() {
+    if (!interruptedStreams.size) { reconnectTimer = 0; return; }
+    let alive = false;
+    try { const r = await fetch('/api/health', { cache: 'no-store' }); alive = !!(r && r.ok); } catch (_) { alive = false; }
+    if (alive) {
+      // report each interrupted stream once. Only the DISPLAYED stream draws a line (same rule as tool/error
+      // lines); a background stream's flag is cleared quietly — its error row already recorded the failure.
+      const wasActive = activeWs && interruptedStreams.has(activeWs.id);
+      interruptedStreams.clear();
+      reconnectTimer = 0;
+      if (wasActive) toolLine('⏹ connection restored — your last run was interrupted and can\'t resume; start it again.', true);
+    } else {
+      reconnectTimer = setTimeout(probeReconnect, 3000);   // still down — keep watching
+    }
+  }
+  function armReconnectWatch() {
+    if (reconnectTimer) return;
+    // if the browser signals it's back online, probe immediately; otherwise poll on a slow cadence.
+    reconnectTimer = setTimeout(probeReconnect, 2000);
+    try { if (typeof window !== 'undefined' && !window.__runtruthOnlineHook) { window.__runtruthOnlineHook = true; window.addEventListener('online', () => { if (interruptedStreams.size && !reconnectTimer) probeReconnect(); }); } } catch (_) {}
   }
 
   // RETIRE A SETTLED BEAT: a decided memory card / answered nudge fades + collapses, then drops out of the
@@ -321,8 +392,10 @@ const Chat = (() => {
     wireStudy();       // GROWTH Tier 1: after a salient run, offer ≤1 dossier belief-update at turn-in priority (registers once)
     wireArc();         // GROWTH Tier 2: after a clean run, offer ONE goal-decomposition confirm at the LOWEST beat priority (registers once)
     wireTrust();       // GROWTH Tier 3: after a clean run, offer ONE earned-autonomy raise at the LOWEST beat priority — below the arc (registers once)
+    wireCrewCapture(); // P3.2: record each dispatched worker's forwarded run-end spend so a 👍 on a crew run splits XP honestly (registers once)
     wireCuriosity();   // Commander Dossier: one gentle "tell me about X" nudge after a clean run (registers once)
     wireSkillAside();  // A2: after a background review distills a skill, ONE quiet "distilled this run…" aside (registers once)
+    wireIdBar();       // COMMS agent selector: a change switches to (or mints) a workstream bound to that agent (registers once)
     load(opts.ws);
     input.onkeydown = e => {
       // SLASH PALETTE owns the nav keys while open (a "/command" menu over the input)
@@ -364,10 +437,61 @@ const Chat = (() => {
     if (input.value) input.style.height = input.scrollHeight + 'px';
   }
 
+  /* ── COMMS AGENT LINE ────────────────────────────────────────────────────────────────────────────────
+     The top-of-panel identity row: a <select> of every live roster agent (so the Commander picks who's on
+     the line) + a truthful readout of THAT agent's model. Both are filled from App.agents() — never
+     hardcoded — so the header can only ever assert a real roster identity (truthful telemetry). Selecting
+     an agent hands off to App.selectAgent, which switches to (or mints) a workstream bound to that agentId;
+     it never rebinds the current conversation to a different agent. Re-rendered on every load()/switch so the
+     selection + model always match the displayed stream (including changes made in the footer dock/dossier). */
+  function agentModelText(a) {
+    if (!a) return '';
+    const model = a.model ? String(a.model) : '';
+    if (!model) return 'follows station default';
+    // reuse the dock's short-label vocabulary when present; else the last path segment (never invent a name)
+    return (typeof ModelDock !== 'undefined' && ModelDock.labels && ModelDock.labels.short)
+      ? ModelDock.labels.short(model)
+      : ((model.split('/').pop() || model).toUpperCase());
+  }
+  function renderIdBar() {
+    const sel = el('comms-agent-select'); const modelEl = el('comms-agent-model'); const bar = el('comms-idbar');
+    if (!sel) return;
+    const list = (typeof App !== 'undefined' && App.agents) ? (App.agents() || []) : [];
+    const activeId = activeWs ? (activeWs.agentId || 'agent') : null;
+    // rebuild the <option> set only when the roster (ids+names) or selection changed, so a redundant re-render
+    // never collapses a mid-open native dropdown.
+    const key = list.map(a => a.id + ':' + (a.name || a.id)).join('|') + '#' + (activeId == null ? '' : activeId);
+    if (sel.__idKey !== key) {
+      sel.__idKey = key;
+      sel.innerHTML = '';
+      for (const a of list) { const o = document.createElement('option'); o.value = a.id; o.textContent = a.name || a.id; sel.appendChild(o); }
+      if (activeId != null) sel.value = activeId;
+    }
+    const cur = list.find(a => a.id === activeId) || null;
+    if (modelEl) modelEl.textContent = cur ? agentModelText(cur) : '';
+    if (bar) bar.hidden = !list.length;   // no roster yet (pre-wake) → hide the row rather than show an empty selector
+  }
+  // wire the agent <select> once: a change hands off to App.selectAgent (switch/mint a stream bound to that
+  // agent). Registered from init() so a re-init can't stack handlers.
+  function wireIdBar() {
+    const sel = el('comms-agent-select');
+    if (!sel || sel.__wired) return;
+    sel.__wired = true;
+    sel.addEventListener('change', () => {
+      const id = sel.value;
+      if (typeof SFX !== 'undefined' && SFX.click) SFX.click();
+      if (typeof App !== 'undefined' && App.selectAgent) App.selectAgent(id);
+      // App.selectAgent → switchWorkstream → Chat.load → renderIdBar, so the model readout follows the switch.
+    });
+  }
+
   // swap the rendered conversation to a workstream (its history). Used on enter/resume and when the
   // Commander clicks another stream in the rail — re-renders without re-wiring the input row.
   function load(ws) {
     activeWs = ws || (typeof Workstreams !== 'undefined' ? Workstreams.active() : null);
+    // SPEAKER IDENTITY: re-resolve `name` (the reply-chip + agent-beat speaker, else stuck at init's hero) from the
+    // displayed stream's agent, so switching agents relabels replies. Guard: an unknown id keeps the current name.
+    if (activeWs && typeof App !== 'undefined' && App.agentName) { const nm = App.agentName(activeWs.agentId || 'agent'); if (nm) name = nm; }
     activeTurnin = null; turninQueue.length = 0; clearChoices();   // visible review/choice layers belong to the current COMMS DOM
     activeStudy = null;   // the study card is the same kind of visible review layer — it belongs to the outgoing DOM
     activeTrust = null;   // GROWTH Tier 3: the trust offer card is likewise a visible review layer bound to the outgoing DOM
@@ -391,6 +515,7 @@ const Chat = (() => {
     // behavior: the focused body, while idle, stops wandering and holds its attention on you (faces you, tracks the
     // cursor); it yields instantly to a reply run and resumes after. This is the ONLY chat.js change for D1 (G7).
     if (typeof World !== 'undefined' && World.setChatFocus) World.setChatFocus(activeWs ? (activeWs.agentId || 'agent') : null);
+    renderIdBar();   // the agent selector + model readout follow the displayed stream's agent
   }
 
   function setSystem(s) { system = s; }
@@ -647,6 +772,59 @@ const Chat = (() => {
       fileBlobUrl(title, agentId).then(u => { try { window.open(u, '_blank', 'noopener'); } catch (_) {} }).catch(() => {});
     });
   }
+
+  // ── "OPEN FOLDER" AFFORDANCE (Theme 4: outputs are findable) ──────────────────────────────────
+  // A deliverable landed on disk in the agent's workspace; a beginner needs to be able to FIND it.
+  // The absolute per-agent dir comes from the additive /api/workspace/dir route (the frontend otherwise
+  // only knows the relative filename). On desktop we try a native reveal-in-folder command IF the shell
+  // ever exposes one (starnet_reveal_path), and ALWAYS fall back to copying the real path; in the browser
+  // there is no filesystem to open, so the button copies the path. Truthful: the button does exactly what
+  // its label says — it never claims to open a folder it can't.
+  const _wsDirCache = new Map();   // agentId -> Promise<absolute dir | ''>
+  function workspaceDir(agentId) {
+    const aid = agentId || 'agent';
+    if (_wsDirCache.has(aid)) return _wsDirCache.get(aid);
+    const tok = (typeof Harness !== 'undefined' && Harness.apiToken) ? String(Harness.apiToken() || '') : '';
+    const p = fetch('/api/workspace/dir?agent=' + encodeURIComponent(aid) + (tok ? '&token=' + encodeURIComponent(tok) : ''), { cache: 'no-store' })
+      .then(r => r.ok ? r.json() : null).then(j => (j && j.dir) ? String(j.dir) : '').catch(() => '');
+    _wsDirCache.set(aid, p);
+    return p;
+  }
+  function tauriCore() {
+    return (typeof window !== 'undefined' && window.__TAURI__ && window.__TAURI__.core) ? window.__TAURI__.core : null;
+  }
+  // Build a small "📁 folder" control. `relPath` (optional) is the deliverable's own path so a future
+  // native reveal can select the file; today it reveals/copies the containing workspace dir.
+  function folderButton(agentId, relPath) {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'deliverable-folder';
+    b.textContent = '📁 folder';
+    const desktop = !!tauriCore();
+    b.title = desktop ? 'reveal this deliverable’s folder on disk' : 'copy the folder path on disk';
+    let dirP = null;
+    b.addEventListener('click', () => {
+      if (!dirP) dirP = workspaceDir(agentId);
+      dirP.then(dir => {
+        if (!dir) { b.textContent = '📁 no path'; setTimeout(() => { b.textContent = '📁 folder'; }, 1400); return; }
+        const core = tauriCore();
+        if (core && core.invoke) {
+          // native reveal IF the shell exposes it; otherwise fall through to copy (never a silent no-op)
+          Promise.resolve(core.invoke('starnet_reveal_path', { path: dir })).then(() => {
+            b.textContent = '📁 opened'; setTimeout(() => { b.textContent = '📁 folder'; }, 1400);
+          }).catch(() => copyPathFeedback(b, dir));
+        } else {
+          copyPathFeedback(b, dir);
+        }
+      });
+    });
+    return b;
+  }
+  function copyPathFeedback(btn, dir) {
+    copyText(dir).then(ok => {
+      btn.textContent = ok ? '📁 path copied' : '📁 ' + dir;
+      setTimeout(() => { btn.textContent = '📁 folder'; }, 1600);
+    });
+  }
   function deliverableLine(title, agentId) {
     const r = row('agent'); r.d.classList.add('tool'); r.d.classList.add('deliverable');
     r.body.appendChild(document.createTextNode('▤ saved '));
@@ -656,6 +834,7 @@ const Chat = (() => {
     a.title = title;                                               // full path on hover
     a.className = 'deliverable-link';
     r.body.appendChild(a);
+    r.body.appendChild(folderButton(agentId, title));             // Theme 4: make the file findable on disk
     autoscroll();
   }
   // an image the agent generated (image_generate / the `studio` capability) — render it INLINE as a small
@@ -748,16 +927,18 @@ const Chat = (() => {
     link.title = path;
     d.appendChild(link);
     if (typeof a.bytes === 'number' && a.bytes >= 0) d.appendChild(document.createTextNode(' — ' + fmtBytes(a.bytes)));
-    // reveal the path: click-to-copy of the workspace path (no shell-open pattern exists in this frontend —
-    // per the design contract we don't invent new Tauri permissions for it).
+    // click-to-copy of the deliverable's own (relative) path — kept for quick reference.
     const cp = document.createElement('button'); cp.type = 'button'; cp.className = 'recap-copy';
     cp.textContent = '⧉'; cp.title = 'copy path: ' + path;
     cp.onclick = () => copyText(path).then(ok => { if (!ok) return; cp.textContent = '✓'; setTimeout(() => { cp.textContent = '⧉'; }, 1100); });
     d.appendChild(cp);
+    // Theme 4: an "open folder" affordance that resolves the REAL absolute workspace dir on disk
+    // (desktop reveals if the shell supports it; browser copies the path) so the file is findable.
+    if (a.kind !== 'message') d.appendChild(folderButton(agentId, path));
     return d;
   }
   const RECAP_MAX_ROWS = 12;   // a monster run lists the first dozen + a "+N more" note (the RUNS panel has the rest)
-  function recapCard(entry, arts, agentId, durMs) {
+  function recapCard(entry, arts, agentId, durMs, runId) {
     const r = row('agent'); r.d.classList.add('tool'); r.d.classList.add('recap');
     const done = (entry.reason || 'done') === 'done';
     const head = document.createElement('div'); head.className = 'recap-line recap-head';
@@ -781,7 +962,41 @@ const Chat = (() => {
       share.onclick = () => firePostcard(entry, arts, agentId, durMs, share);
       r.body.appendChild(share);
     }
+    // G5 SPECTACLE slice 2 — the SHAREABLE CLIP affordance (⏺). Sibling of ⎙ postcard, same quiet chrome, same
+    // "never the beat slot" rule. Only shown when this run actually captured floor frames (the ring was armed for
+    // a task run AND held frames at run end) — a run with nothing recorded gets no dead button. Mints the ~10s GIF.
+    const frames = (runId && runClip.has(runId)) ? runClip.get(runId) : null;
+    if (typeof Clip !== 'undefined' && Clip.capture && frames && frames.length) {
+      const rec = document.createElement('button'); rec.type = 'button'; rec.className = 'recap-clip';
+      rec.textContent = '⏺ clip'; rec.title = 'save a shareable ~10s GIF of this run';
+      rec.onclick = () => fireClip(entry, arts, agentId, durMs, frames, rec);
+      r.body.appendChild(rec);
+    }
     autoscroll();
+  }
+
+  /* Mint the shareable CLIP for a completed run. Feeds the Clip reducer ONLY provable telemetry (the same run
+     entry the postcard uses) plus the run's captured floor frames; the overlay carries NO XP delta (XP mints only
+     from user feedback, so it is unknowable at clip time). Encodes the GIF in-page (no network) + downloads it. */
+  function fireClip(entry, arts, agentId, durMs, frames, btn) {
+    const agent = (typeof App !== 'undefined' && App.currentAgent) ? App.currentAgent() : null;
+    const run = {
+      reason: entry.reason, title: entry.title,
+      artifacts: Array.isArray(arts) ? arts : (entry.artifacts || []),
+      usd: entry.usd, unmetered: entry.unmetered, model: entry.model, tokens: entry.tokens,
+    };
+    // a throwaway recorder-shaped view over the already-captured frames (Clip.capture reads .frames()/.fps()).
+    const view = { frames: () => frames, fps: () => (typeof Clip !== 'undefined' ? Clip.DEFAULT_FPS : 10) };
+    if (btn) { btn.disabled = true; btn.textContent = '⏺ encoding…'; }
+    // encode off the paint path so the button repaint lands first (GIF encode is a few hundred ms of array math).
+    setTimeout(() => {
+      Clip.capture({ run: run, durMs: durMs, agent: agent, recorder: view })
+        .then(res => {
+          if (btn) { btn.textContent = '⏺ saved'; btn.title = res.name + ' — ' + res.frames + ' frames · ' + res.seconds + 's'; }
+          if (typeof SFX !== 'undefined' && SFX.click) { try { SFX.click(); } catch (_) {} }
+        })
+        .catch(() => { if (btn) { btn.disabled = false; btn.textContent = '⏺ clip'; } });
+    }, 20);
   }
 
   /* Capture the postcard for a completed run. Assembles ONLY provable numbers (the Postcard reducer decides
@@ -815,7 +1030,7 @@ const Chat = (() => {
       const arts = Array.isArray(entry.artifacts) ? entry.artifacts : [];   // a legacy row fails open to []
       if (!arts.length && (entry.reason || 'done') === 'done') return;      // quiet clean finish — leave the flow untouched
       if (!isActiveWs(ws)) return;   // the work-log register renders on the on-screen stream only, same as tool lines
-      recapCard(entry, arts, agentId, durMs);
+      recapCard(entry, arts, agentId, durMs, runId);
     } catch (_) { /* the recap is best-effort — it must never disturb the turn teardown */ }
   }
 
@@ -845,6 +1060,7 @@ const Chat = (() => {
       // can tell an approve from a deny and narrate the consent loop honestly. Additive; the run resumes via Harness.consent.
       try { if (typeof U !== 'undefined' && U.bus) U.bus.emit('permission.response', { promptId: p.promptId, decision: decision }); } catch (_) {}
       if (ws && typeof Channels !== 'undefined') Channels.clearPending(ws.id);
+      if (isActiveWs(ws)) renderPresence();   // drop the paused styling the instant the run resumes
       btns.remove();
       const tag = document.createElement('span');
       tag.className = 'consent-result' + (isDeny ? ' err' : '');
@@ -899,6 +1115,23 @@ const Chat = (() => {
     // DIRECT call — never U.bus.emit / never /api/memory/turnin. The 'work:'+runId id resolves to NO memory
     // record, so the sidecar memcore trust path is never touched (delta here is an XP size only).
     if (typeof XpStore !== 'undefined' && XpStore.onEvent) XpStore.onEvent('memory.feedback', { agentId: agentId || 'agent', id: 'work:' + runId, runId: runId, delta: delta, reason: reason, size: size });
+    // P3.2 CREW-RUN RATEABILITY — if this LEAD run dispatched crew whose spend is provable, split the SAME verdict
+    // across them HONESTLY: each worker earns a cost-proportional share of the size-weighted mint (crewSplit), riding
+    // the identical direct memory.feedback path into ITS OWN XpStore identity. Truthful attribution: a worker earns
+    // only when the harness proved its contribution (usd > 0); if no split is provable, no worker is credited and
+    // nothing false is said. The LEAD keeps its full delta above (it owns + synthesized the run). Only hero-lead runs
+    // carry crew (runCrew is populated only for agentId 'agent'). Fail-open — a missing split never blocks the rating.
+    try {
+      const crew = (agentId || 'agent') === 'agent' ? runCrew.get(runId) : null;
+      if (crew && crew.length && typeof Xp !== 'undefined' && Xp.crewSplit && typeof XpStore !== 'undefined' && XpStore.onEvent) {
+        const split = Xp.crewSplit({ leadDelta: delta, leadCost: (w && w.cost) || 0, workers: crew });
+        for (const wk of split.workers) {
+          if (!wk || !wk.agentId) continue;
+          // a worker's share rides the SAME synthetic-id mint path — its own agentId resolves to its roster stats.
+          XpStore.onEvent('memory.feedback', { agentId: wk.agentId, id: 'work:' + runId + ':' + wk.agentId, runId: runId, delta: wk.delta, reason: reason, size: wk.size });
+        }
+      }
+    } catch (_) {}
     // G3a confidence narrative: the same DIRECT hand-off (this verdict never rides the bus, so the fire-once
     // calibration/TRUSTED beats must be told here, AFTER the meter folded). Speaks at most twice, ever; mints nothing.
     if (typeof ConfBeats !== 'undefined' && ConfBeats.onFeedback) { try { ConfBeats.onFeedback({ agentId: agentId || 'agent', id: 'work:' + runId, delta: delta, reason: reason }); } catch (_) {} }
@@ -915,6 +1148,23 @@ const Chat = (() => {
     // AFTER the taste beat so this verdict's other one-beat consumers keep their precedence; BottleStore's own slot
     // guards (busy / a live rate|turn-in control) already stop it from stacking on any beat still on screen.
     if (typeof BottleStore !== 'undefined' && BottleStore.onVerdict) { try { BottleStore.onVerdict(runId, verdict, agentId || 'agent'); } catch (_) {} }
+    // P3.1 RE-SUMMON SIGNAL: a 👍 on a real interactive run may earn a one-time "run it again?" beat — SAME direct
+    // hand-off, SAME shared gold-inset slot + defer-not-stack discipline as BottleStore. Bottle and re-summon are
+    // BOTH 👍-triggered offers competing for the ONE post-run beat, so they must be MUTUALLY EXCLUSIVE per run:
+    // BottleStore keeps priority (the marketplace-growth signal). We fire re-summon ONLY when bottle will NOT offer
+    // for this run — computed synchronously via BottleStore's pure gate on the run's honest info — so a given 👍
+    // run shows at most ONE of the two (never a bottle→re-summon double-ask, never a slot clobber). A recipe-launched
+    // run (bottle stands down: it already IS a recipe) is exactly where re-summon shines. Fail-open.
+    if (typeof ResummonStore !== 'undefined' && ResummonStore.onVerdict) {
+      try {
+        let bottleWillOffer = false;
+        if (typeof BottleStore !== 'undefined' && BottleStore.shouldOffer && typeof App !== 'undefined' && App.runBottleInfo && BottleStore.isDecided && BottleStore._state) {
+          const bs = BottleStore._state(); const bi = App.runBottleInfo(runId);
+          bottleWillOffer = !!(bi && !BottleStore.isDecided(bs, runId) && BottleStore.shouldOffer(bs, verdict, bi));
+        }
+        if (!bottleWillOffer) ResummonStore.onVerdict(runId, verdict, agentId || 'agent');
+      } catch (_) {}
+    }
   }
   // render the rate-the-work control into `host` (a span/div). onSettle fires after the verdict flashes.
   function workRateControl(host, agentId, runId, onSettle) {
@@ -1069,6 +1319,11 @@ const Chat = (() => {
     const dis = document.createElement('button'); dis.className = 'consent-btn deny'; dis.textContent = 'dismiss';
     dis.onclick = () => vanish(r.d);
     foot.appendChild(dis);
+    // ADOPTION (Lane F): a dim line so dismissing doesn't read as LOSING the runs — they wait on the OUTBOX crate.
+    if (typeof ReturnStore !== 'undefined' && ReturnStore.outboxLine) {
+      const keep = document.createElement('span'); keep.className = 'turnin-queue'; keep.textContent = ReturnStore.outboxLine();
+      foot.appendChild(keep);
+    }
     r.body.appendChild(foot);
     autoscroll();
   }
@@ -1122,15 +1377,25 @@ const Chat = (() => {
     title.textContent = '◈ while you were away — ' + who + ' built: ' + String(m.title || 'a deliverable');
     r.body.appendChild(title);
 
-    // HONEST verification line — proves off the manifest ONLY.
+    // HONEST verification line — proves off the manifest ONLY. Three truthful states:
+    //   1. the manifest recorded verify commands  → "tested — N of M passed" (+ per-command detail in the pane)
+    //   2. the agent flagged things a human must check (notVerified) → say so, don't imply failure
+    //   3. neither                                → "built — no test commands were defined"
+    // NOTE: today's workshop agent cannot run commands (it is told so in workshopPrompt), so a real manifest
+    // carries no verified.commands — the notVerified path is the common case. State 1 is future-proofing for
+    // when a shift can run tests; it never fabricates a result the manifest doesn't hold.
     const ver = document.createElement('span'); ver.className = 'ws-verline';
-    const vcmds = (m.verified && Array.isArray(m.verified.commands)) ? m.verified.commands : null;
+    const vcmds = (m.verified && Array.isArray(m.verified.commands)) ? m.verified.commands.filter(c => c && c.cmd) : null;
+    const notVer = Array.isArray(m.notVerified) ? m.notVerified.filter(Boolean) : [];
     if (vcmds && vcmds.length) {
-      const passed = vcmds.filter(c => c && Number(c.exit) === 0).length;
+      const passed = vcmds.filter(c => Number(c.exit) === 0).length;
       ver.textContent = 'tested — ' + passed + ' of ' + vcmds.length + ' command' + (vcmds.length > 1 ? 's' : '') + ' passed';
-      if (passed === vcmds.length) ver.classList.add('ok');
+      ver.classList.add(passed === vcmds.length ? 'ok' : 'dim');
+    } else if (notVer.length) {
+      ver.textContent = 'built — the agent couldn’t test here; ' + notVer.length + ' thing' + (notVer.length > 1 ? 's' : '') + ' for you to check';
+      ver.classList.add('dim');
     } else {
-      ver.textContent = 'built, not yet tested';
+      ver.textContent = 'built — no test commands were defined';
       ver.classList.add('dim');
     }
     r.body.appendChild(ver);
@@ -1174,6 +1439,22 @@ const Chat = (() => {
       mkLine('what', m.summary || '');
       mkLine('how to use', m.howToUse || '');
       if (Array.isArray(m.notVerified) && m.notVerified.length) mkLine('not verified', m.notVerified.join('; '));
+      // per-command verification detail: the ACTUAL commands run + each one's pass/fail from the manifest
+      // (renders only when the manifest actually recorded them — never invents a command or a result).
+      if (vcmds && vcmds.length) {
+        const vd = document.createElement('div'); vd.className = 'ws-verdetail';
+        const vh = document.createElement('div'); vh.className = 'ws-k'; vh.textContent = 'verification'; vd.appendChild(vh);
+        vcmds.forEach(c => {
+          const ok = Number(c.exit) === 0;
+          const line = document.createElement('div'); line.className = 'ws-vcmd ' + (ok ? 'ok' : 'bad');
+          const mark = document.createElement('span'); mark.className = 'ws-vmark'; mark.textContent = ok ? '✓' : '✕';
+          const cmd = document.createElement('code'); cmd.className = 'ws-vcmdtext'; cmd.textContent = String(c.cmd);
+          line.appendChild(mark); line.appendChild(cmd);
+          if (!ok && c.exit != null) { const ex = document.createElement('span'); ex.className = 'ws-vexit'; ex.textContent = 'exit ' + c.exit; line.appendChild(ex); }
+          vd.appendChild(line);
+        });
+        sum.appendChild(vd);
+      }
       pane.appendChild(sum);
 
       // ── pane 2: jailed file browser ──
@@ -1204,12 +1485,44 @@ const Chat = (() => {
 
       // ── three actions, one row ──
       const acts = document.createElement('div'); acts.className = 'turnin-rate ws-acts';
-      // KEEP — a simple path input (default = the Commander's Desktop) then decide keep.
+      // KEEP — pick a destination folder. On desktop we offer a native folder picker (Tauri) IF the shell
+      // exposes one, and ALWAYS keep the typed path as a fallback with INLINE validation (does the folder
+      // exist? — asked of the sidecar) so a bad path is caught before Keep instead of failing silently.
       const keepWrap = document.createElement('span'); keepWrap.className = 'ws-keep';
       const path = document.createElement('input'); path.className = 'turnin-edit ws-path'; path.type = 'text';
       path.placeholder = 'folder to copy into'; path.value = opts.desktopDefault || '';
       path.setAttribute('aria-label', 'Destination folder to keep the deliverable in');
+      const hint = document.createElement('span'); hint.className = 'ws-pathhint'; hint.hidden = true;
       const keepBtn = document.createElement('button'); keepBtn.className = 'consent-btn'; keepBtn.textContent = 'Keep';
+
+      // inline validation: debounced dirstat; a nonexistent/typo'd folder shows a quiet warning (never blocks —
+      // keep still creates the folder, but the Commander sees the truth about their path first).
+      let validateTimer = null;
+      function validatePath() {
+        const dest = String(path.value || '').trim();
+        if (!dest) { hint.hidden = true; return; }
+        fetch('/api/fs/dirstat?path=' + encodeURIComponent(dest), { cache: 'no-store' })
+          .then(r => r.ok ? r.json() : null).then(j => {
+            if (!j) { hint.hidden = true; return; }
+            if (j.exists && j.isDir) { hint.hidden = true; }
+            else if (j.exists && !j.isDir) { hint.hidden = false; hint.textContent = '⚠ that path is a file, not a folder'; }
+            else { hint.hidden = false; hint.textContent = '⚠ that folder doesn’t exist yet — it will be created'; }
+          }).catch(() => { hint.hidden = true; });
+      }
+      path.addEventListener('input', () => { if (validateTimer) clearTimeout(validateTimer); validateTimer = setTimeout(validatePath, 400); });
+
+      const core = tauriCore();
+      let pickBtn = null;
+      if (core && core.invoke) {
+        pickBtn = document.createElement('button'); pickBtn.className = 'consent-btn ws-pick'; pickBtn.textContent = '📁 choose…';
+        pickBtn.title = 'pick a folder';
+        pickBtn.onclick = () => {
+          Promise.resolve(core.invoke('starnet_pick_folder', {})).then(dir => {
+            if (dir) { path.value = String(dir); validatePath(); }
+          }).catch(() => { /* shell has no picker yet — the typed path is the fallback */ path.focus(); });
+        };
+      }
+
       keepBtn.onclick = async () => {
         const dest = String(path.value || '').trim();
         if (!dest) { path.focus(); return; }
@@ -1218,7 +1531,7 @@ const Chat = (() => {
         if (res && res.ok) settle('✓ kept — files copied to ' + (res.destPath || dest), false);
         else { keepBtn.disabled = false; keepBtn.textContent = 'Keep'; localLine('Could not keep this: ' + ((res && res.error) || 'the station refused the copy') + '.'); }
       };
-      keepWrap.appendChild(path); keepWrap.appendChild(keepBtn);
+      keepWrap.appendChild(path); if (pickBtn) keepWrap.appendChild(pickBtn); keepWrap.appendChild(keepBtn); keepWrap.appendChild(hint);
       acts.appendChild(keepWrap);
 
       // LATER — dismiss; the card may return next session (no confirm).
@@ -1266,7 +1579,11 @@ const Chat = (() => {
   function updateTurninQueueNote() {
     if (!activeTurnin || !activeTurnin.queueNote) return;
     const waiting = turninQueue.length;
-    activeTurnin.queueNote.textContent = waiting ? waiting + ' more review ' + (waiting > 1 ? 'batches' : 'batch') + ' waiting' : '';
+    // A passive counter (NOT a second beat — one-beat-at-a-time is untouched): naming that another
+    // follow-up is queued keeps the ~1-2s inter-beat gap from reading as a hang/crash to a beginner.
+    activeTurnin.queueNote.textContent = waiting
+      ? (waiting === 1 ? '1 more follow-up after this…' : waiting + ' more follow-ups after this…')
+      : '';
     activeTurnin.queueNote.hidden = !waiting;
   }
 
@@ -2009,6 +2326,29 @@ const Chat = (() => {
     return { row: r.d, choiceRow: choiceRow };
   }
 
+  // ADAPTIVE RECRUITMENT beat: propose the single NEW teammate the Commander's real workflow points to, ONCE per
+  // session, through the shared gentle nudge (so it rides the same one-beat-at-a-time lifecycle + vanish()). The
+  // WHY is the exact same honest, counter-derived line the bay's CURATED shelf shows (both read RecruiterStore) —
+  // so the beat and the shelf can never disagree. Accepting deep-links into the recruitment bay's summon flow.
+  // Returns true iff a beat was actually shown (so the caller can claim the slot). Never fabricates: a cold/thin
+  // signal → RecruiterStore.topPick() is null → this is a no-op and the chain falls through to curiosity.
+  function maybeRecruit() {
+    if (recruitShown) return false;                                        // one recruit offer per session (anti-nag)
+    if (typeof RecruiterStore === 'undefined' || !RecruiterStore.topPick) return false;
+    if (typeof App === 'undefined' || !App.openSummonBay) return false;    // no deep-link target → don't offer
+    let pick = null; try { pick = RecruiterStore.topPick(); } catch (_) { return false; }
+    if (!pick || !pick.spec) return false;                                 // not warm / nobody to recommend honestly
+    const name = pick.spec.name || pick.classId;
+    // the line: name the class + its honest, real-counter why. Lower-cased why joins mid-sentence cleanly.
+    const line = '✦ your crew could use a ' + name + ' — ' + String(pick.why || '').replace(/^./, c => c.toLowerCase());
+    recruitShown = true;                                                   // spend the session's single recruit offer (even on dismiss — never re-ask this session)
+    if (typeof SFX !== 'undefined' && SFX.idea) { try { SFX.idea(); } catch (_) {} }   // same soft chime as the idea beat
+    nudge(line, [{ label: 'meet them', value: 'go' }, { label: 'not now', value: 'no', skip: true }], choice => {
+      if (choice && choice.value === 'go') { try { App.openSummonBay(); } catch (_) {} }
+    });
+    return true;
+  }
+
   /* A2 — THE SKILL ASIDE. When the quiet background review distills a completed run into a saved skill it fires
      the EXISTING `deliverable` (kind:'skill') event (see skillreview.makeReviewObserver). Here we surface ONE
      gentle, NON-interactive gold-inset aside — "◈ <agent> distilled this run into skill: <name>" — so the
@@ -2060,6 +2400,41 @@ const Chat = (() => {
       skillAside(p.title, agentId);
     });
   }
+  // P3.2 — CAPTURE FORWARDED CREW SPEND. A team.dispatch worker runs its own agent loop and its agent.run.end is
+  // forwarded onto the lead's stream (orchestration.js FORWARD) → it reaches U.bus with the worker's OWN runId,
+  // agentId, and reconciled usd. We record every such worker end into a rolling, time-stamped buffer; the lead's
+  // own run.end (handled in the Harness.chat block) CLAIMS the workers that fired inside its live window. Only a
+  // NAMED roster worker is attributable: an ephemeral team.spawn clone (sub-* id, no persistent identity) vanishes,
+  // so crediting it would be a lie — filtered here. Hero self-runs (agentId 'agent') are never crew. Read-only.
+  let crewCaptureWired = false;
+  function wireCrewCapture() {
+    if (crewCaptureWired || typeof U === 'undefined' || !U.bus) return;
+    crewCaptureWired = true;
+    U.bus.on('agent.run.end', p => {
+      if (!p) return;
+      const aid = String(p.agentId || 'agent');
+      if (aid === 'agent') return;                      // the hero's own run, not a delegated worker
+      if (/^sub-/.test(aid)) return;                    // ephemeral team.spawn clone — no persistent XP identity, never credited
+      const usd = Math.max(0, (typeof p.usd === 'number' && isFinite(p.usd)) ? p.usd : 0);
+      crewSeen.push({ agentId: aid, usd: usd, runId: String(p.runId || p.id || ''), at: Date.now() });
+      if (crewSeen.length > 80) crewSeen.shift();       // rolling window — a long session can't grow it forever
+    });
+  }
+  // claim the crew workers that ran inside a lead run's live window [startedAt, now]. Returns [{ agentId, usd }],
+  // aggregated per worker (a worker dispatched twice in one run sums its spend). Consumes matched entries so a
+  // later lead run can't re-claim them. Pure-ish (mutates crewSeen); the honest attribution list for crewSplit.
+  function claimCrew(startedAt) {
+    if (!(startedAt > 0) || !crewSeen.length) return [];
+    const lo = startedAt - 250;   // small slop: a worker's forwarded end can arrive a beat before the lead's onRunId lands
+    const byAgent = new Map();
+    for (let i = crewSeen.length - 1; i >= 0; i--) {
+      const e = crewSeen[i];
+      if (e.at < lo) break;        // buffer is time-ordered; older than this window → stop scanning
+      byAgent.set(e.agentId, { agentId: e.agentId, usd: (byAgent.get(e.agentId) || { usd: 0 }).usd + e.usd });
+      crewSeen.splice(i, 1);       // consumed — never double-attributed to a second lead run
+    }
+    return Array.from(byAgent.values());
+  }
   function wireCuriosity() {
     if (curiosityWired || typeof U === 'undefined' || !U.bus) return;
     curiosityWired = true;
@@ -2108,6 +2483,12 @@ const Chat = (() => {
         // SELF-GROWING SEED (Slice 5): if a recurring pattern is ripe, the agent offers to author it as a one-tap
         // seed — takes this one beat (after a suggestion, before curiosity) so it never stacks two asks on a task.
         if (typeof SeedStore !== 'undefined' && SeedStore.willPropose && SeedStore.propose && SeedStore.willPropose()) { SeedStore.propose(); return; }
+        // ADAPTIVE RECRUITMENT: once the station has a WARM read of the Commander's real workflow and it points to a
+        // NEW teammate the crew doesn't have, offer ONCE — through THIS single post-run beat, sharing every guard
+        // above (work-earned floor, busy/interview/turn-in, one-beat-at-a-time). Never a parallel nag channel: it
+        // competes for the same slot and only takes it when the suggestion/seed didn't. Accepting deep-links into
+        // the recruitment bay's summon flow. At most once per session.
+        if (maybeRecruit()) return;
         if (typeof CuriosityStore === 'undefined') return;
         const dim = CuriosityStore.consider();
         if (!dim) return;
@@ -2295,22 +2676,37 @@ const Chat = (() => {
   // when called without a verdict (legacy callers / unknowns), preserving the old behavior + value:'retry'.
   function offerRetry(verdict) {
     if (!log) return;
-    if (!verdict) { choices([{ label: '↻ Try again', value: 'retry' }], () => retryLast()); return; }
-    if (verdict.action === 'settings') {
-      choices([{ label: '⚙ Open Settings', value: 'settings' }], () => { if (typeof StationUI !== 'undefined' && StationUI.openTerm) StationUI.openTerm('settings'); });
-      return;
-    }
-    if (verdict.action === 'store') {
-      // the STORE (managed credits) lives in the SETTINGS panel; open it so the user can top up or switch to BYOK.
-      choices([{ label: '🛒 Open STORE', value: 'store' }], () => { if (typeof StationUI !== 'undefined' && StationUI.openTerm) StationUI.openTerm('settings'); });
-      return;
-    }
-    if (verdict.action === 'skills') {
-      choices([{ label: '✦ Open SKILLS', value: 'skills' }], () => { if (typeof StationUI !== 'undefined' && StationUI.openTerm) StationUI.openTerm('skills'); });
-      return;
-    }
-    if (verdict.retryable) { choices([{ label: '↻ Try again', value: 'retry' }], () => retryLast()); return; }
-    // non-retryable with no destination: leave no chip rather than inviting a doomed re-run.
+    if (!verdict) { choices([{ label: '↻ Try again', value: 'retry' }], () => retryLast()); diagAffordance(); return; }
+    // ADOPTION (Lane A): every error names its DOOR and opens the exact one. Friendly.actionButton maps the
+    // verdict to { label, run } — capdenied -> REFIT (with the named capability), auth/no-key -> the real key
+    // field or "reconnect ChatGPT", model-not-found -> models. One source of truth; no local per-action ladder.
+    const btn = (typeof Friendly !== 'undefined' && Friendly.actionButton) ? Friendly.actionButton(verdict) : null;
+    if (btn) { choices([{ label: btn.label, value: verdict.action }], () => btn.run()); diagAffordance(); return; }
+    if (verdict.retryable) { choices([{ label: '↻ Try again', value: 'retry' }], () => retryLast()); diagAffordance(); return; }
+    // non-retryable with no destination: leave no primary chip rather than inviting a doomed re-run — but a stuck
+    // user still gets the quiet bug-report affordance so they can grab a diagnostic readout in place.
+    diagAffordance();
+  }
+  // T3.9 — a SECONDARY, quiet "copy diagnostics for a bug report" affordance dropped under a failed turn, alongside
+  // whatever recovery chip offerRetry rendered. Kept low-key (a subdued pill) so it never competes with the primary
+  // action; one tap copies the sidecar-assembled, SECRET-FREE report (Diag.copy) so a user in a failure state can
+  // email a useful report without leaving the moment. Appends its OWN row so picking the primary chip doesn't wipe it.
+  function diagAffordance() {
+    if (!log || typeof Diag === 'undefined' || !Diag.copy) return;
+    const rowEl = document.createElement('div'); rowEl.className = 'choice-row';
+    const b = document.createElement('button'); b.className = 'choice quiet'; b.type = 'button';
+    b.textContent = '📋 copy diagnostics for a bug report';
+    b.addEventListener('click', () => {
+      b.disabled = true;
+      Diag.copy({ notify: false }).then(ok => {
+        b.textContent = ok ? '✓ diagnostics copied — paste into your report' : 'copy failed — try again';
+        if (!ok) { b.disabled = false; return; }
+        if (typeof SFX !== 'undefined' && SFX.click) SFX.click();
+        setTimeout(() => { try { rowEl.remove(); } catch (_) {} }, 2600);
+      });
+    });
+    rowEl.appendChild(b);
+    log.appendChild(rowEl); autoscroll();
   }
 
   // show the Stop control + the queued pills for whatever stream is on screen. Called from syncStatus (covers
@@ -2661,12 +3057,26 @@ const Chat = (() => {
   // agent's away-workshop backlog (POST /api/workshop/queue via WorkshopStore). One line in, one confirm out.
   function buildAwayCommand(args) {
     const text = String(args || '').trim();
-    if (!text) return localLine('Usage: /build-away <what to build> — queues it for this agent to build while you’re away.');
+    if (!text) return localLine('Usage: /build-away <what to build> — queues it for this agent to build on its own recurring away shift.');
     if (typeof WorkshopStore === 'undefined' || !WorkshopStore.queue) return localLine('Away workshop isn’t available on this station.');
     const agentId = (activeWs && activeWs.agentId) || 'agent';
-    WorkshopStore.queue({ agentId: agentId, text: text, sourceType: 'text' }).then(res => {
-      if (res && res.ok) localLine('◈ queued for the away workshop — ' + name + ' will build this in its sandbox while you’re away. You’ll review it on return.');
-      else localLine('Couldn’t queue that: ' + ((res && res.error) || 'the station refused it') + '.');
+    // pass the display name so a needsGrant warning can name the agent.
+    WorkshopStore.queue({ agentId: agentId, text: text, sourceType: 'text', name: name }).then(res => {
+      if (!res || !res.ok) { localLine('Couldn’t queue that: ' + ((res && res.error) || 'the station refused it') + '.'); return; }
+      // ADOPTION (Lane F): the confirm copy comes from WorkshopStore.queueConfirmLine — it encodes the TRUTH that
+      // away builds run on a recurring shift WHILE THE STATION IS UP (never "while the app is closed").
+      if (res.needsGrant) {
+        // queued, but the grant is OFF → it will never build. Show the honest warn + a one-tap toggle (openGrant).
+        localLine(res.warn || 'saved to the build list — but “build while away” is off, so it won’t be built yet.');
+        choices([{ label: '⚙ Turn on “build while away”', value: 'grant' }], () => {
+          WorkshopStore.openGrant(res.agentId || agentId).then(g => {
+            localLine((g && g.ok) ? '✓ “build while away” is on — ' + name + ' will build this on its next away shift.'
+              : 'Couldn’t turn it on: ' + ((g && g.error) || 'try the AUTONOMY settings') + '.');
+          });
+        });
+        return;
+      }
+      localLine(WorkshopStore.queueConfirmLine(name));
     });
   }
   function steerCommand(args) {
@@ -3269,6 +3679,9 @@ const Chat = (() => {
     }
 
     const isTask = Classify.isTaskDirective(text);
+    // G5 SPECTACLE — a TASK run is the watchable beat: arm the clip ring buffer so its last ~10s are grabbable
+    // when the recap lands. Casual chat never records (nothing to share). Disarmed at run end (finally block).
+    if (isTask) armClip();
     // fold the interest tag of a real task into the local user-affinity profile (the signal classify.js
     // already computes here and otherwise discards). Captures only a derived {code|research|general}
     // count — never the message text. Gated on the user's learning flag inside the store.
@@ -3324,6 +3737,7 @@ const Chat = (() => {
     const callNames = {};   // callId -> tool name (the frozen agent.tool_result has no name field)
     const seenDeliv = {};   // title -> true (one openable row per produced file)
     let runToolsOk = 0, runDeliv = 0, thisRunId = null;   // per-run work tally → the "rate the work" beat's size + delivery gate
+    let runStartedAt = 0;   // P3.2: this lead run's start wall-clock → the window claimCrew uses to attribute forwarded worker spend
     activeLiveRow = streamingAgent();
     let acc = '';
     // VOICE STREAMING: when the agent will speak (🔊 on), hand each COMPLETE sentence to Voice as it
@@ -3361,7 +3775,7 @@ const Chat = (() => {
         system: sys, messages: ws.history, agentId: ws.agentId || 'agent', isTask, recurring, signal: ac.signal, streamId: ws.id,
         placed: (typeof World !== 'undefined' && World.heroCaps) ? World.heroCaps(ws.agentId || 'agent') : [],   // THE MOAT: this run's TOOL reach = the agent's REAL placed props (dish→web · cabinet→files · workbench→terminal · …); compute is the freebie
         stationPlaced: (typeof World !== 'undefined' && World.stationCaps) ? World.stationCaps() : [],   // Class Loadouts (shared-gear): station-wide gear for SKILL availability — a desk-only specialist still gets its class skills when the STATION has the gear (tools stay room-scoped via `placed`)
-        onRunId: id => { thisRunId = id; try { RUN_META.set(id, { isTask: !!isTask, title: (ws && ws.title) || '', directive: String(text || ''), fromRecipe: fromRecipe }); if (RUN_META.size > 60) RUN_META.delete(RUN_META.keys().next().value); } catch (_) {} Channels.setRunId(ws.id, id); if (typeof Workstreams !== 'undefined') { Workstreams.appendRun(ws.id, id); if (typeof App !== 'undefined' && App.refreshRail) App.refreshRail(); } },
+        onRunId: id => { thisRunId = id; runStartedAt = Date.now(); try { RUN_META.set(id, { isTask: !!isTask, title: (ws && ws.title) || '', directive: String(text || ''), fromRecipe: fromRecipe, agentId: ws.agentId || 'agent' }); if (RUN_META.size > 60) RUN_META.delete(RUN_META.keys().next().value); } catch (_) {} Channels.setRunId(ws.id, id); if (typeof Workstreams !== 'undefined') { Workstreams.appendRun(ws.id, id); if (typeof App !== 'undefined' && App.refreshRail) App.refreshRail(); } },
         onToken: d => { acc += d; Channels.appendToken(ws.id, d); if (isActiveWs(ws)) { if (activeLiveRow) activeLiveRow.append(d); if (!isTask) World.say(acc); } if (willSpeak) pushSpeech(false); App.refreshUsage(); },
         onUsage: () => App.refreshUsage(),
         // COMMS-PREMIUM: the Channels store still records the pre-formatted STRING (replay/switch-survival is
@@ -3390,7 +3804,7 @@ const Chat = (() => {
             if (typeof StationUI !== 'undefined') StationUI.notify((mk === 'file' ? 'saved ' : 'made ') + ev.title, 'gold', 'runComplete');   // P1-8 category: run produced a deliverable
           }
         },
-        onPermission: ev => { Channels.setPending(ws.id, { promptId: ev.promptId, tool: ev.tool, argsSummary: ev.argsSummary, runId: Channels.runIdOf(ws.id) }); walkToDesk(); if (isActiveWs(ws)) { breakLive(); permissionRow(ev, ws); } },
+        onPermission: ev => { Channels.setPending(ws.id, { promptId: ev.promptId, tool: ev.tool, argsSummary: ev.argsSummary, runId: Channels.runIdOf(ws.id) }); walkToDesk(); if (isActiveWs(ws)) { breakLive(); permissionRow(ev, ws); renderPresence(); } },
         // the lead's team.summon tool asked the station to create a worker: run the REAL summon (App.summonForRequest
         // → the Recruitment Bay's own summonAgent), then ack with the new id so the lead can delegate to it. The id
         // resolves only after the roster POST lands (App awaits it), so the lead's next team.dispatch finds the worker.
@@ -3405,6 +3819,11 @@ const Chat = (() => {
         // PLAIN-LANGUAGE: lead with the beginner-facing message, keep the raw error as a dim sub-line; persist
         // the friendly text (not the plumbing) so a switch-back / replay shows the same readable failure.
         const v = (typeof Friendly !== 'undefined') ? Friendly.friendlyError(error) : { userMessage: error, retryable: true, action: null, raw: error };
+        // CRASH HONESTY: a network-kind failure on an in-flight run = the stream to the sidecar dropped (the
+        // sidecar crashed / the app lost the connection). The run can't be resumed — the sidecar respawns fresh.
+        // Flag this stream so that WHEN the sidecar is provably back (health probe on reconnect) we tell the
+        // Commander their run was interrupted and must be restarted, instead of leaving a silent dead run.
+        if (v.kind === 'network' && thisRunId) { interruptedStreams.add(ws.id); armReconnectWatch(); }
         if (isActiveWs(ws)) { if (activeLiveRow) activeLiveRow.error(v.userMessage, v.raw); if (!isTask) World.say('…' + (v.userMessage.length > 40 ? v.userMessage.slice(0, 40) + '…' : v.userMessage)); }
         ws.history.push({ role: 'assistant', content: '⚠ ' + v.userMessage, error: true });   // so the failure survives a switch-back, not just a transient notify
         if (typeof StationUI !== 'undefined') StationUI.notify(brief(v.userMessage), 'warn');
@@ -3446,9 +3865,16 @@ const Chat = (() => {
         // stash this run's REAL work so the post-run "rate the work" beat can size the XP honestly + gate on real work.
         let runCost = 0;
         if (thisRunId) { runCost = Math.max(0, (Harness.totals().cost || 0) - (before.cost || 0)); runWork.set(thisRunId, { toolsOk: runToolsOk, delivered: runDeliv, cost: runCost, agentId: ws.agentId || 'agent' }); if (runWork.size > 60) runWork.delete(runWork.keys().next().value); }
+        // P3.2 — CLAIM this lead run's dispatched crew (workers whose forwarded run.end fell inside its live window)
+        // so a 👍 verdict can split its XP mint honestly. A run that dispatched no crew records nothing (empty list),
+        // and the split falls back to lead-only — no fabricated attribution. Only a HERO lead run has crew to claim.
+        if (thisRunId && (ws.agentId || 'agent') === 'agent') { const crew = claimCrew(runStartedAt); if (crew.length) { runCrew.set(thisRunId, crew); if (runCrew.size > 60) runCrew.delete(runCrew.keys().next().value); } }
         // COMMS-PREMIUM: resolve the presence card into a compact summary. steps = real successful tool rounds,
         // cost = this run's REAL usd delta — both truthful (shown only when > 0), never fabricated.
         if (isActiveWs(ws)) resolvePresence(ws, { endReason: endReason, steps: runToolsOk, cost: runCost });
+        // G5 SPECTACLE — snapshot the clip ring's tail (the run's last ~10s of floor) for THIS run so the recap
+        // card's ⏺ affordance can mint it. Taken at run end while the ring is freshest; disarm happens in finally.
+        if (thisRunId && isTask) { const r = clipRecorder; const fr = (r && r.frames) ? r.frames() : []; if (fr.length) { runClip.set(thisRunId, fr); if (runClip.size > 8) runClip.delete(runClip.keys().next().value); } }
         // WORK VISIBILITY: a passive recap of what this run PRODUCED, fetched from the run's recorded
         // artifacts ledger. A report, not an ask — it never claims the post-run beat slot. Fire-and-forget.
         if (thisRunId) renderRunRecap(ws, thisRunId, Date.now() - wiPlacedTs);
@@ -3479,6 +3905,7 @@ const Chat = (() => {
     } finally {
       aborters.delete(ws.id);
       interrupted.delete(ws.id);   // consume the stop flag (whether or not it fired)
+      disarmClip();   // G5: stop sampling the floor when the run ends (the tail snapshot was already taken above)
       Channels.end(ws.id);
       // P1: drain this directive from the QUEUE gauge on ANY teardown (shipped, in-band error, or abort) —
       // the backlog is "runs in flight", independent of whether the work shipped.
@@ -3689,5 +4116,5 @@ const Chat = (() => {
   // only" gate maybeStandaloneRate uses — so a pure-chat run is never bottle-offered. Used by App.runBottleInfo (R5).
   function runDidWork(id) { const w = id ? runWork.get(id) : null; return !!(w && ((w.toolsOk || 0) >= 1 || (w.delivered || 0) >= 1)); }
 
-  return { init, load, send, status, localLine, broadcast, setSystem, getHistory, abort, isBusy, beginInterview, endInterview, echoUser, prefill, autoGrowInput, choices, clearChoices, typeLine, nudge, clearNudge, offerCuriosity, offerFork, briefingReceipt, runMeta, runDidWork, awayDigest, awayReview, workshopReturn };
+  return { init, load, send, status, localLine, broadcast, setSystem, getHistory, abort, isBusy, beginInterview, endInterview, echoUser, prefill, autoGrowInput, choices, clearChoices, typeLine, nudge, clearNudge, offerCuriosity, offerFork, briefingReceipt, runMeta, runDidWork, awayDigest, awayReview, workshopReturn, refreshIdBar: renderIdBar };
 })();

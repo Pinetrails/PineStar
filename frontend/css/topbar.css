@@ -50,7 +50,7 @@
 }
 #tb-station .tb-xp-fill {
   display: block; height: 100%; width: 0%;
-  background: var(--gold); box-shadow: 0 0 6px rgba(255,211,74,0.5);
+  background: var(--gold); box-shadow: 0 0 6px rgba(var(--gold-rgb),0.5);
   transition: width var(--t-slow, 400ms) var(--ease-out, ease);
 }
 /* level-up: the app.css .lvup pulse fires on #tb-station; give the sliver a matching

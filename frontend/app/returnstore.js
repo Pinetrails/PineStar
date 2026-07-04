@@ -81,6 +81,21 @@ const ReturnStore = (() => {
     if (opts.enabled !== false) setTimeout(() => { maybeDigest(awaySince); }, DIGEST_DELAY_MS);
   }
 
+  // ---- attendance truth (item #5): a simple, provable read surface UI can consume ----
+  // lastSeen() — the durable heartbeat stamp (ms epoch) of the LAST time this app was known to be running. 0 before
+  // the first heartbeat. This is the same value that defines "away" for the digest, so any UI keyed on it agrees
+  // with the digest boundary (no second, divergent notion of "away").
+  function lastSeen() { return ready() ? (state.lastSeenAt || 0) : 0; }
+  // isAttended() — is the app being watched RIGHT NOW? True once the store is live and heartbeating (init ran, the
+  // 30s timer is armed). The heartbeat only advances while THIS tab runs, so a true here is a provable "someone is
+  // here" — the honest inverse of the "away" condition the away-workshop/digest describe. Fail-safe false.
+  function isAttended() { return !!(ready() && hbTimer); }
+
+  // the copy a digest-dismiss should show (item #3): dismissing the beat is NOT discarding the work — every listed
+  // run's crate is already pending in the OUTBOX and stays collectable there. One honest sentence the render site
+  // (chat.js awayDigest, Lane B) drops next to the dismiss control so "dismiss" never reads as "lose it".
+  function outboxLine() { return 'the crate on the floor holds these until you review them.'; }
+
   // ---- the OUTBOX crate surface (world.js renders from these; clicking the chute reviews) ----
   function pendingCount() { return ready() ? Returns.pendingCount(state) : 0; }
   // open the collect/review beat for the OLDEST uncollected run (FIFO — crates clear in arrival order)
@@ -97,7 +112,7 @@ const ReturnStore = (() => {
   // S2/new-hero: a fresh Commander inherits no prior pending crates or attendance trail.
   function reset() { state = null; fired = false; try { localStorage.removeItem(KEY); } catch (_) {} }
 
-  return { init, pendingCount, reviewNext, resolve, reset };
+  return { init, pendingCount, reviewNext, resolve, reset, lastSeen, isAttended, outboxLine };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = { ReturnStore };

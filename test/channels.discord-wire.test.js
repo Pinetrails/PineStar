@@ -60,7 +60,9 @@ function fakeFetch() { return async () => ({ ok: true, status: 200, async json()
 
   // SECRET-SAFETY: the status handler reports only booleans/state — never the token/key. Guard the shape.
   const dcStatusBody = (idx.split('function handleDiscordStatus')[1] || '').split('function ')[0];
-  A.ok(/configured:\s*!!d\.token/.test(dcStatusBody), 'status reports a boolean "configured" from the token, not the token itself');
+  // `configured` is a boolean derived from the resolved token (keychain/runtime on desktop, plaintext record in
+  // the bare sidecar) via channelToken() — never the token value itself.
+  A.ok(/const configured = !!channelToken\('discord'/.test(dcStatusBody) && /configured:\s*configured\b/.test(dcStatusBody), 'status reports a boolean "configured" from the resolved token, not the token itself');
   A.ok(!/token:\s*d\.token/.test(dcStatusBody), 'status handler never puts the raw token in its JSON');
   A.ok(!/\bkey:\s*d\.key/.test(dcStatusBody), 'status handler never puts the raw key in its JSON');
   A.ok(/notifyAutonomous/.test(dcStatusBody), 'status surfaces the shared autonomous-ping opt-in (parity with Telegram)');

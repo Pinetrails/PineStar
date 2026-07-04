@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "StarNet",
-  "version": "0.1.5",
+  "version": "0.1.8",
   "identifier": "ai.skynet.harness",
   "build": {
     "frontendDist": "../frontend"
@@ -10,7 +10,7 @@
     "withGlobalTauri": true,
     "windows": [],
     "security": {
-      "csp": "default-src 'self'; base-uri 'none'; object-src 'none'; frame-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: http://127.0.0.1:*; media-src 'self' data: blob: http://127.0.0.1:*; connect-src 'self' http://127.0.0.1:* https://openrouter.ai https://api.openai.com https://chatgpt.com https://auth.openai.com https://accounts.spotify.com https://api.spotify.com https://updates.starnet.app; worker-src 'self' blob:"
+      "csp": "default-src 'self'; base-uri 'none'; object-src 'none'; frame-src 'none'; frame-ancestors 'none'; form-action 'none'; script-src 'self' 'unsafe-inline' http://127.0.0.1:*; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: http://127.0.0.1:*; media-src 'self' data: blob: http://127.0.0.1:*; connect-src 'self' http://127.0.0.1:* https://openrouter.ai https://api.openai.com https://chatgpt.com https://auth.openai.com https://accounts.spotify.com https://api.spotify.com; worker-src 'self' blob:"
     }
   },
   "bundle": {
@@ -35,7 +35,7 @@
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEZGN0UzMkRCMjIyMTNGOEMKUldTTVB5RWkyekorLzlDdS90THkxSTNlVk1CVlFaSVErY2lJVlNESDFtR1Uva2tlS1J6WDZCL1UK",
       "endpoints": [
-        "https://updates.starnet.app/desktop/latest.json"
+        "https://github.com/nonfungiblefunyuns-ship-it/starnet-releases/releases/latest/download/latest.json"
       ],
       "windows": {
         "installMode": "passive"

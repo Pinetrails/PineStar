@@ -174,6 +174,17 @@ const Harness = (() => {
     }
     writeScoped(LS.key, p, k || '');
   };
+  // Channel bot tokens (Telegram/Discord). Desktop: store in the OS keychain via Tauri (never over HTTP, never
+  // plaintext) — mirrors setKey for provider keys. Returns a promise that resolves to true when the token was
+  // routed to the keychain, false in the browser build (where the caller lets the token ride the connect POST as
+  // before). An empty token clears the stored token. `DESKTOP` is the only branch — dev/browser keep the old path.
+  function storeChannelToken(channel, token) {
+    const c = String(channel || '').trim().toLowerCase();
+    if (!DESKTOP || !c) return Promise.resolve(false);
+    return Promise.resolve(invoke('harness_store_channel_token', { channel: c, token: token || '' }))
+      .then(() => true)
+      .catch(e => { console.warn('[harness] channel-token store failed:', (e && e.message) || e); return false; });
+  }
   const getModel = () => localStorage.getItem(LS.model) || '';
   const setModel = m => localStorage.setItem(LS.model, m || '');
   const getProv = () => normalizeProviderId(localStorage.getItem(LS.prov) || 'openrouter');
@@ -532,7 +543,7 @@ const Harness = (() => {
   const memoryRestore = o => memoryMutate('declined/restore', o);   // undo a discard — remove one entry from the reject-list
 
   return {
-    getKey, setKey, getModel, setModel, getProv, setProv, getBaseUrl, setBaseUrl, getReasoningEffort, setReasoningEffort, normalizeReasoningEffort, init, configured, hasStoredCredential,
+    getKey, setKey, storeChannelToken, getModel, setModel, getProv, setProv, getBaseUrl, setBaseUrl, getReasoningEffort, setReasoningEffort, normalizeReasoningEffort, init, configured, hasStoredCredential,
     listModels, priceOf, contextLimitOf, contextState, chat, cancel, haltAll, consent, summonAck, notebook,
     memoryProposals, memoryTurnin, memoryVeto, memoryReset, memoryRecords, memoryDeclined, memoryRestore, memoryPin, memoryEdit, memoryForget,
     studyProposals,

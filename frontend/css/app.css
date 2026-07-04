@@ -173,6 +173,9 @@ input::placeholder, textarea.key-input::placeholder { color: var(--ph-dim); opac
 .msg { min-height: 20px; color: var(--bad); font-size: 16px; margin: 6px 22px 0; }
 .msg:empty { min-height: 0; margin: 0; }
 .msg.ok { color: var(--gold); }
+/* the "get a key" deep-link in a cold-start connect message — reads as an actionable link, not error text */
+.connect-link { color: var(--gold); text-decoration: underline; text-underline-offset: 2px; }
+.connect-link:hover { filter: brightness(1.2); }
 
 /* "FINE-TUNE THE VOICE" reveal — calms the create screen so it leads with the archetype pick */
 .adv-toggle {
@@ -210,6 +213,28 @@ input::placeholder, textarea.key-input::placeholder { color: var(--ph-dim); opac
 /* the live feed graded into the terminal (warms/tints the world so it reads as a
    security-cam picture inside the CRT, not a flat canvas). --cam-grade is themed. */
 #stage { display: block; width: 100%; height: 100%; image-rendering: pixelated; filter: var(--cam-grade); }
+
+/* KEYLESS-BRAIN CTA — the honest standing banner shown after an awakening that finished with no key.
+   Sits low-center over the feed, above the cam HUD (z3) so it reads clearly; the world stays visible behind
+   it. Only the banner itself takes pointer events. Rendered/hidden purely from Harness.hasStoredCredential. */
+.key-cta {
+  position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 4;
+  display: flex; align-items: center; gap: 10px; max-width: 88%;
+  padding: 9px 12px; pointer-events: auto;
+  color: var(--warn, #ffb641); font-size: 13px; line-height: 1.4;
+  background: rgba(4, 8, 5, 0.92); border: 1px solid var(--warn, #ffb641); border-radius: 4px;
+  box-shadow: 0 0 12px rgba(0,0,0,.7), 0 0 10px color-mix(in srgb, var(--warn, #ffb641) 35%, transparent);
+  animation: keyctaIn .5s ease both;
+}
+@keyframes keyctaIn { from { opacity: 0; transform: translate(-50%, 8px); } to { opacity: 1; transform: translate(-50%, 0); } }
+.key-cta[hidden] { display: none; }
+.key-cta-glyph { flex: 0 0 auto; font-weight: 800; }
+.key-cta-txt { min-width: 0; }
+.key-cta-act {
+  flex: 0 0 auto; cursor: pointer; padding: 5px 9px; font: inherit; font-size: 11px; font-weight: 800;
+  color: var(--ink, #010503); background: var(--warn, #ffb641); border: 0; border-radius: 3px; white-space: nowrap;
+}
+.key-cta-act:hover { filter: brightness(1.12); }
 
 /* ---- CRT TUBE FACE: a curved-glass overlay so the feed reads as a convex tube.
    Pure overlay (specular sweep + bowed corner vignette + edge rim) — the pixel
@@ -324,7 +349,7 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
   padding: 9px 12px 9px 11px; border-radius: 0 5px 5px 0; margin-top: 4px;
   background: linear-gradient(180deg, var(--ph-faint), rgba(0,0,0,.22));
   border-left: 3px solid var(--ph);
-  box-shadow: inset 0 1px 0 rgba(255,228,180,.07), 0 0 14px var(--ph-glow2);
+  box-shadow: inset 0 1px 0 rgba(var(--ph-bright-rgb),.07), 0 0 14px var(--ph-glow2);
 }
 .cmsg.agent.reply .who { display: block !important; color: var(--ph-bright); text-shadow: 0 0 4px var(--ph-glow); }
 .cmsg.agent.reply .body { color: var(--ph-bright); text-shadow: 0 0 6px var(--ph-glow); }
@@ -368,6 +393,16 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 }
 .recap-copy:hover { color: var(--ph-bright); opacity: 1; }
 
+/* OPEN-FOLDER affordance on a file deliverable (Theme 4 — outputs are findable). Quiet inline
+   control reusing the phosphor language; desktop reveals the folder, browser copies the path. */
+.deliverable-folder {
+  font: inherit; font-size: 11px; letter-spacing: .3px; cursor: pointer;
+  color: var(--ph-dim); background: transparent;
+  border: 1px solid rgba(var(--ph-bright-rgb), .28); border-radius: 3px;
+  margin-left: 8px; padding: 0 6px; opacity: .85; white-space: nowrap;
+}
+.deliverable-folder:hover { color: var(--ph-bright); border-color: rgba(var(--ph-bright-rgb), .55); opacity: 1; }
+
 /* G5 SPECTACLE — the shareable POSTCARD button on the recap card. Premium-chrome language: phosphor
    border, VT323-ish inherit, hover bloom. Not a beat, not an ask — a quiet "keep this" affordance. */
 .recap-postcard {
@@ -382,9 +417,23 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 }
 .recap-postcard:disabled { color: var(--gold); border-color: var(--ph-dim); cursor: default; opacity: .9; }
 
+/* G5 SPECTACLE slice 2 — the shareable CLIP (~10s GIF) button, a sibling of ⎙ postcard on the recap card.
+   Same quiet phosphor-chrome language; ⏺ records/mints. Not a beat, not an ask — a quiet "keep this" affordance. */
+.recap-clip {
+  font: inherit; font-size: 12px; cursor: pointer; letter-spacing: .4px;
+  color: var(--ph); background: transparent; border: 1px solid var(--ph-dim);
+  border-radius: 3px; margin-top: 8px; margin-left: 6px; padding: 2px 8px;
+  transition: color .15s ease, border-color .15s ease, box-shadow .15s ease;
+}
+.recap-clip:hover:not(:disabled) {
+  color: var(--ph-bright); border-color: var(--ph);
+  box-shadow: 0 0 8px var(--ph-glow);
+}
+.recap-clip:disabled { color: var(--gold); border-color: var(--ph-dim); cursor: default; opacity: .9; }
+
 /* live consent prompt — the agent paused for approval, INLINE in the flow where it happened (this
    replaced the always-on top APPROVALS panel). A clear gold frame so it reads as "act on me now". */
-.cmsg.consent { font-size: 15px; border-left: 2px solid var(--gold); background: rgba(255,211,74,.06); padding: 8px 11px; border-radius: 0 5px 5px 0; margin: 5px 0; }
+.cmsg.consent { font-size: 15px; border-left: 2px solid var(--gold); background: rgba(var(--gold-rgb),.06); padding: 8px 11px; border-radius: 0 5px 5px 0; margin: 5px 0; }
 .cmsg.consent .body { color: var(--ph-bright); }
 .consent-btns { display: inline-flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .consent-btn {
@@ -396,7 +445,7 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 .consent-btn:hover { color: var(--ph-bright); border-color: var(--ph); background: var(--ph-faint); }
 .consent-btn:focus-visible { outline: none; color: var(--ph-bright); border-color: var(--ph); background: var(--ph-faint); box-shadow: 0 0 8px var(--ph-glow2); }
 .consent-btn.danger { color: var(--gold); border-color: var(--gold); }
-.consent-btn.danger:hover { color: var(--ph-bright); background: rgba(255, 200, 80, 0.12); }
+.consent-btn.danger:hover { color: var(--ph-bright); background: rgba(var(--gold-rgb), 0.12); }
 .consent-btn.deny { color: var(--bad); border-color: var(--bad); }
 .consent-btn.deny:hover { color: var(--ph-bright); background: rgba(255, 90, 90, 0.12); }
 .consent-result { font-size: 13px; letter-spacing: 0.5px; color: var(--ph); }
@@ -406,8 +455,8 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 .cmsg.turnin {
   font-size: 15px; margin: 7px 0; padding: 9px 11px 10px;
   border-left: 2px solid var(--gold); border-radius: 0 5px 5px 0;
-  background: linear-gradient(180deg, rgba(255,211,74,.08), rgba(255,211,74,.035));
-  box-shadow: inset 0 1px 0 rgba(255,228,180,.08), 0 0 10px rgba(255,170,0,.08);
+  background: linear-gradient(180deg, rgba(var(--gold-rgb),.08), rgba(var(--gold-rgb),.035));
+  box-shadow: inset 0 1px 0 rgba(var(--ph-bright-rgb),.08), 0 0 10px rgba(var(--gold-rgb),.08);
 }
 .cmsg.turnin .body {
   display: flex; flex-direction: column; gap: 7px;
@@ -416,8 +465,8 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 .turnin-title { display: block; line-height: 1.35; }
 .turnin-queue {
   align-self: flex-start; color: var(--gold); font-size: 11px; letter-spacing: 0.6px;
-  border: 1px solid rgba(255,170,0,.55); border-radius: 2px; padding: 1px 5px;
-  background: rgba(255,170,0,.06);
+  border: 1px solid rgba(var(--gold-rgb),.55); border-radius: 2px; padding: 1px 5px;
+  background: rgba(var(--gold-rgb),.06);
 }
 .turnin-queue[hidden] { display: none; }
 .turnin-slot { display: block; min-width: 0; }
@@ -439,6 +488,14 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
   overflow-wrap: anywhere; word-break: break-word;
 }
 .turnin-item .consent-btns { grid-column: 1 / -1; margin-top: 1px; display: flex; flex-wrap: wrap; gap: 6px; }
+/* anything chat.js appends INTO the item grid AFTER the kind/text pair (the ↳ evidence line on
+   study/trust cards, the verdict flash, an in-place rate control) must claim a full row. Auto-placed
+   they land in the `auto` first column — a long evidence string then blows that column out to the
+   container width and crushes the minmax(0,1fr) text column to ~1ch, wrapping the belief text one
+   character per line down the window edge (and stretching the card to fill the whole panel). */
+.turnin-item > .turnin-queue { grid-column: 1 / -1; justify-self: start; min-width: 0; overflow-wrap: anywhere; }
+.turnin-item > .consent-result { grid-column: 1 / -1; min-width: 0; overflow-wrap: anywhere; }
+.turnin-item > .turnin-rate { grid-column: 1 / -1; min-width: 0; }
 .turnin-edit {
   grid-column: 1 / -1; width: 100%; box-sizing: border-box; min-width: 0;
   font: inherit; font-size: 14px; color: var(--ph-bright);
@@ -464,19 +521,30 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 .ws-file { text-align:left; background:none; border:1px solid transparent; border-radius:2px; color:var(--ph);
   font-family:inherit; font-size:12px; padding:2px 5px; cursor:pointer; overflow-wrap:anywhere; }
 .ws-file:hover { border-color:var(--ph-glow2); color:var(--ph-bright); }
-.ws-file.sel { border-color:var(--gold); color:var(--ph-bright); background:rgba(255,211,74,.06); }
+.ws-file.sel { border-color:var(--gold); color:var(--ph-bright); background:rgba(var(--gold-rgb),.06); }
 .ws-fview { margin:0; max-height:180px; overflow:auto; background:var(--ink); border:1px solid var(--ph-glow2);
   border-radius:2px; padding:6px 7px; color:var(--ph-bright); font-size:12px; line-height:1.4; white-space:pre-wrap;
   overflow-wrap:anywhere; }
 .ws-acts { margin-top:8px; gap:6px 8px; }
 .ws-keep { display:inline-flex; align-items:center; gap:5px; flex-wrap:wrap; }
 .ws-path { width:220px; max-width:100%; }
+.ws-pathhint { flex-basis:100%; font-size:11px; color:var(--ph-dim); letter-spacing:.2px; }
+.ws-pick { white-space:nowrap; }
+/* per-command verification detail: the actual commands run + each one's pass/fail from the manifest */
+.ws-verdetail { margin-top:6px; }
+.ws-verdetail > .ws-k { display:block; color:var(--gold); font-size:10px; letter-spacing:1px; text-transform:uppercase; margin-bottom:3px; }
+.ws-vcmd { display:flex; align-items:baseline; gap:6px; font-size:12px; line-height:1.4; overflow-wrap:anywhere; }
+.ws-vcmd .ws-vmark { flex:0 0 auto; }
+.ws-vcmd.ok  .ws-vmark { color:var(--gold); }
+.ws-vcmd.bad .ws-vmark { color:var(--bad); }
+.ws-vcmdtext { color:var(--ph-bright); font-family:inherit; }
+.ws-vexit { color:var(--bad); font-size:11px; }
 
 /* SILENT-SAVE receipt: a PASSIVE log of memories reflection auto-saved — one compact "◈ remembered: …" line per
    memory, kind tag, and a small ✕ to veto (undo the save). Non-blocking: no buttons demand action, it stays as a
    quiet stream line (no auto-collapse). Shares the gold-inset turn-in family but reads calmer (thinner border,
    softer fill) — it's a notice, not a prompt. .receipts drops the deck's flex-gap so lines stack tight. */
-.cmsg.turnin.receipts { background: linear-gradient(180deg, rgba(255,211,74,.05), rgba(255,211,74,.02)); }
+.cmsg.turnin.receipts { background: linear-gradient(180deg, rgba(var(--gold-rgb),.05), rgba(var(--gold-rgb),.02)); }
 .cmsg.turnin.receipts .body { gap: 4px; }
 .receipt-item {
   display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: start; gap: 4px 8px;
@@ -502,7 +570,7 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
    soft gold-inset language of the consent / turn-in beats: clearly "the station is asking", visually subordinate
    to the live reply above it. One post-run beat at a time (chat.js retires a nudge if a turn-in claims the moment). */
 .cmsg.agent.nudge {
-  border-left: 2px solid var(--gold); background: rgba(255,211,74,.05);
+  border-left: 2px solid var(--gold); background: rgba(var(--gold-rgb),.05);
   padding: 8px 11px; margin: 6px 0 2px; border-radius: 0 5px 5px 0;
 }
 .cmsg.agent.nudge .who { display: none; }
@@ -609,6 +677,11 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
   transition: background .1s, color .1s, border-color .1s;
 }
 .choice:hover, .choice:focus-visible { color: var(--ph-bright); border-color: var(--ph); background: var(--ph-faint); outline: none; }
+/* T3.9 — the SECONDARY bug-report affordance under a failed turn: subdued so it never competes with the primary
+   recovery chip (dashed, dimmer, smaller). Brightens to a normal chip on hover so it stays discoverable. */
+.choice.quiet { font-size: 12px; letter-spacing: 0.3px; border-style: dashed; border-color: var(--ph-faint); color: var(--ph-dim); text-shadow: none; padding: 3px 8px; }
+.choice.quiet:hover, .choice.quiet:focus-visible { color: var(--ph-bright); border-color: var(--ph-dim); border-style: solid; }
+.choice.quiet:disabled { cursor: default; opacity: 0.7; }
 
 /* ===== THE DIALOGUE MODE (dialogue.js) — Fallout-style focused first-run conversation =====
    Mounts as a child overlay of #chat-panel, covering COMMS while the awakening/tutorial runs. One short
@@ -839,6 +912,19 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 .model-dock-empty {
   padding: 18px 6px; color: var(--ph-dim); text-align: center; font-size: 13px;
 }
+/* inline no-key warning inside the dock — one tap opens SETTINGS. Only rendered when the active provider
+   truly has no stored credential (truthful telemetry), so it can't lie about a connection that exists. */
+.model-dock-keywarn {
+  width: 100%; display: flex; gap: 7px; align-items: flex-start; text-align: left; cursor: pointer;
+  margin: 2px 0 6px; padding: 7px 8px; font: inherit; font-size: 12px; line-height: 1.35;
+  color: var(--warn, #e8b64c); background: color-mix(in srgb, var(--warn, #e8b64c) 12%, transparent);
+  border: 1px solid var(--warn, #e8b64c); border-radius: 3px;
+}
+.model-dock-keywarn:hover { background: color-mix(in srgb, var(--warn, #e8b64c) 22%, transparent); }
+.model-dock-keywarn .mdw-glyph { flex: 0 0 auto; font-weight: 800; }
+.model-dock-keywarn .mdw-txt { min-width: 0; }
+/* resting chip flags a missing key with a warm hairline so it's noticeable before the dock is even opened */
+.model-dock-toggle.needs-key { border-color: var(--warn, #e8b64c); box-shadow: 0 0 6px color-mix(in srgb, var(--warn, #e8b64c) 40%, transparent); }
 .model-dock-foot {
   display: grid; grid-template-columns: 1fr 1fr; gap: 6px;
 }
@@ -919,7 +1005,7 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 }
 .ov-leadtag {
   display: inline-flex; align-items: center; gap: 7px; color: var(--gold); font-size: 12px; letter-spacing: 2px;
-  border: 1px solid var(--ph-dim); border-radius: 20px; padding: 2px 11px; margin-bottom: 12px; background: rgba(255,170,51,.05);
+  border: 1px solid var(--ph-dim); border-radius: 20px; padding: 2px 11px; margin-bottom: 12px; background: rgba(var(--ph-rgb),.05);
 }
 .ov-pod {
   position: relative; height: 208px; border: 1px solid var(--ph-dim); border-radius: 8px; overflow: hidden;
@@ -927,7 +1013,7 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
   box-shadow: inset 0 0 60px rgba(0,0,0,.9), 0 0 0 1px rgba(0,0,0,.8), 0 0 24px var(--ph-glow2);
   display: flex; flex-direction: column; align-items: center; justify-content: flex-end;
 }
-.ov-pod::before { content: ""; position: absolute; inset: 0; background: repeating-linear-gradient(0deg, transparent 0 22px, rgba(255,170,51,.04) 22px 23px); pointer-events: none; }
+.ov-pod::before { content: ""; position: absolute; inset: 0; background: repeating-linear-gradient(0deg, transparent 0 22px, rgba(var(--ph-rgb),.04) 22px 23px); pointer-events: none; }
 .ov-stage { margin: 0 0 20px; display: flex; align-items: flex-end; justify-content: center; z-index: 1; }
 .ov-stage-frame { display: flex; align-items: flex-end; justify-content: center; filter: drop-shadow(0 0 14px var(--ph-glow)); }
 .ov-stage-frame img { height: 136px; width: auto; image-rendering: pixelated; image-rendering: crisp-edges; }
@@ -956,7 +1042,7 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 .ov-approve .ov-card-ds { font-size: 12.5px; margin-top: 3px; }
 .ov-card { font: inherit; position: relative; border: 2px solid var(--ph-faint); border-radius: 6px; background: var(--panel2); padding: 9px 10px 8px; cursor: pointer; text-align: left; transition: border-color .12s, background .12s; }
 .ov-card:hover { border-color: var(--ph-dim); background: var(--ph-faint); }
-.ov-card.sel { border-color: var(--ph); background: rgba(255,170,51,.07); box-shadow: 0 0 16px var(--ph-glow2); }
+.ov-card.sel { border-color: var(--ph); background: rgba(var(--ph-rgb),.07); box-shadow: 0 0 16px var(--ph-glow2); }
 .ov-card-ic { color: var(--ph); font-size: 19px; line-height: 1; text-shadow: 0 0 8px var(--ph-glow); }
 .ov-card.sel .ov-card-ic { color: var(--ph-bright); }
 .ov-card-nm { color: var(--ph-bright); font-size: 15px; letter-spacing: 1px; margin-top: 5px; }
@@ -974,7 +1060,7 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 .ov-vtune { margin-top: 8px; }
 
 .ov-field-brain { margin-bottom: 0; }
-.ov-brain { border: 2px solid var(--ph-dim); border-radius: 7px; background: rgba(255,170,51,.04); padding: 10px 12px; }
+.ov-brain { border: 2px solid var(--ph-dim); border-radius: 7px; background: rgba(var(--ph-rgb),.04); padding: 10px 12px; }
 /* beginner-funnel lead-in: names the no-API-key path before the provider row so a newcomer knows the easy
    option exists and that BYOK is still one click away. */
 .ov-brain-lead { font-size: 12px; line-height: 1.32; color: var(--ph-bright); margin: 0 0 9px; opacity: .95; }
@@ -996,7 +1082,7 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
   margin: 10px 22px 0; padding: 9px 14px; font-size: 16px; letter-spacing: .4px;
   color: var(--ph-bright); border: 1px solid var(--gold);
   border-left: 4px solid var(--gold); border-radius: 3px;
-  background: rgba(255,170,51,.07); text-shadow: 0 0 6px var(--ph-glow2);
+  background: rgba(var(--ph-rgb),.07); text-shadow: 0 0 6px var(--ph-glow2);
   box-shadow: inset 0 0 22px rgba(0,0,0,.5), 0 0 12px var(--ph-glow2);
 }
 .ov-recovery b { color: var(--gold); }
@@ -1154,7 +1240,7 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
   padding: 1px 12px; border: 2px solid var(--ph); text-shadow: 0 0 5px var(--ph-glow2);
   box-shadow: 0 0 12px var(--ph-glow2), inset 0 0 10px rgba(0,0,0,0.6);
 }
-#status-pill.working { color: var(--gold); border-color: var(--gold); box-shadow: 0 0 12px rgba(255,211,74,0.35); }
+#status-pill.working { color: var(--gold); border-color: var(--gold); box-shadow: 0 0 12px rgba(var(--gold-rgb),0.35); }
 #status-pill.thinking { color: var(--ph-bright); }
 
 /* ============================================================
@@ -1177,7 +1263,7 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 
 /* status dot on the collapsed trigger */
 .bb-grp-dot { width: 6px; height: 6px; border-radius: 50%; background: transparent; flex: 0 0 auto; transition: background .15s; }
-.bb-group.has-active .bb-grp-dot { background: var(--gold); box-shadow: 0 0 7px rgba(255,211,74,.75); }
+.bb-group.has-active .bb-grp-dot { background: var(--gold); box-shadow: 0 0 7px rgba(var(--gold-rgb),.75); }
 .bb-group.open.has-active .bb-grp-dot { background: var(--ink); box-shadow: none; }
 .bb-group.has-alert .bb-grp-dot { background: var(--warn); box-shadow: 0 0 8px var(--warn); animation: bb-alert 1.4s ease-in-out infinite; }
 @keyframes bb-alert { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
@@ -1326,6 +1412,25 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 .key-row.rm-armed .key-main { opacity: 0.72; }
 .rm-hint { font-size: 10px; letter-spacing: 1px; color: var(--bad); text-align: right; margin-top: 2px; }
 
+/* settings-truth: inline "+ ADD KEY" on a NO-KEY provider card — a collapsible paste-and-save row that reuses the
+   same Harness.setKey path as the key list, so a beginner never hunts for where keys live. The card wraps so the
+   editor sits on its own full-width line below the name/status; gold accent = actionable, matching "NO KEY". */
+.prov-card { flex-wrap: wrap; }
+.prov-addkey { margin-top: 4px; }
+.prov-key-edit { flex-basis: 100%; margin-top: 6px; }
+.prov-key-edit[hidden] { display: none; }
+
+/* settings-truth: per-field source badge (BUDGET) — is this limit a value you SAVED here, or the environment default
+   it currently follows? Honest, non-blocking. Env default is a neutral gold-inset chip (it is NOT "ignored" — env is
+   the fallback, and a saved value always wins); a saved value reads calmer. Never a literal amber — --gold-rgb only. */
+.src-badge {
+  font-size: 9px; letter-spacing: 1px; text-transform: uppercase; padding: 0 5px; border-radius: 2px;
+  border: 1px solid var(--ph-faint); color: var(--ph-dim); vertical-align: middle; white-space: nowrap;
+}
+.src-badge[hidden] { display: none; }
+.src-badge.src-env { color: var(--gold); border-color: rgba(var(--gold-rgb), .55); background: rgba(var(--gold-rgb), .06); }
+.src-badge.src-saved { color: var(--ph); border-color: var(--ph-faint); background: rgba(0, 0, 0, .25); }
+
 /* ---------- WORKSTREAMS rail (left) ---------- */
 #ws-wrap { margin-top: 12px; display: flex; flex-direction: column; min-height: 0; }
 .ws-head {
@@ -1361,6 +1466,11 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 }
 .ws-title { flex: 1; min-width: 0; font-size: 14px; color: var(--ph); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ws-row.sel .ws-title { color: var(--ph-bright); }
+/* UNREAD: the stream did real work since the Commander last had it open (lastActiveAt > lastReadAt) —
+   a small gold spark beside the meta + a lit title. Clears the moment the row is opened. */
+.ws-unread { display: none; flex: 0 0 auto; width: 6px; height: 6px; border-radius: 50%; background: var(--gold); box-shadow: 0 0 6px rgba(var(--gold-rgb), .55); }
+.ws-row.unread .ws-unread { display: inline-block; }
+.ws-row.unread .ws-title { color: var(--ph-bright); }
 /* compact right-edge meta: live elapsed while busy (bright / gold when it needs you), a dim "last worked" stamp when idle */
 .ws-meta { flex: 0 0 auto; font-size: 11px; line-height: 1; color: var(--ph-dim); letter-spacing: .3px; font-variant-numeric: tabular-nums; }
 .ws-meta:empty { display: none; }
@@ -1377,7 +1487,7 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 #ws-archived.on { background: rgba(0,0,0,.34); }
 #ws-archived[hidden] { display: none; }
 /* pinned rows sort to the top AND carry a small gold star so the "kept" state is legible at a glance */
-.ws-pin { flex: 0 0 auto; font-size: 10px; line-height: 1; color: var(--gold); text-shadow: 0 0 6px rgba(255,211,74,.5); }
+.ws-pin { flex: 0 0 auto; font-size: 10px; line-height: 1; color: var(--gold); text-shadow: 0 0 6px rgba(var(--gold-rgb),.5); }
 /* the ⋯ button is the discoverable twin of right-click: hidden until the row is hovered, where it takes the meta slot */
 .ws-kebab {
   display: none; flex: 0 0 auto; font-family: inherit; font-size: 15px; line-height: 1; letter-spacing: 1px;
@@ -1423,7 +1533,7 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 #chat-panel h3 .h3-right { display: inline-flex; align-items: baseline; gap: 8px; min-width: 0; flex: 0 1 auto; overflow: hidden; }
 #chat-panel h3 #chat-status { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 #chat-status.status-thinking { color: var(--ph-bright); text-shadow: 0 0 7px var(--ph-glow2); }
-#chat-status.status-working, #chat-status.status-approval { color: var(--gold); text-shadow: 0 0 7px rgba(255,211,74,.4); }
+#chat-status.status-working, #chat-status.status-approval { color: var(--gold); text-shadow: 0 0 7px rgba(var(--gold-rgb),.4); }
 #chat-status.status-stopping { color: var(--bad); text-shadow: 0 0 7px rgba(255,74,61,.35); }
 
 /* COMMS PROCESSING TIMER — a small engraved readout in the amber header that counts a turn's REAL
@@ -1487,7 +1597,7 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
   background: var(--ph-dim); flex: none;
 }
 .ag-sdot.on { background: var(--ok); box-shadow: 0 0 5px rgba(123,200,138,.55); }
-.ag-sdot.working { background: var(--gold); box-shadow: 0 0 7px rgba(255,211,74,.7); animation: sdot-pulse 1.1s infinite; }
+.ag-sdot.working { background: var(--gold); box-shadow: 0 0 7px rgba(var(--gold-rgb),.7); animation: sdot-pulse 1.1s infinite; }
 .ag-sdot.thinking { background: var(--ph-bright); box-shadow: 0 0 6px var(--ph-glow); animation: sdot-pulse .7s infinite; }
 @keyframes sdot-pulse { 0%,100%{ opacity:1; } 50%{ opacity:.3; } }
 
@@ -1531,7 +1641,7 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 .gx-clear { display:inline-flex; align-items:baseline; gap:7px; background:var(--ph-faint);
   border:1px solid var(--gold); border-radius:2px; padding:4px 10px; }
 .gx-clear .k { font-family:inherit; font-size:11px; letter-spacing:.14em; color:var(--gold); }
-.gx-clear .v { font-family:inherit; font-size:23px; line-height:1; color:var(--gold); text-shadow:0 0 10px rgba(255,211,74,.45); }
+.gx-clear .v { font-family:inherit; font-size:23px; line-height:1; color:var(--gold); text-shadow:0 0 10px rgba(var(--gold-rgb),.45); }
 
 .gx-2 { display:grid; grid-template-columns:1fr 1fr; gap:18px; margin-bottom:16px; }
 
@@ -1548,7 +1658,7 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 
 .gx-trk { position:relative; height:13px; background:var(--ph-faint); border:1px solid var(--ph-glow2); border-radius:2px; overflow:hidden; box-shadow:inset 0 1px 2px rgba(0,0,0,.55); }
 .gx-fill { position:absolute; top:0; left:0; bottom:0; background:var(--ph); opacity:.9; box-shadow:0 0 8px var(--ph-glow); }
-.gx-gfill { position:absolute; top:0; left:0; bottom:0; background:var(--gold); box-shadow:0 0 8px rgba(255,211,74,.4); }
+.gx-gfill { position:absolute; top:0; left:0; bottom:0; background:var(--gold); box-shadow:0 0 8px rgba(var(--gold-rgb),.4); }
 .gx-mark { position:absolute; top:-3px; bottom:-3px; width:2px; background:var(--ph-bright); box-shadow:0 0 0 1px rgba(0,0,0,.45); }
 
 .gx-confnum { font-family:inherit; font-size:32px; line-height:.8; color:var(--ph-bright); text-shadow:0 0 12px var(--ph-glow2); }
@@ -1576,7 +1686,7 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 .gx-tro { border:1px solid var(--ph-glow2); border-radius:2px; padding:8px 9px; background:rgba(0,0,0,.18); }
 .gx-tro.on { border-color:var(--gold); background:var(--ph-faint); }
 .gx-tro .gl { font-size:13px; line-height:1; }
-.gx-tro.on .gl { color:var(--gold); text-shadow:0 0 7px rgba(255,211,74,.55); }
+.gx-tro.on .gl { color:var(--gold); text-shadow:0 0 7px rgba(var(--gold-rgb),.55); }
 .gx-tro.off .gl { color:var(--ph-dim); opacity:.5; }
 .gx-tro .nm { font-family:inherit; font-size:11px; letter-spacing:.03em; margin-top:5px; }
 .gx-tro.on .nm { color:var(--gold); }
@@ -1588,6 +1698,11 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 .q-dismiss { margin-left:auto; flex:0 0 auto; background:none; border:1px solid transparent; border-radius:2px;
   color:var(--ph-dim); opacity:.55; font-family:inherit; font-size:11px; line-height:1; padding:1px 4px; cursor:pointer; }
 .q-dismiss:hover { color:var(--ph-bright); border-color:var(--ph-glow2); opacity:1; }
+/* Slice 5: armed (2-step) state — the ✕ becomes an explicit, dangerous "dismiss forever — sure?" until the
+   confirming click (or ~4s auto-disarm). Widen for the label + read as a warning, not a passive glyph. */
+.q-dismiss.armed { opacity:1; color:var(--ink); background:var(--bad); border-color:var(--bad);
+  white-space:nowrap; padding:1px 6px; text-shadow:none; }
+.q-dismiss.armed:hover { color:var(--ink); background:var(--bad); border-color:var(--bad); }
 /* W3 — "build this while I'm away" affordance on an open, buildable quest. Sits before the dismiss ✕; the
    ◈ marks the away-workshop lane. Gold on hover (it opens the sandbox lane, an amber/consent action). */
 .q-queue { margin-left:auto; flex:0 0 auto; background:none; border:1px solid transparent; border-radius:2px;
@@ -1597,8 +1712,8 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 .q-queue:disabled { opacity:.4; cursor:default; }
 .gx-tro.q-celebrate { border-color:var(--gold); animation:q-celebrate 2.4s ease-out 1; }
 @keyframes q-celebrate {
-  0%   { box-shadow:0 0 18px rgba(255,211,74,.85), inset 0 0 14px rgba(255,211,74,.45); background:rgba(255,211,74,.22); }
-  55%  { box-shadow:0 0 9px rgba(255,211,74,.45), inset 0 0 6px rgba(255,211,74,.22); }
+  0%   { box-shadow:0 0 18px rgba(var(--gold-rgb),.85), inset 0 0 14px rgba(var(--gold-rgb),.45); background:rgba(var(--gold-rgb),.22); }
+  55%  { box-shadow:0 0 9px rgba(var(--gold-rgb),.45), inset 0 0 6px rgba(var(--gold-rgb),.22); }
   100% { box-shadow:none; }
 }
 
@@ -1609,14 +1724,14 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 .gx-station .agents { margin-left:auto; font-family:inherit; font-size:10px; letter-spacing:.1em; color:var(--ph-dim); }
 .gx-station .body { display:flex; align-items:flex-end; gap:16px; }
 .gx-station .lv { flex:0 0 auto; text-align:center; border-right:1px solid var(--ph-glow2); padding-right:16px; }
-.gx-station .lv .n { font-family:inherit; font-size:28px; line-height:.85; color:var(--gold); text-shadow:0 0 10px rgba(255,211,74,.4); }
+.gx-station .lv .n { font-family:inherit; font-size:28px; line-height:.85; color:var(--gold); text-shadow:0 0 10px rgba(var(--gold-rgb),.4); }
 
 .ag-lv { font-family:inherit; font-size:11px; letter-spacing:.08em; color:var(--gold); border:1px solid var(--gold); border-radius:2px; padding:0 5px; margin-left:7px; }
 
 .tb-stat.station { border:1px solid var(--gold); border-radius:2px; padding:1px 8px; }
 .tb-stat.station b { color:var(--gold); }
 .tb-stat.station.lvup { animation: gx-stationpulse 1.5s ease-out; }
-@keyframes gx-stationpulse { 0%{ box-shadow:0 0 0 0 rgba(255,211,74,.55); } 100%{ box-shadow:0 0 16px 2px rgba(255,211,74,0); } }
+@keyframes gx-stationpulse { 0%{ box-shadow:0 0 0 0 rgba(var(--gold-rgb),.55); } 100%{ box-shadow:0 0 16px 2px rgba(var(--gold-rgb),0); } }
 
 /* narrow-window fallback: the GROWTH dossier collapses gracefully if the term is squeezed */
 @media (max-width: 560px) {

@@ -1146,7 +1146,7 @@ const StationUI = (() => {
       '<label class="set-row" style="align-items:flex-start;gap:8px;">' +
         '<input type="checkbox" id="ag-workshop-on"' + (on ? ' checked' : '') + ' aria-label="Build things while I am away">' +
         '<span><b>Build things while I’m away</b>' +
-        '<span class="dim" style="display:block;margin-top:2px;line-height:1.35;">While you’re gone, this agent works on queued ideas in its own sandbox. Nothing touches your files until you approve it.</span></span>' +
+        '<span class="dim" style="display:block;margin-top:2px;line-height:1.35;">On a recurring shift while the station is running, this agent builds queued ideas in its own sandbox. Nothing touches your files until you approve it on return.</span></span>' +
       '</label>' +
       '<div id="ag-workshop-msg" class="msg"></div>' +
     '</div>';
@@ -1832,6 +1832,28 @@ const StationUI = (() => {
     const h = H();
     return !!(h && h.getProv && h.getProv() === 'codex');
   }
+  // Where do saved API keys actually live? TRUTH SOURCE = the sidecar's keychainMode (DESKTOP_SHELL): the packaged
+  // desktop build holds BYOK keys in the OS keychain; the browser holds them in its own local store. We learn this
+  // lazily from /api/providers (mirrors the codex-status probe) and cache it so the key-save confirmation can name
+  // the REAL store — never claim keychain when the key is in the browser (truthful-telemetry law).
+  let keychainModeKnown = null;
+  let keychainModeChecking = false;
+  function refreshKeychainMode() {
+    if (keychainModeKnown !== null || keychainModeChecking || typeof fetch !== 'function') return;
+    keychainModeChecking = true;
+    fetch('/api/providers', { cache: 'no-store' })
+      .then(r => r.ok ? r.json() : {})
+      .then(j => { keychainModeKnown = !!(j && j.keychainMode); })
+      .catch(() => {})
+      .finally(() => { keychainModeChecking = false; });
+  }
+  // honest one-liner for where a just-saved key was stored. Falls back to the neutral "on this machine" until the
+  // probe answers, so we never assert keychain-vs-browser before we actually know it.
+  function keyStoreClause() {
+    if (keychainModeKnown === true) return 'stored in your OS keychain';
+    if (keychainModeKnown === false) return 'stored locally in this browser';
+    return 'stored on this machine';
+  }
   function connectedKeys() {
     const h = H(); if (!h) return [];
     const out = [];
@@ -1880,13 +1902,24 @@ const StationUI = (() => {
       const cls = connected ? 'conn' : (p.live ? 'avail' : 'soon');
       const stat = !p.live ? '○ COMING SOON' : connected ? '● CONNECTED' : (p.id === 'codex' ? '○ NOT SIGNED IN' : (p.id === 'ollama' ? '○ LOCAL' : '○ NO KEY'));
       const n = ks.length;
+      // NO-KEY cards that accept a key get an inline, collapsible paste-and-save row so the user never has to hunt
+      // for where keys live. It reuses the SAME save path (Harness.setKey) as the key list below — no duplicate logic.
+      const wantsInline = p.live && !connected && providerAcceptsKey(p.id);
       return '<div class="prov-card ' + cls + '" data-provider="' + esc(p.id) + '" role="button" tabindex="0" style="--ci:' + pi + '">' +
         '<span class="conn-dot"></span>' +
         '<div class="prov-main">' +
         '<div class="prov-name">' + esc(p.name) + (runnable ? '<span class="prov-badge">ACTIVE</span>' : '') + '</div>' +
         '<div class="prov-ep">' + esc(p.endpoint) + ' · ' + esc(p.blurb) + '</div>' +
         '</div>' +
-        '<div class="prov-stat">' + stat + (connected ? '<i>' + n + (n === 1 ? ' key' : ' keys') + '</i>' : '') + '</div>' +
+        '<div class="prov-stat">' + stat + (connected ? '<i>' + n + (n === 1 ? ' key' : ' keys') + '</i>' : '') +
+          (wantsInline ? '<button class="bb xs prov-addkey" data-act="prov-add-toggle" data-provider="' + esc(p.id) + '" title="paste a ' + esc(p.name) + ' key without leaving this card">+ ADD KEY</button>' : '') +
+        '</div>' +
+        (wantsInline
+          ? '<div class="key-edit prov-key-edit" id="prov-key-edit-' + esc(p.id) + '" hidden>' +
+            '<input type="password" class="key-input" id="prov-key-in-' + esc(p.id) + '" placeholder="paste ' + esc(p.name) + ' key…" autocomplete="off" spellcheck="false">' +
+            '<button class="bb sm" data-act="prov-add-save" data-provider="' + esc(p.id) + '">SAVE</button>' +
+            '</div>'
+          : '') +
         '</div>';
     }).join('');
   }
@@ -1967,7 +2000,9 @@ const StationUI = (() => {
           if (!v) { sfx('bad'); return; }
           const provider = b.dataset.provider || activeProv();
           if (h.setKey) h.setKey(v, provider);
-          notify('connected ' + provName(provider) + ' API key', 'good');
+          notify('✓ connected ' + provName(provider) + ' API key — ' + keyStoreClause(), 'good');
+          if (typeof ModelDock !== 'undefined' && ModelDock.reflect) ModelDock.reflect();   // clear the dock's no-key warning the instant a key lands
+          if (typeof KeyCTA !== 'undefined' && KeyCTA.refresh) KeyCTA.refresh();             // …and the world's keyless-brain banner
           rerender('settings');
           return;
         }
@@ -1981,10 +2016,12 @@ const StationUI = (() => {
           const v = inp ? inp.value.trim() : '';
           if (!v) { sfx('bad'); return; }
           if (h.setKey) h.setKey(v, row.provider);
-          notify('updated ' + provName(row.provider) + ' API key', 'good');
+          notify('✓ updated ' + provName(row.provider) + ' API key — ' + keyStoreClause(), 'good');
+          if (typeof ModelDock !== 'undefined' && ModelDock.reflect) ModelDock.reflect();   // keep the dock's no-key warning honest after an edit
+          if (typeof KeyCTA !== 'undefined' && KeyCTA.refresh) KeyCTA.refresh();
           rerender('settings');
         } else if (act === 'rm') {
-          if (b.dataset.armed) { if (h.setKey) h.setKey('', row.provider); notify('removed ' + provName(row.provider) + ' key — paste a new one here to reconnect', 'warn'); sfx('bad'); rerender('settings'); return; }
+          if (b.dataset.armed) { if (h.setKey) h.setKey('', row.provider); notify('removed ' + provName(row.provider) + ' key — paste a new one here to reconnect', 'warn'); if (typeof ModelDock !== 'undefined' && ModelDock.reflect) ModelDock.reflect(); if (typeof KeyCTA !== 'undefined' && KeyCTA.refresh) KeyCTA.refresh(); sfx('bad'); rerender('settings'); return; }
           // Arm: make the destructive state impossible to miss — filled --bad button + pulse, red hairline on the row,
           // and an inline "click again to confirm" hint. Disarms after 5s, restoring the calm state.
           const rowEl = b.closest('.key-row');
@@ -2008,6 +2045,20 @@ const StationUI = (() => {
 
   /* ============== SETTINGS — connections + real CRT / theme / audio toggles ============== */
   function wireProviderActions(body) {
+    // save a pasted key from a NO-KEY card's inline row, reusing the SAME store path as the key list (Harness.setKey).
+    const saveInline = (provider) => {
+      const h = H();
+      const inp = body.querySelector('#prov-key-in-' + provider);   // provider ids are simple slugs — safe to interpolate
+      const v = inp ? inp.value.trim() : '';
+      if (!v) { sfx('bad'); if (inp) inp.focus(); return; }
+      if (!h || !h.setKey) { sfx('bad'); return; }
+      h.setKey(v, provider);
+      notify('✓ connected ' + provName(provider) + ' API key — ' + keyStoreClause(), 'good');
+      if (typeof ModelDock !== 'undefined' && ModelDock.reflect) ModelDock.reflect();
+      if (typeof KeyCTA !== 'undefined' && KeyCTA.refresh) KeyCTA.refresh();
+      sfx('click');
+      rerender('settings');
+    };
     body.querySelectorAll('.prov-card[data-provider]').forEach(card => {
       const activate = () => {
         const h = H();
@@ -2018,9 +2069,29 @@ const StationUI = (() => {
         sfx('click');
         rerender('settings');
       };
-      card.addEventListener('click', activate);
+      // clicks on the inline key controls must NOT bubble up to provider-select — they toggle/save the key row.
+      const inlineToggle = card.querySelector('[data-act="prov-add-toggle"]');
+      const inlineSave = card.querySelector('[data-act="prov-add-save"]');
+      const inlineEdit = card.querySelector('.prov-key-edit');
+      const inlineInput = card.querySelector('.key-input');
+      if (inlineToggle) inlineToggle.addEventListener('click', ev => {
+        ev.stopPropagation();
+        if (inlineEdit) { inlineEdit.hidden = !inlineEdit.hidden; if (!inlineEdit.hidden && inlineInput) inlineInput.focus(); }
+        sfx('click');
+      });
+      if (inlineSave) inlineSave.addEventListener('click', ev => { ev.stopPropagation(); saveInline(card.dataset.provider); });
+      if (inlineInput) {
+        inlineInput.addEventListener('click', ev => ev.stopPropagation());   // don't select the provider when focusing the field
+        inlineInput.addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); ev.stopPropagation(); saveInline(card.dataset.provider); } });
+      }
+      card.addEventListener('click', ev => {
+        // ignore clicks that originated inside the inline key row (handled above)
+        if (ev.target.closest && ev.target.closest('.prov-key-edit, [data-act="prov-add-toggle"]')) return;
+        activate();
+      });
       card.addEventListener('keydown', ev => {
         if (ev.key !== 'Enter' && ev.key !== ' ') return;
+        if (ev.target !== card) return;   // let the inline input/buttons handle their own keys
         ev.preventDefault();
         activate();
       });
@@ -2112,9 +2183,19 @@ const StationUI = (() => {
           : (k === 'perRun' && typeof st.perRun === 'number') ? st.perRun
           : (typeof envd[k] === 'number' ? envd[k] : 0);
         el.value = String(v);
-        // annotate whether this value is a saved override or the env default (honest, non-blocking).
+        // annotate whether this value is a saved override or the env default (honest, non-blocking). Visible badge +
+        // hover title. Truthful precedence: a saved value WINS here (env is only the fallback default, never an
+        // override that silences a saved cap), so the badge says "environment default" — not "ignored".
         const savedHere = Object.prototype.hasOwnProperty.call(saved, k);
         el.title = savedHere ? 'saved on this machine' : 'environment default (not yet saved here)';
+        const badge = body.querySelector('#bg-src-' + k);
+        if (badge) {
+          badge.textContent = savedHere ? 'saved here' : 'environment default';
+          badge.title = savedHere ? 'you saved this limit on this machine' : 'follows the environment default until you save your own value here';
+          badge.classList.toggle('src-env', !savedHere);
+          badge.classList.toggle('src-saved', savedHere);
+          badge.hidden = false;
+        }
       });
       const anySaved = BG_KEYS.some(k => Object.prototype.hasOwnProperty.call(saved, k));
       if (resetBtn) resetBtn.style.display = anySaved ? '' : 'none';
@@ -2134,7 +2215,7 @@ const StationUI = (() => {
         const raw = String(el.value).trim();
         if (raw === '') { payload[k] = 0; continue; }   // blank -> "no cap" (0), matching the placeholder semantics
         const n = Number(raw);
-        if (!isFinite(n) || n < 0) { setMsg(k + ': enter a number ≥ 0 (0 = no cap)'); sfx('bad'); el.focus(); return; }
+        if (!isFinite(n) || n < 0) { setMsg(k + ': enter a number ≥ 0 (leave blank or 0 for no cap)'); sfx('bad'); el.focus(); return; }
         payload[k] = n;
       }
       setMsg('saving…');
@@ -2371,6 +2452,29 @@ const StationUI = (() => {
   // P1-7 STATION BACKUP — export/import the whole station config to one JSON file. Export bundles the browser-owned
   // slices (settings/autonomy/notifyPrefs) with the server-side stores; import applies server sections + restores
   // the browser slices locally, then surfaces "re-enter your key" states the server flags. Secrets never travel.
+  // T3.9 — COPY DIAGNOSTICS: fetch the sidecar-assembled, secret-free report and put it on the clipboard. The
+  // Diag module (frontend/app/diagnostics.js) owns the fetch/copy/notify; here we just wire the button + flash it.
+  function wireDiagnostics(body) {
+    const btn = body.querySelector('#diag-copy');
+    const msgEl = body.querySelector('#diag-msg');
+    if (!btn) return;
+    const setMsg = (t, ok) => { if (msgEl) { msgEl.textContent = t || ''; msgEl.className = 'msg' + (ok ? ' ok' : ''); } };
+    btn.addEventListener('click', () => {
+      if (typeof Diag === 'undefined' || !Diag.copy) { setMsg('diagnostics unavailable', false); return; }
+      btn.disabled = true; sfx('click');
+      Diag.copy({ notify: false }).then(ok => {
+        btn.disabled = false;
+        setMsg(ok ? '✓ copied — paste it into an email to ' + (Diag.SUPPORT_EMAIL || 'support') : 'copy failed — try again', ok);
+        // Clipboard-failure fallback: if Lane A's on-screen renderer is present, show the report block so the user can
+        // select-and-copy it by hand. Defensive: the helper may not exist in this build yet — keep current behavior then.
+        // (Orchestrator reconciles the exact API at merge.)
+        if (!ok && typeof Diag !== 'undefined' && typeof Diag.showBlock === 'function') {
+          try { Diag.showBlock(body.querySelector('#diag-block') || body); } catch (_) {}
+        }
+      });
+    });
+  }
+
   function wireBackup(body) {
     const msgEl = body.querySelector('#bk-msg');
     const setMsg = (t, ok) => { if (msgEl) { msgEl.textContent = t || ''; msgEl.className = 'msg' + (ok ? ' ok' : ''); } };
@@ -2436,6 +2540,7 @@ const StationUI = (() => {
 
   function buildSettings(body) {
     refreshCodexConnectionStatus();
+    refreshKeychainMode();   // learn keychain-vs-browser once, so the key-save confirmation can name the real store
     const s = store.settings;
     const awakeDesktop = !!(typeof KeepAwake !== 'undefined' && KeepAwake.isDesktop && KeepAwake.isDesktop());
     const awakeChecked = awakeDesktop && !!s.keepComputerAwake;
@@ -2499,16 +2604,16 @@ const StationUI = (() => {
       // BUDGET — the four real USD spend caps the sidecar enforces over the ledger (perRun hard stop + soft
       // per-agent / per-day / global pools). Persisted server-side + applied live; a live spend readout below.
       '<h4 class="ms-h">BUDGET <span class="dim">— real USD spend limits</span></h4>' +
-      '<p class="set-about">Hard money limits your agents cannot exceed. Enforced by the sidecar against the real spend ledger. <b>0 or blank = no cap.</b> Saved here on this machine; live defaults come from the environment.</p>' +
+      '<p class="set-about">Hard money limits your agents cannot exceed. Enforced by the sidecar against the real spend ledger. <b>Leave blank or 0 for no cap.</b> Saved here on this machine; until you save, each limit follows its environment default.</p>' +
       '<div id="budget-spend" class="set-row dim">reading spend…</div>' +
       '<div class="mc-form" id="budget-form">' +
-        '<div class="set-row"><label for="bg-perRun">PER RUN</label><input id="bg-perRun" class="key-input bg-cap" type="number" min="0" step="0.01" inputmode="decimal" autocomplete="off" placeholder="0 = no cap"></div>' +
+        '<div class="set-row"><label for="bg-perRun">PER RUN <span class="src-badge" id="bg-src-perRun" hidden></span></label><input id="bg-perRun" class="key-input bg-cap" type="number" min="0" step="0.01" inputmode="decimal" autocomplete="off" placeholder="blank or 0 = no cap"></div>' +
         '<div class="mc-hint">Hard ceiling for a single agent run. The run stops the moment it would exceed this.</div>' +
-        '<div class="set-row"><label for="bg-perAgent">PER AGENT</label><input id="bg-perAgent" class="key-input bg-cap" type="number" min="0" step="0.01" inputmode="decimal" autocomplete="off" placeholder="0 = no cap"></div>' +
+        '<div class="set-row"><label for="bg-perAgent">PER AGENT <span class="src-badge" id="bg-src-perAgent" hidden></span></label><input id="bg-perAgent" class="key-input bg-cap" type="number" min="0" step="0.01" inputmode="decimal" autocomplete="off" placeholder="blank or 0 = no cap"></div>' +
         '<div class="mc-hint">Lifetime cap on any one agent’s total spend across all its runs.</div>' +
-        '<div class="set-row"><label for="bg-perDay">PER DAY</label><input id="bg-perDay" class="key-input bg-cap" type="number" min="0" step="0.01" inputmode="decimal" autocomplete="off" placeholder="0 = no cap"></div>' +
+        '<div class="set-row"><label for="bg-perDay">PER DAY <span class="src-badge" id="bg-src-perDay" hidden></span></label><input id="bg-perDay" class="key-input bg-cap" type="number" min="0" step="0.01" inputmode="decimal" autocomplete="off" placeholder="blank or 0 = no cap"></div>' +
         '<div class="mc-hint">Total spend across every agent in a rolling 24-hour window.</div>' +
-        '<div class="set-row"><label for="bg-global">GLOBAL</label><input id="bg-global" class="key-input bg-cap" type="number" min="0" step="0.01" inputmode="decimal" autocomplete="off" placeholder="0 = no cap"></div>' +
+        '<div class="set-row"><label for="bg-global">GLOBAL <span class="src-badge" id="bg-src-global" hidden></span></label><input id="bg-global" class="key-input bg-cap" type="number" min="0" step="0.01" inputmode="decimal" autocomplete="off" placeholder="blank or 0 = no cap"></div>' +
         '<div class="mc-hint">All-time ceiling across everything. The last line of defence.</div>' +
         '<div class="mc-acts">' +
           '<button class="bb sm" id="bg-save">SAVE LIMITS</button>' +
@@ -2584,6 +2689,16 @@ const StationUI = (() => {
       '</div>' +
       '<div id="bk-msg" class="msg"></div>' +
       ((typeof Updates !== 'undefined' && Updates.settingsHtml) ? Updates.settingsHtml() : '') +
+      // DIAGNOSTICS (T3.9) — one click copies a paste-ready, SECRET-FREE report to email in a bug report. The sidecar
+      // assembles + sanitizes it (GET /api/diagnostics); this button just fetches + copies. Destination is ONE constant
+      // (Diag.SUPPORT_EMAIL) so it's a one-line swap when the support address is picked. Copy stays honest about where it goes.
+      '<h4 class="ms-h">DIAGNOSTICS <span class="dim">— for a bug report</span></h4>' +
+      '<p class="set-about">If something breaks, copy a <b>diagnostic readout</b> and paste it into an email to ' +
+        '<b>' + esc((typeof Diag !== 'undefined' && Diag.SUPPORT_EMAIL) ? Diag.SUPPORT_EMAIL : 'nonfungiblefunyuns@gmail.com') + '</b>. ' +
+        'It carries your app version, platform, provider &amp; model, and the tail of recent errors — ' +
+        '<b>never your keys, tokens, messages, or prompts</b>. Assembled and scrubbed by the local sidecar.</p>' +
+      '<div class="set-save"><button class="bb sm" id="diag-copy">📋 COPY DIAGNOSTICS</button></div>' +
+      '<div id="diag-msg" class="msg"></div>' +
       '<h4 class="ms-h">STATION DATA</h4>' +
       '<div class="set-save"><button class="bb sm danger" id="set-clear">CLEAR NOTIFICATIONS</button></div>' +
       '<p class="set-about">STARNET — gamified AI-agent harness.<br>Theme, display & audio preferences are saved locally on this machine. Manage workstreams from the TASK BOARD or the COMMS rail.</p>';
@@ -2609,6 +2724,7 @@ const StationUI = (() => {
     wireNotifyPrefs(host);
     wireAdvanced(host);
     wireBackup(host);
+    wireDiagnostics(host);
     // switch theme in place — applySettings repaints via the body class; do NOT rerender (it would wipe an open key editor).
     host.querySelectorAll('[data-t]').forEach(b => b.addEventListener('click', () => {
       s.theme = b.dataset.t; applySettings(); save(); sfx('click');
@@ -3020,7 +3136,15 @@ const StationUI = (() => {
       const agentName = (ag && ag.name) || '';
       msgEl.textContent = 'connecting…';
       try {
-        const r = await fetch('/api/channels/telegram/connect', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token, key, model, provider, baseUrl, agentId, system, agentName }) });
+        // Desktop: park the bot token in the OS keychain (via Tauri), then connect WITHOUT sending it over HTTP —
+        // the sidecar reads it from the keychain-injected runtime layer. Browser: storeChannelToken is a no-op and
+        // the token rides the POST body as before. A fresh paste is required only when nothing is stored yet.
+        let bodyToken = token;
+        if (typeof Harness !== 'undefined' && Harness.storeChannelToken && token) {
+          const stored = await Harness.storeChannelToken('telegram', token);
+          if (stored) bodyToken = '';   // keychain owns it now — don't echo it into the request/plaintext file
+        }
+        const r = await fetch('/api/channels/telegram/connect', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: bodyToken, key, model, provider, baseUrl, agentId, system, agentName }) });
         const j = await r.json().catch(() => ({}));
         if (!r.ok || j.error) { msgEl.textContent = '✕ ' + (j.error || ('HTTP ' + r.status)); sfx('bad'); }
         else { msgEl.textContent = '✓ connected — open Telegram and DM your bot'; sfx('click'); notify('Telegram bot connected', 'good'); body.querySelector('#tg-token').value = ''; }
@@ -3086,7 +3210,13 @@ const StationUI = (() => {
       const agentName = (ag && ag.name) || '';
       dcMsgEl.textContent = 'connecting…';
       try {
-        const r = await fetch('/api/channels/discord/connect', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token, key, model, provider, baseUrl, agentId, system, agentName }) });
+        // Desktop: keychain-park the token then connect without echoing it over HTTP (see the Telegram card).
+        let bodyToken = token;
+        if (typeof Harness !== 'undefined' && Harness.storeChannelToken && token) {
+          const stored = await Harness.storeChannelToken('discord', token);
+          if (stored) bodyToken = '';
+        }
+        const r = await fetch('/api/channels/discord/connect', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: bodyToken, key, model, provider, baseUrl, agentId, system, agentName }) });
         const j = await r.json().catch(() => ({}));
         if (!r.ok || j.error) { dcMsgEl.textContent = '✕ ' + (j.error || ('HTTP ' + r.status)); sfx('bad'); }
         else { dcMsgEl.textContent = '✓ connected — DM your bot on Discord'; sfx('click'); notify('Discord bot connected', 'good'); body.querySelector('#dc-token').value = ''; }
@@ -3708,7 +3838,10 @@ const StationUI = (() => {
       if (!prompt || !schedule) { sfx('bad'); msgEl.textContent = 'a prompt and a schedule are required'; return; }
       msgEl.textContent = 'saving…';
       try {
-        const r = await (await post('/api/cron', { name, prompt, schedule, agentId: agentId || undefined, provider })).json();
+        // tz honesty (G4.1): send the browser's IANA timezone so a wall-clock schedule ("every morning 9:00")
+        // fires in the user's LOCAL time, not the server host's. Backend validates + persists it (invalid tz 400s).
+        const tz = (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || undefined; } catch (_) { return undefined; } })();
+        const r = await (await post('/api/cron', { name, prompt, schedule, agentId: agentId || undefined, provider, tz })).json();
         if (r && r.error) { msgEl.innerHTML = '<span style="color:var(--bad)">✕ ' + esc(r.error) + '</span>'; sfx('bad'); }
         else {
           msgEl.textContent = ''; notify('routine "' + (name || 'unnamed') + '" scheduled for ' + agentLabel(agentId || 'agent'), 'good'); sfx('click');
@@ -4240,18 +4373,28 @@ const StationUI = (() => {
     }));
     // dismissed = stop forever: the row vanishes now and never comes back (and the curiosity nudge for a
     // waved-off dimension stops with it — QuestStateStore.dismiss carries the one anti-nag law end to end).
-    body.querySelectorAll('.q-dismiss').forEach(b => b.addEventListener('click', ev => {
-      ev.stopPropagation();
-      const q = qs.find(x => x && x.id === b.dataset.qid);
-      if (!q) return;
-      // each fix-it/build kind routes to its OWN permanent denylist; the dossier kind goes through QuestState.
-      // Either way: dismissed = stop forever (the one anti-nag law).
-      const took = (q.kind === 'station-gap') ? (SQS && SQS.dismiss && SQS.dismiss(q.id))
-        : (q.kind === 'work') ? (WQS && WQS.dismiss && WQS.dismiss(q.id))
-        : (q.kind === 'maintenance') ? (MQS && MQS.dismiss && MQS.dismiss(q.id))
-        : (QSS && QSS.dismiss && QSS.dismiss(q));
-      if (took) { sfx('click'); rerender('quests'); }
-    }));
+    // Slice 5 (Lane B): permanent by design, so it's a 2-STEP arm/confirm (shared ArmConfirm helper, ~4s
+    // auto-disarm) — one misclick can no longer nuke a build plan. The glyph arms to "dismiss forever — sure?".
+    body.querySelectorAll('.q-dismiss').forEach(b => {
+      const doDismiss = ev => {
+        if (ev && ev.stopPropagation) ev.stopPropagation();
+        const q = qs.find(x => x && x.id === b.dataset.qid);
+        if (!q) return;
+        // each fix-it/build kind routes to its OWN permanent denylist; the dossier kind goes through QuestState.
+        const took = (q.kind === 'station-gap') ? (SQS && SQS.dismiss && SQS.dismiss(q.id))
+          : (q.kind === 'work') ? (WQS && WQS.dismiss && WQS.dismiss(q.id))
+          : (q.kind === 'maintenance') ? (MQS && MQS.dismiss && MQS.dismiss(q.id))
+          : (QSS && QSS.dismiss && QSS.dismiss(q));
+        if (took) { sfx('click'); rerender('quests'); }
+      };
+      if (typeof ArmConfirm !== 'undefined' && ArmConfirm.wire) {
+        // arming shouldn't bubble to the tile; keep restLabel = the ✕ glyph so disarm restores it.
+        b.addEventListener('click', ev => { if (ev && ev.stopPropagation) ev.stopPropagation(); });
+        ArmConfirm.wire(b, { armedLabel: 'dismiss forever — sure?', timeoutMs: 4000, onConfirm: doDismiss });
+      } else {
+        b.addEventListener('click', doDismiss);   // fallback: immediate (helper absent)
+      }
+    });
     // W3 — BUILD THIS WHILE I'M AWAY: queue the quest onto the hero's away-workshop backlog (POST
     // /api/workshop/queue via WorkshopStore). One click; a notice confirms. Never launches a live run —
     // it hands the idea to the sandbox for an unattended shift to pick up.
@@ -4310,9 +4453,12 @@ const StationUI = (() => {
   // OPEN (never toggle-closed) a dock term by key — used by deep links like the COMMS error chip that
   // points a beginner at Settings (fix your model key) or SKILLS (enable a capability). No-op if unknown;
   // if the panel is already open it's left as-is rather than closed.
-  function openTerm(key) {
+  function openTerm(key, section) {
     const def = BUILDERS[key]; if (!def) return;
-    if (open[key]) { if (minimized[key]) restoreTerm(key); return; }   // minimized → restore, not duplicate
+    // optional section arg (Lane A error-door routing): land the console rail on a specific section — same
+    // mechanism as the dossier's "jump to CONFIG" (consoleSection is what mountConsole reads at render).
+    if (section) consoleSection[key] = section;
+    if (open[key]) { if (minimized[key]) restoreTerm(key); if (section) rerender(key); return; }   // minimized → restore, not duplicate
     toggleTerm(key, def[0], def[1], def[2]);
   }
 

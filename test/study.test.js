@@ -323,7 +323,7 @@ const S = require('../frontend/app/study.js');
   A.ok(/if \(!ok\) \{ settle\(/.test(chatSrc.slice(iStudyCard, iStudyCard + 5200)), 'a failed accept never flashes a success verdict (honest telemetry)');
   // rateWork mints taste through the SAME one beat.
   const iRate = chatSrc.indexOf('function rateWork');
-  A.ok(iRate > 0 && /maybeTasteBeat\(/.test(chatSrc.slice(iRate, iRate + 2200)), 'rateWork routes a ratings streak into the shared study beat (maybeTasteBeat)');
+  A.ok(iRate > 0 && /maybeTasteBeat\(/.test(chatSrc.slice(iRate, iRate + 3600)), 'rateWork routes a ratings streak into the shared study beat (maybeTasteBeat)');
 
   A.report('study.test');
 })();

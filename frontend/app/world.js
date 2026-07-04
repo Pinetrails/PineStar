@@ -38,7 +38,7 @@ const World = (() => {
   let scale = 2, panX = 0, panY = 0, fitNeeded = true;
   const MINZ = 0.5, MAXZ = 6;
   const clampz = (v, a, b) => v < a ? a : v > b ? b : v;
-  let drag = null, hoverAgent = false, onClick = null, onArcade = null, onOutbox = null, onMissionBoard = null, onTrophyCase = null, wakeAt = 0;
+  let drag = null, hoverAgent = null, onClick = null, onArcade = null, onOutbox = null, onMissionBoard = null, onTrophyCase = null, wakeAt = 0;
   let camLerp = null;   // {scale,panX,panY} target — a gentle one-on-one framing for voice conversations
   let wakeDark = 0, wakeDarkTarget = 0, awakeFrozen = false;   // the AWAKENING: a darkness veil that lifts to first light, + a freeze so the newborn holds still during its first meeting
   let camAnim = null;                                          // {fromS,toS,fromX,toX,fromY,toY,t,dur,ease,onEnd} — a scripted awakening camera move
@@ -111,6 +111,9 @@ const World = (() => {
   // where the agent is DRAWN: on its couch seat when seated, otherwise its logical foot position
   const rposX = () => (agent && agent.seated) ? agent.seatPx : agent.px;
   const rposY = () => (agent && agent.seated) ? agent.seatPy : agent.py;
+  // same, for ANY placed body (the hero OR a crew/summoned body): its drawn foot/seat position
+  const bodyPosX = b => b ? (b.seated ? b.seatPx : b.px) : 0;
+  const bodyPosY = b => b ? (b.seated ? b.seatPy : b.py) : 0;
 
   /* couch seat reservation (multi-agent seam): "propId:slot" of every taken seat. One agent drives
      world.js today, so this holds at most its own claim — but it's the shared occupancy a second
@@ -692,8 +695,9 @@ const World = (() => {
       if (Math.hypot(wp.x - lastCursor.wx, wp.y - lastCursor.wy) > T * 0.5) cursorMoveT = nowMs;
       lastCursor = { wx: wp.x, wy: wp.y, t: nowMs };   // remember where you are — the agent's sense of your presence (feeds gaze)
       const hit = agentHit(wp);
-      // rising edge: it notices the Commander's cursor land on it and turns to meet you
-      if (hit && !hoverAgent && agent && activity === 'idle' && !agent.working) { setGlance('south', 900, performance.now()); curiositySay(SELF_ACK, 0.3, performance.now()); }
+      // rising edge: the HERO notices the Commander's cursor land on IT and turns to meet you.
+      // (crew bodies just raise their nameplate on hover — only the hero self-acknowledges)
+      if (agent && hit === agent && hoverAgent !== agent && activity === 'idle' && !agent.working) { setGlance('south', 900, performance.now()); curiositySay(SELF_ACK, 0.3, performance.now()); }
       if (hit !== hoverAgent) hoverAgent = hit;
       cv.style.cursor = (hit || arcadeAt(wp) || outboxAt(wp) || missionBoardAt(wp) || trophyCaseAt(wp)) ? 'pointer' : 'default';   // arcade cabinets + a stacked OUTBOX + the MISSION BOARD + the TROPHY CASE are clickable too
     });
@@ -702,8 +706,10 @@ const World = (() => {
       const wasDrag = drag && drag.moved; drag = null; cv.style.cursor = 'default';
       if (wasDrag) return;
       const wp = toWorld(ev);
-      if (agentHit(wp)) {
-        if (agent && activity !== 'task') { agent.dir = 'south'; setGlance('south', 1000, performance.now()); curiositySay(SELF_GREET, 0.8, performance.now()); }   // eye contact for the Commander
+      // a click opens the HERO's console (StationUI.openAgent(0)); keep it hero-only so a crew
+      // body's hover nameplate never turns into a wrong-panel open. Crew clicks fall through.
+      if (agent && agentHit(wp) === agent) {
+        if (activity !== 'task') { agent.dir = 'south'; setGlance('south', 1000, performance.now()); curiositySay(SELF_GREET, 0.8, performance.now()); }   // eye contact for the Commander
         if (onClick) onClick(); return;
       }
       const arc = arcadeAt(wp);
@@ -718,7 +724,7 @@ const World = (() => {
       const tc = trophyCaseAt(wp);
       if (tc && onTrophyCase) onTrophyCase(tc);
     });
-    cv.addEventListener('mouseleave', () => { if (kindleArmed) kindleHolding = false; hoverAgent = false; if (!drag) cv.style.cursor = 'default'; });
+    cv.addEventListener('mouseleave', () => { if (kindleArmed) kindleHolding = false; hoverAgent = null; if (!drag) cv.style.cursor = 'default'; });
     // you just came back to the tab → for a few seconds the agent is likelier to look up and notice you
     try { document.addEventListener('visibilitychange', () => { if (!document.hidden) userReturnUntil = performance.now() + 3000; }); } catch (e) {}
     connectChannelBridge();   // open the SSE bridge so real inbound work animates as boxes on the belts
@@ -906,10 +912,19 @@ const World = (() => {
     return { x: (ev.clientX - r.left) * (cv.width / r.width), y: (ev.clientY - r.top) * (cv.height / r.height) };
   }
   function toWorld(ev) { const c = toCanvas(ev); return { x: (c.x - panX) / scale, y: (c.y - panY) / scale }; }
+  // the nearest PLACED body under the cursor — the hero (Overseer) OR any crew/summoned body —
+  // returned as the body itself (so the hover nameplate can tag whichever one), else null.
   function agentHit(wp) {
-    if (!agent || agent.unplaced) return false;
-    const dx = wp.x - rposX(), dy = wp.y - rposY();
-    return (dx * dx + dy * dy) < 14 * 14;
+    let best = null, bestD = 14 * 14;
+    const consider = b => {
+      if (!b || b.unplaced) return;
+      const dx = wp.x - bodyPosX(b), dy = wp.y - bodyPosY(b);
+      const d = dx * dx + dy * dy;
+      if (d < bestD) { bestD = d; best = b; }
+    };
+    consider(agent);
+    for (const b of crew) consider(b);
+    return best;
   }
 
   /* ---------- pathing + behaviour ---------- */
@@ -1371,8 +1386,8 @@ const World = (() => {
   }
 
   /* v7 sit-ON-the-couch: a couch is a blocking prop (you can't path onto it), so the agent walks to
-     a tile ADJACENT to a free cushion, then RENDERS on that cushion while the couch is y-sorted just
-     behind it — exactly v7's sitTiles + sitPy trick. Seats are the inner footprint columns (an arm
+     a tile ADJACENT to a free cushion, then RENDERS on that cushion while the couch (drawn as the sofa's
+     BACK — it faces north) y-sorts just in front, so the sitter peeks over the backrest. Seats are the inner footprint columns (an arm
      is skipped at each end on a wide couch). Each cushion is reserved in occupiedSeats so a second
      agent takes a different one (or, when the couch is full, planProp moves on to another couch).
      tvId != null → goal 'lounge' (watch + light the TV); else a plain couch sit. */
@@ -3026,8 +3041,13 @@ const World = (() => {
         // (token/tool-driven, heatFor) + a task-progress fraction ONLY when a real one was published
         // (deskProgFor — a live harness run has none and renders none).
         const live = (p.agentId && workstationLit(p)) ? { heat: heatFor(p.agentId), prog: deskProgFor(p.agentId) } : null;
-        // a couch with a seated agent sorts JUST BEHIND the sitter, so the agent renders ON it (v7's sitPy trick)
-        const sy = (agent && agent.seated && agent.usingProp === p.id) ? agent.seatPy - 1 : (p.y + (p.h || 1)) * T;
+        // a couch with a seated agent (hero OR crew) sorts JUST IN FRONT of its sitter: the couch art is the
+        // BACK of the sofa (it faces north, toward the TV wall), so the tall rear panel occludes the sitter's
+        // body and only head/shoulders peek over the cap. Any body lounging on THIS prop counts. All cushions
+        // share one seatPy ((couch.y+h)*T-2), so any sitter's seatPy+1 places the couch in front of them all.
+        const sitter = (agent && agent.seated && agent.usingProp === p.id) ? agent
+          : crew.find(b => b.seated && b.usingProp === p.id);
+        const sy = sitter ? sitter.seatPy + 1 : (p.y + (p.h || 1)) * T;
         items.push({ y: sy, draw: () => PropSprites.draw(p, work, live) });
         // an ASSIGNED workstation is the hero's desk with another name: give it the same chair, in front,
         // y-sorted exactly like the hero's (one row below the desk) so its agent reads as sitting IN it. Scoped
@@ -3055,7 +3075,7 @@ const World = (() => {
     } });
     if (seat && !deskPropId) items.push({ y: (seat.ty + 1) * T, draw: () => drawSeatChair(seat.tx, seat.ty) });   // a PLACED hero desk's chair is drawn by the workstation loop above; draw here only for the synthetic auto-desk
     if (agent && !agent.unplaced) items.push({ y: rposY(), draw: () => drawAgent(now) });
-    for (const b of crew) items.push({ y: b.py, draw: () => drawAgent(now, b) });   // the other agents, at their bays
+    for (const b of crew) items.push({ y: (b.seated ? b.seatPy : b.py), draw: () => drawAgent(now, b) });   // the other agents, at their bays (seated → sort by the cushion pos like the hero's rposY, so a couch-lounging crew body tucks just behind the back-facing couch panel, head over the cap)
     items.sort((a, b) => a.y - b.y);
     for (const it of items) it.draw();
     if (convey) convey.drawBoxes(ctx, now, T);   // boxes ride on top of the belts
@@ -3097,7 +3117,7 @@ const World = (() => {
     drawPinFlourish(now); // G4.2: the amber pin-burst at the board the instant a proposal is pinned
     if (agent && !agent.unplaced) drawBubble(now);
     for (const b of crew) drawBubble(now, b);   // crew speech bubbles (e.g. "received: …" when work routes to them)
-    if (agent && !agent.unplaced && hoverAgent) drawNameplate(now);
+    if (hoverAgent && !hoverAgent.unplaced) drawNameplate(now, hoverAgent);
     drawQueueDepth();   // screen-space backpressure gauge (resets transform; drawn last)
     drawFloorStats(now);   // screen-space factory-floor economy readout (spend / yield / slag / cache)
     // (station growth headline now lives in the top bar's STATION chip — see xpstore.pushTopbar)
@@ -3574,14 +3594,16 @@ const World = (() => {
      level, and the 1px XP-to-next sliver along the bottom all share the suit color — one tiny extra.
      Anchored just above the head, clamped to the viewport. Intentionally small: a glance, not a window. */
   const PLATE_FONT = '"VT323","Courier New",monospace';   // the station terminal face (mirrors the body font stack)
-  function drawNameplate(now) {
-    if (!cache) return;
+  function drawNameplate(now, who) {
+    who = who || agent;
+    if (!cache || !who) return;
     const dpr = window.devicePixelRatio || 1;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.imageSmoothingEnabled = false;
     const Wc = cv.width / dpr, Hc = cv.height / dpr;
-    const suit = agent.color || '#ffaa33';
-    const name = String(agent.name || '');
-    const xp = (agent && xpByAgent.get(agent.id)) || xpAgent;
+    const suit = who.color || '#ffaa33';
+    const name = String(who.name || '');
+    // per-body XP: the hero keeps its exact xpByAgent-or-xpAgent fallback; a crew body reads its own snapshot
+    const xp = xpByAgent.get(who.id) || (who === agent ? xpAgent : null);
     const lvl = (xp && xp.level) ? ('Lv ' + xp.level) : null;
     const frac = (xp && typeof xp.frac === 'number') ? Math.max(0, Math.min(1, xp.frac)) : 0;
 
@@ -3592,7 +3614,7 @@ const World = (() => {
     const w = Math.round(padX * 2 + nameW + gap + lvlW);
 
     // anchor centered just above the head, crisp + clamped to the canvas
-    const ax = (rposX() * scale + panX) / dpr, ay = (rposY() * scale + panY) / dpr;
+    const ax = (bodyPosX(who) * scale + panX) / dpr, ay = (bodyPosY(who) * scale + panY) / dpr;
     const spriteH = 15 * scale / dpr;
     const x = Math.round(Math.max(4, Math.min(Wc - w - 4, ax - w / 2)));
     const y = Math.round(Math.max(4, Math.min(Hc - h - 4, ay - spriteH - 9 - h)));
@@ -3613,7 +3635,7 @@ const World = (() => {
     if (lvl) {
       // LEVEL-UP GLINT: right after a level gain the "Lv N" ticks to a gold bloom and settles back to the
       // suit colour over ~1.2s — the plate number itself catches the light. Piggybacks this draw; no timer.
-      const lva = (agent && agent.levelUpAt) || levelUpAt || 0;
+      const lva = who.levelUpAt || (who === agent ? levelUpAt : 0) || 0;
       const gt = lva ? (now - lva) / 1200 : 1;   // now is the shared render clock (fnow); >=1 → settled
       if (gt >= 0 && gt < 1) {
         const glint = Math.sin(Math.min(1, gt * 1.7) * Math.PI);   // 0→1→0 over the window

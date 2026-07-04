@@ -18,7 +18,7 @@ const recipesSrc = fs.readFileSync(path.join(__dirname, '../frontend/app/recipes
 // rateWork hands its DIRECT (never-on-the-bus) verdict to BottleStore, alongside the ConfBeats hand-off.
 const iRate = chatSrc.indexOf('function rateWork');
 A.ok(iRate > 0, 'chat.js defines rateWork');
-A.ok(/BottleStore\.onVerdict\(\s*runId\s*,\s*verdict\s*,\s*agentId/.test(chatSrc.slice(iRate, iRate + 3200)),
+A.ok(/BottleStore\.onVerdict\(\s*runId\s*,\s*verdict\s*,\s*agentId/.test(chatSrc.slice(iRate, iRate + 5000)),
   'rateWork hands the runId + verdict + agentId to BottleStore.onVerdict (the direct 👍 hand-off)');
 A.ok(chatSrc.indexOf('BottleStore') > chatSrc.indexOf('ConfBeats.onFeedback'),
   'the bottle hand-off sits alongside the confidence-narrative hand-off (both fed by the same direct verdict)');

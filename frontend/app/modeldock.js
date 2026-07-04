@@ -182,6 +182,24 @@ const ModelDock = (() => {
     return list.filter(m => m && m.id);
   }
 
+  // Does this provider require an API key to run at all? (Codex uses OAuth; ollama/custom are keyless
+  // local/self-hosted endpoints.) Mirrors Harness.providerNeedsKey, kept local so the dock has no new dep.
+  function providerNeedsKey(p) {
+    p = normalizeProvider(p);
+    return p !== 'codex' && p !== 'ollama' && p !== 'custom';
+  }
+  // TRUTHFUL: is the ACTIVE provider missing a real, run-able credential? Uses Harness.hasStoredCredential
+  // (never fabricated by DEVMODE) so the warning only shows when a run would genuinely fail for lack of a key —
+  // and disappears the instant a key is stored. This is the pre-RUN surfacing of harness.js's 'no API key set'.
+  function activeNeedsKey() {
+    const p = provider();
+    if (!providerNeedsKey(p)) return false;
+    try {
+      if (typeof Harness !== 'undefined' && Harness.hasStoredCredential) return !Harness.hasStoredCredential(p);
+    } catch (_) {}
+    return false;
+  }
+
   function providerEnabled(p) {
     p = normalizeProvider(p || provider());
     if (p === provider()) return true;
@@ -505,6 +523,32 @@ const ModelDock = (() => {
   }
   function esc(s) { const d = document.createElement('div'); d.textContent = String(s == null ? '' : s); return d.innerHTML; }
 
+  // Inline no-key warning: if the ACTIVE provider needs a key and none is stored, flag the resting chip and
+  // drop a one-tap "add a key in Settings" row inside the dock — surfaced BEFORE the user hits RUN (which would
+  // otherwise be the first time they learn, via harness.js's honest 'no API key set' backstop). Provable from
+  // backend state (hasStoredCredential); vanishes the instant a key lands, so it never lies.
+  function renderKeyWarning() {
+    const needs = activeNeedsKey();
+    const toggle = el('model-dock-toggle');
+    if (toggle) toggle.classList.toggle('needs-key', needs);
+    const head = el('model-dock-head') || (el('model-dock') && el('model-dock').querySelector('.model-dock-head'));
+    let warn = el('model-dock-keywarn');
+    if (!needs) { if (warn) warn.remove(); return; }
+    if (!warn) {
+      warn = document.createElement('button');
+      warn.id = 'model-dock-keywarn';
+      warn.type = 'button';
+      warn.className = 'model-dock-keywarn';
+      warn.addEventListener('click', openSettings);
+      // sits directly under the head, above the search box, so it reads as the first thing when the dock opens
+      const dock = el('model-dock');
+      if (head && head.parentNode) head.parentNode.insertBefore(warn, head.nextSibling);
+      else if (dock) dock.insertBefore(warn, dock.firstChild);
+    }
+    warn.innerHTML = '<span class="mdw-glyph" aria-hidden="true">⚠</span>' +
+      '<span class="mdw-txt">no ' + esc(providerLabel(provider())) + ' key — this model can’t run yet. add one in SETTINGS</span>';
+  }
+
   function reflect() {
     const current = getModel();
     const p = provider();
@@ -522,6 +566,7 @@ const ModelDock = (() => {
       chrome.nameEl.classList.toggle('empty', !short);
     }
     if (chrome) updateTip(chrome.tip);
+    renderKeyWarning();
     renderEfforts();
   }
 

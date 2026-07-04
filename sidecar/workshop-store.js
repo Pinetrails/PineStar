@@ -25,6 +25,7 @@ const { makeDurableJsonStore } = require('./durable-store.js');
 const ID_RE = /^[A-Za-z0-9_-]{1,40}$/;
 const DENYLIST_CAP = 500;   // FIFO cap on the permanent discarded-backlogId list (per agent)
 const BACKLOG_CAP = 200;    // FIFO cap on queued items (oldest un-built drop off if the queue floods)
+const MAX_BUILD_ATTEMPTS = 2;   // failed builds per item before it PARKS (never silently retried again)
 
 function agentIdOf(key) {
   const raw = String(key || '').replace(/^workshop:/, '') || 'agent';
@@ -105,12 +106,14 @@ function makeWorkshopStore(deps) {
     return durable.update(keyOf(agentId), (cur) => {
       const rec = normalize(cur);
       if (rec.denylist.indexOf(id) >= 0) { out = { item: null, reason: 'discarded' }; return undefined; }   // discarded id → never re-queue
+      // an explicit re-ask for an item that's already lined up is a human "try again" — it UN-PARKS the item
+      // (clears failed-build attempts) but never duplicates it.
       const existingById = rec.backlog.find(b => b.id === id);
-      if (existingById) { out = { item: existingById, reason: 'exists' }; return undefined; }                // idempotent add
+      if (existingById) { out = { item: existingById, reason: 'exists' }; if (existingById.attempts) { delete existingById.attempts; return rec; } return undefined; }
       if (nt) {
         if (rec.deniedTitles.indexOf(nt) >= 0) { out = { item: null, reason: 'discarded' }; return undefined; }   // that work was discarded before
         const dupByTitle = rec.backlog.find(b => normTitle(b.title) === nt);
-        if (dupByTitle) { out = { item: dupByTitle, reason: 'duplicate' }; return undefined; }               // already lined up
+        if (dupByTitle) { out = { item: dupByTitle, reason: 'duplicate' }; if (dupByTitle.attempts) { delete dupByTitle.attempts; return rec; } return undefined; }   // already lined up
       }
       const stored = { id: id, title: title, detail: String(it.detail || '').slice(0, 4000), source: String(it.source || 'queued').slice(0, 40), ts: Number(now) || 0 };
       rec.backlog.push(stored);
@@ -122,12 +125,14 @@ function makeWorkshopStore(deps) {
 
   // pop the TOP un-built backlog item for a shift. Returns the item (leaving it in the backlog, stamped with the
   // runId that is building it) or null when the queue is empty. Stamping in-flight lets a completed build map its
-  // manifest back to the backlogId and lets the driver skip an item already being built.
+  // manifest back to the backlogId and lets the driver skip an item already being built. PARKED items (attempts
+  // >= MAX_BUILD_ATTEMPTS after failed builds) are never re-claimed — without this cap a permanently-failing item
+  // would be silently retried every shift forever (an invisible token leak).
   function claimNext(agentId, runId) {
     let claimed = null;
     return durable.update(keyOf(agentId), (cur) => {
       const rec = normalize(cur);
-      const next = rec.backlog.find(b => !b.buildingRunId && !b.builtRunId);
+      const next = rec.backlog.find(b => !b.buildingRunId && !b.builtRunId && !(Number(b.attempts) >= MAX_BUILD_ATTEMPTS));
       if (!next) { claimed = null; return undefined; }   // no change, no write
       next.buildingRunId = String(runId || '');
       claimed = next;
@@ -146,14 +151,27 @@ function makeWorkshopStore(deps) {
     });
   }
 
-  // release a claim without building (empty/invalid/failed shift) so the item stays queued for a later shift.
-  function releaseClaim(agentId, runId) {
+  // release a claim without building so the item stays queued for a later shift. opts.failed = the shift RAN and
+  // produced no valid deliverable (run threw / manifest missing or invalid) — that counts a build ATTEMPT; at
+  // MAX_BUILD_ATTEMPTS the item PARKS (claimNext skips it) so a doomed item can't burn a run every shift forever.
+  // A no-capability release (no model/credentials — the build never started) is NOT an attempt and stays free.
+  // Returns { parked: item|null } so the caller can surface an honest "tried N times, couldn't build it".
+  function releaseClaim(agentId, runId, opts) {
+    const failed = !!(opts && opts.failed);
+    let parked = null;
     return durable.update(keyOf(agentId), (cur) => {
       const rec = normalize(cur);
       let changed = false;
-      for (const b of rec.backlog) { if (b.buildingRunId === String(runId || '')) { delete b.buildingRunId; changed = true; } }
+      for (const b of rec.backlog) {
+        if (b.buildingRunId !== String(runId || '')) continue;
+        delete b.buildingRunId; changed = true;
+        if (failed) {
+          b.attempts = (Number(b.attempts) || 0) + 1;
+          if (b.attempts >= MAX_BUILD_ATTEMPTS) parked = b;
+        }
+      }
       return changed ? rec : undefined;
-    });
+    }).then(() => ({ parked: parked }));
   }
 
   // DISCARD: remove the item from the backlog AND denylist its id forever (never silently re-queued/retried).
@@ -172,6 +190,20 @@ function makeWorkshopStore(deps) {
     });
   }
 
+  // COMPLETE (kept): the Commander kept the deliverable — the work is DONE, so the item leaves the backlog and
+  // its manifest stops being "pending" (the return-card must never resurrect a kept build on the next session).
+  // Unlike discard, the title is NOT denylisted: kept work was good work and may legitimately be asked for again.
+  function complete(agentId, backlogId) {
+    const id = String(backlogId || '');
+    if (!id) return Promise.resolve();
+    return durable.update(keyOf(agentId), (cur) => {
+      const rec = normalize(cur);
+      if (!rec.backlog.some(b => b.id === id)) return undefined;   // unknown id → no change, no write
+      rec.backlog = rec.backlog.filter(b => b.id !== id);
+      return rec;
+    });
+  }
+
   // find the backlog item a given build run produced (by builtRunId or buildingRunId) — used on decide.
   function itemForRun(agentId, runId) {
     const rid = String(runId || '');
@@ -180,7 +212,7 @@ function makeWorkshopStore(deps) {
 
   return {
     read, hasGrant, setGrant, backlogOf, isDenied,
-    queue, claimNext, markBuilt, releaseClaim, discard, itemForRun,
+    queue, claimNext, markBuilt, releaseClaim, discard, complete, itemForRun,
     _durable: durable
   };
 }

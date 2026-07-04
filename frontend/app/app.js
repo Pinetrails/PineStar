@@ -4,6 +4,8 @@
 
 const App = (() => {
   const el = id => document.getElementById(id);
+  // HTML-escape for the rare spot we build a connect message with a link (provider label + signup URL).
+  const esc = s => { const d = document.createElement('div'); d.textContent = String(s == null ? '' : s); return d.innerHTML; };
   // CRT-muted crew suit tints — distinct per crew member but passed through the amber-phosphor grade (no pure neons). Last entry stays gold to match ORCH_COLOR.
   const SUITS = ['#6fb3bf', '#7bc88a', '#d99a5a', '#a888c0', '#cf7d96', '#ffd34a'];
 
@@ -19,6 +21,11 @@ const App = (() => {
   let pickedCustomVoice = '';   // the Commander's free-text "in their own words" voice note (optional)
   let pickedApproval = 'ask';   // the APPROVAL mode — 'ask' (consent-gated) | 'full' (auto-approve). Drives the REAL consent broker (sidecar bypass), not a cosmetic toggle.
   let pickedProvider = 'codex';   // BEGINNER-FIRST default: 'codex' (personal ChatGPT sign-in, NO API key) leads the funnel; 'openrouter' (BYO API key) + the rest stay one click away. initConnect() still honours a returning agent's saved provider (selectProviderUI(Harness.getProv())).
+  let prefilledKey = '';               // the key the CONNECT field was pre-seeded with from storage (browser BYOK). Empty
+                                       //   when nothing was stored (or on desktop, where the key lives in the keychain and
+                                       //   getKey() returns ''). Used by onWake's one-time overwrite guard: editing a
+                                       //   pre-filled key asks once before it silently replaces the stored one.
+  let keyOverwriteConfirmed = false;   // set true once the Commander confirms replacing the pre-filled key (one-time per screen)
   let codexConnected = false;          // last-known /api/auth/codex/status — gates waking on the Codex provider
   let codexFlow = null;                // the in-flight device-code login { device_auth_id, user_code, verification_uri, deadline }
   let codexPoll = null;                // the setTimeout handle for the device-code poll loop
@@ -26,12 +33,29 @@ const App = (() => {
   let pendingStationDoc = null; // a saved station doc awaiting enterGame()
   let pendingStationStats = null; // a saved station-growth rollup (XP/level/confidence) awaiting enterGame()
   let pendingProfile = null;      // a saved user-affinity profile slice awaiting ProfileStore.init() in enterGame()
+  let pendingWorkSignal = null;   // a saved capability-usage histogram slice awaiting WorkSignalStore.init() in enterGame()
   let pendingDossier = null;      // a saved Commander-dossier slice awaiting DossierStore.init() in enterGame()
 
   function show(id) {
     document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
     el(id).classList.add('active');
+    positionLogo();
   }
+
+  // the hoisted brand mark (#logo — fixed above the CRT glass, see style.css) tracks the seat
+  // #logo-anchor reserves in the topbar: the anchor takes the logo's natural width so the gauge
+  // cluster never slides under it, and the logo takes the anchor's on-screen spot.
+  function positionLogo() {
+    const logo = el('logo'), anchor = el('logo-anchor'), bar = el('topbar');
+    if (!logo || !anchor || !bar) return;
+    const game = el('screen-game');
+    if (!game || !game.classList.contains('active')) return;   // hidden screens have no geometry
+    anchor.style.width = logo.offsetWidth + 'px';
+    const a = anchor.getBoundingClientRect(), b = bar.getBoundingClientRect();
+    logo.style.left = a.left + 'px';
+    logo.style.top = (b.top + (b.height - logo.offsetHeight) / 2) + 'px';
+  }
+  if (typeof window !== 'undefined') window.addEventListener('resize', positionLogo);
 
   function refreshUsage() {
     // Broad lifetime token totals are intentionally not surfaced in the chrome.
@@ -212,6 +236,7 @@ const App = (() => {
     }
     pushRoster();   // the pin reaches the sidecar roster (honored by runOnce + cron)
     persist();
+    if (typeof Chat !== 'undefined' && Chat.refreshIdBar) Chat.refreshIdBar();   // COMMS header model readout stays truthful when the pin changes the on-line agent
     return true;
   }
 
@@ -367,6 +392,33 @@ const App = (() => {
     if (p === 'custom') return 'optional API key for this endpoint';
     return 'sk-or-...  -  openrouter.ai/keys';
   }
+  // Where a NEW user actually GETS a key for this provider — the same destinations the key placeholder
+  // hints at, as real URLs so a cold-start message can link them. openrouter.ai/keys is the default.
+  function providerSignupUrl(provider) {
+    const p = normalizeProviderId(provider);
+    const map = {
+      openai: 'https://platform.openai.com/api-keys',
+      anthropic: 'https://console.anthropic.com/settings/keys',
+      gemini: 'https://aistudio.google.com/app/apikey',
+      xai: 'https://console.x.ai',
+      groq: 'https://console.groq.com/keys',
+      mistral: 'https://console.mistral.ai/api-keys',
+      deepseek: 'https://platform.deepseek.com/api_keys',
+      together: 'https://api.together.ai/settings/api-keys',
+      fireworks: 'https://fireworks.ai/account/api-keys',
+      perplexity: 'https://www.perplexity.ai/settings/api',
+      cerebras: 'https://cloud.cerebras.ai',
+      openrouter: 'https://openrouter.ai/keys'
+    };
+    return map[p] || 'https://openrouter.ai/keys';
+  }
+  // A sensible default model slug per provider so a cold-start "no model" bounce can SUGGEST one instead of
+  // stranding the user on an empty required field. Reuses the curated FALLBACK_MODELS lineup (first = best pick).
+  function defaultModelFor(provider) {
+    const p = normalizeProviderId(provider);
+    const list = FALLBACK_MODELS[p] || FALLBACK_MODELS.openrouter;
+    return (list && list[0]) || 'anthropic/claude-sonnet-4.6';
+  }
   function applyQuickModel(sel) {
     if (!agent || !sel) return;
     const model = String(sel.model || ((typeof Harness !== 'undefined' && Harness.getModel) ? Harness.getModel() : '') || '').trim();
@@ -385,6 +437,8 @@ const App = (() => {
     }
     persist();
     if (typeof ModelDock !== 'undefined' && ModelDock.reflect) ModelDock.reflect();
+    if (typeof Chat !== 'undefined' && Chat.refreshIdBar) Chat.refreshIdBar();   // keep the COMMS header model readout in sync with the footer dock change
+    if (typeof KeyCTA !== 'undefined' && KeyCTA.refresh) KeyCTA.refresh();   // a provider switch can change key state — keep the keyless-brain banner honest
     if (typeof StationUI !== 'undefined' && StationUI.notify) {
       const msg = sel.reason === 'effort'
         ? 'REASONING: ' + effortLabel(effort)
@@ -558,10 +612,21 @@ const App = (() => {
     refreshUsage(); renderRail(); persist();
     pushRoster();   // the new worker is now delegatable by the lead
     const _notify = (typeof StationUI !== 'undefined' && StationUI.notify) ? StationUI.notify : (m) => console.log('[summon]', m);
-    _notify(activate
-      ? a.name + ' summoned - type to task it now. Open REFIT to give it its OWN PC (every agent needs one to take floor work).'
-      : a.name + ' summoned - overseer remains in COMMS. Switch to its stream to task it directly, or let the overseer delegate.',
-      'good');
+    if (activate) {
+      // ACTIONABLE FOLLOW-UP (audit B-1): a summoned specialist can't take FLOOR work until it has its own DESK
+      // (a seated workstation). The old copy buried this required step in a passing remark ("give it its OWN PC")
+      // with no way to act. Now the agent says it plainly — "desk", never "OWN PC" — and a chip opens REFIT with
+      // desk placement teed up. The toast still lands as the standing record; the diegetic line + chip is the door.
+      _notify(a.name + ' summoned — type to task it now. It needs a desk before it can take floor work.', 'good');
+      if (typeof Chat !== 'undefined' && Chat.localLine && Chat.choices && (typeof Chat.isBusy !== 'function' || !Chat.isBusy())) {
+        Chat.localLine(a.name + ' is here — but it has nowhere to sit yet. it needs a desk of its own before it can take floor work. want to place one?');
+        Chat.choices([{ label: '▤ PLACE ITS DESK', value: 'desk' }, { label: 'later', value: 'later', skip: true }], item => {
+          if (item && item.value === 'desk') openDeskPlacement();
+        });
+      }
+    } else {
+      _notify(a.name + ' summoned — overseer remains in COMMS. Switch to its stream to task it directly, or let the overseer delegate. Give it a desk in REFIT before it takes floor work of its own.', 'good');
+    }
     // ONE loadout beat: state plainly what the class summon actually applied — the skills enabled, the effort
     // applied, and the STATION GEAR the class draws on (honest present/missing under the overseer, NOT per-agent
     // props). Skipped for a plain persona-only class (no gear/skills/effort) so it never adds noise. Mirrors the
@@ -569,6 +634,31 @@ const App = (() => {
     const lo = loadoutSummary(a, spec);
     if (lo) _notify(a.name + ' loadout - ' + lo, 'info');
     return a;
+  }
+  // OPEN REFIT WITH DESK PLACEMENT TEED UP — the target of the post-summon "PLACE ITS DESK" chip. Opens the
+  // builder (the same door the ⚒ BUILD dock opens) and, once its DOM is up, drives it to the PROP tool on the
+  // WORKSTATIONS category so the very next floor-click drops a desk (a workstation is editable, so it can't be
+  // auto-requisitioned — it opens the agent-binding picker on placement; the Commander places + binds it by hand,
+  // which is the honest one desk-per-agent path). Degrades safely: if any control isn't found we still leave REFIT
+  // open on its default tool, which is already a real improvement over the old unclickable "Open REFIT" sentence.
+  function openDeskPlacement() {
+    if (typeof Build === 'undefined' || !Build.open) return;
+    try { if (!Build.isOpen || !Build.isOpen()) Build.open(); } catch (_) { return; }
+    // REFIT builds its palette synchronously in open()->buildDOM, but retarget across a couple of rAFs to be safe
+    // against any deferred render. Each pass clicks only what isn't already active, so it's idempotent + cheap.
+    let tries = 0;
+    const arm = () => {
+      const q = sel => document.querySelector(sel);
+      const propTool = q('.refit-tool[data-tool="prop"]');
+      if (propTool && !propTool.classList.contains('active')) propTool.click();
+      const fnTier = q('.refit-tier-functional'), curTier = q('.refit-tier.active');
+      if (fnTier && curTier && curTier !== fnTier) fnTier.click();
+      const wsCat = q('.refit-propcat[data-cat="workstation"]');
+      if (wsCat && !wsCat.classList.contains('active')) wsCat.click();
+      const armed = wsCat && wsCat.classList.contains('active') && propTool && propTool.classList.contains('active');
+      if (!armed && ++tries < 8) requestAnimationFrame(arm);
+    };
+    requestAnimationFrame(arm);
   }
   // The capability objectTypes the STATION currently has placed anywhere (station-wide shared gear), deduped.
   // Under Andrew's model a specialist owns only its desk and uses these shared caps under the overseer — so a
@@ -660,6 +750,37 @@ const App = (() => {
     });
   }
 
+  // P3.1 "RUN IT AGAIN?" — the honest facts ResummonStore gates on, read from chat.js's RUN_META (directive +
+  // isTask + the run's agent, recorded at run start) plus Chat.runDidWork (real tool-work / delivery). Adds the
+  // agent's display NAME (resolved from the roster) so the beat can address it by name. A run with no meta reports
+  // nothing re-runnable. cron/unattended runs never flow through the interactive rateWork path (cron:false honest).
+  function runResummonInfo(runId) {
+    const m = (typeof Chat !== 'undefined' && Chat.runMeta) ? Chat.runMeta(runId) : null;
+    if (!m) return null;
+    const aid = m.agentId || 'agent';
+    const a = agents.get(aid);
+    return {
+      isTask: !!m.isTask,
+      cron: false,
+      directive: m.directive || m.title || '',
+      didWork: (typeof Chat !== 'undefined' && Chat.runDidWork) ? Chat.runDidWork(runId) : false,
+      agentId: aid,
+      agentName: (a && a.name) || (aid === 'agent' && agent ? agent.name : '') || ''
+    };
+  }
+  // P3.1 — PRE-FILL a fresh run from a re-summoned one: switch to (or mint) the run's AGENT stream, then seed the
+  // composer with its directive. NOTHING auto-runs — the Commander edits and hits send (Chat.prefill only scaffolds
+  // the input). Mirrors the COMMS agent-selector hand-off (selectAgent → switchWorkstream → Chat.load), then prefill.
+  function prefillResummon(opts) {
+    opts = opts || {};
+    const aid = String(opts.agentId || 'agent');
+    const directive = String(opts.directive || '');
+    if (!directive.trim()) return;
+    try { if (aid && aid !== 'agent' && agents.has(aid)) selectAgent(aid); } catch (_) {}   // hero runs stay on the current/General stream
+    try { if (typeof SFX !== 'undefined' && SFX.click) SFX.click(); } catch (_) {}
+    try { if (typeof Chat !== 'undefined' && Chat.prefill) Chat.prefill(directive); } catch (_) {}
+  }
+
   // push the live agent identity (the run agentId + composed system prompt) to the sidecar so any connected
   // messaging channel (Telegram) runs as the SAME agent. Fire-and-forget; a no-op if no channel is connected.
   function syncChannels() {
@@ -742,9 +863,10 @@ const App = (() => {
     const prov = (typeof Harness !== 'undefined' && Harness.getProv) ? Harness.getProv() : undefined;   // persist the provider so a codex agent resumes without a key prompt after a wipe/origin-reset
     const reasoningEffort = (typeof Harness !== 'undefined' && Harness.getReasoningEffort) ? Harness.getReasoningEffort() : undefined;
     const profile = (typeof ProfileStore !== 'undefined') ? ProfileStore.serialize() : undefined;
+    const worksignal = (typeof WorkSignalStore !== 'undefined') ? WorkSignalStore.serialize() : undefined;   // the capability-usage histogram (adaptive recruitment)
     const roster = liveAgents();
     const dossier = (typeof DossierStore !== 'undefined') ? DossierStore.serialize() : undefined;   // the station-wide Commander model
-    const doc = Save.write(Object.assign({ agent: hero, agents: roster.length > 1 ? roster.map(serializeAgentLite) : undefined, usage: Harness.totals(), prov, reasoningEffort, station: station ? station.serialize() : undefined, stationStats, profile, dossier }, Workstreams.serialize()));
+    const doc = Save.write(Object.assign({ agent: hero, agents: roster.length > 1 ? roster.map(serializeAgentLite) : undefined, usage: Harness.totals(), prov, reasoningEffort, station: station ? station.serialize() : undefined, stationStats, profile, worksignal, dossier }, Workstreams.serialize()));
     if (doc && typeof CloudSave !== 'undefined') CloudSave.push(doc);   // durable write-through to the sidecar (debounced, best-effort)
     if (typeof StationUI !== 'undefined') StationUI.flashSave();
   }
@@ -1218,6 +1340,11 @@ const App = (() => {
   function initConnect(prefillName, isRecovery, savedAgent) {
     const recovery = !!isRecovery && !!savedAgent;
     el('in-key').value = Harness.getKey();
+    // remember what the field was pre-seeded with (browser BYOK: a real stored key; desktop keychain: '') so
+    // onWake can ask ONCE before an edited value silently replaces a stored key. Reset the confirm latch for
+    // this fresh screen. (An empty prefill means there's nothing to overwrite — the guard stays dormant.)
+    prefilledKey = el('in-key').value || '';
+    keyOverwriteConfirmed = false;
     // desktop: the key lives in the OS keychain (getKey returns ''); show that it's already set.
     if (Harness.configured && Harness.configured() && !el('in-key').value) {
       el('in-key').placeholder = '•••••••• stored in keychain — leave blank to keep';
@@ -1359,7 +1486,18 @@ const App = (() => {
     const model = el('in-model').value.trim();
     const name = (el('in-name').value.trim() || 'AGENT').toUpperCase().slice(0, 18);   // single funnel for agent.name → honor the 18-char design cap (covers the roster-pick path too)
     const msg = el('connect-msg'); msg.className = 'msg';
-    if (!model) { msg.textContent = 'choose or type a model slug.'; return; }
+    if (!model) {
+      // COLD-START: never strand a beginner on an empty required field. Pre-fill a sensible default for the
+      // chosen provider (Codex discovers its own lineup, so leave that path to its own picker) and say so.
+      if (pickedProvider !== 'codex') {
+        const def = defaultModelFor(pickedProvider);
+        const inp = el('in-model'); if (inp && def) { inp.value = def; updateHint(); }
+        msg.textContent = 'pick a model — suggested ' + (def || 'a default') + '. edit it above, then WAKE.';
+      } else {
+        msg.textContent = 'choose or type a model slug.';
+      }
+      return;
+    }
     if (pickedProvider === 'codex') {
       if (!codexConnected) { msg.textContent = 'sign in with ChatGPT first, or switch to OpenRouter.'; return; }
       Harness.setModel(model); Harness.setProv('codex');
@@ -1371,7 +1509,25 @@ const App = (() => {
         if (Harness.setBaseUrl) await Harness.setBaseUrl(baseUrl, pickedProvider);
       }
       const configured = !!(Harness.configured && Harness.configured(pickedProvider));
-      if (providerNeedsKey(pickedProvider) && !key && !configured) { msg.textContent = 'enter your ' + providerLabel(pickedProvider) + ' API key.'; return; }
+      if (providerNeedsKey(pickedProvider) && !key && !configured) {
+        // COLD-START guidance: a new user has no key AND no idea where to get one. Name the provider and link
+        // the exact page that mints a key (from providerSignupUrl — same destinations the placeholder hints at).
+        const url = providerSignupUrl(pickedProvider);
+        const host = String(url).replace(/^https?:\/\//, '').replace(/\/$/, '');
+        msg.innerHTML = 'enter your ' + esc(providerLabel(pickedProvider)) + ' API key — get one at '
+          + '<a href="' + esc(url) + '" target="_blank" rel="noopener noreferrer" class="connect-link">' + esc(host) + '</a>.';
+        return;
+      }
+      // OVERWRITE GUARD: the field was pre-filled from a stored key, and the Commander edited it to a DIFFERENT
+      // value — saving would silently replace the stored key. Ask once (inline, no modal) before that happens.
+      // Only fires when there genuinely was a stored key to lose (prefilledKey non-empty), the value actually
+      // changed, and it hasn't already been confirmed this screen. An untouched pre-fill saves the same key
+      // (a no-op replace) so it never trips; a blank field keeps the stored key (handled below) so it never trips.
+      if (prefilledKey && key && key !== prefilledKey && !keyOverwriteConfirmed) {
+        keyOverwriteConfirmed = true;   // arm: this same WAKE press now goes through; a second press confirms
+        msg.textContent = 'this replaces the key already stored on this station. press WAKE again to confirm — or restore the old key to keep it.';
+        return;
+      }
       // Only (re)store when a key was actually typed — desktop keeps the existing keychain key on blank.
       // setKey is async in desktop (writes the keychain + pushes it to the sidecar); await so the run has it.
       if (key) await Harness.setKey(key, pickedProvider);
@@ -1414,6 +1570,7 @@ const App = (() => {
     if (typeof SeedReuseStore !== 'undefined') SeedReuseStore.reset();   // …and no inherited seed-usage tally — a fresh Commander's living-tools shelf starts empty; the 5×/week callout is re-earned (own key)
     if (typeof ConfBeats !== 'undefined') ConfBeats.reset();   // …and both confidence narrative moments re-arm — a fresh hero's meter starts over, so its calibration/TRUSTED beats must be re-earned, never inherited (own key)
     if (typeof BottleStore !== 'undefined') BottleStore.reset();   // …and R5's per-run bottle-decision denylist clears — a fresh hero re-earns every "bottle it?" offer (own key)
+    if (typeof ResummonStore !== 'undefined') ResummonStore.reset();   // …and P3.1's per-run re-summon-decision denylist clears — a fresh hero re-earns every "run it again?" offer (own key)
     if (typeof TrustStore !== 'undefined') TrustStore.reset();   // GROWTH Tier 3: …and a fresh EARNED-AUTONOMY track record — a new Commander never inherits the prior hero's earned rungs / declined-offer state / streak (own key); the earned dial rung must be re-earned from scratch
     if (typeof PermissionsStore !== 'undefined') await PermissionsStore.reset();   // …and LOCK DOWN the standing grants (AWAIT so the revoke lands before the new agent enters — no inherit-window) — a new Commander never inherits the previous one's autonomous file-write permission (server-side grant; re-grant via the Permissions panel)
     if (typeof Harness !== 'undefined' && Harness.memoryReset) Harness.memoryReset(agent.id);   // …and wipe SERVER-SIDE memory (notebook/declined/todo) so no prior Commander's kept or rejected beliefs bleed into the fresh hero
@@ -1442,6 +1599,7 @@ const App = (() => {
     pendingStationDoc = saved.station || null;   // restore the built station (if any)
     pendingStationStats = saved.stationStats || null;   // restore the station-growth rollup (XP/level/confidence)
     pendingProfile = saved.profile || null;   // restore the learned user-affinity profile
+    pendingWorkSignal = saved.worksignal || null;   // restore the capability-usage histogram (adaptive recruitment)
     pendingDossier = saved.dossier || null;   // restore the station-wide Commander dossier
     // gate the awakening on the explicit onboarded flag (new saves), falling back to the old !purpose heuristic
     // for pre-flag saves. This fixes the strand where a refresh AFTER the first (purpose) answer — which persists
@@ -1518,6 +1676,24 @@ const App = (() => {
         const sp = Specialties.get(agent.specialtyId);
         if (sp) ProfileStore.seed(Classify.getTag((sp.purpose || '') + ' ' + (sp.tagline || '')));
       }
+    }
+    // ADAPTIVE RECRUITMENT: the capability-usage histogram — folds the LANE (dish/cabinet/workbench/…) of each
+    // real hero tool fire, plus the run's interest tag, into a decayed per-lane read (worksignal.js engine). Shares
+    // the profile's learning-enabled flag (one glass-box switch governs both) so PAUSE stops all local learning at
+    // once. getRunTag resolves the run's interest tag from RUN_META (else the active workstream title).
+    if (typeof WorkSignalStore !== 'undefined') {
+      WorkSignalStore.init({
+        signal: pendingWorkSignal, persist: persist,
+        learningOn: () => (typeof ProfileStore !== 'undefined' && ProfileStore.enabled) ? ProfileStore.enabled() : true,
+        getRunTag: (runId) => {
+          if (typeof Classify === 'undefined' || !Classify.getTag) return null;
+          let title = '';
+          try { const m = (runId && typeof Chat !== 'undefined' && Chat.runMeta) ? Chat.runMeta(runId) : null; if (m && m.title) title = m.title; } catch (_) {}
+          if (!title) { try { const ws = (typeof Workstreams !== 'undefined' && Workstreams.active) ? Workstreams.active() : null; title = ws ? (ws.title || '') : ''; } catch (_) {} }
+          return title ? Classify.getTag(title) : null;
+        }
+      });
+      pendingWorkSignal = null;
     }
     // AUTO-MINT: watch for recurring task shapes so the bay can propose saving them as one-tap missions. Self-
     // persists to its own localStorage key (rides the backup prefix), so init just hydrates from there. One learning
@@ -1621,6 +1797,53 @@ const App = (() => {
     };
     if (typeof PitchStore !== 'undefined') PitchStore.init(adviceDeps);
     if (typeof SuggestStore !== 'undefined') SuggestStore.init(adviceDeps);
+    // ADAPTIVE RECRUITMENT — PROSPECT GENERATOR (Slice 4): as the station learns the Commander, it DRAFTS bespoke
+    // new agent specs the 17-class catalog doesn't contain, staged in the bay for the Commander to confirm (never
+    // auto-saved). Reason-only model call (like the ongoing suggestion), growth+cooldown+warm gated, once/session,
+    // silent on failure. capabilityKeys/skillSlugs are the REAL allowed sets so a draft can never claim gear that
+    // doesn't exist; getTopRecommendation feeds the recruiter's best existing-class pick so the draft avoids
+    // duplicating it (reply NONE if a class already serves the gap).
+    if (typeof ProspectStore !== 'undefined') {
+      // the real installed skill slugs (fetched once, best-effort) — a prospect's SKILLS must come from this set.
+      let skillSlugs = [];
+      try { fetch('/api/skills').then(r => r.ok ? r.json() : { skills: [] }).then(d => { skillSlugs = ((d && d.skills) || []).map(s => s && s.slug).filter(Boolean); }).catch(() => {}); } catch (_) {}
+      const worksignalSummaryText = () => {
+        try {
+          const s = (typeof WorkSignalStore !== 'undefined' && WorkSignalStore.summary) ? WorkSignalStore.summary() : null;
+          if (!s || !s.dominant) return '';
+          const lanes = Object.keys(s.laneTags || {}).map(l => l + ' (' + s.laneTags[l] + ')').join(', ');
+          return 'dominant lane: ' + s.dominant + '; ' + s.samples + ' tool-samples; lanes worked: ' + (lanes || s.dominant);
+        } catch (_) { return ''; }
+      };
+      // warmth 0..1 = how far past the calibration floor the histogram is (the recruiter's warm read, as a number).
+      const warmthNow = () => {
+        try {
+          const s = (typeof WorkSignalStore !== 'undefined' && WorkSignalStore.summary) ? WorkSignalStore.summary() : null;
+          if (!s || s.calibrating) return 0;
+          const floor = (typeof WorkSignal !== 'undefined' && WorkSignal.CALIBRATING_N) ? WorkSignal.CALIBRATING_N : 5;
+          return Math.min(1, (s.samples || 0) / (floor * 4));
+        } catch (_) { return 0; }
+      };
+      ProspectStore.init({
+        now: () => Date.now(),
+        chat: (o) => (typeof Harness !== 'undefined' && Harness.chat) ? Harness.chat(o) : Promise.resolve({ error: 'no-harness' }),
+        getSystem: () => agent ? agent.systemPrompt : '',
+        getDossierBlock: () => (typeof DossierStore !== 'undefined' && DossierStore.composeBlock) ? (DossierStore.composeBlock() || '') : '',
+        getWorksignalSummary: worksignalSummaryText,
+        getWarmth: warmthNow,
+        getFamiliarity: () => { try { const s = (typeof DossierStore !== 'undefined' && DossierStore.summary) ? DossierStore.summary() : null; return s && Number.isFinite(s.familiarity) ? s.familiarity : null; } catch (_) { return null; } },
+        getRosterClasses: () => liveAgents().map(a => { const sp = a.specialtyId && typeof Specialties !== 'undefined' ? Specialties.get(a.specialtyId) : null; return { name: (sp && sp.name) || a.name, tags: (sp && sp.tags) || {} }; }),
+        getCatalogSummary: () => {
+          if (typeof Specialties === 'undefined') return [];
+          const all = (Specialties.builtins() || []).concat(Specialties.customs ? (Specialties.customs() || []) : []);
+          return all.map(s => ({ id: s.id, name: s.name, tagline: s.tagline, tags: s.tags || {} }));
+        },
+        // the REAL capability keys a kit may use — the same pickable set the custom builder exposes, plus connector.
+        getCapabilityKeys: () => ['dish', 'cabinet', 'notebook', 'workbench', 'studio', 'connector'],
+        getSkillSlugs: () => skillSlugs.slice(),
+        getTopRecommendation: () => { try { const t = (typeof RecruiterStore !== 'undefined' && RecruiterStore.topPick) ? RecruiterStore.topPick() : null; return t ? t.classId : ''; } catch (_) { return ''; } }
+      });
+    }
     // G3a CONFIDENCE NARRATIVE: two fire-once spoken moments in the hero's reliability arc (calibration
     // complete + TRUSTED). Init AFTER XpStore so its memory.feedback hook sees an already-folded meter.
     if (typeof ConfBeats !== 'undefined') ConfBeats.init({ getStats: () => { const a = agents.get('agent'); return a ? a.stats : null; } });
@@ -1628,6 +1851,11 @@ const App = (() => {
     // verdict from chat.js rateWork (like ConfBeats); reads each run's honest facts via runBottleInfo and opens the
     // R2 editor pre-filled on "bottle it". Shares the one post-run beat slot (Chat.nudge) — never stacks an ask.
     if (typeof BottleStore !== 'undefined') BottleStore.init({ openEditor: openBottleEditor, runInfo: runBottleInfo });
+    // P3.1 "RUN IT AGAIN?": the post-run offer to re-run a 👍-rated run's shape. Fed the SAME direct verdict from
+    // chat.js rateWork; reads the run's honest facts via runResummonInfo and, on accept, PRE-FILLS a fresh run
+    // (selects the run's agent stream + seeds the composer with its directive) — never auto-running. Shares the one
+    // post-run beat slot; chat.js gates it so it never co-fires with a bottle offer on the same run.
+    if (typeof ResummonStore !== 'undefined') ResummonStore.init({ runInfo: runResummonInfo, prefillRun: prefillResummon });
     // SELF-INITIATION (Slice 2): the agent proposes recurring standing JOBS grounded in the dossier → the Commander
     // approves → each becomes a scheduled cron routine (POST /api/cron, the same endpoint the ROUTINES panel uses).
     if (typeof AutoJobStore !== 'undefined') AutoJobStore.init({
@@ -1835,12 +2063,16 @@ const App = (() => {
         specialty: opts.specialty || null,                   // (reserved) a pre-specced wake skips re-asking the mission; the orchestrator authors it live
         commit: applyAgentConfig,                            // each answer folds a real doc into the live prompt + persists
         getSystem: () => agent ? agent.systemPrompt : '',    // Interview 2.0: the generated beats (wakemind.js) reason on the LIVE prompt (persona + dossier already folded in)
-        done: () => { if (agent) agent.onboarded = true; persist(); },   // the awakening landed — mark onboarded so a later refresh resumes into the game, not back into the ceremony
+        done: () => { if (agent) agent.onboarded = true; persist(); if (typeof KeyCTA !== 'undefined' && KeyCTA.arm) KeyCTA.arm(); },   // the awakening landed — mark onboarded so a later refresh resumes into the game, not back into the ceremony; arm the keyless-brain CTA (shows only if no key is truly stored)
         notify: (typeof StationUI !== 'undefined') ? StationUI.notify : null,
         // FIRST COMMAND — once the awakening lands, the agent itself teaches the Commander the one real loop (tutorial.js)
         taught: () => { if (typeof Tutorial !== 'undefined' && Tutorial.firstCommand) Tutorial.firstCommand({ name: agent.name }); }
       });
     }
+    // A returning (already-onboarded) hero skips the awakening, so its `done` callback never re-fires — arm the
+    // keyless-brain CTA here so a station saved without a key still surfaces the honest "add a key" banner on boot.
+    // (It's a pure state projection: it stays hidden when a key IS stored.) The awakening path arms it in `done`.
+    if (!opts.awaitingPurpose && typeof KeyCTA !== 'undefined' && KeyCTA.arm) KeyCTA.arm();
     // P3: arm the first-steps briefing's bus ticks; re-offer the checklist to a returning user mid-progress
     if (typeof Tutorial !== 'undefined' && Tutorial.onEnterGame) Tutorial.onEnterGame();
     // G1c: the deferred BUILD-dock glow — a soft standing hint on the BUILD dock while a station quest is open
@@ -1893,7 +2125,8 @@ const App = (() => {
   }
   function rowClass(w, st, activeId) {
     return 'ws-row' + (w.id === activeId ? ' sel' : '') + (st.busy ? ' busy' : '') + (st.attn ? ' attn' : '')
-      + (w.pinned ? ' pinned' : '') + (w.archived ? ' archived' : '');
+      + (w.pinned ? ' pinned' : '') + (w.archived ? ' archived' : '')
+      + (Workstreams.unread(w) ? ' unread' : '');   // real unseen activity (lastActiveAt > lastReadAt, never the open stream)
   }
   function renderRail() {
     const ul = el('workstreams');
@@ -1902,11 +2135,13 @@ const App = (() => {
     ul.innerHTML = Workstreams.list({ includeArchived: railShowArchived }).map(w => {
       const title = w.title || 'General';
       const st = railRowState(w);
-      const tip = title + (w.archived ? ' · archived' : '') + (st.busy ? ' · ' + st.status : '') + ' — right-click for actions';
+      const tip = title + (w.archived ? ' · archived' : '') + (st.busy ? ' · ' + st.status : '')
+        + (Workstreams.unread(w) ? ' · new activity' : '') + ' — right-click for actions';
       return '<li class="' + rowClass(w, st, activeId) + '" data-id="' + U.esc(w.id) + '" title="' + U.esc(tip) + '">' +
         '<span class="' + st.dot + '"></span>' +
         (w.pinned ? '<span class="ws-pin" aria-hidden="true">★</span>' : '') +
         '<span class="ws-title">' + U.esc(title) + '</span>' +
+        '<span class="ws-unread" aria-hidden="true"></span>' +
         '<span class="ws-meta">' + U.esc(st.meta) + '</span>' +
         '<button class="ws-kebab" tabindex="-1" aria-label="session actions" title="session actions">⋯</button>' +
         '</li>';
@@ -1968,6 +2203,25 @@ const App = (() => {
   function newWorkstream() {
     const ws = Workstreams.create(null);
     SFX.open(); Chat.load(ws); refreshUsage(); renderRail(); persist();
+  }
+  // COMMS AGENT SELECTOR: put the Commander on the line with agent <agentId>. Selecting an agent must never
+  // silently rebind an existing conversation to a different agent (that would corrupt whose transcript it is);
+  // instead we switch to the agent's most-recent live workstream, or MINT a fresh one bound to that agentId
+  // (the same Workstreams.create({agentId}) seam summon uses). switchWorkstream then repoints the focused agent
+  // (its model/provider/effort) + Chat.load. Returns the target workstream id, or null for an unknown agent.
+  function selectAgent(agentId) {
+    const id = String(agentId || '');
+    const a = agents.get(id); if (!a) return null;
+    // prefer this agent's existing streams (most-recently-active first — Workstreams.list() is already sorted
+    // pinned>recent); the General default stream (title==null) is only NOVA/hero's home, so a specialist that
+    // has no stream yet gets a fresh one titled with its name (mirrors summon's Workstreams.create).
+    const mine = Workstreams.list().filter(w => (w.agentId || 'agent') === id);
+    let ws = mine[0] || null;
+    if (!ws) ws = Workstreams.create(a.name, { agentId: id, activate: false });
+    if (!ws) return null;
+    if (ws.id === Workstreams.activeId()) { focusAgent(id); Chat.load(ws); }   // already here: just re-affirm focus/labels
+    else switchWorkstream(ws.id);
+    return ws.id;
   }
 
   /* ---------- session (workstream) row actions: rename · pin · archive · delete ----------
@@ -2205,5 +2459,7 @@ const App = (() => {
     heroId: () => (agent ? agent.id : 'agent'),
     currentAgent: () => agent,
     agents: () => liveAgents().map(serializeAgentLite),
+    selectAgent: selectAgent,   // COMMS top-bar agent selector: switch to (or mint) a workstream bound to agentId
+    openSummonBay: openSummonBay,   // adaptive-recruitment beat: accepting the recruit nudge deep-links into the bay's summon flow
     applyConfig: applyAgentConfig };
 })();

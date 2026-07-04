@@ -40,6 +40,8 @@ const Marketplace = (() => {
   let query = '';
   let buildAccent = '#ffaa33', buildModel = 'balanced';   // the custom-class builder's picked accent + tier
   let buildKit = [], buildSkills = [], buildEffort = null;   // the custom-class builder's picked loadout (Class Loadouts S3)
+  let buildDraft = null;            // Slice 4: a station-drafted prospect pre-filling the builder (name/tagline/purpose/manual/emoji)
+  let acceptingProspectId = null;   // Slice 4: the prospect id being reviewed → removed from staging on a successful CREATE
 
   const hasRecipes = () => typeof Recipes !== 'undefined';
   const hasIcons = () => typeof ClassIcons !== 'undefined';
@@ -248,7 +250,7 @@ const Marketplace = (() => {
   }
   function subtitle() {
     if (ctx && ctx.mode === 'pick') return ctx.summon
-      ? ('summon a new agent onto your crew — it gets its own workstream'
+      ? ('summon a new agent onto your crew — it gets its own chat thread'
          + (ctx.concurrentCap > 0 ? ' · up to ' + ctx.concurrentCap + ' run at once' : ''))
       : 'choose a specialist to wake your agent as';
     const who = (ctx && ctx.agentName) || 'your agent';
@@ -377,10 +379,15 @@ const Marketplace = (() => {
     html += summonModelBarHTML();
     html += glassHTML();
     html += recShelfHTML();
-    const builtins = filt(Specialties.builtins());
+    html += prospectShelfHTML();
+    const allBuiltins = Specialties.builtins();
+    const builtins = filt(allBuiltins);
     const customs = filt(Specialties.customs());
     html += '<div class="mkt-sect-h">▮ CLASS ROSTER</div>';
-    html += builtins.length ? '<div class="mkt-grid">' + builtins.map(cardHTML).join('') + '</div>'
+    // truthful telemetry: an EMPTY catalog means the shared catalog script failed to load (a wiring
+    // fault), not "no matches" — say so loudly instead of rendering a quietly blank roster.
+    if (!allBuiltins.length) html += '<div class="mkt-empty">⚠ the class catalog failed to load (shared/specialties.js unreachable) — the built-in roster is unavailable. Restart the app; if it persists, this build is mis-wired.</div>';
+    else html += builtins.length ? '<div class="mkt-grid">' + builtins.map(cardHTML).join('') + '</div>'
       : '<div class="mkt-empty">no classes match your filter.</div>';
     // the build tile (＋) is always available at the bottom — author a brand-new class however you want
     const buildTile = '<button class="mkt-build" type="button" aria-label="build a custom class">' +
@@ -523,9 +530,9 @@ const Marketplace = (() => {
       const present = have.has(t);
       if (!present) missing++;
       return '<div class="mkt-kit-row' + (present ? '' : ' mkt-kit-missing') + '">' +
-        '<span class="mkt-kit-obj">' + esc(kitPropLabel(t)) + '</span>' +
+        '<span class="mkt-kit-obj" data-hint="' + esc(t) + '">' + esc(kitPropLabel(t)) + '</span>' +
         '<span class="mkt-kit-grant">' + esc(capGrant(t)) + '</span>' +
-        '<span class="mkt-kit-state">' + (present ? 'on station' : 'not on station — add in REFIT') + '</span></div>';
+        '<span class="mkt-kit-state">' + (present ? 'on station' : 'not on station — add in REFIT (optional — you can still summon)') + '</span></div>';
     }).join('');
     const note = missing
       ? 'shared station gear this class draws on under the overseer — ' + missing + ' not on the station yet (add ' + (missing === 1 ? 'it' : 'them') + ' in REFIT for its full toolkit).'
@@ -600,7 +607,7 @@ const Marketplace = (() => {
     const ctaLabel = deploy ? ('⏼ DEPLOY TO ' + esc(((ctx && ctx.agentName) || 'AGENT')).toUpperCase()) : ('⏼ SUMMON ' + esc(s.name).toUpperCase());
     const ctaSub = deploy
       ? 're-specs ' + esc((ctx && ctx.agentName) || 'your agent') + '’s purpose &amp; standing orders'
-      : 'opens a fresh workstream · pre-fills name, voice &amp; purpose — <b>you pick its character next</b>';
+      : 'opens its own <span data-hint="workstream">chat thread</span> — name, voice &amp; purpose pre-filled from this class';
     const custActs = s.custom
       ? '<div class="mkt-cta-row"><button class="bb sm mkt-edit" data-id="' + esc(s.id) + '">✎ EDIT</button>' +
         '<button class="bb sm danger mkt-del" data-id="' + esc(s.id) + '">⌫ DELETE</button></div>' : '';
@@ -608,9 +615,9 @@ const Marketplace = (() => {
     // record at summon; the model is a tier that resolves to the pinned/station-default model (advisory pip).
     const effort = s.reasoningEffort ? esc(String(s.reasoningEffort).toUpperCase()) : null;
     const clearRow =
-      '<span class="k">CLEARANCE</span><span class="v">' + pipsOf(s.model) + ' ' + esc(clearanceLabel(s.model)) +
+      '<span class="k" data-hint="clearance">CLEARANCE</span><span class="v">' + pipsOf(s.model) + ' ' + esc(clearanceLabel(s.model)) +
         ' <span class="mkt-clr-note">model: station default</span></span>' +
-      '<span class="k">EFFORT</span><span class="v">' +
+      '<span class="k" data-hint="effort">EFFORT</span><span class="v">' +
         (effort ? '<span class="mkt-chip">' + effort + '</span> <span class="mkt-clr-note">applied at summon</span>'
                 : '<span class="mkt-clr-note">station default</span>') + '</span>';
     return '<div class="mkt-dos-label">▮ CLASS DOSSIER</div>' +
@@ -620,15 +627,15 @@ const Marketplace = (() => {
           '<div class="mkt-dos-class">CLASS · ' + esc(codeOf(s)) + '</div></div></div>' +
       '<div class="mkt-spec">' +
         clearRow +
-        '<span class="k">VOICE</span><span class="v">◈ ' + esc(voiceName(s.persona)) + '</span>' +
-        '<span class="k">FOCUS</span><span class="v"><span class="mkt-chip lane">' + esc(laneLabelOf(s)) + '</span></span>' +
+        '<span class="k" data-hint="voice">VOICE</span><span class="v">◈ ' + esc(voiceName(s.persona)) + '</span>' +
+        '<span class="k" data-hint="focus">FOCUS</span><span class="v"><span class="mkt-chip lane">' + esc(laneLabelOf(s)) + '</span></span>' +
       '</div>' +
       '<div class="mkt-block"><div class="bh">FOCUS LANES</div><div class="mkt-bars">' + bar('code', 'CODE') + bar('research', 'RESEARCH') + bar('general', 'OPS') + '</div></div>' +
       kitBlockHTML(s) +
       skillPackageHTML(s) +
       '<div class="mkt-block"><div class="bh">PURPOSE</div><p class="bp">' + esc(s.purpose) + '</p></div>' +
       (s.manual ? '<div class="mkt-block"><div class="bh">STANDING ORDERS</div><pre>' + esc(s.manual) + '</pre></div>' : '') +
-      (s.starters && s.starters.length ? '<div class="mkt-block"><div class="bh">TRY ASKING</div><ul class="mkt-starters">' + s.starters.map(x => '<li>' + esc(x) + '</li>').join('') + '</ul></div>' : '') +
+      (s.starters && s.starters.length ? '<div class="mkt-block"><div class="bh">TRY ASKING — things you can say to it</div><ul class="mkt-starters">' + s.starters.map(x => '<li>' + esc(x) + '</li>').join('') + '</ul></div>' : '') +
       '<div class="mkt-dos-cta">' + custActs +
         '<button class="mkt-cta-main mkt-deploy" data-id="' + esc(s.id) + '">' + ctaLabel + ' ▸</button>' +
         '<div class="mkt-cta-sub">' + ctaSub + '</div>' +
@@ -756,26 +763,111 @@ const Marketplace = (() => {
   }
 
   /* ---------- recommender shelves ---------- */
-  function rankItems(items, excludeId) {
-    const ps = profileApi(); if (!ps) return null;
-    const summ = ps.summary(); if (!summ || !summ.dominant) return null;
-    if (ps.enabled && !ps.enabled()) return null;
-    const ranked = (items || [])
-      .map((it, idx) => ({ it, idx, score: ps.score(it.tags || {}) }))
-      .filter(r => r.it.id !== excludeId && r.score > 0)
-      .sort((a, b) => (b.score - a.score) || (a.idx - b.idx))
-      .slice(0, 3);
-    return ranked.length ? ranked.map(r => r.it) : null;
-  }
   function becauseText(s) {
     const ps = profileApi(); if (!ps || !ps.explain) return '';
     const t = ps.explain(s.tags || {});
     return t ? (BECAUSE[t] || '') : '';
   }
+  /* ---------- specialist recommendations (deploy AND summon/pick) ----------
+     Mirrors Recipes.rankRecipes: (profile affinity × 4) + (goal-keyword hits × 2), catalog-order tie-break.
+     When BOTH signals are silent (cold start) we fall back to an HONEST lane spread — the first class of each
+     distinct interest lane in catalog order — under a header that says so (never a fake "recommended"). This
+     shelf now renders in the summon/pick flow too: recruiting a NEW agent is exactly when guidance matters. */
+  function specGoalScore(s, gt) {
+    if (!s || !gt) return 0;
+    const words = String(gt).toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length >= 3);
+    if (!words.length) return 0;
+    const seen = {}; let hits = 0;
+    const hay = ((s.name || '') + ' ' + (s.tagline || '') + ' ' + Object.keys(s.tags || {}).join(' ')).toLowerCase();
+    for (const w of words) { if (seen[w]) continue; seen[w] = true; if (hay.indexOf(w) >= 0) hits++; }
+    return hits;
+  }
+  function dominantLane(s) {
+    let best = 'general', bv = -Infinity; const t = s.tags || {};
+    for (const k in t) { const v = Number(t[k]); if (isFinite(v) && v > bv) { bv = v; best = k; } }
+    return best;
+  }
+  function rankSpecs(items, excludeId) {
+    const ps = profileApi();
+    const learningOn = !!(ps && (!ps.enabled || ps.enabled()));
+    const scoreFn = (learningOn && ps && ps.score) ? (t => ps.score(t)) : null;
+    const gt = goalText();
+    const pool = (items || []).filter(s => s && s.id !== excludeId);
+    let anySignal = false;
+    const scored = pool.map((s, idx) => {
+      const aff = scoreFn ? (Number(scoreFn(s.tags || {})) || 0) : 0;
+      const goal = specGoalScore(s, gt);
+      if (aff > 0 || goal > 0) anySignal = true;
+      // the honest per-pick WHY: profile affinity beats goal match when both fire (it's the stronger signal)
+      const why = (aff > 0 ? becauseText(s) : '') || (goal > 0 ? 'matches your stated goals' : '');
+      return { s, idx, v: aff * 4 + goal * 2, why };
+    });
+    if (anySignal) {
+      return { personalized: true, items: scored.filter(x => x.v > 0).sort((a, b) => (b.v - a.v) || (a.idx - b.idx)).slice(0, 3) };
+    }
+    // honest cold-start fallback: one class per distinct interest lane (dominant tag), catalog order.
+    const byLane = [], used = {}, rest = [];
+    pool.forEach(s => { const l = dominantLane(s); if (!used[l]) { used[l] = true; byLane.push(s); } else rest.push(s); });
+    return { personalized: false, items: byLane.concat(rest).slice(0, 3).map(s => {
+      const lbl = TAG_LABEL[dominantLane(s)] || 'GENERAL OPS';
+      return { s, why: 'covers the ' + lbl.toLowerCase() + ' lane' };
+    }) };
+  }
   function recShelfHTML() {
-    if (ctx && ctx.mode === 'pick') return '';
-    const items = rankItems(Specialties.builtins(), ctx && ctx.currentSpecialtyId); if (!items) return '';
-    return '<div class="mkt-sect-h mkt-rec-sect">★ RECOMMENDED FOR YOU</div><div class="mkt-rec-rail">' + items.map(recCardHTML).join('') + '</div>';
+    if (typeof Specialties === 'undefined' || !Specialties.builtins().length) return '';
+    // ADAPTIVE RECRUITMENT: when the station has a WARM read of the Commander's real workflow (the capability
+    // histogram past its floor), the shelf becomes a CURATED next-hire pick — the class whose kit covers the work
+    // the Commander actually does, with a why derived from a real persisted counter. The curated list already
+    // excludes rostered classes and only surfaces classes the work TOUCHES, so it never fabricates a pick. When the
+    // signal is cold/thin (or learning is off), fall through to today's honest rankSpecs shelf UNCHANGED.
+    const curated = recruiterShelf();
+    if (curated) return curated;
+    const res = rankSpecs(Specialties.builtins(), ctx && ctx.currentSpecialtyId);
+    if (!res.items.length) return '';
+    const head = res.personalized
+      ? '★ RECOMMENDED FOR YOU — based on your recent runs'
+      : '◈ STARTING LINEUP — one per lane while the station learns what you work on · this shelf changes as you use agents';
+    return '<div class="mkt-sect-h mkt-rec-sect">' + head + '</div><div class="mkt-rec-rail">' +
+      res.items.map(x => recCardHTML(x.s, x.why)).join('') + '</div>';
+  }
+  // the CURATED-FOR-YOUR-WORKFLOW shelf: returns the shelf HTML when Recruiter has a warm read, else '' (so the
+  // caller falls back to the honest lineup). Excludes the currently-focused class (deploy re-spec) like rankSpecs.
+  function recruiterShelf() {
+    if (typeof RecruiterStore === 'undefined' || !RecruiterStore.recommend) return '';
+    let res; try { res = RecruiterStore.recommend(); } catch (_) { return ''; }
+    if (!res || !res.warm || !res.items || !res.items.length) return '';
+    const excludeId = ctx && ctx.currentSpecialtyId;
+    const cards = res.items
+      .map(it => ({ s: Specialties.get(it.classId), why: it.why }))
+      .filter(x => x.s && x.s.id !== excludeId);
+    if (!cards.length) return '';
+    return '<div class="mkt-sect-h mkt-rec-sect mkt-curated-sect">◆ CURATED FOR YOUR WORKFLOW — based on your recent runs · the next hire your real work points to</div>' +
+      '<div class="mkt-rec-rail">' + cards.map(x => recCardHTML(x.s, x.why)).join('') + '</div>';
+  }
+  /* ---------- PROSPECTS: bespoke DRAFTS the station authored from the Commander's real work (Slice 4) ----------
+     Distinct from the curated shelf (which ranks EXISTING classes): a prospect is a brand-new spec the catalog
+     doesn't contain, DRAFTED by the station and awaiting the Commander's confirm (never auto-saved/summoned).
+     Honest labelling: "DRAFTED FOR YOU" + a provenance note. Clicking opens the EXISTING custom-class builder
+     pre-filled with the draft (mirrors the R5 recipeMint seed path); dismiss denylists it. */
+  function prospectShelfHTML() {
+    if (typeof ProspectStore === 'undefined' || !ProspectStore.list) return '';
+    let items = []; try { items = ProspectStore.list() || []; } catch (_) { return ''; }
+    if (!items.length) return '';
+    return '<div class="mkt-sect-h mkt-rec-sect mkt-prospect-sect">✦ DRAFTED FOR YOU — new roles the station authored from your work</div>' +
+      '<div class="mkt-rec-rail">' + items.map(prospectCardHTML).join('') + '</div>';
+  }
+  function prospectCardHTML(p) {
+    const d = (p && p.draft) || {};
+    const emoji = d.emoji || '✦';
+    return '<div class="mkt-rec mkt-prospect" data-prospect="' + esc(p.id) + '">' +
+      '<div class="mkt-rec-top"><span class="mkt-prospect-glyph" aria-hidden="true">' + esc(emoji) + '</span>' +
+        '<div class="mkt-rec-id"><div class="mkt-rec-name">' + esc(d.name || 'New specialist') + '</div>' +
+          '<div class="mkt-rec-tag">' + esc(d.tagline || '') + '</div></div></div>' +
+      (p.why ? '<div class="mkt-rec-why"><span class="mkt-rec-why-k">WHY</span> ' + esc(p.why) + '</div>' : '') +
+      '<div class="mkt-prospect-prov">◇ drafted by the station from your work — review &amp; save to add it</div>' +
+      '<div class="mkt-prospect-acts"><button class="bb sm mkt-prospect-open" data-prospect="' + esc(p.id) + '">▸ REVIEW &amp; SAVE</button>' +
+        '<button class="bb sm mkt-prospect-dismiss" data-prospect="' + esc(p.id) + '" aria-label="dismiss this drafted role forever" title="dismiss forever — the station won\'t draft this role again">✕</button></div>' +
+    '</div>';
   }
   /* ---------- R6: the "FOR YOU" row (ranked by dossier interest lanes + goal-text keyword match) ----------
      The plan's discovery-front recommender. Distinct from the profile-affinity "RECOMMENDED FOR YOU" shelf above:
@@ -809,8 +901,8 @@ const Marketplace = (() => {
         '<div class="mkt-rec-id"><div class="mkt-rec-name">' + esc(r.name) + '</div><div class="mkt-rec-tag">' + esc(r.tagline) + '</div></div></div>' +
       '<div class="mkt-rec-why"><span class="mkt-rec-why-k">' + esc(cat) + '</span>' + (r.custom ? ' <span class="mkt-badge">CUSTOM</span>' : '') + '</div></button>';
   }
-  function recCardHTML(s) {
-    const why = becauseText(s);
+  function recCardHTML(s, why) {
+    // `why` comes from rankSpecs: the profile-affinity reason, a goal-match note, or the cold-start lane label
     return '<button class="mkt-rec" type="button" data-id="' + esc(s.id) + '" style="--accent:' + esc(s.accent) + '">' +
       '<div class="mkt-rec-top">' + sealHTML(s, false) +
         '<div class="mkt-rec-id"><div class="mkt-rec-name">' + esc(s.name) + '</div><div class="mkt-rec-tag">' + esc(s.tagline) + '</div></div></div>' +
@@ -855,7 +947,7 @@ const Marketplace = (() => {
     if (saveas) saveas.addEventListener('click', () => { sfx('click'); view = 'save'; editingId = null; renderStage(); });
     const build = stage.querySelector('.mkt-build');
     // editingId cleared: ＋ is always a FRESH class, never a stale upsert (the edit view can be abandoned by closing the window)
-    if (build) build.addEventListener('click', () => { sfx('click'); editingId = null; buildAccent = '#ffaa33'; buildModel = 'balanced'; buildKit = []; buildSkills = []; buildEffort = null; view = 'build'; renderStage(); });
+    if (build) build.addEventListener('click', () => { sfx('click'); editingId = null; buildDraft = null; acceptingProspectId = null; buildAccent = '#ffaa33'; buildModel = 'balanced'; buildKit = []; buildSkills = []; buildEffort = null; view = 'build'; renderStage(); });
     const recipeSaveas = stage.querySelector('.mkt-recipe-saveas');
     if (recipeSaveas) recipeSaveas.addEventListener('click', () => { sfx('click'); pendingMintKey = null; pendingMintTemplate = null; enterRecipeEditor(null, 'create'); });
 
@@ -890,6 +982,44 @@ const Marketplace = (() => {
 
     wireGlass(stage);
     wireSuggest(stage);
+    wireProspect(stage);
+  }
+
+  /* ---------- wiring: prospects (station-drafted new classes) ----------
+     REVIEW & SAVE seeds the EXISTING custom-class builder with the draft (kit/skills/text pre-filled) — the
+     Commander reviews, edits, and confirms → a normal custom specialty is saved (summon path unchanged). Accepting
+     removes the prospect from staging (accept, not denylist). Dismiss denylists the fingerprint + re-renders. */
+  function wireProspect(scope) {
+    const sc = scope || root;
+    if (typeof ProspectStore === 'undefined') return;
+    sc.querySelectorAll('.mkt-prospect-open').forEach(b => b.addEventListener('click', () => {
+      const p = ProspectStore.get ? ProspectStore.get(b.dataset.prospect) : null;
+      if (!p || !p.draft) { renderStage(); return; }
+      sfx('click');
+      prefillBuilderFromProspect(p);
+    }));
+    // dismiss permanently denylists the fingerprint (the station won't re-draft this role), so it takes
+    // a two-step arm/confirm like the class DELETE button — the armed label admits the permanence.
+    sc.querySelectorAll('.mkt-prospect-dismiss').forEach(b => b.addEventListener('click', () => {
+      armDelete(b, '✕', () => {
+        if (ProspectStore.dismiss) ProspectStore.dismiss(b.dataset.prospect);
+        renderStage();
+      }, 'DISMISS FOREVER?');
+    }));
+  }
+  // seed the custom-class builder state from a prospect draft, then open it (mirrors the R5 recipeMint pre-fill).
+  // acceptingProspectId is held so a successful CREATE removes the prospect from staging (accept, not dismiss).
+  function prefillBuilderFromProspect(p) {
+    const d = p.draft || {};
+    editingId = null;                                  // a brand-new custom, not an upsert of an existing class
+    buildAccent = d.accent || '#ffaa33';
+    buildModel = (d.model && ['reasoning', 'balanced', 'fast'].indexOf(d.model) >= 0) ? d.model : 'balanced';
+    buildKit = Array.isArray(d.kit) ? d.kit.slice() : [];
+    buildSkills = Array.isArray(d.skills) ? d.skills.slice() : [];
+    buildEffort = d.reasoningEffort || null;
+    buildDraft = { emoji: d.emoji || '✦', name: d.name || '', tagline: d.tagline || '', purpose: d.purpose || '', manual: d.manual || '' };
+    acceptingProspectId = p.id;                        // consumed on a successful save
+    view = 'build'; renderStage();
   }
 
   /* ---------- wiring: dossier (the action button + custom edit/delete) ---------- */
@@ -974,9 +1104,10 @@ const Marketplace = (() => {
     }));
   }
   // two-step arm/confirm on a destructive button (the bay's idiom — never a native confirm)
-  function armDelete(b, label, run) {
+  // armLabel is the text shown once armed (defaults to 'SURE?'); lets a destructive action admit permanence.
+  function armDelete(b, label, run, armLabel) {
     if (b.dataset.armed !== '1') {
-      b.dataset.armed = '1'; b.classList.add('armed'); b.textContent = 'SURE?'; sfx('bad');
+      b.dataset.armed = '1'; b.classList.add('armed'); b.textContent = armLabel || 'SURE?'; sfx('bad');
       setTimeout(() => { if (b.isConnected) { b.dataset.armed = '0'; b.classList.remove('armed'); b.textContent = label; } }, 4000);
       return;
     }
@@ -1514,7 +1645,8 @@ const Marketplace = (() => {
     // Custom classes are edited in THIS builder (via editingId) so their loadout pickers are reachable; a fresh
     // ＋ build has no editingId. Every field prefills from the spec being edited. (Built-ins are frozen — no edit.)
     const editing = editingId ? Specialties.get(editingId) : null;
-    const d = editing || { emoji: '✦', name: '', tagline: '', purpose: '', manual: '' };
+    // a station-drafted prospect (buildDraft) pre-fills the NEW-class form when not editing an existing custom.
+    const d = editing || buildDraft || { emoji: '✦', name: '', tagline: '', purpose: '', manual: '' };
     const sw = BUILD_ACCENTS.map(c => '<button type="button" class="mkt-sw' + (c === buildAccent ? ' sel' : '') +
       '" data-acc="' + c + '" style="background:' + c + '" aria-label="accent ' + c + '"></button>').join('');
     const seg = (m, l) => '<button type="button" class="mkt-seg' + (buildModel === m ? ' sel' : '') + '" data-model="' + m + '">' + l + '</button>';
@@ -1538,7 +1670,7 @@ const Marketplace = (() => {
       // STATION GEAR — capability objectTypes this class draws on under the overseer (informational; labels from
       // the LIVE catalog). Not per-agent props — shared station gear; the picks round-trip into the saved spec.
       '<label class="mkt-lbl">STATION GEAR IT DRAWS ON <span class="mkt-lbl-hint">— shared gear it uses under the overseer</span></label>' +
-      '<div class="mkt-chips" id="mkt-b-kit">' + buildKitChipsHTML() + '</div>' +
+      '<div class="mkt-kitpicks" id="mkt-b-kit">' + buildKitChipsHTML() + '</div>' +
       // SKILL PACKAGE — bundled recipes enabled for this class (from the live /api/skills catalog, filled async).
       '<label class="mkt-lbl">SKILL PACKAGE <span class="mkt-lbl-hint">— recipes it follows when a task matches</span></label>' +
       '<div class="mkt-chips" id="mkt-b-skills"><span class="mkt-hint mkt-chips-loading">loading the skill library…</span></div>' +
@@ -1549,17 +1681,21 @@ const Marketplace = (() => {
   // the pickable kit objectTypes — the auto-requisitionable capabilities (computer/connector are per-agent
   // manual-bind, per-agent bound props, never shared station gear a class draws on). Labels from the live source.
   const KIT_PICKABLE = ['dish', 'cabinet', 'notebook', 'workbench', 'studio'];
+  // each kit pick shows its capability blurb (from capGrant) next to the toggle, so a beginner sees what the
+  // gear actually grants ("the WEB — live search & fetch") instead of a bare prop label with a hidden title.
   function buildKitChipsHTML() {
     return KIT_PICKABLE.map(t => {
       const on = buildKit.indexOf(t) >= 0;
-      return '<button type="button" class="mkt-chip pick' + (on ? ' sel' : '') + '" data-kit="' + esc(t) + '" ' +
-        'title="' + esc(capGrant(t)) + '" aria-pressed="' + (on ? 'true' : 'false') + '">' + esc(kitPropLabel(t)) + '</button>';
+      return '<div class="mkt-kitpick">' +
+        '<button type="button" class="mkt-chip pick' + (on ? ' sel' : '') + '" data-kit="' + esc(t) + '" ' +
+          'title="' + esc(capGrant(t)) + '" aria-pressed="' + (on ? 'true' : 'false') + '">' + esc(kitPropLabel(t)) + '</button>' +
+        '<span class="mkt-kitpick-grant">' + esc(capGrant(t)) + '</span></div>';
     }).join('');
   }
   const effSeg = (e, l) => '<button type="button" class="mkt-seg' + ((buildEffort === e || (e === null && !buildEffort)) ? ' sel' : '') + '" data-effort="' + (e == null ? '' : e) + '">' + l + '</button>';
   function wireBuildForm(stage) {
     const back = stage.querySelector('.mkt-cancel');
-    if (back) back.addEventListener('click', () => { sfx('click'); editingId = null; view = 'grid'; renderStage(); });
+    if (back) back.addEventListener('click', () => { sfx('click'); editingId = null; buildDraft = null; acceptingProspectId = null; view = 'grid'; renderStage(); });
     // live seal preview: icon + accent
     const emojiIn = stage.querySelector('#mkt-b-emoji'), coinEmoji = stage.querySelector('#mkt-build-emoji'), coin = stage.querySelector('#mkt-build-coin');
     if (emojiIn) emojiIn.addEventListener('input', () => { if (coinEmoji) coinEmoji.textContent = (emojiIn.value || '✦').trim() || '✦'; });
@@ -1609,6 +1745,13 @@ const Marketplace = (() => {
       const editing = editingId ? Specialties.get(editingId) : null;
       const name = (stage.querySelector('#mkt-b-name').value || '').trim();
       if (!name) { sfx('bad'); note('give your class a name', 'bad'); stage.querySelector('#mkt-b-name').focus(); return; }
+      // mirror the prospect drafter's constraint (prospect.js:112): a specialist with no gear is not a real role.
+      // an empty kit used to save silently; make it explain itself and point back at the gear picker.
+      if (!buildKit.length) {
+        sfx('bad'); note('a specialist with no gear is not a real role — pick at least one kit item', 'bad');
+        const kitHost = stage.querySelector('#mkt-b-kit'); if (kitHost && kitHost.scrollIntoView) kitHost.scrollIntoView({ block: 'center' });
+        return;
+      }
       // when editing, start from the saved record so non-authored carried fields (persona, tags, starters, blurb)
       // survive the round-trip; the form fields below overwrite what the builder exposes.
       const spec = Object.assign({}, editing || {}, {
@@ -1628,6 +1771,9 @@ const Marketplace = (() => {
       if (editing) spec.id = editing.id;
       try {
         const saved = Specialties.saveCustom(spec);
+        // Slice 4: a saved prospect graduates to a real custom class — remove it from staging (accept, not deny).
+        if (acceptingProspectId && typeof ProspectStore !== 'undefined' && ProspectStore.accept) { try { ProspectStore.accept(acceptingProspectId); } catch (_) {} }
+        acceptingProspectId = null; buildDraft = null;
         focusAgent = saved.id; editingId = null; view = 'grid';
         sfx('click'); note((editing ? 'updated class: ' : 'created class: ') + saved.name, 'good');
         renderStage();
@@ -1636,5 +1782,8 @@ const Marketplace = (() => {
     const nameIn = stage.querySelector('#mkt-b-name'); if (nameIn) nameIn.focus();
   }
 
-  return { open, close };
+  // Slice 4: let ProspectStore refresh the open bay when a fresh prospect mints (no-op when the bay is closed or
+  // not on the grid view — never yanks the user out of the editor).
+  function refreshIfOpen() { if (root && view === 'grid') { try { renderStage(); } catch (_) {} } }
+  return { open, close, refreshIfOpen };
 })();

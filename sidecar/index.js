@@ -67,12 +67,14 @@ const codexTokenStore = require('./providers/codex-token-store.js');
 const { effectiveModel: resolveEffectiveModel, effectiveUsd } = require('./spend.js');
 const { makeEmitter } = require('../shared/emitter.js');
 const { redact, renderRecall, injectRecall, rank, makeContext, compactionMemoryBlock, compactionSummaryPrompt } = require('./context.js');
+const { runRouteFailure } = require('./runroute.js');   // a failure escaping handleRun must never read as an empty 200
 const { reflect, reflectSalient, recordFromProposal, feedbackFor, highStakes } = require('./reflect.js');
 // GROWTH Tier 1 — the pure STUDY ENGINE (the dossier's Phase B). A UMD frontend module that also exports under
 // node, so the sidecar reuses the SAME parse/salience/dedup the browser consent path uses. Fail-open: if it can't
 // load, study just never fires (a run stays byte-identical). No new npm dep — it's a first-party file.
 let Study = null; try { Study = require('../frontend/app/study.js'); } catch (_) { Study = null; }
 const { runtimeIdentityBlock } = require('./runtimeinfo.js');
+const { makeDiagnostics } = require('./diagnostics.js');   // T3.9: pure paste-ready bug-report assembler (redacted, truthful)
 const memcore = require('./memcore.js');
 const { makeConsentBroker } = require('./permissions.js');
 const { makeGrantManager } = require('./permgrants.js');
@@ -80,6 +82,7 @@ const { makeTelegramAdapter } = require('./channels/telegram.js');
 const { makeChannelStore } = require('./channels/store.js');
 const { makeChannelHub } = require('./channels/hub.js');
 const { makeChannelRegistry, wireChannel } = require('./channels/registry.js');   // H6.2: channel descriptors + generic wire-up
+const channelSecretsMod = require('./channels/secrets.js');                        // T1.4: token-vs-config split + keychain migration
 const { makeConnectGateway } = require('./channels/discord.gateway.js');           // P2-E: the real Discord gateway WS client (inbound)
 const { makeSseHub, runTeeView } = require('./channels/sse.js');
 const { makeRouter } = require('./routing/router.js');
@@ -138,6 +141,10 @@ const API_TOKEN = String(ENV('API_TOKEN') || crypto.randomBytes(32).toString('he
 // seeded save with no connect screen / awakening. Holds NO secret — the API key stays in runtimeKey. Never
 // set in a packaged build, so this is inert in shipping. Loopback-only like the rest of the server.
 const DEV_MODE = /^(1|true|yes|on)$/i.test(String(ENV('DEV') || '').trim());
+// Are we running under the real desktop shell (Tauri)? Only then is the OS keychain reachable (through the
+// parent process), so only then do channel bot tokens live in the keychain instead of plaintext secrets.json.
+// The bare sidecar (npm start / tests / headless deploy) never sets this and HONESTLY keeps the plaintext path.
+const DESKTOP_SHELL = /^(1|true|yes|on)$/i.test(String(ENV('DESKTOP_SHELL') || '').trim());
 // API auth/guard DECISIONS live in the unit-tested ./apiauth.js (full threat model documented there);
 // index.js keeps only the thin res-writing wrappers below. Hardened posture: EVERY /api/* route now requires
 // the per-launch token (GET data routes included) except a small header-less set. Native media/file loads
@@ -485,6 +492,28 @@ const runsIo = {
 };
 const runStore = makeRunStore({ io: runsIo, clock: { now: () => Date.now() } });
 
+/* ---- T3.9 DIAGNOSTICS: process start + a small in-memory error ring feeding the paste-ready bug-report block
+   (GET /api/diagnostics). The ring holds only the newest few run-error MESSAGES (already redacted on write) so a
+   public user in a failure state can grab a useful, secret-free report. It is RAM-only + bounded — never persisted,
+   never contains transcript content or a prompt (only the classified run-error message). ---- */
+const PROCESS_START = Date.now();
+const DIAG_ERR_RING = [];             // [{ ts, message }] newest-last, bounded
+const DIAG_ERR_MAX = 8;
+function recordDiagError(message, ts) {
+  const msg = String(message == null ? '' : message).trim();
+  if (!msg) return;
+  DIAG_ERR_RING.push({ ts: num(ts) || Date.now(), message: redact(msg) });   // redact on WRITE (context.js always-on scrubber)
+  while (DIAG_ERR_RING.length > DIAG_ERR_MAX) DIAG_ERR_RING.shift();
+}
+const diagnostics = makeDiagnostics({ redact });   // pure assembler; redact injected for the second sanitization backstop
+// wrap any run emit fn so an `agent.run.error` also lands in the diagnostics ring (one sink for every run path).
+function wrapEmitDiag(emitFn) {
+  return function (name, payload) {
+    try { if (name === 'agent.run.error' && payload && payload.message) recordDiagError(payload.message, payload.ts); } catch (_) {}
+    return emitFn(name, payload);
+  };
+}
+
 // durable per-workstream CONVERSATION transcript (P0.1): append-only + fsync'd like the runs log, a SIBLING of
 // the fs jail. runStore answers "what happened" (one line per run); this keeps WHAT WAS SAID — a server-
 // authoritative, append-only record covering EVERY surface, including headless cron/Telegram/delegated runs
@@ -599,6 +628,25 @@ function saveAgentRoster() {
   } catch (e) { console.warn('[roster] persist failed:', (e && e.message) || e); }
 }
 loadAgentRoster();
+
+// In-messenger `/model` (any channel) sets the CURRENTLY BOUND agent's roster model — the SAME single source of
+// truth the browser dossier writes via POST /api/roster. We mutate the live roster entry and persist through the
+// SAME saveAgentRoster path (no duplicate-and-drift), so the change round-trips a sidecar restart and the browser
+// sees it. Returns { ok, agentId, model, name, error } — truthful: ok:false when there is nothing to write to.
+function setAgentModelFromChannel(agentId, model) {
+  const id = String(agentId || '');
+  if (!/^[A-Za-z0-9_-]{1,40}$/.test(id)) return { ok: false, agentId: id, error: 'bad agentId' };
+  const m = String(model == null ? '' : model).trim();
+  if (!m) return { ok: false, agentId: id, error: 'empty model' };
+  const cur = agentRoster.get(id);
+  if (!cur) return { ok: false, agentId: id, error: 'agent not in roster' };
+  agentRoster.set(id, Object.assign({}, cur, { model: m }));   // same shape replaceAgentRoster produces
+  saveAgentRoster();                                           // fsync-durable + .bak, survives restart
+  return { ok: true, agentId: id, model: m, name: cur.name || id };
+}
+// A live snapshot of the OpenRouter model catalog, warmed at boot (see listModels warmup below). Lets the
+// channel `/model` command validate an id sync without an await; empty until warmed (then validation is skipped).
+let orModelCatalogIds = [];
 
 // jail helper reused by the read-only /api/file route (resolveInside proves a path stays in the workspace)
 const fsJail = makeFsTools({ fsp, pathMod: path, root: WORKSPACES })._internals;
@@ -1264,6 +1312,27 @@ let voiceDispatcher = null;
 function voiceFetchOpts(base) { return voiceDispatcher ? Object.assign({ dispatcher: voiceDispatcher }, base) : base; }
 const CHANNELS_DIR = path.join(WORKSPACES, 'channels');
 const CHANNEL_SECRETS_FILE = path.join(CHANNELS_DIR, 'secrets.json');
+// ---- channel bot tokens: keychain-backed on desktop, plaintext-file fallback in the bare sidecar ----
+// Runtime token layer, mirroring runtimeKeys for provider API keys. On the desktop build the token source of
+// truth is the OS keychain, injected at spawn as SKYNET_<ID>_TOKEN and live-pushed via POST /api/channels/token.
+// In that mode the plaintext secrets.json holds ONLY non-secret config (enabled/model/ownerId/agentId/…). The
+// bare sidecar has no keychain, so the token stays in the file exactly as before.
+const CHANNEL_TOKEN_ENV = { telegram: 'TELEGRAM_TOKEN', discord: 'DISCORD_TOKEN' };
+const channelTokenRuntime = Object.create(null);
+for (const id of channelSecretsMod.CHANNEL_IDS) {
+  const v = String(ENV(CHANNEL_TOKEN_ENV[id]) || '').trim();
+  if (v) channelTokenRuntime[id] = v;
+}
+// Resolve the effective bot token for a channel: an explicit value (a fresh paste) wins; else the keychain-
+// injected/live-pushed runtime token; else — bare sidecar only — the token saved in the plaintext record.
+function channelToken(id, explicit, savedRecord) {
+  const e = String(explicit || '').trim();
+  if (e) return e;
+  const rt = String(channelTokenRuntime[id] || '').trim();
+  if (rt) return rt;
+  if (!DESKTOP_SHELL && savedRecord && savedRecord.token) return String(savedRecord.token);   // plaintext fallback
+  return '';
+}
 function loadChannelSecrets() {
   try { const raw = loadResilient(CHANNEL_SECRETS_FILE, 'channels'); return (raw && typeof raw === 'object') ? raw : {}; }
   catch (e) { return {}; }   // unrecoverable -> nothing configured
@@ -1271,10 +1340,31 @@ function loadChannelSecrets() {
 function saveChannelSecrets(obj) {   // protected sibling of the fs jail; the agent's own fs.* tools can't read/write it
   try {
     fs.mkdirSync(CHANNELS_DIR, { recursive: true });
-    saveResilient(CHANNEL_SECRETS_FILE, obj);   // fsync-durable + .bak last-known-good (bot token survives power loss)
+    // Desktop: never let a bot token touch the plaintext file — it lives in the keychain. Strip before writing.
+    const toPersist = DESKTOP_SHELL ? channelSecretsMod.stripTokens(obj) : obj;
+    saveResilient(CHANNEL_SECRETS_FILE, toPersist);   // fsync-durable + .bak last-known-good (config survives power loss)
   } catch (e) { console.warn('[channels] secrets persist failed:', (e && e.message) || e); }
 }
 let channelSecrets = loadChannelSecrets();
+// First desktop boot after upgrading from a plaintext secrets.json: adopt any file token into the runtime layer
+// (so the currently-running host stays connected this session) and overwrite the file WITHOUT the token. The
+// keychain itself is written by the parent shell (POST /api/channels/token) — the sidecar can't reach keyring —
+// so the token also survives the NEXT restart only once the shell has stored it; until then the runtime value +
+// the imports report below keep this session honest. hasChannelToken() is true when the keychain already injected
+// this channel's token via env (SKYNET_<ID>_TOKEN), so we never double-report an already-migrated token.
+(function migrateChannelTokensToKeychain() {
+  try {
+    const res = channelSecretsMod.migratePlaintext(channelSecrets, {
+      keychainMode: DESKTOP_SHELL,
+      hasChannelToken: (id) => !!String(ENV(CHANNEL_TOKEN_ENV[id]) || '').trim()
+    });
+    if (!res.changed) return;
+    for (const imp of res.imports) { if (!channelTokenRuntime[imp.id]) channelTokenRuntime[imp.id] = imp.token; }   // keep this session live
+    channelSecrets = res.config;
+    saveChannelSecrets(channelSecrets);   // rewrite the file stripped of tokens (stripTokens no-ops what's already gone)
+    if (res.imports.length) console.warn('[channels] migrated ' + res.imports.map(i => i.id).join('+') + ' bot token(s) out of plaintext secrets.json — reconnect once to store them in the OS keychain.');
+  } catch (e) { console.warn('[channels] token migration skipped:', (e && e.message) || e); }
+})();
 const channelStore = makeChannelStore({ fs, pathMod: path, root: CHANNELS_DIR, clock: { now: () => Date.now() }, writeDurable: writeFileDurable, onRecover: (file) => console.warn('[channels] recovered ' + file + ' from .bak last-known-good after a torn/corrupt main.') });
 
 // ---- Codex (personal ChatGPT subscription) OAuth tokens — a protected sibling of the fs jail, SAME posture
@@ -1669,6 +1759,9 @@ function startTelegram(token, key, model, agentCfg) {
   const cfg = agentCfg || {};
   const provider = normalizeProvider(cfg.provider);
   const reasoningEffort = resolveReasoningEffort(provider, cfg.reasoningEffort);
+  // keep the live token in the runtime layer so it survives a saveChannelSecrets() reload (desktop strips it from
+  // the file) and so /status reports `configured` even when the plaintext record carries no token.
+  if (token) channelTokenRuntime.telegram = String(token);
   const prev = (channelSecrets && channelSecrets.telegram) || {};
   // Persist the SAME agentId + composed system prompt the app uses, so a Telegram run IS the same agent
   // (shared notebook/memory/workspace + identity), just a different session. `agentId`/`system` are read
@@ -1696,7 +1789,13 @@ function startTelegram(token, key, model, agentCfg) {
     // (configured agentId else tg_<chatId>), so a no-floor or mis-wired station never stalls real work.
     resolveAgent: (ctx) => router.resolveTarget(ctx),
     getTag: (text) => (Classify.getTag ? Classify.getTag(text) : undefined),   // B3 supplies the real classifier
-    resolveStation: (agentId) => router.stationFor(agentId)                     // B5: a bay's room objects = that agent's caps
+    resolveStation: (agentId) => router.stationFor(agentId),                    // B5: a bay's room objects = that agent's caps
+    // In-messenger control surface (channel-agnostic): list agents / switch agent / change the bound agent's model.
+    // roster + setModel read/write the SAME agentRoster the browser dossier uses (POST /api/roster) — one source
+    // of truth, no per-chat override. modelCatalog is the boot-warmed OpenRouter id snapshot (empty -> skip check).
+    roster: () => [...agentRoster].map(([agentId, a]) => ({ agentId, name: a.name, model: a.model, provider: a.provider })),
+    setModel: (agentId, model) => setAgentModelFromChannel(agentId, model),
+    modelCatalog: () => orModelCatalogIds
   });
   const adapter = makeTelegramAdapter({
     fetch: globalThis.fetch, token: token, apiBase: TELEGRAM_API_BASE, clock: { now: () => Date.now() },
@@ -1774,6 +1873,7 @@ function startDiscord(token, key, model, agentCfg) {
   const cfg = agentCfg || {};
   const provider = normalizeProvider(cfg.provider);
   const reasoningEffort = resolveReasoningEffort(provider, cfg.reasoningEffort);
+  if (token) channelTokenRuntime.discord = String(token);   // keep the live token off the plaintext file (desktop) — see startTelegram
   const prev = (channelSecrets && channelSecrets.discord) || {};
   channelSecrets = Object.assign({}, channelSecrets, { discord: {
     token: token, key: key, model: model, provider: provider, baseUrl: cfg.baseUrl || cfg.base_url || '', reasoningEffort: reasoningEffort, enabled: true,
@@ -1795,7 +1895,12 @@ function startDiscord(token, key, model, agentCfg) {
       newId: () => crypto.randomUUID(),
       resolveAgent: (ctx) => router.resolveTarget(ctx),
       getTag: (text) => (Classify.getTag ? Classify.getTag(text) : undefined),
-      resolveStation: (agentId) => router.stationFor(agentId)
+      resolveStation: (agentId) => router.stationFor(agentId),
+      // In-messenger control surface — identical to Telegram because it lives in the shared hub (roster/setModel/
+      // modelCatalog are the SAME app roster + boot-warmed catalog; NO per-channel routing logic here).
+      roster: () => [...agentRoster].map(([agentId, a]) => ({ agentId, name: a.name, model: a.model, provider: a.provider })),
+      setModel: (agentId, model) => setAgentModelFromChannel(agentId, model),
+      modelCatalog: () => orModelCatalogIds
     },
     adapter: {
       fetch: globalThis.fetch, token: token, clock: { now: () => Date.now() },
@@ -1858,12 +1963,13 @@ const server = http.createServer((req, res) => {
   }
   if (isApi && rejectBadApiToken(req, res)) return;
   if (req.method === 'POST' && req.url === '/api/session') return handleApiSession(req, res);
-  if (req.method === 'POST' && req.url === '/api/run') return handleRun(req, res).catch(() => { try { res.end(); } catch (_) {} });
+  if (req.method === 'POST' && req.url === '/api/run') return handleRun(req, res).catch((e) => runRouteFailure(res, e, redact));
   if (req.method === 'POST' && req.url === '/api/tts') return handleTts(req, res).catch(() => { try { res.end(); } catch (_) {} });
   if (req.method === 'POST' && (req.url === '/api/stt' || req.url.indexOf('/api/stt?') === 0)) return handleStt(req, res).catch(() => { try { res.end(); } catch (_) {} });
   if (req.method === 'POST' && req.url === '/api/cancel') return handleCancel(req, res);
   if (req.method === 'POST' && req.url === '/api/run/steer') return handleRunSteer(req, res).catch(() => { try { res.end(); } catch (_) {} });
   if (req.method === 'GET' && req.url === '/api/version') return handleVersion(req, res);
+  if (req.method === 'GET' && req.url === '/api/diagnostics') return handleDiagnostics(req, res);   // T3.9 paste-ready bug report
   if (req.method === 'POST' && req.url === '/api/halt') return handleHalt(req, res);
   if (req.method === 'POST' && req.url === '/api/consent') return handleConsent(req, res);
   if (req.method === 'GET' && req.url === '/api/permissions') return handlePermissionsList(req, res);
@@ -1872,6 +1978,7 @@ const server = http.createServer((req, res) => {
   if (req.method === 'POST' && req.url === '/api/autonomy/write') return handleAutonomyWrite(req, res).catch(() => { try { res.end(); } catch (_) {} });
   if (req.method === 'POST' && req.url === '/api/summon/ack') return handleSummonAck(req, res);
   if (req.method === 'POST' && req.url === '/api/key') return handleSetKey(req, res);
+  if (req.method === 'POST' && req.url === '/api/channels/token') return handleSetChannelToken(req, res);
   if (req.method === 'POST' && req.url === '/api/channels/telegram/connect') return handleChannelConnect(req, res);
   if (req.method === 'POST' && req.url === '/api/channels/telegram/sync') return handleChannelSync(req, res);
   if (req.method === 'POST' && req.url === '/api/roster') return handleRoster(req, res);
@@ -1935,6 +2042,10 @@ const server = http.createServer((req, res) => {
   if (req.method === 'GET' && req.url.split('?')[0] === '/api/workshop/pending') return handleWorkshopPending(req, res).catch(() => { try { res.end(); } catch (_) {} });
   if (req.method === 'POST' && req.url === '/api/workshop/decide') return handleWorkshopDecide(req, res).catch(() => { try { res.end(); } catch (_) {} });
   if (req.method === 'POST' && req.url === '/api/workshop/shift') return handleWorkshopShiftNow(req, res).catch(() => { try { res.end(); } catch (_) {} });
+  // ADDITIVE (Lane B / ux-run-truth): read-only stat of a user-chosen KEEP destination folder, so the return
+  // card can validate the typed path inline instead of failing silently on Keep. Strictly less powerful than
+  // the existing keep copy (which already writes to an arbitrary destPath) — this only reports exists/isDir.
+  if (req.method === 'GET' && req.url.split('?')[0] === '/api/fs/dirstat') return handleDirStat(req, res).catch(() => { try { res.end(); } catch (_) {} });
   if (req.method === 'POST' && req.url === '/api/checkpoint/restore') return handleCheckpointRestore(req, res);
   if (req.method === 'GET' && req.url.indexOf('/api/checkpoint') === 0) return handleCheckpointList(req, res);
   if (req.method === 'GET' && req.url === '/api/health') { res.writeHead(200); return res.end('ok'); }
@@ -1946,6 +2057,11 @@ const server = http.createServer((req, res) => {
   // inside the model's tool result. (WIRING_AUDIT P4: lie #7.)
   if (req.method === 'GET' && req.url === '/api/limits') { res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); return res.end(JSON.stringify({ maxConcurrentAgents: concurrencyGate.max() })); }
   if ((req.method === 'GET' || req.method === 'HEAD') && req.url.indexOf('/api/file') === 0) return serveWorkspaceFile(req, res);
+  // ADDITIVE (Lane B / ux-run-truth): the absolute per-agent workspace directory, so the COMMS
+  // "open folder" affordance on a file deliverable can show the Commander the REAL path on disk
+  // where their output landed (the frontend otherwise only knows the relative filename). Read-only,
+  // jailed via resolveInside (same proof the /api/file route uses); never lists or exposes contents.
+  if (req.method === 'GET' && req.url.indexOf('/api/workspace/dir') === 0) return serveWorkspaceDir(req, res);
   if (req.method === 'POST' && req.url === '/api/notebook/restore') return handleNotebookRestore(req, res);
   if (req.method === 'GET' && req.url.indexOf('/api/notebook') === 0) return serveNotebook(req, res);
   if (req.method === 'GET' && req.url.indexOf('/api/save') === 0) return serveSaveLoad(req, res);
@@ -1987,26 +2103,32 @@ server.listen(PORT, '127.0.0.1', () => {
   console.log(bar + '\n');
   // warm the key-independent /models catalog once so priceOf / contextLimit are live for every run
   makeOpenRouterProvider({ fetch: globalThis.fetch, baseUrl: providerRuntimeBaseUrl('openrouter', '') || OPENROUTER_BASE }).listModels().then(
-    ms => { if (ms && ms.length) console.log('  · model catalog warmed (' + ms.length + ' models)'); },
+    ms => {
+      if (ms && ms.length) {
+        console.log('  · model catalog warmed (' + ms.length + ' models)');
+        // snapshot the ids so the channel /model command can validate an id synchronously (see setAgentModelFromChannel)
+        try { orModelCatalogIds = ms.map(x => String((x && (x.id || x.model || x.name)) || '')).filter(Boolean); } catch (_) {}
+      }
+    },
     () => {}
   );
   // auto-start a previously-connected Telegram bot (saved config), else an env-provided one (headless deploys).
   try {
     const t = (channelSecrets && channelSecrets.telegram) || {};
-    const envTok = String(ENV('TELEGRAM_TOKEN') || '').trim();
+    const tgTok = channelToken('telegram', '', t);   // keychain/runtime token (desktop) or the plaintext record (bare)
     const envKey = String(ENV('OPENROUTER_KEY') || '').trim();
     const envModel = String(ENV('DEFAULT_MODEL') || '').trim();
-    if (t.enabled && t.token && t.model && providerHasCredential(t.provider, providerRuntimeKey(t.provider, t.key || ''), providerRuntimeBaseUrl(t.provider, t.baseUrl || t.base_url || ''))) { startTelegram(t.token, t.key || '', t.model, { agentId: t.agentId, system: t.system, name: t.name, provider: t.provider, baseUrl: t.baseUrl || t.base_url || '', reasoningEffort: t.reasoningEffort }); console.log('  · telegram auto-started from saved config'); }
-    else if (envTok && envKey && envModel) { startTelegram(envTok, envKey, envModel, {}); console.log('  · telegram auto-started from env'); }
+    if (t.enabled && tgTok && t.model && providerHasCredential(t.provider, providerRuntimeKey(t.provider, t.key || ''), providerRuntimeBaseUrl(t.provider, t.baseUrl || t.base_url || ''))) { startTelegram(tgTok, t.key || '', t.model, { agentId: t.agentId, system: t.system, name: t.name, provider: t.provider, baseUrl: t.baseUrl || t.base_url || '', reasoningEffort: t.reasoningEffort }); console.log('  · telegram auto-started from saved config'); }
+    else if (channelTokenRuntime.telegram && envKey && envModel) { startTelegram(channelTokenRuntime.telegram, envKey, envModel, {}); console.log('  · telegram auto-started from env'); }
   } catch (e) { console.warn('[channels] telegram auto-start failed:', (e && e.message) || e); }
   // H6.2: same auto-start for Discord (saved config else env), through the generic registry path.
   try {
     const d = (channelSecrets && channelSecrets.discord) || {};
-    const envTok = String(ENV('DISCORD_TOKEN') || '').trim();
+    const dcTok = channelToken('discord', '', d);   // keychain/runtime token (desktop) or the plaintext record (bare)
     const envKey = String(ENV('OPENROUTER_KEY') || '').trim();
     const envModel = String(ENV('DEFAULT_MODEL') || '').trim();
-    if (d.enabled && d.token && d.model && providerHasCredential(d.provider, providerRuntimeKey(d.provider, d.key || ''), providerRuntimeBaseUrl(d.provider, d.baseUrl || d.base_url || ''))) { startDiscord(d.token, d.key || '', d.model, { agentId: d.agentId, system: d.system, name: d.name, provider: d.provider, baseUrl: d.baseUrl || d.base_url || '', reasoningEffort: d.reasoningEffort }); console.log('  · discord auto-started from saved config'); }
-    else if (envTok && envKey && envModel) { startDiscord(envTok, envKey, envModel, {}); console.log('  · discord auto-started from env'); }
+    if (d.enabled && dcTok && d.model && providerHasCredential(d.provider, providerRuntimeKey(d.provider, d.key || ''), providerRuntimeBaseUrl(d.provider, d.baseUrl || d.base_url || ''))) { startDiscord(dcTok, d.key || '', d.model, { agentId: d.agentId, system: d.system, name: d.name, provider: d.provider, baseUrl: d.baseUrl || d.base_url || '', reasoningEffort: d.reasoningEffort }); console.log('  · discord auto-started from saved config'); }
+    else if (channelTokenRuntime.discord && envKey && envModel) { startDiscord(channelTokenRuntime.discord, envKey, envModel, {}); console.log('  · discord auto-started from env'); }
   } catch (e) { console.warn('[channels] discord auto-start failed:', (e && e.message) || e); }
   // warm every configured+enabled connector so its tools are ready on the first run (fire-and-forget; a
   // connector that is down/errors simply projects no tools — it never blocks the host or a run).
@@ -2408,6 +2530,22 @@ async function handleSetKey(req, res) {
   return res.end(JSON.stringify({ ok: true, provider: id, configured: providerHasCredential(id, key, baseUrl) }));
 }
 
+/* desktop channel-token push (T1.4): the parent shell stores a bot token in the OS keychain and pushes it here
+   (token-gated, mirrors /api/key) so a token change never restarts the sidecar. Body: { channel, token }. An
+   empty token CLEARS the runtime token for that channel. Never echoes the token back — only booleans. */
+async function handleSetChannelToken(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  const token = String(ENV('IPC_TOKEN') || '');
+  if (!token || (req.headers['x-starnet-token'] || req.headers['x-skynet-token']) !== token) { res.writeHead(403); return res.end('forbidden'); }
+  let body; try { body = JSON.parse(String(await readBody(req, 1 << 16) || '') || '{}') || {}; } catch (_) { return json(400, { error: 'bad json' }); }
+  const channel = String(body.channel || body.id || '').trim().toLowerCase();
+  if (channelSecretsMod.CHANNEL_IDS.indexOf(channel) < 0) return json(400, { error: 'unknown channel' });
+  const tok = String(body.token || '').trim();
+  if (tok) channelTokenRuntime[channel] = tok;
+  else delete channelTokenRuntime[channel];
+  return json(200, { ok: true, channel: channel, configured: !!channelTokenRuntime[channel] });
+}
+
 /* ---- /api/toolsets: the TOOLSETS console. GET lists every toggleable capId family (DERIVED from CAP_REGISTRY,
    never a hand-kept parallel list) with its enabled flag, the granting objectType, its tools, a consent summary,
    and whether that object is PLACED anywhere on the station (the client passes ?placed=<types> — the same
@@ -2674,7 +2812,12 @@ function handleCronCreate(req, res) {
   const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
   readBody(req, 1 << 16).then(raw => {
     let body; try { body = JSON.parse(raw) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
-    let schedule; try { schedule = parseCronScheduleOr400(body.schedule, Date.now()); } catch (e) { return json(e.code || 400, { error: e.message }); }
+    // TZ HONESTY (additive, G4.1 parity with /api/cron/preview): honor an optional IANA `body.tz` so a wall-clock
+    // schedule ("0 9 * * *") fires on the caller's LOCAL 9:00 instead of the host-default (UTC-or-SKYNET_CRON_TZ).
+    // A tz-less body resolves under the host default exactly as before (no signature break, no behavior change for
+    // existing callers); an INVALID tz is REJECTED here (400) rather than silently firing on UTC — so the routine's
+    // rendered cadence label ("9:00 your local time") can never lie about when it actually fires.
+    let schedule; try { schedule = parseCronScheduleOr400(body.schedule, Date.now(), body.tz); } catch (e) { return json(e.code || 400, { error: e.message }); }
     let agentId; try { agentId = parseCronAgentIdOr400(body.agentId); } catch (e) { return json(e.code || 400, { error: e.message }); }
     let provider; try { provider = parseCronProviderOr400(body.provider); } catch (e) { return json(e.code || 400, { error: e.message }); }
     // W6 MINT GATE — server is the authority. If this agent already has a routine with the same (or near-same)
@@ -2804,7 +2947,7 @@ async function handleCronRun(req, res) {
   runs.set(runId, ac);
   req.on('close', () => { ac.abort(); runs.delete(runId); });
   const bus = { emit: (name, payload) => { try { res.write(JSON.stringify({ name, payload: redact(payload) }) + '\n'); } catch (_) {} } };
-  const emit = makeEmitter(bus, e => { if (e && e.event !== 'tool.web') console.warn('[event]', e.kind, e.event, (e.errors || []).join(';')); });
+  const emit = wrapEmitDiag(makeEmitter(bus, e => { if (e && e.event !== 'tool.web') console.warn('[event]', e.kind, e.event, (e.errors || []).join(';')); }));
   // tee: stream every event to the watching browser AND capture the outcome so the last-run record is honest.
   const state = { buf: '', errMsg: null, reason: null, transient: false };
   const teeEmit = (name, payload) => {
@@ -2950,8 +3093,10 @@ async function runWorkshopShift(agentId, opts) {
   // VALIDATE the manifest against the real files. Only a proven manifest emits workshop.built (truthful telemetry).
   const manifest = await validateWorkshopManifest(id, runId);
   if (!manifest) {
-    await workshopStore.releaseClaim(id, runId);   // no deliverable produced → item stays queued for a later shift
-    return { fired: true, runId: runId, reason: threw ? 'run-failed' : 'no-manifest' };
+    // failed build → count the attempt; at the cap the item PARKS so a doomed item can't burn a run every shift.
+    const rel = await workshopStore.releaseClaim(id, runId, { failed: true });
+    if (rel && rel.parked) console.warn('[workshop] parked "' + (rel.parked.title || rel.parked.id) + '" for ' + id + ' after ' + rel.parked.attempts + ' failed builds — it will not be retried; re-queue it to try again.');
+    return { fired: true, runId: runId, reason: threw ? 'run-failed' : 'no-manifest', parked: !!(rel && rel.parked) };
   }
   await workshopStore.markBuilt(id, item.id, runId);
   try { chanEmit('workshop.built', { agentId: id, runId: runId, manifest: manifest }); } catch (_) {}
@@ -3093,6 +3238,9 @@ async function handleWorkshopDecide(req, res) {
       copied++;
     }
   } catch (e) { return json(500, { error: 'could not copy the files: ' + ((e && e.message) || e) }); }
+  // kept = decided: retire the backlog item so /pending never re-lists (and the card never resurrects) a kept
+  // build. The run dir stays in the workshop as an archive; unlike discard, the title is NOT denylisted.
+  if (item) { try { await workshopStore.complete(agentId, item.id); } catch (_) {} }
   try { chanEmit('workshop.decided', { agentId, runId, decision: 'keep', destPath: destPath }); } catch (_) {}
   json(200, { ok: true, decision: 'keep', destPath: destPath, copied: copied });
 }
@@ -3105,7 +3253,7 @@ async function handleWorkshopShiftNow(req, res) {
   if (!/^[A-Za-z0-9_-]{1,40}$/.test(agentId)) { res.writeHead(400, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ error: 'choose a valid agent' })); }
   res.writeHead(200, { 'Content-Type': 'application/x-ndjson; charset=utf-8', 'Cache-Control': 'no-store', 'X-Accel-Buffering': 'no' });
   const bus = { emit: (name, payload) => { try { res.write(JSON.stringify({ name, payload: redact(payload) }) + '\n'); } catch (_) {} } };
-  const emit = makeEmitter(bus, e => { if (e && e.event !== 'tool.web') console.warn('[event]', e.kind, e.event, (e.errors || []).join(';')); });
+  const emit = wrapEmitDiag(makeEmitter(bus, e => { if (e && e.event !== 'tool.web') console.warn('[event]', e.kind, e.event, (e.errors || []).join(';')); }));
   let result;
   try { result = await runWorkshopShift(agentId, { emit: emit, broadcast: true }); }
   catch (e) { result = { fired: false, reason: 'error: ' + ((e && e.message) || e) }; }
@@ -3345,7 +3493,7 @@ async function handleRun(req, res) {
   // the "bus" writes one validated, REDACTED NDJSON line per event (key-shaped secrets are scrubbed even
   // if a tool ever echoes one back); makeEmitter validates against the frozen registry first.
   const bus = { emit: (name, payload) => { try { res.write(JSON.stringify({ name, payload: redact(payload) }) + '\n'); } catch (_) {} } };
-  const emit = makeEmitter(bus, e => { if (e && e.event !== 'tool.web') console.warn('[event]', e.kind, e.event, (e.errors || []).join(';')); });
+  const emit = wrapEmitDiag(makeEmitter(bus, e => { if (e && e.event !== 'tool.web') console.warn('[event]', e.kind, e.event, (e.errors || []).join(';')); }));
 
   // THE LIVE CONSENT CHANNEL: emit a permission.prompt down the NDJSON stream and return a Promise that the loop's
   // dispatch await-pauses on. The browser answers via POST /api/consent (handleConsent), which calls the stored
@@ -4250,6 +4398,58 @@ function handleVersion(req, res) {
   res.end(JSON.stringify(_versionCache));
 }
 
+// GET /api/diagnostics — T3.9: a paste-ready, SECRET-FREE bug report a public user can email. Token-gated (main
+// route table) like all /api. Assembled SERVER-SIDE from real stores/state (never scraped from the DOM). The
+// diagnostics module (sidecar/diagnostics.js) does the pure formatting + a second redact() backstop; here we just
+// collect the honest snapshot. TRUTHFUL TELEMETRY: every field is provable — anything we can't prove is omitted.
+function handleDiagnostics(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let out;
+  try {
+    // version (reuse the cached honest build surface)
+    const ver = { harness: '', app: '', node: process.version };
+    try { ver.harness = String(require('../package.json').version || ''); } catch (_) {}
+    try { const t = require('../src-tauri/tauri.conf.json'); ver.app = String((t && (t.version || (t.package && t.package.version))) || ''); } catch (_) {}
+    // desktop vs browser — provable from the request origin (Tauri custom-scheme origins are the desktop shell)
+    const origin = String((req && req.headers && req.headers.origin) || '').toLowerCase();
+    const mode = (origin.indexOf('tauri') === 0 || origin.indexOf('app://') === 0) ? 'desktop' : (origin ? 'browser' : '');
+    // active provider + model SLUG (never a key): the newest run is the strongest proof of what actually ran; fall
+    // back to the primary roster agent's configured identity when no run has happened yet.
+    const recent = (() => { try { return runStore.list(null, { limit: 1 })[0] || null; } catch (_) { return null; } })();
+    let provider = '', model = '';
+    try {
+      const first = agentRoster.size ? [...agentRoster.values()][0] : null;
+      provider = (first && first.provider) || (runtimeKey ? 'openrouter' : (codexTokens && codexTokens.access_token ? 'codex' : ''));
+      model = (recent && recent.model) || (first && first.model) || '';
+    } catch (_) {}
+    // is ANY credential configured for that provider? bool ONLY — the key itself is never read into the snapshot.
+    let keyPresent = false;
+    try {
+      const pid = normalizeProvider(provider || 'openrouter');
+      keyPresent = providerHasCredential(pid, providerRuntimeKey(pid, ''), providerRuntimeBaseUrl(pid, ''));
+    } catch (_) {}
+    let workspacePresent = false;
+    try { workspacePresent = fs.existsSync(WORKSPACES); } catch (_) {}
+    const snapshot = {
+      version: ver,
+      platform: { os: process.platform, arch: process.arch, node: process.version },
+      mode: mode,
+      provider: provider,
+      model: model,
+      keyPresent: keyPresent,
+      agentCount: agentRoster.size,
+      uptimeMs: Date.now() - PROCESS_START,
+      workspacePresent: workspacePresent,
+      lastRun: recent ? { runId: recent.runId, status: recent.reason, ts: recent.ts } : null,
+      errors: DIAG_ERR_RING.slice()   // already redacted on write; the assembler redacts again as a backstop
+    };
+    out = diagnostics.assemble(snapshot);
+  } catch (e) {
+    return json(500, { error: 'diagnostics failed' });
+  }
+  json(200, out);   // { report, text } — the app copies `text`
+}
+
 // POST /api/halt — the E-STOP. Abort EVERY in-flight run so one click stops all spend immediately: the browser
 // runs (the `runs` Map) AND any messaging-hub/Telegram runs (the hub keeps each run's AbortController in its
 // inflight map). Idempotent. Each run's own finally cleans its maps + auto-denies any open consent prompt; hub
@@ -4274,7 +4474,8 @@ async function handleChannelConnect(req, res) {
   // reuse the saved values when the request omits them, so RECONNECT is one click (no re-pasting the token).
   const saved = (channelSecrets && channelSecrets.telegram) || {};
   const provider = normalizeProvider(body.provider || saved.provider);
-  const token = String(body.token || '').trim() || String(saved.token || '');
+  // desktop: the token comes from the keychain/runtime layer, NOT the plaintext record; a fresh paste still wins.
+  const token = channelToken('telegram', body.token, saved);
   const key = providerRuntimeKey(provider, String(body.key || '').trim() || String(saved.key || ''));
   const baseUrl = providerRuntimeBaseUrl(provider, body.baseUrl || body.base_url || saved.baseUrl || saved.base_url || '');
   const model = String(body.model || '').trim() || String(saved.model || '');
@@ -4325,8 +4526,9 @@ async function handleChannelDisconnect(req, res) {
 // GET /api/channels/telegram/status — booleans + poll state ONLY; never the token/key (those stay server-side).
 function handleChannelStatus(req, res) {
   const t = (channelSecrets && channelSecrets.telegram) || {};
+  const configured = !!channelToken('telegram', '', t);   // keychain/runtime token (desktop) or plaintext record (bare)
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-  res.end(JSON.stringify({ connected: telegramStatus.connected, configured: !!t.token, state: telegramStatus.state, detail: telegramStatus.detail || '', notifyAutonomous: !!(channelSecrets && channelSecrets.notifyAutonomous) }));
+  res.end(JSON.stringify({ connected: telegramStatus.connected, configured: configured, state: telegramStatus.state, detail: telegramStatus.detail || '', notifyAutonomous: !!(channelSecrets && channelSecrets.notifyAutonomous) }));
 }
 
 // POST /api/channels/discord/connect { token, key?, model, provider? } — the Messaging tab's Discord card hands over
@@ -4338,7 +4540,8 @@ async function handleDiscordConnect(req, res) {
   let body; try { body = JSON.parse(await readBody(req, 1 << 16)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
   const saved = (channelSecrets && channelSecrets.discord) || {};
   const provider = normalizeProvider(body.provider || saved.provider);
-  const token = String(body.token || '').trim() || String(saved.token || '');
+  // desktop: token from the keychain/runtime layer, not the plaintext record; a fresh paste still wins.
+  const token = channelToken('discord', body.token, saved);
   const key = providerRuntimeKey(provider, String(body.key || '').trim() || String(saved.key || ''));
   const baseUrl = providerRuntimeBaseUrl(provider, body.baseUrl || body.base_url || saved.baseUrl || saved.base_url || '');
   const model = String(body.model || '').trim() || String(saved.model || '');
@@ -4386,9 +4589,10 @@ async function handleDiscordDisconnect(req, res) {
 // GET /api/channels/discord/status — booleans + gateway state ONLY; never the token/key. Mirrors handleChannelStatus.
 function handleDiscordStatus(req, res) {
   const d = (channelSecrets && channelSecrets.discord) || {};
+  const configured = !!channelToken('discord', '', d);   // keychain/runtime token (desktop) or plaintext record (bare)
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
   // `ownerLocked` proves a saved Discord owner survived restart without disclosing who that owner is.
-  res.end(JSON.stringify({ connected: discordStatus.connected, configured: !!d.token, state: discordStatus.state, detail: discordStatus.detail || '', notifyAutonomous: !!(channelSecrets && channelSecrets.notifyAutonomous), ownerLocked: !!d.ownerId }));
+  res.end(JSON.stringify({ connected: discordStatus.connected, configured: configured, state: discordStatus.state, detail: discordStatus.detail || '', notifyAutonomous: !!(channelSecrets && channelSecrets.notifyAutonomous), ownerLocked: !!d.ownerId }));
 }
 
 // POST /api/channels/notify { on } — the GLOBAL opt-in (default off): ping a connected channel when an AUTONOMOUS
@@ -4472,7 +4676,11 @@ function handleProviders(req, res) {
     return Object.assign({}, p, { configured: providerHasCredential(p.id, key, baseUrl), currentBaseUrl: baseUrl || '' });
   });
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-  res.end(JSON.stringify({ providers }));
+  // keychainMode: TRUE only under the real desktop shell, where BYOK keys live in the OS keychain (seeded via env
+  // at spawn, updated live through /api/key) rather than the browser's local store. The Settings key-save
+  // confirmation reads this so it names the ACTUAL store honestly (keychain vs this browser) — never claims
+  // keychain when the key is in fact held in the browser (truthful-telemetry law).
+  res.end(JSON.stringify({ providers, keychainMode: DESKTOP_SHELL }));
 }
 
 async function listModelsForProvider(providerId, opts) {
@@ -4848,6 +5056,40 @@ function parseRange(header, size) {
   }
   if (!(start >= 0) || start > end || start >= size) return { unsatisfiable: true };
   return { start, end };
+}
+
+// GET /api/workspace/dir?agent=<id> — the ABSOLUTE per-agent workspace directory on disk. Read-only,
+// jailed by the same resolveInside proof /api/file uses (rel=''), so it can only ever return a path
+// under WORKSPACES/<agentId>/ and never lists or reveals file contents. The COMMS "open folder"
+// affordance reads this so a beginner can find where a deliverable actually landed. ADDITIVE (Lane B).
+async function serveWorkspaceDir(req, res) {
+  let dir;
+  try {
+    const u = new URL(req.url, 'http://127.0.0.1');
+    const agent = u.searchParams.get('agent') || 'agent';
+    const r = await fsJail.resolveInside(agent, '');   // '' → the agent's own workspace root; throws on bad agentId
+    dir = r.abs;
+  } catch (e) {
+    const msg = (e && e.message) || '';
+    if (/escape|illegal|bad agentId/.test(msg)) { res.writeHead(403); return res.end('forbidden'); }
+    res.writeHead(404); return res.end('not found');
+  }
+  res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  return res.end(JSON.stringify({ dir: dir }));
+}
+
+// GET /api/fs/dirstat?path=<abs> — read-only existence/type check of a user-chosen KEEP destination folder.
+// Only stats the exact path (no listing, no traversal). Returns { exists, isDir }. ADDITIVE (Lane B): lets the
+// workshop return card validate a typed Keep path inline rather than failing silently at copy time.
+async function handleDirStat(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let p;
+  try { p = new URL(req.url, 'http://127.0.0.1').searchParams.get('path') || ''; } catch (_) { p = ''; }
+  p = String(p).trim();
+  if (!p || !path.isAbsolute(p)) return json(200, { exists: false, isDir: false, reason: 'not-absolute' });
+  let st;
+  try { st = await fsp.stat(p); } catch (_) { return json(200, { exists: false, isDir: false }); }
+  return json(200, { exists: true, isDir: !!(st && st.isDirectory()) });
 }
 
 // GET /api/file?agent=<id>&path=<rel> — read-only view of a file the agent produced, jailed to its

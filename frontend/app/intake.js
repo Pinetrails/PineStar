@@ -42,6 +42,11 @@ const Intake = (() => {
     if (!q) return finish();
     const myIdx = idx;   // bind this question's index so a stale chip row (left over when the user TYPED a
     const segs = [];     //   prior answer instead of tapping) can never answer a LATER question
+    // PROGRESS (truthful): the whole queue is planned up front (Interview.plan), so the count is knowable —
+    // show "question N of M" so the Commander knows the interview is finite and how far in they are. A fast
+    // lead segment (high cps → types near-instantly) so it reads as a quiet HUD marker before the real ask.
+    // (typeLine styles the whole line uniformly, so this is a plain inline prefix, not a styled sub-span.)
+    if (questions.length > 1) segs.push({ text: '[' + (idx + 1) + '/' + questions.length + '] ', cps: 120, holdAfter: 0 });
     if (q.pre) segs.push({ text: q.pre, cps: 47, holdAfter: 300 });
     segs.push({ text: q.ask, cps: 47 });
     type(segs, () => {
@@ -74,7 +79,9 @@ const Intake = (() => {
     if (!running) return;
     running = false; accepting = false;
     if (Chat.endInterview) Chat.endInterview();
-    type([{ text: 'got it. i know you a little better now — and so does every agent on the station. you can refine any of it in the COMMANDER dossier whenever.', cps: 48 }], () => {});
+    // CLOSING SIGNAL: name the end explicitly and hand the COMMS input back — the interview hijacked it, so
+    // "talk to me normally now" tells the Commander the field is theirs again (the exit signal the audit flagged).
+    type([{ text: 'that’s everything — talk to me normally now. i know you a little better, and so does every agent on the station. refine any of it in the COMMANDER dossier whenever.', cps: 48 }], () => {});
     if (onDone) { try { onDone(); } catch (_) {} }
   }
 
