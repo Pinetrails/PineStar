@@ -140,14 +140,14 @@ const F = (err, status) => friendlyError(err, status);
   v = F(new Error('cannot reach the STARNET sidecar — start it with `npm start`'));
   A.eq(v.kind, 'network', 'sidecar-unreachable -> network');
   A.eq(v.retryable, true, 'network retryable');
-  A.ok(/Can't reach the StarNet sidecar/i.test(v.userMessage), 'network friendly headline');
+  A.ok(/Can't reach StarNet's local service/i.test(v.userMessage), 'network friendly headline');
   A.eq(F(new Error('Failed to fetch')).kind, 'network', 'browser "Failed to fetch" -> network');
 
   // 429 / rate / quota -> retryable rate_limit
   v = F(new Error('sidecar HTTP 429'));
   A.eq(v.kind, 'rate_limit', '429 -> rate_limit');
   A.eq(v.retryable, true, 'rate_limit retryable');
-  A.ok(/rate-limiting/i.test(v.userMessage), 'rate_limit friendly headline');
+  A.ok(/too many requests|busy/i.test(v.userMessage), 'rate_limit friendly headline');
   A.eq(F(new Error('Rate limit exceeded')).kind, 'rate_limit', '"rate limit" message -> rate_limit');
 
   // 401 / 403 / auth -> NOT retryable, action = settings
@@ -155,7 +155,7 @@ const F = (err, status) => friendlyError(err, status);
   A.eq(v.kind, 'auth', '401 -> auth');
   A.eq(v.retryable, false, 'auth not retryable');
   A.eq(v.action, 'settings', 'auth points at Settings');
-  A.ok(/Settings/i.test(v.userMessage) && /ChatGPT|key/i.test(v.userMessage), 'auth friendly headline points at Settings and offers a fix path');
+  A.ok(/ChatGPT/i.test(v.userMessage) && /key/i.test(v.userMessage), 'auth friendly headline offers a fix path (add a key or sign in with ChatGPT)');
   A.eq(F(new Error('sidecar HTTP 403')).kind, 'auth', '403 -> auth');
   A.eq(F(new Error('invalid api key')).kind, 'auth', '"invalid api key" -> auth');
 
@@ -165,12 +165,14 @@ const F = (err, status) => friendlyError(err, status);
   A.eq(v.action, 'settings', 'oauth points at Settings');
   A.ok(/ChatGPT sign-in/i.test(v.userMessage), 'oauth friendly headline names ChatGPT sign-in');
 
-  // capability denied -> NOT retryable, action = skills
+  // capability denied -> NOT retryable, action = refit (the TRUE unlock: place the gear; a station quest minted on
+  // this denial completes by PLACEMENT, never a SKILLS toggle). Copy names the exact power + gear.
   v = F(new Error('no web — capability is off'));
   A.eq(v.kind, 'capdenied', 'capdenied forwarded string -> capdenied');
   A.eq(v.retryable, false, 'capdenied not retryable');
-  A.eq(v.action, 'skills', 'capdenied points at SKILLS');
-  A.ok(/enable it in SKILLS/i.test(v.userMessage), 'capdenied friendly headline names SKILLS');
+  A.eq(v.action, 'refit', 'capdenied points at REFIT (place the gear), not the SKILLS list');
+  A.eq(v.cap, 'web', 'capdenied parses the missing capability off the raw message');
+  A.ok(/WEB ACCESS/.test(v.userMessage) && /DISH/.test(v.userMessage) && /REFIT/.test(v.userMessage), 'capdenied headline names the power (WEB ACCESS), the gear (DISH), and the door (REFIT)');
   A.eq(F(new Error('capdenied: terminal')).kind, 'capdenied', 'literal capdenied token -> capdenied');
 
   // timeout vs user-abort: a user cancel is a quiet, non-retryable "Stopped."; a real timeout is retryable.
@@ -207,7 +209,7 @@ const F = (err, status) => friendlyError(err, status);
   for (const k of Object.keys(KINDS)) {
     const def = KINDS[k];
     A.ok(typeof def.retryable === 'boolean' && typeof def.msg === 'string' && def.msg.length > 0, 'kind "' + k + '" has a boolean retryable + a non-empty message');
-    A.ok(def.action === null || def.action === 'settings' || def.action === 'skills' || def.action === 'store', 'kind "' + k + '" action is null|settings|skills|store');
+    A.ok(def.action === null || def.action === 'settings' || def.action === 'skills' || def.action === 'store' || def.action === 'refit', 'kind "' + k + '" action is null|settings|skills|store|refit');
   }
 }
 

@@ -11,8 +11,18 @@
    • kind        — a stable class (mirrors the sidecar classifier's reasons, plus the UI-level
                    `network` / `capdenied` / `user_abort` cases the browser sees but the API layer doesn't).
    • retryable   — whether a plain "↻ Try again" makes sense.
-   • action      — null | 'settings' | 'skills': a context-aware destination instead of a blind retry.
+   • action      — null | 'settings' | 'skills' | 'store' | 'refit': a context-aware DESTINATION
+                   instead of a blind retry. capdenied's true unlock is REFIT (place the gear) —
+                   NOT the SKILLS list — because a station quest, minted on the denial, completes
+                   by PLACEMENT (stationqueststore.js). auth/no-key opens the PROVIDERS key field.
+   • cap         — (capdenied only) the resolved capability id ('web'|'cabinet'|…) parsed from the
+                   raw 'no <need> — …' message, so copy can name WHICH power was missing + its gear.
    • raw         — the original technical text, kept for a de-emphasized sub-line / title tooltip.
+
+   RENDERING THE ACTION (the door): `actionButton(verdict)` maps a verdict to { label, run } — a
+   ready-to-wire button that OPENS the exact surface (Build.open() for REFIT, the settings PROVIDERS
+   section for keys, StationUI SKILLS for a skill toggle). The consumer (chat.js offerRetry) calls
+   it instead of re-deriving the label/route per action, so a new action door is added in ONE place.
 
    INTEGRATION (not duplication): when the sidecar classifier module is reachable (node/tests), we delegate
    to classifyApiError() to derive the reason, then translate that reason into a beginner-facing message —
@@ -31,24 +41,54 @@
   let classifyApiError = null;
   try { if (typeof require === 'function') classifyApiError = require('../../sidecar/providers/errorClass.js').classifyApiError; } catch (_) {}
 
+  // The capability a `no <need> — …` denial names → the plain power word + the placeable GEAR that grants it.
+  // Single-sourced from the sidecar's capsummary CAPS table (id/object) + worldmodel's CAP_LABEL power words, so
+  // a beginner reads "needs FILE ACCESS — the CABINET isn't on station" instead of a raw cap token. `compute` is
+  // the loop's turn-precondition (the DESK/workstation); the rest are placeable floor gear closed in REFIT.
+  const CAP_INFO = {
+    compute:      { power: 'a WORKSTATION', gear: 'a DESK',       does: 'run at all' },
+    web:          { power: 'WEB ACCESS',    gear: 'a DISH',       does: 'search or fetch the web' },
+    cabinet:      { power: 'FILE ACCESS',   gear: 'a CABINET',    does: 'read or write files' },
+    workbench:    { power: 'a TERMINAL',    gear: 'a WORKBENCH',  does: 'run commands or control the computer' },
+    memory:       { power: 'MEMORY',        gear: 'a NOTEBOOK',   does: 'keep long-term memory' },
+    studio:       { power: 'IMAGE TOOLS',   gear: 'a STUDIO',     does: 'generate or analyze images' },
+    jukebox:      { power: 'SPOTIFY',       gear: 'a JUKEBOX',    does: 'search or control Spotify' },
+    orchestrator: { power: 'the LEAD role', gear: 'the ORCHESTRATOR role', does: 'delegate to crew' }
+  };
+  // aliases the raw message may carry for the same capability (prop objectType ↔ cap id, or a tool family word).
+  const CAP_ALIAS = {
+    computer: 'compute', desk: 'compute', workstation: 'compute',
+    dish: 'web', search: 'web', browser: 'web', fetch: 'web',
+    files: 'cabinet', file: 'cabinet', fs: 'cabinet',
+    terminal: 'workbench', shell: 'workbench', exec: 'workbench', desktop: 'workbench',
+    notebook: 'memory', recall: 'memory',
+    images: 'studio', image: 'studio',
+    spotify: 'jukebox', music: 'jukebox'
+  };
+
   // kind -> beginner-facing copy + whether a plain retry helps + where to send them instead.
-  // action: 'settings' (fix the model key) · 'skills' (enable a capability) · null (just retry / nothing).
+  // action: 'settings' (fix the model key) · 'refit' (place the missing gear) · 'skills' (toggle a skill
+  //   family) · 'store' (top up managed credit) · null (just retry / nothing).
   const KINDS = {
     server_error:  { retryable: true,  action: null,       msg: 'The local StarNet service hit an error — give it a moment and try again.' },
-    network:       { retryable: true,  action: null,       msg: "Can't reach the StarNet sidecar — make sure it's still running." },
-    rate_limit:    { retryable: true,  action: null,       msg: 'The model provider is rate-limiting — wait a few seconds and retry.' },
-    auth:          { retryable: false, action: 'settings', msg: 'No working model connection — sign in with ChatGPT (no API key needed) or add a provider key in Settings.' },
-    oauth:         { retryable: false, action: 'settings', msg: 'Your ChatGPT sign-in is missing or expired — reconnect it in Settings, or add a provider API key instead.' },
-    billing:       { retryable: false, action: 'settings', msg: "Your model provider says the account is out of credit — check billing in Settings." },
+    network:       { retryable: true,  action: null,       msg: "Can't reach StarNet's local service — make sure the app is still running, then try again." },
+    rate_limit:    { retryable: true,  action: null,       msg: 'The model provider is busy (too many requests) — wait a few seconds and try again.' },
+    // auth: the pure message is context-blind (classify time can't know if ChatGPT is already connected). It names the
+    // one honest next step; the action BUTTON (actionButton) tailors the door — "add a key" vs "sign in with ChatGPT".
+    auth:          { retryable: false, action: 'settings', msg: 'No model is connected yet — add a provider key (or sign in with ChatGPT) to let it run.' },
+    oauth:         { retryable: false, action: 'settings', msg: 'Your ChatGPT sign-in expired — reconnect it (or add a provider key instead).' },
+    billing:       { retryable: false, action: 'settings', msg: "Your provider account is out of credit — top it up, then try again." },
     // managed StarNet credits ran out (only reachable when a managed-credit backend is wired). Point at the STORE
     // to top up; a BYOK station never hits this kind (it gets `billing`/`auth` instead).
-    managed_credit:{ retryable: false, action: 'store',    msg: "You're out of managed credit — add credits in the STORE to keep running, or connect your own provider key in Settings." },
-    capdenied:     { retryable: false, action: 'skills',   msg: "This needs a capability that's currently off — enable it in SKILLS." },
+    managed_credit:{ retryable: false, action: 'store',    msg: "You're out of StarNet credits — add more in the STORE, or connect your own provider key." },
+    // capdenied copy is REBUILT per-error in friendlyError() to name the exact power + gear; this is the fallback
+    // when the capability can't be parsed. The door is REFIT (place the gear), NOT the SKILLS list.
+    capdenied:     { retryable: false, action: 'refit',    msg: "This task needed a tool this agent doesn't have on station yet — open REFIT to place the gear it's missing." },
     timeout:       { retryable: true,  action: null,       msg: 'That took too long and timed out — try again.' },
     user_abort:    { retryable: false, action: null,       msg: 'Stopped.' },
-    context_overflow: { retryable: false, action: null,    msg: 'This conversation got too long for the model — start a fresh turn or trim it back.' },
-    model_not_found:  { retryable: false, action: 'settings', msg: "That model isn't available — pick another one in Settings." },
-    content_policy_blocked: { retryable: false, action: null, msg: 'The model declined that request on safety grounds — try rephrasing.' },
+    context_overflow: { retryable: false, action: null,    msg: 'This conversation got too long for the model — start a fresh chat or shorten it.' },
+    model_not_found:  { retryable: false, action: 'settings', msg: "That model isn't available — pick a different one in Settings." },
+    content_policy_blocked: { retryable: false, action: null, msg: 'The model declined that request on safety grounds — try rephrasing it.' },
     unknown:       { retryable: true,  action: null,       msg: 'Something went wrong on that turn — try again.' }
   };
 
@@ -71,6 +111,35 @@
   function isUserAbort(err) {
     if (!err || typeof err === 'string') return /\babort/i.test(String(err || ''));
     return err.name === 'AbortError' || /\babort/i.test(String(err.message || ''));
+  }
+
+  // Parse WHICH capability a capdenied names, from the raw error text. The sidecar/harness build the message as
+  //   'no <need> — <reason>'   (need ∈ compute|web|cabinet|workbench|memory|studio|jukebox), OR
+  //   'capability denied: no capability for <tool> in room <room>'  (a tool-level denial, cap unknown up front).
+  // Returns a CAP_INFO key or null. Never throws.
+  function capFromRaw(raw) {
+    const low = String(raw || '').toLowerCase();
+    // preferred shape: "no <need> — …" — pull the word between "no " and the em/en dash or hyphen separator.
+    let m = low.match(/\bno\s+([a-z_]+)\s*[—–-]/);
+    let word = m ? m[1] : null;
+    if (!word) { m = low.match(/\bno\s+([a-z_]+)\s+capability\b/); word = m ? m[1] : null; }
+    if (word) {
+      if (CAP_INFO[word]) return word;
+      if (CAP_ALIAS[word]) return CAP_ALIAS[word];
+    }
+    // fall back to any capability/alias token appearing anywhere in the message (e.g. the tool-level denial text).
+    for (const k of Object.keys(CAP_INFO)) { if (new RegExp('\\b' + k + '\\b').test(low)) return k; }
+    for (const a of Object.keys(CAP_ALIAS)) { if (new RegExp('\\b' + a + '\\b').test(low)) return CAP_ALIAS[a]; }
+    return null;
+  }
+
+  // Build the beginner capdenied sentence naming the exact power + its gear, e.g.
+  //   "This task needs FILE ACCESS — the CABINET isn't on station. Open REFIT to place it."
+  // Falls back to the generic KINDS.capdenied copy when the capability can't be parsed.
+  function capdeniedMessage(cap) {
+    const info = cap && CAP_INFO[cap];
+    if (!info) return KINDS.capdenied.msg;
+    return 'This task needs ' + info.power + ' — ' + info.gear + " isn't on station. Open REFIT to place it and try again.";
   }
 
   // browser fallback: classify the UI-level error string + optional HTTP status into a kind, using the SAME
@@ -146,8 +215,63 @@
       kind = kindFromRaw(raw, status);
     }
     const k = KINDS[kind] || KINDS.unknown;
+    // capdenied: name the exact power + gear parsed from the raw message, and route to REFIT (the true unlock —
+    // a station quest minted on this denial completes by PLACEMENT, not a SKILLS toggle).
+    if (kind === 'capdenied') {
+      const cap = capFromRaw(raw);
+      return { userMessage: capdeniedMessage(cap), kind: kind, retryable: k.retryable, action: k.action, cap: cap, raw: raw };
+    }
     return { userMessage: k.msg, kind: kind, retryable: k.retryable, action: k.action, raw: raw };
   }
 
-  return { friendlyError, KINDS, _internals: { kindFromRaw, isUserAbort, REASON_TO_KIND } };
+  /* ---- The DOOR: map a verdict to a ready-to-wire action button { label, run }. ONE place owns every
+     error→surface route, so the consumer (chat.js offerRetry) never re-derives per-action labels/wiring, and a
+     new door is added here alone. Returns null when the verdict has no actionable door (a plain retry / nothing).
+     run() is a no-op-safe opener: it feature-detects each global (Build / StationUI / Harness) so it degrades
+     quietly if a surface isn't loaded, never throwing. Routing is context-aware where it matters:
+       • auth/oauth → if ChatGPT (Codex) is already connected, offer "sign in with ChatGPT"; else the key field.
+       • capdenied  → REFIT (Build.open) — place the missing gear the message just named.
+       • settings/store → the PROVIDERS section of Settings (openSettingsSection when Lane C ships it; plain
+         openTerm('settings') is the safe fallback until then).                                                */
+  function codexConnected() {
+    try {
+      if (typeof Harness === 'undefined') return false;
+      if (Harness.hasStoredCredential) return !!Harness.hasStoredCredential('codex');
+      if (Harness.getProv) return Harness.getProv() === 'codex';
+    } catch (_) {}
+    return false;
+  }
+  // open Settings, landing on a specific section when the host supports it (Lane C's openTerm(key, section)); the
+  // bare openTerm('settings') is the graceful fallback so this works today.
+  function openSettings(section) {
+    if (typeof StationUI === 'undefined') return;
+    try {
+      if (section && StationUI.openTerm && StationUI.openTerm.length >= 2) { StationUI.openTerm('settings', section); return; }
+      if (StationUI.openTerm) StationUI.openTerm('settings');
+    } catch (_) { try { if (StationUI.openTerm) StationUI.openTerm('settings'); } catch (_) {} }
+  }
+  function actionButton(verdict) {
+    if (!verdict) return null;
+    switch (verdict.action) {
+      case 'refit':
+        return { label: '🔧 Open REFIT', run: () => { try { if (typeof Build !== 'undefined' && Build.open) Build.open(); else if (typeof Build !== 'undefined' && Build.toggle && !(Build.isOpen && Build.isOpen())) Build.toggle(); } catch (_) {} } };
+      case 'settings':
+        // auth/no-key: if ChatGPT is already the connected brain, the honest door is "reconnect ChatGPT"; otherwise
+        // the provider key field. Both land on the same PROVIDERS section (Codex sign-in lives there too).
+        if ((verdict.kind === 'auth' || verdict.kind === 'oauth') && codexConnected())
+          return { label: '⚙ Reconnect ChatGPT', run: () => openSettings('providers') };
+        if (verdict.kind === 'auth' || verdict.kind === 'oauth')
+          return { label: '🔑 Add a key', run: () => openSettings('providers') };
+        return { label: '⚙ Open Settings', run: () => openSettings(verdict.kind === 'model_not_found' ? 'models' : 'providers') };
+      case 'store':
+        return { label: '🛒 Open STORE', run: () => openSettings('providers') };
+      case 'skills':
+        return { label: '✦ Open SKILLS', run: () => { try { if (typeof StationUI !== 'undefined' && StationUI.openTerm) StationUI.openTerm('skills'); } catch (_) {} } };
+      default:
+        return null;
+    }
+  }
+
+  return { friendlyError, actionButton, KINDS, CAP_INFO,
+    _internals: { kindFromRaw, isUserAbort, REASON_TO_KIND, capFromRaw, capdeniedMessage, codexConnected } };
 });

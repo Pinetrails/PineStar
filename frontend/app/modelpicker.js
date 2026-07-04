@@ -79,6 +79,12 @@ const ModelPicker = (() => {
       (og || sel).appendChild(opt);
     }
     if (!list.length) { const o2 = document.createElement('option'); o2.value = '__none'; o2.disabled = true; o2.textContent = 'no models found — add a provider key in Settings'; sel.appendChild(o2); }
+    // STRANDED-STATE DOOR: an empty catalog means no key is connected — a <select> option can't be clicked, so we
+    // render a sibling BUTTON inside the shell that opens the key-entry surface (Settings ▸ PROVIDERS). Purely
+    // additive to the DOM (a `.mp-none` node next to the <select>), so read()/onChange/shellHTML are untouched and
+    // every consumer (recruitment bay, dossier) gets the door for free without any wiring change. Toggled each
+    // populate so it appears exactly when the list is empty and vanishes the moment a key lands + a re-populate runs.
+    try { syncNoneDoor(root, !list.length); } catch (_) {}
 
     // preselect the agent's current model (ensure guaranteed it's present in the list)
     const curKey = current.model ? (norm(current.provider) + SEP + current.model) : '';
@@ -87,6 +93,35 @@ const ModelPicker = (() => {
     const es = effortSel(root);
     if (es) { const item = list.find(m => optValue(m) === sel.value) || (current.model ? { id: current.model, provider: current.provider } : {}); fillEfforts(es, item, current.effort); }
     return list;
+  }
+
+  // Open Settings on the PROVIDERS (key entry) section — the same door friendlyerror routes no-key/auth errors to.
+  // Prefers Lane C's openTerm(key, section) when it ships (arity ≥ 2); falls back to the bare settings window today.
+  function openKeyEntry() {
+    if (typeof StationUI === 'undefined' || !StationUI.openTerm) return;
+    try { if (StationUI.openTerm.length >= 2) { StationUI.openTerm('settings', 'providers'); return; } } catch (_) {}
+    try { StationUI.openTerm('settings'); } catch (_) {}
+  }
+
+  // Show/hide the stranded-state door — a `.mp-none` row (button) rendered as a sibling of the <select> inside the
+  // `.mp-wrap` shell. Idempotent: created once, then toggled hidden. Never throws (fail-open: no shell → no door).
+  function syncNoneDoor(root, show) {
+    const wrap = (root && root.querySelector && root.matches && root.matches('.mp-wrap')) ? root
+               : (root && root.querySelector) ? root.querySelector('.mp-wrap') : null;
+    const host = wrap || root;
+    if (!host || !host.querySelector) return;
+    let door = host.querySelector('.mp-none');
+    if (!show) { if (door) door.hidden = true; return; }
+    if (!door) {
+      door = document.createElement('button');
+      door.type = 'button';
+      door.className = 'mp-none bb sm';
+      door.textContent = '🔑 add a provider key';
+      door.title = 'No models are available yet — connect a provider key to fill this list';
+      door.addEventListener('click', (ev) => { try { ev.preventDefault(); ev.stopPropagation(); } catch (_) {} openKeyEntry(); });
+      host.appendChild(door);
+    }
+    door.hidden = false;
   }
 
   // Read the current selection. model==='' means "inherit / follow default" (a deliberate clear).
