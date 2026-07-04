@@ -9,7 +9,7 @@
 const A = require('./_assert.js');
 const fs = require('fs'); const path = require('path');
 const app = (f) => fs.readFileSync(path.join(__dirname, '..', 'frontend', 'app', f), 'utf8');
-const appjs = app('app.js'), ui = app('stationui.js'), mkt = app('marketplace.js'), dock = app('modeldock.js'), world = app('world.js');
+const appjs = app('app.js'), ui = app('stationui.js'), mkt = app('marketplace.js'), dock = app('modeldock.js'), world = app('world.js'), chat = app('chat.js');
 const html = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'index.html'), 'utf8');
 
 // ---- ModelDock: a PURE catalog + helper surface for other pickers (no Harness/DOM side effects) ----
@@ -71,5 +71,27 @@ A.ok(/function setAgentName[\s\S]{0,900}baseIdentity\(oldName, a\.role\)/.test(a
 // ---- review fix: the dossier picker re-fits the effort select on model change + effort is tied to the picked model ----
 A.ok(/ModelPicker\.onChange\(pickWrap/.test(ui), 'the dossier wires onChange so the effort select re-fits when the model changes');
 A.ok(/pick\.model \? \(pick\.effort/.test(ui), 'effort is only persisted for the PICKED model (never leaks onto a typed advanced model or a cleared pin)');
+
+// ---- COMMS AGENT SELECTOR: the top of the chat window picks which roster agent is on the line ----
+// The header markup exists (a native <select> + a truthful model readout), filled from the LIVE roster.
+A.ok(/id="comms-agent-select"/.test(html), 'index.html has the COMMS agent selector');
+A.ok(/id="comms-agent-model"/.test(html), 'index.html has the COMMS agent model readout');
+// chat.js fills the selector + model text from App.agents() (never hardcoded) and reflects the active stream's agent.
+A.ok(/function renderIdBar\(/.test(chat), 'chat.js renders the COMMS agent line');
+A.ok(/App\.agents\(\)/.test(chat), 'the agent line is populated from the LIVE roster (App.agents), not hardcoded');
+A.ok(/activeWs\s*\?\s*\(activeWs\.agentId/.test(chat), 'the selected agent reflects the DISPLAYED workstream\'s agentId');
+A.ok(/function load\(ws\)[\s\S]{0,3000}renderIdBar\(\)/.test(chat), 'load() re-renders the agent line so it follows every stream switch');
+// a change hands off to App.selectAgent (switch/mint a stream bound to that agent) — never rebinds the current convo.
+A.ok(/function wireIdBar\(/.test(chat), 'chat.js wires the selector change once');
+A.ok(/App\.selectAgent\(/.test(chat), 'selecting an agent hands off to App.selectAgent');
+// App.selectAgent: switch to (or MINT) a workstream BOUND to that agentId — matches the summon binding seam.
+A.ok(/function selectAgent\(agentId\)/.test(appjs), 'App implements selectAgent');
+A.ok(/selectAgent:\s*selectAgent/.test(appjs), 'selectAgent is exposed on the App public API');
+A.ok(/function selectAgent[\s\S]{0,900}Workstreams\.create\(a\.name,\s*\{\s*agentId:\s*id/.test(appjs), 'selectAgent MINTS a stream bound to the agent when it has none (never rebinds an existing convo)');
+A.ok(/function selectAgent[\s\S]{0,1100}switchWorkstream\(ws\.id\)/.test(appjs), 'selectAgent switches to the agent\'s own workstream');
+// the header model readout stays truthful when the model changes via the footer dock or the dossier pin.
+A.ok(/refreshIdBar:\s*renderIdBar/.test(chat), 'chat.js exposes refreshIdBar so other surfaces can re-sync the header model');
+A.ok(/function applyQuickModel[\s\S]{0,1400}Chat\.refreshIdBar\(\)/.test(appjs), 'the footer dock model change re-syncs the COMMS header readout');
+A.ok(/function setAgentModelPin[\s\S]{0,1500}Chat\.refreshIdBar\(\)/.test(appjs), 'the dossier model pin re-syncs the COMMS header readout');
 
 A.report('agent-model-select.test');

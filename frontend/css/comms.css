@@ -318,3 +318,46 @@
    so it keeps floating above the whole composer — this wrapper is a static parent and doesn't reparent it. */
 .chat-tools { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .chat-tools #voice-toggle { margin-left: auto; }
+
+/* ============================================================
+   AGENT LINE — the top-of-panel identity row: who's on the line
+   (a native <select> dressed as a phosphor plate) + a truthful
+   readout of that agent's model. Sits between the ▮ COMMS title
+   and the transcript. Amber phosphor / VT323, themed tokens only.
+   ============================================================ */
+.comms-idbar {
+  display: flex; align-items: baseline; gap: 8px; min-width: 0;
+  margin: 2px 0 6px; padding-bottom: 6px;
+  border-bottom: 1px solid var(--ph-faint);
+}
+.comms-idbar[hidden] { display: none; }
+.comms-agent-wrap {
+  display: inline-flex; align-items: baseline; gap: 5px; min-width: 0; cursor: pointer;
+}
+.comms-agent-wrap .comms-agent-sigil { flex: 0 0 auto; color: var(--ph-dim); font-size: 12px; }
+/* the selector reads as a title chip, not a form control: no browser chrome, phosphor text, VT323 inherited */
+.comms-agent-select {
+  flex: 0 1 auto; min-width: 0; max-width: 60%;
+  font-family: inherit; font-size: 14px; letter-spacing: .5px; text-transform: uppercase;
+  color: var(--ph-bright); background: transparent;
+  border: 1px solid transparent; border-radius: 3px;
+  padding: 1px 18px 1px 5px; margin: 0; cursor: pointer;
+  -webkit-appearance: none; appearance: none;
+  /* a small phosphor chevron drawn as a themed background caret (SVG data-uri would hardcode a colour, so
+     we use a text triangle via ::after on the wrapper instead) */
+  text-overflow: ellipsis; white-space: nowrap; overflow: hidden;
+  text-shadow: 0 0 5px var(--ph-glow);
+}
+.comms-agent-wrap::after {
+  content: '▾'; flex: 0 0 auto; margin-left: -14px; color: var(--ph-dim); font-size: 10px; pointer-events: none;
+}
+.comms-agent-select:hover { border-color: var(--ph-faint); background: var(--ph-faint); }
+.comms-agent-select:focus-visible { outline: none; border-color: var(--ph-dim); }
+/* the native option list can't inherit phosphor everywhere, but set what browsers honour */
+.comms-agent-select option { color: var(--text); background: var(--panel2, var(--panel)); text-transform: none; }
+/* the model readout: dim, quiet, tabular — a fact, not a control */
+.comms-agent-model {
+  flex: 1 1 auto; min-width: 0;
+  font-size: 11px; letter-spacing: .8px; color: var(--ph-dim); opacity: .82;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: right;
+}

@@ -206,6 +206,7 @@ const App = (() => {
     }
     pushRoster();   // the pin reaches the sidecar roster (honored by runOnce + cron)
     persist();
+    if (typeof Chat !== 'undefined' && Chat.refreshIdBar) Chat.refreshIdBar();   // COMMS header model readout stays truthful when the pin changes the on-line agent
     return true;
   }
 
@@ -379,6 +380,7 @@ const App = (() => {
     }
     persist();
     if (typeof ModelDock !== 'undefined' && ModelDock.reflect) ModelDock.reflect();
+    if (typeof Chat !== 'undefined' && Chat.refreshIdBar) Chat.refreshIdBar();   // keep the COMMS header model readout in sync with the footer dock change
     if (typeof StationUI !== 'undefined' && StationUI.notify) {
       const msg = sel.reason === 'effort'
         ? 'REASONING: ' + effortLabel(effort)
@@ -1944,6 +1946,25 @@ const App = (() => {
     const ws = Workstreams.create(null);
     SFX.open(); Chat.load(ws); refreshUsage(); renderRail(); persist();
   }
+  // COMMS AGENT SELECTOR: put the Commander on the line with agent <agentId>. Selecting an agent must never
+  // silently rebind an existing conversation to a different agent (that would corrupt whose transcript it is);
+  // instead we switch to the agent's most-recent live workstream, or MINT a fresh one bound to that agentId
+  // (the same Workstreams.create({agentId}) seam summon uses). switchWorkstream then repoints the focused agent
+  // (its model/provider/effort) + Chat.load. Returns the target workstream id, or null for an unknown agent.
+  function selectAgent(agentId) {
+    const id = String(agentId || '');
+    const a = agents.get(id); if (!a) return null;
+    // prefer this agent's existing streams (most-recently-active first — Workstreams.list() is already sorted
+    // pinned>recent); the General default stream (title==null) is only NOVA/hero's home, so a specialist that
+    // has no stream yet gets a fresh one titled with its name (mirrors summon's Workstreams.create).
+    const mine = Workstreams.list().filter(w => (w.agentId || 'agent') === id);
+    let ws = mine[0] || null;
+    if (!ws) ws = Workstreams.create(a.name, { agentId: id, activate: false });
+    if (!ws) return null;
+    if (ws.id === Workstreams.activeId()) { focusAgent(id); Chat.load(ws); }   // already here: just re-affirm focus/labels
+    else switchWorkstream(ws.id);
+    return ws.id;
+  }
 
   /* ---------- session (workstream) row actions: rename · pin · archive · delete ----------
      Reached by right-click OR the hover ⋯ on any rail row. A floating menu drawn in the phosphor
@@ -2180,5 +2201,6 @@ const App = (() => {
     heroId: () => (agent ? agent.id : 'agent'),
     currentAgent: () => agent,
     agents: () => liveAgents().map(serializeAgentLite),
+    selectAgent: selectAgent,   // COMMS top-bar agent selector: switch to (or mint) a workstream bound to agentId
     applyConfig: applyAgentConfig };
 })();

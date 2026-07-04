@@ -323,6 +323,7 @@ const Chat = (() => {
     wireTrust();       // GROWTH Tier 3: after a clean run, offer ONE earned-autonomy raise at the LOWEST beat priority — below the arc (registers once)
     wireCuriosity();   // Commander Dossier: one gentle "tell me about X" nudge after a clean run (registers once)
     wireSkillAside();  // A2: after a background review distills a skill, ONE quiet "distilled this run…" aside (registers once)
+    wireIdBar();       // COMMS agent selector: a change switches to (or mints) a workstream bound to that agent (registers once)
     load(opts.ws);
     input.onkeydown = e => {
       // SLASH PALETTE owns the nav keys while open (a "/command" menu over the input)
@@ -364,6 +365,54 @@ const Chat = (() => {
     if (input.value) input.style.height = input.scrollHeight + 'px';
   }
 
+  /* ── COMMS AGENT LINE ────────────────────────────────────────────────────────────────────────────────
+     The top-of-panel identity row: a <select> of every live roster agent (so the Commander picks who's on
+     the line) + a truthful readout of THAT agent's model. Both are filled from App.agents() — never
+     hardcoded — so the header can only ever assert a real roster identity (truthful telemetry). Selecting
+     an agent hands off to App.selectAgent, which switches to (or mints) a workstream bound to that agentId;
+     it never rebinds the current conversation to a different agent. Re-rendered on every load()/switch so the
+     selection + model always match the displayed stream (including changes made in the footer dock/dossier). */
+  function agentModelText(a) {
+    if (!a) return '';
+    const model = a.model ? String(a.model) : '';
+    if (!model) return 'follows station default';
+    // reuse the dock's short-label vocabulary when present; else the last path segment (never invent a name)
+    return (typeof ModelDock !== 'undefined' && ModelDock.labels && ModelDock.labels.short)
+      ? ModelDock.labels.short(model)
+      : ((model.split('/').pop() || model).toUpperCase());
+  }
+  function renderIdBar() {
+    const sel = el('comms-agent-select'); const modelEl = el('comms-agent-model'); const bar = el('comms-idbar');
+    if (!sel) return;
+    const list = (typeof App !== 'undefined' && App.agents) ? (App.agents() || []) : [];
+    const activeId = activeWs ? (activeWs.agentId || 'agent') : null;
+    // rebuild the <option> set only when the roster (ids+names) or selection changed, so a redundant re-render
+    // never collapses a mid-open native dropdown.
+    const key = list.map(a => a.id + ':' + (a.name || a.id)).join('|') + '#' + (activeId == null ? '' : activeId);
+    if (sel.__idKey !== key) {
+      sel.__idKey = key;
+      sel.innerHTML = '';
+      for (const a of list) { const o = document.createElement('option'); o.value = a.id; o.textContent = a.name || a.id; sel.appendChild(o); }
+      if (activeId != null) sel.value = activeId;
+    }
+    const cur = list.find(a => a.id === activeId) || null;
+    if (modelEl) modelEl.textContent = cur ? agentModelText(cur) : '';
+    if (bar) bar.hidden = !list.length;   // no roster yet (pre-wake) → hide the row rather than show an empty selector
+  }
+  // wire the agent <select> once: a change hands off to App.selectAgent (switch/mint a stream bound to that
+  // agent). Registered from init() so a re-init can't stack handlers.
+  function wireIdBar() {
+    const sel = el('comms-agent-select');
+    if (!sel || sel.__wired) return;
+    sel.__wired = true;
+    sel.addEventListener('change', () => {
+      const id = sel.value;
+      if (typeof SFX !== 'undefined' && SFX.click) SFX.click();
+      if (typeof App !== 'undefined' && App.selectAgent) App.selectAgent(id);
+      // App.selectAgent → switchWorkstream → Chat.load → renderIdBar, so the model readout follows the switch.
+    });
+  }
+
   // swap the rendered conversation to a workstream (its history). Used on enter/resume and when the
   // Commander clicks another stream in the rail — re-renders without re-wiring the input row.
   function load(ws) {
@@ -391,6 +440,7 @@ const Chat = (() => {
     // behavior: the focused body, while idle, stops wandering and holds its attention on you (faces you, tracks the
     // cursor); it yields instantly to a reply run and resumes after. This is the ONLY chat.js change for D1 (G7).
     if (typeof World !== 'undefined' && World.setChatFocus) World.setChatFocus(activeWs ? (activeWs.agentId || 'agent') : null);
+    renderIdBar();   // the agent selector + model readout follow the displayed stream's agent
   }
 
   function setSystem(s) { system = s; }
@@ -3628,5 +3678,5 @@ const Chat = (() => {
   // only" gate maybeStandaloneRate uses — so a pure-chat run is never bottle-offered. Used by App.runBottleInfo (R5).
   function runDidWork(id) { const w = id ? runWork.get(id) : null; return !!(w && ((w.toolsOk || 0) >= 1 || (w.delivered || 0) >= 1)); }
 
-  return { init, load, send, status, localLine, broadcast, setSystem, getHistory, abort, isBusy, beginInterview, endInterview, echoUser, prefill, autoGrowInput, choices, clearChoices, typeLine, nudge, clearNudge, offerCuriosity, runMeta, runDidWork, awayDigest, awayReview, workshopReturn };
+  return { init, load, send, status, localLine, broadcast, setSystem, getHistory, abort, isBusy, beginInterview, endInterview, echoUser, prefill, autoGrowInput, choices, clearChoices, typeLine, nudge, clearNudge, offerCuriosity, runMeta, runDidWork, awayDigest, awayReview, workshopReturn, refreshIdBar: renderIdBar };
 })();
