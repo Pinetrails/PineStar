@@ -81,18 +81,21 @@ const App = (() => {
       + 'reach you do not have, and never claim a tool is missing when it is in your room. When you are just chatting out '
       + 'loud, keep replies short and easy; when you are typing in the COMMS panel you can go into as much detail as the '
       + 'question deserves. Stay in character.';
-    // The ORCHESTRATOR is the station's founding agent — and, on a fresh station, its ONLY agent. The clause is
-    // strictly READINESS-framed: it does the work itself now and GROWS into directing a crew the Commander recruits
-    // later (the team.dispatch tool only exists once a crew does). It must never speak in the present as if it already
-    // commands a crew — that would be the app-lie the awakening + tutorial are careful to avoid.
-    if (role === 'orchestrator') {
-      s += ' You are this station\'s OVERSEER — its orchestrating lead, its first agent, and right now its only agent. For now '
-        + 'you simply do the work yourself. As the Commander recruits specialists over time, you grow into the one who '
-        + 'breaks a big job into pieces and hands them out — you gain a team.dispatch tool to delegate the moment there '
-        + 'is a crew to delegate to, and not before. Until then, never speak as if you command a crew you do not yet have; '
-        + 'just keep the work moving and keep the Commander oriented on what is done, what is in flight, and what needs them.';
-    }
+    if (role === 'orchestrator') s += orchestratorClause();
     return s;
+  }
+  // The ORCHESTRATOR is the station's founding agent. This clause is TIMELESS on purpose: identity.md is written
+  // once into the save (and is Commander-editable), so any crew-size claim baked here would freeze and turn into
+  // an app-lie the moment the roster changes — exactly the bug the old "right now its only agent" wording had.
+  // The LIVE crew truth rides rosterClause() (derived fresh each compose) + the sidecar's per-run [ORCHESTRATION]
+  // block, which alone grants/lists the delegation tools. Extracted so stripLegacySoloClause can migrate old saves
+  // onto the exact same text (keeping setAgentName's untouched-default detection working).
+  function orchestratorClause() {
+    return ' You are this station\'s OVERSEER — its orchestrating lead and first agent. When there is a crew, you are '
+      + 'the one who breaks a big job into pieces and hands them out; when there is not, you do the work yourself. '
+      + 'Never assume either from memory: your live crew and your delegation tools are stated fresh in each run\'s '
+      + 'briefing — trust that briefing, and never claim a crew member or a delegation tool it does not show. '
+      + 'Keep the work moving and keep the Commander oriented on what is done, what is in flight, and what needs them.';
   }
   // seed the editable docs from the agent's existing fields the first time (back-compat for saves with no docs).
   function agentDocs(a) {
@@ -111,6 +114,23 @@ const App = (() => {
     const id = a && a.docs && a.docs.identity;
     if (typeof id === 'string' && /\n+VOICE & MANNER:/.test(id)) {
       a.docs.identity = id.split(/\n+VOICE & MANNER:/)[0].trimEnd();
+    }
+  }
+  // MIGRATION (pre-roster-clause saves): the old orchestrator identity baked "right now its only agent … never
+  // speak as if you command a crew" into identity.md at creation — frozen there, it becomes an app-lie the moment
+  // the Commander summons a crew (and contradicts the sidecar's per-run [ORCHESTRATION] crew brief). Swap the
+  // EXACT old block for the new timeless clause on resume. Literal-match-guarded so it's idempotent and never
+  // touches an identity the Commander hand-reworded; producing exactly orchestratorClause() keeps the result
+  // byte-equal to a fresh baseIdentity, so setAgentName's untouched-default detection still works after migration.
+  const LEGACY_SOLO_CLAUSE = ' You are this station\'s OVERSEER — its orchestrating lead, its first agent, and right now its only agent. For now '
+    + 'you simply do the work yourself. As the Commander recruits specialists over time, you grow into the one who '
+    + 'breaks a big job into pieces and hands them out — you gain a team.dispatch tool to delegate the moment there '
+    + 'is a crew to delegate to, and not before. Until then, never speak as if you command a crew you do not yet have; '
+    + 'just keep the work moving and keep the Commander oriented on what is done, what is in flight, and what needs them.';
+  function stripLegacySoloClause(a) {
+    const id = a && a.docs && a.docs.identity;
+    if (typeof id === 'string' && id.indexOf(LEGACY_SOLO_CLAUSE) !== -1) {
+      a.docs.identity = id.split(LEGACY_SOLO_CLAUSE).join(orchestratorClause());
     }
   }
   // the APPROVAL clause folded into the system prompt — it MUST match the real consent broker (sidecar) so the
@@ -138,10 +158,34 @@ const App = (() => {
       + 'and not a Hermes agent. Do not guess at your own foundation from ambiguous signals in the environment; report '
       + 'only what you can actually verify, and say plainly when you are not sure.';
   }
-  // assemble the real system prompt from the config docs: identity + FOUNDATION + PERSONALITY + APPROVAL + mission + standing orders.
+  // the orchestrator's CREW POSTURE — derived fresh each compose like approvalClause/foundationClause, never
+  // stored in the editable identity.md (so it can't be edited away and never freezes stale). States only what
+  // the harness can prove: the live roster the browser itself pushes to /api/roster (truthful-telemetry law).
+  // The sidecar's per-run [ORCHESTRATION] block remains the authority on delegation TOOLS; this clause only
+  // keeps the agent's self-image (solo vs leading N named specialists) true between runs. Any roster change
+  // must be followed by recomposeOrchestrators() or the composed prompt goes stale (summon / resume / rename).
+  function rosterClause(a) {
+    if (!a || a.role !== 'orchestrator') return '';
+    const crew = liveAgents().filter(x => x && x.id !== a.id);
+    if (!crew.length) {
+      return '\n\nYOUR CREW: none yet — right now you are this station\'s only agent, so you do the work yourself. '
+        + 'Never speak as if you command a crew you do not yet have; you grow into delegation as specialists join the station.';
+    }
+    const names = crew.map(x => (x.name || x.id) + ' — ' + rosterRole(x)).join('; ');
+    // lead-conditional on purpose: this same base prompt also runs the orchestrator as a dispatched WORKER, where
+    // no delegation briefing (or tools) exists — it must not instruct delegation unconditionally (see pushRoster).
+    return '\n\nYOUR CREW: ' + crew.length + ' specialist' + (crew.length === 1 ? '' : 's') + ' work' + (crew.length === 1 ? 's' : '')
+      + ' under your lead: ' + names + '. When you run as the station\'s lead, your run briefing lists the live crew '
+      + 'and your delegation tools — hand real subtasks to the right specialist through them and synthesize the '
+      + 'results for the Commander.';
+  }
+  // assemble the real system prompt from the config docs: identity + CREW + FOUNDATION + PERSONALITY + APPROVAL + mission + standing orders.
   function composeSystemPrompt(a) {
     const d = agentDocs(a);
     let p = (d.identity || '').trim() || baseIdentity(a.name, a.role);
+    // CREW POSTURE sits right after identity — it corrects/extends the identity's orchestrator framing with the
+    // live roster truth, so it must land before anything else colours the prompt. '' for non-orchestrators.
+    p += rosterClause(a);
     // FOUNDATION sits right after identity (before personality) — a constant system truth that grounds "what you are"
     // so the agent never mistakes StarNet's Hermes-derived internals for being a Hermes agent. Kept out of the docs.
     p += foundationClause();
@@ -288,6 +332,7 @@ const App = (() => {
       if (typeof Chat !== 'undefined' && Chat.setSystem) Chat.setSystem(a.systemPrompt);
     }
     if (typeof World !== 'undefined' && World.relabel) World.relabel(a.id, a.name);   // the floor nameplate follows
+    recomposeOrchestrators();   // a crew rename must reach the lead's YOUR CREW clause (it names specialists)
     if (typeof StationUI !== 'undefined' && StationUI.setRoster) StationUI.setRoster(liveAgents());
     renderRail();
     pushRoster();
@@ -301,6 +346,17 @@ const App = (() => {
      focus follows whichever workstream is active (switchWorkstream calls it with the stream's agentId). */
   function liveAgents() { return [...agents.values()]; }
   function registerHero(a) { agents.clear(); agents.set(a.id, a); }   // wake/resume: the hero founds the registry
+  // rosterClause() reads the LIVE registry, so every orchestrator prompt must be recomposed whenever the roster
+  // changes shape (summon; crew rehydrate on resume; a crew rename) — this is the cached-systemPrompt trap: the
+  // composed prompt is a stored snapshot, not a live view. Callers still pushRoster()/persist() themselves, since
+  // every roster-change site already does both right after.
+  function recomposeOrchestrators() {
+    for (const a of agents.values()) {
+      if (!a || a.role !== 'orchestrator') continue;
+      a.systemPrompt = composeSystemPrompt(a);
+      if (agent && agent.id === a.id && typeof Chat !== 'undefined' && Chat.setSystem) Chat.setSystem(a.systemPrompt);   // focused: the live COMMS session follows
+    }
+  }
   function focusAgent(id) {
     const a = agents.get(id) || agents.get('agent');
     if (!a) return;
@@ -609,6 +665,7 @@ const App = (() => {
       focusAgent(id);
       if (ws && typeof Chat !== 'undefined' && Chat.load) Chat.load(ws);
     }
+    recomposeOrchestrators();   // the lead's YOUR CREW clause must include the new worker before the roster push
     refreshUsage(); renderRail(); persist();
     pushRoster();   // the new worker is now delegatable by the lead
     const _notify = (typeof StationUI !== 'undefined' && StationUI.notify) ? StationUI.notify : (m) => console.log('[summon]', m);
@@ -1545,8 +1602,8 @@ const App = (() => {
               personaId: pickedPersona, voiceTraits: Object.assign({}, pickedTraits), customVoice: pickedCustomVoice.trim(),
               approvalMode: (pickedApproval === 'full' ? 'full' : 'ask'), purpose: null, onboarded: false, createdAt: Date.now() };   // onboarded flips true only when the awakening's finish() lands — so a refresh mid-awakening replays it instead of stranding (see resumeInto)
     agentDocs(agent);                              // seed identity.md (overseer-aware) / purpose.md / operating-manual.md
+    registerHero(agent);   // found the multi-agent registry with the hero BEFORE composing — rosterClause reads the registry, and a same-session re-wake must not see the prior crew
     agent.systemPrompt = composeSystemPrompt(agent);
-    registerHero(agent);   // found the multi-agent registry with the hero
     Harness.resetTotals();
     Workstreams.reset();   // a fresh General stream for the new agent
     if (typeof PitchStore !== 'undefined') PitchStore.reset();   // a brand-new hero re-earns its First Pitch (own key)
@@ -1586,9 +1643,11 @@ const App = (() => {
     if (!agent.role) agent.role = 'orchestrator';  // older hero saves predate the role field — the first agent is the lead
     agentDocs(agent);                              // seed config docs for older saves that predate them
     stripLegacyVoiceBlock(agent);                  // one-time: drop the old awakening's inline VOICE & MANNER so it doesn't double up with the archetype layer
+    stripLegacySoloClause(agent);                  // one-time: swap the frozen "right now its only agent" identity block for the timeless clause (crew truth now rides rosterClause)
     agent.systemPrompt = composeSystemPrompt(agent);
     registerHero(agent);                           // found the registry with the hero…
     rehydrateRoster(saved.agents);                 // …then restore any summoned crew (older saves: no-op)
+    recomposeOrchestrators();                      // …and only NOW does the hero's YOUR CREW clause see them (composing above sees an empty registry)
     if (saved.prov && Harness.setProv) Harness.setProv(saved.prov);   // keep the provider with the agent (codex vs openrouter)
     if (saved.reasoningEffort && Harness.setReasoningEffort) Harness.setReasoningEffort(saved.reasoningEffort);
     if (!agent.provider && saved.prov) agent.provider = saved.prov;   // #4: older hero saves stored provider only at the top level — stamp it onto the hero object so focusAgent restores it
