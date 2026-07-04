@@ -16,6 +16,7 @@ const KeyCTA = (() => {
   const el = id => document.getElementById(id);
   let armed = false;      // only after an awakening lands (arm()) — never on the connect screen / mid-ceremony
   let timer = null;
+  let spoke = false;      // the diegetic "i'm awake but no brain is wired" COMMS line fires at most ONCE per arm cycle
 
   function normProv(p) {
     p = String(p || 'openrouter').trim().toLowerCase();
@@ -50,6 +51,25 @@ const KeyCTA = (() => {
     const b = document.querySelector('.bb[data-term="settings"]'); if (b) b.click();
   }
 
+  // THE DIEGETIC PATH: instead of only a disembodied banner, the AGENT itself says it once in COMMS — the whole
+  // rest of the first-run is the agent speaking, so a bare banner breaks the frame (audit A-3). One agent line +
+  // one tappable chip that opens the key-entry surface (same route as the banner button — the standardized target
+  // KeyCTA already uses; Lane A owns the deeper focus-the-key-field routing, this matches what exists here). The
+  // banner stays as the STANDING projection (fires from render()), so if this diegetic hook can't fire (no Chat,
+  // or the input is busy) the honest state is never lost. Speaks at most once per arm cycle and only while the
+  // key is genuinely still missing at delivery time (pure projection — never asserts a gap that got filled).
+  function speakOnce() {
+    if (spoke) return;
+    if (typeof Chat === 'undefined' || !Chat.localLine || !Chat.choices) return;   // no COMMS surface → banner carries it alone
+    if (typeof Chat.isBusy === 'function' && Chat.isBusy()) return;                 // a run is streaming — don't cut a beat in; the 2s tick retries
+    if (!missingKey()) return;                                                      // re-check at delivery: a key may have landed between arm() and here
+    spoke = true;
+    let nm = ''; try { if (typeof App !== 'undefined' && App.currentAgent) { const a = App.currentAgent(); nm = (a && a.name) || ''; } } catch (_) {}
+    const label = activeProvider().toUpperCase();
+    Chat.localLine((nm ? nm.toLowerCase() + ' — ' : '') + 'i’m awake, but no brain is wired: there’s no ' + label + ' key on the station, so i can’t actually run anything yet. add one and i can work.');
+    Chat.choices([{ label: '⚙ ADD A KEY', value: 'key' }], () => openSettings());
+  }
+
   function ensureBanner() {
     let b = el('key-cta');
     if (b) return b;
@@ -79,6 +99,7 @@ const KeyCTA = (() => {
     b.querySelector('.key-cta-txt').textContent =
       'your agent is awake — but it has no ' + label + ' key, so it can’t run a task yet.';
     b.hidden = false;
+    speakOnce();   // deliver the diegetic agent line once COMMS is free (no-op after it fires or once a key lands)
   }
 
   // begin watching AFTER the awakening lands. Idempotent. A light 2s re-eval is the backstop; settings/key

@@ -21,6 +21,11 @@ const App = (() => {
   let pickedCustomVoice = '';   // the Commander's free-text "in their own words" voice note (optional)
   let pickedApproval = 'ask';   // the APPROVAL mode — 'ask' (consent-gated) | 'full' (auto-approve). Drives the REAL consent broker (sidecar bypass), not a cosmetic toggle.
   let pickedProvider = 'codex';   // BEGINNER-FIRST default: 'codex' (personal ChatGPT sign-in, NO API key) leads the funnel; 'openrouter' (BYO API key) + the rest stay one click away. initConnect() still honours a returning agent's saved provider (selectProviderUI(Harness.getProv())).
+  let prefilledKey = '';               // the key the CONNECT field was pre-seeded with from storage (browser BYOK). Empty
+                                       //   when nothing was stored (or on desktop, where the key lives in the keychain and
+                                       //   getKey() returns ''). Used by onWake's one-time overwrite guard: editing a
+                                       //   pre-filled key asks once before it silently replaces the stored one.
+  let keyOverwriteConfirmed = false;   // set true once the Commander confirms replacing the pre-filled key (one-time per screen)
   let codexConnected = false;          // last-known /api/auth/codex/status — gates waking on the Codex provider
   let codexFlow = null;                // the in-flight device-code login { device_auth_id, user_code, verification_uri, deadline }
   let codexPoll = null;                // the setTimeout handle for the device-code poll loop
@@ -601,10 +606,21 @@ const App = (() => {
     refreshUsage(); renderRail(); persist();
     pushRoster();   // the new worker is now delegatable by the lead
     const _notify = (typeof StationUI !== 'undefined' && StationUI.notify) ? StationUI.notify : (m) => console.log('[summon]', m);
-    _notify(activate
-      ? a.name + ' summoned - type to task it now. Open REFIT to give it its OWN PC (every agent needs one to take floor work).'
-      : a.name + ' summoned - overseer remains in COMMS. Switch to its stream to task it directly, or let the overseer delegate.',
-      'good');
+    if (activate) {
+      // ACTIONABLE FOLLOW-UP (audit B-1): a summoned specialist can't take FLOOR work until it has its own DESK
+      // (a seated workstation). The old copy buried this required step in a passing remark ("give it its OWN PC")
+      // with no way to act. Now the agent says it plainly — "desk", never "OWN PC" — and a chip opens REFIT with
+      // desk placement teed up. The toast still lands as the standing record; the diegetic line + chip is the door.
+      _notify(a.name + ' summoned — type to task it now. It needs a desk before it can take floor work.', 'good');
+      if (typeof Chat !== 'undefined' && Chat.localLine && Chat.choices && (typeof Chat.isBusy !== 'function' || !Chat.isBusy())) {
+        Chat.localLine(a.name + ' is here — but it has nowhere to sit yet. it needs a desk of its own before it can take floor work. want to place one?');
+        Chat.choices([{ label: '▤ PLACE ITS DESK', value: 'desk' }, { label: 'later', value: 'later', skip: true }], item => {
+          if (item && item.value === 'desk') openDeskPlacement();
+        });
+      }
+    } else {
+      _notify(a.name + ' summoned — overseer remains in COMMS. Switch to its stream to task it directly, or let the overseer delegate. Give it a desk in REFIT before it takes floor work of its own.', 'good');
+    }
     // ONE loadout beat: state plainly what the class summon actually applied — the skills enabled, the effort
     // applied, and the STATION GEAR the class draws on (honest present/missing under the overseer, NOT per-agent
     // props). Skipped for a plain persona-only class (no gear/skills/effort) so it never adds noise. Mirrors the
@@ -612,6 +628,31 @@ const App = (() => {
     const lo = loadoutSummary(a, spec);
     if (lo) _notify(a.name + ' loadout - ' + lo, 'info');
     return a;
+  }
+  // OPEN REFIT WITH DESK PLACEMENT TEED UP — the target of the post-summon "PLACE ITS DESK" chip. Opens the
+  // builder (the same door the ⚒ BUILD dock opens) and, once its DOM is up, drives it to the PROP tool on the
+  // WORKSTATIONS category so the very next floor-click drops a desk (a workstation is editable, so it can't be
+  // auto-requisitioned — it opens the agent-binding picker on placement; the Commander places + binds it by hand,
+  // which is the honest one desk-per-agent path). Degrades safely: if any control isn't found we still leave REFIT
+  // open on its default tool, which is already a real improvement over the old unclickable "Open REFIT" sentence.
+  function openDeskPlacement() {
+    if (typeof Build === 'undefined' || !Build.open) return;
+    try { if (!Build.isOpen || !Build.isOpen()) Build.open(); } catch (_) { return; }
+    // REFIT builds its palette synchronously in open()->buildDOM, but retarget across a couple of rAFs to be safe
+    // against any deferred render. Each pass clicks only what isn't already active, so it's idempotent + cheap.
+    let tries = 0;
+    const arm = () => {
+      const q = sel => document.querySelector(sel);
+      const propTool = q('.refit-tool[data-tool="prop"]');
+      if (propTool && !propTool.classList.contains('active')) propTool.click();
+      const fnTier = q('.refit-tier-functional'), curTier = q('.refit-tier.active');
+      if (fnTier && curTier && curTier !== fnTier) fnTier.click();
+      const wsCat = q('.refit-propcat[data-cat="workstation"]');
+      if (wsCat && !wsCat.classList.contains('active')) wsCat.click();
+      const armed = wsCat && wsCat.classList.contains('active') && propTool && propTool.classList.contains('active');
+      if (!armed && ++tries < 8) requestAnimationFrame(arm);
+    };
+    requestAnimationFrame(arm);
   }
   // The capability objectTypes the STATION currently has placed anywhere (station-wide shared gear), deduped.
   // Under Andrew's model a specialist owns only its desk and uses these shared caps under the overseer — so a
@@ -1293,6 +1334,11 @@ const App = (() => {
   function initConnect(prefillName, isRecovery, savedAgent) {
     const recovery = !!isRecovery && !!savedAgent;
     el('in-key').value = Harness.getKey();
+    // remember what the field was pre-seeded with (browser BYOK: a real stored key; desktop keychain: '') so
+    // onWake can ask ONCE before an edited value silently replaces a stored key. Reset the confirm latch for
+    // this fresh screen. (An empty prefill means there's nothing to overwrite — the guard stays dormant.)
+    prefilledKey = el('in-key').value || '';
+    keyOverwriteConfirmed = false;
     // desktop: the key lives in the OS keychain (getKey returns ''); show that it's already set.
     if (Harness.configured && Harness.configured() && !el('in-key').value) {
       el('in-key').placeholder = '•••••••• stored in keychain — leave blank to keep';
@@ -1464,6 +1510,16 @@ const App = (() => {
         const host = String(url).replace(/^https?:\/\//, '').replace(/\/$/, '');
         msg.innerHTML = 'enter your ' + esc(providerLabel(pickedProvider)) + ' API key — get one at '
           + '<a href="' + esc(url) + '" target="_blank" rel="noopener noreferrer" class="connect-link">' + esc(host) + '</a>.';
+        return;
+      }
+      // OVERWRITE GUARD: the field was pre-filled from a stored key, and the Commander edited it to a DIFFERENT
+      // value — saving would silently replace the stored key. Ask once (inline, no modal) before that happens.
+      // Only fires when there genuinely was a stored key to lose (prefilledKey non-empty), the value actually
+      // changed, and it hasn't already been confirmed this screen. An untouched pre-fill saves the same key
+      // (a no-op replace) so it never trips; a blank field keeps the stored key (handled below) so it never trips.
+      if (prefilledKey && key && key !== prefilledKey && !keyOverwriteConfirmed) {
+        keyOverwriteConfirmed = true;   // arm: this same WAKE press now goes through; a second press confirms
+        msg.textContent = 'this replaces the key already stored on this station. press WAKE again to confirm — or restore the old key to keep it.';
         return;
       }
       // Only (re)store when a key was actually typed — desktop keeps the existing keychain key on blank.
