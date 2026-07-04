@@ -78,6 +78,26 @@ function runGit(args, opts) {
     // ---- 8. prune keeps the cap (keep:5) ----
     for (let i = 0; i < 8; i++) { write('report.md', 'rev ' + i + '\n'); await store.snapshot(aid, { runId: 'r1', turn: 10 + i, label: 'fs.write' }); }
     A.ok(store.list(aid).snapshots.length <= 5, 'index pruned to the keep cap');
+
+    // ---- 9. index durability: a .bak snapshot is written; a torn (zero-length) index recovers sync from .bak ----
+    const idxFile = path.join(root, '.checkpoints', aid, 'index.json');
+    A.ok(fs.existsSync(idxFile + '.bak'), 'saveIndex wrote a .bak last-known-good snapshot');
+    const beforeTorn = store.list(aid).snapshots.length;
+    fs.writeFileSync(idxFile, '');                                    // simulate a torn index write
+    A.eq(store.list(aid).snapshots.length, beforeTorn, 'a torn (zero-length) index recovers from .bak (sync list)');
+
+    // ---- 10. REBUILD from git: wipe BOTH index.json and its .bak; the commits are the truth ----
+    fs.rmSync(idxFile, { force: true });
+    fs.rmSync(idxFile + '.bak', { force: true });
+    A.eq(store.list(aid).snapshots.length, 0, 'with index + .bak gone, the sync list is empty (git not consulted)');
+    const rebuilt = await store.listResilient(aid);                  // async path rebuilds from git log
+    A.ok(rebuilt.snapshots.length >= 5, 'listResilient rebuilt the index from the shadow-git commits');
+    A.ok(rebuilt.snapshots.every(s => store.isValidId(s.id)), 'every rebuilt record has a valid git-oid id');
+    A.ok(fs.existsSync(idxFile), 'the rebuilt index was re-persisted for fast subsequent reads');
+    A.eq(store.list(aid).snapshots.length, rebuilt.snapshots.length, 'a subsequent sync list sees the re-persisted rebuild');
+    // and a per-id restore works again off the rebuilt index (the commit is real)
+    const targetId = rebuilt.snapshots[rebuilt.snapshots.length - 1].id;
+    A.ok(await store.restore(aid, targetId), 'restore works against a rebuilt-from-git index');
   } finally {
     try { fs.rmSync(root, { recursive: true, force: true }); } catch (_) {}
   }
