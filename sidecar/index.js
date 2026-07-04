@@ -600,6 +600,25 @@ function saveAgentRoster() {
 }
 loadAgentRoster();
 
+// In-messenger `/model` (any channel) sets the CURRENTLY BOUND agent's roster model — the SAME single source of
+// truth the browser dossier writes via POST /api/roster. We mutate the live roster entry and persist through the
+// SAME saveAgentRoster path (no duplicate-and-drift), so the change round-trips a sidecar restart and the browser
+// sees it. Returns { ok, agentId, model, name, error } — truthful: ok:false when there is nothing to write to.
+function setAgentModelFromChannel(agentId, model) {
+  const id = String(agentId || '');
+  if (!/^[A-Za-z0-9_-]{1,40}$/.test(id)) return { ok: false, agentId: id, error: 'bad agentId' };
+  const m = String(model == null ? '' : model).trim();
+  if (!m) return { ok: false, agentId: id, error: 'empty model' };
+  const cur = agentRoster.get(id);
+  if (!cur) return { ok: false, agentId: id, error: 'agent not in roster' };
+  agentRoster.set(id, Object.assign({}, cur, { model: m }));   // same shape replaceAgentRoster produces
+  saveAgentRoster();                                           // fsync-durable + .bak, survives restart
+  return { ok: true, agentId: id, model: m, name: cur.name || id };
+}
+// A live snapshot of the OpenRouter model catalog, warmed at boot (see listModels warmup below). Lets the
+// channel `/model` command validate an id sync without an await; empty until warmed (then validation is skipped).
+let orModelCatalogIds = [];
+
 // jail helper reused by the read-only /api/file route (resolveInside proves a path stays in the workspace)
 const fsJail = makeFsTools({ fsp, pathMod: path, root: WORKSPACES })._internals;
 
@@ -1696,7 +1715,13 @@ function startTelegram(token, key, model, agentCfg) {
     // (configured agentId else tg_<chatId>), so a no-floor or mis-wired station never stalls real work.
     resolveAgent: (ctx) => router.resolveTarget(ctx),
     getTag: (text) => (Classify.getTag ? Classify.getTag(text) : undefined),   // B3 supplies the real classifier
-    resolveStation: (agentId) => router.stationFor(agentId)                     // B5: a bay's room objects = that agent's caps
+    resolveStation: (agentId) => router.stationFor(agentId),                    // B5: a bay's room objects = that agent's caps
+    // In-messenger control surface (channel-agnostic): list agents / switch agent / change the bound agent's model.
+    // roster + setModel read/write the SAME agentRoster the browser dossier uses (POST /api/roster) — one source
+    // of truth, no per-chat override. modelCatalog is the boot-warmed OpenRouter id snapshot (empty -> skip check).
+    roster: () => [...agentRoster].map(([agentId, a]) => ({ agentId, name: a.name, model: a.model, provider: a.provider })),
+    setModel: (agentId, model) => setAgentModelFromChannel(agentId, model),
+    modelCatalog: () => orModelCatalogIds
   });
   const adapter = makeTelegramAdapter({
     fetch: globalThis.fetch, token: token, apiBase: TELEGRAM_API_BASE, clock: { now: () => Date.now() },
@@ -1795,7 +1820,12 @@ function startDiscord(token, key, model, agentCfg) {
       newId: () => crypto.randomUUID(),
       resolveAgent: (ctx) => router.resolveTarget(ctx),
       getTag: (text) => (Classify.getTag ? Classify.getTag(text) : undefined),
-      resolveStation: (agentId) => router.stationFor(agentId)
+      resolveStation: (agentId) => router.stationFor(agentId),
+      // In-messenger control surface — identical to Telegram because it lives in the shared hub (roster/setModel/
+      // modelCatalog are the SAME app roster + boot-warmed catalog; NO per-channel routing logic here).
+      roster: () => [...agentRoster].map(([agentId, a]) => ({ agentId, name: a.name, model: a.model, provider: a.provider })),
+      setModel: (agentId, model) => setAgentModelFromChannel(agentId, model),
+      modelCatalog: () => orModelCatalogIds
     },
     adapter: {
       fetch: globalThis.fetch, token: token, clock: { now: () => Date.now() },
@@ -1987,7 +2017,13 @@ server.listen(PORT, '127.0.0.1', () => {
   console.log(bar + '\n');
   // warm the key-independent /models catalog once so priceOf / contextLimit are live for every run
   makeOpenRouterProvider({ fetch: globalThis.fetch, baseUrl: providerRuntimeBaseUrl('openrouter', '') || OPENROUTER_BASE }).listModels().then(
-    ms => { if (ms && ms.length) console.log('  · model catalog warmed (' + ms.length + ' models)'); },
+    ms => {
+      if (ms && ms.length) {
+        console.log('  · model catalog warmed (' + ms.length + ' models)');
+        // snapshot the ids so the channel /model command can validate an id synchronously (see setAgentModelFromChannel)
+        try { orModelCatalogIds = ms.map(x => String((x && (x.id || x.model || x.name)) || '')).filter(Boolean); } catch (_) {}
+      }
+    },
     () => {}
   );
   // auto-start a previously-connected Telegram bot (saved config), else an env-provided one (headless deploys).

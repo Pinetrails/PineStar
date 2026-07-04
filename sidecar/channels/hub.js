@@ -61,6 +61,47 @@
     return out;
   }
 
+  // ---- in-messenger control commands (pure, channel-agnostic) --------------------------------------------
+  // Parse a leading slash-command out of an inbound text. Returns { cmd, arg } (cmd lowercased, no slash) or
+  // null when the text is NOT a command (a normal message that should start a run). Only the FIRST token is the
+  // command; the remainder (trimmed) is the argument. A bare '/' or unknown token still parses so we can reply
+  // with help rather than silently spending a run. Telegram-style '/cmd@botname' is tolerated (strip the @suffix).
+  const KNOWN_CMDS = { agents: 1, talk: 1, model: 1, whoami: 1, help: 1 };
+  function parseCommand(text) {
+    const s = String(text == null ? '' : text).trim();
+    if (s[0] !== '/') return null;
+    const sp = s.search(/\s/);
+    let head = (sp === -1 ? s.slice(1) : s.slice(1, sp)).toLowerCase();
+    const at = head.indexOf('@');                 // '/talk@mybot' -> 'talk'
+    if (at !== -1) head = head.slice(0, at);
+    if (!head || !KNOWN_CMDS[head]) return null;   // not a control command -> treat as a normal message
+    const arg = sp === -1 ? '' : s.slice(sp + 1).trim();
+    return { cmd: head, arg: arg };
+  }
+
+  // Forgiving roster lookup: exact agentId, then case-insensitive exact name, then case-insensitive prefix on
+  // name OR agentId (a unique prefix wins; an ambiguous prefix returns { ambiguous:[...] } so we can list them).
+  function matchAgent(roster, query) {
+    const q = String(query == null ? '' : query).trim();
+    if (!q) return null;
+    const list = Array.isArray(roster) ? roster : [];
+    for (const a of list) if (String(a.agentId) === q) return { agent: a };
+    const ql = q.toLowerCase();
+    const nameExact = list.filter(a => String(a.name || '').toLowerCase() === ql);
+    if (nameExact.length === 1) return { agent: nameExact[0] };
+    if (nameExact.length > 1) return { ambiguous: nameExact };
+    const pref = list.filter(a => String(a.name || '').toLowerCase().startsWith(ql) || String(a.agentId).toLowerCase().startsWith(ql));
+    if (pref.length === 1) return { agent: pref[0] };
+    if (pref.length > 1) return { ambiguous: pref };
+    return null;
+  }
+
+  function fmtAgentLine(a, boundId) {
+    const mark = (boundId && String(a.agentId) === String(boundId)) ? '→ ' : '  ';
+    const name = a.name && a.name !== a.agentId ? (a.name + ' (' + a.agentId + ')') : a.agentId;
+    return mark + name + ' — ' + (a.model || 'no model set');
+  }
+
   function makeChannelHub(opts) {
     const o = opts || {};
     const channel = o.channel || 'telegram';
@@ -77,6 +118,14 @@
     const resolveAgent = typeof o.resolveAgent === 'function' ? o.resolveAgent : null;   // Phase B: the placed floor's routing plan
     const getTag = typeof o.getTag === 'function' ? o.getTag : null;                     // FILTER content-routing key (B3 classifier)
     const resolveStation = typeof o.resolveStation === 'function' ? o.resolveStation : null;   // B5: per-bay capability station
+    // In-messenger control surface (channel-agnostic — lives HERE so Telegram/Discord/any future adapter behave
+    // identically). All optional: absent -> commands degrade to an honest "not available here" reply.
+    //   roster()          -> [{ agentId, name, model, provider }]  (the SAME roster the browser dossier reads)
+    //   setModel(id,model)-> { ok, agentId, model, name?, error? } (MUST go through the roster's own write path)
+    //   modelCatalog()    -> [modelId,...]  (optional; when reachable, /model validates against it)
+    const rosterFn = typeof o.roster === 'function' ? o.roster : null;
+    const setModelFn = typeof o.setModel === 'function' ? o.setModel : null;
+    const modelCatalogFn = typeof o.modelCatalog === 'function' ? o.modelCatalog : null;
     if (typeof runOnce !== 'function') throw new Error('makeChannelHub: runOnce is required');
     if (!store || typeof store.loadHistory !== 'function') throw new Error('makeChannelHub: a channel store is required');
     if (typeof send !== 'function') throw new Error('makeChannelHub: a send(chatId,text) is required');
@@ -106,6 +155,84 @@
       return ok;
     }
 
+    // Resolve which agent a chat is currently bound to, from the SAME precedence run resolution uses (minus the
+    // live floor plan, which is content-per-message and not a stable "who am I talking to"). Used by /agents,
+    // /talk confirmations, and /model to name the target honestly.
+    function currentBoundAgent(chatId, boundAgentId, sec) {
+      if (boundAgentId) return boundAgentId;
+      if (sec && sec.agentId && AID_RE.test(String(sec.agentId))) return String(sec.agentId);
+      return agentIdFor(chatId);
+    }
+
+    // Handle a parsed control command. Every reply states what ACTUALLY happened (truthful telemetry): a rebind
+    // only claims success after saveChatRecord returns; a model change only confirms after setModel reports ok.
+    async function handleCommand(chatId, parsed, boundAgentId, sec) {
+      const cmd = parsed.cmd, arg = parsed.arg;
+      const roster = rosterFn ? (rosterFn() || []) : null;
+      const boundId = currentBoundAgent(chatId, boundAgentId, sec);
+      try { emit('channel.command', { channel, chatId: String(chatId), cmd, arg: arg ? '1' : '' }); } catch (_) {}
+
+      if (cmd === 'help') {
+        await deliver(chatId,
+          'Commands:\n/agents — list agents (→ marks the one you\'re talking to)\n'
+          + '/talk <name> — switch this chat to another agent\n'
+          + '/model [id] — show or change the current agent\'s model\n/whoami — show the current agent',
+          '', 'command');
+        return;
+      }
+
+      if (cmd === 'agents' || cmd === 'whoami') {
+        if (!roster || !roster.length) { await deliver(chatId, 'No roster is available to this channel yet.', '', 'command'); return; }
+        if (cmd === 'whoami') {
+          const me = roster.find(a => String(a.agentId) === String(boundId));
+          await deliver(chatId, me ? ('You are talking to ' + fmtAgentLine(me, boundId).trim()) : ('This chat is bound to "' + boundId + '" (not in the current roster).'), '', 'command');
+          return;
+        }
+        const lines = roster.map(a => fmtAgentLine(a, boundId));
+        await deliver(chatId, 'Agents (' + roster.length + '):\n' + lines.join('\n') + '\n\n/talk <name> to switch · /model to change model', '', 'command');
+        return;
+      }
+
+      if (cmd === 'talk') {
+        if (!roster || !roster.length) { await deliver(chatId, 'No roster is available to this channel yet — cannot switch agents.', '', 'command'); return; }
+        if (!arg) { await deliver(chatId, 'Usage: /talk <name>. ' + roster.length + ' available:\n' + roster.map(a => '  ' + (a.name || a.agentId)).join('\n'), '', 'command'); return; }
+        const m = matchAgent(roster, arg);
+        if (!m) { await deliver(chatId, 'No agent matches "' + arg + '". Available:\n' + roster.map(a => '  ' + (a.name || a.agentId)).join('\n'), '', 'command'); return; }
+        if (m.ambiguous) { await deliver(chatId, '"' + arg + '" matches several agents — be more specific:\n' + m.ambiguous.map(a => '  ' + (a.name || a.agentId)).join('\n'), '', 'command'); return; }
+        const target = m.agent;
+        // Persist the rebind. Only confirm the switch if the write actually succeeded (truthful telemetry).
+        let saved = false;
+        try { if (typeof store.saveChatRecord === 'function') { store.saveChatRecord(chatId, { agentId: String(target.agentId), channel: channel }); saved = true; } } catch (_) { saved = false; }
+        if (!saved) { await deliver(chatId, '⚠ Could not persist the switch to "' + (target.name || target.agentId) + '" — this chat is still talking to the previous agent.', '', 'command'); return; }
+        try { emit('channel.rebind', { channel, chatId: String(chatId), agentId: String(target.agentId) }); } catch (_) {}
+        const nm = target.name && target.name !== target.agentId ? (target.name + ' (' + target.agentId + ')') : target.agentId;
+        await deliver(chatId, 'Now talking to ' + nm + ' — model: ' + (target.model || 'not set') + '.', '', 'command');
+        return;
+      }
+
+      if (cmd === 'model') {
+        if (!roster || !roster.length) { await deliver(chatId, 'No roster is available to this channel yet — cannot read or change models.', '', 'command'); return; }
+        const me = roster.find(a => String(a.agentId) === String(boundId));
+        if (!me) { await deliver(chatId, 'This chat is bound to "' + boundId + '", which is not in the current roster — /talk to pick an agent first.', '', 'command'); return; }
+        if (!arg) { await deliver(chatId, (me.name || me.agentId) + '\'s current model: ' + (me.model || 'not set') + '.\nSend /model <id> to change it.', '', 'command'); return; }
+        // Validate against the model catalog when one is reachable sidecar-side; otherwise accept and be honest
+        // that no catalog was available to check against.
+        let catalog = null;
+        try { catalog = modelCatalogFn ? (modelCatalogFn() || null) : null; } catch (_) { catalog = null; }
+        if (Array.isArray(catalog) && catalog.length && catalog.indexOf(arg) === -1) {
+          const near = catalog.filter(id => String(id).toLowerCase().indexOf(arg.toLowerCase()) !== -1).slice(0, 8);
+          await deliver(chatId, '"' + arg + '" is not in the available model catalog.' + (near.length ? ('\nDid you mean:\n' + near.map(x => '  ' + x).join('\n')) : ''), '', 'command');
+          return;
+        }
+        if (!setModelFn) { await deliver(chatId, '⚠ Model changes are not available on this channel (no roster write path wired).', '', 'command'); return; }
+        let r; try { r = setModelFn(String(me.agentId), arg); } catch (e) { r = { ok: false, error: (e && e.message) || 'write threw' }; }
+        if (!r || r.ok === false) { await deliver(chatId, '⚠ Could not change the model — ' + ((r && r.error) || 'roster write failed') + '. It is still ' + (me.model || 'not set') + '.', '', 'command'); return; }
+        try { emit('channel.model', { channel, chatId: String(chatId), agentId: String(me.agentId), model: String(r.model || arg) }); } catch (_) {}
+        await deliver(chatId, (me.name || me.agentId) + '\'s model is now ' + (r.model || arg) + ' (saved to the roster).', '', 'command');
+        return;
+      }
+    }
+
     async function onInbound(msg) {
       if (!msg || !msg.text) return;   // non-text already filtered by the adapter; belt-and-suspenders
       const chatId = String(msg.chatId);
@@ -118,15 +245,34 @@
       const provider = String(sec.provider || 'openrouter').trim().toLowerCase() || 'openrouter';
       const usingCodex = provider === 'codex' || provider === 'openai-codex';
       const reasoningEffort = sec.reasoningEffort || sec.reasoning_effort || (usingCodex ? 'low' : 'medium');
+      // The chat's own persisted binding (set by /talk) — the user's explicit choice of which roster agent this
+      // chat talks to. Read it once here so both command handling (below) and run resolution can honor it.
+      let boundRec = null;
+      try { if (typeof store.getChatRecord === 'function') boundRec = store.getChatRecord(chatId); } catch (_) {}
+      const boundAgentId = (boundRec && boundRec.agentId && AID_RE.test(String(boundRec.agentId))) ? String(boundRec.agentId) : null;
+
+      // Control commands are intercepted BEFORE any run starts — they must never spawn an LLM run. Replies go out
+      // through the SAME deliver() path so chunking/limits apply. Channel-agnostic: this lives in the hub, so
+      // Telegram/Discord/any future adapter get identical behavior.
+      const parsed = parseCommand(msg.text);
+      if (parsed) { await handleCommand(chatId, parsed, boundAgentId, sec); return; }
+
       // Phase B routing: the placed floor (a posted RoutingPlan) decides WHICH agent runs. resolveAgent
       // returns the bay-bound agentId, or null -> fall through to today's resolution so real work NEVER stalls.
+      // Resolution order: floor plan > this chat's explicit /talk binding > the connect-time configured agentId >
+      // the per-chat tg_<chatId> fallback (an unbound chat still just works).
       const tag = getTag ? getTag(msg.text) : undefined;
-      const routed = resolveAgent ? resolveAgent({ tag, chatId, text: msg.text }) : null;
+      const routed = resolveAgent ? resolveAgent({ tag, chatId, text: msg.text, boundAgentId }) : null;
       const agentId = (routed && AID_RE.test(String(routed))) ? String(routed)
+        : boundAgentId
+        ? boundAgentId
         : (sec.agentId && AID_RE.test(String(sec.agentId))) ? String(sec.agentId) : agentIdFor(chatId);
 
       // B4 — persist the chat→agent binding (+ this hub's channel) so the autonomous notifier can find which chat to
       // ping for a given agent when a cron run produces work. Best-effort: a store hiccup must never block the reply.
+      // NOTE: this records the RESOLVED agent so the notifier is accurate; it does NOT overwrite an explicit /talk
+      // binding with a fallback, because when boundAgentId is set it is precisely what resolves here (floor plans
+      // are a deliberate, separate deployment surface).
       try { if (typeof store.saveChatRecord === 'function') store.saveChatRecord(chatId, { agentId: agentId, channel: channel }); } catch (_) {}
 
       // one run per CONVERSATION: a new message in THIS chat ABORTS its in-flight run — keyed by chatId, NOT
@@ -209,9 +355,9 @@
 
     return {
       onInbound, onCallback, onStatus,
-      _internals: { agentIdFor, chunkText, endNote, deliver, inflight, TASK_SUFFIX, DEFAULT_PERSONA }
+      _internals: { agentIdFor, chunkText, endNote, deliver, inflight, handleCommand, currentBoundAgent, TASK_SUFFIX, DEFAULT_PERSONA }
     };
   }
 
-  return { makeChannelHub, chunkText, endNote, _internals: { TASK_SUFFIX, DEFAULT_PERSONA } };
+  return { makeChannelHub, chunkText, endNote, parseCommand, matchAgent, fmtAgentLine, _internals: { TASK_SUFFIX, DEFAULT_PERSONA, parseCommand, matchAgent, fmtAgentLine } };
 });
