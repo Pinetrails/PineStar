@@ -2263,42 +2263,33 @@ const PropSprites = (() => {
     px(x + w - 6, y, 1, 1, watched ? '#ff6a6a' : (blink(1400) ? '#ff3030' : '#3a1010')); // standby LED
   };
 
-  F.couch = (x, y, w, h) => {   // TOP-BIAS OBLIQUE lounge sofa, freestanding (locked style law)
-    const r = RAMP.fabric;
+  F.couch = (x, y, w, h) => {   // TOP-BIAS OBLIQUE lounge sofa seen from BEHIND — it faces north (the TV),
+    const r = RAMP.fabric;      // so the camera gets the tall upholstered rear panel; sitters peek over the cap
     shadow2(x + 1, y + h - 1, w - 2);                            // floor contact
-    for (const lx of [x + 3, x + Math.floor(w / 2) - 1, x + w - 6]) { // stub legs
-      px(lx, y + 10, 3, 2, LINE); px(lx, y + 10, 1, 2, r.lit); px(lx + 1, y + 10, 1, 2, r.dk);
-    }
-    underAO(x + 6, y + 10, w - 12, 1);                           // gap under the seat
-    // backrest: rounded lit cap + short upholstered face
-    rr(x + 1, y - 4, w - 2, 8, LINE);
-    px(x + 2, y - 3, w - 4, 2, r.lit);                           // cap catches the light
-    px(x + 2, y - 3, 8, 1, U.shade(r.lit, 0.10));
-    px(x + 2, y - 1, w - 4, 4, r.face);
-    for (let i = 1; i < (w - 4) / 14; i++) px(x + 2 + i * 14, y - 1, 1, 4, r.dk); // back seams
-    wear(x + 2, y - 1, w - 4, 4, 5, U.shade(r.face, -0.08));
-    // arms: rounded caps that wrap above the back line and drop to the floor
+    // throw-pillow tops leaning on the far seat, just proud of the back line
+    px(x + 6, y - 8, 7, 4, LINE);
+    px(x + 7, y - 7, 5, 3, '#2f6a62'); px(x + 7, y - 7, 5, 1, '#4a8a82');
+    px(x + w - 13, y - 8, 7, 4, LINE);
+    px(x + w - 12, y - 7, 5, 3, '#8a6a3a'); px(x + w - 12, y - 7, 5, 1, '#caa84a');
+    // backrest from behind: rounded lit cap + ONE tall rear panel dropping to the floor
+    rr(x + 1, y - 5, w - 2, h + 5, LINE);
+    px(x + 2, y - 4, w - 4, 2, r.lit);                           // cap catches the light
+    px(x + 2, y - 4, 8, 1, U.shade(r.lit, 0.10));
+    px(x + 2, y - 2, w - 4, h, r.face);                          // rear upholstery panel
+    px(x + 2, y - 2, 1, h, U.shade(r.face, 0.10));               // lit west facet
+    px(x + w - 3, y - 2, 1, h, r.dk);                            // dark east facet
+    for (let i = 1; i < (w - 4) / 14; i++) px(x + 2 + i * 14, y - 1, 1, h - 2, r.dk); // panel seams
+    wear(x + 2, y - 1, w - 4, h - 2, 6, U.shade(r.face, -0.08));
+    px(x + 2, y + h - 3, w - 4, 1, U.shade(r.face, -0.16));      // kick-line shadow near the floor
+    px(x + 2, y + h - 2, w - 4, 1, r.ao);                        // floor-line ambient occlusion
+    // arms: rounded caps that step DOWN from the back and wrap the ends to the floor
     for (const ax of [x, x + w - 4]) {
-      rr(ax - 1, y - 3, 6, h + 2, LINE);
-      px(ax, y - 2, 4, h - 1, r.face);
+      rr(ax - 1, y - 3, 6, h + 3, LINE);
+      px(ax, y - 2, 4, h + 1, r.face);
       px(ax, y - 2, 4, 2, r.lit); px(ax, y - 2, 3, 1, U.shade(r.lit, 0.10)); // arm cap
-      px(ax === x ? ax : ax + 3, y, 1, h - 4, ax === x ? U.shade(r.face, 0.10) : r.dk); // outer facet
-      px(ax, y + h - 4, 4, 1, r.ao);                             // arm base AO
+      px(ax === x ? ax : ax + 3, y, 1, h - 2, ax === x ? U.shade(r.face, 0.10) : r.dk); // outer facet
+      px(ax, y + h - 2, 4, 1, r.ao);                             // arm base AO
     }
-    // seat: big visible cushion tops, then a short front lip
-    px(x + 4, y + 3, w - 8, 4, U.shade(r.top, 0.05));
-    px(x + 4, y + 3, w - 8, 1, r.lit);
-    for (let i = 1; i < (w - 8) / 13; i++) {
-      px(x + 4 + i * 13, y + 3, 1, 4, r.dk);                     // cushion seams
-      px(x + 4 + i * 13 - 5, y + 4, 4, 1, U.shade(r.lit, 0.06)); // cushion sheen
-    }
-    wear(x + 4, y + 3, w - 8, 4, 5, U.shade(r.top, -0.08));
-    px(x + 4, y + 7, w - 8, 2, r.face);                          // seat front lip
-    px(x + 4, y + 7, w - 8, 1, U.shade(r.face, 0.10));
-    px(x + 5, y + 8, w - 10, 1, r.ao);
-    // throw pillows tucked against each arm
-    px(x + 6, y, 5, 4, '#2f6a62'); px(x + 6, y, 5, 1, '#4a8a82'); px(x + 10, y + 3, 1, 1, '#26554e');
-    px(x + w - 11, y, 5, 4, '#8a6a3a'); px(x + w - 11, y, 5, 1, '#caa84a'); px(x + w - 7, y + 3, 1, 1, '#6a5230');
   };
 
   F.arcade = (x, y, w, h, f) => {   // TALL 3/4 cabinet (locked style law): rises above its footprint, may occlude
