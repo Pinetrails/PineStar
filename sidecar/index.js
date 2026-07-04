@@ -1382,7 +1382,19 @@ let voiceDispatcher = null;
     if (u && u.Agent) voiceDispatcher = new u.Agent({ keepAliveTimeout: 30000, keepAliveMaxTimeout: 60000, connections: 8 });
   } catch (_) { voiceDispatcher = null; }   // internal undici not importable → default global pool (still keep-alived)
 })();
-function voiceFetchOpts(base) { return voiceDispatcher ? Object.assign({ dispatcher: voiceDispatcher }, base) : base; }
+// voiceFetchOpts — attach the keep-alive dispatcher AND a hard wall-clock via AbortSignal.timeout so a stalled
+// TTS/STT upstream can't hang the request (and, via the 200-always contract, the frontend voice loop) forever.
+// timeoutMs is per-caller (TTS ~60s, STT ~120s — a longer clip transcription). If a base.signal is ever passed,
+// combine the two so either aborts. Falls back gracefully if AbortSignal.timeout/any is unavailable.
+function voiceFetchOpts(base, timeoutMs) {
+  base = base || {};
+  if (timeoutMs > 0 && typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') {
+    const t = AbortSignal.timeout(timeoutMs);
+    const signal = (base.signal && typeof AbortSignal.any === 'function') ? AbortSignal.any([base.signal, t]) : t;
+    base = Object.assign({}, base, { signal });
+  }
+  return voiceDispatcher ? Object.assign({ dispatcher: voiceDispatcher }, base) : base;
+}
 const CHANNELS_DIR = path.join(WORKSPACES, 'channels');
 const CHANNEL_SECRETS_FILE = path.join(CHANNELS_DIR, 'secrets.json');
 // ---- channel bot tokens: keychain-backed on desktop, plaintext-file fallback in the bare sidecar ----
@@ -2564,8 +2576,8 @@ async function handleConfigExport(req, res) {
    the app can (a) surface re-enter-your-key states and (b) restore its own localStorage slices. Additive/durable:
    each store's own save path runs, so nothing bypasses the .bak/fsync discipline. */
 async function handleConfigImport(req, res) {
-  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
-  let body; try { body = JSON.parse(await readBody(req, 1 << 20)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+  const json = (code, obj) => { if (res.headersSent) return; res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 1 << 20, res)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
   const envelope = body.envelope || body;   // tolerate a bare envelope or a wrapped one
   const parsed = configExport.parseImport(envelope);
   if (!parsed.ok) return json(400, { error: parsed.error });
@@ -3512,16 +3524,25 @@ async function handleWorkshopDecide(req, res) {
   if (!destPath) return json(400, { error: 'choose where to keep it' });
   const man = await validateWorkshopManifest(agentId, runId);
   if (!man) return json(404, { error: 'that deliverable is no longer available' });
+  // SAFE-BY-DEFAULT: copy with COPYFILE_EXCL so Keep never silently clobbers a file the user already has at
+  // destPath. An explicit body.overwrite:true opts into the old replace behavior. The common happy path (a
+  // fresh folder, or filenames that don't collide) is unaffected — EXCL only fires on a real pre-existing file,
+  // which we surface as a clear "already exists" refusal instead of an opaque 500 or a silent overwrite.
+  const overwrite = body.overwrite === true;
+  const copyFlags = overwrite ? 0 : fs.constants.COPYFILE_EXCL;
   let copied = 0;
   try {
     for (const f of man.files) {
       const { abs: srcAbs } = await fsJail.resolveInside(agentId, relDir + '/' + f.path);
       const destAbs = path.join(destPath, f.path);
       await fsp.mkdir(path.dirname(destAbs), { recursive: true });
-      await fsp.copyFile(srcAbs, destAbs);
+      await fsp.copyFile(srcAbs, destAbs, copyFlags);
       copied++;
     }
-  } catch (e) { return json(500, { error: 'could not copy the files: ' + ((e && e.message) || e) }); }
+  } catch (e) {
+    if (e && e.code === 'EEXIST') return json(409, { error: 'some files already exist in that folder — pick an empty folder, or the same one to overwrite.', code: 'EEXIST', overwritable: true });
+    return json(500, { error: 'could not copy the files: ' + ((e && e.message) || e) });
+  }
   // kept = decided: retire the backlog item so /pending never re-lists (and the card never resurrects) a kept
   // build. The run dir stays in the workshop as an archive; unlike discard, the title is NOT denylisted.
   if (item) { try { await workshopStore.complete(agentId, item.id); } catch (_) {} }
@@ -3597,8 +3618,8 @@ async function handleSubagentInterrupt(req, res) {
 
 async function handleRoster(req, res) {
   let body;
-  try { body = JSON.parse(await readBody(req, 2 << 20)); }
-  catch (e) { res.writeHead(400); return res.end('bad json'); }
+  try { body = JSON.parse(await readBody(req, 2 << 20, res)); }
+  catch (e) { if (res.headersSent) return; res.writeHead(400); return res.end('bad json'); }   // over-limit already answered 413
   const list = (body && Array.isArray(body.agents)) ? body.agents : [];
   replaceAgentRoster(list);
   saveAgentRoster();
@@ -3708,8 +3729,8 @@ function serveAgentSkills(req, res) {
 
 // POST /api/agent-skills/manage { agentId, action, ... } - user-visible runtime skill management.
 async function handleAgentSkillManage(req, res) {
-  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
-  let body; try { body = JSON.parse(await readBody(req, 1 << 20)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+  const json = (code, obj) => { if (res.headersSent) return; res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 1 << 20, res)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
   const agentId = String(body.agentId || 'agent');
   if (!/^[A-Za-z0-9_-]{1,40}$/.test(agentId)) return json(403, { error: 'forbidden' });
   const r = skillStore.manage(Object.assign({}, body, { agentId, createdBy: 'user' }));
@@ -3721,8 +3742,8 @@ async function handleAgentSkillManage(req, res) {
 /* ------------------------------- the run endpoint ------------------------------- */
 async function handleRun(req, res) {
   let body;
-  try { body = JSON.parse(await readBody(req, 2 << 20)); }
-  catch (e) { res.writeHead(400); return res.end('bad json'); }
+  try { body = JSON.parse(await readBody(req, 2 << 20, res)); }
+  catch (e) { if (res.headersSent) return; res.writeHead(400); return res.end('bad json'); }   // over-limit already answered 413
   const { model, system, messages = [], agentId = 'agent', isTask = false, provider, fallbackModels, fallbackProviders } = body || {};
   const recurring = !!(body && body.recurring);   // the browser's mint detector saw this task SHAPE before → salience boost for reflection
   const runProvider = normalizeProvider(provider);
@@ -4641,9 +4662,13 @@ async function handlePermissionsRevoke(req, res) {
 // cabinet-OBJECT-placed requirement (the B1 honesty story) is the autopilot's client-side gate (Autopilot.canWrite);
 // the server's authoritative boundary here is the cabinet:write GRANT + the fs-jail + the hardline floor.
 async function handleAutonomyWrite(req, res) {
-  const sendJson = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
-  let body; try { body = JSON.parse(await readBody(req, 1 << 20)) || {}; } catch (e) { res.writeHead(400); return res.end('bad json'); }
+  const sendJson = (code, obj) => { if (res.headersSent) return; res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 1 << 20, res)) || {}; } catch (e) { if (res.headersSent) return; res.writeHead(400); return res.end('bad json'); }
   const agentId = String(body.agentId || 'agent');
+  // agentId keys the workspace jail + the checkpoint store + the blanket-grant set; validate it to the same
+  // shape every sibling route enforces so a crafted id can't reach outside its lane (defense in depth on top of
+  // the fs-jail resolveInside below). Matches ID_RE used across the roster/cron/orchestration surfaces.
+  if (!/^[A-Za-z0-9_-]{1,40}$/.test(agentId)) return sendJson(400, { ok: false, reason: 'invalid agentId' });
   const rel = body.path, content = body.content;
   if (typeof rel !== 'string' || !rel || typeof content !== 'string') return sendJson(400, { ok: false, reason: 'missing path or content' });
   // a one-off registry carrying the cabinet (fs) tools — assembled exactly like runOnce (same makeFsTools args).
@@ -5181,7 +5206,7 @@ async function handleTts(req, res) {
       method: 'POST',
       headers: { 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json', 'HTTP-Referer': 'https://localhost', 'X-Title': 'STARNET' },
       body: JSON.stringify(payload)
-    }));
+    }, 60000));
   } catch (e) { return fallback('network: ' + ((e && e.message) || e)); }
   if (!or.ok) {
     let detail = ''; try { detail = (await or.text()).slice(0, 300); } catch (_) {}
@@ -5214,12 +5239,23 @@ async function handleTts(req, res) {
 
 // read a raw binary request body into a single Buffer (readBody concatenates as a string, which mangles
 // non-UTF8 audio bytes). Capped like readBody so a hostile client can't OOM the host.
-function readBodyBuffer(req, max) {
+function readBodyBuffer(req, max, res) {
   return new Promise((resolve, reject) => {
-    const chunks = []; let n = 0;
-    req.on('data', c => { n += c.length; if (n > max) { reject(new Error('body too large')); req.destroy(); } else chunks.push(c); });
-    req.on('end', () => resolve(Buffer.concat(chunks)));
-    req.on('error', reject);
+    const chunks = []; let n = 0; let over = false;
+    req.on('data', c => {
+      if (over) return;
+      n += c.length;
+      if (n > max) {
+        over = true;
+        // Answer 413 CLEANLY (when a res is available) BEFORE tearing the socket down, so the client reads a
+        // real "payload too large" instead of a bare ECONNRESET. Then destroy to stop consuming the oversized body.
+        try { if (res && !res.headersSent) { res.writeHead(413, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify({ error: 'request body too large' })); } } catch (_) {}
+        const e = new Error('body too large'); e.statusCode = 413; e.tooLarge = true;
+        reject(e); try { req.destroy(); } catch (_) {}
+      } else chunks.push(c);
+    });
+    req.on('end', () => { if (!over) resolve(Buffer.concat(chunks)); });
+    req.on('error', (e) => { if (!over) reject(e); });
   });
 }
 
@@ -5280,7 +5316,7 @@ async function handleStt(req, res) {
         method: 'POST',
         headers: { 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json', 'HTTP-Referer': 'https://localhost', 'X-Title': 'STARNET' },
         body: JSON.stringify(payload(model))
-      }));
+      }, 120000));
     } catch (e) { lastReason = 'network: ' + ((e && e.message) || e); continue; }
     if (!r.ok) {
       let detail = ''; try { detail = (await r.text()).slice(0, 200); } catch (_) {}
@@ -5296,15 +5332,26 @@ async function handleStt(req, res) {
   return degrade(lastReason);
 }
 
-function readBody(req, max) {
+function readBody(req, max, res) {
   // Accumulate raw Buffers and decode ONCE at the end. The old `b += c` did a per-chunk toString(), which
   // mangles a multi-byte UTF-8 char (emoji, CJK, accented) that happens to be SPLIT across two TCP chunks —
   // each half decodes to replacement chars. Byte-counting for the cap stays correct (Buffer.length is bytes).
+  // Over-limit: answer 413 cleanly (when a res is passed) BEFORE destroying, so the client sees "too large"
+  // rather than a mid-request connection reset. Backward compatible — callers that omit res keep old behavior.
   return new Promise((resolve, reject) => {
-    const chunks = []; let n = 0;
-    req.on('data', c => { n += c.length; if (n > max) { reject(new Error('body too large')); req.destroy(); } else chunks.push(c); });
-    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
-    req.on('error', reject);
+    const chunks = []; let n = 0; let over = false;
+    req.on('data', c => {
+      if (over) return;
+      n += c.length;
+      if (n > max) {
+        over = true;
+        try { if (res && !res.headersSent) { res.writeHead(413, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify({ error: 'request body too large' })); } } catch (_) {}
+        const e = new Error('body too large'); e.statusCode = 413; e.tooLarge = true;
+        reject(e); try { req.destroy(); } catch (_) {}
+      } else chunks.push(c);
+    });
+    req.on('end', () => { if (!over) resolve(Buffer.concat(chunks).toString('utf8')); });
+    req.on('error', (e) => { if (!over) reject(e); });
   });
 }
 
