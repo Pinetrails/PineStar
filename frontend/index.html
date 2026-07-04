@@ -304,7 +304,7 @@
       <div class="bb-menu" role="menu">
         <button class="bb" data-term="agents">☻ AGENTS</button>
         <button class="bb" id="bb-roster" title="RECRUITMENT BAY — browse specialist presets and deploy one to your agent">☰ ROSTER</button>
-        <button class="bb" id="bb-summon" title="SUMMON — wake a NEW agent onto your crew; task it in its own workstream">＋ SUMMON</button>
+        <button class="bb" id="bb-summon" data-hint="workstream" title="SUMMON — wake a NEW agent onto your crew; task it in its own workstream">＋ SUMMON</button>
         <button class="bb" data-term="commander" title="COMMANDER DOSSIER — what the station has learned about you (local-first; you own it)">◈ COMMANDER</button>
       </div>
     </div>
@@ -312,8 +312,8 @@
       <button class="bb-grp" aria-haspopup="true" aria-expanded="false">▤ WORK<span class="bb-grp-dot"></span></button>
       <div class="bb-menu" role="menu">
         <button class="bb" data-term="tasks">▤ TASKS</button>
-        <button class="bb" id="bb-missions" title="RECIPE LIBRARY — launch a ready-made recipe into a fresh workstream">❒ RECIPES</button>
-        <button class="bb" data-term="routines">⏱ ROUTINES</button>
+        <button class="bb" id="bb-missions" data-hint="recipe" title="RECIPE LIBRARY — launch a ready-made recipe into a fresh workstream">❒ RECIPES</button>
+        <button class="bb" data-term="routines" data-hint="routine">⏱ ROUTINES</button>
         <button class="bb" data-term="quests" title="QUEST LOG — your real progress as quests: get-to-know-you, achievements, and any waiting idea (nothing is gated)">⚑ QUESTS</button>
       </div>
     </div>
@@ -322,7 +322,7 @@
       <div class="bb-menu" role="menu">
         <button class="bb" id="bb-build" title="BUILD — lay out your station: place rooms, run corridors, paint decks">⚒ BUILD STATION</button>
         <button class="bb" data-term="manual" title="FIELD MANUAL — every prop and mechanic: what's real, what's for show, and how to wire work">▦ MANUAL</button>
-        <button class="bb" data-term="skills">✦ SKILLS</button>
+        <button class="bb" data-term="skills" data-hint="skill">✦ SKILLS</button>
         <button class="bb" data-term="connectors">⇄ TOOLSETS</button>
       </div>
     </div>
@@ -424,6 +424,9 @@
 <script src="app/classify.js"></script>
 <script src="app/friendlyerror.js"></script>
 <script src="app/diagnostics.js"></script><!-- T3.9: one-click COPY DIAGNOSTICS (paste-ready, secret-free bug report) -->
+<script src="app/glossary.js"></script><!-- UX Wave-0: term -> one-sentence beginner map (data source for the hint layer) -->
+<script src="app/hint.js"></script><!-- UX Wave-0: shared data-hint tooltip layer (delegation → late-rendered windows work); loads after glossary.js -->
+<script src="app/armconfirm.js"></script><!-- UX Wave-0: reusable 2-step arm/confirm helper (opt-in; existing call sites unchanged) -->
 <script src="app/agentid.js"></script>
 <script src="app/workstreams.js"></script>
 <script src="app/channels.js"></script>
