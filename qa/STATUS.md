@@ -121,3 +121,4 @@ node scripts/qa/ledger.mjs --status
 - 2026-07-03 agent/chan-routing -> trunk 451f05c2: channel-agnostic /agents /talk /model at hub layer; gate test:fast + test:http GREEN
 - 2026-07-03 agent/comms-picker -> trunk: COMMS agent selector top bar + roster-backed model readout; gate test:fast GREEN
 - 2026-07-03 agent/logo-crisp -> 5715753a (ff from 08d6bfec): STARNET topbar logo hoisted above CRT glass (body-level z960, brand-locked amber glow, anchor-seat layout); test:fast GREEN, live-verified on dev seed :8817
+- 2026-07-03 agent/couch-zsort -> trunk 072bf6c4 (--no-ff): couch y-sorts behind ANY seated body, not just the hero — a crew agent lounging on a couch rendered BEHIND it on north/side approach (draw seam wired hero-only); now every sitter sorts by seatPy w/ couch at seatPy-1. test:fast GREEN; deterministic draw-order sim (real consts T=12) OLD 2/3 behind -> NEW 0/3, hero path byte-identical; browser pixel proof deferred (preview pool full).
