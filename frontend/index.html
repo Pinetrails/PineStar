@@ -179,10 +179,17 @@
 </section>
 
 <!-- ============ GAME ============ -->
+<!-- BRAND MARK — deliberately OUTSIDE the .screen sections: it must paint ABOVE the CRT glass
+     overlays (body::before/::after at z 940/950) so the amber wordmark stays crisp instead of
+     being tinted by the themed top-glow and striped by the scanlines. A .screen is a z-index:10
+     stacking context, so nothing inside one can ever out-stack the glass. #logo-anchor below
+     reserves its seat in the topbar; app.js positionLogo() keeps the two aligned. -->
+<div id="logo"><img class="logo-img" src="assets/brand/starnet-logo.png" alt="STARNET"><span class="logo-sub">AI-AGENT HARNESS</span></div>
+
 <section id="screen-game" class="screen">
 
   <header id="topbar">
-    <div id="logo"><img class="logo-img" src="assets/brand/starnet-logo.png" alt="STARNET"><span class="logo-sub">AI-AGENT HARNESS</span></div>
+    <div id="logo-anchor" aria-hidden="true"></div>
     <div class="tb-stats">
       <!-- AGENT/MODEL are intentionally NOT shown in the HUD: a station runs many agents, so a single
            name+model here misrepresents the crew. Kept hidden as the focused-agent data source that

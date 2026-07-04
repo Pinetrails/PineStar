@@ -31,7 +31,23 @@ const App = (() => {
   function show(id) {
     document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
     el(id).classList.add('active');
+    positionLogo();
   }
+
+  // the hoisted brand mark (#logo — fixed above the CRT glass, see style.css) tracks the seat
+  // #logo-anchor reserves in the topbar: the anchor takes the logo's natural width so the gauge
+  // cluster never slides under it, and the logo takes the anchor's on-screen spot.
+  function positionLogo() {
+    const logo = el('logo'), anchor = el('logo-anchor'), bar = el('topbar');
+    if (!logo || !anchor || !bar) return;
+    const game = el('screen-game');
+    if (!game || !game.classList.contains('active')) return;   // hidden screens have no geometry
+    anchor.style.width = logo.offsetWidth + 'px';
+    const a = anchor.getBoundingClientRect(), b = bar.getBoundingClientRect();
+    logo.style.left = a.left + 'px';
+    logo.style.top = (b.top + (b.height - logo.offsetHeight) / 2) + 'px';
+  }
+  if (typeof window !== 'undefined') window.addEventListener('resize', positionLogo);
 
   function refreshUsage() {
     // Broad lifetime token totals are intentionally not surfaced in the chrome.
