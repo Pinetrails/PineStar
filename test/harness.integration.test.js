@@ -23,6 +23,7 @@ const { makeBrowserTools } = require('../sidecar/tools/builtin/browser.js');
 const { makeDesktopTools } = require('../sidecar/tools/builtin/desktop.js');
 const { makeFsTools } = require('../sidecar/tools/builtin/fs.js');
 const { makeNotebookTools } = require('../sidecar/tools/builtin/notebook.js');
+const { makeWidgetTools } = require('../sidecar/tools/builtin/widgets.js');
 const { makeTodoTool } = require('../sidecar/tools/builtin/todo.js');
 const { makeRecallTool } = require('../sidecar/tools/builtin/recall.js');
 const { makeTranscriptStore } = require('../sidecar/transcriptstore.js');
@@ -81,6 +82,7 @@ const fixture = {
   makeDesktopTools({ opener: async () => 'launched' }).register(registry);
   makeFsTools({ fsp, pathMod: path, root: ROOT, limits: { writeBytes: 1 << 20, readReturn: 24000 } }).register(registry);
   makeNotebookTools({ store: new Map(), clock: { now: () => 0 } }).register(registry);
+  makeWidgetTools({ store: new Map(), clock: { now: () => 0 } }).register(registry);   // WIDGET RAILS Phase 2: widget.set rides the notebook (memory) grant
   makeTodoTool({ store: new Map() }).register(registry);
   makeRecallTool({ transcriptStore: makeTranscriptStore({ io: { readAll() { return []; }, append() {} }, clock: { now: () => 0 } }) }).register(registry);
   makeSkillTools({ store: makeSkillStore({ io: { readAll() { return []; }, append() {} }, clock: { now: () => 0 } }) }).register(registry);
@@ -98,7 +100,7 @@ const fixture = {
   const capCtx = makeCapCtx(resolved, { emit, consent, timeoutMs: 5000 });
 
   // ---- DRIFT GUARDS (these alone would have caught both default-path showstoppers) ----
-  const EXPECTED = ['web_search', 'web_fetch', 'browser.navigate', 'browser.snapshot', 'browser.click', 'browser.type', 'browser.scroll', 'browser.back', 'browser.press', 'browser.console', 'browser.dialog', 'browser.get_text', 'browser.vision', 'desktop.open', 'fs.read', 'fs.write', 'fs.list', 'fs.search', 'fs.append', 'fs.edit', 'fs.patch', 'notebook.read', 'notebook.write', 'notebook.feedback', 'recall_conversation', 'skill.write', 'skill.manage', 'skill.list', 'skill.view', 'todo'];
+  const EXPECTED = ['web_search', 'web_fetch', 'browser.navigate', 'browser.snapshot', 'browser.click', 'browser.type', 'browser.scroll', 'browser.back', 'browser.press', 'browser.console', 'browser.dialog', 'browser.get_text', 'browser.vision', 'desktop.open', 'fs.read', 'fs.write', 'fs.list', 'fs.search', 'fs.append', 'fs.edit', 'fs.patch', 'notebook.read', 'notebook.write', 'notebook.feedback', 'recall_conversation', 'skill.write', 'skill.manage', 'skill.list', 'skill.view', 'todo', 'widget.set'];
   A.eq(resolved.tools.slice().sort(), EXPECTED.slice().sort(), 'office objects resolve to the full toolset (object=capability is real)');
   for (const name of EXPECTED) A.ok(registry.get(name), 'tool registered: ' + name);
 

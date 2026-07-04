@@ -49,4 +49,39 @@ A.eq(s.top.length + s.bot.length, 0, 'a null store → empty rails, never a thro
 s = Widgets._sanitizeLayout({ top: 'nope', bot: 42 }, KNOWN);
 A.eq(s.top.length + s.bot.length, 0, 'non-array rails → empty rails');
 
+/* ============================ 5. feed:* layout ids (agent-fed pins survive) ============================ */
+
+s = Widgets._sanitizeLayout({ top: ['feed:app-revenue', 'runs24'], bot: ['feed:Bad Id', 'feed:'] }, KNOWN);
+A.eq(s.top.join(','), 'feed:app-revenue,runs24', 'a well-formed feed pin survives sanitize (its record may poll in later)');
+A.eq(s.bot.length, 0, 'malformed feed ids are dropped');
+
+/* ============================ 6. sanitizeFeedRecord (trust nothing off the wire) ============================ */
+
+let r = Widgets._sanitizeFeedRecord({ id: 'app-revenue', label: 'App Revenue', value: '$1,240', sub: 'today', agentId: 'nova', updatedAt: 777 });
+A.eq(r.slug + '|' + r.label + '|' + r.value + '|' + r.sub + '|' + r.agentId + '|' + r.updatedAt,
+  'app-revenue|App Revenue|$1,240|today|nova|777', 'a clean record round-trips');
+
+A.eq(Widgets._sanitizeFeedRecord({ id: 'Bad Id!', value: 'x' }), null, 'a malformed id → null (never rendered)');
+A.eq(Widgets._sanitizeFeedRecord({ id: 'empty' }), null, 'no value AND no list → null (never an empty gauge)');
+A.eq(Widgets._sanitizeFeedRecord(null), null, 'garbage → null, never a throw');
+
+r = Widgets._sanitizeFeedRecord({ id: 'news', list: ['a', 'b', 'c', 'd', 'e', 'f', 'g'], agentId: 'scout' });
+A.eq(r.list.length, 5, 'a ticker keeps at most 5 lines');
+A.eq(r.value, null, 'a pure ticker has no big value');
+
+r = Widgets._sanitizeFeedRecord({ id: 'long', value: 'V'.repeat(99), label: 'L'.repeat(99) });
+A.ok(r.value.length <= 24 && r.label.length <= 28, 'over-long strings truncate defensively');
+
+r = Widgets._sanitizeFeedRecord({ id: 'noname', value: '1' });
+A.eq(r.label, 'NONAME', 'a missing label falls back to the slug');
+A.eq(r.agentId, 'agent', 'a missing agentId falls back honestly');
+
+/* ============================ 7. fmtAge (a trust cue, coarse on purpose) ============================ */
+
+A.eq(Widgets._fmtAge(10000, 0), 'now', 'under 45s reads "now"');
+A.eq(Widgets._fmtAge(3 * 60000, 0), '3m', 'minutes');
+A.eq(Widgets._fmtAge(2 * 3600000, 0), '2h', 'hours');
+A.eq(Widgets._fmtAge(4 * 86400000, 0), '4d', 'days');
+A.eq(Widgets._fmtAge(0, 999999), 'now', 'a future timestamp clamps to "now", never negative');
+
 console.log('widgets.test.js OK');

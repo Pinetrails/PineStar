@@ -30,7 +30,8 @@ const ToolProps = (() => {
     web_fetch: 'dish',
     'desktop.open': 'dish',   // opens on the user's real screen; a web-family (dish) grant
     todo: 'notebook',
-    recall_conversation: 'notebook'
+    recall_conversation: 'notebook',
+    'widget.set': 'notebook'   // WIDGET RAILS Phase 2: agent-fed rail readout — a notebook-object (memory) grant
   };
   // family prefix -> prop type (checked after EXACT; first match wins)
   const PREFIX = [
