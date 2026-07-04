@@ -436,7 +436,7 @@
   }
 
   /* computeGraceMs(schedule, anchor, defaultTz?) — how late a recurring fire may be and still run once
-     (vs being declared a stale missed run and fast-forwarded). Mirrors Hermes's half-period clamped
+     (vs being declared a stale missed run and fast-forwarded). Mirrors the reference harness's half-period clamped
      2min..2h. The cron branch measures the inter-fire gap in the schedule's tz so a DST-stretched day
      still yields a sane grace. */
   function computeGraceMs(schedule, anchor, defaultTz) {

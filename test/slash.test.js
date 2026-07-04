@@ -71,7 +71,7 @@ const S = require('../sidecar/slash.js');
   A.eq(mcp.directive.action, 'reload-mcp', 'reload_mcp dispatch runs reload-mcp action');
   const ver = S.dispatch('/v');
   A.eq(ver.directive.action, 'version', 'v alias dispatches to version');
-  // slash-parity: the Hermes-parity commands resolve, aliases canonicalize, and args flow through.
+  // slash-parity: the reference-harness commands resolve, aliases canonicalize, and args flow through.
   A.eq(S.dispatch('/clear').directive, { type: 'client', action: 'clear', args: '' }, 'clear dispatches to clear');
   A.eq(S.dispatch('/cls').command.name, 'clear', 'cls alias canonicalizes to clear');
   A.eq(S.dispatch('/history 5').directive, { type: 'client', action: 'history', args: '5' }, 'history dispatch carries the count arg');

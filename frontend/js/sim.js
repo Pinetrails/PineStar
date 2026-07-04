@@ -800,7 +800,7 @@ const SIM = (() => {
     rollObjectives();
     // opening salvo
     ops('STARNET STATION OS v2.077 — all systems nominal', 'gold');
-    ops('17 agents online. Harnesses: HERMES ×16, OPENCLAW ×1', 'good');
+    ops('17 agents online. Harnesses: STARNET ×16, OPENCLAW ×1', 'good');
     chat('ULTRON', 'Commander on deck. Station is yours. Speak a directive and I will make it real. All departments: report readiness.');
     chat('NOVA', 'research lab warm. I have three Etsy scans queued. the meta shifted overnight — it always does.');
     chat('LEDGER', 'treasury online. current burn is ' + U.money(DATA.AGENTS.reduce((s, a) => s + DATA.DAILY_SUBS[a.model], 0)) + '/day in model subs. make it worth it.');

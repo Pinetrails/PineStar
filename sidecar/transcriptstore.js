@@ -3,7 +3,7 @@
    The spend ledger records the COST of a run; runstore.js records the OUTCOME (one line per finished
    run). NEITHER keeps WHAT was said: `runstore.js`'s own header notes "the full message log is discarded
    once the SSE stream closes." So a sidecar restart wipes the agent's memory of the actual dialogue — the
-   single most jarring day-to-day regression vs a Hermes-class agent (which resumes its transcript). This
+   single most jarring day-to-day regression vs a production-class agent (which resumes its transcript). This
    module closes that: an append-only, per-stream conversation log on the sidecar's own disk (the app-data
    WORKSPACES dir that survives a browser wipe), so a restart can reload the recent dialogue per workstream.
 

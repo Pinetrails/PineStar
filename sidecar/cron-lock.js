@@ -1,6 +1,6 @@
 /* sidecar/cron-lock.js — the cross-process advisory lock that makes cron fire EXACTLY ONCE (G4.3).
 
-   The problem (parity Hermes' .tick.lock / .jobs.lock): the in-process tickInFlight guard
+   The problem (mirrors the reference harness' .tick.lock / .jobs.lock): the in-process tickInFlight guard
    (cron-driver.applyTick) stops a re-entrant tick in ONE process, but two sidecars sharing one
    WORKSPACES dir — or a second sidecar booting and running its resume-reconcile while the first's
    timer fires — would BOTH read the same due store and BOTH launch the run (double-fire), and a CRUD

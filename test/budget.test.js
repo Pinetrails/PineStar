@@ -65,7 +65,7 @@ function collector() { const evs = []; return { emit: (name, payload) => evs.pus
   A.eq(c.evs.filter(e => e.name === 'budget.threshold').length, 2, 'a distinct cap-level threshold fired');
 }
 
-// ---- live spend across DISTINCT runs shares the pool (the global-pool guard Hermes lacked) ----
+// ---- live spend across DISTINCT runs shares the pool (the global-pool guard the reference harness lacked) ----
 {
   const b = makeBudget({ caps: { global: 10 }, ledger: fakeLedger(0, 0), clock: { now: () => 0 } });
   A.eq(b.check('r1', 'a', 6, 0, null), null, 'run1 $6 of the $10 global pool -> ok');

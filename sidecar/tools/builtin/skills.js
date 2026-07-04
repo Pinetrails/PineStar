@@ -1,7 +1,7 @@
 /* sidecar/tools/builtin/skills.js - runtime skill library tools.
 
    skill.list and skill.view provide progressive disclosure. skill.manage is
-   the Hermes-style lifecycle surface. skill.write remains as a compatibility
+   the reference-harness-style lifecycle surface. skill.write remains as a compatibility
    wrapper for simple create/update flows.
 */
 'use strict';

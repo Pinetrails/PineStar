@@ -75,7 +75,7 @@
 
   const textOf = r => (r && (r.content != null ? r.content : ((r.title || '') + ' ' + (r.body || '')))) || '';
 
-  // near-duplicate guard (Hermes-parity Jaccard; mirrors memcore.tokenJaccard, inlined so reflect stays standalone):
+  // near-duplicate guard (parity with the reference harness' Jaccard; mirrors memcore.tokenJaccard, inlined so reflect stays standalone):
   // exact-text dedup misses PARAPHRASES ("prefers npm start" vs "the user prefers running npm start"), which would
   // re-surface a belief the user already kept and clutter the turn-in beat. Drop a candidate >= SIM_THRESHOLD-similar.
   const SIM_THRESHOLD = 0.6;

@@ -3,7 +3,7 @@
    Composes the two pure pieces into a ready adapter: the generic transport-agnostic pipeline
    (channels/adapter.js) + the Bot API fetch transport (channels/telegram.transport.js) + a Telegram-specific
    `normalize(update)` that turns a raw Bot API Update into the adapter's neutral shape. This is the analogue of
-   a Hermes platform subclass: it supplies ONLY the wire translation (normalize) and the limits (4096), and
+   a platform subclass in the reference harness: it supplies ONLY the wire translation (normalize) and the limits (4096), and
    inherits the loop/offset/admission/onInbound/send/backoff from the generic adapter.
 
      makeTelegramAdapter({ fetch, token, apiBase?, allowedChats?, onInbound, onCallback?, onStatus?, clock,

@@ -104,7 +104,7 @@
     const limits = o.limits || {};
     const maxIters = limits.maxIters || 40;
     // GRACE TURN (P0.3): when a run hits the iteration ceiling, give it ONE final no-tools turn to deliver its
-    // best answer instead of dead-stopping at 'max_iters' (the Hermes grace-call pattern). Default on; pass
+    // best answer instead of dead-stopping at 'max_iters' (the reference harness's grace-call pattern). Default on; pass
     // limits.grace === false to test/force the raw hard cap. Bounded: exactly one grace turn per run.
     const graceEnabled = (limits.grace !== false);
     let graceUsed = false;
@@ -130,7 +130,7 @@
     // OPTIONAL provider FALLBACK chain — the consumer for errorClass's shouldFallback/shouldRotateCredential hints
     // (previously computed then discarded). On a classified failover (overloaded/5xx/auth/billing/rate-limit/
     // model-not-found) the loop advances to the next entry and RETRIES the same turn instead of dying — the
-    // Hermes try_activate_fallback pattern. Each entry: { provider, model? }. Empty = no fallback (existing
+    // reference harness's try_activate_fallback pattern. Each entry: { provider, model? }. Empty = no fallback (existing
     // callers byte-identical). Cost stays honest when entries reuse the primary provider (shared priceOf catalog).
     const fallbacks = Array.isArray(o.fallbacks) ? o.fallbacks.slice() : [];
     let fbIndex = 0;
@@ -141,7 +141,7 @@
     const onFallback = (typeof o.onFallback === 'function') ? o.onFallback : null;
     let activeCredKey = (o.credKey != null) ? o.credKey : null;
     // OPTIONAL todo re-injection: after a compaction folds older turns away, re-append the agent's ACTIVE task
-    // plan so a long run never loses it (Hermes' todo survives context compression the same way). A function
+    // plan so a long run never loses it (the reference harness's todo survives context compression the same way). A function
     // returning the plan text (or null); absent = no-op (existing callers byte-identical).
     const todoNote = (typeof o.todoNote === 'function') ? o.todoNote : null;
     // OPTIONAL LIVE STEERING (additive): a function drained ONCE per iteration, at the top of the loop, that
@@ -162,7 +162,7 @@
     const lgFails = new Map();    // signature (name\0args) -> failure count
     const lgWarned = new Set();   // signatures already nudged (the warn fires once)
 
-    // NO-OP TURN REFUND (Hermes iteration-budget parity): a turn that produced NO tool call AND no NEW assistant
+    // NO-OP TURN REFUND (reference-harness iteration-budget parity): a turn that produced NO tool call AND no NEW assistant
     // content (empty/whitespace text, OR text byte-identical to the immediately-prior assistant turn) is wasted work
     // — a pure failover/compaction retry that streamed nothing usable. It should NOT count against the effective
     // iteration budget. But an unbounded refund could, in principle, let a pathological all-no-op provider be

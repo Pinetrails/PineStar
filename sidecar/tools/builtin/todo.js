@@ -3,7 +3,7 @@
    (default) replaces the whole list. State is the agent's own working memory (per-agent, via the same
    injected kv store the notebook uses) — no consent, no outward effect, no network. The ACTIVE plan is
    re-injected after a context compaction (loop.js) so a long run never loses its task list. Replicates
-   Hermes' todo tool (tools/todo_tool.py): id/content/status items, list-order = priority, one in_progress
+   the reference harness's todo tool: id/content/status items, list-order = priority, one in_progress
    at a time, bounded so a replayed/oversized list can't defeat the compaction it rides through.
 
    makeTodoTool({ store }) -> { todoTool, register(reg) }
@@ -35,7 +35,7 @@
     if (!STATUSES[status]) status = 'pending';
     return { id, content: capContent(t && t.content), status };
   }
-  // collapse duplicate ids, keeping the LAST occurrence in its first position (Hermes parity)
+  // collapse duplicate ids, keeping the LAST occurrence in its first position (parity with the reference harness)
   function dedupeById(todos) {
     const lastIndex = {};
     todos.forEach((t, i) => { const id = String((t && t.id) != null ? t.id : '').trim() || '?'; lastIndex[id] = i; });

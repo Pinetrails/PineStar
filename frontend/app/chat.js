@@ -855,7 +855,7 @@ const Chat = (() => {
     fileBlobUrl(title, agentId).then(u => { img.src = u; a.href = u; }).catch(() => {});
     autoscroll();
   }
-  // CLIENT-SIDE MEDIA KIND, keyed off the file extension (the Hermes media.ts model): the backend doesn't
+  // CLIENT-SIDE MEDIA KIND, keyed off the file extension (the reference harness's extension-keyed media model): the backend doesn't
   // declare "this is a video" — we decide from the path, so any .mp4 an agent writes/downloads renders as a
   // player with zero backend wiring. Unknown extensions fall through to 'file' (the plain clickable row).
   const MEDIA_KIND_BY_EXT = {
@@ -874,7 +874,7 @@ const Chat = (() => {
       (tok ? '&token=' + encodeURIComponent(tok) : '');
   }
   // append a small "open in a new tab" fallback link — shown when an inline player can't decode the file
-  // (e.g. an .mkv/.avi the browser won't play), mirroring Hermes's OpenMediaButton.
+  // (e.g. an .mkv/.avi the browser won't play), mirroring the reference harness's OpenMediaButton.
   function openFallback(parent, label, url, title, agentId) {
     if (parent.querySelector('.media-fallback')) return;   // once
     const a = document.createElement('a');
@@ -3136,7 +3136,7 @@ const Chat = (() => {
   }
   // /clear — wipe the rendered COMMS panel and start a fresh workstream. Shares newWorkstreamCommand's create+load
   // (which itself clears the log via load()), so it can NEVER touch another stream's in-flight run: it only ever
-  // spins up a brand-new stream and rebinds the panel to it. Purely additive over /new (aliased for Hermes parity).
+  // spins up a brand-new stream and rebinds the panel to it. Purely additive over /new (aliased for parity with the reference harness).
   function clearCommand(args) {
     newWorkstreamCommand(args);
     if (log) log.innerHTML = '';   // belt-and-suspenders: guarantee a clean panel even if load() left an empty-state hint
@@ -3786,7 +3786,7 @@ const Chat = (() => {
         onToolResult: ev => { if (!ev.isError) runToolsOk++; const nm = callNames[ev.callId] || 'tool'; const t = (ev.isError ? '✕ ' : '◀ ') + nm + ' · ' + brief(ev.summary || (ev.isError ? 'error' : 'ok')) + (ev.isError ? ' — failed' : '') + (ev.ms ? ' (' + fmtMs(ev.ms) + ')' : ''); Channels.addTool(ws.id, t, ev.isError); presenceToolResult(ws); if (isActiveWs(ws)) resolveChip(ev, nm); },
         onDeliverable: ev => {
           // Any produced file is an openable product (image_generate emits kind:'image', fs.write emits
-          // kind:'file'). How we RENDER it is decided client-side from the EXTENSION (the Hermes model), not
+          // kind:'file'). How we RENDER it is decided client-side from the EXTENSION (the reference harness's model), not
           // from the backend's kind — so a .mp4/.webm the agent writes becomes an inline player and a .png a
           // thumbnail, with no backend change. Unknown extensions fall back to the plain clickable row.
           if ((ev.kind === 'file' || ev.kind === 'image') && !seenDeliv[ev.title]) {

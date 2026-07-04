@@ -1,7 +1,7 @@
-/* sidecar/channels/adapter.js — the generic, transport-agnostic messaging-channel adapter (Hermes-derived, C1).
+/* sidecar/channels/adapter.js — the generic, transport-agnostic messaging-channel adapter (C1).
 
-   Hermes attaches an agent to ANY messaging platform through one transport-agnostic base class
-   (`BasePlatformAdapter`) that owns the inbound poll/normalize/admission pipeline and a `send`, and
+   The reference harness attaches an agent to ANY messaging platform through one transport-agnostic base
+   class (`BasePlatformAdapter`) that owns the inbound poll/normalize/admission pipeline and a `send`, and
    translates the wire format into two normalized shapes — inbound `MessageEvent`, outbound `SendResult`.
    The agent runtime is reached through a single injected message-handler callback; the base imports no
    LLM/agent SDK. We re-derive the SMALLEST honest version of that shape for our Node sidecar:
@@ -12,8 +12,8 @@
 
    The adapter is PURE and platform-agnostic: it owns the long-poll loop, offset tracking, the DM/allowlist
    admission gate, the timestamp stamp (from the injected clock), and the `onInbound(InboundMessage)` push
-   to the runtime — it knows nothing of the loop/provider/agent (the runtime-agnostic half of Hermes's
-   contract). All wire I/O lives behind the injected `transport` (a thin fetch wrapper supplied by the
+   to the runtime — it knows nothing of the loop/provider/agent (the runtime-agnostic half of the reference
+   harness's contract). All wire I/O lives behind the injected `transport` (a thin fetch wrapper supplied by the
    composition root); every test injects a FAKE transport, so no test ever hits the network. The
    PLATFORM-SPECIFIC parse of a raw update is the injected `normalize(rawUpdate)` (Telegram supplies it in
    C2), keeping `transport` a dumb HTTPS shim.
@@ -183,7 +183,7 @@
       },
 
       // send ONE message (the hub chunks long replies to MAX_MESSAGE_LENGTH before calling this). A transport
-      // result with { ok:false, retryable:true } gets exactly ONE bounded resend (Hermes _send_with_retry, minimal),
+      // result with { ok:false, retryable:true } gets exactly ONE bounded resend (the reference harness's bounded-resend, minimal),
       // and on a 429 we WAIT out the server's retry_after (capped) first, so the resend lands after the flood window
       // instead of bouncing instantly into it.
       async send(chatId, text, sendOpts) {
@@ -197,7 +197,7 @@
         return r;
       },
 
-      // minimal identity (Hermes get_chat_info -> {name,type}); transports may override with a richer lookup.
+      // minimal identity (the reference harness's chat-info lookup -> {name,type}); transports may override with a richer lookup.
       chatInfo(chatId) {
         if (typeof transport.chatInfo === 'function') return transport.chatInfo(String(chatId));
         return { id: String(chatId), type: allowed.has(String(chatId)) ? 'group' : 'dm' };

@@ -34,8 +34,8 @@
       const d = (typeof delta === 'number' && isFinite(delta)) ? delta : 0;
       const v = t + d * 0.15; return v < 0 ? 0 : v > 1 ? 1 : v;
     };
-    // agent-feedback deltas (Hermes fact_feedback parity: asymmetric — penalize harder than reward, so one
-    // bad recall sinks faster than one good recall rises). Expressed in OUR delta units (×0.15 in nextTrust):
+    // agent-feedback deltas (parity with the reference harness's fact feedback: asymmetric — penalize harder
+    // than reward, so one bad recall sinks faster than one good recall rises). Expressed in OUR delta units (×0.15 in nextTrust):
     // helpful +0.075, unhelpful −0.15 — both WEAKER than a user turn-in keep (+2 → +0.30): the human still wins.
     const HELPFUL_DELTA = 0.5, UNHELPFUL_DELTA = -1.0;
     const KEY = aid => 'notebook:' + (aid || 'agent');
@@ -133,7 +133,7 @@
       }
     };
 
-    // notebook.feedback — Hermes fact_feedback parity ("good facts rise, bad facts sink"). Rating a recalled
+    // notebook.feedback — parity with the reference harness's fact feedback ("good facts rise, bad facts sink"). Rating a recalled
     // memory nudges its TRUST (a stat), never its content and never deletes it — fully consistent with the
     // user-owns-memory model (the agent gives a soft signal, exactly like the user's turn-in verdict; the user
     // still owns edit/forget). Pairs with trust-decay: a re-affirmed memory resets its fade (lastFeedbackAt),

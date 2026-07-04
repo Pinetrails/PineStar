@@ -1,6 +1,6 @@
 /* node test/cron.run-now.test.js - source-locks manual routine Run Now visibility.
 
-   Hermes had this exact class of bug: a manual cron run reported success but did
+   The reference harness had this exact class of bug: a manual cron run reported success but did
    not actually fire through the same observable path. In StarNet the important
    contract is that /api/cron/run is not only a panel-local NDJSON stream: it
    must also place a cron work item and mirror lifecycle over SSE so the floor

@@ -1,5 +1,5 @@
 /* sidecar/budget.js — cross-run spend governance over the ledger. Closes the two runaway-cost
-   holes the parity study flagged that Hermes never had: a per-DAY ceiling and a GLOBAL pool shared
+   holes the parity study flagged that the reference harness never had: a per-DAY ceiling and a GLOBAL pool shared
    across every agent/subagent. (The per-RUN ceiling stays the loop's own maxCostUsd hard stop;
    this layer owns the cross-run scopes, which need the persisted ledger to evaluate.)
 

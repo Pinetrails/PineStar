@@ -51,7 +51,7 @@ const { makeSkillPrefs } = require('../sidecar/skills/prefs.js');
   A.ok(by['test-driven-development'].requires.indexOf('workbench') >= 0, 'TDD requires the workbench object');
   A.eq(by['test-driven-development'].default, false, 'TDD is off by default');
 
-  // ---- C2. the EXPANDED bundled catalog (Lane B port: 15-25 Hermes skills added) ----
+  // ---- C2. the EXPANDED bundled catalog (Lane B port: 15-25 reference-harness skills added) ----
   A.ok(skills.length >= 25, 'the bundled library is now a rich catalog (>=25 recipes), not the original 9');
 
   // every recipe on disk carries the required frontmatter fields and a real body

@@ -57,7 +57,7 @@ const { makeClock } = require('../shared/clock-rng.js');
   A.eq(declined.proposals.length, 1, 'a previously-DISCARDED belief (content-only record) is never re-proposed');
   A.eq(declined.proposals[0].content, 'keeps staging databases isolated', 'a distinct belief beside a declined one still surfaces');
 
-  // ---- near-duplicate (paraphrase) dedup: Jaccard, not just exact text (Hermes-parity) ----
+  // ---- near-duplicate (paraphrase) dedup: Jaccard, not just exact text (parity with the reference harness) ----
   const near = await reflect(run, {
     propose: () => 'PREFERENCE: Andrew prefers running npm start over serve\nFACT: the reactor gauge is cost-driven',
     clock: makeClock(0), redact, existing: [{ kind: 'profile', content: 'Andrew prefers npm start over serve' }]

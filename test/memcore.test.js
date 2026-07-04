@@ -104,7 +104,7 @@ A.eq(applyForget(dup(), 'note_3').records.length, 1, 'forget removes only ONE of
 A.eq(applyPin(dup(), 'note_3', true).records.filter(r => r.pinned).length, 1, 'pin sets only the first of a duplicate pair');
 A.eq(applyEdit(dup(), 'note_3', 'x').records.filter(r => r.content === 'x').length, 1, 'edit changes only the first of a duplicate pair');
 
-// ---- decayTrust: an unreinforced endorsement fades toward 0 (Hermes-parity trust decay) ----
+// ---- decayTrust: an unreinforced endorsement fades toward 0 (trust decay, parity with the reference harness) ----
 A.ok(decayTrust(0.8, 1000, 1000) === 0.8, 'no time elapsed -> trust unchanged');
 A.ok(Math.abs(decayTrust(0.8, 1000, 1000 + TRUST_HALFLIFE_MS) - 0.4) < 1e-9, 'one half-life halves the trust');
 A.ok(Math.abs(decayTrust(0.8, 1000, 1000 + 2 * TRUST_HALFLIFE_MS) - 0.2) < 1e-9, 'two half-lives quarter the trust');

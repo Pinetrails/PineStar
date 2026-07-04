@@ -95,7 +95,7 @@ const dcall = (name, args) => ({ id: 'c', name, args, argsRaw: JSON.stringify(ar
     A.ok(r2.content.indexOf('one') < r2.content.indexOf('two'), 'no ranker injected: falls back to store order, still returns matches');
   }
 
-  // ============ A1c. notebook.feedback — Hermes fact_feedback parity (trust nudge, asymmetric, no content change) ============
+  // ============ A1c. notebook.feedback — fact_feedback parity with the reference harness (trust nudge, asymmetric, no content change) ============
   {
     const { seq, emit } = setup();
     const store = memStore();
