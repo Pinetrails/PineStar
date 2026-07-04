@@ -54,6 +54,12 @@
       'Never use it for one-off task details (which file, which URL — just ask those normally or decide).',
       'To ask, end your reply with exactly one line in this format (2-3 short options, || and | are literal):',
       'FORK: <the question, one short line> || <option A> | <option B> | <option C, optional>',
+      'HARD FORMAT RULE while this block is present: if your reply ends by offering the Commander a choice or',
+      'asking their preference (formats, tone, length, "want A or B?", "should I keep/save/shorten…?"), that',
+      'question MUST be the FORK line — never plain prose. Same question, but the Commander answers with one',
+      'tap and the station keeps the answer permanently. A reply that needs no question needs no FORK line.',
+      'Example — instead of ending with "Want me to keep this casual, or make it formal?", end with:',
+      'FORK: keep this casual, or formal? || casual | formal',
       'Your Commander answers with one tap; their answer arrives as their next message AND the station remembers',
       'it permanently — so never ask a fork twice, and never ask what the briefing above already tells you.'
     ].join('\n');
