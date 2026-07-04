@@ -10,6 +10,37 @@
   backdrop-filter: blur(1px);
   animation: mkt-fade .14s ease-out;
 }
+/* CRT GLASS scanlines for the bay. The global scanline layer (style.css `body::after`, z950) can't
+   reach here — this scrim sits at z9000 and its ~72-90% black backdrop buries whatever's behind it, so
+   the bay would read as the ONE surface with no beam lines. Paint our own, over the console (pointer-
+   events:none), byte-for-byte matching `body::after` so it's indistinguishable from every window's glass.
+   SOURCE OF TRUTH for these stops = style.css `body::after` — retune both together. Respects `no-scan`. */
+.mkt-scrim::after {
+  content: ''; position: absolute; inset: 0; pointer-events: none; z-index: 20;
+  background:
+    repeating-linear-gradient(0deg,
+      rgba(0,0,0,0) 0px,
+      rgba(0,0,0,0) 1px,
+      rgba(0,0,0,0.13) 1.5px,
+      rgba(0,0,0,0.30) 2px,
+      rgba(0,0,0,0.13) 2.5px,
+      rgba(0,0,0,0) 3px),
+    repeating-linear-gradient(90deg, rgba(255,80,40,0.03) 0 1px, rgba(40,180,120,0.02) 1px 2px, rgba(60,120,255,0.03) 2px 3px);
+}
+@media (min-resolution: 1.75dppx) {
+  .mkt-scrim::after {
+    background:
+      repeating-linear-gradient(0deg,
+        rgba(0,0,0,0) 0px,
+        rgba(0,0,0,0) 1.5px,
+        rgba(0,0,0,0.13) 2.2px,
+        rgba(0,0,0,0.28) 3px,
+        rgba(0,0,0,0.13) 3.8px,
+        rgba(0,0,0,0) 4.5px),
+      repeating-linear-gradient(90deg, rgba(255,80,40,0.03) 0 1.5px, rgba(40,180,120,0.02) 1.5px 3px, rgba(60,120,255,0.03) 3px 4.5px);
+  }
+}
+body.no-scan .mkt-scrim::after { display: none; }
 @keyframes mkt-fade { from { opacity: 0; } to { opacity: 1; } }
 
 /* ---- the console frame ---- */
