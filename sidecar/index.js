@@ -583,6 +583,10 @@ const skillPrefs = makeSkillPrefs({ io: skillPrefsIo, clock: { now: () => Date.n
 const credPool = makeCredPool({ clock: { now: () => Date.now() } });
 
 const runs = new Map();          // runId -> AbortController (the kill path)
+// RECONCILIATION snapshot metadata: runId -> { agentId, startedAt, source }. Populated alongside every runs.set
+// (interactive/cron/workshop) and dropped in the same finally that deletes from `runs`, so it exactly tracks the
+// set of live runs. Backs GET /api/state/snapshot — only real per-run facts, never fabricated telemetry.
+const runsMeta = new Map();
 // LIVE STEERING: runId -> [pending Commander notes]. POST /api/run/steer appends; the loop's injected steer()
 // drains once per iteration (see runAgentLoop o.steer). A note only lands while the run is IN-FLIGHT (its runId
 // is still in `runs`); once the run ends the entry is dropped, so a stale steer can never reach a later run.
@@ -2108,6 +2112,7 @@ const server = http.createServer((req, res) => {
   if (req.method === 'GET' && req.url === '/api/spotify/status') return handleSpotifyStatus(req, res);
   if (req.method === 'POST' && req.url === '/api/spotify/disconnect') return handleSpotifyDisconnect(req, res);
   if (req.method === 'GET' && req.url === '/api/widgets') return handleWidgetsList(req, res);   // WIDGET RAILS Phase 2: the agent-fed readouts the chrome rails poll
+  if (req.method === 'GET' && req.url === '/api/state/snapshot') return handleStateSnapshot(req, res);   // reconnect reconciliation (frontend lane consumes it)
   if (req.method === 'GET' && req.url === '/api/cron') return handleCronList(req, res);
   if (req.method === 'POST' && req.url === '/api/cron') return handleCronCreate(req, res);
   if (req.method === 'POST' && req.url === '/api/cron/update') return handleCronUpdate(req, res);
@@ -2884,6 +2889,49 @@ function handleCronList(req, res) {
   res.end(JSON.stringify({ jobs: cronJobs, enabled: cronArmed, tickMs: CRON_TICK_MS }));
 }
 
+/* GET /api/state/snapshot — a RECONNECTION snapshot for the frontend (Lane E). After the SSE bridge drops and
+   reconnects, the app has no way to learn which runs/prompts were already in flight; it consumes this to rebuild
+   its live-state maps and CLEAR anything not present here (so a RUN clock never runs forever). Plain HTTP (no new
+   bus event, so the shared event contract is untouched). The frontend fetches it 404-tolerantly.
+
+   SHAPE (every field is backed by REAL in-memory server state — nothing is fabricated; truthful-telemetry law):
+     {
+       ts: <ms>,                                  // when this snapshot was taken (server clock)
+       runs: [ { runId, agentId, startedAt, source } ],   // live runs (runsMeta, tracks the `runs` kill-map exactly)
+                                                          //   source ∈ 'interactive' | 'cron' | 'workshop'
+       prompts: [ { runId, agentId, promptId } ],  // OPEN consent prompts awaiting a human (pendingByRun)
+       summons: [ { runId, requestId } ],          // OPEN team.summon requests awaiting the browser (pendingSummonByRun)
+       queues:  [ { agentId, depth } ]             // per-agent inbound work-item depth (queueDepth), depth>0 only
+     }
+   NOT INCLUDED (honesty): inflight tool-call glyph per agent — there is no cheap central in-memory source for the
+   agent's current tool name at snapshot time (it rides the per-run event stream), so it is omitted rather than
+   guessed. If a cheap source appears later, add a `tools:[{agentId,tool}]` field. */
+function handleStateSnapshot(req, res) {
+  const out = { ts: Date.now(), runs: [], prompts: [], summons: [], queues: [] };
+  try {
+    for (const [runId, meta] of runsMeta) {
+      out.runs.push({ runId: runId, agentId: (meta && meta.agentId) || null, startedAt: (meta && meta.startedAt) || null, source: (meta && meta.source) || null });
+    }
+  } catch (_) {}
+  try {
+    for (const [runId, pending] of pendingByRun) {
+      const meta = runsMeta.get(runId);
+      const agentId = (meta && meta.agentId) || null;
+      for (const promptId of pending.keys()) out.prompts.push({ runId: runId, agentId: agentId, promptId: promptId });
+    }
+  } catch (_) {}
+  try {
+    for (const [runId, pending] of pendingSummonByRun) {
+      for (const requestId of pending.keys()) out.summons.push({ runId: runId, requestId: requestId });
+    }
+  } catch (_) {}
+  try {
+    for (const [agentId, depth] of queueDepth) { if (depth > 0) out.queues.push({ agentId: agentId, depth: depth }); }
+  } catch (_) {}
+  res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify(out));
+}
+
 // POST /api/cron/arm — runtime one-click ENABLE/DISABLE of the scheduler (G4.6). body: { enabled:bool }.
 // Privileged: this route is behind the SAME x-starnet-token gate as the cron CRUD routes (rejectBadApiToken
 // runs before dispatch for private /api/* routes; /api/key has its own desktop IPC token), so a browser-driven
@@ -3044,7 +3092,8 @@ async function handleCronRun(req, res) {
   const ac = new AbortController();
   const runId = crypto.randomUUID();
   runs.set(runId, ac);
-  req.on('close', () => { ac.abort(); runs.delete(runId); });
+  runsMeta.set(runId, { agentId: job.agentId, startedAt: Date.now(), source: 'cron' });
+  req.on('close', () => { ac.abort(); runs.delete(runId); runsMeta.delete(runId); });
   const bus = { emit: (name, payload) => { try { res.write(JSON.stringify({ name, payload: redact(payload) }) + '\n'); } catch (_) {} } };
   const emit = wrapEmitDiag(makeEmitter(bus, e => { if (e && e.event !== 'tool.web') console.warn('[event]', e.kind, e.event, (e.errors || []).join(';')); }));
   // tee: stream every event to the watching browser AND capture the outcome so the last-run record is honest.
@@ -3073,6 +3122,7 @@ async function handleCronRun(req, res) {
     try { emit('agent.run.error', { agentId: job.agentId, runId: runId, message: state.errMsg, transient: false }); } catch (_) {}
   } finally {
     runs.delete(runId);
+    runsMeta.delete(runId);
     steerBuffers.delete(runId);      // drop any un-drained steering notes so they can't leak to a later run (mirror handleRun)
     const ok = !state.errMsg;
     try {
@@ -3178,6 +3228,7 @@ async function runWorkshopShift(agentId, opts) {
   const ac = o.signal ? null : new AbortController();
   const signal = o.signal || (ac && ac.signal);
   if (ac) runs.set(runId, ac);
+  runsMeta.set(runId, { agentId: id, startedAt: Date.now(), source: 'workshop' });
   const emit = typeof o.emit === 'function' ? o.emit : function () {};
   const prompt = workshopPrompt(runId, item);
   try { placeCronWorkitem(id, 'Workshop: ' + (item.title || 'build'), runId); } catch (_) {}
@@ -3190,7 +3241,7 @@ async function runWorkshopShift(agentId, opts) {
       runId: runId, streamId: 'workshop-' + runId, surface: 'autonomous', trigger: 'schedule', provider: provider, broadcast: !!o.broadcast
     });
   } catch (e) { threw = e; }
-  finally { if (ac) runs.delete(runId); steerBuffers.delete(runId); }   // drop un-drained steering notes (mirror handleRun)
+  finally { if (ac) runs.delete(runId); runsMeta.delete(runId); steerBuffers.delete(runId); }   // drop un-drained steering notes (mirror handleRun)
 
   // VALIDATE the manifest against the real files. Only a proven manifest emits workshop.built (truthful telemetry).
   const manifest = await validateWorkshopManifest(id, runId);
@@ -3586,11 +3637,12 @@ async function handleRun(req, res) {
   const ac = new AbortController();
   const runId = crypto.randomUUID();
   runs.set(runId, ac);
+  runsMeta.set(runId, { agentId: agentId, startedAt: Date.now(), source: 'interactive' });
   const pending = new Map();          // promptId -> finish(decision); the consent prompts awaiting a human
   pendingByRun.set(runId, pending);
   const pendingSummon = new Map();    // requestId -> finish(newAgentId|null); the team.summon requests awaiting the browser
   pendingSummonByRun.set(runId, pendingSummon);
-  req.on('close', () => { ac.abort(); runs.delete(runId); });   // tab closed / DISCONNECT → stop spend
+  req.on('close', () => { ac.abort(); runs.delete(runId); runsMeta.delete(runId); });   // tab closed / DISCONNECT → stop spend
 
   // the "bus" writes one validated, REDACTED NDJSON line per event (key-shaped secrets are scrubbed even
   // if a tool ever echoes one back); makeEmitter validates against the frozen registry first.
@@ -3672,6 +3724,7 @@ async function handleRun(req, res) {
     try { emit('agent.run.error', { agentId, runId, message: 'sidecar failure: ' + ((e && e.message) || e), transient: false }); } catch (_) {}
   } finally {
     runs.delete(runId);
+    runsMeta.delete(runId);
     steerBuffers.delete(runId);      // drop any un-drained steering notes so they can't leak to a later run
     grantsSession.delete(runId);     // drop this run's session-scoped grants
     const p = pendingByRun.get(runId);   // deny any prompt still open (belt-and-suspenders; the loop normally awaits)
