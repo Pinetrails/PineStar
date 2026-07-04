@@ -352,8 +352,11 @@ const Widgets = (() => {
     pollCron(); setInterval(pollCron, POLL_CRON_MS);
   }
 
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
-  else init();
+  // browser boot only — under node (the pure-fold tests require this file) there is no DOM
+  if (typeof document !== 'undefined') {
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+    else init();
+  }
 
   // read-only dev/verification surface (mirrors topbar.js; inert otherwise)
   return { init, _layout: () => ({ top: layout.top.slice(), bot: layout.bot.slice() }), _paintAll: paintAll,
