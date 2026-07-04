@@ -4383,6 +4383,9 @@ const StationUI = (() => {
       b.disabled = true;
       const r = await AJS.acceptPending(b.dataset.pid);
       if (r && r.ok) { sfx('click'); }
+      // ARM-STATE truth: acceptPending reports {disarmed:{text}} when the scheduler that fires this
+      // routine is off — surface it here too (the Dialogue flow already does), never approve-and-silence.
+      if (r && r.ok && r.disarmed && r.disarmed.text) notify(r.disarmed.text, 'warn');
       rerender('quests');
     }));
     body.querySelectorAll('.q-prop-no').forEach(b => b.addEventListener('click', ev => {
