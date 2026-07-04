@@ -94,10 +94,12 @@ const WorldModel = (() => {
 
   /* the paint palette — each is a floor BASE colour; every other floor detail
      (seams / rivets / vents / hatches) is derived from it via U.shade in the bake.
-     Bases stay deliberately dark + low-value (floor SUBSTRATE, not accent light) so the CRT
-     phosphor + warm room-light pools read on top — variety comes from spreading the HUE across
-     the wheel, never from brightening. This catalog is the sole source: add a colour here and
-     it shows up in the DECK PAINT palette AND as a room floor style automatically. */
+     The COLOURED bases stay in a dark low-value SUBSTRATE band (floor, not accent light) so the
+     CRT phosphor + warm room-light pools read on top — their variety comes from spreading the HUE
+     across the wheel, not from brightness. bone + onyx are the deliberate exceptions: the bright
+     and near-black ends of the value range, for decks that want stark contrast. This catalog is the
+     sole source: add a colour here and it appears in the DECK PAINT palette AND as a room floor
+     style automatically. */
   const FLOOR_STYLES = {
     hull:     { base: '#33302a', label: 'HULL' },
     corridor: { base: '#2c2924', label: 'DECKING' },
@@ -114,6 +116,9 @@ const WorldModel = (() => {
     indigo:   { base: '#282a48', label: 'INDIGO' },
     violet:   { base: '#332941', label: 'VIOLET' },
     orchid:   { base: '#3e2a3a', label: 'ORCHID' },
+    // value poles — the bright + near-black ends of the range (stark, deliberate)
+    bone:     { base: '#e7e3d9', label: 'BONE' },
+    onyx:     { base: '#0e0e12', label: 'ONYX' },
   };
 
   /* room categories — a capability-zone label + a default floor. kind drives nothing
