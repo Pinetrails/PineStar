@@ -50,7 +50,22 @@ function startMockOpenRouter() {
           };
           const text = t => { res.write('data: ' + JSON.stringify({ choices: [{ delta: { content: t } }] }) + '\n\n'); res.write('data: ' + JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop' }], usage: { prompt_tokens: 8, completion_tokens: 4, total_tokens: 12 } }) + '\n\n'); };
           const dir = 'workshop/' + runId;
-          if (prompt.indexOf(WORKSHOP_MARK) === 0) {
+          // W7 web-tool build path: when the queued item asks for a web tool, build a SELF-CONTAINED index.html
+          // (all CSS/JS inline) + a README.md, so the return card's "Open it" opens a RUNNING page and a non-html
+          // file exists to test the shell-open route. Keyed off the item title carried in the prompt.
+          const wantsWeb = /web tool/i.test(prompt);
+          if (prompt.indexOf(WORKSHOP_MARK) === 0 && wantsWeb) {
+            const html = '<!doctype html><meta charset="utf-8"><title>Tip Calc</title>'
+              + '<h1 id="h">Tip Calculator</h1><script>document.getElementById("h").dataset.ready="1";</script>';
+            if (toolResults === 0) {
+              tool('h1', 'fs_write', { path: dir + '/index.html', content: html });
+            } else if (toolResults === 1) {
+              tool('h2', 'fs_write', { path: dir + '/README.md', content: '# Tip Calc\n\nOpen index.html.\n' });
+            } else if (toolResults === 2) {
+              const manifest = { v: 1, runId: runId, agentId: 'builder', backlogId: 'item-web', title: 'Tip Calculator', kind: 'tool', summary: 'A single-file HTML tip calculator.', files: [{ path: 'index.html', bytes: html.length }, { path: 'README.md', bytes: 30 }], howToUse: 'Open index.html and use it.', notVerified: ['not run in a browser'] };
+              tool('h3', 'fs_write', { path: dir + '/deliverable.json', content: JSON.stringify(manifest) });
+            } else { text('Built a self-contained HTML tip calculator.'); }
+          } else if (prompt.indexOf(WORKSHOP_MARK) === 0) {
             if (toolResults === 0) {
               tool('w1', 'fs_write', { path: dir + '/cleaner.py', content: 'print("csv cleaned")\n' });
             } else if (toolResults === 1) {
@@ -111,7 +126,8 @@ async function startSse(url) {
 (async () => {
   const mock = await startMockOpenRouter();
   const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-workshop-e2e-'));
-  const env = { SKYNET_WORKSPACES: ws, SKYNET_OPENROUTER_BASE: mock.base, SKYNET_OPENROUTER_KEY: 'sk-or-v1-workshop-fake', SKYNET_DEFAULT_MODEL: 'test/model' };
+  const openLog = path.join(ws, 'open-invocations.log');   // W7: the CI open-seam appends here instead of launching an app
+  const env = { SKYNET_WORKSPACES: ws, SKYNET_OPENROUTER_BASE: mock.base, SKYNET_OPENROUTER_KEY: 'sk-or-v1-workshop-fake', SKYNET_DEFAULT_MODEL: 'test/model', SKYNET_TEST_OPEN_LOG: openLog };
   const { child, port } = await boot(8960 + (process.pid % 30), env, 20);
   const B = 'http://' + HOST + ':' + port;
   let sse = null;
@@ -162,6 +178,72 @@ async function startSse(url) {
     // 6. it shows up as a PENDING deliverable for the return-card.
     const pending = await (await fetch(B + '/api/workshop/pending?agent=builder', { headers })).json();
     A.ok(pending.pending.some(m => m.runId === runId && m.title === 'CSV cleaner'), '/pending lists the built deliverable');
+
+    // ===================== W7: OPEN the deliverable, don't display its code =====================
+    // Build a SELF-CONTAINED web tool (index.html + README.md) and prove the two open surfaces + their guards.
+    await fetch(B + '/api/workshop/queue', { method: 'POST', headers, body: JSON.stringify({ agentId: 'builder', id: 'item-web', title: 'a web tool: tip calculator' }) }).then(r => r.json());
+    const webShift = await fetch(B + '/api/workshop/shift', { method: 'POST', headers, body: JSON.stringify({ agentId: 'builder' }) });
+    const webStream = await readNdjson(webShift);
+    const webRes = ((webStream.find(e => e.name === 'workshop.shift.result') || {}).payload || {});
+    A.ok(webRes.fired === true && webRes.reason === 'built', 'W7: the web-tool shift built a deliverable');
+    const webRun = webRes.runId;
+    A.ok(webRes.manifest && webRes.manifest.files.some(f => /index\.html$/.test(f.path)), 'W7: manifest lists index.html');
+
+    // (1) GET /workshop-run/.../index.html?token= returns the RUNNABLE page (text/html, script intact, no-store).
+    const runBase = B + '/workshop-run/builder/' + webRun;
+    const pageRes = await fetch(runBase + '/index.html?token=' + encodeURIComponent(token));
+    A.eq(pageRes.status, 200, 'W7: /workshop-run serves the html page 200');
+    A.ok(/text\/html/.test(pageRes.headers.get('content-type') || ''), 'W7: html is served as text/html (RUNNABLE, not octet-stream)');
+    A.ok(/no-store/.test(pageRes.headers.get('cache-control') || ''), 'W7: /workshop-run is Cache-Control no-store');
+    const pageBody = await pageRes.text();
+    A.ok(/<script>/.test(pageBody) && /dataset\.ready/.test(pageBody), 'W7: the served html still contains its inline script (it will run in a tab)');
+
+    // correct content-type for a non-html asset too (README.md → text/markdown).
+    const mdRes = await fetch(runBase + '/README.md?token=' + encodeURIComponent(token));
+    A.ok(/text\/markdown/.test(mdRes.headers.get('content-type') || ''), 'W7: .md served with markdown content-type');
+
+    // (2) TOKEN REQUIRED — no ?token= → 403 (a tab nav can\'t send the header, so the query token is the fence).
+    const noTok = await fetch(runBase + '/index.html');
+    A.eq(noTok.status, 403, 'W7: /workshop-run without a token is 403 forbidden');
+    const badTok = await fetch(runBase + '/index.html?token=wrong');
+    A.eq(badTok.status, 403, 'W7: /workshop-run with a WRONG token is 403 forbidden');
+
+    // (3) TRAVERSAL IMPOSSIBLE — a ../ escape and an encoded escape both refuse (never reach a file outside the jail).
+    const trav1 = await fetch(B + '/workshop-run/builder/' + webRun + '/../../builder.workshop.json?token=' + encodeURIComponent(token));
+    A.ok(trav1.status === 403 || trav1.status === 404, 'W7: ../ traversal is refused (403/404), never served');
+    const trav2 = await fetch(B + '/workshop-run/builder/' + encodeURIComponent('..') + '/' + encodeURIComponent('..') + '/builder.workshop.json?token=' + encodeURIComponent(token));
+    A.ok(trav2.status === 403 || trav2.status === 404, 'W7: encoded ../ traversal is refused');
+    const badAgent = await fetch(B + '/workshop-run/..%2f..%2fetc/' + webRun + '/index.html?token=' + encodeURIComponent(token));
+    A.ok(badAgent.status === 403 || badAgent.status === 404, 'W7: a bad agentId segment is refused');
+
+    // (4) NO DIRECTORY LISTING — requesting the run dir itself (a directory) 404s, never lists.
+    const dirReq = await fetch(runBase + '/?token=' + encodeURIComponent(token));
+    A.eq(dirReq.status, 404, 'W7: requesting a directory 404s (no directory listing)');
+    const dirReq2 = await fetch(runBase + '?token=' + encodeURIComponent(token));
+    A.ok(dirReq2.status === 404, 'W7: the run dir with no trailing file also 404s');
+
+    // (5) POST /api/workshop/open — happy path invokes the opener with the JAILED ABS path (asserted via the CI
+    //     open-seam log), and a TRAVERSAL path is refused before any open.
+    const openOk = await fetch(B + '/api/workshop/open', { method: 'POST', headers, body: JSON.stringify({ agentId: 'builder', runId: webRun, path: 'README.md' }) });
+    const openOkJ = await openOk.json();
+    A.ok(openOk.status === 200 && openOkJ.ok === true, 'W7: /api/workshop/open opens a real jailed file (200 ok)');
+    A.ok(typeof openOkJ.opened === 'string' && openOkJ.opened.indexOf(ws) === 0 && /README\.md$/.test(openOkJ.opened), 'W7: the opened path is the jailed ABS path under the workspace');
+    const readOpenLog = () => (fs.existsSync(openLog) ? fs.readFileSync(openLog, 'utf8') : '').split('\n').filter(Boolean).map(l => { try { return JSON.parse(l); } catch (_) { return {}; } });
+    const openedTargets = () => readOpenLog().map(e => String(e.target || ''));
+    A.ok(openedTargets().some(t => /README\.md$/.test(t) && t.indexOf(ws) === 0), 'W7: the opener was actually invoked with the jailed abs path (CI seam log)');
+
+    const openBad = await fetch(B + '/api/workshop/open', { method: 'POST', headers, body: JSON.stringify({ agentId: 'builder', runId: webRun, path: '../../builder.workshop.json' }) });
+    A.ok(openBad.status === 403 || openBad.status === 400, 'W7: /api/workshop/open refuses a traversal path (403/400)');
+    const openMissing = await fetch(B + '/api/workshop/open', { method: 'POST', headers, body: JSON.stringify({ agentId: 'builder', runId: webRun, path: 'does-not-exist.txt' }) });
+    A.eq(openMissing.status, 404, 'W7: /api/workshop/open on a missing file 404s');
+
+    // (6) decide keep { open:true } shell-opens the DEST FOLDER after copy (CI seam records the folder open).
+    const keepOpenDir = path.join(os.tmpdir(), 'starnet-keepopen-' + Date.now());
+    const koRes = await fetch(B + '/api/workshop/decide', { method: 'POST', headers, body: JSON.stringify({ agentId: 'builder', runId: webRun, decision: 'keep', destPath: keepOpenDir, open: true }) });
+    const koJ = await koRes.json();
+    A.ok(koRes.status === 200 && koJ.ok === true && koJ.opened === true, 'W7: keep with open:true copies AND opens the dest folder');
+    A.ok(openedTargets().some(t => t === keepOpenDir), 'W7: the dest folder was handed to the opener after keep');
+    try { fs.rmSync(keepOpenDir, { recursive: true, force: true }); } catch (_) {}
 
     // 7. GRANT IS LOAD-BEARING: an UNGRANTED agent's autonomous fs.write is DENIED. Queue+shift on a NON-granted
     //    agent -> the write default-denies -> no manifest -> no workshop.built (fired but reason no-manifest).
