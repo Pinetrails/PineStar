@@ -80,6 +80,7 @@ const { makeTelegramAdapter } = require('./channels/telegram.js');
 const { makeChannelStore } = require('./channels/store.js');
 const { makeChannelHub } = require('./channels/hub.js');
 const { makeChannelRegistry, wireChannel } = require('./channels/registry.js');   // H6.2: channel descriptors + generic wire-up
+const channelSecretsMod = require('./channels/secrets.js');                        // T1.4: token-vs-config split + keychain migration
 const { makeConnectGateway } = require('./channels/discord.gateway.js');           // P2-E: the real Discord gateway WS client (inbound)
 const { makeSseHub, runTeeView } = require('./channels/sse.js');
 const { makeRouter } = require('./routing/router.js');
@@ -138,6 +139,10 @@ const API_TOKEN = String(ENV('API_TOKEN') || crypto.randomBytes(32).toString('he
 // seeded save with no connect screen / awakening. Holds NO secret — the API key stays in runtimeKey. Never
 // set in a packaged build, so this is inert in shipping. Loopback-only like the rest of the server.
 const DEV_MODE = /^(1|true|yes|on)$/i.test(String(ENV('DEV') || '').trim());
+// Are we running under the real desktop shell (Tauri)? Only then is the OS keychain reachable (through the
+// parent process), so only then do channel bot tokens live in the keychain instead of plaintext secrets.json.
+// The bare sidecar (npm start / tests / headless deploy) never sets this and HONESTLY keeps the plaintext path.
+const DESKTOP_SHELL = /^(1|true|yes|on)$/i.test(String(ENV('DESKTOP_SHELL') || '').trim());
 // API auth/guard DECISIONS live in the unit-tested ./apiauth.js (full threat model documented there);
 // index.js keeps only the thin res-writing wrappers below. Hardened posture: EVERY /api/* route now requires
 // the per-launch token (GET data routes included) except a small header-less set. Native media/file loads
@@ -1283,6 +1288,27 @@ let voiceDispatcher = null;
 function voiceFetchOpts(base) { return voiceDispatcher ? Object.assign({ dispatcher: voiceDispatcher }, base) : base; }
 const CHANNELS_DIR = path.join(WORKSPACES, 'channels');
 const CHANNEL_SECRETS_FILE = path.join(CHANNELS_DIR, 'secrets.json');
+// ---- channel bot tokens: keychain-backed on desktop, plaintext-file fallback in the bare sidecar ----
+// Runtime token layer, mirroring runtimeKeys for provider API keys. On the desktop build the token source of
+// truth is the OS keychain, injected at spawn as SKYNET_<ID>_TOKEN and live-pushed via POST /api/channels/token.
+// In that mode the plaintext secrets.json holds ONLY non-secret config (enabled/model/ownerId/agentId/…). The
+// bare sidecar has no keychain, so the token stays in the file exactly as before.
+const CHANNEL_TOKEN_ENV = { telegram: 'TELEGRAM_TOKEN', discord: 'DISCORD_TOKEN' };
+const channelTokenRuntime = Object.create(null);
+for (const id of channelSecretsMod.CHANNEL_IDS) {
+  const v = String(ENV(CHANNEL_TOKEN_ENV[id]) || '').trim();
+  if (v) channelTokenRuntime[id] = v;
+}
+// Resolve the effective bot token for a channel: an explicit value (a fresh paste) wins; else the keychain-
+// injected/live-pushed runtime token; else — bare sidecar only — the token saved in the plaintext record.
+function channelToken(id, explicit, savedRecord) {
+  const e = String(explicit || '').trim();
+  if (e) return e;
+  const rt = String(channelTokenRuntime[id] || '').trim();
+  if (rt) return rt;
+  if (!DESKTOP_SHELL && savedRecord && savedRecord.token) return String(savedRecord.token);   // plaintext fallback
+  return '';
+}
 function loadChannelSecrets() {
   try { const raw = loadResilient(CHANNEL_SECRETS_FILE, 'channels'); return (raw && typeof raw === 'object') ? raw : {}; }
   catch (e) { return {}; }   // unrecoverable -> nothing configured
@@ -1290,10 +1316,31 @@ function loadChannelSecrets() {
 function saveChannelSecrets(obj) {   // protected sibling of the fs jail; the agent's own fs.* tools can't read/write it
   try {
     fs.mkdirSync(CHANNELS_DIR, { recursive: true });
-    saveResilient(CHANNEL_SECRETS_FILE, obj);   // fsync-durable + .bak last-known-good (bot token survives power loss)
+    // Desktop: never let a bot token touch the plaintext file — it lives in the keychain. Strip before writing.
+    const toPersist = DESKTOP_SHELL ? channelSecretsMod.stripTokens(obj) : obj;
+    saveResilient(CHANNEL_SECRETS_FILE, toPersist);   // fsync-durable + .bak last-known-good (config survives power loss)
   } catch (e) { console.warn('[channels] secrets persist failed:', (e && e.message) || e); }
 }
 let channelSecrets = loadChannelSecrets();
+// First desktop boot after upgrading from a plaintext secrets.json: adopt any file token into the runtime layer
+// (so the currently-running host stays connected this session) and overwrite the file WITHOUT the token. The
+// keychain itself is written by the parent shell (POST /api/channels/token) — the sidecar can't reach keyring —
+// so the token also survives the NEXT restart only once the shell has stored it; until then the runtime value +
+// the imports report below keep this session honest. hasChannelToken() is true when the keychain already injected
+// this channel's token via env (SKYNET_<ID>_TOKEN), so we never double-report an already-migrated token.
+(function migrateChannelTokensToKeychain() {
+  try {
+    const res = channelSecretsMod.migratePlaintext(channelSecrets, {
+      keychainMode: DESKTOP_SHELL,
+      hasChannelToken: (id) => !!String(ENV(CHANNEL_TOKEN_ENV[id]) || '').trim()
+    });
+    if (!res.changed) return;
+    for (const imp of res.imports) { if (!channelTokenRuntime[imp.id]) channelTokenRuntime[imp.id] = imp.token; }   // keep this session live
+    channelSecrets = res.config;
+    saveChannelSecrets(channelSecrets);   // rewrite the file stripped of tokens (stripTokens no-ops what's already gone)
+    if (res.imports.length) console.warn('[channels] migrated ' + res.imports.map(i => i.id).join('+') + ' bot token(s) out of plaintext secrets.json — reconnect once to store them in the OS keychain.');
+  } catch (e) { console.warn('[channels] token migration skipped:', (e && e.message) || e); }
+})();
 const channelStore = makeChannelStore({ fs, pathMod: path, root: CHANNELS_DIR, clock: { now: () => Date.now() }, writeDurable: writeFileDurable, onRecover: (file) => console.warn('[channels] recovered ' + file + ' from .bak last-known-good after a torn/corrupt main.') });
 
 // ---- Codex (personal ChatGPT subscription) OAuth tokens — a protected sibling of the fs jail, SAME posture
@@ -1688,6 +1735,9 @@ function startTelegram(token, key, model, agentCfg) {
   const cfg = agentCfg || {};
   const provider = normalizeProvider(cfg.provider);
   const reasoningEffort = resolveReasoningEffort(provider, cfg.reasoningEffort);
+  // keep the live token in the runtime layer so it survives a saveChannelSecrets() reload (desktop strips it from
+  // the file) and so /status reports `configured` even when the plaintext record carries no token.
+  if (token) channelTokenRuntime.telegram = String(token);
   const prev = (channelSecrets && channelSecrets.telegram) || {};
   // Persist the SAME agentId + composed system prompt the app uses, so a Telegram run IS the same agent
   // (shared notebook/memory/workspace + identity), just a different session. `agentId`/`system` are read
@@ -1799,6 +1849,7 @@ function startDiscord(token, key, model, agentCfg) {
   const cfg = agentCfg || {};
   const provider = normalizeProvider(cfg.provider);
   const reasoningEffort = resolveReasoningEffort(provider, cfg.reasoningEffort);
+  if (token) channelTokenRuntime.discord = String(token);   // keep the live token off the plaintext file (desktop) — see startTelegram
   const prev = (channelSecrets && channelSecrets.discord) || {};
   channelSecrets = Object.assign({}, channelSecrets, { discord: {
     token: token, key: key, model: model, provider: provider, baseUrl: cfg.baseUrl || cfg.base_url || '', reasoningEffort: reasoningEffort, enabled: true,
@@ -1902,6 +1953,7 @@ const server = http.createServer((req, res) => {
   if (req.method === 'POST' && req.url === '/api/autonomy/write') return handleAutonomyWrite(req, res).catch(() => { try { res.end(); } catch (_) {} });
   if (req.method === 'POST' && req.url === '/api/summon/ack') return handleSummonAck(req, res);
   if (req.method === 'POST' && req.url === '/api/key') return handleSetKey(req, res);
+  if (req.method === 'POST' && req.url === '/api/channels/token') return handleSetChannelToken(req, res);
   if (req.method === 'POST' && req.url === '/api/channels/telegram/connect') return handleChannelConnect(req, res);
   if (req.method === 'POST' && req.url === '/api/channels/telegram/sync') return handleChannelSync(req, res);
   if (req.method === 'POST' && req.url === '/api/roster') return handleRoster(req, res);
@@ -2029,20 +2081,20 @@ server.listen(PORT, '127.0.0.1', () => {
   // auto-start a previously-connected Telegram bot (saved config), else an env-provided one (headless deploys).
   try {
     const t = (channelSecrets && channelSecrets.telegram) || {};
-    const envTok = String(ENV('TELEGRAM_TOKEN') || '').trim();
+    const tgTok = channelToken('telegram', '', t);   // keychain/runtime token (desktop) or the plaintext record (bare)
     const envKey = String(ENV('OPENROUTER_KEY') || '').trim();
     const envModel = String(ENV('DEFAULT_MODEL') || '').trim();
-    if (t.enabled && t.token && t.model && providerHasCredential(t.provider, providerRuntimeKey(t.provider, t.key || ''), providerRuntimeBaseUrl(t.provider, t.baseUrl || t.base_url || ''))) { startTelegram(t.token, t.key || '', t.model, { agentId: t.agentId, system: t.system, name: t.name, provider: t.provider, baseUrl: t.baseUrl || t.base_url || '', reasoningEffort: t.reasoningEffort }); console.log('  · telegram auto-started from saved config'); }
-    else if (envTok && envKey && envModel) { startTelegram(envTok, envKey, envModel, {}); console.log('  · telegram auto-started from env'); }
+    if (t.enabled && tgTok && t.model && providerHasCredential(t.provider, providerRuntimeKey(t.provider, t.key || ''), providerRuntimeBaseUrl(t.provider, t.baseUrl || t.base_url || ''))) { startTelegram(tgTok, t.key || '', t.model, { agentId: t.agentId, system: t.system, name: t.name, provider: t.provider, baseUrl: t.baseUrl || t.base_url || '', reasoningEffort: t.reasoningEffort }); console.log('  · telegram auto-started from saved config'); }
+    else if (channelTokenRuntime.telegram && envKey && envModel) { startTelegram(channelTokenRuntime.telegram, envKey, envModel, {}); console.log('  · telegram auto-started from env'); }
   } catch (e) { console.warn('[channels] telegram auto-start failed:', (e && e.message) || e); }
   // H6.2: same auto-start for Discord (saved config else env), through the generic registry path.
   try {
     const d = (channelSecrets && channelSecrets.discord) || {};
-    const envTok = String(ENV('DISCORD_TOKEN') || '').trim();
+    const dcTok = channelToken('discord', '', d);   // keychain/runtime token (desktop) or the plaintext record (bare)
     const envKey = String(ENV('OPENROUTER_KEY') || '').trim();
     const envModel = String(ENV('DEFAULT_MODEL') || '').trim();
-    if (d.enabled && d.token && d.model && providerHasCredential(d.provider, providerRuntimeKey(d.provider, d.key || ''), providerRuntimeBaseUrl(d.provider, d.baseUrl || d.base_url || ''))) { startDiscord(d.token, d.key || '', d.model, { agentId: d.agentId, system: d.system, name: d.name, provider: d.provider, baseUrl: d.baseUrl || d.base_url || '', reasoningEffort: d.reasoningEffort }); console.log('  · discord auto-started from saved config'); }
-    else if (envTok && envKey && envModel) { startDiscord(envTok, envKey, envModel, {}); console.log('  · discord auto-started from env'); }
+    if (d.enabled && dcTok && d.model && providerHasCredential(d.provider, providerRuntimeKey(d.provider, d.key || ''), providerRuntimeBaseUrl(d.provider, d.baseUrl || d.base_url || ''))) { startDiscord(dcTok, d.key || '', d.model, { agentId: d.agentId, system: d.system, name: d.name, provider: d.provider, baseUrl: d.baseUrl || d.base_url || '', reasoningEffort: d.reasoningEffort }); console.log('  · discord auto-started from saved config'); }
+    else if (channelTokenRuntime.discord && envKey && envModel) { startDiscord(channelTokenRuntime.discord, envKey, envModel, {}); console.log('  · discord auto-started from env'); }
   } catch (e) { console.warn('[channels] discord auto-start failed:', (e && e.message) || e); }
   // warm every configured+enabled connector so its tools are ready on the first run (fire-and-forget; a
   // connector that is down/errors simply projects no tools — it never blocks the host or a run).
@@ -2442,6 +2494,22 @@ async function handleSetKey(req, res) {
   const baseUrl = providerRuntimeBaseUrl(id, '');
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
   return res.end(JSON.stringify({ ok: true, provider: id, configured: providerHasCredential(id, key, baseUrl) }));
+}
+
+/* desktop channel-token push (T1.4): the parent shell stores a bot token in the OS keychain and pushes it here
+   (token-gated, mirrors /api/key) so a token change never restarts the sidecar. Body: { channel, token }. An
+   empty token CLEARS the runtime token for that channel. Never echoes the token back — only booleans. */
+async function handleSetChannelToken(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  const token = String(ENV('IPC_TOKEN') || '');
+  if (!token || (req.headers['x-starnet-token'] || req.headers['x-skynet-token']) !== token) { res.writeHead(403); return res.end('forbidden'); }
+  let body; try { body = JSON.parse(String(await readBody(req, 1 << 16) || '') || '{}') || {}; } catch (_) { return json(400, { error: 'bad json' }); }
+  const channel = String(body.channel || body.id || '').trim().toLowerCase();
+  if (channelSecretsMod.CHANNEL_IDS.indexOf(channel) < 0) return json(400, { error: 'unknown channel' });
+  const tok = String(body.token || '').trim();
+  if (tok) channelTokenRuntime[channel] = tok;
+  else delete channelTokenRuntime[channel];
+  return json(200, { ok: true, channel: channel, configured: !!channelTokenRuntime[channel] });
 }
 
 /* ---- /api/toolsets: the TOOLSETS console. GET lists every toggleable capId family (DERIVED from CAP_REGISTRY,
@@ -4310,7 +4378,8 @@ async function handleChannelConnect(req, res) {
   // reuse the saved values when the request omits them, so RECONNECT is one click (no re-pasting the token).
   const saved = (channelSecrets && channelSecrets.telegram) || {};
   const provider = normalizeProvider(body.provider || saved.provider);
-  const token = String(body.token || '').trim() || String(saved.token || '');
+  // desktop: the token comes from the keychain/runtime layer, NOT the plaintext record; a fresh paste still wins.
+  const token = channelToken('telegram', body.token, saved);
   const key = providerRuntimeKey(provider, String(body.key || '').trim() || String(saved.key || ''));
   const baseUrl = providerRuntimeBaseUrl(provider, body.baseUrl || body.base_url || saved.baseUrl || saved.base_url || '');
   const model = String(body.model || '').trim() || String(saved.model || '');
@@ -4361,8 +4430,9 @@ async function handleChannelDisconnect(req, res) {
 // GET /api/channels/telegram/status — booleans + poll state ONLY; never the token/key (those stay server-side).
 function handleChannelStatus(req, res) {
   const t = (channelSecrets && channelSecrets.telegram) || {};
+  const configured = !!channelToken('telegram', '', t);   // keychain/runtime token (desktop) or plaintext record (bare)
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-  res.end(JSON.stringify({ connected: telegramStatus.connected, configured: !!t.token, state: telegramStatus.state, detail: telegramStatus.detail || '', notifyAutonomous: !!(channelSecrets && channelSecrets.notifyAutonomous) }));
+  res.end(JSON.stringify({ connected: telegramStatus.connected, configured: configured, state: telegramStatus.state, detail: telegramStatus.detail || '', notifyAutonomous: !!(channelSecrets && channelSecrets.notifyAutonomous) }));
 }
 
 // POST /api/channels/discord/connect { token, key?, model, provider? } — the Messaging tab's Discord card hands over
@@ -4374,7 +4444,8 @@ async function handleDiscordConnect(req, res) {
   let body; try { body = JSON.parse(await readBody(req, 1 << 16)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
   const saved = (channelSecrets && channelSecrets.discord) || {};
   const provider = normalizeProvider(body.provider || saved.provider);
-  const token = String(body.token || '').trim() || String(saved.token || '');
+  // desktop: token from the keychain/runtime layer, not the plaintext record; a fresh paste still wins.
+  const token = channelToken('discord', body.token, saved);
   const key = providerRuntimeKey(provider, String(body.key || '').trim() || String(saved.key || ''));
   const baseUrl = providerRuntimeBaseUrl(provider, body.baseUrl || body.base_url || saved.baseUrl || saved.base_url || '');
   const model = String(body.model || '').trim() || String(saved.model || '');
@@ -4422,9 +4493,10 @@ async function handleDiscordDisconnect(req, res) {
 // GET /api/channels/discord/status — booleans + gateway state ONLY; never the token/key. Mirrors handleChannelStatus.
 function handleDiscordStatus(req, res) {
   const d = (channelSecrets && channelSecrets.discord) || {};
+  const configured = !!channelToken('discord', '', d);   // keychain/runtime token (desktop) or plaintext record (bare)
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
   // `ownerLocked` proves a saved Discord owner survived restart without disclosing who that owner is.
-  res.end(JSON.stringify({ connected: discordStatus.connected, configured: !!d.token, state: discordStatus.state, detail: discordStatus.detail || '', notifyAutonomous: !!(channelSecrets && channelSecrets.notifyAutonomous), ownerLocked: !!d.ownerId }));
+  res.end(JSON.stringify({ connected: discordStatus.connected, configured: configured, state: discordStatus.state, detail: discordStatus.detail || '', notifyAutonomous: !!(channelSecrets && channelSecrets.notifyAutonomous), ownerLocked: !!d.ownerId }));
 }
 
 // POST /api/channels/notify { on } — the GLOBAL opt-in (default off): ping a connected channel when an AUTONOMOUS

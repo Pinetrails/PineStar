@@ -3020,7 +3020,15 @@ const StationUI = (() => {
       const agentName = (ag && ag.name) || '';
       msgEl.textContent = 'connecting…';
       try {
-        const r = await fetch('/api/channels/telegram/connect', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token, key, model, provider, baseUrl, agentId, system, agentName }) });
+        // Desktop: park the bot token in the OS keychain (via Tauri), then connect WITHOUT sending it over HTTP —
+        // the sidecar reads it from the keychain-injected runtime layer. Browser: storeChannelToken is a no-op and
+        // the token rides the POST body as before. A fresh paste is required only when nothing is stored yet.
+        let bodyToken = token;
+        if (typeof Harness !== 'undefined' && Harness.storeChannelToken && token) {
+          const stored = await Harness.storeChannelToken('telegram', token);
+          if (stored) bodyToken = '';   // keychain owns it now — don't echo it into the request/plaintext file
+        }
+        const r = await fetch('/api/channels/telegram/connect', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: bodyToken, key, model, provider, baseUrl, agentId, system, agentName }) });
         const j = await r.json().catch(() => ({}));
         if (!r.ok || j.error) { msgEl.textContent = '✕ ' + (j.error || ('HTTP ' + r.status)); sfx('bad'); }
         else { msgEl.textContent = '✓ connected — open Telegram and DM your bot'; sfx('click'); notify('Telegram bot connected', 'good'); body.querySelector('#tg-token').value = ''; }
@@ -3086,7 +3094,13 @@ const StationUI = (() => {
       const agentName = (ag && ag.name) || '';
       dcMsgEl.textContent = 'connecting…';
       try {
-        const r = await fetch('/api/channels/discord/connect', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token, key, model, provider, baseUrl, agentId, system, agentName }) });
+        // Desktop: keychain-park the token then connect without echoing it over HTTP (see the Telegram card).
+        let bodyToken = token;
+        if (typeof Harness !== 'undefined' && Harness.storeChannelToken && token) {
+          const stored = await Harness.storeChannelToken('discord', token);
+          if (stored) bodyToken = '';
+        }
+        const r = await fetch('/api/channels/discord/connect', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: bodyToken, key, model, provider, baseUrl, agentId, system, agentName }) });
         const j = await r.json().catch(() => ({}));
         if (!r.ok || j.error) { dcMsgEl.textContent = '✕ ' + (j.error || ('HTTP ' + r.status)); sfx('bad'); }
         else { dcMsgEl.textContent = '✓ connected — DM your bot on Discord'; sfx('click'); notify('Discord bot connected', 'good'); body.querySelector('#dc-token').value = ''; }
