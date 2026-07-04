@@ -21,6 +21,10 @@ merge at a time, always from the integration tree.
    - grep that every symbol it calls/exports is still defined exactly once (auto-merge
      silently drops and duplicates functions here — this has happened repeatedly).
 4. **package.json conflicts:** union both sides' script/deps entries; trunk order canonical.
+   After ANY package.json resolution, verify strict JSON + no BOM:
+   `node -e "const b=require('fs').readFileSync('package.json'); if(b[0]===0xEF) throw 'BOM'; JSON.parse(b.toString())"`
+   — PowerShell-side edits love to prepend a UTF-8 BOM; npm tolerates it, strict JSON.parse
+   consumers (release-cut, tooling) do not. This landed on trunk twice on 2026-07-03.
 5. **Gate:** `npm run test:fast` green, plus `npm run test:http` if sidecar/route/ship files
    changed. Red → `git reset --hard <snapshot>`, mark the lane BLOCKED with the failing
    output, and move on. Never merge-then-fix-forward on trunk.

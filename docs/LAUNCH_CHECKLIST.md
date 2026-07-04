@@ -32,6 +32,20 @@ Updater endpoint (baked into the app, `src-tauri/tauri.conf.json`):
 | **License decision** | Choose the source-code license, add a `LICENSE` file at repo root, then replace the `LICENSE-DECISION` block in TERMS.md §7 with a real pointer. Until then, no code license is granted. | ☐ TODO |
 | **Code signing** (optional but removes the SmartScreen/SAC wall) | Procure an Authenticode cert; sign the installer. Until then INSTALL.md + DOWNLOAD_PAGE.md must keep the unsigned caveat. | ☐ FUTURE |
 
+## Cut & publish order (the installer bakes the frontend — order matters)
+
+1. **Swap the support email first** (it lives in `frontend/app/diagnostics.js`, which ships
+   inside the exe — an installer cut before the swap shows the literal placeholder to users).
+2. **Re-cut LAST**: `npm run release:cut` immediately before upload. A staged installer goes
+   stale the moment trunk moves (this bit us on 2026-07-03: the 23:02 cut predated four
+   same-night merges). Trunk is multi-session — always re-cut, never trust `release/` dates.
+3. Upload + publish the GitHub release (exact tag `vX.Y.Z`), then `npm run release:verify-host`.
+4. **Unattended-update proof — mind the legacy-endpoint trap**: installs ≤0.1.7 have the DEAD
+   `updates.starnet.app` endpoint baked in and will NEVER see GitHub releases. They need one
+   manual (re)install. The real proof of the update loop: manually install the first
+   GitHub-era build, then publish a trivial next version and watch System → Updates apply it
+   unattended. Do this once before telling the public updates work.
+
 ## Consistency gates (do NOT ship until true)
 
 - ☐ SmartScreen / SAC wording is **identical in spirit** across INSTALL.md and DOWNLOAD_PAGE.md
@@ -46,8 +60,9 @@ Updater endpoint (baked into the app, `src-tauri/tauri.conf.json`):
 ## Quick verification commands
 
 ```bash
-# support-email placeholder must be gone before launch:
-grep -rn "ANDREW_SUPPORT_EMAIL" . --include="*.md"
+# support-email placeholder must be gone before launch — NOT just docs:
+# it is also a frontend constant (frontend/app/diagnostics.js) BAKED INTO the exe.
+grep -rn "ANDREW_SUPPORT_EMAIL" --include="*.md" --include="*.js" .
 
 # confirm the updater endpoint the app will actually hit:
 grep -n "endpoints" -A2 src-tauri/tauri.conf.json
