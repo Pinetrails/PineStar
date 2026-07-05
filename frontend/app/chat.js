@@ -3799,6 +3799,11 @@ const Chat = (() => {
     }
     // turn to face the Commander and listen (no camera yank); a spoken CHAT also softly frames the agent.
     if (World.setActivityFor) World.setActivityFor(turnAgentId, 'talk'); else World.setActivity('talk');
+    // A TASK ALWAYS WORKS AT THE WORKSTATION (Andrew's ruling, 2026-07-05, supersedes the reactive-only
+    // rule): a turn the classifier reads as a task sends the agent to its desk IMMEDIATELY — even if the
+    // model ends up answering without a tool. Pure chat still stays in place; walkToDesk stays idempotent
+    // and still also fires on the first real tool call / permission prompt (covers a misclassified task).
+    if (isTask) walkToDesk();
     if (!isTask && willSpeak && World.focusAgent) World.focusAgent({ soft: true });
     status('thinking…');
     ensureElapsedTimer();   // start the live wall-clock the instant the turn begins (before the first token)

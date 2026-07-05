@@ -4523,20 +4523,33 @@ const World = (() => {
   // The hero ships from its desk (byte-identical); a crew/summoned agent ships from a belt tile beside ITS
   // body; an unknown agent falls back to the hero desk. (WIRING_AUDIT P3: kill the single-hero-desk assumption.)
   function outboundBeltTile(aid) {
+    // 1) the PRODUCING agent's own BAY hookup — finished work leaves from the dock, riding the bay→OUTBOX
+    //    lane exactly like a ▸ TEST crate (2026-07-05 fix: the old desk-first order meant a hero with a
+    //    belted BAY never shipped a riding crate, because no belt runs to the desk by design).
+    if (aid && routingPlan && routingPlan.bays) {
+      const b = routingPlan.bays.find(x => x.agentId === aid);
+      if (b && b.tile) return b.tile;
+    }
+    // 2) a crew body ships from a belt tile beside where it stands
     if (aid && agent && aid !== agent.id) {
       const b = bodyForAgent(aid);
       if (b && b !== agent) { const tt = tileOf(b.px, b.py); return beltTileNear(tt.x, tt.y, 1, 1); }
     }
+    // 3) legacy fallback: a belt beside the hero's desk
     return desk ? beltTileNear(desk.tx, desk.ty, desk.w, desk.h) : null;
   }
-  // the agent's reply heads out — enqueue an OUTBOUND box at a belt tile beside the PRODUCING agent's bay
-  function outboundMessage(payload) {
+  /* A COMPLETED RUN SHIPS A CRATE. The single source for outbound PRODUCT boxes is agent.run.end reason
+     'done' — every finished job, in-app or channel, spawns ONE crate at the producing agent's bay hookup
+     and rides the line to the OUTBOX (exactly like ▸ TEST). workitem.delivered no longer enqueues, so a
+     channel reply that also fires delivered can never double-crate. No lane → no riding crate (the work
+     already shipped server-side; the pallet + counter still tell the truth). */
+  const shippedRunIds = new Set();   // dedup: run.end can be observed twice (local harness + SSE echo)
+  function shipProductCrate(p) {
     if (!convey) return;
-    const t = outboundBeltTile(payload && payload.agentId);
-    // the reply rode out and was actually sent (workitem.delivered fires only after a successful send),
-    // so this box is a banked PRODUCT (green). Failed/superseded runs emit none.
-    const w = 0.3;
-    if (t) convey.enqueueAt(t.x, t.y, { outbound: true, box: 'product', weight: w, workitemId: (payload && payload.workitemId) || '' });
+    const rid = (p && p.runId) || '';
+    if (rid) { if (shippedRunIds.has(rid)) return; shippedRunIds.add(rid); if (shippedRunIds.size > 400) shippedRunIds.clear(); }
+    const t = outboundBeltTile(p && p.agentId);
+    if (t) convey.enqueueAt(t.x, t.y, { outbound: true, box: 'product', weight: 0.3, workitemId: (p && p.workitemId) || '' });
   }
   // an unproductive run produced no deliverable — ride a red-hot SLAG crate off the PRODUCING agent's bay
   // carrying its post-mortem one-liner, so the failed outcome is visible leaving the line.
@@ -4932,7 +4945,8 @@ const World = (() => {
     });
     U.bus.on('agent.run.end', p => { if (p && p.agentId) glyphByAgent.delete(p.agentId); });
     U.bus.on('workitem.placed', p => intakeMessage(p));
-    U.bus.on('workitem.delivered', p => outboundMessage(p));
+    // (workitem.delivered no longer spawns a crate — the run.end 'done' handler below is the single
+    //  crate source, so channel replies can't double-crate. delivered still feeds the floor stats fold.)
     U.bus.on('workitem.superseded', p => { if (p && p.workitemId && convey) convey.dropWorkitem(p.workitemId); });
     // queue.status drives BOTH the numeric backpressure gauge (chanQueues) and the FloorStats backlog fold.
     U.bus.on('queue.status', p => { if (p && p.queueId != null) chanQueues.set(p.queueId, Math.max(0, p.depth | 0)); if (floor) floor.onEvent('queue.status', p); });
@@ -4962,7 +4976,8 @@ const World = (() => {
     U.bus.on('agent.run.end', p => {
       if (floor) floor.onEvent('agent.run.end', p, Date.now());
       const r = p && p.reason;
-      // A clean finish is shown by a product crate; crate mass is intentionally fixed in the UI.
+      // A clean finish SHIPS: one product crate leaves the producing agent's bay and rides to the OUTBOX.
+      if (r === 'done') shipProductCrate(p);
       if (r !== 'max_iters' && r !== 'budget' && r !== 'error' && r !== 'refusal') return;
       // UNPRODUCTIVE RUN: pulse the SLAG cell, then turn the failed outcome into a lesson — a real post-mortem in the
       // notifications panel + a red-hot slag crate that rides off the line (if a desk belt exists). The
@@ -5188,7 +5203,7 @@ const World = (() => {
     ctx.fillStyle = 'rgba(8,10,9,0.85)'; ctx.fillRect(x, y, bw, bh);
     ctx.strokeStyle = '#caa84a'; ctx.lineWidth = 1; ctx.strokeRect(x + 0.5, y + 0.5, bw - 1, bh - 1);
     ctx.fillStyle = '#e8c860'; ctx.font = '10px monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-    ctx.fillText('INTAKE ' + '▮'.repeat(Math.min(6, depth)) + ' ' + depth, x + 6, y + bh / 2 + 0.5);
+    ctx.fillText('INBOX ' + '▮'.repeat(Math.min(6, depth)) + ' ' + depth, x + 6, y + bh / 2 + 0.5);
     ctx.restore();
   }
 

@@ -419,7 +419,7 @@ const Build = (() => {
           <li><b>PAINT</b> decks, <b>MOVE</b> / <b>RECLAIM</b> rooms · <b>UNDO</b> anything.</li>
           <li>Your agent walks the rooms + corridors you build.</li>
           <li>Start simple: place a <b>BAY</b> (PROP ▸ WORKFLOW), click it, assign an agent — <b>done</b>. Work for that agent lands at its dock.</li>
-          <li>Then upgrade: <b>INTAKE → BELT (7) → BAY</b> makes work <b>ride in</b>; <b>BAY → BELT → OUTBOX</b> ships finished work <b>out</b>. Complete lines <b>glow</b>; broken pieces are <b>flagged in words</b>. Hit <b>▸ TEST</b> to watch a box ride.</li>
+          <li>Then upgrade: <b>INBOX → BELT (7) → BAY</b> makes outside work <b>ride in</b>; <b>BAY → BELT → OUTBOX</b> ships finished work <b>out</b>. Complete lines <b>glow</b>; broken pieces are <b>flagged in words</b>. Hit <b>▸ TEST</b> to watch a box ride.</li>
         </ul>
         <button class="btn-sm refit-primary" id="refit-guide-go">▸ START BUILDING</button>
       </div>`;
@@ -668,7 +668,7 @@ const Build = (() => {
   function sendTestBoxes(ev) {
     if (!convey) return;
     const t = intakeBeltTile();
-    if (!t) { flashTip(ev, 'place an INTAKE on a belt first', false); sfx('bad'); return; }
+    if (!t) { flashTip(ev, 'place an INBOX on a belt first', false); sfx('bad'); return; }
     for (const tag of ['code', 'research', 'general']) convey.enqueueAt(t.x, t.y, { workitemId: 'test-' + (++_testN), tag, preview: 'test ' + tag });
     flashTip(ev, 'test work riding — watch it sort', true); sfx('click');
   }
