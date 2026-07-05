@@ -25,7 +25,8 @@
       comms_dish: 'dish', comms_uplink: 'dish', comms_beacon: 'dish',
       gigs_servercart: 'notebook', bridge_relaystack: 'notebook', core: 'notebook',
       connector_portal: 'connector',
-      workbench: 'workbench'
+      workbench: 'workbench',
+      studio: 'studio'
     };
     return m[p && p.t] || null;
   };
