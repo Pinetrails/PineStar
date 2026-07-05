@@ -153,4 +153,55 @@ const belt = (x, y, dir) => ({ x, y, dir });
   A.eq(seq.join(','), 'coder,researcher,coder,researcher', 'a round-robin pick spreads dispatch across the splitter lanes (' + seq.join(',') + ')');
 }
 
+/* ---- liveTiles: only tiles on a COMPLETE source->bound-bay route are energized ---- */
+{
+  // E lane reaches the coder bay; S branch off the splitter dead-ends; (8,8) is disconnected scrap
+  const plan = P.compileRoutingPlan(geo(
+    [{ id: 'i', t: 'intake', x: 0, y: 0, w: 1, h: 1 },
+     { id: 'sp', t: 'splitter', x: 2, y: 0, w: 1, h: 1 },
+     { id: 'bc', t: 'bay', x: 5, y: 0, w: 2, h: 2, agentId: 'coder' }],
+    [belt(1, 0, 'E'), belt(2, 0, 'E'), belt(3, 0, 'E'), belt(4, 0, 'E'),
+     belt(2, 1, 'S'), belt(2, 2, 'S'),      // the dead branch: forward-reachable, never reaches a bay
+     belt(8, 8, 'E')]                       // disconnected scrap: not even forward-reachable
+  ));
+  const live = P.liveTiles(plan);
+  A.ok(live['1,0'] && live['2,0'] && live['3,0'] && live['4,0'], 'every tile on the source->bay route is live');
+  A.ok(!live['2,1'] && !live['2,2'], 'a branch that never reaches a bound bay stays cold');
+  A.ok(!live['8,8'], 'a disconnected belt stays cold');
+}
+
+/* ---- liveTiles: no bound bay anywhere -> the whole line is cold (nothing can run) ---- */
+{
+  const plan = P.compileRoutingPlan(geo(
+    [{ id: 'i', t: 'intake', x: 0, y: 0, w: 1, h: 1 }, { id: 'b1', t: 'bay', x: 4, y: 0, w: 2, h: 2 }],   // bay UNBOUND
+    [belt(1, 0, 'E'), belt(2, 0, 'E'), belt(3, 0, 'E')]
+  ));
+  A.eq(Object.keys(P.liveTiles(plan)).length, 0, 'an unbound bay powers nothing — the whole line is cold');
+  A.ok(plan.unboundBays.length === 1 && plan.unboundBays[0].tile.x === 3, 'the unbound bay hookup tile is recorded for the legibility layer');
+}
+
+/* ---- routeFrom: the hover answer — agent / unbound bay / dead end, from any belt tile ---- */
+{
+  const plan = P.compileRoutingPlan(geo(
+    [{ id: 'i', t: 'intake', x: 0, y: 0, w: 1, h: 1 },
+     { id: 'sp', t: 'splitter', x: 2, y: 0, w: 1, h: 1 },
+     { id: 'bc', t: 'bay', x: 5, y: 0, w: 2, h: 2, agentId: 'coder' },
+     { id: 'bu', t: 'bay', x: 1, y: 3, w: 2, h: 2 }],                      // unbound bay on the S lane
+    [belt(1, 0, 'E'), belt(2, 0, 'E'), belt(3, 0, 'E'), belt(4, 0, 'E'),
+     belt(2, 1, 'S'), belt(2, 2, 'S')]
+  ));
+  const atSplit = P.routeFrom(plan, 1, 0);       // upstream of the splitter: both futures are possible
+  A.eq(atSplit.agents.join(','), 'coder', 'upstream of the splitter the flow can reach the coder bay');
+  A.eq(atSplit.unbound, 1, '...and can ride past one unbound bay hookup');
+  A.ok(atSplit.deadEnd, '...and the unbound branch sinks (deadEnd flagged)');
+  const eLane = P.routeFrom(plan, 3, 0);
+  A.eq(eLane.agents.join(','), 'coder', 'on the E lane the flow reaches exactly the coder bay');
+  A.ok(!eLane.deadEnd && eLane.unbound === 0, 'the E lane has no dead futures');
+  const sLane = P.routeFrom(plan, 2, 2);
+  A.eq(sLane.agents.length, 0, 'the S lane reaches no bound bay');
+  A.eq(sLane.unbound, 1, 'the S lane passes the unbound bay hookup');
+  const off = P.routeFrom(plan, 9, 9);
+  A.ok(off.agents.length === 0 && !off.deadEnd, 'a non-belt tile answers empty (no false claims)');
+}
+
 A.report('pipeline');
