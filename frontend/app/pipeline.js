@@ -85,6 +85,9 @@
           if (!cfg.def) errors.push({ code: 'FILTER_NO_DEFAULT', propId: p.id });
         }
         if (kind === 'merge') cfg.bufferSize = Math.max(2, p.bufferSize | 0 || 2);
+        // a splitter with fewer than two out-lanes fans nothing — it silently acts as a plain tile. Warn
+        // (not a blocker: the line still works, it just isn't doing what the prop claims) so the UI can nag.
+        if (kind === 'split' && outLanes(map, t.x, t.y).length < 2) errors.push({ code: 'SPLIT_ONE_LANE', propId: p.id, warn: true });
         junctions[key(t.x, t.y)] = cfg;
       }
     }

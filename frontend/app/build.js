@@ -28,7 +28,7 @@ const Build = (() => {
   let cache = null, cacheGeo = null, bakeDirty = true, bakeDirtyRects = null, bakeVisibleOnly = false, valPlan = null, valLive = null;   // valPlan = live RoutingPlan (cost-safety ghosts); valLive = energized-belt tile set
   const flashes = [];   // {rects, t0, bad} place/delete confirmations
   // short human labels for the routing-validation overlay (cost-safety: surfaced before any paid run)
-  const VAL_LABEL = { ORPHAN_SOURCE: 'NO BELT', ORPHAN_BAY: 'NO BELT', DEAD_BAY: 'UNREACHABLE', CYCLE: 'LOOP!', FILTER_NO_DEFAULT: 'NO DEFAULT', DUP_AGENT: 'DUP AGENT', UNBOUND_BAY: 'NO AGENT' };
+  const VAL_LABEL = { ORPHAN_SOURCE: 'NO BELT', ORPHAN_BAY: 'NO BELT', DEAD_BAY: 'UNREACHABLE', CYCLE: 'LOOP!', FILTER_NO_DEFAULT: 'NO DEFAULT', DUP_AGENT: 'DUP AGENT', UNBOUND_BAY: 'NO AGENT', SPLIT_ONE_LANE: 'ONE LANE' };
   const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
   // camera: screen = world*zoom + pan   (world = bake-pixel space, 1 tile = TILE px)
@@ -332,9 +332,9 @@ const Build = (() => {
     b.appendChild(cvEl); b.appendChild(lbl);
     if (grant) {   // capability prop — flag the POWER it grants so the gallery shows at a glance which props matter
       const g = document.createElement('span'); g.className = 'refit-proptile-grant'; g.textContent = grant; b.appendChild(g);
-    } else if (c.blocks === false) {   // walkable decor marker (agents path THROUGH it) — matches the title hint
-      const tag = document.createElement('span'); tag.className = 'refit-proptile-tag'; tag.textContent = '○'; b.appendChild(tag);
     }
+    // (the old '○' walkable marker is gone — playtesting showed it read as an unexplained mystery badge;
+    //  the hover card already states "N×M · walkable", which is where that fact is actually legible)
     propThumbs.push({ id: c.id, w: c.w, h: c.h, off, octx: off.getContext('2d'), dctx: cvEl.getContext('2d'),
                       nativeW, nativeH, bw: cvEl.width, bh: cvEl.height });
     return b;
@@ -446,10 +446,10 @@ const Build = (() => {
           ? '<ul><li>This computer becomes the chosen agent\'s <b>dedicated PC</b> — its compute.</li><li><b>Every agent needs its own PC</b>; roommates can share one room, not one computer.</li></ul>'
           : '<ul><li>Work routed to this bay <b>runs as the chosen agent</b>.</li><li>A <b>FILTER</b> upstream sorts work to the right bay by content.</li></ul>'}
         <div class="refit-form">
-        ${agents.length ? '<div class="refit-sec">YOUR AGENTS</div><div class="refit-agents refit-bay-agents">' + rows + '</div>' : ''}
-        <div class="refit-sec">AGENT ID</div>
+        ${agents.length ? '<div class="refit-sec">YOUR AGENTS — click to assign</div><div class="refit-agents refit-bay-agents">' + rows + '</div>' : ''}
+        <div class="refit-sec">${agents.length ? 'OR TYPE AN AGENT ID' : 'AGENT ID'}</div>
         <input id="bay-aid" class="refit-input" type="text" maxlength="40" placeholder="agent id — e.g. coder" value="${esc(cur)}" />
-        <div class="refit-error" id="bay-err">unknown agent — check the id</div>
+        <div class="refit-error" id="bay-err">unknown agent — pick one above, or check the id</div>
         <div class="refit-actions">
           <button type="button" class="btn-sm refit-primary" id="bay-ok">▸ ASSIGN</button>
           <button type="button" class="btn-sm" id="bay-clear">UNBIND</button>
@@ -462,7 +462,13 @@ const Build = (() => {
     const input = g.querySelector('#bay-aid');
     const clearErr = () => { input.classList.remove('is-error'); };
     const closeP = () => { if (g.parentNode) g.parentNode.removeChild(g); };
-    g.querySelectorAll('.bay-agent').forEach(b => b.onclick = () => { input.value = b.dataset.aid; clearErr(); });
+    // ONE CLICK: choosing a roster agent IS the assignment. The old behavior (click only filled the id
+    // into the input, ▸ ASSIGN still required) read as "nothing happened" and got dialogs closed half-done.
+    g.querySelectorAll('.bay-agent').forEach(b => b.onclick = () => {
+      const res = station.assignPropAgent(bayId, b.dataset.aid);
+      if (res && res.ok) { sfx('click'); flashTip(ev, noun + ' → ' + (b.textContent || res.agentId).trim(), true); closeP(); }
+      else { input.value = b.dataset.aid; input.classList.add('is-error'); sfx('bad'); }
+    });
     input.addEventListener('input', clearErr);
     g.querySelector('#bay-ok').onclick = () => {
       const res = station.assignPropAgent(bayId, input.value.trim());
@@ -494,11 +500,11 @@ const Build = (() => {
         <li>Just pick one of your active agents — its model/host was set when it was created.</li></ul>
         <div class="refit-form">
         ${agents.length
-          ? '<div class="refit-sec">YOUR AGENTS</div><div class="refit-agents refit-bay-agents">' + rows + '</div>'
+          ? '<div class="refit-sec">YOUR AGENTS — click to assign</div><div class="refit-agents refit-bay-agents">' + rows + '</div>'
           : '<div class="refit-note">No active agents yet — summon one first, or type an id below.</div>'}
-        <div class="refit-sec">AGENT ID</div>
+        <div class="refit-sec">${agents.length ? 'OR TYPE AN AGENT ID' : 'AGENT ID'}</div>
         <input id="ws-aid" class="refit-input" type="text" maxlength="40" placeholder="agent id — e.g. coder" value="${esc(cur)}" />
-        <div class="refit-error" id="ws-err">unknown agent — check the id</div>
+        <div class="refit-error" id="ws-err">unknown agent — pick one above, or check the id</div>
         <div class="refit-actions">
           <button type="button" class="btn-sm refit-primary" id="ws-ok">▸ ASSIGN</button>
           <button type="button" class="btn-sm" id="ws-clear">UNASSIGN</button>
@@ -511,7 +517,12 @@ const Build = (() => {
     const input = g.querySelector('#ws-aid');
     const clearErr = () => { input.classList.remove('is-error'); };
     const closeP = () => { if (g.parentNode) g.parentNode.removeChild(g); };
-    g.querySelectorAll('.ws-agent').forEach(b => b.onclick = () => { input.value = b.dataset.aid; clearErr(); });
+    // ONE CLICK: choosing a roster agent IS the assignment (mirrors the BAY picker — see the note there)
+    g.querySelectorAll('.ws-agent').forEach(b => b.onclick = () => {
+      const res = station.assignPropAgent(propId, b.dataset.aid);
+      if (res && res.ok) { sfx('click'); flashTip(ev, 'workstation → ' + res.agentId, true); closeP(); }
+      else { input.value = b.dataset.aid; input.classList.add('is-error'); sfx('bad'); }
+    });
     input.addEventListener('input', clearErr);
     g.querySelector('#ws-ok').onclick = () => {
       const res = station.assignPropAgent(propId, input.value.trim());

@@ -24,7 +24,7 @@ const QuestStore = (() => {
     // crash, and never an arc claiming a floor we can't read).
     const counts = (typeof World !== 'undefined' && World.stationCounts) ? World.stationCounts() : null;
     const crew = (typeof App !== 'undefined' && App.crewCount) ? App.crewCount() : 0;
-    const station = counts ? { crew, belts: counts.belts || 0, connectors: counts.connectors || 0 } : null;
+    const station = counts ? { crew, belts: counts.belts || 0, connectors: counts.connectors || 0, liveRoute: counts.liveRoute || 0 } : null;
     // G1b — the station-quest generator's fix-it quests (capdenied/capability-gap → "place a DISH in its bay").
     // Already fully shaped by the pure StationQuests engine (the store owns the live reads); a missing store
     // just means no station-gap quests (fewer quests, never a crash — the read-surface degradation idiom).

@@ -28,6 +28,8 @@ const World = (() => {
   let routeTagCache = null;                      // tileKey -> {text, ok} composed hover route tag (invalidated on recompile)
   let hoverBeltTile = null;                      // belt tile under the cursor (hover-glance route tag), or null
   let routingNags = null;                        // [{x,y,w,h,label,warn}] in-world callouts mirroring the compiler's errors
+  let feedState = { known: false, fed: true };   // server-proven "something feeds the intake" truth (channels/cron); fed=true until proven otherwise
+  let feedNagOn = false;                         // a NO FEED nag is showing → the intake becomes clickable (→ CHANNELS)
 
   /* ---------- canvas + camera ---------- */
   let cv, ctx, raf = 0, last = 0, fnow = 0, running = false, ro = null, listenersBound = false;   // listenersBound: init() can run again per new agent — bind canvas/window/doc handlers + the SSE bridge ONCE
@@ -43,7 +45,7 @@ const World = (() => {
   let scale = 2, panX = 0, panY = 0, fitNeeded = true;
   const MINZ = 0.5, MAXZ = 6;
   const clampz = (v, a, b) => v < a ? a : v > b ? b : v;
-  let drag = null, hoverAgent = null, onClick = null, onArcade = null, onOutbox = null, onMissionBoard = null, onTrophyCase = null, onBayAssign = null, wakeAt = 0;
+  let drag = null, hoverAgent = null, onClick = null, onArcade = null, onOutbox = null, onMissionBoard = null, onTrophyCase = null, onBayAssign = null, onIntakeFeed = null, wakeAt = 0;
   let camLerp = null;   // {scale,panX,panY} target — a gentle one-on-one framing for voice conversations
   let wakeDark = 0, wakeDarkTarget = 0, awakeFrozen = false;   // the AWAKENING: a darkness veil that lifts to first light, + a freeze so the newborn holds still during its first meeting
   let camAnim = null;                                          // {fromS,toS,fromX,toX,fromY,toY,t,dur,ease,onEnd} — a scripted awakening camera move
@@ -708,7 +710,7 @@ const World = (() => {
       // belt under the cursor (and no body over it) → arm the hover-glance route tag for the draw pass
       hoverBeltTile = null;
       if (!hit && beltTileSet) { const bt = tileOf(wp.x, wp.y); if (beltTileSet.has(bt.x + ',' + bt.y)) hoverBeltTile = bt; }
-      cv.style.cursor = (hit || arcadeAt(wp) || outboxAt(wp) || missionBoardAt(wp) || trophyCaseAt(wp) || unboundBayAt(wp)) ? 'pointer' : 'default';   // arcade cabinets + a stacked OUTBOX + the MISSION BOARD + the TROPHY CASE + an unbound BAY are clickable too
+      cv.style.cursor = (hit || arcadeAt(wp) || outboxAt(wp) || missionBoardAt(wp) || trophyCaseAt(wp) || unboundBayAt(wp) || intakeFeedAt(wp)) ? 'pointer' : 'default';   // arcade cabinets + a stacked OUTBOX + the MISSION BOARD + the TROPHY CASE + an unbound BAY + a starved INTAKE are clickable too
     });
     cv.addEventListener('mouseup', ev => {
       if (kindleArmed) { kindleHolding = false; return; }   // releasing during the kindle lets the spark ebb
@@ -734,12 +736,17 @@ const World = (() => {
       if (tc && onTrophyCase) { onTrophyCase(tc); return; }
       // an UNBOUND bay's nag says CLICK — the click opens the assign flow (REFIT bay picker), closing the loop
       const ub = unboundBayAt(wp);
-      if (ub && onBayAssign) onBayAssign(ub.id);
+      if (ub && onBayAssign) { onBayAssign(ub.id); return; }
+      // a NO-FEED intake's nag says CLICK — the click opens the CHANNELS panel (the fix is wiring a feed)
+      const inf = intakeFeedAt(wp);
+      if (inf && onIntakeFeed) onIntakeFeed(inf.id);
     });
     cv.addEventListener('mouseleave', () => { if (kindleArmed) kindleHolding = false; hoverAgent = null; hoverBeltTile = null; if (!drag) cv.style.cursor = 'default'; });
     // you just came back to the tab → for a few seconds the agent is likelier to look up and notice you
     try { document.addEventListener('visibilitychange', () => { if (!document.hidden) userReturnUntil = performance.now() + 3000; }); } catch (e) {}
     connectChannelBridge();   // open the SSE bridge so real inbound work animates as boxes on the belts
+    pollFeedState();          // feed truth (channels/cron) for the NO FEED intake nag — server-proven, refreshed slowly
+    setInterval(pollFeedState, 60000);   // listenersBound guards init's one-time block, so this arms exactly once
   }
 
   function resize() {
@@ -3925,6 +3932,7 @@ const World = (() => {
   function setOnArcade(fn) { onArcade = fn; }
   function setOnOutbox(fn) { onOutbox = fn; }
   function setOnBayAssign(fn) { onBayAssign = fn; }   // click an UNBOUND bay → open the assign flow (app wires to REFIT's picker)
+  function setOnIntakeFeed(fn) { onIntakeFeed = fn; } // click a NO-FEED intake → open the CHANNELS panel (app wires it)
 
   /* ---------- BELT LEGIBILITY: the floor teaches its own routing ----------
      The single failure this layer kills: a user lays belts, sees crates or dead machinery, and cannot tell
@@ -3938,11 +3946,13 @@ const World = (() => {
   // compiler error code -> the in-world callout. Wording says what to DO, not what went wrong internally.
   const NAG_LABEL = {
     UNBOUND_BAY: 'NO AGENT — CLICK', ORPHAN_BAY: 'NO BELT', ORPHAN_SOURCE: 'NO BELT',
-    DEAD_BAY: 'NO ROUTE IN', CYCLE: 'LOOP!', FILTER_NO_DEFAULT: 'NO DEFAULT LANE', DUP_AGENT: 'DUP AGENT'
+    DEAD_BAY: 'NO ROUTE IN', CYCLE: 'LOOP!', FILTER_NO_DEFAULT: 'NO DEFAULT LANE', DUP_AGENT: 'DUP AGENT',
+    SPLIT_ONE_LANE: 'SPLITTER — ONE LANE'
   };
   // project the compiled plan's error list onto floor rectangles once per recompile (zero per-frame walk)
   function buildRoutingNags() {
     const out = [];
+    feedNagOn = false;
     if (!routingPlan || !routingPlan.errors || !geo || !geo.props) return out;
     const byId = {};
     for (const p of geo.props) byId[p.id] = p;
@@ -3952,7 +3962,56 @@ const World = (() => {
       if (e.tile) out.push({ x: e.tile.x, y: e.tile.y, w: 1, h: 1, label, warn: !!e.warn });
       else { const p = e.propId != null && byId[e.propId]; if (p) out.push({ x: p.x, y: p.y, w: p.w || 1, h: p.h || 1, label, warn: !!e.warn }); }
     }
+    // beyond the compiler — two silent failure modes the floor must also confess:
+    // (a) a BOUND bay whose room grants no computer: routed work arrives and the run can't act (the compute
+    //     gate stays shut). Same bayObjects check as REFIT's NO COMPUTE ghost, now visible in the live world.
+    if (routingPlan.bays && station && typeof station.bayObjects === 'function') {
+      for (const b of routingPlan.bays) {
+        let objs = [];
+        try { objs = station.bayObjects(b.agentId) || []; } catch (_) {}
+        if (objs.indexOf('computer') >= 0) continue;
+        const p = byId[b.propId];
+        if (p) out.push({ x: p.x, y: p.y, w: p.w || 1, h: p.h || 1, label: 'NO COMPUTE — ADD A PC', warn: true });
+      }
+    }
+    // (b) a COMPLETE line with nothing wired to feed it: no channel configured and no armed routine means no
+    //     crate will EVER enter the intake. Claimed only once the server actually answered (feedState.known) —
+    //     never a nag on ignorance. The click-through opens the CHANNELS panel (onIntakeFeed).
+    if (feedState.known && !feedState.fed && beltLiveSet && Object.keys(beltLiveSet).length) {
+      for (const p of geo.props) {
+        if (p.t !== 'intake') continue;
+        out.push({ x: p.x, y: p.y, w: p.w || 1, h: p.h || 1, label: 'NO FEED — CLICK', warn: true });
+        feedNagOn = true;
+      }
+    }
     return out;
+  }
+  /* FEED TRUTH: is anything actually wired to drop work onto this floor? A channel (Telegram/Discord)
+     configured, or the cron scheduler armed with at least one enabled routine. Server-proven only —
+     `fed` stays true until a real response says otherwise, so a fetch hiccup can never fire the nag. */
+  function pollFeedState() {
+    if (typeof fetch === 'undefined') return;
+    const get = u => { try { return fetch(apiUrl(u)).then(r => (r.ok ? r.json() : null)).catch(() => null); } catch (_) { return Promise.resolve(null); } };
+    Promise.all([get('/api/channels/telegram/status'), get('/api/channels/discord/status'), get('/api/cron')]).then(([tg, dc, cron]) => {
+      if (!tg && !dc && !cron) return;   // nothing answered — keep the last known truth
+      const chan = !!((tg && tg.configured) || (dc && dc.configured));
+      const jobs = (cron && Array.isArray(cron.jobs)) ? cron.jobs : [];
+      const cronFeeds = !!(cron && cron.enabled && jobs.some(j => j && j.enabled !== false));
+      const next = { known: true, fed: chan || cronFeeds };
+      const changed = next.known !== feedState.known || next.fed !== feedState.fed;
+      feedState = next;
+      if (changed) routingNags = buildRoutingNags();   // feed truth changed → refresh the callouts
+    });
+  }
+  // hit-test: an INTAKE currently showing the NO FEED nag (its click-through opens the CHANNELS panel)
+  function intakeFeedAt(wp) {
+    if (!feedNagOn || !geo || !geo.props) return null;
+    for (const p of geo.props) {
+      if (p.t !== 'intake') continue;
+      const x0 = p.x * T, y0 = p.y * T - 10, x1 = (p.x + (p.w || 1)) * T, y1 = (p.y + (p.h || 1)) * T + 2;
+      if (wp.x >= x0 && wp.x < x1 && wp.y >= y0 && wp.y < y1) return p;
+    }
+    return null;
   }
   // hit-test: an UNBOUND bay under a world-space point (its nag says CLICK, so the footprint must be clickable)
   function unboundBayAt(wp) {
@@ -5183,9 +5242,11 @@ const World = (() => {
     liveCount: beltLiveSet ? Object.keys(beltLiveSet).length : 0,
     liveKeys: beltLiveSet ? Object.keys(beltLiveSet).sort() : [],
     nags: routingNags ? routingNags.map(n => n.label) : [],
-    routeAt: (x, y) => routeTagFor(x, y)
+    feed: { known: feedState.known, fed: feedState.fed, nagOn: feedNagOn },
+    routeAt: (x, y) => routeTagFor(x, y),
+    pollFeed: () => pollFeedState()
   });
-  return { init, rebake, crt: CRT, slagLog: () => (slaglog ? slaglog.recent() : []), loadStation, spawn, spawnAgent, relabel, setActivityFor, focusBody, setChatFocus, chatFocusPing, start, stop, setActivity, wakeIn, beginAwakening, setWakeProgress, igniteSpark, armKindle, kindleHold, camPushIn, camCreep, camPunch, camPullBack, awakenTurn, truthPulse, beginFlood, collapseFlood, endAwakening, releaseAwakening, say, focusAgent, getActivity: () => activity, getUse: () => (agent ? agent.usingProp : null), setOnClick, setOnArcade, setOnOutbox, setOnMissionBoard, setOnTrophyCase, setOnBayAssign, refit, pauseBridge, resumeBridge, _dbgSeedRun, _dbgAgeRun, _dbgReconcile, _dbgSweep, _dbgLinkState, _dbgDropBridge, _dbgBeltLegibility,
+  return { init, rebake, crt: CRT, slagLog: () => (slaglog ? slaglog.recent() : []), loadStation, spawn, spawnAgent, relabel, setActivityFor, focusBody, setChatFocus, chatFocusPing, start, stop, setActivity, wakeIn, beginAwakening, setWakeProgress, igniteSpark, armKindle, kindleHold, camPushIn, camCreep, camPunch, camPullBack, awakenTurn, truthPulse, beginFlood, collapseFlood, endAwakening, releaseAwakening, say, focusAgent, getActivity: () => activity, getUse: () => (agent ? agent.usingProp : null), setOnClick, setOnArcade, setOnOutbox, setOnMissionBoard, setOnTrophyCase, setOnBayAssign, setOnIntakeFeed, refit, pauseBridge, resumeBridge, _dbgSeedRun, _dbgAgeRun, _dbgReconcile, _dbgSweep, _dbgLinkState, _dbgDropBridge, _dbgBeltLegibility,
     // AGENT GROWTH: XpStore pushes pre-computed Xp.compute() snapshots here; pulseLevelUp fires
     // the addressed body's gold ring. The colony headline is the top-bar STATION chip.
     setXp: (agentId, a) => {
@@ -5249,11 +5310,14 @@ const World = (() => {
     // QUEST-LOG read: honest floor counts for the station-arc quests (belts laid, portals placed). A pure
     // projection of the live station doc — read-only, no caching, gates nothing.
     stationCounts: () => {
-      if (!station || !station.doc) return { belts: 0, connectors: 0 };
+      if (!station || !station.doc) return { belts: 0, connectors: 0, liveRoute: 0 };
       const d = station.doc() || {};
       return {
         belts: d.belts ? Object.keys(d.belts).length : 0,
-        connectors: d.props ? d.props.filter(p => p && p.t === 'connector_portal').length : 0
+        connectors: d.props ? d.props.filter(p => p && p.t === 'connector_portal').length : 0,
+        // tiles on a COMPLETE intake→bound-bay route (the same energized set the renderer draws) — the
+        // st:belt quest completes on THIS, not on belts laid, so it can never reward a dead line.
+        liveRoute: beltLiveSet ? Object.keys(beltLiveSet).length : 0
       };
     },
     // the live station document (read-only) — the station-quest generator reads props[] to detect the

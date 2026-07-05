@@ -204,4 +204,24 @@ const belt = (x, y, dir) => ({ x, y, dir });
   A.ok(off.agents.length === 0 && !off.deadEnd, 'a non-belt tile answers empty (no false claims)');
 }
 
+/* ---- SPLIT_ONE_LANE: a splitter with <2 out-lanes fans nothing — warn (not a blocker) ---- */
+{
+  const one = P.compileRoutingPlan(geo(
+    [{ id: 'i', t: 'intake', x: 0, y: 0, w: 1, h: 1 },
+     { id: 'sp', t: 'splitter', x: 2, y: 0, w: 1, h: 1 },
+     { id: 'b1', t: 'bay', x: 5, y: 0, w: 2, h: 2, agentId: 'a' }],
+    [belt(1, 0, 'E'), belt(2, 0, 'E'), belt(3, 0, 'E'), belt(4, 0, 'E')]   // single straight lane through the splitter
+  ));
+  A.ok(one.errors.some(e => e.code === 'SPLIT_ONE_LANE' && e.warn), 'a one-lane splitter -> SPLIT_ONE_LANE warning');
+  A.ok(P.ok(one), 'the warning does not block deploy (the line still works, it just is not splitting)');
+  const two = P.compileRoutingPlan(geo(
+    [{ id: 'i', t: 'intake', x: 0, y: 0, w: 1, h: 1 },
+     { id: 'sp', t: 'splitter', x: 2, y: 0, w: 1, h: 1 },
+     { id: 'b1', t: 'bay', x: 5, y: 0, w: 2, h: 2, agentId: 'a' },
+     { id: 'b2', t: 'bay', x: 1, y: 4, w: 2, h: 2, agentId: 'b' }],
+    [belt(1, 0, 'E'), belt(2, 0, 'E'), belt(3, 0, 'E'), belt(4, 0, 'E'), belt(2, 1, 'S'), belt(2, 2, 'S'), belt(2, 3, 'S')]
+  ));
+  A.ok(!two.errors.some(e => e.code === 'SPLIT_ONE_LANE'), 'a splitter with two real out-lanes does not warn');
+}
+
 A.report('pipeline');

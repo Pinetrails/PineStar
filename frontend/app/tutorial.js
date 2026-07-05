@@ -845,11 +845,11 @@ const Tutorial = (() => {
         + fmEntry('SHOW', 'everything else', 'plants, rugs, screens, lounge gear — flavour. they grant nothing; place them because the place is yours.');
     }
     if (tab === 'WIRING') {
-      return '<p class="fm-lead">belts let you SEE work move between stations — and route it. heads up: real work runs server-side whether or not you’ve laid a belt. the belt only ever shows it.</p>'
-        + fmEntry('REAL', 'BELT (key 7)', 'lay a line; boxes ride it. a box is a real work-item, not decoration.')
-        + fmEntry('REAL', 'INTAKE / OUTBOX', 'work enters at an intake; the reply leaves at an outbox.')
-        + fmEntry('REAL', 'BAY', 'binds a spot to an agent — work reaching it runs as that agent, with that room’s gear.')
-        + fmEntry('REAL', 'FILTER / MERGER / SPLITTER', 'route by tag, gather many into one, or fan out across agents — real branching of the pipeline.')
+      return '<p class="fm-lead">the rule: work enters at an INTAKE, rides the belts, and runs as the agent whose BAY the line ends at. belts don’t belong to agents — bays do. heads up: real work runs server-side whether or not you’ve laid a belt; the belt only ever shows and routes it.</p>'
+        + fmEntry('REAL', 'BELT (key 7)', 'drag to lay a line. a COMPLETE intake→bay line glows and animates; a cold dark line means the chain is broken — the broken piece is flagged on the floor, and hovering any belt tile shows where it flows.')
+        + fmEntry('REAL', 'INTAKE / OUTBOX', 'work enters at an intake — from a connected channel (✉ CHANNELS: telegram / discord) or an armed routine. nothing wired to feed it? the intake says NO FEED. replies leave at an outbox.')
+        + fmEntry('REAL', 'BAY', 'click it to assign an agent — work reaching its bay runs as that agent, with that room’s gear. a bay also needs a PC in its room, or routed work arrives with no compute.')
+        + fmEntry('REAL', 'FILTER / MERGER / SPLITTER', 'route by tag, gather many into one, or fan out across agents — real branching of the pipeline. a splitter needs at least two out-going lanes.')
         + fmEntry('REAL', 'AIRLOCK', 'seal a room and the agent can’t path out — an unmerged worktree, made physical.')
         + fmEntry('REAL', '▸ TEST', 'no message handy? hit TEST in REFIT — dummy crates ride your belts so you can watch them sort.')
         + fmEntry('SHOW', 'box bob · chevrons · cargo colours', 'pure juice — they make the flow legible, they don’t change what runs.');
