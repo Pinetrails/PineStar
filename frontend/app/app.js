@@ -1691,7 +1691,13 @@ const App = (() => {
     World.spawn(agent);
     World.setOnClick(() => { if (typeof StationUI !== 'undefined') StationUI.openAgent(0); });
     World.setOnArcade(() => { if (typeof StationUI !== 'undefined' && StationUI.openArcade) StationUI.openArcade(); });   // click a cabinet → BREACH PROTOCOL
-    if (World.setOnOutbox) World.setOnOutbox(() => { if (typeof ReturnStore !== 'undefined' && ReturnStore.reviewNext) ReturnStore.reviewNext(); });   // G2.3: click the stacked OUTBOX → review the oldest uncollected while-away run
+    if (World.setOnOutbox) World.setOnOutbox(() => {
+      // G2.3 first: pending while-away return-crates outrank the pallet — click reviews the oldest.
+      // Otherwise the click opens the LOGBOOK: the shift record behind today's SHIPPED stack.
+      const pending = (typeof ReturnStore !== 'undefined' && ReturnStore.pendingCount) ? (ReturnStore.pendingCount() | 0) : 0;
+      if (pending > 0 && ReturnStore.reviewNext) ReturnStore.reviewNext();
+      else if (typeof StationUI !== 'undefined' && StationUI.openTerm) StationUI.openTerm('logbook');
+    });
     if (World.setOnMissionBoard) World.setOnMissionBoard(() => { if (typeof StationUI !== 'undefined' && StationUI.openTerm) StationUI.openTerm('quests'); });   // G1b: click the MISSION BOARD → the QUEST LOG (the board is a projection, never a gate)
     if (World.setOnTrophyCase) World.setOnTrophyCase(() => { if (typeof StationUI !== 'undefined' && StationUI.openTerm) StationUI.openTerm('trophies'); });   // G3b: click the TROPHY CASE → the TROPHY surface (a projection of real completions, never a gate)
     if (World.setOnBayAssign) World.setOnBayAssign(pid => { if (typeof Build !== 'undefined' && Build.openAssign) Build.openAssign(pid); });   // belt legibility: click an unbound BAY's "NO AGENT" nag → REFIT opens straight into its agent picker

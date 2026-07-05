@@ -746,7 +746,9 @@ const World = (() => {
     try { document.addEventListener('visibilitychange', () => { if (!document.hidden) userReturnUntil = performance.now() + 3000; }); } catch (e) {}
     connectChannelBridge();   // open the SSE bridge so real inbound work animates as boxes on the belts
     pollFeedState();          // feed truth (channels/cron) for the NO FEED intake nag — server-proven, refreshed slowly
-    setInterval(pollFeedState, 60000);   // listenersBound guards init's one-time block, so this arms exactly once
+    pollShipStats();          // SHIPPED TODAY truth (completed runs since local midnight) — reload-proof
+    setInterval(pollFeedState, 60000);   // listenersBound guards init's one-time block, so these arm exactly once
+    setInterval(pollShipStats, 60000);
   }
 
   function resize() {
@@ -3145,6 +3147,7 @@ const World = (() => {
     drawHandoffBoxes(now);   // Stage 2: lead→worker delegation boxes fly over the entities
     drawMeeseeks(now);   // G4.3: the ephemeral sub-agent helper sprites clustered near the lead's desk (over the entities)
     drawQueueJam(now);   // the live backlog as a physical jam of waiting crates at the INTAKE (world-space, under the lightmap)
+    drawShippedPallet(now);   // SHIPPED TODAY: completed jobs stack as product crates at the OUTBOX (server-truth count)
 
     ctx.drawImage(cache.lightCv, 0, 0);
     drawGlows(now);
@@ -4087,15 +4090,17 @@ const World = (() => {
   function returnCrates() {
     try { return (typeof ReturnStore !== 'undefined' && ReturnStore.pendingCount) ? (ReturnStore.pendingCount() | 0) : 0; } catch (_) { return 0; }
   }
-  // hit-test: the OUTBOX chute under a world-space point — clickable ONLY while crates are stacked
-  // (an empty chute keeps plain floor behavior; no dead affordance). The stack climbs above the
-  // footprint, so extend the box up so the crates themselves are clickable too.
+  // hit-test: the OUTBOX chute under a world-space point — clickable while return-crates are stacked
+  // (click = review) OR while today's shipped pallet is showing (click = the LOGBOOK shift record).
+  // An empty chute keeps plain floor behavior; no dead affordance. The stacks spill above AND below
+  // the footprint, so the box extends both ways to keep the crates themselves clickable.
   function outboxAt(wp) {
-    if (!geo || !geo.props || returnCrates() <= 0) return null;
+    if (!geo || !geo.props) return null;
+    if (returnCrates() <= 0 && !(shipStats.known && shipStats.done > 0)) return null;
     for (const p of geo.props) {
       if (p.t !== 'outbox') continue;
       const x0 = p.x * T, y0 = p.y * T - 34;
-      const x1 = (p.x + (p.w || 1)) * T, y1 = (p.y + (p.h || 1)) * T + 4;
+      const x1 = (p.x + (p.w || 1)) * T, y1 = (p.y + (p.h || 1)) * T + 12;
       if (wp.x >= x0 && wp.x < x1 && wp.y >= y0 && wp.y < y1) return p;
     }
     return null;
@@ -4908,6 +4913,8 @@ const World = (() => {
       let line = tickerName(p.agentId) + ' ▸ RUN COMPLETE';
       if (turns > 0) line += ' · ' + turns + ' TURN' + (turns === 1 ? '' : 'S');
       if (isFinite(usd) && usd > 0) line += ' · ' + U.usd(usd);
+      // a DONE run is a shipped job: bump the pallet + tell the day's score in the same breath
+      if (p.reason === 'done') line += ' · ' + bumpShipped() + ' SHIPPED TODAY';
       pushTicker(line, '', tickerSuit(p.agentId));
     });
     U.bus.on('provider.fallback', p => {
@@ -5237,6 +5244,67 @@ const World = (() => {
     ctx.fillStyle = '#e8c860'; ctx.fillRect(x, y, 9, 1);           // top sheen
   }
 
+  /* SHIPPED TODAY — the production pride display. Every job completed today stacks a green PRODUCT
+     crate on a pallet in front of the OUTBOX, with a VT323 counter above ("SHIPPED 14"). The count is
+     SERVER truth: completed runs (reason 'done') since LOCAL midnight via /api/runs — bumped
+     optimistically on agent.run.end and reconciled by a 60s poll, so a page reload never zeroes the
+     day. No OUTBOX on the floor → no pallet (the outbox IS the shipping surface); nothing draws until
+     the server has actually answered (known), so it can never flash a fake number. Clicking the outbox
+     with no pending return-crates opens the LOGBOOK — the shift record behind the stack. */
+  let shipStats = { day: '', done: 0, known: false };
+  let shipFlash = -1e9;   // fnow of the latest shipped job — the newest crate pops for ~0.9s
+  const shipDay = () => { const d = new Date(); return d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate(); };
+  const shipMidnight = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d.getTime(); };
+  function pollShipStats() {
+    if (typeof fetch === 'undefined') return;
+    try {
+      fetch(apiUrl('/api/runs?agent=*&limit=500&since=' + shipMidnight()))
+        .then(r => (r.ok ? r.json() : null))
+        .then(j => {
+          if (!j || !Array.isArray(j.runs)) return;   // no answer — keep the last known truth
+          shipStats = { day: shipDay(), done: j.runs.filter(r => r && r.reason === 'done').length, known: true };
+        }).catch(() => {});
+    } catch (_) {}
+  }
+  // optimistic bump the moment a run lands (the 60s poll reconciles); returns the fresh count for the ticker
+  function bumpShipped() {
+    const day = shipDay();
+    if (shipStats.day !== day) shipStats = { day, done: 0, known: shipStats.known };
+    shipStats.done++; shipFlash = fnow;
+    return shipStats.done;
+  }
+  function drawShippedPallet(now) {
+    if (!shipStats.known || shipStats.done <= 0 || !geo || !geo.props) return;
+    const ob = geo.props.find(p => p.t === 'outbox');
+    if (!ob) return;
+    const done = shipStats.done;
+    const PERROW = 4, MAXVIS = 12, shown = Math.min(done, MAXVIS);
+    const baseX = (ob.x + (ob.w || 1) / 2) * T;
+    const baseY = (ob.y + (ob.h || 1)) * T + 6;   // the pallet sits on the floor in front of the chute
+    ctx.save();
+    if (linkStaleDim) ctx.globalAlpha = 0.3;   // E1: link down → this count is last-known, not live
+    for (let i = 0; i < shown; i++) {
+      const row = (i / PERROW) | 0, col = i % PERROW;
+      const pop = (i === shown - 1 && now - shipFlash < 900) ? 1 - (now - shipFlash) / 900 : 0;
+      drawShipCrate(baseX + (col - (PERROW - 1) / 2) * 10, baseY - row * 6, pop);
+    }
+    ctx.font = NAG_FONT; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+    ctx.shadowBlur = 3; ctx.shadowColor = '#62ff9e'; ctx.fillStyle = '#9adcb0';
+    ctx.fillText('SHIPPED ' + done, baseX, baseY - (((shown + PERROW - 1) / PERROW) | 0) * 6 - 4);
+    ctx.shadowBlur = 0;
+    ctx.restore();
+  }
+  // one banked PRODUCT crate — the green economy family (same read as the outbound product box)
+  function drawShipCrate(cx, cy, pop) {
+    const lift = pop > 0 ? Math.round(pop * 3) : 0;
+    const x = Math.round(cx - 4), y = Math.round(cy - 4) - lift;
+    ctx.fillStyle = '#0e1a12'; ctx.fillRect(x - 1, y - 1, 11, 8);   // dark outline
+    ctx.fillStyle = '#2e6b40'; ctx.fillRect(x, y + 3, 9, 3);        // shaded front face
+    ctx.fillStyle = '#3fa86a'; ctx.fillRect(x, y, 9, 3);            // lit green top
+    ctx.fillStyle = '#7ee2a8'; ctx.fillRect(x, y, 9, 1);            // top sheen
+    if (pop > 0.4) { const a = ctx.globalAlpha; ctx.globalAlpha = a * (pop - 0.4); ctx.fillStyle = '#c9ffe0'; ctx.fillRect(x, y, 9, 7); ctx.globalAlpha = a; }   // arrival glint
+  }
+
   /* THE FLOOR ECONOMY READOUT — the running station made legible at a glance (the Factorio dashboard).
      Four real, folded numbers (FloorStats): YIELD (productive-run rate), RUNS (decisive runs),
      CACHE (the prompt-cache "smelter" signal), SLAG (runs that produced no deliverable — it
@@ -5286,8 +5354,10 @@ const World = (() => {
     liveKeys: beltLiveSet ? Object.keys(beltLiveSet).sort() : [],
     nags: routingNags ? routingNags.map(n => n.label) : [],
     feed: { known: feedState.known, fed: feedState.fed, nagOn: feedNagOn },
+    ship: { known: shipStats.known, day: shipStats.day, done: shipStats.done },
     routeAt: (x, y) => routeTagFor(x, y),
-    pollFeed: () => pollFeedState()
+    pollFeed: () => pollFeedState(),
+    pollShip: () => pollShipStats()
   });
   return { init, rebake, crt: CRT, slagLog: () => (slaglog ? slaglog.recent() : []), loadStation, spawn, spawnAgent, relabel, setActivityFor, focusBody, setChatFocus, chatFocusPing, start, stop, setActivity, wakeIn, beginAwakening, setWakeProgress, igniteSpark, armKindle, kindleHold, camPushIn, camCreep, camPunch, camPullBack, awakenTurn, truthPulse, beginFlood, collapseFlood, endAwakening, releaseAwakening, say, focusAgent, getActivity: () => activity, getUse: () => (agent ? agent.usingProp : null), setOnClick, setOnArcade, setOnOutbox, setOnMissionBoard, setOnTrophyCase, setOnBayAssign, setOnIntakeFeed, refit, pauseBridge, resumeBridge, _dbgSeedRun, _dbgAgeRun, _dbgReconcile, _dbgSweep, _dbgLinkState, _dbgDropBridge, _dbgBeltLegibility,
     // AGENT GROWTH: XpStore pushes pre-computed Xp.compute() snapshots here; pulseLevelUp fires
