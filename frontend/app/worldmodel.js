@@ -789,6 +789,39 @@ const WorldModel = (() => {
       return out;
     }
 
+    /* THE OVERSEER'S DESK, MADE REAL. Historically the hero's starter desk was a SYNTHETIC render in
+       world.js — drawn and walk-blocking, but absent from doc.props. That was an object=capability lie
+       with real teeth: bayObjects() truthfully found no computer in the room, so a bay placed beside the
+       visible "PC" nagged NO COMPUTE and the belt system looked broken on every fresh install (2026-07-05
+       playtest bug). This materializes the same desk as a REAL placed workstation prop assigned to the
+       agent, at the exact spot the synthetic one drew (spawn room, mid-width on the north wall), keeping
+       the old invariant — the overseer always has a desk — honestly. Idempotent: no-op when the agent
+       already owns any seat-type workstation. Falls back to the nearest valid spawn-room tile if the
+       canonical spot is occupied; callers may still synthesize when even that fails (crowded floor). */
+    const SEAT_WORKSTATIONS = { desk: 1, desk2: 1, console: 1, consoleL: 1, pixelrig: 1, bench: 1 };
+    function ensureWorkstation(agentId) {
+      const aid = String(agentId || '').trim();
+      if (!aid || !AID_RE.test(aid)) return fail('BAD_AGENT');
+      if (doc.props.some(p => SEAT_WORKSTATIONS[p.t] && p.agentId === aid)) return { ok: true, existing: true };
+      const rm = doc.meta.spawnRoomId && doc.rooms[doc.meta.spawnRoomId];
+      const r = rm && rm.rects && rm.rects[0];
+      if (!r) return fail('NO_SPAWN_ROOM');
+      // the synthetic auto-desk's exact spot (mirrors world.js placeDesk fallback, in world tiles)
+      let dtx = r.x1 + Math.max(1, Math.floor((r.x2 - r.x1) / 2));
+      if (dtx + 1 > r.x2) dtx = Math.max(r.x1, r.x2 - 1);
+      const dty = Math.min(r.y1 + 1, r.y2 - 1);
+      let spot = canPlaceProp('desk', dtx, dty, 2, 1).ok ? { x: dtx, y: dty } : null;
+      if (!spot) {
+        for (let y = r.y1; y <= r.y2 && !spot; y++)
+          for (let x = r.x1; x <= r.x2 && !spot; x++)
+            if (canPlaceProp('desk', x, y, 2, 1).ok) spot = { x, y };
+      }
+      if (!spot) return fail('NO_ROOM_FOR_DESK');
+      const res = addProp({ t: 'desk', x: spot.x, y: spot.y, w: 2, h: 1, block: true });
+      if (!res.ok) return res;
+      return assignPropAgent(res.id, aid);
+    }
+
     /* ---------- serialize / subscribe ---------- */
     const serialize = () => clone(doc);
     function onChange(fn) { subs.push(fn); return () => { const i = subs.indexOf(fn); if (i >= 0) subs.splice(i, 1); }; }
@@ -802,7 +835,7 @@ const WorldModel = (() => {
       canPlaceRoom, canPlaceHallway, canPlaceProp, canPlaceBeltRun,
       // mutations
       addRoom, placeHallway, removeRoom, moveRoom, setFloor, paintTiles, renameRoom,
-      addProp, removeProp, moveProp, assignPropAgent, configureJunction, bindConnector, setDoorState,
+      addProp, removeProp, moveProp, assignPropAgent, ensureWorkstation, configureJunction, bindConnector, setDoorState,
       setBelt, removeBelt, placeBeltRun,
       // agent-bay binding queries
       propsByType, propsByAgent, pipelineEdges, setPipelineEdges, addPipelineEdge, removePipelineEdge, agentRoomId, bayObjects,

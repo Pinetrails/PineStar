@@ -487,4 +487,40 @@ const oldNoEdges = WM.deserialize({ schema: 'starnet.station', version: 1,
 A.eq(JSON.stringify(oldNoEdges.pipelineEdges()), '[]', 'legacy docs without edges migrate to []');
 A.eq(JSON.stringify(WM.deserialize({ rooms: {}, order: [], props: [], edges: [{ from: 'a', to: 'b', whenKind: 'handoff', lane: 'bad lane' }] }).pipelineEdges()), '[]', 'malformed edge lanes are dropped during migration');
 
+/* ---- ensureWorkstation: the overseer's starter desk is a REAL prop (2026-07-05 NO COMPUTE bug) ---- */
+{
+  const st = WM.create();
+  const r1 = st.ensureWorkstation('agent');
+  A.ok(r1.ok && !r1.existing, 'fresh station: ensureWorkstation seeds a desk');
+  const desks = st.props().filter(p => p.t === 'desk' && p.agentId === 'agent');
+  A.eq(desks.length, 1, 'exactly one hero-assigned desk seeded');
+  A.eq(st.roomAt(desks[0].x, desks[0].y), st.spawnRoomId(), 'seeded desk sits in the spawn room');
+  const r2 = st.ensureWorkstation('agent');
+  A.ok(r2.ok && r2.existing, 'second call is a no-op (idempotent)');
+  A.eq(st.props().filter(p => p.t === 'desk').length, 1, 'no duplicate desk on re-seed');
+
+  // THE BUG ITSELF: a bay bound to the hero, in the same room as the starter PC, must grant compute
+  const bay = st.addProp({ t: 'bay', x: 8, y: 4, w: 2, h: 2, block: false });
+  st.assignPropAgent(bay.id, 'agent');
+  A.ok(st.bayObjects('agent').indexOf('computer') >= 0, 'bay beside the STARTER desk sees a computer (no more NO COMPUTE lie)');
+}
+{
+  // canonical spot occupied → the desk still lands on the nearest valid spawn-room tile
+  const st = WM.create();
+  st.addProp({ t: 'vault', x: 8, y: 1, w: 3, h: 2, block: true });   // squat on the north-wall spot
+  const r = st.ensureWorkstation('agent');
+  A.ok(r.ok, 'occupied canonical spot: seeding falls back to a nearby valid tile');
+  A.eq(st.props().filter(p => p.t === 'desk' && p.agentId === 'agent').length, 1, 'fallback still seeds exactly one desk');
+}
+{
+  // an agent that already OWNS a workstation is never re-seeded
+  const st = WM.create();
+  const c = st.addProp({ t: 'console', x: 3, y: 6, w: 2, h: 1, block: true });
+  st.assignPropAgent(c.id, 'agent');
+  const r = st.ensureWorkstation('agent');
+  A.ok(r.ok && r.existing, 'existing assigned console counts — no desk added');
+  A.eq(st.props().filter(p => p.t === 'desk').length, 0, 'no desk seeded next to an owned console');
+  A.ok(!st.ensureWorkstation('').ok, 'blank agent id refused');
+}
+
 A.report('worldmodel');

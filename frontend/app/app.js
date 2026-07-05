@@ -1703,6 +1703,15 @@ const App = (() => {
     // flash the previous agent's built station (start() paints synchronously off the live geo/cache).
     station = (pendingStationDoc && pendingStationDoc.rooms) ? WorldModel.deserialize(pendingStationDoc) : WorldModel.create();
     pendingStationDoc = null;
+    // THE OVERSEER'S DESK IS A REAL PROP: materialize the starter workstation the world used to merely
+    // DRAW (synthetic auto-desk) as a real hero-assigned desk in the doc, BEFORE the world derives its
+    // floor — so bayObjects/REFIT/dossier see the same PC the player sees (kills the fresh-install
+    // "NO COMPUTE beside the visible PC" lie). Idempotent per load; world keeps its synthetic fallback
+    // only for the pathological no-space floor.
+    if (agent && agent.id && typeof station.ensureWorkstation === 'function') {
+      const seeded = station.ensureWorkstation(agent.id);
+      if (seeded && seeded.ok && !seeded.existing) persist();   // a real floor change — save it like any placement
+    }
     if (typeof World.loadStation === 'function') World.loadStation(station);   // the live world IS the built station
     // give resumed summoned crew their real floor bodies now that the station/geo is loaded (no-op for a
     // single-agent save; summon-during-game spawns its own body directly).
