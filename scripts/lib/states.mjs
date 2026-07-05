@@ -83,8 +83,9 @@ export function buildStates() {
     { name: 'ingame',          drive: closeOnly,                                   wait: 900 },
     // CREW group
     { name: 'crew-agents',     drive: openSel('[data-term="agents"]', 'AGENTS') },
-    { name: 'crew-roster',     drive: openSel('#bb-roster', 'ROSTER→RECRUITMENT'), wait: 1800 },
-    { name: 'crew-summon',     drive: openSel('#bb-summon', 'SUMMON'),             wait: 1800 },
+    // ONE recruit door now (#bb-recruit): the old ROSTER/SUMMON split collapsed into a single
+    // bay whose class dossier carries both verbs, so one state captures it.
+    { name: 'crew-recruit',    drive: openSel('#bb-recruit', 'RECRUIT'),           wait: 1800 },
     { name: 'crew-commander',  drive: openSel('[data-term="commander"]', 'COMMANDER') },
     // WORK group
     { name: 'work-tasks',      drive: openSel('[data-term="tasks"]', 'TASKS') },

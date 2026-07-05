@@ -243,7 +243,7 @@ async function scenarioTask(cdp, A) {
 async function scenarioSummon(cdp, A) {
   await evalJS(cdp, closeOnly).catch(() => {});
   const before = (await getBodies(cdp)).length;
-  const opened = await evalJS(cdp, openSel('#bb-summon', 'SUMMON')).catch((e) => 'ERR:' + e.message);
+  const opened = await evalJS(cdp, openSel('#bb-recruit', 'RECRUIT')).catch((e) => 'ERR:' + e.message);
   const bayUp = await waitSel(cdp, '.mkt-cta-main.mkt-deploy', 40);        // bay opens after an /api/limits fetch
   A.ok('summon/bay-open', bayUp, bayUp ? `recruitment bay shown (${opened})` : `.mkt-cta-main.mkt-deploy never appeared (${opened})`);
   if (bayUp) {
