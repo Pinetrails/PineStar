@@ -28,7 +28,12 @@ const Build = (() => {
   let cache = null, cacheGeo = null, bakeDirty = true, bakeDirtyRects = null, bakeVisibleOnly = false, valPlan = null, valLive = null;   // valPlan = live RoutingPlan (cost-safety ghosts); valLive = energized-belt tile set
   const flashes = [];   // {rects, t0, bad} place/delete confirmations
   // short human labels for the routing-validation overlay (cost-safety: surfaced before any paid run)
-  const VAL_LABEL = { ORPHAN_SOURCE: 'NO BELT', ORPHAN_BAY: 'NO BELT', DEAD_BAY: 'UNREACHABLE', CYCLE: 'LOOP!', FILTER_NO_DEFAULT: 'NO DEFAULT', DUP_AGENT: 'DUP AGENT', UNBOUND_BAY: 'NO AGENT', SPLIT_ONE_LANE: 'ONE LANE' };
+  // every label NAMES THE FIX, in words (mirrors world.js NAG_LABEL — keep the two in sync)
+  const VAL_LABEL = {
+    ORPHAN_SOURCE: 'NO BELT OUT — DRAW A LINE', ORPHAN_BAY: 'NOT ON THE LINE', BAY_NOT_FED: 'BELT TO NOWHERE',
+    CYCLE: 'LOOP! — BREAK THE CIRCLE', FILTER_NO_DEFAULT: 'NO DEFAULT LANE — CLICK', DUP_AGENT: 'DUP AGENT — ONE BAY EACH',
+    UNBOUND_BAY: 'NO AGENT — CLICK', SPLIT_ONE_LANE: 'SPLITTER NEEDS 2 LANES'
+  };
   const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
   // camera: screen = world*zoom + pan   (world = bake-pixel space, 1 tile = TILE px)
@@ -413,8 +418,8 @@ const Build = (() => {
           <li><span class="g-ok">green</span> = ok · <span class="g-bad">red</span> = blocked (a tip says why).</li>
           <li><b>PAINT</b> decks, <b>MOVE</b> / <b>RECLAIM</b> rooms · <b>UNDO</b> anything.</li>
           <li>Your agent walks the rooms + corridors you build.</li>
-          <li><b>BELT</b> (7) draws the line. <b>PROP ▸ WORKFLOW</b> places <b>INTAKE</b> (work enters) and <b>BAY</b> (click it, assign an agent — work whose belt route <b>ends at its bay runs as that agent</b>).</li>
-          <li>A complete INTAKE→BAY line <b>glows and runs</b>; an incomplete one goes <b>cold</b> and the broken piece is flagged. Hit <b>▸ TEST</b> to watch a box ride.</li>
+          <li>Start simple: place a <b>BAY</b> (PROP ▸ WORKFLOW), click it, assign an agent — <b>done</b>. Work for that agent lands at its dock.</li>
+          <li>Then upgrade: <b>INTAKE → BELT (7) → BAY</b> makes work <b>ride in</b>; <b>BAY → BELT → OUTBOX</b> ships finished work <b>out</b>. Complete lines <b>glow</b>; broken pieces are <b>flagged in words</b>. Hit <b>▸ TEST</b> to watch a box ride.</li>
         </ul>
         <button class="btn-sm refit-primary" id="refit-guide-go">▸ START BUILDING</button>
       </div>`;
@@ -1092,7 +1097,8 @@ const Build = (() => {
     else ctx.drawImage(cache.lightCv, ox, oy);
     drawGlows(now);
     drawFlashes(now, t);
-    drawRoutingValidation(t, now);   // red/amber markers on any unroutable junction/bay (cost-safety)
+    drawRoutingValidation(t, now);   // plain-words callouts on any broken piece, IN build mode (cost-safety + guidance)
+    drawBeltEndpointGlow(t, now);    // BELT tool armed → INTAKE glows FROM, BAY/OUTBOX glow TO (what connects to what)
     drawHover(t);
     drawAgentTag(t);   // hovering a PC or BAY names the agent it's bound to (or flags an unassigned PC)
     drawGhost(t, now);
@@ -1168,27 +1174,49 @@ const Build = (() => {
     const dt = lastFrameTs ? (now - lastFrameTs) : 16; lastFrameTs = now;
     // route the preview boxes through the SAME junctions the compiled plan uses, so a TEST box sorts exactly as
     // real work will (build-time "does my routing work?" loop). null until a junction exists -> boxes go straight.
-    const jmap = (valPlan && valPlan.junctions && Object.keys(valPlan.junctions).length) ? new Map(Object.entries(valPlan.junctions)) : null;
+    // Junction keys are LOCAL-frame (valPlan compiles from cacheGeo) — REBASE them to the WORLD tiles the
+    // preview belts use, or junctions silently never trigger off-origin (the frame-drift bug class).
+    let jmap = null;
+    if (valPlan && valPlan.junctions && cacheGeo) {
+      const o = cacheGeo.origin || { tx: 0, ty: 0 };
+      for (const k in valPlan.junctions) { const p = k.split(','); (jmap = jmap || new Map()).set((+p[0] + o.tx) + ',' + (+p[1] + o.ty), valPlan.junctions[k]); }
+    }
     convey.tick(dt, now, belts, jmap);
     convey.drawBelts(ctx, now, t, belts, valLive);
   }
   function drawConveyorBoxes(now, t) { if (convey) convey.drawBoxes(ctx, now, t); }
 
-  /* cost-safety overlay: an unroutable floor would silently send work into a void or an infinite paid loop, so
-     surface it BEFORE any run. Red = blocking (orphan source / dead bay / cycle / filter has no default lane /
-     duplicate agent); amber = warning (a bay with no agent). Plan is recomputed only on a floor edit (rebake). */
+  /* THE GUIDANCE LIVES WHERE THE HANDS ARE (2026-07-05 playtest): callouts render INSIDE build mode, in
+     plain words that name the fix, at a size you can read while placing — the same visual language as the
+     live world's nags (corner brackets + VT323 phosphor), not the old 7px whisper. All plan-derived
+     coordinates are LOCAL-frame (valPlan compiles from cacheGeo) and are REBASED by cacheGeo.origin here,
+     which kills the frame-drift bug that misplaced ghosts on off-origin floors.
+     Red = blocking (loop / no default lane / dup agent / dry intake); amber = fixable advice. */
+  const VAL_FONT = () => Math.max(9, 11 / zoom) + "px 'VT323','Courier New',monospace";
   function drawRoutingValidation(t, now) {
     if (!cacheGeo) return;
-    const pulse = 0.5 + 0.5 * Math.sin(now / 300);
-    ctx.lineWidth = 2 / zoom;
-    ctx.textAlign = 'center'; ctx.textBaseline = 'bottom'; ctx.font = (7 / zoom) + 'px monospace';
+    const o = cacheGeo.origin || { tx: 0, ty: 0 };
+    const pulse = 0.55 + 0.35 * Math.sin(now / 280);
     const mark = (rect, col, label) => {
-      const X = rect.x1 * t, Y = rect.y1 * t, Wd = (rect.x2 - rect.x1 + 1) * t, Hd = (rect.y2 - rect.y1 + 1) * t;
-      ctx.fillStyle = 'rgba(' + col + ',' + (0.10 + 0.12 * pulse).toFixed(3) + ')'; ctx.fillRect(X, Y, Wd, Hd);
-      ctx.strokeStyle = 'rgba(' + col + ',0.95)'; ctx.strokeRect(X + 0.5 / zoom, Y + 0.5 / zoom, Wd - 1 / zoom, Hd - 1 / zoom);
-      ctx.fillStyle = 'rgba(' + col + ',0.95)'; ctx.fillText(label, X + Wd / 2, Y - 1 / zoom);
+      // rect arrives in LOCAL tiles → draw in WORLD px (bake + props frame)
+      const X = (rect.x1 + o.tx) * t, Y = (rect.y1 + o.ty) * t;
+      const Wd = (rect.x2 - rect.x1 + 1) * t, Hd = (rect.y2 - rect.y1 + 1) * t;
+      const L = Math.max(3, Math.floor(t / 3));
+      ctx.save();
+      ctx.globalAlpha = pulse;
+      ctx.strokeStyle = col; ctx.lineWidth = 1.5 / zoom;
+      ctx.beginPath();   // corner brackets — a machinery callout, not a selection box
+      ctx.moveTo(X + .5, Y + .5 + L); ctx.lineTo(X + .5, Y + .5); ctx.lineTo(X + .5 + L, Y + .5);
+      ctx.moveTo(X + Wd - .5 - L, Y + .5); ctx.lineTo(X + Wd - .5, Y + .5); ctx.lineTo(X + Wd - .5, Y + .5 + L);
+      ctx.moveTo(X + .5, Y + Hd - .5 - L); ctx.lineTo(X + .5, Y + Hd - .5); ctx.lineTo(X + .5 + L, Y + Hd - .5);
+      ctx.moveTo(X + Wd - .5, Y + Hd - .5 - L); ctx.lineTo(X + Wd - .5, Y + Hd - .5); ctx.lineTo(X + Wd - .5 - L, Y + Hd - .5);
+      ctx.stroke();
+      ctx.font = VAL_FONT(); ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+      ctx.shadowBlur = 3; ctx.shadowColor = col; ctx.fillStyle = col;
+      ctx.fillText(label, X + Wd / 2, Y - 2 / zoom);
+      ctx.restore();
     };
-    // routing errors from the compiled plan (orphan source / dead bay / cycle / no default / dup agent / no agent)
+    // routing findings from the compiled plan — every label names the FIX (see VAL_LABEL)
     if (valPlan && valPlan.errors && valPlan.errors.length) {
       const propById = {};
       for (const p of (cacheGeo.props || [])) propById[p.id] = p;
@@ -1196,16 +1224,16 @@ const Build = (() => {
         let rect = null;
         if (e.tile) rect = { x1: e.tile.x, y1: e.tile.y, x2: e.tile.x, y2: e.tile.y };
         else if (e.propId && propById[e.propId]) { const p = propById[e.propId]; rect = { x1: p.x, y1: p.y, x2: p.x + (p.w || 1) - 1, y2: p.y + (p.h || 1) - 1 }; }
-        if (rect) mark(rect, e.warn ? '255,190,60' : '255,80,70', VAL_LABEL[e.code] || e.code);   // amber warn vs red blocker
+        if (rect) mark(rect, e.warn ? '#ffbe3c' : '#ff5046', VAL_LABEL[e.code] || e.code);   // amber warn vs red blocker
       }
     }
-    // B5 cost-safety: a BOUND bay whose room has no workstation can't run — the compute gate stays shut, so
-    // routed work would silently do nothing. Surface it (amber) so the Commander knows to equip the bay.
+    // B5 cost-safety: a BOUND bay whose room has no dedicated PC can't run routed work — the compute gate
+    // stays shut. Surface it (amber) so the Commander equips the bay while still IN build mode.
     if (typeof station.bayObjects === 'function') {
       for (const p of (cacheGeo.props || [])) {
         if (p.t !== 'bay' || !p.agentId) continue;
         if (station.bayObjects(p.agentId).indexOf('computer') >= 0) continue;
-        mark({ x1: p.x, y1: p.y, x2: p.x + (p.w || 1) - 1, y2: p.y + (p.h || 1) - 1 }, '255,190,60', 'NO COMPUTE');
+        mark({ x1: p.x, y1: p.y, x2: p.x + (p.w || 1) - 1, y2: p.y + (p.h || 1) - 1 }, '#ffbe3c', 'NO COMPUTE — ADD A PC IN THIS ROOM');
       }
     }
     // a CONNECTOR PORTAL with no bound server grants nothing — surface it (amber) so the Commander binds one.
@@ -1213,8 +1241,31 @@ const Build = (() => {
       if (p.t !== 'connector_portal') continue;
       const live = station.propById(p.id);
       if (live && live.connectorId) continue;
-      mark({ x1: p.x, y1: p.y, x2: p.x + (p.w || 1) - 1, y2: p.y + (p.h || 1) - 1 }, '255,190,60', 'UNBOUND');
+      mark({ x1: p.x, y1: p.y, x2: p.x + (p.w || 1) - 1, y2: p.y + (p.h || 1) - 1 }, '#ffbe3c', 'NO SERVER — CLICK TO BIND');
     }
+  }
+  /* BELT-TOOL ENDPOINT GLOW: while the BELT tool is armed, the legal endpoints announce themselves —
+     INTAKE pulses green "FROM", bound BAYs and OUTBOX pulse cyan "TO" — so "what do I connect to what"
+     is answered by the floor itself before the first tile is laid. Desks never glow: belts don't run to
+     workstations (the agent carries work the last leg). */
+  function drawBeltEndpointGlow(t, now) {
+    if (tool !== 'belt' || !station) return;
+    const pulse = 0.45 + 0.3 * Math.sin(now / 260);
+    ctx.save();
+    ctx.font = VAL_FONT(); ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+    for (const p of station.props()) {
+      const role = p.t === 'intake' ? 'FROM' : (p.t === 'bay' || p.t === 'outbox') ? 'TO' : null;
+      if (!role) continue;
+      const col = role === 'FROM' ? '#3fd08a' : '#5ad0ff';
+      const X = p.x * t, Y = p.y * t, Wd = (p.w || 1) * t, Hd = (p.h || 1) * t;
+      ctx.globalAlpha = pulse;
+      ctx.strokeStyle = col; ctx.lineWidth = 1.5 / zoom;
+      ctx.strokeRect(X - 1, Y - 1, Wd + 2, Hd + 2);
+      ctx.shadowBlur = 3; ctx.shadowColor = col; ctx.fillStyle = col;
+      ctx.fillText(role, X + Wd / 2, Y + Hd + 2 / zoom);
+      ctx.shadowBlur = 0;
+    }
+    ctx.restore();
   }
 
   // hovering an agent-bound endpoint (a PC = compute, a BAY = routing) floats the bound agent's name above it —

@@ -32,15 +32,53 @@ const belt = (x, y, dir) => ({ x, y, dir });
   A.ok(!P.ok(plan), 'an orphan-source plan is not deployable');
 }
 
-/* ---- DEAD_BAY: a bay unreachable from any source ---- */
+/* ---- BAY_NOT_FED (was blocking DEAD_BAY): a hooked bay whose belt serves NEITHER direction ---- */
 {
   const plan = P.compileRoutingPlan(geo(
     [{ id: 'i1', t: 'intake', x: 0, y: 0, w: 1, h: 1 },
      { id: 'b1', t: 'bay', x: 8, y: 8, w: 2, h: 2, agentId: 'lonely' }],
-    [belt(1, 0, 'E'), belt(2, 0, 'E'), belt(9, 8, 'E')]   // bay belt disconnected from the source belt
+    [belt(1, 0, 'E'), belt(2, 0, 'E'), belt(9, 8, 'E')]   // bay's belt scrap: no intake feeds it, no outbox receives it
   ));
   A.eq(plan.reach.lonely, false, 'an unconnected bay is not reachable');
-  A.ok(plan.errors.some(e => e.code === 'DEAD_BAY' && e.agentId === 'lonely'), '-> DEAD_BAY');
+  A.ok(plan.errors.some(e => e.code === 'BAY_NOT_FED' && e.agentId === 'lonely' && e.warn), 'belt to nowhere -> BAY_NOT_FED (warn)');
+  A.ok(P.ok(plan), 'a belt-to-nowhere is advice, never a deploy blocker (dispatch cannot route to it anyway)');
+}
+
+/* ---- LONE BAY IS A COMPLETE BUILD: no intake, no belts -> zero findings (the 2026-07-05 confusion bug) ---- */
+{
+  const plan = P.compileRoutingPlan(geo([{ id: 'b1', t: 'bay', x: 5, y: 0, w: 2, h: 2, agentId: 'solo' }], []));
+  A.eq(plan.errors.length, 0, 'a lone assigned bay has NO errors — the simplest build just works');
+  A.ok(P.ok(plan), 'lone-bay plan is deployable');
+  A.eq(plan.dockBays.length, 1, 'the lone bay is recorded as a working dock');
+  A.eq(plan.bays.length, 0, 'a beltless bay never enters the dispatch bays (router semantics untouched)');
+}
+
+/* ---- OUTBOUND LANE IS VALID + GLOWS: bay -> belt -> OUTBOX with NO intake (Andrew's exact repro) ---- */
+{
+  const plan = P.compileRoutingPlan(geo(
+    [{ id: 'b1', t: 'bay', x: 0, y: 0, w: 2, h: 2, agentId: 'coder' },
+     { id: 'o1', t: 'outbox', x: 6, y: 0, w: 2, h: 2 }],
+    [belt(2, 1, 'E'), belt(3, 1, 'E'), belt(4, 1, 'E'), belt(5, 1, 'E')]
+  ));
+  A.eq(plan.errors.length, 0, 'bay->belt->outbox with no intake: ZERO findings (a correct ship-out lane, not "NO ROUTE IN")');
+  A.ok(P.ok(plan), 'the outbound lane deploys');
+  const live = P.liveTiles(plan);
+  A.ok(live['2,1'] && live['3,1'] && live['4,1'] && live['5,1'], 'the outbound lane GLOWS live end to end');
+  const r = P.routeFrom(plan, 3, 1);
+  A.ok(r.outbox && !r.deadEnd && r.agents.length === 0, 'hovering the outbound lane answers OUTBOX, not DEAD END');
+}
+
+/* ---- ORPHAN_BAY is contextual: beltless bay + an intake line elsewhere -> warn; without a line -> silent ---- */
+{
+  const withLine = P.compileRoutingPlan(geo(
+    [{ id: 'i1', t: 'intake', x: 0, y: 0, w: 1, h: 1 },
+     { id: 'b1', t: 'bay', x: 8, y: 8, w: 2, h: 2, agentId: 'apart' }],
+    [belt(1, 0, 'E'), belt(2, 0, 'E')]
+  ));
+  A.ok(withLine.errors.some(e => e.code === 'ORPHAN_BAY' && e.warn), 'a line exists + bay not hooked -> NOT ON THE LINE (warn)');
+  A.ok(P.ok(withLine), '...and it never blocks deploy');
+  const noLine = P.compileRoutingPlan(geo([{ id: 'b1', t: 'bay', x: 8, y: 8, w: 2, h: 2, agentId: 'apart' }], [belt(1, 0, 'E')]));
+  A.ok(!noLine.errors.some(e => e.code === 'ORPHAN_BAY'), 'no intake line anywhere -> a beltless bay is NOT a finding');
 }
 
 /* ---- CYCLE: a belt loop is a HARD error (a loop = infinite paid runOnce) ---- */

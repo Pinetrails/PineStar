@@ -63,7 +63,10 @@ function makeRouter(o) {
   function stationFor(agentId) {
     const p = activePlan();
     if (!p || !agentId) return null;
-    const bay = (p.bays || []).find(b => b.agentId === agentId);
+    // a bay isolates its agent whether or not a belt is hooked to it: `bays` = belt-hooked dispatch targets,
+    // `dockBays` = EVERY bound bay (a lone dock is a complete build — 2026-07-05 sense pass). Older plans
+    // without dockBays behave exactly as before.
+    const bay = (p.bays || []).find(b => b.agentId === agentId) || (p.dockBays || []).find(b => b.agentId === agentId);
     if (!bay) return null;
     const authoritative = stationStore.hasStation() ? stationStore.bayObjects(agentId) : null;
     const objs = Array.isArray(authoritative) ? authoritative : (Array.isArray(bay.objects) ? bay.objects : []);

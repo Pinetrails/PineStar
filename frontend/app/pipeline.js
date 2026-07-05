@@ -92,7 +92,18 @@
       }
     }
 
-    const seenAgent = {}, unboundBays = [];
+    // OUTBOX hookups: the legal END of an outbound lane (bay/desk -> outbox). Legibility-only — dispatch
+    // never routes THROUGH an outbox — but recording them lets a bay->outbox line count as a VALID build
+    // instead of being shamed as unreachable (the 2026-07-05 "NO ROUTE IN on a correct outbound lane" bug).
+    const outs = [];
+    for (const p of props) {
+      if (p.t !== 'outbox') continue;
+      const t = beltTileNear(map, p.x, p.y, p.w || 1, p.h || 1);
+      if (t) outs.push({ propId: p.id, tile: t });
+    }
+
+    const seenAgent = {}, unboundBays = [], dockBays = [];
+    const hasLine = sources.length > 0;   // an INTAKE line exists — only then can "not fed by it" be a finding
     for (const p of props) {
       if (p.t !== 'bay') continue;
       if (!p.agentId) {
@@ -103,8 +114,15 @@
         if (ut) unboundBays.push({ propId: p.id, tile: ut });
         continue;
       }
+      // EVERY bound bay is a working dock (legibility list; NOT the dispatch `bays` — router semantics untouched).
+      // A LONE assigned bay is a COMPLETE build: work addressed to its agent arrives at the dock, no belts needed.
+      dockBays.push({ propId: p.id, agentId: p.agentId, x: p.x, y: p.y, w: p.w || 1, h: p.h || 1 });
       const t = beltTileNear(map, p.x, p.y, p.w || 1, p.h || 1);
-      if (!t) { errors.push({ code: 'ORPHAN_BAY', propId: p.id, agentId: p.agentId }); continue; }
+      if (!t) {
+        // beltless bound bay: valid alone; merely "not on the line" (warn) when an intake line exists elsewhere
+        if (hasLine) errors.push({ code: 'ORPHAN_BAY', propId: p.id, agentId: p.agentId, warn: true });
+        continue;
+      }
       if (seenAgent[p.agentId]) { errors.push({ code: 'DUP_AGENT', propId: p.id, agentId: p.agentId }); continue; }
       seenAgent[p.agentId] = true;
       bays.push({ agentId: p.agentId, propId: p.id, tile: t });
@@ -126,63 +144,94 @@
         for (const nt of nextTiles(map, junctions, t)) { const nk = key(nt.x, nt.y); if (!seen[nk]) { seen[nk] = true; q.push(nt); } }
       }
     }
-    for (const b of bays) if (!reach[b.agentId]) errors.push({ code: 'DEAD_BAY', propId: b.propId, agentId: b.agentId });
+    // outbound reach: does this hooked bay's flow arrive at an OUTBOX? (a pure outbound lane is a VALID build)
+    const outSet = {};
+    for (const o of outs) outSet[key(o.tile.x, o.tile.y)] = true;
+    function flowsToOutbox(from) {
+      if (cyc) return false;
+      const seen = {}, q = [from]; seen[key(from.x, from.y)] = true;
+      while (q.length) {
+        const t = q.shift(), k = key(t.x, t.y);
+        if (outSet[k]) return true;
+        for (const nt of nextTiles(map, junctions, t)) { const nk = key(nt.x, nt.y); if (!seen[nk]) { seen[nk] = true; q.push(nt); } }
+      }
+      return false;
+    }
+    // a HOOKED bay whose belt serves NEITHER direction (no intake feeds it, no outbox receives from it)
+    // is a belt to nowhere — a warning, never a blocker (dispatch can't route to it anyway: resolveTarget
+    // only walks from sources). This replaces the old blocking DEAD_BAY, which condemned valid outbound lanes.
+    for (const b of bays) if (!reach[b.agentId] && !flowsToOutbox(b.tile)) errors.push({ code: 'BAY_NOT_FED', propId: b.propId, agentId: b.agentId, warn: true });
 
-    const plan = { sources, bays, junctions, belts: map, bayTileToAgent, unboundBays, reach, errors };
-    plan.hash = hashStr(JSON.stringify({ sources, bays, junctions, belts: map }));   // hash excludes unboundBays: same topology, same hash
+    const plan = { sources, bays, junctions, belts: map, bayTileToAgent, unboundBays, dockBays, outs, reach, errors };
+    plan.hash = hashStr(JSON.stringify({ sources, bays, junctions, belts: map }));   // hash excludes the legibility extras: same dispatch topology, same hash
     return plan;
   }
 
   /* ---------- legibility layer: pure readouts of the compiled plan (no routing behavior) ----------
-     liveTiles(plan) -> { "x,y": true } for every belt tile on a COMPLETE route: reachable forward from an
-     INTAKE source AND flowing onward into a bound bay. The renderer draws these tiles energized and the
-     rest cold, so "the line powers on" is literally the compiled plan — truthful telemetry by construction. */
+     liveTiles(plan) -> { "x,y": true } for every belt tile on a COMPLETE route, in EITHER direction:
+       • inbound  — reachable forward from an INTAKE source AND flowing onward into a bound bay;
+       • outbound — reachable forward from a bound bay's hookup AND flowing onward into an OUTBOX.
+     The renderer draws these tiles energized and the rest cold, so "the line powers on" is literally the
+     compiled plan — truthful telemetry by construction. A bay->outbox ship-out lane glows exactly like an
+     intake->bay feed lane: both genuinely carry real crates. */
   function liveTiles(plan) {
     const out = {};
-    if (!plan || !plan.belts || !plan.sources || !plan.sources.length) return out;
+    if (!plan || !plan.belts) return out;
     const map = plan.belts, junctions = plan.junctions || {}, bayAt = plan.bayTileToAgent || {};
-    // forward: every tile a box could occupy starting from any source (a bound bay consumes — don't expand past it)
-    const fwd = {}, q = [];
-    for (const s of plan.sources) { const k = key(s.tile.x, s.tile.y); if (map[k] && !fwd[k]) { fwd[k] = true; q.push(s.tile); } }
-    while (q.length) {
-      const t = q.shift();
-      if (bayAt[key(t.x, t.y)]) continue;
-      for (const nt of nextTiles(map, junctions, t)) { const nk = key(nt.x, nt.y); if (!fwd[nk]) { fwd[nk] = true; q.push(nt); } }
-    }
-    // backward: every tile whose flow can still REACH a bound bay (reverse-BFS from bay tiles over flow edges)
-    const rev = {};   // tileKey -> [upstream tileKeys]
+    // shared reverse adjacency (tileKey -> upstream tileKeys), built once for both direction passes
+    const rev = {};
     for (const k in map) {
       const p = k.split(','), t = { x: +p[0], y: +p[1] };
       for (const nt of nextTiles(map, junctions, t)) { const nk = key(nt.x, nt.y); (rev[nk] = rev[nk] || []).push(k); }
     }
-    const bwd = {}, q2 = [];
-    for (const k in bayAt) if (map[k]) { bwd[k] = true; q2.push(k); }
-    while (q2.length) {
-      const k = q2.shift();
-      for (const uk of (rev[k] || [])) if (!bwd[uk]) { bwd[uk] = true; q2.push(uk); }
+    // forward flood from `starts`, intersected with a reverse flood from `ends` — the tiles on a complete route
+    function segment(starts, stopAtBay, ends) {
+      const fwd = {}, q = [];
+      for (const s of starts) { const k = key(s.x, s.y); if (map[k] && !fwd[k]) { fwd[k] = true; q.push(s); } }
+      while (q.length) {
+        const t = q.shift();
+        if (stopAtBay && bayAt[key(t.x, t.y)]) continue;   // a bound bay consumes inbound boxes
+        for (const nt of nextTiles(map, junctions, t)) { const nk = key(nt.x, nt.y); if (!fwd[nk]) { fwd[nk] = true; q.push(nt); } }
+      }
+      const bwd = {}, q2 = [];
+      for (const e of ends) { const k = key(e.x, e.y); if (map[k] && !bwd[k]) { bwd[k] = true; q2.push(k); } }
+      while (q2.length) {
+        const k = q2.shift();
+        for (const uk of (rev[k] || [])) if (!bwd[uk]) { bwd[uk] = true; q2.push(uk); }
+      }
+      for (const k in fwd) if (bwd[k]) out[k] = true;
     }
-    for (const k in fwd) if (bwd[k]) out[k] = true;
+    // inbound: intake sources -> bound-bay hookups
+    const bayTiles = [];
+    for (const k in bayAt) { const p = k.split(','); bayTiles.push({ x: +p[0], y: +p[1] }); }
+    if (plan.sources && plan.sources.length && bayTiles.length) segment(plan.sources.map(s => s.tile), true, bayTiles);
+    // outbound: bound-bay hookups -> outbox hookups
+    const outTiles = (plan.outs || []).map(o => o.tile);
+    if (bayTiles.length && outTiles.length) segment(bayTiles, false, outTiles);
     return out;
   }
 
   /* routeFrom(plan, x, y) -> where does the flow from THIS belt tile end up?
-     { agents: [agentId...], unbound: n, deadEnd: bool } — agents sorted (deterministic), unbound counts
-     distinct unassigned-bay hookups passed, deadEnd true if any branch sinks without reaching a bound bay.
-     Fans out ALL junction lanes (a hover tag answers "where CAN this go", not one dispatch decision). */
+     { agents: [agentId...], unbound: n, outbox: bool, deadEnd: bool } — agents sorted (deterministic),
+     unbound counts distinct unassigned-bay hookups passed, outbox true when the flow reaches an OUTBOX
+     hookup (a ship-out lane), deadEnd true if any branch sinks with none of the above. Fans out ALL
+     junction lanes (a hover tag answers "where CAN this go", not one dispatch decision). */
   function routeFrom(plan, x, y) {
-    const res = { agents: [], unbound: 0, deadEnd: false };
+    const res = { agents: [], unbound: 0, outbox: false, deadEnd: false };
     if (!plan || !plan.belts || !plan.belts[key(x, y)]) return res;
     const map = plan.belts, junctions = plan.junctions || {}, bayAt = plan.bayTileToAgent || {};
-    const unboundAt = {};
+    const unboundAt = {}, outAt = {};
     for (const u of (plan.unboundBays || [])) unboundAt[key(u.tile.x, u.tile.y)] = u.propId;
+    for (const o of (plan.outs || [])) outAt[key(o.tile.x, o.tile.y)] = true;
     const agents = {}, unboundSeen = {}, seen = {}, q = [{ x, y }];
     seen[key(x, y)] = true;
     while (q.length) {
       const t = q.shift(), k = key(t.x, t.y);
       if (bayAt[k]) { agents[bayAt[k]] = true; continue; }   // a bound bay consumes the box
       if (unboundAt[k]) unboundSeen[unboundAt[k]] = true;     // riding past a dead hookup — note it, flow continues
+      if (outAt[k]) res.outbox = true;                        // this lane ships out (flow may continue past)
       const nts = nextTiles(map, junctions, t);
-      if (!nts.length) { res.deadEnd = true; continue; }      // open end with no bay: the box sinks
+      if (!nts.length) { if (!outAt[k]) res.deadEnd = true; continue; }   // an open end AT the outbox is a delivery, not a dead end
       for (const nt of nts) { const nk = key(nt.x, nt.y); if (!seen[nk]) { seen[nk] = true; q.push(nt); } }
     }
     res.agents = Object.keys(agents).sort();

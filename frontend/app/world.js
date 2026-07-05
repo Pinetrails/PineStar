@@ -3179,6 +3179,7 @@ const World = (() => {
     drawAwaitTag(now);    // G4.1: the amber AWAITING APPROVAL tag over a permission-blocked hero
     drawRoutingNags(now); // BELT LEGIBILITY: the compiled plan's errors as in-world callouts on the broken piece
     drawBeltHoverTag(now);// BELT LEGIBILITY: hover a belt tile → where does this line flow (a glance, never a window)
+    drawDockFlashes(now); // LONE-BAY dock arrival: the bay visibly catches work when no belt line exists
     drawPinFlourish(now); // G4.2: the amber pin-burst at the board the instant a proposal is pinned
     if (agent && !agent.unplaced) drawBubble(now);
     for (const b of crew) drawBubble(now, b);   // crew speech bubbles (e.g. "received: …" when work routes to them)
@@ -3944,9 +3945,12 @@ const World = (() => {
      All world-space VT323 phosphor, drawRunClocks idiom. A glance, never a window (hover law). */
   const NAG_FONT = "8px 'VT323','Courier New',monospace";
   // compiler error code -> the in-world callout. Wording says what to DO, not what went wrong internally.
+  // Every label NAMES THE FIX, never just the fault ("NO LINE FROM INTAKE", not the old "NO ROUTE IN").
+  // A finding only exists when it's true: a lone assigned bay is a COMPLETE build and gets no callout;
+  // a bay->OUTBOX ship-out lane is valid and GLOWS instead of nagging (the 2026-07-05 playtest bug class).
   const NAG_LABEL = {
-    UNBOUND_BAY: 'NO AGENT — CLICK', ORPHAN_BAY: 'NO BELT', ORPHAN_SOURCE: 'NO BELT',
-    DEAD_BAY: 'NO ROUTE IN', CYCLE: 'LOOP!', FILTER_NO_DEFAULT: 'NO DEFAULT LANE', DUP_AGENT: 'DUP AGENT',
+    UNBOUND_BAY: 'NO AGENT — CLICK', ORPHAN_BAY: 'NOT ON THE LINE', ORPHAN_SOURCE: 'NO BELT OUT',
+    BAY_NOT_FED: 'BELT TO NOWHERE', CYCLE: 'LOOP!', FILTER_NO_DEFAULT: 'NO DEFAULT LANE', DUP_AGENT: 'DUP AGENT',
     SPLIT_ONE_LANE: 'SPLITTER — ONE LANE'
   };
   // project the compiled plan's error list onto floor rectangles once per recompile (zero per-frame walk)
@@ -3965,13 +3969,13 @@ const World = (() => {
     // beyond the compiler — two silent failure modes the floor must also confess:
     // (a) a BOUND bay whose room grants no computer: routed work arrives and the run can't act (the compute
     //     gate stays shut). Same bayObjects check as REFIT's NO COMPUTE ghost, now visible in the live world.
-    if (routingPlan.bays && station && typeof station.bayObjects === 'function') {
-      for (const b of routingPlan.bays) {
+    //     Walks dockBays (EVERY bound bay, belt-hooked or standalone) — a lone dock deserves the same truth.
+    if (routingPlan.dockBays && station && typeof station.bayObjects === 'function') {
+      for (const b of routingPlan.dockBays) {
         let objs = [];
         try { objs = station.bayObjects(b.agentId) || []; } catch (_) {}
         if (objs.indexOf('computer') >= 0) continue;
-        const p = byId[b.propId];
-        if (p) out.push({ x: p.x, y: p.y, w: p.w || 1, h: p.h || 1, label: 'NO COMPUTE — ADD A PC', warn: true });
+        out.push({ x: b.x, y: b.y, w: b.w || 1, h: b.h || 1, label: 'NO COMPUTE — ADD A PC', warn: true });
       }
     }
     // (b) a COMPLETE line with nothing wired to feed it: no channel configured and no armed routine means no
@@ -4035,6 +4039,7 @@ const World = (() => {
       const names = r.agents.map(a => { const b = bodyForAgent(a); return ((b && b.name) ? String(b.name) : String(a).slice(0, 8)).toUpperCase(); });
       tag = { text: '▸ ' + names.join(' · ') + (r.deadEnd ? ' +DEAD END' : ''), ok: !r.deadEnd };
     }
+    else if (r.outbox) tag = { text: '▸ OUTBOX — SHIPS OUT', ok: !r.deadEnd };   // a pure outbound lane is a WORKING lane
     else if (r.unbound) tag = { text: '▸ BAY — NO AGENT', ok: false };
     else tag = { text: '▸ DEAD END', ok: false };
     (routeTagCache = routeTagCache || {})[k] = tag;
@@ -4416,8 +4421,10 @@ const World = (() => {
     routingNags = buildRoutingNags();
     // B5: enrich each bay with the capability objectTypes in its room, so the sidecar can isolate that agent's
     // tools to exactly what the floor placed there (the bay->agent binding decides WHO; the room decides WHAT).
-    if (routingPlan && routingPlan.bays && station && typeof station.bayObjects === 'function') {
-      for (const b of routingPlan.bays) b.objects = station.bayObjects(b.agentId);
+    // dockBays too — a LONE bay (no belt) is a complete dock and isolates identically (sense pass 2026-07-05).
+    if (routingPlan && station && typeof station.bayObjects === 'function') {
+      for (const b of (routingPlan.bays || [])) b.objects = station.bayObjects(b.agentId);
+      for (const b of (routingPlan.dockBays || [])) b.objects = station.bayObjects(b.agentId);
     }
     postRoutingPlan(routingPlan);
   }
@@ -4463,12 +4470,48 @@ const World = (() => {
     p.box = 'ore';
     if (p.weight == null) p.weight = 0.3;
     if (t) convey.enqueueAt(t.x, t.y, p);
+    else dockArrival(p);   // no INTAKE line on this floor → the work lands directly at the agent's BAY dock (a lone bay is a complete build)
     // ANTICIPATE: an idle agent senses work on the line and perks up toward the dock before any summon lands
     if (agent && !agent.unplaced && activity === 'idle' && !agent.working) {
       const intake = geo && geo.props && geo.props.find(q => q.t === 'intake');
       if (intake) setGlance(dirToward(agent.px, agent.py, (intake.x + 0.5) * T, (intake.y + 0.5) * T), 1100, fnow);
       curiositySay(['incoming?', 'work inbound', 'something is coming', 'heads up'], 0.6, fnow);
       if (agent.goal == null) agent.idleUntil = Math.min(agent.idleUntil || 0, fnow + 200);
+    }
+  }
+  /* LONE-BAY DOCK ARRIVAL: with no intake/belt route, work addressed to an agent still lands VISIBLY at its
+     bay — a dock flash + the same "received:" beat the belt delivery rings. This is what makes a single
+     assigned BAY a complete, working build (belts become the upgrade for watching work travel, never a
+     prerequisite). Purely visual: the sidecar already ran the work either way (belt-is-never-a-gate law). */
+  const dockFlashes = new Map();   // bay propId -> flash t0 (drawn by drawDockFlashes, ~1.1s decay)
+  function dockArrival(p) {
+    const aid = p && p.agentId;
+    const docks = (routingPlan && routingPlan.dockBays) || [];
+    const dock = docks.find(d => d.agentId === aid) || docks[0];   // unaddressed work flashes the first dock
+    if (!dock) return;                                             // no bay either → nothing to show (today's behavior)
+    dockFlashes.set(dock.propId, fnow);
+    const body = bodyForAgent(aid);
+    if (body && body !== agent) { sayAt(body, 'received: ' + (p.preview || 'message')); body.wakeAt = fnow; if (!(body.workUntil > fnow + 5000)) body.workUntil = fnow + 4000; }
+    else if (agent && !agent.unplaced) { say('received: ' + (p.preview || 'message')); wakeIn(); }
+  }
+  // the dock catching a delivery: a bright ring + rim flash over the bay, ~1.1s, additive (with the glows)
+  function drawDockFlashes(now) {
+    if (!dockFlashes.size || !routingPlan || !routingPlan.dockBays) return;
+    for (const [pid, t0] of dockFlashes) {
+      const k = 1 - (now - t0) / 1100;
+      if (k <= 0) { dockFlashes.delete(pid); continue; }
+      const d = routingPlan.dockBays.find(b => b.propId === pid);
+      if (!d) { dockFlashes.delete(pid); continue; }
+      const X = d.x * T, Y = d.y * T, Wd = (d.w || 1) * T, Hd = (d.h || 1) * T;
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = 0.5 * k;
+      ctx.strokeStyle = '#e8c860'; ctx.lineWidth = 1.5;
+      const grow = (1 - k) * 5;
+      ctx.strokeRect(X - grow, Y - grow, Wd + grow * 2, Hd + grow * 2);   // the expanding catch ring
+      ctx.globalAlpha = 0.35 * k; ctx.fillStyle = '#e8c860';
+      ctx.fillRect(X, Y, Wd, 2);                                          // hot rim on the dock's crown
+      ctx.restore();
     }
   }
   // a belt tile to ship an outbound box from — beside the PRODUCING agent's own bay, not always the hero's.
