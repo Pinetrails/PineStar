@@ -89,6 +89,7 @@ const { makeRouter } = require('./routing/router.js');
 const { makeConnectorManager } = require('./mcp/manager.js');
 const { makeHttpTransport } = require('./mcp/transport.http.js');
 const { makeStdioTransport } = require('./mcp/transport.stdio.js');
+const connectorCatalog = require('./mcp/catalog.js');       // curated one-click MCP connector catalog (pure data + selectors)
 const cron = require('./cron.js');                         // pure schedule math (parse/nextFire/planTick)
 const cronStore = require('./cron-store.js');              // pure CronJob lifecycle reducer
 const mintLedger = require('./mint-ledger.js');            // W6: pure dedup gate + per-agent mint ledger (never re-create what exists)
@@ -2233,6 +2234,7 @@ function dispatchRoute(req, res) {
   // + error on any catalog failure, so it never throws into the central guard.
   if (req.method === 'GET' && req.url.split('?')[0].indexOf('/api/models/') === 0) return handleProviderModels(req, res);
   if (req.method === 'POST' && req.url === '/api/auth/codex/logout') return handleCodexLogout(req, res);
+  if (req.method === 'GET' && req.url === '/api/connectors/catalog') return handleConnectorCatalog(req, res);
   if (req.method === 'GET' && req.url === '/api/connectors') return handleConnectorsList(req, res);
   if (req.method === 'POST' && req.url === '/api/connectors') return handleConnectorUpsert(req, res);
   if (req.method === 'POST' && req.url === '/api/connectors/remove') return handleConnectorRemove(req, res);
@@ -2882,6 +2884,13 @@ async function handleToolsetToggle(req, res) {
 function handleConnectorsList(req, res) {
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
   res.end(JSON.stringify({ connectors: connectors.list() }));
+}
+/* GET /api/connectors/catalog — the curated one-click catalog (pure data). Annotated with `installed`
+   by cross-referencing the live connector configs (by id), so the browse panel can show what's already
+   added. No secrets involved — the catalog carries only public endpoints + metadata, never a token. */
+function handleConnectorCatalog(req, res) {
+  res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify(connectorCatalog.browse((connectorConfigs || []).map(c => c && c.id))));
 }
 async function handleConnectorUpsert(req, res) {
   const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
