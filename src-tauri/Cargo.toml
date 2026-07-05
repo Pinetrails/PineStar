@@ -13,7 +13,10 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 tauri-plugin-single-instance = "2"
 tauri-plugin-updater = "2"
-keyring = { version = "3", features = ["windows-native"] }
+# per-platform credential-store backends: Credential Manager / macOS Keychain /
+# Secret Service (dbus) with keyutils fallback — without these, non-Windows builds
+# compile but have NO store and every keychain call errors at runtime.
+keyring = { version = "3", features = ["windows-native", "apple-native", "linux-native", "sync-secret-service"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 uuid = { version = "1", features = ["v4"] }
