@@ -1682,6 +1682,7 @@ const App = (() => {
     if (World.setOnOutbox) World.setOnOutbox(() => { if (typeof ReturnStore !== 'undefined' && ReturnStore.reviewNext) ReturnStore.reviewNext(); });   // G2.3: click the stacked OUTBOX → review the oldest uncollected while-away run
     if (World.setOnMissionBoard) World.setOnMissionBoard(() => { if (typeof StationUI !== 'undefined' && StationUI.openTerm) StationUI.openTerm('quests'); });   // G1b: click the MISSION BOARD → the QUEST LOG (the board is a projection, never a gate)
     if (World.setOnTrophyCase) World.setOnTrophyCase(() => { if (typeof StationUI !== 'undefined' && StationUI.openTerm) StationUI.openTerm('trophies'); });   // G3b: click the TROPHY CASE → the TROPHY surface (a projection of real completions, never a gate)
+    if (World.setOnBayAssign) World.setOnBayAssign(pid => { if (typeof Build !== 'undefined' && Build.openAssign) Build.openAssign(pid); });   // belt legibility: click an unbound BAY's "NO AGENT" nag → REFIT opens straight into its agent picker
     if (opts.awaitingPurpose) World.beginAwakening();        // wake in darkness — the awakening lifts the room to first light (set BEFORE start so there's no flash of the lit room)
     else if (opts.wake) { World.wakeIn(); SFX.level(); }
     // the canonical station the builder edits — restored from the save, or a fresh starter room. LOAD it

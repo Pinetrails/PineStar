@@ -1396,7 +1396,17 @@ const Build = (() => {
     return { ok: true, tile };
   }
 
-  const api = { init, open, close, toggle, isOpen, requisition };
+  // deep-link: open REFIT straight into a placed prop's editor. The live world's "NO AGENT — CLICK"
+  // bay nag lands here, so the fix is one click away from the callout instead of a hunt through modes.
+  function openAssign(propId) {
+    if (!station) return;
+    if (!running) open();
+    const p = station.propById(propId);
+    if (!p) return;
+    openPropEditor(propId, p.t, { clientX: (window.innerWidth / 2) | 0, clientY: 120 });   // synthetic anchor for the action tip
+  }
+
+  const api = { init, open, close, toggle, isOpen, requisition, openAssign };
   if (typeof window !== 'undefined' && window.__STARNET_DEV__) api.__test__ = __test__;
   return api;
 })();

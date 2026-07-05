@@ -24,6 +24,10 @@ const World = (() => {
   let junctions = null;   // splitter/merger/filter routing overrides keyed by tile (rebuilt on geo change)
   let routingPlan = null, lastPlanHash = null;   // compiled RoutingPlan (Pipeline) — drives junctions + the sidecar dispatch
   let beltLiveSet = null;                        // { "x,y": true } belt tiles on a complete INTAKE→bound-BAY route (energized render)
+  let beltTileSet = null;                        // Set("x,y") of every belt tile (hover hit-test; rebuilt with the plan)
+  let routeTagCache = null;                      // tileKey -> {text, ok} composed hover route tag (invalidated on recompile)
+  let hoverBeltTile = null;                      // belt tile under the cursor (hover-glance route tag), or null
+  let routingNags = null;                        // [{x,y,w,h,label,warn}] in-world callouts mirroring the compiler's errors
 
   /* ---------- canvas + camera ---------- */
   let cv, ctx, raf = 0, last = 0, fnow = 0, running = false, ro = null, listenersBound = false;   // listenersBound: init() can run again per new agent — bind canvas/window/doc handlers + the SSE bridge ONCE
@@ -39,7 +43,7 @@ const World = (() => {
   let scale = 2, panX = 0, panY = 0, fitNeeded = true;
   const MINZ = 0.5, MAXZ = 6;
   const clampz = (v, a, b) => v < a ? a : v > b ? b : v;
-  let drag = null, hoverAgent = null, onClick = null, onArcade = null, onOutbox = null, onMissionBoard = null, onTrophyCase = null, wakeAt = 0;
+  let drag = null, hoverAgent = null, onClick = null, onArcade = null, onOutbox = null, onMissionBoard = null, onTrophyCase = null, onBayAssign = null, wakeAt = 0;
   let camLerp = null;   // {scale,panX,panY} target — a gentle one-on-one framing for voice conversations
   let wakeDark = 0, wakeDarkTarget = 0, awakeFrozen = false;   // the AWAKENING: a darkness veil that lifts to first light, + a freeze so the newborn holds still during its first meeting
   let camAnim = null;                                          // {fromS,toS,fromX,toX,fromY,toY,t,dur,ease,onEnd} — a scripted awakening camera move
@@ -701,7 +705,10 @@ const World = (() => {
       // (crew bodies just raise their nameplate on hover — only the hero self-acknowledges)
       if (agent && hit === agent && hoverAgent !== agent && activity === 'idle' && !agent.working) { setGlance('south', 900, performance.now()); curiositySay(SELF_ACK, 0.3, performance.now()); }
       if (hit !== hoverAgent) hoverAgent = hit;
-      cv.style.cursor = (hit || arcadeAt(wp) || outboxAt(wp) || missionBoardAt(wp) || trophyCaseAt(wp)) ? 'pointer' : 'default';   // arcade cabinets + a stacked OUTBOX + the MISSION BOARD + the TROPHY CASE are clickable too
+      // belt under the cursor (and no body over it) → arm the hover-glance route tag for the draw pass
+      hoverBeltTile = null;
+      if (!hit && beltTileSet) { const bt = tileOf(wp.x, wp.y); if (beltTileSet.has(bt.x + ',' + bt.y)) hoverBeltTile = bt; }
+      cv.style.cursor = (hit || arcadeAt(wp) || outboxAt(wp) || missionBoardAt(wp) || trophyCaseAt(wp) || unboundBayAt(wp)) ? 'pointer' : 'default';   // arcade cabinets + a stacked OUTBOX + the MISSION BOARD + the TROPHY CASE + an unbound BAY are clickable too
     });
     cv.addEventListener('mouseup', ev => {
       if (kindleArmed) { kindleHolding = false; return; }   // releasing during the kindle lets the spark ebb
@@ -724,9 +731,12 @@ const World = (() => {
       if (mb && onMissionBoard) { onMissionBoard(mb); return; }
       // G3b: the TROPHY CASE opens the trophy surface (honest even when empty — it shows dust, never a dead click)
       const tc = trophyCaseAt(wp);
-      if (tc && onTrophyCase) onTrophyCase(tc);
+      if (tc && onTrophyCase) { onTrophyCase(tc); return; }
+      // an UNBOUND bay's nag says CLICK — the click opens the assign flow (REFIT bay picker), closing the loop
+      const ub = unboundBayAt(wp);
+      if (ub && onBayAssign) onBayAssign(ub.id);
     });
-    cv.addEventListener('mouseleave', () => { if (kindleArmed) kindleHolding = false; hoverAgent = null; if (!drag) cv.style.cursor = 'default'; });
+    cv.addEventListener('mouseleave', () => { if (kindleArmed) kindleHolding = false; hoverAgent = null; hoverBeltTile = null; if (!drag) cv.style.cursor = 'default'; });
     // you just came back to the tab → for a few seconds the agent is likelier to look up and notice you
     try { document.addEventListener('visibilitychange', () => { if (!document.hidden) userReturnUntil = performance.now() + 3000; }); } catch (e) {}
     connectChannelBridge();   // open the SSE bridge so real inbound work animates as boxes on the belts
@@ -3160,6 +3170,8 @@ const World = (() => {
     drawRunClocks(now);   // G0.2: the honest elapsed-time tag at every desk with a live run (world-space, over the lightmap)
     drawWorkGlyphs(now);  // stage-ticker STRETCH: the "▸ TOOL" tag at a desk with a real tool in flight (one line below the run clock)
     drawAwaitTag(now);    // G4.1: the amber AWAITING APPROVAL tag over a permission-blocked hero
+    drawRoutingNags(now); // BELT LEGIBILITY: the compiled plan's errors as in-world callouts on the broken piece
+    drawBeltHoverTag(now);// BELT LEGIBILITY: hover a belt tile → where does this line flow (a glance, never a window)
     drawPinFlourish(now); // G4.2: the amber pin-burst at the board the instant a proposal is pinned
     if (agent && !agent.unplaced) drawBubble(now);
     for (const b of crew) drawBubble(now, b);   // crew speech bubbles (e.g. "received: …" when work routes to them)
@@ -3912,6 +3924,98 @@ const World = (() => {
   function setOnClick(fn) { onClick = fn; }
   function setOnArcade(fn) { onArcade = fn; }
   function setOnOutbox(fn) { onOutbox = fn; }
+  function setOnBayAssign(fn) { onBayAssign = fn; }   // click an UNBOUND bay → open the assign flow (app wires to REFIT's picker)
+
+  /* ---------- BELT LEGIBILITY: the floor teaches its own routing ----------
+     The single failure this layer kills: a user lays belts, sees crates or dead machinery, and cannot tell
+     WHY the line isn't doing anything. Three glances answer it, all derived from the SAME compiled plan the
+     sidecar dispatches by (never a parallel guess):
+       1. dead-vs-live tiles (drawBelts liveSet — wired in compileRouting above);
+       2. in-world nags on the broken piece (this section — the compiler's own errors, made physical);
+       3. a hover route tag on any belt tile ("▸ CODER" / "DEAD END").
+     All world-space VT323 phosphor, drawRunClocks idiom. A glance, never a window (hover law). */
+  const NAG_FONT = "8px 'VT323','Courier New',monospace";
+  // compiler error code -> the in-world callout. Wording says what to DO, not what went wrong internally.
+  const NAG_LABEL = {
+    UNBOUND_BAY: 'NO AGENT — CLICK', ORPHAN_BAY: 'NO BELT', ORPHAN_SOURCE: 'NO BELT',
+    DEAD_BAY: 'NO ROUTE IN', CYCLE: 'LOOP!', FILTER_NO_DEFAULT: 'NO DEFAULT LANE', DUP_AGENT: 'DUP AGENT'
+  };
+  // project the compiled plan's error list onto floor rectangles once per recompile (zero per-frame walk)
+  function buildRoutingNags() {
+    const out = [];
+    if (!routingPlan || !routingPlan.errors || !geo || !geo.props) return out;
+    const byId = {};
+    for (const p of geo.props) byId[p.id] = p;
+    for (const e of routingPlan.errors) {
+      const label = NAG_LABEL[e.code];
+      if (!label) continue;
+      if (e.tile) out.push({ x: e.tile.x, y: e.tile.y, w: 1, h: 1, label, warn: !!e.warn });
+      else { const p = e.propId != null && byId[e.propId]; if (p) out.push({ x: p.x, y: p.y, w: p.w || 1, h: p.h || 1, label, warn: !!e.warn }); }
+    }
+    return out;
+  }
+  // hit-test: an UNBOUND bay under a world-space point (its nag says CLICK, so the footprint must be clickable)
+  function unboundBayAt(wp) {
+    if (!geo || !geo.props) return null;
+    for (const p of geo.props) {
+      if (p.t !== 'bay' || p.agentId) continue;
+      const x0 = p.x * T, y0 = p.y * T - 10;   // the nag text floats above the crown — keep it clickable too
+      const x1 = (p.x + (p.w || 1)) * T, y1 = (p.y + (p.h || 1)) * T + 2;
+      if (wp.x >= x0 && wp.x < x1 && wp.y >= y0 && wp.y < y1) return p;
+    }
+    return null;
+  }
+  // the hover answer for one belt tile, cached until the next recompile. ok=true → the flow reaches a bound bay.
+  function routeTagFor(tx, ty) {
+    if (!routingPlan || typeof Pipeline === 'undefined' || !Pipeline.routeFrom) return null;
+    const k = tx + ',' + ty;
+    if (routeTagCache && routeTagCache[k] !== undefined) return routeTagCache[k];
+    const r = Pipeline.routeFrom(routingPlan, tx, ty);
+    let tag;
+    if (r.agents.length) {
+      const names = r.agents.map(a => { const b = bodyForAgent(a); return ((b && b.name) ? String(b.name) : String(a).slice(0, 8)).toUpperCase(); });
+      tag = { text: '▸ ' + names.join(' · ') + (r.deadEnd ? ' +DEAD END' : ''), ok: !r.deadEnd };
+    }
+    else if (r.unbound) tag = { text: '▸ BAY — NO AGENT', ok: false };
+    else tag = { text: '▸ DEAD END', ok: false };
+    (routeTagCache = routeTagCache || {})[k] = tag;
+    return tag;
+  }
+  // amber (warn) / red (blocker) corner brackets + a one-line instruction over the broken piece, gently pulsing
+  function drawRoutingNags(now) {
+    if (!routingNags || !routingNags.length) return;
+    const pulse = 0.55 + 0.35 * Math.sin(now / 280);
+    for (const n of routingNags) {
+      const X = n.x * T, Y = n.y * T, Wd = n.w * T, Hd = n.h * T;
+      const col = n.warn ? '#ffbe3c' : '#ff5046';
+      const L = Math.max(3, Math.floor(T / 3));
+      ctx.save();
+      ctx.globalAlpha = pulse;
+      ctx.strokeStyle = col; ctx.lineWidth = 1;
+      ctx.beginPath();   // corner brackets, not a full box — a machinery callout, not a selection
+      ctx.moveTo(X + .5, Y + .5 + L); ctx.lineTo(X + .5, Y + .5); ctx.lineTo(X + .5 + L, Y + .5);
+      ctx.moveTo(X + Wd - .5 - L, Y + .5); ctx.lineTo(X + Wd - .5, Y + .5); ctx.lineTo(X + Wd - .5, Y + .5 + L);
+      ctx.moveTo(X + .5, Y + Hd - .5 - L); ctx.lineTo(X + .5, Y + Hd - .5); ctx.lineTo(X + .5 + L, Y + Hd - .5);
+      ctx.moveTo(X + Wd - .5, Y + Hd - .5 - L); ctx.lineTo(X + Wd - .5, Y + Hd - .5); ctx.lineTo(X + Wd - .5 - L, Y + Hd - .5);
+      ctx.stroke();
+      ctx.font = NAG_FONT; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+      ctx.shadowBlur = 3; ctx.shadowColor = col; ctx.fillStyle = col;
+      ctx.fillText(n.label, X + Wd / 2, Y - 3);
+      ctx.restore();
+    }
+  }
+  // the hover-glance route tag over the belt tile under the cursor (green = flows to a bound bay, amber = doesn't)
+  function drawBeltHoverTag(now) {
+    if (!hoverBeltTile) return;
+    const tag = routeTagFor(hoverBeltTile.x, hoverBeltTile.y);
+    if (!tag) return;
+    ctx.save();
+    ctx.font = NAG_FONT; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+    ctx.shadowBlur = 3; ctx.shadowColor = tag.ok ? '#62ff9e' : '#ffbe3c';
+    ctx.fillStyle = tag.ok ? '#9adcb0' : '#ffd9a3';
+    ctx.fillText(tag.text, (hoverBeltTile.x + 0.5) * T, hoverBeltTile.y * T - 4);
+    ctx.restore();
+  }
   function setOnMissionBoard(fn) { onMissionBoard = fn; }   // G1b: click a placed MISSION BOARD → open the quest log
   function setOnTrophyCase(fn) { onTrophyCase = fn; }   // G3b: click a placed TROPHY CASE → open the trophy surface
   // G2.3 — the live uncollected-crate count (ReturnStore's pending ledger). Read per-frame for the
@@ -4248,6 +4352,9 @@ const World = (() => {
     // the energized-belt set: derived from the SAME plan the sidecar routes by, so a glowing line always
     // means "a complete route runs here" and a cold line always means the chain is incomplete
     beltLiveSet = (routingPlan && Pipeline.liveTiles) ? Pipeline.liveTiles(routingPlan) : null;
+    beltTileSet = new Set(((geo && geo.belts) || []).map(b => b.x + ',' + b.y));
+    routeTagCache = null; hoverBeltTile = null;   // the floor changed — every cached hover answer is stale
+    routingNags = buildRoutingNags();
     // B5: enrich each bay with the capability objectTypes in its room, so the sidecar can isolate that agent's
     // tools to exactly what the floor placed there (the bay->agent binding decides WHO; the room decides WHAT).
     if (routingPlan && routingPlan.bays && station && typeof station.bayObjects === 'function') {
@@ -5070,7 +5177,7 @@ const World = (() => {
   // so the DOWN branch can be observed against a real non-OPEN readyState without killing the whole process.
   const _dbgLinkState = () => ({ es: !!chanES, readyState: (chanES ? chanES.readyState : -1), lastEventMsAgo: (lastSseEventAt ? Math.round(((typeof performance !== 'undefined') ? performance.now() : fnow) - lastSseEventAt) : null), linkDown: linkDown((typeof performance !== 'undefined') ? performance.now() : fnow) });
   const _dbgDropBridge = () => { if (chanES) { try { chanES.close(); } catch (_) {} } return _dbgLinkState(); };
-  return { init, rebake, crt: CRT, slagLog: () => (slaglog ? slaglog.recent() : []), loadStation, spawn, spawnAgent, relabel, setActivityFor, focusBody, setChatFocus, chatFocusPing, start, stop, setActivity, wakeIn, beginAwakening, setWakeProgress, igniteSpark, armKindle, kindleHold, camPushIn, camCreep, camPunch, camPullBack, awakenTurn, truthPulse, beginFlood, collapseFlood, endAwakening, releaseAwakening, say, focusAgent, getActivity: () => activity, getUse: () => (agent ? agent.usingProp : null), setOnClick, setOnArcade, setOnOutbox, setOnMissionBoard, setOnTrophyCase, refit, pauseBridge, resumeBridge, _dbgSeedRun, _dbgAgeRun, _dbgReconcile, _dbgSweep, _dbgLinkState, _dbgDropBridge,
+  return { init, rebake, crt: CRT, slagLog: () => (slaglog ? slaglog.recent() : []), loadStation, spawn, spawnAgent, relabel, setActivityFor, focusBody, setChatFocus, chatFocusPing, start, stop, setActivity, wakeIn, beginAwakening, setWakeProgress, igniteSpark, armKindle, kindleHold, camPushIn, camCreep, camPunch, camPullBack, awakenTurn, truthPulse, beginFlood, collapseFlood, endAwakening, releaseAwakening, say, focusAgent, getActivity: () => activity, getUse: () => (agent ? agent.usingProp : null), setOnClick, setOnArcade, setOnOutbox, setOnMissionBoard, setOnTrophyCase, setOnBayAssign, refit, pauseBridge, resumeBridge, _dbgSeedRun, _dbgAgeRun, _dbgReconcile, _dbgSweep, _dbgLinkState, _dbgDropBridge,
     // AGENT GROWTH: XpStore pushes pre-computed Xp.compute() snapshots here; pulseLevelUp fires
     // the addressed body's gold ring. The colony headline is the top-bar STATION chip.
     setXp: (agentId, a) => {
