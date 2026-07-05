@@ -5370,6 +5370,7 @@ const World = (() => {
     nags: routingNags ? routingNags.map(n => n.label) : [],
     feed: { known: feedState.known, fed: feedState.fed, nagOn: feedNagOn },
     ship: { known: shipStats.known, day: shipStats.day, done: shipStats.done },
+    boxes: convey ? convey.peekBoxes() : [],   // the crates riding RIGHT NOW (id/tile/dir/payload)
     routeAt: (x, y) => routeTagFor(x, y),
     pollFeed: () => pollFeedState(),
     pollShip: () => pollShipStats()
