@@ -4538,12 +4538,18 @@ const World = (() => {
     // 3) legacy fallback: a belt beside the hero's desk
     return desk ? beltTileNear(desk.tx, desk.ty, desk.w, desk.h) : null;
   }
-  /* A COMPLETED RUN SHIPS A CRATE. The single source for outbound PRODUCT boxes is agent.run.end reason
-     'done' — every finished job, in-app or channel, spawns ONE crate at the producing agent's bay hookup
-     and rides the line to the OUTBOX (exactly like ▸ TEST). workitem.delivered no longer enqueues, so a
-     channel reply that also fires delivered can never double-crate. No lane → no riding crate (the work
-     already shipped server-side; the pallet + counter still tell the truth). */
+  /* A COMPLETED RUN SHIPS A CRATE — BUT ONLY IF IT ACTUALLY WORKED (crate-honesty, Andrew's ruling
+     2026-07-05): reason 'done' alone is NOT success — a run that ends by politely explaining it couldn't
+     do the job is 'done' too. A crate (and the SHIPPED count) requires PROVEN work: ≥1 successful tool
+     result or a produced deliverable during the run, tracked from the same bus events the tickers ride.
+     The single crate source stays agent.run.end (no double-crate from workitem.delivered); no lane → no
+     riding crate (the pallet + counter still tell the server's truth). */
+  const runWork = new Map();         // agentId -> { tools, dels } observed during the CURRENT run
   const shippedRunIds = new Set();   // dedup: run.end can be observed twice (local harness + SSE echo)
+  function runWorked(aid) {
+    const w = runWork.get(aid || 'agent');
+    return !!(w && (w.tools > 0 || w.dels > 0));
+  }
   function shipProductCrate(p) {
     if (!convey) return;
     const rid = (p && p.runId) || '';
@@ -4926,10 +4932,16 @@ const World = (() => {
       let line = tickerName(p.agentId) + ' ▸ RUN COMPLETE';
       if (turns > 0) line += ' · ' + turns + ' TURN' + (turns === 1 ? '' : 'S');
       if (isFinite(usd) && usd > 0) line += ' · ' + U.usd(usd);
-      // a DONE run is a shipped job: bump the pallet + tell the day's score in the same breath
-      if (p.reason === 'done') line += ' · ' + bumpShipped() + ' SHIPPED TODAY';
+      // a DONE run that PROVABLY WORKED (tool result / deliverable) is a shipped job: bump the pallet
+      // + tell the day's score in the same breath. A clean-but-workless finish is just RUN COMPLETE.
+      if (p.reason === 'done' && runWorked(p.agentId)) line += ' · ' + bumpShipped() + ' SHIPPED TODAY';
       pushTicker(line, '', tickerSuit(p.agentId));
     });
+    // PROVEN-WORK tracker (crate-honesty): what did the CURRENT run actually do? Reset on run.start;
+    // successful tool results + deliverables accumulate; run.end consumers read it, then it's dropped.
+    U.bus.on('agent.run.start', p => { if (p && p.agentId) runWork.set(p.agentId, { tools: 0, dels: 0 }); });
+    U.bus.on('agent.tool_result', p => { if (p && !p.isError) { const w = runWork.get(p.agentId || 'agent'); if (w) w.tools++; } });
+    U.bus.on('deliverable', p => { const w = runWork.get((p && p.agentId) || 'agent'); if (w) w.dels++; });
     U.bus.on('provider.fallback', p => {
       if (!p || !p.toModel) return;
       const to = String(p.toModel).split('/').pop();
@@ -4976,8 +4988,10 @@ const World = (() => {
     U.bus.on('agent.run.end', p => {
       if (floor) floor.onEvent('agent.run.end', p, Date.now());
       const r = p && p.reason;
-      // A clean finish SHIPS: one product crate leaves the producing agent's bay and rides to the OUTBOX.
-      if (r === 'done') shipProductCrate(p);
+      // A clean finish that PROVABLY WORKED ships: one product crate leaves the producing agent's bay
+      // and rides to the OUTBOX. A done-but-workless run ("I couldn't do that") ships NOTHING.
+      if (r === 'done' && runWorked(p && p.agentId)) shipProductCrate(p);
+      if (p && p.agentId) runWork.delete(p.agentId);   // the run is over — drop its work tally either way
       if (r !== 'max_iters' && r !== 'budget' && r !== 'error' && r !== 'refusal') return;
       // UNPRODUCTIVE RUN: pulse the SLAG cell, then turn the failed outcome into a lesson — a real post-mortem in the
       // notifications panel + a red-hot slag crate that rides off the line (if a desk belt exists). The
@@ -5277,7 +5291,9 @@ const World = (() => {
         .then(r => (r.ok ? r.json() : null))
         .then(j => {
           if (!j || !Array.isArray(j.runs)) return;   // no answer — keep the last known truth
-          shipStats = { day: shipDay(), done: j.runs.filter(r => r && r.reason === 'done').length, known: true };
+          // SHIPPED = done AND provably worked (successful tools or artifacts on the server's run row).
+          // Rows older than the toolsOk field count only via artifacts — under-claiming, never over.
+          shipStats = { day: shipDay(), done: j.runs.filter(r => r && r.reason === 'done' && (((r.toolsOk | 0) > 0) || (Array.isArray(r.artifacts) && r.artifacts.length > 0))).length, known: true };
         }).catch(() => {});
     } catch (_) {}
   }
@@ -5371,6 +5387,7 @@ const World = (() => {
     feed: { known: feedState.known, fed: feedState.fed, nagOn: feedNagOn },
     ship: { known: shipStats.known, day: shipStats.day, done: shipStats.done },
     boxes: convey ? convey.peekBoxes() : [],   // the crates riding RIGHT NOW (id/tile/dir/payload)
+    work: (() => { const o = {}; for (const [k, v] of runWork) o[k] = { tools: v.tools, dels: v.dels }; return o; })(),   // proven-work tally per in-flight run
     routeAt: (x, y) => routeTagFor(x, y),
     pollFeed: () => pollFeedState(),
     pollShip: () => pollShipStats()

@@ -87,6 +87,7 @@
         model: modelName(e.model),   // H3.3/G6: actual model used, or explicit (unknown) as a last resort
         unmetered: !!e.unmetered,    // G6.2: subscription usage is counted, not summed as $0 spend
         artifacts: artifactList(e.artifacts),   // work-visibility: what the run PRODUCED (additive; [] default)
+        toolsOk: num(e.toolsOk),                // crate-honesty (additive): successful tool results — proven work, not just talk. Old rows default 0.
         ts: num(e.ts) || clock.now()
       };
       rows.push(entry);

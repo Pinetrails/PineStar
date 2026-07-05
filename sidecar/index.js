@@ -4415,6 +4415,7 @@ async function runOnce(o) {
 
   const seen = new Map();
   let toolBytes = 0;   // running total of tool-output chars fed back into the model this run
+  let toolsOk = 0;     // crate-honesty: successful tool results this run — "did it actually WORK, or just talk?"
   let cpTurn = 0;      // per-run checkpoint sequence (a pseudo-turn for the snapshot index/lineage)
   // WORK VISIBILITY (slice 1): fold every successful tool call into this run's artifacts ledger — what the
   // run PRODUCED (files/images/channel sends) — recorded onto the runStore row at run end and served over
@@ -4452,6 +4453,7 @@ async function runOnce(o) {
       }
       toolBytes += r.content.length;
     }
+    if (r && !r.isError) toolsOk++;   // crate-honesty: count PROVEN work (each successful tool result)
     // loop-guard bookkeeping: a FAILING result advances this signature's streak; ANY success clears it (so an
     // intermittently-failing call that eventually works never trips the guard). Matches loop.js's reset-on-success.
     if (r && r.isError) seen.set(sig, (seen.get(sig) || 0) + 1);
@@ -4687,7 +4689,7 @@ async function runOnce(o) {
     try {
       let title = '';
       for (let i = msgs.length - 1; i >= 0; i--) { if (msgs[i] && msgs[i].role === 'user' && typeof msgs[i].content === 'string') { title = msgs[i].content; break; } }
-      runStore.record({ runId, agentId, reason: (result && result.reason) || 'done', turns: finalTurns, tokens: finalTokens, usd: finalUsd, title: title, streamId: o.streamId || '', model: finalModel, unmetered: providerUnmetered, artifacts: artifactLedger.list() });   // H3.2/H3.3/G6 + work-visibility: transcript join + honest model/spend/deliverables
+      runStore.record({ runId, agentId, reason: (result && result.reason) || 'done', turns: finalTurns, tokens: finalTokens, usd: finalUsd, title: title, streamId: o.streamId || '', model: finalModel, unmetered: providerUnmetered, artifacts: artifactLedger.list(), toolsOk });   // H3.2/H3.3/G6 + work-visibility + crate-honesty: transcript join + honest model/spend/deliverables/worked
       // P0.1/H1.1: persist the full DIALOGUE (not just the outcome) — a durable server-side transcript for EVERY
       // run, incl. headless ones (cron/Telegram/delegated). Append the triggering user directive, then EVERY new
       // turn the loop produced (assistant incl. tool_calls + tool results), so a resume can rebuild exact state.

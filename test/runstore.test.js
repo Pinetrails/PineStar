@@ -119,6 +119,10 @@ const clock = { now: () => clk };
   const long = s.record({ runId: 'w5', agentId: 'a', artifacts: [{ kind: 'file', path: 'x'.repeat(999) }] });
   A.ok(long.artifacts[0].path.length <= 260, 'artifact path capped at 260 chars');
   A.eq(io.lines[0].artifacts.length, 3, 'artifacts persisted on the appended JSONL row');
+  // ---- (crate-honesty) toolsOk rides the row: proven work count, 0 default ----
+  A.eq(s.record({ runId: 'w6', agentId: 'a', reason: 'done', toolsOk: 4 }).toolsOk, 4, 'toolsOk recorded on the row');
+  A.eq(s.record({ runId: 'w7', agentId: 'a', reason: 'done' }).toolsOk, 0, 'missing toolsOk defaults to 0 (old rows under-claim, never over)');
+  A.eq(s.record({ runId: 'w8', agentId: 'a', toolsOk: 'nope' }).toolsOk, 0, 'non-numeric toolsOk clamps to 0');
 }
 
 // ---- J. (work-visibility) OLD JSONL rows WITHOUT artifacts still parse + list (fail-open) ----
