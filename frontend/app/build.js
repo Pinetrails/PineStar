@@ -1038,7 +1038,15 @@ const Build = (() => {
       ? StationBake.bakeIncremental(cacheGeo, cache, bakeDirtyRects, { visibleRect, maxRetainedChunks: MAX_REFIT_CHUNKS, onlyMissingVisible: bakeVisibleOnly })
       : StationBake.bake(cacheGeo);
     valPlan = (typeof Pipeline !== 'undefined') ? Pipeline.compileRoutingPlan(cacheGeo) : null;   // cost-safety: recompute the routing plan on every floor edit
-    valLive = (valPlan && Pipeline.liveTiles) ? Pipeline.liveTiles(valPlan) : null;               // dead-vs-live belt render mirrors the live world
+    // dead-vs-live belt render mirrors the live world. The plan is compiled in cacheGeo's LOCAL frame but
+    // drawConveyor draws station.belts() in WORLD tiles — rebase the live keys by the geo origin or every
+    // REFIT belt would look cold (frame-mismatch, not truth).
+    valLive = null;
+    if (valPlan && Pipeline.liveTiles) {
+      const lv = Pipeline.liveTiles(valPlan), o = (cacheGeo && cacheGeo.origin) || { tx: 0, ty: 0 };
+      valLive = {};
+      for (const k in lv) { const p = k.split(','); valLive[(+p[0] + o.tx) + ',' + (+p[1] + o.ty)] = true; }
+    }
     bakeDirty = false; bakeDirtyRects = null; bakeVisibleOnly = false;
   }
 
@@ -1364,6 +1372,9 @@ const Build = (() => {
   }
   const __test__ = {
     isOpen: () => running,
+    // the live WorldModel — for CDP verify scripts to lay a floor through the REAL validated
+    // mutation API (setBelt/addProp/assignPropAgent), never by poking doc internals.
+    station: () => station || (opts && typeof opts.getStation === 'function' ? opts.getStation() : null),
     placeCapProp: (type) => {
       if (!running || !station) return { ok: false, reason: 'not-in-build' };
       const t = type || 'workbench';   // a real cap-prop id (CAP_PROP_MAP): workbench→terminal, comms_dish→web
