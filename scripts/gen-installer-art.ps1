@@ -1,8 +1,10 @@
-# Generate the branded NSIS installer bitmaps (CRT phosphor look).
+# Generate the branded installer art (CRT phosphor look) — all platforms.
 #
 # NSIS (Modern UI) wants classic 24-bit BMPs at fixed sizes:
 #   sidebar (welcome/finish page)  164 x 314
 #   header  (inner pages)          150 x  57
+# macOS DMG wants a PNG background sized to the drag-to-install window:
+#   dmg-background.png             660 x 400
 # Output is committed under src-tauri/installer/ — re-run this only to change the art.
 #   powershell -ExecutionPolicy Bypass -File scripts/gen-installer-art.ps1
 #
@@ -37,7 +39,7 @@ function New-Canvas([int]$w, [int]$h) {
 }
 
 function Add-Starfield($g, [int]$w, [int]$h, [int]$n, [int]$seed) {
-  $rnd = New-Object System.Random($seed)   # seeded => regenerating gives identical art
+  $rnd = New-Object System.Random($seed)   # seeded => same star layout every run (text AA bytes may still drift)
   for ($i = 0; $i -lt $n; $i++) {
     $x = $rnd.Next(0, $w); $y = $rnd.Next(0, $h)
     $v = $rnd.Next(30, 110)
@@ -99,6 +101,47 @@ $fSm.Dispose()
 $g.Dispose()
 Add-Scanlines $bmp
 Save-Bmp $bmp (Join-Path $outDir 'sidebar.bmp')
+$bmp.Dispose()
+
+# ---------- dmg background 660x400 (macOS drag-to-install window) ----------
+# geometry MUST match bundle.macOS.dmg in tauri.conf.json: window 660x400,
+# app icon at (180,170), Applications folder at (480,170). Icons are ~128px,
+# drawn by macOS on top of this image — we paint the guidance around them.
+$bmp, $g = New-Canvas 660 400
+Add-Starfield $g 660 400 220 90210
+
+# glow well behind the wordmark
+$path = New-Object System.Drawing.Drawing2D.GraphicsPath
+$path.AddEllipse(130, -80, 400, 220)
+$pgb = New-Object System.Drawing.Drawing2D.PathGradientBrush($path)
+$pgb.CenterColor = [System.Drawing.Color]::FromArgb(46, 88, 255, 155)
+$pgb.SurroundColors = @([System.Drawing.Color]::FromArgb(0, 2, 6, 4))
+$g.FillPath($pgb, $path); $pgb.Dispose(); $path.Dispose()
+
+$fTitle = New-Object System.Drawing.Font('Consolas', 30, [System.Drawing.FontStyle]::Bold)
+Add-GlowText $g 'STARNET' $fTitle 246 28 $C_PHOS $C_PHOSD
+$fTitle.Dispose()
+
+# phosphor arrow between the two icon wells (app at x=180, folder at x=480, both y=170)
+$penA = New-Object System.Drawing.Pen($C_PHOS, 3)
+$penA.EndCap = [System.Drawing.Drawing2D.LineCap]::ArrowAnchor
+$g.DrawLine($penA, 268, 170, 392, 170); $penA.Dispose()
+
+$fHint = New-Object System.Drawing.Font('Consolas', 10, [System.Drawing.FontStyle]::Bold)
+Add-GlowText $g 'DRAG TO INSTALL' $fHint 268 190 $C_GOLD $C_GOLDD
+$fHint.Dispose()
+
+# gold rail + status line at the foot (matches the NSIS sidebar language)
+$penG = New-Object System.Drawing.Pen($C_GOLD, 1)
+$g.DrawLine($penG, 200, 344, 460, 344); $penG.Dispose()
+$fSm = New-Object System.Drawing.Font('Consolas', 8, [System.Drawing.FontStyle]::Bold)
+Add-GlowText $g 'HARNESS // ONLINE' $fSm 262 354 $C_GOLD $C_GOLDD
+$fSm.Dispose()
+
+$g.Dispose()
+Add-Scanlines $bmp
+$bmp.Save((Join-Path $outDir 'dmg-background.png'), [System.Drawing.Imaging.ImageFormat]::Png)
+Write-Host "wrote $(Join-Path $outDir 'dmg-background.png') ($($bmp.Width)x$($bmp.Height))"
 $bmp.Dispose()
 
 # ---------- header 150x57 (inner pages) ----------

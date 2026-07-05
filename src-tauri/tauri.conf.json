@@ -32,6 +32,15 @@
         "sidebarImage": "installer/sidebar.bmp"
       }
     },
+    "macOS": {
+      "minimumSystemVersion": "10.15",
+      "dmg": {
+        "background": "installer/dmg-background.png",
+        "windowSize": { "width": 660, "height": 400 },
+        "appPosition": { "x": 180, "y": 170 },
+        "applicationFolderPosition": { "x": 480, "y": 170 }
+      }
+    },
     "resources": {
       "../sidecar": "sidecar",
       "../frontend": "frontend",
