@@ -413,7 +413,8 @@ const Build = (() => {
           <li><span class="g-ok">green</span> = ok · <span class="g-bad">red</span> = blocked (a tip says why).</li>
           <li><b>PAINT</b> decks, <b>MOVE</b> / <b>RECLAIM</b> rooms · <b>UNDO</b> anything.</li>
           <li>Your agent walks the rooms + corridors you build.</li>
-          <li><b>BELT</b> (7) + <b>PROP ▸ LOGISTICS</b> (INTAKE · BAY · FILTER) wire work to your agents — the floor <b>IS</b> the routing. Hit <b>▸ TEST</b> to watch a box ride.</li>
+          <li><b>BELT</b> (7) draws the line. <b>PROP ▸ WORKFLOW</b> places <b>INTAKE</b> (work enters) and <b>BAY</b> (click it, assign an agent — work whose belt route <b>ends at its bay runs as that agent</b>).</li>
+          <li>A complete INTAKE→BAY line <b>glows and runs</b>; an incomplete one goes <b>cold</b> and the broken piece is flagged. Hit <b>▸ TEST</b> to watch a box ride.</li>
         </ul>
         <button class="btn-sm refit-primary" id="refit-guide-go">▸ START BUILDING</button>
       </div>`;

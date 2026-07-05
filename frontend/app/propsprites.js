@@ -4603,12 +4603,15 @@ const PropSprites = (() => {
     { id: "workbench", label: "WORKBENCH", cat: "workstation", tier: "functional", w: 2, h: 1, animated: true, blocks: true, desc: "WORKBENCH — grants the room's agent shell + verify, so it can run and test real code. Pair it with a workstation in the same room." },
     // WORKFLOW — how work enters, moves, routes, and leaves.
     { id: "intake", label: "INTAKE", cat: "workflow", tier: "functional", w: 2, h: 2, animated: true, blocks: false, desc: "INTAKE — where outside work (a DM, a job) enters the station and drops onto a belt. The start of a workflow." },
-    { id: "bay", label: "BAY", cat: "workflow", tier: "functional", w: 2, h: 2, animated: true, blocks: false, desc: "BAY — the agent dock. Assign an agent; work routed here runs as that agent, and the props in this room become its powers." },
+    { id: "bay", label: "BAY", cat: "workflow", tier: "functional", w: 2, h: 2, animated: true, blocks: false, desc: "BAY — the agent dock. Belts don't belong to agents — bays do: click the bay to assign an agent, and any work whose belt route ends here RUNS AS that agent. The props in its room become its powers." },
     { id: "filter", label: "FILTER", cat: "workflow", tier: "functional", w: 1, h: 1, animated: true, blocks: false, desc: "FILTER — sorts work by its content, sending each kind down a different belt lane. Click it to set the routes." },
     { id: "merger", label: "MERGER", cat: "workflow", tier: "functional", w: 1, h: 1, animated: true, blocks: false, desc: "MERGER — buffers K incoming boxes, then emits one combined box. A join / map-reduce barrier." },
     { id: "splitter", label: "SPLITTER", cat: "workflow", tier: "functional", w: 1, h: 1, animated: true, blocks: false, desc: "SPLITTER — fans one work stream across its lanes to run several agents in parallel (load-balance)." },
     { id: "outbox", label: "OUTBOX", cat: "workflow", tier: "functional", w: 2, h: 2, animated: true, blocks: false, desc: "OUTBOX — the dispatch chute where an agent's finished reply leaves the station." },
-    { id: "beltH", label: "CONVEYOR", cat: "workflow", tier: "functional", w: 2, h: 1, animated: true, blocks: true, desc: "CONVEYOR — carries work boxes between stations; the path work travels. Tip: use the BELT tool to draw long runs." },
+    // NOTE: the old "CONVEYOR" palette prop (beltH) is retired — it was inert scenery that LOOKED like the
+    // routing system and taught users the wrong model (you can't assign or route through it). Real belts are
+    // laid with the BELT tool and compile into the RoutingPlan. F.beltH stays so stations that placed one
+    // still render; it just can't be placed anew.
     // CAPABILITY — object = capability. Place one in a BAY's room to grant that agent a power.
     { id: "connector_portal", label: "CONNECTOR", cat: "capability", tier: "functional", w: 1, h: 2, animated: true, blocks: true, desc: "CONNECTOR — bind an MCP server here to grant the room's agent that server's live tools. Click it to bind one." },
     { id: "comms_dish", label: "DISH", cat: "capability", tier: "functional", w: 2, h: 2, animated: true, blocks: true, desc: D_WEB },
