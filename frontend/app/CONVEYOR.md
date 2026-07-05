@@ -36,9 +36,12 @@ factory powers both REFIT preview and the live world, each with its own box stat
 - `enqueueAt(x,y,payload)` — place a real work-item box at a source tile; `dropWorkitem(id)` —
   early-sink a riding box whose run was superseded (it never delivers); `Conveyor.create({onDeliver})`
   — `onDeliver(box,x,y)` fires once when a payload box rides off the end.
-- `drawBelts(ctx, nowMs, TILE, beltMap)` — each tile: rails on the cross-axis, tread chevrons
+- `drawBelts(ctx, nowMs, TILE, beltMap, liveSet?)` — each tile: rails on the cross-axis, tread chevrons
   scrolling in the flow direction (ported from v7 `F.beltH`, generalized to 4 dirs + 1 tile),
-  drive-LED. Direction is legible at a glance.
+  drive-LED. Direction is legible at a glance. `liveSet` (from `Pipeline.liveTiles(plan)`) marks the
+  tiles on a complete INTAKE→bound-BAY route: those render ENERGIZED (marching treads/chevron, blinking
+  LED); the rest render COLD (frozen treads, no chevron, dark LED, dimmed) so an incomplete chain is
+  visibly not running. Omitted → every tile draws live (legacy behavior).
 - `drawBoxes(ctx, nowMs, TILE)` — riding crates with contact shadows; a short sink-fade at the end.
 
 Belts draw at floor level (over the bake, under the lightmap); boxes just above, y-sorted with

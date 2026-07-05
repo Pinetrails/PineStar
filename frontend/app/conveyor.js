@@ -381,11 +381,20 @@ const Conveyor = (() => {
     }
 
     /* ---------- belt art (direction + topology aware) ---------- */
-    function drawBelts(ctx, nowMs, T, belts) {
+    /* liveSet (optional): { "x,y": true } from Pipeline.liveTiles — tiles on a complete INTAKE→bound-BAY
+       route render ENERGIZED (marching treads/chevron, blinking drive LED); everything else renders COLD
+       (static treads, no flow, dark LED, dimmed) so an incomplete line visibly isn't running. Omitted →
+       every tile draws live (legacy callers unchanged). The glow IS the compiled plan — truthful telemetry. */
+    function drawBelts(ctx, nowMs, T, belts, liveSet) {
       if (!belts || !belts.length) return;
       _ctx = ctx; _now = nowMs;
       const map = buildMap(belts);
-      for (const b of belts) beltTile(b.x * T, b.y * T, T, classify(map, b), nowMs, U.hash('belt' + key(b.x, b.y)));
+      for (const b of belts) {
+        const live = !liveSet || !!liveSet[key(b.x, b.y)];
+        // a cold tile freezes at now=0: deterministic, and every time-driven cue (tread scroll, feeder
+        // hatch cycle) parks instead of marching — the line reads as powered-down machinery, not broken art
+        beltTile(b.x * T, b.y * T, T, classify(map, b), live ? nowMs : 0, U.hash('belt' + key(b.x, b.y)), live);
+      }
       drawMergeFx(T);   // G0.10: combine flashes over the junction tiles (under the riding boxes)
     }
     /* G0.10 MERGE SHIMMER: a merger just absorbed a crate into its buffer (or released the combined
@@ -411,7 +420,8 @@ const Conveyor = (() => {
         _ctx.restore();
       }
     }
-    function beltTile(X, Y, T, info, now, h) {
+    function beltTile(X, Y, T, info, now, h, live) {
+      if (live === undefined) live = true;
       const v = DIRV[info.dir], horiz = v[0] !== 0;
       px(X, Y, T, T, '#222a26'); px(X + 1, Y + 1, T - 2, T - 2, '#161c1a');   // bed + recess
       // rails along the edges PARALLEL to flow
@@ -426,11 +436,13 @@ const Conveyor = (() => {
       // deterministic wear speckle (frame-stable per tile)
       for (let k = 0; k < 3; k++) { const w = h >> (k * 4); px(X + 2 + (w % (T - 4)), Y + 2 + ((w >> 3) % (T - 4)), 1, 1, '#1d2420'); }
       if (info.kind === 'corner') beltCornerGlyph(X, Y, T, info, now);
-      else beltChevron(X, Y, T, info.dir, now);
-      // drive LED (small, powered cue)
-      px(X + 1, Y + T - 2, 1, 1, ((now / 300) % 1) < 0.5 ? '#3fa86a' : '#1a2a22');
+      else if (live) beltChevron(X, Y, T, info.dir, now);   // no marching flow on a cold line
+      // drive LED: blinking green = powered (on a compiled route); constant near-black = unpowered
+      px(X + 1, Y + T - 2, 1, 1, live ? (((now / 300) % 1) < 0.5 ? '#3fa86a' : '#1a2a22') : '#101613');
       if (info.kind === 'source') beltSource(X, Y, T, info, now, h);
       else if (info.kind === 'sink') beltSink(X, Y, T, info);
+      // cold wash LAST so the whole tile (rails, treads, source/sink furniture) reads powered-down
+      if (!live) { _ctx.globalAlpha = 0.38; px(X, Y, T, T, '#060908'); _ctx.globalAlpha = 1; }
     }
     // a DIM-NEUTRAL marching chevron (no economy accent — keeps cyan/green for data/money)
     function beltChevron(X, Y, T, dir, now) {

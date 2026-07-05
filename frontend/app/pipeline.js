@@ -89,10 +89,17 @@
       }
     }
 
-    const seenAgent = {};
+    const seenAgent = {}, unboundBays = [];
     for (const p of props) {
       if (p.t !== 'bay') continue;
-      if (!p.agentId) { errors.push({ code: 'UNBOUND_BAY', propId: p.id, warn: true }); continue; }
+      if (!p.agentId) {
+        errors.push({ code: 'UNBOUND_BAY', propId: p.id, warn: true });
+        // an unbound bay is not a routing target, but the legibility layer (hover tags, nags) needs to know
+        // a belt runs past it — record its connection tile additively (never enters bayTileToAgent/hash).
+        const ut = beltTileNear(map, p.x, p.y, p.w || 1, p.h || 1);
+        if (ut) unboundBays.push({ propId: p.id, tile: ut });
+        continue;
+      }
       const t = beltTileNear(map, p.x, p.y, p.w || 1, p.h || 1);
       if (!t) { errors.push({ code: 'ORPHAN_BAY', propId: p.id, agentId: p.agentId }); continue; }
       if (seenAgent[p.agentId]) { errors.push({ code: 'DUP_AGENT', propId: p.id, agentId: p.agentId }); continue; }
@@ -118,9 +125,66 @@
     }
     for (const b of bays) if (!reach[b.agentId]) errors.push({ code: 'DEAD_BAY', propId: b.propId, agentId: b.agentId });
 
-    const plan = { sources, bays, junctions, belts: map, bayTileToAgent, reach, errors };
-    plan.hash = hashStr(JSON.stringify({ sources, bays, junctions, belts: map }));
+    const plan = { sources, bays, junctions, belts: map, bayTileToAgent, unboundBays, reach, errors };
+    plan.hash = hashStr(JSON.stringify({ sources, bays, junctions, belts: map }));   // hash excludes unboundBays: same topology, same hash
     return plan;
+  }
+
+  /* ---------- legibility layer: pure readouts of the compiled plan (no routing behavior) ----------
+     liveTiles(plan) -> { "x,y": true } for every belt tile on a COMPLETE route: reachable forward from an
+     INTAKE source AND flowing onward into a bound bay. The renderer draws these tiles energized and the
+     rest cold, so "the line powers on" is literally the compiled plan — truthful telemetry by construction. */
+  function liveTiles(plan) {
+    const out = {};
+    if (!plan || !plan.belts || !plan.sources || !plan.sources.length) return out;
+    const map = plan.belts, junctions = plan.junctions || {}, bayAt = plan.bayTileToAgent || {};
+    // forward: every tile a box could occupy starting from any source (a bound bay consumes — don't expand past it)
+    const fwd = {}, q = [];
+    for (const s of plan.sources) { const k = key(s.tile.x, s.tile.y); if (map[k] && !fwd[k]) { fwd[k] = true; q.push(s.tile); } }
+    while (q.length) {
+      const t = q.shift();
+      if (bayAt[key(t.x, t.y)]) continue;
+      for (const nt of nextTiles(map, junctions, t)) { const nk = key(nt.x, nt.y); if (!fwd[nk]) { fwd[nk] = true; q.push(nt); } }
+    }
+    // backward: every tile whose flow can still REACH a bound bay (reverse-BFS from bay tiles over flow edges)
+    const rev = {};   // tileKey -> [upstream tileKeys]
+    for (const k in map) {
+      const p = k.split(','), t = { x: +p[0], y: +p[1] };
+      for (const nt of nextTiles(map, junctions, t)) { const nk = key(nt.x, nt.y); (rev[nk] = rev[nk] || []).push(k); }
+    }
+    const bwd = {}, q2 = [];
+    for (const k in bayAt) if (map[k]) { bwd[k] = true; q2.push(k); }
+    while (q2.length) {
+      const k = q2.shift();
+      for (const uk of (rev[k] || [])) if (!bwd[uk]) { bwd[uk] = true; q2.push(uk); }
+    }
+    for (const k in fwd) if (bwd[k]) out[k] = true;
+    return out;
+  }
+
+  /* routeFrom(plan, x, y) -> where does the flow from THIS belt tile end up?
+     { agents: [agentId...], unbound: n, deadEnd: bool } — agents sorted (deterministic), unbound counts
+     distinct unassigned-bay hookups passed, deadEnd true if any branch sinks without reaching a bound bay.
+     Fans out ALL junction lanes (a hover tag answers "where CAN this go", not one dispatch decision). */
+  function routeFrom(plan, x, y) {
+    const res = { agents: [], unbound: 0, deadEnd: false };
+    if (!plan || !plan.belts || !plan.belts[key(x, y)]) return res;
+    const map = plan.belts, junctions = plan.junctions || {}, bayAt = plan.bayTileToAgent || {};
+    const unboundAt = {};
+    for (const u of (plan.unboundBays || [])) unboundAt[key(u.tile.x, u.tile.y)] = u.propId;
+    const agents = {}, unboundSeen = {}, seen = {}, q = [{ x, y }];
+    seen[key(x, y)] = true;
+    while (q.length) {
+      const t = q.shift(), k = key(t.x, t.y);
+      if (bayAt[k]) { agents[bayAt[k]] = true; continue; }   // a bound bay consumes the box
+      if (unboundAt[k]) unboundSeen[unboundAt[k]] = true;     // riding past a dead hookup — note it, flow continues
+      const nts = nextTiles(map, junctions, t);
+      if (!nts.length) { res.deadEnd = true; continue; }      // open end with no bay: the box sinks
+      for (const nt of nts) { const nk = key(nt.x, nt.y); if (!seen[nk]) { seen[nk] = true; q.push(nt); } }
+    }
+    res.agents = Object.keys(agents).sort();
+    res.unbound = Object.keys(unboundSeen).length;
+    return res;
   }
 
   // which agentId does a work-item with this tag route to? Follows belt flow from the (first) source, applying
@@ -164,5 +228,5 @@
 
   const ok = plan => !plan.errors.some(e => !e.warn);   // a plan is deployable iff it has no non-warning errors
 
-  return { compileRoutingPlan, resolveTarget, ok, _internals: { DIRV, OPP, LANE_ORDER, key, buildBeltMap, outLanes, beltTileNear, nextTiles, detectCycle, hashStr } };
+  return { compileRoutingPlan, resolveTarget, ok, liveTiles, routeFrom, _internals: { DIRV, OPP, LANE_ORDER, key, buildBeltMap, outLanes, beltTileNear, nextTiles, detectCycle, hashStr } };
 });

@@ -23,6 +23,7 @@ const World = (() => {
   let convey = null;   // live conveyor transport sim (boxes riding the belts)
   let junctions = null;   // splitter/merger/filter routing overrides keyed by tile (rebuilt on geo change)
   let routingPlan = null, lastPlanHash = null;   // compiled RoutingPlan (Pipeline) — drives junctions + the sidecar dispatch
+  let beltLiveSet = null;                        // { "x,y": true } belt tiles on a complete INTAKE→bound-BAY route (energized render)
 
   /* ---------- canvas + camera ---------- */
   let cv, ctx, raf = 0, last = 0, fnow = 0, running = false, ro = null, listenersBound = false;   // listenersBound: init() can run again per new agent — bind canvas/window/doc handlers + the SSE bridge ONCE
@@ -3069,7 +3070,7 @@ const World = (() => {
     if (geo && geo.belts && typeof Conveyor !== 'undefined') {
       if (!convey) convey = Conveyor.create({ onDeliver: onWorkitemDeliver });
       convey.tick(dt, now, geo.belts, junctions);
-      convey.drawBelts(ctx, now, T, geo.belts);
+      convey.drawBelts(ctx, now, T, geo.belts, beltLiveSet);
     }
 
     const items = [];
@@ -4244,6 +4245,9 @@ const World = (() => {
      conveyor animates. If Pipeline isn't loaded, routingPlan stays null and buildJunctions() falls back. */
   function compileRouting() {
     routingPlan = (typeof Pipeline !== 'undefined' && geo) ? Pipeline.compileRoutingPlan(geo) : null;
+    // the energized-belt set: derived from the SAME plan the sidecar routes by, so a glowing line always
+    // means "a complete route runs here" and a cold line always means the chain is incomplete
+    beltLiveSet = (routingPlan && Pipeline.liveTiles) ? Pipeline.liveTiles(routingPlan) : null;
     // B5: enrich each bay with the capability objectTypes in its room, so the sidecar can isolate that agent's
     // tools to exactly what the floor placed there (the bay->agent binding decides WHO; the room decides WHAT).
     if (routingPlan && routingPlan.bays && station && typeof station.bayObjects === 'function') {

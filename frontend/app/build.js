@@ -25,7 +25,7 @@ const Build = (() => {
   let opts = null, station = null, unsub = null;
   let root, cv, ctx, tip, hintEl, undoBtn, redoBtn, propCard, dpr = 1, ro = null;
   let raf = 0, running = false;
-  let cache = null, cacheGeo = null, bakeDirty = true, bakeDirtyRects = null, bakeVisibleOnly = false, valPlan = null;   // valPlan = live RoutingPlan (cost-safety ghosts)
+  let cache = null, cacheGeo = null, bakeDirty = true, bakeDirtyRects = null, bakeVisibleOnly = false, valPlan = null, valLive = null;   // valPlan = live RoutingPlan (cost-safety ghosts); valLive = energized-belt tile set
   const flashes = [];   // {rects, t0, bad} place/delete confirmations
   // short human labels for the routing-validation overlay (cost-safety: surfaced before any paid run)
   const VAL_LABEL = { ORPHAN_SOURCE: 'NO BELT', ORPHAN_BAY: 'NO BELT', DEAD_BAY: 'UNREACHABLE', CYCLE: 'LOOP!', FILTER_NO_DEFAULT: 'NO DEFAULT', DUP_AGENT: 'DUP AGENT', UNBOUND_BAY: 'NO AGENT' };
@@ -1037,6 +1037,7 @@ const Build = (() => {
       ? StationBake.bakeIncremental(cacheGeo, cache, bakeDirtyRects, { visibleRect, maxRetainedChunks: MAX_REFIT_CHUNKS, onlyMissingVisible: bakeVisibleOnly })
       : StationBake.bake(cacheGeo);
     valPlan = (typeof Pipeline !== 'undefined') ? Pipeline.compileRoutingPlan(cacheGeo) : null;   // cost-safety: recompute the routing plan on every floor edit
+    valLive = (valPlan && Pipeline.liveTiles) ? Pipeline.liveTiles(valPlan) : null;               // dead-vs-live belt render mirrors the live world
     bakeDirty = false; bakeDirtyRects = null; bakeVisibleOnly = false;
   }
 
@@ -1149,7 +1150,7 @@ const Build = (() => {
     // real work will (build-time "does my routing work?" loop). null until a junction exists -> boxes go straight.
     const jmap = (valPlan && valPlan.junctions && Object.keys(valPlan.junctions).length) ? new Map(Object.entries(valPlan.junctions)) : null;
     convey.tick(dt, now, belts, jmap);
-    convey.drawBelts(ctx, now, t, belts);
+    convey.drawBelts(ctx, now, t, belts, valLive);
   }
   function drawConveyorBoxes(now, t) { if (convey) convey.drawBoxes(ctx, now, t); }
 
