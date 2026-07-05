@@ -24,7 +24,7 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
 
-  const SUPPORT_EMAIL = 'nonfungiblefunyuns@gmail.com';
+  const SUPPORT_EMAIL = 'androo.agi@gmail.com';
   // The build-time placeholder that means "no support address chosen yet". Kept as a sentinel so an un-swapped
   // build (or a cleared constant) is treated as "unconfigured" — never rendered literally to a user.
   const SUPPORT_PLACEHOLDER = 'ANDREW_SUPPORT_EMAIL';

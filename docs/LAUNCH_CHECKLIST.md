@@ -28,8 +28,8 @@ Updater endpoint (baked into the app, `src-tauri/tauri.conf.json`):
 
 | Item | What to do | Status |
 | --- | --- | --- |
-| **Support email** | Replace every `ANDREW_SUPPORT_EMAIL` placeholder with the real address. Appears in: PRIVACY.md, TERMS.md, docs/DOWNLOAD_PAGE.md. Grep the repo for `ANDREW_SUPPORT_EMAIL` to catch them all. | ☐ TODO |
-| **License decision** | Choose the source-code license, add a `LICENSE` file at repo root, then replace the `LICENSE-DECISION` block in TERMS.md §7 with a real pointer. Until then, no code license is granted. | ☐ TODO |
+| **Support email** | ✅ DONE 2026-07-04: `androo.agi@gmail.com` in diagnostics.js + PRIVACY.md + TERMS.md + DOWNLOAD_PAGE.md (Andrew's pick; supersedes the earlier gmail swap). | ✅ DONE |
+| **License decision** | ✅ DONE 2026-07-04: MIT. `LICENSE` at repo root; TERMS.md §7 points to it. | ✅ DONE |
 | **Code signing** (optional but removes the SmartScreen/SAC wall) | Procure an Authenticode cert; sign the installer. Until then INSTALL.md + DOWNLOAD_PAGE.md must keep the unsigned caveat. | ☐ FUTURE |
 
 ## Cut & publish order (the installer bakes the frontend — order matters)

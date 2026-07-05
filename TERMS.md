@@ -5,7 +5,7 @@ _Last updated: 2026-07-03._
 StarNet is a free desktop application that runs AI agents on your own computer. By downloading,
 installing, or using StarNet, you agree to these terms. They are intentionally short.
 
-Questions: nonfungiblefunyuns@gmail.com.
+Questions: androo.agi@gmail.com.
 
 ## 1. The app is provided "as is"
 
@@ -47,35 +47,18 @@ provider through StarNet is governed by that provider's own terms and privacy po
 StarNet may update itself through its built-in updater (see `INSTALL.md`). We may change,
 suspend, or discontinue the app — or these terms — at any time. There is no guarantee of
 continued availability or support. Support is best-effort and offered by email only at
-nonfungiblefunyuns@gmail.com.
+androo.agi@gmail.com.
 
 ## 6. Privacy
 
 See `PRIVACY.md`. In short: StarNet runs locally, collects no telemetry, and your data stays on
 your machine except for the specific provider/channel/update requests described there.
 
-<!-- ============================ LICENSE-DECISION ============================
-     UNRESOLVED: the software license for the StarNet CODE has not been chosen yet.
-
-     These Terms of Use govern your USE of the app; they are NOT a software license
-     and deliberately do not grant, imply, or presume any particular open-source or
-     proprietary license, nor any rights to copy, modify, redistribute, or reverse
-     the code.
-
-     BEFORE PUBLIC LAUNCH, decide and then:
-       - add a LICENSE file at the repo root, and
-       - replace this block with a one-line pointer, e.g.
-         "## 7. License — The StarNet source code is licensed under <LICENSE>; see LICENSE."
-
-     Until a LICENSE file exists, no license to the source is granted by these terms.
-     ========================================================================= -->
-
 ## 7. License
 
-_Placeholder — pending the LICENSE-DECISION above._ These terms cover use of the app only. The
-source-code license has not been finalized; see the `LICENSE-DECISION` note above and the
-`LICENSE` file (once added) for the terms that govern the code itself.
+The StarNet source code is licensed under the MIT License; see the `LICENSE` file at the
+repository root. These terms cover use of the app; the MIT License governs the code itself.
 
 ## 8. Contact
 
-Everything else: nonfungiblefunyuns@gmail.com.
+Everything else: androo.agi@gmail.com.

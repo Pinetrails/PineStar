@@ -7,7 +7,7 @@ machine (`localhost`) and does the agent work there. There is **no StarNet cloud
 account, and no StarNet server that receives your data.** This document is written in plain
 English and is grounded in an audit of the actual code — not aspirations.
 
-Support questions: nonfungiblefunyuns@gmail.com.
+Support questions: androo.agi@gmail.com.
 
 ## The short version
 
@@ -133,4 +133,4 @@ can be removed via Windows Credential Manager (search for `ai.skynet.harness`).
 
 ## Changes
 
-If this changes, we'll update this document. Questions: nonfungiblefunyuns@gmail.com.
+If this changes, we'll update this document. Questions: androo.agi@gmail.com.
