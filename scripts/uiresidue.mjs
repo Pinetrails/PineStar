@@ -60,7 +60,7 @@ async function main(){
     await ev(c, `document.getElementById('refit-done')?.click(); document.querySelectorAll('.term-x').forEach(b=>{try{b.click()}catch{}})`);
     await step('exit refit + panels', null);
     // T3: open recruitment (summon), then a dock panel
-    await step('open SUMMON/recruitment', clickBB('SUMMON'));
+    await step('open RECRUIT/recruitment', clickBB('RECRUIT'));
     await shot('recruit');
     await step('open SETTINGS while recruiting', clickBB('SETTINGS'));
     await shot('recruit-plus-panel');
@@ -68,7 +68,7 @@ async function main(){
     await step('close recruitment', null);
     // T4: enter refit, then open recruitment (two full-screen modes?)
     await step('enter BUILD/refit again', clickBB('REFIT STATION'));
-    await step('open SUMMON while in refit', clickBB('SUMMON'));
+    await step('open RECRUIT while in refit', clickBB('RECRUIT'));
     await shot('refit-plus-recruit');
 
     writeFileSync(join(OUT,'residue.json'), JSON.stringify({findings},null,2));

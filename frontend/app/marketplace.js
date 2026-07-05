@@ -463,8 +463,9 @@ const Marketplace = (() => {
 
   /* ---------- the class card (coin seal in the roster) ---------- */
   function cardHTML(s, i) {
-    const deploy = !ctx || ctx.mode !== 'pick';
-    const here = deploy && ctx && ctx.currentSpecialtyId === s.id;
+    // DEPLOYED flag is mode-independent: the merged recruit door passes currentSpecialtyId in
+    // pick mode too, so the card the current agent already runs as stays honestly marked.
+    const here = !!(ctx && ctx.currentSpecialtyId && ctx.currentSpecialtyId === s.id);
     const sel = (focusAgent === s.id);
     return '<button class="mkt-card' + (sel ? ' sel' : '') + '" type="button" data-id="' + esc(s.id) + '" style="--accent:' + esc(s.accent) + ';--ci:' + (i || 0) + '">' +
       sealHTML(s, true) +
@@ -599,7 +600,7 @@ const Marketplace = (() => {
     const s = (focusAgent && Specialties.get(focusAgent)) || Specialties.builtins()[0];
     if (!s) return '<div class="mkt-dos-empty">no class selected.</div>';
     const deploy = !ctx || ctx.mode !== 'pick';
-    const here = deploy && ctx && ctx.currentSpecialtyId === s.id;
+    const here = !!(ctx && ctx.currentSpecialtyId && ctx.currentSpecialtyId === s.id);
     const t = s.tags || {};
     const bar = (k, label) => { const v = Math.round((t[k] || 0) * 100);
       return '<div class="mkt-barrow"><span class="bk">' + label + '</span><span class="trk"><span class="fill" style="width:' + v + '%"></span></span><span class="bv">' + v + '%</span></div>'; };
@@ -639,6 +640,13 @@ const Marketplace = (() => {
       '<div class="mkt-dos-cta">' + custActs +
         '<button class="mkt-cta-main mkt-deploy" data-id="' + esc(s.id) + '">' + ctaLabel + ' ▸</button>' +
         '<div class="mkt-cta-sub">' + ctaSub + '</div>' +
+        // the merged recruit door's SECOND verb: in summon mode, a deploy context (onDeploy +
+        // agentName) also offers re-speccing the CURRENT agent as this class — the old ROSTER
+        // door's action, now living on the card instead of a separate dock button.
+        (!deploy && ctx && ctx.onDeploy && ctx.agentName && !here
+          ? '<button class="mkt-cta-alt mkt-deploy-cur" data-id="' + esc(s.id) + '">⏼ DEPLOY TO ' + esc(ctx.agentName).toUpperCase() + ' ▸</button>' +
+            '<div class="mkt-cta-sub">no new crew member — re-specs ' + esc(ctx.agentName) + '’s purpose &amp; standing orders</div>'
+          : '') +
       '</div>';
   }
   // GEAR the recipe draws on — one advisory row per objectType: prop label + what it grants + a present/WANT
@@ -1047,6 +1055,16 @@ const Marketplace = (() => {
         note(s.name + ' deployed to ' + ((ctx && ctx.agentName) || 'your agent') + (adoptVoice ? ' (+ voice)' : ''), 'good');
         close();
       }
+    });
+    // second verb on the merged recruit door: DEPLOY TO <current> from summon mode (no voice
+    // adoption checkbox in this pane — deploy keeps the agent's voice; the dossier can retune it).
+    const deployCurBtn = sc.querySelector('.mkt-deploy-cur');
+    if (deployCurBtn) deployCurBtn.addEventListener('click', () => {
+      const s = Specialties.get(deployCurBtn.dataset.id); if (!s) return;
+      sfx('click');
+      if (ctx && ctx.onDeploy) ctx.onDeploy(s, { adoptVoice: false });
+      note(s.name + ' deployed to ' + ((ctx && ctx.agentName) || 'your agent'), 'good');
+      close();
     });
     const launchBtn = sc.querySelector('.mkt-launch');
     if (launchBtn) launchBtn.addEventListener('click', () => {

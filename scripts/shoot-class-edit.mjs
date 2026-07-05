@@ -48,8 +48,8 @@ try {
     console.log('minted custom class:', mint);
     const spec = JSON.parse(mint);
 
-    // Open the RECRUITMENT BAY (ROSTER → deploy bay), let the grid render, focus the new custom class.
-    await evalJS(cdp, `(()=>{ const el=document.querySelector('#bb-roster'); if(el) el.click(); return 'clicked'; })()`);
+    // Open the RECRUITMENT BAY (the one #bb-recruit door), let the grid render, focus the new custom class.
+    await evalJS(cdp, `(()=>{ const el=document.querySelector('#bb-recruit'); if(el) el.click(); return 'clicked'; })()`);
     await sleep(1800);
     // click the custom class coin to open its dossier (which carries the ✎ EDIT button)
     const focus = await evalJS(cdp, `(()=>{ const c=document.querySelector('[data-spec="${spec.id}"],[data-id="${spec.id}"]'); if(c){c.click(); return 'focused';} return 'no-coin'; })()`);

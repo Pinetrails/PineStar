@@ -39,8 +39,8 @@ try {
     const stationCaps = await evalJS(cdp, `JSON.stringify((window.World && World.stationCaps) ? World.stationCaps().map(c=>c.objectType||c) : 'no-World')`);
     console.log('station caps:', stationCaps);
 
-    // Open the RECRUITMENT BAY (ROSTER → deploy bay). Give it time to render the grid + dossier.
-    const openRes = await evalJS(cdp, `(()=>{ const el=document.querySelector('#bb-roster'); if(!el) return 'NOTFOUND'; el.click(); return 'clicked'; })()`);
+    // Open the RECRUITMENT BAY (the one #bb-recruit door). Give it time to render the grid + dossier.
+    const openRes = await evalJS(cdp, `(()=>{ const el=document.querySelector('#bb-recruit'); if(!el) return 'NOTFOUND'; el.click(); return 'clicked'; })()`);
     console.log('open bay:', openRes);
     await sleep(1800);
 

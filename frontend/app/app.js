@@ -744,12 +744,24 @@ const App = (() => {
     }
     return parts.join(' · ');
   }
-  // open the Recruitment Bay in SUMMON mode (reuses pick-mode's specialist grid; RECRUIT → summonAgent).
+  // THE one recruit door: the bay opens in SUMMON mode (pick-mode specialist grid → summonAgent),
+  // and ALSO carries the deploy context so each class dossier offers the second verb — DEPLOY TO
+  // <current agent> (deploySpecialty). The old split (ROSTER=deploy door, SUMMON=new-agent door)
+  // was two dock buttons opening the same screen; the verbs now live on the card, not the dock.
   let concurrentCap = null;   // server MAX_CONCURRENT_AGENTS (how many agents RUN at once) — fetched once, kept honest
   function openSummonBay() {
     if (typeof Marketplace === 'undefined' || !agent) return;
     SFX.click();
-    const go = () => Marketplace.open({ mode: 'pick', summon: true, concurrentCap: concurrentCap, notify: (typeof StationUI !== 'undefined') ? StationUI.notify : null, onPick: summonAgent });
+    const go = () => Marketplace.open({
+      mode: 'pick', summon: true, concurrentCap: concurrentCap,
+      notify: (typeof StationUI !== 'undefined') ? StationUI.notify : null,
+      onPick: summonAgent,
+      // deploy-to-current context (the merged ROSTER verb): who the current agent is + what it
+      // already runs as, so the bay can flag DEPLOYED and re-spec honestly.
+      onDeploy: deploySpecialty,
+      agentName: agent.name,
+      currentSpecialtyId: agent.specialtyId || null
+    });
     // surface the REAL concurrency ceiling in the bay so "summon as many as you like" doesn't imply they all
     // run at once (the gate refuses excess parallel workers). Fetch once; open immediately thereafter.
     if (concurrentCap != null) return go();
@@ -1707,10 +1719,8 @@ const App = (() => {
         bbBuild.onclick = () => { SFX.click(); bbBuild.classList.remove('refit-nudge'); Build.toggle(); if (typeof Tutorial !== 'undefined' && Tutorial.onBuildOpen && Build.isOpen && Build.isOpen()) Tutorial.onBuildOpen(); };
       }
     }
-    const bbRoster = el('bb-roster');
-    if (bbRoster) bbRoster.onclick = () => openDeployBay('agents');   // the in-game Recruitment Bay (AGENTS tab)
-    const bbSummon = el('bb-summon');
-    if (bbSummon) bbSummon.onclick = openSummonBay;   // SUMMON a NEW agent onto the crew
+    const bbRecruit = el('bb-recruit');
+    if (bbRecruit) bbRecruit.onclick = openSummonBay;   // the ONE recruit door — bay carries both verbs (summon new / deploy to current)
 
     const bbMissions = el('bb-missions');
     if (bbMissions) bbMissions.onclick = () => openDeployBay('recipes');   // straight to the RECIPES (mission) library tab
