@@ -1,7 +1,7 @@
 [package]
 name = "skynet-desktop"
-version = "0.1.8"
-description = "StarNet — native desktop shell for the gamified AI-agent harness"
+version = "0.1.9"
+description = "StarNet ??? native desktop shell for the gamified AI-agent harness"
 authors = ["StarNet"]
 edition = "2021"
 rust-version = "1.77.2"
@@ -21,7 +21,7 @@ uuid = { version = "1", features = ["v4"] }
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_System_Power", "Win32_System_Threading"] }
 
-# A small, fast desktop binary — strip symbols and optimize for size in release.
+# A small, fast desktop binary ??? strip symbols and optimize for size in release.
 [profile.release]
 panic = "abort"
 codegen-units = 1
