@@ -1422,8 +1422,8 @@ const Build = (() => {
   // deep-link: open REFIT straight into a placed prop's editor. The live world's "NO AGENT — CLICK"
   // bay nag lands here, so the fix is one click away from the callout instead of a hunt through modes.
   function openAssign(propId) {
-    if (!station) return;
-    if (!running) open();
+    if (!running) open();     // open() resolves `station` from opts.getStation() — MUST run before the guard
+    if (!station) return;     // (guard-first was a real shipped bug: the click-nag path no-opped on any session that had never opened REFIT)
     const p = station.propById(propId);
     if (!p) return;
     openPropEditor(propId, p.t, { clientX: (window.innerWidth / 2) | 0, clientY: 120 });   // synthetic anchor for the action tip
