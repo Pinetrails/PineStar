@@ -5309,6 +5309,9 @@ async function handleTts(req, res) {
   // malformed client can't blow the input past the model's limit. Empty style → plain synthesis (unchanged).
   const style = String((body && body.style) || '').replace(/\s+/g, ' ').trim().slice(0, 240);
   if (!text) return fallback('no text');
+  // ElevenLabs branch — user-trained voices (e.g. the Commander's own Ultron clone). Its own key + cache
+  // namespace; the OpenRouter key is irrelevant there, so dispatch BEFORE the no-key gate.
+  if (String((body && body.provider) || '').trim().toLowerCase() === 'elevenlabs') return ttsElevenLabs(res, body, text, fallback);
   if (!key) return fallback('no key');
 
   // fold the style into the spoken input the way Gemini TTS documents (a leading directive it obeys but
@@ -5367,6 +5370,50 @@ async function handleTts(req, res) {
   res.writeHead(200, { 'Content-Type': outType, 'Cache-Control': 'no-store', 'X-Voice-Cache': 'miss' });
   res.end(buf);
   // every 32nd miss, sweep the cache AFTER the response so it never adds latency to a spoken reply.
+  if (++ttsMissCount % 32 === 0) setImmediate(() => { maybeEvictVoiceCache().catch(() => {}); });
+}
+
+/* ElevenLabs TTS — speak with a user-trained ElevenLabs voice (e.g. the Commander's own Ultron clone).
+   BYOK: the key rides the request (body.elKey, from the voicelab field) or ELEVENLABS_API_KEY in the
+   sidecar env — never stored by this route, never echoed. Same 200-degrade contract + disk voice cache
+   as the OpenRouter path; ElevenLabs returns mp3, so no PCM wrapping. Style/voice steering lives in the
+   ElevenLabs voice itself (that's the point — the voice was designed there), so no style param here. */
+const EL_TTS_MODEL = 'eleven_multilingual_v2';
+async function ttsElevenLabs(res, body, text, fallback) {
+  const key = String((body && body.elKey) || '').trim() || String(process.env.ELEVENLABS_API_KEY || '').trim();
+  const voiceId = String((body && body.voiceId) || '').trim();
+  const modelId = String((body && body.modelId) || EL_TTS_MODEL).trim();
+  if (!/^[A-Za-z0-9]{8,48}$/.test(voiceId)) return fallback('bad voiceId');
+  if (!/^[A-Za-z0-9._-]{1,64}$/.test(modelId)) return fallback('bad modelId');
+  if (!key) return fallback('no elevenlabs key');
+  // cache under an elevenlabs/ namespace so it can never collide with an OpenRouter clip of the same text
+  const ck = crypto.createHash('sha1').update('elevenlabs/' + modelId + '|' + voiceId + '||' + text).digest('hex');
+  try {
+    const buf = await fsp.readFile(path.join(VOICE_CACHE_DIR, ck + '.mp3'));
+    res.writeHead(200, { 'Content-Type': 'audio/mpeg', 'Cache-Control': 'no-store', 'X-Voice-Cache': 'hit' });
+    return res.end(buf);
+  } catch (_) { /* miss → synthesize */ }
+  let r;
+  try {
+    r = await fetch('https://api.elevenlabs.io/v1/text-to-speech/' + encodeURIComponent(voiceId), voiceFetchOpts({
+      method: 'POST',
+      headers: { 'xi-api-key': key, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, model_id: modelId })
+    }, 60000));
+  } catch (e) { return fallback('network: ' + ((e && e.message) || e)); }
+  if (!r.ok) {
+    let detail = ''; try { detail = (await r.text()).slice(0, 300); } catch (_) {}
+    return fallback('elevenlabs ' + r.status + (detail ? ' — ' + detail : ''));
+  }
+  const ct = (r.headers.get('content-type') || '').toLowerCase();
+  let buf;
+  try { buf = Buffer.from(await r.arrayBuffer()); } catch (e) { return fallback('read: ' + ((e && e.message) || e)); }
+  if (!buf || !buf.length) return fallback('empty audio');
+  // anything that isn't mp3 (e.g. a 200 with a JSON error body) is NOT blindly served — degrade cleanly.
+  if (!/mpeg|mp3/.test(ct)) return fallback('unexpected content-type: ' + ct);
+  try { const tmp = path.join(VOICE_CACHE_DIR, ck + '.mp3.' + crypto.randomUUID() + '.tmp'); await fsp.writeFile(tmp, buf); await fsp.rename(tmp, path.join(VOICE_CACHE_DIR, ck + '.mp3')); } catch (_) {}
+  res.writeHead(200, { 'Content-Type': 'audio/mpeg', 'Cache-Control': 'no-store', 'X-Voice-Cache': 'miss' });
+  res.end(buf);
   if (++ttsMissCount % 32 === 0) setImmediate(() => { maybeEvictVoiceCache().catch(() => {}); });
 }
 

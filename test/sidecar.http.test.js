@@ -39,6 +39,7 @@ function boot(port, workspaces, attemptsLeft) {
         // clear the OpenRouter key so the voice routes' no-key fallback path is deterministic (a dev machine
         // with the key in its ambient env would otherwise hit the network and flip the {text:''} assertions).
         OPENROUTER_KEY: '', STARNET_OPENROUTER_KEY: '', SKYNET_OPENROUTER_KEY: '',
+        ELEVENLABS_API_KEY: '',   // same determinism for the ElevenLabs TTS branch's no-key degrade
         OPENAI_API_KEY: '',
         STARNET_OPENAI_API_KEY: '',
         SKYNET_OPENAI_API_KEY: '',
@@ -624,6 +625,15 @@ function boot(port, workspaces, attemptsLeft) {
     A.ok(/no key/i.test(ttsNoKey.body.reason || ''), 'the TTS fallback names the no-key reason');
     const ttsNoText = await j('POST', '/api/tts', { text: '   ' });
     A.eq(ttsNoText.body.fallback, true, 'empty-text TTS also degrades cleanly');
+    // ElevenLabs branch: same 200-degrade contract, its own key + validation (no network with the env cleared).
+    const elBadVoice = await j('POST', '/api/tts', { provider: 'elevenlabs', text: 'station check', voiceId: 'not/a/valid/id!' });
+    A.eq(elBadVoice.status, 200, 'POST /api/tts elevenlabs with a malformed voiceId -> 200');
+    A.eq(elBadVoice.body.fallback, true, 'malformed voiceId degrades to the fallback envelope');
+    A.ok(/bad voiceId/i.test(elBadVoice.body.reason || ''), 'the degrade names the bad-voiceId reason');
+    const elNoKey = await j('POST', '/api/tts', { provider: 'elevenlabs', text: 'station check', voiceId: 'AbCdEf012345678901234' });
+    A.eq(elNoKey.status, 200, 'POST /api/tts elevenlabs with no key -> 200 (never a hard error)');
+    A.eq(elNoKey.body.fallback, true, 'no-key ElevenLabs TTS returns the {fallback:true} envelope');
+    A.ok(/no elevenlabs key/i.test(elNoKey.body.reason || ''), 'the degrade names the missing ElevenLabs key specifically');
 
     // STT JSON shape: no audio -> {text:'',reason}; audio present but no key -> {text:'',reason:'no key'}.
     const sttNoAudio = await j('POST', '/api/stt', { format: 'wav' });
