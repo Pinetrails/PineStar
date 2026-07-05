@@ -28,7 +28,11 @@ DATA.SKINS = {
   capybara:   { name: 'Capybara',   set: 'capybara',   scale: 0.425 },
   robot:      { name: 'Robot',      set: 'robot',      scale: 0.385 },
   vaultboy:   { name: 'Vault Boy',  set: 'vaultboy',   scale: 0.376 },
-  blank:      { name: 'Blank',      set: 'blank',      scale: 0.385 },
-  heisenberg: { name: 'Heisenberg', set: 'heisenberg', scale: 0.36  },
+  blank:       { name: 'Blank',       set: 'blank',       scale: 0.385 },
+  blank_blue:  { name: 'Blank Blue',  set: 'blank_blue',  scale: 0.385 },
+  blank_green: { name: 'Blank Green', set: 'blank_green', scale: 0.385 },
+  blank_red:   { name: 'Blank Red',   set: 'blank_red',   scale: 0.385 },
+  blank_amber: { name: 'Blank Amber', set: 'blank_amber', scale: 0.385 },
+  heisenberg:  { name: 'Heisenberg',  set: 'heisenberg',  scale: 0.36  },
 };
-DATA.DEFAULT_SKIN = 'bear';
+DATA.DEFAULT_SKIN = 'blank';

@@ -789,6 +789,290 @@
       "heisenberg/walk_north_3.png",
       "heisenberg/walk_north_4.png",
       "heisenberg/walk_north_5.png"
+    ],
+    "blank.blink.south": [
+      "blank/blink_south.png"
+    ],
+    "blank.blink.east": [
+      "blank/blink_east.png"
+    ],
+    "blank.blink.west": [
+      "blank/blink_west.png"
+    ],
+    "blank.blink.north": [
+      "blank/blink_north.png"
+    ],
+    "blank_blue.rot.south": [
+      "blank_blue/rot_south.png"
+    ],
+    "blank_blue.rot.east": [
+      "blank_blue/rot_east.png"
+    ],
+    "blank_blue.rot.west": [
+      "blank_blue/rot_west.png"
+    ],
+    "blank_blue.rot.north": [
+      "blank_blue/rot_north.png"
+    ],
+    "blank_blue.sit.south": [
+      "blank_blue/sit_south.png"
+    ],
+    "blank_blue.sit.east": [
+      "blank_blue/sit_east.png"
+    ],
+    "blank_blue.sit.west": [
+      "blank_blue/sit_west.png"
+    ],
+    "blank_blue.sit.north": [
+      "blank_blue/sit_north.png"
+    ],
+    "blank_blue.walk.south": [
+      "blank_blue/walk_south_0.png",
+      "blank_blue/walk_south_1.png",
+      "blank_blue/walk_south_2.png",
+      "blank_blue/walk_south_3.png",
+      "blank_blue/walk_south_4.png",
+      "blank_blue/walk_south_5.png"
+    ],
+    "blank_blue.walk.east": [
+      "blank_blue/walk_east_0.png",
+      "blank_blue/walk_east_1.png",
+      "blank_blue/walk_east_2.png",
+      "blank_blue/walk_east_3.png",
+      "blank_blue/walk_east_4.png",
+      "blank_blue/walk_east_5.png"
+    ],
+    "blank_blue.walk.west": [
+      "blank_blue/walk_west_0.png",
+      "blank_blue/walk_west_1.png",
+      "blank_blue/walk_west_2.png",
+      "blank_blue/walk_west_3.png",
+      "blank_blue/walk_west_4.png",
+      "blank_blue/walk_west_5.png"
+    ],
+    "blank_blue.walk.north": [
+      "blank_blue/walk_north_0.png",
+      "blank_blue/walk_north_1.png",
+      "blank_blue/walk_north_2.png",
+      "blank_blue/walk_north_3.png",
+      "blank_blue/walk_north_4.png",
+      "blank_blue/walk_north_5.png"
+    ],
+    "blank_blue.blink.south": [
+      "blank_blue/blink_south.png"
+    ],
+    "blank_blue.blink.east": [
+      "blank_blue/blink_east.png"
+    ],
+    "blank_blue.blink.west": [
+      "blank_blue/blink_west.png"
+    ],
+    "blank_blue.blink.north": [
+      "blank_blue/blink_north.png"
+    ],
+    "blank_green.rot.south": [
+      "blank_green/rot_south.png"
+    ],
+    "blank_green.rot.east": [
+      "blank_green/rot_east.png"
+    ],
+    "blank_green.rot.west": [
+      "blank_green/rot_west.png"
+    ],
+    "blank_green.rot.north": [
+      "blank_green/rot_north.png"
+    ],
+    "blank_green.sit.south": [
+      "blank_green/sit_south.png"
+    ],
+    "blank_green.sit.east": [
+      "blank_green/sit_east.png"
+    ],
+    "blank_green.sit.west": [
+      "blank_green/sit_west.png"
+    ],
+    "blank_green.sit.north": [
+      "blank_green/sit_north.png"
+    ],
+    "blank_green.walk.south": [
+      "blank_green/walk_south_0.png",
+      "blank_green/walk_south_1.png",
+      "blank_green/walk_south_2.png",
+      "blank_green/walk_south_3.png",
+      "blank_green/walk_south_4.png",
+      "blank_green/walk_south_5.png"
+    ],
+    "blank_green.walk.east": [
+      "blank_green/walk_east_0.png",
+      "blank_green/walk_east_1.png",
+      "blank_green/walk_east_2.png",
+      "blank_green/walk_east_3.png",
+      "blank_green/walk_east_4.png",
+      "blank_green/walk_east_5.png"
+    ],
+    "blank_green.walk.west": [
+      "blank_green/walk_west_0.png",
+      "blank_green/walk_west_1.png",
+      "blank_green/walk_west_2.png",
+      "blank_green/walk_west_3.png",
+      "blank_green/walk_west_4.png",
+      "blank_green/walk_west_5.png"
+    ],
+    "blank_green.walk.north": [
+      "blank_green/walk_north_0.png",
+      "blank_green/walk_north_1.png",
+      "blank_green/walk_north_2.png",
+      "blank_green/walk_north_3.png",
+      "blank_green/walk_north_4.png",
+      "blank_green/walk_north_5.png"
+    ],
+    "blank_green.blink.south": [
+      "blank_green/blink_south.png"
+    ],
+    "blank_green.blink.east": [
+      "blank_green/blink_east.png"
+    ],
+    "blank_green.blink.west": [
+      "blank_green/blink_west.png"
+    ],
+    "blank_green.blink.north": [
+      "blank_green/blink_north.png"
+    ],
+    "blank_red.rot.south": [
+      "blank_red/rot_south.png"
+    ],
+    "blank_red.rot.east": [
+      "blank_red/rot_east.png"
+    ],
+    "blank_red.rot.west": [
+      "blank_red/rot_west.png"
+    ],
+    "blank_red.rot.north": [
+      "blank_red/rot_north.png"
+    ],
+    "blank_red.sit.south": [
+      "blank_red/sit_south.png"
+    ],
+    "blank_red.sit.east": [
+      "blank_red/sit_east.png"
+    ],
+    "blank_red.sit.west": [
+      "blank_red/sit_west.png"
+    ],
+    "blank_red.sit.north": [
+      "blank_red/sit_north.png"
+    ],
+    "blank_red.walk.south": [
+      "blank_red/walk_south_0.png",
+      "blank_red/walk_south_1.png",
+      "blank_red/walk_south_2.png",
+      "blank_red/walk_south_3.png",
+      "blank_red/walk_south_4.png",
+      "blank_red/walk_south_5.png"
+    ],
+    "blank_red.walk.east": [
+      "blank_red/walk_east_0.png",
+      "blank_red/walk_east_1.png",
+      "blank_red/walk_east_2.png",
+      "blank_red/walk_east_3.png",
+      "blank_red/walk_east_4.png",
+      "blank_red/walk_east_5.png"
+    ],
+    "blank_red.walk.west": [
+      "blank_red/walk_west_0.png",
+      "blank_red/walk_west_1.png",
+      "blank_red/walk_west_2.png",
+      "blank_red/walk_west_3.png",
+      "blank_red/walk_west_4.png",
+      "blank_red/walk_west_5.png"
+    ],
+    "blank_red.walk.north": [
+      "blank_red/walk_north_0.png",
+      "blank_red/walk_north_1.png",
+      "blank_red/walk_north_2.png",
+      "blank_red/walk_north_3.png",
+      "blank_red/walk_north_4.png",
+      "blank_red/walk_north_5.png"
+    ],
+    "blank_red.blink.south": [
+      "blank_red/blink_south.png"
+    ],
+    "blank_red.blink.east": [
+      "blank_red/blink_east.png"
+    ],
+    "blank_red.blink.west": [
+      "blank_red/blink_west.png"
+    ],
+    "blank_red.blink.north": [
+      "blank_red/blink_north.png"
+    ],
+    "blank_amber.rot.south": [
+      "blank_amber/rot_south.png"
+    ],
+    "blank_amber.rot.east": [
+      "blank_amber/rot_east.png"
+    ],
+    "blank_amber.rot.west": [
+      "blank_amber/rot_west.png"
+    ],
+    "blank_amber.rot.north": [
+      "blank_amber/rot_north.png"
+    ],
+    "blank_amber.sit.south": [
+      "blank_amber/sit_south.png"
+    ],
+    "blank_amber.sit.east": [
+      "blank_amber/sit_east.png"
+    ],
+    "blank_amber.sit.west": [
+      "blank_amber/sit_west.png"
+    ],
+    "blank_amber.sit.north": [
+      "blank_amber/sit_north.png"
+    ],
+    "blank_amber.walk.south": [
+      "blank_amber/walk_south_0.png",
+      "blank_amber/walk_south_1.png",
+      "blank_amber/walk_south_2.png",
+      "blank_amber/walk_south_3.png",
+      "blank_amber/walk_south_4.png",
+      "blank_amber/walk_south_5.png"
+    ],
+    "blank_amber.walk.east": [
+      "blank_amber/walk_east_0.png",
+      "blank_amber/walk_east_1.png",
+      "blank_amber/walk_east_2.png",
+      "blank_amber/walk_east_3.png",
+      "blank_amber/walk_east_4.png",
+      "blank_amber/walk_east_5.png"
+    ],
+    "blank_amber.walk.west": [
+      "blank_amber/walk_west_0.png",
+      "blank_amber/walk_west_1.png",
+      "blank_amber/walk_west_2.png",
+      "blank_amber/walk_west_3.png",
+      "blank_amber/walk_west_4.png",
+      "blank_amber/walk_west_5.png"
+    ],
+    "blank_amber.walk.north": [
+      "blank_amber/walk_north_0.png",
+      "blank_amber/walk_north_1.png",
+      "blank_amber/walk_north_2.png",
+      "blank_amber/walk_north_3.png",
+      "blank_amber/walk_north_4.png",
+      "blank_amber/walk_north_5.png"
+    ],
+    "blank_amber.blink.south": [
+      "blank_amber/blink_south.png"
+    ],
+    "blank_amber.blink.east": [
+      "blank_amber/blink_east.png"
+    ],
+    "blank_amber.blink.west": [
+      "blank_amber/blink_west.png"
+    ],
+    "blank_amber.blink.north": [
+      "blank_amber/blink_north.png"
     ]
   }
 }
