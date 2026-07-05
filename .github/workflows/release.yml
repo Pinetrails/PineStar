@@ -1,0 +1,80 @@
+# StarNet release build — machine-independent signed cut.
+#
+# Why this exists: local release builds depend on the dev machine's Smart App Control
+# state (SAC enforce blocks freshly compiled proc-macro DLLs — see docs/LAUNCH_CHECKLIST.md).
+# This workflow produces the same signed installer + updater artifacts on a clean runner.
+#
+# Required repo secrets (Settings → Secrets and variables → Actions):
+#   TAURI_SIGNING_PRIVATE_KEY          — contents of ~/.tauri/starnet-updater.key (the whole file)
+#   TAURI_SIGNING_PRIVATE_KEY_PASSWORD — empty string (the key is encrypted with an empty password)
+#   RELEASES_TOKEN                     — fine-grained PAT with Contents:write on
+#                                        nonfungiblefunyuns-ship-it/starnet-releases
+#                                        (only needed for the publish step; build works without it)
+#
+# Trigger: manually (Run workflow), with the version read from src-tauri/tauri.conf.json.
+
+name: release
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "Publish to starnet-releases (true) or just build artifacts (false)"
+        required: true
+        default: "false"
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install frontend/sidecar deps
+        run: npm ci
+
+      - name: Signed release cut (installer + .sig + latest.json into release/)
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: npm run release:cut
+
+      - name: Read version
+        id: ver
+        shell: pwsh
+        run: |
+          $v = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          "version=$v" >> $env:GITHUB_OUTPUT
+
+      - name: Upload build artifacts (always)
+        uses: actions/upload-artifact@v4
+        with:
+          name: starnet-v${{ steps.ver.outputs.version }}
+          path: |
+            release/StarNet_${{ steps.ver.outputs.version }}_x64-setup.exe
+            release/StarNet_${{ steps.ver.outputs.version }}_x64-setup.exe.sig
+            release/latest.json
+          if-no-files-found: error
+
+      - name: Publish to starnet-releases
+        if: ${{ github.event.inputs.publish == 'true' }}
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+        run: |
+          $v = "${{ steps.ver.outputs.version }}"
+          gh release create "v$v" `
+            --repo nonfungiblefunyuns-ship-it/starnet-releases `
+            --title "StarNet $v" `
+            --notes-file RELEASE_NOTES.md `
+            "release/StarNet_${v}_x64-setup.exe" `
+            "release/StarNet_${v}_x64-setup.exe.sig" `
+            "release/latest.json"
+
+      - name: Verify live endpoint (only after publish)
+        if: ${{ github.event.inputs.publish == 'true' }}
+        run: npm run release:verify-host
