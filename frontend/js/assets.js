@@ -138,9 +138,10 @@ const SPRITES = (() => {
     } else if (b.sitting) {
       key = pick(set, ['sit', 'rot'], dir); fps = 4;
     } else if (b.speaking) {
-      // talking out loud: no dedicated talk sprite exists, so sell it with a livelier bob + a subtle
-      // 1px head bounce so the agent visibly animates while its voice plays (not a frozen idle pose).
-      key = pick(set, ['rot'], dir); fps = 6;
+      // talking out loud: prefer a dedicated talk track (open/closed mouth chatter) when the set
+      // ships one; otherwise sell it with a livelier bob + a subtle 1px head bounce so the agent
+      // visibly animates while its voice plays (not a frozen idle pose).
+      key = pick(set, ['talk', 'rot'], dir); fps = 6;
       bob = Math.sin(nowMs / 170 + b.phase) * 1.1 - (Math.floor(nowMs / 150) % 2 ? 1 : 0);
     } else {
       key = pick(set, ['rot'], dir);

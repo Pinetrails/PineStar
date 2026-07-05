@@ -1073,6 +1073,96 @@
     ],
     "blank_amber.blink.north": [
       "blank_amber/blink_north.png"
+    ],
+    "blank.type.north": [
+      "blank/type_north_0.png",
+      "blank/type_north_1.png",
+      "blank/type_north_2.png",
+      "blank/type_north_3.png"
+    ],
+    "blank.talk.south": [
+      "blank/talk_south_0.png",
+      "blank/talk_south_1.png"
+    ],
+    "blank.talk.east": [
+      "blank/talk_east_0.png",
+      "blank/talk_east_1.png"
+    ],
+    "blank.talk.west": [
+      "blank/talk_west_0.png",
+      "blank/talk_west_1.png"
+    ],
+    "blank_blue.type.north": [
+      "blank_blue/type_north_0.png",
+      "blank_blue/type_north_1.png",
+      "blank_blue/type_north_2.png",
+      "blank_blue/type_north_3.png"
+    ],
+    "blank_blue.talk.south": [
+      "blank_blue/talk_south_0.png",
+      "blank_blue/talk_south_1.png"
+    ],
+    "blank_blue.talk.east": [
+      "blank_blue/talk_east_0.png",
+      "blank_blue/talk_east_1.png"
+    ],
+    "blank_blue.talk.west": [
+      "blank_blue/talk_west_0.png",
+      "blank_blue/talk_west_1.png"
+    ],
+    "blank_green.type.north": [
+      "blank_green/type_north_0.png",
+      "blank_green/type_north_1.png",
+      "blank_green/type_north_2.png",
+      "blank_green/type_north_3.png"
+    ],
+    "blank_green.talk.south": [
+      "blank_green/talk_south_0.png",
+      "blank_green/talk_south_1.png"
+    ],
+    "blank_green.talk.east": [
+      "blank_green/talk_east_0.png",
+      "blank_green/talk_east_1.png"
+    ],
+    "blank_green.talk.west": [
+      "blank_green/talk_west_0.png",
+      "blank_green/talk_west_1.png"
+    ],
+    "blank_red.type.north": [
+      "blank_red/type_north_0.png",
+      "blank_red/type_north_1.png",
+      "blank_red/type_north_2.png",
+      "blank_red/type_north_3.png"
+    ],
+    "blank_red.talk.south": [
+      "blank_red/talk_south_0.png",
+      "blank_red/talk_south_1.png"
+    ],
+    "blank_red.talk.east": [
+      "blank_red/talk_east_0.png",
+      "blank_red/talk_east_1.png"
+    ],
+    "blank_red.talk.west": [
+      "blank_red/talk_west_0.png",
+      "blank_red/talk_west_1.png"
+    ],
+    "blank_amber.type.north": [
+      "blank_amber/type_north_0.png",
+      "blank_amber/type_north_1.png",
+      "blank_amber/type_north_2.png",
+      "blank_amber/type_north_3.png"
+    ],
+    "blank_amber.talk.south": [
+      "blank_amber/talk_south_0.png",
+      "blank_amber/talk_south_1.png"
+    ],
+    "blank_amber.talk.east": [
+      "blank_amber/talk_east_0.png",
+      "blank_amber/talk_east_1.png"
+    ],
+    "blank_amber.talk.west": [
+      "blank_amber/talk_west_0.png",
+      "blank_amber/talk_west_1.png"
     ]
   }
 }
