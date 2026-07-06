@@ -189,7 +189,16 @@ const Voice = (() => {
     // playback — Ultron's cold-metal body. A persona WITH a shell bypasses the transmission color (below).
     return { model: TTS_MODEL, voice: (p && p.ttsVoice) || 'Umbriel', speed: (p && p.ttsSpeed) || 1.0, style: (p && p.ttsStyle) || '', deep: !!(p && p.ttsDeep), shell: (p && p.ttsShell) || null };
   }
-  function haveKey() { return !!apiKey() || (typeof Harness !== 'undefined' && Harness.configured && Harness.configured()); }
+  // Can neural TTS possibly work? Browser: yes iff the page holds a key / reports configured. DESKTOP: the
+  // key lives in the SIDECAR (keychain->env), and the page-side configured() flag has proven unreliable there
+  // (a false negative silently forced the robotic speechSynthesis voice for WEEKS while the server could
+  // synthesize fine — the "voices never changed" desktop bug). On the desktop shell, don't guess: always let
+  // the request go — the sidecar is the source of truth, its 'no key' degrade comes back on the FIRST call
+  // and latches ttsDisabled, so a truly key-less install pays exactly one cheap round-trip per session.
+  function haveKey() {
+    if (typeof window !== 'undefined' && (window.__TAURI__ || window.__TAURI_INTERNALS__)) return true;
+    return !!apiKey() || (typeof Harness !== 'undefined' && Harness.configured && Harness.configured());
+  }
 
   /* PRE-WARM the voice cache: when the speaker turns on, quietly synthesize the active persona's stock lines
      (ambient mutters + the sample reply) so those exact lines later play INSTANTLY from the sidecar's disk
