@@ -183,7 +183,9 @@ const Voice = (() => {
     const p = (typeof Personas !== 'undefined' && Personas.get) ? Personas.get(activePersonaId) : null;
     // ttsStyle is the natural-language delivery instruction the sidecar folds into the input (and the
     // cache key) — the station's eerie register, distinct per persona. Empty → plain synthesis.
-    return { model: TTS_MODEL, voice: (p && p.ttsVoice) || 'Umbriel', speed: (p && p.ttsSpeed) || 1.0, style: (p && p.ttsStyle) || '' };
+    // ttsDeep: disable pitch-preservation on playback, so ttsSpeed<1 genuinely LOWERS the pitch (the
+    // character-voice lever: Venom/Ultron get their sub-bass register from Algenib resampled down).
+    return { model: TTS_MODEL, voice: (p && p.ttsVoice) || 'Umbriel', speed: (p && p.ttsSpeed) || 1.0, style: (p && p.ttsStyle) || '', deep: !!(p && p.ttsDeep) };
   }
   function haveKey() { return !!apiKey() || (typeof Harness !== 'undefined' && Harness.configured && Harness.configured()); }
 
@@ -326,7 +328,9 @@ const Voice = (() => {
 
   // play an audio blob (mp3/wav), wiring start/end into the same speaking-state + loop hooks as the
   // browser path. playbackRate gives the per-personality pacing (Gemini TTS takes no speed param).
-  function playBlob(blob, onEnd, volume, onFail, rate) {
+  // deep=true disables pitch-preservation, so a sub-1 rate lowers PITCH along with pace — the character-
+  // voice register (persona ttsDeep). Vendor-prefixed setters for older engines; all guarded.
+  function playBlob(blob, onEnd, volume, onFail, rate, deep) {
     let url = null, a = null, done = false;
     const cleanup = () => { if (url) { try { URL.revokeObjectURL(url); } catch (_) {} } if (currentAudio === a) currentAudio = null; };
     const endOk = () => { if (done) return; done = true; cleanup(); onSpeakEnd(); onEnd && onEnd(); };
@@ -336,6 +340,7 @@ const Voice = (() => {
       a = new Audio(url); currentAudio = a;
       a.volume = (volume == null ? 1 : volume);
       if (rate && rate > 0) a.playbackRate = Math.max(0.5, Math.min(2, rate));
+      if (deep) { try { a.preservesPitch = false; } catch (_) {} try { a.webkitPreservesPitch = false; } catch (_) {} try { a.mozPreservesPitch = false; } catch (_) {} }
       // add the station "transmission" color (guarded; dry playback if WebAudio routing fails). When routed
       // through WebAudio, crossOrigin must be set before load for some engines — the blob is same-origin so
       // this is a no-op, but harmless. Routing an element captures its output into the graph → the element's
@@ -437,8 +442,9 @@ const Voice = (() => {
       const advance = () => { playing = false; playIdx++; pumpPlay(); };
       if (res.kind === 'neural') {
         lastAudioPath = 'neural';
-        const rate = ttsConfig().speed * (job.opts.speedMul || 1);
-        playBlob(res.blob, advance, job.opts.volume, () => browserPlay(job, advance), rate);
+        const cfg = ttsConfig();
+        const rate = cfg.speed * (job.opts.speedMul || 1);
+        playBlob(res.blob, advance, job.opts.volume, () => browserPlay(job, advance), rate, cfg.deep);
       } else if (res.kind === 'browser') {
         browserPlay(job, advance);
       } else { advance(); }   // 'skip' (aborted)
