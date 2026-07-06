@@ -2298,6 +2298,19 @@ const App = (() => {
   function selectAgent(agentId) {
     const id = String(agentId || '');
     const a = agents.get(id); if (!a) return null;
+    // A BRAND-NEW empty session is a blank line the Commander just opened: picking an agent puts THAT agent
+    // on THIS line instead of teleporting to the agent's latest old stream (the Commander keeps the freedom
+    // to start a fresh chat with anyone). Rebinding a blank stream corrupts no transcript — the no-rebind
+    // law above only protects conversations with content. General (the hero's home) and any stream with
+    // history / runs / a live run keep their binding and fall through to the switch-or-mint path.
+    const cur = Workstreams.active();
+    if (cur && cur.id !== Workstreams.generalId() && (cur.agentId || 'agent') !== id
+        && !(cur.history && cur.history.length) && !(cur.runIds && cur.runIds.length)
+        && !(typeof Channels !== 'undefined' && Channels.isBusy(cur.id))
+        && Workstreams.setAgent(cur.id, id)) {
+      focusAgent(id); Chat.load(cur); refreshUsage(); renderRail(); persist();
+      return cur.id;
+    }
     // prefer this agent's existing streams (most-recently-active first — Workstreams.list() is already sorted
     // pinned>recent); the General default stream (title==null) is only NOVA/hero's home, so a specialist that
     // has no stream yet gets a fresh one titled with its name (mirrors summon's Workstreams.create).
