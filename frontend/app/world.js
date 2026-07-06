@@ -4470,7 +4470,6 @@ const World = (() => {
   // matching agent's bay — frontend sort == backend dispatch.
   function intakeMessage(payload) {
     if (!convey) return;
-    const t = intakeTile();
     // tag the box with its content kind (the same getTag the sidecar routes by) so a FILTER sorts it visibly
     const p = payload || {};
     if (!p.tag && typeof Classify !== 'undefined' && Classify.getTag) p.tag = Classify.getTag(p.preview || p.text || '');
@@ -4479,8 +4478,21 @@ const World = (() => {
     // bound to real outcomes, never to this inbound request. (WIRING_AUDIT P4: lie #5.)
     p.box = 'ore';
     if (p.weight == null) p.weight = 0.3;
+    // WHERE does this work ENTER the floor? (multi-network law, 2026-07-05 — Andrew's two-room bug):
+    //  • a COMMS directive is a DIRECT order to a specific agent — it skips the station doors entirely and
+    //    lands at that agent's BAY (the model sentence: "COMMS orders skip the ride in");
+    //  • addressed channel/cron work enters through the INBOX whose line actually REACHES its agent's dock
+    //    (Pipeline.sourceFor — each room's INBOX feeds its own network, never another room's outbox);
+    //  • unaddressed work takes the first INBOX (unchanged);
+    //  • no reaching line → the work lands directly at the agent's BAY dock (a lone bay is a complete build).
+    let t = null;
+    if (p.kind !== 'directive') {
+      t = (p.agentId && routingPlan && typeof Pipeline !== 'undefined' && Pipeline.sourceFor)
+        ? Pipeline.sourceFor(routingPlan, p.agentId)
+        : intakeTile();
+    }
     if (t) convey.enqueueAt(t.x, t.y, p);
-    else dockArrival(p);   // no INTAKE line on this floor → the work lands directly at the agent's BAY dock (a lone bay is a complete build)
+    else dockArrival(p);
     // ANTICIPATE: an idle agent senses work on the line and perks up toward the dock before any summon lands
     if (agent && !agent.unplaced && activity === 'idle' && !agent.working) {
       const intake = geo && geo.props && geo.props.find(q => q.t === 'intake');
@@ -4497,8 +4509,10 @@ const World = (() => {
   function dockArrival(p) {
     const aid = p && p.agentId;
     const docks = (routingPlan && routingPlan.dockBays) || [];
-    const dock = docks.find(d => d.agentId === aid) || docks[0];   // unaddressed work flashes the first dock
-    if (!dock) return;                                             // no bay either → nothing to show (today's behavior)
+    // ADDRESSED work flashes ONLY its own agent's dock — never another agent's (that's a wrong-agent
+    // reaction, the exact confusion this lane kills). Only UNADDRESSED work falls back to the first dock.
+    const dock = aid ? docks.find(d => d.agentId === aid) : docks[0];
+    if (!dock) return;                                             // no (matching) bay → nothing to show (today's behavior)
     dockFlashes.set(dock.propId, fnow);
     const body = bodyForAgent(aid);
     if (body && body !== agent) { sayAt(body, 'received: ' + (p.preview || 'message')); body.wakeAt = fnow; if (!(body.workUntil > fnow + 5000)) body.workUntil = fnow + 4000; }

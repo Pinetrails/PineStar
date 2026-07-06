@@ -279,4 +279,48 @@ const belt = (x, y, dir) => ({ x, y, dir });
   A.eq(P.junctionLaneOwners({ belts: {} })['x'], undefined, 'empty plan -> no owners (never throws)');
 }
 
+/* ---- MULTI-NETWORK LAW (the two-room bug): sourceFor picks the INBOX that reaches the agent; resolveTarget
+        walks EVERY source and honors an explicit binding with a dock ---- */
+{
+  // room 1: intakeA -> bayA ('over')     room 2 (disjoint): intakeB -> bayB ('nova')
+  const plan = P.compileRoutingPlan(geo(
+    [{ id: 'iA', t: 'intake', x: 0, y: 0, w: 1, h: 1 },
+     { id: 'bA', t: 'bay', x: 4, y: 0, w: 2, h: 2, agentId: 'over' },
+     { id: 'iB', t: 'intake', x: 0, y: 10, w: 1, h: 1 },
+     { id: 'bB', t: 'bay', x: 4, y: 10, w: 2, h: 2, agentId: 'nova' }],
+    [belt(1, 0, 'E'), belt(2, 0, 'E'), belt(3, 0, 'E'),
+     belt(1, 10, 'E'), belt(2, 10, 'E'), belt(3, 10, 'E')]
+  ));
+  A.eq(P.sourceFor(plan, 'over'), { x: 1, y: 0 }, "sourceFor('over') = room 1's INBOX hookup");
+  A.eq(P.sourceFor(plan, 'nova'), { x: 1, y: 10 }, "sourceFor('nova') = room 2's INBOX hookup — never room 1's line");
+  A.eq(P.sourceFor(plan, 'ghost'), null, 'no line reaches an unknown agent -> null (caller lands it at the dock)');
+  A.eq(P.sourceFor(plan, null), null, 'unaddressed -> null (caller keeps first-INBOX behavior)');
+  A.eq(P.resolveTarget(plan, { boundAgentId: 'nova' }), 'nova', 'an ADDRESSED message resolves to its addressee, not the first network');
+  A.eq(P.resolveTarget(plan, { tag: 'x' }), 'over', 'unaddressed work still takes the first network (deterministic default)');
+  A.eq(P.resolveTarget(plan, { boundAgentId: 'ghost' }), 'over', 'a binding with NO dock on the floor falls through to the walk (work never stalls)');
+}
+
+/* ---- sourceFor rides THROUGH a foreign dock (addressed physics): one line, two bays in series ---- */
+{
+  const plan = P.compileRoutingPlan(geo(
+    [{ id: 'i', t: 'intake', x: 0, y: 0, w: 1, h: 1 },
+     { id: 'b1', t: 'bay', x: 2, y: 1, w: 1, h: 1, agentId: 'first' },    // hooked at (2,0) on the line
+     { id: 'b2', t: 'bay', x: 6, y: 0, w: 2, h: 2, agentId: 'second' }],
+    [belt(1, 0, 'E'), belt(2, 0, 'E'), belt(3, 0, 'E'), belt(4, 0, 'E'), belt(5, 0, 'E')]
+  ));
+  A.eq(P.sourceFor(plan, 'second'), { x: 1, y: 0 }, "an addressed item reaches 'second' RIDING THROUGH 'first's dock hookup");
+}
+
+/* ---- resolveTarget: a SECOND source feeding the only bay is found (sources[0] alone was the old blind spot) ---- */
+{
+  const plan = P.compileRoutingPlan(geo(
+    [{ id: 'iA', t: 'intake', x: 0, y: 0, w: 1, h: 1 },      // source A: dead-ends, no bay
+     { id: 'iB', t: 'intake', x: 0, y: 5, w: 1, h: 1 },
+     { id: 'b', t: 'bay', x: 4, y: 5, w: 2, h: 2, agentId: 'solo' }],
+    [belt(1, 0, 'E'), belt(2, 0, 'E'),
+     belt(1, 5, 'E'), belt(2, 5, 'E'), belt(3, 5, 'E')]
+  ));
+  A.eq(P.resolveTarget(plan, { tag: 'x' }), 'solo', "source A sinks -> the walk continues to source B's network (was null)");
+}
+
 A.report('pipeline');

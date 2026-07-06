@@ -288,42 +288,84 @@
     return out;
   }
 
+  /* sourceFor(plan, agentId) -> the INBOX source whose flow actually REACHES this agent's dock, or null.
+     Multi-network law (2026-07-05, Andrew's two-room bug): each room's INBOX feeds its OWN line — an
+     addressed work-item must enter through the door that leads home, never sail another agent's lane to
+     their outbox. Mirrors the ENGINE's addressed-crate physics exactly: fans ALL junction lanes (owners
+     steer it home), rides THROUGH foreign docks (only the owner's dock consumes an addressed crate).
+     First matching source in plan order (deterministic); null -> no line on this floor reaches the agent
+     (caller lands the work directly at the dock — the lone-bay law). */
+  function sourceFor(plan, agentId) {
+    if (!plan || !plan.sources || !plan.sources.length || !agentId) return null;
+    const map = plan.belts, junctions = plan.junctions || {}, bayAt = plan.bayTileToAgent || {};
+    for (const s of plan.sources) {
+      const seen = {}, q = [s.tile];
+      seen[key(s.tile.x, s.tile.y)] = true;
+      let hit = false;
+      while (q.length && !hit) {
+        const t = q.shift(), k = key(t.x, t.y);
+        if (bayAt[k] === agentId) { hit = true; break; }
+        // a FOREIGN dock hookup does not consume an addressed crate — keep riding
+        for (const nt of nextTiles(map, junctions, t)) { const nk = key(nt.x, nt.y); if (!seen[nk]) { seen[nk] = true; q.push(nt); } }
+      }
+      if (hit) return s.tile;
+    }
+    return null;
+  }
+
   // round-robin picker so autonomous dispatch genuinely SPREADS splitter work across agents, matching the
   // engine's load-balance intent instead of always running the first lane.
   function resolveTarget(plan, ctx, pick) {
-    if (!plan || !plan.sources || !plan.sources.length) return null;
+    if (!plan) return null;
+    // ADDRESSED WORK GOES TO ITS ADDRESSEE (2026-07-05, Andrew's consistency ruling): when the message is
+    // explicitly bound to an agent (a COMMS session, a /talk binding) and that agent owns a dock on this
+    // floor, the floor's answer IS that dock — content/filter routing only ever sorts UNADDRESSED work
+    // (group intake, unbound chats). Without this, a two-room floor sent "message to agent B" down room A's
+    // line because A's INBOX compiled first.
+    const bound = ctx && ctx.boundAgentId;
+    if (bound) {
+      const docks = plan.dockBays || plan.bays || [];
+      for (const b of docks) if (b.agentId === bound) return bound;
+    }
+    if (!plan.sources || !plan.sources.length) return null;
     const tag = (ctx && ctx.tag) || 'general';
     const map = plan.belts, junctions = plan.junctions, bayAt = plan.bayTileToAgent;
-    let t = plan.sources[0].tile, guard = 0; const seen = {};
-    while (t && guard++ < 4096) {
-      const k = key(t.x, t.y);
-      if (bayAt[k]) return bayAt[k];                 // arrived at a bound bay
-      if (seen[k]) return null;                      // loop guard (a CYCLE is already a compile error)
-      seen[k] = true;
-      const here = map[k]; if (!here) return null;   // sank with no bay
-      const j = junctions[k];
-      let d = here;
-      if (j && j.kind === 'filter') {
-        // mirror conveyor.chooseExit EXACTLY: routed lane -> default lane -> first lane (never an invalid dir),
-        // so the agent the sidecar resolves is provably the bay the box physically rides to.
-        const lanes = outLanes(map, t.x, t.y);
-        const want = j.routes && j.routes[tag];
-        d = (want && lanes.indexOf(want) >= 0) ? want
-          : (j.def && lanes.indexOf(j.def) >= 0) ? j.def
-          : (lanes[0] || here);
+    // walk EVERY source in plan order (not just sources[0] — a second room's network was invisible);
+    // the first lane that lands on a bound bay wins. Deterministic: plan order + lane rules are fixed.
+    for (const s of plan.sources) {
+      let t = s.tile, guard = 0; const seen = {};
+      let hitAgent = null;
+      while (t && guard++ < 4096) {
+        const k = key(t.x, t.y);
+        if (bayAt[k]) { hitAgent = bayAt[k]; break; } // arrived at a bound bay
+        if (seen[k]) break;                            // loop guard (a CYCLE is already a compile error)
+        seen[k] = true;
+        const here = map[k]; if (!here) break;         // sank with no bay
+        const j = junctions[k];
+        let d = here;
+        if (j && j.kind === 'filter') {
+          // mirror conveyor.chooseExit EXACTLY: routed lane -> default lane -> first lane (never an invalid dir),
+          // so the agent the sidecar resolves is provably the bay the box physically rides to.
+          const lanes = outLanes(map, t.x, t.y);
+          const want = j.routes && j.routes[tag];
+          d = (want && lanes.indexOf(want) >= 0) ? want
+            : (j.def && lanes.indexOf(j.def) >= 0) ? j.def
+            : (lanes[0] || here);
+        }
+        else if (j) {   // SPLIT/MERGE: pick a lane (default 0; the router's picker round-robins to spread work)
+          const lanes = outLanes(map, t.x, t.y);
+          if (lanes.length) { const i = pick ? ((pick(k, lanes.length) % lanes.length) + lanes.length) % lanes.length : 0; d = lanes[i]; } else d = here;
+        }
+        const v = DIRV[d], nx = t.x + v[0], ny = t.y + v[1];
+        if (!map[key(nx, ny)]) break;                  // stepped off the belt with no bay
+        t = { x: nx, y: ny };
       }
-      else if (j) {   // SPLIT/MERGE: pick a lane (default 0; the router's picker round-robins to spread work)
-        const lanes = outLanes(map, t.x, t.y);
-        if (lanes.length) { const i = pick ? ((pick(k, lanes.length) % lanes.length) + lanes.length) % lanes.length : 0; d = lanes[i]; } else d = here;
-      }
-      const v = DIRV[d], nx = t.x + v[0], ny = t.y + v[1];
-      if (!map[key(nx, ny)]) return null;            // stepped off the belt with no bay
-      t = { x: nx, y: ny };
+      if (hitAgent) return hitAgent;
     }
     return null;
   }
 
   const ok = plan => !plan.errors.some(e => !e.warn);   // a plan is deployable iff it has no non-warning errors
 
-  return { compileRoutingPlan, resolveTarget, ok, liveTiles, routeFrom, junctionLaneOwners, _internals: { DIRV, OPP, LANE_ORDER, key, buildBeltMap, outLanes, beltTileNear, nextTiles, detectCycle, hashStr } };
+  return { compileRoutingPlan, resolveTarget, sourceFor, ok, liveTiles, routeFrom, junctionLaneOwners, _internals: { DIRV, OPP, LANE_ORDER, key, buildBeltMap, outLanes, beltTileNear, nextTiles, detectCycle, hashStr } };
 });
