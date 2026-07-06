@@ -131,6 +131,13 @@ $fHint = New-Object System.Drawing.Font('Consolas', 10, [System.Drawing.FontStyl
 Add-GlowText $g 'DRAG TO INSTALL' $fHint 268 190 $C_GOLD $C_GOLDD
 $fHint.Dispose()
 
+# first-launch rescue instructions — phrased conditionally ("IF") so the text
+# stays truthful once builds are notarized and the block never appears
+$fInfo = New-Object System.Drawing.Font('Consolas', 9, [System.Drawing.FontStyle]::Bold)
+Add-GlowText $g 'FIRST LAUNCH - IF MACOS SAYS THE APP IS BLOCKED:' $fInfo 122 272 $C_PHOS $C_PHOSD
+Add-GlowText $g 'SYSTEM SETTINGS > PRIVACY & SECURITY > OPEN ANYWAY' $fInfo 114 292 $C_GOLD $C_GOLDD
+$fInfo.Dispose()
+
 # gold rail + status line at the foot (matches the NSIS sidebar language)
 $penG = New-Object System.Drawing.Pen($C_GOLD, 1)
 $g.DrawLine($penG, 200, 344, 460, 344); $penG.Dispose()

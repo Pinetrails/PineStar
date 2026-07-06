@@ -11,10 +11,21 @@
 #   APPLE_ID + APPLE_PASSWORD + APPLE_TEAM_ID -> notarize (kills the Gatekeeper wall)
 # With no Apple secrets the DMG is unsigned: fine for internal testing (System
 # Settings -> Privacy & Security -> Open Anyway), not for public distribution.
+#
+# publish-test=true additionally publishes everything as a public PRE-release on
+# starnet-releases (needs RELEASES_TOKEN, same secret release.yml uses) — a shareable
+# no-login download link whose release notes ARE the per-OS install instructions.
+# Pre-releases never become the repo's "latest", so the Windows updater feed
+# (releases/latest/download/latest.json) cannot be disturbed by a test publish.
 name: desktop-build
 
 on:
   workflow_dispatch:
+    inputs:
+      publish-test:
+        description: "Publish a public test pre-release to starnet-releases (shareable download link)"
+        required: false
+        default: "false"
   push:
     tags: ['v*']
 
@@ -105,3 +116,46 @@ jobs:
             src-tauri/target/**/release/bundle/dmg/*.dmg
             src-tauri/target/**/release/bundle/macos/*.app.tar.gz
             src-tauri/target/**/release/bundle/macos/*.app.tar.gz.sig
+
+  publish-test:
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.publish-test == 'true'
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Publish public test pre-release (the notes ARE the install guide)
+        env:
+          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+        run: |
+          VERSION=$(jq -r .version src-tauri/tauri.conf.json)
+          TAG="test-v${VERSION}-r${{ github.run_number }}"
+          cat > notes.md <<'NOTES'
+          Test build — not a public release. Pick your platform:
+
+          ## macOS
+          1. Download the `.dmg` — **Apple Silicon** (M1/M2/M3/M4, any Mac from 2020 on): `aarch64`. **Intel Mac**: `x64`.
+          2. Open it and drag **StarNet** onto the **Applications** folder.
+          3. Launch it from Applications. If macOS says the app was **blocked**: click **Done**, then open **System Settings → Privacy & Security**, scroll to the bottom, click **Open Anyway**, and enter your password. One time only — this build isn't notarized yet.
+
+          ## Linux
+          - **AppImage**: `chmod +x StarNet_*.AppImage` then run it, or
+          - **Debian/Ubuntu**: `sudo apt install ./StarNet_*.deb`
+
+          ## Windows
+          Run the `-setup.exe`. If SmartScreen objects: **More info → Run anyway**.
+          NOTES
+          find dist -type f
+          ASSETS=$(find dist -type f \( -name '*.dmg' -o -name '*.AppImage' -o -name '*.deb' -o -name '*-setup.exe' \))
+          gh release create "$TAG" \
+            --repo nonfungiblefunyuns-ship-it/starnet-releases \
+            --title "StarNet ${VERSION} test build (r${{ github.run_number }})" \
+            --notes-file notes.md \
+            --prerelease \
+            $ASSETS
+          echo "::notice::shareable download page: https://github.com/nonfungiblefunyuns-ship-it/starnet-releases/releases/tag/$TAG"
