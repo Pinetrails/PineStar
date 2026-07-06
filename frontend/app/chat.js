@@ -410,6 +410,9 @@ const Chat = (() => {
         e.preventDefault();
         const t = input.value.trim();
         if (!t) return;
+        // A "/name args" line whose palette is closed must still DISPATCH as a command, not get sent to the
+        // agent as chat. runSlash reads its args off input.value, so hand it the raw line before clearing.
+        if (t[0] === '/') { const cmd = commandFromLine(t); if (cmd) { closeSlash(); runSlash(cmd); return; } }
         input.value = ''; closeSlash(); autoGrowInput();   // COMPOSER: collapse back to one line after a send
         if (isBusy()) enqueue(t); else send(t);   // TYPE-AHEAD: queue a follow-up rather than dropping it while the stream is busy
       } else if (e.key === 'Escape' && isBusy()) {
@@ -3651,10 +3654,24 @@ const Chat = (() => {
   function openSlash(query) {
     const pop = el('chat-slash'); if (!pop) return;
     warmSlashCatalog();
-    slashItems = matchCommands(query);
+    // Match on the command NAME only (the first token). Once the user types a space into the arguments
+    // ("/personality direct"), the full string stops prefix-matching any command name and the palette used
+    // to CLOSE — which dropped Enter through to send(), firing the whole "/cmd args" line at the agent as a
+    // chat message instead of running the command. Matching the first token keeps the command shown so Enter
+    // dispatches it (with its args parsed off input.value in runSlash).
+    slashItems = matchCommands(String(query || '').split(/\s+/)[0]);
     if (!slashItems.length) { closeSlash(); return; }
     if (slashSel >= slashItems.length) slashSel = 0;
     renderSlash(); pop.hidden = false;
+  }
+  // resolve a "/name …" line to its command by exact name/alias (first token) — the belt-and-suspenders path
+  // for Enter when the palette isn't open (e.g. the server catalog is still loading), so an arg-taking command
+  // still dispatches instead of being sent to the agent as plain text.
+  function commandFromLine(raw) {
+    const m = String(raw || '').match(/^\/(\S+)/);
+    if (!m) return null;
+    const name = m[1].toLowerCase();
+    return buildCommands().find(c => c.name.toLowerCase() === name || (c.aliases || []).some(a => String(a || '').toLowerCase() === name)) || null;
   }
   function closeSlash() { const pop = el('chat-slash'); if (pop) pop.hidden = true; slashItems = []; slashSel = 0; }
   function moveSlash(d) { if (!slashItems.length) return; slashSel = (slashSel + d + slashItems.length) % slashItems.length; renderSlash(); }
