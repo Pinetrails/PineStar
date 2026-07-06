@@ -481,6 +481,85 @@ const WorldModel = (() => {
       return { ok: true };
     };
 
+    /* ---------- CONNECT MODE (2026-07-05 UX reshape): connect MACHINES, not tiles ----------
+       connectBelt(fromId, toId) lays a correctly-oriented belt path between two workflow props
+       automatically: BFS over deck tiles (never through blocking props, never under ANY prop, never
+       trampling an existing lane), flow from → to, the final tile aimed INTO the target's footprint so
+       the crate visibly sinks at the dock. A junction that already sits ON a line starts its branch from
+       a free neighbor (the out-lane forms naturally). All-or-nothing, one undo slot. This is what makes
+       the tile-perfect wiring rules (ring adjacency, junction-on-line, direction) unlearnable-by-necessity:
+       the user clicks INBOX then BAY, and the path knows the rules for them. */
+    const CONNECTABLE = { intake: 1, bay: 1, outbox: 1, filter: 1, splitter: 1, merger: 1 };
+    function connectBelt(fromId, toId) {
+      const A = doc.props.find(p => p.id === fromId), B = doc.props.find(p => p.id === toId);
+      if (!A || !B) return fail('NOT_FOUND', 'no such prop');
+      if (A.id === B.id) return fail('SAME_PROP', 'pick two different machines');
+      if (!CONNECTABLE[A.t] || !CONNECTABLE[B.t]) return fail('NOT_CONNECTABLE', 'connect workflow machines (INBOX/BAY/OUTBOX/junctions)');
+      const inFoot = (p, x, y) => x >= p.x && x < p.x + (p.w || 1) && y >= p.y && y < p.y + (p.h || 1);
+      // a path tile: on deck, not an existing belt, not under ANY prop (docks hook via ring adjacency)
+      const pathable = (x, y) => !doc.belts[beltKey(x, y)] && !propAt(x, y) && !!roomAt(x, y);
+      // the 1-tile ring around a footprint (the expanded rect minus the footprint) — matches beltTileNear's hookup scan
+      const ring = p => {
+        const out = [], w = p.w || 1, h = p.h || 1;
+        for (let y = p.y - 1; y <= p.y + h; y++) for (let x = p.x - 1; x <= p.x + w; x++)
+          if (!inFoot(p, x, y)) out.push({ x, y });
+        return out;
+      };
+      // START set: a junction already ON a line branches from a free 4-neighbor of its own tile;
+      // anything else starts from a pathable ring tile.
+      const starts = [];
+      if (doc.belts[beltKey(A.x, A.y)]) {
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const x = A.x + dx, y = A.y + dy; if (pathable(x, y)) starts.push({ x, y }); }
+      } else {
+        for (const t of ring(A)) if (pathable(t.x, t.y)) starts.push(t);
+      }
+      if (!starts.length) return fail('FROM_BLOCKED', 'no free tile beside the start machine');
+      // GOAL set: pathable ring tiles of B — EDGE tiles preferred over corners, so the lane's last tile
+      // can aim straight INTO the footprint and the crate visibly sinks at the dock (a corner end works
+      // but sinks diagonally beside it; corners are the fallback when every edge is taken)
+      const goalEdge = new Set(), goalCorner = new Set();
+      for (const t of ring(B)) {
+        if (!pathable(t.x, t.y)) continue;
+        const corner = (t.x < B.x || t.x >= B.x + (B.w || 1)) && (t.y < B.y || t.y >= B.y + (B.h || 1));
+        (corner ? goalCorner : goalEdge).add(t.x + ',' + t.y);
+      }
+      const goals = goalEdge.size ? goalEdge : goalCorner;
+      if (!goals.size) return fail('TO_BLOCKED', 'no free tile beside the destination');
+      // BFS, multi-source → any goal (shortest orthogonal path; deterministic neighbor order)
+      const prev = new Map(), q = [];
+      for (const s of starts) { const k = s.x + ',' + s.y; if (!prev.has(k)) { prev.set(k, null); q.push(s); } }
+      let hit = null, head = 0;
+      while (head < q.length && !hit) {
+        const t = q[head++];
+        const tk = t.x + ',' + t.y;
+        if (goals.has(tk)) { hit = t; break; }
+        for (const [dx, dy] of [[1, 0], [0, 1], [-1, 0], [0, -1]]) {
+          const x = t.x + dx, y = t.y + dy, k = x + ',' + y;
+          if (prev.has(k) || !pathable(x, y)) continue;
+          prev.set(k, tk); q.push({ x, y });
+        }
+        if (q.length > 4096) return fail('NO_PATH', 'no route found (path too long)');
+      }
+      if (!hit) return fail('NO_PATH', 'no clear route between these machines');
+      // rebuild the path start→goal
+      const path = [];
+      let ck = hit.x + ',' + hit.y;
+      while (ck) { const pp = ck.split(','); path.unshift({ x: +pp[0], y: +pp[1] }); ck = prev.get(ck); }
+      // orient each tile at the next; the LAST tile aims into B's footprint (open-end sink at the dock)
+      const dirTo = (a, b) => (b.x > a.x ? 'E' : b.x < a.x ? 'W' : b.y > a.y ? 'S' : 'N');
+      const dirs = [];
+      for (let i = 0; i < path.length - 1; i++) dirs.push(dirTo(path[i], path[i + 1]));
+      const last = path[path.length - 1];
+      let endDir = null;
+      for (const [dx, dy, d] of [[1, 0, 'E'], [-1, 0, 'W'], [0, 1, 'S'], [0, -1, 'N']]) if (inFoot(B, last.x + dx, last.y + dy)) { endDir = d; break; }
+      dirs.push(endDir || (dirs.length ? dirs[dirs.length - 1] : 'E'));
+      snapshot();   // one undo slot for the whole connection
+      const dirty = [];
+      for (let i = 0; i < path.length; i++) { doc.belts[beltKey(path[i].x, path[i].y)] = dirs[i]; dirty.push({ x1: path[i].x, y1: path[i].y, x2: path[i].x, y2: path[i].y }); }
+      emit(dirty);
+      return { ok: true, count: path.length, from: A.t, to: B.t };
+    }
+
     function renameRoom(id, name) {
       const rm = doc.rooms[id];
       if (!rm) return fail('NOT_FOUND', 'no such room');
@@ -836,7 +915,7 @@ const WorldModel = (() => {
       // mutations
       addRoom, placeHallway, removeRoom, moveRoom, setFloor, paintTiles, renameRoom,
       addProp, removeProp, moveProp, assignPropAgent, ensureWorkstation, configureJunction, bindConnector, setDoorState,
-      setBelt, removeBelt, placeBeltRun,
+      setBelt, removeBelt, placeBeltRun, connectBelt,
       // agent-bay binding queries
       propsByType, propsByAgent, pipelineEdges, setPipelineEdges, addPipelineEdge, removePipelineEdge, agentRoomId, bayObjects,
       capForProp: t => CAP_PROP_MAP[t] || null,   // a prop type's capability objectType (single source for the UI)
