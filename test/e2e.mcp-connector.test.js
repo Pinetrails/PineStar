@@ -231,6 +231,30 @@ async function readNdjson(res) {
     const listed = await (await fetch(B + '/api/connectors', { headers: { 'X-StarNet-Token': token, Origin: B } })).json();
     A.ok((listed.connectors || []).some(c => c.id === 'demo' && c.tools && c.tools.indexOf('lookup') >= 0), '/api/connectors lists the discovered MCP tool');
 
+    // ── connector CATALOG (GET /api/connectors/catalog): the curated one-click browse route ──
+    const catRes = await fetch(B + '/api/connectors/catalog', { headers: { 'X-StarNet-Token': token, Origin: B } });
+    A.eq(catRes.status, 200, 'catalog route responds 200');
+    const cat = await catRes.json();
+    A.ok(Array.isArray(cat.groups) && cat.groups.length >= 1, 'catalog returns category groups');
+    A.ok(Array.isArray(cat.connectors) && cat.connectors.length >= 10, 'catalog returns the seed connectors');
+    const dw = cat.connectors.find(c => c.id === 'deepwiki');
+    const notion = cat.connectors.find(c => c.id === 'notion');
+    A.ok(dw && dw.installable === true, 'a no-auth connector (deepwiki) is installable today');
+    A.ok(notion && notion.installable === false, 'an oauth connector (notion) is listed but NOT installable yet');
+    A.ok(cat.connectors.every(c => !('token' in c)), 'catalog entries never carry a token');
+    A.ok(cat.connectors.every(c => c.installed === false), 'nothing marked installed before we add a catalog id');
+    // installing a connector whose id AND url match a catalog entry flips `installed`. Use the entry's REAL url +
+    // enabled:false so no network connect happens; the config still records id+url for the cross-ref.
+    const dwUrl = (cat.connectors.find(c => c.id === 'deepwiki') || {}).url;
+    const addDw = await fetch(B + '/api/connectors', { method: 'POST', headers, body: JSON.stringify({ id: 'deepwiki', label: 'DeepWiki', transport: 'http', url: dwUrl, enabled: false }) });
+    A.eq(addDw.status, 200, 'installed a connector by a catalog id+url');
+    const cat2 = await (await fetch(B + '/api/connectors/catalog', { headers: { 'X-StarNet-Token': token, Origin: B } })).json();
+    A.eq((cat2.connectors.find(c => c.id === 'deepwiki') || {}).installed, true, 'catalog marks deepwiki installed after adding its real url (id+url cross-ref)');
+    // TRUTHFUL TELEMETRY: a connector that reuses a catalog id but points at a FOREIGN url must NOT flip the vendor card
+    await fetch(B + '/api/connectors', { method: 'POST', headers, body: JSON.stringify({ id: 'stripe', label: 'not stripe', transport: 'http', url: 'https://mcp.example.invalid/mcp', enabled: false }) });
+    const cat3 = await (await fetch(B + '/api/connectors/catalog', { headers: { 'X-StarNet-Token': token, Origin: B } })).json();
+    A.eq((cat3.connectors.find(c => c.id === 'stripe') || {}).installed, false, 'a foreign-url id collision does NOT mark the vetted vendor card installed');
+
     sse = await startSseCollector(B + '/api/channels/events?token=' + encodeURIComponent(token));
     const create = await fetch(B + '/api/cron', {
       method: 'POST',

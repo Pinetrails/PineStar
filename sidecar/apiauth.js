@@ -47,11 +47,13 @@ function pathOf(url) { const u = String(url || ''); const i = u.indexOf('?'); re
      /api/channels/token   : guarded by its OWN per-launch IPC_TOKEN (the desktop channel-token push)
      /api/health           : liveness probe
      /api/spotify/callback : an OAuth redirect — a top-level browser navigation, no place to put a header
+     /api/connectors/oauth/callback : same — the MCP-connector OAuth redirect; the CSRF `state` param (matched
+                             against the in-memory pending map) is its fence, exactly like the Spotify callback
      /api/channels/events  : SSE — EventSource cannot set headers, so it carries a ?token= query instead,
                              validated by queryTokenOk in the handler
      /api/file query token : not exempt; index.js accepts ?token only for GET/HEAD /api/file because native
                              media/link loads cannot attach a custom header */
-const TOKEN_EXEMPT = new Set(['/api/key', '/api/channels/token', '/api/health', '/api/spotify/callback', '/api/channels/events']);
+const TOKEN_EXEMPT = new Set(['/api/key', '/api/channels/token', '/api/health', '/api/spotify/callback', '/api/connectors/oauth/callback', '/api/channels/events']);
 function requiresApiToken(req) {
   if (!req || req.method === 'OPTIONS') return false;
   const p = pathOf(req.url);

@@ -3326,8 +3326,18 @@ const StationUI = (() => {
         '</div>' +
       '</div>' +
       '<div id="mc-msg" class="msg"></div>';
+    // ---- CATALOG pane markup: one-click, vetted MCP servers. The cards + category groups render async from
+    //      GET /api/connectors/catalog. Installing reuses the SAME POST /api/connectors upsert the manual form uses. ----
+    const secCatalog =
+      '<p class="set-about">One-click <b>connectors</b>. Browse vetted MCP servers and add them to your station — ' +
+        'their tools appear to your agents automatically, through the same approval gate as the built-ins. ' +
+        '<span class="dim">⚡ no-setup ones connect instantly · 🔑 paste an API key · 🔒 sign in with a secure browser login (OAuth).</span></p>' +
+      '<div id="cc-list" class="cc-list"><span class="loading pulse">loading catalog…</span></div>' +
+      '<div id="cc-msg" class="msg"></div>' +
+      '<p class="set-about dim">Need something not listed? Add any MCP server by URL or local command in <b>MCP CONNECTORS</b>.</p>';
     const frag = h => (el => { el.innerHTML = h; });
     mountConsole(body, 'connectors', [
+      { id: 'catalog', label: 'CATALOG', glyph: '⊞', desc: 'One-click connectors — browse vetted MCP servers (docs, search, automation, payments…) and add them to your station.', build: frag(secCatalog) },
       { id: 'toolsets', label: 'TOOLSETS', glyph: '▤', desc: 'Every capability your agents can use, grouped and switchable. A prop grants a toolset; the switch is the kill-switch on top.', build: frag(secToolsets) },
       { id: 'mcp', label: 'MCP CONNECTORS', glyph: '⧉', desc: 'External tool servers your agents can call — GitHub, Slack, a database. Their tools run through the same approval gate as the built-ins.', build: frag(secMcp) }
     ], { search: true, searchPlaceholder: 'search toolsets & connectors…' });
@@ -3561,6 +3571,113 @@ const StationUI = (() => {
     });
     refresh();
     // NB: setupSpotify(body) is invoked from tsRefresh() above, once the JUKEBOX toolset row has mounted the sp-* markup.
+
+    // ===== CATALOG: one-click browse-and-add over GET /api/connectors/catalog =====
+    // Each card installs by pre-filling the SAME POST /api/connectors upsert the manual form uses; the manager
+    // then really connects and reports honest live state, so a card never claims more than the backend proves.
+    const ccListEl = body.querySelector('#cc-list');
+    const ccMsgEl = body.querySelector('#cc-msg');
+    let ccCache = [];   // flat catalog entries, so a click reads the authoritative id/url/name (never re-typed)
+    const ccPending = new Set();   // connector ids with an in-flight OAuth sign-in (guards duplicate popups/pollers)
+    // auth tier chip: glyph, label, colour. Drives the honest "what will adding this cost me" cue.
+    const CC_CHIP = { none: ['⚡', 'no setup', 'var(--ok)'], apikey: ['🔑', 'API key', 'var(--gold)'], oauth: ['🔒', 'sign-in', 'var(--ph-dim)'] };
+    function ccCard(e, ci) {
+      const chip = CC_CHIP[e.authType] || CC_CHIP.none;
+      const origin = e.official ? '<span class="cc-badge cc-official" title="first-party server, run by the vendor">✓ official</span>'
+                                : '<span class="cc-badge cc-community" title="community-run server">community</span>';
+      let action;
+      if (e.installed) action = '<button class="bb xs" data-cc-act="added" disabled>✓ ADDED</button>';
+      else if (e.authType === 'oauth') action = e.url
+        ? '<button class="bb xs" data-cc-act="signin" data-id="' + esc(e.id) + '" title="opens a secure browser sign-in (OAuth)">🔒 SIGN IN</button>'
+        : '<button class="bb xs" data-cc-act="soon" disabled title="not directly wired yet — see the note">🔒 SOON</button>';   // an oauth entry with no endpoint (e.g. via an aggregator) is honestly not sign-in-able
+      else if (e.authType === 'apikey') action = '<button class="bb xs" data-cc-act="key" data-id="' + esc(e.id) + '">+ ADD</button>';
+      else action = '<button class="bb sm" data-cc-act="add" data-id="' + esc(e.id) + '">+ ADD</button>';
+      const keyField = e.authType === 'apikey'
+        ? '<div class="cc-key" style="display:none"><input type="password" class="key-input" data-cc-key="' + esc(e.id) + '" placeholder="' + esc(e.name) + ' API key / token" autocomplete="off" spellcheck="false">' +
+            '<div class="mc-hint">Stored locally by the sidecar, sent as <code>Authorization: Bearer …</code>, never displayed again.</div></div>'
+        : '';
+      const home = e.homepage ? ' <a class="cc-home dim" href="' + esc(e.homepage) + '" target="_blank" rel="noopener">site ↗</a>' : '';
+      return '<div class="cc-card' + (e.installed ? ' cc-on' : '') + '" data-id="' + esc(e.id) + '" style="--ci:' + (ci || 0) + '">' +
+          '<div class="cc-head"><b>' + esc(e.name) + '</b> ' + origin +
+            '<span class="cc-chip" style="color:' + chip[2] + '" title="' + esc(chip[1]) + '">' + chip[0] + ' ' + esc(chip[1]) + '</span></div>' +
+          '<div class="cc-blurb dim">' + esc(e.blurb) + '</div>' + keyField +
+          '<div class="cc-acts">' + action + home + '</div>' +
+        '</div>';
+    }
+    function ccGroupHTML(g) {
+      if (!g.connectors || !g.connectors.length) return '';
+      return '<div class="cc-group"><div class="sec"><span class="sec-l">' + esc(g.category) + '</span>' +
+          '<span class="sec-r dim">' + g.connectors.length + '</span><span class="sec-nd"></span></div>' +
+        '<div class="cc-grid">' + g.connectors.map((e, i) => ccCard(e, i)).join('') + '</div></div>';
+    }
+    async function ccRefresh() {
+      try {
+        const j = await (await fetch('/api/connectors/catalog')).json();
+        ccCache = (j && j.connectors) || [];
+        const groups = (j && j.groups) || [];
+        ccListEl.innerHTML = groups.map(ccGroupHTML).join('') || '<div class="mc-detail">catalog is empty.</div>';
+      } catch (_) { ccListEl.innerHTML = '<div class="mc-detail">sidecar offline — start it to browse the catalog.</div>'; }
+    }
+    async function ccInstall(id, token) {
+      const e = ccCache.find(x => x.id === id);
+      if (!e || !e.url) { sfx('bad'); return; }
+      ccMsgEl.classList.remove('ok'); ccMsgEl.textContent = 'connecting ' + e.name + '…';
+      const payload = { id: e.id, label: e.name, transport: 'http', url: e.url, enabled: true };
+      if (token) payload.token = token;
+      try {
+        const j = await (await postJSON('/api/connectors', payload)).json().catch(() => ({}));
+        if (j.error) { ccMsgEl.textContent = '✕ ' + j.error; sfx('bad'); }
+        else if (j.status && j.status.state === 'up') {
+          ccMsgEl.classList.add('ok'); ccMsgEl.textContent = '✓ ' + e.name + ' connected — ' + (j.status.toolCount || 0) + ' tool(s) available'; sfx('click');
+          notify('Connector "' + e.name + '" connected', 'good');
+        } else { ccMsgEl.textContent = '✕ ' + ((j.status && j.status.detail) || ('could not connect (' + (j.state || 'error') + ')')); sfx('bad'); }
+      } catch (err) { ccMsgEl.textContent = '✕ ' + ((err && err.message) || 'failed to reach the sidecar'); sfx('bad'); }
+      ccRefresh();   // reflect the new installed state on the cards
+      refresh();     // and repaint the MCP CONNECTORS list (same underlying connector set)
+    }
+    // OAuth sign-in: start the flow, open the provider's consent in a popup, poll until the connector connects.
+    async function ccSignIn(id) {
+      if (ccPending.has(id)) { sfx('bad'); ccMsgEl.classList.remove('ok'); ccMsgEl.textContent = 'a sign-in is already in progress for this connector…'; return; }
+      ccPending.add(id);   // one in-flight sign-in per connector — no duplicate popups / concurrent pollers
+      const e = ccCache.find(x => x.id === id); const label = (e && e.name) || id;
+      ccMsgEl.classList.remove('ok'); ccMsgEl.textContent = 'starting sign-in for ' + label + '…';
+      let url;
+      try {
+        const j = await (await postJSON('/api/connectors/oauth/start', { id: id })).json().catch(() => ({}));
+        if (j.error || !j.url) { ccMsgEl.textContent = '✕ ' + (j.error || 'could not start sign-in'); sfx('bad'); ccPending.delete(id); return; }
+        url = j.url;
+      } catch (err) { ccMsgEl.textContent = '✕ ' + ((err && err.message) || 'request failed'); sfx('bad'); ccPending.delete(id); return; }
+      const win = window.open(url, 'starnet_oauth', 'width=540,height=720');
+      ccMsgEl.textContent = 'complete the sign-in for ' + label + ' in the popup window…';
+      let tries = 0;
+      const timer = setInterval(async () => {
+        tries++;
+        try {
+          const j = await (await fetch('/api/connectors')).json();
+          const c = (j.connectors || []).find(x => x.id === id);
+          if (c && c.state === 'up') { clearInterval(timer); ccPending.delete(id); sfx('click'); notify('Connector "' + label + '" connected', 'good'); ccMsgEl.classList.add('ok'); ccMsgEl.textContent = '✓ ' + label + ' signed in — ' + (c.toolCount || 0) + ' tool(s)'; ccRefresh(); refresh(); try { if (win && !win.closed) win.close(); } catch (_) {} return; }
+          if (c && c.state === 'error') { clearInterval(timer); ccPending.delete(id); sfx('bad'); ccMsgEl.textContent = '✕ ' + label + ' — ' + (c.detail || 'connection failed'); ccRefresh(); return; }
+        } catch (_) {}
+        if (tries > 150) { clearInterval(timer); ccPending.delete(id); }   // ~5-minute cap so a stalled/abandoned sign-in stops polling
+      }, 2000);
+    }
+    ccListEl.addEventListener('click', async ev => {
+      const btn = ev.target.closest('button[data-cc-act]'); if (!btn) return;
+      const act = btn.dataset.ccAct, id = btn.dataset.id;
+      if (act === 'add') { btn.disabled = true; await ccInstall(id); }
+      else if (act === 'key') {
+        // first tap reveals the inline key field; the second (now ▶ CONNECT) submits it — no modal.
+        const card = ev.target.closest('.cc-card');
+        const wrap = card && card.querySelector('.cc-key');
+        const input = wrap && wrap.querySelector('input[data-cc-key]');
+        if (wrap && wrap.style.display === 'none') { wrap.style.display = ''; btn.textContent = '▶ CONNECT'; if (input) input.focus(); sfx('tick'); return; }
+        const token = ((input && input.value) || '').trim();
+        if (!token) { sfx('bad'); ccMsgEl.classList.remove('ok'); ccMsgEl.textContent = 'paste the API key first'; return; }
+        btn.disabled = true; await ccInstall(id, token);
+      }
+      else if (act === 'signin') { btn.disabled = true; await ccSignIn(id); btn.disabled = false; }
+    });
+    ccRefresh();
   }
 
   /* ---- SPOTIFY connect (OAuth PKCE): open the consent window, then poll /api/spotify/status until the

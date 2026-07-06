@@ -25,6 +25,7 @@ A.eq(auth.requiresApiToken(req('POST', '/api/session')), true, 'POST session now
 A.eq(auth.requiresApiToken(req('POST', '/api/key')), false, 'key push exempt (own IPC_TOKEN guard)');
 A.eq(auth.requiresApiToken(req('GET', '/api/health')), false, 'health probe exempt');
 A.eq(auth.requiresApiToken(req('GET', '/api/spotify/callback?code=abc')), false, 'spotify OAuth redirect exempt');
+A.eq(auth.requiresApiToken(req('GET', '/api/connectors/oauth/callback?code=abc&state=xyz')), false, 'connector OAuth redirect exempt (state is the CSRF fence)');
 A.eq(auth.requiresApiToken(req('GET', '/api/channels/events')), false, 'SSE exempt from header token (uses ?token=)');
 A.eq(auth.requiresApiToken(req('OPTIONS', '/api/run')), false, 'CORS preflight exempt');
 // non-/api requests never need a token (static assets / app shell)
