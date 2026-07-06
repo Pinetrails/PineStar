@@ -523,4 +523,66 @@ A.eq(JSON.stringify(WM.deserialize({ rooms: {}, order: [], props: [], edges: [{ 
   A.ok(!st.ensureWorkstation('').ok, 'blank agent id refused');
 }
 
+/* ---- connectBelt: CLICK TWO MACHINES, the path lays itself (2026-07-05 connect-mode UX) ---- */
+{
+  const Pipeline = require('../frontend/app/pipeline.js');
+  const st = WM.create();   // 18x11 starter room
+  const inbox = st.addProp({ t: 'intake', x: 0, y: 4, w: 2, h: 2, block: false });
+  const bay = st.addProp({ t: 'bay', x: 8, y: 4, w: 2, h: 2, block: false });
+  st.assignPropAgent(bay.id, 'agent');
+  const c1 = st.connectBelt(inbox.id, bay.id);
+  A.ok(c1.ok && c1.count >= 5, 'INBOX→BAY connects across free floor (' + c1.count + ' belts laid)');
+  const plan = Pipeline.compileRoutingPlan(st.projectGeometry());
+  A.eq(plan.errors.length, 0, 'the auto-laid line compiles clean (source hooked, bay hooked, reachable)');
+  A.eq(plan.reach.agent, true, 'the bay is reachable from the inbox along the auto path');
+  A.ok(Object.keys(Pipeline.liveTiles(plan)).length >= c1.count, 'the whole auto lane glows live');
+  // outbound leg: BAY → OUTBOX also auto-connects, and both legs stay clean
+  const obox = st.addProp({ t: 'outbox', x: 14, y: 4, w: 2, h: 2, block: false });
+  const c2 = st.connectBelt(bay.id, obox.id);
+  A.ok(c2.ok && c2.count >= 2, 'BAY→OUTBOX connects (' + c2.count + ' belts)');
+  const plan2 = Pipeline.compileRoutingPlan(st.projectGeometry());
+  A.eq(plan2.errors.length, 0, 'inbound + outbound legs coexist clean');
+  // one undo removes the whole second connection
+  const beltsBefore = st.belts().length;
+  st.undo();
+  A.eq(st.belts().length, beltsBefore - c2.count, 'one undo removes the ENTIRE connection (single snapshot)');
+  st.redo();
+  // guards
+  A.ok(!st.connectBelt(inbox.id, inbox.id).ok, 'same machine twice is refused');
+  A.ok(!st.connectBelt('nope', bay.id).ok, 'unknown prop is refused');
+  const desk = st.addProp({ t: 'desk', x: 4, y: 9, w: 2, h: 1, block: true });
+  A.ok(!st.connectBelt(inbox.id, desk.id).ok, 'a workstation is not a belt endpoint (belts never run to desks)');
+}
+{
+  // NO_PATH: a full-height wall of blocking props separates the two machines
+  const st = WM.create();
+  const a = st.addProp({ t: 'intake', x: 0, y: 4, w: 2, h: 2, block: false });
+  for (let y = 0; y <= 10; y++) st.addProp({ t: 'rack', x: 5, y: y, w: 2, h: 1, block: true });
+  const b = st.addProp({ t: 'bay', x: 10, y: 4, w: 2, h: 2, block: false });
+  st.assignPropAgent(b.id, 'agent');
+  const r = st.connectBelt(a.id, b.id);
+  A.ok(!r.ok && r.error === 'NO_PATH', 'a walled-off destination fails with NO_PATH (never a partial lane)');
+  A.eq(st.belts().length, 0, '...and lays nothing');
+}
+{
+  // a FILTER already ON a line branches from a free neighbor — the junction out-lane forms naturally
+  const Pipeline = require('../frontend/app/pipeline.js');
+  const st = WM.create();
+  const inbox = st.addProp({ t: 'intake', x: 0, y: 2, w: 2, h: 2, block: false });
+  const bay1 = st.addProp({ t: 'bay', x: 10, y: 2, w: 2, h: 2, block: false });
+  st.assignPropAgent(bay1.id, 'agent');
+  A.ok(st.connectBelt(inbox.id, bay1.id).ok, 'main line laid');
+  // drop the filter ON the line (a mid-lane tile), then connect it to a second bay below
+  const mid = st.belts()[Math.floor(st.belts().length / 2)];
+  const filt = st.addProp({ t: 'filter', x: mid.x, y: mid.y, w: 1, h: 1, block: false });
+  const bay2 = st.addProp({ t: 'bay', x: Math.max(0, mid.x - 1), y: 8, w: 2, h: 2, block: false });
+  st.assignPropAgent(bay2.id, 'coder');
+  const br = st.connectBelt(filt.id, bay2.id);
+  A.ok(br.ok, 'FILTER→BAY branch connects from the on-line junction');
+  st.configureJunction(filt.id, { routes: { code: 'S' }, def: 'E' });
+  const plan = Pipeline.compileRoutingPlan(st.projectGeometry());
+  A.eq(plan.reach.agent, true, 'main-lane bay reachable');
+  A.eq(plan.reach.coder, true, 'branch bay reachable through the junction');
+}
+
 A.report('worldmodel');

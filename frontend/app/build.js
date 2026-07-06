@@ -18,11 +18,14 @@ const Build = (() => {
     { id: 'move', key: '4', label: '✥ MOVE', hint: 'drag a room to relocate it', cursor: 'move' },
     { id: 'reclaim', key: '5', label: '⌫ RECLAIM', hint: 'click a room or prop to tear it down (UNDO restores it)', cursor: 'not-allowed' },
     { id: 'prop', key: '6', label: '⚇ PROP', hint: 'click to place furniture · agents walk around it', cursor: 'crosshair' },
-    { id: 'belt', key: '7', label: '⇶ BELT', hint: 'drag to lay a conveyor — boxes flow the way you drag', cursor: 'crosshair' },
+    { id: 'belt', key: '7', label: '⇶ BELT', hint: 'CLICK one machine, then another — the belt lays itself · (or drag to lay tiles by hand)', cursor: 'crosshair' },
   ];
   const SEEN_KEY = 'starnet.refit.seen';
+  // machines the BELT tool connects with two clicks (mirrors worldmodel CONNECTABLE)
+  const CONNECT_TYPES = { intake: 1, bay: 1, outbox: 1, filter: 1, splitter: 1, merger: 1 };
 
   let opts = null, station = null, unsub = null;
+  let connectFrom = null;   // connect-mode state: the armed FROM machine's propId (null = not connecting)
   let root, cv, ctx, tip, hintEl, undoBtn, redoBtn, propCard, dpr = 1, ro = null;
   let raf = 0, running = false;
   let cache = null, cacheGeo = null, bakeDirty = true, bakeDirtyRects = null, bakeVisibleOnly = false, valPlan = null, valLive = null;   // valPlan = live RoutingPlan (cost-safety ghosts); valLive = energized-belt tile set
@@ -30,7 +33,7 @@ const Build = (() => {
   // short human labels for the routing-validation overlay (cost-safety: surfaced before any paid run)
   // every label NAMES THE FIX, in words (mirrors world.js NAG_LABEL — keep the two in sync)
   const VAL_LABEL = {
-    ORPHAN_SOURCE: 'NO BELT OUT — DRAW A LINE', ORPHAN_BAY: 'NOT ON THE LINE', BAY_NOT_FED: 'BELT TO NOWHERE',
+    ORPHAN_SOURCE: 'NOT CONNECTED — BELT: CLICK IT, THEN A BAY', ORPHAN_BAY: 'NOT ON THE LINE', BAY_NOT_FED: 'NOT CONNECTED — BELT: CLICK IT, THEN A MACHINE',
     CYCLE: 'LOOP! — BREAK THE CIRCLE', FILTER_NO_DEFAULT: 'NO DEFAULT LANE — CLICK', DUP_AGENT: 'DUP AGENT — ONE BAY EACH',
     UNBOUND_BAY: 'NO AGENT — CLICK', SPLIT_ONE_LANE: 'SPLITTER NEEDS 2 LANES'
   };
@@ -85,6 +88,7 @@ const Build = (() => {
   function close() {
     if (!running) return;
     running = false;
+    connectFrom = null;   // never carry a half-made connection across sessions
     if (raf) cancelAnimationFrame(raf), raf = 0;
     clearTimeout(tipTimer); tipTimer = 0;
     if (convey) convey.reset(), convey = null;
@@ -378,7 +382,7 @@ const Build = (() => {
   }
 
   function selectTool(id) {
-    tool = id; drag = null; hideTip(); hidePropCard();
+    tool = id; drag = null; connectFrom = null; hideTip(); hidePropCard();
     root.querySelectorAll('.refit-tool').forEach(b => {
       const active = b.dataset.tool === id;
       b.classList.toggle('active', active);
@@ -420,7 +424,7 @@ const Build = (() => {
           <li><b>PAINT</b> decks, <b>MOVE</b> / <b>RECLAIM</b> rooms · <b>UNDO</b> anything.</li>
           <li>Your agent walks the rooms + corridors you build.</li>
           <li>Start simple: place a <b>BAY</b> (PROP ▸ WORKFLOW), click it, assign an agent — <b>done</b>. Work for that agent lands at its dock.</li>
-          <li>Then upgrade: <b>INBOX → BELT (7) → BAY</b> makes outside work <b>ride in</b>; <b>BAY → BELT → OUTBOX</b> ships finished work <b>out</b>. Complete lines <b>glow</b>; broken pieces are <b>flagged in words</b>. Hit <b>▸ TEST</b> to watch a box ride.</li>
+          <li>Then wire it: with <b>BELT (7)</b>, just <b>click one machine, then another</b> — the belt lays itself. <b>INBOX → BAY</b> brings outside work in; <b>BAY → OUTBOX</b> ships results out. Complete lines <b>glow</b>; broken pieces are <b>flagged in words</b>. Hit <b>▸ TEST</b> for the narrated loop.</li>
         </ul>
         <button class="btn-sm refit-primary" id="refit-guide-go">▸ START BUILDING</button>
       </div>`;
@@ -875,13 +879,31 @@ const Build = (() => {
   function onDown(ev) {
     lastClient = { x: ev.clientX, y: ev.clientY };
     hidePropCard();
-    // right-button cancels an in-progress edit (and never starts one)
-    if (ev.button === 2) { if (drag) { drag = null; hideTip(); } return; }
+    // right-button cancels an in-progress edit (and never starts one) — including a half-made connection
+    if (ev.button === 2) { if (drag) { drag = null; hideTip(); } if (connectFrom) { connectFrom = null; hideTip(); } return; }
     try { cv.setPointerCapture(ev.pointerId); } catch (e) {}
     if (panTrigger(ev)) { drag = { mode: 'pan', sx: toCanvas(ev).x, sy: toCanvas(ev).y }; cv.style.cursor = 'grabbing'; return; }
     if (ev.button !== 0) return;
     const w = toWorldTile(ev);
     if (tool === 'belt') {
+      /* CONNECT MODE — the primary belt interaction (2026-07-05 UX reshape): click one MACHINE, then
+         another, and the path lays itself (station.connectBelt — oriented, hooked, junction-aware).
+         Clicking empty floor still starts the classic hand-laid drag; a second click on the same
+         machine (or any empty click mid-connect) cancels. */
+      const pid = station.propAt(w.tx, w.ty);
+      const pp = pid && station.propById(pid);
+      if (pp && CONNECT_TYPES[pp.t]) {
+        if (!connectFrom) { connectFrom = pid; sfx('click'); flashTip(ev, 'FROM ▸ ' + (propSpec(pp.t).label || pp.t).toUpperCase() + ' — now click a destination', true); return; }
+        if (connectFrom === pid) { connectFrom = null; hideTip(); return; }
+        const res = station.connectBelt(connectFrom, pid);
+        connectFrom = null;
+        if (res && res.ok) {
+          sfx('chime'); flashTip(ev, 'CONNECTED — ' + res.count + ' belts laid themselves', true);
+          if (typeof Tutorial !== 'undefined' && Tutorial.onBeltPlaced) Tutorial.onBeltPlaced();
+        } else { sfx('bad'); flashTip(ev, (res && res.msg) || 'no clear route between those machines', false); }
+        return;
+      }
+      if (connectFrom) { connectFrom = null; flashTip(ev, 'connect cancelled', false); return; }
       drag = { mode: 'beltrun', start: w, cur: w, moved: false };
     } else if (tool === 'prop') {
       drag = { mode: 'propstamp', start: w, cur: w, moved: false };
@@ -982,20 +1004,33 @@ const Build = (() => {
       if (ep && ep.t === propType) { openPropEditor(exist, ep.t, ev); return; }
     }
     const s = propSpec(propType);
-    const placement = { t: propType, x: d.cur.tx, y: d.cur.ty, w: s.w, h: s.h, block: s.blocks !== false };
+    let px = d.cur.tx, py = d.cur.ty;
+    // JUNCTION SNAP (connect-mode UX): a filter/splitter/merger only works ON a line — if it's dropped
+    // NEXT to one, snap it onto the nearest belt tile instead of leaving an inert junction (the exact
+    // silent failure of the 2026-07-05 playtest). Dropped ON a belt already? Unchanged.
+    if ((propType === 'filter' || propType === 'splitter' || propType === 'merger') && !station.beltAt(px, py)) {
+      let snapped = null;
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+        if (station.beltAt(px + dx, py + dy)) { snapped = { x: px + dx, y: py + dy }; break; }
+      }
+      if (snapped) { px = snapped.x; py = snapped.y; flashTip(ev, 'snapped onto the line', true); }
+    }
+    const placement = { t: propType, x: px, y: py, w: s.w, h: s.h, block: s.blocks !== false };
     if (propType === 'airlock') placement.door = 'closed';   // a fresh airlock seals its room (then click to cycle)
     const grant = (typeof WorldModel !== 'undefined' && WorldModel.grantLabelForProp) ? WorldModel.grantLabelForProp(propType) : null;
     const res = station.addProp(placement);
     if (res && res.ok) {
-      pushFlash([{ x1: d.cur.tx, y1: d.cur.ty, x2: d.cur.tx + s.w - 1, y2: d.cur.ty + s.h - 1 }], false);
+      pushFlash([{ x1: px, y1: py, x2: px + s.w - 1, y2: py + s.h - 1 }], false);
       // a prop just landed → resolve the quest generators + fold NOW, so a station gap this placement closes
       // celebrates on its own edge (fast back-to-back placements can't coalesce it away on the 1s tick).
       if (typeof StationUI !== 'undefined' && StationUI.pokeQuests) { try { StationUI.pokeQuests(); } catch (_) {} }
       if (grant) sfx('chime');   // a capability just came online — a brighter note than the plain placement click
-      // first-touch coachmark (tutorial.js): a portal teaches "live tools", any other gear teaches "props are permissions"
+      // first-touch coachmark (tutorial.js): a portal teaches "live tools", any other gear teaches "props are
+      // permissions". WORKFLOW props coach even though they're editable (their editor opens too) — otherwise
+      // the belt-teach chain coaches never fire at all (editable placements skipped this hook entirely).
       if (typeof Tutorial !== 'undefined') {
         if (propType === 'connector_portal') { if (Tutorial.onConnectorPlaced) Tutorial.onConnectorPlaced(); }
-        else if (!isEditableProp(propType) && Tutorial.onPropPlaced) Tutorial.onPropPlaced(propType);
+        else if ((!isEditableProp(propType) || CONNECT_TYPES[propType]) && Tutorial.onPropPlaced) Tutorial.onPropPlaced(propType);
       }
       if (isEditableProp(propType) && res.id) { openPropEditor(res.id, propType, ev); return; }   // configure the freshly-placed prop
     }
@@ -1351,12 +1386,16 @@ const Build = (() => {
     ctx.save();
     ctx.font = VAL_FONT(); ctx.textAlign = 'center'; ctx.textBaseline = 'top';
     for (const p of station.props()) {
-      const role = p.t === 'intake' ? 'FROM' : (p.t === 'bay' || p.t === 'outbox') ? 'TO' : null;
-      if (!role) continue;
-      const col = role === 'FROM' ? '#3fd08a' : '#5ad0ff';
+      if (!CONNECT_TYPES[p.t]) continue;
+      const isFrom = connectFrom && p.id === connectFrom;
+      // mid-connect the story flips: the armed machine burns gold, every other machine reads as a target
+      const role = isFrom ? 'FROM ▸ NOW CLICK A DESTINATION'
+        : connectFrom ? 'CLICK TO CONNECT'
+        : p.t === 'intake' ? 'FROM · CLICK TO CONNECT' : (p.t === 'bay' || p.t === 'outbox') ? 'TO · CLICK TO CONNECT' : 'JUNCTION';
+      const col = isFrom ? '#ffd94a' : connectFrom ? '#7ee2a8' : p.t === 'intake' ? '#3fd08a' : '#5ad0ff';
       const X = p.x * t, Y = p.y * t, Wd = (p.w || 1) * t, Hd = (p.h || 1) * t;
-      ctx.globalAlpha = pulse;
-      ctx.strokeStyle = col; ctx.lineWidth = 1.5 / zoom;
+      ctx.globalAlpha = isFrom ? 0.95 : pulse;
+      ctx.strokeStyle = col; ctx.lineWidth = (isFrom ? 2.5 : 1.5) / zoom;
       ctx.strokeRect(X - 1, Y - 1, Wd + 2, Hd + 2);
       ctx.shadowBlur = 3; ctx.shadowColor = col; ctx.fillStyle = col;
       ctx.fillText(role, X + Wd / 2, Y + Hd + 2 / zoom);
