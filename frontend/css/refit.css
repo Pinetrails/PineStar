@@ -63,6 +63,15 @@
 .refit-note { color: var(--warn); font-family: 'VT323', monospace; font-size: 14px; letter-spacing: .5px; margin: 6px 0; }
 .refit-note.bad { color: var(--gold); }
 
+/* ---------- FLOW STRIP: the one picture of the work pipeline, hot segment lit (belt-teach) ---------- */
+.refit-flowstrip { margin: 6px 0 8px; padding: 7px 8px 6px; border: 1px solid var(--ph-faint); background: rgba(0,0,0,.25); }
+.refit-flowstrip .flow-line { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 3px; }
+.flow-seg { font-family: 'VT323', monospace; font-size: 14px; letter-spacing: 1px; color: var(--ph-dim); padding: 1px 5px; border: 1px solid var(--ph-faint); }
+.flow-seg.hot { color: var(--gold); border-color: var(--gold); text-shadow: 0 0 6px rgba(var(--gold-rgb), .55); }
+.flow-seg.desk { border-style: dashed; }
+.flow-arrow { color: var(--ph-dim); font-size: 11px; }
+.refit-flowstrip .flow-note { margin-top: 5px; text-align: center; font-family: 'VT323', monospace; font-size: 12.5px; letter-spacing: .4px; color: var(--ph-dim); }
+
 /* ---------- FILTER route rows ---------- */
 .refit-filter-rows { margin: 4px 0 2px; }
 .refit-route-row { display: flex; align-items: center; gap: 5px; margin: 3px 0; }

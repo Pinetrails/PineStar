@@ -243,6 +243,39 @@
   // FILTER content-routing by tag, until it reaches a bound bay. null = no bay on the route.
   // `pick(tileKey, laneCount) -> index` chooses the lane at a SPLIT/MERGE junction (FILTER is deterministic by
   // tag and ignores it). Omitted -> lane 0 (a pure, replay-stable read). The sidecar router passes a stateful
+  /* junctionLaneOwners(plan) -> { junctionTileKey: { dir: [agentIds…] } } — for each junction out-lane,
+     every bound-bay owner that lane can reach (fanning through downstream junctions; a bound bay consumes,
+     so the walk never fans past one). The conveyor engine reads this so an ADDRESSED crate (payload.agentId
+     — a cron, a bound chat) takes the lane that leads HOME instead of obeying content/balance routing:
+     filters and splitters only ever decide for unowned work. Pure, deterministic, sorted output. */
+  function junctionLaneOwners(plan) {
+    const out = {};
+    if (!plan || !plan.belts) return out;
+    const map = plan.belts, junctions = plan.junctions || {}, bayAt = plan.bayTileToAgent || {};
+    function ownersFrom(start) {
+      const seen = {}, q = [start], found = {};
+      seen[key(start.x, start.y)] = true;
+      while (q.length) {
+        const t = q.shift(), k = key(t.x, t.y);
+        if (bayAt[k]) { found[bayAt[k]] = true; continue; }
+        for (const nt of nextTiles(map, junctions, t)) { const nk = key(nt.x, nt.y); if (!seen[nk]) { seen[nk] = true; q.push(nt); } }
+      }
+      return found;
+    }
+    for (const jk in junctions) {
+      const p = jk.split(','), x = +p[0], y = +p[1];
+      const rec = {};
+      for (const d of outLanes(map, x, y)) {
+        const v = DIRV[d], nt = { x: x + v[0], y: y + v[1] };
+        if (!map[key(nt.x, nt.y)]) continue;
+        const ids = Object.keys(ownersFrom(nt)).sort();
+        if (ids.length) rec[d] = ids;
+      }
+      if (Object.keys(rec).length) out[jk] = rec;
+    }
+    return out;
+  }
+
   // round-robin picker so autonomous dispatch genuinely SPREADS splitter work across agents, matching the
   // engine's load-balance intent instead of always running the first lane.
   function resolveTarget(plan, ctx, pick) {
@@ -280,5 +313,5 @@
 
   const ok = plan => !plan.errors.some(e => !e.warn);   // a plan is deployable iff it has no non-warning errors
 
-  return { compileRoutingPlan, resolveTarget, ok, liveTiles, routeFrom, _internals: { DIRV, OPP, LANE_ORDER, key, buildBeltMap, outLanes, beltTileNear, nextTiles, detectCycle, hashStr } };
+  return { compileRoutingPlan, resolveTarget, ok, liveTiles, routeFrom, junctionLaneOwners, _internals: { DIRV, OPP, LANE_ORDER, key, buildBeltMap, outLanes, beltTileNear, nextTiles, detectCycle, hashStr } };
 });

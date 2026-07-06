@@ -69,7 +69,8 @@ const Build = (() => {
       updateUndoRedo();
     });
     bakeDirty = true; bakeDirtyRects = null;
-    convey = (typeof Conveyor !== 'undefined') ? Conveyor.create({ onDeliver: onBuildDeliver }) : null;
+    convey = (typeof Conveyor !== 'undefined') ? Conveyor.create({ onDeliver: onBuildDeliver, onAdvance: onBuildAdvance }) : null;
+    testNotes.length = 0;   // never carry a prior session's ride captions into a fresh REFIT
     lastFrameTs = 0;
     if (!stars.length) seedStars();
     resize();
@@ -439,6 +440,7 @@ const Build = (() => {
     const p = station.propById(bayId); if (!p || !(p.t === 'bay' || isPcProp(p.t))) return;
     const isPc = isPcProp(p.t);
     const noun = isPc ? 'PC' : 'bay';
+    const strip = isPc ? '' : flowStripHTML('bay');
     const cur = p.agentId || '';
     const agents = (opts && typeof opts.agents === 'function' && opts.agents()) || [];
     const rows = agents.map(a => `<button type="button" class="bb sm bay-agent${a.id === cur ? ' active' : ''}" data-aid="${esc(a.id)}">${esc(a.name || a.id)}</button>`).join('');
@@ -447,6 +449,7 @@ const Build = (() => {
     g.innerHTML = `
       <div class="refit-guide-card">
         <h3>▮ ASSIGN AGENT TO ${isPc ? 'PC' : 'BAY'}</h3>
+        ${strip}
         ${isPc
           ? '<ul><li>This computer becomes the chosen agent\'s <b>dedicated PC</b> — its compute.</li><li><b>Every agent needs its own PC</b>; roommates can share one room, not one computer.</li></ul>'
           : '<ul><li>Work routed to this bay <b>runs as the chosen agent</b>.</li><li>A <b>FILTER</b> upstream sorts work to the right bay by content.</li></ul>'}
@@ -553,6 +556,37 @@ const Build = (() => {
     for (const d of J_LANES) { const v = J_DIRV[d], nb = station.beltAt(tx + v[0], ty + v[1]); if (nb && nb !== J_OPP[d]) out.push(d); }
     return out;
   }
+  /* ---------- THE FLOW STRIP + FLOW CARD (belt-teach): ONE picture of the whole system, shown wherever
+     a workflow prop is touched, with the clicked piece lit — so the model accretes instead of fragmenting
+     across six prop descriptions. INBOX/OUTBOX clicks (no editor of their own) open the card directly. */
+  function flowStripHTML(hot) {
+    const seg = (id, label) => '<span class="flow-seg' + (id === hot ? ' hot' : '') + '">' + label + '</span>';
+    const ar = '<span class="flow-arrow">▸</span>';
+    return '<div class="refit-flowstrip"><div class="flow-line">'
+      + seg('intake', 'INBOX') + ar + seg('junction', 'SORT') + ar + seg('bay', 'BAY') + ar
+      + '<span class="flow-seg desk">DESK</span>' + ar + seg('bay', 'BAY') + ar + seg('outbox', 'OUTBOX')
+      + '</div><div class="flow-note">outside work rides IN to an agent’s dock · they work it at their desk · the finished result rides OUT. (COMMS orders skip the ride in — you gave them in person.)</div></div>';
+  }
+  function openFlowCard(propId) {
+    if (!root || root.querySelector('.refit-flow-card')) return;
+    const p = station.propById(propId); if (!p) return;
+    const hot = p.t === 'intake' ? 'intake' : p.t === 'outbox' ? 'outbox' : (p.t === 'filter' || p.t === 'splitter' || p.t === 'merger') ? 'junction' : 'bay';
+    const line = p.t === 'intake'
+      ? 'This is where OUTSIDE work — a channel DM, a scheduled routine — physically arrives on the floor. No feed connected? It says so, and clicking it opens CHANNELS.'
+      : 'Every job the crew actually FINISHES ships a green crate here; the pallet is today’s output. Click it (when quiet) for the LOGBOOK.';
+    const g = document.createElement('div');
+    g.className = 'refit-guide refit-flow-card';
+    g.innerHTML = '<div class="refit-guide-card"><h3>▮ ' + (p.t === 'intake' ? 'INBOX — WORK IN' : 'OUTBOX — RESULTS OUT') + '</h3>'
+      + flowStripHTML(hot)
+      + '<ul><li>' + line + '</li></ul>'
+      + '<div class="refit-actions"><button type="button" class="btn-sm refit-primary" id="flow-ok">✓ GOT IT</button></div></div>';
+    root.appendChild(g);
+    requestAnimationFrame(() => g.classList.add('refit-swap'));
+    const closeP = () => { if (g.parentNode) g.parentNode.removeChild(g); };
+    g.querySelector('#flow-ok').onclick = () => { sfx('click'); closeP(); };
+    g.addEventListener('click', e => { if (e.target === g) closeP(); });
+  }
+
   function openJunctionEditor(propId, ev) {
     if (!root || root.querySelector('.refit-junction-editor')) return;
     const p = station.propById(propId); if (!p || (p.t !== 'filter' && p.t !== 'merger')) return;
@@ -562,7 +596,7 @@ const Build = (() => {
 
     if (p.t === 'merger') {
       const k = Math.max(2, p.bufferSize | 0 || 2);
-      g.innerHTML = '<div class="refit-guide-card"><h3>▮ MERGER</h3>'
+      g.innerHTML = '<div class="refit-guide-card"><h3>▮ MERGER</h3>' + flowStripHTML('junction')
         + '<ul><li>Buffers <b>K</b> inbound boxes, then emits ONE combined box (a map-reduce barrier).</li></ul>'
         + '<label class="refit-field">combine K = '
         + '<input id="mrg-k" class="refit-num" type="number" min="2" max="9" value="' + k + '"/></label>'
@@ -586,8 +620,8 @@ const Build = (() => {
           : '<span class="refit-note bad">lay belts OUT of this filter first</span>';
         return '<div class="refit-route-row"><span class="refit-route-lbl">' + label + ' →</span>' + btns + '</div>';
       }).join('');
-      g.innerHTML = '<div class="refit-guide-card"><h3>▮ FILTER — route by content</h3>'
-        + '<ul><li>Each <b>kind</b> of work routes to the out-lane you pick; the rest take <b>EVERYTHING ELSE</b>.</li>'
+      g.innerHTML = '<div class="refit-guide-card"><h3>▮ FILTER — route by content</h3>' + flowStripHTML('junction')
+        + '<ul><li>Each <b>kind</b> of work routes to the out-lane you pick; the rest take <b>EVERYTHING ELSE</b>. Sorting applies to <b>unowned</b> work — addressed jobs (crons, bound chats) ride straight to their owner’s bay.</li>'
         + '<li>Put a <b>BAY</b> on a lane to send that work to a specific agent.</li></ul>'
         + '<div class="refit-filter-rows">' + rowHtml + '</div>'
         + '<div class="refit-actions"><button type="button" class="btn-sm refit-primary" id="j-ok">▸ SAVE ROUTES</button><button type="button" class="btn-sm" id="j-clear">CLEAR</button><button type="button" class="btn-sm" id="j-cancel">CANCEL</button></div></div>';
@@ -651,8 +685,51 @@ const Build = (() => {
   }
 
   /* ---------- test run (Polish B): send work down your belts with NO bot connected, and watch it sort to the
-     bays right here in REFIT — the build-time payoff + the first thing a tutorial points at. ---------- */
-  function onBuildDeliver(bx) { pushFlash([{ x1: bx.x, y1: bx.y, x2: bx.x, y2: bx.y }], false); sfx('click'); }   // box finished — flash where it landed
+     bays right here in REFIT — the build-time payoff + the first thing a tutorial points at.
+     THE NARRATED RIDE (2026-07-05): ▸ TEST now teaches the whole two-trip model as it happens — numbered
+     captions land at each stage (① enters → ② sorted → ③ delivered to the dock → ④ result ships from the
+     dock → ⑤ out), and a delivered test crate spawns a RETURN product crate so the outbound leg shows too.
+     Ephemeral, REFIT-preview only, driven by the same engine decisions real work rides on. ---------- */
+  const testNotes = [];   // {x, y, text, col, t0} — stage captions over the ride (WORLD tiles)
+  const NOTE_MS = 3200;
+  function note(x, y, text, col) { testNotes.push({ x, y, text, col: col || '#9adcb0', t0: (typeof performance !== 'undefined') ? performance.now() : 0 }); if (testNotes.length > 12) testNotes.shift(); }
+  const agentLabelFor = aid => {
+    const list = (opts && typeof opts.agents === 'function' && opts.agents()) || [];
+    const a = list.find(x => x.id === aid);
+    return ((a && a.name) || aid || 'AGENT').toUpperCase();
+  };
+  // world-frame stops map for the preview sim: bound-bay hookup tiles (LOCAL plan keys rebased by origin)
+  function testStops() {
+    if (!valPlan || !valPlan.bayTileToAgent || !cacheGeo) return null;
+    const o = cacheGeo.origin || { tx: 0, ty: 0 }, out = {};
+    for (const k in valPlan.bayTileToAgent) { const p = k.split(','); out[(+p[0] + o.tx) + ',' + (+p[1] + o.ty)] = valPlan.bayTileToAgent[k]; }
+    return out;
+  }
+  function onBuildDeliver(bx, x, y) {
+    pushFlash([{ x1: x, y1: y, x2: x, y2: y }], false); sfx('click');
+    const p = bx.payload || {};
+    if (!p.test) return;
+    const stops = testStops() || {};
+    const owner = stops[x + ',' + y];
+    if (!p.outbound && owner) {
+      // stage ③ + ④: the dock consumed the job — and the finished work ships back out from the same dock
+      note(x, y, '③ DELIVERED — ' + agentLabelFor(owner) + "'S DOCK (they work it at their desk)", '#e8c860');
+      convey.enqueueAt(x, y, { test: true, outbound: true, box: 'product', workitemId: 'test-out-' + (++_testN) });
+      setTimeout(() => note(x, y + 1, '④ THE RESULT SHIPS FROM THE DOCK…', '#9adcb0'), 900);
+    } else if (p.outbound) {
+      note(x, y, '⑤ …AND OUT. THAT IS THE WHOLE LOOP', '#7ee2a8');
+    } else {
+      note(x, y, '③ SANK — no assigned dock on this line', '#ffbe3c');
+    }
+  }
+  // stage-② watcher: caption the junction decision the moment the engine makes it (same onAdvance seam
+  // the telemetry uses — the caption can only ever say what the engine actually did)
+  function onBuildAdvance(bx, info) {
+    if (!bx.payload || !bx.payload.test || !info || !info.tile) return;
+    if (info.kind === 'filter') note(info.tile.x, info.tile.y, '② SORTED: ' + (info.tag || '?') + ' → ' + info.lane, '#5ad0ff');
+    else if (info.kind === 'split') note(info.tile.x, info.tile.y, '② SPLIT: balancing lanes', '#5ad0ff');
+    else if (info.kind === 'merge' && info.absorbed) note(info.tile.x, info.tile.y, '② MERGING: held for the batch', '#5ad0ff');
+  }
   // the INTAKE's belt-adjacent tile (where a box spawns), or null if no INTAKE sits on a belt
   function intakeBeltTile() {
     const intake = station.props().find(p => p.t === 'intake');
@@ -669,8 +746,24 @@ const Build = (() => {
     if (!convey) return;
     const t = intakeBeltTile();
     if (!t) { flashTip(ev, 'place an INBOX on a belt first', false); sfx('bad'); return; }
-    for (const tag of ['code', 'research', 'general']) convey.enqueueAt(t.x, t.y, { workitemId: 'test-' + (++_testN), tag, preview: 'test ' + tag });
-    flashTip(ev, 'test work riding — watch it sort', true); sfx('click');
+    for (const tag of ['code', 'research', 'general']) convey.enqueueAt(t.x, t.y, { workitemId: 'test-' + (++_testN), tag, preview: 'test ' + tag, test: true });
+    note(t.x, t.y, '① OUTSIDE WORK ENTERS HERE (DMs · routines)', '#e8c860');
+    flashTip(ev, 'test work riding — watch the loop', true); sfx('click');
+  }
+  // render the stage captions: VT323 phosphor, brief rise + fade, world coords (drawn after the boxes)
+  function drawTestNotes(now, t) {
+    if (!testNotes.length) return;
+    ctx.save();
+    ctx.font = VAL_FONT(); ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+    for (let i = testNotes.length - 1; i >= 0; i--) {
+      const n = testNotes[i], k = (now - n.t0) / NOTE_MS;
+      if (k >= 1) { testNotes.splice(i, 1); continue; }
+      const rise = Math.min(1, k * 4) * 4 + k * 3;
+      ctx.globalAlpha = k < 0.12 ? k / 0.12 : (1 - k) / 0.88;
+      ctx.shadowBlur = 3; ctx.shadowColor = n.col; ctx.fillStyle = n.col;
+      ctx.fillText(n.text, (n.x + 0.5) * t, n.y * t - 3 - rise);
+    }
+    ctx.restore();
   }
 
   /* ---------- AIRLOCK door-state picker: cycle a room's SPATIAL seal (floor containment, NOT capability
@@ -878,8 +971,8 @@ const Build = (() => {
   // open the right editor for a logistics prop that carries config (BAY = agent, FILTER/MERGER = routing, AIRLOCK = seal)
   // a workstation (PC/desk) opens the dedicated WORKSTATION picker; bays/junctions/etc. keep their editors.
   // (Trunk's PC-binding via the BAY picker is unified into the workstation picker — same agentId field, richer UX.)
-  const openPropEditor = (id, t, ev) => { if (WORKSTATION_TYPES[t]) openWorkstationPicker(id, ev); else if (t === 'bay') openBayPicker(id, ev); else if (t === 'filter' || t === 'merger') openJunctionEditor(id, ev); else if (t === 'airlock') openDoorPicker(id, ev); else if (t === 'connector_portal') openConnectorEditor(id, ev); };
-  const PROP_EDITABLE = { bay: 1, filter: 1, merger: 1, airlock: 1, connector_portal: 1 };
+  const openPropEditor = (id, t, ev) => { if (WORKSTATION_TYPES[t]) openWorkstationPicker(id, ev); else if (t === 'bay') openBayPicker(id, ev); else if (t === 'filter' || t === 'merger') openJunctionEditor(id, ev); else if (t === 'airlock') openDoorPicker(id, ev); else if (t === 'connector_portal') openConnectorEditor(id, ev); else if (t === 'intake' || t === 'outbox') openFlowCard(id); };
+  const PROP_EDITABLE = { bay: 1, filter: 1, merger: 1, airlock: 1, connector_portal: 1, intake: 1, outbox: 1 };
   const isEditableProp = t => !!PROP_EDITABLE[t] || !!WORKSTATION_TYPES[t];   // a workstation binds an agent + opens its picker on place/click
   function commitPropStamp(d, ev) {
     // a click (no drag) on an existing editable logistics prop re-opens its editor instead of stamping a duplicate
@@ -1179,12 +1272,16 @@ const Build = (() => {
     let jmap = null;
     if (valPlan && valPlan.junctions && cacheGeo) {
       const o = cacheGeo.origin || { tx: 0, ty: 0 };
-      for (const k in valPlan.junctions) { const p = k.split(','); (jmap = jmap || new Map()).set((+p[0] + o.tx) + ',' + (+p[1] + o.ty), valPlan.junctions[k]); }
+      const owners = (typeof Pipeline !== 'undefined' && Pipeline.junctionLaneOwners) ? Pipeline.junctionLaneOwners(valPlan) : {};
+      for (const k in valPlan.junctions) {
+        const p = k.split(','), wk = (+p[0] + o.tx) + ',' + (+p[1] + o.ty);
+        (jmap = jmap || new Map()).set(wk, owners[k] ? Object.assign({}, valPlan.junctions[k], { owners: owners[k] }) : valPlan.junctions[k]);
+      }
     }
-    convey.tick(dt, now, belts, jmap);
+    convey.tick(dt, now, belts, jmap, testStops());   // stops: preview crates are consumed at their dock, like real ones
     convey.drawBelts(ctx, now, t, belts, valLive);
   }
-  function drawConveyorBoxes(now, t) { if (convey) convey.drawBoxes(ctx, now, t); }
+  function drawConveyorBoxes(now, t) { if (convey) { convey.drawBoxes(ctx, now, t); drawTestNotes(now, t); } }
 
   /* THE GUIDANCE LIVES WHERE THE HANDS ARE (2026-07-05 playtest): callouts render INSIDE build mode, in
      plain words that name the fix, at a size you can read while placing — the same visual language as the
