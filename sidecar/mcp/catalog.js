@@ -41,7 +41,7 @@
   // here still renders — it just sorts last, alphabetically — so a new-category row never needs a code edit.
   const CATEGORY_ORDER = [
     'Docs & Knowledge', 'Search & Research', 'Compute & Data', 'Developer Tools',
-    'Automation', 'Productivity', 'Payments & Finance', 'CRM & Sales', 'Marketing'
+    'Automation', 'Social', 'Productivity', 'Payments & Finance', 'CRM & Sales', 'Marketing'
   ];
 
   /* The seed. Every endpoint below is a Streamable-HTTP `/mcp`-style URL. The `none` tier is verified to
@@ -65,10 +65,13 @@
       url: 'https://gitmcp.io/docs', official: false, homepage: 'https://gitmcp.io',
       blurb: 'Turns any GitHub project into a docs assistant the agent can query for accurate, current answers.' },
 
-    // ── Search & Research — zero-setup ────────────────────────────────────────────────────────────────
+    // ── Search & Research (Exa is zero-setup; Tavily takes a key) ─────────────────────────────────────
     { id: 'exa', name: 'Exa Search', category: 'Search & Research', authType: 'none', transport: 'http',
       url: 'https://mcp.exa.ai/mcp', official: true, homepage: 'https://exa.ai',
       blurb: 'Neural web search built for AI — higher-signal results and full-page content extraction.' },
+    { id: 'tavily', name: 'Tavily', category: 'Search & Research', authType: 'apikey', transport: 'http',
+      url: 'https://mcp.tavily.com/mcp', official: true, homepage: 'https://tavily.com',
+      blurb: 'AI-native web search + page extraction tuned for agents. Paste your Tavily API key.' },
 
     // ── Compute & Data — zero-setup ───────────────────────────────────────────────────────────────────
     { id: 'wolfram', name: 'Wolfram', category: 'Compute & Data', authType: 'none', transport: 'http',
@@ -82,6 +85,14 @@
     { id: 'apify', name: 'Apify', category: 'Automation', authType: 'apikey', transport: 'http',
       url: 'https://mcp.apify.com', official: true, homepage: 'https://apify.com',
       blurb: 'Run web-scraping and automation Actors, and pull structured data from the web.' },
+    { id: 'composio', name: 'Composio', category: 'Automation', authType: 'apikey', transport: 'http',
+      url: 'https://connect.composio.dev/mcp', official: true, homepage: 'https://composio.dev',
+      blurb: 'One key bridges 500+ apps — X, Slack, Gmail, Google Drive, Notion, GitHub, and more. The fastest way to reach the platforms that otherwise need their own sign-in.' },
+
+    // ── Social — paste an API key (read access); posting needs OAuth ───────────────────────────────────
+    { id: 'x-twitter', name: 'X (Twitter)', category: 'Social', authType: 'apikey', transport: 'http',
+      url: 'https://api.x.com/mcp', official: true, homepage: 'https://x.com',
+      blurb: "X's official server — search and read posts, profiles, and timelines with your X API Bearer token. Posting needs OAuth (coming soon)." },
 
     // ── Payments & Finance — one API key ──────────────────────────────────────────────────────────────
     { id: 'stripe', name: 'Stripe', category: 'Payments & Finance', authType: 'apikey', transport: 'http',

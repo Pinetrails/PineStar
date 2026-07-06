@@ -101,4 +101,19 @@ const ID_RE = /^[A-Za-z0-9_-]{1,40}$/;
   A.eq(JSON.stringify(C.list()), JSON.stringify(C.list()), 'list is deterministic');
 }
 
+// ---- H. the named common paste-a-key connectors (X, aggregator, search) are present + installable ----
+{
+  for (const id of ['x-twitter', 'composio', 'tavily']) {
+    const e = C.get(id);
+    A.ok(e, id + ' is in the catalog');
+    A.eq(e.authType, 'apikey', id + ' is a paste-a-key (apikey) connector');
+    A.eq(e.installable, true, id + ' is installable today');
+    A.ok(/^https:\/\/\S+/.test(e.url), id + ' has a concrete https endpoint (verified reachable)');
+    const cfg = C.installConfig(id);
+    A.ok(cfg && !('token' in cfg), id + ' installConfig carries no token (the user pastes the key)');
+  }
+  A.ok(C.categories().indexOf('Social') >= 0, 'Social category is present (home for X)');
+  A.eq(C.get('x-twitter').category, 'Social', 'X is filed under Social');
+}
+
 console.log('ok - mcp.catalog');
