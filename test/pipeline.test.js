@@ -262,4 +262,21 @@ const belt = (x, y, dir) => ({ x, y, dir });
   A.ok(!two.errors.some(e => e.code === 'SPLIT_ONE_LANE'), 'a splitter with two real out-lanes does not warn');
 }
 
+/* ---- junctionLaneOwners: each junction lane knows which bay owners it can reach (addressed crates ride home) ---- */
+{
+  const plan = P.compileRoutingPlan(geo(
+    [{ id: 'i', t: 'intake', x: 0, y: 0, w: 1, h: 1 },
+     { id: 'f', t: 'filter', x: 2, y: 0, w: 1, h: 1, routes: { code: 'S' }, def: 'E' },
+     { id: 'bc', t: 'bay', x: 5, y: 0, w: 2, h: 2, agentId: 'nova' },
+     { id: 'br', t: 'bay', x: 1, y: 3, w: 2, h: 2, agentId: 'coder' }],
+    [belt(1, 0, 'E'), belt(2, 0, 'E'), belt(3, 0, 'E'), belt(4, 0, 'E'),
+     belt(2, 1, 'S'), belt(2, 2, 'S')]
+  ));
+  const own = P.junctionLaneOwners(plan);
+  A.ok(own['2,0'], 'the filter tile carries lane owners');
+  A.eq((own['2,0'].E || []).join(','), 'nova', 'E lane reaches nova');
+  A.eq((own['2,0'].S || []).join(','), 'coder', 'S lane reaches coder');
+  A.eq(P.junctionLaneOwners({ belts: {} })['x'], undefined, 'empty plan -> no owners (never throws)');
+}
+
 A.report('pipeline');

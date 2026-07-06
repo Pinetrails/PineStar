@@ -227,4 +227,55 @@ const mr2 = mergeRun();
 A.eq(JSON.stringify(mr.del[0].merged.slice().sort()), JSON.stringify(mr2.del[0].merged.slice().sort()),
   'MERGER is replay-stable (identical combined set across runs)');
 
+/* ---------- DOCK STOPS (crate-physics truth): inbound crates are consumed at their dock ---------- */
+{
+  // one straight lane E from (0,0) to (5,0); dock (bound-bay hookup) at (2,0); open end past (5,0)
+  const lane = [0, 1, 2, 3, 4, 5].map(x => ({ x, y: 0, dir: 'E' }));
+  const stops = { '2,0': 'coder' };
+  const runLane = payload => {
+    const del = [];
+    const cv = Conveyor.create({ onDeliver: (bx, x, y) => del.push({ x, y, p: bx.payload }) });
+    cv.enqueueAt(0, 0, payload);
+    let t = 0; for (let i = 0; i < 400; i++) { t += 16; cv.tick(16, t, lane, null, stops); }
+    return del;
+  };
+  const un = runLane({ workitemId: 'u1' });
+  A.eq(un.length, 1, 'an UNOWNED inbound crate delivers exactly once');
+  A.ok(un[0].x === 2 && un[0].y === 0, '...AT the first dock — it never rides past it');
+  const own = runLane({ workitemId: 'o1', agentId: 'coder' });
+  A.ok(own.length === 1 && own[0].x === 2, 'a crate addressed to the dock owner stops at ITS dock');
+  const other = runLane({ workitemId: 'o2', agentId: 'scout' });
+  A.ok(other.length === 1 && other[0].x === 5, 'a crate addressed to SOMEONE ELSE rides past the dock to the open end');
+  const outb = runLane({ workitemId: 'o3', outbound: true, agentId: 'coder' });
+  A.ok(outb.length === 1 && outb[0].x === 5, 'an OUTBOUND crate ignores docks entirely (it is shipping out)');
+  // born ON a dock tile: an outbound crate starting at its own dock is never instantly consumed
+  const cv2del = [];
+  const cv2 = Conveyor.create({ onDeliver: (bx, x, y) => cv2del.push({ x, y }) });
+  cv2.enqueueAt(2, 0, { workitemId: 'b1' });   // inbound born on the dock — birth tile never consumes
+  let t2 = 0; for (let i = 0; i < 400; i++) { t2 += 16; cv2.tick(16, t2, lane, null, stops); }
+  A.ok(cv2del.length === 1 && cv2del[0].x === 5, 'a crate born ON a dock tile is not consumed at birth');
+}
+
+/* ---------- ADDRESSED CRATES RIDE HOME through junctions (owners beat tag routing) ---------- */
+{
+  // T: feed E (0,0)->(2,0 junction); E lane on to (4,0); S lane (2,1)->(2,3)
+  const tb = [{ x: 0, y: 0, dir: 'E' }, { x: 1, y: 0, dir: 'E' }, { x: 2, y: 0, dir: 'E' }, { x: 3, y: 0, dir: 'E' }, { x: 4, y: 0, dir: 'E' },
+              { x: 2, y: 1, dir: 'S' }, { x: 2, y: 2, dir: 'S' }, { x: 2, y: 3, dir: 'S' }];
+  const jt = new Map([['2,0', { kind: 'filter', routes: { code: 'S' }, def: 'E', owners: { E: ['nova'], S: ['coder'] } }]]);
+  const ride = payload => {
+    const cv = Conveyor.create();
+    cv.enqueueAt(0, 0, payload);
+    let t = 0, lane = '?';
+    for (let i = 0; i < 300 && lane === '?'; i++) {
+      t += 16; cv.tick(16, t, tb, jt);
+      const b = cv.peekBoxes().find(x => x.payload && x.payload.workitemId === payload.workitemId);
+      if (b && b.sink <= 0 && (b.x > 2 || b.y >= 1)) lane = (b.y === 0) ? 'E' : 'S';
+    }
+    return lane;
+  };
+  A.eq(ride({ workitemId: 'a1', tag: 'code' }), 'S', 'an UNOWNED code crate follows the filter route (S)');
+  A.eq(ride({ workitemId: 'a2', tag: 'code', agentId: 'nova' }), 'E', "an ADDRESSED code crate ignores the tag and rides HOME (nova's E lane)");
+  A.eq(ride({ workitemId: 'a3', tag: 'research', agentId: 'coder' }), 'S', 'addressed routing works both ways (coder rides S despite def E)');
+}
+
 A.report('conveyor');

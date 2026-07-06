@@ -267,6 +267,14 @@ const Conveyor = (() => {
       const lanes = outLanes(x, y, map);
       if (!lanes.length) return null;                      // open-end junction: nothing to override, deliver/sink
       const k = key(x, y);
+      // ADDRESSED work rides HOME (crate-physics truth, 2026-07-05): a box that already belongs to an
+      // agent (payload.agentId — a cron, a bound chat) ignores content/balance routing and takes the lane
+      // that reaches ITS OWNER's bay (jt.owners = {dir: [agentIds]}, precompiled from the plan). Filters
+      // and splitters only ever decide for UNOWNED work — so the crate's path can never contradict who
+      // actually runs the job. Deterministic: fixed LANE_ORDER scan.
+      if (bx.payload && bx.payload.agentId && !bx.payload.outbound && jt.owners) {
+        for (const d of lanes) { const own = jt.owners[d]; if (own && own.indexOf(bx.payload.agentId) >= 0) { if (onAdvance) onAdvance(bx, { kind: jt.kind, tile: { x, y }, lane: d, owner: bx.payload.agentId }); return d; } }
+      }
       if (jt.kind === 'split') {
         const n = rr.get(k) || 0;
         rr.set(k, (n + 1) % lanes.length);
@@ -326,7 +334,12 @@ const Conveyor = (() => {
       return best;
     }
 
-    function tick(dtMs, nowMs, belts, junctions) {
+    /* stops (optional 5th arg): { "x,y": agentId } — bound-bay hookup tiles. An INBOUND crate arriving on
+       a stop tile is DELIVERED there (the dock consumes the job): an unowned crate stops at the FIRST dock
+       it reaches; an addressed crate stops only at ITS OWNER's dock and rides past every other. Outbound
+       crates ignore stops entirely (they START at a dock and ship out). This is what makes "the crate ends
+       at the bay" physically true even when the lane continues on toward an OUTBOX. */
+    function tick(dtMs, nowMs, belts, junctions, stops) {
       reconcileJunctions(junctions);   // E6a: drop stale merge buffers when a junction is re-wired this tick
       const map = buildMap(belts || []);
       const dt = Math.min(64, dtMs) / 1000;
@@ -347,7 +360,7 @@ const Conveyor = (() => {
         const p = pending.shift();
         const d = map.get(key(p.x, p.y));
         if (!d) continue;
-        boxes.push({ id: nid++, x: p.x, y: p.y, dir: d, prog: 0, sink: 0, t0: nowMs, turn0: -1e9, payload: p.payload });
+        boxes.push({ id: nid++, x: p.x, y: p.y, dir: d, prog: 0, sink: 0, t0: nowMs, turn0: -1e9, payload: p.payload, spawnTile: key(p.x, p.y) });
       }
 
       // advance: cap each box so it never closes within MIN_GAP of the box ahead (no stacking; backpressure)
@@ -362,6 +375,15 @@ const Conveyor = (() => {
         bx.prog += allowed;
         let guard = 0;
         while (bx.prog >= 1 && guard++ < 8) {
+          // DOCK DELIVERY: an inbound crate whose tile is a qualifying stop is consumed HERE — it never
+          // rides past its dock. (Outbound crates skip this — they were born ON a dock tile and ship out —
+          // and no crate is ever consumed on its own birth tile.)
+          const stopOwner = stops && stops[key(bx.x, bx.y)];
+          if (stopOwner && bx.payload && !bx.payload.outbound && bx.spawnTile !== key(bx.x, bx.y) &&
+              (!bx.payload.agentId || bx.payload.agentId === stopOwner)) {
+            if (onDeliver && !bx.delivered) { bx.delivered = true; onDeliver(bx, bx.x, bx.y); }
+            bx.prog = 1; bx.sink = 1; break;
+          }
           let dir = bx.dir;
           const jt = junctions && junctions.get(key(bx.x, bx.y));            // a junction picks the exit lane (else straight)
           if (jt) {

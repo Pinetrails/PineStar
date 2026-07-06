@@ -679,9 +679,21 @@ const Tutorial = (() => {
     showCoach('build', '#refit-tools',
       'this is REFIT — the floor isn’t decoration. where you put things changes what i can do. keys 1–7 up top: 6 places gear, 7 lays belts.');
   }
+  /* WORKFLOW COACHES (2026-07-05 belt-teach): each routing prop teaches ITS role in the two-trip story the
+     first time it's placed — one line, at the moment of need, in the agent's voice. Each has its own
+     seen-key so the whole chain gets taught exactly once, piece by piece, never as a wall of text. */
+  const WF_COACH = {
+    intake: 'that’s the INBOX — outside work (a DM, a routine) physically arrives here. belt it toward a BAY and you’ll watch the job ride in.',
+    bay: 'a BAY is one agent’s personal dock — jobs land there, and every finished result ships out from it. it works with no belts at all; click it to pick whose dock it is.',
+    outbox: 'the OUTBOX is the loading dock — every job we actually FINISH ships a crate here onto the pallet. hit ▸ TEST to watch the whole loop once.',
+    filter: 'a FILTER sorts UNOWNED work by what it is — code down one lane, research down another. work that already belongs to someone rides straight home past it. click it to set the lanes.',
+    splitter: 'a SPLITTER spreads unowned work across its lanes — several agents working the same stream in parallel. it needs at least two out-going lanes.',
+    merger: 'a MERGER holds crates until it has a full batch, then sends ONE combined crate on — a join point for fan-in work.'
+  };
   function onPropPlaced(propType) {
     const grant = (typeof WorldModel !== 'undefined' && WorldModel.grantLabelForProp) ? WorldModel.grantLabelForProp(propType) : null;
     if (kitMode) return kitOnPropPlaced(grant);   // the kit-out owns placement while it runs
+    if (WF_COACH[propType]) { tickBrief('build'); showCoach('wf-' + propType, '#refit-palette', WF_COACH[propType]); return; }
     tickBrief('build');
     let msg;
     // HONEST (truthful-telemetry): a fresh solo station is COMPUTE-ONLY, so placing a cap-prop genuinely UNLOCKS

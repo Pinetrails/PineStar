@@ -3088,7 +3088,9 @@ const World = (() => {
     // conveyor belts (floor machinery) + the live transport sim — local frame, under entities
     if (geo && geo.belts && typeof Conveyor !== 'undefined') {
       if (!convey) convey = Conveyor.create({ onDeliver: onWorkitemDeliver });
-      convey.tick(dt, now, geo.belts, junctions);
+      // stops = bound-bay hookup tiles (crate-physics truth: an inbound crate is CONSUMED at its dock,
+      // never riding past it toward the outbox — an addressed crate stops only at its OWNER's dock)
+      convey.tick(dt, now, geo.belts, junctions, routingPlan ? routingPlan.bayTileToAgent : null);
       convey.drawBelts(ctx, now, T, geo.belts, beltLiveSet);
     }
 
@@ -4450,7 +4452,10 @@ const World = (() => {
   function buildJunctions() {
     if (routingPlan && routingPlan.junctions) {
       let j = null;
-      for (const k in routingPlan.junctions) (j = j || new Map()).set(k, routingPlan.junctions[k]);
+      // enrich each junction with its lanes' reachable OWNERS so addressed crates ride home (a shallow
+      // copy — never mutate the plan object itself; the sidecar-posted plan/hash stays untouched)
+      const owners = (typeof Pipeline !== 'undefined' && Pipeline.junctionLaneOwners) ? Pipeline.junctionLaneOwners(routingPlan) : {};
+      for (const k in routingPlan.junctions) (j = j || new Map()).set(k, owners[k] ? Object.assign({}, routingPlan.junctions[k], { owners: owners[k] }) : routingPlan.junctions[k]);
       return j;
     }
     // fallback (Pipeline unavailable): the original splitter-only scan keeps belts animating
