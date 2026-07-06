@@ -24,11 +24,13 @@ function writeArtifact(dir, rel, sig) {
   if (sig !== null && sig !== undefined) fs.writeFileSync(full + '.sig', sig);
   return full;
 }
-// Build a full four-platform dist tree; caller may then mutate it.
+// Build a full four-platform dist tree; caller may then mutate it. The mac bundles carry
+// per-arch basenames, matching what the release train's rename step produces — release
+// assets are a flat namespace, so identical basenames are a collision (see test 8).
 function fullDist(base) {
   writeArtifact(base, 'StarNet_0.2.0_x64-setup.exe', 'SIG-WIN');
-  writeArtifact(base, path.join('macos', 'aarch64', 'StarNet.app.tar.gz'), 'SIG-MAC-ARM');
-  writeArtifact(base, path.join('macos', 'x86_64', 'StarNet.app.tar.gz'), 'SIG-MAC-X64');
+  writeArtifact(base, path.join('macos', 'aarch64', 'StarNet_darwin-arm64.app.tar.gz'), 'SIG-MAC-ARM');
+  writeArtifact(base, path.join('macos', 'x86_64', 'StarNet_darwin-x64.app.tar.gz'), 'SIG-MAC-X64');
   writeArtifact(base, 'StarNet_0.2.0_amd64.AppImage', 'SIG-LINUX');
 }
 
@@ -56,7 +58,8 @@ try {
     eq(m.platforms['windows-x86_64'].url,
       'https://github.com/nonfungiblefunyuns-ship-it/starnet-releases/releases/download/v0.2.0/StarNet_0.2.0_x64-setup.exe',
       'win url points at versioned tag asset');
-    ok(m.platforms['darwin-aarch64'].url.endsWith('/v0.2.0/StarNet.app.tar.gz'), 'mac url basename');
+    ok(m.platforms['darwin-aarch64'].url.endsWith('/v0.2.0/StarNet_darwin-arm64.app.tar.gz'), 'mac-arm url basename');
+    ok(m.platforms['darwin-x86_64'].url.endsWith('/v0.2.0/StarNet_darwin-x64.app.tar.gz'), 'mac-x64 url basename');
     ok(m.platforms['windows-x86_64'].url.startsWith('https://'), 'https url');
   }
 
@@ -131,6 +134,20 @@ try {
       '--out', path.join(tmp, 'semver-latest.json')]);
     eq(res.status, 1, 'non-semver should fail');
     ok(/SemVer/i.test(res.stderr), 'semver message');
+  }
+  // 8. Basename collision across platforms → hard fail (mac bundles not renamed per-arch:
+  // both legs emit "StarNet.app.tar.gz", which is ONE flat release asset — one arch would
+  // silently receive the other arch's binary).
+  {
+    const dist = path.join(tmp, 'collide');
+    fs.mkdirSync(dist);
+    writeArtifact(dist, 'StarNet_0.2.0_x64-setup.exe', 'SIG-WIN');
+    writeArtifact(dist, path.join('macos', 'aarch64', 'StarNet.app.tar.gz'), 'SIG-MAC-ARM');
+    writeArtifact(dist, path.join('macos', 'x86_64', 'StarNet.app.tar.gz'), 'SIG-MAC-X64');
+    writeArtifact(dist, 'StarNet_0.2.0_amd64.AppImage', 'SIG-LINUX');
+    const res = run(['--dist', dist, ...COMMON, '--out', path.join(tmp, 'collide-latest.json')]);
+    eq(res.status, 1, 'same-basename mac bundles should fail');
+    ok(/basename collision/i.test(res.stderr), 'collision message');
   }
 } finally {
   fs.rmSync(tmp, { recursive: true, force: true });

@@ -183,6 +183,26 @@ jobs:
           printf '  art: %s\n' "${arts[@]}"
           printf '  sig: %s\n' "${sigs[@]}"
 
+      # Tauri names the mac updater bundle "<App>.app.tar.gz" with NO arch marker — identical
+      # for both mac legs. Release assets are a flat namespace, so without a rename the two
+      # legs collide into one asset and one arch gets the wrong binary. Rename per-arch here.
+      # The signature signs the tar.gz BYTES, not the filename, so renaming both together is
+      # safe; the assembler pairs them by "<artifact>.sig" and reads the arch from the name.
+      - name: Rename mac updater bundle per-arch (basename collision guard)
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          shopt -s globstar nullglob
+          for f in src-tauri/target/**/release/bundle/macos/*.app.tar.gz; do
+            base="${f%.app.tar.gz}"
+            mv "$f" "${base}_${TARGET}.app.tar.gz"
+            mv "$f.sig" "${base}_${TARGET}.app.tar.gz.sig"
+            echo "renamed: ${base}_${TARGET}.app.tar.gz (+.sig)"
+          done
+
       - uses: actions/upload-artifact@v4
         with:
           name: starnet-${{ matrix.target }}
@@ -293,7 +313,20 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # All installers + all .sig + the assembled latest.json.
+          # All installers + all .sig + the assembled latest.json. Staging FLATTENS paths,
+          # so duplicate basenames would silently overwrite/drop assets — fail loudly instead.
+          dupes=$(find dist -type f \( \
+            -name '*-setup.exe' -o \
+            -name '*.dmg' -o \
+            -name '*.app.tar.gz' -o \
+            -name '*.deb' -o \
+            -name '*.AppImage' -o \
+            -name '*.sig' \
+          \) -printf '%f\n' | sort | uniq -d)
+          if [ -n "$dupes" ]; then
+            echo "::error::duplicate asset basename(s) across build legs — staging would drop files: $dupes"
+            exit 1
+          fi
           mkdir -p staged
           find dist -type f \( \
             -name '*-setup.exe' -o \
@@ -302,7 +335,7 @@ jobs:
             -name '*.deb' -o \
             -name '*.AppImage' -o \
             -name '*.sig' \
-          \) -exec cp -n {} staged/ \;
+          \) -exec cp {} staged/ \;
           cp release/latest.json staged/latest.json
           echo "Assets staged for attachment:"
           ls -1 staged

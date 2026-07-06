@@ -152,6 +152,20 @@ function main() {
     platforms[plat] = { signature: hit.signature, url: assetBase + encodeURIComponent(basename) };
   }
 
+  // GitHub release assets are a flat namespace: two platforms whose artifacts share a
+  // basename would collide into ONE asset and silently serve the wrong binary to one of
+  // them (the mac .app.tar.gz legs are named identically unless the build renames them).
+  const byUrl = {};
+  for (const [plat, entry] of Object.entries(platforms)) {
+    if (byUrl[entry.url]) {
+      fail('asset basename collision: ' + plat + ' and ' + byUrl[entry.url] +
+        ' both resolve to ' + entry.url +
+        '\n  Rename the artifacts so every platform has a unique basename (the release train' +
+        '\n  build job renames mac .app.tar.gz bundles per-arch for exactly this reason).');
+    }
+    byUrl[entry.url] = plat;
+  }
+
   const manifest = { version, notes, pub_date: new Date().toISOString(), platforms };
 
   mkdirSync(dirname(outFile), { recursive: true });
