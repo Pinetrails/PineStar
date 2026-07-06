@@ -3,7 +3,13 @@
 One page. Every public-facing artifact and its status, so launch day is a checklist — not a
 memory test. Update the Status column as things land.
 
-_Last updated: 2026-07-03._
+_Last updated: 2026-07-06._
+
+## Launch scope
+
+| Decision | Value | Notes |
+| --- | --- | --- |
+| **Advertised platforms** | **Windows + macOS + Linux** | Andrew's decision 2026-07-06. INSTALL.md and DOWNLOAD_PAGE.md advertise all three; the release train builds and signs all four legs (win-x64, darwin-arm64, darwin-x64, linux-x64). macOS + Linux carry an honest "less-tested-than-Windows" note pointing to androo.agi@gmail.com. |
 
 ## Release channel
 
@@ -15,8 +21,10 @@ Updater endpoint (baked into the app, `src-tauri/tauri.conf.json`):
 
 | # | Artifact | Location | Status | Notes |
 | - | --- | --- | --- | --- |
-| 1 | **Installer** `StarNet_<ver>_x64-setup.exe` | GitHub release asset | ☐ TODO | Windows x64 NSIS. Currently **unsigned** — SmartScreen/SAC caveats apply (see INSTALL.md). |
-| 2 | **`latest.json`** update manifest | GitHub release asset (root of endpoint above) | ☐ TODO | Must be uploaded to each release; signed against the pubkey baked in `tauri.conf.json`. |
+| 1 | **Windows installer** `StarNet_<ver>_x64-setup.exe` (+ `.sig`) | GitHub release asset | ☐ TODO | Windows x64 NSIS. **Unsigned** — SmartScreen/SAC caveats apply (see INSTALL.md). |
+| 1a | **macOS DMG** `StarNet_<ver>_aarch64.dmg` + `StarNet_<ver>_x64.dmg` | GitHub release asset | ☐ TODO | Apple Silicon + Intel. **Unsigned + un-notarized** — Gatekeeper "Open Anyway" caveat (INSTALL.md). Updater artifact is the paired per-arch `*.app.tar.gz` + `.sig`. |
+| 1b | **Linux** `StarNet_<ver>_amd64.deb` + `StarNet_<ver>_amd64.AppImage` (+ `.sig`) | GitHub release asset | ☐ TODO | x64. Needs WebKitGTK 4.1 at runtime. AppImage `.sig` is the updater artifact. |
+| 2 | **`latest.json`** update manifest (multi-platform) | GitHub release asset (root of endpoint above) | ☐ TODO | ONE manifest covering windows-x86_64, darwin-aarch64, darwin-x86_64, linux-x86_64. Assembled by `release-assemble-manifest.mjs`; signed against the pubkey baked in `tauri.conf.json`. |
 | 3 | **Updater signature key** | `~/.tauri/starnet-updater.key` (Andrew's machine) | ☐ VERIFY | Pubkey is committed in `tauri.conf.json`; private key must sign every `latest.json`. |
 | 4 | **INSTALL.md** | repo root — SHIPPED on trunk | ✅ DONE | SmartScreen + SAC honesty; download + update + uninstall. Public copy must match repo. |
 | 5 | **PRIVACY.md** | repo root | ✅ DRAFTED | Audited 2026-07-03. No telemetry; local-first; keychain vs plaintext honest. |
@@ -48,8 +56,14 @@ Updater endpoint (baked into the app, `src-tauri/tauri.conf.json`):
 
 ## Consistency gates (do NOT ship until true)
 
-- ☐ SmartScreen / SAC wording is **identical in spirit** across INSTALL.md and DOWNLOAD_PAGE.md
-  (unsigned build, "More info → Run anyway", SAC is a hard block).
+- ☐ **Cross-platform smoke test BEFORE clicking Publish on the draft:** install and launch one
+  **macOS** build (Andrew's brother's Mac) and one **Linux** build (a VM) from the staged draft
+  assets, and confirm each opens past its OS first-run wall (mac "Open Anyway"; Linux
+  `.deb`/AppImage runs). We advertise all three platforms — do not publish a draft where mac or
+  linux was never launched once.
+- ☐ SmartScreen / SAC / Gatekeeper wording is **identical in spirit** across INSTALL.md and
+  DOWNLOAD_PAGE.md (unsigned/un-notarized builds, Windows "More info → Run anyway", SAC hard
+  block, macOS "Open Anyway").
 - ☐ The `latest.json` uploaded matches the version of the installer asset in the same release.
 - ☐ `ANDREW_SUPPORT_EMAIL` no longer appears anywhere (grep returns nothing).
 - ☐ `LICENSE` file exists and TERMS.md §7 points to it.
