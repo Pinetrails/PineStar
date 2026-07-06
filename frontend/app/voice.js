@@ -185,7 +185,9 @@ const Voice = (() => {
     // cache key) — the station's eerie register, distinct per persona. Empty → plain synthesis.
     // ttsDeep: disable pitch-preservation on playback, so ttsSpeed<1 genuinely LOWERS the pitch (the
     // character-voice lever: Venom/Ultron get their sub-bass register from Algenib resampled down).
-    return { model: TTS_MODEL, voice: (p && p.ttsVoice) || 'Umbriel', speed: (p && p.ttsSpeed) || 1.0, style: (p && p.ttsStyle) || '', deep: !!(p && p.ttsDeep) };
+    // ttsShell: an optional per-persona "machine shell" FX chain ({metal,digitize,reverb} in 0..1) applied on
+    // playback — Ultron's cold-metal body. A persona WITH a shell bypasses the transmission color (below).
+    return { model: TTS_MODEL, voice: (p && p.ttsVoice) || 'Umbriel', speed: (p && p.ttsSpeed) || 1.0, style: (p && p.ttsStyle) || '', deep: !!(p && p.ttsDeep), shell: (p && p.ttsShell) || null };
   }
   function haveKey() { return !!apiKey() || (typeof Harness !== 'undefined' && Harness.configured && Harness.configured()); }
 
@@ -326,11 +328,94 @@ const Voice = (() => {
     } catch (_) { return false; }   // routing failed → dry playback (the element still outputs normally)
   }
 
+  /* ---- MACHINE SHELL — a persona's cold-metal body (personas.js: ttsShell {metal,digitize,reverb}) --------
+     Ultron's voice: a low raspy human (Algenib) pushed through a metal shell. Tuned live in the voicelab and
+     ported here VERBATIM so in-game == what was auditioned. Layers, each 0..1:
+       metal    → two parallel comb resonators (~278Hz body + ~870Hz sheen) = the metallic ring
+       digitize → a bit-depth quantizer (11→4 bits) + a 47Hz ring-mod shimmer = the "synthesized" edge
+       reverb   → a synthetic metal-chamber impulse (rings ~950Hz) = voice inside the chassis
+     Compression + band-limit (95Hz/8.5k) + a presence peak sit in front. The dry human voice yields as metal
+     and digitize rise but never below 0.15 (the human stays underneath). Its own AudioContext; a shell persona
+     BYPASSES routeThroughFx. Fully guarded: any failure → the caller's transmission/dry fallback. */
+  let shCtx = null, shIn = null, shN = null, shBroken = false;
+  function makeQuantCurve(bits) {
+    const n = 4096, c = new Float32Array(n), L = Math.pow(2, bits);
+    for (let i = 0; i < n; i++) { const x = i / (n - 1) * 2 - 1; c[i] = Math.round(x * L) / L; }
+    return c;
+  }
+  function makeMetalIR(ctx, dur) {
+    const sr = ctx.sampleRate, len = Math.max(1, (dur * sr) | 0), buf = ctx.createBuffer(2, len, sr);
+    for (let ch = 0; ch < 2; ch++) { const d = buf.getChannelData(ch);
+      for (let i = 0; i < len; i++) { const t = i / sr, env = Math.exp(-t * 5.5), ring = 0.55 + 0.45 * Math.sin(2 * Math.PI * 950 * t + ch * 1.7); d[i] = (Math.random() * 2 - 1) * env * ring * 0.5; } }
+    return buf;
+  }
+  function ensureShellGraph() {
+    if (shN || shBroken) return !!shN;
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext; if (!AC) { shBroken = true; return false; }
+      shCtx = new AC();
+      shIn = shCtx.createGain();
+      const comp = shCtx.createDynamicsCompressor();
+      comp.threshold.value = -28; comp.knee.value = 18; comp.ratio.value = 7; comp.attack.value = 0.004; comp.release.value = 0.12;
+      const hp = shCtx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 95;
+      const lp = shCtx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 8500;
+      const peak = shCtx.createBiquadFilter(); peak.type = 'peaking'; peak.frequency.value = 2800; peak.Q.value = 1.1; peak.gain.value = 0;
+      const delay = shCtx.createDelay(0.05); delay.delayTime.value = 0.0036;
+      const fb = shCtx.createGain(); fb.gain.value = 0;
+      const mix = shCtx.createGain(); mix.gain.value = 0;
+      const delay2 = shCtx.createDelay(0.05); delay2.delayTime.value = 0.00115;
+      const fb2 = shCtx.createGain(); fb2.gain.value = 0;
+      const mix2 = shCtx.createGain(); mix2.gain.value = 0;
+      const rm = shCtx.createGain(); rm.gain.value = 0;
+      const osc = shCtx.createOscillator(); osc.type = 'sine'; osc.frequency.value = 47;
+      const rmDepth = shCtx.createGain(); rmDepth.gain.value = 1.0;
+      osc.connect(rmDepth); rmDepth.connect(rm.gain); osc.start();
+      const rmMix = shCtx.createGain(); rmMix.gain.value = 0;
+      const quant = shCtx.createWaveShaper(); quant.curve = makeQuantCurve(11); quant.oversample = 'none';
+      const qMix = shCtx.createGain(); qMix.gain.value = 0;
+      const conv = shCtx.createConvolver(); conv.buffer = makeMetalIR(shCtx, 0.9);
+      const revMix = shCtx.createGain(); revMix.gain.value = 0;
+      const dry = shCtx.createGain(); dry.gain.value = 1.0;
+      const out = shCtx.createGain(); out.gain.value = 0.96;
+      shIn.connect(comp); comp.connect(hp); hp.connect(lp); lp.connect(peak);
+      peak.connect(dry); dry.connect(out);
+      peak.connect(delay); delay.connect(fb); fb.connect(delay); delay.connect(mix); mix.connect(out);
+      peak.connect(delay2); delay2.connect(fb2); fb2.connect(delay2); delay2.connect(mix2); mix2.connect(out);
+      peak.connect(rm); rm.connect(rmMix); rmMix.connect(out);
+      peak.connect(quant); quant.connect(qMix); qMix.connect(out);
+      peak.connect(conv); conv.connect(revMix); revMix.connect(out);
+      out.connect(shCtx.destination);
+      shN = { comb: { fb, mix }, comb2: { fb: fb2, mix: mix2 }, rmMix, quant, qMix, revMix, peak, dry };
+      return true;
+    } catch (_) { shBroken = true; try { if (shCtx) shCtx.close(); } catch (__) {} shCtx = null; shIn = null; return false; }
+  }
+  // set the shell amounts from a persona cfg {metal,digitize,reverb} (0..1). Identical math to the voicelab.
+  function applyShellAmounts(cfg) {
+    if (!shN) return;
+    const m = Math.max(0, Math.min(1, +cfg.metal || 0)), d = Math.max(0, Math.min(1, +cfg.digitize || 0)), r = Math.max(0, Math.min(1, +cfg.reverb || 0));
+    shN.comb.fb.gain.value = 0.30 + m * 0.35; shN.comb.mix.gain.value = m * 0.34;
+    shN.comb2.fb.gain.value = 0.25 + m * 0.35; shN.comb2.mix.gain.value = m * 0.26;
+    shN.peak.gain.value = m * 6;
+    shN.quant.curve = makeQuantCurve(Math.round(11 - d * 7)); shN.qMix.gain.value = d * 1.0; shN.rmMix.gain.value = d * 0.30;
+    shN.revMix.gain.value = r * 1.1;
+    shN.dry.gain.value = Math.max(0.15, 1.0 - m * 0.18 - d * 0.60);
+  }
+  function routeThroughShell(a, cfg) {
+    if (!ensureShellGraph()) return false;
+    try {
+      if (shCtx.state === 'suspended') { try { shCtx.resume(); } catch (_) {} }
+      applyShellAmounts(cfg);
+      if (!a._shSrc) a._shSrc = shCtx.createMediaElementSource(a);
+      a._shSrc.connect(shIn);
+      return true;
+    } catch (_) { return false; }
+  }
+
   // play an audio blob (mp3/wav), wiring start/end into the same speaking-state + loop hooks as the
   // browser path. playbackRate gives the per-personality pacing (Gemini TTS takes no speed param).
   // deep=true disables pitch-preservation, so a sub-1 rate lowers PITCH along with pace — the character-
   // voice register (persona ttsDeep). Vendor-prefixed setters for older engines; all guarded.
-  function playBlob(blob, onEnd, volume, onFail, rate, deep) {
+  function playBlob(blob, onEnd, volume, onFail, rate, deep, shell) {
     let url = null, a = null, done = false;
     const cleanup = () => { if (url) { try { URL.revokeObjectURL(url); } catch (_) {} } if (currentAudio === a) currentAudio = null; };
     const endOk = () => { if (done) return; done = true; cleanup(); onSpeakEnd(); onEnd && onEnd(); };
@@ -345,7 +430,9 @@ const Voice = (() => {
       // through WebAudio, crossOrigin must be set before load for some engines — the blob is same-origin so
       // this is a no-op, but harmless. Routing an element captures its output into the graph → the element's
       // own output goes silent, so ONLY route when the graph actually wires up.
-      routeThroughFx(a);
+      // A persona with a machine shell (Ultron) routes through the shell and SKIPS the transmission color; if
+      // the shell graph can't wire, fall back to transmission (best-effort) rather than nothing.
+      if (!(shell && routeThroughShell(a, shell))) routeThroughFx(a);
       a.onplay = () => onSpeakStart();
       a.onended = endOk;
       // a decode/format error on the neural blob is exactly the "try the browser voice" case — route
@@ -444,7 +531,7 @@ const Voice = (() => {
         lastAudioPath = 'neural';
         const cfg = ttsConfig();
         const rate = cfg.speed * (job.opts.speedMul || 1);
-        playBlob(res.blob, advance, job.opts.volume, () => browserPlay(job, advance), rate, cfg.deep);
+        playBlob(res.blob, advance, job.opts.volume, () => browserPlay(job, advance), rate, cfg.deep, cfg.shell);
       } else if (res.kind === 'browser') {
         browserPlay(job, advance);
       } else { advance(); }   // 'skip' (aborted)
