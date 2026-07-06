@@ -66,6 +66,7 @@ test/t3-release-smoke.test.js
 test/t4-update-delivery.test.js
 test/t5-public-distribution.test.js
 test/release-assemble-manifest.test.js
+test/verify-update-host.test.js
 test/replacement-sweep.test.js
 test/lint-evidence-secrets.test.js
 scripts/lint-evidence-secrets.mjs
