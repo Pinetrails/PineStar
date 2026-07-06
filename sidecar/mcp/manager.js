@@ -150,10 +150,16 @@
       setState(c, 'connecting');
       try {
         const connTimeout = c.timeoutMs || timeoutMs;
+        // oauth connectors carry a tokenProvider() rather than a frozen token, so EVERY (re)connect — the initial
+        // connect, a manual Reload, and bounded auto-reconnect — fetches a FRESH bearer (refreshing if near expiry).
+        // A provider throw falls back to the static token; an empty result connects tokenless so an expired/signed-out
+        // connector surfaces an HONEST 401/error (visible + reloadable), never a crash or a silently-frozen stale token.
+        let liveToken = c.token;
+        if (typeof c.tokenProvider === 'function') { try { const t = await c.tokenProvider(); if (t != null) liveToken = String(t); } catch (_) {} }
         c.transport = makeTransport({
           transport: c.transportKind,
           url: c.url,
-          token: c.token,
+          token: liveToken,
           headers: c.headers,
           command: c.command,
           args: c.args,
@@ -199,6 +205,9 @@
         timeoutMs: normalizeTimeout(cfg, prev),
         label: String(cfg.label || (prev && prev.label) || id),
         enabled: cfg.enabled !== false,
+        // oauth connectors pass a tokenProvider() instead of a frozen token (see connect); carried across reconfigure
+        // so a benign toggle/re-warm keeps refreshing the bearer.
+        tokenProvider: (typeof cfg.tokenProvider === 'function') ? cfg.tokenProvider : (prev ? prev.tokenProvider : null),
         state: 'down', detail: '', tools: [], client: null, transport: null, ts: clock.now(),
         reconnectAttempt: 0, reconnectTimer: null, _epoch: 0
       };
@@ -231,7 +240,8 @@
         enabled: c.enabled,
         state: c.state,
         detail: c.detail,
-        hasToken: !!c.token,
+        hasToken: !!(c.token || c.tokenProvider),
+        oauth: !!c.tokenProvider,                        // the panel renders oauth connectors distinctly (re-auth via sign-in, not an http edit)
         timeoutMs: c.timeoutMs || timeoutMs,
         toolCount: (c.tools || []).length,
         tools: (c.tools || []).map(t => t.name)

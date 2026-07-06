@@ -3578,6 +3578,7 @@ const StationUI = (() => {
     const ccListEl = body.querySelector('#cc-list');
     const ccMsgEl = body.querySelector('#cc-msg');
     let ccCache = [];   // flat catalog entries, so a click reads the authoritative id/url/name (never re-typed)
+    const ccPending = new Set();   // connector ids with an in-flight OAuth sign-in (guards duplicate popups/pollers)
     // auth tier chip: glyph, label, colour. Drives the honest "what will adding this cost me" cue.
     const CC_CHIP = { none: ['⚡', 'no setup', 'var(--ok)'], apikey: ['🔑', 'API key', 'var(--gold)'], oauth: ['🔒', 'sign-in', 'var(--ph-dim)'] };
     function ccCard(e, ci) {
@@ -3636,14 +3637,16 @@ const StationUI = (() => {
     }
     // OAuth sign-in: start the flow, open the provider's consent in a popup, poll until the connector connects.
     async function ccSignIn(id) {
+      if (ccPending.has(id)) { sfx('bad'); ccMsgEl.classList.remove('ok'); ccMsgEl.textContent = 'a sign-in is already in progress for this connector…'; return; }
+      ccPending.add(id);   // one in-flight sign-in per connector — no duplicate popups / concurrent pollers
       const e = ccCache.find(x => x.id === id); const label = (e && e.name) || id;
       ccMsgEl.classList.remove('ok'); ccMsgEl.textContent = 'starting sign-in for ' + label + '…';
       let url;
       try {
         const j = await (await postJSON('/api/connectors/oauth/start', { id: id })).json().catch(() => ({}));
-        if (j.error || !j.url) { ccMsgEl.textContent = '✕ ' + (j.error || 'could not start sign-in'); sfx('bad'); return; }
+        if (j.error || !j.url) { ccMsgEl.textContent = '✕ ' + (j.error || 'could not start sign-in'); sfx('bad'); ccPending.delete(id); return; }
         url = j.url;
-      } catch (err) { ccMsgEl.textContent = '✕ ' + ((err && err.message) || 'request failed'); sfx('bad'); return; }
+      } catch (err) { ccMsgEl.textContent = '✕ ' + ((err && err.message) || 'request failed'); sfx('bad'); ccPending.delete(id); return; }
       const win = window.open(url, 'starnet_oauth', 'width=540,height=720');
       ccMsgEl.textContent = 'complete the sign-in for ' + label + ' in the popup window…';
       let tries = 0;
@@ -3652,10 +3655,10 @@ const StationUI = (() => {
         try {
           const j = await (await fetch('/api/connectors')).json();
           const c = (j.connectors || []).find(x => x.id === id);
-          if (c && c.state === 'up') { clearInterval(timer); sfx('click'); notify('Connector "' + label + '" connected', 'good'); ccMsgEl.classList.add('ok'); ccMsgEl.textContent = '✓ ' + label + ' signed in — ' + (c.toolCount || 0) + ' tool(s)'; ccRefresh(); refresh(); try { if (win && !win.closed) win.close(); } catch (_) {} return; }
-          if (c && c.state === 'error') { clearInterval(timer); sfx('bad'); ccMsgEl.textContent = '✕ ' + label + ' — ' + (c.detail || 'connection failed'); ccRefresh(); return; }
+          if (c && c.state === 'up') { clearInterval(timer); ccPending.delete(id); sfx('click'); notify('Connector "' + label + '" connected', 'good'); ccMsgEl.classList.add('ok'); ccMsgEl.textContent = '✓ ' + label + ' signed in — ' + (c.toolCount || 0) + ' tool(s)'; ccRefresh(); refresh(); try { if (win && !win.closed) win.close(); } catch (_) {} return; }
+          if (c && c.state === 'error') { clearInterval(timer); ccPending.delete(id); sfx('bad'); ccMsgEl.textContent = '✕ ' + label + ' — ' + (c.detail || 'connection failed'); ccRefresh(); return; }
         } catch (_) {}
-        if (tries > 150) { clearInterval(timer); }   // ~5-minute cap so a stalled/abandoned sign-in stops polling
+        if (tries > 150) { clearInterval(timer); ccPending.delete(id); }   // ~5-minute cap so a stalled/abandoned sign-in stops polling
       }, 2000);
     }
     ccListEl.addEventListener('click', async ev => {

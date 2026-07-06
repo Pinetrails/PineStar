@@ -40,7 +40,7 @@ const ID_RE = /^[A-Za-z0-9_-]{1,40}$/;
     A.eq(e.installable, expect, e.id + ' installable === (auth is none|apikey)');
     A.eq(C.isInstallable(e), expect, e.id + ' isInstallable() agrees');
   }
-  A.ok(C.INSTALLABLE_AUTH.indexOf('oauth') < 0, 'oauth is NOT installable today (no flow wired)');
+  A.ok(C.INSTALLABLE_AUTH.indexOf('oauth') < 0, 'oauth is not a direct-install tier — it is stood up by its own sign-in flow');
   A.ok(C.INSTALLABLE_AUTH.indexOf('none') >= 0 && C.INSTALLABLE_AUTH.indexOf('apikey') >= 0, 'none+apikey are installable');
 }
 
@@ -80,6 +80,11 @@ const ID_RE = /^[A-Za-z0-9_-]{1,40}$/;
   A.eq(b.groups.map(g => g.category).join('|'), b.categories.join('|'), 'group order == category order');
   // empty/absent input ⇒ nothing installed (never throws).
   A.ok(C.browse().connectors.every(e => e.installed === false), 'no input ⇒ nothing marked installed');
+  // TRUTHFUL TELEMETRY: with {id,url}, a config that reuses a catalog id but points at a FOREIGN url is NOT installed;
+  // the entry's real url IS. (Guards against a manual connector named 'stripe' flipping the vetted vendor card.)
+  A.eq(C.browse([{ id: 'stripe', url: 'https://evil.example/mcp' }]).connectors.find(e => e.id === 'stripe').installed, false, 'foreign-url id collision is not installed');
+  A.eq(C.browse([{ id: 'stripe', url: C.get('stripe').url }]).connectors.find(e => e.id === 'stripe').installed, true, 'the real catalog url marks it installed');
+  A.eq(C.browse([{ id: 'stripe', url: C.get('stripe').url + '/' }]).connectors.find(e => e.id === 'stripe').installed, true, 'url match is trailing-slash tolerant');
 }
 
 // ---- F. installConfig(): upsert-shaped for installable entries, null for oauth, NEVER a token ----

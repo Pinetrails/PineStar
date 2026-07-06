@@ -12,10 +12,11 @@
    authType — drives the UI tier AND which entries are installable TODAY:
      'none'   — no credentials; connects immediately (the zero-setup tier; our live-verified demo path).
      'apikey' — paste a bearer API key / token (works today via the manager's existing `token` field).
-     'oauth'  — needs an interactive OAuth sign-in flow. NOT wired yet, so these are LISTED but NOT
-                installable — the panel shows them as "needs sign-in (coming soon)" rather than letting a
-                click fail with a 401. When the OAuth slice lands, flip them installable by widening
-                INSTALLABLE_AUTH; no data change needed.
+     'oauth'  — needs an interactive OAuth sign-in (the generic RFC 9728/8414/7591 + PKCE dynamic-client-
+                registration flow in mcp/oauth.js). LIVE: the panel shows a SIGN IN button (gated on
+                authType==='oauth'). `installable` stays FALSE for oauth BY DESIGN — an oauth connector is stood
+                up by its own start/callback sign-in flow, not a one-click direct upsert, so installConfig()
+                returns null for it. A url-less oauth entry (reached via an aggregator) shows a disabled SOON.
 
    transport is always 'http' — the manager's http transport speaks MCP "Streamable HTTP" (POST JSON-RPC,
    response is JSON or an SSE stream). We deliberately seed only Streamable-HTTP `/mcp`-style endpoints and
@@ -33,8 +34,9 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
 
-  // the auth tiers the connector manager can actually stand up TODAY (no OAuth flow yet). Widen this when
-  // the OAuth slice lands — the oauth rows below become installable with zero data change.
+  // the auth tiers stood up by a direct one-click upsert (POST /api/connectors). OAuth is deliberately NOT here —
+  // an oauth connector is stood up by its own sign-in flow (oauth/start -> callback), so it is never "installable"
+  // and installConfig() returns null for it; the panel drives it via a SIGN IN button instead.
   const INSTALLABLE_AUTH = ['none', 'apikey'];
 
   // Stable category ORDER for the browse UI (entries within a category sort by name). A category not listed
@@ -92,7 +94,7 @@
     // ── Social — paste an API key (read access); posting needs OAuth ───────────────────────────────────
     { id: 'x-twitter', name: 'X (Twitter)', category: 'Social', authType: 'apikey', transport: 'http',
       url: 'https://api.x.com/mcp', official: true, homepage: 'https://x.com',
-      blurb: "X's official server — search and read posts, profiles, and timelines with your X API Bearer token. Posting needs OAuth (coming soon)." },
+      blurb: "X's official server — search and read posts, profiles, and timelines with your X API Bearer token. This read-only token connector does not grant posting (that needs X's write OAuth scope)." },
 
     // ── Payments & Finance — one API key ──────────────────────────────────────────────────────────────
     { id: 'stripe', name: 'Stripe', category: 'Payments & Finance', authType: 'apikey', transport: 'http',
@@ -216,13 +218,32 @@
     });
   }
 
-  // the browse payload: entries (optionally annotated with `installed` from the live connector configs),
-  // grouped by category in stable order. `installedIds` is any iterable of already-configured connector ids.
-  function browse(installedIds) {
-    const have = new Set();
-    if (installedIds && typeof installedIds.forEach === 'function') installedIds.forEach(x => have.add(String(x)));
-    else if (Array.isArray(installedIds)) for (const x of installedIds) have.add(String(x));
-    const entries = CATALOG.map(e => { const c = cloneEntry(e); c.installed = have.has(c.id); return c; });
+  function normUrl(u) { return String(u == null ? '' : u).trim().toLowerCase().replace(/\/+$/, ''); }
+
+  // the browse payload: entries annotated with `installed` from the live connector configs, grouped by category.
+  // `installed` accepts an iterable of ids (back-compat) OR of {id,url}. An entry is installed only when a config
+  // shares its id AND (the entry has no canonical url, OR a config with that id also matches the entry's url) — so a
+  // manually-added connector that merely REUSES a catalog id but points at a foreign URL never flips the vetted
+  // vendor card to ADDED (truthful telemetry).
+  function browse(installed) {
+    const byId = new Map();   // id -> Set<normUrl> of configured urls, or null = "id present, match on id alone"
+    const add = (x) => {
+      if (x == null) return;
+      if (typeof x === 'string') { if (!byId.has(x)) byId.set(x, null); return; }
+      const id = x.id; if (!id) return;
+      const u = normUrl(x.url);
+      if (!byId.has(id)) byId.set(id, u ? new Set([u]) : null);
+      else { const cur = byId.get(id); if (cur && u) cur.add(u); }   // a later id-only config leaves it id-only
+    };
+    if (installed && typeof installed.forEach === 'function') installed.forEach(add);
+    const isInstalled = (e) => {
+      if (!byId.has(e.id)) return false;
+      const urls = byId.get(e.id);
+      if (!urls) return true;      // id-only info (back-compat / stdio) — best we can do
+      if (!e.url) return true;     // catalog entry has no canonical url to disambiguate
+      return urls.has(normUrl(e.url));
+    };
+    const entries = CATALOG.map(e => { const c = cloneEntry(e); c.installed = isInstalled(c); return c; });
     const order = categories();
     entries.sort((a, b) => (order.indexOf(a.category) - order.indexOf(b.category)) || a.name.localeCompare(b.name));
     const groups = order.map(cat => ({ category: cat, connectors: entries.filter(e => e.category === cat) }));

@@ -51,9 +51,26 @@
     return out;
   }
 
+  // SSRF hardening: the discovery/registration/token URLs come partly from a server-supplied WWW-Authenticate
+  // pointer + PRM body, so require https and refuse any endpoint on an internal host (loopback / link-local /
+  // private / cloud-metadata) by its literal hostname. redirect:'manual' turns any 3xx into a non-2xx the callers
+  // already reject, so a metadata URL can't 302-bounce the fetch to an internal target. (Literal-host guard; if OAuth
+  // is ever opened to user-provided — non-catalog — server URLs, add DNS-resolution guarding like tools/web.js.)
+  function assertSafeUrl(raw, label) {
+    let u; try { u = new URL(raw); } catch (e) { throw new Error((label || 'oauth') + ': invalid url ' + raw); }
+    if (u.protocol !== 'https:') throw new Error((label || 'oauth') + ': url must be https (' + raw + ')');
+    let h = u.hostname.toLowerCase(); if (h.charAt(0) === '[') h = h.slice(1, -1);
+    const internal = h === 'localhost' || h.endsWith('.localhost') || h === '::1' || h === '::' || h === '0.0.0.0'
+      || /^127\./.test(h) || /^0\./.test(h) || /^169\.254\./.test(h) || /^10\./.test(h) || /^192\.168\./.test(h)
+      || /^172\.(1[6-9]|2\d|3[01])\./.test(h) || /^fe80:/i.test(h) || /^f[cd][0-9a-f]{2}:/i.test(h);
+    if (internal) throw new Error((label || 'oauth') + ': refusing an endpoint on an internal host (' + h + ')');
+    return u;
+  }
+
   async function getJson(fetchImpl, url, label) {
+    assertSafeUrl(url, label);
     let res;
-    try { res = await fetchImpl(url, { headers: { 'Accept': 'application/json', 'MCP-Protocol-Version': '2025-06-18' } }); }
+    try { res = await fetchImpl(url, { headers: { 'Accept': 'application/json', 'MCP-Protocol-Version': '2025-06-18' }, redirect: 'manual' }); }
     catch (e) { throw new Error((label || 'fetch') + ' failed: ' + ((e && e.message) || e)); }
     if (!res || res.status < 200 || res.status >= 300) throw new Error((label || 'fetch') + ' HTTP ' + (res && res.status));
     try { return await res.json(); } catch (e) { throw new Error((label || 'fetch') + ' returned non-JSON'); }
@@ -115,8 +132,9 @@
       token_endpoint_auth_method: 'none',   // public client — PKCE is the proof, never a secret
       application_type: 'native'
     };
+    assertSafeUrl(opts.registrationEndpoint, 'client registration');
     let res;
-    try { res = await fetchImpl(opts.registrationEndpoint, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' }, body: JSON.stringify(body) }); }
+    try { res = await fetchImpl(opts.registrationEndpoint, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' }, body: JSON.stringify(body), redirect: 'manual' }); }
     catch (e) { throw new Error('client registration failed: ' + ((e && e.message) || e)); }
     if (!res || res.status < 200 || res.status >= 300) { let d = ''; try { d = (await res.text()).slice(0, 160); } catch (_) {} throw new Error('client registration HTTP ' + (res && res.status) + (d ? ' — ' + d : '')); }
     let j; try { j = await res.json(); } catch (e) { throw new Error('client registration returned non-JSON'); }
@@ -163,8 +181,9 @@
   }
 
   async function postForm(fetchImpl, tokenEndpoint, params, label) {
+    assertSafeUrl(tokenEndpoint, label);
     let res;
-    try { res = await fetchImpl(tokenEndpoint, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json' }, body: new URLSearchParams(params).toString() }); }
+    try { res = await fetchImpl(tokenEndpoint, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json' }, body: new URLSearchParams(params).toString(), redirect: 'manual' }); }
     catch (e) { throw new Error((label || 'token request') + ' failed: ' + ((e && e.message) || e)); }
     if (!res || res.status < 200 || res.status >= 300) { let d = ''; try { d = (await res.text()).slice(0, 200); } catch (_) {} throw new Error((label || 'token request') + ' HTTP ' + (res && res.status) + (d ? ' — ' + d : '')); }
     try { return await res.json(); } catch (e) { throw new Error((label || 'token request') + ' returned non-JSON'); }

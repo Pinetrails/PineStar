@@ -1607,6 +1607,11 @@ function saveConnectorOauth() {
   try { fs.mkdirSync(CONNECTORS_DIR, { recursive: true }); saveResilient(CONNECTORS_OAUTH_FILE, { version: 1, byId: connectorOauth.byId, clients: connectorOauth.clients }); }
   catch (e) { console.warn('[connectors] oauth persist failed:', (e && e.message) || e); }
 }
+// drop the cached dynamically-registered client for an authorization server (when the AS reports it invalid), so the
+// next sign-in RE-REGISTERS a fresh one instead of wedging forever on a pruned/rotated client id.
+function forgetOauthClient(authServer) {
+  if (authServer && connectorOauth.clients[authServer]) { delete connectorOauth.clients[authServer]; saveConnectorOauth(); }
+}
 const connectorOauthPending = new Map();   // csrf state -> { id, label, verifier, clientId, tokenEndpoint, authorizationServer, resource, serverUrl, redirectUri, at }
 // refresh an oauth connector's access token when it's near expiry; returns the freshest access token ('' if not authed).
 async function ensureConnectorOauthToken(id) {
@@ -1624,9 +1629,11 @@ async function ensureConnectorOauthToken(id) {
 // configure a connector, injecting a fresh OAuth bearer for oauth connectors (kept out of the persisted config).
 async function configureConnectorCfg(cfg) {
   if (cfg && cfg.oauth) {
-    const token = await ensureConnectorOauthToken(cfg.id);
-    if (!token) return { ok: false, state: 'error', error: 'not signed in' };
-    return connectors.configure(cfg.id, Object.assign({}, cfg, { token: token }));
+    // Pass a tokenProvider (NOT a frozen token) so the manager fetches a FRESH bearer on every connect / auto-
+    // reconnect / Reload — an oauth connector no longer dies ~1h in when the access token expires. We ALWAYS
+    // register + connect (even when signed-out): a missing token yields an HONEST 401/error the panel shows and can
+    // re-sign-in from, rather than the connector vanishing from /api/connectors.
+    return connectors.configure(cfg.id, Object.assign({}, cfg, { token: '', tokenProvider: () => ensureConnectorOauthToken(cfg.id) }));
   }
   return connectors.configure(cfg.id, cfg);
 }
@@ -2933,7 +2940,9 @@ function handleConnectorsList(req, res) {
    added. No secrets involved — the catalog carries only public endpoints + metadata, never a token. */
 function handleConnectorCatalog(req, res) {
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-  res.end(JSON.stringify(connectorCatalog.browse((connectorConfigs || []).map(c => c && c.id))));
+  // pass {id,url} so `installed` is a TRUTHFUL match: a manually-added connector that merely reuses a catalog id
+  // (e.g. id 'notion' pointing at a different / self-hosted URL) must NOT flip the vetted vendor card to ADDED.
+  res.end(JSON.stringify(connectorCatalog.browse((connectorConfigs || []).map(c => c && { id: c.id, url: c.url || '' }))));
 }
 async function handleConnectorUpsert(req, res) {
   const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
@@ -2989,9 +2998,13 @@ async function handleConnectorUpsert(req, res) {
     enabled: body.enabled !== false
   };
   if (timeoutMs) cfg.timeoutMs = timeoutMs;
+  // Preserve the oauth marker across a benign toggle/edit — it is the ONLY trigger for bearer injection, so losing
+  // it would silently strip auth and self-destruct a signed-in connector. Route through configureConnectorCfg so an
+  // oauth connector re-warms with a fresh tokenProvider; non-oauth connectors pass straight through unchanged.
+  if (prev.oauth || body.oauth) cfg.oauth = true;
   connectorConfigs = connectorConfigs.filter(c => c.id !== id).concat([cfg]);
   saveConnectorConfigs();
-  let result; try { result = await connectors.configure(id, cfg); } catch (e) { result = { ok: false, state: 'error', error: (e && e.message) || 'configure failed' }; }
+  let result; try { result = await configureConnectorCfg(cfg); } catch (e) { result = { ok: false, state: 'error', error: (e && e.message) || 'configure failed' }; }
   json(result.ok ? 200 : 502, Object.assign({ status: connectors.status(id) }, result));
 }
 async function handleConnectorRemove(req, res) {
@@ -3000,7 +3013,14 @@ async function handleConnectorRemove(req, res) {
   const id = String(body.id || '').trim();
   connectorConfigs = connectorConfigs.filter(c => c.id !== id);
   saveConnectorConfigs();
-  if (connectorOauth.byId[id]) { delete connectorOauth.byId[id]; saveConnectorOauth(); }   // forget the OAuth tokens too
+  if (connectorOauth.byId[id]) {
+    // forget the OAuth tokens AND the dynamically-registered client for this connector's authorization server, so a
+    // later re-add RE-REGISTERS a fresh client — a server-pruned/rotated DCR client would otherwise wedge sign-in.
+    const as = connectorOauth.byId[id].authorizationServer;
+    delete connectorOauth.byId[id];
+    if (as && connectorOauth.clients[as]) delete connectorOauth.clients[as];
+    saveConnectorOauth();
+  }
   await connectors.remove(id);
   json(200, { ok: true });
 }
@@ -3068,7 +3088,12 @@ async function handleConnectorOauthCallback(req, res) {
   const code = q.get('code'), state = q.get('state'), providerErr = q.get('error');
   const pending = state ? connectorOauthPending.get(state) : null;
   if (state) connectorOauthPending.delete(state);
-  if (providerErr) return page('Sign-in failed', 'The provider returned: ' + providerErr + (q.get('error_description') ? ' — ' + q.get('error_description') : ''), false);
+  if (providerErr) {
+    // invalid/unknown client = our cached dynamically-registered client was pruned/rotated server-side. Drop it so
+    // the NEXT sign-in re-registers a fresh one (otherwise every retry repeats identically, with no in-app escape).
+    if (/invalid_client|unauthorized_client/i.test(providerErr) && pending && pending.authorizationServer) forgetOauthClient(pending.authorizationServer);
+    return page('Sign-in failed', 'The provider returned: ' + providerErr + (q.get('error_description') ? ' — ' + q.get('error_description') : '') + (/invalid_client/i.test(providerErr) ? ' — cleared the stale app registration; please try Sign in again.' : ''), false);
+  }
   if (!pending) return page('Sign-in expired', 'This sign-in link expired or was already used. Please start again from the catalog.', false);
   if (!code) return page('Sign-in failed', 'No authorization code was returned by the provider.', false);
   try {
@@ -3084,7 +3109,11 @@ async function handleConnectorOauthCallback(req, res) {
     const result = await configureConnectorCfg(cfg);
     if (result && result.ok && result.state === 'up') return page(pending.label + ' connected', pending.label + ' is connected — ' + (result.toolCount || 0) + ' tool(s) now available to your agents.', true);
     return page('Almost there', pending.label + ' authorized, but the connection did not come up: ' + ((result && result.error) || 'unknown error') + '. Try Reload from the connectors panel.', false);
-  } catch (e) { return page('Sign-in failed', 'Token exchange failed: ' + ((e && e.message) || e), false); }
+  } catch (e) {
+    const msg = (e && e.message) || String(e);
+    if (/invalid_client|unauthorized_client/i.test(msg) && pending && pending.authorizationServer) forgetOauthClient(pending.authorizationServer);
+    return page('Sign-in failed', 'Token exchange failed: ' + msg, false);
+  }
 }
 
 /* ---- /api/spotify: OAuth 2.0 Authorization-Code-with-PKCE for the JUKEBOX skill. NO client secret is ever

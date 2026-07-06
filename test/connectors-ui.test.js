@@ -84,6 +84,22 @@ function fakeStack(tools) {
     A.ok(threw, 'array headers are rejected');
   }
 
+  // oauth connectors pass a tokenProvider() (not a frozen token) so EVERY (re)connect/Reload fetches a FRESH bearer
+  // — the fix for the token dying ~1h into a session. The resolved token never leaks into the summary.
+  {
+    const { seen, makeTransport, makeClient } = fakeStack([]);
+    let calls = 0;
+    const m = makeConnectorManager({ makeTransport, makeClient, makeToolDef: () => ({}), timeoutMs: 30000 });
+    await m.configure('oa', { transport: 'http', url: 'https://mcp.example/x', token: '', tokenProvider: async () => { calls++; return 'fresh-' + calls; } });
+    A.eq(seen.transport.token, 'fresh-1', 'tokenProvider result is the bearer handed to the transport on connect');
+    const s = m.status('oa');
+    A.eq(s.hasToken, true, 'summary reports hasToken for a tokenProvider connector');
+    A.eq(s.oauth, true, 'summary flags oauth (tokenProvider) connectors so the panel can render them distinctly');
+    A.ok(JSON.stringify(s).indexOf('fresh-1') === -1, 'the resolved oauth token never leaves the summary');
+    await m.refresh('oa');
+    A.eq(seen.transport.token, 'fresh-2', 'Reload/refresh re-invokes the tokenProvider (fresh bearer, not a frozen stale one)');
+  }
+
   // ---------- 2. SOURCE GUARD: the frontend panel ----------
   const station = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'app', 'stationui.js'), 'utf8');
   const css = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'css', 'app.css'), 'utf8');
@@ -134,6 +150,7 @@ function fakeStack(tools) {
   A.ok(/action = e\.url/.test(station), 'an oauth entry with no endpoint is NOT shown as sign-in-able (no dead button — truthful telemetry)');
   A.ok(/\/api\/connectors\/oauth\/start/.test(station), 'sign-in kicks off the real OAuth flow (oauth/start)');
   A.ok(/window\.open\(/.test(station), 'sign-in opens the provider consent in a popup');
+  A.ok(/ccPending/.test(station), 'sign-in has a per-connector in-flight guard (no duplicate popups / concurrent pollers)');
   A.ok(/e\.authType === 'oauth'/.test(station), 'the UI gates on the authType tier from the catalog');
   // installing reuses the SAME upsert (no parallel install path) and never fabricates the endpoint
   A.ok(/function ccInstall/.test(station) && /postJSON\('\/api\/connectors'/.test(station), 'install posts through the existing /api/connectors upsert');
