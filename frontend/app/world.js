@@ -4493,10 +4493,11 @@ const World = (() => {
     }
     if (t) convey.enqueueAt(t.x, t.y, p);
     else dockArrival(p);
-    // ANTICIPATE: an idle agent senses work on the line and perks up toward the dock before any summon lands
+    // ANTICIPATE: an idle agent senses work on the line and perks up toward the door it ACTUALLY entered
+    // (the chosen entry tile — on a multi-inbox floor the first-intake glance pointed at the wrong door).
     if (agent && !agent.unplaced && activity === 'idle' && !agent.working) {
-      const intake = geo && geo.props && geo.props.find(q => q.t === 'intake');
-      if (intake) setGlance(dirToward(agent.px, agent.py, (intake.x + 0.5) * T, (intake.y + 0.5) * T), 1100, fnow);
+      const at = t || (geo && geo.props && geo.props.find(q => q.t === 'intake'));
+      if (at) setGlance(dirToward(agent.px, agent.py, (at.x + 0.5) * T, (at.y + 0.5) * T), 1100, fnow);
       curiositySay(['incoming?', 'work inbound', 'something is coming', 'heads up'], 0.6, fnow);
       if (agent.goal == null) agent.idleUntil = Math.min(agent.idleUntil || 0, fnow + 200);
     }
@@ -4567,8 +4568,11 @@ const World = (() => {
     if (aid && agent && aid !== agent.id) {
       const b = bodyForAgent(aid);
       if (b && b !== agent) { const tt = tileOf(b.px, b.py); return beltTileNear(tt.x, tt.y, 1, 1); }
+      // a CREW agent with no bay and no body has NO honest spawn point — no crate beats a crate
+      // materializing on the HERO's lane (wrong-agent reaction; 2026-07-06 audit).
+      return null;
     }
-    // 3) legacy fallback: a belt beside the hero's desk
+    // 3) legacy fallback (HERO only): a belt beside the hero's desk
     return desk ? beltTileNear(desk.tx, desk.ty, desk.w, desk.h) : null;
   }
   /* A COMPLETED RUN SHIPS A CRATE — BUT ONLY IF IT ACTUALLY WORKED (crate-honesty, Andrew's ruling

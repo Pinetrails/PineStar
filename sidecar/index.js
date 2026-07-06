@@ -1561,6 +1561,22 @@ function bumpQueue(agentId, d) { const n = Math.max(0, (queueDepth.get(agentId) 
 // the placed floor's RoutingPlan (posted by the app on every geo change). resolveTarget answers "which agent
 // runs this work-item?"; a non-deployable plan (cycle/orphan/dead-bay) is refused so routing can't loop.
 const router = makeRouter();
+/* RESTART TRUTH (2026-07-06 audit): the router used to hold the posted plan ONLY in memory — after a sidecar
+   restart, cron/channel work fired UNROUTED (fallback agent, default-office caps, no per-bay isolation) until
+   a browser happened to open and re-post. The last ACCEPTED plan persists beside the other protected state
+   (same durable save/load idiom as cron.jobs.json) and re-arms at boot; setPlan re-validates on load, so a
+   stale or corrupt file is refused and simply leaves routing unarmed — never worse than the old behavior. */
+const ROUTING_FILE = path.join(WORKSPACES, 'routing.plan.json');
+(function restoreRoutingPlan() {
+  try {
+    const plan = loadResilient(ROUTING_FILE, 'routing');
+    if (plan && typeof plan === 'object') {
+      const r = router.setPlan(plan);
+      if (r && r.ok) console.log('  · routing plan restored from disk (hash ' + (plan.hash || '?') + ')');
+      else console.warn('[routing] persisted plan refused at boot (' + ((r && r.error) || 'invalid') + ') — routing unarmed until the app posts one');
+    }
+  } catch (e) { console.warn('[routing] plan restore failed:', (e && e.message) || e); }
+})();
 
 /* ---- MCP connectors (the "connectors" capability): configured MCP servers whose live tools become real
    agent tools. Tokens persist in a PROTECTED sibling file (outside the fs jail, never on the bus, never
@@ -1792,11 +1808,32 @@ const autoNotifier = makeAutoNotifier({
   jobAgent: (jobId) => { const j = (cronJobs || []).find(x => x && x.id === jobId); return (j && j.agentId) || null; }
 });
 // feed every cron event to the notifier alongside the validated SSE/console emit; it never throws into the cron pass.
-const cronEmitNotify = (name, payload) => { const r = cronEmit(name, payload); try { autoNotifier.onEvent(name, payload); } catch (_) {} return r; };
+// Also the settle point for autonomous work-items: a cron run's terminal agent.run.end drains its queue slot
+// (settleCronWorkitem is idempotent — the workshop finally-backstop may have settled it first).
+const cronEmitNotify = (name, payload) => { const r = cronEmit(name, payload); try { if (name === 'agent.run.end' && payload && payload.runId) settleCronWorkitem(payload.runId, payload.reason); } catch (_) {} try { autoNotifier.onEvent(name, payload); } catch (_) {} return r; };
+// TRUTHFUL CRON QUEUE (2026-07-06 audit): the old placeCronWorkitem hardcoded queueDepth: 0 and never
+// touched the shared queueDepth map — two stacked routine fires read as an empty queue on the HUD. Now a
+// cron/workshop item bumps the SAME per-agent queue a Telegram admit does and drains on its run's end.
+const cronItems = new Map();   // runId -> { agentId, workitemId } in-flight autonomous work-items
 function placeCronWorkitem(agentId, prompt, runId) {
   try {
     const preview = String(prompt || '').replace(/\s+/g, ' ').slice(0, 40);
-    chanEmit('workitem.placed', { workitemId: crypto.randomUUID(), queueId: agentId, agentId, kind: 'cron', preview, queueDepth: 0, ts: Date.now() });
+    const workitemId = crypto.randomUUID();
+    if (runId) cronItems.set(runId, { agentId, workitemId });
+    const depth = bumpQueue(agentId, +1);
+    chanEmit('workitem.placed', { workitemId, queueId: agentId, agentId, kind: 'cron', preview, queueDepth: depth, ts: Date.now() });
+    chanEmit('queue.status', { queueId: agentId, depth, maxCapacity: QUEUE_CAP, nextAdvanceAt: 0 });
+  } catch (_) {}
+}
+function settleCronWorkitem(runId, reason) {
+  const it = cronItems.get(runId);
+  if (!it) return;                       // already settled, or not a tracked autonomous item
+  cronItems.delete(runId);
+  try {
+    const d = bumpQueue(it.agentId, -1);
+    // 'delivered' only on a genuinely finished run — a failed/aborted routine just drains the slot
+    if (reason === 'done') chanEmit('workitem.delivered', { workitemId: it.workitemId, finalQueueId: 'outbox', agentId: it.agentId, box: '', ms: 0, ts: Date.now() });
+    chanEmit('queue.status', { queueId: it.agentId, depth: d, maxCapacity: QUEUE_CAP, nextAdvanceAt: 0 });
   } catch (_) {}
 }
 // the autonomous tick driver — pure orchestration with every ambient dep injected here
@@ -1842,6 +1879,10 @@ const cronDriver = makeCronDriver({
   maxParallel: CRON_MAX_PARALLEL,                          // G4.4 global concurrency cap: at most N cron runs in-flight; the rest defer
   defaultTz: CRON_HOST_TZ,                                 // boot-frozen host tz: a tz-less schedule fires on LOCAL wall-clock (G4.1)
   identityForAgent: (agentId) => cronIdentityFor(agentId),
+  // B5 parity (2026-07-06 audit): routines were the ONE dispatch path that never passed a station — a
+  // bay-docked agent's cron ran with the default office instead of its bay room's objects. Same resolver
+  // the telegram/discord hubs use; null -> the default office, exactly like an unrouted chat.
+  resolveStation: (agentId) => router.stationFor(agentId),
   // a fired routine rides its instruction onto the CONVEYOR as a CRON box bound for its agent — the SAME
   // workitem.placed plumbing a Telegram message uses (-> SSE -> the floor), so a scheduled fire is VISIBLE: a
   // crate arrives at the agent's bay and (with the run-lifecycle binding in world.js) the agent goes to work.
@@ -2484,6 +2525,8 @@ function handleRouting(req, res) {
     let plan = null;
     if (raw && raw.trim()) { try { plan = JSON.parse(raw); } catch (_) { res.writeHead(400); return res.end('bad json'); } }
     const r = router.setPlan(plan);
+    // persist every ACCEPTED plan (incl. an accepted clear) so routing survives a sidecar restart (2026-07-06).
+    if (r && r.ok) { try { saveResilient(ROUTING_FILE, plan); } catch (e) { console.warn('[routing] plan persist failed:', (e && e.message) || e); } }
     res.writeHead(r.ok ? 200 : 422, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(r));
   }).catch(() => { try { res.writeHead(400); res.end(); } catch (_) {} });
@@ -3458,10 +3501,18 @@ async function runWorkshopShift(agentId, opts) {
       key: key, model: model, system: cronSystemFor(id),
       messages: [{ role: 'user', content: prompt }],
       agentId: id, isTask: true, emit: emit, signal: signal,
-      runId: runId, streamId: 'workshop-' + runId, surface: 'autonomous', trigger: 'schedule', provider: provider, broadcast: !!o.broadcast
+      runId: runId, streamId: 'workshop-' + runId, surface: 'autonomous', trigger: 'schedule', provider: provider, broadcast: !!o.broadcast,
+      // B5 parity (2026-07-06 audit): a bay-docked agent's workshop shift runs with ITS bay room's objects,
+      // never the default office — the same station contract as routed channel messages and cron fires.
+      station: router.stationFor(id) || undefined
     });
   } catch (e) { threw = e; }
-  finally { if (ac) runs.delete(runId); runsMeta.delete(runId); steerBuffers.delete(runId); }   // drop un-drained steering notes (mirror handleRun)
+  finally {
+    if (ac) runs.delete(runId); runsMeta.delete(runId); steerBuffers.delete(runId);   // drop un-drained steering notes (mirror handleRun)
+    // queue-slot backstop: if this shift's run.end never flowed through cronEmitNotify (caller-supplied emit),
+    // drain its work-item here. Idempotent with the cronEmitNotify settle — first one wins.
+    try { settleCronWorkitem(runId, threw ? null : 'done'); } catch (_) {}
+  }
 
   // VALIDATE the manifest against the real files. Only a proven manifest emits workshop.built (truthful telemetry).
   const manifest = await validateWorkshopManifest(id, runId);

@@ -70,6 +70,10 @@
     // determinism-clean — a getter is just an injected dep, exactly like getKey/getJobs.
     const personaOf = typeof d.persona === 'function' ? d.persona : function () { return d.persona || ''; };
     const placeWorkitem = typeof d.placeWorkitem === 'function' ? d.placeWorkitem : function () {};
+    // B5 parity (2026-07-06 audit): a routine's run gets the SAME per-bay capability station a routed channel
+    // message gets — resolveStation(agentId) -> the bay room's objects, else null -> the host's default office.
+    // Optional + injected so this module stays determinism-clean; absent -> pre-fix behavior.
+    const resolveStation = typeof d.resolveStation === 'function' ? d.resolveStation : null;
     const maxRunMs = d.maxRunMs || (8 * 60 * 1000);
     // G4.4 global concurrency cap: at most `maxParallel` cron runs may be IN-FLIGHT at once. When a tick's due
     // set would push the live-lease count over this, the EXTRA due jobs are DEFERRED to the next tick WITHOUT
@@ -163,7 +167,10 @@
           // stream no UI renders. A PER-RUN id (not per-job) keeps the run's message seed empty (index.js only
           // reconstructs a stream when messages<=1), so cron behavior is byte-identical — the frontend
           // autosessions module reads GET /api/transcript?stream=cron-<runId> to surface the output as a session.
-          runId: runId, streamId: 'cron-' + runId, surface: 'autonomous', trigger: 'schedule', provider: provider
+          runId: runId, streamId: 'cron-' + runId, surface: 'autonomous', trigger: 'schedule', provider: provider,
+          // per-bay capability isolation (B5): a bay-docked agent's routine runs with ITS room's objects,
+          // never the default office — same contract as a routed channel message. undefined -> office.
+          station: (resolveStation ? resolveStation(job.agentId) : null) || undefined
         });
       } catch (e) { p = Promise.reject(e); }
       Promise.resolve(p).then(
