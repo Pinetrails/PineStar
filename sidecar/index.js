@@ -5385,7 +5385,9 @@ async function handleTts(req, res) {
   // per-persona delivery style (personas.js:ttsStyle) — Gemini TTS is steered by a natural-language
   // instruction PREPENDED to the input ("Say the following in <style>: <text>"). Optional; capped so a
   // malformed client can't blow the input past the model's limit. Empty style → plain synthesis (unchanged).
-  const style = String((body && body.style) || '').replace(/\s+/g, ' ').trim().slice(0, 240);
+  // 500 (was 240): character voices need room for PROSODY direction (pauses, savored words, emphasis)
+  // on top of the timbre spec — 240 forced choosing one or the other and silently truncated the rest.
+  const style = String((body && body.style) || '').replace(/\s+/g, ' ').trim().slice(0, 500);
   if (!text) return fallback('no text');
   // ElevenLabs branch — user-trained voices (e.g. the Commander's own Ultron clone). Its own key + cache
   // namespace; the OpenRouter key is irrelevant there, so dispatch BEFORE the no-key gate.
