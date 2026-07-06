@@ -113,6 +113,32 @@ jobs:
             exit 1
           fi
 
+      # Validate the key's SHAPE in ~seconds so a bad/swapped secret fails here instead of
+      # 8 minutes into a Rust compile. The Tauri updater private key is a single-line base64
+      # blob (base64 of the minisign secret-key file, starts with "dW50") — it must be pure
+      # base64: no dashes, no spaces, no "BEGIN". This step prints NO key material.
+      - name: Validate signing key shape (fast fail)
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          KEY="$TAURI_SIGNING_PRIVATE_KEY"
+          echo "key length: ${#KEY}"
+          if printf '%s' "$KEY" | grep -q '[- ]'; then
+            echo "::error::signing key contains a dash or space — that is NOT a Tauri updater key (looks like a PEM/SSH key or a swapped secret). It must be the pure-base64 contents of ~/.tauri/starnet-updater.key (starts with dW50)."
+            exit 1
+          fi
+          if ! printf '%s' "$KEY" | base64 -d >/dev/null 2>&1; then
+            echo "::error::signing key is not valid base64 — re-copy the exact contents of ~/.tauri/starnet-updater.key into the secret."
+            exit 1
+          fi
+          if ! printf '%s' "$KEY" | base64 -d 2>/dev/null | grep -qi 'rsign\|minisign'; then
+            echo "::error::signing key decoded but is not a minisign/rsign secret key — wrong key in the secret."
+            exit 1
+          fi
+          echo "::notice::signing key shape looks valid (pure base64, decodes to a minisign secret key)."
+
       - name: Build desktop bundles (signed updater artifacts required)
         shell: bash
         env:
