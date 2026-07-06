@@ -15,7 +15,10 @@ const ROOT = path.resolve(__dirname, '..');
 const script = path.join(ROOT, 'scripts', 'verify-update-host.mjs');
 
 const REPO = 'nonfungiblefunyuns-ship-it/starnet-releases';
-const VERSION = '0.2.0';
+// Far-future fixture version: --manifest mode compares manifest.version >= the SHIPPED
+// tauri.conf.json version, so a fixture pinned near the current release becomes a gate
+// time-bomb on the next bump (broke the v0.2.1 train gate on 2026-07-06).
+const VERSION = '99.0.0';
 const GOOD_SIG = 'a'.repeat(80); // >40 chars trimmed = valid updater-signature shape
 
 function url(plat, asset, version) {
@@ -94,12 +97,12 @@ try {
   // 4. Wrong URL version path (url points at a different release tag) → FAIL.
   {
     const m = fourPlatform();
-    // manifest says 0.2.0 but this URL is pinned to v0.1.9
+    // manifest says 99.0.0 but this URL is pinned to v0.1.9
     m.platforms['windows-x86_64'].url = url('win', 'StarNet_0.1.9_x64-setup.exe', '0.1.9');
     const f = writeManifest('wrongurl.json', m);
     const res = run(['--manifest', f]);
     assert.equal(res.status, 1, 'wrong url version path should fail\n' + res.stdout);
-    assert.match(res.stdout, /FAIL platform\["windows-x86_64"\]\.url pinned to \/download\/v0\.2\.0\//);
+    assert.match(res.stdout, /FAIL platform\["windows-x86_64"\]\.url pinned to \/download\/v99\.0\.0\//);
   }
 
   // 5. --expect-version mismatch → FAIL.
