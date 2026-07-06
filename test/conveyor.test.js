@@ -44,6 +44,15 @@ A.eq(s.belts().length, 8, 'undo restores the removed belt');
 const doc = s.serialize();
 A.eq(JSON.stringify(WM.deserialize(doc).serialize()), JSON.stringify(doc), 'belts serialize round-trip identically');
 
+// batch removeBelts: a RECLAIM drag clears many tiles in ONE undo slot (mirrors placeBeltRun)
+const before = s.belts().length;                          // 8 — the L-run is fully restored here
+const rb = s.removeBelts([[r.x1 + 3, r.y1 + 2], [r.x1 + 4, r.y1 + 2], [r.x1 + 5, r.y1 + 2], [999, 999]]);
+A.ok(rb.ok && rb.count === 3, 'removeBelts clears the 3 real belt tiles and skips the empty one');
+A.eq(s.belts().length, before - 3, 'batch remove drops exactly the hit tiles');
+s.undo();
+A.eq(s.belts().length, before, 'ONE undo restores the whole batch (single snapshot)');
+A.ok(!s.removeBelts([[999, 999], [998, 998]]).ok, 'removeBelts on all-empty tiles is a no-op fail (caller flags "no belts")');
+
 // migrate() drops malformed belt entries without crashing
 const mig = WM.deserialize({ schema: 'starnet.station', version: 1,
   rooms: { rA: { id: 'rA', kind: 'hab', name: 'A', rects: [{ x1: 0, y1: 0, x2: 5, y2: 5 }] } }, order: ['rA'],
