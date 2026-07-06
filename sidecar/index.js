@@ -3822,14 +3822,27 @@ async function handleSubagentInterrupt(req, res) {
 }
 
 async function handleRoster(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
   let body;
   try { body = JSON.parse(await readBody(req, 2 << 20, res)); }
-  catch (e) { if (res.headersSent) return; res.writeHead(400); return res.end('bad json'); }   // over-limit already answered 413
-  const list = (body && Array.isArray(body.agents)) ? body.agents : [];
-  replaceAgentRoster(list);
+  catch (e) { if (res.headersSent) return; return json(400, { error: 'bad json' }); }   // over-limit already answered 413
+  // STRICT VALIDATION (HOSTILE_QA P1-2): a malformed body must NEVER be coerced to [] and persisted —
+  // that silently wipes the user's whole crew roster (this route replaces the entire store each push).
+  // The only legitimate caller (frontend pushRoster()) ALWAYS sends a non-empty array whose first member
+  // is the hero — liveAgents() can never be empty (registerHero seeds it) — so an empty or missing/typeless
+  // `agents` is by definition malformed, not a "clear roster" intent. Reject rather than destroy.
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return json(400, { error: 'agents must be an object body' });
+  if (!Array.isArray(body.agents)) return json(400, { error: 'agents must be an array' });
+  if (body.agents.length === 0) return json(400, { error: 'agents must not be empty' });   // no legit caller clears the roster; refuse the wipe
+  for (const a of body.agents) {
+    if (!a || typeof a !== 'object' || Array.isArray(a)) return json(400, { error: 'each agent must be an object' });
+    // agentId must be a real, non-coerced string id (the numeric-to-string coercion class the QA flagged:
+    // a numeric agentId would previously coerce through String() and pass the id regex silently).
+    if (typeof a.agentId !== 'string' || !/^[A-Za-z0-9_-]{1,40}$/.test(a.agentId)) return json(400, { error: 'each agent needs a valid string agentId' });
+  }
+  replaceAgentRoster(body.agents);
   saveAgentRoster();
-  res.writeHead(200, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify({ ok: true, count: agentRoster.size }));
+  json(200, { ok: true, count: agentRoster.size });
 }
 
 // POST /api/dossier { block } — the browser pushes the composed Commander-dossier block whenever it changes,
