@@ -1,3 +1,12 @@
+# ⚠️ DEPRECATED — superseded by release-train.yml.
+# The release train (release-train.yml) is now the source-of-truth release path: it gates on
+# tests, builds all four platforms with REQUIRED updater signing, assembles one multi-platform
+# latest.json, and stages a DRAFT release so a human clicks Publish. This workflow builds
+# WINDOWS ONLY and can publish a live release with no draft/verify checkpoint. It is kept ONLY
+# as an emergency fallback for when the train is broken. Do NOT run this with publish=true
+# unless the train is down — a Windows-only publish strands every Mac/Linux user on their
+# installed version. Do not delete.
+#
 # StarNet release build — machine-independent signed cut.
 #
 # Why this exists: local release builds depend on the dev machine's Smart App Control
