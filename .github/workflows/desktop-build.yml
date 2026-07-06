@@ -26,8 +26,8 @@ on:
         description: "Publish a public test pre-release to starnet-releases (shareable download link)"
         required: false
         default: "false"
-  push:
-    tags: ['v*']
+  # No tag trigger: v* tags run release-train.yml (the shipping path). This workflow is for
+  # manual test builds / shareable pre-releases only.
 
 jobs:
   build:
