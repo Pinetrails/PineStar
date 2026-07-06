@@ -68,7 +68,9 @@
     // Resolve a relative path and PROVE it stays inside the agent's workspace.
     async function resolveInside(agentId, rel) {
       rel = String(rel == null ? '' : rel);
-      if (P.isAbsolute(rel) || /(^|[\\/])\.\.([\\/]|$)/.test(rel) || /^[A-Za-z]:/.test(rel) || rel.indexOf('\0') >= 0)
+      // Absolute on EITHER platform is illegal: posix "/abs", win32 "C:\..." AND UNC
+      // "\\server\share" — host P.isAbsolute alone misses UNC when running on Linux.
+      if (P.win32.isAbsolute(rel) || P.posix.isAbsolute(rel) || /(^|[\\/])\.\.([\\/]|$)/.test(rel) || /^[A-Za-z]:/.test(rel) || rel.indexOf('\0') >= 0)
         throw new Error('illegal path: ' + rel);
       const base = await workspaceRoot(agentId);
       const abs = P.resolve(base, rel || '.');
