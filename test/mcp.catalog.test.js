@@ -116,4 +116,13 @@ const ID_RE = /^[A-Za-z0-9_-]{1,40}$/;
   A.eq(C.get('x-twitter').category, 'Social', 'X is filed under Social');
 }
 
+// ---- I. wave-2 additions: present, correctly tiered, and the Design category exists ----
+{
+  A.ok(C.categories().indexOf('Design') >= 0, 'Design category present (Canva/Webflow/Wix)');
+  for (const id of ['gitlab', 'vercel', 'asana', 'canva', 'paypal', 'square', 'neon', 'netlify', 'monday', 'webflow', 'wix']) A.eq((C.get(id) || {}).authType, 'oauth', id + ' is an oauth connector');
+  for (const id of ['airtable', 'prisma', 'intercom']) A.eq((C.get(id) || {}).authType, 'apikey', id + ' is a paste-a-key connector');
+  for (const id of ['cloudflare-docs', 'microsoft-learn']) { const e = C.get(id); A.eq(e.authType, 'none', id + ' is zero-setup'); A.eq(e.installable, true, id + ' installs with no key'); }
+  A.ok(C.list().length >= 30, 'catalog now carries a substantial verified set (30+)');
+}
+
 console.log('ok - mcp.catalog');
