@@ -90,6 +90,7 @@ const { makeConnectorManager } = require('./mcp/manager.js');
 const { makeHttpTransport } = require('./mcp/transport.http.js');
 const { makeStdioTransport } = require('./mcp/transport.stdio.js');
 const connectorCatalog = require('./mcp/catalog.js');       // curated one-click MCP connector catalog (pure data + selectors)
+const mcpOauth = require('./mcp/oauth.js');                 // generic OAuth 2.1 client for MCP connectors (discover/DCR/PKCE/refresh)
 const cron = require('./cron.js');                         // pure schedule math (parse/nextFire/planTick)
 const cronStore = require('./cron-store.js');              // pure CronJob lifecycle reducer
 const mintLedger = require('./mint-ledger.js');            // W6: pure dedup gate + per-agent mint ledger (never re-create what exists)
@@ -1590,6 +1591,46 @@ const connectors = makeConnectorManager({
   onEvent: (e) => { try { console.log('[connector]', e.type, e.connectorId || '', e.state || e.detail || ''); } catch (_) {} }
 });
 
+/* ---- MCP connector OAuth (turns the catalog's gated `oauth` tier live): the generic RFC 9728 / 8414 / 7591 +
+   PKCE flow lives in mcp/oauth.js; index.js (the only ambient-I/O module) orchestrates it. Access + refresh
+   tokens and the dynamically-registered client id live in a PROTECTED sibling file, never on the bus, never
+   returned by /api/connectors. The access token lives ONLY here — an oauth connector's persisted config carries
+   `oauth:true` but no token, so a stale/expired token is never persisted or reused. ---- */
+const CONNECTOR_OAUTH_REDIRECT = 'http://127.0.0.1:' + PORT + '/api/connectors/oauth/callback';
+const CONNECTORS_OAUTH_FILE = path.join(CONNECTORS_DIR, 'oauth.json');
+function loadConnectorOauth() {
+  try { const raw = loadResilient(CONNECTORS_OAUTH_FILE, 'connector-oauth'); return (raw && typeof raw === 'object') ? { byId: raw.byId || {}, clients: raw.clients || {} } : { byId: {}, clients: {} }; }
+  catch (_) { return { byId: {}, clients: {} }; }
+}
+let connectorOauth = loadConnectorOauth();
+function saveConnectorOauth() {
+  try { fs.mkdirSync(CONNECTORS_DIR, { recursive: true }); saveResilient(CONNECTORS_OAUTH_FILE, { version: 1, byId: connectorOauth.byId, clients: connectorOauth.clients }); }
+  catch (e) { console.warn('[connectors] oauth persist failed:', (e && e.message) || e); }
+}
+const connectorOauthPending = new Map();   // csrf state -> { id, label, verifier, clientId, tokenEndpoint, authorizationServer, resource, serverUrl, redirectUri, at }
+// refresh an oauth connector's access token when it's near expiry; returns the freshest access token ('' if not authed).
+async function ensureConnectorOauthToken(id) {
+  const t = connectorOauth.byId[id];
+  if (!t || !t.accessToken) return '';
+  if (mcpOauth.needsRefresh(t.expiresAt, Date.now()) && t.refreshToken && t.tokenEndpoint) {
+    try {
+      const nt = await mcpOauth.refreshTokens({ fetchImpl: globalThis.fetch, tokenEndpoint: t.tokenEndpoint, refreshToken: t.refreshToken, clientId: t.clientId, resource: t.resource, now: Date.now() });
+      connectorOauth.byId[id] = Object.assign({}, t, nt); saveConnectorOauth();
+      return nt.accessToken;
+    } catch (e) { console.warn('[connectors] oauth refresh failed for ' + id + ':', (e && e.message) || e); return t.accessToken; }
+  }
+  return t.accessToken;
+}
+// configure a connector, injecting a fresh OAuth bearer for oauth connectors (kept out of the persisted config).
+async function configureConnectorCfg(cfg) {
+  if (cfg && cfg.oauth) {
+    const token = await ensureConnectorOauthToken(cfg.id);
+    if (!token) return { ok: false, state: 'error', error: 'not signed in' };
+    return connectors.configure(cfg.id, Object.assign({}, cfg, { token: token }));
+  }
+  return connectors.configure(cfg.id, cfg);
+}
+
 /* ---- TOOLSETS kill-switch store (the reference harness's "toolsets" surface): a per-capId-FAMILY on/off flag
    layered on top of object=capability. available = the granting object is placed AND the toolset is enabled.
    Default = enabled for every family; we only PERSIST the ones a user explicitly turned OFF (a sparse
@@ -2235,6 +2276,8 @@ function dispatchRoute(req, res) {
   if (req.method === 'GET' && req.url.split('?')[0].indexOf('/api/models/') === 0) return handleProviderModels(req, res);
   if (req.method === 'POST' && req.url === '/api/auth/codex/logout') return handleCodexLogout(req, res);
   if (req.method === 'GET' && req.url === '/api/connectors/catalog') return handleConnectorCatalog(req, res);
+  if (req.method === 'POST' && req.url === '/api/connectors/oauth/start') return handleConnectorOauthStart(req, res);
+  if (req.method === 'GET' && req.url.indexOf('/api/connectors/oauth/callback') === 0) return handleConnectorOauthCallback(req, res);
   if (req.method === 'GET' && req.url === '/api/connectors') return handleConnectorsList(req, res);
   if (req.method === 'POST' && req.url === '/api/connectors') return handleConnectorUpsert(req, res);
   if (req.method === 'POST' && req.url === '/api/connectors/remove') return handleConnectorRemove(req, res);
@@ -2365,7 +2408,7 @@ server.listen(PORT, '127.0.0.1', () => {
   // warm every configured+enabled connector so its tools are ready on the first run (fire-and-forget; a
   // connector that is down/errors simply projects no tools — it never blocks the host or a run).
   try {
-    for (const c of connectorConfigs) { if (c && c.enabled !== false && (c.url || c.command)) connectors.configure(c.id, c).catch(() => {}); }
+    for (const c of connectorConfigs) { if (c && c.enabled !== false && (c.url || c.command || c.oauth)) configureConnectorCfg(c).catch(() => {}); }
     if (connectorConfigs.length) console.log('  · ' + connectorConfigs.length + ' MCP connector(s) warming');
   } catch (e) { console.warn('[connectors] warm failed:', (e && e.message) || e); }
   // cron (OPT-IN): the scheduler arms iff SKYNET_CRON_ENABLED OR the persisted runtime cronArmed flag is set
@@ -2957,6 +3000,7 @@ async function handleConnectorRemove(req, res) {
   const id = String(body.id || '').trim();
   connectorConfigs = connectorConfigs.filter(c => c.id !== id);
   saveConnectorConfigs();
+  if (connectorOauth.byId[id]) { delete connectorOauth.byId[id]; saveConnectorOauth(); }   // forget the OAuth tokens too
   await connectors.remove(id);
   json(200, { ok: true });
 }
@@ -2966,6 +3010,81 @@ async function handleConnectorRefresh(req, res) {
   const id = String(body.id || '').trim();
   let result; try { result = await connectors.refresh(id); } catch (e) { result = { ok: false, state: 'error', error: (e && e.message) || 'refresh failed' }; }
   json(200, Object.assign({ status: connectors.status(id) }, result));
+}
+
+/* POST /api/connectors/oauth/start {id} — begin the OAuth sign-in for a catalog `oauth` connector: probe the
+   server for its WWW-Authenticate pointer, discover the AS, reuse-or-dynamically-register a public client, mint
+   PKCE + CSRF state, and return the authorization URL for the browser to open. No token is stored yet. */
+async function handleConnectorOauthStart(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 4096)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+  const entry = connectorCatalog.get(String(body.id || '').trim());
+  if (!entry) return json(400, { error: 'unknown catalog connector' });
+  if (entry.authType !== 'oauth') return json(400, { error: 'this connector does not use OAuth' });
+  if (!entry.url) return json(400, { error: 'this connector has no endpoint configured yet' });
+  try {
+    // best-effort: read the 401 WWW-Authenticate pointer (discover() falls back to the default PRM url if absent).
+    let www = '';
+    try {
+      const pr = await globalThis.fetch(entry.url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Accept': 'application/json, text/event-stream' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'StarNet', version: '1' } } }) });
+      www = (pr.headers && pr.headers.get && pr.headers.get('www-authenticate')) || '';
+    } catch (_) {}
+    const disc = await mcpOauth.discover({ fetchImpl: globalThis.fetch, serverUrl: entry.url, wwwAuthenticate: www });
+    // reuse a cached client for this authorization server, else dynamically register one (RFC 7591).
+    let clientId = (connectorOauth.clients[disc.authorizationServer] || {}).clientId;
+    if (!clientId) {
+      if (!disc.registrationEndpoint) return json(502, { error: 'this server needs a pre-registered OAuth client (no dynamic registration)' });
+      const reg = await mcpOauth.registerClient({ fetchImpl: globalThis.fetch, registrationEndpoint: disc.registrationEndpoint, redirectUri: CONNECTOR_OAUTH_REDIRECT, clientName: 'StarNet' });
+      clientId = reg.clientId;
+      connectorOauth.clients[disc.authorizationServer] = { clientId: clientId, at: Date.now() }; saveConnectorOauth();
+    }
+    const verifier = mcpOauth.makeVerifier(crypto.randomBytes(48));
+    const state = crypto.randomBytes(16).toString('hex');
+    connectorOauthPending.set(state, { id: entry.id, label: entry.name, verifier: verifier, clientId: clientId,
+      tokenEndpoint: disc.tokenEndpoint, authorizationServer: disc.authorizationServer, resource: disc.resource,
+      serverUrl: entry.url, redirectUri: CONNECTOR_OAUTH_REDIRECT, at: Date.now() });
+    // bound the pending set (a stale/abandoned sign-in never accumulates); 10-minute TTL.
+    for (const [k, v] of connectorOauthPending) { if (Date.now() - (v.at || 0) > 600000) connectorOauthPending.delete(k); }
+    const url = mcpOauth.buildAuthorizeUrl({ authorizationEndpoint: disc.authorizationEndpoint, clientId: clientId, redirectUri: CONNECTOR_OAUTH_REDIRECT, challenge: mcpOauth.challengeOf(verifier), state: state, resource: disc.resource });
+    json(200, { url: url });
+  } catch (e) { json(502, { error: (e && e.message) || 'oauth start failed' }); }
+}
+
+/* GET /api/connectors/oauth/callback?code&state — the redirect target (a top-level browser navigation, so it is
+   header-token-exempt; the CSRF `state` is its fence). Exchanges the code, persists tokens to the protected
+   store, upserts the connector (oauth:true, no token in the config), connects it, and closes the popup. */
+async function handleConnectorOauthCallback(req, res) {
+  const escHtml = (s) => String(s == null ? '' : s).replace(/[<>&"]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c]));
+  const page = (title, msg, ok) => {
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+    res.end('<!doctype html><meta charset="utf-8"><title>' + escHtml(title) + '</title>' +
+      '<body style="font-family:system-ui,sans-serif;background:#0b0f0c;color:' + (ok ? '#7CFF9B' : '#ff8f8f') + ';padding:2.5rem;line-height:1.5">' +
+      '<h2 style="margin:0 0 .5rem">' + (ok ? '✓ ' : '✕ ') + escHtml(title) + '</h2>' +
+      '<p style="color:#b9c7bd">' + escHtml(msg) + '</p><p style="color:#6b786f">You can close this window.</p>' +
+      '<script>try{window.close()}catch(e){}</script>');
+  };
+  const q = new URLSearchParams((String(req.url).split('?')[1]) || '');
+  const code = q.get('code'), state = q.get('state'), providerErr = q.get('error');
+  const pending = state ? connectorOauthPending.get(state) : null;
+  if (state) connectorOauthPending.delete(state);
+  if (providerErr) return page('Sign-in failed', 'The provider returned: ' + providerErr + (q.get('error_description') ? ' — ' + q.get('error_description') : ''), false);
+  if (!pending) return page('Sign-in expired', 'This sign-in link expired or was already used. Please start again from the catalog.', false);
+  if (!code) return page('Sign-in failed', 'No authorization code was returned by the provider.', false);
+  try {
+    const tok = await mcpOauth.exchangeCode({ fetchImpl: globalThis.fetch, tokenEndpoint: pending.tokenEndpoint, code: code,
+      redirectUri: pending.redirectUri, clientId: pending.clientId, verifier: pending.verifier, resource: pending.resource, now: Date.now() });
+    if (!tok.accessToken) return page('Sign-in failed', 'The provider did not return an access token.', false);
+    connectorOauth.byId[pending.id] = { accessToken: tok.accessToken, refreshToken: tok.refreshToken, expiresAt: tok.expiresAt,
+      scope: tok.scope, tokenType: tok.tokenType, clientId: pending.clientId, tokenEndpoint: pending.tokenEndpoint,
+      authorizationServer: pending.authorizationServer, resource: pending.resource, at: Date.now() };
+    saveConnectorOauth();
+    const cfg = { id: pending.id, transport: 'http', url: pending.serverUrl, label: pending.label, enabled: true, oauth: true };
+    connectorConfigs = connectorConfigs.filter(c => c.id !== pending.id).concat([cfg]); saveConnectorConfigs();
+    const result = await configureConnectorCfg(cfg);
+    if (result && result.ok && result.state === 'up') return page(pending.label + ' connected', pending.label + ' is connected — ' + (result.toolCount || 0) + ' tool(s) now available to your agents.', true);
+    return page('Almost there', pending.label + ' authorized, but the connection did not come up: ' + ((result && result.error) || 'unknown error') + '. Try Reload from the connectors panel.', false);
+  } catch (e) { return page('Sign-in failed', 'Token exchange failed: ' + ((e && e.message) || e), false); }
 }
 
 /* ---- /api/spotify: OAuth 2.0 Authorization-Code-with-PKCE for the JUKEBOX skill. NO client secret is ever
