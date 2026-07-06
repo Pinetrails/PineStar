@@ -3331,7 +3331,7 @@ const StationUI = (() => {
     const secCatalog =
       '<p class="set-about">One-click <b>connectors</b>. Browse vetted MCP servers and add them to your station — ' +
         'their tools appear to your agents automatically, through the same approval gate as the built-ins. ' +
-        '<span class="dim">⚡ no-setup ones connect instantly · 🔑 need an API key · 🔒 sign-in (OAuth) is coming soon.</span></p>' +
+        '<span class="dim">⚡ no-setup ones connect instantly · 🔑 paste an API key · 🔒 sign in with a secure browser login (OAuth).</span></p>' +
       '<div id="cc-list" class="cc-list"><span class="loading pulse">loading catalog…</span></div>' +
       '<div id="cc-msg" class="msg"></div>' +
       '<p class="set-about dim">Need something not listed? Add any MCP server by URL or local command in <b>MCP CONNECTORS</b>.</p>';
@@ -3586,7 +3586,7 @@ const StationUI = (() => {
                                 : '<span class="cc-badge cc-community" title="community-run server">community</span>';
       let action;
       if (e.installed) action = '<button class="bb xs" data-cc-act="added" disabled>✓ ADDED</button>';
-      else if (e.authType === 'oauth') action = '<button class="bb xs" data-cc-act="soon" disabled title="needs OAuth sign-in — coming soon">🔒 SIGN-IN SOON</button>';
+      else if (e.authType === 'oauth') action = '<button class="bb xs" data-cc-act="signin" data-id="' + esc(e.id) + '" title="opens a secure browser sign-in (OAuth)">🔒 SIGN IN</button>';
       else if (e.authType === 'apikey') action = '<button class="bb xs" data-cc-act="key" data-id="' + esc(e.id) + '">+ ADD</button>';
       else action = '<button class="bb sm" data-cc-act="add" data-id="' + esc(e.id) + '">+ ADD</button>';
       const keyField = e.authType === 'apikey'
@@ -3632,6 +3632,30 @@ const StationUI = (() => {
       ccRefresh();   // reflect the new installed state on the cards
       refresh();     // and repaint the MCP CONNECTORS list (same underlying connector set)
     }
+    // OAuth sign-in: start the flow, open the provider's consent in a popup, poll until the connector connects.
+    async function ccSignIn(id) {
+      const e = ccCache.find(x => x.id === id); const label = (e && e.name) || id;
+      ccMsgEl.classList.remove('ok'); ccMsgEl.textContent = 'starting sign-in for ' + label + '…';
+      let url;
+      try {
+        const j = await (await postJSON('/api/connectors/oauth/start', { id: id })).json().catch(() => ({}));
+        if (j.error || !j.url) { ccMsgEl.textContent = '✕ ' + (j.error || 'could not start sign-in'); sfx('bad'); return; }
+        url = j.url;
+      } catch (err) { ccMsgEl.textContent = '✕ ' + ((err && err.message) || 'request failed'); sfx('bad'); return; }
+      const win = window.open(url, 'starnet_oauth', 'width=540,height=720');
+      ccMsgEl.textContent = 'complete the sign-in for ' + label + ' in the popup window…';
+      let tries = 0;
+      const timer = setInterval(async () => {
+        tries++;
+        try {
+          const j = await (await fetch('/api/connectors')).json();
+          const c = (j.connectors || []).find(x => x.id === id);
+          if (c && c.state === 'up') { clearInterval(timer); sfx('click'); notify('Connector "' + label + '" connected', 'good'); ccMsgEl.classList.add('ok'); ccMsgEl.textContent = '✓ ' + label + ' signed in — ' + (c.toolCount || 0) + ' tool(s)'; ccRefresh(); refresh(); try { if (win && !win.closed) win.close(); } catch (_) {} return; }
+          if (c && c.state === 'error') { clearInterval(timer); sfx('bad'); ccMsgEl.textContent = '✕ ' + label + ' — ' + (c.detail || 'connection failed'); ccRefresh(); return; }
+        } catch (_) {}
+        if (tries > 150) { clearInterval(timer); }   // ~5-minute cap so a stalled/abandoned sign-in stops polling
+      }, 2000);
+    }
     ccListEl.addEventListener('click', async ev => {
       const btn = ev.target.closest('button[data-cc-act]'); if (!btn) return;
       const act = btn.dataset.ccAct, id = btn.dataset.id;
@@ -3646,6 +3670,7 @@ const StationUI = (() => {
         if (!token) { sfx('bad'); ccMsgEl.classList.remove('ok'); ccMsgEl.textContent = 'paste the API key first'; return; }
         btn.disabled = true; await ccInstall(id, token);
       }
+      else if (act === 'signin') { btn.disabled = true; await ccSignIn(id); btn.disabled = false; }
     });
     ccRefresh();
   }

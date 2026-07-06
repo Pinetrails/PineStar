@@ -130,7 +130,9 @@ function fakeStack(tools) {
   // honest auth tiers: no-setup adds, apikey reveals a key field, oauth is listed-but-gated (never a dead click)
   A.ok(/data-cc-act="add"/.test(station), 'no-setup connectors get an ADD action');
   A.ok(/data-cc-act="key"/.test(station) && /data-cc-key=/.test(station), 'apikey connectors reveal an inline key field');
-  A.ok(/data-cc-act="soon"/.test(station) && /disabled/.test(station), 'oauth connectors are shown but disabled (sign-in coming soon)');
+  A.ok(/data-cc-act="signin"/.test(station) && /function ccSignIn/.test(station), 'oauth connectors get a live SIGN IN button + handler');
+  A.ok(/\/api\/connectors\/oauth\/start/.test(station), 'sign-in kicks off the real OAuth flow (oauth/start)');
+  A.ok(/window\.open\(/.test(station), 'sign-in opens the provider consent in a popup');
   A.ok(/e\.authType === 'oauth'/.test(station), 'the UI gates on the authType tier from the catalog');
   // installing reuses the SAME upsert (no parallel install path) and never fabricates the endpoint
   A.ok(/function ccInstall/.test(station) && /postJSON\('\/api\/connectors'/.test(station), 'install posts through the existing /api/connectors upsert');
