@@ -4533,7 +4533,21 @@ const World = (() => {
     //    belted BAY never shipped a riding crate, because no belt runs to the desk by design).
     if (aid && routingPlan && routingPlan.bays) {
       const b = routingPlan.bays.find(x => x.agentId === aid);
-      if (b && b.tile) return b.tile;
+      const cand = b ? ((b.tiles && b.tiles.length) ? b.tiles : (b.tile ? [b.tile] : [])) : [];
+      // a dock can touch several lanes (inbound + outbound): prefer the hookup whose ONWARD flow ships
+      // to an OUTBOX — probe from the tile past it, since the hookup itself reads as the bay
+      if (cand.length && typeof Pipeline !== 'undefined' && Pipeline.routeFrom && routingPlan.belts) {
+        const DV = { E: [1, 0], W: [-1, 0], S: [0, 1], N: [0, -1] };
+        for (const c of cand) {
+          const d = routingPlan.belts[c.x + ',' + c.y], v = d && DV[d];
+          if (!v) continue;
+          const nx = c.x + v[0], ny = c.y + v[1];
+          if (!routingPlan.belts[nx + ',' + ny]) continue;
+          const r = Pipeline.routeFrom(routingPlan, nx, ny);
+          if (r && r.outbox) return c;
+        }
+      }
+      if (cand.length) return cand[0];
     }
     // 2) a crew body ships from a belt tile beside where it stands
     if (aid && agent && aid !== agent.id) {
@@ -5394,6 +5408,7 @@ const World = (() => {
     boxes: convey ? convey.peekBoxes() : [],   // the crates riding RIGHT NOW (id/tile/dir/payload)
     work: (() => { const o = {}; for (const [k, v] of runWork) o[k] = { tools: v.tools, dels: v.dels }; return o; })(),   // proven-work tally per in-flight run
     routeAt: (x, y) => routeTagFor(x, y),
+    outboundAt: aid => outboundBeltTile(aid),   // where would this agent's product crate spawn (verify hook)
     pollFeed: () => pollFeedState(),
     pollShip: () => pollShipStats()
   });

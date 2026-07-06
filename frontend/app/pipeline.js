@@ -98,8 +98,12 @@
     const outs = [];
     for (const p of props) {
       if (p.t !== 'outbox') continue;
-      const t = beltTileNear(map, p.x, p.y, p.w || 1, p.h || 1);
-      if (t) outs.push({ propId: p.id, tile: t });
+      // EVERY ring belt tile is a delivery mouth (same multi-hookup rule as bays — a single-tile hookup
+      // left the final approach tile of a second lane dark)
+      const ow = p.w || 1, oh = p.h || 1;
+      for (let yy = p.y - 1; yy <= p.y + oh; yy++)
+        for (let xx = p.x - 1; xx <= p.x + ow; xx++)
+          if (map[key(xx, yy)]) outs.push({ propId: p.id, tile: { x: xx, y: yy } });
     }
 
     const seenAgent = {}, unboundBays = [], dockBays = [];
@@ -125,8 +129,16 @@
       }
       if (seenAgent[p.agentId]) { errors.push({ code: 'DUP_AGENT', propId: p.id, agentId: p.agentId }); continue; }
       seenAgent[p.agentId] = true;
-      bays.push({ agentId: p.agentId, propId: p.id, tile: t });
-      bayTileToAgent[key(t.x, t.y)] = p.agentId;
+      // A DOCK TOUCHES THE LINE WHEREVER THE LINE TOUCHES IT: record EVERY ring belt tile as a hookup —
+      // an inbound lane arrives at one, an outbound lane leaves from another, and both must count (a
+      // single-tile hookup left a bay's out-lane dark and spawned its product crates on the in-lane).
+      const tiles = [];
+      const bw = p.w || 1, bh = p.h || 1;
+      for (let yy = p.y - 1; yy <= p.y + bh; yy++)
+        for (let xx = p.x - 1; xx <= p.x + bw; xx++)
+          if (map[key(xx, yy)]) tiles.push({ x: xx, y: yy });
+      bays.push({ agentId: p.agentId, propId: p.id, tile: t, tiles });
+      for (const ht of tiles) bayTileToAgent[key(ht.x, ht.y)] = p.agentId;
     }
 
     const cyc = detectCycle(map, junctions);

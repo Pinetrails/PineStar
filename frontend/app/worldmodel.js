@@ -514,9 +514,16 @@ const WorldModel = (() => {
         for (const t of ring(A)) if (pathable(t.x, t.y)) starts.push(t);
       }
       if (!starts.length) return fail('FROM_BLOCKED', 'no free tile beside the start machine');
-      // GOAL set: pathable ring tiles of B (the laid end tile will aim into B's footprint)
-      const goals = new Set();
-      for (const t of ring(B)) if (pathable(t.x, t.y)) goals.add(t.x + ',' + t.y);
+      // GOAL set: pathable ring tiles of B — EDGE tiles preferred over corners, so the lane's last tile
+      // can aim straight INTO the footprint and the crate visibly sinks at the dock (a corner end works
+      // but sinks diagonally beside it; corners are the fallback when every edge is taken)
+      const goalEdge = new Set(), goalCorner = new Set();
+      for (const t of ring(B)) {
+        if (!pathable(t.x, t.y)) continue;
+        const corner = (t.x < B.x || t.x >= B.x + (B.w || 1)) && (t.y < B.y || t.y >= B.y + (B.h || 1));
+        (corner ? goalCorner : goalEdge).add(t.x + ',' + t.y);
+      }
+      const goals = goalEdge.size ? goalEdge : goalCorner;
       if (!goals.size) return fail('TO_BLOCKED', 'no free tile beside the destination');
       // BFS, multi-source → any goal (shortest orthogonal path; deterministic neighbor order)
       const prev = new Map(), q = [];
