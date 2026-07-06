@@ -650,6 +650,54 @@ function boot(port, workspaces, attemptsLeft) {
     const sttRawBody = await sttRaw.json();
     A.eq(sttRawBody.text, '', 'raw-bytes STT with no key returns an empty transcript');
 
+    // ---- P1-2 ROSTER GUARD: a malformed /api/roster body must NEVER wipe the persisted crew (data-loss bug). ----
+    // Establish a real persisted roster first (valid push -> 200 + on-disk file), then fire every malformed shape
+    // and prove each is a 400 that leaves the roster file on disk BYTE-FOR-BYTE unchanged (non-destruction).
+    const rosterFile = path.join(ws, 'agent.roster.json');
+    const validPush = await j('POST', '/api/roster', { agents: [
+      { agentId: 'agent', system: 'hero', name: 'Ultron', model: 'anthropic/claude-sonnet-4.6', provider: 'openrouter', role: 'orchestrator' },
+      { agentId: 'researcher-2', system: 'worker', name: 'Scout', model: '', provider: 'openrouter', role: 'research' }
+    ] });
+    A.eq(validPush.status, 200, 'POST /api/roster with a valid crew -> 200');
+    A.eq(validPush.body.count, 2, 'the valid push persisted both agents');
+    A.ok(fs.existsSync(rosterFile), 'the roster round-tripped to disk');
+    const rosterBefore = fs.readFileSync(rosterFile, 'utf8');
+    A.ok(rosterBefore.indexOf('researcher-2') >= 0, 'the persisted roster names the summoned worker');
+
+    // every malformed body -> 400 AND the on-disk roster is untouched (prove by reading the store back)
+    const malformed = [
+      ['missing agents field', {}],
+      ['agents is null', { agents: null }],
+      ['agents is a string', { agents: 'agent' }],
+      ['agents is an object', { agents: { agentId: 'x' } }],
+      ['agents is empty (would clear the crew)', { agents: [] }],
+      ['an agent entry is null', { agents: [null] }],
+      ['an agent entry is a string', { agents: ['agent'] }],
+      ['an agent entry is an array', { agents: [[]] }],
+      ['an agent has a numeric agentId (coercion class)', { agents: [{ agentId: 123, name: 'x' }] }],
+      ['an agent has no agentId', { agents: [{ name: 'x' }] }],
+      ['an agent has an out-of-charset agentId', { agents: [{ agentId: '../evil', name: 'x' }] }]
+    ];
+    for (const [label, badBody] of malformed) {
+      const r = await j('POST', '/api/roster', badBody);
+      A.eq(r.status, 400, 'malformed /api/roster (' + label + ') -> 400, not a silent wipe');
+      A.ok(r.body && typeof r.body.error === 'string', 'the ' + label + ' rejection carries a JSON error envelope');
+      A.eq(fs.readFileSync(rosterFile, 'utf8'), rosterBefore, 'the persisted roster is UNCHANGED after the ' + label + ' rejection (no data loss)');
+    }
+    // a top-level array body (not an object) is also refused without clobbering
+    const arrBody = await fetch(B + '/api/roster', { method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json' }, tok), body: JSON.stringify([{ agentId: 'agent' }]) });
+    A.eq(arrBody.status, 400, 'a top-level array roster body -> 400');
+    A.eq(fs.readFileSync(rosterFile, 'utf8'), rosterBefore, 'a top-level array body leaves the roster unchanged');
+    // a malformed-JSON body is a 400 too and never touches the store
+    const rosterBadJson = await fetch(B + '/api/roster', { method: 'POST', headers: tok, body: '{not json' });
+    A.eq(rosterBadJson.status, 400, 'POST /api/roster with malformed JSON -> 400');
+    A.eq(fs.readFileSync(rosterFile, 'utf8'), rosterBefore, 'malformed JSON leaves the roster unchanged');
+    // and a fresh VALID push still works after all the rejections (the guard did not wedge the route)
+    const revalid = await j('POST', '/api/roster', { agents: [{ agentId: 'agent', system: 'solo', name: 'Ultron', provider: 'openrouter' }] });
+    A.eq(revalid.status, 200, 'a valid push after the rejections still succeeds');
+    A.eq(revalid.body.count, 1, 'the follow-up valid push replaced the roster as intended');
+    A.ok(fs.readFileSync(rosterFile, 'utf8').indexOf('researcher-2') < 0, 'the legitimate replacement dropped the old worker (clear-and-set still works)');
+
     // ---- reconnect reconciliation snapshot: GET /api/state/snapshot returns the documented shape, token-gated ----
     const snapNoTok = await fetch(B + '/api/state/snapshot');
     A.eq(snapNoTok.status, 403, 'GET /api/state/snapshot WITHOUT a token -> 403 (gated like sibling GETs)');
