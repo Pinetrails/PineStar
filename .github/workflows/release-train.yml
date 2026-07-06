@@ -154,6 +154,11 @@ jobs:
         run: |
           if [ "$RUNNER_OS" = "macOS" ] && [ -z "$APPLE_CERTIFICATE" ]; then
             echo "::warning::no Apple signing cert in secrets — DMG will be UNSIGNED (Gatekeeper wall for public users)"
+            # Tauri runs `security import` whenever these vars are PRESENT — even empty — and
+            # dies on an empty certificate (SecKeychainItemImport: invalid parameters). Unset
+            # them so the bundler skips Apple codesigning entirely and produces an unsigned .app
+            # (still updater-signed via the minisign key). Restore signing by adding the secrets.
+            unset APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID
           fi
           npm run tauri -- build --bundles ${{ matrix.bundles }} ${RUST_TARGET:+--target $RUST_TARGET}
 
