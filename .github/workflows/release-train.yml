@@ -1,0 +1,344 @@
+# Release train — the ONE path from a version tag to a staged draft release.
+#
+# This workflow replaces release.yml's publish role. It NEVER publishes: it produces a
+# DRAFT release on nonfungiblefunyuns-ship-it/starnet-releases with every platform's signed
+# installer + updater artifact + a multi-platform latest.json attached. The only publish is a
+# human clicking "Publish" on GitHub after reviewing the verify summary. Until that click,
+# zero users can receive anything.
+#
+# Flow: tag push (v*) → gate (test:fast) → build (4 legs, updater signing REQUIRED) →
+#       assemble (one multi-platform latest.json + local verify) → stage-draft (draft only).
+#
+# Required repo secrets:
+#   TAURI_SIGNING_PRIVATE_KEY          — contents of ~/.tauri/starnet-updater.key (whole file).
+#                                        UNLIKE desktop-build, this is REQUIRED: the build fails
+#                                        fast if absent. There is NO createUpdaterArtifacts:false
+#                                        fallback here — an unsigned release train is not a thing.
+#   TAURI_SIGNING_PRIVATE_KEY_PASSWORD — empty string (key encrypted with an empty password).
+#   RELEASES_TOKEN                     — fine-grained PAT with Contents:write on
+#                                        nonfungiblefunyuns-ship-it/starnet-releases.
+#   APPLE_* (optional)                 — codesign/notarize the mac DMG when present; absent = unsigned.
+name: release-train
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to build, e.g. v0.2.0 (must equal v<version> from tauri.conf.json)"
+        required: true
+  push:
+    tags: ['v*']
+
+jobs:
+  # -------------------------------------------------------------------------------------------
+  # Job 1 — gate: nothing builds unless the fast test suite is green.
+  # -------------------------------------------------------------------------------------------
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - run: npm ci
+
+      - name: Fast test gate (red = the whole train stops)
+        run: npm run test:fast
+
+  # -------------------------------------------------------------------------------------------
+  # Job 2 — build: the 4-leg matrix from desktop-build.yml, with updater signing REQUIRED and
+  # a post-build check that each leg actually produced its updater artifact + .sig.
+  # -------------------------------------------------------------------------------------------
+  build:
+    needs: gate
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: win-x64
+            bundles: nsis
+          - os: ubuntu-22.04
+            target: linux-x64
+            bundles: deb,appimage
+          - os: macos-latest
+            target: darwin-arm64
+            bundles: dmg
+            rust-target: aarch64-apple-darwin
+          - os: macos-latest
+            target: darwin-x64
+            bundles: dmg
+            rust-target: x86_64-apple-darwin
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Linux system deps (webkit + tauri build chain + dbus for keyring)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file \
+            libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev libdbus-1-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust-target }}
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: ${{ matrix.target }}
+
+      - run: npm ci
+
+      - name: Stage bundled Node sidecar runtime
+        run: node scripts/prepare-node.mjs ${{ matrix.target }}
+
+      # Fail fast BEFORE the expensive build if the updater key is missing. Unlike
+      # desktop-build, the release train never produces an unsigned build — every installed
+      # user's updater feed depends on these .sig files, so a keyless run is a hard error.
+      - name: Require updater signing key
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            echo "::error::TAURI_SIGNING_PRIVATE_KEY secret is empty. The release train REQUIRES updater signing — refusing to build unsigned artifacts. Set the secret (contents of ~/.tauri/starnet-updater.key) and re-run."
+            exit 1
+          fi
+
+      - name: Build desktop bundles (signed updater artifacts required)
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          RUST_TARGET: ${{ matrix.rust-target }}
+        run: |
+          if [ "$RUNNER_OS" = "macOS" ] && [ -z "$APPLE_CERTIFICATE" ]; then
+            echo "::warning::no Apple signing cert in secrets — DMG will be UNSIGNED (Gatekeeper wall for public users)"
+          fi
+          npm run tauri -- build --bundles ${{ matrix.bundles }} ${RUST_TARGET:+--target $RUST_TARGET}
+
+      # Prove the leg produced its updater artifact + .sig. If updater signing silently no-op'd
+      # (bad key, tauri config drift), the .sig would be missing and the whole feed would be
+      # broken — catch it here on the leg that built it, not three jobs downstream.
+      - name: Verify updater artifact + signature exist
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          root="src-tauri/target"
+          case "$RUNNER_OS" in
+            Windows)
+              art_glob="$root/**/release/bundle/nsis/*-setup.exe"
+              sig_glob="$root/**/release/bundle/nsis/*-setup.exe.sig"
+              kind="nsis *-setup.exe"
+              ;;
+            macOS)
+              art_glob="$root/**/release/bundle/macos/*.app.tar.gz"
+              sig_glob="$root/**/release/bundle/macos/*.app.tar.gz.sig"
+              kind="macos *.app.tar.gz"
+              ;;
+            Linux)
+              art_glob="$root/**/release/bundle/appimage/*.AppImage"
+              sig_glob="$root/**/release/bundle/appimage/*.AppImage.sig"
+              kind="appimage *.AppImage"
+              ;;
+            *)
+              echo "::error::unknown RUNNER_OS=$RUNNER_OS"
+              exit 1
+              ;;
+          esac
+          shopt -s globstar nullglob
+          arts=( $art_glob )
+          sigs=( $sig_glob )
+          if [ ${#arts[@]} -eq 0 ]; then
+            echo "::error::[$TARGET] no updater artifact found ($kind). Build produced no installer — cannot stage this platform."
+            exit 1
+          fi
+          if [ ${#sigs[@]} -eq 0 ]; then
+            echo "::error::[$TARGET] updater artifact present but NO .sig ($kind.sig). Signing did not run — refusing to ship an unsigned platform into the feed."
+            exit 1
+          fi
+          for s in "${sigs[@]}"; do
+            if [ ! -s "$s" ]; then
+              echo "::error::[$TARGET] signature file is empty: $s"
+              exit 1
+            fi
+          done
+          echo "::notice::[$TARGET] updater artifact + signature verified:"
+          printf '  art: %s\n' "${arts[@]}"
+          printf '  sig: %s\n' "${sigs[@]}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: starnet-${{ matrix.target }}
+          if-no-files-found: error
+          # ** matches zero segments: covers target/release (host builds) AND
+          # target/<triple>/release (mac legs built with an explicit --target)
+          path: |
+            src-tauri/target/**/release/bundle/nsis/*.exe
+            src-tauri/target/**/release/bundle/nsis/*.sig
+            src-tauri/target/**/release/bundle/deb/*.deb
+            src-tauri/target/**/release/bundle/appimage/*.AppImage
+            src-tauri/target/**/release/bundle/appimage/*.sig
+            src-tauri/target/**/release/bundle/dmg/*.dmg
+            src-tauri/target/**/release/bundle/macos/*.app.tar.gz
+            src-tauri/target/**/release/bundle/macos/*.app.tar.gz.sig
+
+  # -------------------------------------------------------------------------------------------
+  # Job 3 — assemble: one multi-platform latest.json from all artifacts, verified locally.
+  # -------------------------------------------------------------------------------------------
+  assemble:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Resolve + verify version against the tag
+        id: ver
+        shell: bash
+        run: |
+          set -euo pipefail
+          V=$(jq -r .version src-tauri/tauri.conf.json)
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG_INPUT='${{ github.event.inputs.tag }}'
+          else
+            TAG_INPUT="${GITHUB_REF#refs/tags/}"
+          fi
+          if [ "$TAG_INPUT" != "v$V" ]; then
+            echo "::error::tag/version mismatch: pushed/dispatched tag is '$TAG_INPUT' but tauri.conf.json version is '$V' (expected tag 'v$V'). Bump the version or fix the tag."
+            exit 1
+          fi
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "tag=v$V" >> "$GITHUB_OUTPUT"
+          echo "::notice::building release train for v$V"
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: List downloaded artifacts
+        run: find dist -type f | sort
+
+      - name: Assemble multi-platform latest.json
+        run: |
+          node scripts/release-assemble-manifest.mjs \
+            --dist dist \
+            --version "${{ steps.ver.outputs.version }}" \
+            --repo nonfungiblefunyuns-ship-it/starnet-releases \
+            --tag "${{ steps.ver.outputs.tag }}" \
+            --notes-file RELEASE_NOTES.md
+
+      - name: Verify manifest (local, before any publish)
+        run: node scripts/verify-update-host.mjs --manifest release/latest.json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-manifest
+          if-no-files-found: error
+          path: release/
+
+  # -------------------------------------------------------------------------------------------
+  # Job 4 — stage-draft: DRAFT release only. Nothing reaches users until a human clicks Publish.
+  # -------------------------------------------------------------------------------------------
+  stage-draft:
+    needs: assemble
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+      REPO: nonfungiblefunyuns-ship-it/starnet-releases
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: ver
+        shell: bash
+        run: |
+          set -euo pipefail
+          V=$(jq -r .version src-tauri/tauri.conf.json)
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "tag=v$V" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-manifest
+          path: release
+
+      - name: Collect assets to attach
+        id: assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          # All installers + all .sig + the assembled latest.json.
+          mkdir -p staged
+          find dist -type f \( \
+            -name '*-setup.exe' -o \
+            -name '*.dmg' -o \
+            -name '*.app.tar.gz' -o \
+            -name '*.deb' -o \
+            -name '*.AppImage' -o \
+            -name '*.sig' \
+          \) -exec cp -n {} staged/ \;
+          cp release/latest.json staged/latest.json
+          echo "Assets staged for attachment:"
+          ls -1 staged
+          count=$(ls -1 staged | wc -l)
+          if [ "$count" -lt 2 ]; then
+            echo "::error::only $count asset(s) staged — expected installers + sigs + latest.json. Aborting."
+            exit 1
+          fi
+
+      - name: Create or update DRAFT release (idempotent)
+        shell: bash
+        env:
+          TAG: ${{ steps.ver.outputs.tag }}
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          set -euo pipefail
+          # Idempotent: if the draft/tag already exists (a re-run), clobber assets instead of
+          # failing. gh release view exits non-zero when the release does not exist.
+          if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
+            echo "::notice::release $TAG already exists on $REPO — uploading assets with --clobber (re-run)"
+            gh release upload "$TAG" --repo "$REPO" --clobber staged/*
+          else
+            echo "::notice::creating DRAFT release $TAG on $REPO"
+            gh release create "$TAG" \
+              --repo "$REPO" \
+              --draft \
+              --title "StarNet $VERSION" \
+              --notes-file RELEASE_NOTES.md \
+              staged/*
+          fi
+
+      - name: Go / no-go summary
+        shell: bash
+        env:
+          TAG: ${{ steps.ver.outputs.tag }}
+        run: |
+          echo "::notice::DRAFT staged — nothing reaches users until you click Publish on GitHub."
+          echo "Review the draft: https://github.com/$REPO/releases"
+          echo "Draft tag: $TAG"
