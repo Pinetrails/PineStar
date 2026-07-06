@@ -5423,6 +5423,7 @@ const World = (() => {
     work: (() => { const o = {}; for (const [k, v] of runWork) o[k] = { tools: v.tools, dels: v.dels }; return o; })(),   // proven-work tally per in-flight run
     routeAt: (x, y) => routeTagFor(x, y),
     outboundAt: aid => outboundBeltTile(aid),   // where would this agent's product crate spawn (verify hook)
+    sourceAt: aid => (routingPlan && typeof Pipeline !== 'undefined' && Pipeline.sourceFor) ? Pipeline.sourceFor(routingPlan, aid) : null,   // which INBOX would an addressed item enter through (verify hook)
     pollFeed: () => pollFeedState(),
     pollShip: () => pollShipStats()
   });
