@@ -3586,7 +3586,9 @@ const StationUI = (() => {
                                 : '<span class="cc-badge cc-community" title="community-run server">community</span>';
       let action;
       if (e.installed) action = '<button class="bb xs" data-cc-act="added" disabled>✓ ADDED</button>';
-      else if (e.authType === 'oauth') action = '<button class="bb xs" data-cc-act="signin" data-id="' + esc(e.id) + '" title="opens a secure browser sign-in (OAuth)">🔒 SIGN IN</button>';
+      else if (e.authType === 'oauth') action = e.url
+        ? '<button class="bb xs" data-cc-act="signin" data-id="' + esc(e.id) + '" title="opens a secure browser sign-in (OAuth)">🔒 SIGN IN</button>'
+        : '<button class="bb xs" data-cc-act="soon" disabled title="not directly wired yet — see the note">🔒 SOON</button>';   // an oauth entry with no endpoint (e.g. via an aggregator) is honestly not sign-in-able
       else if (e.authType === 'apikey') action = '<button class="bb xs" data-cc-act="key" data-id="' + esc(e.id) + '">+ ADD</button>';
       else action = '<button class="bb sm" data-cc-act="add" data-id="' + esc(e.id) + '">+ ADD</button>';
       const keyField = e.authType === 'apikey'
