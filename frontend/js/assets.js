@@ -139,10 +139,12 @@ const SPRITES = (() => {
       key = pick(set, ['sit', 'rot'], dir); fps = 4;
     } else if (b.speaking) {
       // talking out loud: prefer a dedicated talk track (open/closed mouth chatter) when the set
-      // ships one; otherwise sell it with a livelier bob + a subtle 1px head bounce so the agent
-      // visibly animates while its voice plays (not a frozen idle pose).
+      // ships one — the mouth carries the speech, so keep only the gentle idle sway. Sets without
+      // a talk track keep the livelier bob + 1px head bounce so speech never reads as a frozen pose.
       key = pick(set, ['talk', 'rot'], dir); fps = 6;
-      bob = Math.sin(nowMs / 170 + b.phase) * 1.1 - (Math.floor(nowMs / 150) % 2 ? 1 : 0);
+      bob = (key && key.indexOf('.talk.') !== -1)
+        ? Math.sin(nowMs / 600 + b.phase) * 0.7
+        : Math.sin(nowMs / 170 + b.phase) * 1.1 - (Math.floor(nowMs / 150) % 2 ? 1 : 0);
     } else {
       key = pick(set, ['rot'], dir);
       bob = Math.sin(nowMs / 600 + b.phase) * 0.7;
