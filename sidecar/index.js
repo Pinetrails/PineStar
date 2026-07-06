@@ -2020,7 +2020,10 @@ function startTelegram(token, key, model, agentCfg) {
       let agentId = '', workitemId = '';
       const chatKey = String((m && m.chatId) || '');
       try {
-        if (tgResolved && String(tgResolved.chatId) === chatKey && tgResolved.agentId) {
+        // BELT IS WORK-ONLY (Andrew's ruling 2026-07-05): only a real TASK directive rides in as a crate.
+        // Pure chat ("hello") still gets its reply + dish pulse (channel.inbound) but leaves the floor alone —
+        // no crate, no queue bump, no delivered beat. Same classifier that gates the desk walk.
+        if (tgResolved && String(tgResolved.chatId) === chatKey && tgResolved.agentId && tgResolved.isTask) {
           agentId = String(tgResolved.agentId);
           workitemId = crypto.randomUUID();
           const preview = String((m && m.text) || '').replace(/\s+/g, ' ').slice(0, 40);
@@ -2032,6 +2035,12 @@ function startTelegram(token, key, model, agentCfg) {
           const depth = bumpQueue(agentId, +1);
           chanEmit('workitem.placed', { workitemId, queueId: agentId, agentId, kind: 'telegram', preview, queueDepth: depth, ts: Date.now() });
           chanEmit('queue.status', { queueId: agentId, depth, maxCapacity: QUEUE_CAP, nextAdvanceAt: 0 });
+        } else if (tgResolved && String(tgResolved.chatId) === chatKey) {
+          // a NON-task message still ABORTS this chat's in-flight run (hub: one run per conversation) — drop
+          // the aborted task's crate honestly so its settle can't read as delivered. Its own settle handler
+          // still owns the queue decrement (exactly once).
+          const prior = activeItem.get(chatKey);
+          if (prior) { activeItem.delete(chatKey); chanEmit('workitem.superseded', { workitemId: prior.workitemId, agentId: prior.agentId, ts: Date.now() }); }
         }
       } catch (e) { console.warn('[telegram] intake intercept error:', (e && e.message) || e); }
       tgResolved = null;

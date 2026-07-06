@@ -3760,14 +3760,10 @@ const Chat = (() => {
     const firstTurn = (typeof Workstreams !== 'undefined') && ws.id !== Workstreams.generalId()
       && !ws.history.some(m => m && m.role === 'user');
     Channels.begin(ws.id, Date.now());   // stamp the run start so the COMMS elapsed timer counts real wall-clock
-    // P1: drop this directive's INTAKE ore box on the belt + start its DWELL clock (mirrors the Telegram
-    // admit shape). queueId === agentId so the box routes to the hero / bound desk in world.js.
     const wiAid = ws.agentId || 'agent';
     const wiId = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : ('wi-' + Date.now() + '-' + (++wiSeq));
     const wiPlacedTs = Date.now();
-    { const depth = wiBump(wiAid, 1);
-      wiEmit('workitem.placed', { workitemId: wiId, queueId: wiAid, agentId: wiAid, kind: 'directive', preview: String(text || '').replace(/\s+/g, ' ').slice(0, 40), queueDepth: depth, ts: wiPlacedTs });
-      wiEmit('queue.status', { queueId: wiAid, depth: depth, maxCapacity: 64, nextAdvanceAt: 0 }); }
+    let wiPlaced = false;   // set below iff a crate actually rode — every wi* beat downstream gates on it
     stick = true;   // sending a message means you want to watch the exchange — re-follow the bottom
     if (!retry) { addUser(text); ws.history.push({ role: 'user', content: text }); capHistory(ws); }   // on RETRY the user turn is already in the thread + on screen
     // name an untitled stream from its first real message (no-op on General / already-titled)
@@ -3776,6 +3772,15 @@ const Chat = (() => {
     }
 
     const isTask = Classify.isTaskDirective(text);
+    // P1 + BELT IS WORK-ONLY (Andrew's ruling 2026-07-05): only a real TASK directive drops an INTAKE ore box
+    // on the belt / bumps the queue gauge (mirrors the Telegram admit shape — the sidecar gates on the SAME
+    // classifier). Pure chat ("hello") gets its reply with NOTHING on the floor.
+    if (isTask) {
+      wiPlaced = true;
+      const depth = wiBump(wiAid, 1);
+      wiEmit('workitem.placed', { workitemId: wiId, queueId: wiAid, agentId: wiAid, kind: 'directive', preview: String(text || '').replace(/\s+/g, ' ').slice(0, 40), queueDepth: depth, ts: wiPlacedTs });
+      wiEmit('queue.status', { queueId: wiAid, depth: depth, maxCapacity: 64, nextAdvanceAt: 0 });
+    }
     // G5 SPECTACLE — a TASK run is the watchable beat: arm the clip ring buffer so its last ~10s are grabbable
     // when the recap lands. Casual chat never records (nothing to share). Disarmed at run end (finally block).
     if (isTask) armClip();
@@ -3963,7 +3968,7 @@ const Chat = (() => {
         // profile/XP ship-signal + the "tasks shipped" milestone. Only on done/undefined — a max_iters/budget/
         // error/refusal stop is an unproductive run (the agent.run.end SLAG path owns that); abort/hard-error never
         // reach this branch. (Not gated on isActiveWs: a background stream's work still ships.)
-        if (!endReason || endReason === 'done') wiEmit('workitem.delivered', { workitemId: wiId, finalQueueId: 'outbox', agentId: wiAid, box: '', ms: Date.now() - wiPlacedTs, ts: Date.now() });
+        if (wiPlaced && (!endReason || endReason === 'done')) wiEmit('workitem.delivered', { workitemId: wiId, finalQueueId: 'outbox', agentId: wiAid, box: '', ms: Date.now() - wiPlacedTs, ts: Date.now() });
         // stash this run's REAL work so the post-run "rate the work" beat can size the XP honestly + gate on real work.
         let runCost = 0;
         if (thisRunId) { runCost = Math.max(0, (Harness.totals().cost || 0) - (before.cost || 0)); runWork.set(thisRunId, { toolsOk: runToolsOk, delivered: runDeliv, cost: runCost, agentId: ws.agentId || 'agent' }); if (runWork.size > 60) runWork.delete(runWork.keys().next().value); }
@@ -4011,7 +4016,7 @@ const Chat = (() => {
       Channels.end(ws.id);
       // P1: drain this directive from the QUEUE gauge on ANY teardown (shipped, in-band error, or abort) —
       // the backlog is "runs in flight", independent of whether the work shipped.
-      { const depth = wiBump(wiAid, -1); wiEmit('queue.status', { queueId: wiAid, depth: depth, maxCapacity: 64, nextAdvanceAt: 0 }); }
+      if (wiPlaced) { const depth = wiBump(wiAid, -1); wiEmit('queue.status', { queueId: wiAid, depth: depth, maxCapacity: 64, nextAdvanceAt: 0 }); }
       if (isActiveWs(ws)) { syncStatus(); activeLiveRow = null; }
       // after a turn: in a hands-free voice conversation keep him facing you (one-on-one, no wandering off
       // between turns); otherwise he stands up and goes back to idle. Only steer the world if THIS finished

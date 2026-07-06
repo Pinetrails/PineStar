@@ -290,7 +290,11 @@
       try { if (typeof store.saveChatRecord === 'function' && (!boundAgentId || boundAgentId === agentId)) store.saveChatRecord(chatId, { agentId: agentId, channel: channel }); } catch (_) {}
 
       // announce the SINGLE resolution to the host (workitem crate + queue HUD attribution — one truth).
-      if (onResolved) { try { onResolved({ chatId: chatId, agentId: agentId, text: msg.text }); } catch (_) {} }
+      // isTask rides along: the BELT IS WORK-ONLY (Andrew's ruling 2026-07-05) — the host places a crate only
+      // for a real task directive; "hello" gets a reply and NOTHING on the floor. Same classifier that gates
+      // the desk walk + the task tool suffix below, so the body and the belt tell one story.
+      const isTask = !!classify(msg.text);
+      if (onResolved) { try { onResolved({ chatId: chatId, agentId: agentId, text: msg.text, isTask: isTask }); } catch (_) {} }
 
       // one run per CONVERSATION: a new message in THIS chat ABORTS its in-flight run — keyed by chatId, NOT
       // agentId, so two chats routed to the SAME agent (via a splitter/filter) never cross-cancel each other.
@@ -310,7 +314,6 @@
       try { store.appendTurn(agentId, 'user', msg.text); } catch (_) {}
       const messages = history.map(m => ({ role: m.role, content: m.content })).concat([{ role: 'user', content: msg.text }]);
 
-      const isTask = !!classify(msg.text);
       const rec = store.getChatRecord ? store.getChatRecord(chatId) : null;
       const persona = sec.system || personaFor(agentId, rec);   // the agent's REAL composed prompt when configured
       const system = persona + (isTask ? TASK_SUFFIX : '');

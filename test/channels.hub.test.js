@@ -197,7 +197,7 @@ async function run() {
     const runOnce = async (o) => { o.emit('agent.run.start', { agentId: o.agentId, runId: o.runId, trigger: 'event', model: o.model }); o.emit('agent.token', { agentId: o.agentId, runId: o.runId, delta: 'ok' }); o.emit('agent.run.end', { agentId: o.agentId, runId: o.runId, reason: 'done', turns: 1, usd: 0 }); };
     const hub = makeChannelHub({
       runOnce, store, send: () => Promise.resolve({ ok: true }),
-      secrets: () => ({ key: 'k', model: 'm', agentId: 'overseer' }), classify: () => false, newId: idGen(),
+      secrets: () => ({ key: 'k', model: 'm', agentId: 'overseer' }), classify: (t) => /research/.test(t), newId: idGen(),
       getTag: (t) => (/research/.test(t) ? 'research' : 'general'),
       resolveAgent: (ctx) => ctx.tag === 'research' ? 'researcher' : null,
       roster: () => [{ agentId: 'overseer', name: 'Overseer', model: 'm' }],
@@ -208,10 +208,12 @@ async function run() {
     A.eq(resolved[0].agentId, 'researcher', 'onResolved carries the FLOOR-ROUTED agent — the same one the run executes as');
     A.eq(resolved[0].chatId, '555', 'onResolved carries the chatId');
     A.eq(resolved[0].text, 'research the market', 'onResolved carries the message text (crate preview source)');
+    A.eq(resolved[0].isTask, true, 'onResolved carries isTask=true for a task directive (the host places a crate only then)');
     await p;
     await hub.onInbound(dm('plain chat'));
     A.eq(resolved.length, 2, 'a second real message fires it again');
     A.eq(resolved[1].agentId, 'overseer', 'unrouted message resolves to the configured agent — same fallback the run uses');
+    A.eq(resolved[1].isTask, false, 'pure chat resolves with isTask=false — BELT IS WORK-ONLY, "hello" puts nothing on the floor');
     await hub.onInbound(dm('/agents'));
     A.eq(resolved.length, 2, 'a /command NEVER fires onResolved — no phantom crate for control chatter');
   }
