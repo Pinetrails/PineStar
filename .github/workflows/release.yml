@@ -86,4 +86,5 @@ jobs:
 
       - name: Verify live endpoint (only after publish)
         if: ${{ github.event.inputs.publish == 'true' }}
-        run: npm run release:verify-host
+        # this fallback ships Windows only — don't require the train's 4-platform set
+        run: npm run release:verify-host -- --require-platforms windows-x86_64

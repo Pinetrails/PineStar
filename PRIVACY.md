@@ -1,6 +1,6 @@
 # StarNet Privacy
 
-_Last reviewed: 2026-07-03, against the shipping code._
+_Last reviewed: 2026-07-06, against the shipping code._
 
 StarNet is a **local-first desktop app**. It runs a small server (the "sidecar") on your own
 machine (`localhost`) and does the agent work there. There is **no StarNet cloud, no StarNet
@@ -16,7 +16,8 @@ Support questions: androo.agi@gmail.com.
   usual suspects (Sentry, PostHog, Mixpanel, Segment, Google Analytics, Amplitude, Datadog):
   none are present.
 - **Your data stays on your machine**, under your OS user's app-data directory
-  (`%LOCALAPPDATA%\StarNet\` on Windows).
+  (`%APPDATA%\ai.skynet.harness\workspaces\` on Windows for the desktop app; the
+  developer-mode sidecar uses `%LOCALAPPDATA%\StarNet\`).
 - The app talks to the network **only** to do work you asked for, and only to the specific
   third parties described below.
 
@@ -60,12 +61,20 @@ the token you granted. If you don't enable Spotify, no Spotify requests are made
 
 If an agent uses its web tools, StarNet fetches results through independent, keyless services
 — web search via Mojeek (`mojeek.com`, with DuckDuckGo as a fallback) and page reading via
-Jina Reader (`r.jina.ai`) — or, if you have an OpenRouter key, OpenRouter's web plugin. Only
+Jina Reader (`r.jina.ai`) — or, if you have an OpenRouter key, OpenRouter's web plugin. If the
+Jina reader is unavailable or rate-limits, the page is fetched **directly from its own host**
+as a fallback, so the site you asked to read may see the request come from your machine. Only
 your search query or the URL you asked to read is sent, and only when an agent actually runs a
 web search or fetch. (The fetch tool also refuses to reach private/internal network addresses,
 as an anti-abuse guard.)
 
-### 5. A version check for updates (no personal data)
+### 5. Voice / text-to-speech — only if voices are on
+
+Agent voices are synthesized through your model provider (OpenRouter) by default. If you
+configure an **ElevenLabs** voice with your own ElevenLabs key, the line to be spoken is sent
+to `api.elevenlabs.io` instead. No voices, no TTS requests.
+
+### 6. A version check for updates (no personal data)
 
 The desktop app checks for updates by fetching a single public manifest file from GitHub
 Releases:
@@ -82,8 +91,9 @@ installed.
 ## What StarNet stores on your machine (and how)
 
 Everything below lives under your per-user app-data directory
-(`%LOCALAPPDATA%\StarNet\workspaces\` on Windows). It never leaves your machine except as
-described above.
+(`%APPDATA%\ai.skynet.harness\workspaces\` on Windows for the desktop app;
+`%LOCALAPPDATA%\StarNet\workspaces\` in developer mode). It never leaves your machine except
+as described above.
 
 | What | Where | How it's stored |
 | --- | --- | --- |
@@ -92,9 +102,12 @@ described above.
 | Agent memory / beliefs / to-dos | `<agent>.notebook.json`, `<agent>.todo.json`, dossier/goals | **Plaintext** JSON on disk |
 | Voice cache (spoken-line audio) | `voice-cache/` | **Plaintext** audio files on disk |
 | Discord / Telegram bot tokens | OS keychain (desktop) | **OS keychain** (Windows Credential Manager); plaintext fallback in bare/dev mode — see below |
-| Your model-provider API keys | OS keychain (desktop) | **OS keychain** (Windows Credential Manager) |
+| Your model-provider API keys | OS keychain (desktop) | **OS keychain** (Windows Credential Manager); loaded into app memory at launch, never written to disk by the app |
 | Spotify OAuth token | `.secrets/spotify.json` | **Plaintext** JSON on disk |
 | ChatGPT / Codex sign-in token | `codex/tokens.json` | **Plaintext** JSON on disk |
+| Channel message history (Discord/Telegram chats the bot saw) | `channels/*.history.json` | **Plaintext** JSON on disk |
+| Agent memory ledgers (accepted/declined memory proposals, dossiers, goals) | per-agent `*.json` | **Plaintext** JSON on disk |
+| Station state (widgets, sub-agents, routing, quests, XP) | various `*.json` | **Plaintext** JSON on disk |
 | Settings, roster, permissions, cron, connectors | various `*.json` | **Plaintext** JSON on disk |
 
 ### Secrets: keychain vs. plaintext — the honest picture
@@ -128,8 +141,10 @@ Windows user account can read it. Protect your machine account accordingly.
 ## Deleting your data
 
 Your data is just files. To wipe it, uninstall StarNet and delete the
-`%LOCALAPPDATA%\StarNet\` folder. Provider API keys and channel tokens held in the OS keychain
-can be removed via Windows Credential Manager (search for `ai.skynet.harness`).
+`%APPDATA%\ai.skynet.harness\` folder (that's `C:\Users\<you>\AppData\Roaming\ai.skynet.harness\`).
+If you ever ran the developer-mode sidecar, also delete `%LOCALAPPDATA%\StarNet\`. Provider API
+keys and channel tokens held in the OS keychain can be removed via Windows Credential Manager
+(search for `ai.skynet.harness`).
 
 ## Changes
 

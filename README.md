@@ -34,7 +34,8 @@ npm run desktop:build    # produce the NSIS installer
 ```
 
 > Data (agent memory, spend ledger, saves, secrets) is stored per-user under your OS app-data dir
-> (`%LOCALAPPDATA%\StarNet` on Windows). Secrets are held by the sidecar / OS keychain, never in the frontend.
+> (desktop app: `%APPDATA%\ai.skynet.harness\workspaces` on Windows; bare dev sidecar:
+> `%LOCALAPPDATA%\StarNet`). Secrets are held by the sidecar / OS keychain, never in the frontend.
 
 ## How it works (the one-line bet)
 
