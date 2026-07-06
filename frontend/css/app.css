@@ -2125,6 +2125,27 @@ select.fbc-sel:focus { border-color: var(--ph); box-shadow: 0 0 12px var(--ph-gl
   border-radius: 3px; padding: 0 4px; margin-right: 4px; text-transform: uppercase;
 }
 
+/* ===== CONNECTOR CATALOG: one-click, vetted MCP servers (browse-and-add cards) ===== */
+.cc-list { display: flex; flex-direction: column; gap: 14px; margin: 4px 0 10px; }
+.cc-group { display: flex; flex-direction: column; gap: 8px; }
+.cc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(224px, 1fr)); gap: 8px; }
+.cc-card { display: flex; flex-direction: column; gap: 6px; border: 1px solid var(--ph-dim); border-radius: var(--r-sm);
+  padding: 9px 11px; background: rgba(0,0,0,.35); box-shadow: var(--raise);
+  animation: cardIn var(--t-med) var(--ease-out) both; animation-delay: calc(var(--ci, 0) * 28ms); }
+.cc-card.cc-on { border-color: var(--ok); box-shadow: var(--raise), inset 0 0 0 1px var(--ok); }
+.cc-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.cc-head b { color: var(--ph-bright); font-weight: normal; letter-spacing: .5px; }
+.cc-badge { font-size: 9px; letter-spacing: .5px; border-radius: 3px; padding: 0 4px; text-transform: uppercase; }
+.cc-official { color: var(--ok); border: 1px solid var(--ok); }
+.cc-community { color: var(--ph-dim); border: 1px solid var(--ph-dim); }
+.cc-chip { margin-left: auto; font-size: 10px; letter-spacing: .5px; white-space: nowrap; }
+.cc-blurb { font-size: 12px; line-height: 1.4; flex: 1; }
+.cc-acts { display: flex; align-items: center; gap: 8px; margin-top: 2px; }
+.cc-home { font-size: 11px; letter-spacing: .5px; text-decoration: none; }
+.cc-home:hover { color: var(--ph); }
+.cc-key { display: flex; flex-direction: column; gap: 3px; }
+.cc-card .bb[disabled] { opacity: .5; cursor: default; }
+
 .rt-agent-pick { display: grid; grid-template-columns: repeat(auto-fit, minmax(132px, 1fr)); gap: 5px; }
 .rt-agent-btn {
   min-width: 0; display: grid; grid-template-columns: 9px minmax(0, 1fr); grid-template-rows: auto auto;

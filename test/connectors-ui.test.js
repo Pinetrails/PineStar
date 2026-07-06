@@ -121,5 +121,27 @@ function fakeStack(tools) {
   // styling hooks exist so the new controls actually render on-theme
   A.ok(/\.mc-seg-btn/.test(css) && /\.mc-hint/.test(css) && /\.mc-tag/.test(css), 'connector form styles present');
 
+  // ---------- 3. CONNECTOR CATALOG tab (one-click browse-and-add) ----------
+  // the tab exists and is fed by the catalog route
+  A.ok(/id:\s*'catalog'/.test(station) && /label:\s*'CATALOG'/.test(station), 'CATALOG tab registered on the connectors console');
+  A.ok(/id="cc-list"/.test(station), 'catalog list container present');
+  A.ok(/\/api\/connectors\/catalog/.test(station), 'catalog pane fetches GET /api/connectors/catalog');
+  A.ok(/function ccCard/.test(station) && /function ccGroupHTML/.test(station), 'catalog card + category-group renderers present');
+  // honest auth tiers: no-setup adds, apikey reveals a key field, oauth is listed-but-gated (never a dead click)
+  A.ok(/data-cc-act="add"/.test(station), 'no-setup connectors get an ADD action');
+  A.ok(/data-cc-act="key"/.test(station) && /data-cc-key=/.test(station), 'apikey connectors reveal an inline key field');
+  A.ok(/data-cc-act="soon"/.test(station) && /disabled/.test(station), 'oauth connectors are shown but disabled (sign-in coming soon)');
+  A.ok(/e\.authType === 'oauth'/.test(station), 'the UI gates on the authType tier from the catalog');
+  // installing reuses the SAME upsert (no parallel install path) and never fabricates the endpoint
+  A.ok(/function ccInstall/.test(station) && /postJSON\('\/api\/connectors'/.test(station), 'install posts through the existing /api/connectors upsert');
+  A.ok(/ccCache\.find\(/.test(station), 'install reads the authoritative url/name from the catalog, never a re-typed value');
+  A.ok(/transport:\s*'http',\s*url:\s*e\.url/.test(station), 'install pre-fills the catalog entry url');
+  A.ok(/if \(token\) payload\.token = token/.test(station), 'an API key is sent only when the user provided one');
+  // truthful telemetry: ADDED state comes from the backend `installed` flag, and live state is re-read after add
+  A.ok(/e\.installed/.test(station) && /✓ ADDED/.test(station), 'an already-installed connector shows ADDED (from backend state, not guessed)');
+  A.ok(/state === 'up'/.test(station), 'the connect result badge reflects the real manager state, not an assumption');
+  // on-theme styling for the new cards
+  A.ok(/\.cc-card/.test(css) && /\.cc-grid/.test(css) && /\.cc-chip/.test(css), 'catalog card styles present');
+
   A.report('connectors-ui');
 })().catch(e => { console.log('FAIL: threw ' + (e && e.stack || e)); process.exit(1); });
