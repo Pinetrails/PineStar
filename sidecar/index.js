@@ -1553,7 +1553,9 @@ const subagents = makeSubagentManager({ fs: fs, pathMod: path, file: path.join(W
 // run finishes. Drives queue.status -> the queue-depth HUD. Keyed by the SAME agentId the hub routes to.
 const QUEUE_CAP = 64;
 const queueDepth = new Map();
-const activeItem = new Map();   // agentId -> the newest in-flight workitemId; older ones the hub superseded
+const activeItem = new Map();   // chatId -> { agentId, workitemId } newest in-flight item; older ones the hub superseded
+                                // (keyed by CHAT, mirroring the hub's one-run-per-conversation abort — floor
+                                // routing can send consecutive messages of one chat to DIFFERENT agents)
 function bumpQueue(agentId, d) { const n = Math.max(0, (queueDepth.get(agentId) || 0) + d); queueDepth.set(agentId, n); return n; }
 
 // the placed floor's RoutingPlan (posted by the app on every geo change). resolveTarget answers "which agent
@@ -1985,8 +1987,13 @@ function startTelegram(token, key, model, agentCfg) {
     // of truth, no per-chat override. modelCatalog is the boot-warmed OpenRouter id snapshot (empty -> skip check).
     roster: () => [...agentRoster].map(([agentId, a]) => ({ agentId, name: a.name, model: a.model, provider: a.provider })),
     setModel: (agentId, model) => setAgentModelFromChannel(agentId, model),
-    modelCatalog: () => orModelCatalogIds
+    modelCatalog: () => orModelCatalogIds,
+    // ONE-RESOLVER LAW: the hub hands us the EXACT agentId the run executes as (floor plan > /talk binding >
+    // configured > tg_<chatId>). This one-shot slot feeds the work-item intercept below, so the crate on the
+    // belt and the queue HUD attribute to the SAME agent that actually works — never a parallel guess.
+    onResolved: (info) => { tgResolved = info; }
   });
+  let tgResolved = null;   // set synchronously by onResolved during hub.onInbound's first slice; consumed per message
   const adapter = makeTelegramAdapter({
     fetch: globalThis.fetch, token: token, apiBase: TELEGRAM_API_BASE, clock: { now: () => Date.now() },
     // owner-only admission: the first DM claims the bot; persist that userId so it survives restarts.
@@ -2001,34 +2008,43 @@ function startTelegram(token, key, model, agentCfg) {
     },
     onInbound: (m) => {
       // WORK-ITEM INTERCEPT: an admitted message becomes a box that rides the player-laid belts to the
-      // agent. This is pure VISUALIZATION telemetry — hub.onInbound still runs the real work regardless of
-      // whether any belt/INTAKE exists. agentId MIRRORS the hub's OWN resolution (a configured agentId else
-      // tg_<chatId>) so the HUD attributes work to the same agent the hub actually runs (hub.js AID_RE/secrets).
+      // agent. Pure VISUALIZATION telemetry — hub.onInbound still runs the real work regardless of belts.
+      // The agentId comes from the hub's onResolved hook (the ONE resolver: floor plan > /talk binding >
+      // configured > tg_<chatId>), so the crate/HUD attribute to the agent that ACTUALLY runs. The hook fires
+      // in onInbound's first synchronous slice (before any await, so before the run starts); /commands and
+      // refused messages never fire it — no more phantom crates for /agents. If the hub ever moves resolution
+      // behind an await, tgResolved stays null here and we honestly place NO crate (never a wrong one).
+      tgResolved = null;
+      const settled = Promise.resolve(hub.onInbound(m))
+        .catch(e => console.warn('[telegram] inbound error:', (e && e.message) || e));
       let agentId = '', workitemId = '';
+      const chatKey = String((m && m.chatId) || '');
       try {
-        const sec = (channelSecrets && channelSecrets.telegram) || {};
-        agentId = (sec.agentId && /^[A-Za-z0-9_-]{1,40}$/.test(String(sec.agentId))) ? String(sec.agentId) : hub._internals.agentIdFor(String(m && m.chatId));
-        workitemId = crypto.randomUUID();
-        const preview = String((m && m.text) || '').replace(/\s+/g, ' ').slice(0, 40);
-        // a prior in-flight item for this chat is about to be ABORTED by the hub — drop its box off the belt.
-        const prior = activeItem.get(agentId);
-        if (prior && prior !== workitemId) chanEmit('workitem.superseded', { workitemId: prior, agentId, ts: Date.now() });
-        activeItem.set(agentId, workitemId);
-        const depth = bumpQueue(agentId, +1);
-        chanEmit('workitem.placed', { workitemId, queueId: agentId, agentId, kind: 'telegram', preview, queueDepth: depth, ts: Date.now() });
-        chanEmit('queue.status', { queueId: agentId, depth, maxCapacity: QUEUE_CAP, nextAdvanceAt: 0 });
+        if (tgResolved && String(tgResolved.chatId) === chatKey && tgResolved.agentId) {
+          agentId = String(tgResolved.agentId);
+          workitemId = crypto.randomUUID();
+          const preview = String((m && m.text) || '').replace(/\s+/g, ' ').slice(0, 40);
+          // a prior in-flight item for THIS CHAT is about to be ABORTED by the hub — drop its box off the belt
+          // (its agent may differ: floor routing sorts consecutive messages of one chat to different bays).
+          const prior = activeItem.get(chatKey);
+          if (prior) chanEmit('workitem.superseded', { workitemId: prior.workitemId, agentId: prior.agentId, ts: Date.now() });
+          activeItem.set(chatKey, { agentId, workitemId });
+          const depth = bumpQueue(agentId, +1);
+          chanEmit('workitem.placed', { workitemId, queueId: agentId, agentId, kind: 'telegram', preview, queueDepth: depth, ts: Date.now() });
+          chanEmit('queue.status', { queueId: agentId, depth, maxCapacity: QUEUE_CAP, nextAdvanceAt: 0 });
+        }
       } catch (e) { console.warn('[telegram] intake intercept error:', (e && e.message) || e); }
-      Promise.resolve(hub.onInbound(m))
-        .catch(e => console.warn('[telegram] inbound error:', (e && e.message) || e))
-        .then(() => {
-          if (!agentId) return;
-          const d = bumpQueue(agentId, -1);
-          if (activeItem.get(agentId) === workitemId) {        // finished WITHOUT being superseded → the reply went out
-            activeItem.delete(agentId);
-            chanEmit('workitem.delivered', { workitemId, finalQueueId: 'outbox', agentId, box: '', ms: 0, ts: Date.now() });
-          }
-          chanEmit('queue.status', { queueId: agentId, depth: d, maxCapacity: QUEUE_CAP, nextAdvanceAt: 0 });
-        });
+      tgResolved = null;
+      settled.then(() => {
+        if (!agentId) return;
+        const d = bumpQueue(agentId, -1);
+        const cur = activeItem.get(chatKey);
+        if (cur && cur.workitemId === workitemId) {          // finished WITHOUT being superseded → the reply went out
+          activeItem.delete(chatKey);
+          chanEmit('workitem.delivered', { workitemId, finalQueueId: 'outbox', agentId, box: '', ms: 0, ts: Date.now() });
+        }
+        chanEmit('queue.status', { queueId: agentId, depth: d, maxCapacity: QUEUE_CAP, nextAdvanceAt: 0 });
+      });
     },
 
     onCallback: hub.onCallback,

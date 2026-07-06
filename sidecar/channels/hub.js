@@ -118,6 +118,11 @@
     const resolveAgent = typeof o.resolveAgent === 'function' ? o.resolveAgent : null;   // Phase B: the placed floor's routing plan
     const getTag = typeof o.getTag === 'function' ? o.getTag : null;                     // FILTER content-routing key (B3 classifier)
     const resolveStation = typeof o.resolveStation === 'function' ? o.resolveStation : null;   // B5: per-bay capability station
+    // ONE-RESOLVER LAW: any telemetry that attributes an inbound message to an agent (workitem crates, queue
+    // HUD) must come from THIS hub's resolution, never a parallel guess. onResolved fires once per real message
+    // (never for /commands) with the exact agentId the run will execute as, in onInbound's first synchronous
+    // slice — before any run starts. Optional; a throwing hook must never break the inbound.
+    const onResolved = typeof o.onResolved === 'function' ? o.onResolved : null;
     // In-messenger control surface (channel-agnostic — lives HERE so Telegram/Discord/any future adapter behave
     // identically). All optional: absent -> commands degrade to an honest "not available here" reply.
     //   roster()          -> [{ agentId, name, model, provider }]  (the SAME roster the browser dossier reads)
@@ -278,10 +283,14 @@
 
       // B4 — persist the chat→agent binding (+ this hub's channel) so the autonomous notifier can find which chat to
       // ping for a given agent when a cron run produces work. Best-effort: a store hiccup must never block the reply.
-      // NOTE: this records the RESOLVED agent so the notifier is accurate; it does NOT overwrite an explicit /talk
-      // binding with a fallback, because when boundAgentId is set it is precisely what resolves here (floor plans
-      // are a deliberate, separate deployment surface).
-      try { if (typeof store.saveChatRecord === 'function') store.saveChatRecord(chatId, { agentId: agentId, channel: channel }); } catch (_) {}
+      // GUARD (2026-07-05): a FLOOR-ROUTED agent must never overwrite the user's explicit /talk binding — one
+      // belt-routed message used to silently rebind the whole chat to whatever bay the belts picked, so /whoami,
+      // /model and the notifier all started asserting an agent the user never chose. Persist only when the chat is
+      // unbound or the resolution agrees with the binding.
+      try { if (typeof store.saveChatRecord === 'function' && (!boundAgentId || boundAgentId === agentId)) store.saveChatRecord(chatId, { agentId: agentId, channel: channel }); } catch (_) {}
+
+      // announce the SINGLE resolution to the host (workitem crate + queue HUD attribution — one truth).
+      if (onResolved) { try { onResolved({ chatId: chatId, agentId: agentId, text: msg.text }); } catch (_) {} }
 
       // one run per CONVERSATION: a new message in THIS chat ABORTS its in-flight run — keyed by chatId, NOT
       // agentId, so two chats routed to the SAME agent (via a splitter/filter) never cross-cancel each other.

@@ -191,6 +191,51 @@ async function run() {
     A.eq(lastRun.agentId, 'tg_777', 'resolveAgent -> null falls back to tg_<chatId> (real work never stalls)');
   }
 
+  // ---- J2. ONE-RESOLVER LAW: onResolved fires with the ROUTED agent, synchronously, never for /commands ----
+  {
+    const store = fakeStore(); const resolved = [];
+    const runOnce = async (o) => { o.emit('agent.run.start', { agentId: o.agentId, runId: o.runId, trigger: 'event', model: o.model }); o.emit('agent.token', { agentId: o.agentId, runId: o.runId, delta: 'ok' }); o.emit('agent.run.end', { agentId: o.agentId, runId: o.runId, reason: 'done', turns: 1, usd: 0 }); };
+    const hub = makeChannelHub({
+      runOnce, store, send: () => Promise.resolve({ ok: true }),
+      secrets: () => ({ key: 'k', model: 'm', agentId: 'overseer' }), classify: () => false, newId: idGen(),
+      getTag: (t) => (/research/.test(t) ? 'research' : 'general'),
+      resolveAgent: (ctx) => ctx.tag === 'research' ? 'researcher' : null,
+      roster: () => [{ agentId: 'overseer', name: 'Overseer', model: 'm' }],
+      onResolved: (info) => resolved.push(Object.assign({}, info))
+    });
+    const p = hub.onInbound(dm('research the market'));
+    A.eq(resolved.length, 1, 'onResolved fired in onInbound\'s first synchronous slice (before any await)');
+    A.eq(resolved[0].agentId, 'researcher', 'onResolved carries the FLOOR-ROUTED agent — the same one the run executes as');
+    A.eq(resolved[0].chatId, '555', 'onResolved carries the chatId');
+    A.eq(resolved[0].text, 'research the market', 'onResolved carries the message text (crate preview source)');
+    await p;
+    await hub.onInbound(dm('plain chat'));
+    A.eq(resolved.length, 2, 'a second real message fires it again');
+    A.eq(resolved[1].agentId, 'overseer', 'unrouted message resolves to the configured agent — same fallback the run uses');
+    await hub.onInbound(dm('/agents'));
+    A.eq(resolved.length, 2, 'a /command NEVER fires onResolved — no phantom crate for control chatter');
+  }
+
+  // ---- J3. floor routing must NOT clobber an explicit /talk binding (B4 persist guard) ----
+  {
+    const store = fakeStore(); const saves = [];
+    store.saveChatRecord = (chatId, rec) => { saves.push({ chatId: String(chatId), rec }); store.recs.set(String(chatId), rec); };
+    store.recs.set('555', { agentId: 'overseer', channel: 'telegram' });   // the user's explicit /talk choice
+    const runOnce = async (o) => { o.emit('agent.run.start', { agentId: o.agentId, runId: o.runId, trigger: 'event', model: o.model }); o.emit('agent.token', { agentId: o.agentId, runId: o.runId, delta: 'ok' }); o.emit('agent.run.end', { agentId: o.agentId, runId: o.runId, reason: 'done', turns: 1, usd: 0 }); };
+    const hub = makeChannelHub({
+      runOnce, store, send: () => Promise.resolve({ ok: true }),
+      secrets: () => ({ key: 'k', model: 'm' }), classify: () => false, newId: idGen(),
+      resolveAgent: () => 'researcher'   // the floor routes EVERY message elsewhere
+    });
+    await hub.onInbound(dm('do the thing'));
+    A.eq(saves.length, 0, 'floor-routed resolution did NOT overwrite the explicit binding');
+    A.eq(store.recs.get('555').agentId, 'overseer', 'the chat still belongs to the agent the user chose');
+    // an UNBOUND chat still records the resolved agent (the notifier needs some chat for that agent)
+    await hub.onInbound(dm('hello', '777'));
+    A.eq(saves.length, 1, 'unbound chat -> binding persisted');
+    A.eq(saves[0], { chatId: '777', rec: { agentId: 'researcher', channel: 'telegram' } }, 'unbound chat records the resolved agent');
+  }
+
   // ---- K. two chats routed to the SAME agent do NOT cross-cancel (supersede keyed by chatId, not agentId) ----
   {
     const store = fakeStore(); const sends = []; const parks = {};
