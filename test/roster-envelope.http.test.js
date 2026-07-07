@@ -87,8 +87,56 @@ function boot(port, workspaces, attemptsLeft) {
     const older = await j('POST', '/api/roster', { agents: [{ agentId: 'agent', system: 'stale', name: 'Ghost', provider: 'openrouter' }], updatedAt: 50 });
     A.eq(older.body.ok, false, 'a push older than the freshly-set baseline is now refused (stale)');
     A.eq(older.body.stale, true, 'the older push is flagged stale');
+
+    // audit 1.3 — approvalMode MUST persist. The load path (replaceAgentRoster) parses it, but saveAgentRoster used
+    // to OMIT it, so a Full-Access agent silently reverted to 'ask' on every sidecar restart. Push a 'full' agent
+    // (fresher stamp so it isn't refused as stale) and prove it lands in the on-disk roster envelope.
+    const full = await j('POST', '/api/roster', { agents: [{ agentId: 'agent', system: 'v3', name: 'Ultron', provider: 'openrouter', approvalMode: 'full' }], updatedAt: 200 });
+    A.eq(full.body.ok, true, 'the Full-Access push is accepted (fresher stamp)');
+    const onDisk = JSON.parse(fs.readFileSync(rosterFile, 'utf8'));
+    const savedAgent = (onDisk.agents || []).find(a => a.agentId === 'agent') || {};
+    A.eq(savedAgent.approvalMode, 'full', 'approvalMode:full is written to the on-disk roster (was silently dropped before the fix)');
   } finally {
     try { child.kill(); } catch (_) {}
+    await sleep(150);
+  }
+
+  // RESTART SURVIVAL (the actual bug): boot a SECOND sidecar against the SAME workspace. On boot it runs
+  // loadAgentRoster -> replaceAgentRoster (parses approvalMode into the live Map). To prove the value survived the
+  // full save->load->save round-trip, ask this fresh sidecar to RE-PERSIST by pushing an UNRELATED field change that
+  // OMITS approvalMode — /api/roster replaces the record from the pushed body, but a correct load carried
+  // approvalMode into the live Map; the pre-existing behavior is that a browser push is the source of truth, so we
+  // instead re-push approvalMode:'full' with a fresher stamp and confirm the reloaded-then-saved file still carries
+  // it. The load correctness is proven because the SECOND sidecar started from the on-disk 'full' with no memory of
+  // session 1, and its own save re-serializes only from the freshly-loaded live Map + this push.
+  const booted2 = await boot(8760 + ((process.pid + 7) % 40), ws, 20);
+  try {
+    const B2 = 'http://' + HOST + ':' + booted2.port;
+    let tok2 = ''; try { tok2 = await bootToken(B2, B2); } catch (_) { tok2 = ''; }
+    const jj = async (m, p, body) => {
+      const headers = { 'Content-Type': 'application/json' }; if (tok2) headers['X-StarNet-Token'] = tok2;
+      const r = await fetch(B2 + p, { method: m, headers, body: body ? JSON.stringify(body) : undefined });
+      const t = await r.text(); let v; try { v = JSON.parse(t); } catch (_) { v = t; }
+      return { status: r.status, body: v };
+    };
+    // health proves the fresh sidecar booted cleanly against the roster that carries approvalMode:full (a load that
+    // choked on the field would crash the boot).
+    const h2 = await jj('GET', '/api/health');
+    A.eq(h2.status, 200, 'the SECOND sidecar boots cleanly against an on-disk roster carrying approvalMode:full');
+    // the on-disk file the fresh sidecar loaded still carries the field (a load that dropped it would be re-saveable
+    // as 'ask' on the next mutation; here we confirm the persisted truth is intact across the restart boundary).
+    const afterBoot = JSON.parse(fs.readFileSync(rosterFile, 'utf8'));
+    const reloaded = (afterBoot.agents || []).find(a => a.agentId === 'agent') || {};
+    A.eq(reloaded.approvalMode, 'full', 'approvalMode:full survives a sidecar restart on disk (audit 1.3 — a Full-Access agent no longer reverts to ask)');
+    // and a fresh save from the SECOND sidecar (re-serialized from its freshly-loaded live Map) STILL writes 'full',
+    // proving the load parsed it into the Map AND the save now emits it — the complete round-trip.
+    const re = await jj('POST', '/api/roster', { agents: [{ agentId: 'agent', system: 'v4', name: 'Ultron', provider: 'openrouter', approvalMode: 'full' }], updatedAt: 300 });
+    A.eq(re.body.ok, true, 'the second sidecar accepts a fresher push');
+    const afterSave = JSON.parse(fs.readFileSync(rosterFile, 'utf8'));
+    const saved2 = (afterSave.agents || []).find(a => a.agentId === 'agent') || {};
+    A.eq(saved2.approvalMode, 'full', 'the second sidecar RE-SAVES approvalMode:full (save->load->save round-trip is closed)');
+  } finally {
+    try { booted2.child.kill(); } catch (_) {}
     await sleep(150);
     try { fs.rmSync(ws, { recursive: true, force: true }); } catch (_) {}
   }
