@@ -354,6 +354,40 @@ E-STOP visibility + get-a-key link already chipped by Atlas — not re-listed.**
 - GB-27 .bugloops unbounded (395MB/2066 files) — TTL sweep.
 - GB-28 Multi-agent status dashboard (which of N agents stuck/failed/done — superset of GB-7).
 
+**Round 3 (GC) — closing sweeps 2026-07-07: external parity (ChatGPT/Claude Desktop/Cursor/
+LM Studio) + final corners. Convergence reached: 18/28 parity candidates and most corner items
+were already shipped or on GA/GB — the audit is saturated; below is the residue. AUDIT CLOSED.**
+
+*GC-T1 — the OS-integration layer (the entire theme parity surfaced; StarNet has none of it):*
+- GC-1 System tray + close-to-tray: app fully DIES on window close — contradicts the "agents
+  keep working / 24-7 routines+channels" pitch. No TrayIcon anywhere in src-tauri.
+- GC-2 Global summon hotkey / quick-entry window (ChatGPT Alt+Space class; no global-shortcut
+  plugin in Cargo.toml).
+- GC-3 Launch-at-login toggle (no tauri-plugin-autostart) — pairs with GC-1 for real 24/7.
+- GC-4 Screenshot capture-and-attach (companion to GA-1; only canvas postcard capture exists).
+- GC-5 App shortcut set: new session / focus input / palette (only ctrl-handlers in ALL of
+  frontend = REFIT undo/redo + Alt+H) — makes GA-17 cheat-sheet worth having.
+- GC-6 Always-on-top compact companion mode (capability in Tauri schema, never invoked).
+
+*GC-T2 — chat + trust residue:*
+- GC-7 Memory VIEW surface: user can veto ("forget this") at write time but can NEVER browse/
+  bulk-delete what agents remember — trust/privacy gap (chat.js ~1070 deck is write-time only).
+- GC-8 Temporary/incognito chat (no transcript/memory writes) — complements GB-3.
+- GC-9 Branch conversation from a message keeping both (GA-3 edit is destructive).
+- GC-10 Quote-selection-to-reply; @-mention agent autocomplete in input.
+- GC-11 Session folders/projects grouping (flat list; matters past ~30 sessions).
+- GC-12 Spend click-through: topbar total → per-agent/per-day breakdown (data tracked, no UI).
+
+*GC-T3 — board + small residue:*
+- GC-13 Task cards: drag between lanes, notes/description field, optional due-date (title +
+  deliverable link is ALL a card holds today).
+- GC-14 Recruit: preview class system prompt before summon; custom-class DELETE (edit exists);
+  skin preview before confirm.
+- GC-15 Factory-reset (fresh station) from settings without reinstall.
+- GC-16 Widget resize (reorder/remove exist); maxlength counters (18-char rename truncates
+  silently); spellcheck attr on chat textarea; emoji-in-names canvas rendering unvalidated.
+- GC-17 Parked/low: proxy settings, app locale, migration guide doc (export covers data).
+
 ## NIGHT SHIFT — autonomy rebuild (added 2026-07-07, Fable session; Andrew-approved direction)
 
 **Escape:** Andrew left the station overnight at MAX autonomy → exactly 1 autonomous act, then
