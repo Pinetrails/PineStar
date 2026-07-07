@@ -149,4 +149,39 @@ A.eq(Autopilot.digestHeadline({ wroteCount: 1, draftCount: 0 }), '1 file written
 A.eq(Autopilot.digestHeadline({ wroteCount: 0, draftCount: 1 }), '1 draft on your desk', 'headline draft-only');
 A.eq(Autopilot.digestHeadline({}), 'nothing to report', 'empty headline is honest');
 
+/* ---------- NS-3: the tool-capable V2 directives + the shared LEARN transform ---------- */
+// the V2 candidate directive: same tagged output contract (so parseCandidates works verbatim) but BUILD-shaped —
+// asks for a real artifact, allows tools/research, forbids send/publish/spend.
+const cd2 = Autopilot.buildCandidateDirectiveV2({ beliefs: b2, eligible: eligAll });
+A.ok(/GROUNDED/i.test(cd2) && /CONFIDENCE/i.test(cd2) && /JOB:/.test(cd2), 'V2 candidate keeps the grounded, confidence-rated, tagged contract (parseCandidates-compatible)');
+A.ok(/artifact/i.test(cd2) && /(sandbox|workshop|local)/i.test(cd2), 'V2 candidate asks for a REAL artifact built locally in the sandbox');
+A.ok(!/NO tools/i.test(cd2) && /(send|publish|spend)/i.test(cd2), 'V2 candidate does NOT forbid tools, but DOES forbid send/publish/spend');
+// parseCandidates + the grounding veto work UNCHANGED on a V2-style reply (proof the contract is reused).
+const cands2 = Autopilot.parseCandidates(reply, { eligible: eligAll, beliefs: b2 });
+A.eq(cands2.length, 2, 'the grounding veto still drops the invented candidate on the V2 path (same parser)');
+
+// the V2 do directive: instructs a real jailed BUILD under the run dir + a deliverable.json manifest (workshop schema).
+const dd2 = Autopilot.buildDoDirectiveV2(cands2[0], { runId: 'run-xyz', dir: 'workshop/run-xyz', backlogId: 'ns-act-run-xyz' });
+A.ok(/deliverable\.json/.test(dd2) && /workshop\/run-xyz\//.test(dd2), 'V2 do directive demands a manifest + writes under the run dir');
+A.ok(/"backlogId":\s*"ns-act-run-xyz"/.test(dd2), 'V2 do directive threads the backlogId into the manifest shape');
+A.ok(/(never send|LOCAL ONLY|not.*publish|spend)/i.test(dd2), 'V2 do directive keeps the local-only (no send/publish/spend) rule');
+
+// the shared LEARN transform: fold verdicts, derive the capped bias — the SAME math the frontend AutopilotStore uses.
+let L = {};
+L = Autopilot.learnFold(L, 'advance-goal', true);
+L = Autopilot.learnFold(L, 'advance-goal', true);
+L = Autopilot.learnFold(L, 'scout', false);
+A.eq([L['advance-goal'].up, L['advance-goal'].down], [2, 0], 'learnFold tallies approvals (up)');
+A.eq([L.scout.up, L.scout.down], [0, 1], 'learnFold tallies denials (down)');
+const W = Autopilot.learnWeightsFrom(L);
+A.eq(W['advance-goal'], 0.5, 'a net +2 up-weights to the cap (+0.5)');
+A.eq(W.scout, -0.25, 'a net -1 down-weights (-0.25)');
+// the cap holds even at extreme tallies (learning sways ties, never the confidence gate).
+let Lx = {}; for (let i = 0; i < 20; i++) Lx = Autopilot.learnFold(Lx, 'kill-pain', true);
+A.eq(Autopilot.learnWeightsFrom(Lx)['kill-pain'], 0.5, 'the up-weight is capped at +0.5 no matter how many approvals');
+A.eq(Autopilot.learnWeightsFrom(null).constructor, Object, 'learnWeightsFrom is tolerant of a null/absent store');
+// the learned weight actually flips a confidence tie via scoreAndSelect (deny→down, approve→up move selection).
+const tie2 = [{ title: 'a', archetype: 'advance-goal', grounds: 'g', confidence: 'high', spec: 's' }, { title: 'b', archetype: 'scout', grounds: 'g', confidence: 'high', spec: 's' }];
+A.eq(Autopilot.scoreAndSelect(tie2, { weights: Autopilot.learnWeightsFrom(Autopilot.learnFold(Autopilot.learnFold({}, 'scout', true), 'scout', true)) }).selected.archetype, 'scout', 'approvals of scout up-weight it enough to win a tie against the default-order winner');
+
 A.report('autopilot.test');
