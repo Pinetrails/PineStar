@@ -1599,6 +1599,10 @@ const App = (() => {
   // station; otherwise it shows the connect screen in RESUME mode. Only a genuine no-save state falls through
   // to a fresh creation.
   function reentry() {
+    // FORWARD-VERSION GATE (P0.3): a re-entry (disconnect / back / recovery) must not fall through to a fresh
+    // create when the stored save is from a NEWER build — Save.load() returns null for it, which would look like
+    // "no save" and clobber it on first persist(). Stop at the honest update gate; the save stays untouched.
+    if (Save.isFuture && Save.isFuture()) { showFutureSaveGate(Save.loadStatus().version); return; }
     const saved = Save.has() ? Save.load() : null;
     if (saved && saved.agent) {
       if (saved.prov && Harness.setProv) Harness.setProv(saved.prov);
@@ -2561,6 +2565,40 @@ const App = (() => {
     show('screen-connect'); initConnect();
   }
 
+  // FORWARD-VERSION GATE (P0.3). Raised when the save on this machine (or an adopted durable remote) was written
+  // by a NEWER StarNet than this build can read. This is a HARD STOP: it shows the blocking gate screen and
+  // returns; NOTHING here calls persist()/Save.write(), so the newer save is never re-stamped or clobbered. The
+  // only action re-checks/opens the desktop Update Center when the native updater is present; otherwise it states
+  // how to update. gateActive latches so a stray timer/beacon can't route back into a resume/persist path.
+  let gateActive = false;
+  function showFutureSaveGate(version) {
+    gateActive = true;
+    try { Chat.abort(); } catch (_) {}
+    try { if (World && World.stop) World.stop(); } catch (_) {}
+    const v = Number(version) || 0;
+    const sub = el('future-sub');
+    if (sub) sub.textContent = v ? ('saved format v' + v + ' · this build reads up to v' + Save.CURRENT) : '';
+    const msg = el('future-msg');
+    const btn = el('btn-future-update');
+    const hasUpdater = (typeof Updates !== 'undefined') && (typeof window !== 'undefined' && window.__TAURI__ && window.__TAURI__.core);
+    if (btn) {
+      btn.onclick = async () => {
+        SFX.click && SFX.click();
+        if (hasUpdater) {
+          if (msg) msg.textContent = 'checking for an update…';
+          try {
+            const snap = await Updates.check(true, 'future-save-gate');
+            if (snap && snap.phase === 'available') { try { await Updates.install(); } catch (_) {} }
+            else if (msg) msg.textContent = 'no newer build is published yet — check back shortly.';
+          } catch (_) { if (msg) msg.textContent = 'update check failed — try again in a moment.'; }
+        } else if (msg) {
+          msg.textContent = 'Update StarNet to the latest version (in the desktop app: Update Center), then reopen.';
+        }
+      };
+    }
+    show('screen-future');
+  }
+
   /* ---------- boot ---------- */
   async function init() {
     if (Harness.init) await Harness.init();   // desktop: load the keychain "configured?" flag first
@@ -2594,11 +2632,24 @@ const App = (() => {
       reentry();   // resume straight into the restored agent (or its RESUME screen if creds are still missing)
     };
 
+    // FORWARD-VERSION GATE (P0.3), step 1 — the LOCAL cache. Save.load() returns null for a future save (so no
+    // call site can adopt/re-save it), which would otherwise look like "no save" here and fall through to a fresh
+    // create that clobbers the newer save on first persist(). Check the honest status BEFORE reconcile and stop:
+    // the gate returns without ever touching the stored doc.
+    const localStatus = Save.loadStatus ? Save.loadStatus() : { status: (Save.load() ? 'ok' : 'none'), version: 0 };
+    if (localStatus.status === 'future') { showFutureSaveGate(localStatus.version); return; }
+
     // durable restore: adopt whichever of {localStorage cache, sidecar mirror} is NEWER. This is what brings
     // the agent back after a browser-cache wipe (local gone, the sidecar still holds it) and refreshes the
     // cache to match. Best-effort: an unreachable sidecar just falls back to the local cache.
     if (typeof CloudSave !== 'undefined') CloudSave.installUnloadFlush();
     const saved = (typeof CloudSave !== 'undefined') ? await CloudSave.reconcile(Save.load()) : Save.load();
+    // FORWARD-VERSION GATE (P0.3), step 2 — a durable REMOTE from a newer build. reconcile() refuses to adopt it
+    // into the cache and hands back a future-save sentinel instead of a resumable doc. Same hard stop: gate, return,
+    // nothing persists.
+    if (typeof CloudSave !== 'undefined' && CloudSave.isFutureSentinel && CloudSave.isFutureSentinel(saved)) {
+      showFutureSaveGate(saved.version); return;
+    }
     // restore the provider BEFORE the credential check so a codex agent (tokens server-side) jumps straight
     // in after a wipe/origin-reset instead of being misrouted to an OpenRouter key prompt.
     if (saved && saved.prov && Harness.setProv) Harness.setProv(saved.prov);
