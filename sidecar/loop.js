@@ -418,7 +418,13 @@
           turns = turnStart;                                          // refund: this turn didn't advance the budget
           emit('iteration.refunded', { agentId, runId, turn: turnStart, reason: empty ? 'empty' : 'duplicate', refundsUsed });
         }
-        return end('done');
+        // TRUTHFUL TELEMETRY (audit 1.7): a final turn that produced ZERO tools AND no text is NOT a clean delivery —
+        // a degraded provider streaming empty completions would otherwise read as a successful 'done'. End it as
+        // 'empty' (an ADDITIVE agent.run.end reason value; see shared/events.js) so index.js skips reflection/study/
+        // skill-review, the cron settle path never emits workitem.delivered, and the frontend renders "ended: empty"
+        // instead of a delivered crate. A DUPLICATE turn is different: it re-emitted a REAL prior answer, so it stays
+        // 'done' (the answer exists — only the genuinely empty final turn is degraded).
+        return end(empty ? 'empty' : 'done');
       }
 
       // (6) EXECUTE — needs a dispatcher (M1.2+)

@@ -43,7 +43,11 @@
     }),
     'agent.run.end': obj(['agentId', 'runId', 'reason', 'turns', 'usd'], {
       agentId: str, runId: str,
-      reason: { enum: ['done', 'max_iters', 'budget', 'cancelled', 'error', 'refusal'] },
+      // ADDITIVE 2026-07-06 (audit 1.7, run-truth-quickies): 'empty' — the final model turn produced ZERO tools and
+      // no text (a degraded provider streaming empty completions). Distinct from 'done' so it never reads as a clean
+      // delivery (loop.js ends it 'empty'; the frontend renders "ended: empty", never a delivered crate). Enum VALUE
+      // added, never renamed/removed — old payloads and consumers stay valid.
+      reason: { enum: ['done', 'max_iters', 'budget', 'cancelled', 'error', 'refusal', 'empty'] },
       turns: int, usd: num,
       // ADDITIVE (optional, Lane 5): WHY the provider stopped when it was a truncation/policy cut. Present ONLY
       // for the non-clean stops so the frontend can render a "cut short" recap instead of a delivered crate; a
