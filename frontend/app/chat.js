@@ -547,7 +547,10 @@ const Chat = (() => {
   // server never expects it) and hard-caps to HISTORY_CAP dialogue turns as a belt-and-suspenders bound.
   function historyWindow(ws) {
     if (!ws || !Array.isArray(ws.history)) return [];
-    const real = ws.history.filter(m => !(m && m.truncated));
+    // drop LOCAL markers that are records, not dialogue: the history-cap marker (truncated) and any system status
+    // line (sys — e.g. an autosessions "routine ran, nothing to report" / "couldn't load the output" framing line).
+    // These must NEVER be replayed to the model as prior turns (a frontend-authored string is not the agent's word).
+    const real = ws.history.filter(m => !(m && (m.truncated || m.sys)));
     return real.length > HISTORY_CAP ? real.slice(-HISTORY_CAP) : real;
   }
   function getHistory() { return activeWs ? activeWs.history.slice() : []; }
@@ -2605,6 +2608,9 @@ const Chat = (() => {
     for (const m of h) {
       if (m && m.truncated) continue;   // E3: the local history-cap marker is a data record, not a dialogue turn
       if (m.role === 'user') { addUser(m.content); continue; }
+      // a SYSTEM STATUS marker (sys — e.g. an autosessions run-outcome framing line) renders as a system-styled
+      // line, NOT as agent speech; it never seeds the model (historyWindow drops it) and it stays visible in-thread.
+      if (m && m.sys) { if ((m.content || '').trim()) toolLine(m.content, !!m.error); continue; }
       if (m.role !== 'assistant') continue;   // only dialogue turns render (a stray system marker never shows as an agent reply)
       if (!(m.content || '').trim()) continue;   // skip a turn that produced no prose (tool-only / stopped run)
       const r = row('agent', { stamp: true });   // past turns render as plain GROUPED messages; only the LIVE reply is the lit headline

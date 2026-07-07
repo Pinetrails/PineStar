@@ -75,6 +75,7 @@ const AutoSessions = (() => {
     // mark the row busy via the SAME per-workstream channel state chat.js drives (Channels.begin) so the
     // rail's railRowState paints the pulsing "running" dot — reused, not a bespoke busy flag.
     if (hasCh() && !Channels.isBusy(id)) Channels.begin(id, Date.now());
+    armReconcilePoll();   // a live cron run → keep a bounded poll ready to heal it if the result event is lost
     refreshRail();
     persist();
     return ws;
@@ -91,13 +92,13 @@ const AutoSessions = (() => {
     if (!ws) ws = beginSession(runId, routineFor(/* jobId unknown here */ '') || null);
     if (!ws) return;
 
-    let turns = [];
+    let turns = [], fetchOk = false;
     try {
       const r = await fetch('/api/transcript?agent=' + encodeURIComponent(ws.agentId || 'agent') + '&stream=' + encodeURIComponent(id) + '&limit=200', { cache: 'no-store' });
-      if (r.ok) turns = ((await r.json()) || {}).turns || [];
-    } catch (_) { turns = []; }   // fail-open: no fabricated content
+      if (r.ok) { turns = ((await r.json()) || {}).turns || []; fetchOk = true; }
+    } catch (_) { turns = []; fetchOk = false; }   // fail-open: no fabricated content — and we know the fetch FAILED
 
-    foldTurns(ws, turns, outcome, reason);
+    foldTurns(ws, turns, outcome, reason, fetchOk);
     if (hasCh()) Channels.end(id);   // clear the busy/running channel state
     // if this session is the one on screen, re-render it so the folded output is visible immediately.
     if (hasChat() && Workstreams.activeId && Workstreams.activeId() === id) Chat.load(ws);
@@ -105,32 +106,76 @@ const AutoSessions = (() => {
     persist();
   }
 
-  // Fold server transcript rows into ws.history in chat.js's EXACT native shape ({role, content, error?}).
-  // Attended history only ever holds user/assistant turns (chat.js never pushes 'tool' rows), so we match
-  // that: keep user + assistant prose, drop 'tool'/'system' mechanics. Idempotent-ish — we replace history
-  // rather than append duplicates when re-folding the same run (a backfill that races a live result).
-  function foldTurns(ws, turns, outcome, reason) {
+  // Fold server transcript rows into ws.history in chat.js's native shape. REAL dialogue is user/assistant prose;
+  // our own framing lines (silent / failed / couldn't-load / nothing-to-report) are STATUS markers — role:'system'
+  // with sys:true — NOT role:'assistant'. That matters twice (Lane 5): chat.js renders a sys marker as a system-
+  // styled line (not agent speech), and historyWindow() EXCLUDES sys markers so a frontend-authored string is never
+  // replayed back to the model as a prior assistant turn. `fetchOk` distinguishes a transcript-fetch FAILURE (say
+  // so honestly) from a run that genuinely produced no readable output. Idempotent-ish — replaces history.
+  function foldTurns(ws, turns, outcome, reason, fetchOk) {
+    const sysMarker = (text, error) => { const m = { role: 'system', sys: true, content: String(text) }; if (error) m.error = true; return m; };
     const next = [];
     for (const t of (turns || [])) {
       if (!t || (t.role !== 'user' && t.role !== 'assistant')) continue;   // mechanics (tool/system) stay out of COMMS
       const content = String(t.content == null ? '' : t.content);
       if (t.role === 'user') { next.push({ role: 'user', content: content }); continue; }
-      // assistant: a bare '[SILENT]' reply is a REAL, honest outcome (the routine chose to stay quiet) — mark
-      // it as such rather than dropping it to a blank thread. Empty prose (tool-only turn) is skipped.
-      if (content.trim() === '[SILENT]') { next.push({ role: 'assistant', content: '— routine ran, nothing to report —' }); continue; }
+      // assistant: a bare '[SILENT]' reply is a REAL, honest outcome (the routine chose to stay quiet) — mark it as
+      // a status line rather than dropping it to a blank thread. Empty prose (tool-only turn) is skipped.
+      if (content.trim() === '[SILENT]') { next.push(sysMarker('— routine ran, nothing to report —')); continue; }
       if (content.trim()) next.push({ role: 'assistant', content: content });
     }
+    const hasReply = next.some(m => m.role === 'assistant');
     // a FAILED run must never look like it produced nothing: append an honest error line from the outcome.
     if (outcome === 'failed') {
       const why = String(reason || 'run failed').trim();
-      next.push({ role: 'assistant', content: '⚠ Routine failed — ' + why, error: true });
-    } else if (!next.some(m => m.role === 'assistant')) {
-      // no assistant prose AND not failed → be truthful that the run settled without readable output.
-      next.push({ role: 'assistant', content: '— routine ran, nothing to report —' });
+      next.push(sysMarker('⚠ Routine failed — ' + why, true));
+    } else if (!hasReply) {
+      // no assistant prose AND not failed. Be precise about WHY there's nothing: a FAILED transcript fetch is NOT
+      // the same as a run that settled quietly — never claim "nothing to report" when we simply couldn't read it.
+      next.push(fetchOk
+        ? sysMarker('— routine ran, nothing to report —')
+        : sysMarker('⚠ couldn\'t load the output — the run\'s transcript wasn\'t reachable', true));
     }
     ws.history = next;
     if (hasWS() && Workstreams.appendRun) Workstreams.appendRun(ws.id, ws.id);   // hybrid-honest: a real run fired → todo advances to active
   }
+
+  // ---- busy reconciliation: heal a session wedged 'RUNNING' after a mid-run SSE drop -----------
+  // The busy state a cron fire sets (Channels.begin) is cleared ONLY by cron.result. If the SSE bridge drops
+  // between fire and result, that event is LOST and the session stays RUNNING forever — which also blocks the
+  // Commander from typing into it (chat.js: `if (Channels.isBusy(ws.id)) return`). A run is recorded in the
+  // runStore ONLY when it finishes, so: for each busy cron session, ask /api/runs whether its runId is now done;
+  // if so, complete it (fold transcript + Channels.end). Fail-open, self-contained, no new events.
+  let reconcilePoll = null;
+  async function reconcileBusy() {
+    if (!hasWS() || !hasCh() || !Channels.busyIds) return;
+    const busy = Channels.busyIds().filter(id => String(id).indexOf(STREAM_PREFIX) === 0 && validStream(id));
+    if (!busy.length) { stopReconcilePoll(); return; }
+    for (const sid of busy) {
+      const ws = Workstreams.get(sid);
+      const runId = String(sid).slice(STREAM_PREFIX.length);
+      let done = null;
+      try {
+        const r = await fetch('/api/runs?agent=' + encodeURIComponent((ws && ws.agentId) || 'agent') + '&runId=' + encodeURIComponent(runId), { cache: 'no-store' });
+        if (r.ok) { const rows = ((await r.json()) || {}).runs || []; done = rows.find(x => x && x.runId === runId) || null; }
+      } catch (_) { done = null; }   // offline / bridge still down → leave it busy, retry next tick
+      if (done) {
+        const outcome = (done.reason === 'error' || done.error) ? 'failed' : 'ok';
+        await completeSession(runId, outcome, done.error || done.reason);   // folds transcript + Channels.end
+      }
+    }
+    if (!Channels.busyIds().some(id => String(id).indexOf(STREAM_PREFIX) === 0)) stopReconcilePoll();
+  }
+  // a bounded self-poll: armed whenever a cron session goes busy, it retries reconcileBusy on a slow cadence
+  // (covers an SSE drop with no reconnect event to hook) and self-stops once no cron session is busy. Bounded so
+  // a genuinely long run doesn't poll forever — it caps out, then boot backfill / the next fire re-arms it.
+  function armReconcilePoll() {
+    if (reconcilePoll) return;
+    if (!hasCh() || !Channels.busyIds || !Channels.busyIds().some(id => String(id).indexOf(STREAM_PREFIX) === 0)) return;   // nothing busy → nothing to poll
+    let left = 40;   // ~10 min at 15s — long enough for any real cron run; boot backfill is the backstop past that
+    reconcilePoll = setInterval(() => { if (--left <= 0) { stopReconcilePoll(); return; } reconcileBusy(); }, 15000);
+  }
+  function stopReconcilePoll() { if (reconcilePoll) { clearInterval(reconcilePoll); reconcilePoll = null; } }
 
   // ---- boot backfill: sessions for cron runs that finished while the browser was CLOSED ---------
   async function backfill() {
@@ -147,20 +192,29 @@ const AutoSessions = (() => {
       for (const run of runs) {
         const sid = run && run.streamId;
         if (!sid || String(sid).indexOf(STREAM_PREFIX) !== 0 || !validStream(sid)) continue;
-        if (seen[sid] || Workstreams.get(sid)) continue;   // dedupe: one session per stream id
+        if (seen[sid]) continue;
         seen[sid] = 1;
+        // ORPHAN FIX (Lane 5): a reload MID-RUN leaves an ADOPTED busy session in Workstreams with the user seed
+        // but NO assistant reply. The old dedupe skipped ANY existing session, permanently orphaning that output.
+        // Now: skip only a session that has ALREADY folded a reply (a real dedupe); an existing session with no
+        // assistant turn yet is folded from its (now-complete) durable transcript. A run only appears in this
+        // /api/runs list once it's DONE, so backfilling it here is correct — and it also clears the wedged busy
+        // state (foldTurns → completeSession-style, plus Channels.end below).
+        const existing = Workstreams.get(sid);
+        if (existing && existing.history && existing.history.some(m => m && m.role === 'assistant')) continue;   // already has output → true dedupe
         const runId = String(sid).slice(STREAM_PREFIX.length);
-        // adopt an idle (not busy) session then fold its transcript — a while-away run is already DONE.
-        Workstreams.adopt({ id: sid, title: String(run.title || 'Routine').split('\n')[0].slice(0, 80) || 'Routine', agentId: String(run.agentId || 'agent'), lane: 'active', history: [] });
+        // adopt (idempotent) — an existing seed-only session is preserved by adopt; a while-away run is already DONE.
+        Workstreams.adopt({ id: sid, title: String(run.title || 'Routine').split('\n')[0].slice(0, 80) || 'Routine', agentId: String(run.agentId || 'agent'), lane: 'active', history: (existing && existing.history) || [] });
         const ws = Workstreams.get(sid);
         if (!ws) continue;
-        let turns = [];
+        let turns = [], fetchOk = false;
         try {
           const tr = await fetch('/api/transcript?agent=' + encodeURIComponent(ws.agentId || 'agent') + '&stream=' + encodeURIComponent(sid) + '&limit=200', { cache: 'no-store' });
-          if (tr.ok) turns = ((await tr.json()) || {}).turns || [];
-        } catch (_) { turns = []; }
+          if (tr.ok) { turns = ((await tr.json()) || {}).turns || []; fetchOk = true; }
+        } catch (_) { turns = []; fetchOk = false; }
         const outcome = (run.reason === 'error' || run.error) ? 'failed' : 'ok';
-        foldTurns(ws, turns, outcome, run.error || run.reason);
+        foldTurns(ws, turns, outcome, run.error || run.reason, fetchOk);
+        if (hasCh()) Channels.end(sid);   // a backfilled run is DONE → clear any wedged busy/running state
       }
       refreshRail();
       persist();
@@ -193,9 +247,11 @@ const AutoSessions = (() => {
       U.bus.on('cron.result', onResult);
     }
     // backfill after boot; delayed so the save load + rail have settled (mirrors ReturnStore's digest delay).
-    setTimeout(() => { backfill(); }, 1400);
+    // After backfill, reconcile any session the restored save left marked busy (a mid-run reload/SSE drop) — a
+    // finished run gets folded + un-wedged; a still-live one arms the bounded poll.
+    setTimeout(() => { backfill().then(() => { reconcileBusy(); armReconcilePoll(); }); }, 1400);
   }
-  function reset() { routines = null; }   // a fresh Commander re-reads the catalogue; sessions are cleared by Workstreams.reset()
+  function reset() { routines = null; stopReconcilePoll(); }   // a fresh Commander re-reads the catalogue; sessions are cleared by Workstreams.reset()
 
   return { init, reset, _internals: { beginSession, completeSession, foldTurns, backfill, loadRoutines, routineFor, validStream, streamOf } };
 })();
