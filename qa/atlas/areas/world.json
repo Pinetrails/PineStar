@@ -39,21 +39,33 @@
    "kind": "ui",
    "area": "world",
    "name": "▸ fine-tune the voice — dials & your own words (optional)",
-   "purpose": "",
-   "promise": "",
+   "purpose": "The \"fine-tune the voice\" progressive-disclosure toggle that reveals the trait dials + free-text voice box on the connect screen.",
+   "promise": "Collapsed by default (aria-expanded=false, caret ▸); clicking reveals #adv-body (caret ▾, aria-expanded=true) and clicking again collapses it — pure disclosure, no behaviour change (inputs stay in the DOM so onWake reads them either way).",
    "wiring": {
-    "files": [],
+    "files": [
+     "frontend/index.html",
+     "frontend/app/app.js"
+    ],
     "events": []
    },
-   "coverage": [],
-   "status": "unmapped",
-   "auditedAt": null,
+   "coverage": [
+    {
+     "kind": "known",
+     "ref": "no-machine-assertion"
+    }
+   ],
+   "status": "audited",
+   "auditedAt": {
+    "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+    "date": "2026-07-07T22:34:32Z"
+   },
    "findings": [],
    "firstSeen": "2026-07-07T08:11:07.402Z",
    "lastSeen": "2026-07-07T08:25:37.292Z",
    "missing": false,
    "selector": "#adv-toggle",
-   "state": "ingame"
+   "state": "ingame",
+   "notes": "Live-proven cold boot — before {expanded:false,bodyHidden:true}, after click {expanded:true,bodyHidden:false,caret:▾}, re-click collapses. app.js setAdvanced/wireAdvancedToggle (1635-1647). KNOWN: no journey/test asserts this DOM toggle; candidate for a beginner-run sub-step. Evidence cold.json#probes.advToggle."
   },
   {
    "id": "ui/world/aria-add-a-widget-to-this-rail",
@@ -178,8 +190,8 @@
    ],
    "status": "perfected",
    "auditedAt": {
-    "sha": "43e860b254af28741405216c2259a2226d106be7",
-    "date": "2026-07-07T21:06:49.519Z"
+    "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+    "date": "2026-07-07T22:34:32Z"
    },
    "findings": [],
    "firstSeen": "2026-07-07T08:11:07.405Z",
@@ -211,8 +223,8 @@
    ],
    "status": "perfected",
    "auditedAt": {
-    "sha": "43e860b254af28741405216c2259a2226d106be7",
-    "date": "2026-07-07T21:06:49.519Z"
+    "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+    "date": "2026-07-07T22:34:32Z"
    },
    "findings": [],
    "firstSeen": "2026-07-07T08:11:07.405Z",
@@ -244,8 +256,8 @@
    ],
    "status": "perfected",
    "auditedAt": {
-    "sha": "43e860b254af28741405216c2259a2226d106be7",
-    "date": "2026-07-07T21:06:49.519Z"
+    "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+    "date": "2026-07-07T22:34:32Z"
    },
    "findings": [],
    "firstSeen": "2026-07-07T08:11:07.405Z",
@@ -260,168 +272,273 @@
    "kind": "ui",
    "area": "world",
    "name": "‹ BACK",
-   "purpose": "",
-   "promise": "",
+   "purpose": "The BACK action on the connect screen returning to the prior flow (re-entry / roster).",
+   "promise": "Clicking it runs onConnectBack() to leave the connect screen without creating an agent.",
    "wiring": {
-    "files": [],
+    "files": [
+     "frontend/index.html",
+     "frontend/app/app.js"
+    ],
     "events": []
    },
-   "coverage": [],
-   "status": "unmapped",
-   "auditedAt": null,
+   "coverage": [
+    {
+     "kind": "journey",
+     "ref": "beginner-run:connect"
+    }
+   ],
+   "status": "audited",
+   "auditedAt": {
+    "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+    "date": "2026-07-07T22:34:32Z"
+   },
    "findings": [],
    "firstSeen": "2026-07-07T08:11:07.402Z",
    "lastSeen": "2026-07-07T08:25:37.292Z",
    "missing": false,
    "selector": "#btn-back",
-   "state": "ingame"
+   "state": "ingame",
+   "notes": "Live-proven cold boot — present+visible; onclick=onConnectBack (app.js:1540). beginner-run reaches the connect screen but does not click BACK specifically; the element+handler are verified. Evidence cold.json#probes.connectInputs."
   },
   {
    "id": "ui/world/btn-codex-logout",
    "kind": "ui",
    "area": "world",
    "name": "✕ DISCONNECT",
-   "purpose": "",
-   "promise": "",
+   "purpose": "Disconnects the stored ChatGPT credentials (forgets the Codex tokens).",
+   "promise": "Shown only when connected; clicking POSTs /api/auth/codex/logout, drops the tokens, and returns the block to the \"sign in\" state.",
    "wiring": {
-    "files": [],
+    "files": [
+     "frontend/index.html",
+     "frontend/app/app.js",
+     "sidecar/index.js"
+    ],
     "events": []
    },
-   "coverage": [],
-   "status": "unmapped",
-   "auditedAt": null,
+   "coverage": [
+    {
+     "kind": "test",
+     "ref": "provider.codex-auth.test.js"
+    }
+   ],
+   "status": "perfected",
+   "auditedAt": {
+    "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+    "date": "2026-07-07T22:34:32Z"
+   },
    "findings": [],
    "firstSeen": "2026-07-07T08:11:07.402Z",
    "lastSeen": "2026-07-07T08:25:37.292Z",
    "missing": false,
    "selector": "#btn-codex-logout",
-   "state": "ingame"
+   "state": "ingame",
+   "notes": "Live-proven cold boot — codex provider showed the CONNECTED branch (real token migrated from default workspace: status \"connected to ChatGPT\", logout visible:true), which is exactly the state that surfaces btn-codex-logout; onclick=codexLogout → POST /api/auth/codex/logout (app.js:1362, sidecar 6635). Truthful: connected state reflects a real in-memory token (migration feature), not a fake. Evidence cold.json#probes.providerSwitch."
   },
   {
    "id": "ui/world/btn-codex-open",
    "kind": "ui",
    "area": "world",
    "name": "↗ OPEN PAGE",
-   "purpose": "",
-   "promise": "",
+   "purpose": "Re-opens the ChatGPT device-verification page during an in-flight Codex sign-in.",
+   "promise": "Hidden until a sign-in code is issued; once shown, clicking opens the verification_uri (Tauri external-open or window.open).",
    "wiring": {
-    "files": [],
+    "files": [
+     "frontend/index.html",
+     "frontend/app/app.js"
+    ],
     "events": []
    },
-   "coverage": [],
-   "status": "unmapped",
-   "auditedAt": null,
+   "coverage": [
+    {
+     "kind": "test",
+     "ref": "provider.codex-auth.test.js"
+    }
+   ],
+   "status": "perfected",
+   "auditedAt": {
+    "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+    "date": "2026-07-07T22:34:32Z"
+   },
    "findings": [],
    "firstSeen": "2026-07-07T08:11:07.402Z",
    "lastSeen": "2026-07-07T08:25:37.292Z",
    "missing": false,
    "selector": "#btn-codex-open",
-   "state": "ingame"
+   "state": "ingame",
+   "notes": "Live-proven cold boot — hidden at rest (visible:false), became shown (openShown:true) after the device code was issued; onclick=openExternalUrl(verification_uri) (app.js:1338). Evidence cold.json#probes.codexSigninFlow.openShown + providerSwitch."
   },
   {
    "id": "ui/world/btn-codex-signin",
    "kind": "ui",
    "area": "world",
    "name": "⏼ SIGN IN WITH CHATGPT ▸",
-   "purpose": "",
-   "promise": "",
+   "purpose": "Starts the ChatGPT (Codex OAuth) device-code sign-in so a user can run agents on their ChatGPT subscription with no API key.",
+   "promise": "Clicking POSTs /api/auth/codex/start and, on success, displays the real device user_code + opens the verification page; on failure it shows a clean error and stays.",
    "wiring": {
-    "files": [],
+    "files": [
+     "frontend/index.html",
+     "frontend/app/app.js",
+     "sidecar/index.js"
+    ],
     "events": []
    },
-   "coverage": [],
-   "status": "unmapped",
-   "auditedAt": null,
+   "coverage": [
+    {
+     "kind": "test",
+     "ref": "provider.codex-auth.test.js"
+    },
+    {
+     "kind": "test",
+     "ref": "provider.codex.test.js"
+    }
+   ],
+   "status": "perfected",
+   "auditedAt": {
+    "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+    "date": "2026-07-07T22:34:32Z"
+   },
    "findings": [],
    "firstSeen": "2026-07-07T08:11:07.402Z",
    "lastSeen": "2026-07-07T08:25:37.292Z",
    "missing": false,
    "selector": "#btn-codex-signin",
-   "state": "ingame"
+   "state": "ingame",
+   "notes": "Live-proven cold boot — clicking btn-codex-signin drove the REAL device flow: status became \"enter this code at https://auth.openai.com/codex/device\", codeShown:true, user_code \"TTAE-2M1I4\" (OAuth NOT completed, per instruction). Backend startDeviceLogin traced (sidecar 6500). provider.codex-auth.test.js asserts startDeviceLogin/pollDeviceLogin/exchangeCode. Evidence cold.json#probes.codexSigninFlow."
   },
   {
    "id": "ui/world/btn-export",
    "kind": "ui",
    "area": "world",
    "name": "⭳ EXPORT AGENT",
-   "purpose": "",
-   "promise": "",
+   "purpose": "Exports every starnet.* key + a memory snapshot as one backup file (the only in-app export entry point).",
+   "promise": "Shown only when there is a saved agent to back up; clicking bundles the config+memories and reports the saved file + key/memory counts.",
    "wiring": {
-    "files": [],
+    "files": [
+     "frontend/index.html",
+     "frontend/app/app.js",
+     "frontend/app/backup.js"
+    ],
     "events": []
    },
-   "coverage": [],
-   "status": "unmapped",
-   "auditedAt": null,
+   "coverage": [
+    {
+     "kind": "test",
+     "ref": "configexport.test.js"
+    }
+   ],
+   "status": "perfected",
+   "auditedAt": {
+    "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+    "date": "2026-07-07T22:34:32Z"
+   },
    "findings": [],
    "firstSeen": "2026-07-07T08:11:07.402Z",
    "lastSeen": "2026-07-07T08:25:37.292Z",
    "missing": false,
    "selector": "#btn-export",
-   "state": "ingame"
+   "state": "ingame",
+   "notes": "Live-proven cold boot — hidden on a fresh (no-agent) connect screen exactly as designed (btn-export present, visible:false); applyRecoveryMode toggles it (app.js:1567); onclick=Backup.exportAll (2634). configexport.test.js guards the export envelope (no secret prompt/token leak). Evidence cold.json#probes.connectInputs (btn-export present, visible:false)."
   },
   {
    "id": "ui/world/btn-future-update",
    "kind": "ui",
    "area": "world",
    "name": "⭯ UPDATE STARNET ▸",
-   "purpose": "",
-   "promise": "",
+   "purpose": "The single action on the FORWARD-VERSION gate — the blocking screen shown when the save was written by a NEWER StarNet than this build can read.",
+   "promise": "On the gate screen, clicking re-checks/opens the desktop Update Center when a Tauri updater is present, else shows plain \"update StarNet then reopen\" guidance; while the gate is up nothing persists (the newer save stays untouched).",
    "wiring": {
-    "files": [],
+    "files": [
+     "frontend/index.html",
+     "frontend/app/app.js",
+     "frontend/app/save.js"
+    ],
     "events": []
    },
-   "coverage": [],
-   "status": "unmapped",
-   "auditedAt": null,
+   "coverage": [
+    {
+     "kind": "test",
+     "ref": "saveversion.test.js"
+    }
+   ],
+   "status": "audited",
+   "auditedAt": {
+    "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+    "date": "2026-07-07T22:34:32Z"
+   },
    "findings": [],
    "firstSeen": "2026-07-07T08:11:07.402Z",
    "lastSeen": "2026-07-07T08:25:37.292Z",
    "missing": false,
    "selector": "#btn-future-update",
-   "state": "ingame"
+   "state": "ingame",
+   "notes": "Live-proven on :8969 — element present with label \"⭯ UPDATE STARNET ▸\"; when #screen-future is active the button is visible and (no Tauri updater in browser) its else-branch shows \"Update StarNet to the latest version…\". Real handler wired inside showFutureSaveGate() (app.js:2605-2618). saveversion.test.js guards the forward-version refusal that raises the gate. The natural cold-trigger (a corrupt future-version save) was not injected; button DOM+visibility+message-branch proven, handler code-traced → audited not perfected. Evidence .uiatlas/final-b-evidence/future.json."
   },
   {
    "id": "ui/world/btn-import",
    "kind": "ui",
    "area": "world",
    "name": "⭱ IMPORT AGENT",
-   "purpose": "",
-   "promise": "",
+   "purpose": "Imports a previously-exported agent backup file to restore an agent on any browser/machine.",
+   "promise": "Clicking opens the hidden file picker (accept=.json); choosing a valid export restores the agent + memories and resumes into it.",
    "wiring": {
-    "files": [],
+    "files": [
+     "frontend/index.html",
+     "frontend/app/app.js",
+     "frontend/app/backup.js"
+    ],
     "events": []
    },
-   "coverage": [],
-   "status": "unmapped",
-   "auditedAt": null,
+   "coverage": [
+    {
+     "kind": "test",
+     "ref": "configexport.test.js"
+    }
+   ],
+   "status": "perfected",
+   "auditedAt": {
+    "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+    "date": "2026-07-07T22:34:32Z"
+   },
    "findings": [],
    "firstSeen": "2026-07-07T08:11:07.402Z",
    "lastSeen": "2026-07-07T08:25:37.292Z",
    "missing": false,
    "selector": "#btn-import",
-   "state": "ingame"
+   "state": "ingame",
+   "notes": "Live-proven cold boot — btn-import present+visible; clicking triggers file-import.click() (shimmed+observed: triggersFilePicker:true), accept=\"application/json,.json\" (app.js:2642). configexport.test.js guards buildExport/parseImport round-trip. Evidence cold.json#probes.importWiring."
   },
   {
    "id": "ui/world/btn-wake",
    "kind": "ui",
    "area": "world",
    "name": "⏼ WAKE OVERSEER ▸",
-   "purpose": "",
-   "promise": "",
+   "purpose": "The primary WAKE OVERSEER action that validates the connect form and creates/resumes the agent into the game.",
+   "promise": "On a valid config it leaves the connect screen for the in-game floor; on a missing model/key it shows inline guidance (never a dead-end) and stays.",
    "wiring": {
-    "files": [],
+    "files": [
+     "frontend/index.html",
+     "frontend/app/app.js"
+    ],
     "events": []
    },
-   "coverage": [],
-   "status": "unmapped",
-   "auditedAt": null,
+   "coverage": [
+    {
+     "kind": "journey",
+     "ref": "beginner-run:create-agent"
+    }
+   ],
+   "status": "perfected",
+   "auditedAt": {
+    "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+    "date": "2026-07-07T22:34:32Z"
+   },
    "findings": [],
    "firstSeen": "2026-07-07T08:11:07.402Z",
    "lastSeen": "2026-07-07T08:25:37.292Z",
    "missing": false,
    "selector": "#btn-wake",
-   "state": "ingame"
+   "state": "ingame",
+   "notes": "Live-proven cold boot — present+visible; onWake() traced (app.js:1649+). beginner-run.mjs clicks btn-wake and asserts it advances off the connect screen. Evidence cold.json#probes.connectInputs."
   },
   {
    "id": "ui/world/chat-input",
@@ -455,8 +572,8 @@
    ],
    "status": "perfected",
    "auditedAt": {
-    "sha": "62f3501bb4516ca435dd51fccac51f2fb2db614f",
-    "date": "2026-07-07T20:28:25.275Z"
+    "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+    "date": "2026-07-07T22:34:32Z"
    },
    "findings": [],
    "firstSeen": "2026-07-07T08:11:07.402Z",
@@ -488,8 +605,8 @@
    ],
    "status": "perfected",
    "auditedAt": {
-    "sha": "62f3501bb4516ca435dd51fccac51f2fb2db614f",
-    "date": "2026-07-07T20:28:25.275Z"
+    "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+    "date": "2026-07-07T22:34:32Z"
    },
    "findings": [],
    "firstSeen": "2026-07-07T08:11:07.405Z",
@@ -516,8 +633,8 @@
    "coverage": [],
    "status": "audited",
    "auditedAt": {
-    "sha": "62f3501bb4516ca435dd51fccac51f2fb2db614f",
-    "date": "2026-07-07T20:28:25.275Z"
+    "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+    "date": "2026-07-07T22:34:32Z"
    },
    "findings": [
     "bd391f68"
@@ -552,8 +669,8 @@
    ],
    "status": "perfected",
    "auditedAt": {
-    "sha": "43e860b254af28741405216c2259a2226d106be7",
-    "date": "2026-07-07T21:06:49.519Z"
+    "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+    "date": "2026-07-07T22:34:32Z"
    },
    "findings": [],
    "firstSeen": "2026-07-07T08:11:07.402Z",
@@ -590,8 +707,8 @@
    ],
    "status": "perfected",
    "auditedAt": {
-    "sha": "43e860b254af28741405216c2259a2226d106be7",
-    "date": "2026-07-07T21:06:49.519Z"
+    "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+    "date": "2026-07-07T22:34:32Z"
    },
    "findings": [],
    "firstSeen": "2026-07-07T08:11:07.405Z",
@@ -628,8 +745,8 @@
    ],
    "status": "perfected",
    "auditedAt": {
-    "sha": "43e860b254af28741405216c2259a2226d106be7",
-    "date": "2026-07-07T21:06:49.519Z"
+    "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+    "date": "2026-07-07T22:34:32Z"
    },
    "findings": [],
    "firstSeen": "2026-07-07T08:11:07.405Z",
@@ -662,8 +779,8 @@
    ],
    "status": "perfected",
    "auditedAt": {
-    "sha": "43e860b254af28741405216c2259a2226d106be7",
-    "date": "2026-07-07T21:06:49.519Z"
+    "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+    "date": "2026-07-07T22:34:32Z"
    },
    "findings": [],
    "firstSeen": "2026-07-07T08:11:07.405Z",
@@ -696,8 +813,8 @@
    ],
    "status": "perfected",
    "auditedAt": {
-    "sha": "43e860b254af28741405216c2259a2226d106be7",
-    "date": "2026-07-07T21:06:49.519Z"
+    "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+    "date": "2026-07-07T22:34:32Z"
    },
    "findings": [],
    "firstSeen": "2026-07-07T08:11:07.405Z",
@@ -731,8 +848,8 @@
    ],
    "status": "perfected",
    "auditedAt": {
-    "sha": "43e860b254af28741405216c2259a2226d106be7",
-    "date": "2026-07-07T21:06:49.519Z"
+    "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+    "date": "2026-07-07T22:34:32Z"
    },
    "findings": [],
    "firstSeen": "2026-07-07T08:11:07.405Z",
@@ -765,8 +882,8 @@
    ],
    "status": "perfected",
    "auditedAt": {
-    "sha": "43e860b254af28741405216c2259a2226d106be7",
-    "date": "2026-07-07T21:06:49.519Z"
+    "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+    "date": "2026-07-07T22:34:32Z"
    },
    "findings": [],
    "firstSeen": "2026-07-07T08:11:07.405Z",
@@ -799,8 +916,8 @@
    ],
    "status": "perfected",
    "auditedAt": {
-    "sha": "43e860b254af28741405216c2259a2226d106be7",
-    "date": "2026-07-07T21:06:49.519Z"
+    "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+    "date": "2026-07-07T22:34:32Z"
    },
    "findings": [],
    "firstSeen": "2026-07-07T08:11:07.405Z",
@@ -837,8 +954,8 @@
    ],
    "status": "audited",
    "auditedAt": {
-    "sha": "43e860b254af28741405216c2259a2226d106be7",
-    "date": "2026-07-07T21:06:49.519Z"
+    "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+    "date": "2026-07-07T22:34:32Z"
    },
    "findings": [
     "161206b5"
@@ -873,8 +990,8 @@
    ],
    "status": "perfected",
    "auditedAt": {
-    "sha": "43e860b254af28741405216c2259a2226d106be7",
-    "date": "2026-07-07T21:06:49.519Z"
+    "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+    "date": "2026-07-07T22:34:32Z"
    },
    "findings": [],
    "firstSeen": "2026-07-07T08:11:07.405Z",
@@ -907,8 +1024,8 @@
    ],
    "status": "perfected",
    "auditedAt": {
-    "sha": "43e860b254af28741405216c2259a2226d106be7",
-    "date": "2026-07-07T21:06:49.519Z"
+    "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+    "date": "2026-07-07T22:34:32Z"
    },
    "findings": [],
    "firstSeen": "2026-07-07T08:11:07.405Z",
@@ -943,8 +1060,8 @@
    ],
    "status": "perfected",
    "auditedAt": {
-    "sha": "43e860b254af28741405216c2259a2226d106be7",
-    "date": "2026-07-07T21:06:49.519Z"
+    "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+    "date": "2026-07-07T22:34:32Z"
    },
    "findings": [],
    "firstSeen": "2026-07-07T08:11:07.405Z",
@@ -977,8 +1094,8 @@
    ],
    "status": "perfected",
    "auditedAt": {
-    "sha": "43e860b254af28741405216c2259a2226d106be7",
-    "date": "2026-07-07T21:06:49.519Z"
+    "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+    "date": "2026-07-07T22:34:32Z"
    },
    "findings": [],
    "firstSeen": "2026-07-07T08:11:07.405Z",
@@ -1015,8 +1132,8 @@
    ],
    "status": "perfected",
    "auditedAt": {
-    "sha": "43e860b254af28741405216c2259a2226d106be7",
-    "date": "2026-07-07T21:06:49.519Z"
+    "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+    "date": "2026-07-07T22:34:32Z"
    },
    "findings": [],
    "firstSeen": "2026-07-07T08:11:07.405Z",
@@ -1044,8 +1161,8 @@
    "coverage": [],
    "status": "audited",
    "auditedAt": {
-    "sha": "43e860b254af28741405216c2259a2226d106be7",
-    "date": "2026-07-07T21:06:49.519Z"
+    "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+    "date": "2026-07-07T22:34:32Z"
    },
    "findings": [
     "16193fd0"
@@ -1062,105 +1179,171 @@
    "kind": "ui",
    "area": "world",
    "name": "input",
-   "purpose": "",
-   "promise": "",
+   "purpose": "The hidden <input type=file> that btn-import triggers to receive the backup JSON.",
+   "promise": "Stays hidden; its change handler runs Backup.importFile() on the chosen file and reports restored agent/keys/memories or a clean failure.",
    "wiring": {
-    "files": [],
+    "files": [
+     "frontend/index.html",
+     "frontend/app/app.js",
+     "frontend/app/backup.js"
+    ],
     "events": []
    },
-   "coverage": [],
-   "status": "unmapped",
-   "auditedAt": null,
+   "coverage": [
+    {
+     "kind": "test",
+     "ref": "configexport.test.js"
+    }
+   ],
+   "status": "perfected",
+   "auditedAt": {
+    "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+    "date": "2026-07-07T22:34:32Z"
+   },
    "findings": [],
    "firstSeen": "2026-07-07T08:11:07.402Z",
    "lastSeen": "2026-07-07T08:25:37.292Z",
    "missing": false,
    "selector": "#file-import",
-   "state": "ingame"
+   "state": "ingame",
+   "notes": "Live-proven cold boot — present, hidden (offsetParent null / hidden attr), accept=\"application/json,.json\"; onchange=Backup.importFile (app.js:2643). configexport.test.js guards parseImport (forward-tolerant, fail-soft). Evidence cold.json#probes.importWiring."
   },
   {
    "id": "ui/world/in-base-url",
    "kind": "ui",
    "area": "world",
    "name": "input",
-   "purpose": "",
-   "promise": "",
+   "purpose": "The /v1 base-URL field revealed for Custom / self-hosted OpenAI-compatible providers.",
+   "promise": "Hidden by default; selecting the CUSTOM provider reveals it, and a Custom provider WAKE requires a non-empty base URL before it proceeds.",
    "wiring": {
-    "files": [],
+    "files": [
+     "frontend/index.html",
+     "frontend/app/app.js"
+    ],
     "events": []
    },
-   "coverage": [],
-   "status": "unmapped",
-   "auditedAt": null,
+   "coverage": [
+    {
+     "kind": "test",
+     "ref": "provider.openai-compatible.test.js"
+    }
+   ],
+   "status": "perfected",
+   "auditedAt": {
+    "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+    "date": "2026-07-07T22:34:32Z"
+   },
    "findings": [],
    "firstSeen": "2026-07-07T08:11:07.402Z",
    "lastSeen": "2026-07-07T08:25:37.292Z",
    "missing": false,
    "selector": "#in-base-url",
-   "state": "ingame"
+   "state": "ingame",
+   "notes": "Live-proven cold boot — hidden at rest, becomes visible on .prov[data-prov=\"custom\"] click; onWake() requires it for custom providers (app.js:1677-1680). Evidence cold.json#probes.providerSwitch (in-base-url visible:true after custom click)."
   },
   {
    "id": "ui/world/in-key",
    "kind": "ui",
    "area": "world",
    "name": "input",
-   "purpose": "",
-   "promise": "",
+   "purpose": "The BYOK API-key field for the chosen provider on the connect screen.",
+   "promise": "A pasted key is stored locally and sent only to the 127.0.0.1 sidecar; leaving it blank when a key is already stored keeps the stored key (placeholder says so); an overwrite of a stored key asks once before replacing.",
    "wiring": {
-    "files": [],
+    "files": [
+     "frontend/index.html",
+     "frontend/app/app.js",
+     "frontend/app/harness.js"
+    ],
     "events": []
    },
-   "coverage": [],
-   "status": "unmapped",
-   "auditedAt": null,
+   "coverage": [
+    {
+     "kind": "journey",
+     "ref": "beginner-run:connect"
+    }
+   ],
+   "status": "perfected",
+   "auditedAt": {
+    "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+    "date": "2026-07-07T22:34:32Z"
+   },
    "findings": [],
    "firstSeen": "2026-07-07T08:11:07.402Z",
    "lastSeen": "2026-07-07T08:25:37.292Z",
    "missing": false,
    "selector": "#in-key",
-   "state": "ingame"
+   "state": "ingame",
+   "notes": "Live-proven cold boot — password input present+visible; onWake() reads it with the stored-key-keep + overwrite-guard branches (app.js:1676-1699). beginner-run.mjs sets in-key on the connect path. Evidence cold.json#probes.connectInputs."
   },
   {
    "id": "ui/world/in-model",
    "kind": "ui",
    "area": "world",
    "name": "input",
-   "purpose": "",
-   "promise": "",
+   "purpose": "The model-slug field (datalist-backed) selecting which model powers the overseer's mind.",
+   "promise": "Typing/picking a slug prices it via the live catalog hint; a blank slug on WAKE pre-fills a sensible provider default rather than stranding the user.",
    "wiring": {
-    "files": [],
+    "files": [
+     "frontend/index.html",
+     "frontend/app/app.js"
+    ],
     "events": []
    },
-   "coverage": [],
-   "status": "unmapped",
-   "auditedAt": null,
+   "coverage": [
+    {
+     "kind": "test",
+     "ref": "modelpicker.test.js"
+    },
+    {
+     "kind": "journey",
+     "ref": "beginner-run:connect"
+    }
+   ],
+   "status": "perfected",
+   "auditedAt": {
+    "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+    "date": "2026-07-07T22:34:32Z"
+   },
    "findings": [],
    "firstSeen": "2026-07-07T08:11:07.402Z",
    "lastSeen": "2026-07-07T08:25:37.292Z",
    "missing": false,
    "selector": "#in-model",
-   "state": "ingame"
+   "state": "ingame",
+   "notes": "Live-proven cold boot — input present+visible, oninput=updateHint (app.js:1516). modelpicker.test.js guards the picker engine; beginner-run sets in-model. Evidence cold.json#probes.connectInputs."
   },
   {
    "id": "ui/world/in-name",
    "kind": "ui",
    "area": "world",
    "name": "input",
-   "purpose": "",
-   "promise": "",
+   "purpose": "The overseer's name field on the CREATE YOUR OVERSEER connect screen — the first identity choice a new user makes.",
+   "promise": "Typing a name (≤18 chars) updates the live nameplate and is carried into agent.name on WAKE; a blank/sentinel name mints a station codename instead of the bland \"AGENT\".",
    "wiring": {
-    "files": [],
+    "files": [
+     "frontend/index.html",
+     "frontend/app/app.js"
+    ],
     "events": []
    },
-   "coverage": [],
-   "status": "unmapped",
-   "auditedAt": null,
+   "coverage": [
+    {
+     "kind": "journey",
+     "ref": "beginner-run:connect"
+    }
+   ],
+   "status": "perfected",
+   "auditedAt": {
+    "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+    "date": "2026-07-07T22:34:32Z"
+   },
    "findings": [],
    "firstSeen": "2026-07-07T08:11:07.402Z",
    "lastSeen": "2026-07-07T08:25:37.292Z",
    "missing": false,
    "selector": "#in-name",
-   "state": "ingame"
+   "state": "ingame",
+   "notes": "Live-proven cold boot :8969 — present+visible on the active connect screen; onWake() reads it (app.js:1656). Covered by beginner-run.mjs which sets in-name and asserts WAKE advances. Evidence .uiatlas/final-b-evidence/cold.json#probes.connectInputs."
   },
   {
    "id": "ui/world/model-dock-refresh",
@@ -1287,8 +1470,8 @@
    ],
    "status": "perfected",
    "auditedAt": {
-    "sha": "43e860b254af28741405216c2259a2226d106be7",
-    "date": "2026-07-07T21:06:49.519Z"
+    "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+    "date": "2026-07-07T22:34:32Z"
    },
    "findings": [],
    "firstSeen": "2026-07-07T08:11:07.402Z",
@@ -15458,21 +15641,33 @@
    "kind": "ui",
    "area": "world",
    "name": "textarea",
-   "purpose": "",
-   "promise": "",
+   "purpose": "The free-text \"in your own words\" voice-note textarea (inside the fine-tune reveal) that overrides the preset personality.",
+   "promise": "Revealed with #adv-body; accepts free text that onWake() folds into the agent's voice spec, overriding the archetype where they conflict.",
    "wiring": {
-    "files": [],
+    "files": [
+     "frontend/index.html",
+     "frontend/app/app.js"
+    ],
     "events": []
    },
-   "coverage": [],
-   "status": "unmapped",
-   "auditedAt": null,
+   "coverage": [
+    {
+     "kind": "known",
+     "ref": "no-machine-assertion"
+    }
+   ],
+   "status": "audited",
+   "auditedAt": {
+    "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+    "date": "2026-07-07T22:34:32Z"
+   },
    "findings": [],
    "firstSeen": "2026-07-07T08:11:07.402Z",
    "lastSeen": "2026-07-07T08:25:37.292Z",
    "missing": false,
    "selector": "#voice-custom",
-   "state": "ingame"
+   "state": "ingame",
+   "notes": "Live-proven cold boot — hidden until adv-toggle opens, then visible + accepts typed text (app.js reads it at 1475). KNOWN: no test/journey guards the textarea → voice-spec seam. Evidence cold.json#probes.advToggle.typed."
   },
   {
    "id": "ui/world/voice-mode",
@@ -15491,8 +15686,8 @@
    "coverage": [],
    "status": "audited",
    "auditedAt": {
-    "sha": "62f3501bb4516ca435dd51fccac51f2fb2db614f",
-    "date": "2026-07-07T20:28:25.275Z"
+    "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+    "date": "2026-07-07T22:34:32Z"
    },
    "findings": [
     "c3fa1f39"
@@ -15521,8 +15716,8 @@
    "coverage": [],
    "status": "audited",
    "auditedAt": {
-    "sha": "62f3501bb4516ca435dd51fccac51f2fb2db614f",
-    "date": "2026-07-07T20:28:25.275Z"
+    "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+    "date": "2026-07-07T22:34:32Z"
    },
    "findings": [
     "c3fa1f39"
