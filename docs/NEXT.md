@@ -215,6 +215,42 @@ _Wave-1 DONE 2026-07-07 (both lanes merged + reaped, gate 261 green each merge):
   topbar instruments un-enumerated (f0fddb55 → cartographer tooling chip)._
 - _Gauge after wave 1: **15/1288 perfected·fresh (1%)** + 15 audited. Queue: 1258 unmapped._
 
+## Table-stakes gap audit 2026-07-07 (Fable session) — missing mini-features, code-verified
+
+Four-surface grep audit (COMMS / sessions / global-desktop / harness). Each item below was
+verified MISSING or slash-only on trunk 626c017f before listing. Claim an item here before
+building it (same law as Atlas areas).
+
+**T1 — chat core (COMMS), daily pain:**
+- GA-1 Attachments: ALREADY BUILT on `agent/comms-attach` d9f7d9c7 (unmerged) — MERGE, don't rebuild.
+- GA-2 Markdown/code-block rendering + per-code-block copy (renderProse = escape+linkify only; chat.js:314-333).
+- GA-3 Edit-and-resend a user message; RETRY as a visible button (exists as /retry only, chat.js:2841).
+- GA-4 Input history (up-arrow) + per-session draft persistence (input clears on send, chat.js:417).
+- GA-5 Unread badge when COMMS closed / other session active (pill only while scrolled-up in open panel).
+- GA-6 Search: session list filter AND in-conversation search (both absent).
+- GA-7 Export/copy whole conversation; clear-conversation (per-message copy only).
+
+**T2 — engine-without-UI (violates "where's its UI?" law):**
+- GA-8 MCP connector status panel (manager.js emits connector.state; nothing renders it).
+- GA-9 Cron/routines UI: next-run, last result, pause (cron-driver full; no surface).
+- GA-10 Per-session/per-agent spend readout (workstreams track {tokens,usd,calls}; never displayed).
+- GA-11 Provider rate-limit/quota rejection surfaced as friendly error (currently generic).
+- GA-12 Steer-while-running button on the presence card (/steer works end-to-end, slash-only).
+
+**T3 — desktop table stakes:**
+- GA-13 OS-level (Tauri) notification on background task finish (in-app toast only).
+- GA-14 UI zoom / font-size setting.
+- GA-15 Tauri window size/position persistence across launches (not in main.rs).
+- GA-16 DOM windows not resizable (drag+minimize only).
+- GA-17 Replay tour / in-app help re-entry after onboarding; keyboard cheat-sheet overlay.
+- GA-18 Settings: clear-all-data + data-location display.
+
+**T4 — harness power features (lower urgency):**
+- GA-19 Files-touched summary / diff preview before fs changes apply.
+- GA-20 Attach context from UI (point agent at file/folder) — pairs with GA-1.
+- GA-21 Prompt templates / quick replies.
+- GA-22 Bulk session ops (clear completed, archive old).
+
 ## Parked product decisions (need Andrew, don't guess)
 
 - `fullOffice()` autonomous prop placement vs. hand-placed only.
