@@ -1327,7 +1327,7 @@ const App = (() => {
     codeEl.textContent = d.user_code; codeEl.classList.remove('hidden');
     openBtn.classList.remove('hidden');
     openBtn.onclick = () => openExternalUrl(d.verification_uri);
-    statusEl.innerHTML = 'enter this code at <b>' + d.verification_uri + '</b> (opening it now)…';
+    statusEl.innerHTML = 'enter this code at <b>' + esc(d.verification_uri) + '</b> (opening it now)…';
     openExternalUrl(d.verification_uri);
     pollCodex(d.interval || 5);
   }
