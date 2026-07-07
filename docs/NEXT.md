@@ -51,9 +51,9 @@ multiplatform install docs. ✅ (all in git log)
 - Prompt-injection via auto-granted `team.*` caps — genuine product fork, needs Andrew.
 - P2 hygiene list lives in `docs/GROUND_UP_AUDIT_2026-07-06.md` — do not copy it here.
 
-## Branch triage (18 unmerged `agent/*` branches ✅)
+## Branch triage (17 unmerged `agent/*` branches ✅)
 
-In-flight: `truth-chrome-instruments`. Likely-value parked: `honest-states`,
+Likely-value parked: `honest-states`,
 `quick-model-selector`, `ui-number-format`, `workstreams-sessions-ui`, `cron-staylive`.
 Probably stale (pre-date recent reworks — diff before deciding): `belt-reclaim`,
 `commission-redux`, `cortex-hermes-plus`, `growth-t4`, `hermes-parity-loop`,
