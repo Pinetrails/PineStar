@@ -5401,20 +5401,34 @@ async function handleRunSteer(req, res) {
 }
 
 // GET /api/version — the honest build/version surface for /version. Reads the repo package.json (harness version)
-// and, when present, the Tauri desktop app version; both are best-effort so a missing file never 500s.
+// and the Tauri desktop app version; both are best-effort so a missing file never 500s.
+//   app-version fallback chain (GROUND_UP_AUDIT 2026-07-06 P2): env STARNET_APP_VERSION → src-tauri/tauri.conf.json
+//   → blank. In the PACKAGED desktop app src-tauri/ is NOT a bundled resource, so the conf lookup returns '' and a
+//   support ticket can't tell which build the user is on. The desktop shell should export STARNET_APP_VERSION when
+//   it spawns the sidecar (one-line follow-up for the src-tauri owner — NOT edited here). `appSource` is additive:
+//   it names WHERE app came from ('env' | 'conf' | 'unknown') so diagnostics never reports a silent blank as fact.
+//   The response keeps the existing {harness, app, node} shape byte-compatible (chat.js versionCommand reads those).
 let _versionCache = null;
-function handleVersion(req, res) {
-  if (!_versionCache) {
-    const out = { harness: '', app: '', node: process.version };
-    try { out.harness = String(require('../package.json').version || ''); } catch (_) {}
+function computeVersionSurface() {
+  if (_versionCache) return _versionCache;
+  const out = { harness: '', app: '', node: process.version, appSource: 'unknown' };
+  try { out.harness = String(require('../package.json').version || ''); } catch (_) {}
+  const envApp = String(ENV('APP_VERSION') || '').trim();   // STARNET_APP_VERSION (or SKYNET_APP_VERSION) — the packaged-app source of truth
+  if (envApp) { out.app = envApp; out.appSource = 'env'; }
+  else {
     try {
       const t = require('../src-tauri/tauri.conf.json');
-      out.app = String((t && (t.version || (t.package && t.package.version))) || '');
+      const confApp = String((t && (t.version || (t.package && t.package.version))) || '');
+      if (confApp) { out.app = confApp; out.appSource = 'conf'; }
     } catch (_) {}
-    _versionCache = out;
   }
+  _versionCache = out;
+  return out;
+}
+function handleVersion(req, res) {
+  const out = computeVersionSurface();
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-  res.end(JSON.stringify(_versionCache));
+  res.end(JSON.stringify(out));
 }
 
 // GET /api/diagnostics — T3.9: a paste-ready, SECRET-FREE bug report a public user can email. Token-gated (main
@@ -5425,10 +5439,9 @@ function handleDiagnostics(req, res) {
   const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
   let out;
   try {
-    // version (reuse the cached honest build surface)
-    const ver = { harness: '', app: '', node: process.version };
-    try { ver.harness = String(require('../package.json').version || ''); } catch (_) {}
-    try { const t = require('../src-tauri/tauri.conf.json'); ver.app = String((t && (t.version || (t.package && t.package.version))) || ''); } catch (_) {}
+    // version (reuse the cached honest build surface — same env-first fallback as GET /api/version, so a packaged
+    // desktop's STARNET_APP_VERSION shows up in the bug report instead of a blank app version)
+    const ver = computeVersionSurface();
     // desktop vs browser — provable from the request origin (Tauri custom-scheme origins are the desktop shell)
     const origin = String((req && req.headers && req.headers.origin) || '').toLowerCase();
     const mode = (origin.indexOf('tauri') === 0 || origin.indexOf('app://') === 0) ? 'desktop' : (origin ? 'browser' : '');
