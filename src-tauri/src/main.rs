@@ -382,9 +382,49 @@ fn copy_missing_dir(src: &Path, dst: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
+/// Name of the one-shot done-marker dropped in the live workspace root after the FIRST
+/// successful legacy migration. Its presence is the sole signal to never migrate again.
+const MIGRATION_MARKER: &str = ".migrated";
+
+/// True when the live workspace root already holds real data (anything other than our own
+/// marker file). A pre-existing populated root means an earlier install/migration already ran,
+/// so we must NOT copy from legacy roots — doing so resurrects files the user deleted.
+fn workspace_has_content(current: &Path) -> bool {
+    let Ok(entries) = std::fs::read_dir(current) else {
+        return false;
+    };
+    entries
+        .flatten()
+        .any(|e| e.file_name() != std::ffi::OsStr::new(MIGRATION_MARKER))
+}
+
+/// One-time import of data from legacy workspace roots into the live one. THIS RUNS ONCE, EVER.
+///
+/// Bug it fixes (audit 0.1): running unconditionally every boot means `copy_missing_dir` re-copies
+/// any file present in a stale legacy root (e.g. %LOCALAPPDATA%\StarNet\workspaces) but absent in
+/// the live root — so agents/prospects/sessions the user DELETED silently reappear on the next
+/// launch. Guard rails, checked before any copy:
+///   1. If the `.migrated` marker exists in the live root, skip entirely (the definitive signal).
+///   2. Belt-and-suspenders: if the live root already has real content, skip and drop the marker
+///      so a first-run-with-marker-missing but already-populated install never migrates either.
+/// The marker is written only AFTER the copy pass completes, so a crash mid-copy simply retries
+/// the (idempotent, copy-missing-only) migration next boot rather than stranding a half state.
 fn migrate_workspace_data(current: &Path, legacy_roots: &[PathBuf]) -> Vec<PathBuf> {
     let mut migrated = Vec::new();
     let _ = std::fs::create_dir_all(current);
+    let marker = current.join(MIGRATION_MARKER);
+
+    // (1) Already migrated once — never touch legacy roots again.
+    if marker.exists() {
+        return migrated;
+    }
+    // (2) Live root already populated (upgrade from a pre-marker build, or a manual copy): treat
+    //     as already-migrated. Stamp the marker so future boots take the fast path at (1).
+    if workspace_has_content(current) {
+        let _ = std::fs::write(&marker, b"1");
+        return migrated;
+    }
+
     for legacy in legacy_roots {
         if !legacy.is_dir() {
             continue;
@@ -393,6 +433,9 @@ fn migrate_workspace_data(current: &Path, legacy_roots: &[PathBuf]) -> Vec<PathB
             migrated.push(legacy.clone());
         }
     }
+    // Marker written LAST, after all copies land: crash-safe (a mid-copy crash leaves no marker,
+    // so the idempotent copy-missing pass simply re-runs next boot).
+    let _ = std::fs::write(&marker, b"1");
     migrated
 }
 
@@ -687,7 +730,51 @@ fn migrate_channel_tokens_from_plaintext(workspaces: &Path) {
     }
     if changed {
         if let Ok(serialized) = serde_json::to_string(&json) {
-            let _ = std::fs::write(&file, serialized);
+            // Atomic rewrite: a crash mid-write of secrets.json must never leave a truncated
+            // file (would corrupt the channel config). Write a sibling temp, then rename over
+            // the target — rename is atomic on the same volume, so readers see all-or-nothing.
+            let _ = atomic_write(&file, serialized.as_bytes());
+        }
+    }
+}
+
+/// Write `bytes` to `path` crash-safely: land them in a sibling temp file, flush, then
+/// atomically rename over `path`. The temp lives in the SAME directory so the rename stays on
+/// one volume (cross-volume renames are not atomic and can fall back to copy+delete). A crash
+/// before the rename leaves the temp (harmless orphan) and the original untouched; a crash
+/// after leaves the fully-written new file. Best-effort — errors bubble to the caller to log/ignore.
+fn atomic_write(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    let dir = path.parent().unwrap_or_else(|| Path::new("."));
+    std::fs::create_dir_all(dir)?;
+    // Unique-ish temp name in the same dir; the pid keeps concurrent writers from colliding.
+    let tmp = dir.join(format!(
+        ".{}.{}.tmp",
+        path.file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("secrets.json"),
+        std::process::id()
+    ));
+    {
+        let mut f = std::fs::File::create(&tmp)?;
+        f.write_all(bytes)?;
+        f.flush()?;
+        let _ = f.sync_all();
+    }
+    // On Windows, rename fails if the destination exists; remove-then-rename is the pragmatic
+    // path (there is a tiny window with no file, but a crash there still leaves the temp intact
+    // for a manual recover, and the sidecar's own resilient loader tolerates a missing file).
+    #[cfg(windows)]
+    {
+        if path.exists() {
+            let _ = std::fs::remove_file(path);
+        }
+    }
+    match std::fs::rename(&tmp, path) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            let _ = std::fs::remove_file(&tmp);
+            Err(e)
         }
     }
 }
@@ -864,6 +951,80 @@ fn spawn_sidecar(state: &AppState) -> bool {
     false
 }
 
+/// Startup-failure dialog (audit 0.2). When the FIRST `spawn_sidecar` fails — e.g. a first-run
+/// user whose bundled node was blocked by antivirus/Application-Control — the window would
+/// otherwise open dead with every /api fetch failing, no explanation, no way back. This surfaces
+/// a native error box that names the startup.log path (the diagnostic) and offers Retry.
+///
+/// Returns `true` if the user chose Retry (caller should re-attempt the spawn), `false` on
+/// Cancel/close. On non-Windows there is no dialog dependency wired, so we log and return `false`
+/// (honest degradation — the AV-block scenario this fixes is Windows-specific).
+#[cfg(windows)]
+fn show_startup_failure_dialog(startup_log: &Option<PathBuf>) -> bool {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        MessageBoxW, IDRETRY, MB_ICONERROR, MB_RETRYCANCEL, MB_SETFOREGROUND, MB_SYSTEMMODAL,
+    };
+    let log_line = match startup_log {
+        Some(p) => format!("Details were written to:\n{}", p.display()),
+        None => "No startup log path was available.".to_string(),
+    };
+    let body = format!(
+        "StarNet could not start its local engine.\n\n\
+         This usually means the bundled Node runtime was blocked by antivirus or a Windows \
+         Application Control policy, or the port could not be opened.\n\n\
+         {log_line}\n\n\
+         Click Retry to try starting the engine again, or Cancel to close StarNet."
+    );
+    let to_wide = |s: &str| -> Vec<u16> {
+        s.encode_utf16().chain(std::iter::once(0)).collect()
+    };
+    let text = to_wide(&body);
+    let caption = to_wide("StarNet — startup failed");
+    // SYSTEMMODAL + SETFOREGROUND so the box is seen even though the main window isn't up yet.
+    let result = unsafe {
+        MessageBoxW(
+            std::ptr::null_mut(),
+            text.as_ptr(),
+            caption.as_ptr(),
+            MB_RETRYCANCEL | MB_ICONERROR | MB_SETFOREGROUND | MB_SYSTEMMODAL,
+        )
+    };
+    result == IDRETRY
+}
+
+#[cfg(not(windows))]
+fn show_startup_failure_dialog(startup_log: &Option<PathBuf>) -> bool {
+    log_startup(
+        startup_log,
+        "startup failed: sidecar did not come up and no native dialog is wired on this platform",
+    );
+    eprintln!("[starnet] startup failed: sidecar did not come up (see startup.log)");
+    false
+}
+
+/// Spawn the sidecar and, if it fails to come up, loop showing the startup-failure dialog so the
+/// user can Retry (audit 0.2). Bounded so a persistently-blocked node can't spin a dialog forever:
+/// after the retries are exhausted we return `false` and let the guardian keep trying in the
+/// background. Returns `true` once the sidecar is listening.
+fn spawn_sidecar_with_retry(state: &AppState) -> bool {
+    // A handful of user-driven retries at startup; the long-lived guardian covers the rest.
+    for _ in 0..5 {
+        if spawn_sidecar(state) {
+            return true;
+        }
+        if !show_startup_failure_dialog(&state.startup_log) {
+            // User chose Cancel — stop prompting; the guardian may still recover it silently.
+            return false;
+        }
+        log_startup(&state.startup_log, "startup: user chose Retry — respawning sidecar");
+    }
+    log_startup(
+        &state.startup_log,
+        "startup: retries exhausted; leaving recovery to the guardian",
+    );
+    false
+}
+
 // ---- watchdog: respawn a crashed sidecar so the open window keeps working ----
 //
 // If the sidecar node process exits unexpectedly (crash, OOM), the open page silently loses its
@@ -876,6 +1037,10 @@ fn spawn_sidecar(state: &AppState) -> bool {
 // the watchdog does not touch power state.
 fn spawn_guardian(app: AppHandle) {
     std::thread::spawn(move || {
+        // Tracks consecutive failed respawns while the sidecar is absent so we back off instead of
+        // hammering a permanently-blocked node (audit 0.2: recover even from the None state, but
+        // bounded). Reset to 0 whenever the sidecar is confirmed alive.
+        let mut consecutive_failures: u32 = 0;
         loop {
             std::thread::sleep(Duration::from_secs(3));
             let Some(state) = app.try_state::<AppState>() else {
@@ -886,13 +1051,26 @@ fn spawn_guardian(app: AppHandle) {
                 break;
             }
 
-            // Detect an unexpected exit while holding the lock, but release it BEFORE respawning —
-            // spawn_sidecar takes the same lock itself, so respawning under it would deadlock.
+            // Decide under the lock, respawn after releasing it — spawn_sidecar takes the same lock
+            // itself, so respawning while holding it would deadlock. `needs_respawn` covers TWO cases:
+            //   (a) a child exists but has exited unexpectedly (crash/OOM), and
+            //   (b) NO child exists at all — the initial spawn never succeeded (e.g. AV-blocked node).
+            // Case (b) is the audit-0.2 fix: previously the guardian only ever healed (a), so a
+            // first-run spawn failure left the app permanently dead with no background recovery.
             let mut needs_respawn = false;
+            let mut from_none = false;
             if let Ok(mut guard) = st.sidecar.lock() {
-                if let Some(child) = guard.as_mut() {
-                    if let Ok(Some(_status)) = child.try_wait() {
-                        needs_respawn = true;
+                match guard.as_mut() {
+                    Some(child) => {
+                        if let Ok(Some(_status)) = child.try_wait() {
+                            needs_respawn = true; // (a) crashed
+                        } else {
+                            consecutive_failures = 0; // alive and running
+                        }
+                    }
+                    None => {
+                        needs_respawn = true; // (b) never came up
+                        from_none = true;
                     }
                 }
             }
@@ -901,8 +1079,29 @@ fn spawn_guardian(app: AppHandle) {
                 if st.shutting_down.load(Ordering::SeqCst) {
                     break;
                 }
-                log_startup(&st.startup_log, "watchdog: sidecar exited unexpectedly — respawning");
-                let _ = spawn_sidecar(st);
+                // Back off the never-came-up case: after a few quick tries, poll far less often so a
+                // genuinely blocked node doesn't burn a core. A crash-respawn (Some, exited) always
+                // gets an immediate attempt — that path had a working node moments ago.
+                if from_none && consecutive_failures >= 5 {
+                    // Slow path: ~30s between attempts once we've clearly failed to launch repeatedly.
+                    if consecutive_failures % 10 != 0 {
+                        consecutive_failures = consecutive_failures.saturating_add(1);
+                        continue;
+                    }
+                }
+                log_startup(
+                    &st.startup_log,
+                    if from_none {
+                        "watchdog: sidecar never came up — attempting respawn"
+                    } else {
+                        "watchdog: sidecar exited unexpectedly — respawning"
+                    },
+                );
+                if spawn_sidecar(st) {
+                    consecutive_failures = 0;
+                } else {
+                    consecutive_failures = consecutive_failures.saturating_add(1);
+                }
             }
         }
     });
@@ -1324,7 +1523,10 @@ fn main() {
                 keep_awake: Mutex::new(KeepAwakeState::new()),
                 shutting_down: AtomicBool::new(false),
             };
-            let _ = spawn_sidecar(&state);
+            // Try to bring the sidecar up; on failure show a native Retry dialog naming startup.log
+            // (audit 0.2). Even if this ultimately returns false, the guardian below keeps trying so
+            // the app can still recover in the background rather than sitting permanently dead.
+            let _ = spawn_sidecar_with_retry(&state);
             app.manage(state);
             app.manage(PendingUpdate(Mutex::new(None)));
 
