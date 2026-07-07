@@ -175,6 +175,8 @@ test/autojobstore.test.js
 test/autojobs-ui.test.js
 test/autopilot.test.js
 test/autopilotstore.test.js
+test/nightshift.test.js
+test/nightshift-driver.test.js
 test/autonomy-write.test.js
 test/autonotify.test.js
 test/permgrants.test.js

@@ -39,6 +39,21 @@ const DossierStore = (() => {
     try {
       fetch('/api/dossier', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ block: composeBlock() }) }).catch(() => {});
     } catch (_) {}
+    // NS-1: also mirror a READ-ONLY structured BELIEFS SNAPSHOT (per-dim text + timestamps) to the sidecar, so the
+    // SERVER-side night-shift driver can gate ACTING with the same Autopilot.readiness() the frontend autopilot
+    // used (the dossier itself stays frontend-owned; this is advisory grounding, never written back). Rides the
+    // existing posture route (beliefs-only body). Best-effort; a failed sync just degrades the night shift to
+    // EARN-tier (readiness reads 'cold' with no snapshot) — never breaks the dossier.
+    try {
+      const dimKeys = dims().map(d => d.key);
+      const snap = {};
+      const known = [];
+      for (const k of dimKeys) {
+        const arr = (beliefs(k) || []).map(b => ({ text: String((b && b.text) || ''), updatedAt: Number(b && b.updatedAt) || 0, createdAt: Number(b && b.createdAt) || 0 })).filter(b => b.text);
+        if (arr.length) { snap[k] = arr; known.push(k); }
+      }
+      fetch('/api/autonomy/posture', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ beliefs: { known: known, beliefs: snap } }) }).catch(() => {});
+    } catch (_) {}
   }
 
   // re-seed from freshly-authored onboarding docs (called from applyAgentConfig when the Commander edits a

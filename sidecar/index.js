@@ -96,6 +96,10 @@ const cron = require('./cron.js');                         // pure schedule math
 const cronStore = require('./cron-store.js');              // pure CronJob lifecycle reducer
 const mintLedger = require('./mint-ledger.js');            // W6: pure dedup gate + per-agent mint ledger (never re-create what exists)
 const { makeCronDriver } = require('./cron-driver.js');    // the autonomous tick driver (ambient deps injected here)
+const nightshift = require('./nightshift.js');            // NS-1: pure planner for the server-owned night-shift driver
+const { makeNightshiftDriver } = require('./nightshift-driver.js'); // NS-1: the restart-safe idle-autonomy tick driver
+const Autopilot = require('../frontend/app/autopilot.js'); // NS-1: the pure, node-exportable anti-slop ACT pipeline (reused, not rewritten)
+const Autonomy = require('../frontend/app/autonomy.js');   // NS-1: the pure posture engine (summary/normalize) — the SERVER reads the same shape the dial writes
 const { makeAutoNotifier } = require('./autonotify.js');   // B4: ping a connected channel when a cron run produces work
 const configExport = require('./configexport.js');   // P1-7: station backup — export/import/reset (pure shape+redaction; index wires the live stores)
 const { writeFileDurable } = require('./durable-write.js'); // G4.2: crash-safe atomic+durable single-file replace (fsync-before-rename)
@@ -323,6 +327,19 @@ const CRON_MAX_PARALLEL = num(ENV('CRON_MAX_PARALLEL'), 4);
 const CRON_STALENESS_MULT = (function () { const n = parseFloat(ENV('CRON_STALENESS_MULT')); return (Number.isFinite(n) && n > 0) ? n : 1; })();
 const CRON_HEARTBEAT_STALE_MS = num(ENV('CRON_HEARTBEAT_STALE_MS'), Math.round(CRON_MAX_RUN_MS * CRON_STALENESS_MULT));
 const CRON_DURABLE_HEARTBEAT_MS = num(ENV('CRON_DURABLE_HEARTBEAT_MS'), Math.max(1, Math.round(CRON_HEARTBEAT_STALE_MS / 4)));
+// ---- NIGHT SHIFT (NS-1): the server-owned idle-autonomy driver. RESTART-SAFE replacement for the frontend
+// autopilot loop (which died on sleep/throttle/restart). While the Commander is AWAY and the dial permits acting,
+// it attempts one autonomous beat every ~beatInterval, leash-capped (leash ENFORCED here, not in localStorage),
+// day-rolling, E-STOP-aware. INERT-when-off invariant: the timer arms only when SKYNET_NIGHTSHIFT_ENABLED (env)
+// OR the posture's initiative is ≥ 'leash' at boot — with neither, no timer is ever constructed and the path is
+// byte-identical. The tick cadence is FAST (like cron's 60s) so a beat becomes eligible promptly once away+cooldown
+// clear; the BEAT interval (default 45 min) is the real rate limit. Dev overrides shrink both so it's live-verifiable
+// in minutes: SKYNET_NIGHTSHIFT_AWAY_MS / SKYNET_NIGHTSHIFT_BEAT_MS.
+const NIGHTSHIFT_ENABLED = /^(1|true|yes|on)$/i.test(String(ENV('NIGHTSHIFT_ENABLED') || '').trim());
+const NIGHTSHIFT_TICK_MS = num(ENV('NIGHTSHIFT_TICK_MS'), 60000);          // how often the driver re-evaluates the gates
+const NIGHTSHIFT_AWAY_MS = num(ENV('NIGHTSHIFT_AWAY_MS'), nightshift.DEFAULT_AWAY_MS);   // "the Commander is away" threshold (default 15 min)
+const NIGHTSHIFT_BEAT_MS = num(ENV('NIGHTSHIFT_BEAT_MS'), nightshift.DEFAULT_BEAT_MS);   // steady cadence: one beat per ~45 min
+const NIGHTSHIFT_AGENT = String(ENV('NIGHTSHIFT_AGENT') || 'agent').trim() || 'agent';   // the agent the night shift acts as
 // Stage 2: the lead's team.dispatch awaits full worker agent-loops (minutes), so it CANNOT inherit the 30s
 // fast-tool timeout (CAPS.toolTimeoutMs) or it always times out before a real worker returns. Give it the same
 // ≈8-min single-run worst-case bound; env-tunable. Per-worker spend is still capped by ORCH_PER_WORKER.
@@ -1089,6 +1106,67 @@ const commanderGoals = {
   }
 };
 commanderGoals.load();
+
+/* ---- NS-1: the SERVER copy of the autonomy POSTURE + a read-only BELIEFS snapshot. The dial (and the
+   awakening cadence beat) live in the frontend and self-persist to localStorage; the night-shift driver runs in
+   the SIDECAR and must read a server-owned truth, not a webview it can't see. So the frontend now MIRRORS its
+   posture here on every change (POST /api/autonomy/posture), and the driver reads ONLY this copy.
+
+   THE BELIEFS SEAM (documented honestly): the structured, per-dim, timestamped dossier beliefs that
+   Autopilot.readiness() needs to gate ACTING live in the frontend DossierStore/StudyStore (localStorage) — the
+   sidecar only had the flat _commander.dossier text block. Rather than duplicate the whole belief engine
+   server-side, the frontend syncs a READ-ONLY beliefs snapshot ({ known:[dim], beliefs:{dim:[{text,updatedAt}]} })
+   alongside the posture. It is advisory grounding for the away pipeline; it is NEVER written back, and a missing
+   snapshot degrades the driver to EARN-tier (no ACT) safely (readiness() reads 'cold'). A later lane may move the
+   dossier server-side; until then this snapshot is the seam and the report says so. Stored as a sibling of the
+   dossier block (outside every agent's fs jail); survives a restart; plain HTTP, no bus event (mirrors dossier). */
+const AUTONOMY_POSTURE_FILE = path.join(WORKSPACES, '_commander.autonomy.json');
+const commanderPosture = {
+  _posture: null,     // { initiative, reach, leashPerDay } — normalized through Autonomy
+  _beliefs: null,     // { known:[dim], beliefs:{dim:[{text,updatedAt,createdAt}]}, at } — the read-only snapshot
+  posture() { return this._posture ? Autonomy.normalize(this._posture) : Autonomy.fresh(); },
+  // the derived read surface the driver gates on (actsUnattended, leashPerDay, …) — the SAME shape the dial exposes.
+  summary() { return Autonomy.summary(this.posture()); },
+  beliefs() { return this._beliefs; },
+  set(posture, beliefs) {
+    if (posture && typeof posture === 'object') this._posture = Autonomy.normalize(posture);
+    if (beliefs && typeof beliefs === 'object') {
+      // normalize the snapshot defensively: a bounded known[] + a bounded per-dim belief list (text + stamps only).
+      const known = Array.isArray(beliefs.known) ? beliefs.known.filter(x => typeof x === 'string').slice(0, 24) : [];
+      const src = (beliefs.beliefs && typeof beliefs.beliefs === 'object') ? beliefs.beliefs : {};
+      const out = {};
+      for (const dim of Object.keys(src).slice(0, 24)) {
+        const arr = Array.isArray(src[dim]) ? src[dim] : [];
+        out[dim] = arr.slice(0, 40).map(b => ({
+          text: String((b && b.text) || '').slice(0, 400),
+          updatedAt: Number(b && b.updatedAt) || 0,
+          createdAt: Number(b && b.createdAt) || 0
+        })).filter(b => b.text);
+      }
+      this._beliefs = { known: known, beliefs: out, at: Date.now() };
+    }
+    try {
+      fs.mkdirSync(WORKSPACES, { recursive: true });
+      saveResilient(AUTONOMY_POSTURE_FILE, { v: 1, posture: this._posture, beliefs: this._beliefs });
+    } catch (e) { console.warn('[autonomy] posture persist failed:', (e && e.message) || e); }
+  },
+  load() {
+    const o = loadResilient(AUTONOMY_POSTURE_FILE, 'autonomy-posture');
+    if (o && typeof o === 'object') {
+      if (o.posture && typeof o.posture === 'object') this._posture = Autonomy.normalize(o.posture);
+      if (o.beliefs && typeof o.beliefs === 'object') this._beliefs = o.beliefs;
+    }
+  }
+};
+commanderPosture.load();
+
+// ---- NS-1: AWAY DETECTION, server-owned. lastUserActivityAt is stamped by GENUINELY user-triggered work: the
+// browser /api/run route (surface:'interactive') and a throttled activity beacon from the frontend (POST
+// /api/activity). Internal/cron/autonomous/night-shift runs NEVER stamp it (they are the station acting on its
+// own, not the Commander). Seeded to boot time so a fresh boot reads as PRESENT until the away threshold elapses
+// (never "instantly away" on startup). The night-shift driver reads this to decide away = now - it >= threshold.
+let lastUserActivityAt = Date.now();
+function noteUserActivity(now) { lastUserActivityAt = Number.isFinite(now) ? now : Date.now(); }
 
 // P1.2 (UPDATE_STATE_SAFETY_AUDIT) — the "merged with ULTRON" lie: a roster/registry gap used to make a
 // specialist SILENTLY answer as the overseer (cron fell back to the station persona + default model, zero logging;
@@ -2266,6 +2344,186 @@ const cronDriver = makeCronDriver({
 });
 let cronTimer = null;
 
+/* ============================ NIGHT SHIFT (NS-1) — the composition root ============================
+   The ambient half of the server-owned idle-autonomy loop: the persisted state file, the ledger append, the
+   beat pipeline (the ported autopilot.js reason-only flow run through runOnce), the driver wiring, and the timer.
+   All the DECISION logic is in the pure planner (nightshift.js) + driver (nightshift-driver.js); this is glue. */
+
+// ---- the persisted driver state ({ v, day, beatsUsedToday, lastBeatAt }) — a sibling of cron.jobs.json, so a
+//      restart RESUMES mid-night (same day → same spent leash) instead of resetting. Durable temp→fsync→rename.
+const NIGHTSHIFT_STATE_FILE = path.join(WORKSPACES, 'nightshift.state.json');
+function loadNightshiftState() {
+  try { return nightshift.loadEnvelope(loadResilient(NIGHTSHIFT_STATE_FILE, 'nightshift'), Date.now()); }
+  catch (e) { console.warn('[nightshift] load failed:', (e && e.message) || e); return nightshift.fresh(Date.now()); }
+}
+let nightshiftState = loadNightshiftState();
+function saveNightshiftState() { try { saveResilient(NIGHTSHIFT_STATE_FILE, nightshift.toEnvelope(nightshiftState, Date.now())); } catch (e) { console.warn('[nightshift] persist failed:', (e && e.message) || e); } }
+
+/* ---- NS-5: the DECISION LEDGER append — wired to NS-0's REAL ledger (sidecar/autonomy-ledger.js, served at
+   GET /api/autonomy/ledger via recordAutonomy above). This thin adapter maps the night-shift driver's entries
+   ({ kind:'beat'|'decline'|'outcome', binding, beatsLeft, away, delivered, title, archetype, reason }) onto the
+   ledger's governed record shape: kind 'beat'→'act' (the station decided to act), 'decline' stays 'decline'
+   (binding names the gate), 'outcome'→'note' (the settle record; delivered/title/archetype ride the sanitized
+   `detail` bag — record() only keeps governed top-level fields). One ledger, one file (autonomy.ledger.jsonl);
+   no parallel night-shift log. Best-effort (recordAutonomy already never throws into a tick). */
+function autonomyLedgerAppend(entry) {
+  const e = entry || {};
+  const kind = e.kind === 'beat' ? 'act' : (e.kind === 'decline' ? 'decline' : 'note');
+  const detail = {};
+  if (e.beatsLeft != null) detail.beatsLeft = e.beatsLeft;
+  if (e.away != null) detail.away = !!e.away;
+  if (e.kind === 'outcome') { detail.phase = 'outcome'; detail.delivered = !!e.delivered; if (e.title) detail.title = e.title; if (e.archetype) detail.archetype = e.archetype; }
+  recordAutonomy({
+    ts: e.ts, source: 'nightshift', kind: kind,
+    agentId: e.agentId, binding: e.binding,
+    reason: e.reason || (e.kind === 'outcome' ? (e.delivered ? 'delivered' : 'stood-down') : undefined),
+    detail: detail
+  });
+}
+
+/* ---- the BEAT pipeline: the PORTED autopilot.js act flow, run server-side. It reuses the pure engine
+   (Autopilot.*) exactly as the frontend did — propose grounded candidates → grounding-veto parse →
+   score-and-select with the confidence gate → do → parse deliverable → self-critique → ship/revise/drop — then
+   records a draft to the drafts store AND surfaces it so the "while you were away" digest still works. Model
+   calls go through runOnce as SILENT reason-only autonomous runs (no tools → safe by construction). Leash
+   accounting is the DRIVER's job (server-side only); this returns { delivered, reason, title?, archetype? }. */
+
+// a reason-only internal run through runOnce: no tools (no `station`/extraObjects), surface:'autonomous', assemble
+// the reply from agent.token deltas (the SAME contract cron-driver/hub use — there is no agent.message event).
+async function nightshiftChat(o) {
+  const agentId = String((o && o.agentId) || NIGHTSHIFT_AGENT);
+  const ident = cronIdentityFor(agentId) || {};
+  const provider = cronProviderFor({ agentId: agentId });
+  const key = cronKeyFor(provider);
+  const model = cronModelFor({ agentId: agentId });
+  if (!model || !cronHasCredential(provider, key)) return { error: 'no-capability' };
+  const runId = crypto.randomUUID();
+  const state = { buf: '', err: null };
+  const sink = (name, payload) => {
+    const p = payload || {};
+    if (name === 'agent.token') { state.buf += (p.delta || ''); return; }
+    if (name === 'agent.run.error') state.err = p.message || 'run error';
+  };
+  try {
+    await runOnce({
+      key: key, model: model, provider: provider,
+      system: (o && o.system) || (ident.system && String(ident.system)) || cronSystemFor(agentId),
+      messages: o.messages, agentId: agentId, isTask: false, emit: sink, signal: o && o.signal,
+      runId: runId, streamId: 'nightshift-' + runId, surface: 'autonomous', trigger: 'nightshift'
+    });
+  } catch (e) { return { error: (e && e.message) || 'run failed' }; }
+  if (state.err) return { error: state.err };
+  return { text: state.buf };
+}
+
+// the away DRAFTS store: a capped per-station log the digest reads (sibling of the dossier; survives restart).
+// Mirrors the frontend AutopilotStore draft log shape so the SAME Autopilot.digest* helpers compose the digest.
+const NIGHTSHIFT_DRAFTS_FILE = path.join(WORKSPACES, 'nightshift.drafts.json');
+function loadNightshiftDrafts() { try { const o = loadResilient(NIGHTSHIFT_DRAFTS_FILE, 'nightshift-drafts'); return (o && Array.isArray(o.drafts)) ? o.drafts : []; } catch (_) { return []; } }
+let nightshiftDrafts = loadNightshiftDrafts();
+function recordNightshiftDraft(entry) {
+  nightshiftDrafts.push(entry);
+  if (nightshiftDrafts.length > 20) nightshiftDrafts = nightshiftDrafts.slice(-20);
+  try { saveResilient(NIGHTSHIFT_DRAFTS_FILE, { v: 1, drafts: nightshiftDrafts }); } catch (e) { console.warn('[nightshift] drafts persist failed:', (e && e.message) || e); }
+}
+
+// build the { dim:[texts] } grounding map from the synced read-only beliefs snapshot (commanderPosture.beliefs()).
+function nightshiftBeliefMap() {
+  const snap = commanderPosture.beliefs();
+  const out = {};
+  const src = (snap && snap.beliefs && typeof snap.beliefs === 'object') ? snap.beliefs : {};
+  for (const k of ['goals', 'pain', 'ambition', 'stack', 'standing_orders', 'style']) {
+    const arr = (src[k] || []).map(b => b && b.text).filter(Boolean);
+    if (arr.length) out[k] = arr;
+  }
+  return out;
+}
+
+/* runNightshiftBeat — ONE autonomous beat. Returns { delivered, reason, title?, archetype? }. Stands down
+   honestly (delivered:false, no draft) when nothing grounds out or nothing clears the confidence gate —
+   idle-doing-nothing beats slop (the anti-slop heart, preserved from the frontend). */
+async function runNightshiftBeat(opts) {
+  opts = opts || {};
+  const agentId = String(opts.agentId || NIGHTSHIFT_AGENT);
+  const signal = opts.signal;
+  // readiness from the synced beliefs snapshot: a dim is usable iff known + fresh (Autopilot.readiness).
+  const snap = commanderPosture.beliefs() || {};
+  const summary = { known: Array.isArray(snap.known) ? snap.known : Object.keys((snap.beliefs) || {}) };
+  const beliefsByDim = (dim) => (snap.beliefs && snap.beliefs[dim]) || [];
+  const rd = Autopilot.readiness(summary, beliefsByDim, Date.now(), {});
+  const eligible = Autopilot.eligibleArchetypes(rd.usableDims);
+  if (rd.tier !== 'hot' || !eligible.length) return { delivered: false, reason: 'not-ready:' + rd.tier };
+  const beliefs = nightshiftBeliefMap();
+  const ident = cronIdentityFor(agentId) || {};
+  const system = (ident.system && String(ident.system)) || cronSystemFor(agentId);
+  const name = (ident.name && String(ident.name)) || agentId;
+
+  // 1) PROPOSE
+  const cRes = await nightshiftChat({ agentId, system, signal, messages: [{ role: 'user', content: Autopilot.buildCandidateDirective({ beliefs, eligible }) }] });
+  if (cRes.error) return { delivered: false, reason: cRes.error };
+  const candidates = Autopilot.parseCandidates(cRes.text, { eligible, beliefs });
+  // 2) SELECT (confidence gate)
+  const sel = Autopilot.scoreAndSelect(candidates, {});
+  if (!sel.selected) return { delivered: false, reason: sel.reason };
+  // 3) DO
+  const dRes = await nightshiftChat({ agentId, system, signal, messages: [{ role: 'user', content: Autopilot.buildDoDirective(sel.selected, { name }) }] });
+  if (dRes.error) return { delivered: false, reason: dRes.error };
+  let deliverable = Autopilot.parseDeliverable(dRes.text, { fallbackTitle: sel.selected.title });
+  if (!deliverable) return { delivered: false, reason: 'no-deliverable' };
+  // 3b) SELF-CRITIQUE
+  const style = (beliefs.style || []).join('; ');
+  const standingOrders = (beliefs.standing_orders || []).join('; ');
+  const qRes = await nightshiftChat({ agentId, system, signal, messages: [{ role: 'user', content: Autopilot.buildCritiqueDirective(deliverable, sel.selected, { style, standingOrders }) }] });
+  const crit = (qRes && !qRes.error) ? Autopilot.parseCritique(qRes.text, { fallbackTitle: deliverable.title }) : { verdict: 'ship', note: '' };
+  if (crit.verdict === 'drop') return { delivered: false, reason: 'self-rejected' };
+  if (crit.verdict === 'revise' && crit.revised) deliverable = crit.revised;
+
+  // 4) DELIVER — record the draft (the digest reads these) + surface to the floor via the SAME crate/beat plumbing
+  //    an autonomous cron run uses, so the "while you were away" digest still works. Reach stays sandbox: nothing
+  //    is sent/published/spent; in THIS lane the deliverable is a desk draft (NS-3 upgrades acts to jailed writes).
+  const entry = { title: deliverable.title, archetype: sel.selected.archetype, at: Date.now(), body: String(deliverable.body || '').slice(0, 4000), note: crit.note || '' };
+  recordNightshiftDraft(entry);
+  try { placeCronWorkitem(agentId, '✦ night-shift: ' + deliverable.title, crypto.randomUUID()); } catch (_) {}
+  return { delivered: true, reason: 'delivered', title: deliverable.title, archetype: sel.selected.archetype, verdict: crit.verdict };
+}
+
+// ---- the driver: all ambient deps injected, so nightshift-driver.js stays determinism-clean.
+const nightshiftDriver = makeNightshiftDriver({
+  getState: () => nightshiftState,
+  setState: (s) => { nightshiftState = s; saveNightshiftState(); },
+  getPosture: () => commanderPosture.summary(),
+  lastActivity: () => lastUserActivityAt,
+  // E-STOP awareness: a global halt has no persistent flag, but while any run is being aborted / just after a
+  // halt there should be no fresh autonomous spend. We treat "a run is in flight for this agent" as busy (below)
+  // and honor the abort hook; there is no separate persisted halt gate in this lane (the E-STOP aborts the beat).
+  isHalted: () => false,
+  concurrencyFree: (agentId) => { try { return concurrencyGate.inFlight(agentId) === 0; } catch (_) { return true; } },
+  beat: (o) => runNightshiftBeat(o),
+  newAbort: () => new AbortController(),
+  now: () => Date.now(),
+  ledger: (entry) => autonomyLedgerAppend(entry),
+  emit: (name, payload) => { try { cronEmitNotify(name, payload); } catch (_) {} },   // reuse the validated cron emitter for a war-room pulse
+  agentId: NIGHTSHIFT_AGENT,
+  awayThresholdMs: NIGHTSHIFT_AWAY_MS,
+  beatIntervalMs: NIGHTSHIFT_BEAT_MS
+});
+let nightshiftTimer = null;
+// the LIVE armed state: SKYNET_NIGHTSHIFT_ENABLED (env, boot-frozen) OR the posture already permits acting at boot.
+function nightshiftShouldArm() { try { return NIGHTSHIFT_ENABLED || !!(commanderPosture.summary() || {}).actsUnattended; } catch (_) { return NIGHTSHIFT_ENABLED; } }
+function armNightshift() {
+  if (nightshiftTimer) return false;
+  nightshiftTimer = setInterval(() => { try { nightshiftDriver.applyTick(Date.now()); } catch (e) { console.warn('[nightshift] tick error:', (e && e.message) || e); } }, NIGHTSHIFT_TICK_MS);
+  if (nightshiftTimer.unref) nightshiftTimer.unref();   // the http server keeps the process alive; the ticker alone shouldn't
+  console.log('  · night-shift armed (tick ' + Math.round(NIGHTSHIFT_TICK_MS / 1000) + 's, beat ' + Math.round(NIGHTSHIFT_BEAT_MS / 60000) + 'm, away ' + Math.round(NIGHTSHIFT_AWAY_MS / 60000) + 'm)');
+  return true;
+}
+function disarmNightshift() {
+  if (!nightshiftTimer) return false;
+  try { clearInterval(nightshiftTimer); } catch (_) {}
+  nightshiftTimer = null;
+  return true;
+}
+
 /* ---- G4.6: arm/disarm the live scheduler tick. armCron() runs ONE immediate reconcile tick (catching up any
    fires missed while the timer was off — at-most-one within grace, else fast-forward+skip, never a backlog)
    UNDER the cross-process lock (G4.3), then arms the interval; it is IDEMPOTENT (a no-op when a timer already
@@ -2645,6 +2903,12 @@ function dispatchRoute(req, res) {
   if (req.method === 'POST' && req.url === '/api/permissions/grant') return handlePermissionsGrant(req, res);
   if (req.method === 'POST' && req.url === '/api/permissions/revoke') return handlePermissionsRevoke(req, res);
   if (req.method === 'POST' && req.url === '/api/autonomy/write') return handleAutonomyWrite(req, res);
+  // NS-1: the SERVER copy of the dial + a read-only beliefs snapshot (the driver reads ONLY this); the throttled
+  // activity beacon (away detection); and the truthful night-shift status telemetry.
+  if (req.method === 'POST' && req.url === '/api/autonomy/posture') return handleAutonomyPosture(req, res);
+  if (req.method === 'GET' && req.url === '/api/autonomy/posture') return handleAutonomyPostureGet(req, res);
+  if (req.method === 'POST' && req.url === '/api/activity') return handleActivityBeacon(req, res);
+  if (req.method === 'GET' && req.url === '/api/nightshift/status') return handleNightshiftStatus(req, res);
   if (req.method === 'POST' && req.url === '/api/summon/ack') return handleSummonAck(req, res);
   if (req.method === 'POST' && req.url === '/api/key') return handleSetKey(req, res);
   if (req.method === 'POST' && req.url === '/api/channels/token') return handleSetChannelToken(req, res);
@@ -2825,6 +3089,13 @@ server.listen(PORT, '127.0.0.1', () => {
   try {
     if (cronArmed) armCron();
   } catch (e) { console.warn('[cron] start failed:', (e && e.message) || e); }
+  // NIGHT SHIFT (OPT-IN, NS-1): arms iff SKYNET_NIGHTSHIFT_ENABLED OR the posture already permits acting at boot
+  // (initiative ≥ 'leash'). Inert otherwise — no timer, no fire, byte-identical for a Commander who never dials up.
+  // A live posture write that RAISES initiative to acting also arms it (POST /api/autonomy/posture), so it starts
+  // the same session the dial is turned up, with no restart. The persisted state file makes a restart RESUME.
+  try {
+    if (nightshiftShouldArm()) armNightshift();
+  } catch (e) { console.warn('[nightshift] start failed:', (e && e.message) || e); }
   // WORKSHOP zombie-claim boot sweep: a shift that crashed mid-build leaves an item stamped buildingRunId; at
   // boot NO run is live, so any such stamp is a zombie that would mute the agent's backlog forever. Clear them
   // (isRunLive is all-false at boot) so the next shift can claim again. Best-effort, fire-and-forget per agent.
@@ -2855,6 +3126,7 @@ function gracefulShutdown(signal) {
   const deadline = setTimeout(() => { try { console.warn('  · shutdown deadline hit — forcing exit'); } catch (_) {} process.exit(0); }, 3000);
   if (deadline.unref) deadline.unref();
   try { if (typeof cronTimer !== 'undefined' && cronTimer) { clearInterval(cronTimer); } } catch (_) {}
+  try { if (typeof nightshiftTimer !== 'undefined' && nightshiftTimer) { clearInterval(nightshiftTimer); } } catch (_) {}   // NS-1: stop the night-shift ticker on shutdown
   try { if (typeof shellBg !== 'undefined' && shellBg && shellBg.killAll) shellBg.killAll(); } catch (_) {}   // reap backgrounded shell children (dev servers etc.)
   try { if (typeof executionEnvironment !== 'undefined' && executionEnvironment && executionEnvironment.killAllBackground) executionEnvironment.killAllBackground(); } catch (_) {}
   try { if (typeof subagents !== 'undefined' && subagents && subagents.interruptAll) subagents.interruptAll(); } catch (_) {}   // stop watchable background workers
@@ -4625,6 +4897,11 @@ async function handleRun(req, res) {
   const runId = crypto.randomUUID();
   runs.set(runId, ac);
   runsMeta.set(runId, { agentId: agentId, startedAt: Date.now(), source: 'interactive' });
+  // NS-1 AWAY DETECTION: a browser /api/run is genuinely user-triggered work — stamp the away clock so the
+  // night-shift driver treats the Commander as PRESENT. Cron/workshop/night-shift runs go through runOnce with
+  // surface:'autonomous' and NEVER reach this route, so they can't reset the away clock (which would make the
+  // station perpetually think the user is here and never run the night shift).
+  noteUserActivity(Date.now());
   const pending = new Map();          // promptId -> finish(decision); the consent prompts awaiting a human
   pendingByRun.set(runId, pending);
   const pendingSummon = new Map();    // requestId -> finish(newAgentId|null); the team.summon requests awaiting the browser
@@ -5537,6 +5814,65 @@ async function handleAutonomyWrite(req, res) {
   return sendJson((r && r.summary === 'denied') ? 403 : 400, { ok: false, path: rel, reason: (r && (r.content || r.summary)) || 'write failed' });
 }
 
+// POST /api/autonomy/posture { posture:{ initiative, reach, leashPerDay }, beliefs?:{ known, beliefs } } — the
+// frontend MIRRORS the dial here on every change (and the awakening cadence beat sets the opening posture), so the
+// SERVER-side night-shift driver reads a truth it owns, not a webview it can't see. The optional beliefs snapshot
+// is the READ-ONLY grounding seam (see commanderPosture header). Persisted durably; survives restart. Arming the
+// night shift the SAME session the dial is raised means turning it up to 'build'/'free' starts it with no restart.
+async function handleAutonomyPosture(req, res) {
+  const json = (code, obj) => { if (res.headersSent) return; res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 1 << 18, res)) || {}; } catch (e) { if (res.headersSent) return; res.writeHead(400); return res.end('bad json'); }
+  const posture = (body.posture && typeof body.posture === 'object') ? body.posture
+    : ((body.initiative || body.reach || body.leashPerDay != null) ? body : null);   // tolerate a flat posture too
+  commanderPosture.set(posture, body.beliefs);
+  // if the (new) posture permits acting and the timer isn't running yet, arm it NOW (no restart); if it dropped
+  // below acting, we LEAVE the timer armed — its own gate returns binding:'posture' and no beat fires, which is
+  // cheaper + simpler than tearing the timer down and matches how the driver already no-ops when not permitted.
+  try { if (nightshiftShouldArm() && !nightshiftTimer) armNightshift(); } catch (_) {}
+  return json(200, { ok: true, summary: commanderPosture.summary(), nightshiftArmed: !!nightshiftTimer });
+}
+// GET /api/autonomy/posture — the server copy (posture summary + whether a beliefs snapshot is present). Never
+// echoes the raw beliefs texts back to the browser (it already has them); just reports presence + freshness.
+function handleAutonomyPostureGet(req, res) {
+  const b = commanderPosture.beliefs();
+  res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify({ summary: commanderPosture.summary(), beliefs: b ? { known: b.known || [], at: b.at || 0 } : null }));
+}
+// POST /api/activity — the throttled activity beacon (the frontend calls this from noteActivity, ≥60s apart) so a
+// Commander who is watching-but-not-running-a-task still counts as PRESENT. Body is ignored; the arrival IS the
+// signal. Cheap, no-store, always 200 (never blocks the UI). Cron/night-shift never call this (server-internal).
+async function handleActivityBeacon(req, res) {
+  try { await readBody(req, 1024, res); } catch (_) {}   // drain any tiny body; content is irrelevant
+  noteUserActivity(Date.now());
+  if (res.headersSent) return;
+  res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify({ ok: true, at: lastUserActivityAt }));
+}
+// GET /api/nightshift/status — truthful telemetry for a later UI lane. Every field is provable from server state:
+// active (timer armed), away + awaySince (the away clock), beatsUsedToday/leashPerDay (the enforced leash),
+// lastBeatAt, nextEligibleAt (cooldown clears), and `binding` (the gate currently blocking a beat, or null when
+// one would fire this instant). Reads the pure planner's decision so status == what the tick would actually do.
+function handleNightshiftStatus(req, res) {
+  const now = Date.now();
+  const decision = (() => { try { return nightshiftDriver.decideNow(now); } catch (_) { return null; } })();
+  const summary = commanderPosture.summary() || {};
+  const rolled = nightshift.rollDay(nightshiftState, now);
+  const awaySince = lastUserActivityAt + NIGHTSHIFT_AWAY_MS;   // the instant "away" becomes true
+  const out = {
+    active: !!nightshiftTimer,
+    away: decision ? !!decision.away : false,
+    awaySince: awaySince,
+    beatsUsedToday: rolled.beatsUsedToday || 0,
+    leashPerDay: Number.isFinite(summary.leashPerDay) ? summary.leashPerDay : null,
+    lastBeatAt: rolled.lastBeatAt || 0,
+    nextEligibleAt: decision ? decision.nextEligibleAt : ((rolled.lastBeatAt || 0) + NIGHTSHIFT_BEAT_MS),
+    binding: decision ? decision.binding : 'unknown',
+    inFlight: (() => { try { return nightshiftDriver.runInFlight(); } catch (_) { return false; } })()
+  };
+  res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify(out));
+}
+
 // POST /api/summon/ack { runId, requestId, agentId } — the browser's answer to a live crew.summon.request: it ran
 // the REAL summonAgent() and reports the new agentId (or null if it couldn't). Resolves the run's awaiting
 // team.summon tool. A stale runId/requestId is a harmless no-op (the run ended or the request auto-settled to null).
@@ -5668,6 +6004,7 @@ function handleHalt(req, res) {
   const halted = killAll(runs, tgInflight, dcInflight);   // browser runs + Telegram + Discord hub runs, in one kill (see sidecar/halt.js)
   let cronAborted = 0;
   try { cronAborted = cronDriver.abortAllLeases(); } catch (_) {}   // Phase 0: E-STOP also aborts in-flight cron runs (unattended spend)
+  try { nightshiftDriver.abortBeat(); } catch (_) {}   // NS-1: E-STOP also aborts an in-flight night-shift beat (unattended spend)
   try { executionEnvironment.killAllBackground(); } catch (_) {}   // H2.2/Phase 0: E-STOP also reaps backend-owned background processes
   try { subagents.interruptAll(); } catch (_) {}   // Phase 1: E-STOP aborts watchable background workers too
   try { cronLock.release(); } catch (_) {}  // G4.3: drop any cron lock this process holds so an E-STOP mid-tick never wedges the next tick (standalone halt-block addition; G2 will add connectors.close here)
