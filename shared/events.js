@@ -110,12 +110,16 @@
 
     // ---- cron / scheduled routines (autonomous, unattended fires; producers in the index.js tick driver) ----
     // the scheduler tick ran: how many due jobs it planned / fired / skipped this pass (the war-room pulse).
-    'cron.tick': obj(['fired', 'skipped'], { fired: int, skipped: int, planned: int }),
+    // ADDITIVE (NS-0, 2026-07-07): `deferred` — how many due jobs were HELD BACK past the concurrency cap this
+    // tick (they stay due, drain on a later tick). Optional int; old payloads/consumers omit it and stay valid.
+    'cron.tick': obj(['fired', 'skipped'], { fired: int, skipped: int, planned: int, deferred: int }),
     // a scheduled job fired a run — runId links to the agent.* run it launched; scheduledFor = ms it was due.
     'cron.fire': obj(['jobId', 'runId'], { jobId: str, runId: str, scheduledFor: num }),
-    // a due job was NOT fired this tick (already running, disabled, stale-fast-forwarded, ungated, lease-reclaimed).
+    // a due job was NOT fired this tick (already running, disabled, stale-fast-forwarded, ungated, lease-reclaimed,
+    // or at-capacity: deferred past the concurrency cap). ADDITIVE (NS-0, 2026-07-07): 'at-capacity' — the previously
+    // silent concurrency-cap deferral is now emitted. Enum VALUE added, never renamed/removed; old payloads stay valid.
     'cron.skipped': obj(['jobId', 'reason'], {
-      jobId: str, reason: { enum: ['already-running', 'disabled', 'caught-up', 'no-capability', 'stale-lock-reclaimed'] }
+      jobId: str, reason: { enum: ['already-running', 'disabled', 'caught-up', 'no-capability', 'stale-lock-reclaimed', 'at-capacity'] }
     }),
     // a fired job's run finished: ok / failed (always delivered) / silent ([SILENT] suppressed delivery, audit kept).
     'cron.result': obj(['jobId', 'runId', 'outcome'], {
