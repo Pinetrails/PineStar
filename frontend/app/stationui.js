@@ -3393,14 +3393,16 @@ const StationUI = (() => {
         // the sidecar reads it from the keychain-injected runtime layer. Browser: storeChannelToken is a no-op and
         // the token rides the POST body as before. A fresh paste is required only when nothing is stored yet.
         let bodyToken = token;
+        let localFallback = false;   // desktop keychain store failed -> the token is saved locally (plaintext), not in the OS keychain
         if (typeof Harness !== 'undefined' && Harness.storeChannelToken && token) {
           const stored = await Harness.storeChannelToken('telegram', token);
           if (stored) bodyToken = '';   // keychain owns it now — don't echo it into the request/plaintext file
+          else if (Harness.isDesktop && Harness.isDesktop()) localFallback = true;   // desktop + store failed -> body token persists locally (still safe, still connected)
         }
         const r = await fetch('/api/channels/telegram/connect', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: bodyToken, key, model, provider, baseUrl, agentId, system, agentName }) });
         const j = await r.json().catch(() => ({}));
         if (!r.ok || j.error) { msgEl.textContent = '✕ ' + (j.error || ('HTTP ' + r.status)); sfx('bad'); }
-        else { msgEl.textContent = '✓ connected — open Telegram and DM your bot'; sfx('click'); notify('Telegram bot connected', 'good'); body.querySelector('#tg-token').value = ''; }
+        else { msgEl.textContent = '✓ connected — open Telegram and DM your bot' + (localFallback ? ' (token saved locally, not the OS keychain)' : ''); sfx('click'); notify('Telegram bot connected', 'good'); body.querySelector('#tg-token').value = ''; }
       } catch (e) { msgEl.textContent = '✕ ' + ((e && e.message) || 'failed to reach the sidecar'); sfx('bad'); }
       refresh();
     });
@@ -3465,14 +3467,16 @@ const StationUI = (() => {
       try {
         // Desktop: keychain-park the token then connect without echoing it over HTTP (see the Telegram card).
         let bodyToken = token;
+        let localFallback = false;   // desktop keychain store failed -> token saved locally (still safe, still connected)
         if (typeof Harness !== 'undefined' && Harness.storeChannelToken && token) {
           const stored = await Harness.storeChannelToken('discord', token);
           if (stored) bodyToken = '';
+          else if (Harness.isDesktop && Harness.isDesktop()) localFallback = true;
         }
         const r = await fetch('/api/channels/discord/connect', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: bodyToken, key, model, provider, baseUrl, agentId, system, agentName }) });
         const j = await r.json().catch(() => ({}));
         if (!r.ok || j.error) { dcMsgEl.textContent = '✕ ' + (j.error || ('HTTP ' + r.status)); sfx('bad'); }
-        else { dcMsgEl.textContent = '✓ connected — DM your bot on Discord'; sfx('click'); notify('Discord bot connected', 'good'); body.querySelector('#dc-token').value = ''; }
+        else { dcMsgEl.textContent = '✓ connected — DM your bot on Discord' + (localFallback ? ' (token saved locally, not the OS keychain)' : ''); sfx('click'); notify('Discord bot connected', 'good'); body.querySelector('#dc-token').value = ''; }
       } catch (e) { dcMsgEl.textContent = '✕ ' + ((e && e.message) || 'failed to reach the sidecar'); sfx('bad'); }
       dcRefresh();
     });
