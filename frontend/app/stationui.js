@@ -87,7 +87,22 @@ const StationUI = (() => {
       : act === 'talk' ? 'in conversation'
       : 'idle — awaiting orders';
   }
+  // E2: the SSE bridge health, read from the same predicate the canvas dims its live telemetry with
+  // (World.linkState). ONLINE / the "on" status dot may only show while the link is genuinely up — a
+  // dead sidecar must never read as ONLINE (activity() swallows errors → 'idle' → the else-branch, so
+  // without this an idle agent looks online even when the harness is gone). Only a genuinely bridged-
+  // but-dead link counts as down; a never-opened or deliberately-paused bridge does not (no false alarm).
+  function linkDown() {
+    try {
+      if (typeof World !== 'undefined' && World.linkState) {
+        const ls = World.linkState();
+        return !!(ls && ls.bridged && !ls.paused && ls.down);
+      }
+    } catch (_) {}
+    return false;
+  }
   function pillFor(act) {
+    if (linkDown()) return ['LINK DOWN', 'down'];   // link gone → the pill can't honestly assert ONLINE
     return act === 'task' ? ['WORKING', 'working']
       : act === 'talk' ? ['THINKING', 'thinking']
       : ['ONLINE', ''];
@@ -759,8 +774,9 @@ const StationUI = (() => {
   }
 
   function agHead(a, act) {
-    const dotCls = act === 'task' ? 'working' : act === 'talk' ? 'thinking' : 'on';
-    const statusText = act === 'task' ? 'WORKING' : act === 'talk' ? 'THINKING' : 'ONLINE';
+    const dn = linkDown();   // E2: link gone → the dossier can't honestly say ONLINE either
+    const dotCls = dn ? 'down' : act === 'task' ? 'working' : act === 'talk' ? 'thinking' : 'on';
+    const statusText = dn ? 'OFFLINE' : act === 'task' ? 'WORKING' : act === 'talk' ? 'THINKING' : 'ONLINE';
     const lv = (typeof Xp !== 'undefined' && a.stats) ? Xp.compute(a.stats).level : null;   // always-visible level chip
     return '<div class="ag-hero">' +
       // recessed portrait WELL: corner ticks + a slow scan-sweep overlay (v2 hero pattern). The sweep +
@@ -1399,8 +1415,9 @@ const StationUI = (() => {
   function refreshDossierLive() {
     const w = open.agents; if (!w) return;
     const act = activity();
-    const dotCls = act === 'task' ? 'working' : act === 'talk' ? 'thinking' : 'on';
-    const statusText = act === 'task' ? 'WORKING' : act === 'talk' ? 'THINKING' : 'ONLINE';
+    const dn = linkDown();   // E2: keep the live-painted status honest — link gone → OFFLINE, not ONLINE
+    const dotCls = dn ? 'down' : act === 'task' ? 'working' : act === 'talk' ? 'thinking' : 'on';
+    const statusText = dn ? 'OFFLINE' : act === 'task' ? 'WORKING' : act === 'talk' ? 'THINKING' : 'ONLINE';
     // hero: the status dot (class) + the role line's status word (keeps ' · HAB-01' suffix)
     const dot = w.querySelector('.ag-role-line .ag-sdot');
     if (dot) dot.className = 'ag-sdot ' + dotCls;

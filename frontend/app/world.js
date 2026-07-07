@@ -4392,6 +4392,16 @@ const World = (() => {
     if (connPollTimer) { clearInterval(connPollTimer); connPollTimer = null; }
     if (chanES) { try { chanES.close(); } catch (_) {} chanES = null; }
   }
+  // E1: the ONE public read of the SSE bridge health — the SAME predicate the canvas dims its live
+  // telemetry with (linkStaleDim). Chrome instruments outside world.js (topbar #sig / #status-pill,
+  // widget rail, model dock) read this so a dead sidecar reads as down everywhere, not just on the
+  // canvas. `down` is the honest fault; `paused` = user deliberately disconnected (title screen);
+  // `bridged` = the bridge was ever opened (pre-entry, both are false — instruments show a neutral
+  // "not yet live" state, never a false alarm).
+  function linkState() {
+    const now = (typeof performance !== 'undefined') ? performance.now() : fnow;
+    return { down: linkDown(now), paused: bridgePaused, bridged: bridged };
+  }
   function resumeBridge() {
     if (!bridged) return;                 // never set up yet (no agent has entered) — connectChannelBridge will open it
     bridgePaused = false;
@@ -5431,7 +5441,7 @@ const World = (() => {
     pollFeed: () => pollFeedState(),
     pollShip: () => pollShipStats()
   });
-  return { init, rebake, crt: CRT, slagLog: () => (slaglog ? slaglog.recent() : []), loadStation, spawn, spawnAgent, relabel, setActivityFor, focusBody, setChatFocus, chatFocusPing, start, stop, setActivity, wakeIn, beginAwakening, setWakeProgress, igniteSpark, armKindle, kindleHold, camPushIn, camCreep, camPunch, camPullBack, awakenTurn, truthPulse, beginFlood, collapseFlood, endAwakening, releaseAwakening, say, focusAgent, getActivity: () => activity, getUse: () => (agent ? agent.usingProp : null), setOnClick, setOnArcade, setOnOutbox, setOnMissionBoard, setOnTrophyCase, setOnBayAssign, setOnIntakeFeed, refit, pauseBridge, resumeBridge, _dbgSeedRun, _dbgAgeRun, _dbgReconcile, _dbgSweep, _dbgLinkState, _dbgDropBridge, _dbgBeltLegibility,
+  return { init, rebake, crt: CRT, slagLog: () => (slaglog ? slaglog.recent() : []), loadStation, spawn, spawnAgent, relabel, setActivityFor, focusBody, setChatFocus, chatFocusPing, start, stop, setActivity, wakeIn, beginAwakening, setWakeProgress, igniteSpark, armKindle, kindleHold, camPushIn, camCreep, camPunch, camPullBack, awakenTurn, truthPulse, beginFlood, collapseFlood, endAwakening, releaseAwakening, say, focusAgent, getActivity: () => activity, getUse: () => (agent ? agent.usingProp : null), setOnClick, setOnArcade, setOnOutbox, setOnMissionBoard, setOnTrophyCase, setOnBayAssign, setOnIntakeFeed, refit, pauseBridge, resumeBridge, linkState, _dbgSeedRun, _dbgAgeRun, _dbgReconcile, _dbgSweep, _dbgLinkState, _dbgDropBridge, _dbgBeltLegibility,
     // AGENT GROWTH: XpStore pushes pre-computed Xp.compute() snapshots here; pulseLevelUp fires
     // the addressed body's gold ring. The colony headline is the top-bar STATION chip.
     setXp: (agentId, a) => {

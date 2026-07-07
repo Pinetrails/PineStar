@@ -88,6 +88,42 @@ const Topbar = (() => {
     if (isFinite(usd) && usd > 0) { liveSpend += usd; paintSpend(true); }
   }
 
+  /* ---- UPLINK (#sig): wired to the REAL SSE bridge health (World.linkState), the same predicate the
+     canvas dims its live telemetry with. Full bars + UPLINK while the bridge is up; when it dies the
+     bars collapse to the dead glyph and the label flips to LINK DOWN in red (mirrors the canvas
+     LINK DOWN marker). Before the bridge is ever opened (title screen / pre-entry) it shows a neutral
+     STANDBY rather than a false green or a false alarm. Was static HTML no JS ever wrote. ---- */
+  const SIG_UP = '▂▄▆█', SIG_DOWN = '▁▁▁▁';
+  function linkNow() {
+    try { if (typeof World !== 'undefined' && World.linkState) return World.linkState(); } catch (_) {}
+    return null;
+  }
+  function paintSig() {
+    const el = $('#sig'); if (!el) return;
+    const bars = el.querySelector('b'); if (!bars) return;
+    const ls = linkNow();
+    // no world / never bridged / deliberately paused → neutral standby (never a false ONLINE-green,
+    // never a false DOWN-red). Only a genuinely bridged-but-dead link paints the red fault state.
+    if (!ls || !ls.bridged || ls.paused) {
+      el.classList.remove('down');
+      el.childNodes[0].nodeValue = 'STANDBY ';
+      bars.textContent = ls && ls.paused ? SIG_DOWN : SIG_UP;
+      el.title = ls && ls.paused ? 'uplink paused (disconnected)' : 'local sidecar uplink';
+      return;
+    }
+    if (ls.down) {
+      el.classList.add('down');
+      el.childNodes[0].nodeValue = 'LINK DOWN ';
+      bars.textContent = SIG_DOWN;
+      el.title = 'local sidecar uplink — DOWN (no live telemetry)';
+    } else {
+      el.classList.remove('down');
+      el.childNodes[0].nodeValue = 'UPLINK ';
+      bars.textContent = SIG_UP;
+      el.title = 'local sidecar uplink — live';
+    }
+  }
+
   function init() {
     if (wired) return;
     wired = true;
@@ -95,6 +131,7 @@ const Topbar = (() => {
     // first paints (may run before any event / poll — honest zeros / current level)
     paintXp();
     paintSpend(false);
+    paintSig();
 
     if (typeof U !== 'undefined' && U.bus) {
       // SPEND ticks the instant a run bills; the growth events also advance the XP sliver.
@@ -112,6 +149,11 @@ const Topbar = (() => {
     // repaint the XP sliver on a slow cadence too, in case a level-up celebration reset the level
     // (cheap: one read-only compute; no network). Piggybacks the same 30s tick.
     setInterval(paintXp, 30000);
+
+    // UPLINK health: poll World.linkState on a short cadence (the readyState check is the fast signal;
+    // 3s catches a dropped socket well within the DOWN threshold) so #sig tracks the live bridge, not
+    // a frozen glyph. Cheap: one read-only predicate, no network.
+    setInterval(paintSig, 3000);
   }
 
   // start once the DOM + app globals exist (this script loads after app.js)
@@ -122,7 +164,7 @@ const Topbar = (() => {
   }
 
   // expose a tiny read-only surface for dev/verification (mirrors testapi.js style; inert otherwise)
-  return { init, _paintSpend: paintSpend, _paintXp: paintXp, _displaySpend: displaySpend };
+  return { init, _paintSpend: paintSpend, _paintXp: paintXp, _displaySpend: displaySpend, _paintSig: paintSig };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = { Topbar };
