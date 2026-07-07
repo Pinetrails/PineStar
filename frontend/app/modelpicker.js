@@ -8,7 +8,10 @@
 
 const ModelPicker = (() => {
   const SEP = '|';   // provider/id delimiter in the option value — never appears in a provider id or model id
-  function esc(s) { const d = (typeof document !== 'undefined') ? document.createElement('div') : null; if (!d) return String(s == null ? '' : s); d.textContent = String(s == null ? '' : s); return d.innerHTML; }
+  // Delegates to the one complete implementation (U.esc escapes & < > " ' — quotes included, so the many
+  // id="…" / aria-label="…" attribute contexts this picker builds are injection-safe). U.esc is pure string
+  // work (no DOM), so the old document-presence guard is unnecessary; keep the null-guard the local had.
+  const esc = s => U.esc(s == null ? '' : s);
   function md() { return (typeof ModelDock !== 'undefined' && ModelDock && ModelDock.catalog) ? ModelDock : null; }
   function norm(p) { const M = md(); return M ? M.labels.normProvider(p) : String(p || '').trim().toLowerCase(); }
 

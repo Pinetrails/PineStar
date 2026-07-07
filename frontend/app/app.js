@@ -5,7 +5,9 @@
 const App = (() => {
   const el = id => document.getElementById(id);
   // HTML-escape for the rare spot we build a connect message with a link (provider label + signup URL).
-  const esc = s => { const d = document.createElement('div'); d.textContent = String(s == null ? '' : s); return d.innerHTML; };
+  // Delegates to the one complete implementation (U.esc escapes & < > " ' — quotes included, so attribute
+  // contexts are safe); keep the null-guard the old local copy had so U.esc(null) never renders "null".
+  const esc = s => U.esc(s == null ? '' : s);
   // CRT-muted crew suit tints — distinct per crew member but passed through the amber-phosphor grade (no pure neons). Last entry stays gold to match ORCH_COLOR.
   const SUITS = ['#6fb3bf', '#7bc88a', '#d99a5a', '#a888c0', '#cf7d96', '#ffd34a'];
 

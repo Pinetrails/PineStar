@@ -12,7 +12,9 @@
 (function () {
   if (typeof document === 'undefined') return;
   const $ = s => document.querySelector(s);
-  const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  // Delegates to the one complete implementation. The old local copy missed ' (apostrophe) — U.esc escapes
+  // all of & < > " ', so a name/argsSummary carrying an apostrophe can't break a single-quoted attribute.
+  const esc = s => U.esc(s == null ? '' : s);
   const sfx = n => { try { if (typeof SFX === 'object' && SFX[n]) SFX[n](); } catch (_) {} };
 
   /* ---------------- APPROVAL HOTSPOT (pinned above COMMS) ---------------- */
