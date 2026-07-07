@@ -98,6 +98,7 @@ const mintLedger = require('./mint-ledger.js');            // W6: pure dedup gat
 const { makeCronDriver } = require('./cron-driver.js');    // the autonomous tick driver (ambient deps injected here)
 const nightshift = require('./nightshift.js');            // NS-1: pure planner for the server-owned night-shift driver
 const { makeNightshiftDriver } = require('./nightshift-driver.js'); // NS-1: the restart-safe idle-autonomy tick driver
+const contextpack = require('./contextpack.js');          // NS-2: pure recency-weighted context pack for the propose step
 const Autopilot = require('../frontend/app/autopilot.js'); // NS-1: the pure, node-exportable anti-slop ACT pipeline (reused, not rewritten)
 const Autonomy = require('../frontend/app/autonomy.js');   // NS-1: the pure posture engine (summary/normalize) — the SERVER reads the same shape the dial writes
 const { makeAutoNotifier } = require('./autonotify.js');   // B4: ping a connected channel when a cron run produces work
@@ -2376,6 +2377,7 @@ function autonomyLedgerAppend(entry) {
   const detail = {};
   if (e.beatsLeft != null) detail.beatsLeft = e.beatsLeft;
   if (e.away != null) detail.away = !!e.away;
+  if (e.preSpend) detail.preSpend = true;   // NS-2: this decline stood down BEFORE spending a leash unit (cold-leash fix)
   if (e.kind === 'outcome') {
     detail.phase = 'outcome'; detail.delivered = !!e.delivered;
     if (e.title) detail.title = e.title; if (e.archetype) detail.archetype = e.archetype;
@@ -2495,6 +2497,67 @@ function nightshiftBeliefMap() {
   return out;
 }
 
+/* NS-2: the CONTEXT-PACK io — the ambient half of contextpack.js. Gathers REAL recent activity from the durable
+   stores (runs / transcript / goal arc / autonomy ledger for kept-vs-discarded / dossier beliefs / learn store) and
+   hands the pure assembler already-fetched arrays (determinism-split: this side reads Date.now + the stores, the
+   pure core is a transform over its inputs). Returns the assembled pack { sections, text, activityLines, counts }.
+   The pack is what makes the propose step feel like magic — candidates grounded in what the Commander ACTUALLY did,
+   not six static dossier strings. Bounded + fail-open: any store hiccup degrades that one section to empty. */
+function nightshiftContextPack() {
+  const now = Date.now();
+  // recent RUNS (newest-first already from runStore.list). We pass the whole recent window; the pure core windows
+  // to ~7d + excludes internal streamIds (nightshift-/cron-/workshop-) + de-dupes. limit generous; core caps to 8.
+  let runs = [];
+  try { runs = (runStore.list(null, { limit: 60 }) || []).map(r => ({ title: r.title, ts: r.ts, streamId: r.streamId, reason: r.reason })); } catch (_) { runs = []; }
+  // recent CHATS: all transcript rows (the store already redacted content on write); the core filters role:'user',
+  // excludes internal streams, takes first-lines, re-redacts as a backstop. Bound the tail we hand over (RAM-safe).
+  let chats = [];
+  try { const all = transcriptStore.all() || []; chats = all.slice(-400).map(m => ({ role: m.role, content: m.content, ts: m.ts, streamId: m.streamId })); } catch (_) { chats = []; }
+  // the active GOAL ARC (single object or null).
+  let goal = null;
+  try { goal = commanderGoals.get() || null; } catch (_) { goal = null; }
+  // LANDED work: join the ledger's kind:'act' entries (title+runId) with its verdict entries (approved/denied+runId)
+  // to produce recent {title, verdict, ts} pairs — what kind of night-shift work the Commander KEPT vs DISCARDED.
+  let landed = [];
+  try {
+    const led = autonomyLedger.list({ source: 'nightshift', limit: 200 }) || [];
+    const titleByRun = {};
+    for (const e of led) { if (e && e.kind === 'act' && e.runId && e.detail && e.detail.title) titleByRun[String(e.runId)] = String(e.detail.title); }
+    for (const e of led) {
+      if (!e || e.kind !== 'note' || !e.runId) continue;
+      const verdict = e.reason === 'approved' ? 'kept' : (e.reason === 'denied' ? 'discarded' : null);
+      if (!verdict) continue;
+      const title = titleByRun[String(e.runId)] || (e.detail && e.detail.title) || '';
+      if (title) landed.push({ title: title, verdict: verdict, ts: e.ts });
+    }
+  } catch (_) { landed = []; }
+  const beliefs = nightshiftBeliefMap();
+  const learn = (nightshiftLearn && typeof nightshiftLearn === 'object') ? nightshiftLearn : {};
+  const pack = contextpack.assemble({ runs, chats, goal, landed, beliefs, learn, redact }, { now });
+  // the count of recent USER-INITIATED runs the pack recognized — the ACTIVITY-as-grounding evidence for readiness.
+  pack.userRunCount = (pack.counts && pack.counts.runs) || 0;
+  return pack;
+}
+
+// NS-2: the PURELY-LOCAL pre-spend readiness gate for the night-shift driver (the cold-leash fix). Answers, with NO
+// model call, "could a beat even reach a model call right now?" — the same readiness/eligibility conditions the act
+// pipeline checks first. Dossier OR substantial recent activity counts as grounding (Autopilot.readiness folds both).
+// Returns { ok, reason }. Called by the driver BEFORE the leash is spent, so a stand-down that no model call could
+// have avoided (cold on both paths → tier not hot, or nothing eligible) costs no budget. Best-effort; fail OPEN.
+function nightshiftPrecheck() {
+  try {
+    const snap = commanderPosture.beliefs() || {};
+    const summary = { known: Array.isArray(snap.known) ? snap.known : Object.keys((snap.beliefs) || {}) };
+    const beliefsByDim = (dim) => (snap.beliefs && snap.beliefs[dim]) || [];
+    let activityCount = 0;
+    try { activityCount = nightshiftContextPack().userRunCount || 0; } catch (_) { activityCount = 0; }
+    const rd = Autopilot.readiness(summary, beliefsByDim, Date.now(), { activityCount });
+    const eligible = Autopilot.eligibleArchetypes(rd.usableDims, { activityGrounded: rd.groundedBy === 'activity' });
+    if (rd.tier !== 'hot' || !eligible.length) return { ok: false, reason: 'readiness' };
+    return { ok: true };
+  } catch (_) { return { ok: true }; }   // fail open → NS-1 behavior (spend + let the pipeline decide)
+}
+
 /* runNightshiftBeat — ONE autonomous beat. Returns { delivered, reason, title?, archetype? }. Stands down
    honestly (delivered:false, no draft) when nothing grounds out or nothing clears the confidence gate —
    idle-doing-nothing beats slop (the anti-slop heart, preserved from the frontend). */
@@ -2512,22 +2575,27 @@ async function runNightshiftBeat(opts) {
   if (posture.buildsUnattended && workshopOf(agentId)) {
     return runNightshiftActShift(Object.assign({}, opts, { agentId }));
   }
-  // readiness from the synced beliefs snapshot: a dim is usable iff known + fresh (Autopilot.readiness).
+  // NS-2: assemble the CONTEXT PACK (recent runs/chats/goal/landed work) — the real-activity grounding that makes
+  // the propose step aim at what the Commander is ACTUALLY doing, not six static dossier strings.
+  const pack = nightshiftContextPack();
+  const activity = pack.activityLines || [];
+  // readiness folds BOTH grounding paths: the dossier AND substantial recent activity (a heavily-active brand-new
+  // user is now hot on activity alone). eligibility opens to all archetypes when activity is the grounding source.
   const snap = commanderPosture.beliefs() || {};
   const summary = { known: Array.isArray(snap.known) ? snap.known : Object.keys((snap.beliefs) || {}) };
   const beliefsByDim = (dim) => (snap.beliefs && snap.beliefs[dim]) || [];
-  const rd = Autopilot.readiness(summary, beliefsByDim, Date.now(), {});
-  const eligible = Autopilot.eligibleArchetypes(rd.usableDims);
+  const rd = Autopilot.readiness(summary, beliefsByDim, Date.now(), { activityCount: pack.userRunCount || 0 });
+  const eligible = Autopilot.eligibleArchetypes(rd.usableDims, { activityGrounded: rd.groundedBy === 'activity' });
   if (rd.tier !== 'hot' || !eligible.length) return { delivered: false, reason: 'not-ready:' + rd.tier };
   const beliefs = nightshiftBeliefMap();
   const ident = cronIdentityFor(agentId) || {};
   const system = (ident.system && String(ident.system)) || cronSystemFor(agentId);
   const name = (ident.name && String(ident.name)) || agentId;
 
-  // 1) PROPOSE
-  const cRes = await nightshiftChat({ agentId, system, signal, messages: [{ role: 'user', content: Autopilot.buildCandidateDirective({ beliefs, eligible }) }] });
+  // 1) PROPOSE — the directive carries the recent-activity block; the grounding veto's evidence pool = beliefs + activity.
+  const cRes = await nightshiftChat({ agentId, system, signal, messages: [{ role: 'user', content: Autopilot.buildCandidateDirective({ beliefs, activity, eligible }) }] });
   if (cRes.error) return { delivered: false, reason: cRes.error };
-  const candidates = Autopilot.parseCandidates(cRes.text, { eligible, beliefs });
+  const candidates = Autopilot.parseCandidates(cRes.text, { eligible, beliefs, activity });
   // 2) SELECT (confidence gate + the learned per-archetype bias — NS-3 wires the server LEARN store in here)
   const sel = Autopilot.scoreAndSelect(candidates, { weights: nightshiftLearnWeights() });
   if (!sel.selected) return { delivered: false, reason: sel.reason };
@@ -2575,18 +2643,20 @@ async function runNightshiftActShift(opts) {
 
   // 1) PROPOSE + 2) SELECT — reason-only (nightshiftChat runs with NO tools), tool-capable CANDIDATE directive so
   //    the ideas are BUILD-shaped, still grounding-vetoed + confidence-gated + learn-biased. Same anti-slop heart.
+  const pack = nightshiftContextPack();   // NS-2: same recent-activity grounding on the BUILD path
+  const activity = pack.activityLines || [];
   const snap = commanderPosture.beliefs() || {};
   const summary = { known: Array.isArray(snap.known) ? snap.known : Object.keys((snap.beliefs) || {}) };
   const beliefsByDim = (dim) => (snap.beliefs && snap.beliefs[dim]) || [];
-  const rd = Autopilot.readiness(summary, beliefsByDim, Date.now(), {});
-  const eligible = Autopilot.eligibleArchetypes(rd.usableDims);
+  const rd = Autopilot.readiness(summary, beliefsByDim, Date.now(), { activityCount: pack.userRunCount || 0 });
+  const eligible = Autopilot.eligibleArchetypes(rd.usableDims, { activityGrounded: rd.groundedBy === 'activity' });
   if (rd.tier !== 'hot' || !eligible.length) return { delivered: false, reason: 'not-ready:' + rd.tier };
   const beliefs = nightshiftBeliefMap();
   const ident = cronIdentityFor(agentId) || {};
   const system = (ident.system && String(ident.system)) || cronSystemFor(agentId);
-  const cRes = await nightshiftChat({ agentId, system, signal, messages: [{ role: 'user', content: Autopilot.buildCandidateDirectiveV2({ beliefs, eligible }) }] });
+  const cRes = await nightshiftChat({ agentId, system, signal, messages: [{ role: 'user', content: Autopilot.buildCandidateDirectiveV2({ beliefs, activity, eligible }) }] });
   if (cRes.error) return { delivered: false, reason: cRes.error };
-  const candidates = Autopilot.parseCandidates(cRes.text, { eligible, beliefs });
+  const candidates = Autopilot.parseCandidates(cRes.text, { eligible, beliefs, activity });
   const sel = Autopilot.scoreAndSelect(candidates, { weights: nightshiftLearnWeights() });
   if (!sel.selected) return { delivered: false, reason: sel.reason };
 
@@ -2654,6 +2724,10 @@ const nightshiftDriver = makeNightshiftDriver({
   // and honor the abort hook; there is no separate persisted halt gate in this lane (the E-STOP aborts the beat).
   isHalted: () => false,
   concurrencyFree: (agentId) => { try { return concurrencyGate.inFlight(agentId) === 0; } catch (_) { return true; } },
+  // NS-2 cold-leash fix: the PURELY-LOCAL pre-spend gate. A cold-on-both-paths beat (thin dossier AND thin recent
+  // activity) stands down here, BEFORE the leash is spent, because no model call could have salvaged it. Anything
+  // that clears this still spends at accept-time (a beat that reached a model call and stood down cost the budget).
+  precheck: () => nightshiftPrecheck(),
   beat: (o) => runNightshiftBeat(o),
   newAbort: () => new AbortController(),
   now: () => Date.now(),
@@ -6021,7 +6095,10 @@ async function handleActivityBeacon(req, res) {
 // one would fire this instant). Reads the pure planner's decision so status == what the tick would actually do.
 function handleNightshiftStatus(req, res) {
   const now = Date.now();
-  const decision = (() => { try { return nightshiftDriver.decideNow(now); } catch (_) { return null; } })();
+  // statusDecision folds the pre-spend readiness precheck into the pure gates, so status == what the tick would
+  // actually do: when the pure gates clear but the local precheck says the beat couldn't reach a model call, the
+  // binding is 'readiness' (a pre-spend stand-down that spends NO leash).
+  const decision = (() => { try { return nightshiftDriver.statusDecision(now); } catch (_) { return null; } })();
   const summary = commanderPosture.summary() || {};
   const rolled = nightshift.rollDay(nightshiftState, now);
   const awaySince = lastUserActivityAt + NIGHTSHIFT_AWAY_MS;   // the instant "away" becomes true

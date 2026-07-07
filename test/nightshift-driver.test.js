@@ -25,6 +25,7 @@ function setup(over) {
   const persisted = [];        // every setState the driver committed (the durability trail)
   const ledger = [];           // every ledger entry
   const beats = [];            // every beat({agentId,signal}) call
+  const prechecks = [];        // every precheck({agentId}) call (NS-2 cold-leash fix)
   let beatResolve = null;      // hold a beat open to test the in-flight guard
   const cfg = {
     getState: () => state,
@@ -33,6 +34,9 @@ function setup(over) {
     lastActivity: () => (over.lastActivity != null ? over.lastActivity : clock - 20 * 60000),   // away by default
     isHalted: () => !!over.halted,
     concurrencyFree: () => over.concurrencyFree !== false,
+    // NS-2 cold-leash fix: the optional pre-spend local gate. `over.precheck` (a value or fn) drives it; absent → NS-1
+    // behavior (no precheck dep at all). A precheck call is recorded so a test can assert it ran BEFORE the spend.
+    precheck: (over.precheck === undefined) ? undefined : (arg) => { prechecks.push(arg); return (typeof over.precheck === 'function') ? over.precheck(arg) : over.precheck; },
     beat: (o) => { beats.push(o); return new Promise((res) => { beatResolve = res; if (over.autoResolve !== false) res({ delivered: true, title: 'X', archetype: 'advance-goal' }); }); },
     newAbort: () => { let aborted = false; return { signal: { get aborted() { return aborted; } }, abort: () => { aborted = true; } }; },
     now: () => clock,
@@ -42,7 +46,7 @@ function setup(over) {
     beatIntervalMs: 45 * 60000
   };
   const driver = makeNightshiftDriver(cfg);
-  return { driver, get state() { return state; }, persisted, ledger, beats, setClock: (t) => { clock = t; }, resolveBeat: (r) => beatResolve && beatResolve(r) };
+  return { driver, get state() { return state; }, persisted, ledger, beats, prechecks, setClock: (t) => { clock = t; }, resolveBeat: (r) => beatResolve && beatResolve(r) };
 }
 
 // ---- a clear tick fires + persists the spend immediately ----
@@ -124,6 +128,58 @@ function setup(over) {
   h.resolveBeat({ delivered: false, reason: 'aborted' });
   await flush();
   A.eq(h.driver.runInFlight(), false, 'guard cleared after abort settles');
+})();
+
+// ---- NS-2: the COLD-LEASH FIX — a pre-spend readiness stand-down does NOT spend a leash unit ----
+(function coldLeashNoSpend() {
+  // the pure gates all clear (away, posture, leash, cooldown), but the local precheck says "not ready" (cold on
+  // both grounding paths → no model call could salvage it). The beat must decline WITHOUT spending.
+  const h = setup({ precheck: { ok: false, reason: 'readiness' } });
+  const r = h.driver.applyTick(T0);
+  A.eq(r.fired, false, 'a cold-readiness beat does NOT fire');
+  A.eq(r.binding, 'readiness', 'the binding is readiness (the pre-spend stand-down kind)');
+  A.eq(h.state.beatsUsedToday, 0, 'NO leash was spent (the cold-leash wart is fixed)');
+  A.eq(h.beats.length, 0, 'no model-call beat was launched (purely-local stand-down)');
+  A.eq(h.prechecks.length, 1, 'the precheck ran');
+  A.ok(h.ledger.some(e => e.kind === 'decline' && e.binding === 'readiness' && e.preSpend === true), 'the decline is ledgered with binding:readiness + preSpend:true');
+})();
+
+// ---- NS-2: a beat that PASSES the precheck still spends at accept-time (anti-runaway preserved) ----
+(function passingPrecheckStillSpends() {
+  const h = setup({ precheck: { ok: true }, autoResolve: false });
+  const r = h.driver.applyTick(T0);
+  A.eq(r.fired, true, 'a ready beat fires');
+  A.eq(h.state.beatsUsedToday, 1, 'the leash IS spent at accept-time (a beat that reached a model call cost budget)');
+  A.eq(h.beats.length, 1, 'the model-call beat launched');
+  A.eq(h.prechecks.length, 1, 'the precheck ran before the spend');
+  h.resolveBeat({ delivered: false, reason: 'stood-down' });
+})();
+
+// ---- NS-2: a precheck HICCUP fails OPEN to NS-1 behavior (spend + let the pipeline decide) ----
+(function precheckHiccupFailsOpen() {
+  const h = setup({ precheck: () => { throw new Error('boom'); }, autoResolve: false });
+  const r = h.driver.applyTick(T0);
+  A.eq(r.fired, true, 'a throwing precheck fails open → the beat still fires (NS-1 behavior)');
+  A.eq(h.state.beatsUsedToday, 1, 'fail-open spends at accept-time (never wedge the tick on a precheck error)');
+  h.resolveBeat({ delivered: false, reason: 'stood-down' });
+})();
+
+// ---- NS-2: statusDecision reflects the pre-spend readiness stand-down (status == what the tick would do) ----
+(function statusReflectsPrecheck() {
+  const h = setup({ precheck: { ok: false, reason: 'readiness' } });
+  const sd = h.driver.statusDecision(T0);
+  A.eq([sd.fire, sd.binding], [false, 'readiness'], 'statusDecision folds the precheck: binding readiness, no fire');
+  // no precheck dep → statusDecision == decideNow (unchanged path).
+  const h2 = setup({});   // no precheck
+  A.eq(h2.driver.statusDecision(T0).fire, h2.driver.decideNow(T0).fire, 'with no precheck, statusDecision matches decideNow');
+})();
+
+// ---- NS-2: the pure-gate declines still take precedence over the precheck (precheck only runs when gates clear) ----
+(function gateBeforePrecheck() {
+  const h = setup({ actsUnattended: false, precheck: { ok: false, reason: 'readiness' } });
+  const r = h.driver.applyTick(T0);
+  A.eq(r.binding, 'posture', 'a pure-gate decline (posture) still names its gate — the precheck is not consulted');
+  A.eq(h.prechecks.length, 0, 'the precheck is not even called when a pure gate already blocks (no wasted work)');
 })();
 
 setTimeout(() => A.report('nightshift-driver.test'), 50);
