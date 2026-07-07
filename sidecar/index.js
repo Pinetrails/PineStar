@@ -335,7 +335,7 @@ const CRON_ROUTINE_NOTE = '\n\n[ROUTINE] This is an unattended scheduled routine
 // something is actually on fire. Rate-limited so a fast-repeating throw can't flood the ring: at most one ring
 // entry per DISTINCT message per window. recordDiagError is a hoisted decl (defined below) + redacts on write.
 const PROC_DIAG_WINDOW_MS = 5 * 60 * 1000;
-const _procDiagSeen = new Map();   // distinct message -> last-surfaced epoch ms (pruned when it grows)
+const _procDiagSeen = new Map();   // distinct message -> last-surfaced epoch ms (TTL-evicted on insert; see below)
 function surfaceProcessError(kind, e) {
   const raw = (e && (e.stack || e.message)) || String(e);
   console.error(kind + ':', raw);
@@ -345,7 +345,12 @@ function surfaceProcessError(kind, e) {
     const last = _procDiagSeen.get(msg) || 0;
     if (now - last >= PROC_DIAG_WINDOW_MS) {
       _procDiagSeen.set(msg, now);
-      if (_procDiagSeen.size > 64) { for (const [k, t] of _procDiagSeen) if (now - t >= PROC_DIAG_WINDOW_MS) _procDiagSeen.delete(k); }
+      // TTL eviction on insert (GROUND_UP_AUDIT 2026-07-06 P2): the old prune only ran once size > 64, so a slow
+      // trickle of ≤64 distinct one-shot messages leaked forever. Evict any entry older than 2× the rate-limit
+      // window on every insert — safe because once an entry is that stale its rate-limit has long expired, so
+      // dropping it costs nothing (the next occurrence re-surfaces immediately, which is the desired behavior).
+      const ttl = 2 * PROC_DIAG_WINDOW_MS;
+      for (const [k, t] of _procDiagSeen) if (now - t >= ttl) _procDiagSeen.delete(k);
       recordDiagError('process ' + msg);
     }
   } catch (_) {}
@@ -665,6 +670,15 @@ const runsMeta = new Map();
 // is still in `runs`); once the run ends the entry is dropped, so a stale steer can never reach a later run.
 const steerBuffers = new Map();
 function drainSteer(runId) { const b = steerBuffers.get(runId); if (!b || !b.length) return []; steerBuffers.set(runId, []); return b; }
+// Teardown drop with diagnostics (GROUND_UP_AUDIT 2026-07-06 P2): at run end we drop any un-drained steering notes
+// so a stale correction can't leak to a later run. That drop was SILENT — a Commander whose steer arrived after the
+// run's last loop iteration saw nothing happen and no reason why. Log one honest line with the dropped count (the
+// note text is NOT logged — it can contain user content). ctx names the run path so the log is triageable.
+function dropSteer(runId, ctx) {
+  const b = steerBuffers.get(runId);
+  if (b && b.length) console.log('[steer] dropped ' + b.length + ' un-applied steering note(s) at ' + (ctx || 'run') + ' teardown for run ' + runId + ' (arrived after the run finished)');
+  steerBuffers.delete(runId);
+}
 const STEER_MAX_PENDING = 8;      // bound the buffer so a spammed steer can't grow unbounded between iterations
 let lastSearchAt = 0;            // module-level web_search throttle (≥1.1s between DDG hits, any run)
 // Stage 2: the crew roster the browser pushes (POST /api/roster) so team.dispatch can run a WORKER as its
@@ -814,9 +828,39 @@ function setAgentModelFromChannel(agentId, model) {
   saveAgentRoster();                                           // fsync-durable + .bak, survives restart
   return { ok: true, agentId: id, model: m, name: cur.name || id };
 }
-// A live snapshot of the OpenRouter model catalog, warmed at boot (see listModels warmup below). Lets the
-// channel `/model` command validate an id sync without an await; empty until warmed (then validation is skipped).
+// A live snapshot of the OpenRouter model catalog, warmed at boot (see the server.listen warmup) AND on demand
+// (see maybeRewarmModelCatalog). Lets the channel `/model` command validate an id sync without an await; empty
+// until warmed (then validation is skipped so a still-cold catalog never rejects a legitimate id).
 let orModelCatalogIds = [];
+// On-demand re-warm (GROUND_UP_AUDIT 2026-07-06 P2): the boot warm had an EMPTY rejection handler, so a single
+// boot-time /models failure disabled channel /model validation for the WHOLE session. Mirror the provider layer's
+// throttled catalog re-warm (openai-compatible.js maybeRewarmCatalog): when validation asks and the snapshot is
+// still empty, kick ONE non-blocking re-warm, at most once per MODEL_CATALOG_REWARM_MS. Fire-and-forget: this
+// turn's validation still skips (catalog empty), but the NEXT /model attempt gets the recovered catalog.
+const MODEL_CATALOG_REWARM_MS = 5 * 60 * 1000;   // matches REWARM_MIN_MS in the provider layer
+let _modelCatalogRewarmAt = 0;
+let _modelCatalogWarming = false;
+function warmModelCatalog() {
+  if (_modelCatalogWarming) return Promise.resolve();
+  _modelCatalogWarming = true;
+  return makeOpenRouterProvider({ fetch: globalThis.fetch, baseUrl: providerRuntimeBaseUrl('openrouter', '') || OPENROUTER_BASE }).listModels().then(
+    ms => {
+      if (ms && ms.length) {
+        // snapshot the ids so the channel /model command can validate an id synchronously (see setAgentModelFromChannel)
+        try { orModelCatalogIds = ms.map(x => String((x && (x.id || x.model || x.name)) || '')).filter(Boolean); } catch (_) {}
+      }
+      return ms;
+    }
+  ).finally(() => { _modelCatalogWarming = false; });
+}
+function maybeRewarmModelCatalog() {
+  if (orModelCatalogIds.length) return;   // already warm — nothing to do
+  if (_modelCatalogWarming) return;
+  const now = Date.now();
+  if (now - _modelCatalogRewarmAt < MODEL_CATALOG_REWARM_MS) return;   // throttle: at most one re-warm per window
+  _modelCatalogRewarmAt = now;
+  warmModelCatalog().catch(() => {});   // non-blocking; a failure just leaves it empty for the next attempt to retry
+}
 
 // jail helper reused by the read-only /api/file route (resolveInside proves a path stays in the workspace)
 const fsJail = makeFsTools({ fsp, pathMod: path, root: WORKSPACES })._internals;
@@ -1339,6 +1383,7 @@ const SKILL_CURATOR_MAX_COST_USD = num(process.env.SKYNET_SKILL_CURATOR_MAX_USD,
 const skillCuratorLastRun = new Map();
 async function runBackgroundSkillReview(o) {
   const { agentId, runId, messages, provider, model, cost, loadedSkills, managedSkills } = o || {};
+  const unmetered = !!(o && o.unmetered);   // Codex/unmetered parity: mirror reflection/study so a Codex-only user's budget isn't drained by phantom aux spend
   const ac = new AbortController();
   const timer = setTimeout(() => { try { ac.abort(); } catch (_) {} }, SKILL_REVIEW_TIMEOUT_MS);
   const reviewRunId = String(runId || 'run') + '_skill_review';
@@ -1398,13 +1443,14 @@ async function runBackgroundSkillReview(o) {
   finally {
     clearTimeout(timer);
     if (result && result.usd) {
-      try { ledger.record({ runId: reviewRunId, agentId, turns: result.turns || 0, usd: result.usd || 0, tokens: result.tokens || 0 }); } catch (_) {}
+      try { ledger.record({ runId: reviewRunId, agentId, turns: result.turns || 0, usd: result.usd || 0, tokens: result.tokens || 0, unmetered }); } catch (_) {}
     }
   }
 }
 
 async function runSkillCurator(o) {
   const { agentId, runId, provider, model, cost } = o || {};
+  const unmetered = !!(o && o.unmetered);   // Codex/unmetered parity: mirror reflection/study so a Codex-only user's budget isn't drained by phantom aux spend
   const nowMs = Date.now();
   if (SKILL_CURATOR_INTERVAL_MS > 0 && (nowMs - (skillCuratorLastRun.get(agentId) || 0)) < SKILL_CURATOR_INTERVAL_MS) return;
   const all = skillStore.list(agentId, { includeArchived: true });
@@ -1444,7 +1490,7 @@ async function runSkillCurator(o) {
   finally {
     clearTimeout(timer);
     if (result && result.usd) {
-      try { ledger.record({ runId: curatorRunId, agentId, turns: result.turns || 0, usd: result.usd || 0, tokens: result.tokens || 0 }); } catch (_) {}
+      try { ledger.record({ runId: curatorRunId, agentId, turns: result.turns || 0, usd: result.usd || 0, tokens: result.tokens || 0, unmetered }); } catch (_) {}
     }
   }
 }
@@ -2244,7 +2290,7 @@ function startTelegram(token, key, model, agentCfg) {
     // of truth, no per-chat override. modelCatalog is the boot-warmed OpenRouter id snapshot (empty -> skip check).
     roster: () => [...agentRoster].map(([agentId, a]) => ({ agentId, name: a.name, model: a.model, provider: a.provider })),
     setModel: (agentId, model) => setAgentModelFromChannel(agentId, model),
-    modelCatalog: () => orModelCatalogIds,
+    modelCatalog: () => { maybeRewarmModelCatalog(); return orModelCatalogIds; },   // re-warm on demand if a boot-time /models failure left it empty
     // ONE-RESOLVER LAW: the hub hands us the EXACT agentId the run executes as (floor plan > /talk binding >
     // configured > tg_<chatId>). This one-shot slot feeds the work-item intercept below, so the crate on the
     // belt and the queue HUD attribute to the SAME agent that actually works — never a parallel guess.
@@ -2372,7 +2418,7 @@ function startDiscord(token, key, model, agentCfg) {
       // modelCatalog are the SAME app roster + boot-warmed catalog; NO per-channel routing logic here).
       roster: () => [...agentRoster].map(([agentId, a]) => ({ agentId, name: a.name, model: a.model, provider: a.provider })),
       setModel: (agentId, model) => setAgentModelFromChannel(agentId, model),
-      modelCatalog: () => orModelCatalogIds
+      modelCatalog: () => { maybeRewarmModelCatalog(); return orModelCatalogIds; }   // re-warm on demand if a boot-time /models failure left it empty
     },
     adapter: {
       fetch: globalThis.fetch, token: token, clock: { now: () => Date.now() },
@@ -2629,15 +2675,11 @@ server.listen(PORT, '127.0.0.1', () => {
   console.log('     the agents/web-search/tools behind it are all served from here.');
   if (DEV_MODE) console.log('     ⚡ DEV SEED MODE — onboarding auto-skipped; the page resumes the seeded agent.');
   console.log(bar + '\n');
-  // warm the key-independent /models catalog once so priceOf / contextLimit are live for every run
-  makeOpenRouterProvider({ fetch: globalThis.fetch, baseUrl: providerRuntimeBaseUrl('openrouter', '') || OPENROUTER_BASE }).listModels().then(
-    ms => {
-      if (ms && ms.length) {
-        console.log('  · model catalog warmed (' + ms.length + ' models)');
-        // snapshot the ids so the channel /model command can validate an id synchronously (see setAgentModelFromChannel)
-        try { orModelCatalogIds = ms.map(x => String((x && (x.id || x.model || x.name)) || '')).filter(Boolean); } catch (_) {}
-      }
-    },
+  // warm the key-independent /models catalog once so priceOf / contextLimit are live for every run. A boot-time
+  // failure no longer disables channel /model validation for the session — maybeRewarmModelCatalog re-warms on
+  // demand (throttled) the next time a /model command asks (see the channel-hub modelCatalog accessor).
+  warmModelCatalog().then(
+    ms => { if (ms && ms.length) console.log('  · model catalog warmed (' + ms.length + ' models)'); },
     () => {}
   );
   // auto-start a previously-connected Telegram bot (saved config), else an env-provided one (headless deploys).
@@ -3744,7 +3786,7 @@ async function handleCronRun(req, res) {
   } finally {
     runs.delete(runId);
     runsMeta.delete(runId);
-    steerBuffers.delete(runId);      // drop any un-drained steering notes so they can't leak to a later run (mirror handleRun)
+    dropSteer(runId, 'manual-run');      // drop any un-drained steering notes so they can't leak to a later run (mirror handleRun); logs a count if non-empty
     const ok = !state.errMsg;
     try {
       // G4.3: record the manual run's outcome as a re-read-modify-write under the lock (don't clobber a
@@ -3867,7 +3909,7 @@ async function runWorkshopShift(agentId, opts) {
     });
   } catch (e) { threw = e; }
   finally {
-    if (ac) runs.delete(runId); runsMeta.delete(runId); steerBuffers.delete(runId);   // drop un-drained steering notes (mirror handleRun)
+    if (ac) runs.delete(runId); runsMeta.delete(runId); dropSteer(runId, 'workshop-shift');   // drop un-drained steering notes (mirror handleRun); logs a count if non-empty
     // queue-slot backstop: if this shift's run.end never flowed through cronEmitNotify (caller-supplied emit),
     // drain its work-item here. Idempotent with the cronEmitNotify settle — first one wins.
     try { settleCronWorkitem(runId, threw ? null : 'done'); } catch (_) {}
@@ -4163,7 +4205,13 @@ function handleCheckpointList(req, res) {
     const agent = u.searchParams.get('agent') || 'agent';
     if (!/^[A-Za-z0-9_-]{1,40}$/.test(agent)) return json(400, { error: 'bad agentId' });
     json(200, { enabled: CHECKPOINTS_ENABLED, snapshots: checkpointStore.list(agent).snapshots });
-  } catch (e) { json(200, { enabled: CHECKPOINTS_ENABLED, snapshots: [] }); }
+  } catch (e) {
+    // HONESTY (GROUND_UP_AUDIT P2): a thrown store read is a real failure — report 500 so a crash isn't
+    // masked as "no restore points". A genuinely-empty list still returns 200 {snapshots:[]} above (shape
+    // untouched). stationui.js's refresh() guards with try/catch + ((j&&j.snapshots)||[]) so a 500 body
+    // degrades to the honest empty-state, never a crash.
+    json(500, { error: 'could not read checkpoints: ' + ((e && e.message) || e) });
+  }
 }
 
 // POST /api/roster { agents:[{ agentId, system, name, model, provider }] } — the browser pushes the live crew identities
@@ -4530,7 +4578,7 @@ async function handleRun(req, res) {
   } finally {
     runs.delete(runId);
     runsMeta.delete(runId);
-    steerBuffers.delete(runId);      // drop any un-drained steering notes so they can't leak to a later run
+    dropSteer(runId, 'handleRun');      // drop any un-drained steering notes so they can't leak to a later run; logs a count if non-empty
     grantsSession.delete(runId);     // drop this run's session-scoped grants
     const p = pendingByRun.get(runId);   // deny any prompt still open (belt-and-suspenders; the loop normally awaits)
     if (p) { for (const f of p.values()) { try { f('deny'); } catch (_) {} } pendingByRun.delete(runId); }
@@ -5264,10 +5312,10 @@ async function runOnce(o) {
     runStudy({ agentId, runId, messages: result.messages.slice(), directive: studyDirective, provider, model: reflectModel || resolveEffectiveModel({ result, requestedModel: o.model, usingCodex, codexDefaultModel: CODEX_DEFAULT_MODEL, defaultModel: CRON_DEFAULT_MODEL }), cost, unmetered: providerUnmetered }).catch(() => {}).finally(() => { studyingNow.delete(agentId); });
   }
   if (process.env.SKYNET_SKILL_REVIEW !== '0' && result && result.reason === 'done' && _qualifies && !signal.aborted && skillReview.shouldReviewRun(result)) {
-    runBackgroundSkillReview({ agentId, runId, messages: result.messages.slice(), provider, model, cost, loadedSkills, managedSkills }).catch(() => {});
+    runBackgroundSkillReview({ agentId, runId, messages: result.messages.slice(), provider, model, cost, loadedSkills, managedSkills, unmetered: providerUnmetered }).catch(() => {});
   }
   if (process.env.SKYNET_SKILL_CURATOR !== '0' && result && result.reason === 'done' && _qualifies && !signal.aborted) {
-    runSkillCurator({ agentId, runId, provider, model, cost }).catch(() => {});
+    runSkillCurator({ agentId, runId, provider, model, cost, unmetered: providerUnmetered }).catch(() => {});
   }
   return result;
 
@@ -5395,20 +5443,34 @@ async function handleRunSteer(req, res) {
 }
 
 // GET /api/version — the honest build/version surface for /version. Reads the repo package.json (harness version)
-// and, when present, the Tauri desktop app version; both are best-effort so a missing file never 500s.
+// and the Tauri desktop app version; both are best-effort so a missing file never 500s.
+//   app-version fallback chain (GROUND_UP_AUDIT 2026-07-06 P2): env STARNET_APP_VERSION → src-tauri/tauri.conf.json
+//   → blank. In the PACKAGED desktop app src-tauri/ is NOT a bundled resource, so the conf lookup returns '' and a
+//   support ticket can't tell which build the user is on. The desktop shell should export STARNET_APP_VERSION when
+//   it spawns the sidecar (one-line follow-up for the src-tauri owner — NOT edited here). `appSource` is additive:
+//   it names WHERE app came from ('env' | 'conf' | 'unknown') so diagnostics never reports a silent blank as fact.
+//   The response keeps the existing {harness, app, node} shape byte-compatible (chat.js versionCommand reads those).
 let _versionCache = null;
-function handleVersion(req, res) {
-  if (!_versionCache) {
-    const out = { harness: '', app: '', node: process.version };
-    try { out.harness = String(require('../package.json').version || ''); } catch (_) {}
+function computeVersionSurface() {
+  if (_versionCache) return _versionCache;
+  const out = { harness: '', app: '', node: process.version, appSource: 'unknown' };
+  try { out.harness = String(require('../package.json').version || ''); } catch (_) {}
+  const envApp = String(ENV('APP_VERSION') || '').trim();   // STARNET_APP_VERSION (or SKYNET_APP_VERSION) — the packaged-app source of truth
+  if (envApp) { out.app = envApp; out.appSource = 'env'; }
+  else {
     try {
       const t = require('../src-tauri/tauri.conf.json');
-      out.app = String((t && (t.version || (t.package && t.package.version))) || '');
+      const confApp = String((t && (t.version || (t.package && t.package.version))) || '');
+      if (confApp) { out.app = confApp; out.appSource = 'conf'; }
     } catch (_) {}
-    _versionCache = out;
   }
+  _versionCache = out;
+  return out;
+}
+function handleVersion(req, res) {
+  const out = computeVersionSurface();
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-  res.end(JSON.stringify(_versionCache));
+  res.end(JSON.stringify(out));
 }
 
 // GET /api/diagnostics — T3.9: a paste-ready, SECRET-FREE bug report a public user can email. Token-gated (main
@@ -5419,10 +5481,9 @@ function handleDiagnostics(req, res) {
   const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
   let out;
   try {
-    // version (reuse the cached honest build surface)
-    const ver = { harness: '', app: '', node: process.version };
-    try { ver.harness = String(require('../package.json').version || ''); } catch (_) {}
-    try { const t = require('../src-tauri/tauri.conf.json'); ver.app = String((t && (t.version || (t.package && t.package.version))) || ''); } catch (_) {}
+    // version (reuse the cached honest build surface — same env-first fallback as GET /api/version, so a packaged
+    // desktop's STARNET_APP_VERSION shows up in the bug report instead of a blank app version)
+    const ver = computeVersionSurface();
     // desktop vs browser — provable from the request origin (Tauri custom-scheme origins are the desktop shell)
     const origin = String((req && req.headers && req.headers.origin) || '').toLowerCase();
     const mode = (origin.indexOf('tauri') === 0 || origin.indexOf('app://') === 0) ? 'desktop' : (origin ? 'browser' : '');
@@ -6311,7 +6372,14 @@ function serveRuns(req, res) {
     let rows = runStore.list(agent === '*' ? null : agent, { limit });
     if (since > 0) rows = rows.filter(r => (r.ts || 0) > since);
     json(200, { runs: rows });
-  } catch (e) { json(200, { runs: [] }); }   // tolerate any error — empty history, never a 500
+  } catch (e) {
+    // HONESTY (GROUND_UP_AUDIT P2): a store read that THROWS is a real failure, not "no history" — a
+    // 200-empty here makes an auth/crash indistinguishable from a genuinely-empty log, so support can't
+    // triage it. A no-rows read still returns 200 {runs:[]} above (the happy-path shape is untouched);
+    // only a thrown error reaches here and now reports truthfully. Every /api/runs consumer already guards
+    // on r.ok (chat.js, autosessions.js, returnstore.js, world.js) or a safe [] default (stationui.js).
+    json(500, { error: 'could not read run history: ' + ((e && e.message) || e) });
+  }
 }
 
 // GET /api/insights?agent=<id> — H3.3: aggregate usage folded from the run history (overview, per-model spend,
