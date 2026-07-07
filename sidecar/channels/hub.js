@@ -113,9 +113,11 @@
     const redact = typeof o.redact === 'function' ? o.redact : (p) => p;
     const emit = typeof o.emit === 'function' ? o.emit : () => {};
     const newId = typeof o.newId === 'function' ? o.newId : (() => { let n = 0; return () => channel + '-run-' + (++n); })();
-    // injected wall-clock (stays pure/deterministic for tests that pass one; the composition root passes Date.now).
-    // Used only to STAMP a run's startedAt in `inflight` so the snapshot can age it — never for control flow.
-    const now = typeof o.now === 'function' ? o.now : () => Date.now();
+    // INJECTED wall-clock — no ambient fallback (this module is pure/deterministic; the determinism gate bans a bare
+    // Date.now here). The composition root passes now:()=>Date.now(); a hub built without one (unit tests) stamps a
+    // run's startedAt as null. Used ONLY to age a run in the state snapshot — never for control flow, so a null
+    // startedAt is harmless (the frontend's normalizeSnapshot reads a missing startedAt as 0ms-ago).
+    const now = typeof o.now === 'function' ? o.now : null;
     const maxMessageLength = o.maxMessageLength || 4096;
     const agentPrefix = o.agentPrefix || 'tg_';
     const resolveAgent = typeof o.resolveAgent === 'function' ? o.resolveAgent : null;   // Phase B: the placed floor's routing plan
@@ -337,7 +339,7 @@
       // agentId/startedAt ride in the record so GET /api/state/snapshot can list THIS run (attributed to the acting
       // agent, aged from startedAt) — a reconnect then keeps the agent's live floor/HUD state instead of clearing
       // it. abort/superseded remain what halt.js's E-STOP reads; the extra fields are additive and invisible to it.
-      const myRec = { runId, abort: ac, superseded: false, agentId: agentId, startedAt: now() };
+      const myRec = { runId, abort: ac, superseded: false, agentId: agentId, startedAt: now ? now() : null };
       inflight.set(chatId, myRec);
 
       // assemble the reply by buffering agent.token deltas — the SAME reassembly harness.js does in the browser.
