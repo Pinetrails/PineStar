@@ -335,7 +335,7 @@ const CRON_ROUTINE_NOTE = '\n\n[ROUTINE] This is an unattended scheduled routine
 // something is actually on fire. Rate-limited so a fast-repeating throw can't flood the ring: at most one ring
 // entry per DISTINCT message per window. recordDiagError is a hoisted decl (defined below) + redacts on write.
 const PROC_DIAG_WINDOW_MS = 5 * 60 * 1000;
-const _procDiagSeen = new Map();   // distinct message -> last-surfaced epoch ms (pruned when it grows)
+const _procDiagSeen = new Map();   // distinct message -> last-surfaced epoch ms (TTL-evicted on insert; see below)
 function surfaceProcessError(kind, e) {
   const raw = (e && (e.stack || e.message)) || String(e);
   console.error(kind + ':', raw);
@@ -345,7 +345,12 @@ function surfaceProcessError(kind, e) {
     const last = _procDiagSeen.get(msg) || 0;
     if (now - last >= PROC_DIAG_WINDOW_MS) {
       _procDiagSeen.set(msg, now);
-      if (_procDiagSeen.size > 64) { for (const [k, t] of _procDiagSeen) if (now - t >= PROC_DIAG_WINDOW_MS) _procDiagSeen.delete(k); }
+      // TTL eviction on insert (GROUND_UP_AUDIT 2026-07-06 P2): the old prune only ran once size > 64, so a slow
+      // trickle of ≤64 distinct one-shot messages leaked forever. Evict any entry older than 2× the rate-limit
+      // window on every insert — safe because once an entry is that stale its rate-limit has long expired, so
+      // dropping it costs nothing (the next occurrence re-surfaces immediately, which is the desired behavior).
+      const ttl = 2 * PROC_DIAG_WINDOW_MS;
+      for (const [k, t] of _procDiagSeen) if (now - t >= ttl) _procDiagSeen.delete(k);
       recordDiagError('process ' + msg);
     }
   } catch (_) {}
