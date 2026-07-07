@@ -51,6 +51,44 @@ previously bylined "Hermes Agent" by convention; that byline has been removed.)
 `ledger-upkeep`, `price-watch`, `security-sweep`, `source-triangulation`, `study-plan`,
 `translation-pass`.
 
+## Bundled fonts
+
+StarNet ships the **VT323** typeface locally (`frontend/assets/fonts/vt323.woff2`) so the
+CRT terminal look renders on an offline / air-gapped first boot without depending on Google
+Fonts. VT323 is provided under the **SIL Open Font License, Version 1.1**.
+
+- **Font:** VT323
+- **Copyright:** © 2011 The VT323 Project Authors (peter.hull@oikoi.com)
+- **License:** SIL Open Font License 1.1 — <https://openfontlicense.org>
+
+The OFL permits bundling and redistribution of the font (including in an application) provided
+the copyright and license notice above are preserved and the font itself is not sold on its
+own. The full license text is available at the URL above; its permission notice reads, in
+part:
+
+```
+This Font Software is licensed under the SIL Open Font License, Version 1.1.
+This license is copied below, and is also available with a FAQ at:
+https://openfontlicense.org
+
+PERMISSION & CONDITIONS
+Permission is hereby granted, free of charge, to any person obtaining a copy of the Font
+Software, to use, study, copy, merge, embed, modify, redistribute, and sell modified and
+unmodified copies of the Font Software, subject to the following conditions:
+
+1) Neither the Font Software nor any of its individual components, in Original or Modified
+   Versions, may be sold by itself.
+2) Original or Modified Versions of the Font Software may be bundled, redistributed and/or
+   sold with any software, provided that each copy contains the above copyright notice and
+   this license. These can be included either as stand-alone text files, human-readable
+   headers or in the appropriate machine-readable metadata fields within text or binary
+   files as long as those fields can be easily viewed by the user.
+
+THE FONT SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+INCLUDING BUT NOT LIMITED TO ANY WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR
+PURPOSE AND NONINFRINGEMENT OF COPYRIGHT, PATENT, TRADEMARK, OR OTHER RIGHT.
+```
+
 ## MIT License
 
 All third-party components listed above are provided under the MIT License. Copyright is held
