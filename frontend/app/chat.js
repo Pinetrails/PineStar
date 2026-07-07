@@ -2381,7 +2381,10 @@ const Chat = (() => {
         Intake.start({
           skip: skip,
           onCommit: b => { if (typeof DossierStore !== 'undefined') DossierStore.upsert(b.dim, { text: b.text, source: 'curiosity' }); if (typeof CuriosityStore !== 'undefined' && CuriosityStore.markAnswered) CuriosityStore.markAnswered(b.dim); briefingReceipt(b.dim); },   // R4: the answer visibly pays off — one provable "now in every agent's briefing" line (this was the ONE commit path with zero acknowledgment)
-          onDone: () => { if (typeof StationUI !== 'undefined' && StationUI.rerender) StationUI.rerender('commander'); }
+          onDone: () => { if (typeof StationUI !== 'undefined' && StationUI.rerender) StationUI.rerender('commander'); },
+          // LEAVING the curiosity-launched interview = the same "not now" wave-off: mark the dimension dismissed so it
+          // isn't raised again this session (existing store, no new persistence — mirrors the choice-row "not now").
+          onLeave: () => { if (typeof CuriosityStore !== 'undefined') CuriosityStore.markDismissed(dim); }
         });
       } else if (typeof CuriosityStore !== 'undefined') {
         CuriosityStore.markDismissed(dim);   // waved off → never raise this dimension again
@@ -4174,7 +4177,7 @@ const Chat = (() => {
     activeChoiceRows.add(rowEl);
     let done = false;
     (items || []).forEach(it => {
-      const b = document.createElement('button'); b.className = 'choice'; b.textContent = it.label;
+      const b = document.createElement('button'); b.className = 'choice' + (it.quiet ? ' quiet' : ''); b.textContent = it.label;   // .quiet = a subdued secondary chip (e.g. "✕ leave interview") — never competes with the real answers
       const pick = () => { if (done) return; done = true; activeChoiceRows.delete(rowEl); rowEl.remove(); if (typeof SFX !== 'undefined') SFX.click(); onPick(it); };
       // activate on POINTERDOWN, not click: a document-level activity listener (autopilotstore's welcome-back
       // digest) can fire during the capture phase of this same press and remove this row mid-dispatch. The event

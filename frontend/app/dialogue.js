@@ -142,8 +142,22 @@ const Dialogue = (() => {
       customBtn.onclick = () => openCustom(cfg, finishPick);
       optsEl.appendChild(customBtn); rows.push(customBtn);
     }
+    // OPT-IN escape hatch (mid-game asks, Andrew): a caller that presents a *sequence* of asks (e.g. the schedule
+    // proposals) passes dismissable:true so Esc — or a quiet "✕ dismiss" row — resolves the node with dismissed:true,
+    // letting the caller abandon the WHOLE flow, not just skip one. The GENESIS awakening never sets this, so its
+    // ceremony is unchanged (no accidental early-exit from the birth).
+    if (cfg.dismissable) {
+      const d = document.createElement('button');
+      d.className = 'fnv-opt skip dismiss'; d.type = 'button';
+      const num = document.createElement('span'); num.className = 'fnv-num'; num.textContent = '✕';
+      const lbl = document.createElement('span'); lbl.className = 'fnv-opt-l'; lbl.textContent = cfg.dismissLabel || 'dismiss — not now';
+      d.appendChild(num); d.appendChild(lbl);
+      d.onclick = () => finishPick({ value: '', skip: true, dismissed: true });
+      optsEl.appendChild(d);
+    }
     // keyboard: number keys pick an option; the trailing custom row is selectable too.
     keyHandler = e => {
+      if (e.key === 'Escape' && cfg.dismissable) { e.preventDefault(); finishPick({ value: '', skip: true, dismissed: true }); return; }
       if (e.key === 'Enter' && cfg.allowCustom) { e.preventDefault(); openCustom(cfg, finishPick); return; }
       const n = parseInt(e.key, 10);
       if (!isNaN(n) && n >= 1 && n <= rows.length) { e.preventDefault(); rows[n - 1].click(); }

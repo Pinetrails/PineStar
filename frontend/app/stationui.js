@@ -4233,6 +4233,7 @@ const StationUI = (() => {
         skip: skip,
         onCommit: belief => ds.upsert(belief.dim, { text: belief.text, source: belief.source }),
         onDone: () => rerender('commander'),
+        onLeave: () => { rerender('commander'); notify('left the interview — what you answered is saved', ''); },   // user-launched: leaving is a clean stop (answers banked), nothing to wave off
         onEmpty: () => notify('the station already knows you — edit any belief below to refine', 'good')
       });
       if (began) { sfx('click'); notify('the station is interviewing you — answer in COMMS →', 'good'); }

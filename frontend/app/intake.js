@@ -9,7 +9,8 @@
 'use strict';
 const Intake = (() => {
   let questions = [], idx = 0, accepting = false, running = false;
-  let onCommit = null, onDone = null;
+  let onCommit = null, onDone = null, onLeave = null;
+  let escHandler = null;   // document-level Esc-to-leave, live only while the interview is running
 
   const sfx = n => { try { if (typeof SFX === 'object' && SFX[n]) SFX[n](); } catch (_) {} };
   function type(segs, cb) {
@@ -30,9 +31,15 @@ const Intake = (() => {
     if (!questions.length) { if (opts.onEmpty) { try { opts.onEmpty(); } catch (_) {} } return false; }
     onCommit = opts.onCommit || null;
     onDone = opts.onDone || null;
+    onLeave = opts.onLeave || null;
     idx = 0; accepting = false; running = true;
     Chat.beginInterview(text => answer(text, text, false), { placeholder: 'tell the station about yourself… (or “skip”)', status: 'getting to know you…' });
-    type([{ text: 'one second, Commander — let me actually get to know you. this shapes how every agent here works for you. answer or tap, “skip” anything.', cps: 48, holdAfter: 250 }], () => setTimeout(ask, 450));
+    // ESCAPE HATCH (Andrew ask): the interview hijacks COMMS, so the Commander must be able to walk away from the
+    // WHOLE thing — not just skip one question at a time. Esc leaves; a "✕ leave interview" chip sits on every
+    // question (see ask()). Capture-phase so it wins over any other Esc listener while the interview owns the moment.
+    escHandler = e => { if (e.key === 'Escape' && running) { e.preventDefault(); e.stopPropagation(); leave(); } };
+    document.addEventListener('keydown', escHandler, true);
+    type([{ text: 'one second, Commander — let me actually get to know you. this shapes how every agent here works for you. answer or tap, “skip” anything — or press Esc to leave the interview.', cps: 48, holdAfter: 250 }], () => setTimeout(ask, 450));
     return true;
   }
 
@@ -52,10 +59,17 @@ const Intake = (() => {
     type(segs, () => {
       if (!running) return;
       accepting = true;
-      if (q.chips && Chat.choices) Chat.choices(q.chips, item => {
-        if (!accepting || idx !== myIdx) return;   // ignore a tap meant for a question we've already moved past
-        answer(item.value != null ? item.value : item.label, item.label, !!item.skip);
-      });
+      if (Chat.choices) {
+        // every question carries a quiet "✕ leave interview" chip alongside its own chips, so the Commander can
+        // exit the WHOLE flow at any point without answering (partial answers already banked). `leave:true` is the
+        // marker answer() reads to tear the interview down instead of advancing.
+        const chips = (q.chips ? q.chips.slice() : []).concat([{ label: '✕ leave interview', value: '', leave: true, quiet: true }]);
+        Chat.choices(chips, item => {
+          if (!accepting || idx !== myIdx) return;   // ignore a tap meant for a question we've already moved past
+          if (item && item.leave) { leave(); return; }
+          answer(item.value != null ? item.value : item.label, item.label, !!item.skip);
+        });
+      }
     });
   }
 
@@ -75,9 +89,26 @@ const Intake = (() => {
     setTimeout(ask, 520);
   }
 
+  function detachEsc() { if (escHandler) { document.removeEventListener('keydown', escHandler, true); escHandler = null; } }
+
+  // LEAVE THE WHOLE INTERVIEW (Esc or the leave chip): the Commander walks away without finishing. Whatever was
+  // already answered stays banked (each answer committed as it was given); the rest is simply not asked. Dismissal
+  // is recorded through the caller's EXISTING waved-off store via onLeave (the curiosity path marks the dimension
+  // dismissed so it isn't re-asked this session) — this module invents no persistence of its own.
+  function leave() {
+    if (!running) return;
+    running = false; accepting = false;
+    detachEsc();
+    if (Chat.endInterview) Chat.endInterview();
+    sfx('close');
+    type([{ text: 'no problem — we’ll leave it there. i kept whatever you did tell me; refine any of it in the COMMANDER dossier whenever.', cps: 48 }], () => {});
+    if (onLeave) { try { onLeave(); } catch (_) {} }
+  }
+
   function finish() {
     if (!running) return;
     running = false; accepting = false;
+    detachEsc();
     if (Chat.endInterview) Chat.endInterview();
     // CLOSING SIGNAL: name the end explicitly and hand the COMMS input back — the interview hijacked it, so
     // "talk to me normally now" tells the Commander the field is theirs again (the exit signal the audit flagged).
@@ -90,6 +121,7 @@ const Intake = (() => {
   function stop() {
     if (!running) return;
     running = false; accepting = false;
+    detachEsc();
     if (typeof Chat !== 'undefined' && Chat.endInterview) Chat.endInterview();
   }
   function isRunning() { return running; }
