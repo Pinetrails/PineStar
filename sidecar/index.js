@@ -749,6 +749,56 @@ function saveAgentRoster(updatedAt) {
 }
 loadAgentRoster();
 
+/* ---- P2.1 (UPDATE_STATE_SAFETY_AUDIT): WORKSPACE-ROOT schemaVersion stamp + forward-version guard.
+   Individual stores are versioned in isolation (roster/savestore/cron each carry `version:1`), but there is no
+   ROOT marker to key a multi-store migration on and — more importantly — nothing stops an OLDER sidecar from
+   writing a workspace a NEWER StarNet already upgraded. This stamps <WORKSPACES>/.schema-version.json at boot and,
+   if the stamp on disk is from a NEWER sidecar (schemaVersion > ours), sets a DEGRADED flag: the app still READS
+   and RUNS (never block a user out of their own station), but envelope-level DESTRUCTIVE writes to versioned
+   stores this code can't fully understand (roster + save) are REFUSED with an honest error. Truthful-telemetry:
+   don't guess — SAY the workspace was written by a newer StarNet. Mirrors the last-run-version marker the Rust
+   shell writes (%APPDATA%/ai.skynet.harness/last-run-version) in spirit: a version marker that gates behavior. */
+const WORKSPACE_SCHEMA_VERSION = 1;
+const SCHEMA_VERSION_FILE = path.join(WORKSPACES, '.schema-version.json');
+// DEGRADED when the workspace on disk was stamped by a sidecar NEWER than this one. Read by handleRoster /
+// handleSaveWrite to refuse destructive writes they can't safely perform. Never blocks reads or runs.
+let workspaceDegraded = false;
+let workspaceStampVersion = WORKSPACE_SCHEMA_VERSION;   // the schemaVersion actually on disk (for diagnostics/logs)
+function initWorkspaceSchemaStamp() {
+  try {
+    fs.mkdirSync(WORKSPACES, { recursive: true });
+    const existing = loadResilient(SCHEMA_VERSION_FILE, 'schema-version');   // last-known-good recovery; undefined = absent/corrupt
+    if (!existing || typeof existing !== 'object') {
+      // absent (new install / never stamped) → write our stamp. version:1 is the ENVELOPE version (like the other
+      // stores); schemaVersion is the WORKSPACE schema generation this sidecar understands.
+      saveResilient(SCHEMA_VERSION_FILE, { version: 1, schemaVersion: WORKSPACE_SCHEMA_VERSION, stampedAt: Date.now() });
+      workspaceStampVersion = WORKSPACE_SCHEMA_VERSION;
+      return;
+    }
+    const stamped = Number(existing.schemaVersion);
+    workspaceStampVersion = Number.isFinite(stamped) ? stamped : WORKSPACE_SCHEMA_VERSION;
+    if (Number.isFinite(stamped) && stamped > WORKSPACE_SCHEMA_VERSION) {
+      // A NEWER StarNet wrote this workspace. Refuse to clobber versioned stores; log LOUDLY so this is never silent.
+      workspaceDegraded = true;
+      console.error('[schema] WORKSPACE WRITTEN BY A NEWER STARNET: on-disk schemaVersion=' + stamped +
+        ' > this sidecar understands ' + WORKSPACE_SCHEMA_VERSION + '. Entering DEGRADED mode — reads/runs continue, ' +
+        'but roster/save WRITES are refused to avoid corrupting newer data. Update this StarNet to the latest build.');
+      return;
+    }
+    // Same or older stamp: safe to keep using. (A future migration would re-stamp UP here after upgrading stores.)
+    // We do NOT downgrade an older on-disk stamp to hide that a migration is pending — leave it honest.
+    if (Number.isFinite(stamped) && stamped < WORKSPACE_SCHEMA_VERSION) {
+      // Newer code meeting older data: fine today (all stores load older shapes). Re-stamp UP so the marker tracks
+      // the newest sidecar that has run here (mirrors last-run-version). Preserve any unknown keys the stamp carried.
+      const preserved = {};
+      for (const k of Object.keys(existing)) { if (k !== 'version' && k !== 'schemaVersion' && k !== 'stampedAt') preserved[k] = existing[k]; }
+      saveResilient(SCHEMA_VERSION_FILE, Object.assign(preserved, { version: 1, schemaVersion: WORKSPACE_SCHEMA_VERSION, stampedAt: Date.now() }));
+      workspaceStampVersion = WORKSPACE_SCHEMA_VERSION;
+    }
+  } catch (e) { console.warn('[schema] workspace stamp init failed (continuing un-stamped):', (e && e.message) || e); }
+}
+initWorkspaceSchemaStamp();
+
 // In-messenger `/model` (any channel) sets the CURRENTLY BOUND agent's roster model — the SAME single source of
 // truth the browser dossier writes via POST /api/roster. We mutate the live roster entry and persist through the
 // SAME saveAgentRoster path (no duplicate-and-drift), so the change round-trips a sidecar restart and the browser
@@ -4076,6 +4126,9 @@ async function handleRoster(req, res) {
   if (hasStamp && agentRosterUpdatedAt && incomingUpdatedAt < agentRosterUpdatedAt) {
     return json(200, { ok: false, stale: true, updatedAt: agentRosterUpdatedAt });
   }
+  // P2.1: DEGRADED — this workspace was stamped by a NEWER StarNet. Refuse a destructive roster overwrite (the
+  // route replaces the whole store) rather than corrupt data this code doesn't understand. Reads/runs are untouched.
+  if (workspaceDegraded) return json(200, { ok: false, error: 'workspace written by newer StarNet', degraded: true });
   replaceAgentRoster(body.agents);
   saveAgentRoster(hasStamp ? incomingUpdatedAt : undefined);
   json(200, { ok: true, count: agentRoster.size, updatedAt: agentRosterUpdatedAt });
@@ -6134,6 +6187,9 @@ async function handleSaveWrite(req, res) {
   // string, so derive from body.agent.id (an explicit body.agentId wins if a future caller sends one).
   const agentId = String(body.agentId || (body.agent && body.agent.id) || 'agent');
   if (!/^[A-Za-z0-9_-]{1,40}$/.test(agentId)) return json(400, { error: 'agentId must be 1-40 chars of [A-Za-z0-9_-]' });
+  // P2.1: DEGRADED — refuse a save write when this workspace was stamped by a NEWER StarNet (writing a newer save
+  // envelope shape through older code risks silent field loss). Reads (GET /api/save) still serve; runs continue.
+  if (workspaceDegraded) return json(200, { ok: false, error: 'workspace written by newer StarNet', degraded: true });
   try {
     const result = saveStore.save(agentId, body);
     json(200, result);

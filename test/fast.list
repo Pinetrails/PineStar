@@ -1,6 +1,7 @@
 # Fast test gate steps - run in order by scripts/run-fast-tests.mjs. One path per line.
 test/schema.test.js
 test/contract.test.js
+test/events-contract.test.js
 test/clock-rng.test.js
 test/context.test.js
 test/runtimeinfo.test.js
@@ -92,6 +93,7 @@ test/slash.palette.test.js
 test/slash.config.test.js
 test/voice.button.test.js
 test/save.test.js
+test/schema-stamp.test.js
 test/rename-migrate.test.js
 test/roster-clause.test.js
 test/notebookrestore.test.js
