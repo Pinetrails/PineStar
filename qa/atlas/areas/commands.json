@@ -1,0 +1,766 @@
+{
+  "area": "commands",
+  "updatedAt": "2026-07-07T08:18:15.162Z",
+  "entries": [
+    {
+      "id": "command/agents",
+      "kind": "command",
+      "area": "commands",
+      "name": "/agents — show active agents and running streams",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.408Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "command/background",
+      "kind": "command",
+      "area": "commands",
+      "name": "/background — run a prompt in a new background workstream",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.408Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "command/blueprint",
+      "kind": "command",
+      "area": "commands",
+      "name": "/blueprint — load a recipe blueprint into the composer",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.408Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "command/branch",
+      "kind": "command",
+      "area": "commands",
+      "name": "/branch — fork this conversation into a new workstream",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.408Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "command/bundles",
+      "kind": "command",
+      "area": "commands",
+      "name": "/bundles — list recipe and skill slash bundles",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.408Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "command/clear",
+      "kind": "command",
+      "area": "commands",
+      "name": "/clear — clear COMMS and start a fresh workstream",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.408Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "command/compress",
+      "kind": "command",
+      "area": "commands",
+      "name": "/compress — show context compaction status",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.408Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "command/copy",
+      "kind": "command",
+      "area": "commands",
+      "name": "/copy — copy the agent's last reply",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.408Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "command/cron",
+      "kind": "command",
+      "area": "commands",
+      "name": "/cron — show or arm scheduled routines",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.408Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "command/debug",
+      "kind": "command",
+      "area": "commands",
+      "name": "/debug — show chat and slash debug state",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "command/fast",
+      "kind": "command",
+      "area": "commands",
+      "name": "/fast — show fast-mode support status",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.408Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "command/goal",
+      "kind": "command",
+      "area": "commands",
+      "name": "/goal — set an autonomous standing goal (status/pause/resume/clear)",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.408Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "command/help",
+      "kind": "command",
+      "area": "commands",
+      "name": "/help — list available commands",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.408Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "command/history",
+      "kind": "command",
+      "area": "commands",
+      "name": "/history — show recent turns of this workstream",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.408Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "command/insights",
+      "kind": "command",
+      "area": "commands",
+      "name": "/insights — usage rollup from the run history",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.408Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "command/memory",
+      "kind": "command",
+      "area": "commands",
+      "name": "/memory — show the active agent memory records",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.408Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "command/model",
+      "kind": "command",
+      "area": "commands",
+      "name": "/model — show or set the active model",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.408Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "command/new",
+      "kind": "command",
+      "area": "commands",
+      "name": "/new — start a fresh workstream",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.408Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "command/personality",
+      "kind": "command",
+      "area": "commands",
+      "name": "/personality — show or set the active personality",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.408Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "command/queue",
+      "kind": "command",
+      "area": "commands",
+      "name": "/queue — show or add queued follow-up text",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.408Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "command/reasoning",
+      "kind": "command",
+      "area": "commands",
+      "name": "/reasoning — show reasoning-mode support status",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.408Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "command/reload-mcp",
+      "kind": "command",
+      "area": "commands",
+      "name": "/reload-mcp — refresh configured MCP connectors",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.408Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "command/reload-skills",
+      "kind": "command",
+      "area": "commands",
+      "name": "/reload-skills — refresh the slash skill catalog",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.408Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "command/resume",
+      "kind": "command",
+      "area": "commands",
+      "name": "/resume — list or switch workstreams",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.408Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "command/retry",
+      "kind": "command",
+      "area": "commands",
+      "name": "/retry — re-run the last turn",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.408Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "command/save",
+      "kind": "command",
+      "area": "commands",
+      "name": "/save — save the current station state",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.408Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "command/skills",
+      "kind": "command",
+      "area": "commands",
+      "name": "/skills — show installed skill recipes",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.408Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "command/status",
+      "kind": "command",
+      "area": "commands",
+      "name": "/status — show current stream and run state",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.408Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "command/steer",
+      "kind": "command",
+      "area": "commands",
+      "name": "/steer — steer the live run (or queue guidance when idle)",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.408Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "command/stop",
+      "kind": "command",
+      "area": "commands",
+      "name": "/stop — interrupt the running turn",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.408Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "command/subgoal",
+      "kind": "command",
+      "area": "commands",
+      "name": "/subgoal — add a criterion the goal loop must also satisfy",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.408Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "command/suggestions",
+      "kind": "command",
+      "area": "commands",
+      "name": "/suggestions — review recurring-task recipe suggestions",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.408Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "command/title",
+      "kind": "command",
+      "area": "commands",
+      "name": "/title — show or rename the current workstream",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.408Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "command/tools",
+      "kind": "command",
+      "area": "commands",
+      "name": "/tools — show tools granted by the workstation",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.408Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "command/undo",
+      "kind": "command",
+      "area": "commands",
+      "name": "/undo — remove the last local exchange",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.408Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "command/usage",
+      "kind": "command",
+      "area": "commands",
+      "name": "/usage — show token and spend totals",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.408Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "command/version",
+      "kind": "command",
+      "area": "commands",
+      "name": "/version — show StarNet version information",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "command/voice",
+      "kind": "command",
+      "area": "commands",
+      "name": "/voice — show or toggle spoken replies",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.408Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "command/whoami",
+      "kind": "command",
+      "area": "commands",
+      "name": "/whoami — show the current agent identity",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.408Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "command/yolo",
+      "kind": "command",
+      "area": "commands",
+      "name": "/yolo — toggle full-access approval mode",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.408Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    }
+  ]
+}

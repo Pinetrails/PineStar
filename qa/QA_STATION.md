@@ -23,6 +23,8 @@
 5. [Visual Auditor](#5--visual-auditor)
 6. [Overseer (the daily digest)](#6--overseer-the-daily-digest)
 7. [Janitor](#7--janitor)
+7b. [Cartographer](#7b--cartographer)
+7c. [Perfectionist](#7c--perfectionist)
 8. [Port registry](#8--port-registry)
 9. [The notification rule](#9--the-notification-rule)
 10. [KNOWN_ISSUES triage flow](#10--known_issues-triage-flow)
@@ -42,6 +44,8 @@
 | **Visual Auditor** | Is the rendered game coherent? *(needs eyes)* | **session** | `/loop` per `scripts/VISUAL_AUDITOR.md` | self-paced, local | `SESSIONS.md` + re-shot PNGs |
 | **Overseer** | What broke today, what needs Andrew? | **session** | `/loop` reading the ledger | daily | `qa/digests/<date>.md` + P0 pings |
 | **Janitor** | What's rotting in the workshop? | script | `npm run qa:janitor` | weekly | ledger (P2) + `qa/digests/janitor-<date>.md` |
+| **Cartographer** | Is every surface element mapped (nothing un-enumerated)? | script | `npm run qa:atlas` | weekly + after big merge waves | registry `qa/atlas/areas/*.json` + `ATLAS.md` + `qa/STATUS.md` + ledger (P2 dead-entry) |
+| **Perfectionist** | Is every surface element correct, purposeful, polished? | **session** | `/loop` per `loops/perfectionist.md` | self-paced, local | registry judgment fields + ledger + routed fixes |
 
 Two runner kinds, cleanly separated (Charter Part 2):
 - **Scripts** — node, headless, no vision. Detect, write findings, exit nonzero. Never notify.
@@ -294,6 +298,82 @@ they show up in the Overseer digest for a human to action the printed commands.
 
 ---
 
+## 7b · Cartographer
+
+**Answers:** "Is every surface element ENUMERATED — is anything un-mapped or vanished?" This is the
+**script half** of the perfection loop. The regression crew above proves trunk stays green; the
+Cartographer proves the *surface* is fully accounted for. It is the sibling of the Perfectionist
+session (§7c) — one enumerates, the other judges.
+**Script:** `scripts/qa/cartographer.mjs` · **Ports:** 8920–8929 (CDP 9320–9329) · **Registry:**
+`qa/atlas/` (charter: `qa/atlas/README.md`).
+
+One `--sweep` does two enumerations and merges the result into a sharded registry:
+
+1. **Static** (no browser): slash commands (`sidecar/slash.js` catalog, built-ins only), API routes
+   (every `req.method === … && <url match>` form in `sidecar/index.js`; the sweep report prints
+   *matched vs. method-guard count* so a miss is visible), bus events (`shared/events.js` `EVENTS`
+   keys — READ ONLY, an owned contract file), and shoot states (`buildStates()` from
+   `scripts/lib/states.mjs`).
+2. **Live DOM** (skipped under `--static-only`): boots the seeded sidecar exactly like `journeys.mjs`,
+   walks every `buildStates()` state, and enumerates every interactive element (`button`, `[role]`,
+   `a[href]`, inputs, `[data-term]`, …) with a stable key, deduped across states (first state wins).
+
+**Merge = the station law made mechanical** (`qa/atlas/README.md`): a new element → a SKELETON entry
+(`status: unmapped`, harvested fields filled); an existing one → `lastSeen` refreshed and **nothing a
+session decided**; an entry of a swept kind no longer found → `missing: true` + ONE deduped **P2
+`dead-entry`** ledger finding. Skeletons are NOT findings — the registry itself is the queue; the
+ledger only ever hears about *vanished* entries.
+
+### Launch lines
+```bash
+npm run qa:atlas            # full sweep: static enum + live DOM walk (ports 8920/9320); merge shards
+npm run qa:atlas:static     # static half only (slash/routes/events/states) — no Chrome, fast
+npm run qa:atlas:status     # gauge (PERFECTED-fresh X/Y) + regen qa/atlas/ATLAS.md + STATUS row
+```
+
+### Cadence
+**Weekly + after big merge waves.** The surface drifts when features land: a merge wave adds routes /
+commands / UI controls, so a sweep after one keeps the registry from going stale. The keyless static
+half (`qa:atlas:static`) is safe to run any time; the live half needs headless Chrome + a free 8920s
+port, exactly like the other visual crew.
+
+### Evidence + STATUS + no-fake-green
+Every sweep writes `.uiatlas/sweep-report.json` (counts per kind/area, new + missing lists, states
+walked, elements per state) and `.uiatlas/sweep.log`. `--status` refreshes the **Cartographer** row in
+`qa/STATUS.md` (single-row splice; inserted after the Janitor row if absent) and regenerates the
+generated `qa/atlas/ATLAS.md` index. Findings are filed through `scripts/qa/ledger.mjs --add` so
+dedup / known-refusal stay the ONE implementation. **The Cartographer never notifies.** Exit codes:
+**0** clean sweep · **1** the sweep ran and filed `dead-entry` findings · **2** BLOCKED (boot/CDP
+failure, a state drive `NOTFOUND`, a spawn error) — a P0 BLOCKED finding is filed with the log path as
+evidence and the cycle never silently passes (No-fake-green law, Part 5).
+
+---
+
+## 7c · Perfectionist
+
+**Answers:** "Is every surface element CORRECT, purposeful, and polished?" This is the **session half**
+of the perfection loop — the judgment crew that consumes the Cartographer's registry and drives every
+entry to `perfected`. **It needs judgement (and live-app proof), so it is NOT a headless script** and
+NOT schedulable as a cron/Task-Scheduler job — like the Visual Auditor and the Overseer, it is a local
+Claude `/loop` session.
+
+**It runs on Opus** (repo delegation law), driven by **`loops/perfectionist.md`** — that file owns the
+launch prompt, the 7-point rubric, and the DISSECT→PROVE→JUDGE→file→promote cycle; do not duplicate it
+here. In one sentence: pick ONE area batch by priority (escapes-adjacent first, then user-traffic
+order; stale before unmapped), claim it in `docs/NEXT.md`, trace each entry's full seam and fill
+`purpose`/`promise`/`wiring`, PROVE the promise live (DOM round-trips + `window.__world` reads, never
+screenshots), judge against the rubric (purpose · promise · works · truthful · discoverable · polished ·
+covered), file every miss through the ledger and **route the fix to a feature lane** (never fix in the
+QA lane), and set `status: perfected` + `auditedAt` only when all seven hold.
+
+**Cadence:** self-paced, on Andrew's machine (it needs the local app + live proof). Multiple
+Perfectionist sessions may run at once **only on different areas** (the sharded registry makes that
+safe — the one-session-one-area law in `qa/atlas/README.md` + `docs/MISTAKES.md` #4). The convergence
+gauge is `npm run qa:atlas:status`; the loop never ends because **staleness re-queues work** — a
+`perfected` entry whose wired files change since `auditedAt.sha` drops back into the queue.
+
+---
+
 ## 8 · Port registry
 
 Loops must not collide — multiple sidecars may run at once (Charter Part 3 / Part 5 port law).
@@ -301,10 +381,11 @@ Each crew boots sidecars **only** in its assigned range. Mirrored in `qa/STATUS.
 
 | Range | Owner | CDP range |
 | --- | --- | --- |
+| 8920–8929 | Cartographer (live DOM sweep, default 8920/9320) | 9320–9329 |
 | 8930–8939 | Visual Auditor (`scripts/VISUAL_AUDITOR.md`) | 9330–9339 |
-| 8940–8949 | Green Guardian (shoot 8940/9340 · golden 8941/9341 · audit 8942/9342) | 9340–9349 |
+| 8940–8949 | Green Guardian (shoot 8940/9340 · golden 8941/9341 · audit 8942/9342 · journeys 8943/9343) | 9340–9349 |
 | 8950–8959 | Beginner Run (default 8950/9350) | 9350–9359 |
-| 8960+ | Ad-hoc / manual | 9360+ |
+| 8960+ | Ad-hoc / manual (Perfectionist sessions boot here) | 9360+ |
 
 Truth Auditor has no range of its own: inside a Guardian cycle it uses the Guardian's audit
 ports (8942/9342); run standalone it defaults to the 8930s.

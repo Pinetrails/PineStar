@@ -50,6 +50,7 @@ src-tauri/binaries/
 .uisummon/
 .uiaudit/
 .uijourneys/
+.uiatlas/
 .uigolden/
 .dogfood/
 .bugloops/

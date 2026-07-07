@@ -1,0 +1,805 @@
+#!/usr/bin/env node
+/* scripts/qa/cartographer.mjs — the Station Atlas MAPPER (the perfection-loop machine's script half).
+ *
+ * WHY THIS EXISTS: the QA Station (qa/QA_STATION.md) is a REGRESSION watch — it proves trunk
+ * stays green and the app keeps booting. It CANNOT answer "is every single UI element / feature
+ * correct, purposeful, and polished?" because nothing enumerates the full surface. The Cartographer
+ * is that missing layer: it mechanically ENUMERATES every surface element (UI controls, slash
+ * commands, API routes, bus events, shoot states) and keeps a sharded registry (qa/atlas/areas/*.json)
+ * honest — appending a skeleton entry for anything new, refreshing lastSeen for anything still there,
+ * and marking `missing:true` (+ ONE ledger finding) for anything that vanished. A Perfectionist SESSION
+ * (loops/perfectionist.md) then drives each entry to `perfected`. The convergence gauge is `--status`.
+ *
+ * THE STATION LAW (Charter Part 2, absolute here): scripts DETECT + write the ledger; sessions JUDGE
+ * + notify. So this script writes ONLY the harvested/mechanical fields (skeletons, lastSeen, missing,
+ * firstSeen, harvested label/selector/state). It NEVER touches the SESSION-OWNED judgment fields
+ * (purpose / promise / wiring / coverage / status-beyond-unmapped / auditedAt). A sweep that re-finds
+ * an existing entry updates its lastSeen and NOTHING a human decided. The Cartographer never notifies.
+ *
+ * HOUSE PATTERN (matches scripts/qa/{ledger,guardian,janitor}.mjs + the sidecar stores): the CORE is a
+ * PURE factory `makeCartographer({ io, clock, git })`. No ambient time, no ambient disk, no child
+ * processes, no git in the core — the host injects all three. The core's job is the DECISION logic:
+ * validate + merge harvested elements into the registry shards, slug ids deterministically, derive
+ * staleness from git output, and render the STATUS row + ATLAS.md index. That makes the whole merge/
+ * status judgement testable headlessly (test/qa-cartographer.test.js) without a browser, a real git,
+ * or a real clock. The IO SHELL / CLI below owns Chrome/CDP, the seeded sidecar, git, and disk — the
+ * one place ambient effects live, exactly like ledger.mjs's CLI block.
+ *
+ * NO-FAKE-GREEN LAW (Charter Part 5): a --sweep that CANNOT run (boot/CDP failure, a state drive
+ * NOTFOUND, a spawn error) files a P0 BLOCKED finding (with the log path as evidence) and exits 2. It
+ * never silently passes. Exit 0 = clean sweep · 1 = sweep ran and filed dead-entry findings · 2 = BLOCKED.
+ *
+ * PORT LAW (Charter Part 3/5): the live DOM sweep boots sidecars ONLY in the Cartographer range
+ * 8920-8929 (CDP 9320-9329). Defaults: SKYNET_ATLAS_PORT=8920, SKYNET_ATLAS_CDP=9320.
+ *
+ * makeCartographer({ io, clock, git }) -> {
+ *   entryId({ kind, area, key })     -> stable slugged id (deterministic)
+ *   validateEntry(entry, where)      -> throws loudly (file+id) on a malformed entry
+ *   mergeSweep(shards, harvest)      -> { shards, created, updated, missing, findings }   // the merge logic
+ *   deriveStatus(shards)             -> { total, byStatus, byArea, stale:[ids], queue, perfectedFresh, markdown }
+ *   renderAtlasMd(derived)           -> markdown for qa/atlas/ATLAS.md (the human index)
+ *   statusRow(derived, cycle)        -> the Cartographer row for qa/STATUS.md
+ *   renderStatus(existingMd, row)    -> { markdown, replaced }   // splice-or-insert the row
+ *   areaOfState(name)                -> 'crew'|'work'|'build'|'system'|'world'
+ * }
+ *
+ * CLI:
+ *   node scripts/qa/cartographer.mjs --sweep                 # static enum + live DOM sweep; merge shards
+ *   node scripts/qa/cartographer.mjs --sweep --static-only   # skip the browser half (no Chrome)
+ *   node scripts/qa/cartographer.mjs --status                # convergence gauge + regen ATLAS.md + STATUS row
+ */
+
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { createRequire } from 'node:module';
+
+/* ─────────────────────────────── PURE CORE ─────────────────────────────── */
+
+const CREW = 'Cartographer';
+
+// The area taxonomy — every entry lives in exactly one. UI/state kinds land in the four station
+// groups + world; the static kinds each own a synthetic area so the queue reads cleanly.
+export const AREAS = Object.freeze(['crew', 'work', 'build', 'system', 'world', 'commands', 'routes', 'events', 'props']);
+const AREA_SET = new Set(AREAS);
+
+// The status lifecycle. The script may only ever WRITE 'unmapped' (on a fresh skeleton); everything
+// beyond it is session-owned and the merge never regresses it.
+export const STATUSES = Object.freeze(['unmapped', 'mapped', 'audited', 'perfected']);
+const STATUS_SET = new Set(STATUSES);
+
+const KINDS = new Set(['ui', 'command', 'route', 'event', 'state', 'prop']);
+
+// The fields the SCRIPT owns (safe to overwrite on a re-sweep). Everything NOT in this set is
+// session-owned judgment and is preserved byte-for-byte across sweeps.
+const SCRIPT_OWNED = new Set(['name', 'selector', 'state', 'kind', 'area', 'firstSeen', 'lastSeen', 'missing']);
+
+function str(v) { return v == null ? '' : String(v); }
+function num(v) { return (typeof v === 'number' && isFinite(v)) ? v : 0; }
+function arr(v) { return Array.isArray(v) ? v : (v == null ? [] : [v]); }
+function shortSha(sha) { return str(sha).trim().slice(0, 8) || '(unknown)'; }
+
+// Deterministic slug: lowercase, keep [a-z0-9], collapse everything else to single dashes, trim
+// leading/trailing dashes, cap length. Same input -> same slug, forever (stable ids across runs).
+export function slug(s) {
+  return str(s).toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 60) || 'x';
+}
+
+// state name -> area. The shoot states are named `ingame` / `crew-*` / `work-*` / `build-*` / `sys-*`.
+// sys -> system, ingame -> world, else the leading group segment (crew/work/build).
+export function areaOfState(name) {
+  const n = str(name).toLowerCase();
+  if (n === 'ingame' || n.startsWith('ingame')) return 'world';
+  const g = n.split('-')[0];
+  if (g === 'sys' || g === 'system') return 'system';
+  if (g === 'crew') return 'crew';
+  if (g === 'work') return 'work';
+  if (g === 'build') return 'build';
+  return 'world';
+}
+
+export function makeCartographer(opts) {
+  opts = opts || {};
+  const clock = opts.clock || { now() { return 0; } };
+  const nowIso = () => new Date(clock.now()).toISOString();
+  // git is injected so staleness derivation is testable with a fake. Contract:
+  //   git.logSince(sha, files) -> string (git log --oneline <sha>..HEAD -- <files...>); non-empty => moved.
+  const git = opts.git || {};
+  const logSince = typeof git.logSince === 'function' ? git.logSince.bind(git) : () => '';
+
+  // A stable id for an entry. UI/state ids include the area so `ui/system/x` never collides with
+  // `ui/crew/x`; the static kinds are globally unique on their key already.
+  function entryId(parts) {
+    parts = parts || {};
+    const kind = str(parts.kind);
+    const area = str(parts.area);
+    const key = slug(parts.key);
+    if (kind === 'ui') return 'ui/' + area + '/' + key;
+    if (kind === 'command') return 'command/' + key;
+    if (kind === 'route') return 'route/' + key;      // key already carries method+path
+    if (kind === 'event') return 'event/' + key;
+    if (kind === 'state') return 'state/' + key;
+    if (kind === 'prop') return 'prop/' + key;
+    return kind + '/' + area + '/' + key;
+  }
+
+  // A fresh skeleton — status ALWAYS 'unmapped' (the only status the script writes). Session-owned
+  // fields are seeded EMPTY for a human to fill; the merge never rewrites them afterward.
+  function skeleton(el) {
+    const now = nowIso();
+    const entry = {
+      id: str(el.id),
+      kind: str(el.kind),
+      area: str(el.area),
+      name: str(el.name),
+      purpose: '',
+      promise: '',
+      wiring: { files: [], events: [] },
+      coverage: [],
+      status: 'unmapped',
+      auditedAt: null,
+      findings: [],
+      firstSeen: now,
+      lastSeen: now,
+      missing: false
+    };
+    if (el.kind === 'ui') { entry.selector = str(el.selector); entry.state = str(el.state); }
+    return entry;
+  }
+
+  // Validate an entry loudly — reject a malformed one naming file + id (load-time guard). Applied by
+  // the CLI on every shard it reads AND by the merge on every skeleton it mints (so a bug that writes
+  // garbage is caught immediately, not silently persisted).
+  function validateEntry(entry, where) {
+    const at = str(where) || (entry && entry.id) || '(no id)';
+    const bad = (msg) => { throw new Error('[atlas] malformed entry ' + at + ': ' + msg); };
+    if (!entry || typeof entry !== 'object') bad('not an object');
+    if (!str(entry.id)) bad('missing id');
+    if (!KINDS.has(str(entry.kind))) bad('bad kind "' + str(entry.kind) + '" (want one of ' + [...KINDS].join('/') + ')');
+    if (!AREA_SET.has(str(entry.area))) bad('bad area "' + str(entry.area) + '" (want one of ' + AREAS.join('/') + ')');
+    if (!str(entry.name)) bad('missing name');
+    if (!STATUS_SET.has(str(entry.status))) bad('bad status "' + str(entry.status) + '" (want one of ' + STATUSES.join('/') + ')');
+    if (entry.wiring && typeof entry.wiring !== 'object') bad('wiring must be an object');
+    if (entry.coverage != null && !Array.isArray(entry.coverage)) bad('coverage must be an array');
+    if (entry.findings != null && !Array.isArray(entry.findings)) bad('findings must be an array');
+    return entry;
+  }
+
+  // Sort a shard's entries by id (stable, byte-clean diffs).
+  function sortEntries(entries) {
+    return entries.slice().sort((a, b) => str(a.id).localeCompare(str(b.id)));
+  }
+
+  // Merge a harvest (the flat list of enumerated elements, each already carrying id/kind/area/name +
+  // maybe selector/state) into the registry shards. `shards` is a map { area -> { area, updatedAt,
+  // entries:[] } }. `harvest.elements` = the enumerated list; `harvest.sweptKinds` = the kinds this
+  // sweep actually covered (so a static-only sweep never marks UI entries missing). `harvest.reportRel`
+  // = the evidence path filed on a dead-entry finding.
+  //
+  // Rules (the station law made mechanical):
+  //   - new element      -> append a SKELETON (status 'unmapped'); count created.
+  //   - existing element -> refresh ONLY script-owned fields (name/selector/state/lastSeen), clear a
+  //                         prior missing flag; NEVER touch a session-owned field. count updated.
+  //   - a registry entry of a SWEPT kind NOT seen this sweep -> set missing:true + ONE P2 dead-entry
+  //                         finding (skeletons are the queue, not findings — only vanished entries file).
+  function mergeSweep(shards, harvest) {
+    shards = shards || {};
+    harvest = harvest || {};
+    const elements = arr(harvest.elements);
+    const sweptKinds = new Set(arr(harvest.sweptKinds));
+    const reportRel = str(harvest.reportRel) || '.uiatlas/sweep-report.json';
+    const now = nowIso();
+
+    // index every existing entry by id across all shards.
+    const byId = new Map();
+    for (const area of Object.keys(shards)) {
+      const shard = shards[area] || {};
+      for (const e of arr(shard.entries)) byId.set(str(e.id), { entry: e, area });
+    }
+
+    const seen = new Set();
+    let created = 0, updated = 0;
+    const touchedAreas = new Set();
+
+    for (const el of elements) {
+      if (!el || !el.id) continue;
+      validateEntry(skeleton(el), 'harvest:' + el.id);   // validate the SHAPE we'd mint (catches a bad harvester)
+      const id = str(el.id);
+      seen.add(id);
+      const hit = byId.get(id);
+      if (!hit) {
+        // new: append a skeleton into its area shard.
+        const area = str(el.area);
+        const shard = shards[area] || (shards[area] = { area, updatedAt: now, entries: [] });
+        shard.entries.push(skeleton(el));
+        byId.set(id, { entry: shard.entries[shard.entries.length - 1], area });
+        created++;
+        touchedAreas.add(area);
+      } else {
+        // existing: refresh ONLY script-owned fields; leave every session-owned field untouched.
+        const e = hit.entry;
+        e.name = str(el.name) || e.name;
+        if (el.kind === 'ui') {
+          if (str(el.selector)) e.selector = str(el.selector);
+          if (str(el.state) && !str(e.state)) e.state = str(el.state);   // keep the FIRST state it was seen in
+        }
+        e.lastSeen = now;
+        if (e.missing) { e.missing = false; touchedAreas.add(hit.area); }  // resurrected — clear the flag
+        updated++;
+      }
+    }
+
+    // dead-entry pass: any entry of a SWEPT kind that we did NOT see this sweep is missing.
+    const missing = [];
+    const findings = [];
+    for (const [id, { entry, area }] of byId.entries()) {
+      const kind = str(entry.kind);
+      if (!sweptKinds.has(kind)) continue;                 // this sweep didn't cover that kind — can't judge it
+      if (seen.has(id)) continue;
+      if (!entry.missing) { entry.missing = true; touchedAreas.add(area); }
+      missing.push(id);
+      // ONE deduped P2 finding per vanished entry (fingerprint is stable per id via the ledger).
+      findings.push({
+        crew: CREW, severity: 'P2',
+        title: 'Atlas dead entry: ' + id + ' no longer found by the sweep',
+        detail: 'A prior-mapped ' + kind + ' surface (' + id + ') was not enumerated this sweep — it was removed, renamed, or is unreachable. Reconcile the registry (retire it, or fix the regression that hid it).',
+        evidence: [reportRel],
+        checkId: 'dead-entry',
+        subject: id
+      });
+    }
+
+    // bump updatedAt + re-sort every touched shard (stable id order => clean diffs).
+    for (const area of touchedAreas) {
+      const shard = shards[area];
+      if (shard) { shard.entries = sortEntries(shard.entries); shard.updatedAt = now; }
+    }
+
+    return { shards, created, updated, missing, findings, sweptKinds: [...sweptKinds] };
+  }
+
+  // Derive the convergence report from the loaded shards. Effective status:
+  //   - 'missing' entries are counted separately (they're out of the surface now).
+  //   - an entry with auditedAt.sha AND non-empty wiring.files whose files MOVED since that sha is STALE
+  //     (perfection went out of date). Stale is the re-queue signal — it beats 'perfected'.
+  function deriveStatus(shards) {
+    shards = shards || {};
+    const areas = Object.keys(shards).sort();
+    const byStatus = { unmapped: 0, mapped: 0, audited: 0, perfected: 0, stale: 0, missing: 0 };
+    const byArea = {};
+    const staleIds = [];
+    let total = 0, perfectedFresh = 0;
+
+    for (const area of areas) {
+      const per = { total: 0, unmapped: 0, mapped: 0, audited: 0, perfected: 0, stale: 0, missing: 0 };
+      for (const e of arr(shards[area] && shards[area].entries)) {
+        total++; per.total++;
+        if (e.missing) { byStatus.missing++; per.missing++; continue; }
+        let st = STATUS_SET.has(str(e.status)) ? str(e.status) : 'unmapped';
+        // staleness: only a perfected/audited entry with a recorded sha + tracked files can go stale.
+        const sha = e.auditedAt && str(e.auditedAt.sha);
+        const files = (e.wiring && arr(e.wiring.files)) || [];
+        if (sha && files.length) {
+          const moved = str(logSince(sha, files)).trim();
+          if (moved) { st = 'stale'; staleIds.push(str(e.id)); }
+        }
+        byStatus[st] = (byStatus[st] || 0) + 1;
+        per[st] = (per[st] || 0) + 1;
+        if (st === 'perfected') perfectedFresh++;
+      }
+      byArea[area] = per;
+    }
+
+    const pct = total ? Math.round((perfectedFresh / total) * 100) : 0;
+    const queue = { unmapped: byStatus.unmapped, stale: byStatus.stale };
+    const markdown = 'PERFECTED-fresh ' + perfectedFresh + ' / total ' + total + ' (' + pct + '%)';
+    return { areas, total, perfectedFresh, pct, byStatus, byArea, stale: staleIds, queue, markdown };
+  }
+
+  // The human index qa/atlas/ATLAS.md — the gauge line + a per-area table + a datestamp.
+  function renderAtlasMd(derived, meta) {
+    derived = derived || {};
+    meta = meta || {};
+    const L = [];
+    const p = (x) => L.push(x);
+    p('# Station Atlas — convergence index');
+    p('');
+    p('> **GENERATED FILE — do not edit by hand.** Regenerated by `npm run qa:atlas:status`');
+    p('> (`scripts/qa/cartographer.mjs --status`). The source of truth is the sharded registry under');
+    p('> `qa/atlas/areas/*.json`; the charter is `qa/atlas/README.md`. Edit those, not this.');
+    p('');
+    p('**Gauge:** ' + str(derived.markdown));
+    p('');
+    p('The goal: every entry `perfected` AND fresh at the current trunk. `unmapped` + `stale` is the');
+    p('work queue a Perfectionist session (`loops/perfectionist.md`) burns down. `missing` = a surface');
+    p('that vanished (retire it from the registry or fix the regression that hid it).');
+    p('');
+    p('| Area | Total | Unmapped | Mapped | Audited | Perfected | Stale | Missing |');
+    p('| --- | --- | --- | --- | --- | --- | --- | --- |');
+    for (const area of arr(derived.areas)) {
+      const a = (derived.byArea && derived.byArea[area]) || {};
+      p('| ' + area + ' | ' + num(a.total) + ' | ' + num(a.unmapped) + ' | ' + num(a.mapped) +
+        ' | ' + num(a.audited) + ' | ' + num(a.perfected) + ' | ' + num(a.stale) + ' | ' + num(a.missing) + ' |');
+    }
+    // totals row
+    const bs = derived.byStatus || {};
+    p('| **all** | **' + num(derived.total) + '** | ' + num(bs.unmapped) + ' | ' + num(bs.mapped) +
+      ' | ' + num(bs.audited) + ' | ' + num(bs.perfected) + ' | ' + num(bs.stale) + ' | ' + num(bs.missing) + ' |');
+    p('');
+    p('_Last regenerated: ' + (str(meta.date) || nowIso()) + (meta.sha ? ' @ ' + shortSha(meta.sha) : '') + '._');
+    p('');
+    return L.join('\n');
+  }
+
+  // The Cartographer row for qa/STATUS.md. cycle = { isoTime, sha, gauge, unmapped }.
+  function statusRow(derived, cycle) {
+    derived = derived || {};
+    cycle = cycle || {};
+    const iso = str(cycle.isoTime) || '—';
+    const sha = shortSha(cycle.sha);
+    const lastRun = iso === '—' ? '—' : (iso + ' @ ' + sha);
+    const gauge = str(cycle.gauge) || str(derived.markdown) || '—';
+    const unmapped = cycle.unmapped != null ? num(cycle.unmapped) : num(derived.queue && derived.queue.unmapped);
+    return '| Cartographer | Is every surface element mapped and perfected? | ' +
+      lastRun + ' | ' + gauge + ' | ' + unmapped + ' |';
+  }
+
+  // Splice the Cartographer row into an existing STATUS.md, preserving every other row byte-for-byte.
+  // If the row is absent, insert it right after the Janitor row (so the crew table stays grouped); if
+  // there's no Janitor row either, append at the end of the first markdown table block. Mirrors
+  // guardian.renderStatus's single-row splice technique.
+  function renderStatus(existingMd, row) {
+    const md = str(existingMd);
+    const lines = md.split('\n');
+    let replaced = false;
+    let out = lines.map(line => {
+      if (!replaced && /^\|\s*Cartographer\s*\|/.test(line)) { replaced = true; return row; }
+      return line;
+    });
+    if (replaced) return { markdown: out.join('\n'), replaced: true, inserted: false };
+
+    // not present — insert after the Janitor row.
+    let janitorIdx = -1;
+    for (let i = 0; i < out.length; i++) if (/^\|\s*Janitor\s*\|/.test(out[i])) { janitorIdx = i; break; }
+    if (janitorIdx >= 0) {
+      out.splice(janitorIdx + 1, 0, row);
+      return { markdown: out.join('\n'), replaced: false, inserted: true };
+    }
+    return { markdown: md, replaced: false, inserted: false };  // no crew table found — caller warns
+  }
+
+  return {
+    entryId, slug, skeleton, validateEntry, mergeSweep, deriveStatus,
+    renderAtlasMd, statusRow, renderStatus, areaOfState,
+    _internals: { sortEntries, SCRIPT_OWNED }
+  };
+}
+
+/* ───────────────────────────── IO SHELL / CLI ─────────────────────────────
+ * The ONLY place ambient effects live: static enumeration (require sidecar/slash.js, scan
+ * sidecar/index.js text, import shared/events.js + scripts/lib/states.mjs), the live DOM sweep
+ * (headless Chrome + CDP + a seeded sidecar), git (for staleness), and disk (the shards + ATLAS.md
+ * + STATUS row). Runs only when invoked directly. The static fs/path/url/child_process imports are
+ * side-effect-free so a CJS test can require() the pure core without any of this executing.
+ */
+
+const INVOKED_DIRECTLY = (() => {
+  try { return process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href; }
+  catch (_) { return false; }
+})();
+
+if (INVOKED_DIRECTLY) {
+  const __dirname = path.dirname(fileURLToPath(import.meta.url));
+  const REPO = path.resolve(__dirname, '..', '..');            // scripts/qa/ -> repo root
+  const AREAS_DIR = path.join(REPO, 'qa', 'atlas', 'areas');
+  const ATLAS_MD = path.join(REPO, 'qa', 'atlas', 'ATLAS.md');
+  const STATUS_FILE = path.join(REPO, 'qa', 'STATUS.md');
+  const LEDGER_CLI = path.join(REPO, 'scripts', 'qa', 'ledger.mjs');
+  const OUT_DIR = path.join(REPO, '.uiatlas');
+  const SWEEP_REPORT = path.join(OUT_DIR, 'sweep-report.json');
+  const SWEEP_LOG = path.join(OUT_DIR, 'sweep.log');
+
+  // Cartographer port range (Charter §8): 8920-8929 sidecar, 9320-9329 CDP.
+  const PORT = process.env.SKYNET_ATLAS_PORT || '8920';
+  const CDP_PORT = Number(process.env.SKYNET_ATLAS_CDP || 9320);
+  const APP_URL = 'http://127.0.0.1:' + PORT + '/';
+
+  const require_ = createRequire(import.meta.url);
+  const log = (...a) => console.log('[cartographer]', ...a);
+  const errlog = (...a) => console.error('[cartographer]', ...a);
+
+  const nowIsoReal = () => new Date().toISOString();
+
+  function ensureDir(p) { fs.mkdirSync(p, { recursive: true }); }
+  function appendLog(line) { try { ensureDir(OUT_DIR); fs.appendFileSync(SWEEP_LOG, str(line) + '\n', 'utf8'); } catch (_) {} }
+
+  function readJsonMaybe(file) { try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch (_) { return null; } }
+
+  // ---- git shell (staleness only; read-only) ----
+  function gitShell() {
+    return {
+      logSince(sha, files) {
+        if (!sha || !arr(files).length) return '';
+        try {
+          const r = spawnSync('git', ['log', '--oneline', shortSha(sha) + '..HEAD', '--'].concat(arr(files).map(String)),
+            { cwd: REPO, encoding: 'utf8', windowsHide: true });
+          return r.status === 0 ? str(r.stdout).trim() : '';
+        } catch (_) { return ''; }
+      },
+      head() {
+        try { const r = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: REPO, encoding: 'utf8', windowsHide: true }); return r.status === 0 ? str(r.stdout).trim() : ''; }
+        catch (_) { return ''; }
+      }
+    };
+  }
+
+  // ---- shard IO ----
+  const carto = makeCartographer({ clock: { now: () => Date.now() }, git: gitShell() });
+
+  function loadShards() {
+    const shards = {};
+    let names = [];
+    try { names = fs.readdirSync(AREAS_DIR); } catch (_) { return shards; }
+    for (const n of names) {
+      if (!n.endsWith('.json')) continue;
+      const shard = readJsonMaybe(path.join(AREAS_DIR, n));
+      if (!shard || typeof shard !== 'object') continue;
+      const area = str(shard.area) || n.replace(/\.json$/, '');
+      // validate every entry LOUDLY (naming file + id) — a corrupt shard must never silently pass.
+      for (const e of arr(shard.entries)) carto.validateEntry(e, n + '#' + str(e && e.id));
+      shards[area] = { area, updatedAt: str(shard.updatedAt) || nowIsoReal(), entries: arr(shard.entries) };
+    }
+    return shards;
+  }
+
+  function writeShards(shards, onlyAreas) {
+    ensureDir(AREAS_DIR);
+    const areas = onlyAreas ? [...onlyAreas] : Object.keys(shards);
+    for (const area of areas) {
+      const shard = shards[area];
+      if (!shard) continue;
+      const file = path.join(AREAS_DIR, area + '.json');
+      fs.writeFileSync(file, JSON.stringify({ area: shard.area, updatedAt: shard.updatedAt, entries: shard.entries }, null, 2) + '\n', 'utf8');
+    }
+  }
+
+  // ---- STATIC ENUMERATION (no browser) ----
+  // Returns { elements, eyeballs } where eyeballs is a per-kind sanity count printed so a miss is visible.
+  function staticEnumerate() {
+    const elements = [];
+    const counts = { command: 0, route: 0, event: 0, state: 0 };
+
+    // 1. slash commands — enumerate the catalog with EMPTY recipes/skills (built-ins only), the same
+    //    call /api/slash/catalog makes. One entry per built-in command.
+    try {
+      const slash = require_(path.join(REPO, 'sidecar', 'slash.js'));
+      const cat = slash.catalog({ recipes: [], skills: [] });
+      for (const c of arr(cat.commands)) {
+        if (!c || !c.name) continue;
+        const id = carto.entryId({ kind: 'command', area: 'commands', key: c.name });
+        elements.push({
+          id, kind: 'command', area: 'commands',
+          name: '/' + c.name + (c.desc ? ' — ' + c.desc : '')
+        });
+        counts.command++;
+      }
+    } catch (e) { appendLog('static/slash FAILED: ' + (e && e.message || e)); throw new Error('static enumeration of slash commands failed: ' + (e && e.message || e)); }
+
+    // 2. API routes — scan sidecar/index.js text for every route-match form. Study the file: the router
+    //    is a flat list of `if (req.method === 'X' && <url match>) return handler(...)`. The url match
+    //    appears in several forms; capture ALL of them:
+    //      req.url === '/api/...'
+    //      req.url.split('?')[0] === '/api/...'
+    //      req.url.indexOf('/api/...') === 0     (prefix)
+    //      req.url.startsWith('/api/...')        (prefix)
+    //      apiauth.pathOf(req.url) === '/api/...'
+    try {
+      const src = fs.readFileSync(path.join(REPO, 'sidecar', 'index.js'), 'utf8');
+      const seen = new Set();
+      // one regex per url-match form, each paired to a nearby method. We first find the method token,
+      // then the path token, on the SAME statement (method and match co-occur in `req.method === 'X' && ...`).
+      const routeRe = /req\.method\s*===\s*'([A-Z]+)'[\s\S]{0,240}?(?:req\.url(?:\.split\('\?'\)\[0\])?\s*===\s*'(\/api[^']*)'|req\.url\.indexOf\('(\/api[^']*)'\)\s*===\s*0|req\.url\.startsWith\('(\/api[^']*)'\)|apiauth\.pathOf\(req\.url\)\s*===\s*'(\/api[^']*)')/g;
+      let m;
+      let matched = 0;
+      while ((m = routeRe.exec(src))) {
+        const method = m[1];
+        const p = m[2] || m[3] || m[4] || m[5] || '';
+        if (!p) continue;
+        const key = method + '-' + p;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        matched++;
+        const id = carto.entryId({ kind: 'route', area: 'routes', key });
+        elements.push({ id, kind: 'route', area: 'routes', name: method + ' ' + p });
+        counts.route++;
+      }
+      // eyeball: how many `req.method ===` guards exist at all (an upper bound on routes). Reported so a
+      // gap between the two numbers is visible in the sweep report (some guards are multi-condition/HEAD dupes).
+      const guardCount = (src.match(/req\.method\s*===\s*'[A-Z]+'/g) || []).length;
+      counts._routeGuards = guardCount;
+      counts._routeMatched = matched;
+    } catch (e) { appendLog('static/routes FAILED: ' + (e && e.message || e)); throw new Error('static enumeration of API routes failed: ' + (e && e.message || e)); }
+
+    // 3. events — import shared/events.js (READ ONLY; owned contract file) and enumerate EVENTS keys.
+    try {
+      const events = require_(path.join(REPO, 'shared', 'events.js'));
+      const keys = typeof events.names === 'function' ? events.names() : Object.keys(events.EVENTS || {});
+      for (const type of keys) {
+        const id = carto.entryId({ kind: 'event', area: 'events', key: type });
+        elements.push({ id, kind: 'event', area: 'events', name: type });
+        counts.event++;
+      }
+    } catch (e) { appendLog('static/events FAILED: ' + (e && e.message || e)); throw new Error('static enumeration of events failed: ' + (e && e.message || e)); }
+
+    // 4. shoot states — import buildStates() and one entry per state, area = its group.
+    try {
+      const url = pathToFileURL(path.join(REPO, 'scripts', 'lib', 'states.mjs')).href;
+      // dynamic import via the CLI's own loader (top-level await is fine here — this block only runs as a CLI).
+      return import(url).then(mod => {
+        const states = typeof mod.buildStates === 'function' ? mod.buildStates() : [];
+        for (const s of arr(states)) {
+          const area = carto.areaOfState(s.name);
+          const id = carto.entryId({ kind: 'state', area, key: s.name });
+          elements.push({ id, kind: 'state', area, name: 'shoot state: ' + s.name });
+          counts.state++;
+        }
+        return { elements, counts };
+      });
+    } catch (e) { appendLog('static/states FAILED: ' + (e && e.message || e)); throw new Error('static enumeration of states failed: ' + (e && e.message || e)); }
+  }
+
+  // ---- the in-page enumerator probe (collects every interactive element in the current state) ----
+  // Returns a flat list of { key, label, selector, visible }. Stable key: #id | [data-term=..] |
+  // aria-label | text+tag+nth. Dedup within a state by key.
+  const ENUM_PROBE = `(() => {
+    const SEL = 'button, [role="button"], [role="menuitem"], [role="tab"], a[href], input, select, textarea, summary, [onclick], [data-term]';
+    const nodes = Array.from(document.querySelectorAll(SEL));
+    const out = [];
+    const seen = new Set();
+    const cssEsc = (s) => (window.CSS && CSS.escape) ? CSS.escape(s) : String(s).replace(/["\\\\#.:\\[\\]]/g, '\\\\$&');
+    const tagNth = new Map();
+    for (const el of nodes) {
+      const tag = el.tagName.toLowerCase();
+      let key = '', selector = '';
+      if (el.id) { key = '#' + el.id; selector = '#' + cssEsc(el.id); }
+      else if (el.getAttribute && el.getAttribute('data-term')) { const t = el.getAttribute('data-term'); key = '[data-term=' + t + ']'; selector = '[data-term="' + t + '"]'; }
+      else if (el.getAttribute && el.getAttribute('aria-label')) { const a = el.getAttribute('aria-label'); key = 'aria:' + a.slice(0, 40); selector = tag + '[aria-label="' + a.replace(/"/g, '\\\\"') + '"]'; }
+      else {
+        const txt = (el.textContent || '').trim().replace(/\\s+/g, ' ').slice(0, 40);
+        const n = (tagNth.get(tag) || 0) + 1; tagNth.set(tag, n);
+        key = 'txt:' + tag + ':' + txt + ':' + n;
+        selector = tag + (txt ? '' : '');   // best-effort; the session refines the selector
+      }
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const label = (el.getAttribute && (el.getAttribute('aria-label') || el.getAttribute('title'))) || (el.textContent || '').trim().replace(/\\s+/g, ' ').slice(0, 60) || tag;
+      let visible = false;
+      try {
+        const r = el.getBoundingClientRect();
+        visible = !!(el.offsetParent !== null || (r.width > 0 && r.height > 0));
+      } catch (_) {}
+      out.push({ key, label, selector, visible, tag });
+    }
+    return out;
+  })()`;
+
+  // ---- LIVE DOM SWEEP ----
+  // Boot the seeded sidecar exactly like journeys.mjs, walk every buildStates() state, run its drive,
+  // wait its wait, enumerate. Dedup across states by key (FIRST state wins). Returns { elements, states }.
+  async function liveSweep() {
+    const { sleep, launchChrome, connectCDP, evalJS } = await import(pathToFileURL(path.join(REPO, 'scripts', 'lib', 'cdp.mjs')).href);
+    const { materializeSeedWorkspace, bootSeededSidecar, isUp, waitUp, waitDevReady } = await import(pathToFileURL(path.join(REPO, 'scripts', 'lib', 'seed.mjs')).href);
+    const statesMod = await import(pathToFileURL(path.join(REPO, 'scripts', 'lib', 'states.mjs')).href);
+
+    const scratch = path.join(OUT_DIR, '_seed-workspace');
+    const profile = path.join(OUT_DIR, '_profile');
+    let sidecar = null, chromeProc = null, cdp = null;
+    const cleanup = () => {
+      try { cdp && cdp.ws.close(); } catch (_) {}
+      try { chromeProc && chromeProc.kill('SIGKILL'); } catch (_) {}
+      try { sidecar && sidecar.kill('SIGKILL'); } catch (_) {}
+    };
+
+    try {
+      if (await isUp(APP_URL)) throw new Error('BLOCKED: atlas port :' + PORT + ' already has a server; set SKYNET_ATLAS_PORT to a free port');
+      appendLog('booting seeded sidecar on :' + PORT);
+      materializeSeedWorkspace(scratch);
+      sidecar = bootSeededSidecar({ port: PORT, scratchDir: scratch });
+      if (!(await waitUp(APP_URL))) throw new Error('BLOCKED: seeded sidecar failed to come up on :' + PORT);
+
+      const win = process.env.SKYNET_SHOT_SIZE || '1440,900';
+      const launched = launchChrome({ cdpPort: CDP_PORT, win, profileDir: profile });
+      chromeProc = launched.proc;
+      chromeProc.on('error', (e) => appendLog('chrome spawn error: ' + (e && e.message)));
+      cdp = await connectCDP(CDP_PORT);
+      await cdp.send('Page.enable');
+      await cdp.send('Runtime.enable');
+      await cdp.send('Page.navigate', { url: APP_URL });
+      const floorReady = await waitDevReady(cdp, evalJS, { tries: 40, url: APP_URL });
+      if (!floorReady) throw new Error('BLOCKED: never reached in-game (floor did not come up)');
+      appendLog('floor ready; walking states');
+
+      const states = statesMod.buildStates();
+      const elements = [];
+      const seenKeys = new Set();
+      const perState = [];
+      for (const s of states) {
+        const drive = await evalJS(cdp, s.drive).catch((e) => 'ERR:' + (e && e.message));
+        if (typeof drive === 'string' && drive.indexOf('NOTFOUND') === 0) {
+          throw new Error('BLOCKED: state "' + s.name + '" drive returned ' + drive + ' (a dock target is missing — the sweep cannot enumerate it honestly)');
+        }
+        await sleep(num(s.wait) || 700);
+        const found = await evalJS(cdp, ENUM_PROBE).catch((e) => { appendLog('enum probe threw in ' + s.name + ': ' + (e && e.message)); return []; });
+        const list = arr(found);
+        perState.push({ state: s.name, area: carto.areaOfState(s.name), count: list.length });
+        for (const el of list) {
+          if (!el || !el.key) continue;
+          if (seenKeys.has(el.key)) continue;               // FIRST state an element is seen in wins
+          seenKeys.add(el.key);
+          const area = carto.areaOfState(s.name);
+          const id = carto.entryId({ kind: 'ui', area, key: el.key });
+          elements.push({
+            id, kind: 'ui', area, name: str(el.label) || str(el.key),
+            selector: str(el.selector), state: s.name
+          });
+        }
+      }
+      appendLog('walked ' + states.length + ' states; ' + elements.length + ' distinct UI elements');
+      return { elements, states: perState };
+    } finally {
+      cleanup();
+    }
+  }
+
+  // File a finding through the ledger CLI (the ONE dedup/known path). Returns true if handled.
+  function fileFinding(finding) {
+    const r = spawnSync(process.execPath, [LEDGER_CLI, '--add', '--json', JSON.stringify(finding)], {
+      cwd: REPO, encoding: 'utf8', windowsHide: true
+    });
+    const out = str(r.stdout).trim(); const err = str(r.stderr).trim();
+    if (out) log('ledger:', out);
+    if (err) errlog('ledger:', err);
+    return (r.status === 0 || r.status === 2);   // exit 2 = refused/known — a HANDLED outcome, not our error
+  }
+
+  function fileBlocked(reason, logPath) {
+    const finding = {
+      crew: CREW, severity: 'P0',
+      title: 'Cartographer BLOCKED: sweep could not run',
+      detail: 'The Atlas sweep could not complete: ' + str(reason) + '. A detector that cannot run is a P0 (no-fake-green law) — treat as red until it runs clean.',
+      evidence: [logPath && fs.existsSync(logPath) ? logPath : SWEEP_LOG],
+      checkId: 'blocked', subject: 'sweep/blocked'
+    };
+    fileFinding(finding);
+  }
+
+  // ---- --sweep ----
+  async function runSweep(staticOnly) {
+    ensureDir(OUT_DIR);
+    try { fs.writeFileSync(SWEEP_LOG, '[atlas] sweep start ' + nowIsoReal() + (staticOnly ? ' (static-only)' : '') + '\n', 'utf8'); } catch (_) {}
+    const sha = gitShell().head();
+
+    // static enumeration (throws -> BLOCKED). staticEnumerate returns a PROMISE (it dynamic-imports states).
+    let staticResult;
+    try { staticResult = await staticEnumerate(); }
+    catch (e) {
+      errlog('BLOCKED (static): ' + (e && e.message || e));
+      appendLog('BLOCKED static: ' + (e && e.stack || e));
+      fileBlocked('static enumeration failed — ' + (e && e.message || e), SWEEP_LOG);
+      return 2;
+    }
+    const elements = staticResult.elements.slice();
+    const counts = staticResult.counts;
+    const sweptKinds = new Set(['command', 'route', 'event', 'state']);
+    let statesWalked = [];
+
+    if (!staticOnly) {
+      let live;
+      try { live = await liveSweep(); }
+      catch (e) {
+        errlog('BLOCKED (live): ' + (e && e.message || e));
+        appendLog('BLOCKED live: ' + (e && e.stack || e));
+        fileBlocked('live DOM sweep failed — ' + (e && e.message || e), SWEEP_LOG);
+        return 2;
+      }
+      for (const el of live.elements) elements.push(el);
+      statesWalked = live.states;
+      sweptKinds.add('ui');
+      counts.ui = live.elements.length;
+    }
+
+    // merge into the shards.
+    const shards = loadShards();
+    const reportRel = path.relative(REPO, SWEEP_REPORT).replace(/\\/g, '/');
+    const merge = carto.mergeSweep(shards, { elements, sweptKinds: [...sweptKinds], reportRel });
+    writeShards(merge.shards);
+
+    // file ONE ledger finding per vanished entry (skeletons are NOT findings — the registry is the queue).
+    for (const f of merge.findings) fileFinding(f);
+
+    // per-area / per-kind counts for the report.
+    const byArea = {};
+    for (const area of Object.keys(merge.shards)) byArea[area] = arr(merge.shards[area].entries).length;
+
+    const report = {
+      ranAt: nowIsoReal(), sha, staticOnly: !!staticOnly,
+      counts, sweptKinds: [...sweptKinds],
+      created: merge.created, updated: merge.updated,
+      missing: merge.missing, missingCount: merge.missing.length,
+      statesWalked, byArea,
+      newIds: []   // filled below
+    };
+    // recover the ids created this sweep for the report (a skeleton has firstSeen === lastSeen just now).
+    try {
+      for (const area of Object.keys(merge.shards)) {
+        for (const e of arr(merge.shards[area].entries)) {
+          if (e.firstSeen && e.firstSeen === e.lastSeen && e.status === 'unmapped') report.newIds.push(e.id);
+        }
+      }
+    } catch (_) {}
+    try { fs.writeFileSync(SWEEP_REPORT, JSON.stringify(report, null, 2) + '\n', 'utf8'); } catch (_) {}
+
+    log('sweep done — created ' + merge.created + ', updated ' + merge.updated + ', missing ' + merge.missing.length);
+    log('  static: ' + counts.command + ' commands · ' + counts.route + ' routes (' + (counts._routeMatched || counts.route) + ' matched / ' + (counts._routeGuards || '?') + ' method-guards) · ' + counts.event + ' events · ' + counts.state + ' states');
+    if (!staticOnly) log('  live: ' + (counts.ui || 0) + ' distinct UI elements across ' + statesWalked.length + ' states');
+    log('  report: ' + reportRel);
+    return merge.missing.length ? 1 : 0;
+  }
+
+  // ---- --status ----
+  function runStatus() {
+    const shards = loadShards();
+    const derived = carto.deriveStatus(shards);
+    const sha = gitShell().head();
+    const date = nowIsoReal();
+
+    // regenerate ATLAS.md
+    try {
+      ensureDir(path.dirname(ATLAS_MD));
+      fs.writeFileSync(ATLAS_MD, carto.renderAtlasMd(derived, { date, sha }) + '\n', 'utf8');
+      log('wrote ' + path.relative(REPO, ATLAS_MD).replace(/\\/g, '/'));
+    } catch (e) { errlog('could not write ATLAS.md: ' + (e && e.message || e)); }
+
+    // update the Cartographer STATUS row (splice or insert-after-Janitor)
+    const isoTime = new Date().toISOString().slice(0, 16).replace('T', ' ') + 'Z';
+    const row = carto.statusRow(derived, { isoTime, sha, gauge: derived.markdown, unmapped: derived.queue.unmapped });
+    try {
+      const existing = fs.readFileSync(STATUS_FILE, 'utf8');
+      const { markdown, replaced, inserted } = carto.renderStatus(existing, row);
+      if (replaced || inserted) { fs.writeFileSync(STATUS_FILE, markdown, 'utf8'); log('STATUS.md Cartographer row ' + (replaced ? 'updated' : 'inserted')); }
+      else errlog('WARNING: no crew table / Janitor row in ' + STATUS_FILE + '; STATUS not updated');
+    } catch (e) { errlog('WARNING: could not update STATUS.md: ' + (e && e.message || e)); }
+
+    // print the convergence report
+    const L = [];
+    L.push('Station Atlas — ' + derived.markdown);
+    L.push('  by status: ' + Object.keys(derived.byStatus).map(k => k + '=' + derived.byStatus[k]).join(' · '));
+    L.push('  queue: unmapped=' + derived.queue.unmapped + ' · stale=' + derived.queue.stale);
+    L.push('  per area:');
+    for (const area of derived.areas) {
+      const a = derived.byArea[area];
+      L.push('    ' + area.padEnd(9) + ' total ' + a.total + ' | unmapped ' + a.unmapped + ' mapped ' + a.mapped + ' audited ' + a.audited + ' perfected ' + a.perfected + ' stale ' + a.stale + ' missing ' + a.missing);
+    }
+    console.log(L.join('\n'));
+    return 0;
+  }
+
+  // ---- arg parse + dispatch ----
+  (async () => {
+    const argv = process.argv.slice(2);
+    const wantSweep = argv.includes('--sweep');
+    const wantStatus = argv.includes('--status');
+    const staticOnly = argv.includes('--static-only');
+
+    if (wantStatus && !wantSweep) { process.exit(runStatus()); }
+    else if (wantSweep) { process.exit(await runSweep(staticOnly)); }
+    else {
+      console.error('usage: node scripts/qa/cartographer.mjs [--sweep [--static-only]] [--status]');
+      process.exit(1);
+    }
+  })().catch(e => { errlog('FATAL: ' + (e && e.stack || e)); try { fileBlocked('FATAL: ' + (e && e.message || e), SWEEP_LOG); } catch (_) {} process.exit(2); });
+}

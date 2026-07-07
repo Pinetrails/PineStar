@@ -146,6 +146,20 @@ promise?" (sibling of "where's its UI?").
 - **EL-4 · Installed-app weekly smoke** — CDP-attach to the installed exe and run the parity
   sweep there; the dev sidecar can never see the WebView2-cache class. Session task, weekly.
 
+## Atlas — Perfectionist area claims (one session, one area)
+
+The Station Atlas (`qa/atlas/`) is a registry of every surface element; Perfectionist sessions
+(`loops/perfectionist.md`) drive each to `perfected`. **Concurrency law** (`docs/MISTAKES.md` #4 +
+`qa/atlas/README.md`): one session claims one area at a time. Before working an area, claim it here
+as `IN PROGRESS — <lane> · <area>`; release it (delete the line) when the batch commits. Never work
+an area another session has claimed. Priority: escapes-adjacent first, then
+`system → crew → work → build → world → commands → routes → events`; stale before unmapped.
+
+Gauge: `npm run qa:atlas:status`. Seed sweep 2026-07-07: **1245 entries, 0 perfected (all unmapped)** —
+the whole surface is the queue. Areas: system, crew, work, build, world, commands, routes, events, props.
+
+_Active claims: (none yet)._
+
 ## Parked product decisions (need Andrew, don't guess)
 
 - `fullOffice()` autonomous prop placement vs. hand-placed only.

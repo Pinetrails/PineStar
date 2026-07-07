@@ -1,0 +1,262 @@
+/* node test/qa-cartographer.test.js — the Station Atlas MAPPER's pure core (the perfection-loop
+   machine's script half), fed a controllable clock + a fake injected git (zero disk, zero browser,
+   zero real git). Asserts the station law made mechanical:
+     (a) sweep merge classification — new element -> skeleton (correct id/area/status), existing ->
+         lastSeen refreshed + session-owned fields UNTOUCHED, vanished (of a swept kind) -> missing:true
+         + a dead-entry finding routed to the ledger-ready findings list.
+     (b) id slugging determinism + stable id sort within a shard.
+     (c) staleness derivation — fake git returns output -> effective 'stale'; empty -> 'perfected'/fresh.
+     (d) schema validation rejects a malformed entry LOUDLY (throws, naming the entry).
+     (e) STATUS row splice — replaced when the row exists, inserted after Janitor when it doesn't.
+   Pure + deterministic — every timestamp comes from the injected clock, never Date.now(). */
+'use strict';
+const A = require('./_assert.js');
+const { makeCartographer, slug, areaOfState, AREAS, STATUSES } = require('../scripts/qa/cartographer.mjs');
+
+// a fixed clock so firstSeen/lastSeen are deterministic ISO strings.
+let clk = Date.UTC(2026, 6, 7, 12, 0, 0);          // 2026-07-07T12:00:00.000Z
+const clock = { now: () => clk };
+const ISO0 = new Date(clk).toISOString();
+
+// a fake injected git: logSince returns whatever we stage per (sha) — non-empty => the files moved.
+function fakeGit(moved) {
+  return { logSince: (sha, files) => (moved && moved[sha]) ? moved[sha] : '' };
+}
+
+// build a shards map { area -> { area, updatedAt, entries[] } } from a flat entry list.
+function shardsFrom(entries) {
+  const shards = {};
+  for (const e of (entries || [])) {
+    const a = e.area;
+    (shards[a] || (shards[a] = { area: a, updatedAt: ISO0, entries: [] })).entries.push(e);
+  }
+  return shards;
+}
+
+// a fully-formed session-owned entry (as a human would leave it after auditing).
+const fullEntry = (over) => Object.assign({
+  id: 'ui/system/bb-recruit', kind: 'ui', area: 'system', name: 'RECRUIT',
+  selector: '#bb-recruit', state: 'crew-recruit',
+  purpose: 'opens the recruitment bay', promise: 'click -> bay overlay opens',
+  wiring: { files: ['frontend/js/navdock.js'], events: [] }, coverage: [{ kind: 'journey', ref: 'J1' }],
+  status: 'perfected', auditedAt: { sha: 'abc1234', date: ISO0 }, findings: [],
+  firstSeen: ISO0, lastSeen: ISO0, missing: false
+}, over || {});
+
+// ---- (b) id slugging determinism + stable sort ----
+{
+  A.eq(slug('#bb-recruit'), 'bb-recruit', 'slug strips leading # and lowercases');
+  A.eq(slug('POST /api/run'), 'post-api-run', 'slug collapses spaces+slashes to single dashes');
+  A.eq(slug('  Weird__Name!!  '), 'weird-name', 'slug trims + collapses punctuation runs');
+  A.eq(slug('POST /api/run'), slug('POST /api/run'), 'slug is deterministic (same input, same output)');
+
+  const carto = makeCartographer({ clock, git: fakeGit() });
+  A.eq(carto.entryId({ kind: 'ui', area: 'crew', key: '#bb-recruit' }), 'ui/crew/bb-recruit', 'ui id carries area + slug');
+  A.eq(carto.entryId({ kind: 'command', area: 'commands', key: 'help' }), 'command/help', 'command id is kind/slug');
+  A.eq(carto.entryId({ kind: 'route', area: 'routes', key: 'GET-/api/version' }), 'route/get-api-version', 'route id slugs method+path');
+  A.eq(carto.entryId({ kind: 'event', area: 'events', key: 'agent.run.start' }), 'event/agent-run-start', 'event id slugs the type');
+
+  // stable sort: merge two out-of-order new elements, assert the shard comes out id-sorted.
+  const shards = {};
+  const harvest = {
+    elements: [
+      { id: 'command/zebra', kind: 'command', area: 'commands', name: '/zebra' },
+      { id: 'command/alpha', kind: 'command', area: 'commands', name: '/alpha' }
+    ],
+    sweptKinds: ['command'], reportRel: '.uiatlas/sweep-report.json'
+  };
+  const res = carto.mergeSweep(shards, harvest);
+  const ids = res.shards.commands.entries.map(e => e.id);
+  A.eq(ids, ['command/alpha', 'command/zebra'], 'entries are stable-sorted by id (clean diffs)');
+}
+
+// ---- (a) sweep merge classification: new / existing-untouched / vanished ----
+{
+  const carto = makeCartographer({ clock, git: fakeGit() });
+
+  // seed: one fully-audited UI entry + one command that WILL vanish this sweep.
+  const seedUi = fullEntry();
+  const seedCmd = { id: 'command/oldcmd', kind: 'command', area: 'commands', name: '/oldcmd',
+    purpose: 'p', promise: 'q', wiring: { files: [], events: [] }, coverage: [], status: 'mapped',
+    auditedAt: null, findings: [], firstSeen: ISO0, lastSeen: ISO0, missing: false };
+  const shards = shardsFrom([seedUi, seedCmd]);
+
+  // advance the clock so lastSeen refresh is observable.
+  clk += 60000; const ISO1 = new Date(clk).toISOString();
+
+  const harvest = {
+    elements: [
+      // existing UI element re-seen with a NEW harvested label (script-owned field refresh only).
+      { id: 'ui/system/bb-recruit', kind: 'ui', area: 'system', name: 'RECRUIT (relabeled)', selector: '#bb-recruit', state: 'sys-something' },
+      // a brand-new command -> skeleton.
+      { id: 'command/newcmd', kind: 'command', area: 'commands', name: '/newcmd — a new one' }
+      // NOTE: command/oldcmd is absent this sweep -> should be marked missing (command IS a swept kind).
+    ],
+    sweptKinds: ['command', 'ui'], reportRel: '.uiatlas/sweep-report.json'
+  };
+  const res = carto.mergeSweep(shards, harvest);
+
+  // new element -> skeleton with correct id/area/status + timestamps.
+  const newEntry = res.shards.commands.entries.find(e => e.id === 'command/newcmd');
+  A.ok(!!newEntry, 'new element appended as a skeleton');
+  A.eq(newEntry.status, 'unmapped', 'a fresh skeleton is status:unmapped (the only status the script writes)');
+  A.eq(newEntry.area, 'commands', 'skeleton carries the right area');
+  A.eq(newEntry.firstSeen, ISO1, 'skeleton firstSeen stamped from the injected clock');
+  A.eq(newEntry.lastSeen, ISO1, 'skeleton lastSeen == firstSeen on creation');
+  A.eq(newEntry.purpose, '', 'skeleton purpose is empty (session-owned, seeded blank)');
+  A.eq(res.created, 1, 'exactly one entry created');
+
+  // existing element -> lastSeen refreshed, session-owned fields UNTOUCHED.
+  const kept = res.shards.system.entries.find(e => e.id === 'ui/system/bb-recruit');
+  A.eq(kept.lastSeen, ISO1, 'existing entry lastSeen refreshed to now');
+  A.eq(kept.name, 'RECRUIT (relabeled)', 'script-owned name refreshed from the harvest');
+  A.eq(kept.state, 'crew-recruit', 'FIRST-seen state preserved (not overwritten by a later state)');
+  A.eq(kept.purpose, 'opens the recruitment bay', 'session-owned purpose UNTOUCHED by the sweep');
+  A.eq(kept.status, 'perfected', 'session-owned status UNTOUCHED (never regressed by the script)');
+  A.eq(JSON.stringify(kept.auditedAt), JSON.stringify({ sha: 'abc1234', date: ISO0 }), 'session-owned auditedAt UNTOUCHED');
+  A.eq(JSON.stringify(kept.coverage), JSON.stringify([{ kind: 'journey', ref: 'J1' }]), 'session-owned coverage UNTOUCHED');
+
+  // vanished element -> missing:true + a dead-entry finding routed to the ledger-ready list.
+  const gone = res.shards.commands.entries.find(e => e.id === 'command/oldcmd');
+  A.eq(gone.missing, true, 'a swept-kind entry not seen this sweep is marked missing:true');
+  A.eq(res.missing.length, 1, 'one missing id reported');
+  A.eq(res.missing[0], 'command/oldcmd', 'the vanished id is reported');
+  A.eq(res.findings.length, 1, 'exactly ONE dead-entry finding filed (skeletons are NOT findings)');
+  const f = res.findings[0];
+  A.eq(f.crew, 'Cartographer', 'finding routed to the Cartographer crew');
+  A.eq(f.checkId, 'dead-entry', 'finding checkId is dead-entry');
+  A.eq(f.subject, 'command/oldcmd', 'finding subject is the vanished id');
+  A.eq(f.severity, 'P2', 'a dead entry is P2 (informational reconcile, never a blocker)');
+  A.ok(Array.isArray(f.evidence) && f.evidence.length > 0, 'finding carries an evidence path (evidence law)');
+
+  // a static-only re-sweep (sweptKinds without 'ui') must NOT mark a UI entry missing even if unseen.
+  clk += 60000;
+  const res2 = carto.mergeSweep(shardsFrom([fullEntry()]), { elements: [], sweptKinds: ['command'], reportRel: 'r' });
+  const ui2 = res2.shards.system.entries.find(e => e.id === 'ui/system/bb-recruit');
+  A.eq(ui2.missing, false, 'a UI entry is NOT marked missing by a sweep that did not cover the ui kind');
+  A.eq(res2.findings.length, 0, 'no dead-entry finding for an unswept kind');
+
+  // resurrection: a previously-missing entry re-seen clears the flag.
+  const missingSeed = fullEntry({ missing: true });
+  const res3 = carto.mergeSweep(shardsFrom([missingSeed]), {
+    elements: [{ id: 'ui/system/bb-recruit', kind: 'ui', area: 'system', name: 'RECRUIT', selector: '#bb-recruit', state: 'sys-x' }],
+    sweptKinds: ['ui'], reportRel: 'r'
+  });
+  A.eq(res3.shards.system.entries[0].missing, false, 'a re-seen entry has its missing flag cleared');
+}
+
+// ---- (c) staleness derivation: git output -> stale; empty -> fresh/perfected ----
+{
+  // fresh: git returns nothing -> the perfected entry stays perfected, and is counted as perfected-fresh.
+  const fresh = makeCartographer({ clock, git: fakeGit() });
+  const dFresh = fresh.deriveStatus(shardsFrom([fullEntry()]));
+  A.eq(dFresh.byStatus.perfected, 1, 'a perfected entry whose files did not move stays perfected');
+  A.eq(dFresh.byStatus.stale, 0, 'nothing stale when git reports no movement');
+  A.eq(dFresh.perfectedFresh, 1, 'perfected-fresh count reflects the fresh entry');
+  A.eq(dFresh.total, 1, 'total counts the entry');
+  A.ok(/PERFECTED-fresh 1 \/ total 1 \(100%\)/.test(dFresh.markdown), 'gauge renders 100% when the sole entry is perfected+fresh');
+
+  // stale: git returns a commit line for the audited sha -> the entry is effectively STALE, not perfected.
+  const stale = makeCartographer({ clock, git: fakeGit({ 'abc1234': 'deadbee some later commit touched the file' }) });
+  const dStale = stale.deriveStatus(shardsFrom([fullEntry()]));
+  A.eq(dStale.byStatus.perfected, 0, 'a perfected entry whose files MOVED is no longer counted perfected');
+  A.eq(dStale.byStatus.stale, 1, 'the moved-files entry is effectively stale');
+  A.eq(dStale.stale.length, 1, 'the stale id is reported');
+  A.eq(dStale.stale[0], 'ui/system/bb-recruit', 'the correct id is flagged stale');
+  A.eq(dStale.perfectedFresh, 0, 'a stale entry does not count as perfected-fresh');
+  A.eq(dStale.queue.stale, 1, 'stale feeds the re-queue count');
+
+  // an entry with NO auditedAt sha can never be stale (no baseline to compare against).
+  const noSha = makeCartographer({ clock, git: fakeGit({ 'abc1234': 'x' }) });
+  const dNo = noSha.deriveStatus(shardsFrom([fullEntry({ auditedAt: null, status: 'mapped' })]));
+  A.eq(dNo.byStatus.stale, 0, 'no auditedAt sha -> never stale');
+  A.eq(dNo.byStatus.mapped, 1, 'a mapped entry is counted as mapped');
+
+  // a missing entry is counted separately and never as perfected.
+  const dMiss = fresh.deriveStatus(shardsFrom([fullEntry({ missing: true })]));
+  A.eq(dMiss.byStatus.missing, 1, 'a missing entry is counted in the missing bucket');
+  A.eq(dMiss.byStatus.perfected, 0, 'a missing entry is not counted perfected even if its status says so');
+}
+
+// ---- (d) schema validation rejects a malformed entry LOUDLY ----
+{
+  const carto = makeCartographer({ clock, git: fakeGit() });
+  A.notThrows(() => carto.validateEntry(fullEntry(), 'areas/system.json#ui/system/bb-recruit'), 'a well-formed entry validates clean');
+
+  // bad kind
+  A.throws(() => carto.validateEntry(fullEntry({ kind: 'widget' }), 'system.json#bad'), 'a bad kind throws');
+  // bad area
+  A.throws(() => carto.validateEntry(fullEntry({ area: 'nowhere' }), 'system.json#bad'), 'a bad area throws');
+  // bad status
+  A.throws(() => carto.validateEntry(fullEntry({ status: 'shipped' }), 'system.json#bad'), 'a bad status throws');
+  // missing id
+  A.throws(() => carto.validateEntry(fullEntry({ id: '' }), 'system.json#noid'), 'a missing id throws');
+  // missing name
+  A.throws(() => carto.validateEntry(fullEntry({ name: '' }), 'system.json#noname'), 'a missing name throws');
+  // the error names the location (file+id) so a corrupt shard is greppable.
+  let msg = '';
+  try { carto.validateEntry(fullEntry({ kind: 'widget' }), 'areas/system.json#ui/system/bb-recruit'); }
+  catch (e) { msg = e.message; }
+  A.ok(/areas\/system\.json#ui\/system\/bb-recruit/.test(msg), 'the validation error names the file+id location');
+
+  // the merge validates the SHAPE it would mint (a garbage harvest element is caught, not silently persisted).
+  A.throws(() => carto.mergeSweep({}, { elements: [{ id: 'x/y', kind: 'bogus', area: 'commands', name: 'n' }], sweptKinds: [], reportRel: 'r' }),
+    'the merge rejects a harvest element with a bad kind');
+}
+
+// ---- (e) STATUS row splice: replaced vs inserted-after-Janitor ----
+{
+  const carto = makeCartographer({ clock, git: fakeGit() });
+  const derived = carto.deriveStatus(shardsFrom([fullEntry()]));
+  const row = carto.statusRow(derived, { isoTime: '2026-07-07 12:00Z', sha: 'abc1234def', gauge: derived.markdown, unmapped: 0 });
+  A.ok(/^\| Cartographer \|/.test(row), 'the row starts with the Cartographer cell');
+  A.ok(/PERFECTED-fresh/.test(row), 'the row carries the gauge');
+
+  // REPLACED: an existing Cartographer row is spliced in place, other rows byte-preserved.
+  const withRow = [
+    '| Crew | Q | Last run | Result | Open |',
+    '| --- | --- | --- | --- | --- |',
+    '| Janitor | rot? | 2026-07-01 | clean | 0 |',
+    '| Cartographer | old | 2026-07-01 | OLD | 9 |',
+    '| Overseer | dig | 2026-07-01 | — | — |'
+  ].join('\n');
+  const r1 = carto.renderStatus(withRow, row);
+  A.eq(r1.replaced, true, 'an existing Cartographer row is REPLACED');
+  A.eq(r1.inserted, false, 'not inserted when it already exists');
+  A.ok(r1.markdown.indexOf('| Cartographer | old |') < 0, 'the old row is gone');
+  A.ok(r1.markdown.indexOf(row) >= 0, 'the fresh row is present');
+  A.ok(/\| Overseer \| dig \|/.test(r1.markdown), 'other rows preserved byte-for-byte');
+
+  // INSERTED: no Cartographer row -> inserted right after the Janitor row.
+  const noRow = [
+    '| Crew | Q | Last run | Result | Open |',
+    '| --- | --- | --- | --- | --- |',
+    '| Janitor | rot? | 2026-07-01 | clean | 0 |',
+    '| Overseer | dig | 2026-07-01 | — | — |'
+  ].join('\n');
+  const r2 = carto.renderStatus(noRow, row);
+  A.eq(r2.replaced, false, 'nothing to replace');
+  A.eq(r2.inserted, true, 'the row is INSERTED when absent');
+  const lines = r2.markdown.split('\n');
+  const jIdx = lines.findIndex(l => /^\|\s*Janitor\s*\|/.test(l));
+  A.ok(/^\|\s*Cartographer\s*\|/.test(lines[jIdx + 1]), 'the new row sits immediately after the Janitor row');
+
+  // NEITHER: no crew table at all -> returned unchanged, flagged for the caller to warn.
+  const r3 = carto.renderStatus('# just a heading\n\nno table here\n', row);
+  A.eq(r3.replaced, false, 'no table -> not replaced');
+  A.eq(r3.inserted, false, 'no table -> not inserted');
+  A.eq(r3.markdown, '# just a heading\n\nno table here\n', 'no-table input returned unchanged');
+}
+
+// ---- (f) sanity: areaOfState mapping + exported taxonomy ----
+{
+  A.eq(areaOfState('ingame'), 'world', 'ingame -> world');
+  A.eq(areaOfState('sys-settings'), 'system', 'sys-* -> system');
+  A.eq(areaOfState('crew-recruit'), 'crew', 'crew-* -> crew');
+  A.eq(areaOfState('work-tasks'), 'work', 'work-* -> work');
+  A.eq(areaOfState('build-station'), 'build', 'build-* -> build');
+  A.ok(AREAS.includes('commands') && AREAS.includes('routes') && AREAS.includes('events') && AREAS.includes('props'), 'the static areas are in the taxonomy');
+  A.ok(STATUSES.length === 4 && STATUSES[0] === 'unmapped' && STATUSES[3] === 'perfected', 'the status lifecycle is unmapped..perfected');
+}
+
+A.report('qa-cartographer.test');

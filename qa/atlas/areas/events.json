@@ -1,0 +1,1146 @@
+{
+  "area": "events",
+  "updatedAt": "2026-07-07T08:09:25.408Z",
+  "entries": [
+    {
+      "id": "event/agent-compact",
+      "kind": "event",
+      "area": "events",
+      "name": "agent.compact",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "event/agent-cost",
+      "kind": "event",
+      "area": "events",
+      "name": "agent.cost",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "event/agent-reasoning",
+      "kind": "event",
+      "area": "events",
+      "name": "agent.reasoning",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "event/agent-run-end",
+      "kind": "event",
+      "area": "events",
+      "name": "agent.run.end",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "event/agent-run-error",
+      "kind": "event",
+      "area": "events",
+      "name": "agent.run.error",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "event/agent-run-start",
+      "kind": "event",
+      "area": "events",
+      "name": "agent.run.start",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "event/agent-token",
+      "kind": "event",
+      "area": "events",
+      "name": "agent.token",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "event/agent-tool-call",
+      "kind": "event",
+      "area": "events",
+      "name": "agent.tool_call",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "event/agent-tool-result",
+      "kind": "event",
+      "area": "events",
+      "name": "agent.tool_result",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "event/budget-threshold",
+      "kind": "event",
+      "area": "events",
+      "name": "budget.threshold",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "event/capdenied",
+      "kind": "event",
+      "area": "events",
+      "name": "capdenied",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "event/channel-connect",
+      "kind": "event",
+      "area": "events",
+      "name": "channel.connect",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "event/channel-delivery",
+      "kind": "event",
+      "area": "events",
+      "name": "channel.delivery",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "event/channel-inbound",
+      "kind": "event",
+      "area": "events",
+      "name": "channel.inbound",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "event/chat",
+      "kind": "event",
+      "area": "events",
+      "name": "chat",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "event/checkpoint-created",
+      "kind": "event",
+      "area": "events",
+      "name": "checkpoint.created",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "event/checkpoint-restored",
+      "kind": "event",
+      "area": "events",
+      "name": "checkpoint.restored",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "event/cost-estimate",
+      "kind": "event",
+      "area": "events",
+      "name": "cost.estimate",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "event/crew-summon-request",
+      "kind": "event",
+      "area": "events",
+      "name": "crew.summon.request",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "event/cron-fire",
+      "kind": "event",
+      "area": "events",
+      "name": "cron.fire",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "event/cron-result",
+      "kind": "event",
+      "area": "events",
+      "name": "cron.result",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "event/cron-skipped",
+      "kind": "event",
+      "area": "events",
+      "name": "cron.skipped",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "event/cron-tick",
+      "kind": "event",
+      "area": "events",
+      "name": "cron.tick",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "event/day",
+      "kind": "event",
+      "area": "events",
+      "name": "day",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "event/deliverable",
+      "kind": "event",
+      "area": "events",
+      "name": "deliverable",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "event/flagged",
+      "kind": "event",
+      "area": "events",
+      "name": "flagged",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "event/hazard",
+      "kind": "event",
+      "area": "events",
+      "name": "hazard",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "event/intel",
+      "kind": "event",
+      "area": "events",
+      "name": "intel",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "event/iteration-refunded",
+      "kind": "event",
+      "area": "events",
+      "name": "iteration.refunded",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "event/level",
+      "kind": "event",
+      "area": "events",
+      "name": "level",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "event/memory-feedback",
+      "kind": "event",
+      "area": "events",
+      "name": "memory.feedback",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "event/memory-forget",
+      "kind": "event",
+      "area": "events",
+      "name": "memory.forget",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "event/memory-proposed",
+      "kind": "event",
+      "area": "events",
+      "name": "memory.proposed",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "event/memory-recall",
+      "kind": "event",
+      "area": "events",
+      "name": "memory.recall",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "event/memory-used",
+      "kind": "event",
+      "area": "events",
+      "name": "memory.used",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "event/memory-write",
+      "kind": "event",
+      "area": "events",
+      "name": "memory.write",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "event/notify",
+      "kind": "event",
+      "area": "events",
+      "name": "notify",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "event/object-place",
+      "kind": "event",
+      "area": "events",
+      "name": "object.place",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "event/object-reclaim",
+      "kind": "event",
+      "area": "events",
+      "name": "object.reclaim",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "event/objectives",
+      "kind": "event",
+      "area": "events",
+      "name": "objectives",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "event/parcel",
+      "kind": "event",
+      "area": "events",
+      "name": "parcel",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "event/party",
+      "kind": "event",
+      "area": "events",
+      "name": "party",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "event/permission-prompt",
+      "kind": "event",
+      "area": "events",
+      "name": "permission.prompt",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "event/permission-response",
+      "kind": "event",
+      "area": "events",
+      "name": "permission.response",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "event/provider-fallback",
+      "kind": "event",
+      "area": "events",
+      "name": "provider.fallback",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "event/queue-status",
+      "kind": "event",
+      "area": "events",
+      "name": "queue.status",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "event/run-cancel",
+      "kind": "event",
+      "area": "events",
+      "name": "run.cancel",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "event/sale",
+      "kind": "event",
+      "area": "events",
+      "name": "sale",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "event/shell-bg-exit",
+      "kind": "event",
+      "area": "events",
+      "name": "shell.bg.exit",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "event/shell-exec",
+      "kind": "event",
+      "area": "events",
+      "name": "shell.exec",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "event/stats",
+      "kind": "event",
+      "area": "events",
+      "name": "stats",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "event/task",
+      "kind": "event",
+      "area": "events",
+      "name": "task",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "event/tool-args-repaired",
+      "kind": "event",
+      "area": "events",
+      "name": "tool.args.repaired",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "event/verify-result",
+      "kind": "event",
+      "area": "events",
+      "name": "verify.result",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "event/workitem-delivered",
+      "kind": "event",
+      "area": "events",
+      "name": "workitem.delivered",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "event/workitem-placed",
+      "kind": "event",
+      "area": "events",
+      "name": "workitem.placed",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "event/workitem-superseded",
+      "kind": "event",
+      "area": "events",
+      "name": "workitem.superseded",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "event/workshop-built",
+      "kind": "event",
+      "area": "events",
+      "name": "workshop.built",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "event/workshop-decided",
+      "kind": "event",
+      "area": "events",
+      "name": "workshop.decided",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    },
+    {
+      "id": "event/worldchange",
+      "kind": "event",
+      "area": "events",
+      "name": "worldChange",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "missing": false
+    }
+  ]
+}

@@ -22,6 +22,7 @@ own runner (Q1 Guardian, Q2 Beginner Run, Q4 Janitor) or the Overseer digest; th
 | Visual Auditor | Is the rendered game coherent? (needs eyes) | — (local /loop; not headless) | — | 0 |
 | Overseer | What broke today, what needs Andrew? | 2026-07-01 (digest rendered) | 0 P0 · 106 P2 | — |
 | Janitor | What's rotting in the workshop? | 2026-07-01 | 106 findings | 106 |
+| Cartographer | Is every surface element mapped and perfected? | 2026-07-07 08:18Z @ 0e41d845 | PERFECTED-fresh 0 / total 1245 (0%) | 1245 |
 
 _The rows above are the Q5 **movie test** (2026-07-01): one real cycle of every headless
 crew member against trunk `ef47f9d`. Guardian ran all four gates GREEN (Truth Auditor is the
@@ -39,10 +40,11 @@ Loops must not collide — multiple sidecars may run at once. Each crew boots si
 
 | Range | Owner |
 | --- | --- |
+| 8920–8929 | Cartographer (live DOM sweep; see `qa/atlas/README.md`) |
 | 8930–8939 | Visual Auditor (documented; see `scripts/VISUAL_AUDITOR.md`) |
 | 8940–8949 | Green Guardian |
 | 8950–8959 | Beginner Run |
-| 8960+ | Ad-hoc / manual |
+| 8960+ | Ad-hoc / manual (Perfectionist sessions) |
 
 ## Green Guardian (lane Q1)
 
