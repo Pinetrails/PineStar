@@ -20,6 +20,7 @@ Every loop obeys AGENTS.md (worktree protocol) and appends a terse dated digest 
 | L6 | Adversarial Reviewer | adversarial-reviewer.md | 6h | own worktree | half-baked happy-path features |
 | L7 | Debt Burner | debt-burner.md | daily | own worktree | complexity creep in hotfiles |
 | L8 | Security Sweep | security-sweep.md | weekly | own worktree | leaked secrets/PII, unsafe surfaces |
+| L9 | Perfectionist | perfectionist.md | self-paced | own worktree | un-mapped/imperfect surface (drives the Station Atlas to `perfected`) |
 
 ## Priority if running fewer sessions
 Minimum viable set: **L1 + L3** (nothing merges wrong, nothing stays broken).
