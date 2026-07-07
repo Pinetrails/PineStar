@@ -421,8 +421,11 @@ leash-capped. Deliverable shape = "while you were gone I finished X — approve 
 **Lane queue (claim in-file before building; shared/events.js changes are additive-only via its
 owner):**
 
-_Claims: NS-0 IN PROGRESS — agent/night-core · NS-1 IN PROGRESS — agent/night-shift
-(Fable-orchestrated wave 1, 2026-07-07)._
+_Claims: NS-3 IN PROGRESS — agent/night-hands · NS-4 IN PROGRESS — agent/night-report
+(Fable-orchestrated wave 2, 2026-07-07). NS-2 queued behind NS-3 (same beat-pipeline seam).
+DONE: NS-0 MERGED (night-core — heartbeat leases + skip telemetry + decision ledger, gates
+264+http green) · NS-1 MERGED (night-shift — server-owned driver, enforced leash, restart
+resume, status route; KNOWN: cold-dossier beat spends leash pre-model-call → NS-2 fixes)._
 
 - **NS-0 · truth first (small, immediate):** (a) cron lease HEARTBEAT — renew while the run is
   provably alive, reclaim only on dead heartbeat; kills the duplicate-fire storm (test: run
