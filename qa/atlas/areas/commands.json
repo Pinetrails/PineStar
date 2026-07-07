@@ -1,6 +1,6 @@
 {
   "area": "commands",
-  "updatedAt": "2026-07-07T21:06:49.519Z",
+  "updatedAt": "2026-07-07T22:40:51.000Z",
   "entries": [
     {
       "id": "command/agents",
@@ -29,11 +29,11 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "393e8cdb92799ff1497ad40b1c61e2a59bc66c81",
-        "date": "2026-07-07T21:55:44.491Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
-      "notes": "Live-proven via .uiatlas/commands-evidence/input-path-proof.json — '/agents' → 'Agents: NOVA. Streams: 1; running: none.' (truthful roster).",
+      "notes": "Live-proven via .uiatlas/commands-evidence/input-path-proof.json — '/agents' → 'Agents: NOVA. Streams: 1; running: none.' (truthful roster). [wave-7 final-a re-stale: re-proven via /api/slash/dispatch on :8966. Evidence http-result.json.]",
       "firstSeen": "2026-07-07T08:09:25.408Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false
@@ -194,11 +194,11 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "393e8cdb92799ff1497ad40b1c61e2a59bc66c81",
-        "date": "2026-07-07T21:55:44.491Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
-      "notes": "Live-proven via input-path-proof.json + HTTP dispatch (http-dispatch.txt): /clear resolves to {action:clear} and dispatches through the composer without echoing the slash as chat.",
+      "notes": "Live-proven via input-path-proof.json + HTTP dispatch (http-dispatch.txt): /clear resolves to {action:clear} and dispatches through the composer without echoing the slash as chat. [wave-7 final-a re-stale: re-proven via /api/slash/dispatch on :8966. Evidence http-result.json.]",
       "firstSeen": "2026-07-07T08:09:25.408Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false
@@ -390,11 +390,11 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "393e8cdb92799ff1497ad40b1c61e2a59bc66c81",
-        "date": "2026-07-07T21:55:44.491Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
-      "notes": "HTTP dispatch proven (http-dispatch.txt): '/goal ship it' → {action:goal, args:'ship it'}; args flow to the GoalLoop create path. Live composer dispatch confirmed (input-path-proof.json).",
+      "notes": "HTTP dispatch proven (http-dispatch.txt): '/goal ship it' → {action:goal, args:'ship it'}; args flow to the GoalLoop create path. Live composer dispatch confirmed (input-path-proof.json). [wave-7 final-a re-stale: re-proven via /api/slash/dispatch on :8966. Evidence http-result.json.]",
       "firstSeen": "2026-07-07T08:09:25.408Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false
@@ -426,11 +426,11 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "393e8cdb92799ff1497ad40b1c61e2a59bc66c81",
-        "date": "2026-07-07T21:55:44.491Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
-      "notes": "Live-proven via input-path-proof.json: '/help' → 'Commands - /retry, /stop, /copy, /help, /new, /branch, /status, /usage, plus 50 recipe commands. Type \"/\" to browse.' — honest, catalog-derived.",
+      "notes": "Live-proven via input-path-proof.json: '/help' → 'Commands - /retry, /stop, /copy, /help, /new, /branch, /status, /usage, plus 50 recipe commands. Type \"/\" to browse.' — honest, catalog-derived. [wave-7 final-a re-stale: re-proven via /api/slash/dispatch on :8966. Evidence http-result.json.]",
       "firstSeen": "2026-07-07T08:09:25.408Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false
@@ -462,11 +462,11 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "393e8cdb92799ff1497ad40b1c61e2a59bc66c81",
-        "date": "2026-07-07T21:55:44.491Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
-      "notes": "Live-proven via input-path-proof.json: '/history 5' → 'No conversation history in this workstream yet.' (honest empty state on the seeded fresh stream).",
+      "notes": "Live-proven via input-path-proof.json: '/history 5' → 'No conversation history in this workstream yet.' (honest empty state on the seeded fresh stream). [wave-7 final-a re-stale: re-proven via /api/slash/dispatch on :8966. Evidence http-result.json.]",
       "firstSeen": "2026-07-07T08:09:25.408Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false
@@ -563,13 +563,13 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "393e8cdb92799ff1497ad40b1c61e2a59bc66c81",
-        "date": "2026-07-07T21:55:44.491Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [
         "070e8aca"
       ],
-      "notes": "Live-proven via input-path-proof.json: '/model anthropic/claude-opus-4' (palette open on first token) → 'Model set to anthropic/claude-opus-4 for future runs.' + subsequent /status & /whoami report the new model; userEchoedSlash=false. ROSTER LAW verified: app.js applyAgentConfig sets agent.model (per-agent) + persists, not per-chat. finding 070e8aca (P1) records that the INPUT path (palette->dispatch) has no BEHAVIORAL guard — only source-grep tests — the seam that escaped as the ARGS bug; the promise's dispatch resolution IS machine-guarded by test/slash.test.js, so this entry reaches perfected with the residual input-path gap recorded per the EL-3 escape law.",
+      "notes": "Live-proven via input-path-proof.json: '/model anthropic/claude-opus-4' (palette open on first token) → 'Model set to anthropic/claude-opus-4 for future runs.' + subsequent /status & /whoami report the new model; userEchoedSlash=false. ROSTER LAW verified: app.js applyAgentConfig sets agent.model (per-agent) + persists, not per-chat. finding 070e8aca (P1) records that the INPUT path (palette->dispatch) has no BEHAVIORAL guard — only source-grep tests — the seam that escaped as the ARGS bug; the promise's dispatch resolution IS machine-guarded by test/slash.test.js, so this entry reaches perfected with the residual input-path gap recorded per the EL-3 escape law. [wave-7 final-a re-stale: re-proven via /api/slash/dispatch on :8966. Evidence http-result.json.]",
       "firstSeen": "2026-07-07T08:09:25.408Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false
@@ -601,11 +601,11 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "393e8cdb92799ff1497ad40b1c61e2a59bc66c81",
-        "date": "2026-07-07T21:55:44.491Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
-      "notes": "HTTP dispatch proven (http-dispatch.txt): '/new' and '/reset' both resolve to {action:new}; alias canonicalization verified. Shares the load()/create path proven by /clear live.",
+      "notes": "HTTP dispatch proven (http-dispatch.txt): '/new' and '/reset' both resolve to {action:new}; alias canonicalization verified. Shares the load()/create path proven by /clear live. [wave-7 final-a re-stale: re-proven via /api/slash/dispatch on :8966. Evidence http-result.json.]",
       "firstSeen": "2026-07-07T08:09:25.408Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false
@@ -830,11 +830,11 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "393e8cdb92799ff1497ad40b1c61e2a59bc66c81",
-        "date": "2026-07-07T21:55:44.491Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
-      "notes": "HTTP dispatch proven (http-dispatch.txt): '/retry' → {type:client, action:retry, args:''}. Client action retryLast wired in localSlashActions; live composer dispatch path proven via input-path-proof.json.",
+      "notes": "HTTP dispatch proven (http-dispatch.txt): '/retry' → {type:client, action:retry, args:''}. Client action retryLast wired in localSlashActions; live composer dispatch path proven via input-path-proof.json. [wave-7 final-a re-stale: re-proven via /api/slash/dispatch on :8966. Evidence http-result.json.]",
       "firstSeen": "2026-07-07T08:09:25.408Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false
@@ -926,11 +926,11 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "393e8cdb92799ff1497ad40b1c61e2a59bc66c81",
-        "date": "2026-07-07T21:55:44.491Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
-      "notes": "Live-proven via input-path-proof.json: '/status' → 'Status: idle on General (0 turns, 0 queued); model anthropic/claude-opus-4 via openrouter.' — reflects the model just set by /model (truthful telemetry).",
+      "notes": "Live-proven via input-path-proof.json: '/status' → 'Status: idle on General (0 turns, 0 queued); model anthropic/claude-opus-4 via openrouter.' — reflects the model just set by /model (truthful telemetry). [wave-7 final-a re-stale: re-proven via /api/slash/dispatch on :8966. Evidence http-result.json.]",
       "firstSeen": "2026-07-07T08:09:25.408Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false
@@ -990,11 +990,11 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "393e8cdb92799ff1497ad40b1c61e2a59bc66c81",
-        "date": "2026-07-07T21:55:44.491Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
-      "notes": "HTTP dispatch proven (http-dispatch.txt): '/stop' → {type:client, action:stop, args:''}. stopActive wired in localSlashActions (aborts fetch + Harness.cancel + pauses goal loop); live composer dispatch path proven via input-path-proof.json.",
+      "notes": "HTTP dispatch proven (http-dispatch.txt): '/stop' → {type:client, action:stop, args:''}. stopActive wired in localSlashActions (aborts fetch + Harness.cancel + pauses goal loop); live composer dispatch path proven via input-path-proof.json. [wave-7 final-a re-stale: re-proven via /api/slash/dispatch on :8966. Evidence http-result.json.]",
       "firstSeen": "2026-07-07T08:09:25.408Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false
@@ -1122,11 +1122,11 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "393e8cdb92799ff1497ad40b1c61e2a59bc66c81",
-        "date": "2026-07-07T21:55:44.491Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
-      "notes": "Live-proven via input-path-proof.json: '/tools' → 'Tools: compute (model.chat). Locked until placed: web, files, memory, terminal, image, spotify.' — truthful capability gating on the seeded (bare-floor) agent.",
+      "notes": "Live-proven via input-path-proof.json: '/tools' → 'Tools: compute (model.chat). Locked until placed: web, files, memory, terminal, image, spotify.' — truthful capability gating on the seeded (bare-floor) agent. [wave-7 final-a re-stale: re-proven via /api/slash/dispatch on :8966. Evidence http-result.json.]",
       "firstSeen": "2026-07-07T08:09:25.408Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false
@@ -1190,11 +1190,11 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "393e8cdb92799ff1497ad40b1c61e2a59bc66c81",
-        "date": "2026-07-07T21:55:44.491Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
-      "notes": "Live-proven via input-path-proof.json: '/usage' → 'Usage: lifetime 0 tokens, $0.000000, 0 calls. This stream: 0 tokens, $0.000000, 0 calls.' — honest zeros on a fresh seeded station, no fabricated spend.",
+      "notes": "Live-proven via input-path-proof.json: '/usage' → 'Usage: lifetime 0 tokens, $0.000000, 0 calls. This stream: 0 tokens, $0.000000, 0 calls.' — honest zeros on a fresh seeded station, no fabricated spend. [wave-7 final-a re-stale: re-proven via /api/slash/dispatch on :8966. Evidence http-result.json.]",
       "firstSeen": "2026-07-07T08:09:25.408Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false
@@ -1259,11 +1259,11 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "393e8cdb92799ff1497ad40b1c61e2a59bc66c81",
-        "date": "2026-07-07T21:55:44.491Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
-      "notes": "Live-proven via input-path-proof.json: '/voice status' → 'Voice: replies off, hands-free off, listening support yes, speech support yes.' — reflects real browser capability probes.",
+      "notes": "Live-proven via input-path-proof.json: '/voice status' → 'Voice: replies off, hands-free off, listening support yes, speech support yes.' — reflects real browser capability probes. [wave-7 final-a re-stale: re-proven via /api/slash/dispatch on :8966. Evidence http-result.json.]",
       "firstSeen": "2026-07-07T08:09:25.408Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false
@@ -1295,11 +1295,11 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "393e8cdb92799ff1497ad40b1c61e2a59bc66c81",
-        "date": "2026-07-07T21:55:44.491Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
-      "notes": "Live-proven via input-path-proof.json: '/whoami' → 'You are NOVA [agent] — orchestrator, Lv 1 (0 XP, 0% to Lv 2). Model: anthropic/claude-opus-4 via openrouter. Placed capabilities: none on the floor yet.' — matches the seeded roster + the model just set (truthful telemetry).",
+      "notes": "Live-proven via input-path-proof.json: '/whoami' → 'You are NOVA [agent] — orchestrator, Lv 1 (0 XP, 0% to Lv 2). Model: anthropic/claude-opus-4 via openrouter. Placed capabilities: none on the floor yet.' — matches the seeded roster + the model just set (truthful telemetry). [wave-7 final-a re-stale: re-proven via /api/slash/dispatch on :8966. Evidence http-result.json.]",
       "firstSeen": "2026-07-07T08:09:25.408Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false
