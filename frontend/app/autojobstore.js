@@ -154,7 +154,8 @@ const AutoJobStore = (() => {
       for (const pr of proposals) {
         if (!Dialogue.isOpen()) break;
         if (existsAmong(pr.title, live)) continue;   // already a live routine with this name — don't offer a dup
-        const choice = await Dialogue.node({ lines: AutoJobs.proposalLines(pr), options: AutoJobs.approveChoices() });
+        const choice = await Dialogue.node({ lines: AutoJobs.proposalLines(pr), options: AutoJobs.approveChoices(), dismissable: true, dismissLabel: 'leave it — not now' });
+        if (choice && choice.dismissed) break;   // Esc / "leave it": the Commander walked away — stop asking the rest of the proposals (Andrew: let the user exit a multi-question popup)
         if (choice && choice.value === 'yes' && deps.scheduleJob) {
           try { const r = await deps.scheduleJob(AutoJobs.toCronBody(pr)); if (r && r.ok !== false && !(r && r.duplicate)) { scheduled++; live.push(pr.title); } } catch (_) {}
         }
