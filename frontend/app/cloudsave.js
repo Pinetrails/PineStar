@@ -82,12 +82,20 @@ const CloudSave = (() => {
     try { retryTimer = setTimeout(() => { retryTimer = null; flush(); }, delay); } catch (_) { retryTimer = null; }
   }
 
-  function flush() {
+  // flush(opts) — attempt one POST of the newest pending doc.
+  //   opts.force (default false): bypass the backoff-hold window. The normal debounced/retry path HONORS the
+  //   backoff (a live failure streak that isn't due yet holds `pending` and re-arms). The pre-update-install
+  //   drain (updates.js) has no future — the app is about to be killed by the NSIS installer — so it passes
+  //   { force:true } for a single immediate best-effort attempt regardless of the backoff clock. It still
+  //   fails soft (re-queues on failure like any flush), so if the install is somehow aborted the mirror keeps
+  //   trying; the caller bounds the wait with its own timeout so a dead sidecar can never hang the update.
+  function flush(opts) {
+    const force = !!(opts && opts.force);
     if (timer) { clearTimeout(timer); timer = null; }
     if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
     // honor the backoff window — if a failure streak is live and the next attempt isn't due yet, hold the
-    // doc in `pending` and re-arm rather than hammering the sidecar every debounce.
-    if (Core && isSave(pending) && !Core.retryDue(health, now())) { scheduleRetry(); return Promise.resolve(false); }
+    // doc in `pending` and re-arm rather than hammering the sidecar every debounce. `force` skips this hold.
+    if (!force && Core && isSave(pending) && !Core.retryDue(health, now())) { scheduleRetry(); return Promise.resolve(false); }
     const doc = pending; pending = null;
     if (!isSave(doc)) return Promise.resolve(false);
     return postNow(doc)

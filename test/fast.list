@@ -94,6 +94,7 @@ test/voice.button.test.js
 test/save.test.js
 test/saveversion.test.js
 test/rename-migrate.test.js
+test/update-state-parity.test.js
 test/roster-clause.test.js
 test/notebookrestore.test.js
 test/runstore.test.js
