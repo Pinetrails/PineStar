@@ -369,6 +369,9 @@ leash-capped. Deliverable shape = "while you were gone I finished X — approve 
 **Lane queue (claim in-file before building; shared/events.js changes are additive-only via its
 owner):**
 
+_Claims: NS-0 IN PROGRESS — agent/night-core · NS-1 IN PROGRESS — agent/night-shift
+(Fable-orchestrated wave 1, 2026-07-07)._
+
 - **NS-0 · truth first (small, immediate):** (a) cron lease HEARTBEAT — renew while the run is
   provably alive, reclaim only on dead heartbeat; kills the duplicate-fire storm (test: run
   longer than maxRunMs fires exactly once). (b) emit the stubbed skip/defer reasons
