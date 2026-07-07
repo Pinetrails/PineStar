@@ -20,7 +20,11 @@
    Work-visibility slice 1 (ADDITIVE): `artifacts` — what the run PRODUCED, as small sanitized records
    ({ kind:'file'|'image'|'message', path?, target?, bytes? }, max 50, strings cut at 260). Collected by
    sidecar/artifacts.js during the run; defaults to []. Rows persisted before the field existed simply
-   lack it and still parse/list fine (fail-open — proven in runstore.test.js). */
+   lack it and still parse/list fine (fail-open — proven in runstore.test.js).
+
+   Roster-honesty P1.2 (ADDITIVE): `identityFallback` — TRUE when the run's agentId was missing from the roster so
+   the run executed on the station-persona/default-model FALLBACK rather than the named specialist. An honest
+   durable marker (never impersonate silently). Defaults false; old rows lack it and parse fine. */
 'use strict';
 (function (root, factory) {
   const api = factory();
@@ -88,6 +92,7 @@
         unmetered: !!e.unmetered,    // G6.2: subscription usage is counted, not summed as $0 spend
         artifacts: artifactList(e.artifacts),   // work-visibility: what the run PRODUCED (additive; [] default)
         toolsOk: num(e.toolsOk),                // crate-honesty (additive): successful tool results — proven work, not just talk. Old rows default 0.
+        identityFallback: !!e.identityFallback, // P1.2 (additive): TRUE when this run's agentId was MISSING from the roster and it ran on the station-persona/default-model fallback — an honest marker that it was NOT the named specialist. Old rows lack it and default false.
         ts: num(e.ts) || clock.now()
       };
       rows.push(entry);

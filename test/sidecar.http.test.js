@@ -698,6 +698,55 @@ function boot(port, workspaces, attemptsLeft) {
     A.eq(revalid.body.count, 1, 'the follow-up valid push replaced the roster as intended');
     A.ok(fs.readFileSync(rosterFile, 'utf8').indexOf('researcher-2') < 0, 'the legitimate replacement dropped the old worker (clear-and-set still works)');
 
+    // ---- P1.1 ROSTER ENVELOPE + ANTI-CLOBBER (UPDATE_STATE_SAFETY_AUDIT): { version, updatedAt, agents } + refuse a stale push ----
+    // Stamps are anchored to a real-clock base ABOVE any prior stamp-less host-clock save this test already made
+    // (the earlier P1-2 guard block's unstamped pushes advance the baseline off Date.now()), so these are genuinely
+    // fresher / staler relative to the LIVE baseline rather than to fixed small numbers.
+    const eBase = Date.now() + 100000;
+    // 1) a stamped push round-trips into an envelope on disk (version + updatedAt) and echoes the accepted stamp.
+    const envPush = await j('POST', '/api/roster', { agents: [{ agentId: 'agent', system: 'solo', name: 'Ultron', provider: 'openrouter' }], updatedAt: eBase });
+    A.eq(envPush.status, 200, 'a stamped roster push -> 200');
+    A.eq(envPush.body.updatedAt, eBase, 'the accepted push echoes its own updatedAt stamp');
+    const env = JSON.parse(fs.readFileSync(rosterFile, 'utf8'));
+    A.eq(env.version, 1, 'the on-disk roster carries version:1');
+    A.eq(env.updatedAt, eBase, 'the on-disk envelope records the accepted updatedAt (anti-clobber baseline)');
+    A.ok(Array.isArray(env.agents) && env.agents.length === 1, 'the envelope holds the agents array');
+    // 2) a STALE push (older updatedAt) is refused with 200 { ok:false, stale:true } and does NOT mutate the store.
+    const envBefore = fs.readFileSync(rosterFile, 'utf8');
+    const stale = await j('POST', '/api/roster', { agents: [{ agentId: 'agent', system: 'STALE', name: 'Ghost', provider: 'openrouter' }], updatedAt: eBase - 1000 });
+    A.eq(stale.status, 200, 'a stale roster push -> 200 (behind, not malformed)');
+    A.eq(stale.body.ok, false, 'the stale push is refused (ok:false)');
+    A.eq(stale.body.stale, true, 'the stale push is flagged stale:true');
+    A.eq(stale.body.updatedAt, eBase, 'the stale rejection reports the authoritative on-disk updatedAt');
+    A.eq(fs.readFileSync(rosterFile, 'utf8'), envBefore, 'the stale push left the roster BYTE-FOR-BYTE unchanged (no clobber)');
+    // 3) a NEWER push wins and advances the baseline.
+    const fresh = await j('POST', '/api/roster', { agents: [{ agentId: 'agent', system: 'fresh', name: 'Ultron', provider: 'openrouter' }], updatedAt: eBase + 1000 });
+    A.eq(fresh.status, 200, 'a newer roster push -> 200');
+    A.eq(fresh.body.ok, true, 'the newer push is accepted');
+    A.eq(JSON.parse(fs.readFileSync(rosterFile, 'utf8')).updatedAt, eBase + 1000, 'the newer stamp is now the on-disk baseline');
+    // 4) BACKWARD COMPAT: a stamp-less push (legacy frontend) skips the gate and still writes as today.
+    const noStamp = await j('POST', '/api/roster', { agents: [{ agentId: 'agent', system: 'legacy-client', name: 'Ultron', provider: 'openrouter' }] });
+    A.eq(noStamp.status, 200, 'a stamp-less (legacy) push -> 200');
+    A.eq(noStamp.body.ok, true, 'a stamp-less push is accepted (backward compatible)');
+    A.ok(fs.readFileSync(rosterFile, 'utf8').indexOf('legacy-client') >= 0, 'the stamp-less push persisted');
+
+    // ---- P1.1 UNKNOWN-FIELD PRESERVATION: a field a NEWER frontend adds must survive an older sidecar's re-save ----
+    // Push an agent carrying a field this sidecar's schema does NOT model (futureField). On re-save saveAgentRoster
+    // rebuilds each row from a fixed known-field list — WITHOUT preservation that field would be silently dropped
+    // (the exact reshape-on-save data-loss class P1.1 flags). Prove it round-trips onto disk under the known fields.
+    // Stamp above the current baseline (the stamp-less push above advanced it off the host clock).
+    const fwPush = await j('POST', '/api/roster', { agents: [
+      { agentId: 'agent', system: 'hero', name: 'Ultron', provider: 'openrouter', futureField: 'keep-me-42', nested: { a: 1 } }
+    ], updatedAt: Date.now() + 200000 });
+    A.eq(fwPush.status, 200, 'a push with an unknown per-agent field -> 200');
+    const fwDisk = JSON.parse(fs.readFileSync(rosterFile, 'utf8'));
+    const fwRec = fwDisk.agents.find(a => a.agentId === 'agent');
+    A.ok(fwRec, 'the agent persisted');
+    A.eq(fwRec.futureField, 'keep-me-42', 'an UNKNOWN scalar field is preserved through re-save (no reshape drop)');
+    A.ok(fwRec.nested && fwRec.nested.a === 1, 'an UNKNOWN nested field is preserved through re-save');
+    A.eq(fwRec.name, 'Ultron', 'the KNOWN fields still win / persist alongside the preserved ones');
+    A.eq(fwRec.provider, 'openrouter', 'the known provider field is intact next to the preserved unknowns');
+
     // ---- reconnect reconciliation snapshot: GET /api/state/snapshot returns the documented shape, token-gated ----
     const snapNoTok = await fetch(B + '/api/state/snapshot');
     A.eq(snapNoTok.status, 403, 'GET /api/state/snapshot WITHOUT a token -> 403 (gated like sibling GETs)');

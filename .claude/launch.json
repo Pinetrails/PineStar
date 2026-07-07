@@ -4,18 +4,30 @@
     {
       "name": "truth-props-glow-seed",
       "runtimeExecutable": "node",
-      "runtimeArgs": ["C:/Users/andro/gen-trees/truth-props-glow/dev/seed.js", "--keep"],
+      "runtimeArgs": [
+        "C:/Users/andro/gen-trees/truth-props-glow/dev/seed.js",
+        "--keep"
+      ],
       "port": 8161,
       "autoPort": false,
-      "env": { "SKYNET_PORT": "8161", "SKYNET_DEFAULT_MODEL": "anthropic/claude-3.5-sonnet" }
+      "env": {
+        "SKYNET_PORT": "8161",
+        "SKYNET_DEFAULT_MODEL": "anthropic/claude-3.5-sonnet"
+      }
     },
     {
       "name": "comms-fresh-session-seed",
       "runtimeExecutable": "node",
-      "runtimeArgs": ["C:/Users/andro/gen-trees/comms-fresh-session/dev/seed.js", "--keep"],
+      "runtimeArgs": [
+        "C:/Users/andro/gen-trees/comms-fresh-session/dev/seed.js",
+        "--keep"
+      ],
       "port": 8836,
       "autoPort": false,
-      "env": { "SKYNET_PORT": "8836", "SKYNET_DEFAULT_MODEL": "anthropic/claude-3.5-sonnet" }
+      "env": {
+        "SKYNET_PORT": "8836",
+        "SKYNET_DEFAULT_MODEL": "anthropic/claude-3.5-sonnet"
+      }
     },
     {
       "name": "belt-connect-seed",
@@ -933,6 +945,20 @@
       "autoPort": false,
       "env": {
         "SKYNET_PORT": "8158",
+        "SKYNET_DEFAULT_MODEL": "anthropic/claude-3.5-sonnet"
+      }
+    },
+    {
+      "name": "roster-honesty-seed",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "C:/Users/andro/gen-trees/roster-honesty/dev/seed.js",
+        "--keep"
+      ],
+      "port": 8159,
+      "autoPort": false,
+      "env": {
+        "SKYNET_PORT": "8159",
         "SKYNET_DEFAULT_MODEL": "anthropic/claude-3.5-sonnet"
       }
     }

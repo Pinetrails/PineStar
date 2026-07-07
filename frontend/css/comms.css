@@ -375,3 +375,6 @@
   font-size: 11px; letter-spacing: .8px; color: var(--ph-dim); opacity: .82;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: right;
 }
+/* P1.2 identity-honesty: the model slot doubles as a one-line honest notice when the focused agent id is not in
+   the live registry (roster out of sync). Amber warn token, not the dim phosphor — this is a state to notice. */
+.comms-agent-model.comms-agent-warn { color: var(--warn); opacity: 1; }

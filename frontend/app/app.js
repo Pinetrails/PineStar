@@ -409,8 +409,22 @@ const App = (() => {
     }
   }
   function focusAgent(id) {
-    const a = agents.get(id) || agents.get('agent');
+    // P1.2 (UPDATE_STATE_SAFETY_AUDIT) — end silent impersonation. The old `agents.get(id) || agents.get('agent')`
+    // SILENTLY rebound COMMS + the run identity to the OVERSEER whenever `id` was missing from the live registry
+    // (a stale workstream binding, a roster gone out of sync after an update). The user then read the overseer's
+    // replies as coming from their specialist — "my agents were never real". Truthful-telemetry law: never assert
+    // an identity the harness can't back. So: if `id` is a real, non-overseer id that ISN'T in the registry, do
+    // NOT switch — keep whoever is currently focused, warn, and surface an honest inline state on the COMMS header.
+    const want = String(id == null ? '' : id);
+    const hit = agents.get(want);
+    if (!hit && want && want !== 'agent') {
+      try { console.warn('[roster] focusAgent: agent ' + want + ' not in the live registry — keeping current focus, NOT rebinding to the overseer (roster out of sync)'); } catch (_) {}
+      if (typeof Chat !== 'undefined' && Chat.setRosterStatus) Chat.setRosterStatus('agent unavailable — roster out of sync');
+      return;   // leave `agent` untouched: the last real identity stays on the line
+    }
+    const a = hit || agents.get('agent');
     if (!a) return;
+    if (typeof Chat !== 'undefined' && Chat.setRosterStatus) Chat.setRosterStatus('');   // a real agent is focused — clear any prior honest-miss notice
     agent = a;
     if (a.model && typeof Harness !== 'undefined' && Harness.setModel) Harness.setModel(a.model);
     // #4: provider + reasoning-effort are PER-AGENT, not one global — restore them on focus so switching to an
@@ -950,7 +964,12 @@ const App = (() => {
       const list = liveAgents().map(a => ({ agentId: a.id, system: a.systemPrompt || '', name: a.name || a.id, model: a.model || '', provider: a.provider || fallbackProv, role: rosterRole(a), approvalMode: (a.approvalMode === 'full' ? 'full' : 'ask'),
         workshop: !!a.workshop,   // W3: the away-build grant travels with the roster so the consent broker can honor it
         skills: Array.isArray(a.skills) ? a.skills : [], reasoningEffort: a.reasoningEffort || null }));   // #4: each agent's OWN provider; Class Loadouts S1: per-agent skill package + applied effort
-      lastRosterPush = fetch('/api/roster', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ agents: list }) })
+      // P1.1 (UPDATE_STATE_SAFETY_AUDIT): stamp a freshness `updatedAt` so the sidecar can refuse a STALE push (a
+      // background tab / out-of-sync frontend whose roster is older than what the store already accepted). The
+      // sidecar records the stamp of the last accepted write and 200s { ok:false, stale:true } on an older one;
+      // a legacy stamp-less push still writes as before (backward compatible). Date.now() is monotonic-enough for
+      // this last-write anti-clobber (mirrors save.js's own updatedAt stamp).
+      lastRosterPush = fetch('/api/roster', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ agents: list, updatedAt: Date.now() }) })
         .then(r => {
           if (r && r.ok === false) throw new Error('roster HTTP ' + r.status);
           if (rosterPushFailed) { rosterPushFailed = false; try { console.info('[roster] sidecar roster sync recovered.'); } catch (_) {} }

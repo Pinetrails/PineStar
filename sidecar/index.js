@@ -672,12 +672,24 @@ let lastSearchAt = 0;            // module-level web_search throttle (≥1.1s be
 // The browser replaces it on every push; a protected on-disk mirror lets headless cron fires still run as the
 // selected agent after a sidecar restart. Not an event (contract-free).
 const agentRoster = new Map();
+// P1.1 (UPDATE_STATE_SAFETY_AUDIT): the LAST-SEEN RAW per-agent record, keyed by agentId. saveAgentRoster()
+// rebuilds each row from a FIXED field list, so any field a NEWER frontend added (that older sidecar code
+// doesn't know to re-emit) would be silently dropped on the next re-save. We stash the raw incoming record here
+// and spread its prior-unknown keys UNDER the known ones on save — forward-compatible field preservation, so
+// old code round-trips new state losslessly instead of eating it. Additive: absent for agents never pushed raw.
+const agentRosterRaw = new Map();
+// P1.1: the roster envelope's updatedAt (ms). Written by saveAgentRoster into { version, updatedAt, agents } and
+// read by handleRoster's anti-clobber gate (mirrors savestore's updatedAt regression refusal). 0 until first
+// push/load — a legacy on-disk { version:1, agents } (no updatedAt) loads as 0, so any first write is accepted.
+let agentRosterUpdatedAt = 0;
 const AGENT_ROSTER_FILE = path.join(WORKSPACES, 'agent.roster.json');
 function replaceAgentRoster(list) {
   agentRoster.clear();
+  agentRosterRaw.clear();
   for (const a of (Array.isArray(list) ? list : [])) {
     const id = a && String(a.agentId || '');
     if (!/^[A-Za-z0-9_-]{1,40}$/.test(id)) continue;
+    if (a && typeof a === 'object') agentRosterRaw.set(id, a);   // stash the raw record so unknown fields survive re-save
     agentRoster.set(id, {
       system: String((a && a.system) || ''),
       name: String((a && a.name) || id).slice(0, 40),
@@ -695,14 +707,44 @@ function replaceAgentRoster(list) {
 function loadAgentRoster() {
   try {
     const raw = loadResilient(AGENT_ROSTER_FILE, 'roster');   // last-known-good recovery; never silent-wipe
-    if (raw) replaceAgentRoster(raw && raw.agents);
+    if (raw) {
+      replaceAgentRoster(raw && raw.agents);
+      // P1.1: adopt the stored envelope's updatedAt as the anti-clobber baseline. A LEGACY { version:1, agents }
+      // file has no updatedAt → 0, so the first live push (whatever its stamp) is accepted (backward compatible).
+      agentRosterUpdatedAt = Number(raw && raw.updatedAt) || 0;
+    }
   } catch (_) {}
 }
-function saveAgentRoster() {
+// P1.1: the fields saveAgentRoster() rebuilds from the live Map — the KNOWN shape. Preserved unknown fields (any
+// key a newer frontend added that this sidecar doesn't model) are spread UNDER these on save, so they survive a
+// re-save by older code rather than being dropped. agentId is always rebuilt (identity), never preserved raw.
+const ROSTER_KNOWN_FIELDS = ['agentId', 'system', 'name', 'model', 'provider', 'role', 'approvalMode', 'skills', 'reasoningEffort'];
+// saveAgentRoster(updatedAt?) — persist the live roster. The optional updatedAt is the CLIENT's freshness stamp
+// (from POST /api/roster body.updatedAt); handleRoster passes it after its anti-clobber gate accepts a push, so the
+// stored envelope records the exact stamp we accepted (a later push older than it is refused). Server-internal
+// saves (setAgentModelFromChannel, boot sweeps) pass nothing → we advance the stamp with the host clock so the
+// envelope's updatedAt only ever moves forward, and a subsequently-arriving stale browser push still loses.
+function saveAgentRoster(updatedAt) {
   try {
     fs.mkdirSync(WORKSPACES, { recursive: true });
-    const agents = [...agentRoster].map(([agentId, a]) => ({ agentId, system: a.system || '', name: a.name || agentId, model: a.model || null, provider: a.provider || null, role: a.role || '', skills: Array.isArray(a.skills) ? a.skills : [], reasoningEffort: a.reasoningEffort || null }));   // Class Loadouts S1: persist per-agent skill package + effort
-    saveResilient(AGENT_ROSTER_FILE, { version: 1, agents });   // fsync-durable + .bak last-known-good
+    const agents = [...agentRoster].map(([agentId, a]) => {
+      const known = { agentId, system: a.system || '', name: a.name || agentId, model: a.model || null, provider: a.provider || null, role: a.role || '', skills: Array.isArray(a.skills) ? a.skills : [], reasoningEffort: a.reasoningEffort || null };   // Class Loadouts S1: persist per-agent skill package + effort
+      // P1.1: forward-compat field preservation — carry any UNKNOWN keys from the last-seen raw record under the
+      // known ones, so a field a newer frontend added isn't silently eaten when older sidecar code re-saves.
+      const rawRec = agentRosterRaw.get(agentId);
+      if (rawRec && typeof rawRec === 'object') {
+        const preserved = {};
+        for (const k of Object.keys(rawRec)) { if (!ROSTER_KNOWN_FIELDS.includes(k)) preserved[k] = rawRec[k]; }
+        return Object.assign(preserved, known);   // known fields WIN over preserved (never let stale raw shadow live state)
+      }
+      return known;
+    });
+    // P1.1: stamp updatedAt into the envelope so handleRoster can refuse a stale (older) push. A client-provided
+    // stamp (already proven fresh by the gate) is recorded verbatim; otherwise advance monotonically off the host
+    // clock so the envelope only ever moves forward. Legacy readers ignore the extra key harmlessly.
+    const stamp = Number(updatedAt);
+    agentRosterUpdatedAt = (Number.isFinite(stamp) && stamp > 0) ? stamp : Math.max(agentRosterUpdatedAt + 1, Date.now());
+    saveResilient(AGENT_ROSTER_FILE, { version: 1, updatedAt: agentRosterUpdatedAt, agents });   // fsync-durable + .bak last-known-good
   } catch (e) { console.warn('[roster] persist failed:', (e && e.message) || e); }
 }
 loadAgentRoster();
@@ -889,10 +931,24 @@ const commanderGoals = {
 };
 commanderGoals.load();
 
+// P1.2 (UPDATE_STATE_SAFETY_AUDIT) — the "merged with ULTRON" lie: a roster/registry gap used to make a
+// specialist SILENTLY answer as the overseer (cron fell back to the station persona + default model, zero logging;
+// users read this as "my agents were never real"). We can't refuse to run a scheduled routine (that breaks the
+// user's automation), but we MUST make the gap VISIBLE instead of impersonating. rosterMissWarned dedupes the
+// console.warn to once per (agentId) per boot so a routine firing every minute doesn't spam the log. A run driven
+// through this fallback also carries an honest identityFallback flag on its durable run record (see runOnce).
+const rosterMissWarned = new Set();
+function warnRosterMiss(agentId, where) {
+  const id = String(agentId || '');
+  if (!id || id === 'agent') return;   // 'agent' is the overseer's own id — a legitimate persona, not a gap
+  if (rosterMissWarned.has(id)) return;
+  rosterMissWarned.add(id);
+  try { console.warn('[roster] identity fallback: agent ' + id + ' not in roster (' + (where || 'lookup') + ') — run proceeds on the station persona/default model, NOT impersonating it as ' + id); } catch (_) {}
+}
 function cronIdentityFor(agentId) {
   const id = String(agentId || 'agent');
   const ident = agentRoster.get(id);
-  if (!ident) return null;
+  if (!ident) { warnRosterMiss(id, 'cron'); return null; }
   const system = String(ident.system || '').trim();
   return {
     model: ident.model || null,
@@ -4010,9 +4066,19 @@ async function handleRoster(req, res) {
     // a numeric agentId would previously coerce through String() and pass the id regex silently).
     if (typeof a.agentId !== 'string' || !/^[A-Za-z0-9_-]{1,40}$/.test(a.agentId)) return json(400, { error: 'each agent needs a valid string agentId' });
   }
+  // P1.1 anti-clobber (mirrors savestore.js:145-171): if the pusher stamped a freshness `updatedAt` and it is
+  // OLDER than what we last accepted, refuse — a stale background tab / out-of-sync frontend can no longer legally
+  // overwrite a newer roster. 200 { ok:false, stale:true } (NOT an HTTP error: the pusher's data isn't malformed,
+  // it's just behind). Backward compatible: a body with no updatedAt (legacy frontend) skips the gate and writes as
+  // today. On accept, the client stamp is recorded into the envelope so the NEXT older push loses too.
+  const incomingUpdatedAt = Number(body.updatedAt);
+  const hasStamp = Number.isFinite(incomingUpdatedAt) && incomingUpdatedAt > 0;
+  if (hasStamp && agentRosterUpdatedAt && incomingUpdatedAt < agentRosterUpdatedAt) {
+    return json(200, { ok: false, stale: true, updatedAt: agentRosterUpdatedAt });
+  }
   replaceAgentRoster(body.agents);
-  saveAgentRoster();
-  json(200, { ok: true, count: agentRoster.size });
+  saveAgentRoster(hasStamp ? incomingUpdatedAt : undefined);
+  json(200, { ok: true, count: agentRoster.size, updatedAt: agentRosterUpdatedAt });
 }
 
 // POST /api/agent/delete { agentId } — DOSSIER › DELETE AGENT. Removes a summoned agent from the SERVER roster
@@ -4344,6 +4410,11 @@ async function runOnce(o) {
   // this only fills a gap — it never overrides a choice the caller actually made. Honest: the pin lives in the same
   // roster the dossier writes + cron already reads (cronModelFor), so what the UI shows == what the run uses.
   const rosterIdent = agentRoster.get(String(agentId || '')) || null;
+  // P1.2: a non-overseer run whose agentId is absent from the roster is running on FALLBACK identity (station
+  // persona/default model), not the specialist the caller named. Warn once/boot and mark the run record honestly
+  // (identityFallback) so the gap is visible in history instead of the run silently masquerading as that agent.
+  const identityFallback = !rosterIdent && String(agentId || '') !== '' && String(agentId || '') !== 'agent';
+  if (identityFallback) warnRosterMiss(agentId, 'runOnce');
   const providerId = normalizeProvider(o.provider || (rosterIdent && rosterIdent.provider) || '');
   const usingCodex = providerUsesCodex(providerId);
   const providerUnmetered = !!((getProviderProfile(providerId) || {}).unmetered);
@@ -5002,7 +5073,8 @@ async function runOnce(o) {
     try {
       let title = '';
       for (let i = msgs.length - 1; i >= 0; i--) { if (msgs[i] && msgs[i].role === 'user' && typeof msgs[i].content === 'string') { title = msgs[i].content; break; } }
-      runStore.record({ runId, agentId, reason: (result && result.reason) || 'done', turns: finalTurns, tokens: finalTokens, usd: finalUsd, title: title, streamId: o.streamId || '', model: finalModel, unmetered: providerUnmetered, artifacts: artifactLedger.list(), toolsOk });   // H3.2/H3.3/G6 + work-visibility + crate-honesty: transcript join + honest model/spend/deliverables/worked
+      runStore.record({ runId, agentId, reason: (result && result.reason) || 'done', turns: finalTurns, tokens: finalTokens, usd: finalUsd, title: title, streamId: o.streamId || '', model: finalModel, unmetered: providerUnmetered, artifacts: artifactLedger.list(), toolsOk, identityFallback });   // H3.2/H3.3/G6 + work-visibility + crate-honesty + P1.2 identity-honesty: transcript join + honest model/spend/deliverables/worked/named-agent
+
       // P0.1/H1.1: persist the full DIALOGUE (not just the outcome) — a durable server-side transcript for EVERY
       // run, incl. headless ones (cron/Telegram/delegated). Append the triggering user directive, then EVERY new
       // turn the loop produced (assistant incl. tool_calls + tool results), so a resume can rebuild exact state.
