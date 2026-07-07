@@ -235,12 +235,20 @@ Gauge: `npm run qa:atlas:status`. Trunk re-sweep 2026-07-07 (39b9c569): **1339 e
 (1288 unmapped queue + 51 missing from the skills-legibility redesign — P2s filed, dedup holds).
 The whole surface is the queue. Areas: system, crew, work, build, world, commands, routes, events, props.
 
-_Active claims:_
-- IN PROGRESS — agent/perfect-restale · **commands+system+work+build+world (STALE entries ONLY)**
-  (wave-4 re-proof sweeper; orchestrator-sanctioned multi-area hold — stale re-proof only,
-  no unmapped work; other lanes stay off these areas' shards)
-- IN PROGRESS — agent/perfect-crew2 · **crew** (9 stale re-proof + remainder batch; wave 4)
-- IN PROGRESS — agent/perfect-routes · **routes** (API contract surface; wave 4)
+_Active claims: (none)._
+
+_Wave-4 DONE 2026-07-07 (3 lanes merged + gated + reaped; gate 261→264 under parallel
+merges): **restale 76/76 HELD, 0 regressions** (sidecar token/OAuth commits moved no
+audited seam — proven) · **routes ALL 114 mapped**, 19 core contracts proven (tts/stt
+200-always + diagnostics secret-free + snapshot==store all HOLD; /api/session = no-op
+stub b1248295; six core routes only covered by non-gate test:http 6887ef72) · **crew**
+12 restale held + 16 new, SKILLS-honesty + XP-truth laws proven live (CHANGE SKIN
+uncovered d2121f51). Staleness churned again mid-wave (night-shift merges → 42 stale)
+→ **executable-probe upgrade chipped** (probe-per-dossier → nightly script reprove;
+that chip is now the highest-leverage Atlas click). Gauge: **67 fresh / 42 stale /
+50 audited / 125 mapped / 1004 unmapped**. Janitor item: gen-trees/perfect-crew2 dir
+locked by stray handle (git-pruned, inert). Next: system remainder (132) · world
+remainder (429) · events (60) · re-prove routes' 19 when probe layer lands._
 
 _Wave-3 DONE 2026-07-07 (3 lanes merged + gated 261 + reaped): world/COMMS +4P/+3A
 (chat-stop never machine-clicked bd391f68 · voice press-flips c3fa1f39) · build/REFIT +11P
