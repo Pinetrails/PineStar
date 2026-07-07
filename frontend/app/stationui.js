@@ -1541,14 +1541,17 @@ const StationUI = (() => {
     // CONSOLE MODE: CAPABILITIES · SKILL LIBRARY · AGENT SKILLS as three sections instead of one long scroll.
     // The library categories stay as sub-headers inside the LIBRARY section (renderSkillLibrary emits them);
     // its async loaders target #sk-lib / #sk-agent which live inside the panes below.
+    // locked copy is OBJECT-TRUTHFUL: not a disabled toggle, but "no DISH at the desk" — it points at the furniture.
+    const capLockedText = (s) => '○ NO ' + (SK_OBJ_NAME[s.cap] || String(s.cap || '').toUpperCase()) + ' AT DESK';
     const secCaps =
+      '<div class="sk-chain">OBJECT AT DESK <span class="sk-chain-arr">→</span> CAPABILITY <span class="sk-chain-arr">→</span> SKILL</div>' +
       '<div class="perk-grid">' +
       skills.map((s, i) => '<div class="perk ' + (s.on ? 'on' : '') + '" style="--ci:' + i + '">' +
         '<div class="perk-icon">' + s.icon + '</div>' +
         '<div class="perk-name">' + s.name + '</div>' +
         '<div class="perk-desc">' + s.tools + '</div>' +
         '<div class="perk-stat' + (s.consent ? ' ask' : '') + '">' +
-        (s.on ? (s.consent ? '● ASKS OK' : '● ENABLED') : '○ LOCKED') + '</div></div>').join('') +
+        (s.on ? (s.consent ? '● ASKS OK' : '● ENABLED') : capLockedText(s)) + '</div></div>').join('') +
       '</div>' +
       '<p class="sk-note">Capabilities follow the <b>objects at the workstation</b> — the room layout IS the ' +
       'permission system. <b>File writes</b> and <b>commands</b> pause for one-click approval in COMMS; the private ' +
@@ -1612,44 +1615,122 @@ const StationUI = (() => {
   }
 
   const SK_OBJ_NAME = { cabinet: 'CABINET', dish: 'DISH', workbench: 'WORKBENCH', studio: 'STUDIO', notebook: 'NOTEBOOK', jukebox: 'JUKEBOX', computer: 'COMPUTER', orchestrator: 'ORCHESTRATOR', connector: 'CONNECTOR' };
+  // Each capability objectType → the representative placeable prop (CAP_PROP_MAP) and the REFIT palette category tab
+  // that holds it. Lets a locked skill's "PLACE" button land the user on the exact gear in the real build surface.
+  const SK_PLACE = {
+    cabinet:  { prop: 'safe',      cat: 'capability' },
+    dish:     { prop: 'comms_dish', cat: 'capability' },
+    workbench:{ prop: 'workbench', cat: 'workstation' },
+    studio:   { prop: 'studio',    cat: 'capability' },
+    notebook: { prop: 'core',      cat: 'capability' }
+  };
+  // Deep-link a locked skill's missing gear into the REAL placement surface: minimize SKILLS, open REFIT, drive its
+  // palette to the PROP tool → FUNCTIONAL tier → the missing cap's category tab → its prop tile (so the very next
+  // floor-click drops it). Mirrors app.js openDeskPlacement() — the honest path, never a fake auto-place. `objType`
+  // is a capability objectType (cabinet/dish/workbench/…); `agentName` is only for the guidance toast.
+  function placeGearForSkill(objType, agentName) {
+    const spot = SK_PLACE[objType];
+    const label = SK_OBJ_NAME[objType] || String(objType).toUpperCase();
+    if (typeof Build === 'undefined' || !(Build.open || Build.toggle)) {
+      notify('Open ⚒ BUILD and place a ' + label + ' to unlock this skill', 'warn'); return;
+    }
+    try { if (open.skills) minimizeTerm('skills'); } catch (_) {}
+    try {
+      if (Build.isOpen && Build.isOpen()) { /* already in REFIT */ }
+      else if (Build.open) Build.open();
+      else Build.toggle();
+    } catch (_) { notify('Could not open REFIT — open ⚒ BUILD and place a ' + label, 'warn'); return; }
+    notify('Place a ' + label + ' at ' + (agentName || 'the agent') + '’s desk to unlock this skill', 'good');
+    if (!spot) return;   // no known prop mapping — REFIT is open, the toast named the gear; that's the floor of acceptable
+    // Drive the palette to the PROP tool → FUNCTIONAL tier → the missing cap's category tab → its prop tile so the
+    // very next floor-click drops it. REFIT builds its DOM synchronously in open(), so the FIRST pass runs inline
+    // (works even where rAF is throttled); a few rAF retries then cover any deferred re-render. Each pass clicks only
+    // what isn't already active, so it's idempotent + cheap.
+    let tries = 0;
+    const arm = () => {
+      const q = sel => document.querySelector(sel);
+      const propTool = q('.refit-tool[data-tool="prop"]');
+      if (propTool && !propTool.classList.contains('active')) propTool.click();
+      const fnTier = q('.refit-tier-functional'), curTier = q('.refit-tier.active');
+      if (fnTier && curTier && curTier !== fnTier) fnTier.click();
+      const catTab = q('.refit-propcat[data-cat="' + spot.cat + '"]');
+      if (catTab && !catTab.classList.contains('active')) catTab.click();
+      const tile = q('.refit-proptile[data-prop="' + spot.prop + '"]');
+      if (tile && !tile.classList.contains('active')) tile.click();
+      const armed = tile && tile.classList.contains('active');
+      if (!armed && ++tries < 8) requestAnimationFrame(arm);
+    };
+    arm();                                   // inline first pass (rAF-independent)
+    requestAnimationFrame(arm);              // + defensive retries for any deferred render
+  }
+  // Bucket the catalog by the TWO-AXIS state the redesign shows: a skill is READY (the user turned it on AND the floor
+  // grants the gear), NEEDS GEAR (turned on but a required object is missing), or OFF (turned off, gear irrelevant).
+  // Pure + stand-alone so it's unit-testable and the render stays declarative. Preserves the catalog's incoming order
+  // within each bucket. Exposed on SkillsUI.groupSkillsByState for the node test.
+  function groupSkillsByState(skills) {
+    const ready = [], needsGear = [], off = [];
+    for (const s of (skills || [])) {
+      if (!s.enabled) off.push(s);
+      else if (s.available) ready.push(s);
+      else needsGear.push(s);
+    }
+    return { ready: ready, needsGear: needsGear, off: off };
+  }
+
   function renderSkillLibrary(host, skills, agentId, placed) {
     if (!skills.length) { host.innerHTML = '<div class="sk-loading">No skills in the library yet.</div>'; return; }
     const placedSet = {}; (placed || []).forEach(p => placedSet[p] = true);
     const objLabel = (r) => SK_OBJ_NAME[r] || String(r).toUpperCase();
     const active = skills.filter(s => s.enabled && s.available).length;
-    const cats = [], byCat = {};
-    for (const s of skills) { if (!byCat[s.category]) { byCat[s.category] = []; cats.push(s.category); } byCat[s.category].push(s); }
+    const agentName = (present[sel] && present[sel].name) || agentId;
+    const groups = groupSkillsByState(skills);
     let html = '<div class="sk-lib-sum">' + skills.length + ' recipe' + (skills.length === 1 ? '' : 's') +
-      ' · <b>' + active + '</b> active for ' + esc((present[sel] && present[sel].name) || agentId) + '</div>';
-    for (const cat of cats) {
-      const catActive = byCat[cat].filter(s => s.enabled && s.available).length;
-      html += '<div class="sec sk-cat-sec"><span class="sec-l">' + esc(cat) + '</span>' +
-        '<span class="sec-r sk-cat-count">' + (catActive ? catActive + '/' : '') + byCat[cat].length + '</span><span class="sec-nd"></span></div>';
-      let ci = 0;
-      for (const s of byCat[cat]) {
-        const missing = (s.requires || []).filter(r => !placedSet[r]);
-        const state = s.enabled ? (s.available ? 'on' : 'want') : 'off';
-        const stat = s.enabled ? (s.available ? '● ACTIVE' : '● ON · needs ' + missing.map(objLabel).join(' + ')) : '○ OFF';
-        const reqs = (s.requires || []).length
-          ? s.requires.map(r => '<span class="sk-badge ' + (placedSet[r] ? 'have' : 'miss') + '">' + objLabel(r) + '</span>').join('')
-          : '<span class="sk-badge free">no gear needed</span>';
-        html +=
-          '<div class="sk-card ' + state + '" style="--ci:' + (ci++) + '">' +
-            '<div class="sk-card-head">' +
-              '<button class="sk-toggle" data-toggle="' + esc(s.slug) + '" data-enabled="' + (s.enabled ? 'true' : 'false') + '" title="' + (s.enabled ? 'Disable' : 'Enable') + ' this skill">' + (s.enabled ? '◉' : '○') + '</button>' +
-              '<div class="sk-card-main">' +
-                '<div class="sk-name-row"><span class="sk-name">' + esc(s.name) + '</span><span class="sk-reqs">' + reqs + '</span></div>' +
-                '<div class="sk-desc">' + esc(s.description) + '</div>' +
-                '<div class="sk-stat ' + state + '">' + stat + '</div>' +
-              '</div>' +
-              '<button class="sk-expand" data-expand="' + esc(s.slug) + '" title="Read the recipe">▸</button>' +
+      ' · <b>' + active + '</b> active for ' + esc(agentName) + '</div>';
+    // A pill SWITCH (the user's choice) — reads unambiguously as a control, not a status dot. data-toggle drives the round-trip.
+    const switchHTML = (s) =>
+      '<button class="sk-switch ' + (s.enabled ? 'on' : 'off') + '" role="switch" aria-checked="' + (s.enabled ? 'true' : 'false') + '" ' +
+        'data-toggle="' + esc(s.slug) + '" data-enabled="' + (s.enabled ? 'true' : 'false') + '" title="' + (s.enabled ? 'Turn OFF' : 'Turn ON') + ' this skill station-wide">' +
+        '<span class="sk-sw-track"><span class="sk-sw-knob"></span></span>' +
+        '<span class="sk-sw-label">' + (s.enabled ? 'ON' : 'OFF') + '</span>' +
+      '</button>';
+    // A SEPARATE readiness chip — the floor's grant, never merged with the switch. READY (green) or NEEDS GEAR (amber).
+    const readyChip = (s, missing) => s.available
+      ? '<span class="sk-ready ok">READY</span>'
+      : '<span class="sk-ready gear">NEEDS ' + missing.map(objLabel).join(' + ') + '</span>';
+    const reqBadges = (s) => (s.requires || []).length
+      ? s.requires.map(r => '<span class="sk-badge ' + (placedSet[r] ? 'have' : 'miss') + '">' + objLabel(r) + '</span>').join('')
+      : '<span class="sk-badge free">no gear needed</span>';
+    // one PLACE button per missing object → the real REFIT placement surface (placeGearForSkill).
+    const placeBtns = (missing) => missing.map(r =>
+      '<button class="sk-place" data-place="' + esc(r) + '" title="Open REFIT to place a ' + esc(objLabel(r)) + '">→ PLACE ' + esc(objLabel(r)) + '</button>').join('');
+    let ci = 0;
+    const card = (s) => {
+      const missing = (s.requires || []).filter(r => !placedSet[r]);
+      const state = s.enabled ? (s.available ? 'on' : 'want') : 'off';
+      return '<div class="sk-card ' + state + '" style="--ci:' + (ci++) + '">' +
+          '<div class="sk-card-head">' +
+            switchHTML(s) +
+            '<div class="sk-card-main">' +
+              '<div class="sk-name-row"><span class="sk-name">' + esc(s.name) + '</span>' +
+                (s.category ? '<span class="sk-badge cat">' + esc(String(s.category).toUpperCase()) + '</span>' : '') +
+                readyChip(s, missing) + '</div>' +
+              '<div class="sk-desc">' + esc(s.description) + '</div>' +
+              '<div class="sk-reqs">' + reqBadges(s) + '</div>' +
+              (missing.length ? '<div class="sk-place-row">' + placeBtns(missing) + '</div>' : '') +
             '</div>' +
-            '<div class="sk-body"><pre>' + esc(s.body || '') + '</pre>' +
-              (s.author ? '<div class="sk-attr">Ported from ' + esc(s.author) + (s.license ? ' · ' + esc(s.license) : '') + '</div>' : '') +
-            '</div>' +
-          '</div>';
-      }
-    }
+            '<button class="sk-expand" data-expand="' + esc(s.slug) + '" title="Read the recipe">▸</button>' +
+          '</div>' +
+          '<div class="sk-body"><pre>' + esc(s.body || '') + '</pre>' +
+            (s.author ? '<div class="sk-attr">Ported from ' + esc(s.author) + (s.license ? ' · ' + esc(s.license) : '') + '</div>' : '') +
+          '</div>' +
+        '</div>';
+    };
+    const section = (label, list) => list.length
+      ? '<div class="sec sk-state-sec"><span class="sec-l">' + label + '</span><span class="sec-r">' + list.length + '</span><span class="sec-nd"></span></div>' + list.map(card).join('')
+      : '';
+    html += section('READY TO USE', groups.ready);
+    html += section('NEEDS GEAR', groups.needsGear);
+    html += section('TURNED OFF', groups.off);
     host.innerHTML = html;
     host.querySelectorAll('[data-toggle]').forEach(btn => btn.addEventListener('click', () => {
       const slug = btn.dataset.toggle, next = btn.dataset.enabled !== 'true';
@@ -1658,6 +1739,9 @@ const StationUI = (() => {
         .then(r => r.ok ? r.json() : null)
         .then(res => { if (res && res.ok) { sfx('click'); loadSkillLibrary(agentId); } else { btn.classList.remove('busy'); } })
         .catch(() => btn.classList.remove('busy'));
+    }));
+    host.querySelectorAll('[data-place]').forEach(btn => btn.addEventListener('click', () => {
+      sfx('click'); placeGearForSkill(btn.dataset.place, agentName);
     }));
     host.querySelectorAll('[data-expand]').forEach(btn => btn.addEventListener('click', () => {
       const card = btn.closest('.sk-card'); if (!card) return;
