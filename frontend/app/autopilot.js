@@ -296,6 +296,89 @@
     return { title: title.slice(0, 80), body };
   }
 
+  /* ============================ NS-3: the TOOL-CAPABLE ACT variant (reach ≥ sandbox) ============================
+     The Slice-A directives above hard-forbid tools ("NO tools, NO web, NO file writes") — correct for the
+     reason-only DRAFT path (reach 'observe'). When the Commander raises Reach to 'sandbox', an unattended beat may
+     do REAL work in the agent's jailed sandbox: research with read-only tools, then BUILD a reviewable artifact
+     (a file / a small tool / a research brief) under workshop/<runId>/, exactly like an away-workshop shift. These
+     V2 variants ask for that instead — same grounding veto (parseCandidates is reused unchanged), same confidence
+     gate (scoreAndSelect unchanged), same self-critique step after. They are ADDITIVE: the V1 exports and their
+     tests are untouched; the server picks V2 only on the reach-gated path. The one hard rule these keep, matching
+     the consent floor the sidecar enforces, is that NOTHING may send/publish/spend — the artifact is LOCAL. */
+
+  // the tool-capable CANDIDATE directive. Same tagged output contract as buildCandidateDirective (so parseCandidates
+  // + the grounding veto work verbatim), but the achievability rule is inverted: the job must produce a REAL
+  // artifact the agent can build UNATTENDED in its sandbox — a file, a small runnable tool, a researched brief.
+  function buildCandidateDirectiveV2(ctx) {
+    ctx = ctx || {};
+    const beliefs = (ctx.beliefs && typeof ctx.beliefs === 'object') ? ctx.beliefs : {};
+    const eligible = (Array.isArray(ctx.eligible) && ctx.eligible.length) ? ctx.eligible : ARCHETYPES;
+    const max = Number.isFinite(ctx.max) ? ctx.max : CANDIDATE_MAX;
+    const lines = [];
+    lines.push('INTERNAL — SELF-DIRECTED WORK. The Commander is away and has cleared you to BUILD in your private sandbox. Reason first, then reply in the exact format below.');
+    lines.push('Propose up to ' + max + ' small jobs you could do RIGHT NOW, unattended, that each end in a REAL, reviewable artifact left in your workshop — then you will be asked to build the single best one.');
+    const dimLine = (key, label) => { const arr = Array.isArray(beliefs[key]) ? beliefs[key].filter(Boolean) : []; if (arr.length) lines.push('- ' + label + ': ' + arr.join(' | ')); };
+    lines.push('What you know about them:');
+    dimLine('goals', 'Goals'); dimLine('pain', 'Pain points'); dimLine('ambition', 'Ambitions'); dimLine('stack', 'Stack & tools'); dimLine('standing_orders', 'Standing orders'); dimLine('style', 'Working style');
+    lines.push('Each job must be ONE of these kinds: ' + eligible.map(a => a.id + ' (' + a.blurb + ')').join(', ') + '.');
+    lines.push('Hard rules:');
+    lines.push('- GROUNDED: every job must aim at a SPECIFIC thing above (a real goal / pain / etc). Quote the exact thing in GROUNDS. If you cannot ground it in something you actually know, do not propose it.');
+    lines.push('- BUILDABLE NOW, UNATTENDED, LOCAL: it must finish as a FILE or small self-contained tool you write into your workshop folder. You MAY read/research with your tools first. You may NOT send, publish, spend, message, or touch anything outside your sandbox — the artifact stays local for the Commander to review.');
+    lines.push('- HONEST CONFIDENCE: rate how sure you are it is genuinely useful AND that you can build it well now (high/medium/low). Low is fine — better than padding.');
+    lines.push('Reply with one block PER job, EXACTLY this format, nothing else:');
+    lines.push('JOB: <short title, a few words>');
+    lines.push('KIND: <one id from the list>');
+    lines.push('GROUNDS: <the exact goal/pain/etc this serves — quote what you know>');
+    lines.push('CONFIDENCE: <high | medium | low>');
+    lines.push('SPEC: <one line — exactly what the finished artifact will be (your own done-check)>');
+    return lines.join('\n');
+  }
+
+  // the tool-capable DO directive. Unlike buildDoDirective (which asks for a titled text draft in the reply), this
+  // instructs the agent to BUILD the artifact with its real tools under a given run directory and write a workshop
+  // manifest — the SAME deliverable.json contract the away-workshop validates, so the return card + ship gate are
+  // reused verbatim. The runId/dir come from the caller (ctx.runId, ctx.dir); the sidecar re-jails every path.
+  function buildDoDirectiveV2(selected, ctx) {
+    selected = selected || {}; ctx = ctx || {};
+    const dir = String(ctx.dir || ('workshop/' + (ctx.runId || 'run')));
+    const backlogId = String(ctx.backlogId || '');
+    const lines = [];
+    lines.push('INTERNAL — SELF-DIRECTED WORK. The Commander is away and cleared you to build in your private sandbox. Build this ONE job now and leave a real, reviewable artifact.');
+    lines.push('- JOB: ' + String(selected.title || '').trim());
+    if (selected.grounds) lines.push('- WHY IT MATTERS TO THEM: ' + String(selected.grounds).trim());
+    if (selected.spec) lines.push('- DONE WHEN: ' + String(selected.spec).trim());
+    lines.push('RULES:');
+    lines.push('- Prefer a SELF-CONTAINED, double-click-runnable deliverable: when it fits, a SINGLE-FILE HTML tool (all CSS/JS inline, no external files or build step) named index.html the Commander can just Open — otherwise a script/doc plus a one-line run note in "howToUse". Zero setup on their end.');
+    lines.push('- Do the real work with your tools (web read/search, files). Ground factual claims in what the tools return. Write every file for this deliverable UNDER "' + dir + '/" (use paths like "' + dir + '/<file>").');
+    lines.push('- LOCAL ONLY: never send, publish, spend, or message. You cannot run commands or tests, so do not claim anything was tested — list what a human still needs to verify.');
+    lines.push('- When finished, write a manifest to "' + dir + '/deliverable.json" with EXACTLY this shape:');
+    lines.push('  { "v": 1, "runId": "' + String(ctx.runId || '') + '", "agentId": "<your id>", "backlogId": "' + backlogId + '",');
+    lines.push('    "title": "<short name>", "kind": "tool|fix|draft|doc|other", "summary": "<one paragraph, plain language>",');
+    lines.push('    "files": [{ "path": "<relative to ' + dir + '>", "bytes": <number> }],');
+    lines.push('    "howToUse": "<how the Commander uses it>", "notVerified": ["<what you could not check>"] }');
+    lines.push('- The manifest MUST list the real files you wrote (paths relative to "' + dir + '/"). A shift with no manifest is discarded.');
+    return lines.join('\n');
+  }
+
+  /* the shared LEARN transform (A3 parity, server + frontend). The frontend AutopilotStore keeps a per-archetype
+     { up, down } tally the Commander's verdicts feed; learnWeightsFrom() turns it into the small, capped selection
+     bias scoreAndSelect consumes. NS-1 ran server-side with EMPTY weights; NS-3 needs the server to learn from
+     approve/deny too, so the pure math lives HERE (one definition, both sides) instead of being re-derived. Pure:
+     no clock/rng. learnFold() applies one verdict; learnWeightsFrom() derives the weights. */
+  function learnFold(learn, archetype, useful) {
+    const L = (learn && typeof learn === 'object') ? learn : {};
+    const key = String(archetype || '').trim();
+    if (!key) return L;
+    const e = L[key] = L[key] || { up: 0, down: 0 };
+    if (useful) e.up = (Number(e.up) || 0) + 1; else e.down = (Number(e.down) || 0) + 1;
+    return L;
+  }
+  function learnWeightsFrom(learn) {
+    const w = {}; const L = (learn && typeof learn === 'object') ? learn : {};
+    for (const k in L) { const e = L[k] || {}; const net = (Number(e.up) || 0) - (Number(e.down) || 0); w[k] = Math.max(-0.5, Math.min(0.5, net * 0.25)); }
+    return w;
+  }
+
   /* ---- Slice A3: self-critique before delivery, + the "while you were away" digest ---- */
 
   // THE CRITIQUE DIRECTIVE — the reason-only self-review run: the agent adversarially checks its OWN draft against
@@ -396,6 +479,7 @@
     idleFor, readiness, decide, newestStamp,
     eligibleArchetypes, grounded, sigTokens, flattenBeliefs,
     buildCandidateDirective, parseCandidates, scoreAndSelect, buildDoDirective, parseDeliverable,
+    buildCandidateDirectiveV2, buildDoDirectiveV2, learnFold, learnWeightsFrom,
     buildCritiqueDirective, parseCritique, digestLines, digestSummary, digestHeadline,
     writePath, canWrite, fileBody,
     DEFAULT_IDLE_MS, DEFAULT_TICK_MS, REQUIRE_DIM, WARM_MIN, HOT_MIN, STALE_MS,
