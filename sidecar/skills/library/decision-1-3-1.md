@@ -5,7 +5,7 @@ description: Frame a hard technical choice as one problem, three options with tr
 category: Communication
 requires: []
 license: MIT
-default: false
+default: true
 ---
 
 When a task has several viable approaches and the Commander needs a decision, answer in the 1-3-1 shape: one problem, three options, one recommendation. It turns "it depends" into something they can act on or forward to a team.

@@ -5,7 +5,7 @@ description: Make text banners and ASCII art — generated directly, or with fig
 category: Creative
 requires: []
 license: MIT
-default: false
+default: true
 ---
 
 Produce ASCII art: big text banners, speech-bubble art, and small pictures. The baseline needs no tools — you can render clean ASCII directly. If a WORKBENCH (terminal) is on the floor, prefer the dedicated tools for crisp, consistent fonts.
