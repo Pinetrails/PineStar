@@ -259,20 +259,27 @@ fresh `npm run qa:ready` receipt printed alongside the claim. Lane-level done st
 "lane X verified; station-wide status is whatever qa:ready says."
 
 **Queue:**
-- **EL-7 · qa:ready gate** — `scripts/qa/ready.mjs` + `npm run qa:ready`: one machine verdict
-  READY / NOT READY with receipts (ledger open P0/P1 == 0 · Guardian last cycle green AND fresh ·
-  qa:journeys pass · Beginner Run not stuck · installed-exe smoke stamp fresh). No-fake-green: a
-  check that cannot run = NOT READY, loudly. **IN PROGRESS — Fable session · lane agent/ready-gate.**
-- **EL-8 · RC freeze + installed-exe soak (absorbs EL-4)** — `docs/RELEASE_READINESS.md` (cut an
-  RC, freeze it — only P0/P1 fixes merge in — then ≥48h soak on the INSTALLED exe with REAL
-  providers before publish) + the EL-4 CDP-attach installed-smoke runner writing the stamp
-  `qa:ready` reads + RELEASE_RUNBOOK step 0 = qa:ready must print READY before release:bump.
-  **IN PROGRESS — Fable session · lane agent/rc-soak.**
-- **EL-9 · Dogfood loop (Andrew stops being QA)** — `loops/dogfood.md`: standing session loop
-  where an agent USES StarNet like a user (recruit → assign real multi-step work → interrupt →
-  restart → open deliverables → channels), real providers, dev seed AND installed exe; every
-  anomaly filed through the ledger with evidence per EL-3. Port range + crew row in qa/STATUS.md.
-  **IN PROGRESS — Fable session · lane agent/dogfood.**
+- **EL-7 · qa:ready gate** — ✅ MERGED 2026-07-07 (lane agent/ready-gate → 7f737a93, gate 267
+  green): `npm run qa:ready` = one machine verdict READY/NOT-READY with per-check receipts
+  (ledger P0/P1 via openBySeverity() · Guardian green+fresh+saw-current-trunk via git drift ·
+  journeys · beginner · installed-smoke stamp ≤7d). No-fake-green. LOCKED LAW in DECISIONS.md +
+  starnet-verify: no "ready/perfect/go-public" claim without a pasted fresh qa:ready receipt.
+  First live trunk verdict: honest NOT READY — 5 reasons (6 P0 · 6 P1 open; runner stamps unwritten
+  until each runner's next cycle; installed exe unverified).
+- **EL-8 · RC freeze + installed-exe soak (absorbs EL-4)** — ✅ MERGED 2026-07-07 (lane
+  agent/rc-soak → bf72e8bb, gate 268 green): docs/RELEASE_READINESS.md (rc/<ver> freeze — only
+  P0/P1 cherry-picks with their EL-3 scenario; ≥48h installed-exe real-provider soak, dogfood-
+  driven; P0 restarts the clock; pass = 0 new P0/P1 + qa:ready READY) + scripts/qa/installed-
+  smoke.mjs (CDP attach 9333 via scripts/lib/cdp.mjs; GREEN/RED/BLOCKED stamp qa/installed/
+  last-smoke.json — cross-lane read PROVEN live vs qa:ready; BLOCKED files P0, RED files P1) +
+  RELEASE_RUNBOOK step 0 (no READY, no release:bump). STILL OPEN: first real run against
+  Andrew's installed exe (relaunch with WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=
+  --remote-debugging-port=9333, then `npm run qa:smoke:installed`).
+- **EL-9 · Dogfood loop (Andrew stops being QA)** — ✅ MERGED 2026-07-07 (lane agent/dogfood →
+  41b189fc, gate 266 green): loops/dogfood.md 9-step real-user shift + crew row/ports 8970–8979 +
+  first proof shift in qa/dogfood/SHIFTS.md (mock, labelled; interrupt truthfully cancelled,
+  diagnostics survived restart, 0 anomalies). STILL OPEN: first REAL-provider shift (needs key in
+  dev/.env.dev; pennies on a haiku-class model) and installed-exe shifts as the RC-soak driver.
 
 ## Atlas — Perfectionist area claims (one session, one area)
 
