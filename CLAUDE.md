@@ -3,6 +3,11 @@
 This project is built by **many agents at once** (commonly 7–10). This file is the contract
 that keeps them from overwriting each other. Read it before you touch anything.
 
+**Orientation (the project brain):** [docs/BRAIN.md](docs/BRAIN.md) — what StarNet is,
+architecture, where truth lives. Then [docs/DECISIONS.md](docs/DECISIONS.md) (locked
+decisions), [docs/MISTAKES.md](docs/MISTAKES.md) (recurring failures), and
+[docs/NEXT.md](docs/NEXT.md) (current priorities + task queue).
+
 ## Prime directive
 
 You are ONE of many agents working this repo simultaneously. **Stay inside your own
@@ -11,7 +16,7 @@ data loss — that is the single failure mode this protocol exists to prevent.
 
 ## Where work happens
 
-- **Integration tree** — `C:\Users\andro\OneDrive\Desktop\gen` on branch `feat/harness-backend`.
+- **Integration tree** — `C:\Users\andro\Desktop\gen` on branch `feat/harness-backend`.
   This is the **trunk**: the place branches MERGE INTO. Do **not** do feature editing here.
 - **Your workspace** — a git *worktree* at `C:\Users\andro\gen-trees\<name>` on branch
   `agent/<name>`. ALL your editing and committing happens there, in isolation.

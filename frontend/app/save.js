@@ -62,16 +62,34 @@ const Save = (() => {
     } catch (_) {}
   }
 
-  function load() {
+  // FORWARD-VERSION GUARD (P0.3). loadStatus() is the honest verdict channel the boot path reads BEFORE
+  // it decides resume-vs-onboard. A save whose version is GREATER than this build's CURRENT was written by
+  // a NEWER StarNet: this code cannot read the fields that version added, so migrating it (which would
+  // re-stamp version = CURRENT and drop those fields) is silent contamination. We refuse: leave the stored
+  // doc byte-for-byte UNTOUCHED and report { status:'future', version } so the boot path can raise an
+  // honest "update the app" gate instead of either mangling the save or (worse) treating it as no-save and
+  // clobbering it on the first persist(). status 'ok' carries the migrated doc; 'none' = genuinely no save;
+  // 'error' = unreadable/corrupt (treated as no-save by callers today, same as the old load()).
+  function loadStatus() {
     try {
       const raw = localStorage.getItem(KEY);
-      if (!raw) return null;
+      if (!raw) return { status: 'none', doc: null, version: 0 };
       let doc = JSON.parse(raw);
-      if (!doc || (doc.schema !== SCHEMA && doc.schema !== LEGACY_SCHEMA) || !doc.agent) return null;
+      if (!doc || (doc.schema !== SCHEMA && doc.schema !== LEGACY_SCHEMA) || !doc.agent) return { status: 'none', doc: null, version: 0 };
+      const v = Number(doc.version || 0);
+      if (v > CURRENT) return { status: 'future', doc: null, version: v };   // NEWER build wrote this — do not touch it
       backupBeforeMigrate(raw, doc);
-      return migrate(doc);
-    } catch (e) { console.warn('[save] load failed:', e); return null; }
+      return { status: 'ok', doc: migrate(doc), version: CURRENT };
+    } catch (e) { console.warn('[save] load failed:', e); return { status: 'error', doc: null, version: 0 }; }
   }
+
+  // load() keeps its historic contract: the migrated doc, or null on anything else (no save / future / error).
+  // A future save returns null here so no legacy call site can adopt or re-save it; the boot path uses
+  // loadStatus()/isFuture() to distinguish "no save" (start onboarding) from "future save" (raise the gate).
+  function load() { return loadStatus().doc; }
+
+  // convenience for callers that only need the yes/no forward-version verdict without the full status shape.
+  function isFuture() { return loadStatus().status === 'future'; }
 
   // returns the persisted doc (so callers can mirror the EXACT envelope to the durable sidecar), or null on
   // failure. The doc carries a fresh updatedAt stamp, which the sidecar uses to reject stale write-throughs.
@@ -84,5 +102,6 @@ const Save = (() => {
   function clear() { try { localStorage.removeItem(KEY); } catch (e) {} }
   function has() { try { return !!localStorage.getItem(KEY); } catch (e) { return false; } }
 
-  return { load, write, clear, has, CURRENT, PRE_MIGRATE_BACKUP_KEY };
+  return { load, loadStatus, isFuture, write, clear, has, CURRENT, PRE_MIGRATE_BACKUP_KEY };
 })();
+if (typeof module !== 'undefined' && module.exports) module.exports = Save;

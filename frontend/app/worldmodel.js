@@ -81,14 +81,15 @@ const WorldModel = (() => {
     gigs_servercart: 'notebook', bridge_relaystack: 'notebook', core: 'notebook',                                            // a server/databank = memory
     connector_portal: 'connector',                                                                                           // a connector portal = an MCP server's live tools (per-instance, bound to a connectorId)
     workbench: 'workbench',                                                                                                   // a workbench = shell.exec + verify.run (real code execution, consent-gated)
-    studio: 'studio'                                                                                                          // a media studio = image_generate / image_analyze (G1b: image tools finally have a placeable body)
+    studio: 'studio',                                                                                                         // a media studio = image_generate / image_analyze (G1b: image tools finally have a placeable body)
+    jukebox: 'jukebox'                                                                                                        // a jukebox = Spotify tools (search/now-playing/play/pause/queue); INERT until Spotify is connected in Settings
   };
 
   /* the plain-English POWER each capability grants — one OWNED source of truth so the palette tile, the
      placement toast, and the Field Manual all say the SAME word for the same thing (kills DISH-vs-antenna
      drift: a prop, the power it grants, and what the agent then does all match). */
   const CAP_LABEL = {
-    computer: 'COMPUTE', cabinet: 'FILES', dish: 'WEB', notebook: 'MEMORY', connector: 'LIVE TOOLS', workbench: 'TERMINAL', studio: 'IMAGES'
+    computer: 'COMPUTE', cabinet: 'FILES', dish: 'WEB', notebook: 'MEMORY', connector: 'LIVE TOOLS', workbench: 'TERMINAL', studio: 'IMAGES', jukebox: 'SPOTIFY'
   };
   function grantLabelForProp(propType) { const c = CAP_PROP_MAP[propType]; return c ? (CAP_LABEL[c] || c) : null; }   // prop -> plain power word (or null = inert decor)
 

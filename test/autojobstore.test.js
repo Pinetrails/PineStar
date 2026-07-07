@@ -227,6 +227,19 @@ global.Onboarding = undefined;
     A.eq(AutoJobStore.pendingCount(), 0, 'no board → nothing is parked on a (non-existent) board');
     A.eq(rn.scheduled, 1, 'no-board propose reports scheduled count as before');
 
+    /* ========== POPUP-ESCAPE (Andrew): the Commander can bail the WHOLE multi-proposal ask ========== */
+    /* each approval node is offered as dismissable, and a `dismissed` result stops asking the rest ---- */
+    clearFakes(); AutoJobStore.reset(); boardHere = false;
+    hn.next = { text: TWO };
+    dlg.choices = [{ value: '', skip: true, dismissed: true }, { value: 'yes' }];   // Esc / "leave it" on proposal #1
+    const rd = await AutoJobStore.propose({ proactive: true });
+    A.eq(dlg.noded, 1, 'a dismiss on the first proposal stops the loop — the 2nd is never asked');
+    A.eq(scheduled.length, 0, 'dismissing the flow schedules nothing');
+    A.ok(dlg.lastNodes[0] && dlg.lastNodes[0].dismissable === true, 'each proposal node is presented as dismissable (Esc/✕ can exit)');
+    A.eq(rd.scheduled, 0, 'a dismissed flow reports zero scheduled');
+    A.ok(dlg.closed >= 1, 'the Dialogue still closes cleanly after a dismiss (panel never left hanging)');
+    A.eq(AutoJobStore._state().proposed, true, 'a dismissed proactive offer is still spent — it is not re-nagged this session');
+
     /* ========== W6 MINT DEDUP: the frontend never offers/mints a routine that already exists ========== */
 
     /* inline Dialogue flow: a proposal whose name already matches a LIVE routine is skipped (no doomed offer) ---- */

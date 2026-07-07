@@ -19,8 +19,16 @@
  * block (matched by `name = "skynet-desktop"`), which needs no registry access — the
  * package is local, so no checksum changes. We never run cargo (no network dependency).
  *
- * VALIDATION: <version> must be SemVer and STRICTLY GREATER THAN the current
- * tauri.conf.json version — a bump can only ever go up, never sideways or backward.
+ * VALIDATION: <version> must be SemVer and STRICTLY GREATER THAN two floors:
+ *   1. the current in-tree tauri.conf.json version (always enforced, offline-safe), AND
+ *   2. the HIGHEST version PUBLISHED to the updater's releases repo, when reachable.
+ * Floor (2) exists because the in-tree file can lag the fleet (in-tree 0.2.2 while the fleet
+ * runs 0.2.4) and GitHub's releases/latest is the MOST-RECENTLY-published release, not the
+ * highest semver — so publishing a lower version than the fleet already runs would flip every
+ * user's update feed BACKWARDS. We query it with `gh release list` against the repo read from
+ * tauri.conf.json's updater endpoint. If we can't reach it (offline / no `gh` / no auth / a
+ * private-repo 404), we WARN LOUDLY and fall back to floor (1) — never a silent backwards pass,
+ * never a hard-fail on an offline dev box.
  *
  * SAFETY: never pushes. `--no-tag` skips the tag. `--dry-run` prints every change and
  * touches nothing (no writes, no git).
@@ -30,6 +38,8 @@
  *
  * Env overrides (used by the unit test to run against a throwaway fixture repo):
  *   STARNET_BUMP_ROOT   default: repo root (parent of scripts/)
+ *   STARNET_BUMP_GH     default: 'gh' — the GitHub CLI used for the published-floor query
+ *                       (the unit test injects a fake `gh` here to exercise every branch offline)
  */
 
 import {
@@ -77,6 +87,80 @@ function compareSemver(a, b) {
   if (!pa.pre) return 1;   // release > prerelease of same core
   if (!pb.pre) return -1;
   return pa.pre < pb.pre ? -1 : 1; // lexical is enough for the strictly-greater gate
+}
+
+function warn(msg) { process.stderr.write('release-bump: WARNING: ' + msg + '\n'); }
+
+// ---- Published-release floor (0.5b) ---------------------------------------------------
+//
+// The in-tree tauri.conf.json version is NOT a safe floor: the file can lag the published
+// fleet (e.g. in-tree 0.2.2 while the fleet is on 0.2.4). GitHub's releases/latest = the
+// MOST-RECENTLY-PUBLISHED release, not the highest semver — so publishing a lower version
+// than the fleet already runs would flip every user's update feed BACKWARDS. Before we let a
+// bump proceed we anchor the floor to the HIGHEST version actually published to the updater's
+// own releases repo. If we cannot reach it (offline, no auth, private-repo 404), we fall back
+// to the in-tree floor with a LOUD warning — never a silent pass, never a hard-fail on a dev
+// box with no network.
+
+// Extract the `owner/repo` slug from the updater endpoint in tauri.conf.json. Read-only.
+function resolveReleasesRepo() {
+  const confPath = join(ROOT, 'src-tauri', 'tauri.conf.json');
+  if (!existsSync(confPath)) return null;
+  let conf;
+  try { conf = readJson(confPath); } catch { return null; }
+  const endpoints = conf?.plugins?.updater?.endpoints;
+  const url = Array.isArray(endpoints) ? endpoints.find(e => typeof e === 'string') : null;
+  if (!url) return null;
+  // e.g. https://github.com/nonfungiblefunyuns-ship-it/starnet-releases/releases/latest/...
+  const m = /github\.com\/([^/]+)\/([^/]+)/.exec(url);
+  if (!m) return null;
+  return m[1] + '/' + m[2];
+}
+
+// Query the highest SemVer tag published to `repo`, or a status describing why we couldn't.
+// Returns one of:
+//   { ok: true,  floor: '0.2.4' }        highest published version (null if repo has 0 releases)
+//   { ok: true,  floor: null }           repo reachable but genuinely has no releases
+//   { ok: false, reason: '...' }         could-not-check (offline / no gh / auth / 404) -> warn+fallback
+//
+// The gh binary is overridable via STARNET_BUMP_GH so the unit test can inject a fake gh
+// (same seam pattern as STARNET_BUMP_ROOT) and exercise every branch offline.
+function queryPublishedFloor(repo) {
+  const ghBin = process.env.STARNET_BUMP_GH || 'gh';
+  const ghArgs = ['release', 'list', '-R', repo, '--json', 'tagName', '--limit', '200'];
+  // Test seam: a fake gh supplied as a .mjs/.cjs/.js script is run with the current node so the
+  // unit test can exercise the real spawn+parse path cross-platform (a bare .cmd/.js can't be
+  // spawned without a shell on Windows). Real gh is a native binary and takes the plain path.
+  let cmd = ghBin, cmdArgs = ghArgs;
+  if (/\.(mjs|cjs|js)$/i.test(ghBin)) { cmd = process.execPath; cmdArgs = [ghBin, ...ghArgs]; }
+  let res;
+  try {
+    res = spawnSync(cmd, cmdArgs, { encoding: 'utf8' });
+  } catch (e) {
+    return { ok: false, reason: 'gh spawn threw: ' + e.message };
+  }
+  if (res.error) {
+    // ENOENT = gh not installed; any spawn error = can't check.
+    return { ok: false, reason: 'gh not runnable (' + (res.error.code || res.error.message) + ')' };
+  }
+  if (res.status !== 0) {
+    // Non-zero covers auth failure and the private-repo 404 (unauth'd API 404s on private repos):
+    // we must NOT read that as "no releases" (which would let a backwards bump pass).
+    const detail = (res.stderr || res.stdout || '').trim().split(/\r?\n/)[0] || ('exit ' + res.status);
+    return { ok: false, reason: 'gh release list exited ' + res.status + ': ' + detail };
+  }
+  let rows;
+  try { rows = JSON.parse(res.stdout || '[]'); } catch {
+    return { ok: false, reason: 'could not parse gh JSON output' };
+  }
+  if (!Array.isArray(rows)) return { ok: false, reason: 'unexpected gh JSON shape' };
+  let floor = null;
+  for (const row of rows) {
+    const tag = String(row?.tagName || '').replace(/^v/, '');
+    if (!SEMVER_RE.test(tag)) continue;
+    if (floor === null || compareSemver(tag, floor) > 0) floor = tag;
+  }
+  return { ok: true, floor };
 }
 
 // ---- Pure file-edit planners (return {path, before, after}); no side effects. ----
@@ -144,13 +228,41 @@ function main() {
   const current = readJson(confPath).version;
   if (!current) fail('tauri.conf.json has no current version');
   if (compareSemver(version, current) <= 0) {
-    fail('new version ' + version + ' is not strictly greater than current ' + current + '.');
+    fail('new version ' + version + ' is not strictly greater than current in-tree ' + current + '.');
+  }
+
+  // 0.5b — anchor the floor to the highest PUBLISHED release when we can reach it, because the
+  // in-tree version can lag the fleet and GitHub's releases/latest is most-recent-not-highest.
+  let publishedFloor = null;
+  const repo = resolveReleasesRepo();
+  if (!repo) {
+    warn('could not resolve the releases repo from tauri.conf.json updater endpoint — '
+      + 'published-floor check SKIPPED; only the in-tree floor (' + current + ') was enforced.');
+  } else {
+    const q = queryPublishedFloor(repo);
+    if (!q.ok) {
+      warn('could not check the published release floor for ' + repo + ' (' + q.reason + ').');
+      warn('  A backwards release could NOT be ruled out. Only the in-tree floor (' + current
+        + ') was enforced. If ' + repo + ' is private, run `gh auth login` (with read access) '
+        + 'and re-run so this bump is verified against what the fleet actually runs.');
+    } else if (q.floor === null) {
+      log('  published floor  : (none — ' + repo + ' has no releases yet)');
+    } else {
+      publishedFloor = q.floor;
+      if (compareSemver(version, publishedFloor) <= 0) {
+        fail('new version ' + version + ' is not strictly greater than the highest PUBLISHED '
+          + 'release ' + publishedFloor + ' on ' + repo + '. Publishing it would flip the fleet '
+          + 'update feed BACKWARDS (releases/latest is most-recent, not highest semver). '
+          + 'Bump above ' + publishedFloor + '.');
+      }
+    }
   }
 
   log('== release-bump preflight ==');
   log('  root            : ' + ROOT);
   log('  current version : ' + current);
   log('  new version     : ' + version);
+  if (publishedFloor) log('  published floor : ' + publishedFloor + ' (' + repo + ')');
   log('  dry-run         : ' + DRY_RUN);
   log('  tag             : ' + (NO_TAG ? '(skipped, --no-tag)' : 'v' + version));
 

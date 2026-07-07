@@ -1,8 +1,11 @@
-StarNet desktop 0.1.9.
+# StarNet v0.2.2
 
-- Verifies the new auto-update loop end-to-end (0.1.8 → 0.1.9 is the first unattended
-  update ever delivered through the GitHub Releases channel).
-- Latest station fixes: conveyor-belt route legibility, COMMS reply chip follows the
-  selected agent.
+First release on the new multi-platform update train.
 
-See INSTALL.md for first-time install instructions (unsigned installer / SmartScreen).
+- Updates now ship for Windows, macOS (Apple Silicon + Intel), and Linux from a single release.
+- One-click MCP connector catalog: curated connectors with paste-a-key and OAuth setup.
+- Update Center improvements: the app checks for updates automatically and installs only when you say so.
+- Security: workspace file jail now rejects Windows network paths on every platform.
+- Reliability: signed update artifacts are verified end-to-end before a release can go live.
+
+If the app is already running an older version, open System → Updates → CHECK NOW to get this build.

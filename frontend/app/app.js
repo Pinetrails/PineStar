@@ -5,7 +5,9 @@
 const App = (() => {
   const el = id => document.getElementById(id);
   // HTML-escape for the rare spot we build a connect message with a link (provider label + signup URL).
-  const esc = s => { const d = document.createElement('div'); d.textContent = String(s == null ? '' : s); return d.innerHTML; };
+  // Delegates to the one complete implementation (U.esc escapes & < > " ' — quotes included, so attribute
+  // contexts are safe); keep the null-guard the old local copy had so U.esc(null) never renders "null".
+  const esc = s => U.esc(s == null ? '' : s);
   // CRT-muted crew suit tints — distinct per crew member but passed through the amber-phosphor grade (no pure neons). Last entry stays gold to match ORCH_COLOR.
   const SUITS = ['#6fb3bf', '#7bc88a', '#d99a5a', '#a888c0', '#cf7d96', '#ffd34a'];
 
@@ -340,6 +342,57 @@ const App = (() => {
     return true;
   }
 
+  // DOSSIER › CHANGE SKIN: repoint an agent's sprite set to another entry in the SAME genesis skin catalog
+  // (DATA.SKINS — the single source of truth the create screen's picker reads). Display identity only: the
+  // agentId, model, prompt and every lookup are untouched; we persist the new skin on the record, live-update
+  // the floor body (World.setSkin), refresh an open dossier, and persist. Returns false on an unknown skin.
+  function setAgentSkin(agentId, skin) {
+    const a = agents.get(String(agentId || '')) || (agent && agent.id === agentId ? agent : null);
+    if (!a) return false;
+    const sk = String(skin || '').trim();
+    if (!sk || typeof DATA === 'undefined' || !DATA.SKINS || !DATA.SKINS[sk]) return false;   // must be a real catalog skin
+    a.skin = sk;
+    if (typeof World !== 'undefined' && World.setSkin) World.setSkin(a.id, sk);   // live-update the sprite on the floor
+    if (typeof StationUI !== 'undefined' && StationUI.setRoster) StationUI.setRoster(liveAgents());   // repaint the dossier portrait/picker
+    persist();
+    return true;
+  }
+
+  // DOSSIER › DELETE AGENT: remove a SUMMONED specialist from the crew for real — the roster, the world body, and
+  // the server-side stores (archived, not wiped, by /api/agent/delete). Refuses to delete the hero or the LAST
+  // remaining agent (the UI disables the button with a reason; this is the matching hard guard). The frontend
+  // owns the roster, so we mutate the live registry, re-push the surviving set, drop the floor body, retire any
+  // workstreams bound to the gone agent, then fire the server archive. Returns a Promise<bool>.
+  function deleteAgent(agentId) {
+    const id = String(agentId || '');
+    const a = agents.get(id);
+    if (!a) return Promise.resolve(false);
+    if (id === 'agent' || (agent && agent.id === 'agent' && a.role === 'orchestrator')) return Promise.resolve(false);   // never the hero
+    if (a.role === 'orchestrator') return Promise.resolve(false);   // the overseer is the founder — undeletable
+    if (agents.size <= 1) return Promise.resolve(false);   // never the last agent on station
+    // if the deleted agent is currently focused, hand COMMS back to the hero BEFORE dropping it.
+    const wasFocused = agent && agent.id === id;
+    agents.delete(id);
+    if (wasFocused) focusAgent('agent');
+    if (typeof World !== 'undefined' && World.despawnAgent) World.despawnAgent(id);   // pull its floor body
+    // retire workstreams bound to the gone agent so the rail can't reopen a stream with no agent behind it.
+    try {
+      if (typeof Workstreams !== 'undefined' && Workstreams.removeByAgent) Workstreams.removeByAgent(id);
+    } catch (_) {}
+    recomposeOrchestrators();   // the lead's YOUR CREW clause must drop the removed specialist
+    if (typeof StationUI !== 'undefined' && StationUI.setRoster) StationUI.setRoster(liveAgents());
+    renderRail();
+    pushRoster();   // the surviving crew replaces the whole server roster
+    persist();
+    // fire-and-honest: archive the server-side stores. The roster is already correct locally + re-pushed; this
+    // resolves off the real route so the caller can surface a truthful result, but a failure here never resurrects
+    // the agent (its stores just stay retained on disk, which is the safe direction).
+    return fetch('/api/agent/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ agentId: id }) })
+      .then(r => r.json().catch(() => null))
+      .then(j => !!(j && j.ok))
+      .catch(() => false);
+  }
+
   /* ---------- the live agent registry (multi-agent) ----------
      `agent` is the FOCUSED agent; `agents` holds the whole crew. liveAgents() is what the world / bay /
      builder / dossier read. focusAgent(id) repoints COMMS + the run identity at one crew member — the
@@ -358,8 +411,22 @@ const App = (() => {
     }
   }
   function focusAgent(id) {
-    const a = agents.get(id) || agents.get('agent');
+    // P1.2 (UPDATE_STATE_SAFETY_AUDIT) — end silent impersonation. The old `agents.get(id) || agents.get('agent')`
+    // SILENTLY rebound COMMS + the run identity to the OVERSEER whenever `id` was missing from the live registry
+    // (a stale workstream binding, a roster gone out of sync after an update). The user then read the overseer's
+    // replies as coming from their specialist — "my agents were never real". Truthful-telemetry law: never assert
+    // an identity the harness can't back. So: if `id` is a real, non-overseer id that ISN'T in the registry, do
+    // NOT switch — keep whoever is currently focused, warn, and surface an honest inline state on the COMMS header.
+    const want = String(id == null ? '' : id);
+    const hit = agents.get(want);
+    if (!hit && want && want !== 'agent') {
+      try { console.warn('[roster] focusAgent: agent ' + want + ' not in the live registry — keeping current focus, NOT rebinding to the overseer (roster out of sync)'); } catch (_) {}
+      if (typeof Chat !== 'undefined' && Chat.setRosterStatus) Chat.setRosterStatus('agent unavailable — roster out of sync');
+      return;   // leave `agent` untouched: the last real identity stays on the line
+    }
+    const a = hit || agents.get('agent');
     if (!a) return;
+    if (typeof Chat !== 'undefined' && Chat.setRosterStatus) Chat.setRosterStatus('');   // a real agent is focused — clear any prior honest-miss notice
     agent = a;
     if (a.model && typeof Harness !== 'undefined' && Harness.setModel) Harness.setModel(a.model);
     // #4: provider + reasoning-effort are PER-AGENT, not one global — restore them on focus so switching to an
@@ -889,13 +956,29 @@ const App = (() => {
   // the most recent /api/roster POST. A backend-initiated summon must AWAIT this before acking, so the lead's
   // immediate team.dispatch sees the new worker in agentRoster (the POST is otherwise fire-and-forget → a race).
   let lastRosterPush = Promise.resolve();
+  // like the cloudsave mirror, a roster POST used to swallow every failure silently. Lighter treatment than
+  // the full backoff loop (the roster is re-derivable from local state and re-pushed constantly): track a
+  // single failed flag, warn EXACTLY once on the healthy→failing edge, and let the next persist re-attempt.
+  let rosterPushFailed = false;
   function pushRoster() {
     try {
       const fallbackProv = (typeof Harness !== 'undefined' && Harness.getProv) ? Harness.getProv() : 'openrouter';
       const list = liveAgents().map(a => ({ agentId: a.id, system: a.systemPrompt || '', name: a.name || a.id, model: a.model || '', provider: a.provider || fallbackProv, role: rosterRole(a), approvalMode: (a.approvalMode === 'full' ? 'full' : 'ask'),
         workshop: !!a.workshop,   // W3: the away-build grant travels with the roster so the consent broker can honor it
         skills: Array.isArray(a.skills) ? a.skills : [], reasoningEffort: a.reasoningEffort || null }));   // #4: each agent's OWN provider; Class Loadouts S1: per-agent skill package + applied effort
-      lastRosterPush = fetch('/api/roster', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ agents: list }) }).catch(() => {});
+      // P1.1 (UPDATE_STATE_SAFETY_AUDIT): stamp a freshness `updatedAt` so the sidecar can refuse a STALE push (a
+      // background tab / out-of-sync frontend whose roster is older than what the store already accepted). The
+      // sidecar records the stamp of the last accepted write and 200s { ok:false, stale:true } on an older one;
+      // a legacy stamp-less push still writes as before (backward compatible). Date.now() is monotonic-enough for
+      // this last-write anti-clobber (mirrors save.js's own updatedAt stamp).
+      lastRosterPush = fetch('/api/roster', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ agents: list, updatedAt: Date.now() }) })
+        .then(r => {
+          if (r && r.ok === false) throw new Error('roster HTTP ' + r.status);
+          if (rosterPushFailed) { rosterPushFailed = false; try { console.info('[roster] sidecar roster sync recovered.'); } catch (_) {} }
+        })
+        .catch(() => {
+          if (!rosterPushFailed) { rosterPushFailed = true; try { console.warn('[roster] sidecar roster sync failed; will retry on next persist. Local roster is intact.'); } catch (_) {} }
+        });
       return lastRosterPush;
     } catch (_) { return Promise.resolve(); }
   }
@@ -937,6 +1020,7 @@ const App = (() => {
     const dossier = (typeof DossierStore !== 'undefined') ? DossierStore.serialize() : undefined;   // the station-wide Commander model
     const doc = Save.write(Object.assign({ agent: hero, agents: roster.length > 1 ? roster.map(serializeAgentLite) : undefined, usage: Harness.totals(), prov, reasoningEffort, station: station ? station.serialize() : undefined, stationStats, profile, worksignal, dossier }, Workstreams.serialize()));
     if (doc && typeof CloudSave !== 'undefined') CloudSave.push(doc);   // durable write-through to the sidecar (debounced, best-effort)
+    if (rosterPushFailed) pushRoster();   // a prior roster POST failed — retry it opportunistically on this persist
     if (typeof StationUI !== 'undefined') StationUI.flashSave();
   }
 
@@ -965,11 +1049,11 @@ const App = (() => {
     for (const m of list) { const o = document.createElement('option'); o.value = m.id; dl.appendChild(o); }
     if (list.length) {
       countEl.textContent = '(' + list.length + ' available)';
-      if (!inp.value) {
-        const pref = list.find(m => /claude.*sonnet|gpt-4o|gpt-5/i.test(m.id)) || list[0];
-        inp.value = pref.id;   // DEFAULT-FILL so a first ⏼ WAKE never bounces on an empty model (matches the Codex path, which already defaults)
-        inp.placeholder = 'e.g. ' + pref.id;
-      }
+      const pref = list.find(m => /claude.*sonnet|gpt-4o|gpt-5/i.test(m.id)) || list[0];
+      if (!inp.value) inp.value = pref.id;   // DEFAULT-FILL so a first ⏼ WAKE never bounces on an empty model (matches the Codex path, which already defaults)
+      // Always retire the "loading models…" placeholder once the catalog resolves — otherwise a field that was
+      // already default-filled (prior provider, restored save) keeps asserting "loading" as its accessible name.
+      inp.placeholder = 'e.g. ' + pref.id;
     } else {
       // catalog unreachable (no network to openrouter.ai, or fetch blocked): DON'T leave the field
       // looking like it's still loading. Seed a few common slugs and make the placeholder actionable
@@ -977,7 +1061,8 @@ const App = (() => {
       const FALLBACK = FALLBACK_MODELS[p] || FALLBACK_MODELS.openrouter;
       for (const id of FALLBACK) { const o = document.createElement('option'); o.value = id; dl.appendChild(o); }
       countEl.textContent = '(catalog offline — type or pick a slug)';
-      if (!inp.value) { inp.value = FALLBACK[0]; inp.placeholder = 'type a model slug — e.g. gpt-5.5'; }   // default-fill even offline so WAKE works; the Commander can overtype
+      if (!inp.value) inp.value = FALLBACK[0];   // default-fill even offline so WAKE works; the Commander can overtype
+      inp.placeholder = 'type a model slug — e.g. gpt-5.5';   // never leave "loading models…" up once we've resolved (even to the offline fallback)
     }
     updateHint();
   }
@@ -1195,6 +1280,7 @@ const App = (() => {
     for (const m of models) { const o = document.createElement('option'); o.value = m.id; if (m.displayName && m.displayName !== m.id) o.label = m.displayName; dl.appendChild(o); }
     el('model-count').textContent = '(ChatGPT subscription)';
     const mi = el('in-model'); if (!ids.includes(mi.value)) mi.value = def;
+    if (def) mi.placeholder = 'e.g. ' + def;   // retire "loading models…" here too, so the field's accessible name matches the loaded catalog
     updateHint();
   }
 
@@ -1243,7 +1329,7 @@ const App = (() => {
     codeEl.textContent = d.user_code; codeEl.classList.remove('hidden');
     openBtn.classList.remove('hidden');
     openBtn.onclick = () => openExternalUrl(d.verification_uri);
-    statusEl.innerHTML = 'enter this code at <b>' + d.verification_uri + '</b> (opening it now)…';
+    statusEl.innerHTML = 'enter this code at <b>' + esc(d.verification_uri) + '</b> (opening it now)…';
     openExternalUrl(d.verification_uri);
     pollCodex(d.interval || 5);
   }
@@ -1517,6 +1603,10 @@ const App = (() => {
   // station; otherwise it shows the connect screen in RESUME mode. Only a genuine no-save state falls through
   // to a fresh creation.
   function reentry() {
+    // FORWARD-VERSION GATE (P0.3): a re-entry (disconnect / back / recovery) must not fall through to a fresh
+    // create when the stored save is from a NEWER build — Save.load() returns null for it, which would look like
+    // "no save" and clobber it on first persist(). Stop at the honest update gate; the save stays untouched.
+    if (Save.isFuture && Save.isFuture()) { showFutureSaveGate(Save.loadStatus().version); return; }
     const saved = Save.has() ? Save.load() : null;
     if (saved && saved.agent) {
       if (saved.prov && Harness.setProv) Harness.setProv(saved.prov);
@@ -1553,7 +1643,12 @@ const App = (() => {
     SFX.boot(); SFX.open();
     stopCodexPoll();   // leaving the connect screen — drop any in-flight sign-in poll
     const model = el('in-model').value.trim();
-    const name = (el('in-name').value.trim() || 'AGENT').toUpperCase().slice(0, 18);   // single funnel for agent.name → honor the 18-char design cap (covers the roster-pick path too)
+    // single funnel for agent.name → honor the 18-char design cap (covers the roster-pick path too).
+    // A blank/sentinel name mints a station codename (never the bland 'AGENT'), matching the awakening
+    // speaker — dialogue.js owns the generator so both surfaces stay consistent.
+    let rawName = el('in-name').value.trim();
+    if (typeof Dialogue !== 'undefined' && Dialogue.isUnnamed && Dialogue.isUnnamed(rawName)) rawName = Dialogue.codename();
+    const name = (rawName || 'AGENT').toUpperCase().slice(0, 18);
     const msg = el('connect-msg'); msg.className = 'msg';
     if (!model) {
       // COLD-START: never strand a beginner on an empty required field. Pre-fill a sensible default for the
@@ -1746,7 +1841,7 @@ const App = (() => {
         totals: () => Harness.totals(),
         context: () => Harness.contextState(agent ? agent.id : 'agent'),
         activity: () => (World.getActivity ? World.getActivity() : 'idle'),
-        config: { apply: applyAgentConfig, setModel: setAgentModelPin, setName: setAgentName, setWorkshop: setAgentWorkshop }   // dossier edits re-shape the live prompt; setModel pins per-agent model/provider/effort (P1-6); setName renames the agent; setWorkshop flips the away-build grant (W3)
+        config: { apply: applyAgentConfig, setModel: setAgentModelPin, setName: setAgentName, setWorkshop: setAgentWorkshop, setSkin: setAgentSkin, deleteAgent: deleteAgent, crewCount: () => agents.size }   // dossier edits re-shape the live prompt; setModel pins per-agent model/provider/effort (P1-6); setName renames the agent; setWorkshop flips the away-build grant (W3); setSkin repoints the sprite (genesis catalog); deleteAgent archives+removes a specialist; crewCount gates the last-agent delete guard
       });
       if (!opts.awaitingPurpose) StationUI.notify(agent.name + ' is online — ' + agent.model, 'good');   // during the awakening the finale announces it instead
     }
@@ -2165,7 +2260,6 @@ const App = (() => {
     // (the fix is one click away). Stands down while the tutorial is coaching (tutorial wins). Started here so
     // it only ever runs on the floor; disconnect() stops it.
     if (typeof DockGlow !== 'undefined' && DockGlow.start) DockGlow.start();
-    el('btn-disconnect').onclick = disconnect;
   }
 
   // (the single-question purpose interview was replaced by the AWAKENING — Onboarding authors purpose.md
@@ -2298,6 +2392,19 @@ const App = (() => {
   function selectAgent(agentId) {
     const id = String(agentId || '');
     const a = agents.get(id); if (!a) return null;
+    // A BRAND-NEW empty session is a blank line the Commander just opened: picking an agent puts THAT agent
+    // on THIS line instead of teleporting to the agent's latest old stream (the Commander keeps the freedom
+    // to start a fresh chat with anyone). Rebinding a blank stream corrupts no transcript — the no-rebind
+    // law above only protects conversations with content. General (the hero's home) and any stream with
+    // history / runs / a live run keep their binding and fall through to the switch-or-mint path.
+    const cur = Workstreams.active();
+    if (cur && cur.id !== Workstreams.generalId() && (cur.agentId || 'agent') !== id
+        && !(cur.history && cur.history.length) && !(cur.runIds && cur.runIds.length)
+        && !(typeof Channels !== 'undefined' && Channels.isBusy(cur.id))
+        && Workstreams.setAgent(cur.id, id)) {
+      focusAgent(id); Chat.load(cur); refreshUsage(); renderRail(); persist();
+      return cur.id;
+    }
     // prefer this agent's existing streams (most-recently-active first — Workstreams.list() is already sorted
     // pinned>recent); the General default stream (title==null) is only NOVA/hero's home, so a specialist that
     // has no stream yet gets a fresh one titled with its name (mirrors summon's Workstreams.create).
@@ -2450,9 +2557,10 @@ const App = (() => {
   }
   function toggleArchived() { railShowArchived = !railShowArchived; SFX.click(); renderRail(); }
 
-  // DISCONNECT (the ⏏ button) tears down the live game but NEVER wipes data and NEVER lands on a dead title
-  // screen — it persists, then re-enters via reentry(): straight back into the station if creds are still in
-  // hand, otherwise the RESUME-mode connect screen. The agent is always preserved.
+  // disconnect() — the teardown path: tears down the live game but NEVER wipes data and NEVER lands on a dead
+  // title screen — it persists, then re-enters via reentry(): straight back into the station if creds are still
+  // in hand, otherwise the RESUME-mode connect screen. The agent is always preserved. (The old user-facing ⏏
+  // DISCONNECT topbar button was removed; recovery / resume / error paths still reuse this teardown.)
   function disconnect() { if (typeof Onboarding !== 'undefined' && Onboarding.stop && Onboarding.isRunning && Onboarding.isRunning()) Onboarding.stop(); if (typeof Tutorial !== 'undefined' && Tutorial.teardown) Tutorial.teardown(); if (typeof DockGlow !== 'undefined' && DockGlow.stop) DockGlow.stop(); if (typeof Intake !== 'undefined' && Intake.stop) Intake.stop(); SFX.close(); Chat.abort(); stopRailTicker(); World.stop(); if (World.pauseBridge) World.pauseBridge(); persist(); if (typeof StationUI !== 'undefined') StationUI.leave(); reentry(); }
 
   /* ---------- creation ---------- */
@@ -2464,6 +2572,40 @@ const App = (() => {
     const hasSave = Save.has() && !!Save.load();
     if (!resumingSaved || !hasSave) resumingSaved = null;
     show('screen-connect'); initConnect();
+  }
+
+  // FORWARD-VERSION GATE (P0.3). Raised when the save on this machine (or an adopted durable remote) was written
+  // by a NEWER StarNet than this build can read. This is a HARD STOP: it shows the blocking gate screen and
+  // returns; NOTHING here calls persist()/Save.write(), so the newer save is never re-stamped or clobbered. The
+  // only action re-checks/opens the desktop Update Center when the native updater is present; otherwise it states
+  // how to update. gateActive latches so a stray timer/beacon can't route back into a resume/persist path.
+  let gateActive = false;
+  function showFutureSaveGate(version) {
+    gateActive = true;
+    try { Chat.abort(); } catch (_) {}
+    try { if (World && World.stop) World.stop(); } catch (_) {}
+    const v = Number(version) || 0;
+    const sub = el('future-sub');
+    if (sub) sub.textContent = v ? ('saved format v' + v + ' · this build reads up to v' + Save.CURRENT) : '';
+    const msg = el('future-msg');
+    const btn = el('btn-future-update');
+    const hasUpdater = (typeof Updates !== 'undefined') && (typeof window !== 'undefined' && window.__TAURI__ && window.__TAURI__.core);
+    if (btn) {
+      btn.onclick = async () => {
+        SFX.click && SFX.click();
+        if (hasUpdater) {
+          if (msg) msg.textContent = 'checking for an update…';
+          try {
+            const snap = await Updates.check(true, 'future-save-gate');
+            if (snap && snap.phase === 'available') { try { await Updates.install(); } catch (_) {} }
+            else if (msg) msg.textContent = 'no newer build is published yet — check back shortly.';
+          } catch (_) { if (msg) msg.textContent = 'update check failed — try again in a moment.'; }
+        } else if (msg) {
+          msg.textContent = 'Update StarNet to the latest version (in the desktop app: Update Center), then reopen.';
+        }
+      };
+    }
+    show('screen-future');
   }
 
   /* ---------- boot ---------- */
@@ -2499,11 +2641,24 @@ const App = (() => {
       reentry();   // resume straight into the restored agent (or its RESUME screen if creds are still missing)
     };
 
+    // FORWARD-VERSION GATE (P0.3), step 1 — the LOCAL cache. Save.load() returns null for a future save (so no
+    // call site can adopt/re-save it), which would otherwise look like "no save" here and fall through to a fresh
+    // create that clobbers the newer save on first persist(). Check the honest status BEFORE reconcile and stop:
+    // the gate returns without ever touching the stored doc.
+    const localStatus = Save.loadStatus ? Save.loadStatus() : { status: (Save.load() ? 'ok' : 'none'), version: 0 };
+    if (localStatus.status === 'future') { showFutureSaveGate(localStatus.version); return; }
+
     // durable restore: adopt whichever of {localStorage cache, sidecar mirror} is NEWER. This is what brings
     // the agent back after a browser-cache wipe (local gone, the sidecar still holds it) and refreshes the
     // cache to match. Best-effort: an unreachable sidecar just falls back to the local cache.
     if (typeof CloudSave !== 'undefined') CloudSave.installUnloadFlush();
     const saved = (typeof CloudSave !== 'undefined') ? await CloudSave.reconcile(Save.load()) : Save.load();
+    // FORWARD-VERSION GATE (P0.3), step 2 — a durable REMOTE from a newer build. reconcile() refuses to adopt it
+    // into the cache and hands back a future-save sentinel instead of a resumable doc. Same hard stop: gate, return,
+    // nothing persists.
+    if (typeof CloudSave !== 'undefined' && CloudSave.isFutureSentinel && CloudSave.isFutureSentinel(saved)) {
+      showFutureSaveGate(saved.version); return;
+    }
     // restore the provider BEFORE the credential check so a codex agent (tokens server-side) jumps straight
     // in after a wipe/origin-reset instead of being misrouted to an OpenRouter key prompt.
     if (saved && saved.prov && Harness.setProv) Harness.setProv(saved.prov);
@@ -2540,7 +2695,7 @@ const App = (() => {
   // (never an id in the UI) and keys its standing candidates against the focused hero.
   // currentAgent/agents/applyConfig (slash-plan): the slash-command suite reads/writes the live roster
   // and per-agent config (/agents, /model, /personality, …).
-  return { show, refreshUsage, persist, refreshRail: renderRail, openWorkstream, summonAgent, summonForRequest, crewCount: () => agents.size,
+  return { show, refreshUsage, persist, pushRoster, refreshRail: renderRail, openWorkstream, summonAgent, summonForRequest, crewCount: () => agents.size,
     agentName: id => { const a = agents.get(id); return a ? (a.name || a.id) : null; },
     heroId: () => (agent ? agent.id : 'agent'),
     currentAgent: () => agent,

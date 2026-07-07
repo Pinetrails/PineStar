@@ -1,0 +1,92 @@
+# MISTAKES.md — recurring failures & hard-won gotchas
+
+The mistakes this project actually repeats, so you don't repeat them again. Read before
+debugging or claiming anything done. Companions: [BRAIN.md](BRAIN.md) · [DECISIONS.md](DECISIONS.md) ·
+[NEXT.md](NEXT.md) · `.claude/skills/starnet-debugging` (the method) · `.claude/skills/starnet-verify` (the proof bar).
+
+## The big five (cost the most time, keep recurring)
+
+1. **Fake done.** Code that compiles + tests that pass is NOT done. Done = the behavior
+   observed in the live running app. This is the #1 recurring failure on the project.
+   Mechanics: `.claude/skills/starnet-verify`.
+2. **Plan docs lie within hours.** Audits/plans/memory claims go stale FAST here (10+ lanes
+   merge per day). Any "X is missing/broken" claim must be re-proven by grepping trunk
+   before you build or "fix" anything. Half-built or fully-shipped versions of your task
+   usually already exist.
+3. **The app lying (untruthful telemetry).** UI asserting state the harness can't prove —
+   fake green dots, cosmetic props, decorative gauges. Fix the claim, not the appearance.
+4. **Parallel-agent breakage.** Editing outside your worktree, `git add -A`, touching owned
+   contract files (`shared/events.js`, `shared/schema.js`), or feature-editing the
+   integration tree. The protocol in CLAUDE.md exists because all of these happened.
+5. **Pattern-match fixes.** A signal that looks like a known failure often has a different
+   cause. Reproduce first, one hypothesis at a time. Example: slash commands "not working"
+   (2026-07-05) was an INPUT-path bug (palette prefix-match swallowed arg-taking commands
+   and sent them as chat) — every output-path fix attempt was wasted. Diagnose the input
+   path before blaming the output path.
+
+## Desktop / installed-app traps
+
+- **The installed app's UI is compiled into the exe** (webview loads `tauri.localhost`).
+  Patching the repo/folder NEVER changes the installed UI — only an exe swap/reinstall does.
+  The only proof of installed-UI behavior is CDP-attach (`--remote-debugging-port`).
+- **WebView2 caches the embedded frontend** in `EBWebView\Default\{Cache,Code Cache}` and
+  never revalidates — V8 can run OLD bytecode against NEW data (the 7/6 "missing agents"
+  incident: data was never lost; a plain relaunch after cache purge healed it). Hot patches
+  stay invisible until that cache is purged. HTTP/version checks do NOT prove the webview
+  updated. (Purge-on-version-change shipped 2026-07-06, agent/wv-cache-purge.)
+- **Real station data root** = `%APPDATA%\Roaming\ai.skynet.harness\workspaces`
+  (`startup.log` proves it). `%LOCALAPPDATA%\StarNet\workspaces` is a stale migrated-from
+  secondary — don't debug against it.
+- **Tauri/Rust build:** `E0463 ctor_proc_macro` = cargo parallel-build race. Pre-build the
+  ctor crates, then `desktop:build`. The toolchain is fine; don't reinstall it.
+
+## CI / release traps
+
+- **Gate order:** run the test gate AFTER the version bump, BEFORE the tag push. v0.2.0 and
+  v0.2.1 were burned learning this (that's the gate working as designed — a burned version
+  number is cheap, a broken public release is not).
+- **Version fixtures pinned near the current version are time-bombs** — a fixture at
+  "current+1" starts failing when the real version catches up. Use `99.0.0`.
+  (But NOTE: `t1`/`t5` hardcoded mtimes are relative-ordering fixtures, NOT date-bombs —
+  never "fix" those.)
+- **macOS CI:** runners ship bash 3.2 (no globstar — use `find`); mac legs must bundle
+  `app,dmg` (dmg alone produces no `.app.tar.gz` updater artifact); unset empty `APPLE_*`
+  env vars or unsigned builds fail at codesign instead of skipping it.
+- **Windows cmd 8191-char limit** breaks long test invocations — split test lists instead
+  of growing one command line.
+
+## Frontend / canvas traps
+
+- **Canvas screenshots time out** (rAF canvas). Verify via `preview_eval` DOM round-trips,
+  `window.__world` state reads, or CDP — not screenshots. See `starnet-verify`.
+- **Composite shadow vars referencing `--ph` must live on `body`, not `:root`** (theme bezel
+  trap, fixed 5274a42) — on `:root` they freeze the fallback at parse time.
+- **Per-theme `--gold-rgb` triplets** must exist for any rgba() glow derived from gold.
+- **No static asset tags outside `frontend/`** (frontendDist). A `<script src="/shared/...">`
+  works in dev and 404s in the packaged app (zero-presets bug, f70a4f05).
+- **Full-row grid children:** a cell added to a fixed-column grid without `grid-column: 1/-1`
+  blows out the row (letter-spill bug, e2630472).
+- **Preview windows at 0×0:** preview clicks silently no-op on unsized windows — size/position
+  before interacting.
+
+## Backend / process traps
+
+- **`npm start` (:8787) is the app.** `npm run serve` is a dead UI-only path — using it
+  "works" and then nothing real functions.
+- **Bare `require()` at module top for optional deps** crashes the single-process sidecar at
+  boot — lazy-require inside the handler (prop-upgrade merge lesson).
+- **Windows file authoring:** heredocs/echo can inject NUL/BOM bytes that git then treats as
+  binary — author files with the Write tool or `git show :path` round-trips, and check
+  `git diff` renders as text before committing.
+- **Merging Codex branches:** merge, never rebase; 29-hotfile no-touch set; grep for symbol
+  collisions after each hotfile merge (`starnet-merge-ritual` has the full ritual).
+
+## Judgment traps
+
+- **"Audit says missing" ≠ missing** — the FULL_RELEASE_POLISH sprint found audit claims
+  stale within hours; every lane must grep trunk first (its lesson is now law #2 above).
+- **Verify-then-delete:** four "dead" subsystems (providers/billing/patchparse/data-shim)
+  turned out LIVE on 2026-07-04. Never delete on an audit's say-so; prove dead in the
+  running app first.
+- **Don't gold-plate cosmetic asks** and don't ask Andrew questions research can answer.
+  Ask only at genuine product forks.

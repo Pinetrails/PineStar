@@ -2389,56 +2389,65 @@ const PropSprites = (() => {
     wear(x + 1, y + bh - 7, cw - 2, 4, 3, U.shade(r.face, -0.12));
   };
 
-  F.jukebox = (x, y, w, h) => {   // TALL 3/4 jukebox: rounded dome, bubble chase, spinning record
+  F.jukebox = (x, y, w, h, f) => {   // TALL 3/4 jukebox: rounded dome, bubble chase, spinning record
+    // OBJECT=CAPABILITY TRUTH: a placed jukebox GRANTS the Spotify tools, but they are INERT until the user
+    // connects Spotify in Settings. So the sprite runs DEAD when unconnected — the machine is unplugged: no
+    // bubble chase, no spinning disc, no lamps, no floor glow, everything dimmed to a cold grey — and only
+    // comes alive (bubbles rise, disc spins, lamps blink, gold floor glow) when f.live (=Spotify connected).
+    const live = !!(f && f.live);
     const cw = 13, bh = h, r = RAMP.steel;
+    const dim = c => live ? c : U.shade(c, -0.42);   // cold-shift every accent when unplugged
     shadow2(x + 1, y + bh - 1, cw - 2);
     // body slab
     rr(x - 1, y - 5, cw + 2, bh + 4, LINE);
-    px(x + 1, y - 4, cw - 2, bh + 2, r.face);
-    px(x + 1, y - 4, 1, bh + 1, U.shade(r.face, 0.10)); px(x + cw - 2, y - 4, 1, bh + 1, r.dk);
+    px(x + 1, y - 4, cw - 2, bh + 2, dim(r.face));
+    px(x + 1, y - 4, 1, bh + 1, dim(U.shade(r.face, 0.10))); px(x + cw - 2, y - 4, 1, bh + 1, U.shade(r.dk, live ? 0 : -0.2));
     // rounded DOME top
     px(x + 3, y - 8, cw - 6, 1, LINE);
     px(x + 1, y - 7, cw - 2, 1, LINE);
     px(x, y - 6, cw, 2, LINE);
-    px(x + 4, y - 8, cw - 8, 1, U.shade(r.sheen, 0.15));        // dome crown catch
-    px(x + 2, y - 7, cw - 4, 1, r.sheen);
-    px(x + 1, y - 6, cw - 2, 1, r.lit);
-    // arch lamp under the dome
-    px(x + 2, y - 4, cw - 4, 3, blink(500) ? '#ffd34a' : '#b88a3a');
-    px(x + 3, y - 4, cw - 6, 1, '#ffe88c');
-    glow(x + 2, y - 4, cw - 4, 3, '#ffd34a', 0.3 + 0.2 * Math.sin(now / 400));
-    // bubble tubes climbing both flanks
+    px(x + 4, y - 8, cw - 8, 1, dim(U.shade(r.sheen, 0.15)));   // dome crown catch
+    px(x + 2, y - 7, cw - 4, 1, dim(r.sheen));
+    px(x + 1, y - 6, cw - 2, 1, dim(r.lit));
+    // arch lamp under the dome — lit + breathing only when connected; a cold dead filament otherwise
+    if (live) {
+      px(x + 2, y - 4, cw - 4, 3, blink(500) ? '#ffd34a' : '#b88a3a');
+      px(x + 3, y - 4, cw - 6, 1, '#ffe88c');
+      glow(x + 2, y - 4, cw - 4, 3, '#ffd34a', 0.3 + 0.2 * Math.sin(now / 400));
+    } else {
+      px(x + 2, y - 4, cw - 4, 3, '#3a3226');                   // unlit arch (dead filament)
+      px(x + 3, y - 4, cw - 6, 1, '#4a4030');
+    }
+    // bubble tubes climbing both flanks — bubbles only rise when live; static cold fluid when dead
     for (let i = 0; i < 2; i++) {
       const bx = i ? x + cw - 3 : x + 2;
       px(bx, y + 1, 1, 9, '#2c3a42');
-      const bp = (now / (900 + i * 300)) % 1;
-      px(bx, y + 1 + Math.floor((1 - bp) * 8), 1, 1, '#7fd0ff');
+      if (live) { const bp = (now / (900 + i * 300)) % 1; px(bx, y + 1 + Math.floor((1 - bp) * 8), 1, 1, '#7fd0ff'); }
     }
-    // record window + spinning disc
+    // record window + disc — spins only when live; parked (no glint) when dead
     inset(x + 3, y + 1, cw - 6, 6, '#10161c');
     px(x + 4, y + 2, cw - 8, 4, '#26262e');                     // platter
     px(x + 4, y + 2, cw - 8, 1, '#3a3a44');                     // groove ring catch
     px(x + 5, y + 3, cw - 10, 2, '#15151a');                    // vinyl
-    px(x + 6, y + 3, 1, 1, ACC.lounge);                         // label dot
-    const a = now / 300;
-    px(x + 6 + Math.round(Math.cos(a) * 1.5), y + 3 + Math.round(Math.sin(a)), 1, 1, '#bfe6ff'); // disc glint
-    px(x + 2, y - 1, 1, 2, r.sheen); px(x + cw - 3, y - 1, 1, 2, r.sheen); // chrome shoulder trims
-    // selection buttons
+    px(x + 6, y + 3, 1, 1, live ? ACC.lounge : U.shade(ACC.lounge, -0.4)); // label dot
+    if (live) { const a = now / 300; px(x + 6 + Math.round(Math.cos(a) * 1.5), y + 3 + Math.round(Math.sin(a)), 1, 1, '#bfe6ff'); } // disc glint
+    px(x + 2, y - 1, 1, 2, dim(r.sheen)); px(x + cw - 3, y - 1, 1, 2, dim(r.sheen)); // chrome shoulder trims
+    // selection buttons — blink when live, dark when dead
     px(x + 3, y + 9, cw - 6, 2, '#1c242a');
-    for (let i = 0; i < 3; i++) px(x + 4 + i * 2, y + 9, 1, 1, blink(600, i) ? '#ffd34a' : '#3a3020');
+    for (let i = 0; i < 3; i++) px(x + 4 + i * 2, y + 9, 1, 1, (live && blink(600, i)) ? '#ffd34a' : '#3a3020');
     // speaker grille skirt
     for (let i = 0; i < 3; i++) {
       px(x + 2, y + 12 + i * 2, cw - 4, 1, r.ao);
-      px(x + 2, y + 13 + i * 2, cw - 4, 1, U.shade(r.face, 0.10));
+      px(x + 2, y + 13 + i * 2, cw - 4, 1, dim(U.shade(r.face, 0.10)));
     }
-    // base lamps + kick + feet
-    px(x + 2, y + bh - 5, 2, 2, blink(400) ? '#ff5c5c' : '#5c1c1c');
-    px(x + cw - 4, y + bh - 5, 2, 2, blink(400, 1) ? '#41ff8a' : '#1c5c2c');
+    // base lamps — power indicators: green+red alternating only when connected, both dark otherwise
+    px(x + 2, y + bh - 5, 2, 2, (live && blink(400)) ? '#ff5c5c' : '#5c1c1c');
+    px(x + cw - 4, y + bh - 5, 2, 2, (live && blink(400, 1)) ? '#41ff8a' : '#1c5c2c');
     px(x + 1, y + bh - 3, cw - 2, 1, r.ao);
     underAO(x + 2, y + bh - 2, cw - 4, 1);
     px(x + 1, y + bh - 2, 2, 2, r.dk); px(x + cw - 3, y + bh - 2, 2, 2, r.dk);
-    px(x + 1, y + bh - 2, 1, 1, r.lit); px(x + cw - 3, y + bh - 2, 1, 1, r.lit);
-    glow(x + 1, y + bh - 2, cw - 2, 2, '#ffd34a', 0.10 + 0.05 * Math.sin(now / 400)); // floor glow
+    px(x + 1, y + bh - 2, 1, 1, dim(r.lit)); px(x + cw - 3, y + bh - 2, 1, 1, dim(r.lit));
+    if (live) glow(x + 1, y + bh - 2, cw - 2, 2, '#ffd34a', 0.10 + 0.05 * Math.sin(now / 400)); // floor glow — only when plugged in
   };
 
   F.bunk = (x, y, w, h) => {   // TOP-BIAS OBLIQUE berth: Zelda bed — pillow + blanket seen from above
@@ -4727,13 +4736,41 @@ const PropSprites = (() => {
   }
   function pulseConnector(id) { if (!id) return; (connState[id] || (connState[id] = {})).firedAt = now; }
   function connectorFired(id) { const s = id && connState[id]; return (s && s.firedAt) ? Math.max(0, 1 - (now - s.firedAt) / PULSE_MS) : 0; }
+  /* reconcile against a SUCCESSFUL /api/connectors poll: any tracked connector ABSENT from the live list was
+     removed/unbound server-side, so DROP it — else its portal would keep glowing green off a stale last-known
+     state until reload. Called ONLY on a good poll; a FAILED poll never clears (keep-last-known, E4/E6f). */
+  function reconcileConnectors(liveIds) {
+    const keep = new Set(liveIds || []);
+    for (const id of Object.keys(connState)) if (!keep.has(id)) delete connState[id];
+  }
 
   /* live WORKBENCH pulse (drives the workbench sprite). The world layer calls pulseWorkbench(ok) when a
      shell.exec / verify.result fires (ok=false => a verify FAILED, the bench flashes red). One global pulse —
      every placed workbench glows, signalling "the agent is running code right now." */
-  let wbFiredAt = 0, wbBad = false;
-  function pulseWorkbench(ok) { wbFiredAt = now; wbBad = (ok === false); }
-  function workbenchFired() { return wbFiredAt ? Math.max(0, 1 - (now - wbFiredAt) / PULSE_MS) : 0; }
+  // ROOM-SCOPED (T1 finding): a shell/verify pulse must glow only the ACTING agent's OWN workbench, not every
+  // placed bench on the floor. The world layer resolves the target instance (capPropFor('workbench', agentId))
+  // and passes its propId; keyed by propId so two agents' benches pulse independently. pulseWorkbench(ok) with
+  // no id falls back to a GLOBAL pulse (back-compat: a single-bench floor / a caller that can't resolve a room).
+  let wbFiredAt = 0, wbBad = false;                 // global fallback (no propId)
+  const wbInst = {};                                // propId -> { at, bad } per-instance pulse
+  function pulseWorkbench(ok, id) {
+    if (id) { wbInst[id] = { at: now, bad: ok === false }; return; }
+    wbFiredAt = now; wbBad = (ok === false);
+  }
+  // this workbench's pulse: its OWN instance pulse if it has one, else the global fallback (never both — an
+  // instance that ever pulsed owns its glow and ignores the global, so a scoped pulse can't leak floor-wide).
+  function workbenchFiredFor(id) {
+    if (id && wbInst[id]) return { fired: Math.max(0, 1 - (now - wbInst[id].at) / PULSE_MS), bad: wbInst[id].bad };
+    return { fired: wbFiredAt ? Math.max(0, 1 - (now - wbFiredAt) / PULSE_MS) : 0, bad: wbBad };
+  }
+
+  /* live JUKEBOX state (drives the jukebox sprite's dead-vs-live glow). Object=capability law: a placed
+     jukebox grants the Spotify tools, but they're INERT until the user connects Spotify in Settings — so
+     the sprite must read DEAD (dark, no bubble chase / no spinning disc / no lamps) when unconnected and
+     only come alive (animated + gold floor glow) once /api/spotify/status reports connected:true. The
+     world layer polls that endpoint and pushes the boolean here; the draw stays a pure function of it. */
+  let jukeConnected = false;
+  function setSpotifyConnected(on) { jukeConnected = !!on; }
 
   /* live CAPABILITY-PROP pulse (G0.1) — per placed INSTANCE, the connector/workbench idiom generalized:
      the world layer maps a firing tool to the prop that GRANTS it (fs->cabinet · web/browser->dish ·
@@ -4742,8 +4779,11 @@ const PropSprites = (() => {
      1 -> 0 over PULSE_MS. Colors ride the station's semantic economy (amber=files, cyan=web/data,
      green=memory, magenta=media, gold=audio). */
   const CAP_GLOW = { cabinet: '#e8c860', dish: '#4ad9ff', notebook: '#41ff8a', studio: '#ff6ad5', jukebox: '#ffd34a' };
-  const propPulse = {};          // propId -> { at, cap }
-  function pulseProp(id, cap) { if (!id) return; propPulse[id] = { at: now, cap: cap || '' }; }
+  const PROP_FAIL = '#ff5c5c';   // a DENIED/FAILED tool call — the workbench verify-red cue, generalized
+  const propPulse = {};          // propId -> { at, cap, bad }
+  // ok defaults true (the success surge). ok===false => a distinct RED failure cue (denied/errored tool call) —
+  // TRUTH: a call that the gate denied or that errored never did the work, so it must NOT read as the green surge.
+  function pulseProp(id, cap, ok) { if (!id) return; propPulse[id] = { at: now, cap: cap || '', bad: ok === false }; }
 
   // G2.3 — uncollected while-away work: the world layer feeds the ReturnStore's pending-crate count
   // here each frame; the OUTBOX sprite stacks that many banked-product crates (cap 5 + counter).
@@ -4778,7 +4818,8 @@ const PropSprites = (() => {
       o.state = cid ? ((connState[cid] && connState[cid].state) || 'offline') : 'unbound';
       o.fired = connectorFired(cid);
     }
-    if (f.t === 'workbench') { o.fired = workbenchFired(); o.bad = wbBad; }   // shell/verify pulse
+    if (f.t === 'workbench') { const wf = workbenchFiredFor(f.id); o.fired = wf.fired; o.bad = wf.bad; }   // shell/verify pulse (room-scoped by propId)
+    if (f.t === 'jukebox') o.live = jukeConnected;   // dead until Spotify is connected in Settings (object=capability truth)
     if (f.t === 'outbox') o.crates = outboxCrates;   // G2.3: uncollected while-away runs stack as crates
     if (f.t === 'missionboard') { o.pins = missionPins; o.hot = missionHot; o.jam = missionJam; o.proposals = missionProposals; }   // G1b/G1c: open quests pinned + the station-gap beacon + the routine-JAM amber stub; G4: pending autojob PROPOSAL cards
     if (f.t === 'trophycase') o.trophies = trophyCount;   // G3b: earned trophies stand behind glass (real completions only)
@@ -4798,12 +4839,15 @@ const PropSprites = (() => {
       px(X + 3, Y - 5, pw, 1, '#62ff9e');               // the honest fraction
       glow(X + 3, Y - 6, pw, 3, '#62ff9e', 0.35);
     }
-    // G0.1 TOOL-FIRE SURGE: this instance's tool just ran — a hot core wash + wider halo in the
+    // G0.1 TOOL-FIRE SURGE: this instance's tool just RESOLVED — a hot core wash + wider halo in the
     // capability accent, plus a charge bar draining shut across the crown. BOLD by design (the CRT-lab
-    // law: effects read from across the room), gone in under a second.
+    // law: effects read from across the room), gone in under a second. A DENIED/FAILED call surges RED
+    // instead (the workbench verify-red cue) — a call the gate refused never did the work, so it must
+    // never read as the green success surge (truthful-telemetry law).
     const pf = propFired(f.id);
     if (pf > 0) {
-      const acc = CAP_GLOW[(propPulse[f.id] && propPulse[f.id].cap) || ''] || '#c7ffe0';
+      const ps = propPulse[f.id];
+      const acc = (ps && ps.bad) ? PROP_FAIL : (CAP_GLOW[(ps && ps.cap) || ''] || '#c7ffe0');
       glow(X - 1, Y - 3, W + 2, H + 4, acc, 0.10 + 0.32 * pf);               // outer halo
       glow(X + 1, Y - 1, Math.max(2, W - 2), Math.max(2, H - 2), acc, 0.28 * pf);   // hot core
       px(X, Y - 3, Math.max(1, Math.round(W * pf)), 1, acc);                 // draining charge bar
@@ -4818,6 +4862,10 @@ const PropSprites = (() => {
     setConnectorState, pulseConnector,
     // workbench pulse (the world layer feeds this off shell.exec / verify.result)
     pulseWorkbench,
+    // connector reconcile: drop portals absent from a successful /api/connectors poll (stale-green fix)
+    reconcileConnectors,
+    // JUKEBOX live state (the world layer feeds this off /api/spotify/status — dead-vs-live glow)
+    setSpotifyConnected,
     // per-instance capability-prop pulse (G0.1 — the world layer feeds this off agent.tool_call via toolprops.js)
     pulseProp,
     // G2.3 uncollected-crate stack on the OUTBOX (the world layer feeds this from ReturnStore.pendingCount)

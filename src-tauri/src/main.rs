@@ -382,9 +382,49 @@ fn copy_missing_dir(src: &Path, dst: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
+/// Name of the one-shot done-marker dropped in the live workspace root after the FIRST
+/// successful legacy migration. Its presence is the sole signal to never migrate again.
+const MIGRATION_MARKER: &str = ".migrated";
+
+/// True when the live workspace root already holds real data (anything other than our own
+/// marker file). A pre-existing populated root means an earlier install/migration already ran,
+/// so we must NOT copy from legacy roots — doing so resurrects files the user deleted.
+fn workspace_has_content(current: &Path) -> bool {
+    let Ok(entries) = std::fs::read_dir(current) else {
+        return false;
+    };
+    entries
+        .flatten()
+        .any(|e| e.file_name() != std::ffi::OsStr::new(MIGRATION_MARKER))
+}
+
+/// One-time import of data from legacy workspace roots into the live one. THIS RUNS ONCE, EVER.
+///
+/// Bug it fixes (audit 0.1): running unconditionally every boot means `copy_missing_dir` re-copies
+/// any file present in a stale legacy root (e.g. %LOCALAPPDATA%\StarNet\workspaces) but absent in
+/// the live root — so agents/prospects/sessions the user DELETED silently reappear on the next
+/// launch. Guard rails, checked before any copy:
+///   1. If the `.migrated` marker exists in the live root, skip entirely (the definitive signal).
+///   2. Belt-and-suspenders: if the live root already has real content, skip and drop the marker
+///      so a first-run-with-marker-missing but already-populated install never migrates either.
+/// The marker is written only AFTER the copy pass completes, so a crash mid-copy simply retries
+/// the (idempotent, copy-missing-only) migration next boot rather than stranding a half state.
 fn migrate_workspace_data(current: &Path, legacy_roots: &[PathBuf]) -> Vec<PathBuf> {
     let mut migrated = Vec::new();
     let _ = std::fs::create_dir_all(current);
+    let marker = current.join(MIGRATION_MARKER);
+
+    // (1) Already migrated once — never touch legacy roots again.
+    if marker.exists() {
+        return migrated;
+    }
+    // (2) Live root already populated (upgrade from a pre-marker build, or a manual copy): treat
+    //     as already-migrated. Stamp the marker so future boots take the fast path at (1).
+    if workspace_has_content(current) {
+        let _ = std::fs::write(&marker, b"1");
+        return migrated;
+    }
+
     for legacy in legacy_roots {
         if !legacy.is_dir() {
             continue;
@@ -393,6 +433,9 @@ fn migrate_workspace_data(current: &Path, legacy_roots: &[PathBuf]) -> Vec<PathB
             migrated.push(legacy.clone());
         }
     }
+    // Marker written LAST, after all copies land: crash-safe (a mid-copy crash leaves no marker,
+    // so the idempotent copy-missing pass simply re-runs next boot).
+    let _ = std::fs::write(&marker, b"1");
     migrated
 }
 
@@ -407,6 +450,172 @@ fn log_startup(path: &Option<PathBuf>, message: impl AsRef<str>) {
     {
         use std::io::Write;
         let _ = writeln!(file, "{}", message.as_ref());
+    }
+}
+
+// ---- WebView2 stale-cache purge on version change ----------------------------------------
+//
+// The desktop webview loads the frontend COMPILED INTO the exe (tauri.localhost). WebView2
+// caches those assets (Cache / `Code Cache/js`) and never revalidates. After an exe swap, V8
+// can run OLD bytecode against NEW data — the 2026-07-06 incident (agents vanished from the
+// world sim, COMMS fell back to the overseer). Fix: on every version change, delete the
+// compiled/GPU caches while PRESERVING user state (Local Storage holds the world save under
+// `starnet.save`). See docs/UPDATE_STATE_SAFETY_AUDIT_2026-07-06.md P0.1.
+
+/// Pure decision: given the previously-recorded marker (if any) and the running version,
+/// should we purge the stale webview caches? Purge on first run (no marker) or on any change.
+/// Kept side-effect-free so it can be unit-tested without touching the filesystem.
+fn should_purge_webview_cache(last_marker: Option<&str>, current_version: &str) -> bool {
+    match last_marker {
+        Some(prev) => prev.trim() != current_version.trim(),
+        None => true,
+    }
+}
+
+/// Marker file recording the version that last ran, next to the workspaces root
+/// (`%APPDATA%\ai.skynet.harness\last-run-version`). Reused for the purge decision.
+fn last_run_version_marker(app: &tauri::AppHandle) -> Option<PathBuf> {
+    app.path().app_data_dir().ok().map(|dir| {
+        let _ = std::fs::create_dir_all(&dir);
+        dir.join("last-run-version")
+    })
+}
+
+/// Resolve the EBWebView user-data directory the webview will actually use. Honors the
+/// WEBVIEW2_USER_DATA_FOLDER override; otherwise the Tauri/WebView2 default of
+/// `%LOCALAPPDATA%\<identifier>\EBWebView`.
+#[cfg(windows)]
+fn webview2_user_data_dir(identifier: &str) -> Option<PathBuf> {
+    if let Some(override_dir) = std::env::var_os("WEBVIEW2_USER_DATA_FOLDER") {
+        let p = PathBuf::from(override_dir);
+        if !p.as_os_str().is_empty() {
+            return Some(p);
+        }
+    }
+    std::env::var_os("LOCALAPPDATA")
+        .map(PathBuf::from)
+        .map(|base| base.join(identifier).join("EBWebView"))
+}
+
+/// Compiled/GPU cache subdirs under `EBWebView\Default` that are safe to delete on version
+/// change. Deliberately EXCLUDES Local Storage / Session Storage / IndexedDB / Cookies —
+/// those hold the user's world save and must be byte-preserved.
+#[cfg(windows)]
+const WEBVIEW2_STALE_CACHE_DIRS: [&str; 5] = [
+    "Cache",
+    "Code Cache",
+    "GPUCache",
+    "DawnGraphiteCache",
+    "DawnWebGPUCache",
+];
+
+/// Delete the stale compiled/GPU caches under `<user_data>\Default`. Fails soft: a locked
+/// or missing dir is logged and skipped, never fatal to boot. Returns the dirs actually
+/// removed (for logging/telemetry).
+#[cfg(windows)]
+fn purge_webview2_caches(user_data_dir: &Path, startup_log: &Option<PathBuf>) -> Vec<String> {
+    let default_dir = user_data_dir.join("Default");
+    let mut removed = Vec::new();
+    for name in WEBVIEW2_STALE_CACHE_DIRS {
+        let target = default_dir.join(name);
+        if !target.exists() {
+            continue;
+        }
+        match std::fs::remove_dir_all(&target) {
+            Ok(()) => {
+                removed.push(name.to_string());
+                log_startup(
+                    startup_log,
+                    format!("webview-cache-purge: removed {}", target.display()),
+                );
+            }
+            Err(e) => {
+                // App likely running / files locked — never crash boot, just record it.
+                log_startup(
+                    startup_log,
+                    format!(
+                        "webview-cache-purge: SKIP {} (soft-fail: {e})",
+                        target.display()
+                    ),
+                );
+            }
+        }
+    }
+    removed
+}
+
+/// Top-level orchestration: compare the running version to the stored marker; on first run
+/// or any change, purge the stale webview caches (Windows/WebView2 today; other platforms
+/// hook in later), then record the new marker. Platform-neutral marker logic so a future
+/// mac/linux (WebKit) purge can reuse the same decision path.
+fn purge_stale_webview_cache_on_version_change(
+    app: &tauri::AppHandle,
+    identifier: &str,
+    current_version: &str,
+    startup_log: &Option<PathBuf>,
+) {
+    let marker_path = last_run_version_marker(app);
+    let last = marker_path
+        .as_ref()
+        .and_then(|p| std::fs::read_to_string(p).ok());
+    let last_trimmed = last.as_ref().map(|s| s.trim());
+
+    if !should_purge_webview_cache(last_trimmed, current_version) {
+        return;
+    }
+
+    log_startup(
+        startup_log,
+        format!(
+            "webview-cache-purge: version change {:?} -> {} — purging stale caches (preserving Local Storage/IndexedDB/cookies)",
+            last_trimmed, current_version
+        ),
+    );
+
+    #[cfg(windows)]
+    {
+        match webview2_user_data_dir(identifier) {
+            Some(user_data_dir) => {
+                let removed = purge_webview2_caches(&user_data_dir, startup_log);
+                log_startup(
+                    startup_log,
+                    format!(
+                        "webview-cache-purge: done ({} of {} cache dir(s) removed) under {}",
+                        removed.len(),
+                        WEBVIEW2_STALE_CACHE_DIRS.len(),
+                        user_data_dir.join("Default").display()
+                    ),
+                );
+            }
+            None => log_startup(
+                startup_log,
+                "webview-cache-purge: could not resolve EBWebView user-data dir — skipped",
+            ),
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        // WebKit (macOS/Linux) caches live elsewhere; no purge wired yet. Marker still
+        // advances so the decision path is exercised cross-platform.
+        let _ = identifier;
+        log_startup(
+            startup_log,
+            "webview-cache-purge: non-Windows platform — no cache purge wired yet",
+        );
+    }
+
+    // Record the new marker LAST, so a crash mid-purge re-triggers a purge next boot rather
+    // than leaving stale caches behind a satisfied marker.
+    if let Some(path) = marker_path {
+        if let Err(e) = std::fs::write(&path, current_version) {
+            log_startup(
+                startup_log,
+                format!(
+                    "webview-cache-purge: failed to write marker {} ({e})",
+                    path.display()
+                ),
+            );
+        }
     }
 }
 
@@ -521,7 +730,51 @@ fn migrate_channel_tokens_from_plaintext(workspaces: &Path) {
     }
     if changed {
         if let Ok(serialized) = serde_json::to_string(&json) {
-            let _ = std::fs::write(&file, serialized);
+            // Atomic rewrite: a crash mid-write of secrets.json must never leave a truncated
+            // file (would corrupt the channel config). Write a sibling temp, then rename over
+            // the target — rename is atomic on the same volume, so readers see all-or-nothing.
+            let _ = atomic_write(&file, serialized.as_bytes());
+        }
+    }
+}
+
+/// Write `bytes` to `path` crash-safely: land them in a sibling temp file, flush, then
+/// atomically rename over `path`. The temp lives in the SAME directory so the rename stays on
+/// one volume (cross-volume renames are not atomic and can fall back to copy+delete). A crash
+/// before the rename leaves the temp (harmless orphan) and the original untouched; a crash
+/// after leaves the fully-written new file. Best-effort — errors bubble to the caller to log/ignore.
+fn atomic_write(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    let dir = path.parent().unwrap_or_else(|| Path::new("."));
+    std::fs::create_dir_all(dir)?;
+    // Unique-ish temp name in the same dir; the pid keeps concurrent writers from colliding.
+    let tmp = dir.join(format!(
+        ".{}.{}.tmp",
+        path.file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("secrets.json"),
+        std::process::id()
+    ));
+    {
+        let mut f = std::fs::File::create(&tmp)?;
+        f.write_all(bytes)?;
+        f.flush()?;
+        let _ = f.sync_all();
+    }
+    // On Windows, rename fails if the destination exists; remove-then-rename is the pragmatic
+    // path (there is a tiny window with no file, but a crash there still leaves the temp intact
+    // for a manual recover, and the sidecar's own resilient loader tolerates a missing file).
+    #[cfg(windows)]
+    {
+        if path.exists() {
+            let _ = std::fs::remove_file(path);
+        }
+    }
+    match std::fs::rename(&tmp, path) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            let _ = std::fs::remove_file(&tmp);
+            Err(e)
         }
     }
 }
@@ -698,6 +951,80 @@ fn spawn_sidecar(state: &AppState) -> bool {
     false
 }
 
+/// Startup-failure dialog (audit 0.2). When the FIRST `spawn_sidecar` fails — e.g. a first-run
+/// user whose bundled node was blocked by antivirus/Application-Control — the window would
+/// otherwise open dead with every /api fetch failing, no explanation, no way back. This surfaces
+/// a native error box that names the startup.log path (the diagnostic) and offers Retry.
+///
+/// Returns `true` if the user chose Retry (caller should re-attempt the spawn), `false` on
+/// Cancel/close. On non-Windows there is no dialog dependency wired, so we log and return `false`
+/// (honest degradation — the AV-block scenario this fixes is Windows-specific).
+#[cfg(windows)]
+fn show_startup_failure_dialog(startup_log: &Option<PathBuf>) -> bool {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        MessageBoxW, IDRETRY, MB_ICONERROR, MB_RETRYCANCEL, MB_SETFOREGROUND, MB_SYSTEMMODAL,
+    };
+    let log_line = match startup_log {
+        Some(p) => format!("Details were written to:\n{}", p.display()),
+        None => "No startup log path was available.".to_string(),
+    };
+    let body = format!(
+        "StarNet could not start its local engine.\n\n\
+         This usually means the bundled Node runtime was blocked by antivirus or a Windows \
+         Application Control policy, or the port could not be opened.\n\n\
+         {log_line}\n\n\
+         Click Retry to try starting the engine again, or Cancel to close StarNet."
+    );
+    let to_wide = |s: &str| -> Vec<u16> {
+        s.encode_utf16().chain(std::iter::once(0)).collect()
+    };
+    let text = to_wide(&body);
+    let caption = to_wide("StarNet — startup failed");
+    // SYSTEMMODAL + SETFOREGROUND so the box is seen even though the main window isn't up yet.
+    let result = unsafe {
+        MessageBoxW(
+            std::ptr::null_mut(),
+            text.as_ptr(),
+            caption.as_ptr(),
+            MB_RETRYCANCEL | MB_ICONERROR | MB_SETFOREGROUND | MB_SYSTEMMODAL,
+        )
+    };
+    result == IDRETRY
+}
+
+#[cfg(not(windows))]
+fn show_startup_failure_dialog(startup_log: &Option<PathBuf>) -> bool {
+    log_startup(
+        startup_log,
+        "startup failed: sidecar did not come up and no native dialog is wired on this platform",
+    );
+    eprintln!("[starnet] startup failed: sidecar did not come up (see startup.log)");
+    false
+}
+
+/// Spawn the sidecar and, if it fails to come up, loop showing the startup-failure dialog so the
+/// user can Retry (audit 0.2). Bounded so a persistently-blocked node can't spin a dialog forever:
+/// after the retries are exhausted we return `false` and let the guardian keep trying in the
+/// background. Returns `true` once the sidecar is listening.
+fn spawn_sidecar_with_retry(state: &AppState) -> bool {
+    // A handful of user-driven retries at startup; the long-lived guardian covers the rest.
+    for _ in 0..5 {
+        if spawn_sidecar(state) {
+            return true;
+        }
+        if !show_startup_failure_dialog(&state.startup_log) {
+            // User chose Cancel — stop prompting; the guardian may still recover it silently.
+            return false;
+        }
+        log_startup(&state.startup_log, "startup: user chose Retry — respawning sidecar");
+    }
+    log_startup(
+        &state.startup_log,
+        "startup: retries exhausted; leaving recovery to the guardian",
+    );
+    false
+}
+
 // ---- watchdog: respawn a crashed sidecar so the open window keeps working ----
 //
 // If the sidecar node process exits unexpectedly (crash, OOM), the open page silently loses its
@@ -710,6 +1037,10 @@ fn spawn_sidecar(state: &AppState) -> bool {
 // the watchdog does not touch power state.
 fn spawn_guardian(app: AppHandle) {
     std::thread::spawn(move || {
+        // Tracks consecutive failed respawns while the sidecar is absent so we back off instead of
+        // hammering a permanently-blocked node (audit 0.2: recover even from the None state, but
+        // bounded). Reset to 0 whenever the sidecar is confirmed alive.
+        let mut consecutive_failures: u32 = 0;
         loop {
             std::thread::sleep(Duration::from_secs(3));
             let Some(state) = app.try_state::<AppState>() else {
@@ -720,13 +1051,26 @@ fn spawn_guardian(app: AppHandle) {
                 break;
             }
 
-            // Detect an unexpected exit while holding the lock, but release it BEFORE respawning —
-            // spawn_sidecar takes the same lock itself, so respawning under it would deadlock.
+            // Decide under the lock, respawn after releasing it — spawn_sidecar takes the same lock
+            // itself, so respawning while holding it would deadlock. `needs_respawn` covers TWO cases:
+            //   (a) a child exists but has exited unexpectedly (crash/OOM), and
+            //   (b) NO child exists at all — the initial spawn never succeeded (e.g. AV-blocked node).
+            // Case (b) is the audit-0.2 fix: previously the guardian only ever healed (a), so a
+            // first-run spawn failure left the app permanently dead with no background recovery.
             let mut needs_respawn = false;
+            let mut from_none = false;
             if let Ok(mut guard) = st.sidecar.lock() {
-                if let Some(child) = guard.as_mut() {
-                    if let Ok(Some(_status)) = child.try_wait() {
-                        needs_respawn = true;
+                match guard.as_mut() {
+                    Some(child) => {
+                        if let Ok(Some(_status)) = child.try_wait() {
+                            needs_respawn = true; // (a) crashed
+                        } else {
+                            consecutive_failures = 0; // alive and running
+                        }
+                    }
+                    None => {
+                        needs_respawn = true; // (b) never came up
+                        from_none = true;
                     }
                 }
             }
@@ -735,8 +1079,29 @@ fn spawn_guardian(app: AppHandle) {
                 if st.shutting_down.load(Ordering::SeqCst) {
                     break;
                 }
-                log_startup(&st.startup_log, "watchdog: sidecar exited unexpectedly — respawning");
-                let _ = spawn_sidecar(st);
+                // Back off the never-came-up case: after a few quick tries, poll far less often so a
+                // genuinely blocked node doesn't burn a core. A crash-respawn (Some, exited) always
+                // gets an immediate attempt — that path had a working node moments ago.
+                if from_none && consecutive_failures >= 5 {
+                    // Slow path: ~30s between attempts once we've clearly failed to launch repeatedly.
+                    if consecutive_failures % 10 != 0 {
+                        consecutive_failures = consecutive_failures.saturating_add(1);
+                        continue;
+                    }
+                }
+                log_startup(
+                    &st.startup_log,
+                    if from_none {
+                        "watchdog: sidecar never came up — attempting respawn"
+                    } else {
+                        "watchdog: sidecar exited unexpectedly — respawning"
+                    },
+                );
+                if spawn_sidecar(st) {
+                    consecutive_failures = 0;
+                } else {
+                    consecutive_failures = consecutive_failures.saturating_add(1);
+                }
             }
         }
     });
@@ -1092,6 +1457,28 @@ async fn starnet_update_install(
     app.restart()
 }
 
+/// P1.5 build provenance: the app version + the git commit/dirty state this binary was compiled from (stamped by
+/// build.rs). The frontend diagnostics panel renders "build <version> @ <commit>[ DIRTY]" so a user (or the release
+/// train) can prove exactly which source produced an installed exe. Commit is "unknown" when git was unavailable
+/// at build time (never a hard failure).
+#[derive(serde::Serialize)]
+struct BuildInfo {
+    version: String,
+    commit: String,
+    describe: String,
+    dirty: bool,
+}
+
+#[tauri::command]
+fn starnet_build_info(app: AppHandle) -> BuildInfo {
+    BuildInfo {
+        version: app.package_info().version.to_string(),
+        commit: env!("STARNET_BUILD_COMMIT").to_string(),
+        describe: env!("STARNET_BUILD_DESCRIBE").to_string(),
+        dirty: env!("STARNET_BUILD_DIRTY") == "1",
+    }
+}
+
 fn main() {
     tauri::Builder::default()
         // A second launch should focus the running window, not spin up a 2nd sidecar.
@@ -1117,7 +1504,8 @@ fn main() {
             starnet_keep_awake_status,
             starnet_update_status,
             starnet_update_check,
-            starnet_update_install
+            starnet_update_install,
+            starnet_build_info
         ])
         .setup(|app| {
             let root = project_root(app.handle());
@@ -1158,7 +1546,10 @@ fn main() {
                 keep_awake: Mutex::new(KeepAwakeState::new()),
                 shutting_down: AtomicBool::new(false),
             };
-            let _ = spawn_sidecar(&state);
+            // Try to bring the sidecar up; on failure show a native Retry dialog naming startup.log
+            // (audit 0.2). Even if this ultimately returns false, the guardian below keeps trying so
+            // the app can still recover in the background rather than sitting permanently dead.
+            let _ = spawn_sidecar_with_retry(&state);
             app.manage(state);
             app.manage(PendingUpdate(Mutex::new(None)));
 
@@ -1171,6 +1562,22 @@ fn main() {
             let init = format!(
                 "window.__STARNET_API__='http://127.0.0.1:{port}';window.__STARNET_API_TOKEN__='{api_token}';var _sf=window.fetch;window.fetch=function(u,o){{if(typeof u==='string'&&u.indexOf('/api/')===0)u=window.__STARNET_API__+u;return _sf(u,o)}};"
             );
+
+            // Purge stale WebView2 compiled/GPU caches when the app version changed, BEFORE the
+            // webview window is created — otherwise V8 can run old bytecode against new data
+            // (see docs/UPDATE_STATE_SAFETY_AUDIT_2026-07-06.md P0.1). Fails soft; never blocks boot.
+            {
+                let handle = app.handle();
+                let identifier = handle.config().identifier.clone();
+                let current_version = handle.package_info().version.to_string();
+                let log = startup_log_path(handle);
+                purge_stale_webview_cache_on_version_change(
+                    handle,
+                    &identifier,
+                    &current_version,
+                    &log,
+                );
+            }
 
             WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
                 .title("StarNet")
@@ -1198,4 +1605,122 @@ fn main() {
                 }
             }
         });
+}
+
+#[cfg(test)]
+mod webview_cache_purge_tests {
+    use super::*;
+
+    #[test]
+    fn purges_on_first_run_when_marker_missing() {
+        assert!(should_purge_webview_cache(None, "0.2.4"));
+    }
+
+    #[test]
+    fn purges_when_version_changed() {
+        assert!(should_purge_webview_cache(Some("0.2.3"), "0.2.4"));
+    }
+
+    #[test]
+    fn no_purge_when_version_unchanged() {
+        assert!(!should_purge_webview_cache(Some("0.2.4"), "0.2.4"));
+    }
+
+    #[test]
+    fn tolerates_whitespace_in_marker() {
+        // Markers are written via fs::write and read back with read_to_string; a trailing
+        // newline or stray whitespace must NOT be read as a version change (would purge every
+        // boot). trim() on both sides guards that.
+        assert!(!should_purge_webview_cache(Some("0.2.4\n"), "0.2.4"));
+        assert!(!should_purge_webview_cache(Some("  0.2.4  "), "0.2.4"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn honors_env_override_for_user_data_dir() {
+        // Serialize env mutation within this test; other tests don't touch these vars.
+        let key = "WEBVIEW2_USER_DATA_FOLDER";
+        let prev = std::env::var_os(key);
+        std::env::set_var(key, r"C:\some\custom\webview");
+        let got = webview2_user_data_dir("ai.skynet.harness");
+        match prev {
+            Some(v) => std::env::set_var(key, v),
+            None => std::env::remove_var(key),
+        }
+        assert_eq!(got, Some(PathBuf::from(r"C:\some\custom\webview")));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn purge_deletes_caches_but_preserves_user_state() {
+        use std::io::Write;
+
+        // Build a fake EBWebView\Default tree in a unique temp dir.
+        let base = std::env::temp_dir().join(format!(
+            "starnet-wvpurge-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let default_dir = base.join("Default");
+        std::fs::create_dir_all(&default_dir).unwrap();
+
+        // Caches that MUST be deleted.
+        for name in WEBVIEW2_STALE_CACHE_DIRS {
+            let d = default_dir.join(name);
+            std::fs::create_dir_all(&d).unwrap();
+            let mut f = std::fs::File::create(d.join("stale.bin")).unwrap();
+            f.write_all(b"old-bytecode").unwrap();
+        }
+
+        // User state that MUST be preserved (world save lives in Local Storage).
+        for name in ["Local Storage", "Session Storage", "IndexedDB"] {
+            let d = default_dir.join(name);
+            std::fs::create_dir_all(&d).unwrap();
+            let mut f = std::fs::File::create(d.join("keep.bin")).unwrap();
+            f.write_all(b"starnet.save").unwrap();
+        }
+        let cookies = default_dir.join("Cookies");
+        std::fs::write(&cookies, b"cookie-jar").unwrap();
+
+        let removed = purge_webview2_caches(&base, &None);
+
+        // Every cache dir gone.
+        for name in WEBVIEW2_STALE_CACHE_DIRS {
+            assert!(
+                !default_dir.join(name).exists(),
+                "cache dir {name} should have been removed"
+            );
+        }
+        assert_eq!(removed.len(), WEBVIEW2_STALE_CACHE_DIRS.len());
+
+        // Every user-state dir/file preserved.
+        for name in ["Local Storage", "Session Storage", "IndexedDB"] {
+            assert!(
+                default_dir.join(name).join("keep.bin").exists(),
+                "user state {name} must be preserved"
+            );
+        }
+        assert!(cookies.exists(), "Cookies must be preserved");
+
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn purge_is_soft_when_default_dir_absent() {
+        // Missing user-data dir must not panic and must remove nothing.
+        let base = std::env::temp_dir().join(format!(
+            "starnet-wvpurge-absent-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let removed = purge_webview2_caches(&base, &None);
+        assert!(removed.is_empty());
+    }
 }

@@ -17,6 +17,11 @@ function fakeStore() {
 }
 const idGen = () => { let i = 0; return () => 'run' + (++i); };
 const dm = (text, chatId) => ({ channel: 'telegram', chatId: chatId || '555', chatType: 'dm', userId: 'u1', text, messageId: '1', ts: 1 });
+// yield the event loop until pred() is true (or a bounded number of macrotask ticks elapse — never hangs the suite).
+async function waitFor(pred, ticks) {
+  for (let i = 0; i < (ticks || 200); i++) { if (pred()) return; await new Promise(r => setTimeout(r, 0)); }
+  throw new Error('waitFor: predicate never became true');
+}
 
 async function run() {
   // ---- A. happy path: tokens -> reply -> send; user+assistant persisted; inbound/delivery emitted ----
@@ -284,6 +289,144 @@ async function run() {
     await hub.onInbound(dm('/agents'));   // a control command that reads the roster; must NOT reject
     A.eq(sends.length, 1, 'one polite reply sent when rosterFn() throws');
     A.ok(/could not read the agent roster/i.test(sends[0]), 'polite roster-failure reply');
+  }
+
+  // ---- L. supersede-race retry: the host's transient "already running a task" refusal (same-agent workspace
+  // mutex) is RETRIED with backoff so the user's message is never silently dropped; a real reply eventually lands. --
+  {
+    const store = fakeStore(); const sends = []; const slept = []; let call = 0;
+    const runOnce = async (o) => {
+      call++;
+      o.emit('agent.run.start', { agentId: o.agentId, runId: o.runId, trigger: 'event', model: o.model });
+      if (call === 1) {   // first attempt loses the workspace-mutex race -> transient refusal (verbatim host text)
+        o.emit('agent.run.error', { agentId: o.agentId, runId: o.runId, transient: true, message: 'That agent is already running a task. Wait for it to finish before starting another — one run at a time per agent (they share a workspace).' });
+        o.emit('agent.run.end', { agentId: o.agentId, runId: o.runId, reason: 'error', turns: 0, usd: 0 });
+        return;
+      }
+      o.emit('agent.token', { agentId: o.agentId, runId: o.runId, delta: 'took over' });
+      o.emit('agent.run.end', { agentId: o.agentId, runId: o.runId, reason: 'done', turns: 1, usd: 0 });
+    };
+    const hub = makeChannelHub({
+      runOnce, store, send: (c, t) => { sends.push({ c, t }); return Promise.resolve({ ok: true }); },
+      secrets: () => ({ key: 'k', model: 'm' }), classify: () => false, newId: idGen(),
+      sleep: (ms) => { slept.push(ms); return Promise.resolve(); }   // fake: instant, records the backoff schedule
+    });
+    await hub.onInbound(dm('take over please'));
+    A.eq(call, 2, 'the supersede-race refusal was retried exactly once (2nd attempt succeeded)');
+    A.eq(slept.length, 1, 'exactly one backoff wait before the successful retry');
+    A.ok(slept[0] > 0, 'backoff waited a positive amount (the aborted run\'s slot needs time to free)');
+    A.eq(sends.length, 1, 'the user got ONE reply, not the internal mutex refusal');
+    A.eq(sends[0].t, 'took over', 'the reply is the successful retry\'s real answer');
+    A.ok(!/already running a task/i.test(sends[0].t), 'the raw host mutex message never reaches the user');
+  }
+
+  // ---- L2. exhausted supersede-retry -> an HONEST "still busy" reply (message not lost, user can resend). Also
+  // proves the backoff is BOUNDED (does not loop forever) and grows (exponential). ----
+  {
+    const store = fakeStore(); const sends = []; const slept = []; let call = 0;
+    const runOnce = async (o) => {
+      call++;
+      o.emit('agent.run.start', { agentId: o.agentId, runId: o.runId, trigger: 'event', model: o.model });
+      o.emit('agent.run.error', { agentId: o.agentId, runId: o.runId, transient: true, message: 'That agent is already running a task. Wait for it to finish before starting another — one run at a time per agent (they share a workspace).' });
+      o.emit('agent.run.end', { agentId: o.agentId, runId: o.runId, reason: 'error', turns: 0, usd: 0 });
+    };
+    const hub = makeChannelHub({
+      runOnce, store, send: (c, t) => { sends.push(t); return Promise.resolve({ ok: true }); },
+      secrets: () => ({ key: 'k', model: 'm' }), classify: () => false, newId: idGen(),
+      supersedeRetries: 3, supersedeBackoffMs: 100, sleep: (ms) => { slept.push(ms); return Promise.resolve(); }
+    });
+    await hub.onInbound(dm('never frees'));
+    A.eq(call, 4, 'bounded: 1 initial + exactly 3 retries, then it gives up (no infinite loop)');
+    A.eq(slept, [100, 200, 400], 'exponential backoff schedule (100·2^n) across the 3 retries');
+    A.eq(sends.length, 1, 'exactly one reply on exhaustion');
+    A.ok(/still busy/i.test(sends[0]) && /again/i.test(sends[0]), 'honest "still busy — try again" reply on exhausted retries');
+    A.ok(!/already running a task/i.test(sends[0]), 'never leaks the internal mutex message even on exhaustion');
+    A.eq((store.hist.get('tg_555') || []).filter(m => m.role === 'assistant').length, 0, 'no assistant turn persisted on exhaustion');
+  }
+
+  // ---- L3. OTHER error classes are NOT retried (only the workspace-mutex race is) — a hard error and the DISTINCT
+  // 'too many agents' cap refusal both surface immediately, once. ----
+  {
+    // a NON-transient hard error: surface it verbatim, zero retries.
+    const store = fakeStore(); const sends = []; const slept = []; let call = 0;
+    const runOnce = async (o) => {
+      call++;
+      o.emit('agent.run.start', { agentId: o.agentId, runId: o.runId, trigger: 'event', model: o.model });
+      o.emit('agent.run.error', { agentId: o.agentId, runId: o.runId, transient: false, message: 'boom' });
+    };
+    const hub = makeChannelHub({
+      runOnce, store, send: (c, t) => { sends.push(t); return Promise.resolve({ ok: true }); },
+      secrets: () => ({ key: 'k', model: 'm' }), classify: () => false, newId: idGen(),
+      sleep: (ms) => { slept.push(ms); return Promise.resolve(); }
+    });
+    await hub.onInbound(dm('hi'));
+    A.eq(call, 1, 'a hard (non-transient) error is NOT retried');
+    A.eq(slept.length, 0, 'no backoff for a non-retryable error');
+    A.eq(sends, ['⚠ boom'], 'the hard error surfaces verbatim, once');
+  }
+  {
+    // a DIFFERENT transient (the 'too many agents' concurrency cap) is NOT the workspace-mutex race -> not retried.
+    const store = fakeStore(); const sends = []; const slept = []; let call = 0;
+    const runOnce = async (o) => {
+      call++;
+      o.emit('agent.run.start', { agentId: o.agentId, runId: o.runId, trigger: 'event', model: o.model });
+      o.emit('agent.run.error', { agentId: o.agentId, runId: o.runId, transient: true, message: 'Too many agents are working at once (limit 6). Wait for one to finish, or raise STARNET_MAX_CONCURRENT_AGENTS.' });
+      o.emit('agent.run.end', { agentId: o.agentId, runId: o.runId, reason: 'error', turns: 0, usd: 0 });
+    };
+    const hub = makeChannelHub({
+      runOnce, store, send: (c, t) => { sends.push(t); return Promise.resolve({ ok: true }); },
+      secrets: () => ({ key: 'k', model: 'm' }), classify: () => false, newId: idGen(),
+      sleep: (ms) => { slept.push(ms); return Promise.resolve(); }
+    });
+    await hub.onInbound(dm('hi'));
+    A.eq(call, 1, 'a DIFFERENT transient (concurrency cap) is NOT retried — only the workspace-mutex race is');
+    A.eq(slept.length, 0, 'no backoff for the unrelated transient');
+    A.ok(/Too many agents/.test(sends[0]), 'the distinct transient surfaces its own message, once');
+  }
+
+  // ---- L4. a message that arrives DURING the backoff supersedes the retry -> the retry bails (newer run owns the
+  // chat), and the pure classifier isSupersedeRaceRefusal only fires on the exact class. ----
+  {
+    const { isSupersedeRaceRefusal } = require('../sidecar/channels/hub.js');
+    A.eq(isSupersedeRaceRefusal(true, 'That agent is already running a task. …'), true, 'classifier: transient + phrase -> true');
+    A.eq(isSupersedeRaceRefusal(false, 'That agent is already running a task. …'), false, 'classifier: non-transient never matches (transient flag required)');
+    A.eq(isSupersedeRaceRefusal(true, 'Too many agents are working at once'), false, 'classifier: the concurrency-cap transient is a different class');
+    A.eq(isSupersedeRaceRefusal(true, ''), false, 'classifier: empty message -> false');
+    A.eq(isSupersedeRaceRefusal(true, null), false, 'classifier: null message -> false (no throw)');
+
+    // Scenario: the first message's run hits a GENUINE mutex-race refusal (NOT yet superseded) and enters backoff.
+    // While it is parked in sleep(), a second message arrives, supersedes it, and runs its own reply. The parked
+    // retry must then BAIL after the backoff (its record is now superseded) instead of firing a stale extra run.
+    const store = fakeStore(); const sends = []; let releaseSleep = null; const sleepEntered = [];
+    let call = 0;
+    const runOnce = async (o) => {
+      call++;
+      o.emit('agent.run.start', { agentId: o.agentId, runId: o.runId, trigger: 'event', model: o.model });
+      if (call === 1) {
+        // first run: instant mutex-race refusal (transient), no supersede yet -> the hub enters backoff sleep.
+        o.emit('agent.run.error', { agentId: o.agentId, runId: o.runId, transient: true, message: 'That agent is already running a task. (they share a workspace).' });
+        o.emit('agent.run.end', { agentId: o.agentId, runId: o.runId, reason: 'error', turns: 0, usd: 0 });
+        return;
+      }
+      // any later run (the second message's) delivers a normal reply.
+      o.emit('agent.token', { agentId: o.agentId, runId: o.runId, delta: 'newest reply' });
+      o.emit('agent.run.end', { agentId: o.agentId, runId: o.runId, reason: 'done', turns: 1, usd: 0 });
+    };
+    const hub = makeChannelHub({
+      runOnce, store, send: (c, t) => { sends.push({ c, t }); return Promise.resolve({ ok: true }); },
+      secrets: () => ({ key: 'k', model: 'm' }), classify: () => false, newId: idGen(),
+      sleep: () => { const p = new Promise(r => { releaseSleep = r; }); sleepEntered.push(1); return p; }
+    });
+    const p1 = hub.onInbound(dm('first'));   // refuses (call 1), then parks in the backoff sleep
+    await waitFor(() => sleepEntered.length === 1);   // the first run is now parked in backoff
+    A.eq(sends.length, 0, 'nothing delivered yet — the first run is mid-backoff, not given up');
+    const p2 = hub.onInbound(dm('second'));   // supersedes the parked retry AND runs its own reply (call 2)
+    await p2;
+    releaseSleep();                           // let the first run\'s backoff resolve — it must see superseded and bail
+    await p1;
+    A.eq(call, 2, 'the superseded retry did NOT fire a stale extra run after the backoff');
+    A.eq(sends.length, 1, 'only the newest message is answered');
+    A.eq(sends[0].t, 'newest reply', 'the delivered reply is the newest run\'s, not a stale retry');
   }
 
   A.report('channels.hub.test');

@@ -187,12 +187,16 @@
       unpricedUsage.push({ model: modelId || '(unknown)', tokensIn: c.tokensIn || 0, tokensOut: c.tokensOut || 0 });
     }
     function end(reason) {
-      emit('agent.run.end', { agentId, runId, reason, turns, usd: spentUsd });
+      // A3/Lane5: surface WHY the model stopped when it's a truncation/policy stop, ADDITIVELY — on BOTH the return
+      // value (index.js gates reflection/study/skills on it) AND the agent.run.end event (the frontend renders a
+      // "cut short" recap instead of a delivered crate). The event field is now schema-declared (optional) so old
+      // clean-run payloads — which omit it — stay valid. Only the non-clean reasons are worth surfacing.
+      const cut = (lastFinishReason === 'length' || lastFinishReason === 'content_filter') ? lastFinishReason : null;
+      const endPayload = { agentId, runId, reason, turns, usd: spentUsd };
+      if (cut) endPayload.finishReason = cut;
+      emit('agent.run.end', endPayload);
       const out = { reason, messages, usd: spentUsd, turns, tokens: spentTokens, model, unpricedUsage: unpricedUsage.slice() };
-      // A3: surface WHY the model stopped when it's a truncation/policy stop, ADDITIVELY (the frontend + index.js
-      // gate on reason==='done'; finishReason is an extra field on the return value, never a new run-end reason,
-      // never on the schema-frozen agent.run.end event). Only the non-clean reasons are worth surfacing.
-      if (lastFinishReason === 'length' || lastFinishReason === 'content_filter') out.finishReason = lastFinishReason;
+      if (cut) out.finishReason = cut;
       return out;
     }
 
@@ -414,7 +418,13 @@
           turns = turnStart;                                          // refund: this turn didn't advance the budget
           emit('iteration.refunded', { agentId, runId, turn: turnStart, reason: empty ? 'empty' : 'duplicate', refundsUsed });
         }
-        return end('done');
+        // TRUTHFUL TELEMETRY (audit 1.7): a final turn that produced ZERO tools AND no text is NOT a clean delivery —
+        // a degraded provider streaming empty completions would otherwise read as a successful 'done'. End it as
+        // 'empty' (an ADDITIVE agent.run.end reason value; see shared/events.js) so index.js skips reflection/study/
+        // skill-review, the cron settle path never emits workitem.delivered, and the frontend renders "ended: empty"
+        // instead of a delivered crate. A DUPLICATE turn is different: it re-emitted a REAL prior answer, so it stays
+        // 'done' (the answer exists — only the genuinely empty final turn is degraded).
+        return end(empty ? 'empty' : 'done');
       }
 
       // (6) EXECUTE — needs a dispatcher (M1.2+)

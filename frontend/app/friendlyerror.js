@@ -89,6 +89,10 @@
     context_overflow: { retryable: false, action: null,    msg: 'This conversation got too long for the model — start a fresh chat or shorten it.' },
     model_not_found:  { retryable: false, action: 'settings', msg: "That model isn't available — pick a different one in Settings." },
     content_policy_blocked: { retryable: false, action: null, msg: 'The model declined that request on safety grounds — try rephrasing it.' },
+    // JUKEBOX is placed (the Spotify tools ARE granted) but Spotify's OAuth session isn't connected yet — the
+    // real second half of the unlock chain. The door is SETTINGS (connect Spotify), NOT REFIT (the gear is
+    // already on station), so this is distinct from `capdenied` which fires when no JUKEBOX is placed at all.
+    spotify_not_connected: { retryable: false, action: 'settings', msg: 'The JUKEBOX is on station, but Spotify isn’t connected yet — connect it in Settings, then try again.' },
     unknown:       { retryable: true,  action: null,       msg: 'Something went wrong on that turn — try again.' }
   };
 
@@ -197,6 +201,9 @@
       kind = 'oauth';
     } else if (/no api key set|no model selected/.test(raw.toLowerCase())) {
       kind = 'auth';
+    } else if (/spotify is not connected|spotify.*not connected|connect (it in settings|spotify)/.test(raw.toLowerCase())) {
+      // the JUKEBOX is placed but Spotify's OAuth isn't linked — a settings step, not a REFIT one.
+      kind = 'spotify_not_connected';
     } else if (/\bcapdenied\b/.test(raw.toLowerCase()) || /^no\s+\w+\s+—/.test(raw.toLowerCase()) || /needs a capability/.test(raw.toLowerCase())) {
       // a capability denial is UI-level (the sidecar classifier doesn't model it) — catch it before delegating.
       kind = 'capdenied';

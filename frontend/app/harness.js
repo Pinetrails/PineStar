@@ -41,9 +41,25 @@ const Harness = (() => {
   let apiToken = (typeof window !== 'undefined' && window.__STARNET_API_TOKEN__) ? String(window.__STARNET_API_TOKEN__) : '';
   let apiTokenPromise = null;
 
+  // TRUE only for our OWN sidecar API — a same-origin request under /api/. The X-StarNet-Token this gates is a
+  // PRIVATE local credential; a naive substring match on '/api/' would attach it to third-party URLs that merely
+  // contain '/api/' (e.g. the OpenRouter fallback catalog https://openrouter.ai/api/v1/models), leaking the token
+  // cross-origin AND forcing a CORS preflight OpenRouter rejects (so the fallback fails exactly when it's needed).
+  // Same-origin = a leading-slash relative path ('/api/...') OR an absolute URL whose origin === location.origin.
+  function apiPath(s) {
+    s = String(s || '');
+    if (s.indexOf('/api/') === 0) return true;   // leading-slash relative — always same-origin
+    if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(s)) return false;   // other relative forms don't carry another origin
+    try {
+      const base = (typeof location !== 'undefined' && location.href) ? location.href : undefined;
+      const parsed = new URL(s, base);
+      const here = (typeof location !== 'undefined' && location.origin) ? location.origin : null;
+      return here != null && parsed.origin === here && parsed.pathname.indexOf('/api/') === 0;
+    } catch (_) { return false; }
+  }
   function isApiUrl(u) {
-    if (typeof u === 'string') return u.indexOf('/api/') === 0 || /\/api\//.test(u);
-    return !!(u && typeof u.url === 'string' && /\/api\//.test(u.url));
+    if (typeof u === 'string') return apiPath(u);
+    return !!(u && typeof u.url === 'string' && apiPath(u.url));
   }
   function withApiToken(init, token) {
     init = Object.assign({}, init || {});
@@ -340,7 +356,7 @@ const Harness = (() => {
 
     const reader = res.body.getReader();
     const dec = new TextDecoder();
-    let buf = '', full = '', lastUsage = null, runId = null, errMsg = null, endReason = null;
+    let buf = '', full = '', lastUsage = null, runId = null, errMsg = null, endReason = null, finishReason = null;
 
     for (;;) {
       const { value, done } = await reader.read();
@@ -393,7 +409,9 @@ const Harness = (() => {
           case 'agent.run.error': if (!payload.runId || payload.runId === runId) errMsg = payload.message; break;   // the lead's own error (a worker's rides the tool result)
           case 'agent.run.end':
             if (payload.runId) delete runModels[payload.runId];
-            if (!payload.runId || payload.runId === runId) endReason = payload.reason;
+            // latch the lead's stop reason AND (Lane 5, additive) WHY it stopped when the provider truncated/
+            // filtered it — the caller renders a "cut short" recap instead of a delivered crate for those.
+            if (!payload.runId || payload.runId === runId) { endReason = payload.reason; finishReason = payload.finishReason || null; }
             break;   // the lead's own end, not a forwarded worker's
         }
       }
@@ -401,8 +419,8 @@ const Harness = (() => {
     totals.calls++;
     // surface the error to the caller (do NOT swallow it just because some text streamed first) —
     // a network/fetch failure still throws below; this is for in-band run errors / capdenied.
-    if (errMsg) return { text: full, usage: lastUsage, runId, error: errMsg, endReason };
-    return { text: full, usage: lastUsage, runId, endReason };
+    if (errMsg) return { text: full, usage: lastUsage, runId, error: errMsg, endReason, finishReason };
+    return { text: full, usage: lastUsage, runId, endReason, finishReason };
   }
 
   /* Read-only fetch of an agent's notebook (its memory.md) from the sidecar. The agent writes these notes

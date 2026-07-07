@@ -22,6 +22,30 @@ const Dialogue = (() => {
   let typer = null;            // active typewriter cancel handle
   let keyHandler = null;       // active option/number keydown handler
 
+  // GENESIS never leaves a mind nameless-yet-labelled. If the Commander wakes an overseer without typing a name,
+  // the flow used to fall back to the bland literal 'AGENT' (name = n || name) with no nudge — a blank ceremony.
+  // Instead, mint a station codename: eerie-not-cute, single-word, machine-designation flavour (matching the
+  // seeded NOVA / VENOM / ULTRON tone), uppercased and clamped to the 18-char nameplate cap. Deterministic pool,
+  // random pick — every silent awakening still gets a real name, never the generic placeholder.
+  const CODENAMES = [
+    'NOVA', 'VESPER', 'ONYX', 'HALCYON', 'ORACLE', 'CIPHER', 'VANTA', 'ECHO',
+    'WRAITH', 'SABLE', 'QUASAR', 'OBSIDIAN', 'PHANTOM', 'ZEPHYR', 'HELIX', 'RAVEN',
+    'PROXIMA', 'ATLAS', 'SPECTER', 'CINDER', 'VECTOR', 'MERIDIAN', 'UMBRA', 'PULSAR',
+  ];
+  // a blank/whitespace/placeholder name has no real identity behind it — treat it as "unnamed" so the caller's
+  // empty WAKE input and the bland 'AGENT' sentinel both route to a minted codename, never to a dead label.
+  function isUnnamed(n) { const s = String(n == null ? '' : n).trim().toUpperCase(); return !s || s === 'AGENT'; }
+  function codename() { return CODENAMES[Math.floor(Math.random() * CODENAMES.length)].slice(0, 18); }
+  // resolve a caller-supplied name to a real one: a typed name is honoured (trimmed, capped); a blank/placeholder
+  // mints a codename ONCE and remembers it, so the speaker label stays stable for the rest of the ceremony.
+  let minted = '';
+  function resolveName(n) {
+    const s = String(n == null ? '' : n).trim();
+    if (s && !isUnnamed(s)) return s.slice(0, 18);
+    if (!minted) minted = codename();
+    return minted;
+  }
+
   const sfx = n => { try { if (typeof SFX !== 'undefined' && SFX[n]) SFX[n](); } catch (_) {} };
   const reduceMotion = () => { try { return matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (_) { return false; } };
   function seg(text, cps, hold) { return { text: String(text == null ? '' : text), cps: cps || 46, holdAfter: hold || 0 }; }
@@ -32,7 +56,9 @@ const Dialogue = (() => {
     return lines.map(l => (typeof l === 'string') ? seg(l) : seg(l.text, l.cps, l.holdAfter));
   }
 
-  function setName(n) { name = n || name; if (speakerEl) speakerEl.textContent = name; }
+  // set the speaker label. A real typed name is honoured; a blank/placeholder mints (and remembers) a station
+  // codename so the awakening never shows the bland generic 'AGENT'. Never hard-blocks — the flow always advances.
+  function setName(n) { name = resolveName(n); if (speakerEl) speakerEl.textContent = name; }
 
   /* mount the panel as a child of COMMS (#chat-panel) so it covers the conversation and tracks layout. */
   function ensure() {
@@ -50,9 +76,12 @@ const Dialogue = (() => {
   }
 
   function openPanel(opts) {
+    // resolve the speaker name BEFORE the panel paints so a blank/placeholder WAKE mints a codename up front
+    // (never a flash of the generic 'AGENT'). resolveName honours a real typed name and mints only when unnamed.
+    name = resolveName(opts && opts.name);
     ensure();
     open = true;
-    if (opts && opts.name) setName(opts.name);
+    if (speakerEl) speakerEl.textContent = name;
     document.body.classList.add('fnv-mode');
     if (panel) panel.classList.add('show');
   }
@@ -142,8 +171,22 @@ const Dialogue = (() => {
       customBtn.onclick = () => openCustom(cfg, finishPick);
       optsEl.appendChild(customBtn); rows.push(customBtn);
     }
+    // OPT-IN escape hatch (mid-game asks, Andrew): a caller that presents a *sequence* of asks (e.g. the schedule
+    // proposals) passes dismissable:true so Esc — or a quiet "✕ dismiss" row — resolves the node with dismissed:true,
+    // letting the caller abandon the WHOLE flow, not just skip one. The GENESIS awakening never sets this, so its
+    // ceremony is unchanged (no accidental early-exit from the birth).
+    if (cfg.dismissable) {
+      const d = document.createElement('button');
+      d.className = 'fnv-opt skip dismiss'; d.type = 'button';
+      const num = document.createElement('span'); num.className = 'fnv-num'; num.textContent = '✕';
+      const lbl = document.createElement('span'); lbl.className = 'fnv-opt-l'; lbl.textContent = cfg.dismissLabel || 'dismiss — not now';
+      d.appendChild(num); d.appendChild(lbl);
+      d.onclick = () => finishPick({ value: '', skip: true, dismissed: true });
+      optsEl.appendChild(d);
+    }
     // keyboard: number keys pick an option; the trailing custom row is selectable too.
     keyHandler = e => {
+      if (e.key === 'Escape' && cfg.dismissable) { e.preventDefault(); finishPick({ value: '', skip: true, dismissed: true }); return; }
       if (e.key === 'Enter' && cfg.allowCustom) { e.preventDefault(); openCustom(cfg, finishPick); return; }
       const n = parseInt(e.key, 10);
       if (!isNaN(n) && n >= 1 && n <= rows.length) { e.preventDefault(); rows[n - 1].click(); }
@@ -179,7 +222,10 @@ const Dialogue = (() => {
     setTimeout(() => inp.focus(), 30);
   }
 
-  return { open: openPanel, close: closePanel, say, node, setName, isOpen: () => open };
+  // codename() is also exported so the WAKE funnel (app.js) can persist a real minted name instead of the bland
+  // 'AGENT' when the Commander leaves the name blank — keeping the world nameplate / dossier consistent with the
+  // speaker label. isUnnamed() lets a caller cheaply detect the blank/placeholder case.
+  return { open: openPanel, close: closePanel, say, node, setName, isOpen: () => open, codename, isUnnamed };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = { Dialogue };

@@ -43,8 +43,16 @@
     }),
     'agent.run.end': obj(['agentId', 'runId', 'reason', 'turns', 'usd'], {
       agentId: str, runId: str,
-      reason: { enum: ['done', 'max_iters', 'budget', 'cancelled', 'error', 'refusal'] },
-      turns: int, usd: num
+      // ADDITIVE 2026-07-06 (audit 1.7, run-truth-quickies): 'empty' — the final model turn produced ZERO tools and
+      // no text (a degraded provider streaming empty completions). Distinct from 'done' so it never reads as a clean
+      // delivery (loop.js ends it 'empty'; the frontend renders "ended: empty", never a delivered crate). Enum VALUE
+      // added, never renamed/removed — old payloads and consumers stay valid.
+      reason: { enum: ['done', 'max_iters', 'budget', 'cancelled', 'error', 'refusal', 'empty'] },
+      turns: int, usd: num,
+      // ADDITIVE (optional, Lane 5): WHY the provider stopped when it was a truncation/policy cut. Present ONLY
+      // for the non-clean stops so the frontend can render a "cut short" recap instead of a delivered crate; a
+      // clean run omits it entirely (old payloads stay valid — not required, no additionalProperties:false).
+      finishReason: { enum: ['length', 'content_filter'] }
     }),
     'agent.run.error': obj(['agentId', 'runId', 'message', 'transient'], {
       agentId: str, runId: str, message: str, transient: bool
@@ -155,8 +163,10 @@
       channel: str, chatId: str, agentId: str, userId: str, kind: { enum: ['dm', 'group'] }
     }),
     // the agent's reply was delivered back to the platform (chunk count + ok/why) — outbound delivery telemetry.
+    // agentId (additive, optional 2026-07-06): WHICH roster agent produced the reply, so the floor pulses the
+    // RIGHT agent's dish on a multi-agent station instead of any dish. Optional — absent on legacy/command sends.
     'channel.delivery': obj(['channel', 'chatId', 'runId', 'ok'], {
-      channel: str, chatId: str, runId: str, ok: bool, chunks: int, reason: str
+      channel: str, chatId: str, runId: str, ok: bool, chunks: int, reason: str, agentId: str
     }),
     // adapter transport health: poll up / network down / fatal token error (in-memory health state).
     'channel.connect': obj(['channel', 'state'], {

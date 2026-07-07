@@ -201,7 +201,6 @@ input::placeholder, textarea.key-input::placeholder { color: var(--ph-dim); opac
 .gt-field { color: var(--ph-dim); font-size: 15px; letter-spacing: 1px; }
 .gt-field b { color: var(--ph-bright); font-weight: normal; margin-left: 4px; }
 .gt-spacer { flex: 1; }
-#btn-disconnect { margin-left: 6px; }
 
 #game-main { flex: 1; display: flex; gap: 9px; min-height: 0; }
 
@@ -473,6 +472,10 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 /* "rate the work" — the primary leveling beat: a gold label + the shared consent buttons (reused styling). */
 .turnin-rate { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; margin: 5px 0 9px; }
 .work-rate-label { color: var(--gold); font-size: 12px; letter-spacing: .4px; opacity: .95; }
+/* one-time explainer above the very first rate control (chat.js WORKRATE_COACH_KEY) — a quiet full-width
+   line so it reads as coaching, not part of the label. flex-basis 100% breaks it onto its own row in the
+   .turnin-rate / consent-btns flex hosts. */
+.work-rate-hint { flex-basis: 100%; width: 100%; color: var(--ph); font-size: 11px; letter-spacing: .3px; opacity: .8; margin-bottom: 2px; }
 .turnin-rate .consent-btns, .cmsg.work-rate .consent-btns { margin-top: 0; }
 .turnin-item {
   display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: 7px 8px;
@@ -908,6 +911,11 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 }
 .model-dock-row:hover { color: var(--ph-bright); background: var(--ph-faint); }
 .model-dock-row.sel { color: var(--ink); background: var(--ph); }
+/* E4: offline fallback — the live catalog was unreachable, these are a built-in unverified seed list.
+   Amber group tag + dimmed rows so they never read as a verified live catalog. */
+.model-dock-group-offline { color: var(--warn, #e8a13a); font-size: 9px; font-weight: 600; font-style: normal; letter-spacing: 0.5px; }
+.model-dock-row.fallback .model-dock-row-name { color: var(--ph-dim); }
+.model-dock-row.fallback.sel .model-dock-row-name { color: var(--ink); }
 .model-dock-row-name {
   min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px;
 }
@@ -1232,9 +1240,8 @@ body.col-resizing #stage { pointer-events: none; }
    have) — re-point it at the live station so the SETTINGS toggle works */
 body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 
-/* top bar: reuse v7 #logo/.logo-*/.tb-stat; subtitle + disconnect fit */
+/* top bar: reuse v7 #logo/.logo-*/.tb-stat; subtitle fit */
 #topbar .logo-sub { white-space: nowrap; }
-#topbar #btn-disconnect { margin-left: 16px; align-self: center; }
 
 /* crew manifest empty state */
 .crew-empty { padding: 14px 10px; font-size: 13px; color: var(--ph-dim); }
@@ -1247,6 +1254,16 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 }
 #status-pill.working { color: var(--gold); border-color: var(--gold); box-shadow: 0 0 12px rgba(var(--gold-rgb),0.35); }
 #status-pill.thinking { color: var(--ph-bright); }
+/* E1: LINK DOWN — the pill can only read ONLINE while the sidecar bridge is actually up. When the
+   link dies it flips to a red-phosphor OFFLINE, matching the canvas LINK DOWN marker (#ff6a4c) with
+   a slow breathing pulse so it reads as a live fault, never a frozen label. */
+#status-pill.down {
+  color: #ff6a4c; border-color: rgba(255,80,60,0.6);
+  text-shadow: 0 0 6px rgba(255,80,60,0.9);
+  box-shadow: 0 0 12px rgba(255,80,60,0.35), inset 0 0 10px rgba(0,0,0,0.6);
+  animation: pill-down-breathe 2.2s ease-in-out infinite;
+}
+@keyframes pill-down-breathe { 0%,100% { opacity: 0.62; } 50% { opacity: 1; } }
 
 /* ============================================================
    GROUPED BOTTOM-BAR DOCKS (navdock.js) — the flat panel
@@ -1633,6 +1650,8 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 .ag-sdot.on { background: var(--ok); box-shadow: 0 0 5px rgba(123,200,138,.55); }
 .ag-sdot.working { background: var(--gold); box-shadow: 0 0 7px rgba(var(--gold-rgb),.7); animation: sdot-pulse 1.1s infinite; }
 .ag-sdot.thinking { background: var(--ph-bright); box-shadow: 0 0 6px var(--ph-glow); animation: sdot-pulse .7s infinite; }
+/* E2: link down → OFFLINE dot, red-phosphor breathing, matching the canvas LINK DOWN marker */
+.ag-sdot.down { background: #ff6a4c; box-shadow: 0 0 6px rgba(255,80,60,.75); animation: sdot-pulse 2.2s infinite; }
 @keyframes sdot-pulse { 0%,100%{ opacity:1; } 50%{ opacity:.3; } }
 
 /* 3-cell RPG stat grid */
@@ -1660,6 +1679,19 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 /* footer row */
 .ag-foot-row { font-size: 11px; color: var(--ph-dim); letter-spacing: .4px; margin-top: 4px; }
 .ag-foot-row b { color: var(--ph); font-weight: normal; }
+
+/* COMMANDER CONTROLS — dossier BRIEF: change skin + delete agent */
+.ag-command { margin: 10px 0 8px; display: flex; flex-direction: column; gap: 12px; }
+.ag-cmd-sec { border-top: 1px solid var(--hair, rgba(255,255,255,.08)); padding-top: 8px; }
+.ag-cmd-lbl { font-size: 10px; color: var(--ph-dim); letter-spacing: 2px; margin-bottom: 6px; }
+.ag-skin-row { max-height: 108px; }   /* reuse .skin-picker/.skin-thumb; a shorter well in the narrower dossier pane */
+.ag-cmd-danger .ag-cmd-lbl { color: var(--bad, #e2604a); }
+.ag-del-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.ag-del { border-color: var(--bad, #e2604a) !important; color: var(--bad, #e2604a) !important; }
+.ag-del:hover:not(:disabled) { background: rgba(226,96,74,.12) !important; }
+.ag-del:disabled { opacity: .4; cursor: not-allowed; border-color: var(--ph-dim) !important; color: var(--ph-dim) !important; }
+.ag-del.armed { background: var(--bad, #e2604a) !important; color: #120404 !important; box-shadow: 0 0 12px rgba(226,96,74,.5); }
+.ag-del-why { font-size: 11px; color: var(--ph-dim); font-style: italic; }
 
 /* ============ PREMIUM GROWTH DOSSIER — the GROWTH tab ============
    Tactical-ops grid discipline, refined with hairline rules + engraved labels and breathing room.

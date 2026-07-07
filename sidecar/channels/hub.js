@@ -40,6 +40,19 @@
     return '\n\n(stopped: ' + reason + ')';
   }
 
+  // The ONE transient refusal the messaging bridge retries: the host's same-agent workspace mutex (index.js's
+  // `concurrencyGate.inFlight(agentId) > 0` guard) refuses a run whose agentId already has one in flight. When a
+  // second message ABORTS this chat's prior run and we immediately start the replacement, the aborted run's slot may
+  // not have released yet (its `concurrencyGate.leave` runs in an async finally as the aborted run unwinds), so the
+  // replacement momentarily loses that race and is refused. The refusal is marked transient by the host and clears
+  // as soon as the prior run finishes unwinding — so we retry ONLY this class (never a budget/config/capdenied
+  // error, never the distinct 'too many agents' cap refusal). Matched on transient + the distinctive phrase so a
+  // different transient never gets silently looped. Kept as a narrow regex, not a substring, to avoid false hits.
+  const SUPERSEDE_REFUSAL_RE = /already running a task/i;
+  function isSupersedeRaceRefusal(transient, message) {
+    return !!transient && SUPERSEDE_REFUSAL_RE.test(String(message == null ? '' : message));
+  }
+
   // split text into <=max-length pieces, preferring to break at the last newline/space so words/lines stay whole.
   function chunkText(text, max) {
     const s = String(text == null ? '' : text);
@@ -113,6 +126,23 @@
     const redact = typeof o.redact === 'function' ? o.redact : (p) => p;
     const emit = typeof o.emit === 'function' ? o.emit : () => {};
     const newId = typeof o.newId === 'function' ? o.newId : (() => { let n = 0; return () => channel + '-run-' + (++n); })();
+    // INJECTED wall-clock — no ambient fallback (this module is pure/deterministic; the determinism gate bans a bare
+    // Date.now here). The composition root passes now:()=>Date.now(); a hub built without one (unit tests) stamps a
+    // run's startedAt as null. Used ONLY to age a run in the state snapshot — never for control flow, so a null
+    // startedAt is harmless (the frontend's normalizeSnapshot reads a missing startedAt as 0ms-ago).
+    const now = typeof o.now === 'function' ? o.now : null;
+    // INJECTED delay (the SAME pattern adapter.js / discord.transport.js already use in this dir): sleep(ms) -> a
+    // Promise that resolves after ms. Used ONLY by the supersede-retry backoff below. Tests pass a fake (instant +
+    // records the delays); the real fallback is a setTimeout-backed sleep so the fix works even where the composition
+    // root doesn't inject one. It is a wall-time WAIT, not a clock READ — the determinism gate bans Date.now/random
+    // here, not setTimeout (see adapter.js:70, discord.transport.js:33 for the identical fallback).
+    const sleep = typeof o.sleep === 'function' ? o.sleep : (ms => new Promise(r => setTimeout(r, ms)));
+    // Supersede-retry knobs (tunable for tests; the defaults give ~0.3s+0.6s+1.2s ≈ a couple seconds of grace). When a
+    // second message aborts this chat's in-flight run, the fresh run can momentarily lose the same-agent workspace
+    // mutex race in the host and get a TRANSIENT "already running a task" refusal — retry exactly that class a few
+    // times so the user's message is never silently dropped. See SUPERSEDE_REFUSAL_RE below for the exact class.
+    const supersedeRetries = Number.isFinite(o.supersedeRetries) ? Math.max(0, o.supersedeRetries | 0) : 3;
+    const supersedeBackoffMs = Number.isFinite(o.supersedeBackoffMs) ? Math.max(0, o.supersedeBackoffMs) : 300;
     const maxMessageLength = o.maxMessageLength || 4096;
     const agentPrefix = o.agentPrefix || 'tg_';
     const resolveAgent = typeof o.resolveAgent === 'function' ? o.resolveAgent : null;   // Phase B: the placed floor's routing plan
@@ -139,7 +169,13 @@
       : (() => { const p = (typeof o.persona === 'string' && o.persona) || DEFAULT_PERSONA; return () => p; });
 
     const AID_RE = /^[A-Za-z0-9_-]{1,40}$/;   // notebook/fs-jail agentId grammar (a configured agentId must match)
-    const inflight = new Map();   // chatId -> { runId, abort, superseded } (one run per CONVERSATION, not per agent)
+    // chatId -> { runId, abort, superseded, agentId, startedAt } (one run per CONVERSATION, not per agent). The
+    // record is the SINGLE source of truth for this channel's live runs: E-STOP reads it (killAll in halt.js) AND
+    // GET /api/state/snapshot reads it (so a reconnect never wipes a live channel run's floor/HUD state — the
+    // reconcile keeps any agent listed here). agentId/startedAt are carried so the snapshot can attribute the run
+    // to the acting agent and age it, exactly like an interactive/cron/workshop run in runsMeta. Additive to the
+    // record: halt.js only ever reads { abort, superseded }, so the extra fields are invisible to it.
+    const inflight = new Map();
 
     // chatId -> a per-chat agentId, sanitized to the notebook/fs-jail grammar (/^[A-Za-z0-9_-]{1,40}$/). Telegram
     // chat ids are already safe (numeric, '-' for groups); the prefix namespaces them away from the browser 'agent'.
@@ -148,7 +184,10 @@
       return agentPrefix + (tail || '0');
     }
 
-    async function deliver(chatId, text, runId, reason) {
+    // agentId (optional, last arg) names WHICH roster agent produced this reply, so the floor can pulse the RIGHT
+    // agent's dish on a multi-agent station. Passed only for a real RUN reply (onInbound); administrative command
+    // replies (/agents, /model…) omit it — no agent "produced" them, so the floor should not attribute a dish.
+    async function deliver(chatId, text, runId, reason, agentId) {
       const chunks = chunkText(text, maxMessageLength);
       let ok = true;
       for (const c of chunks) {
@@ -156,7 +195,9 @@
         try { r = await send(chatId, c); } catch (e) { r = { ok: false, error: (e && e.message) || 'send threw' }; }
         if (!r || r.ok === false) { ok = false; break; }
       }
-      try { emit('channel.delivery', { channel, chatId: String(chatId), runId: runId || '', ok, chunks: chunks.length, reason: reason || '' }); } catch (_) {}
+      const ev = { channel, chatId: String(chatId), runId: runId || '', ok, chunks: chunks.length, reason: reason || '' };
+      if (agentId) ev.agentId = String(agentId);   // additive/optional — attribute the dish to the acting agent
+      try { emit('channel.delivery', ev); } catch (_) {}
       return ok;
     }
 
@@ -318,51 +359,98 @@
       const persona = sec.system || personaFor(agentId, rec);   // the agent's REAL composed prompt when configured
       const system = persona + (isTask ? TASK_SUFFIX : '');
 
-      const runId = newId();
-      const ac = new AbortController();
-      const myRec = { runId, abort: ac, superseded: false };
-      inflight.set(chatId, myRec);
-
-      // assemble the reply by buffering agent.token deltas — the SAME reassembly harness.js does in the browser.
-      const state = { runId, buf: '', errMsg: null, reason: null };
-      const sink = (name, payload) => {
-        let p; try { p = redact(payload); } catch (_) { p = payload; }
-        if (name === 'agent.run.start') state.runId = p.runId || state.runId;
-        else if (name === 'agent.token') state.buf += (p.delta || '');
-        else if (name === 'agent.run.error') state.errMsg = p.message || 'run error';
-        else if (name === 'capdenied') state.errMsg = state.errMsg || ('no ' + (p.need || 'capability') + ' — ' + (p.reason || ''));
-        else if (name === 'agent.run.end') state.reason = p.reason;
-      };
-
       // B5: if this agent runs at a bound BAY, its tools are that bay room's objects (resolveStation), not the
       // default office — so a routed agent's reach is exactly what the floor granted it. null -> office default.
       const bayStation = resolveStation ? resolveStation(agentId) : null;
+
+      // ---- run with bounded supersede-retry ------------------------------------------------------------------
+      // ONE run per conversation: the prev.abort.abort() above told this chat's prior run to stop. But its host-side
+      // workspace-mutex slot (index.js concurrencyGate) releases in an async finally as the aborted run unwinds — so
+      // the FIRST attempt of the replacement can lose that race and get a TRANSIENT "already running a task" refusal.
+      // Retry ONLY that class, up to supersedeRetries times with backoff, so the Commander's message is never
+      // silently dropped. Any OTHER outcome (a real reply, a budget/config/capdenied error, an unrelated transient,
+      // or a supersede by a still-newer message) exits the loop immediately.
+      //
+      // ONE stable inflight record spans ALL attempts (created here, deleted once after the loop). This is load-
+      // bearing: it must stay in `inflight` DURING the backoff sleep so a message arriving mid-backoff still finds it
+      // (prev.superseded=true above) and the parked retry bails instead of firing a stale run. E-STOP (halt.js) reads
+      // the SAME record. Per attempt we swap the live AbortController + runId + startedAt so each field always
+      // reflects the attempt currently executing (or last executed).
+      // agentId/startedAt ride in the record so GET /api/state/snapshot can list THIS run (attributed to the acting
+      // agent, aged from startedAt) — a reconnect then keeps the agent's live floor/HUD state instead of clearing it.
+      // abort/superseded are what halt.js's E-STOP reads; the extra fields are additive and invisible to it.
+      const myRec = { runId: '', abort: null, superseded: false, agentId: agentId, startedAt: null };
+      inflight.set(chatId, myRec);
+      let state = null;          // the LAST attempt's assembled state (buf/errMsg/reason/transient)
+      let lastRunId = '';        // the runId actually delivered under (the last attempt's)
+      let attempt = 0;
       try {
-        await runOnce({
-          key: usingCodex ? '' : sec.key, model: sec.model, provider, baseUrl: sec.baseUrl || sec.base_url || '', reasoningEffort, system, messages, agentId, isTask,
-          emit: sink, signal: ac.signal, runId, trigger: 'event', surface: 'autonomous',
-          broadcast: true,   // P1: mirror this routed run's lifecycle to the station floor over SSE — it has no browser-local stream
-          station: bayStation || undefined
-        });
-      } catch (e) {
-        state.errMsg = state.errMsg || ('run failed: ' + ((e && e.message) || e));
+      for (;;) {
+        const runId = newId();
+        lastRunId = runId;
+        const ac = new AbortController();
+        myRec.runId = runId; myRec.abort = ac; myRec.startedAt = now ? now() : null;
+
+        // assemble the reply by buffering agent.token deltas — the SAME reassembly harness.js does in the browser.
+        // transient rides alongside errMsg so the retry gate can tell the workspace-mutex race from a hard error.
+        state = { runId, buf: '', errMsg: null, reason: null, transient: false };
+        const sink = (name, payload) => {
+          let p; try { p = redact(payload); } catch (_) { p = payload; }
+          if (name === 'agent.run.start') state.runId = p.runId || state.runId;
+          else if (name === 'agent.token') state.buf += (p.delta || '');
+          else if (name === 'agent.run.error') { state.errMsg = p.message || 'run error'; state.transient = !!p.transient; }
+          else if (name === 'capdenied') state.errMsg = state.errMsg || ('no ' + (p.need || 'capability') + ' — ' + (p.reason || ''));
+          else if (name === 'agent.run.end') state.reason = p.reason;
+        };
+
+        try {
+          await runOnce({
+            key: usingCodex ? '' : sec.key, model: sec.model, provider, baseUrl: sec.baseUrl || sec.base_url || '', reasoningEffort, system, messages, agentId, isTask,
+            emit: sink, signal: ac.signal, runId, trigger: 'event', surface: 'autonomous',
+            broadcast: true,   // P1: mirror this routed run's lifecycle to the station floor over SSE — it has no browser-local stream
+            station: bayStation || undefined
+          });
+        } catch (e) {
+          state.errMsg = state.errMsg || ('run failed: ' + ((e && e.message) || e));
+        }
+
+        // a newer message (or E-STOP) took over this chat — abandon this run's (now stale) partial reply, and do
+        // NOT retry (the newer message owns the conversation now and is running its own replacement).
+        if (myRec.superseded) return;
+
+        // Retry ONLY the same-agent workspace-mutex race, and only while attempts remain. On the final failed
+        // attempt fall through so the loop exits and the honest "still busy" reply below is delivered.
+        if (isSupersedeRaceRefusal(state.transient, state.errMsg) && attempt < supersedeRetries) {
+          attempt++;
+          // exponential backoff (300ms, 600ms, 1200ms…) — a couple seconds of grace for the aborted run's finally
+          // to release the shared workspace slot. Injected sleep so tests run instantly with a fake clock. The
+          // record stays in `inflight` across this wait so a mid-backoff message can supersede us (checked next).
+          await sleep(supersedeBackoffMs * Math.pow(2, attempt - 1));
+          if (myRec.superseded) return;
+          continue;
+        }
+        break;
+      }
       } finally {
+        // release the (single) inflight record exactly once — but only if a NEWER message hasn't already replaced it
+        // (the supersede path installs its own record under this chatId; clobbering it would drop the live run).
         if (inflight.get(chatId) === myRec) inflight.delete(chatId);
       }
-
-      // a newer message took over this chat — abandon this run's (now stale) partial reply.
-      if (myRec.superseded) return;
 
       // persist the assistant turn only on a real, non-error reply; build the outgoing text.
       let reply;
       if (state.errMsg) {
-        reply = '⚠ ' + state.errMsg;
+        // an exhausted supersede-retry gets an HONEST channel reply (never the raw internal mutex message) — the
+        // user's message was NOT lost silently; they can simply resend. Any other error surfaces its own message.
+        reply = isSupersedeRaceRefusal(state.transient, state.errMsg)
+          ? '⚠ Still busy finishing your last message — please send that again in a moment.'
+          : '⚠ ' + state.errMsg;
       } else {
         if (state.buf) { try { store.appendTurn(agentId, 'assistant', state.buf); } catch (_) {} }
         reply = state.buf || '(no reply)';
         if (state.reason && state.reason !== 'done') reply += endNote(state.reason);
       }
-      await deliver(chatId, reply, runId, state.errMsg ? 'error' : (state.reason || 'done'));
+      await deliver(chatId, reply, lastRunId, state.errMsg ? 'error' : (state.reason || 'done'), agentId);
     }
 
     // inline-keyboard taps (consent buttons) — wired in C6; a noop under the autonomous MVP.
@@ -375,9 +463,9 @@
 
     return {
       onInbound, onCallback, onStatus,
-      _internals: { agentIdFor, chunkText, endNote, deliver, inflight, handleCommand, currentBoundAgent, TASK_SUFFIX, DEFAULT_PERSONA }
+      _internals: { agentIdFor, chunkText, endNote, deliver, inflight, handleCommand, currentBoundAgent, isSupersedeRaceRefusal, TASK_SUFFIX, DEFAULT_PERSONA }
     };
   }
 
-  return { makeChannelHub, chunkText, endNote, parseCommand, matchAgent, fmtAgentLine, _internals: { TASK_SUFFIX, DEFAULT_PERSONA, parseCommand, matchAgent, fmtAgentLine } };
+  return { makeChannelHub, chunkText, endNote, parseCommand, matchAgent, fmtAgentLine, isSupersedeRaceRefusal, _internals: { TASK_SUFFIX, DEFAULT_PERSONA, parseCommand, matchAgent, fmtAgentLine, isSupersedeRaceRefusal } };
 });

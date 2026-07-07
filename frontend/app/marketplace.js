@@ -87,7 +87,7 @@ const Marketplace = (() => {
   const has = () => typeof Specialties !== 'undefined';
   const sfx = n => { try { if (typeof SFX !== 'undefined' && SFX[n]) SFX[n](); } catch (_) {} };
   const note = (m, k) => { try { if (ctx && ctx.notify) ctx.notify(m, k); } catch (_) {} };
-  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+  const esc = s => U.esc(s == null ? '' : s);   // delegate to the one complete impl (escapes & < > " ')
   function el(tag, cls, html) { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; }
   function voiceName(personaId) { return (typeof Personas !== 'undefined' && Personas.get(personaId) && Personas.get(personaId).name) || personaId; }
 
@@ -149,8 +149,14 @@ const Marketplace = (() => {
       .then(d => {
         const map = {};
         for (const s of ((d && d.skills) || [])) if (s && s.slug) map[s.slug] = { name: s.name || s.slug, description: s.description || '' };
-        skillCatalog = map; return map;
-      }).catch(() => { skillCatalog = {}; return skillCatalog; });
+        skillCatalog = map; skillCatalogPending = null; return map;
+      })
+      // FAILURE MUST STAY RETRYABLE: a transient sidecar hiccup used to cache `skillCatalog = {}`, and the
+      // `if (skillCatalog)` guard above then short-circuited every later open — recipes showed raw slugs for
+      // the rest of the session even after the sidecar recovered. Leave skillCatalog null and clear the
+      // in-flight marker so the NEXT natural open re-fetches (same retry shape as cronPending below). Return
+      // an empty map so THIS call's hydrateSkillRows degrades to slug placeholders instead of throwing.
+      .catch(() => { skillCatalogPending = null; return {}; });
     return skillCatalogPending;
   }
 

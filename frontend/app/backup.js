@@ -99,6 +99,10 @@ const Backup = (() => {
   function validate(doc) {
     if (!doc || typeof doc !== 'object') return 'not a JSON object';
     if (doc.schema !== SCHEMA && doc.schema !== LEGACY_SCHEMA) return 'not a StarNet backup file';
+    // FORWARD-VERSION GUARD (P0.3): a backup file whose envelope version is NEWER than this build understands
+    // was exported by a later StarNet. Its store may carry key shapes/save schemas this code can't restore
+    // faithfully, so refuse rather than importing a half-understood bundle. The import UI surfaces this string.
+    if (Number(doc.version || 0) > VERSION) return 'backup was made by a newer StarNet (v' + Number(doc.version) + ') — update the app to import it';
     if (!doc.store || typeof doc.store !== 'object') return 'backup has no data';
     if (typeof doc.store[SAVE_KEY] !== 'string' && typeof doc.store['skynet.save'] !== 'string') return 'backup has no agent';
     return null;   // ok

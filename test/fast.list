@@ -1,11 +1,13 @@
 # Fast test gate steps - run in order by scripts/run-fast-tests.mjs. One path per line.
 test/schema.test.js
 test/contract.test.js
+test/events-contract.test.js
 test/clock-rng.test.js
 test/context.test.js
 test/runtimeinfo.test.js
 test/diagnostics.test.js
 test/diagnostics-support-email.test.js
+test/diagnostics-build.test.js
 test/reflect.test.js
 test/memcore.test.js
 test/cost.test.js
@@ -49,6 +51,7 @@ test/loopguard.test.js
 test/loopguard.dispatch.test.js
 test/iteration-budget.test.js
 test/updatecore.test.js
+test/cloudsavecore.test.js
 test/fullscreen.test.js
 test/keepawake.test.js
 test/grace.test.js
@@ -89,8 +92,12 @@ test/skills.library.test.js
 test/slash.test.js
 test/slash.palette.test.js
 test/slash.config.test.js
+test/voice.button.test.js
 test/save.test.js
+test/saveversion.test.js
+test/schema-stamp.test.js
 test/rename-migrate.test.js
+test/update-state-parity.test.js
 test/roster-clause.test.js
 test/notebookrestore.test.js
 test/runstore.test.js
@@ -132,6 +139,7 @@ test/truststore.test.js
 test/goalloop.test.js
 test/interview.test.js
 test/onboarding.test.js
+test/dialogue.test.js
 test/wakemind.test.js
 test/curiosity.test.js
 test/dossierinject.test.js
@@ -203,6 +211,7 @@ test/cron.dst.test.js
 test/cron.durability.test.js
 test/cron.lock.test.js
 test/cron.oneshot.test.js
+test/cron.run-now.test.js
 test/routine-tools.test.js
 test/workstreams.test.js
 test/prepare-node.test.js
@@ -213,11 +222,11 @@ test/orchestration.test.js
 test/channels.test.js
 test/toolprops.test.js
 test/worldmodel.test.js
+test/station-authority.test.js
 test/zones.test.js
 test/social-border.test.js
 test/g1bprops.test.js
 test/g3btrophy.test.js
-test/org-validator.test.js
 test/stationbake.chunk.test.js
 test/conveyor.test.js
 test/pipeline.test.js

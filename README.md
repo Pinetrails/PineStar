@@ -15,8 +15,10 @@ genuinely distinct, bounded agent run, not a cosmetic sprite.
 
 ## Quick start
 
-**Requirements:** [Node.js](https://nodejs.org) 18+ (the sidecar uses only Node core modules — no
-`npm install` needed to run it). To build the desktop installer you additionally need Rust + the Tauri CLI.
+**Requirements:** [Node.js](https://nodejs.org) 18+. The sidecar itself runs on Node core modules
+alone, so **no `npm install` is needed to run the harness**. `npm install` is only for the
+desktop build/dev tooling (the `@tauri-apps/cli` devDependency); building the desktop installer
+additionally needs Rust + the Tauri CLI.
 
 ```bash
 # 1. run the harness (the Node sidecar serves the frontend AND the agent runtime)
@@ -37,6 +39,16 @@ npm run desktop:build    # produce the NSIS installer
 > (desktop app: `%APPDATA%\ai.skynet.harness\workspaces` on Windows; bare dev sidecar:
 > `%LOCALAPPDATA%\StarNet`). Secrets are held by the sidecar / OS keychain, never in the frontend.
 
+## Testing
+
+```bash
+npm run test:fast   # the merge gate — must be green before any change lands
+npm test            # the full suite (validate + world + fast + long HTTP/e2e)
+```
+
+`test:fast` is the fast headless gate; `npm test` also runs the slower end-to-end HTTP suite.
+Contributors: see [CONTRIBUTING.md](CONTRIBUTING.md).
+
 ## How it works (the one-line bet)
 
 Keep v7 StarNet's entire vanilla-JS canvas world (renderer, tile map, movement/sit/work state machine, sprite
@@ -53,6 +65,9 @@ Tauri desktop shell · Node.js agent-host sidecar (owns secrets) · OpenRouter a
 carrying the frozen `U.bus` event schema (`shared/events.js`).
 
 ## Design history
+
+> These are preserved design history and may not reflect the current code — for living docs see
+> [docs/](docs/) (start with [docs/INDEX.md](docs/INDEX.md)).
 
 The original product + architecture plans (written before the build) live alongside the code and are kept
 as design history, not as the entry point:

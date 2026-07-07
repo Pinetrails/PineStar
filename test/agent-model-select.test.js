@@ -61,7 +61,7 @@ A.ok(/function setAgentName[\s\S]{0,1800}pushRoster\(\)[\s\S]{0,120}persist\(\)/
 
 // ---- World.relabel: the floor nameplate follows a rename ----
 A.ok(/function relabel\(id, name\)/.test(world), 'World implements relabel');
-A.ok(/spawnAgent, relabel,/.test(world), 'relabel is exported on the World public API');
+A.ok(/\brelabel,/.test(world), 'relabel is exported on the World public API');
 A.ok(/World\.relabel/.test(appjs), 'setAgentName relabels the floor body');
 
 // ---- review fix: rename must re-sync the DEFAULT identity so the PROMPT (not just the label) takes the new name ----
@@ -89,8 +89,12 @@ A.ok(/App\.selectAgent\(/.test(chat), 'selecting an agent hands off to App.selec
 // App.selectAgent: switch to (or MINT) a workstream BOUND to that agentId — matches the summon binding seam.
 A.ok(/function selectAgent\(agentId\)/.test(appjs), 'App implements selectAgent');
 A.ok(/selectAgent:\s*selectAgent/.test(appjs), 'selectAgent is exposed on the App public API');
-A.ok(/function selectAgent[\s\S]{0,900}Workstreams\.create\(a\.name,\s*\{\s*agentId:\s*id/.test(appjs), 'selectAgent MINTS a stream bound to the agent when it has none (never rebinds an existing convo)');
-A.ok(/function selectAgent[\s\S]{0,1100}switchWorkstream\(ws\.id\)/.test(appjs), 'selectAgent switches to the agent\'s own workstream');
+// FRESH-SESSION FREEDOM: a brand-new EMPTY session rebinds in place when an agent is picked (the Commander
+// keeps the blank line they just opened); the no-rebind law protects only conversations WITH content, which
+// still switch/mint below. Windows widened 900→2000 / 1100→2200 for the guard block that lands first.
+A.ok(/function selectAgent[\s\S]{0,1000}!\(cur\.history\s*&&\s*cur\.history\.length\)[\s\S]{0,220}Workstreams\.setAgent\(cur\.id,\s*id\)/.test(appjs), 'selectAgent rebinds a brand-new EMPTY session in place (empty-history guard + setAgent)');
+A.ok(/function selectAgent[\s\S]{0,2000}Workstreams\.create\(a\.name,\s*\{\s*agentId:\s*id/.test(appjs), 'selectAgent MINTS a stream bound to the agent when it has none (never rebinds a convo with content)');
+A.ok(/function selectAgent[\s\S]{0,2200}switchWorkstream\(ws\.id\)/.test(appjs), 'selectAgent switches to the agent\'s own workstream when the current one has content');
 // the header model readout stays truthful when the model changes via the footer dock or the dossier pin.
 A.ok(/refreshIdBar:\s*renderIdBar/.test(chat), 'chat.js exposes refreshIdBar so other surfaces can re-sync the header model');
 A.ok(/function applyQuickModel[\s\S]{0,1400}Chat\.refreshIdBar\(\)/.test(appjs), 'the footer dock model change re-syncs the COMMS header readout');

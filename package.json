@@ -2,14 +2,17 @@
   "name": "starnet-harness",
   "version": "0.0.0",
   "private": true,
-  "description": "StarNet ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â a real, gamified, downloadable AI-agent harness. Phase 0.0 scaffold: the v7 engine ported verbatim into frontend/, with the v7 headless tests running from test/.",
+  "description": "StarNet — a real, gamified, downloadable AI-agent harness. Phase 0.0 scaffold: the v7 engine ported verbatim into frontend/, with the v7 headless tests running from test/.",
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "validate": "node scripts/timeout.mjs --label validate --timeout=120000 -- node test/validate_map.js",
     "validate:raw": "node test/validate_map.js",
     "test:world": "node scripts/timeout.mjs --label test:world --timeout=120000 -- node test/test_world.js",
     "test:world:raw": "node test/test_world.js",
     "test:http": "node scripts/timeout.mjs --label test:http --timeout=300000 -- npm run test:http:raw",
-    "test:http:raw": "node test/sidecar.http.test.js && node test/e2e.run.test.js && node test/e2e.summon.test.js && node test/e2e.worker-access.test.js && node test/e2e.subagent-background.test.js && node test/e2e.mcp-connector.test.js && node test/cron.api.test.js && node test/cron.run-now.e2e.test.js && node test/workshop.e2e.test.js && node test/cron.session-transcript.e2e.test.js && node test/channels.telegram.e2e.test.js && node test/cron.arm.test.js && node test/checkpoint-store.test.js && node test/shell.test.js && node test/verify.run.test.js",
+    "test:http:raw": "node test/sidecar.http.test.js && node test/roster-envelope.http.test.js && node test/e2e.run.test.js && node test/e2e.summon.test.js && node test/e2e.worker-access.test.js && node test/e2e.subagent-background.test.js && node test/e2e.mcp-connector.test.js && node test/cron.api.test.js && node test/cron.run-now.e2e.test.js && node test/workshop.e2e.test.js && node test/cron.session-transcript.e2e.test.js && node test/channels.telegram.e2e.test.js && node test/cron.arm.test.js && node test/checkpoint-store.test.js && node test/shell.test.js && node test/verify.run.test.js",
     "test:fast": "node scripts/timeout.mjs --label test:fast --timeout=600000 -- npm run test:fast:raw",
     "test:fast:raw": "node scripts/run-fast-tests.mjs",
     "test": "npm run validate && npm run test:world && npm run test:fast && npm run test:http",

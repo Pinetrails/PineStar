@@ -5,9 +5,12 @@
    the floor even a no-op counts, so a pathological all-no-op run still terminates. A refund emits iteration.refunded
    and NEVER touches the loop guard's failure streak (that only advances on tool-call turns).
 
-   Proves: (1) productive turns count normally; (2) an empty no-op turn is refunded + emits iteration.refunded;
-   (3) a duplicate-content no-op turn is refunded with reason 'duplicate'; (4) refundMax:0 disables the refund so a
-   no-op turn counts (the floor mechanism controls counting → termination is guaranteed); (5) the loop guard still
+   Proves: (1) productive turns count normally; (2) an empty no-op turn is refunded + emits iteration.refunded, and
+   the RUN ends reason:'empty' (audit 1.7 — a final turn that produced zero tools and no text is NOT a clean 'done',
+   so a degraded provider streaming empty completions is distinguishable from a real finish); (3) a duplicate-content
+   no-op turn is refunded with reason 'duplicate' AND the run still ends 'done' (the prior assistant text is a real
+   answer — only a genuinely empty final turn is 'empty'); (4) refundMax:0 disables the refund so a no-op turn counts
+   (the floor mechanism controls counting → termination is guaranteed), and it still ends 'empty'; (5) the loop guard still
    hard-stops a stuck identical-failing loop with the refund logic in place; (6) replay determinism holds — two runs
    emit a byte-identical event stream. Replay-shaped provider -> zero spend. */
 'use strict';
@@ -61,11 +64,12 @@ const failDispatch = async () => ({ ok: false, isError: true, content: 'nope', s
     const res = await runAgentLoop({ messages: [{ role: 'user', content: 'go' }], provider, emit,
       cost: makeCostEngine({ priceOf: provider.priceOf }), model: 'replay/model', agentId: 'a', runId: 'r',
       limits: { maxIters: 1, grace: false }, dispatch: okDispatch, capCtx: openCtx() });
-    A.eq(res.reason, 'done', 'empty no-op turn ends cleanly');
+    A.eq(res.reason, 'empty', 'a final turn that produced ZERO tools and no text ends reason:empty (audit 1.7 — NOT a clean done, so a degraded provider streaming empty completions is distinguishable from a real finish)');
     A.eq(res.turns, 0, 'the empty no-op turn was refunded to the starting count');
     const ref = seq.filter(e => e.name === 'iteration.refunded');
     A.eq(ref.length, 1, 'exactly one iteration.refunded emitted');
-    A.eq(ref[0].payload.reason, 'empty', 'reason is empty');
+    A.eq(ref[0].payload.reason, 'empty', 'the refund event reason is empty');
+    A.eq(seq.find(e => e.name === 'agent.run.end').payload.reason, 'empty', 'agent.run.end carries reason:empty (frontend renders "ended: empty", never a delivered crate)');
     A.eq(ref[0].payload.refundsUsed, 1, 'refundsUsed reports the running count');
     A.eq(seq.find(e => e.name === 'agent.run.end').payload.turns, 0, 'run.end reports the refunded effective count');
   }
@@ -79,7 +83,7 @@ const failDispatch = async () => ({ ok: false, isError: true, content: 'nope', s
     const res = await runAgentLoop({ messages: [{ role: 'user', content: 'go' }], provider, emit,
       cost: makeCostEngine({ priceOf: provider.priceOf }), model: 'replay/model', agentId: 'a', runId: 'r',
       limits: { maxIters: 10, grace: false }, dispatch: okDispatch, capCtx: openCtx() });
-    A.eq(res.reason, 'done', 'duplicate final turn ends cleanly');
+    A.eq(res.reason, 'done', 'a DUPLICATE final turn still ends done (the re-emitted text is a real prior answer — only a genuinely empty final turn is reason:empty; this guards the empty-vs-duplicate scoping)');
     A.eq(res.turns, 1, 'only the productive tool turn counts; the duplicate no-op turn is refunded');
     const ref = seq.filter(e => e.name === 'iteration.refunded');
     A.eq(ref.length, 1, 'the duplicate turn emits one iteration.refunded');
@@ -94,7 +98,7 @@ const failDispatch = async () => ({ ok: false, isError: true, content: 'nope', s
     const res = await runAgentLoop({ messages: [{ role: 'user', content: 'go' }], provider, emit,
       cost: makeCostEngine({ priceOf: provider.priceOf }), model: 'replay/model', agentId: 'a', runId: 'r',
       limits: { maxIters: 1, grace: false, refundMax: 0 }, dispatch: okDispatch, capCtx: openCtx() });
-    A.eq(res.reason, 'done', 'still ends cleanly with refunds disabled');
+    A.eq(res.reason, 'empty', 'the empty final turn still reads reason:empty even when the refund floor is disabled (the reason reflects WHAT the turn produced — nothing — independent of budget accounting)');
     A.eq(res.turns, 1, 'refundMax:0 -> the no-op turn is NOT refunded, it counts (guarantees termination)');
     A.eq(seq.filter(e => e.name === 'iteration.refunded').length, 0, 'no iteration.refunded when the floor disables refunding');
   }

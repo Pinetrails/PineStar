@@ -335,7 +335,7 @@ const CRON_ROUTINE_NOTE = '\n\n[ROUTINE] This is an unattended scheduled routine
 // something is actually on fire. Rate-limited so a fast-repeating throw can't flood the ring: at most one ring
 // entry per DISTINCT message per window. recordDiagError is a hoisted decl (defined below) + redacts on write.
 const PROC_DIAG_WINDOW_MS = 5 * 60 * 1000;
-const _procDiagSeen = new Map();   // distinct message -> last-surfaced epoch ms (pruned when it grows)
+const _procDiagSeen = new Map();   // distinct message -> last-surfaced epoch ms (TTL-evicted on insert; see below)
 function surfaceProcessError(kind, e) {
   const raw = (e && (e.stack || e.message)) || String(e);
   console.error(kind + ':', raw);
@@ -345,7 +345,12 @@ function surfaceProcessError(kind, e) {
     const last = _procDiagSeen.get(msg) || 0;
     if (now - last >= PROC_DIAG_WINDOW_MS) {
       _procDiagSeen.set(msg, now);
-      if (_procDiagSeen.size > 64) { for (const [k, t] of _procDiagSeen) if (now - t >= PROC_DIAG_WINDOW_MS) _procDiagSeen.delete(k); }
+      // TTL eviction on insert (GROUND_UP_AUDIT 2026-07-06 P2): the old prune only ran once size > 64, so a slow
+      // trickle of ≤64 distinct one-shot messages leaked forever. Evict any entry older than 2× the rate-limit
+      // window on every insert — safe because once an entry is that stale its rate-limit has long expired, so
+      // dropping it costs nothing (the next occurrence re-surfaces immediately, which is the desired behavior).
+      const ttl = 2 * PROC_DIAG_WINDOW_MS;
+      for (const [k, t] of _procDiagSeen) if (now - t >= ttl) _procDiagSeen.delete(k);
       recordDiagError('process ' + msg);
     }
   } catch (_) {}
@@ -665,6 +670,15 @@ const runsMeta = new Map();
 // is still in `runs`); once the run ends the entry is dropped, so a stale steer can never reach a later run.
 const steerBuffers = new Map();
 function drainSteer(runId) { const b = steerBuffers.get(runId); if (!b || !b.length) return []; steerBuffers.set(runId, []); return b; }
+// Teardown drop with diagnostics (GROUND_UP_AUDIT 2026-07-06 P2): at run end we drop any un-drained steering notes
+// so a stale correction can't leak to a later run. That drop was SILENT — a Commander whose steer arrived after the
+// run's last loop iteration saw nothing happen and no reason why. Log one honest line with the dropped count (the
+// note text is NOT logged — it can contain user content). ctx names the run path so the log is triageable.
+function dropSteer(runId, ctx) {
+  const b = steerBuffers.get(runId);
+  if (b && b.length) console.log('[steer] dropped ' + b.length + ' un-applied steering note(s) at ' + (ctx || 'run') + ' teardown for run ' + runId + ' (arrived after the run finished)');
+  steerBuffers.delete(runId);
+}
 const STEER_MAX_PENDING = 8;      // bound the buffer so a spammed steer can't grow unbounded between iterations
 let lastSearchAt = 0;            // module-level web_search throttle (≥1.1s between DDG hits, any run)
 // Stage 2: the crew roster the browser pushes (POST /api/roster) so team.dispatch can run a WORKER as its
@@ -672,12 +686,24 @@ let lastSearchAt = 0;            // module-level web_search throttle (≥1.1s be
 // The browser replaces it on every push; a protected on-disk mirror lets headless cron fires still run as the
 // selected agent after a sidecar restart. Not an event (contract-free).
 const agentRoster = new Map();
+// P1.1 (UPDATE_STATE_SAFETY_AUDIT): the LAST-SEEN RAW per-agent record, keyed by agentId. saveAgentRoster()
+// rebuilds each row from a FIXED field list, so any field a NEWER frontend added (that older sidecar code
+// doesn't know to re-emit) would be silently dropped on the next re-save. We stash the raw incoming record here
+// and spread its prior-unknown keys UNDER the known ones on save — forward-compatible field preservation, so
+// old code round-trips new state losslessly instead of eating it. Additive: absent for agents never pushed raw.
+const agentRosterRaw = new Map();
+// P1.1: the roster envelope's updatedAt (ms). Written by saveAgentRoster into { version, updatedAt, agents } and
+// read by handleRoster's anti-clobber gate (mirrors savestore's updatedAt regression refusal). 0 until first
+// push/load — a legacy on-disk { version:1, agents } (no updatedAt) loads as 0, so any first write is accepted.
+let agentRosterUpdatedAt = 0;
 const AGENT_ROSTER_FILE = path.join(WORKSPACES, 'agent.roster.json');
 function replaceAgentRoster(list) {
   agentRoster.clear();
+  agentRosterRaw.clear();
   for (const a of (Array.isArray(list) ? list : [])) {
     const id = a && String(a.agentId || '');
     if (!/^[A-Za-z0-9_-]{1,40}$/.test(id)) continue;
+    if (a && typeof a === 'object') agentRosterRaw.set(id, a);   // stash the raw record so unknown fields survive re-save
     agentRoster.set(id, {
       system: String((a && a.system) || ''),
       name: String((a && a.name) || id).slice(0, 40),
@@ -695,17 +721,97 @@ function replaceAgentRoster(list) {
 function loadAgentRoster() {
   try {
     const raw = loadResilient(AGENT_ROSTER_FILE, 'roster');   // last-known-good recovery; never silent-wipe
-    if (raw) replaceAgentRoster(raw && raw.agents);
+    if (raw) {
+      replaceAgentRoster(raw && raw.agents);
+      // P1.1: adopt the stored envelope's updatedAt as the anti-clobber baseline. A LEGACY { version:1, agents }
+      // file has no updatedAt → 0, so the first live push (whatever its stamp) is accepted (backward compatible).
+      agentRosterUpdatedAt = Number(raw && raw.updatedAt) || 0;
+    }
   } catch (_) {}
 }
-function saveAgentRoster() {
+// P1.1: the fields saveAgentRoster() rebuilds from the live Map — the KNOWN shape. Preserved unknown fields (any
+// key a newer frontend added that this sidecar doesn't model) are spread UNDER these on save, so they survive a
+// re-save by older code rather than being dropped. agentId is always rebuilt (identity), never preserved raw.
+const ROSTER_KNOWN_FIELDS = ['agentId', 'system', 'name', 'model', 'provider', 'role', 'approvalMode', 'skills', 'reasoningEffort'];
+// saveAgentRoster(updatedAt?) — persist the live roster. The optional updatedAt is the CLIENT's freshness stamp
+// (from POST /api/roster body.updatedAt); handleRoster passes it after its anti-clobber gate accepts a push, so the
+// stored envelope records the exact stamp we accepted (a later push older than it is refused). Server-internal
+// saves (setAgentModelFromChannel, boot sweeps) pass nothing → we advance the stamp with the host clock so the
+// envelope's updatedAt only ever moves forward, and a subsequently-arriving stale browser push still loses.
+function saveAgentRoster(updatedAt) {
   try {
     fs.mkdirSync(WORKSPACES, { recursive: true });
-    const agents = [...agentRoster].map(([agentId, a]) => ({ agentId, system: a.system || '', name: a.name || agentId, model: a.model || null, provider: a.provider || null, role: a.role || '', skills: Array.isArray(a.skills) ? a.skills : [], reasoningEffort: a.reasoningEffort || null }));   // Class Loadouts S1: persist per-agent skill package + effort
-    saveResilient(AGENT_ROSTER_FILE, { version: 1, agents });   // fsync-durable + .bak last-known-good
+    const agents = [...agentRoster].map(([agentId, a]) => {
+      const known = { agentId, system: a.system || '', name: a.name || agentId, model: a.model || null, provider: a.provider || null, role: a.role || '', approvalMode: (a.approvalMode === 'full') ? 'full' : 'ask', skills: Array.isArray(a.skills) ? a.skills : [], reasoningEffort: a.reasoningEffort || null };   // Class Loadouts S1: persist per-agent skill package + effort. approvalMode (audit 1.3): the load path parses it (replaceAgentRoster) but the save path omitted it — a Full-Access agent reverted to 'ask' every sidecar restart until a browser re-pushed. Persist it, matching the load-path normalization ('full' | 'ask').
+      // P1.1: forward-compat field preservation — carry any UNKNOWN keys from the last-seen raw record under the
+      // known ones, so a field a newer frontend added isn't silently eaten when older sidecar code re-saves.
+      const rawRec = agentRosterRaw.get(agentId);
+      if (rawRec && typeof rawRec === 'object') {
+        const preserved = {};
+        for (const k of Object.keys(rawRec)) { if (!ROSTER_KNOWN_FIELDS.includes(k)) preserved[k] = rawRec[k]; }
+        return Object.assign(preserved, known);   // known fields WIN over preserved (never let stale raw shadow live state)
+      }
+      return known;
+    });
+    // P1.1: stamp updatedAt into the envelope so handleRoster can refuse a stale (older) push. A client-provided
+    // stamp (already proven fresh by the gate) is recorded verbatim; otherwise advance monotonically off the host
+    // clock so the envelope only ever moves forward. Legacy readers ignore the extra key harmlessly.
+    const stamp = Number(updatedAt);
+    agentRosterUpdatedAt = (Number.isFinite(stamp) && stamp > 0) ? stamp : Math.max(agentRosterUpdatedAt + 1, Date.now());
+    saveResilient(AGENT_ROSTER_FILE, { version: 1, updatedAt: agentRosterUpdatedAt, agents });   // fsync-durable + .bak last-known-good
   } catch (e) { console.warn('[roster] persist failed:', (e && e.message) || e); }
 }
 loadAgentRoster();
+
+/* ---- P2.1 (UPDATE_STATE_SAFETY_AUDIT): WORKSPACE-ROOT schemaVersion stamp + forward-version guard.
+   Individual stores are versioned in isolation (roster/savestore/cron each carry `version:1`), but there is no
+   ROOT marker to key a multi-store migration on and — more importantly — nothing stops an OLDER sidecar from
+   writing a workspace a NEWER StarNet already upgraded. This stamps <WORKSPACES>/.schema-version.json at boot and,
+   if the stamp on disk is from a NEWER sidecar (schemaVersion > ours), sets a DEGRADED flag: the app still READS
+   and RUNS (never block a user out of their own station), but envelope-level DESTRUCTIVE writes to versioned
+   stores this code can't fully understand (roster + save) are REFUSED with an honest error. Truthful-telemetry:
+   don't guess — SAY the workspace was written by a newer StarNet. Mirrors the last-run-version marker the Rust
+   shell writes (%APPDATA%/ai.skynet.harness/last-run-version) in spirit: a version marker that gates behavior. */
+const WORKSPACE_SCHEMA_VERSION = 1;
+const SCHEMA_VERSION_FILE = path.join(WORKSPACES, '.schema-version.json');
+// DEGRADED when the workspace on disk was stamped by a sidecar NEWER than this one. Read by handleRoster /
+// handleSaveWrite to refuse destructive writes they can't safely perform. Never blocks reads or runs.
+let workspaceDegraded = false;
+let workspaceStampVersion = WORKSPACE_SCHEMA_VERSION;   // the schemaVersion actually on disk (for diagnostics/logs)
+function initWorkspaceSchemaStamp() {
+  try {
+    fs.mkdirSync(WORKSPACES, { recursive: true });
+    const existing = loadResilient(SCHEMA_VERSION_FILE, 'schema-version');   // last-known-good recovery; undefined = absent/corrupt
+    if (!existing || typeof existing !== 'object') {
+      // absent (new install / never stamped) → write our stamp. version:1 is the ENVELOPE version (like the other
+      // stores); schemaVersion is the WORKSPACE schema generation this sidecar understands.
+      saveResilient(SCHEMA_VERSION_FILE, { version: 1, schemaVersion: WORKSPACE_SCHEMA_VERSION, stampedAt: Date.now() });
+      workspaceStampVersion = WORKSPACE_SCHEMA_VERSION;
+      return;
+    }
+    const stamped = Number(existing.schemaVersion);
+    workspaceStampVersion = Number.isFinite(stamped) ? stamped : WORKSPACE_SCHEMA_VERSION;
+    if (Number.isFinite(stamped) && stamped > WORKSPACE_SCHEMA_VERSION) {
+      // A NEWER StarNet wrote this workspace. Refuse to clobber versioned stores; log LOUDLY so this is never silent.
+      workspaceDegraded = true;
+      console.error('[schema] WORKSPACE WRITTEN BY A NEWER STARNET: on-disk schemaVersion=' + stamped +
+        ' > this sidecar understands ' + WORKSPACE_SCHEMA_VERSION + '. Entering DEGRADED mode — reads/runs continue, ' +
+        'but roster/save WRITES are refused to avoid corrupting newer data. Update this StarNet to the latest build.');
+      return;
+    }
+    // Same or older stamp: safe to keep using. (A future migration would re-stamp UP here after upgrading stores.)
+    // We do NOT downgrade an older on-disk stamp to hide that a migration is pending — leave it honest.
+    if (Number.isFinite(stamped) && stamped < WORKSPACE_SCHEMA_VERSION) {
+      // Newer code meeting older data: fine today (all stores load older shapes). Re-stamp UP so the marker tracks
+      // the newest sidecar that has run here (mirrors last-run-version). Preserve any unknown keys the stamp carried.
+      const preserved = {};
+      for (const k of Object.keys(existing)) { if (k !== 'version' && k !== 'schemaVersion' && k !== 'stampedAt') preserved[k] = existing[k]; }
+      saveResilient(SCHEMA_VERSION_FILE, Object.assign(preserved, { version: 1, schemaVersion: WORKSPACE_SCHEMA_VERSION, stampedAt: Date.now() }));
+      workspaceStampVersion = WORKSPACE_SCHEMA_VERSION;
+    }
+  } catch (e) { console.warn('[schema] workspace stamp init failed (continuing un-stamped):', (e && e.message) || e); }
+}
+initWorkspaceSchemaStamp();
 
 // In-messenger `/model` (any channel) sets the CURRENTLY BOUND agent's roster model — the SAME single source of
 // truth the browser dossier writes via POST /api/roster. We mutate the live roster entry and persist through the
@@ -722,12 +828,71 @@ function setAgentModelFromChannel(agentId, model) {
   saveAgentRoster();                                           // fsync-durable + .bak, survives restart
   return { ok: true, agentId: id, model: m, name: cur.name || id };
 }
-// A live snapshot of the OpenRouter model catalog, warmed at boot (see listModels warmup below). Lets the
-// channel `/model` command validate an id sync without an await; empty until warmed (then validation is skipped).
+// A live snapshot of the OpenRouter model catalog, warmed at boot (see the server.listen warmup) AND on demand
+// (see maybeRewarmModelCatalog). Lets the channel `/model` command validate an id sync without an await; empty
+// until warmed (then validation is skipped so a still-cold catalog never rejects a legitimate id).
 let orModelCatalogIds = [];
+// On-demand re-warm (GROUND_UP_AUDIT 2026-07-06 P2): the boot warm had an EMPTY rejection handler, so a single
+// boot-time /models failure disabled channel /model validation for the WHOLE session. Mirror the provider layer's
+// throttled catalog re-warm (openai-compatible.js maybeRewarmCatalog): when validation asks and the snapshot is
+// still empty, kick ONE non-blocking re-warm, at most once per MODEL_CATALOG_REWARM_MS. Fire-and-forget: this
+// turn's validation still skips (catalog empty), but the NEXT /model attempt gets the recovered catalog.
+const MODEL_CATALOG_REWARM_MS = 5 * 60 * 1000;   // matches REWARM_MIN_MS in the provider layer
+let _modelCatalogRewarmAt = 0;
+let _modelCatalogWarming = false;
+function warmModelCatalog() {
+  if (_modelCatalogWarming) return Promise.resolve();
+  _modelCatalogWarming = true;
+  return makeOpenRouterProvider({ fetch: globalThis.fetch, baseUrl: providerRuntimeBaseUrl('openrouter', '') || OPENROUTER_BASE }).listModels().then(
+    ms => {
+      if (ms && ms.length) {
+        // snapshot the ids so the channel /model command can validate an id synchronously (see setAgentModelFromChannel)
+        try { orModelCatalogIds = ms.map(x => String((x && (x.id || x.model || x.name)) || '')).filter(Boolean); } catch (_) {}
+      }
+      return ms;
+    }
+  ).finally(() => { _modelCatalogWarming = false; });
+}
+function maybeRewarmModelCatalog() {
+  if (orModelCatalogIds.length) return;   // already warm — nothing to do
+  if (_modelCatalogWarming) return;
+  const now = Date.now();
+  if (now - _modelCatalogRewarmAt < MODEL_CATALOG_REWARM_MS) return;   // throttle: at most one re-warm per window
+  _modelCatalogRewarmAt = now;
+  warmModelCatalog().catch(() => {});   // non-blocking; a failure just leaves it empty for the next attempt to retry
+}
 
 // jail helper reused by the read-only /api/file route (resolveInside proves a path stays in the workspace)
 const fsJail = makeFsTools({ fsp, pathMod: path, root: WORKSPACES })._internals;
+
+// Roots the read-only /api/fs/dirstat probe is allowed to stat (audit P2): the user's own HOME (covers every
+// realistic Keep destination — Desktop/Documents/Downloads all live under it) and the WORKSPACES root. Anything
+// outside these is refused, so a token-holder can't enumerate existence/type of arbitrary system paths
+// (/etc/shadow, C:\Windows\System32\config\SAM, ~/.ssh, ...). Literal + realpath'd forms of each root are kept so
+// the symlink check compares real-vs-real (same discipline as fsJail.resolveInside).
+const DIRSTAT_ROOTS = (() => {
+  const seen = new Set(); const roots = [];
+  const add = (d) => { if (!d) return; const abs = path.resolve(d); let real = abs; try { real = require('fs').realpathSync(abs); } catch (_) {} for (const r of [abs, real]) { const k = (path.sep === '\\') ? r.toLowerCase() : r; if (!seen.has(k)) { seen.add(k); roots.push(r); } } };
+  try { add(os.homedir()); } catch (_) {}
+  try { add(WORKSPACES); } catch (_) {}
+  return roots;
+})();
+// TRUE iff `abs` (already absolute) resolves inside one of DIRSTAT_ROOTS, following symlinks on the deepest
+// existing ancestor so a symlink can't hop the jail. Both the syntactic path and its realpath must land in a root.
+async function dirStatAllowed(abs) {
+  if (!DIRSTAT_ROOTS.length) return false;
+  if (!DIRSTAT_ROOTS.some(root => fsJail.pathInside(abs, root))) return false;   // fast syntactic reject
+  // symlink guard: realpath the deepest existing ancestor and require IT to be inside a root too.
+  let cur = abs;
+  for (;;) {
+    let real = null;
+    try { real = await fsp.realpath(cur); } catch (_) { real = null; }
+    if (real != null) return DIRSTAT_ROOTS.some(root => fsJail.pathInside(real, root));
+    const parent = path.dirname(cur);
+    if (!parent || parent === cur) return false;
+    cur = parent;
+  }
+}
 
 // SPOTIFY (the JUKEBOX skill): ONE durable OAuth session for the station, persisted OUTSIDE any agent jail
 // (WORKSPACES/.secrets/spotify.json — not reachable via /api/file). PKCE flow → client_id only, never a secret.
@@ -784,11 +949,16 @@ let workshopOpener = _desktopInternals.makeShellOpener({});   // ({ kind, target
 function setWorkshopOpener(fn) { workshopOpener = fn; }   // test seam
 // CI seam (never in a shipping build): STARNET_TEST_OPEN_LOG points at a file the opener APPENDS the target path to
 // instead of launching anything — so the e2e can assert /api/workshop/open invoked the opener with the jailed ABS
-// path without spawning a real app on the runner. Guarded strictly to a non-empty env var; production uses the real
-// shell opener above. This proves the wiring (jail-proven abs path reaches the launcher) exactly as required.
+// path without spawning a real app on the runner. This proves the wiring (jail-proven abs path reaches the launcher).
+// HARD GATE: the fake opener installs ONLY in dev/test mode (DEV_MODE, i.e. SKYNET_DEV/STARNET_DEV — a flag the
+// packaged desktop build NEVER sets; dev/seed.js:19). Env-var-alone is NOT enough: without this gate, a production
+// process that happened to carry STARNET_TEST_OPEN_LOG would make /api/workshop/open report `launched` while opening
+// nothing (a truthful-telemetry violation — the app asserting state the harness didn't perform). If the var is set
+// outside dev mode we keep the REAL opener and warn, so the misconfiguration is visible rather than silently faked.
 (function installTestOpenLog() {
   const logFile = String(ENV('TEST_OPEN_LOG') || '').trim();
   if (!logFile) return;
+  if (!DEV_MODE) { try { console.warn('[workshop] STARNET_TEST_OPEN_LOG is set but DEV_MODE is off — ignoring the test open-seam; using the real shell opener.'); } catch (_) {} return; }
   workshopOpener = ({ kind, target }) => { try { fs.appendFileSync(logFile, JSON.stringify({ kind, target }) + '\n'); } catch (_) {} return Promise.resolve('launched'); };
 })();
 // honest run-liveness for the workshop zombie-claim reclaim: a runId is live iff its controller is still in the
@@ -889,10 +1059,24 @@ const commanderGoals = {
 };
 commanderGoals.load();
 
+// P1.2 (UPDATE_STATE_SAFETY_AUDIT) — the "merged with ULTRON" lie: a roster/registry gap used to make a
+// specialist SILENTLY answer as the overseer (cron fell back to the station persona + default model, zero logging;
+// users read this as "my agents were never real"). We can't refuse to run a scheduled routine (that breaks the
+// user's automation), but we MUST make the gap VISIBLE instead of impersonating. rosterMissWarned dedupes the
+// console.warn to once per (agentId) per boot so a routine firing every minute doesn't spam the log. A run driven
+// through this fallback also carries an honest identityFallback flag on its durable run record (see runOnce).
+const rosterMissWarned = new Set();
+function warnRosterMiss(agentId, where) {
+  const id = String(agentId || '');
+  if (!id || id === 'agent') return;   // 'agent' is the overseer's own id — a legitimate persona, not a gap
+  if (rosterMissWarned.has(id)) return;
+  rosterMissWarned.add(id);
+  try { console.warn('[roster] identity fallback: agent ' + id + ' not in roster (' + (where || 'lookup') + ') — run proceeds on the station persona/default model, NOT impersonating it as ' + id); } catch (_) {}
+}
 function cronIdentityFor(agentId) {
   const id = String(agentId || 'agent');
   const ident = agentRoster.get(id);
-  if (!ident) return null;
+  if (!ident) { warnRosterMiss(id, 'cron'); return null; }
   const system = String(ident.system || '').trim();
   return {
     model: ident.model || null,
@@ -1199,6 +1383,7 @@ const SKILL_CURATOR_MAX_COST_USD = num(process.env.SKYNET_SKILL_CURATOR_MAX_USD,
 const skillCuratorLastRun = new Map();
 async function runBackgroundSkillReview(o) {
   const { agentId, runId, messages, provider, model, cost, loadedSkills, managedSkills } = o || {};
+  const unmetered = !!(o && o.unmetered);   // Codex/unmetered parity: mirror reflection/study so a Codex-only user's budget isn't drained by phantom aux spend
   const ac = new AbortController();
   const timer = setTimeout(() => { try { ac.abort(); } catch (_) {} }, SKILL_REVIEW_TIMEOUT_MS);
   const reviewRunId = String(runId || 'run') + '_skill_review';
@@ -1258,13 +1443,14 @@ async function runBackgroundSkillReview(o) {
   finally {
     clearTimeout(timer);
     if (result && result.usd) {
-      try { ledger.record({ runId: reviewRunId, agentId, turns: result.turns || 0, usd: result.usd || 0, tokens: result.tokens || 0 }); } catch (_) {}
+      try { ledger.record({ runId: reviewRunId, agentId, turns: result.turns || 0, usd: result.usd || 0, tokens: result.tokens || 0, unmetered }); } catch (_) {}
     }
   }
 }
 
 async function runSkillCurator(o) {
   const { agentId, runId, provider, model, cost } = o || {};
+  const unmetered = !!(o && o.unmetered);   // Codex/unmetered parity: mirror reflection/study so a Codex-only user's budget isn't drained by phantom aux spend
   const nowMs = Date.now();
   if (SKILL_CURATOR_INTERVAL_MS > 0 && (nowMs - (skillCuratorLastRun.get(agentId) || 0)) < SKILL_CURATOR_INTERVAL_MS) return;
   const all = skillStore.list(agentId, { includeArchived: true });
@@ -1304,7 +1490,7 @@ async function runSkillCurator(o) {
   finally {
     clearTimeout(timer);
     if (result && result.usd) {
-      try { ledger.record({ runId: curatorRunId, agentId, turns: result.turns || 0, usd: result.usd || 0, tokens: result.tokens || 0 }); } catch (_) {}
+      try { ledger.record({ runId: curatorRunId, agentId, turns: result.turns || 0, usd: result.usd || 0, tokens: result.tokens || 0, unmetered }); } catch (_) {}
     }
   }
 }
@@ -1464,10 +1650,32 @@ function loadChannelSecrets() {
 function saveChannelSecrets(obj) {   // protected sibling of the fs jail; the agent's own fs.* tools can't read/write it
   try {
     fs.mkdirSync(CHANNELS_DIR, { recursive: true });
-    // Desktop: never let a bot token touch the plaintext file — it lives in the keychain. Strip before writing.
+    // Desktop: never let a bot token OR the provider API key touch the plaintext file — both live in the keychain.
+    // Strip before writing. (stripTokens now removes `token` AND `key`; see sidecar/channels/secrets.js.)
     const toPersist = DESKTOP_SHELL ? channelSecretsMod.stripTokens(obj) : obj;
     saveResilient(CHANNEL_SECRETS_FILE, toPersist);   // fsync-durable + .bak last-known-good (config survives power loss)
   } catch (e) { console.warn('[channels] secrets persist failed:', (e && e.message) || e); }
+}
+// Scrub the .bak last-known-good of any plaintext channel secret (P1 key hygiene). saveResilient snapshots the
+// CURRENT main into <file>.bak BEFORE overwriting it, so a legacy main that still carried a `key`/`token` leaves a
+// plaintext copy in the .bak even after the main is rewritten clean. Rewrite the .bak stripped (durably) rather
+// than delete it, so config recovery still works but no secret survives anywhere on disk. Desktop-only + no-op
+// unless the .bak actually parses and still holds a strippable secret (never clobbers a good/absent .bak blindly).
+function scrubChannelSecretsBak() {
+  if (!DESKTOP_SHELL) return;
+  const bak = CHANNEL_SECRETS_FILE + '.bak';
+  let raw;
+  try { raw = fs.readFileSync(bak, 'utf8'); } catch (_) { return; }   // no .bak -> nothing to scrub
+  if (!raw || !String(raw).length) return;
+  let parsed;
+  try { parsed = JSON.parse(raw); } catch (_) { return; }             // corrupt .bak -> leave it (recovery may need bytes)
+  if (!parsed || typeof parsed !== 'object') return;
+  const stripped = channelSecretsMod.stripTokens(parsed);
+  if (JSON.stringify(stripped) === JSON.stringify(parsed)) return;    // already clean -> no needless rewrite
+  try {
+    writeFileDurable({ fs: fs, path: path }, bak, JSON.stringify(stripped));
+    console.warn('[channels] scrubbed a plaintext secret out of secrets.json.bak (last-known-good rewritten clean).');
+  } catch (e) { console.warn('[channels] .bak scrub failed:', (e && e.message) || e); }
 }
 let channelSecrets = loadChannelSecrets();
 // First desktop boot after upgrading from a plaintext secrets.json: adopt any file token into the runtime layer
@@ -1476,18 +1684,23 @@ let channelSecrets = loadChannelSecrets();
 // so the token also survives the NEXT restart only once the shell has stored it; until then the runtime value +
 // the imports report below keep this session honest. hasChannelToken() is true when the keychain already injected
 // this channel's token via env (SKYNET_<ID>_TOKEN), so we never double-report an already-migrated token.
-(function migrateChannelTokensToKeychain() {
+(function migrateChannelSecretsToKeychain() {
   try {
     const res = channelSecretsMod.migratePlaintext(channelSecrets, {
       keychainMode: DESKTOP_SHELL,
       hasChannelToken: (id) => !!String(ENV(CHANNEL_TOKEN_ENV[id]) || '').trim()
     });
-    if (!res.changed) return;
-    for (const imp of res.imports) { if (!channelTokenRuntime[imp.id]) channelTokenRuntime[imp.id] = imp.token; }   // keep this session live
-    channelSecrets = res.config;
-    saveChannelSecrets(channelSecrets);   // rewrite the file stripped of tokens (stripTokens no-ops what's already gone)
-    if (res.imports.length) console.warn('[channels] migrated ' + res.imports.map(i => i.id).join('+') + ' bot token(s) out of plaintext secrets.json — reconnect once to store them in the OS keychain.');
-  } catch (e) { console.warn('[channels] token migration skipped:', (e && e.message) || e); }
+    if (res.changed) {
+      for (const imp of res.imports) { if (!channelTokenRuntime[imp.id]) channelTokenRuntime[imp.id] = imp.token; }   // keep this session live
+      channelSecrets = res.config;
+      saveChannelSecrets(channelSecrets);   // rewrite the file stripped of token AND key (no-ops what's already gone)
+      if (res.imports.length) console.warn('[channels] migrated ' + res.imports.map(i => i.id).join('+') + ' bot token(s) out of plaintext secrets.json — reconnect once to store them in the OS keychain.');
+    }
+    // Always sweep the .bak too — the main rewrite above snapshots the pre-scrub (leaky) main into .bak, and a
+    // legacy .bak can independently still hold a secret even when the current main is already clean. Cheap no-op
+    // when the .bak is absent/clean.
+    scrubChannelSecretsBak();
+  } catch (e) { console.warn('[channels] secret migration skipped:', (e && e.message) || e); }
 })();
 const channelStore = makeChannelStore({ fs, pathMod: path, root: CHANNELS_DIR, clock: { now: () => Date.now() }, writeDurable: writeFileDurable, onRecover: (file) => console.warn('[channels] recovered ' + file + ' from .bak last-known-good after a torn/corrupt main.') });
 
@@ -2066,7 +2279,7 @@ function startTelegram(token, key, model, agentCfg) {
       return { key, model: t.model, provider, baseUrl, configured: providerHasCredential(provider, key, baseUrl), reasoningEffort: resolveReasoningEffort(provider, t.reasoningEffort), agentId: t.agentId, system: t.system };
     },
     persona: TELEGRAM_PERSONA, classify: Classify.isTaskDirective, redact: redact, emit: chanEmit,
-    newId: () => crypto.randomUUID(), maxMessageLength: 4096,
+    newId: () => crypto.randomUUID(), now: () => Date.now(), maxMessageLength: 4096,
     // Phase B: the placed floor decides WHICH agent runs (resolveTarget); null -> the hub's own resolution
     // (configured agentId else tg_<chatId>), so a no-floor or mis-wired station never stalls real work.
     resolveAgent: (ctx) => router.resolveTarget(ctx),
@@ -2077,7 +2290,7 @@ function startTelegram(token, key, model, agentCfg) {
     // of truth, no per-chat override. modelCatalog is the boot-warmed OpenRouter id snapshot (empty -> skip check).
     roster: () => [...agentRoster].map(([agentId, a]) => ({ agentId, name: a.name, model: a.model, provider: a.provider })),
     setModel: (agentId, model) => setAgentModelFromChannel(agentId, model),
-    modelCatalog: () => orModelCatalogIds,
+    modelCatalog: () => { maybeRewarmModelCatalog(); return orModelCatalogIds; },   // re-warm on demand if a boot-time /models failure left it empty
     // ONE-RESOLVER LAW: the hub hands us the EXACT agentId the run executes as (floor plan > /talk binding >
     // configured > tg_<chatId>). This one-shot slot feeds the work-item intercept below, so the crate on the
     // belt and the queue HUD attribute to the SAME agent that actually works — never a parallel guess.
@@ -2197,7 +2410,7 @@ function startDiscord(token, key, model, agentCfg) {
         return { key: k, model: d.model, provider, baseUrl, configured: providerHasCredential(provider, k, baseUrl), reasoningEffort: resolveReasoningEffort(provider, d.reasoningEffort), agentId: d.agentId, system: d.system };
       },
       persona: DISCORD_PERSONA, classify: Classify.isTaskDirective, redact: redact, emit: chanEmit,
-      newId: () => crypto.randomUUID(),
+      newId: () => crypto.randomUUID(), now: () => Date.now(),
       resolveAgent: (ctx) => router.resolveTarget(ctx),
       getTag: (text) => (Classify.getTag ? Classify.getTag(text) : undefined),
       resolveStation: (agentId) => router.stationFor(agentId),
@@ -2205,7 +2418,7 @@ function startDiscord(token, key, model, agentCfg) {
       // modelCatalog are the SAME app roster + boot-warmed catalog; NO per-channel routing logic here).
       roster: () => [...agentRoster].map(([agentId, a]) => ({ agentId, name: a.name, model: a.model, provider: a.provider })),
       setModel: (agentId, model) => setAgentModelFromChannel(agentId, model),
-      modelCatalog: () => orModelCatalogIds
+      modelCatalog: () => { maybeRewarmModelCatalog(); return orModelCatalogIds; }   // re-warm on demand if a boot-time /models failure left it empty
     },
     adapter: {
       fetch: globalThis.fetch, token: token, clock: { now: () => Date.now() },
@@ -2220,8 +2433,20 @@ function startDiscord(token, key, model, agentCfg) {
         onState: (s) => {
           const state = (s && s.state) || 'down';
           const connected = state === 'up';
-          discordStatus = { connected, state, detail: (s && s.detail) || '' };
-          try { chanEmit('channel.connect', { channel: 'discord', ok: connected, state, detail: (s && s.detail) || '' }); } catch (_) {}
+          const detail = (s && s.detail) || '';
+          // discordStatus keeps the RAW transport state ('connecting'/'reconnecting'/'up'/'down'/'error') — the
+          // /api/channels/discord/status endpoint the Messaging panel polls reads it and renders the true phase.
+          discordStatus = { connected, state, detail };
+          // The channel.connect BUS event's enum is FROZEN to ['up','down','error'] (shared/events.js, owned).
+          // The gateway's transient 'connecting'/'reconnecting' are NOT in it, so emitting them raw is rejected by
+          // the validating chanEmit and SILENTLY DROPPED — the panel's refresh-on-connect trigger then never fires
+          // and the status line goes stale through the whole reconnect. Map both transients to the legal 'down'
+          // with a truthful detail ('connecting…' / 'reconnecting…'); the event now passes validation, the panel
+          // re-polls, and the HTTP status above supplies the precise phase text. (No shared/ change needed.)
+          const isTransient = state === 'connecting' || state === 'reconnecting';
+          const emitState = isTransient ? 'down' : state;
+          const emitDetail = isTransient ? ((state === 'reconnecting' ? 'reconnecting…' : 'connecting…') + (detail ? ' — ' + detail : '')) : detail;
+          try { chanEmit('channel.connect', { channel: 'discord', ok: connected, state: emitState, detail: emitDetail }); } catch (_) {}
         }
       }),
       ownerUserId: (channelSecrets.discord && channelSecrets.discord.ownerId) || '',
@@ -2316,6 +2541,7 @@ function dispatchRoute(req, res) {
   if (req.method === 'POST' && req.url === '/api/channels/telegram/connect') return handleChannelConnect(req, res);
   if (req.method === 'POST' && req.url === '/api/channels/telegram/sync') return handleChannelSync(req, res);
   if (req.method === 'POST' && req.url === '/api/roster') return handleRoster(req, res);
+  if (req.method === 'POST' && req.url === '/api/agent/delete') return handleAgentDelete(req, res);
   if (req.method === 'POST' && req.url === '/api/dossier') return handleDossier(req, res);
   if (req.method === 'POST' && req.url === '/api/goals') return handleGoals(req, res);   // GROWTH Tier 2: the active goal-arc summary for cron personas
   if (req.method === 'POST' && req.url === '/api/channels/telegram/disconnect') return handleChannelDisconnect(req, res);
@@ -2449,15 +2675,11 @@ server.listen(PORT, '127.0.0.1', () => {
   console.log('     the agents/web-search/tools behind it are all served from here.');
   if (DEV_MODE) console.log('     ⚡ DEV SEED MODE — onboarding auto-skipped; the page resumes the seeded agent.');
   console.log(bar + '\n');
-  // warm the key-independent /models catalog once so priceOf / contextLimit are live for every run
-  makeOpenRouterProvider({ fetch: globalThis.fetch, baseUrl: providerRuntimeBaseUrl('openrouter', '') || OPENROUTER_BASE }).listModels().then(
-    ms => {
-      if (ms && ms.length) {
-        console.log('  · model catalog warmed (' + ms.length + ' models)');
-        // snapshot the ids so the channel /model command can validate an id synchronously (see setAgentModelFromChannel)
-        try { orModelCatalogIds = ms.map(x => String((x && (x.id || x.model || x.name)) || '')).filter(Boolean); } catch (_) {}
-      }
-    },
+  // warm the key-independent /models catalog once so priceOf / contextLimit are live for every run. A boot-time
+  // failure no longer disables channel /model validation for the session — maybeRewarmModelCatalog re-warms on
+  // demand (throttled) the next time a /model command asks (see the channel-hub modelCatalog accessor).
+  warmModelCatalog().then(
+    ms => { if (ms && ms.length) console.log('  · model catalog warmed (' + ms.length + ' models)'); },
     () => {}
   );
   // auto-start a previously-connected Telegram bot (saved config), else an env-provided one (headless deploys).
@@ -3316,8 +3538,12 @@ function handleCronList(req, res) {
    SHAPE (every field is backed by REAL in-memory server state — nothing is fabricated; truthful-telemetry law):
      {
        ts: <ms>,                                  // when this snapshot was taken (server clock)
-       runs: [ { runId, agentId, startedAt, source } ],   // live runs (runsMeta, tracks the `runs` kill-map exactly)
-                                                          //   source ∈ 'interactive' | 'cron' | 'workshop'
+       runs: [ { runId, agentId, startedAt, source } ],   // live runs (runsMeta + the channel hubs' inflight maps)
+                                                          //   source ∈ 'interactive' | 'cron' | 'workshop' | 'telegram' | 'discord'
+                                                          //   Channel (Telegram/Discord) runs are driven by the messaging hub, which keeps its OWN inflight
+                                                          //   map (keyed by chatId) rather than runsMeta — so they are read from the SAME maps E-STOP kills
+                                                          //   (telegram/discord hub._internals.inflight). Without this a reconnect would clear a live
+                                                          //   channel run's agent from the floor mid-run (reconcileFromSnapshot drops any agent not listed here).
        prompts: [ { runId, agentId, promptId } ],  // OPEN consent prompts awaiting a human (pendingByRun)
        summons: [ { runId, requestId } ],          // OPEN team.summon requests awaiting the browser (pendingSummonByRun)
        queues:  [ { agentId, depth } ]             // per-agent inbound work-item depth (queueDepth), depth>0 only
@@ -3327,11 +3553,29 @@ function handleCronList(req, res) {
    guessed. If a cheap source appears later, add a `tools:[{agentId,tool}]` field. */
 function handleStateSnapshot(req, res) {
   const out = { ts: Date.now(), runs: [], prompts: [], summons: [], queues: [] };
+  const seenRunIds = new Set();
   try {
     for (const [runId, meta] of runsMeta) {
+      seenRunIds.add(runId);
       out.runs.push({ runId: runId, agentId: (meta && meta.agentId) || null, startedAt: (meta && meta.startedAt) || null, source: (meta && meta.source) || null });
     }
   } catch (_) {}
+  // CHANNEL runs (Telegram/Discord) live in the messaging hub's OWN inflight map, not runsMeta — include them so a
+  // reconnect keeps their agent's live floor/HUD state (reconcileFromSnapshot clears any agent absent here). Read
+  // the EXACT maps E-STOP kills (hub._internals.inflight) — one source of truth, no parallel bookkeeping. Each
+  // record carries { runId, agentId, startedAt } (see channels/hub.js). Tolerant of an absent hub (not connected).
+  const addHubRuns = (hub, source) => {
+    const inflight = (hub && hub._internals) ? hub._internals.inflight : null;
+    if (!inflight || typeof inflight.values !== 'function') return;
+    for (const rec of inflight.values()) {
+      const runId = rec && rec.runId;
+      if (!runId || seenRunIds.has(runId)) continue;   // defensive: never double-list a run
+      seenRunIds.add(runId);
+      out.runs.push({ runId: runId, agentId: (rec && rec.agentId) || null, startedAt: (rec && rec.startedAt) || null, source: source });
+    }
+  };
+  try { addHubRuns(telegram && telegram.hub, 'telegram'); } catch (_) {}
+  try { addHubRuns(discord && discord.hub, 'discord'); } catch (_) {}
   try {
     for (const [runId, pending] of pendingByRun) {
       const meta = runsMeta.get(runId);
@@ -3542,7 +3786,7 @@ async function handleCronRun(req, res) {
   } finally {
     runs.delete(runId);
     runsMeta.delete(runId);
-    steerBuffers.delete(runId);      // drop any un-drained steering notes so they can't leak to a later run (mirror handleRun)
+    dropSteer(runId, 'manual-run');      // drop any un-drained steering notes so they can't leak to a later run (mirror handleRun); logs a count if non-empty
     const ok = !state.errMsg;
     try {
       // G4.3: record the manual run's outcome as a re-read-modify-write under the lock (don't clobber a
@@ -3665,7 +3909,7 @@ async function runWorkshopShift(agentId, opts) {
     });
   } catch (e) { threw = e; }
   finally {
-    if (ac) runs.delete(runId); runsMeta.delete(runId); steerBuffers.delete(runId);   // drop un-drained steering notes (mirror handleRun)
+    if (ac) runs.delete(runId); runsMeta.delete(runId); dropSteer(runId, 'workshop-shift');   // drop un-drained steering notes (mirror handleRun); logs a count if non-empty
     // queue-slot backstop: if this shift's run.end never flowed through cronEmitNotify (caller-supplied emit),
     // drain its work-item here. Idempotent with the cronEmitNotify settle — first one wins.
     try { settleCronWorkitem(runId, threw ? null : 'done'); } catch (_) {}
@@ -3849,6 +4093,8 @@ const WORKSHOP_RUN_PREFIX = '/workshop-run/';
 // (fsJail.resolveInside — the '..'/absolute/symlink escape all throw); correct Content-Type by extension; NO
 // directory listing (a dir 404s); Cache-Control no-store. Browser navigation can't send a header, so the per-launch
 // token rides ?token= on GET/HEAD exactly like /api/file (this route is NOT under /api/, so we enforce it here).
+// EVERY response carries `Content-Security-Policy: sandbox allow-scripts` (opaque origin, scripts allowed but NO
+// same-origin) so a running deliverable can't read the app token or drive the API — see the headers block below.
 async function serveWorkshopRun(req, res) {
   // token gate: same per-launch secret as every API route, accepted as ?token= (a tab navigation has no header seam).
   if (!apiauth.queryTokenOk(req, API_TOKEN)) { res.writeHead(403); return res.end('forbidden token'); }
@@ -3875,7 +4121,14 @@ async function serveWorkshopRun(req, res) {
   const headers = {
     'Content-Type': MIME[ext] || 'application/octet-stream',
     'Cache-Control': 'no-store',
-    'X-Content-Type-Options': 'nosniff'
+    'X-Content-Type-Options': 'nosniff',
+    // OPAQUE-ORIGIN SANDBOX: `sandbox allow-scripts` (deliberately WITHOUT allow-same-origin) puts every served
+    // deliverable in a unique opaque origin. Inline <script> STILL RUNS (interactive tools keep working), but the
+    // page can't read the app's DOM/`window.__STARNET_API_TOKEN__` and any fetch('/') or fetch('/api/*') it makes is
+    // cross-origin + uncredentialed — so an agent-built deliverable can't exfiltrate the launch token or drive the
+    // API (self-approve consent, write files, dump config). /api/file sandboxes the SAME bytes with script-src 'none'
+    // to STOP them running; here scripts must run, so we sandbox the ORIGIN instead of killing the scripts.
+    'Content-Security-Policy': 'sandbox allow-scripts'
   };
   if (req.method === 'HEAD') { headers['Content-Length'] = st.size; res.writeHead(200, headers); return res.end(); }
   res.writeHead(200, headers);
@@ -3952,7 +4205,13 @@ function handleCheckpointList(req, res) {
     const agent = u.searchParams.get('agent') || 'agent';
     if (!/^[A-Za-z0-9_-]{1,40}$/.test(agent)) return json(400, { error: 'bad agentId' });
     json(200, { enabled: CHECKPOINTS_ENABLED, snapshots: checkpointStore.list(agent).snapshots });
-  } catch (e) { json(200, { enabled: CHECKPOINTS_ENABLED, snapshots: [] }); }
+  } catch (e) {
+    // HONESTY (GROUND_UP_AUDIT P2): a thrown store read is a real failure — report 500 so a crash isn't
+    // masked as "no restore points". A genuinely-empty list still returns 200 {snapshots:[]} above (shape
+    // untouched). stationui.js's refresh() guards with try/catch + ((j&&j.snapshots)||[]) so a 500 body
+    // degrades to the honest empty-state, never a crash.
+    json(500, { error: 'could not read checkpoints: ' + ((e && e.message) || e) });
+  }
 }
 
 // POST /api/roster { agents:[{ agentId, system, name, model, provider }] } — the browser pushes the live crew identities
@@ -3997,9 +4256,75 @@ async function handleRoster(req, res) {
     // a numeric agentId would previously coerce through String() and pass the id regex silently).
     if (typeof a.agentId !== 'string' || !/^[A-Za-z0-9_-]{1,40}$/.test(a.agentId)) return json(400, { error: 'each agent needs a valid string agentId' });
   }
+  // P1.1 anti-clobber (mirrors savestore.js:145-171): if the pusher stamped a freshness `updatedAt` and it is
+  // OLDER than what we last accepted, refuse — a stale background tab / out-of-sync frontend can no longer legally
+  // overwrite a newer roster. 200 { ok:false, stale:true } (NOT an HTTP error: the pusher's data isn't malformed,
+  // it's just behind). Backward compatible: a body with no updatedAt (legacy frontend) skips the gate and writes as
+  // today. On accept, the client stamp is recorded into the envelope so the NEXT older push loses too.
+  const incomingUpdatedAt = Number(body.updatedAt);
+  const hasStamp = Number.isFinite(incomingUpdatedAt) && incomingUpdatedAt > 0;
+  if (hasStamp && agentRosterUpdatedAt && incomingUpdatedAt < agentRosterUpdatedAt) {
+    return json(200, { ok: false, stale: true, updatedAt: agentRosterUpdatedAt });
+  }
+  // P2.1: DEGRADED — this workspace was stamped by a NEWER StarNet. Refuse a destructive roster overwrite (the
+  // route replaces the whole store) rather than corrupt data this code doesn't understand. Reads/runs are untouched.
+  if (workspaceDegraded) return json(200, { ok: false, error: 'workspace written by newer StarNet', degraded: true });
   replaceAgentRoster(body.agents);
-  saveAgentRoster();
-  json(200, { ok: true, count: agentRoster.size });
+  saveAgentRoster(hasStamp ? incomingUpdatedAt : undefined);
+  json(200, { ok: true, count: agentRoster.size, updatedAt: agentRosterUpdatedAt });
+}
+
+// POST /api/agent/delete { agentId } — DOSSIER › DELETE AGENT. Removes a summoned agent from the SERVER roster
+// and ARCHIVES (never wipes) its durable per-agent state: the notebook/todo/declined/workshop sibling stores and
+// the agent's fs workspace dir are MOVED under WORKSPACES/_archive/<aid>-<ts>/. The append-only run-history and
+// cost ledger are keyed by agentId and left in place on purpose — deleting an agent must not erase the record of
+// what it did or what it cost (truthful telemetry / "retain, don't wipe"). The frontend is the roster's source of
+// truth and re-pushes the surviving crew via /api/roster right after; this route's job is the server-side stores
+// the roster push can't touch. The hero ('agent') is never deletable — refused here as a second line of defence
+// behind the UI guard (you can't archive the founder without corrupting resume).
+async function handleAgentDelete(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 1 << 16)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+  const agentId = String(body.agentId || body.agent || '');
+  if (!/^[A-Za-z0-9_-]{1,40}$/.test(agentId)) return json(400, { error: 'invalid agentId' });   // same id regex as roster/fs-jail surfaces
+  if (agentId === 'agent') return json(400, { error: 'cannot delete the hero agent' });   // the founder is undeletable (resume depends on it)
+
+  const archived = [];
+  try {
+    const ts = new Date().toISOString().replace(/[:.]/g, '-');
+    const archiveDir = path.join(WORKSPACES, '_archive', agentId + '-' + ts);
+    // move(src, destName) — rename a file/dir into the archive dir if it exists; tolerant of ENOENT.
+    const move = (src, destName) => {
+      try {
+        if (!fs.existsSync(src)) return;
+        if (!fs.existsSync(archiveDir)) fs.mkdirSync(archiveDir, { recursive: true });
+        fs.renameSync(src, path.join(archiveDir, destName));
+        archived.push(destName);
+      } catch (e) { console.warn('[agent.delete] archive move failed for ' + destName + ':', (e && e.message) || e); }
+    };
+    // per-agent sibling stores (+ their .bak last-known-good) live at WORKSPACES/<aid>.<kind>.json — see notebookStore/workshopStore.
+    for (const kind of ['notebook', 'todo', 'declined', 'workshop']) {
+      move(path.join(WORKSPACES, agentId + '.' + kind + '.json'), agentId + '.' + kind + '.json');
+      move(path.join(WORKSPACES, agentId + '.' + kind + '.json.bak'), agentId + '.' + kind + '.json.bak');
+    }
+    // the agent's fs workspace dir (WORKSPACES/<aid>/ — the deliverables/artifacts jail). Archived whole so the
+    // Commander can still recover a deleted agent's work off disk; it never touches another agent's jail.
+    move(path.join(WORKSPACES, agentId), agentId);
+  } catch (e) {
+    console.warn('[agent.delete] archive failed:', (e && e.message) || e);
+    // fall through — still drop the roster entry so the delete is honoured; the stores stay put (safe: retained).
+  }
+  // drop the in-memory + on-disk roster entry (the browser also re-pushes the surviving set right after).
+  let removed = false;
+  try { removed = agentRoster.delete(agentId); if (removed) saveAgentRoster(); } catch (e) { console.warn('[agent.delete] roster drop failed:', (e && e.message) || e); }
+  // clear any live in-RAM per-agent proposal/study queues so a gone agent can't land a turn-in later.
+  try {
+    for (const [rid, b] of proposalsByRun) { if (b && b.agentId === agentId) proposalsByRun.delete(rid); }
+    latestProposalRun.delete(agentId); lastReflectAt.delete(agentId); reflectingNow.delete(agentId);
+    for (const [rid, b] of studyByRun) { if (b && b.agentId === agentId) studyByRun.delete(rid); }
+    latestStudyRun.delete(agentId); lastStudyAt.delete(agentId); studyingNow.delete(agentId); studyDeclinedByAgent.delete(agentId);
+  } catch (_) {}
+  return json(200, { ok: true, agentId, rosterRemoved: removed, archived });
 }
 
 // POST /api/dossier { block } — the browser pushes the composed Commander-dossier block whenever it changes,
@@ -4127,7 +4452,8 @@ async function handleRun(req, res) {
   const streamId = (body && body.streamId && /^[A-Za-z0-9_-]{1,64}$/.test(String(body.streamId))) ? String(body.streamId) : null;   // M-mem.2b: the active workstream (bounded; bad → global)
   // THE MOAT (FLOOR-REAL): the browser sends the agent's REAL placed capability objects (World.heroCaps) so this
   // interactive run grants exactly what's ON THE FLOOR — additive on top of the compute-only interactive office
-  // (see runOnce). dish→web · cabinet→files · workbench→terminal · notebook→memory · studio→image · jukebox→spotify.
+  // (see runOnce). dish→web · cabinet→files · workbench→terminal · notebook→memory · studio→image · jukebox→spotify
+  // (a placed JUKEBOX grants the Spotify tools, but they stay inert until the user connects Spotify in Settings).
   // A placed WORKBENCH still walks the full consent ladder + auto-checkpoints before every command. Legacy clients
   // send just `workbench:true`; that path is preserved so an older build still grants the terminal.
   let extraObjects = [];
@@ -4252,7 +4578,7 @@ async function handleRun(req, res) {
   } finally {
     runs.delete(runId);
     runsMeta.delete(runId);
-    steerBuffers.delete(runId);      // drop any un-drained steering notes so they can't leak to a later run
+    dropSteer(runId, 'handleRun');      // drop any un-drained steering notes so they can't leak to a later run; logs a count if non-empty
     grantsSession.delete(runId);     // drop this run's session-scoped grants
     const p = pendingByRun.get(runId);   // deny any prompt still open (belt-and-suspenders; the loop normally awaits)
     if (p) { for (const f of p.values()) { try { f('deny'); } catch (_) {} } pendingByRun.delete(runId); }
@@ -4277,6 +4603,11 @@ async function runOnce(o) {
   // this only fills a gap — it never overrides a choice the caller actually made. Honest: the pin lives in the same
   // roster the dossier writes + cron already reads (cronModelFor), so what the UI shows == what the run uses.
   const rosterIdent = agentRoster.get(String(agentId || '')) || null;
+  // P1.2: a non-overseer run whose agentId is absent from the roster is running on FALLBACK identity (station
+  // persona/default model), not the specialist the caller named. Warn once/boot and mark the run record honestly
+  // (identityFallback) so the gap is visible in history instead of the run silently masquerading as that agent.
+  const identityFallback = !rosterIdent && String(agentId || '') !== '' && String(agentId || '') !== 'agent';
+  if (identityFallback) warnRosterMiss(agentId, 'runOnce');
   const providerId = normalizeProvider(o.provider || (rosterIdent && rosterIdent.provider) || '');
   const usingCodex = providerUsesCodex(providerId);
   const providerUnmetered = !!((getProviderProfile(providerId) || {}).unmetered);
@@ -4935,7 +5266,8 @@ async function runOnce(o) {
     try {
       let title = '';
       for (let i = msgs.length - 1; i >= 0; i--) { if (msgs[i] && msgs[i].role === 'user' && typeof msgs[i].content === 'string') { title = msgs[i].content; break; } }
-      runStore.record({ runId, agentId, reason: (result && result.reason) || 'done', turns: finalTurns, tokens: finalTokens, usd: finalUsd, title: title, streamId: o.streamId || '', model: finalModel, unmetered: providerUnmetered, artifacts: artifactLedger.list(), toolsOk });   // H3.2/H3.3/G6 + work-visibility + crate-honesty: transcript join + honest model/spend/deliverables/worked
+      runStore.record({ runId, agentId, reason: (result && result.reason) || 'done', turns: finalTurns, tokens: finalTokens, usd: finalUsd, title: title, streamId: o.streamId || '', model: finalModel, unmetered: providerUnmetered, artifacts: artifactLedger.list(), toolsOk, identityFallback });   // H3.2/H3.3/G6 + work-visibility + crate-honesty + P1.2 identity-honesty: transcript join + honest model/spend/deliverables/worked/named-agent
+
       // P0.1/H1.1: persist the full DIALOGUE (not just the outcome) — a durable server-side transcript for EVERY
       // run, incl. headless ones (cron/Telegram/delegated). Append the triggering user directive, then EVERY new
       // turn the loop produced (assistant incl. tool_calls + tool results), so a resume can rebuild exact state.
@@ -4980,10 +5312,10 @@ async function runOnce(o) {
     runStudy({ agentId, runId, messages: result.messages.slice(), directive: studyDirective, provider, model: reflectModel || resolveEffectiveModel({ result, requestedModel: o.model, usingCodex, codexDefaultModel: CODEX_DEFAULT_MODEL, defaultModel: CRON_DEFAULT_MODEL }), cost, unmetered: providerUnmetered }).catch(() => {}).finally(() => { studyingNow.delete(agentId); });
   }
   if (process.env.SKYNET_SKILL_REVIEW !== '0' && result && result.reason === 'done' && _qualifies && !signal.aborted && skillReview.shouldReviewRun(result)) {
-    runBackgroundSkillReview({ agentId, runId, messages: result.messages.slice(), provider, model, cost, loadedSkills, managedSkills }).catch(() => {});
+    runBackgroundSkillReview({ agentId, runId, messages: result.messages.slice(), provider, model, cost, loadedSkills, managedSkills, unmetered: providerUnmetered }).catch(() => {});
   }
   if (process.env.SKYNET_SKILL_CURATOR !== '0' && result && result.reason === 'done' && _qualifies && !signal.aborted) {
-    runSkillCurator({ agentId, runId, provider, model, cost }).catch(() => {});
+    runSkillCurator({ agentId, runId, provider, model, cost, unmetered: providerUnmetered }).catch(() => {});
   }
   return result;
 
@@ -5111,20 +5443,34 @@ async function handleRunSteer(req, res) {
 }
 
 // GET /api/version — the honest build/version surface for /version. Reads the repo package.json (harness version)
-// and, when present, the Tauri desktop app version; both are best-effort so a missing file never 500s.
+// and the Tauri desktop app version; both are best-effort so a missing file never 500s.
+//   app-version fallback chain (GROUND_UP_AUDIT 2026-07-06 P2): env STARNET_APP_VERSION → src-tauri/tauri.conf.json
+//   → blank. In the PACKAGED desktop app src-tauri/ is NOT a bundled resource, so the conf lookup returns '' and a
+//   support ticket can't tell which build the user is on. The desktop shell should export STARNET_APP_VERSION when
+//   it spawns the sidecar (one-line follow-up for the src-tauri owner — NOT edited here). `appSource` is additive:
+//   it names WHERE app came from ('env' | 'conf' | 'unknown') so diagnostics never reports a silent blank as fact.
+//   The response keeps the existing {harness, app, node} shape byte-compatible (chat.js versionCommand reads those).
 let _versionCache = null;
-function handleVersion(req, res) {
-  if (!_versionCache) {
-    const out = { harness: '', app: '', node: process.version };
-    try { out.harness = String(require('../package.json').version || ''); } catch (_) {}
+function computeVersionSurface() {
+  if (_versionCache) return _versionCache;
+  const out = { harness: '', app: '', node: process.version, appSource: 'unknown' };
+  try { out.harness = String(require('../package.json').version || ''); } catch (_) {}
+  const envApp = String(ENV('APP_VERSION') || '').trim();   // STARNET_APP_VERSION (or SKYNET_APP_VERSION) — the packaged-app source of truth
+  if (envApp) { out.app = envApp; out.appSource = 'env'; }
+  else {
     try {
       const t = require('../src-tauri/tauri.conf.json');
-      out.app = String((t && (t.version || (t.package && t.package.version))) || '');
+      const confApp = String((t && (t.version || (t.package && t.package.version))) || '');
+      if (confApp) { out.app = confApp; out.appSource = 'conf'; }
     } catch (_) {}
-    _versionCache = out;
   }
+  _versionCache = out;
+  return out;
+}
+function handleVersion(req, res) {
+  const out = computeVersionSurface();
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-  res.end(JSON.stringify(_versionCache));
+  res.end(JSON.stringify(out));
 }
 
 // GET /api/diagnostics — T3.9: a paste-ready, SECRET-FREE bug report a public user can email. Token-gated (main
@@ -5135,10 +5481,9 @@ function handleDiagnostics(req, res) {
   const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
   let out;
   try {
-    // version (reuse the cached honest build surface)
-    const ver = { harness: '', app: '', node: process.version };
-    try { ver.harness = String(require('../package.json').version || ''); } catch (_) {}
-    try { const t = require('../src-tauri/tauri.conf.json'); ver.app = String((t && (t.version || (t.package && t.package.version))) || ''); } catch (_) {}
+    // version (reuse the cached honest build surface — same env-first fallback as GET /api/version, so a packaged
+    // desktop's STARNET_APP_VERSION shows up in the bug report instead of a blank app version)
+    const ver = computeVersionSurface();
     // desktop vs browser — provable from the request origin (Tauri custom-scheme origins are the desktop shell)
     const origin = String((req && req.headers && req.headers.origin) || '').toLowerCase();
     const mode = (origin.indexOf('tauri') === 0 || origin.indexOf('app://') === 0) ? 'desktop' : (origin ? 'browser' : '');
@@ -5703,7 +6048,6 @@ async function handleStt(req, res) {
   const ok = (text) => { res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify({ text: String(text || '') })); };
   const degrade = (reason) => { console.warn('[stt] →', reason); res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify({ text: '', reason })); };
 
-  const u = new URL(req.url, 'http://127.0.0.1');
   const ctReq = String(req.headers['content-type'] || '').toLowerCase();
   let audioB64 = '', format = '', key = '';
   try {
@@ -5718,8 +6062,10 @@ async function handleStt(req, res) {
       // derive format from the content-type: audio/webm → webm, audio/wav|x-wav → wav, audio/ogg → ogg
       const m = ctReq.match(/audio\/(?:x-)?([a-z0-9]+)/);
       format = m ? m[1] : '';
-      // key travels out-of-band for the raw path: query ?key= or an X-OpenRouter-Key header
-      key = String(u.searchParams.get('key') || req.headers['x-openrouter-key'] || '').trim();
+      // key travels out-of-band for the raw path via the X-OpenRouter-Key HEADER only. A query ?key= was removed
+      // (audit P2): URLs land in access logs / proxy history / referrers, so a key on the query string is a leak.
+      // The desktop path sends no key at all (it lives in runtimeKey below); the browser recorder sends the header.
+      key = String(req.headers['x-openrouter-key'] || '').trim();
     }
   } catch (e) { return degrade('body: ' + ((e && e.message) || e)); }
 
@@ -5866,12 +6212,16 @@ async function serveWorkspaceDir(req, res) {
 // GET /api/fs/dirstat?path=<abs> — read-only existence/type check of a user-chosen KEEP destination folder.
 // Only stats the exact path (no listing, no traversal). Returns { exists, isDir }. ADDITIVE (Lane B): lets the
 // workshop return card validate a typed Keep path inline rather than failing silently at copy time.
+// JAILED (audit P2): the path must resolve inside the user's HOME or WORKSPACES (DIRSTAT_ROOTS). A path outside
+// those roots is NOT stat'd — it degrades like a not-yet-existing folder so the UX is unchanged, but a token-holder
+// can no longer probe existence/type of arbitrary absolute system paths.
 async function handleDirStat(req, res) {
   const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
   let p;
   try { p = new URL(req.url, 'http://127.0.0.1').searchParams.get('path') || ''; } catch (_) { p = ''; }
   p = String(p).trim();
   if (!p || !path.isAbsolute(p)) return json(200, { exists: false, isDir: false, reason: 'not-absolute' });
+  if (!(await dirStatAllowed(path.resolve(p)))) return json(200, { exists: false, isDir: false, reason: 'outside-allowed-roots' });
   let st;
   try { st = await fsp.stat(p); } catch (_) { return json(200, { exists: false, isDir: false }); }
   return json(200, { exists: true, isDir: !!(st && st.isDirectory()) });
@@ -5995,6 +6345,9 @@ async function handleSaveWrite(req, res) {
   // string, so derive from body.agent.id (an explicit body.agentId wins if a future caller sends one).
   const agentId = String(body.agentId || (body.agent && body.agent.id) || 'agent');
   if (!/^[A-Za-z0-9_-]{1,40}$/.test(agentId)) return json(400, { error: 'agentId must be 1-40 chars of [A-Za-z0-9_-]' });
+  // P2.1: DEGRADED — refuse a save write when this workspace was stamped by a NEWER StarNet (writing a newer save
+  // envelope shape through older code risks silent field loss). Reads (GET /api/save) still serve; runs continue.
+  if (workspaceDegraded) return json(200, { ok: false, error: 'workspace written by newer StarNet', degraded: true });
   try {
     const result = saveStore.save(agentId, body);
     json(200, result);
@@ -6019,7 +6372,14 @@ function serveRuns(req, res) {
     let rows = runStore.list(agent === '*' ? null : agent, { limit });
     if (since > 0) rows = rows.filter(r => (r.ts || 0) > since);
     json(200, { runs: rows });
-  } catch (e) { json(200, { runs: [] }); }   // tolerate any error — empty history, never a 500
+  } catch (e) {
+    // HONESTY (GROUND_UP_AUDIT P2): a store read that THROWS is a real failure, not "no history" — a
+    // 200-empty here makes an auth/crash indistinguishable from a genuinely-empty log, so support can't
+    // triage it. A no-rows read still returns 200 {runs:[]} above (the happy-path shape is untouched);
+    // only a thrown error reaches here and now reports truthfully. Every /api/runs consumer already guards
+    // on r.ok (chat.js, autosessions.js, returnstore.js, world.js) or a safe [] default (stationui.js).
+    json(500, { error: 'could not read run history: ' + ((e && e.message) || e) });
+  }
 }
 
 // GET /api/insights?agent=<id> — H3.3: aggregate usage folded from the run history (overview, per-model spend,

@@ -127,7 +127,10 @@ async function startSse(url) {
   const mock = await startMockOpenRouter();
   const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-workshop-e2e-'));
   const openLog = path.join(ws, 'open-invocations.log');   // W7: the CI open-seam appends here instead of launching an app
-  const env = { SKYNET_WORKSPACES: ws, SKYNET_OPENROUTER_BASE: mock.base, SKYNET_OPENROUTER_KEY: 'sk-or-v1-workshop-fake', SKYNET_DEFAULT_MODEL: 'test/model', SKYNET_TEST_OPEN_LOG: openLog };
+  // SKYNET_DEV=1 marks this as a dev/CI context so the TEST open-seam (SKYNET_TEST_OPEN_LOG) is honored. The seam
+  // is now gated on DEV_MODE (audit 1.4): a production process carrying SKYNET_TEST_OPEN_LOG must NOT fake-launch,
+  // so the env var alone no longer installs the fake opener — the run must also declare itself dev/test.
+  const env = { SKYNET_WORKSPACES: ws, SKYNET_DEV: '1', SKYNET_OPENROUTER_BASE: mock.base, SKYNET_OPENROUTER_KEY: 'sk-or-v1-workshop-fake', SKYNET_DEFAULT_MODEL: 'test/model', SKYNET_TEST_OPEN_LOG: openLog };
   const { child, port } = await boot(8960 + (process.pid % 30), env, 20);
   const B = 'http://' + HOST + ':' + port;
   let sse = null;
@@ -198,9 +201,21 @@ async function startSse(url) {
     const pageBody = await pageRes.text();
     A.ok(/<script>/.test(pageBody) && /dataset\.ready/.test(pageBody), 'W7: the served html still contains its inline script (it will run in a tab)');
 
+    // AUDIT 0.3 — OPAQUE-ORIGIN SANDBOX: a served deliverable is same-origin executable HTML, so it MUST carry
+    // `Content-Security-Policy: sandbox allow-scripts` (scripts run, but NO allow-same-origin → opaque origin →
+    // can't read window.__STARNET_API_TOKEN__ or make credentialed /api/* calls). allow-same-origin would defeat
+    // the whole fence, so assert it is ABSENT. HEAD carries the same header (a preflight probe must see the fence).
+    const cspOf = r => (r.headers.get('content-security-policy') || '');
+    A.ok(/\bsandbox\b/.test(cspOf(pageRes)), 'AUDIT 0.3: served html carries a sandbox CSP');
+    A.ok(/allow-scripts/.test(cspOf(pageRes)), 'AUDIT 0.3: the sandbox allows scripts (interactive deliverables still run)');
+    A.ok(!/allow-same-origin/.test(cspOf(pageRes)), 'AUDIT 0.3: the sandbox does NOT allow-same-origin (opaque origin — token/API unreachable)');
+    const headRes = await fetch(runBase + '/index.html?token=' + encodeURIComponent(token), { method: 'HEAD' });
+    A.ok(/\bsandbox\b/.test(cspOf(headRes)) && !/allow-same-origin/.test(cspOf(headRes)), 'AUDIT 0.3: HEAD response carries the same opaque-origin sandbox CSP');
+
     // correct content-type for a non-html asset too (README.md → text/markdown).
     const mdRes = await fetch(runBase + '/README.md?token=' + encodeURIComponent(token));
     A.ok(/text\/markdown/.test(mdRes.headers.get('content-type') || ''), 'W7: .md served with markdown content-type');
+    A.ok(/\bsandbox\b/.test(cspOf(mdRes)) && !/allow-same-origin/.test(cspOf(mdRes)), 'AUDIT 0.3: sibling assets served from the run dir carry the sandbox CSP too');
 
     // (2) TOKEN REQUIRED — no ?token= → 403 (a tab nav can\'t send the header, so the query token is the fence).
     const noTok = await fetch(runBase + '/index.html');

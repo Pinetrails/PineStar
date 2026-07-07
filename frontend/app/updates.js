@@ -159,6 +159,33 @@ const Updates = (() => {
     return snapshot();
   }
 
+  // P1.3: bound any promise so a hung sidecar can't stall the update. Resolves to `fallback` on timeout/throw.
+  // No AbortController here on purpose — CloudSave.flush()/App.pushRoster() already own their own fetch; we only
+  // need to STOP WAITING on them, not cancel them (a slow write that lands after we move on is harmless).
+  function withTimeout(promise, ms, fallback) {
+    return Promise.race([
+      Promise.resolve().then(() => promise).catch(() => fallback),
+      new Promise(resolve => { try { setTimeout(() => resolve(fallback), ms); } catch (_) { resolve(fallback); } })
+    ]);
+  }
+
+  // P1.3: flush the durable mirror + push the roster BEFORE the installer kills us, each time-boxed. Exposed on the
+  // module API so it is unit-testable and CDP-drivable (prove the mirror advances before the install invoke fires).
+  async function preInstallDrain(ms) {
+    const budget = Math.max(250, +ms || 3000);
+    const jobs = [];
+    // force:true bypasses the backoff-hold — this is the app's last breath, attempt the write regardless of the
+    // retry clock. A missing CloudSave (browser preview) just yields a resolved no-op.
+    if (typeof CloudSave !== 'undefined' && CloudSave && typeof CloudSave.flush === 'function') {
+      jobs.push(withTimeout(CloudSave.flush({ force: true }), budget, false));
+    }
+    // App.pushRoster() returns the in-flight roster POST promise (app.js). Missing/older App -> resolved no-op.
+    if (typeof App !== 'undefined' && App && typeof App.pushRoster === 'function') {
+      jobs.push(withTimeout(App.pushRoster(), budget, undefined));
+    }
+    try { await Promise.all(jobs); } catch (_) {}
+  }
+
   async function install() {
     if (!TAURI || !CORE || busy || !state.update) {
       notify('No StarNet update is ready to install', 'warn');
@@ -176,6 +203,12 @@ const Updates = (() => {
     state.error = '';
     const onEvent = new Channel(event => handleInstallEvent(event));
     emit();
+    // P1.3 (UPDATE_STATE_SAFETY_AUDIT): the NSIS installer kills the running app (CheckIfAppIsRunning), so the
+    // last ~1.2s debounce window of world changes — and the newest roster — would be LOST on every in-app update.
+    // Drain them FIRST: force one immediate durable-mirror flush + a roster push. Each is bounded (Promise.race
+    // with a timeout) so a dead/slow sidecar can NEVER hang the update — a lost drain is strictly better than a
+    // frozen updater. Best-effort throughout: any failure just proceeds to install (localStorage is intact).
+    await preInstallDrain();
     try {
       await invoke('starnet_update_install', { onEvent });
       state.phase = 'restarting';
@@ -315,7 +348,7 @@ const Updates = (() => {
   }
 
   return {
-    init, refreshStatus, check, install, snapshot, settingsHtml, wireSettings, render,
+    init, refreshStatus, check, install, preInstallDrain, snapshot, settingsHtml, wireSettings, render,
     phase: () => state.phase,
     prefs: () => Object.assign({}, prefs)
   };

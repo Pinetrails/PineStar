@@ -89,7 +89,22 @@ A.ok(tcm && tcm.name === 'mcp__github__search' && !('argsSummary' in tcm), 'mcp_
 
 // the token stream NEVER tees (that noise decision stands)
 A.eq(runTeeView('agent.token', { agentId: 'a1', runId: 'r1', delta: 'hello' }), null, 'agent.token is never teed');
-A.eq(runTeeView('agent.tool_result', { agentId: 'a1', runId: 'r1', callId: 'c1', ok: true, isError: false, summary: 's' }), null, 'tool_result is not teed (unchanged)');
+
+// agent.tool_result TEES OUTCOME-ONLY (2026-07-06 audit: was dropped; now the floor can render a FAILED/denied
+// tool surge for autonomous runs) — but the payload-bearing `summary` is STRIPPED structurally.
+const tr = runTeeView('agent.tool_result', { agentId: 'a1', runId: 'r1', callId: 'c1', ok: false, isError: true, ms: 12, summary: 'SECRET RESULT BODY' });
+A.ok(!!tr, 'agent.tool_result is now teed (outcome-only) so denied/failed calls surge red on the floor');
+A.ok(!('summary' in tr), 'the tool RESULT body (summary) is STRIPPED — result payloads never ride the SSE bus');
+A.eq(Object.keys(tr).sort().join(','), 'agentId,callId,isError,ms,ok,runId', 'the tool_result view carries EXACTLY the outcome fields — nothing else can leak');
+A.eq(tr.isError, true, 'isError (error-kind) is carried so the floor renders the red/dim variant');
+
+// the observability metadata events tee WHOLE (no args/result payloads in their frozen schemas)
+A.ok(!!runTeeView('deliverable', { id: 'd1', agentId: 'a1', room: 'r', kind: 'html', title: 't' }), 'deliverable tees (crates land for autonomous runs)');
+A.ok(!!runTeeView('agent.run.error', { agentId: 'a1', runId: 'r1', message: 'boom', transient: false }), 'agent.run.error tees (errors strobe the floor)');
+A.ok(!!runTeeView('memory.write', { agentId: 'a1', runId: 'r1', id: 'm1', kind: 'fact' }), 'memory.write tees (memory pulses for autonomous runs)');
+A.ok(!!runTeeView('memory.recall', { agentId: 'a1', runId: 'r1', count: 3, chars: 40 }), 'memory.recall tees');
+A.ok(!!runTeeView('capdenied', { agentId: 'a1', need: 'net', reason: 'no key' }), 'capdenied tees (denials show on the floor)');
+
 A.eq(runTeeView('agent.reasoning', { agentId: 'a1', runId: 'r1', on: true }), null, 'other run events stay off the bus');
 
 // SOURCE GUARD (lint-emits idiom): the runOnce broadcast tee in sidecar/index.js must route through

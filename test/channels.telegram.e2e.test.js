@@ -28,6 +28,13 @@ function readJsonBody(req) {
 
 function startMockOpenRouter() {
   const requests = [];
+  // gate lets the snapshot test HOLD a completion in-flight: when armed, the handler writes the first delta (so
+  // agent.run.start has fired and the hub run is registered in inflight) then AWAITS release() before the finishing
+  // chunk. Default = not armed (instant reply) so every other flow is unchanged. `started` resolves when a held
+  // completion has emitted its first delta — the point at which the run is provably in-flight.
+  const gate = { armed: false, _release: null, _startedResolve: null, started: null };
+  gate.arm = () => { gate.armed = true; gate.started = new Promise(r => { gate._startedResolve = r; }); };
+  gate.release = () => { const r = gate._release; gate._release = null; if (r) r(); };
   return new Promise(resolve => {
     const server = http.createServer((req, res) => {
       if (req.url.indexOf('/models') >= 0) {
@@ -38,10 +45,14 @@ function startMockOpenRouter() {
       if (req.url.indexOf('/chat/completions') >= 0) {
         let body = '';
         req.on('data', d => { body += d; });
-        req.on('end', () => {
+        req.on('end', async () => {
           try { requests.push(JSON.parse(body)); } catch (_) {}
           res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' });
           res.write('data: ' + JSON.stringify({ choices: [{ delta: { content: 'Telegram answer' } }] }) + '\n\n');
+          if (gate.armed) {
+            gate.armed = false;   // hold only the FIRST completion after arming
+            await new Promise(r => { gate._release = r; if (gate._startedResolve) gate._startedResolve(); });
+          }
           res.write('data: ' + JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop' }], usage: { prompt_tokens: 5, completion_tokens: 3, total_tokens: 8 } }) + '\n\n');
           res.write('data: [DONE]\n\n');
           res.end();
@@ -50,7 +61,7 @@ function startMockOpenRouter() {
       }
       res.writeHead(404); res.end();
     });
-    server.listen(0, HOST, () => resolve({ server, requests, base: 'http://' + HOST + ':' + server.address().port + '/api/v1' }));
+    server.listen(0, HOST, () => resolve({ server, requests, gate, base: 'http://' + HOST + ':' + server.address().port + '/api/v1' }));
   });
 }
 
@@ -213,7 +224,7 @@ async function startSseCollector(url) {
 async function waitUntil(fn, ms, label) {
   const deadline = Date.now() + ms;
   while (Date.now() < deadline) {
-    if (fn()) return;
+    if (await fn()) return;   // await so an async predicate (e.g. a snapshot fetch) is honored, not truthy-Promise-passed
     await sleep(25);
   }
   throw new Error('timed out waiting for ' + label);
@@ -263,6 +274,82 @@ async function waitUntil(fn, ms, label) {
     const turns = (tr && tr.turns) || [];
     A.ok(turns.some(t => t.role === 'user' && String(t.content || '').indexOf('research AI trend now') >= 0), 'transcript captured Telegram user turn');
     A.ok(turns.some(t => t.role === 'assistant' && String(t.content || '').indexOf('Telegram answer') >= 0), 'transcript captured Telegram assistant reply');
+
+    // ---- P1 1.2: a live channel run must appear in GET /api/state/snapshot so an SSE reconnect keeps its agent's
+    // floor/HUD state (reconcileFromSnapshot clears any agent NOT listed). Drive a SECOND message on a fresh chat,
+    // HOLD it in-flight via the mock gate, prove the snapshot lists it (attributed + sourced 'telegram'), then
+    // release and prove it's gone once the run ends — exactly tracking the hub's inflight lifecycle. ----
+    const snapshot = async () => {
+      const r = await fetch(B + '/api/state/snapshot', { headers: { 'X-StarNet-Token': token, Origin: B } });
+      A.eq(r.status, 200, 'GET /api/state/snapshot -> 200');
+      return r.json();
+    };
+    // baseline: with the first run long settled, no channel run is listed.
+    const base = await snapshot();
+    A.ok(Array.isArray(base.runs) && !base.runs.some(x => x && x.agentId === 'tg_4243'), 'snapshot has no tg_4243 run before the second message');
+
+    llm.gate.arm();                                  // the NEXT completion holds after its first delta
+    tg.pushText(4243, 99, 'hold this run please');   // a fresh chat -> agentId tg_4243, its own run
+    await llm.gate.started;                           // resolves once the held completion emitted its first delta (run is provably in-flight)
+    await sse.waitFor(events => events.some(e => e.name === 'agent.run.start' && e.payload && e.payload.agentId === 'tg_4243'), 5000, 'second SSE run start');
+
+    // WHILE HELD: the snapshot lists this live channel run, attributed to the acting agent and sourced 'telegram'.
+    const during = await snapshot();
+    const live = (during.runs || []).find(x => x && x.agentId === 'tg_4243');
+    A.ok(!!live, 'a live Telegram hub run IS listed in the snapshot while in-flight');
+    A.eq(live.source, 'telegram', "the channel run's source is 'telegram'");
+    A.ok(typeof live.runId === 'string' && live.runId.length > 0, 'the listed channel run carries a runId');
+    A.ok(typeof live.startedAt === 'number' && during.ts >= live.startedAt, "the run's startedAt is a real server timestamp (<= snapshot ts)");
+
+    llm.gate.release();                              // let the held completion finish
+    await sse.waitFor(events => events.some(e => e.name === 'agent.run.end' && e.payload && e.payload.agentId === 'tg_4243'), 5000, 'second SSE run end');
+    // AFTER IT ENDS: the run drops out of the snapshot (inflight cleared in the hub's finally) — no phantom clock.
+    await waitUntil(async () => { const s = await snapshot(); return !(s.runs || []).some(x => x && x.agentId === 'tg_4243'); }, 5000, 'tg_4243 run leaves the snapshot after it ends');
+
+    // ---- P2 supersede race: a SECOND message to the SAME busy chat must NOT be silently dropped on the transient
+    // "already running a task" refusal. Repro: HOLD run #1 for chat 5555 in-flight (slot held), then send message #2
+    // to 5555 — the hub aborts #1 and immediately starts #2, which loses the same-agent workspace-mutex race in the
+    // host (index.js concurrencyGate.inFlight>0) and is refused TRANSIENTLY. The hub must RETRY with backoff until
+    // #1's aborted run releases the slot, then deliver #2's real answer — never the raw mutex refusal to the user. --
+    const sendsToChatBefore = tg.sends.filter(s => String(s.chat_id) === '5555').length;
+    A.eq(sendsToChatBefore, 0, 'no prior reply to chat 5555');
+
+    llm.gate.arm();                                  // run #1 will HOLD after its first delta (keeps its slot)
+    tg.pushText(5555, 99, 'first message — will be held and superseded');
+    await llm.gate.started;                           // run #1 is provably in-flight (slot held) now
+    await sse.waitFor(events => events.some(e => e.name === 'agent.run.start' && e.payload && e.payload.agentId === 'tg_5555'), 5000, 'run #1 start (tg_5555)');
+
+    // SECOND message to the SAME chat: aborts #1, then races the still-held workspace slot -> transient refusal ->
+    // the hub's bounded retry recovers once #1's abort frees the slot.
+    tg.pushText(5555, 99, 'second message — should supersede and still get answered');
+
+    // the user's SECOND message must EVENTUALLY get a real answer delivered to chat 5555 (the whole point of the fix).
+    await waitUntil(() => tg.sends.some(s => String(s.chat_id) === '5555' && String(s.text || '').indexOf('Telegram answer') >= 0), 12000, 'chat 5555 eventually gets the real answer for message #2');
+
+    // TRUTHFUL TELEMETRY: the raw internal mutex message ("already running a task") must NEVER be delivered to the
+    // user on ANY reply to chat 5555 — the fix converts that transient refusal into a retry (or, if it truly never
+    // frees, an honest "still busy" reply), never a leaked internal string.
+    const chat5555Replies = tg.sends.filter(s => String(s.chat_id) === '5555');
+    A.ok(chat5555Replies.length >= 1, 'chat 5555 received at least one reply');
+    A.ok(chat5555Replies.every(s => String(s.text || '').indexOf('already running a task') === -1), 'no reply to chat 5555 leaked the internal "already running a task" mutex message');
+
+    // Prove the RETRY PATH actually engaged (not merely that the race happened not to fire): the transient
+    // "already running a task" refusal is teed whole to the channels SSE feed (sse.js runTeeView), and it must be
+    // FOLLOWED by a successful run.end for the same agent — i.e. the hub retried and recovered rather than giving up.
+    const sawTransientRefusal = sse.events.some(e => e.name === 'agent.run.error' && e.payload
+      && e.payload.agentId === 'tg_5555' && e.payload.transient === true
+      && String(e.payload.message || '').indexOf('already running a task') >= 0);
+    if (sawTransientRefusal) {
+      await sse.waitFor(events => {
+        // a run.end for tg_5555 that is NOT the aborted/error one: the recovered retry's clean finish.
+        return events.some(e => e.name === 'agent.run.end' && e.payload && e.payload.agentId === 'tg_5555' && e.payload.reason && e.payload.reason !== 'error');
+      }, 8000, 'tg_5555 recovered with a successful run after the transient refusal (retry worked)');
+      console.log('  · supersede race reproduced AND recovered (transient refusal -> retry -> real answer)');
+    } else {
+      // The race is timing-sensitive; if the slot happened to free before #2's admission, the message still got its
+      // real answer above (the invariant that matters). Note it so the run log is honest about what was exercised.
+      console.log('  · supersede race did not fire this run; #2 still delivered its real answer (invariant holds)');
+    }
   } finally {
     if (sse) sse.close();
     try { child.kill(); } catch (_) {}

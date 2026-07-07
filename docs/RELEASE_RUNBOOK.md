@@ -65,7 +65,19 @@ git show --stat v0.2.0
 Eyeball: version is `0.2.0` in **both** `tauri.conf.json` and `Cargo.toml`; `RELEASE_NOTES.md`
 reads the way you want; no stray files snuck into the commit.
 
-### 1.4 Push the tag — this is what starts the train
+### 1.4 Run the gate locally AFTER the bump, BEFORE pushing the tag
+
+```
+npm run test:fast
+```
+
+The bump changes the shipped version, and any test coupled to it will fail the train's CI
+gate AFTER the tag is pushed — which burns a version number (tags are never force-moved;
+a failed tag means cutting a patch). This exact mistake cost v0.2.0 AND v0.2.1 on
+2026-07-06 (a fixture pinned near the current version). Green locally post-bump = the CI
+gate will be green too.
+
+### 1.5 Push the tag — this is what starts the train
 
 ```
 git push origin v0.2.0
@@ -75,7 +87,7 @@ Pushing the `v*` tag triggers `.github/workflows/release-train.yml`.
 (You do not need to push the branch for the train; the tag is the trigger. Push the branch too
 if you want the commit on the branch: `git push origin HEAD`.)
 
-### 1.5 Watch the train (4 jobs)
+### 1.6 Watch the train (4 jobs)
 
 Open the source repo → **Actions** → the **release-train** run for tag `v0.2.0`. Per contract
 C4 it runs four jobs in sequence; each must go green before the next starts:
@@ -94,7 +106,7 @@ C4 it runs four jobs in sequence; each must go green before the next starts:
 
 If any job is red, go to **section 2**.
 
-### 1.6 Review the DRAFT release
+### 1.7 Review the DRAFT release
 
 Open: `https://github.com/nonfungiblefunyuns-ship-it/starnet-releases/releases` → the draft
 tagged **v0.2.0** (it has a grey "Draft" badge; it is NOT yet the public "latest").
@@ -112,7 +124,7 @@ Checklist — eyeball all of these before you publish:
     `latest.json`**. A `.sig` with no artifact, or an artifact with no `.sig`, is a red flag —
     do not publish; re-run **stage-draft** (section 2.2).
 
-### 1.7 Publish (the only human ship gate)
+### 1.8 Publish (the only human ship gate)
 
 On the draft release page: **Edit** (pencil) if needed → scroll to the bottom → make sure
 **"Set as the latest release"** is checked and **"Set as a pre-release"** is **un**checked →
@@ -121,7 +133,7 @@ click **Publish release**.
 The moment you publish, GitHub repoints `releases/latest` at v0.2.0, and every client's
 6-hour check loop will start pulling the new `latest.json`.
 
-### 1.8 Prove the live endpoint is coherent
+### 1.9 Prove the live endpoint is coherent
 
 ```
 npm run release:verify-host
@@ -136,7 +148,7 @@ Pin the expected version to catch a stale "latest":
 npm run release:verify-host -- --expect-version 0.2.0
 ```
 
-### 1.9 Canary proof (an actually-installed older StarNet takes the update)
+### 1.10 Canary proof (an actually-installed older StarNet takes the update)
 
 `verify-host` proves the *feed* is correct; the canary proves the *client* consumes it. Do
 this on a machine (or VM) that already has an **older** StarNet installed (e.g. 0.1.9):

@@ -4,6 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>STARNET</title>
+<!-- VT323 (the house typeface) is shipped LOCALLY via @font-face in css/style.css
+     (frontend/assets/fonts/vt323.woff2, SIL OFL) so the CRT look survives an offline /
+     air-gapped boot. The Google Fonts link below is a SECONDARY online enhancement only
+     (fuller unicode subsets); it is NOT required for the app to render in VT323. -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=VT323&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/style.css">
@@ -179,6 +183,42 @@
   </div>
 </section>
 
+<!-- ============ FORWARD-VERSION GATE ============ -->
+<!-- Blocking screen raised when the local/durable save (or an adopted remote) was written by a NEWER StarNet
+     than this build can read (save.js forward-version guard, P0.3). It reuses the connect-panel CRT chrome so
+     no new window vocabulary is invented. While this screen is active NOTHING calls persist()/Save.write() —
+     app.js showFutureSaveGate() returns before any resume/create path runs, so the newer save is never
+     mangled. The single action re-checks/opens the desktop Update Center when available; otherwise it tells
+     the user how to update. Truthful telemetry: the message states only what the harness proved (the stored
+     version is higher than CURRENT). -->
+<section id="screen-future" class="screen">
+  <div class="panel connect-panel ov-panel">
+    <span class="cc-bracket cc-tl">┌</span><span class="cc-bracket cc-tr">┐</span>
+    <span class="cc-bracket cc-bl">└</span><span class="cc-bracket cc-br">┘</span>
+    <header class="cc-console-head ov-head">
+      <div class="cc-titlebar"><span class="cc-tb-tag">STARNET</span><span class="cc-tb-rule"></span><span class="cc-tb-mode">UPDATE REQUIRED</span><span class="cc-tb-rec">● HOLD</span></div>
+      <div class="cc-title-row ov-title-row">
+        <h2>▮ SAVE FROM A NEWER STARNET</h2>
+        <span id="future-sub" class="ov-sub"></span>
+      </div>
+      <div class="ov-recovery" role="alert">
+        Your station was last saved by a <b>newer version of StarNet</b>. This build can't read that save
+        without risking damage to it, so it's being kept <b>untouched</b>. Update the app to continue — your
+        agent, history and progress are safe.
+      </div>
+    </header>
+    <div id="future-msg" class="msg"></div>
+    <div class="ov-foot">
+      <div class="ov-foot-data">
+        <span class="ov-foot-cap">＋ your save is intact — this build simply predates it</span>
+      </div>
+      <div class="connect-actions ov-actions">
+        <button id="btn-future-update" class="btn-xl">⭯ UPDATE STARNET ▸</button>
+      </div>
+    </div>
+  </div>
+</section>
+
 <!-- ============ GAME ============ -->
 <!-- BRAND MARK — deliberately OUTSIDE the .screen sections: it must paint ABOVE the CRT glass
      overlays (body::before/::after at z 940/950) so the amber wordmark stays crisp instead of
@@ -218,7 +258,6 @@
         <span id="status-pill">ONLINE</span>
         <span id="save-dot" title="autosave">●</span>
       </div>
-      <button id="btn-disconnect" class="btn-sm" title="disconnect agent">⏏ DISCONNECT</button>
     </div>
   </header>
 
@@ -267,7 +306,7 @@
            On its OWN row so the message always spans the panel and a long message stays fully visible while typing. -->
       <div class="chat-editline">
         <span class="prompt">&gt;</span>
-        <textarea id="chat-input" rows="1" maxlength="500" placeholder="speak to your agent…" autocomplete="off" aria-label="Message your agent"></textarea>
+        <textarea id="chat-input" rows="1" maxlength="500" placeholder="speak to your agent… ( / for commands )" autocomplete="off" aria-label="Message your agent"></textarea>
       </div>
       <!-- CONTROL CLUSTER: interrupt · model dock · voice · mic — a second row so they never steal the input's width -->
       <div class="chat-tools">
@@ -477,6 +516,7 @@ document.write('<script src="' + ((window.__STARNET_API__ || '') + '/shared/spec
 
 <script src="app/build.js"></script>
 <script src="app/save.js"></script>
+<script src="app/cloudsavecore.js"></script><!-- pure retry/health brain (unit-tested); MUST load before cloudsave.js -->
 <script src="app/cloudsave.js"></script>
 <script src="app/backup.js"></script>
 <script src="app/dialogue.js"></script>

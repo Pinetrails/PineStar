@@ -87,7 +87,22 @@ const StationUI = (() => {
       : act === 'talk' ? 'in conversation'
       : 'idle — awaiting orders';
   }
+  // E2: the SSE bridge health, read from the same predicate the canvas dims its live telemetry with
+  // (World.linkState). ONLINE / the "on" status dot may only show while the link is genuinely up — a
+  // dead sidecar must never read as ONLINE (activity() swallows errors → 'idle' → the else-branch, so
+  // without this an idle agent looks online even when the harness is gone). Only a genuinely bridged-
+  // but-dead link counts as down; a never-opened or deliberately-paused bridge does not (no false alarm).
+  function linkDown() {
+    try {
+      if (typeof World !== 'undefined' && World.linkState) {
+        const ls = World.linkState();
+        return !!(ls && ls.bridged && !ls.paused && ls.down);
+      }
+    } catch (_) {}
+    return false;
+  }
   function pillFor(act) {
+    if (linkDown()) return ['LINK DOWN', 'down'];   // link gone → the pill can't honestly assert ONLINE
     return act === 'task' ? ['WORKING', 'working']
       : act === 'talk' ? ['THINKING', 'thinking']
       : ['ONLINE', ''];
@@ -759,8 +774,9 @@ const StationUI = (() => {
   }
 
   function agHead(a, act) {
-    const dotCls = act === 'task' ? 'working' : act === 'talk' ? 'thinking' : 'on';
-    const statusText = act === 'task' ? 'WORKING' : act === 'talk' ? 'THINKING' : 'ONLINE';
+    const dn = linkDown();   // E2: link gone → the dossier can't honestly say ONLINE either
+    const dotCls = dn ? 'down' : act === 'task' ? 'working' : act === 'talk' ? 'thinking' : 'on';
+    const statusText = dn ? 'OFFLINE' : act === 'task' ? 'WORKING' : act === 'talk' ? 'THINKING' : 'ONLINE';
     const lv = (typeof Xp !== 'undefined' && a.stats) ? Xp.compute(a.stats).level : null;   // always-visible level chip
     return '<div class="ag-hero">' +
       // recessed portrait WELL: corner ticks + a slow scan-sweep overlay (v2 hero pattern). The sweep +
@@ -808,7 +824,38 @@ const StationUI = (() => {
         ? '<div class="ag-mission-text">' + esc(a.purpose) + '</div>'
         : '<div class="ag-mission-cta">No purpose set — tell your agent what you need in COMMS, or write it in CONFIG › purpose.md.</div>') +
       '</div>' +
+      agCommand(a) +
       '<div class="ag-foot-row">on station since <b>' + since + '</b></div>';
+  }
+
+  // COMMANDER CONTROLS (dossier BRIEF): change this agent's SKIN and DELETE it. Both use the SAME genesis skin
+  // catalog (DATA.SKINS — single source of truth) and reuse the .skin-thumb visual vocabulary from the create
+  // screen. DELETE is a two-click armed confirm (ArmConfirm) and is disabled — with a stated reason, not a
+  // prompt — for the hero and for the last remaining agent. Wired in wireCommand.
+  function agCommand(a) {
+    const skins = (typeof DATA !== 'undefined' && DATA.SKINS) ? DATA.SKINS : {};
+    const cur = (a && a.skin && skins[a.skin]) ? a.skin : (typeof DATA !== 'undefined' ? DATA.DEFAULT_SKIN : '');
+    const thumbs = Object.keys(skins).map(id => {
+      const sk = skins[id];
+      return '<button type="button" class="skin-thumb ag-skin-thumb' + (id === cur ? ' sel' : '') + '" data-skin="' + esc(id) + '" title="' + esc(sk.name || id) + '" aria-label="' + esc(sk.name || id) + '">' +
+        '<img src="assets/sprites/' + esc(sk.set) + '/rot_south.png" alt="' + esc(sk.name || id) + '" draggable="false"></button>';
+    }).join('');
+    // DELETE gating: the hero (orchestrator / id 'agent') is undeletable; so is the last agent on station.
+    const isHero = (a && (a.id === 'agent' || a.role === 'orchestrator'));
+    const crewCount = (access.config && typeof access.config.crewCount === 'function') ? access.config.crewCount() : present.length;
+    const lastOne = crewCount <= 1;
+    const disabledReason = isHero ? 'the overseer can’t be deleted' : (lastOne ? 'the last agent can’t be deleted' : '');
+    const delBtn = disabledReason
+      ? '<button class="bb sm ag-del" id="ag-del-btn" disabled title="' + esc(disabledReason) + '">✕ DELETE AGENT</button>' +
+        '<span class="ag-del-why">' + esc(disabledReason) + '</span>'
+      : '<button class="bb sm ag-del" id="ag-del-btn" title="archive this agent and remove it from the station">✕ DELETE AGENT</button>' +
+        '<span class="ag-del-why">work is archived, not erased</span>';
+    return '<div class="ag-command">' +
+      '<div class="ag-cmd-sec"><div class="ag-cmd-lbl">SKIN</div>' +
+        '<div class="ag-skin-row skin-picker" role="listbox" aria-label="Agent skin">' + thumbs + '</div></div>' +
+      '<div class="ag-cmd-sec ag-cmd-danger"><div class="ag-cmd-lbl">DANGER</div>' +
+        '<div class="ag-del-row">' + delBtn + '</div></div>' +
+      '</div>';
   }
 
   // GROWTH tab — the premium agent-growth dossier: XP ladder, a physical satisfaction gauge (honest "—"
@@ -1292,6 +1339,44 @@ const StationUI = (() => {
     if (rsave) rsave.addEventListener('click', commit);
     const rcancel = body.querySelector('#ag-rename-cancel');
     if (rcancel) rcancel.addEventListener('click', () => { delete agEdit['__name']; sfx('click'); rerender('agents'); });
+    wireCommand(body, a);
+  }
+
+  // wire the COMMANDER CONTROLS block (agCommand): SKIN thumbs → access.config.setSkin (live sprite swap), and
+  // DELETE AGENT → an armed 2-click confirm (ArmConfirm) → access.config.deleteAgent. A disabled DELETE (hero /
+  // last agent) is left inert. Guarded so a section without the block (or a missing access hook) is a safe no-op.
+  function wireCommand(body, a) {
+    if (!a) return;
+    body.querySelectorAll('.ag-skin-thumb').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const skin = btn.dataset.skin;
+        if (!skin || skin === a.skin) return;
+        if (!(access.config && access.config.setSkin)) { notify('skin change unavailable', 'bad'); return; }
+        const ok = access.config.setSkin(a.id, skin);
+        if (ok === false) { notify('could not change skin', 'bad'); sfx('bad'); return; }
+        const nm = ((typeof DATA !== 'undefined' && DATA.SKINS && DATA.SKINS[skin] && DATA.SKINS[skin].name) || skin);
+        notify('skin → ' + String(nm).toUpperCase(), 'good');
+        sfx('click'); rerender('agents');
+      });
+    });
+    const del = body.querySelector('#ag-del-btn');
+    if (del && !del.disabled && typeof ArmConfirm !== 'undefined' && ArmConfirm.wire) {
+      ArmConfirm.wire(del, {
+        armedLabel: '✕ DELETE — sure?',
+        timeoutMs: 4000,
+        onConfirm: () => {
+          if (!(access.config && access.config.deleteAgent)) { notify('delete unavailable', 'bad'); return; }
+          const nm = a.name || a.id;
+          Promise.resolve(access.config.deleteAgent(a.id)).then(ok => {
+            if (ok === false) { notify('could not delete ' + String(nm).toUpperCase(), 'bad'); sfx('bad'); rerender('agents'); return; }
+            notify(String(nm).toUpperCase() + ' deleted — its work is archived', 'warn');
+            sfx('bad');
+            sel = 0;   // the deleted row is gone; land on the first surviving agent
+            rerender('agents');
+          });
+        }
+      });
+    }
   }
 
   function buildAgents(body) {
@@ -1399,8 +1484,9 @@ const StationUI = (() => {
   function refreshDossierLive() {
     const w = open.agents; if (!w) return;
     const act = activity();
-    const dotCls = act === 'task' ? 'working' : act === 'talk' ? 'thinking' : 'on';
-    const statusText = act === 'task' ? 'WORKING' : act === 'talk' ? 'THINKING' : 'ONLINE';
+    const dn = linkDown();   // E2: keep the live-painted status honest — link gone → OFFLINE, not ONLINE
+    const dotCls = dn ? 'down' : act === 'task' ? 'working' : act === 'talk' ? 'thinking' : 'on';
+    const statusText = dn ? 'OFFLINE' : act === 'task' ? 'WORKING' : act === 'talk' ? 'THINKING' : 'ONLINE';
     // hero: the status dot (class) + the role line's status word (keeps ' · HAB-01' suffix)
     const dot = w.querySelector('.ag-role-line .ag-sdot');
     if (dot) dot.className = 'ag-sdot ' + dotCls;
@@ -1899,7 +1985,12 @@ const StationUI = (() => {
       // ACTIVE means this transport can actually run right now: selected provider AND a model is set.
       const runnable = connected && p.id === active && !!ks[0].model;
       const cls = connected ? 'conn' : (p.live ? 'avail' : 'soon');
-      const stat = !p.live ? '○ COMING SOON' : connected ? '● CONNECTED' : (p.id === 'codex' ? '○ NOT SIGNED IN' : (p.id === 'ollama' ? '○ LOCAL' : '○ NO KEY'));
+      // E5: `connected` is KEY PRESENCE, not a verified live connection — a saved key can be revoked,
+      // rate-limited, or wrong, and we haven't round-tripped it. Label it "KEY SAVED" (or SIGNED IN for
+      // the codex OAuth path, which IS real auth) rather than the over-claiming "CONNECTED". The
+      // ACTIVE/runnable badge logic below is unchanged — that already gates on selected provider + model.
+      const connLabel = p.id === 'codex' ? '● SIGNED IN' : '● KEY SAVED';
+      const stat = !p.live ? '○ COMING SOON' : connected ? connLabel : (p.id === 'codex' ? '○ NOT SIGNED IN' : (p.id === 'ollama' ? '○ LOCAL' : '○ NO KEY'));
       const n = ks.length;
       // NO-KEY cards that accept a key get an inline, collapsible paste-and-save row so the user never has to hunt
       // for where keys live. It reuses the SAME save path (Harness.setKey) as the key list below — no duplicate logic.
@@ -2110,6 +2201,28 @@ const StationUI = (() => {
       if (invoke) { invoke('open_external_url', { url }).catch(() => { try { window.open(url, '_blank', 'noopener'); } catch (_) {} }); return; }
     } catch (_) {}
     try { window.open(url, '_blank', 'noopener'); } catch (_) {}
+  }
+
+  // Open an interactive sign-in / consent URL and report whether it ACTUALLY opened, so callers can keep
+  // their "waiting for sign-in…" copy + status poll honest (truthful-telemetry law: never claim a window
+  // exists when it doesn't). Two worlds:
+  //   • Desktop (Tauri): a raw window.open silently fails under the window policy, so hand the URL to the OS
+  //     browser via open_external_url — a real awaitable success/fail. No window.open fallback here: on desktop
+  //     that IS the failing path, so a reject means the browser genuinely didn't open — say so, don't pretend.
+  //   • Browser: window.open opens a popup, but returns null when popup-blocked — that null is the honest signal.
+  // Returns { opened, where:'browser'|'popup', win } — win is the popup handle (browser only) for a later close().
+  async function openSignIn(url) {
+    if (!url) return { opened: false, where: 'popup', win: null };
+    try {
+      const invoke = window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke;
+      if (invoke) {
+        try { await invoke('open_external_url', { url }); return { opened: true, where: 'browser', win: null }; }
+        catch (_) { return { opened: false, where: 'browser', win: null }; }
+      }
+    } catch (_) {}
+    let win = null;
+    try { win = window.open(url, 'starnet_oauth', 'width=540,height=720'); } catch (_) {}
+    return { opened: !!win, where: 'popup', win };
   }
 
   // STORE / MANAGED CREDITS — populate #credits-store from the real /api/credits payload. The endpoint 404s unless
@@ -2456,6 +2569,14 @@ const StationUI = (() => {
   function wireDiagnostics(body) {
     const btn = body.querySelector('#diag-copy');
     const msgEl = body.querySelector('#diag-msg');
+    // P1.5: surface one honest build-provenance line "build <version> @ <commit>[ DIRTY]". Diag.buildLine() returns
+    // '' in browser mode (no Tauri binary) — we then leave the element hidden, never faking a commit for a session
+    // that wasn't built from any binary. Defensive: Diag may be absent in a stripped build.
+    (function paintBuild() {
+      const el = body.querySelector('#diag-build');
+      if (!el || typeof Diag === 'undefined' || typeof Diag.buildLine !== 'function') return;
+      Diag.buildLine().then(line => { if (line) { el.textContent = line; el.hidden = false; } }).catch(() => {});
+    })();
     if (!btn) return;
     const setMsg = (t, ok) => { if (msgEl) { msgEl.textContent = t || ''; msgEl.className = 'msg' + (ok ? ' ok' : ''); } };
     btn.addEventListener('click', () => {
@@ -2707,6 +2828,9 @@ const StationUI = (() => {
       })()) +
       '<div class="set-save"><button class="bb sm" id="diag-copy">📋 COPY DIAGNOSTICS</button></div>' +
       '<div id="diag-msg" class="msg"></div>' +
+      // P1.5 build provenance — the git commit this desktop binary was compiled from. Hidden until resolved (and
+      // stays hidden in a plain browser, where there is no binary to prove). Populated in wireDiagnostics().
+      '<div id="diag-build" class="dim" style="margin-top:6px;font-size:11px" hidden></div>' +
       '<h4 class="ms-h">STATION DATA</h4>' +
       '<div class="set-save"><button class="bb sm danger" id="set-clear">CLEAR NOTIFICATIONS</button></div>' +
       '<p class="set-about">STARNET — gamified AI-agent harness.<br>Theme, display & audio preferences are saved locally on this machine. Manage workstreams from the TASK BOARD or the COMMS rail.</p>';
@@ -3049,6 +3173,9 @@ const StationUI = (() => {
     const [txt, cls] = pillFor(activity());
     const p = $('#status-pill');
     if (p) { p.textContent = txt; p.className = cls; }
+    // keep the save-dot's durability state honest even between persists — a mirror can go stale (cross the
+    // 60-min line while a failure streak is live) or recover (a backoff retry lands) without a fresh save.
+    refreshSaveDurability();
     // refresh BRIEF's live telemetry only. CONSOLE MODE keeps every section pane in the DOM at once, so a full
     // rerender would rebuild (and wipe) an open CONFIG editor / MEMORY list even when BRIEF is showing. Instead
     // surgically repaint just the live nodes (hero status dot + line, roster idle/working hints) in place — no
@@ -3058,6 +3185,25 @@ const StationUI = (() => {
   function flashSave() {
     const d = $('#save-dot'); if (!d) return;
     d.classList.add('flash'); setTimeout(() => d.classList.remove('flash'), 600);
+    refreshSaveDurability(d);
+  }
+  // TRUTHFUL save-dot: the green flash means "the LOCAL cache was written" — but the durable mirror
+  // (the sidecar copy that survives a webview-profile wipe) can be silently frozen while pushes fail.
+  // When CloudSave reports a stale mirror (no confirmed backup in > 60 min + a live failure streak),
+  // flip the dot to a distinct amber/warn state + explain it in the title. NO new window, NO nag — just
+  // an honest dot state. Never asserts durability the harness can't prove (truthful-telemetry law).
+  function refreshSaveDurability(d) {
+    d = d || $('#save-dot'); if (!d) return;
+    let h = null;
+    try { h = (typeof CloudSave !== 'undefined' && CloudSave.health) ? CloudSave.health() : null; } catch (_) { h = null; }
+    if (h && h.stale) {
+      d.classList.add('stale');
+      const since = h.lastPushOkAt ? new Date(h.lastPushOkAt).toLocaleString() : 'never';
+      d.title = 'world is saved locally; the durable backup copy hasn’t synced since ' + since;
+    } else {
+      d.classList.remove('stale');
+      d.title = 'autosave';
+    }
   }
 
   /* ============== MESSAGING — connect a Telegram bot so the Commander can DM the agent ==============
@@ -3635,7 +3781,8 @@ const StationUI = (() => {
       ccRefresh();   // reflect the new installed state on the cards
       refresh();     // and repaint the MCP CONNECTORS list (same underlying connector set)
     }
-    // OAuth sign-in: start the flow, open the provider's consent in a popup, poll until the connector connects.
+    // OAuth sign-in: start the flow, open the provider's consent (browser tab on desktop, popup in a browser),
+    // then poll until the connector connects — but only if the consent window actually opened.
     async function ccSignIn(id) {
       if (ccPending.has(id)) { sfx('bad'); ccMsgEl.classList.remove('ok'); ccMsgEl.textContent = 'a sign-in is already in progress for this connector…'; return; }
       ccPending.add(id);   // one in-flight sign-in per connector — no duplicate popups / concurrent pollers
@@ -3647,8 +3794,15 @@ const StationUI = (() => {
         if (j.error || !j.url) { ccMsgEl.textContent = '✕ ' + (j.error || 'could not start sign-in'); sfx('bad'); ccPending.delete(id); return; }
         url = j.url;
       } catch (err) { ccMsgEl.textContent = '✕ ' + ((err && err.message) || 'request failed'); sfx('bad'); ccPending.delete(id); return; }
-      const win = window.open(url, 'starnet_oauth', 'width=540,height=720');
-      ccMsgEl.textContent = 'complete the sign-in for ' + label + ' in the popup window…';
+      const opened = await openSignIn(url);
+      if (!opened.opened) {
+        // The consent window never opened (popup-blocked in a browser, or the OS-browser hand-off failed on
+        // desktop). Do NOT start the poll — a "waiting for sign-in" claim against a window that doesn't exist
+        // is the exact lie this fix removes. Tell the truth and stop.
+        ccMsgEl.textContent = '✕ couldn’t open the sign-in page for ' + label + (opened.where === 'popup' ? ' — allow pop-ups for this site, then try again.' : ' — try again.'); sfx('bad'); ccPending.delete(id); return;
+      }
+      const win = opened.win;   // popup handle when in a browser; null on desktop (opened in the real browser)
+      ccMsgEl.textContent = 'complete the sign-in for ' + label + (opened.where === 'browser' ? ' in your browser…' : ' in the popup window…');
       let tries = 0;
       const timer = setInterval(async () => {
         tries++;
@@ -3712,8 +3866,12 @@ const StationUI = (() => {
       try {
         const j = await (await fetch('/api/spotify/auth/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(clientId ? { clientId } : {}) })).json();
         if (j.error) { msgEl.textContent = '✕ ' + j.error; sfx('bad'); return; }
-        window.open(j.url, '_blank', 'noopener');
-        msgEl.textContent = 'Approve access in the window that opened, then return here — this updates automatically.';
+        const opened = await openSignIn(j.url);
+        if (!opened.opened) {
+          // No consent window opened → don't poll and don't claim one is waiting (truthful-telemetry law).
+          msgEl.textContent = '✕ couldn’t open the Spotify sign-in page' + (opened.where === 'popup' ? ' — allow pop-ups for this site, then try again.' : ' — try again.'); sfx('bad'); return;
+        }
+        msgEl.textContent = 'Approve access in ' + (opened.where === 'browser' ? 'your browser' : 'the window that opened') + ', then return here — this updates automatically.';
         sfx('click');
         let n = 0, fails = 0; clearInterval(pollTimer);
         pollTimer = setInterval(async () => {
@@ -4233,6 +4391,7 @@ const StationUI = (() => {
         skip: skip,
         onCommit: belief => ds.upsert(belief.dim, { text: belief.text, source: belief.source }),
         onDone: () => rerender('commander'),
+        onLeave: () => { rerender('commander'); notify('left the interview — what you answered is saved', ''); },   // user-launched: leaving is a clean stop (answers banked), nothing to wave off
         onEmpty: () => notify('the station already knows you — edit any belief below to refine', 'good')
       });
       if (began) { sfx('click'); notify('the station is interviewing you — answer in COMMS →', 'good'); }

@@ -1,6 +1,6 @@
 /* STARNET — topbar.css : the TOPBAR INSTRUMENT CLUSTER.
-   One coherent cockpit gauge group in #topbar, right of the logo and left of
-   DISCONNECT: STATION (level + XP sliver) · SPEND TODAY · UPLINK · ONLINE · save.
+   One coherent cockpit gauge group in #topbar, right of the logo:
+   STATION (level + XP sliver) · SPEND TODAY · UPLINK · ONLINE · save.
    Built in the premium CRT hardware language (recessed wells, hairline separators,
    small dim labels over bright values — the dossier stat-well vocabulary in a
    compact horizontal form). Additive layer over style.css/app.css/motion.css.
@@ -12,8 +12,8 @@
      on a hot path; the 60fps canvas runs behind the chrome.
    - Composite vars referencing vars would live on `body`; this file uses none. */
 
-/* the cluster wrapper — a single instrument row that lays flat between logo and
-   DISCONNECT. tb-stats already holds it; this styles the members + separators. */
+/* the cluster wrapper — a single instrument row that lays flat right of the logo.
+   tb-stats already holds it; this styles the members + separators. */
 #topbar .tb-stats { gap: 0; flex-wrap: nowrap; min-width: 0; }
 
 /* hairline separator between instruments — a milled groove line, faint at the ends */
@@ -61,6 +61,9 @@
 /* ---- SPEND TODAY well: dim label, bright dollar value, glow-pulse on a fresh cost ---- */
 #tb-spend .tb-val { color: var(--ph-bright); }
 #tb-spend[data-zero="1"] .tb-val { color: var(--ph-dim); text-shadow: none; }   /* $0.00 sits quiet */
+/* E3: ledger poll dead → the shown spend is last-known, not live. Dim + amber tint, mirroring the
+   widget-rail stale cue and the canvas linkStaleDim (value present but not fresh). */
+#tb-spend[data-stale="1"] .tb-val { color: var(--warn, #e8a13a); opacity: 0.55; text-shadow: none; }
 /* a cost event just landed — brief phosphor bloom on the value (opacity/text only) */
 #tb-spend.tb-tick .tb-val { animation: tb-spend-tick var(--t-slow, 400ms) var(--ease-out, ease); }
 @keyframes tb-spend-tick {

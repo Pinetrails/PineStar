@@ -15,9 +15,13 @@ Support questions: androo.agi@gmail.com.
   and no "phone home" of any kind. We verified this by searching the whole codebase for the
   usual suspects (Sentry, PostHog, Mixpanel, Segment, Google Analytics, Amplitude, Datadog):
   none are present.
-- **Your data stays on your machine**, under your OS user's app-data directory
-  (`%APPDATA%\ai.skynet.harness\workspaces\` on Windows for the desktop app; the
-  developer-mode sidecar uses `%LOCALAPPDATA%\StarNet\`).
+- **Your data stays on your machine**, under your OS user's app-data directory —
+  Windows: `%APPDATA%\ai.skynet.harness\workspaces\`; macOS:
+  `~/Library/Application Support/ai.skynet.harness/workspaces/`; Linux:
+  `~/.local/share/ai.skynet.harness/workspaces/`. (The developer-mode sidecar uses
+  `%LOCALAPPDATA%\StarNet\` on Windows.) The `ai.skynet.harness` folder name is an intentional
+  back-compatibility alias kept from before the app was renamed to StarNet on 2026-06-22 — it
+  holds your StarNet data.
 - The app talks to the network **only** to do work you asked for, and only to the specific
   third parties described below.
 
@@ -90,10 +94,11 @@ installed.
 
 ## What StarNet stores on your machine (and how)
 
-Everything below lives under your per-user app-data directory
-(`%APPDATA%\ai.skynet.harness\workspaces\` on Windows for the desktop app;
-`%LOCALAPPDATA%\StarNet\workspaces\` in developer mode). It never leaves your machine except
-as described above.
+Everything below lives under your per-user app-data directory (see the paths in "The short
+version" above for Windows/macOS/Linux). It never leaves your machine except as described
+above. Where this document says "OS keychain," that means Windows Credential Manager, the
+macOS Keychain, or the Linux Secret Service (e.g. GNOME Keyring), depending on your platform —
+always under the service name `ai.skynet.harness`.
 
 | What | Where | How it's stored |
 | --- | --- | --- |
@@ -140,11 +145,13 @@ Windows user account can read it. Protect your machine account accordingly.
 
 ## Deleting your data
 
-Your data is just files. To wipe it, uninstall StarNet and delete the
-`%APPDATA%\ai.skynet.harness\` folder (that's `C:\Users\<you>\AppData\Roaming\ai.skynet.harness\`).
-If you ever ran the developer-mode sidecar, also delete `%LOCALAPPDATA%\StarNet\`. Provider API
-keys and channel tokens held in the OS keychain can be removed via Windows Credential Manager
-(search for `ai.skynet.harness`).
+Your data is just files. To wipe it, uninstall StarNet and delete the `ai.skynet.harness`
+app-data folder for your OS — Windows: `%APPDATA%\ai.skynet.harness\`
+(`C:\Users\<you>\AppData\Roaming\ai.skynet.harness\`); macOS:
+`~/Library/Application Support/ai.skynet.harness/`; Linux: `~/.local/share/ai.skynet.harness/`.
+If you ever ran the developer-mode sidecar on Windows, also delete `%LOCALAPPDATA%\StarNet\`.
+Provider API keys and channel tokens held in the OS keychain can be removed there too (search
+your credential manager / keychain for `ai.skynet.harness`).
 
 ## Changes
 
