@@ -280,6 +280,13 @@
 .cmsg.broadcast.broadcast-gold::after {
   background: linear-gradient(90deg, transparent, var(--gold), transparent); opacity: .5;
 }
+/* E6: a non-clean background-process exit — amber fault register (a crashed dev server / killed watcher). */
+.cmsg.broadcast.broadcast-warn .bc-line { color: var(--warn, #e8a13a); text-shadow: 0 0 6px rgba(232,161,58,.5); }
+.cmsg.broadcast.broadcast-warn .bc-glyph { color: var(--warn, #e8a13a); opacity: 1; }
+.cmsg.broadcast.broadcast-warn::before,
+.cmsg.broadcast.broadcast-warn::after {
+  background: linear-gradient(90deg, transparent, var(--warn, #e8a13a), transparent); opacity: .4;
+}
 
 /* the surge-in: a brief phosphor bloom that settles — the CRT "broadcast lands" feel, once, then still */
 @keyframes bc-surge {
