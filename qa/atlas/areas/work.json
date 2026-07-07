@@ -1,63 +1,118 @@
 {
   "area": "work",
-  "updatedAt": "2026-07-07T08:11:07.401Z",
+  "updatedAt": "2026-07-07T18:35:13Z",
   "entries": [
     {
       "id": "state/work-recipes",
       "kind": "state",
       "area": "work",
       "name": "shoot state: work-recipes",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The RECIPES shoot state: the mission library (marketplace RECIPES tab) of ready-made, parameterized directives a user can launch or bottle as their own.",
+      "promise": "The RECIPES tab lists the builtin + saved recipes; SAVE A RECIPE opens the editor, TWEAK forks any recipe, EXPORT/IMPORT round-trip a recipe as portable JSON, and LAUNCH→RUN NOW fills a recipe's params once and dispatches a fresh kind:\"task\" workstream.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/app.js",
+          "frontend/app/recipes.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/recipes.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "e536b958b8b1f9175f4daeba3f72d044ba1b93e2",
+        "date": "2026-07-07T18:35:13Z"
+      },
+      "findings": [
+        "e74ea483"
+      ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false
+      "missing": false,
+      "notes": "Live-proven .uiatlas/work-evidence/probe-evidence.txt (bay opens via #bb-missions, SAVE A RECIPE editor opens, LAUNCH→RUN NOW created a NEW kind:task workstream \"Morning Brief\"). test/recipes.test.js guards fillTask/importRecipe/exportRecipe (the launch/round-trip primitives). NOTE: the UI button→dispatch seam itself is not journey-covered — see finding routed to work-recipes lane. [downgraded to AUDITED: a routed UI-seam coverage finding is attached — the store/route is guarded but the button→dispatch seam is not.]"
     },
     {
       "id": "state/work-routines",
       "kind": "state",
       "area": "work",
       "name": "shoot state: work-routines",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The ROUTINES shoot state: the scheduled-autonomous-run console where a user creates, previews, arms, runs-now, and manages server-owned cron jobs that fire their agent unattended.",
+      "promise": "CREATE ROUTINE validates + previews a schedule (server math), + ADD ROUTINE POSTs /api/cron and the job appears in ACTIVE ROUTINES; the arm control toggles the live scheduler via /api/cron/arm and RUN NOW streams a routine immediately — every displayed state reads from the authoritative GET /api/cron.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/index.js",
+          "frontend/app/autojobstore.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/cron.api.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/cron.arm.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/cron.run-now.e2e.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "e536b958b8b1f9175f4daeba3f72d044ba1b93e2",
+        "date": "2026-07-07T18:35:13Z"
+      },
+      "findings": [
+        "5c6adcaa"
+      ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false
+      "missing": false,
+      "notes": "Live-proven .uiatlas/work-evidence/probe-evidence.txt (preview server math, ADD ROUTINE→/api/cron created+enabled, active list renders with RUN NOW). cron.api/arm/run-now tests guard the routes the console drives. [downgraded to AUDITED: a routed UI-seam coverage finding is attached — the store/route is guarded but the button→dispatch seam is not.]"
     },
     {
       "id": "state/work-tasks",
       "kind": "state",
       "area": "work",
       "name": "shoot state: work-tasks",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The TASKS shoot state: the project-board view of workstreams (one card ≡ one kind:\"task\" workstream), where a user queues, assigns, ships, and archives directives for their agent.",
+      "promise": "Opening TASKS shows exactly the kind:\"task\" workstreams (never chat/summon sessions) as kanban cards across TO DO / IN PROGRESS / SHIPPED; a card auto-advances to IN PROGRESS when a run fires and only reaches SHIPPED on a deliberate human ✓ SHIP.",
       "wiring": {
-        "files": [],
-        "events": []
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/app.js",
+          "frontend/app/workstreams.js",
+          "frontend/app/channels.js"
+        ],
+        "events": [
+          "agent.run.start",
+          "agent.run.end"
+        ]
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "journey",
+          "ref": "J1"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "e536b958b8b1f9175f4daeba3f72d044ba1b93e2",
+        "date": "2026-07-07T18:35:13Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false
+      "missing": false,
+      "notes": "Live-proven .uiatlas/work-evidence/probe-evidence.txt (kb-add→kind:task TO DO, assign→IN PROGRESS, ship→SHIPPED). J1 (scripts/qa/journeys.mjs) guards the board-truth lifecycle: rows===kind:task store, RUNNING/DONE chip===Channels.isBusy, no chat session on the board."
     },
     {
       "id": "ui/work/aria-close-routines",
@@ -85,21 +140,32 @@
       "kind": "ui",
       "area": "work",
       "name": "Close TASK BOARD",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The window ✕ (Close TASK BOARD): closes the TASKS window, removing it from the floor.",
+      "promise": "Clicking Close TASK BOARD tears down the window (removed from the DOM); the board is no longer shown.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/qa-cartographer.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "e536b958b8b1f9175f4daeba3f72d044ba1b93e2",
+        "date": "2026-07-07T18:35:13Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button[aria-label=\"Close TASK BOARD\"]",
-      "state": "work-tasks"
+      "state": "work-tasks",
+      "notes": "Live-proven .uiatlas/work-evidence/probe-evidence.txt EVID kb-close: winRemovedFromDOM true, noKbCols true. AUDITED not PERFECTED: window close/minimize chrome is shared window plumbing with no board-specific machine assertion (J1 uses closeOnly but never asserts the close control per se). KNOWN gap recorded per EL-3."
     },
     {
       "id": "ui/work/aria-minimize-routines",
@@ -127,105 +193,184 @@
       "kind": "ui",
       "area": "work",
       "name": "Minimize TASK BOARD",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The window – (Minimize TASK BOARD): collapses the TASKS window to a strip chip while keeping it logically open.",
+      "promise": "Clicking Minimize TASK BOARD hides the window (term-min-hidden) and adds a chip to the #term-strip; restoring re-opens it in place.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/qa-cartographer.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "e536b958b8b1f9175f4daeba3f72d044ba1b93e2",
+        "date": "2026-07-07T18:35:13Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button[aria-label=\"Minimize TASK BOARD\"]",
-      "state": "work-tasks"
+      "state": "work-tasks",
+      "notes": "Live-proven .uiatlas/work-evidence/probe-evidence.txt EVID kb-minimize: minimizedToStrip true, winHidden true. AUDITED not PERFECTED: shared window chrome, no dedicated assertion — KNOWN gap recorded per EL-3."
     },
     {
       "id": "ui/work/con-tab-routines-active",
       "kind": "ui",
       "area": "work",
       "name": "◷ACTIVE ROUTINES",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The ◷ ACTIVE ROUTINES console tab: shows the scheduler gate badge, SUGGEST ROUTINES, and the live list of standing jobs.",
+      "promise": "Clicking ◷ ACTIVE ROUTINES shows each job's next run / last result / armed state (from GET /api/cron) with RUN NOW / DISABLE / DELETE row actions.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/index.js",
+          "frontend/app/autojobstore.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/cron.api.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/cron.run-now.e2e.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "e536b958b8b1f9175f4daeba3f72d044ba1b93e2",
+        "date": "2026-07-07T18:35:13Z"
+      },
+      "findings": [
+        "5c6adcaa"
+      ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#con-tab-routines-active",
-      "state": "work-routines"
+      "state": "work-routines",
+      "notes": "Live-proven .uiatlas/work-evidence/probe-evidence.txt EVID routines-active-list: rowsRendered 1, runNowBtn true (the created routine renders with its RUN NOW action). AUDITED: tab switch not machine-asserted; cron.api/run-now guard the routes behind the row actions. KNOWN gap per EL-3."
     },
     {
       "id": "ui/work/con-tab-routines-create",
       "kind": "ui",
       "area": "work",
       "name": "✦CREATE ROUTINE",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The ✦ CREATE ROUTINE console tab: reveals the routine-creation form (how-it-works + name/prompt/schedule/agent + preview + ADD).",
+      "promise": "Clicking ✦ CREATE ROUTINE shows the create pane with a live schedule preview (server math) and the + ADD ROUTINE action.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/index.js",
+          "frontend/app/autojobstore.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/cron.api.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "e536b958b8b1f9175f4daeba3f72d044ba1b93e2",
+        "date": "2026-07-07T18:35:13Z"
+      },
+      "findings": [
+        "5c6adcaa"
+      ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#con-tab-routines-create",
-      "state": "work-routines"
+      "state": "work-routines",
+      "notes": "Live-proven .uiatlas/work-evidence/probe-evidence.txt EVID routines-preview: server-computed next-fire times shown for \"every 30m\". AUDITED: the tab switch itself is not machine-asserted (cron tests drive the routes, not the console tab). KNOWN gap per EL-3."
     },
     {
       "id": "ui/work/kb-add",
       "kind": "ui",
       "area": "work",
       "name": "+ ADD",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The + ADD button on the TASKS board: queues a new TO DO workstream (kind:\"task\") from the adjacent input.",
+      "promise": "Typing a title in #kb-in and clicking + ADD creates a kind:\"task\" workstream in the TO DO column, clears the input, and does not hijack the active chat.",
       "wiring": {
-        "files": [],
-        "events": []
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/app.js",
+          "frontend/app/workstreams.js",
+          "frontend/app/channels.js"
+        ],
+        "events": [
+          "agent.run.start",
+          "agent.run.end"
+        ]
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "journey",
+          "ref": "J1"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "e536b958b8b1f9175f4daeba3f72d044ba1b93e2",
+        "date": "2026-07-07T18:35:13Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#kb-add",
-      "state": "work-tasks"
+      "state": "work-tasks",
+      "notes": "Live-proven .uiatlas/work-evidence/probe-evidence.txt EVID kb-add: countBefore 0→1, cardLane \"TO DO\", kind \"task\", inputCleared true. J1 guards the resulting board-truth (rows===kind:task store) though it drives Workstreams.create directly rather than this DOM button."
     },
     {
       "id": "ui/work/kb-in",
       "kind": "ui",
       "area": "work",
       "name": "input",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The add-a-workstream text input on the TASKS board: holds the title for the next queued directive.",
+      "promise": "Typing a title and pressing Enter (or clicking + ADD) queues it as a TO DO task; the field then clears. Max 160 chars.",
       "wiring": {
-        "files": [],
-        "events": []
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/app.js",
+          "frontend/app/workstreams.js",
+          "frontend/app/channels.js"
+        ],
+        "events": [
+          "agent.run.start",
+          "agent.run.end"
+        ]
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "journey",
+          "ref": "J1"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "e536b958b8b1f9175f4daeba3f72d044ba1b93e2",
+        "date": "2026-07-07T18:35:13Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#kb-in",
-      "state": "work-tasks"
+      "state": "work-tasks",
+      "notes": "Live-proven .uiatlas/work-evidence/probe-evidence.txt (input accepted, submit created a task, input cleared). J1 covers the board lifecycle the input feeds."
     },
     {
       "id": "ui/work/mkt-import-file",
@@ -253,21 +398,36 @@
       "kind": "ui",
       "area": "work",
       "name": "+ ADD ROUTINE",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The + ADD ROUTINE button: creates a scheduled cron job (name + prompt + schedule + agent) via POST /api/cron.",
+      "promise": "With a prompt and schedule filled, clicking + ADD ROUTINE POSTs /api/cron (with the browser IANA tz), the fields clear, and the new job appears in ACTIVE ROUTINES; a missing prompt/schedule is refused before any request.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/index.js",
+          "frontend/app/autojobstore.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/cron.api.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "e536b958b8b1f9175f4daeba3f72d044ba1b93e2",
+        "date": "2026-07-07T18:35:13Z"
+      },
+      "findings": [
+        "5c6adcaa"
+      ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#rt-add",
-      "state": "work-routines"
+      "state": "work-routines",
+      "notes": "Live-proven .uiatlas/work-evidence/probe-evidence.txt EVID routines-add-dispatch: created true, schedule \"every 30m\", enabled true, then active-list rows 1. cron.api.test.js guards POST /api/cron create (valid→200 with job id, unparseable→400). [downgraded to AUDITED: a routed UI-seam coverage finding is attached — the store/route is guarded but the button→dispatch seam is not.]"
     },
     {
       "id": "ui/work/rt-agent",
@@ -295,42 +455,70 @@
       "kind": "ui",
       "area": "work",
       "name": "▶ ENABLE SCHEDULING",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The ▶ ENABLE / ⏸ DISABLE SCHEDULING button: runtime one-click arm/disarm of the cron scheduler via POST /api/cron/arm.",
+      "promise": "The button reflects the authoritative GET /api/cron enabled flag; clicking it flips the live scheduler (no env edit/restart) and the badge updates to the armed/off truth.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/index.js",
+          "frontend/app/autojobstore.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/cron.arm.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "e536b958b8b1f9175f4daeba3f72d044ba1b93e2",
+        "date": "2026-07-07T18:35:13Z"
+      },
+      "findings": [
+        "5c6adcaa"
+      ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#rt-arm",
-      "state": "work-routines"
+      "state": "work-routines",
+      "notes": "Live-proven .uiatlas/work-evidence/probe-evidence.txt EVID routines-arm: armBtnPresent true, dataArm \"1\", armedBefore false (badge honestly reflects OFF scheduler). cron.arm.test.js guards /api/cron/arm arming a due job within one tick. [downgraded to AUDITED: a routed UI-seam coverage finding is attached — the store/route is guarded but the button→dispatch seam is not.]"
     },
     {
       "id": "ui/work/rt-empty-cta",
       "kind": "ui",
       "area": "work",
       "name": "+ ADD A ROUTINE",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The + ADD A ROUTINE empty-state CTA: when no routines exist, jumps the console to CREATE ROUTINE and focuses the name field.",
+      "promise": "Clicking + ADD A ROUTINE activates the CREATE ROUTINE tab and focuses #rt-name so the user can start the first routine.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/cron.api.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "e536b958b8b1f9175f4daeba3f72d044ba1b93e2",
+        "date": "2026-07-07T18:35:13Z"
+      },
+      "findings": [
+        "5c6adcaa"
+      ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#rt-empty-cta",
-      "state": "work-routines"
+      "state": "work-routines",
+      "notes": "Verified live the CREATE form + tabs are reachable (EVID routines-view: tabCreate/tabActive present). The empty-state CTA only shows with zero jobs; not exercised after a job existed in the probe. AUDITED: navigation-only affordance, no dedicated assertion — KNOWN gap per EL-3."
     },
     {
       "id": "ui/work/rt-name",
@@ -421,21 +609,32 @@
       "kind": "ui",
       "area": "work",
       "name": "+ ADD ONE",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The + ADD ONE empty-state CTA in the TO DO column: focuses the add-a-workstream input when the board is empty (focus only, no new behavior).",
+      "promise": "Clicking + ADD ONE in the empty TO DO column focuses #kb-in so the user can immediately type a first directive.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "journey",
+          "ref": "J1"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "e536b958b8b1f9175f4daeba3f72d044ba1b93e2",
+        "date": "2026-07-07T18:35:13Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
-      "state": "work-tasks"
+      "state": "work-tasks",
+      "notes": "Live-verified the control exists and its handler focuses #kb-in (stationui.js kbEmpty + wiring). Left AUDITED not PERFECTED: it is a focus-only affordance with no dedicated machine assertion (J1 never exercises the empty-state CTA). KNOWN: cosmetic focus helper, guarding it is low-value — recorded reason per EL-3."
     },
     {
       "id": "ui/work/txt-button-agents-405",
@@ -904,21 +1103,30 @@
       "kind": "ui",
       "area": "work",
       "name": "download this recipe as a portable JSON file",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The ⇩ EXPORT button on a recipe dossier: downloads that recipe as a portable JSON file.",
+      "promise": "Clicking ⇩ EXPORT serializes the recipe (exportRecipe) and saves it to downloads; an unknown/failed export reports honestly and downloads nothing.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/recipes.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/recipes.test.js"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
-      "state": "work-recipes"
+      "state": "work-recipes",
+      "notes": "Traced seam (marketplace.js mkt-recipe-export → Recipes.exportRecipe). recipes.test.js covers exportRecipe. Browser download not driven live. Left MAPPED."
     },
     {
       "id": "ui/work/txt-button-feefeed-watchkeep-an-eye-on-a-source-fo-444",
@@ -988,21 +1196,31 @@
       "kind": "ui",
       "area": "work",
       "name": "⌫ FORGET",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The ⌫ FORGET button (recipe family): a two-step armed control to remove a saved/imported custom recipe family.",
+      "promise": "Clicking ⌫ FORGET arms (label→confirm, 4s window); a second click removes the custom recipe; it is never a one-click destructive action.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/app.js",
+          "frontend/app/recipes.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/recipes.test.js"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
-      "state": "work-recipes"
+      "state": "work-recipes",
+      "notes": "Traced seam (marketplace.js mkt-fam-forget two-step arm/confirm at ~L1170). Not exercised live in this batch. Left MAPPED — destructive control, needs its own arm/confirm assertion."
     },
     {
       "id": "ui/work/txt-button-general1-412",
@@ -1072,21 +1290,30 @@
       "kind": "ui",
       "area": "work",
       "name": "import a recipe from a JSON file",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The ⇪ IMPORT button: reads a recipe JSON file, validates it, and lands it in YOUR RECIPES.",
+      "promise": "Clicking ⇪ IMPORT opens a file picker; a valid recipe JSON is validated (importRecipe), unknown fields stripped, and the user lands on the imported recipe in the MINE view — a malformed file is refused with an honest error, nothing imported.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/recipes.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/recipes.test.js"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
-      "state": "work-recipes"
+      "state": "work-recipes",
+      "notes": "Traced seam (marketplace.js R6 import: hidden #mkt-import-file → Recipes.importRecipe). recipes.test.js covers importRecipe/exportRecipe round-trip at the store level. UI file-picker path not driven live (headless file upload out of scope). Left MAPPED."
     },
     {
       "id": "ui/work/txt-button-inbinbox-triagewhat-in-your-inbox-actua-464",
@@ -1450,21 +1677,36 @@
       "kind": "ui",
       "area": "work",
       "name": "❒ RECIPES",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The ❒ RECIPES tab in the recruitment bay: switches the bay to the mission library.",
+      "promise": "Clicking ❒ RECIPES shows the recipe roster (builtin categories + MINE) with SAVE A RECIPE + IMPORT controls.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/app.js",
+          "frontend/app/recipes.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/recipes.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "e536b958b8b1f9175f4daeba3f72d044ba1b93e2",
+        "date": "2026-07-07T18:35:13Z"
+      },
+      "findings": [
+        "e74ea483"
+      ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
-      "state": "work-recipes"
+      "state": "work-recipes",
+      "notes": "Live-proven .uiatlas/work-evidence/probe-evidence.txt EVID mkt-state tabs \"☰ AGENTS ❒ RECIPES\", recipes-view saveAsBtn+importBtn present, 53 recipe els. AUDITED: the tab switch has no dedicated machine assertion (recipes.test.js covers the store, not the tab). KNOWN gap per EL-3."
     },
     {
       "id": "ui/work/txt-button-refrefactor-scoutfind-the-code-most-wor-439",
@@ -1597,21 +1839,36 @@
       "kind": "ui",
       "area": "work",
       "name": "＋ SAVE A RECIPE",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The ＋ SAVE A RECIPE button: opens the recipe editor on a blank create to bottle a reusable parameterized directive.",
+      "promise": "Clicking ＋ SAVE A RECIPE opens the editor titled \"SAVE A RECIPE\" (blank create path) where a user names, templates, and declares params for a new custom recipe.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/app.js",
+          "frontend/app/recipes.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/recipes.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "e536b958b8b1f9175f4daeba3f72d044ba1b93e2",
+        "date": "2026-07-07T18:35:13Z"
+      },
+      "findings": [
+        "e74ea483"
+      ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
-      "state": "work-recipes"
+      "state": "work-recipes",
+      "notes": "Live-proven .uiatlas/work-evidence/probe-evidence.txt EVID recipes-saveas: editorOpen true, title \"SAVE A RECIPE\". AUDITED: the editor-open UI path is not machine-guarded (recipes.test.js validates recipe shape/fillTask, not the editor). Finding routed to work-recipes lane for a UI-dispatch assertion."
     },
     {
       "id": "ui/work/txt-button-scrscript-outlinea-beat-by-beat-outline-458",
@@ -1639,21 +1896,36 @@
       "kind": "ui",
       "area": "work",
       "name": "▸ SET UP & LAUNCH",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The ▸ SET UP & LAUNCH button on a recipe dossier: opens the launch form to fill the recipe's params, then RUN NOW dispatches it as a fresh task.",
+      "promise": "Clicking ▸ SET UP & LAUNCH opens the LAUNCH form; filling required params and clicking ▸ RUN NOW creates a new kind:\"task\" workstream named for the recipe and sets the agent to work on the filled directive.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/app.js",
+          "frontend/app/recipes.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/recipes.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "e536b958b8b1f9175f4daeba3f72d044ba1b93e2",
+        "date": "2026-07-07T18:35:13Z"
+      },
+      "findings": [
+        "e74ea483"
+      ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
-      "state": "work-recipes"
+      "state": "work-recipes",
+      "notes": "Live-proven .uiatlas/work-evidence/probe-evidence.txt EVID recipes-launch-open (morning-brief), recipes-runnow-form, recipes-runnow-dispatch: countBefore 1→2, newTasks 1, title \"Morning Brief\", kind \"task\" — the launchRecipe dispatch contract holds. AUDITED not PERFECTED: recipes.test.js covers fillTask (the launch primitive) but NO journey/test drives this UI button→kind:task dispatch. Finding routed to work-recipes lane."
     },
     {
       "id": "ui/work/txt-button-sousource-comparewhere-the-sources-actu-450",
@@ -1933,21 +2205,31 @@
       "kind": "ui",
       "area": "work",
       "name": "✎ TWEAK",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The ✎ TWEAK button on every recipe dossier: forks that recipe into a new editable custom (source preserved), prefilled in the editor.",
+      "promise": "Clicking ✎ TWEAK opens the recipe editor titled \"TWEAK RECIPE\" seeded from the source recipe with source:\"fork\" provenance; the builtin is never mutated.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/app.js",
+          "frontend/app/recipes.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/recipes.test.js"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
-      "state": "work-recipes"
+      "state": "work-recipes",
+      "notes": "Traced seam (marketplace.js mkt-recipe-tweak → enterRecipeEditor fork path). Not exercised in this batch's live probe (only SAVE A RECIPE + LAUNCH were driven). Left MAPPED; recipes.test.js guards the underlying recipe shape but not the TWEAK UI."
     },
     {
       "id": "ui/work/txt-button-weeweekly-reviewclose-the-week-aim-the-466",
