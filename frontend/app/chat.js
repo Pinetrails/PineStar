@@ -4037,9 +4037,18 @@ const Chat = (() => {
       // stream is the one on screen — a background stream finishing must not move the view.
       const stayFacing = typeof Voice !== 'undefined' && Voice.inVoiceMode && Voice.inVoiceMode();
       // a summoned crew body extinguishes the moment ITS run ends — even if it finished off-screen (a
-      // background crew run must stop "working"). The hero keeps its original active-stream-gated stance.
+      // background crew run must stop "working").
       if ((ws.agentId || 'agent') !== 'agent') { if (World.setActivityFor) World.setActivityFor(ws.agentId, 'idle'); }
-      else if (isActiveWs(ws)) { World.setActivity(stayFacing ? 'talk' : 'idle'); if (stayFacing && World.focusAgent) World.focusAgent({ soft: true }); }
+      else {
+        // HERO: split the two concerns the old single gate conflated. (1) POSE — a hero run that finished in a
+        // BACKGROUND workstream must ALSO stop "working" (the tick tears it out of the desk pose the instant
+        // activity flips off 'task'); setActivity('idle') does that WITHOUT touching the camera. (2) VIEW — only
+        // steer the world (voice-facing talk pose + soft focus) when THIS finished stream is the one on screen,
+        // so a background run finishing never moves the camera. (Lane 5 truth-run-lifecycle: was gated entirely on
+        // isActiveWs, leaving a background hero run stuck in the working pose forever.)
+        if (isActiveWs(ws)) { World.setActivity(stayFacing ? 'talk' : 'idle'); if (stayFacing && World.focusAgent) World.focusAgent({ soft: true }); }
+        else World.setActivity('idle');
+      }
       // D1 WARMTH: a run for the on-screen stream just ended → the focused agent returns to the chat-stare per the
       // D1 loop; re-warm so the stare holds for a fresh window after it answers (the "watch you type ↔ work the
       // answer" beat), instead of the reply-run wall-clock counting against warmth. Only the visible stream re-warms.
