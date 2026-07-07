@@ -1916,7 +1916,12 @@ const StationUI = (() => {
       // ACTIVE means this transport can actually run right now: selected provider AND a model is set.
       const runnable = connected && p.id === active && !!ks[0].model;
       const cls = connected ? 'conn' : (p.live ? 'avail' : 'soon');
-      const stat = !p.live ? '○ COMING SOON' : connected ? '● CONNECTED' : (p.id === 'codex' ? '○ NOT SIGNED IN' : (p.id === 'ollama' ? '○ LOCAL' : '○ NO KEY'));
+      // E5: `connected` is KEY PRESENCE, not a verified live connection — a saved key can be revoked,
+      // rate-limited, or wrong, and we haven't round-tripped it. Label it "KEY SAVED" (or SIGNED IN for
+      // the codex OAuth path, which IS real auth) rather than the over-claiming "CONNECTED". The
+      // ACTIVE/runnable badge logic below is unchanged — that already gates on selected provider + model.
+      const connLabel = p.id === 'codex' ? '● SIGNED IN' : '● KEY SAVED';
+      const stat = !p.live ? '○ COMING SOON' : connected ? connLabel : (p.id === 'codex' ? '○ NOT SIGNED IN' : (p.id === 'ollama' ? '○ LOCAL' : '○ NO KEY'));
       const n = ks.length;
       // NO-KEY cards that accept a key get an inline, collapsible paste-and-save row so the user never has to hunt
       // for where keys live. It reuses the SAME save path (Harness.setKey) as the key list below — no duplicate logic.
