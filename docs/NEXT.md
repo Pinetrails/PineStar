@@ -112,7 +112,8 @@ Rule stands: land it or delete it — an unmerged branch is a claim nobody verif
   DONE—REVIEW & SHIP chip on active cards via Channels.isBusy. SHIP stays human-only.
   Live DOM round-trip NOT done (predicate proven against real module + dev seed).
 - Discovered in passing: sidecar/loop.js has a stray NUL byte (~offset 32377) — git/grep
-  treat it as BINARY. Fix queued as a spawned task (byte-strip only, semantics untouched).
+  treat it as BINARY. ✅ FIXED 2026-07-07 in agent/multiagent-truth (2 raw NULs → u0000
+  escapes, runtime-identical; loop suites green).
 
 ## DONE 2026-07-07 — SKILLS panel legibility (Fable session) ✅
 
@@ -221,6 +222,28 @@ promise?" (sibling of "where's its UI?").
     leaving plaintext key in the .bak (hygiene, not loss).
   - Audited CLEAN: roster/knobs/budget/allowlist/cron/ledger via saveResilient+.bak;
     localStorage creds not touched by version purge.
+- **EL-6 · ESCAPE 2026-07-07: multi-agent run died ~5min + visuals lied + research not
+  headless — ✅ FIXED + MERGED (lane agent/multiagent-truth → 957384bf, gates fast 266 +
+  http green, escape-first tests, live-verified dev seed).** Andrew's overseer→researcher→
+  peter dispatch: worker ran its roster MODEL on the LEAD's provider wire (instant 400 when
+  they differ — the fast worker death), run stream byte-silent for minutes during dispatch
+  (silent-socket kill class), diag error ring RAM-only (restart erased the evidence), worker
+  sprite decayed at RUN_TTL because only lifecycle+cost forward, and browser.* launched a
+  VISIBLE window for research. All seven fixes in the qa/STATUS.md digest. STILL OPEN from
+  this escape:
+  - **EL-6a · queued-worker floor affordance** — team.dispatch's later workers show NOTHING
+    until their turn (sequential by design). Needs an ADDITIVE shared/events.js event (e.g.
+    dispatch-intent carrying worker ids) — REQUEST TO CONTRACT OWNER (cortex-memory lane);
+    argsSummary's 80-char clip cannot carry the list. Then world.js renders a "queued" chip.
+  - **EL-6b · single worker turn >5min** — agent.cost stamps the TTL per completed turn; a
+    single silent turn longer than RUN_TTL still decays the sprite. Acceptable edge unless
+    escapes recur; revisit with EL-6a's event.
+  - **EL-6c · Andrew's exact trigger unconfirmed** — his install predates the diag
+    persistence, so the original error text is gone. If it recurs on a build with this lane,
+    /api/diagnostics now carries the error across restarts; pin it then.
+  - NOTE: his diagnostics said `App version: unknown / Mode: browser` — expected for npm
+    start/browser mode (packaged desktop sets STARNET_APP_VERSION + tauri origin). If he was
+    IN the installed exe, that's an origin-detection bug worth a look on a repro.
 
 ## Atlas — Perfectionist area claims (one session, one area)
 
