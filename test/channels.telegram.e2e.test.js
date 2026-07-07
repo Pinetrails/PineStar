@@ -28,6 +28,13 @@ function readJsonBody(req) {
 
 function startMockOpenRouter() {
   const requests = [];
+  // gate lets the snapshot test HOLD a completion in-flight: when armed, the handler writes the first delta (so
+  // agent.run.start has fired and the hub run is registered in inflight) then AWAITS release() before the finishing
+  // chunk. Default = not armed (instant reply) so every other flow is unchanged. `started` resolves when a held
+  // completion has emitted its first delta — the point at which the run is provably in-flight.
+  const gate = { armed: false, _release: null, _startedResolve: null, started: null };
+  gate.arm = () => { gate.armed = true; gate.started = new Promise(r => { gate._startedResolve = r; }); };
+  gate.release = () => { const r = gate._release; gate._release = null; if (r) r(); };
   return new Promise(resolve => {
     const server = http.createServer((req, res) => {
       if (req.url.indexOf('/models') >= 0) {
@@ -38,10 +45,14 @@ function startMockOpenRouter() {
       if (req.url.indexOf('/chat/completions') >= 0) {
         let body = '';
         req.on('data', d => { body += d; });
-        req.on('end', () => {
+        req.on('end', async () => {
           try { requests.push(JSON.parse(body)); } catch (_) {}
           res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' });
           res.write('data: ' + JSON.stringify({ choices: [{ delta: { content: 'Telegram answer' } }] }) + '\n\n');
+          if (gate.armed) {
+            gate.armed = false;   // hold only the FIRST completion after arming
+            await new Promise(r => { gate._release = r; if (gate._startedResolve) gate._startedResolve(); });
+          }
           res.write('data: ' + JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop' }], usage: { prompt_tokens: 5, completion_tokens: 3, total_tokens: 8 } }) + '\n\n');
           res.write('data: [DONE]\n\n');
           res.end();
@@ -50,7 +61,7 @@ function startMockOpenRouter() {
       }
       res.writeHead(404); res.end();
     });
-    server.listen(0, HOST, () => resolve({ server, requests, base: 'http://' + HOST + ':' + server.address().port + '/api/v1' }));
+    server.listen(0, HOST, () => resolve({ server, requests, gate, base: 'http://' + HOST + ':' + server.address().port + '/api/v1' }));
   });
 }
 
@@ -213,7 +224,7 @@ async function startSseCollector(url) {
 async function waitUntil(fn, ms, label) {
   const deadline = Date.now() + ms;
   while (Date.now() < deadline) {
-    if (fn()) return;
+    if (await fn()) return;   // await so an async predicate (e.g. a snapshot fetch) is honored, not truthy-Promise-passed
     await sleep(25);
   }
   throw new Error('timed out waiting for ' + label);
@@ -263,6 +274,37 @@ async function waitUntil(fn, ms, label) {
     const turns = (tr && tr.turns) || [];
     A.ok(turns.some(t => t.role === 'user' && String(t.content || '').indexOf('research AI trend now') >= 0), 'transcript captured Telegram user turn');
     A.ok(turns.some(t => t.role === 'assistant' && String(t.content || '').indexOf('Telegram answer') >= 0), 'transcript captured Telegram assistant reply');
+
+    // ---- P1 1.2: a live channel run must appear in GET /api/state/snapshot so an SSE reconnect keeps its agent's
+    // floor/HUD state (reconcileFromSnapshot clears any agent NOT listed). Drive a SECOND message on a fresh chat,
+    // HOLD it in-flight via the mock gate, prove the snapshot lists it (attributed + sourced 'telegram'), then
+    // release and prove it's gone once the run ends — exactly tracking the hub's inflight lifecycle. ----
+    const snapshot = async () => {
+      const r = await fetch(B + '/api/state/snapshot', { headers: { 'X-StarNet-Token': token, Origin: B } });
+      A.eq(r.status, 200, 'GET /api/state/snapshot -> 200');
+      return r.json();
+    };
+    // baseline: with the first run long settled, no channel run is listed.
+    const base = await snapshot();
+    A.ok(Array.isArray(base.runs) && !base.runs.some(x => x && x.agentId === 'tg_4243'), 'snapshot has no tg_4243 run before the second message');
+
+    llm.gate.arm();                                  // the NEXT completion holds after its first delta
+    tg.pushText(4243, 99, 'hold this run please');   // a fresh chat -> agentId tg_4243, its own run
+    await llm.gate.started;                           // resolves once the held completion emitted its first delta (run is provably in-flight)
+    await sse.waitFor(events => events.some(e => e.name === 'agent.run.start' && e.payload && e.payload.agentId === 'tg_4243'), 5000, 'second SSE run start');
+
+    // WHILE HELD: the snapshot lists this live channel run, attributed to the acting agent and sourced 'telegram'.
+    const during = await snapshot();
+    const live = (during.runs || []).find(x => x && x.agentId === 'tg_4243');
+    A.ok(!!live, 'a live Telegram hub run IS listed in the snapshot while in-flight');
+    A.eq(live.source, 'telegram', "the channel run's source is 'telegram'");
+    A.ok(typeof live.runId === 'string' && live.runId.length > 0, 'the listed channel run carries a runId');
+    A.ok(typeof live.startedAt === 'number' && during.ts >= live.startedAt, "the run's startedAt is a real server timestamp (<= snapshot ts)");
+
+    llm.gate.release();                              // let the held completion finish
+    await sse.waitFor(events => events.some(e => e.name === 'agent.run.end' && e.payload && e.payload.agentId === 'tg_4243'), 5000, 'second SSE run end');
+    // AFTER IT ENDS: the run drops out of the snapshot (inflight cleared in the hub's finally) — no phantom clock.
+    await waitUntil(async () => { const s = await snapshot(); return !(s.runs || []).some(x => x && x.agentId === 'tg_4243'); }, 5000, 'tg_4243 run leaves the snapshot after it ends');
   } finally {
     if (sse) sse.close();
     try { child.kill(); } catch (_) {}

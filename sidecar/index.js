@@ -2172,7 +2172,7 @@ function startTelegram(token, key, model, agentCfg) {
       return { key, model: t.model, provider, baseUrl, configured: providerHasCredential(provider, key, baseUrl), reasoningEffort: resolveReasoningEffort(provider, t.reasoningEffort), agentId: t.agentId, system: t.system };
     },
     persona: TELEGRAM_PERSONA, classify: Classify.isTaskDirective, redact: redact, emit: chanEmit,
-    newId: () => crypto.randomUUID(), maxMessageLength: 4096,
+    newId: () => crypto.randomUUID(), now: () => Date.now(), maxMessageLength: 4096,
     // Phase B: the placed floor decides WHICH agent runs (resolveTarget); null -> the hub's own resolution
     // (configured agentId else tg_<chatId>), so a no-floor or mis-wired station never stalls real work.
     resolveAgent: (ctx) => router.resolveTarget(ctx),
@@ -2303,7 +2303,7 @@ function startDiscord(token, key, model, agentCfg) {
         return { key: k, model: d.model, provider, baseUrl, configured: providerHasCredential(provider, k, baseUrl), reasoningEffort: resolveReasoningEffort(provider, d.reasoningEffort), agentId: d.agentId, system: d.system };
       },
       persona: DISCORD_PERSONA, classify: Classify.isTaskDirective, redact: redact, emit: chanEmit,
-      newId: () => crypto.randomUUID(),
+      newId: () => crypto.randomUUID(), now: () => Date.now(),
       resolveAgent: (ctx) => router.resolveTarget(ctx),
       getTag: (text) => (Classify.getTag ? Classify.getTag(text) : undefined),
       resolveStation: (agentId) => router.stationFor(agentId),
@@ -3435,8 +3435,12 @@ function handleCronList(req, res) {
    SHAPE (every field is backed by REAL in-memory server state — nothing is fabricated; truthful-telemetry law):
      {
        ts: <ms>,                                  // when this snapshot was taken (server clock)
-       runs: [ { runId, agentId, startedAt, source } ],   // live runs (runsMeta, tracks the `runs` kill-map exactly)
-                                                          //   source ∈ 'interactive' | 'cron' | 'workshop'
+       runs: [ { runId, agentId, startedAt, source } ],   // live runs (runsMeta + the channel hubs' inflight maps)
+                                                          //   source ∈ 'interactive' | 'cron' | 'workshop' | 'telegram' | 'discord'
+                                                          //   Channel (Telegram/Discord) runs are driven by the messaging hub, which keeps its OWN inflight
+                                                          //   map (keyed by chatId) rather than runsMeta — so they are read from the SAME maps E-STOP kills
+                                                          //   (telegram/discord hub._internals.inflight). Without this a reconnect would clear a live
+                                                          //   channel run's agent from the floor mid-run (reconcileFromSnapshot drops any agent not listed here).
        prompts: [ { runId, agentId, promptId } ],  // OPEN consent prompts awaiting a human (pendingByRun)
        summons: [ { runId, requestId } ],          // OPEN team.summon requests awaiting the browser (pendingSummonByRun)
        queues:  [ { agentId, depth } ]             // per-agent inbound work-item depth (queueDepth), depth>0 only
@@ -3446,11 +3450,29 @@ function handleCronList(req, res) {
    guessed. If a cheap source appears later, add a `tools:[{agentId,tool}]` field. */
 function handleStateSnapshot(req, res) {
   const out = { ts: Date.now(), runs: [], prompts: [], summons: [], queues: [] };
+  const seenRunIds = new Set();
   try {
     for (const [runId, meta] of runsMeta) {
+      seenRunIds.add(runId);
       out.runs.push({ runId: runId, agentId: (meta && meta.agentId) || null, startedAt: (meta && meta.startedAt) || null, source: (meta && meta.source) || null });
     }
   } catch (_) {}
+  // CHANNEL runs (Telegram/Discord) live in the messaging hub's OWN inflight map, not runsMeta — include them so a
+  // reconnect keeps their agent's live floor/HUD state (reconcileFromSnapshot clears any agent absent here). Read
+  // the EXACT maps E-STOP kills (hub._internals.inflight) — one source of truth, no parallel bookkeeping. Each
+  // record carries { runId, agentId, startedAt } (see channels/hub.js). Tolerant of an absent hub (not connected).
+  const addHubRuns = (hub, source) => {
+    const inflight = (hub && hub._internals) ? hub._internals.inflight : null;
+    if (!inflight || typeof inflight.values !== 'function') return;
+    for (const rec of inflight.values()) {
+      const runId = rec && rec.runId;
+      if (!runId || seenRunIds.has(runId)) continue;   // defensive: never double-list a run
+      seenRunIds.add(runId);
+      out.runs.push({ runId: runId, agentId: (rec && rec.agentId) || null, startedAt: (rec && rec.startedAt) || null, source: source });
+    }
+  };
+  try { addHubRuns(telegram && telegram.hub, 'telegram'); } catch (_) {}
+  try { addHubRuns(discord && discord.hub, 'discord'); } catch (_) {}
   try {
     for (const [runId, pending] of pendingByRun) {
       const meta = runsMeta.get(runId);

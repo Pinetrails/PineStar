@@ -113,6 +113,11 @@
     const redact = typeof o.redact === 'function' ? o.redact : (p) => p;
     const emit = typeof o.emit === 'function' ? o.emit : () => {};
     const newId = typeof o.newId === 'function' ? o.newId : (() => { let n = 0; return () => channel + '-run-' + (++n); })();
+    // INJECTED wall-clock — no ambient fallback (this module is pure/deterministic; the determinism gate bans a bare
+    // Date.now here). The composition root passes now:()=>Date.now(); a hub built without one (unit tests) stamps a
+    // run's startedAt as null. Used ONLY to age a run in the state snapshot — never for control flow, so a null
+    // startedAt is harmless (the frontend's normalizeSnapshot reads a missing startedAt as 0ms-ago).
+    const now = typeof o.now === 'function' ? o.now : null;
     const maxMessageLength = o.maxMessageLength || 4096;
     const agentPrefix = o.agentPrefix || 'tg_';
     const resolveAgent = typeof o.resolveAgent === 'function' ? o.resolveAgent : null;   // Phase B: the placed floor's routing plan
@@ -139,7 +144,13 @@
       : (() => { const p = (typeof o.persona === 'string' && o.persona) || DEFAULT_PERSONA; return () => p; });
 
     const AID_RE = /^[A-Za-z0-9_-]{1,40}$/;   // notebook/fs-jail agentId grammar (a configured agentId must match)
-    const inflight = new Map();   // chatId -> { runId, abort, superseded } (one run per CONVERSATION, not per agent)
+    // chatId -> { runId, abort, superseded, agentId, startedAt } (one run per CONVERSATION, not per agent). The
+    // record is the SINGLE source of truth for this channel's live runs: E-STOP reads it (killAll in halt.js) AND
+    // GET /api/state/snapshot reads it (so a reconnect never wipes a live channel run's floor/HUD state — the
+    // reconcile keeps any agent listed here). agentId/startedAt are carried so the snapshot can attribute the run
+    // to the acting agent and age it, exactly like an interactive/cron/workshop run in runsMeta. Additive to the
+    // record: halt.js only ever reads { abort, superseded }, so the extra fields are invisible to it.
+    const inflight = new Map();
 
     // chatId -> a per-chat agentId, sanitized to the notebook/fs-jail grammar (/^[A-Za-z0-9_-]{1,40}$/). Telegram
     // chat ids are already safe (numeric, '-' for groups); the prefix namespaces them away from the browser 'agent'.
@@ -325,7 +336,10 @@
 
       const runId = newId();
       const ac = new AbortController();
-      const myRec = { runId, abort: ac, superseded: false };
+      // agentId/startedAt ride in the record so GET /api/state/snapshot can list THIS run (attributed to the acting
+      // agent, aged from startedAt) — a reconnect then keeps the agent's live floor/HUD state instead of clearing
+      // it. abort/superseded remain what halt.js's E-STOP reads; the extra fields are additive and invisible to it.
+      const myRec = { runId, abort: ac, superseded: false, agentId: agentId, startedAt: now ? now() : null };
       inflight.set(chatId, myRec);
 
       // assemble the reply by buffering agent.token deltas — the SAME reassembly harness.js does in the browser.
