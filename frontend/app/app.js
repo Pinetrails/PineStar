@@ -2165,7 +2165,6 @@ const App = (() => {
     // (the fix is one click away). Stands down while the tutorial is coaching (tutorial wins). Started here so
     // it only ever runs on the floor; disconnect() stops it.
     if (typeof DockGlow !== 'undefined' && DockGlow.start) DockGlow.start();
-    el('btn-disconnect').onclick = disconnect;
   }
 
   // (the single-question purpose interview was replaced by the AWAKENING — Onboarding authors purpose.md
@@ -2463,9 +2462,10 @@ const App = (() => {
   }
   function toggleArchived() { railShowArchived = !railShowArchived; SFX.click(); renderRail(); }
 
-  // DISCONNECT (the ⏏ button) tears down the live game but NEVER wipes data and NEVER lands on a dead title
-  // screen — it persists, then re-enters via reentry(): straight back into the station if creds are still in
-  // hand, otherwise the RESUME-mode connect screen. The agent is always preserved.
+  // disconnect() — the teardown path: tears down the live game but NEVER wipes data and NEVER lands on a dead
+  // title screen — it persists, then re-enters via reentry(): straight back into the station if creds are still
+  // in hand, otherwise the RESUME-mode connect screen. The agent is always preserved. (The old user-facing ⏏
+  // DISCONNECT topbar button was removed; recovery / resume / error paths still reuse this teardown.)
   function disconnect() { if (typeof Onboarding !== 'undefined' && Onboarding.stop && Onboarding.isRunning && Onboarding.isRunning()) Onboarding.stop(); if (typeof Tutorial !== 'undefined' && Tutorial.teardown) Tutorial.teardown(); if (typeof DockGlow !== 'undefined' && DockGlow.stop) DockGlow.stop(); if (typeof Intake !== 'undefined' && Intake.stop) Intake.stop(); SFX.close(); Chat.abort(); stopRailTicker(); World.stop(); if (World.pauseBridge) World.pauseBridge(); persist(); if (typeof StationUI !== 'undefined') StationUI.leave(); reentry(); }
 
   /* ---------- creation ---------- */

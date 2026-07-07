@@ -1,6 +1,6 @@
 /* STARNET — topbar.css : the TOPBAR INSTRUMENT CLUSTER.
-   One coherent cockpit gauge group in #topbar, right of the logo and left of
-   DISCONNECT: STATION (level + XP sliver) · SPEND TODAY · UPLINK · ONLINE · save.
+   One coherent cockpit gauge group in #topbar, right of the logo:
+   STATION (level + XP sliver) · SPEND TODAY · UPLINK · ONLINE · save.
    Built in the premium CRT hardware language (recessed wells, hairline separators,
    small dim labels over bright values — the dossier stat-well vocabulary in a
    compact horizontal form). Additive layer over style.css/app.css/motion.css.
@@ -12,8 +12,8 @@
      on a hot path; the 60fps canvas runs behind the chrome.
    - Composite vars referencing vars would live on `body`; this file uses none. */
 
-/* the cluster wrapper — a single instrument row that lays flat between logo and
-   DISCONNECT. tb-stats already holds it; this styles the members + separators. */
+/* the cluster wrapper — a single instrument row that lays flat right of the logo.
+   tb-stats already holds it; this styles the members + separators. */
 #topbar .tb-stats { gap: 0; flex-wrap: nowrap; min-width: 0; }
 
 /* hairline separator between instruments — a milled groove line, faint at the ends */

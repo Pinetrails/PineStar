@@ -201,7 +201,6 @@ input::placeholder, textarea.key-input::placeholder { color: var(--ph-dim); opac
 .gt-field { color: var(--ph-dim); font-size: 15px; letter-spacing: 1px; }
 .gt-field b { color: var(--ph-bright); font-weight: normal; margin-left: 4px; }
 .gt-spacer { flex: 1; }
-#btn-disconnect { margin-left: 6px; }
 
 #game-main { flex: 1; display: flex; gap: 9px; min-height: 0; }
 
@@ -1232,9 +1231,8 @@ body.col-resizing #stage { pointer-events: none; }
    have) — re-point it at the live station so the SETTINGS toggle works */
 body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 
-/* top bar: reuse v7 #logo/.logo-*/.tb-stat; subtitle + disconnect fit */
+/* top bar: reuse v7 #logo/.logo-*/.tb-stat; subtitle fit */
 #topbar .logo-sub { white-space: nowrap; }
-#topbar #btn-disconnect { margin-left: 16px; align-self: center; }
 
 /* crew manifest empty state */
 .crew-empty { padding: 14px 10px; font-size: 13px; color: var(--ph-dim); }
