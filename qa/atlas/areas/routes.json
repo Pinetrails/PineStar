@@ -1,20 +1,30 @@
 {
   "area": "routes",
-  "updatedAt": "2026-07-07T08:09:25.408Z",
+  "updatedAt": "2026-07-07T21:05:27.430Z",
   "entries": [
     {
       "id": "route/get-api-agent-skills",
       "kind": "route",
       "area": "routes",
       "name": "GET /api/agent-skills",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Runtime-created (agent-authored) skills for the selected agent — the SKILLS panel's per-agent view.",
+      "promise": "GET ?agent=<id>[&archived=1&body=1] returns 200 with that agent's runtime skills from the skill store.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/skillstore.js",
+          "sidecar/skillcurator.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "sidecar.http.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -26,14 +36,17 @@
       "kind": "route",
       "area": "routes",
       "name": "GET /api/auth/codex/logout",
-      "purpose": "",
-      "promise": "",
+      "purpose": "(POST route) forget stored ChatGPT/Codex credentials.",
+      "promise": "POST clears the Codex tokens and returns 200; status then reports disconnected. (Cartographer harvested method may differ from dispatch: index.js registers POST /api/auth/codex/logout.)",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/providers"
+        ],
         "events": []
       },
       "coverage": [],
-      "status": "unmapped",
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -45,14 +58,17 @@
       "kind": "route",
       "area": "routes",
       "name": "GET /api/auth/codex/models",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The account's real Codex model list, live-discovered with a fresh token.",
+      "promise": "GET returns 200 {models:[...]} for the signed-in Codex account, or an honest error if not connected.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/providers"
+        ],
         "events": []
       },
       "coverage": [],
-      "status": "unmapped",
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -64,14 +80,18 @@
       "kind": "route",
       "area": "routes",
       "name": "GET /api/auth/codex/status",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Codex/ChatGPT sign-in status — booleans only, never the tokens.",
+      "promise": "GET returns 200 with connected/expiry booleans; the OAuth tokens are never echoed.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/apiauth.js",
+          "sidecar/providers"
+        ],
         "events": []
       },
       "coverage": [],
-      "status": "unmapped",
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -83,33 +103,62 @@
       "kind": "route",
       "area": "routes",
       "name": "GET /api/budget/status",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The live spend pools (day + global) vs their caps, plus per-run cap and session headroom.",
+      "promise": "GET returns 200 with real ledger-derived {caps, day:{usd,cap}, global:{usd,cap}, spentToday, lifetime, runs, overrides}; values track actual spend, never fabricated.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/budget.js",
+          "sidecar/budgetcaps.js",
+          "sidecar/spend.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "sidecar.http.test.js",
+          "gate": "test:http"
+        },
+        {
+          "kind": "test",
+          "ref": "budget.test.js",
+          "gate": "test:fast"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "78351f3eeb3595ac7b1c8bfe5b227d3d2b6bf8f3",
+        "date": "2026-07-07T21:05:27.430Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE 8968: 200 with spentToday:0, day.cap:40/global.cap:100 (env defaults). After POST caps perDay=25 the status truthfully showed day.cap:25."
     },
     {
       "id": "route/get-api-channels-discord-status",
       "kind": "route",
       "area": "routes",
       "name": "GET /api/channels/discord/status",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Discord bot status — booleans + gateway state only, never the token/key.",
+      "promise": "GET returns 200 with connected/gateway booleans; secrets stay server-side.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/channels"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "sidecar.http.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -121,14 +170,24 @@
       "kind": "route",
       "area": "routes",
       "name": "GET /api/channels/events",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The channels SSE event stream (TOKEN_EXEMPT header-wise; carries ?token= query, validated in-handler).",
+      "promise": "GET (EventSource) streams channel events after queryTokenOk validates the ?token=; a bad token is rejected.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/channels",
+          "sidecar/apiauth.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "channels.telegram.e2e.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -140,14 +199,17 @@
       "kind": "route",
       "area": "routes",
       "name": "GET /api/channels/telegram/status",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Telegram bot status — booleans + poll state only, never the token/key.",
+      "promise": "GET returns 200 with connected/polling booleans; secrets stay server-side.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/channels"
+        ],
         "events": []
       },
       "coverage": [],
-      "status": "unmapped",
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -159,14 +221,29 @@
       "kind": "route",
       "area": "routes",
       "name": "GET /api/checkpoint",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The read-only snapshot index a \"rewind\" affordance lists from.",
+      "promise": "GET ?agent=<id> returns 200 with the checkpoint index for that agent.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/checkpoint.js",
+          "sidecar/checkpoint-store.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "checkpoint-store.test.js",
+          "gate": "test:http"
+        },
+        {
+          "kind": "test",
+          "ref": "sidecar.http.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -178,14 +255,23 @@
       "kind": "route",
       "area": "routes",
       "name": "GET /api/connectors",
-      "purpose": "",
-      "promise": "",
+      "purpose": "List configured MCP connectors (out-bound tool servers) for the connectors panel.",
+      "promise": "GET returns 200 with the connector records (no secrets echoed).",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/mcp"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "e2e.mcp-connector.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -197,14 +283,23 @@
       "kind": "route",
       "area": "routes",
       "name": "GET /api/connectors/catalog",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The curated one-click MCP connector catalog.",
+      "promise": "GET returns 200 with the catalog entries the connectors panel offers.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/mcp"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "sidecar.http.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -216,14 +311,24 @@
       "kind": "route",
       "area": "routes",
       "name": "GET /api/connectors/oauth/callback",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The MCP-connector OAuth redirect landing (TOKEN_EXEMPT; CSRF state is its fence).",
+      "promise": "GET with a matching state completes the connector auth; a mismatched/absent state is rejected.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/mcp",
+          "sidecar/apiauth.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "e2e.mcp-connector.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -235,14 +340,24 @@
       "kind": "route",
       "area": "routes",
       "name": "GET /api/credits",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Managed-credit account balance surface — INERT (404s) unless STARNET_CREDITS_URL is configured (honesty law: a control that does nothing must not render).",
+      "promise": "GET returns 200 balance when managed credits are wired, else 404 (no surface).",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/credits.js",
+          "sidecar/billing.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "sidecar.http.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -254,14 +369,25 @@
       "kind": "route",
       "area": "routes",
       "name": "GET /api/cron",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The routine (cron) job snapshot the scheduler panel renders — no secrets in a CronJob.",
+      "promise": "GET returns 200 {jobs:[...], enabled} where enabled honestly reflects whether the live tick is armed.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/cron.js",
+          "sidecar/cron-store.js",
+          "sidecar/cron-driver.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "cron.api.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -273,33 +399,56 @@
       "kind": "route",
       "area": "routes",
       "name": "GET /api/diagnostics",
-      "purpose": "",
-      "promise": "",
+      "purpose": "A paste-ready, SECRET-FREE bug report assembled server-side from real stores (version, platform, provider/model slug, keyPresent bool, uptime, recent redacted errors).",
+      "promise": "GET returns 200 {report, text}; every field is provable and NO key/token/message content appears — keyPresent is a boolean only.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/diagnostics.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "diagnostics.test.js",
+          "gate": "test:fast"
+        },
+        {
+          "kind": "test",
+          "ref": "diagnostics-support-email.test.js",
+          "gate": "test:fast"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "78351f3eeb3595ac7b1c8bfe5b227d3d2b6bf8f3",
+        "date": "2026-07-07T21:05:27.430Z"
+      },
+      "findings": [
+        "6887ef72"
+      ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE 8968 with fake key sk-fake-probe-key seeded: report showed keyPresent:true but the literal key appears NOWHERE in the payload (grep count 0). Secret-free law PROVEN."
     },
     {
       "id": "route/get-api-execution",
       "kind": "route",
       "area": "routes",
       "name": "GET /api/execution",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The execution environment description (OS/shell/tooling the backend can run).",
+      "promise": "GET returns 200 with executionEnvironment.describe() — the honest capability surface.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/environment.js"
+        ],
         "events": []
       },
       "coverage": [],
-      "status": "unmapped",
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -311,14 +460,17 @@
       "kind": "route",
       "area": "routes",
       "name": "GET /api/fallback/chain",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Read the effective fallback model chain (saved-or-env) for the Models panel.",
+      "promise": "GET returns 200 {chain, saved, envDefault, maxEntries} — honestly flags env-default vs a saved override.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/fallbackchain.js"
+        ],
         "events": []
       },
       "coverage": [],
-      "status": "unmapped",
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -330,14 +482,28 @@
       "kind": "route",
       "area": "routes",
       "name": "GET /api/file",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Read-only view of a file the agent produced, jailed to its workspace (GET/HEAD; accepts ?token= for native media loads).",
+      "promise": "GET ?agent=<id>&path=<rel> streams the jailed file with correct content-type; a path escape is 403.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/apiauth.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "sidecar.http.test.js",
+          "gate": "test:http"
+        },
+        {
+          "kind": "test",
+          "ref": "e2e.worker-access.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -349,14 +515,16 @@
       "kind": "route",
       "area": "routes",
       "name": "GET /api/fs/dirstat",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Read-only existence/type check of a user-chosen KEEP destination folder.",
+      "promise": "GET ?path=<abs> returns 200 {exists, isDir} only — never lists or reads contents.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js"
+        ],
         "events": []
       },
       "coverage": [],
-      "status": "unmapped",
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -368,14 +536,22 @@
       "kind": "route",
       "area": "routes",
       "name": "GET /api/health",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Liveness probe (TOKEN_EXEMPT).",
+      "promise": "GET returns 200 \"ok\" with no auth — pure liveness.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "sidecar.http.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -387,14 +563,23 @@
       "kind": "route",
       "area": "routes",
       "name": "GET /api/insights",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Aggregate usage folded from the run history (spend per model, outcomes, over-time).",
+      "promise": "GET ?agent=<id> returns 200 with the aggregate fold; fail-open to an empty fold, never a 500.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/insights.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "sidecar.http.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -406,14 +591,22 @@
       "kind": "route",
       "area": "routes",
       "name": "GET /api/limits",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The honest concurrency ceiling: how many distinct agents may RUN at once.",
+      "promise": "GET returns 200 {maxConcurrentAgents:<n>} from the real concurrency gate — visible before a fan-out, not only in a tool result.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/concurrency.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "journey",
+          "ref": "summon"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -425,14 +618,24 @@
       "kind": "route",
       "area": "routes",
       "name": "GET /api/memory/config",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The live reflection/memory config + a plain-English scope note (P1-10 controls).",
+      "promise": "GET returns 200 with the reflection config values driving the memory-controls panel.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/memcore.js",
+          "sidecar/reflect.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "sidecar.http.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -444,14 +647,23 @@
       "kind": "route",
       "area": "routes",
       "name": "GET /api/memory/declined",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The permanent reject-list: beliefs the Commander Discarded.",
+      "promise": "GET ?agent=<id> returns 200 with the declined entries.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/memory-store.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "sidecar.http.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -463,14 +675,24 @@
       "kind": "route",
       "area": "routes",
       "name": "GET /api/memory/proposals",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The pending Keep/Edit/Discard memory candidates reflection raised for a run.",
+      "promise": "GET ?agent=<id>&run=<id> returns 200 with the pending proposals from the reflection store.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/reflect.js",
+          "sidecar/memory-store.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "sidecar.http.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -482,14 +704,24 @@
       "kind": "route",
       "area": "routes",
       "name": "GET /api/memory/records",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The full memory records for the Memory Core panel.",
+      "promise": "GET ?agent=<id> returns 200 with the agent's complete memory records.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/memory-store.js",
+          "sidecar/memcore.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "sidecar.http.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -501,14 +733,23 @@
       "kind": "route",
       "area": "routes",
       "name": "GET /api/notebook",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Read-only JSON view of an agent's own notebook (its memory.md).",
+      "promise": "GET ?agent=<id> returns 200 with the agent's notebook contents.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/memory-store.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "sidecar.http.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -520,33 +761,62 @@
       "kind": "route",
       "area": "routes",
       "name": "GET /api/permissions",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The Permissions Panel read: every standing capability grant the agent can use without asking, plus the grantable set.",
+      "promise": "GET returns 200 {grants:[], grantable:[...], meta:{}} reflecting the real permgrants store; meta carries each grant's grantedAt.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/permgrants.js",
+          "sidecar/permissions.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "permissions.test.js",
+          "gate": "test:fast"
+        },
+        {
+          "kind": "test",
+          "ref": "permissionsstore.test.js",
+          "gate": "test:fast"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "78351f3eeb3595ac7b1c8bfe5b227d3d2b6bf8f3",
+        "date": "2026-07-07T21:05:27.430Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE 8968: 200 {grants:[],grantable:[\"cabinet:write\"],meta:{}}; after grant reflected cabinet:write + grantedAt ts; after revoke back to empty (store round-trip truthful)."
     },
     {
       "id": "route/get-api-providers",
       "kind": "route",
       "area": "routes",
       "name": "GET /api/providers",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The provider profiles + whether each is configured (has a credential), for the connect/settings model picker.",
+      "promise": "GET returns 200 {providers:[{...,configured}], keychainMode}; configured tracks a real credential, keychainMode true only under the desktop shell.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/providers",
+          "sidecar/credpool.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "modelpicker.test.js",
+          "gate": "test:fast"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -558,14 +828,28 @@
       "kind": "route",
       "area": "routes",
       "name": "GET /api/runs",
-      "purpose": "",
-      "promise": "",
+      "purpose": "An agent's run history (M-save P4), newest-first.",
+      "promise": "GET ?agent=<id>&limit=<n>&since=<ms> returns 200 {runs:[...]} of real completed runs (runId, reason, turns, tokens, usd, model).",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/runstore.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "e2e.run.test.js",
+          "gate": "test:http"
+        },
+        {
+          "kind": "test",
+          "ref": "sidecar.http.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -577,14 +861,23 @@
       "kind": "route",
       "area": "routes",
       "name": "GET /api/runtime/knobs",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Read the advanced runtime knobs (maxIters, maxConcurrentAgents, consentTimeout, cronTick) + which are env-locked.",
+      "promise": "GET returns 200 with each knob's effective value + envLocked flag; precedence env>saved>default is disclosed.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/runtimeinfo.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "sidecar.http.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -596,14 +889,24 @@
       "kind": "route",
       "area": "routes",
       "name": "GET /api/save",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The durable agent save mirror (M-save): the stored save envelope.",
+      "promise": "GET ?agent=<id> returns 200 with the durable save envelope so the browser can reconcile against localStorage.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/savestore.js",
+          "sidecar/durable-store.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "sidecar.http.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -615,52 +918,93 @@
       "kind": "route",
       "area": "routes",
       "name": "GET /api/skills",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The bundled recipe library + per-workstation placement flags for the SKILLS panel.",
+      "promise": "GET (optionally ?placed=...) returns 200 with the library catalog + enabled/placed flags from the skill store.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "skills.test.js",
+          "gate": "test:fast"
+        },
+        {
+          "kind": "test",
+          "ref": "skills.library.test.js",
+          "gate": "test:fast"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "78351f3eeb3595ac7b1c8bfe5b227d3d2b6bf8f3",
+        "date": "2026-07-07T21:05:27.430Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE 8968: 200, 82KB catalog payload."
     },
     {
       "id": "route/get-api-slash-catalog",
       "kind": "route",
       "area": "routes",
       "name": "GET /api/slash/catalog",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Server-owned slash-command metadata for chat palettes (name, aliases, category, args, dispatch).",
+      "promise": "GET returns 200 with the command catalog array driving the palette; each entry carries its dispatch target.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/slash.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "slash.test.js",
+          "gate": "test:fast"
+        },
+        {
+          "kind": "test",
+          "ref": "slash.palette.test.js",
+          "gate": "test:fast"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "78351f3eeb3595ac7b1c8bfe5b227d3d2b6bf8f3",
+        "date": "2026-07-07T21:05:27.430Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE 8968: 200, 20KB catalog."
     },
     {
       "id": "route/get-api-spotify-callback",
       "kind": "route",
       "area": "routes",
       "name": "GET /api/spotify/callback",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Spotify OAuth redirect landing (TOKEN_EXEMPT; state is its fence).",
+      "promise": "GET with a matching state stores the Spotify tokens and returns/redirects; mismatch rejected.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/spotify",
+          "sidecar/apiauth.js"
+        ],
         "events": []
       },
       "coverage": [],
-      "status": "unmapped",
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -672,14 +1016,17 @@
       "kind": "route",
       "area": "routes",
       "name": "GET /api/spotify/status",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Spotify connection status — booleans only, never tokens.",
+      "promise": "GET returns 200 with connected/playback booleans; tokens stay server-side.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/spotify"
+        ],
         "events": []
       },
       "coverage": [],
-      "status": "unmapped",
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -691,33 +1038,51 @@
       "kind": "route",
       "area": "routes",
       "name": "GET /api/state/snapshot",
-      "purpose": "",
-      "promise": "",
+      "purpose": "A reconnection snapshot for the frontend: the LIVE per-run facts (in-flight runs, pending prompts, summons, queue depths) so the world reconciles after an SSE drop.",
+      "promise": "GET returns 200 {ts, runs:[], prompts:[], summons:[], queues:[]} equal to the in-memory run maps — only real live runs, never settled/history runs, never fabricated telemetry.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/runstore.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "sidecar.http.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "78351f3eeb3595ac7b1c8bfe5b227d3d2b6bf8f3",
+        "date": "2026-07-07T21:05:27.430Z"
+      },
+      "findings": [
+        "6887ef72"
+      ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE 8969: empty {runs:[]} before AND after a completed run — settled run correctly absent from live snapshot and instead present in /api/runs history. Snapshot == store state proven."
     },
     {
       "id": "route/get-api-study-proposals",
       "kind": "route",
       "area": "routes",
       "name": "GET /api/study/proposals",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The pending dossier belief-update proposals a run raised (GROWTH Tier 1).",
+      "promise": "GET ?agent=<id>&run=<id> returns 200 with the pending study proposals.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/memcore.js"
+        ],
         "events": []
       },
       "coverage": [],
-      "status": "unmapped",
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -729,14 +1094,23 @@
       "kind": "route",
       "area": "routes",
       "name": "GET /api/subagents",
-      "purpose": "",
-      "promise": "",
+      "purpose": "List watchable background sub-agent workers (the meeseeks swarm backend).",
+      "promise": "GET returns 200 with the current sub-agent records.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/subagents.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "e2e.subagent-background.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -748,14 +1122,17 @@
       "kind": "route",
       "area": "routes",
       "name": "GET /api/toolsets",
-      "purpose": "",
-      "promise": "",
+      "purpose": "List the tool toolsets and their enabled state.",
+      "promise": "GET returns 200 with the toolset records for the tools panel.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/tools"
+        ],
         "events": []
       },
       "coverage": [],
-      "status": "unmapped",
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -767,14 +1144,23 @@
       "kind": "route",
       "area": "routes",
       "name": "GET /api/transcript",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The durable per-workstream conversation transcript.",
+      "promise": "GET ?stream=<id>&agent=<id>&limit=<n> returns 200 with the stored transcript lines.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/transcriptstore.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "cron.session-transcript.e2e.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -786,33 +1172,49 @@
       "kind": "route",
       "area": "routes",
       "name": "GET /api/version",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The honest build/version surface behind /version: harness (package.json) + desktop app version + node.",
+      "promise": "GET returns 200 {harness, app, node, appSource} read from real files; appSource names where the app version came from (env|conf|unknown), never a silent blank asserted as fact.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "package.json"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "sidecar.http.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "78351f3eeb3595ac7b1c8bfe5b227d3d2b6bf8f3",
+        "date": "2026-07-07T21:05:27.430Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE 8968: 200 {\"harness\":\"0.0.0\",\"app\":\"0.2.2\",\"node\":\"v22.23.0\",\"appSource\":\"conf\"}."
     },
     {
       "id": "route/get-api-widgets",
       "kind": "route",
       "area": "routes",
       "name": "GET /api/widgets",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The agent-fed widget readout records the chrome rails poll (WIDGET RAILS Phase 2).",
+      "promise": "GET returns 200 with the durable widget.set records verbatim (provenance-stamped); never synthesized values.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/station-store.js"
+        ],
         "events": []
       },
       "coverage": [],
-      "status": "unmapped",
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -824,14 +1226,23 @@
       "kind": "route",
       "area": "routes",
       "name": "GET /api/workshop/backlog",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The raw queued/building/built items for an agent (the \"what's lined up\" view).",
+      "promise": "GET ?agent=<id> returns 200 with the backlog items from the workshop store.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/workshop-store.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "workshop.e2e.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -843,14 +1254,23 @@
       "kind": "route",
       "area": "routes",
       "name": "GET /api/workshop/pending",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Undecided deliverable manifests (built, not yet kept/discarded).",
+      "promise": "GET ?agent=<id> returns 200 with the pending deliverable manifests.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/workshop-store.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "workshop.e2e.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -862,14 +1282,16 @@
       "kind": "route",
       "area": "routes",
       "name": "GET /api/workspace/dir",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The absolute per-agent workspace directory on disk (so COMMS can show the real output path).",
+      "promise": "GET ?agent=<id> returns 200 {dir} for the jailed workspace; read-only, never lists contents.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js"
+        ],
         "events": []
       },
       "coverage": [],
-      "status": "unmapped",
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -881,14 +1303,17 @@
       "kind": "route",
       "area": "routes",
       "name": "POST /api/agent/delete",
-      "purpose": "",
-      "promise": "",
+      "purpose": "DOSSIER › DELETE AGENT: remove a summoned agent from the server roster.",
+      "promise": "POST {agentId} removes the agent server-side and returns 200.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/station-store.js"
+        ],
         "events": []
       },
       "coverage": [],
-      "status": "unmapped",
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -900,14 +1325,18 @@
       "kind": "route",
       "area": "routes",
       "name": "POST /api/agent-skills/manage",
-      "purpose": "",
-      "promise": "",
+      "purpose": "User-visible runtime skill management (create/archive/restore/edit) for an agent.",
+      "promise": "POST {agentId, action, ...} mutates the agent's runtime skills and returns the updated set.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/skillstore.js",
+          "sidecar/skillcurator.js"
+        ],
         "events": []
       },
       "coverage": [],
-      "status": "unmapped",
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -919,14 +1348,17 @@
       "kind": "route",
       "area": "routes",
       "name": "POST /api/auth/codex/poll",
-      "purpose": "",
-      "promise": "",
+      "purpose": "One Codex device-auth poll tick until the user finishes in the browser.",
+      "promise": "POST {device_auth_id, user_code} returns pending until authorized, then persists tokens and reports connected.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/providers"
+        ],
         "events": []
       },
       "coverage": [],
-      "status": "unmapped",
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -938,14 +1370,17 @@
       "kind": "route",
       "area": "routes",
       "name": "POST /api/auth/codex/start",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Begin Codex device-auth: ask OpenAI for a device/user code.",
+      "promise": "POST returns 200 {user_code, verification_url, device_auth_id} to show the user.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/providers"
+        ],
         "events": []
       },
       "coverage": [],
-      "status": "unmapped",
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -957,14 +1392,18 @@
       "kind": "route",
       "area": "routes",
       "name": "POST /api/autonomy/write",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Autonomy Stage B deterministic pre-vetted file write, reusing the same fs tools/jail/checkpoint as runOnce.",
+      "promise": "POST {agentId?, path, content} writes within the fs jail (needs cabinet:write grant) and returns 200; escapes are 403/blocked.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/tools",
+          "sidecar/checkpoint.js"
+        ],
         "events": []
       },
       "coverage": [],
-      "status": "unmapped",
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -976,33 +1415,56 @@
       "kind": "route",
       "area": "routes",
       "name": "POST /api/budget/caps",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Set one or more USD spend caps (perRun/perAgent/perDay/global), persisted as overrides on the env defaults.",
+      "promise": "POST {perDay?,...} persists the cap and returns 200 with the updated caps; GET /api/budget/status immediately reflects the new cap.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/budgetcaps.js",
+          "sidecar/budget.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "budget-caps.test.js",
+          "gate": "test:fast"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "78351f3eeb3595ac7b1c8bfe5b227d3d2b6bf8f3",
+        "date": "2026-07-07T21:05:27.430Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE 8968: POST {perDay:25} → 200, saved:{perDay:25}, status day.cap flipped to 25. TRUTHFUL persistence."
     },
     {
       "id": "route/post-api-budget-resume",
       "kind": "route",
       "area": "routes",
       "name": "POST /api/budget/resume",
-      "purpose": "",
-      "promise": "",
+      "purpose": "One-click \"keep going\" after a SOFT pool cap: grant another base-cap of headroom to day/global for the session.",
+      "promise": "POST {scope:\"day\"|\"global\"} returns 200 {resumed, cap, status}; an ungoverned scope → 409; bad scope → 400.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/budget.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "sidecar.http.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -1014,33 +1476,48 @@
       "kind": "route",
       "area": "routes",
       "name": "POST /api/cancel",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Cancel one in-flight interactive run by id (soft stop of a single stream).",
+      "promise": "POST {runId} aborts that run if live and returns 200 \"ok\"; an unknown runId is a harmless 200 no-op.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "e2e.run.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "78351f3eeb3595ac7b1c8bfe5b227d3d2b6bf8f3",
+        "date": "2026-07-07T21:05:27.430Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE 8968: POST unknown runId → 200 \"ok\" (idempotent)."
     },
     {
       "id": "route/post-api-channels-discord-connect",
       "kind": "route",
       "area": "routes",
       "name": "POST /api/channels/discord/connect",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Connect a Discord bot: persist config + start the gateway.",
+      "promise": "POST {token, key?, model, provider?} starts the bot and returns 200; secrets never echoed.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/channels"
+        ],
         "events": []
       },
       "coverage": [],
-      "status": "unmapped",
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -1052,14 +1529,17 @@
       "kind": "route",
       "area": "routes",
       "name": "POST /api/channels/discord/disconnect",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Stop the Discord bot (config kept).",
+      "promise": "POST stops the bot, marks it disabled, returns 200.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/channels"
+        ],
         "events": []
       },
       "coverage": [],
-      "status": "unmapped",
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -1071,14 +1551,17 @@
       "kind": "route",
       "area": "routes",
       "name": "POST /api/channels/discord/sync",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Refresh the agent identity the Discord bot runs as.",
+      "promise": "POST updates the Discord bot identity and returns 200.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/channels"
+        ],
         "events": []
       },
       "coverage": [],
-      "status": "unmapped",
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -1090,14 +1573,18 @@
       "kind": "route",
       "area": "routes",
       "name": "POST /api/channels/notify",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The global opt-in (default off) to ping a connected channel when an autonomous run finishes.",
+      "promise": "POST {on} persists the notify flag and returns 200.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/channels",
+          "sidecar/autonotify.js"
+        ],
         "events": []
       },
       "coverage": [],
-      "status": "unmapped",
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -1109,14 +1596,23 @@
       "kind": "route",
       "area": "routes",
       "name": "POST /api/channels/telegram/connect",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Connect a Telegram bot: persist config + start headless polling.",
+      "promise": "POST {token, key?, model, provider?} starts the bot and returns 200; missing token → 400; secrets never echoed.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/channels"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "channels.telegram.e2e.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -1128,14 +1624,17 @@
       "kind": "route",
       "area": "routes",
       "name": "POST /api/channels/telegram/disconnect",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Stop the Telegram bot (config kept so the token can be reused).",
+      "promise": "POST stops the bot, marks it disabled, returns 200; status reports disconnected.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/channels"
+        ],
         "events": []
       },
       "coverage": [],
-      "status": "unmapped",
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -1147,14 +1646,23 @@
       "kind": "route",
       "area": "routes",
       "name": "POST /api/channels/telegram/sync",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Refresh the agent identity the Telegram bot runs as.",
+      "promise": "POST {agentId?, system?, model?, ...} updates the bot's identity and returns 200.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/channels"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "channels.telegram.e2e.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -1166,14 +1674,24 @@
       "kind": "route",
       "area": "routes",
       "name": "POST /api/channels/token",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Desktop key-push of a channel bot token (TOKEN_EXEMPT; own IPC token gate).",
+      "promise": "POST {channel, token} guarded by STARNET_IPC_TOKEN persists the token server-side and returns 200; wrong token 403; never echoed back.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/channels",
+          "sidecar/apiauth.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "sidecar.http.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -1185,14 +1703,24 @@
       "kind": "route",
       "area": "routes",
       "name": "POST /api/checkpoint/restore",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Rewind: restore an agent's workspace to a prior auto-checkpoint.",
+      "promise": "POST {agent, id} restores that checkpoint and returns 200.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/checkpoint.js",
+          "sidecar/checkpoint-store.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "checkpoint-store.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -1204,14 +1732,23 @@
       "kind": "route",
       "area": "routes",
       "name": "POST /api/config/export",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Station backup: export the durable config bundle.",
+      "promise": "POST returns 200 with the exportable config envelope (secrets excluded per config export rules).",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/configexport.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "sidecar.http.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -1223,14 +1760,23 @@
       "kind": "route",
       "area": "routes",
       "name": "POST /api/config/import",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Restore a station config bundle produced by export.",
+      "promise": "POST {bundle} validates and folds the config in, returning 200 on success or a shaped error.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/configexport.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "sidecar.http.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -1242,14 +1788,23 @@
       "kind": "route",
       "area": "routes",
       "name": "POST /api/config/reset",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Reset station config to defaults.",
+      "promise": "POST clears the config overrides and returns 200.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/configexport.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "sidecar.http.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -1261,14 +1816,23 @@
       "kind": "route",
       "area": "routes",
       "name": "POST /api/connectors",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Add/update an MCP connector config.",
+      "promise": "POST {connector} upserts it and returns 200; secrets are stored server-side, never echoed back.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/mcp"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "e2e.mcp-connector.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -1280,14 +1844,17 @@
       "kind": "route",
       "area": "routes",
       "name": "POST /api/connectors/oauth/start",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Begin the generic OAuth 2.1 DCR flow for an MCP connector.",
+      "promise": "POST returns 200 with the auth URL + a CSRF state pushed to the pending map.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/mcp"
+        ],
         "events": []
       },
       "coverage": [],
-      "status": "unmapped",
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -1299,14 +1866,23 @@
       "kind": "route",
       "area": "routes",
       "name": "POST /api/connectors/refresh",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Re-probe a connector's tool list.",
+      "promise": "POST {id} refreshes the connector's tools and returns 200 with the updated tool count.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/mcp"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "e2e.mcp-connector.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -1318,14 +1894,17 @@
       "kind": "route",
       "area": "routes",
       "name": "POST /api/connectors/remove",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Remove a configured MCP connector.",
+      "promise": "POST {id} deletes it and returns 200; a subsequent list omits it.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/mcp"
+        ],
         "events": []
       },
       "coverage": [],
-      "status": "unmapped",
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -1337,14 +1916,23 @@
       "kind": "route",
       "area": "routes",
       "name": "POST /api/consent",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The browser's answer to a live permission.prompt emitted mid-run; resolves the awaiting dispatch.",
+      "promise": "POST {runId, promptId, decision} resolves that prompt (fail-closed to deny on illegal values); a stale id is a harmless no-op.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/loop.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "e2e.worker-access.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -1356,14 +1944,25 @@
       "kind": "route",
       "area": "routes",
       "name": "POST /api/cron",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Create a scheduled routine.",
+      "promise": "POST {name, prompt, schedule, ...} validates the schedule and mints a job (dedup-gated), returning 200 with the job; bad schedule/tz → 400.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/cron.js",
+          "sidecar/cron-store.js",
+          "sidecar/mint-ledger.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "cron.api.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -1375,14 +1974,25 @@
       "kind": "route",
       "area": "routes",
       "name": "POST /api/cron/arm",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Runtime one-click enable/disable of the whole scheduler tick.",
+      "promise": "POST {enabled:bool} persists the arm flag AND arms/disarms the live timer now, returning 200 {ok:true, enabled, tickMs}; GET /api/cron reflects it immediately.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/cron.js",
+          "sidecar/cron-driver.js",
+          "sidecar/cron-lock.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "cron.arm.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -1394,14 +2004,23 @@
       "kind": "route",
       "area": "routes",
       "name": "POST /api/cron/preview",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Validate a schedule string + return the next up-to-5 fire times.",
+      "promise": "POST {schedule, tz?} returns 200 with the next fire times under the (optionally overridden) timezone; invalid tz → 400.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/cron.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "cron.api.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -1413,14 +2032,24 @@
       "kind": "route",
       "area": "routes",
       "name": "POST /api/cron/remove",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Delete a routine.",
+      "promise": "POST {id} removes the job and returns 200; a subsequent list omits it.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/cron.js",
+          "sidecar/cron-store.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "cron.api.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -1432,14 +2061,25 @@
       "kind": "route",
       "area": "routes",
       "name": "POST /api/cron/run",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Run a routine NOW, streamed as NDJSON exactly like /api/run.",
+      "promise": "POST {id} fires the job immediately and streams the run; the result is recorded like any run.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/cron.js",
+          "sidecar/cron-driver.js",
+          "sidecar/loop.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "cron.run-now.e2e.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -1451,14 +2091,24 @@
       "kind": "route",
       "area": "routes",
       "name": "POST /api/cron/update",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Edit a routine's fields + pause/resume (via an enabled flag in the patch).",
+      "promise": "POST {id, patch} applies the patch and returns 200 with the updated job.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/cron.js",
+          "sidecar/cron-store.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "cron.api.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -1470,14 +2120,17 @@
       "kind": "route",
       "area": "routes",
       "name": "POST /api/dossier",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The browser pushes the composed Commander-dossier block whenever it changes (so headless runs share it).",
+      "promise": "POST {block} persists the dossier block and returns 200.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/dossierinject.js"
+        ],
         "events": []
       },
       "coverage": [],
-      "status": "unmapped",
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -1489,14 +2142,17 @@
       "kind": "route",
       "area": "routes",
       "name": "POST /api/fallback/chain",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Save the ordered fallback model chain the Settings→Models panel edits.",
+      "promise": "POST persists the chain (bounded to MAX_ENTRIES) and returns the effective chain; invalid ids are surfaced, not silently accepted.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/fallbackchain.js"
+        ],
         "events": []
       },
       "coverage": [],
-      "status": "unmapped",
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -1508,14 +2164,17 @@
       "kind": "route",
       "area": "routes",
       "name": "POST /api/goals",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The browser pushes the active goal-arc summary for cron personas (GROWTH Tier 2).",
+      "promise": "POST {goal} persists the goal summary and returns 200.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/station-store.js"
+        ],
         "events": []
       },
       "coverage": [],
-      "status": "unmapped",
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -1527,52 +2186,92 @@
       "kind": "route",
       "area": "routes",
       "name": "POST /api/halt",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The E-STOP: abort EVERY in-flight run (browser + Telegram/Discord hub + cron leases + background procs) so one call stops all spend.",
+      "promise": "POST returns 200 {halted:<n>, cronAborted:<n>} with honest counts of controllers aborted; idempotent when nothing is running.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/halt.js",
+          "sidecar/cron-driver.js",
+          "sidecar/subagents.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "journey",
+          "ref": "halt-interrupt"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "78351f3eeb3595ac7b1c8bfe5b227d3d2b6bf8f3",
+        "date": "2026-07-07T21:05:27.430Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE 8968: POST with no runs → 200 {halted:0,cronAborted:0} (truthful zero counts). Journey corps exercises the interrupt path."
     },
     {
       "id": "route/post-api-key",
       "kind": "route",
       "area": "routes",
       "name": "POST /api/key",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Update a provider's BYOK key/baseUrl in place (desktop key push) without restarting the sidecar.",
+      "promise": "POST guarded by its OWN IPC token (STARNET_IPC_TOKEN, header x-starnet-token): wrong/absent token → 403 forbidden; correct token → 200 {ok:true, configured:true} and /api/providers reflects configured:true.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/credpool.js",
+          "sidecar/apiauth.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "sidecar.http.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "78351f3eeb3595ac7b1c8bfe5b227d3d2b6bf8f3",
+        "date": "2026-07-07T21:05:27.430Z"
+      },
+      "findings": [
+        "6887ef72"
+      ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE 8970 (fresh instance with STARNET_IPC_TOKEN): wrong IPC → 403; correct IPC → 200 {ok:true,configured:true}; /api/providers then showed openrouter configured:true. TOKEN_EXEMPT from the API token by design (own IPC gate)."
     },
     {
       "id": "route/post-api-memory-config",
       "kind": "route",
       "area": "routes",
       "name": "POST /api/memory/config",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Persist memory-control config changes.",
+      "promise": "POST persists the reflection config and returns 200; GET reflects it.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/memcore.js",
+          "sidecar/reflect.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "sidecar.http.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -1584,14 +2283,23 @@
       "kind": "route",
       "area": "routes",
       "name": "POST /api/memory/declined/restore",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Remove one entry from the permanent reject-list so a belief can be re-proposed.",
+      "promise": "POST {agent, text} removes the entry and returns 200; the declined list omits it.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/memory-store.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "sidecar.http.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -1603,14 +2311,17 @@
       "kind": "route",
       "area": "routes",
       "name": "POST /api/memory/edit",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Edit the text of a stored memory record.",
+      "promise": "POST {agent, id, content} updates the record and returns 200.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/memory-store.js"
+        ],
         "events": []
       },
       "coverage": [],
-      "status": "unmapped",
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -1622,14 +2333,17 @@
       "kind": "route",
       "area": "routes",
       "name": "POST /api/memory/forget",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Delete a stored memory record.",
+      "promise": "POST {agent, id} removes the record and returns 200.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/memory-store.js"
+        ],
         "events": []
       },
       "coverage": [],
-      "status": "unmapped",
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -1641,14 +2355,17 @@
       "kind": "route",
       "area": "routes",
       "name": "POST /api/memory/pin",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Pin a memory record so it always loads into context.",
+      "promise": "POST {agent, id/text} marks the record pinned and returns 200.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/memory-store.js"
+        ],
         "events": []
       },
       "coverage": [],
-      "status": "unmapped",
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -1660,14 +2377,24 @@
       "kind": "route",
       "area": "routes",
       "name": "POST /api/memory/reset",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Wipe a hero's server-side memory on new-hero commission.",
+      "promise": "POST {agent} clears that agent's durable memory and returns 200.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/memory-store.js",
+          "sidecar/memcore.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "sidecar.http.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -1679,14 +2406,24 @@
       "kind": "route",
       "area": "routes",
       "name": "POST /api/memory/turnin",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Resolve ONE memory proposal (keep/edit/discard).",
+      "promise": "POST {agentId, runId, id, verdict, content?} consumes the proposal and returns 200; the record store reflects it.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/reflect.js",
+          "sidecar/memory-store.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "sidecar.http.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -1698,14 +2435,18 @@
       "kind": "route",
       "area": "routes",
       "name": "POST /api/notebook/restore",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Fold a backup's memory snapshot back into an agent's notebook.",
+      "promise": "POST {agent?, notes:[...]} merges the notes into the agent notebook and returns 200.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/notebookrestore.js",
+          "sidecar/memory-store.js"
+        ],
         "events": []
       },
       "coverage": [],
-      "status": "unmapped",
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -1717,52 +2458,87 @@
       "kind": "route",
       "area": "routes",
       "name": "POST /api/permissions/grant",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Proactively pre-bless a curated LOCAL-only capability (e.g. cabinet:write) so the agent won't need to ask.",
+      "promise": "POST {key} for a grantable key persists the grant and returns 200 {ok:true, grants:[...]}; a subsequent GET /api/permissions lists it with a grantedAt.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/permgrants.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "permissions.test.js",
+          "gate": "test:fast"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "78351f3eeb3595ac7b1c8bfe5b227d3d2b6bf8f3",
+        "date": "2026-07-07T21:05:27.430Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE 8968: grant cabinet:write → 200 {ok:true,grants:[\"cabinet:write\"]}; list reflected it. TRUTHFUL round-trip."
     },
     {
       "id": "route/post-api-permissions-revoke",
       "kind": "route",
       "area": "routes",
       "name": "POST /api/permissions/revoke",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Withdraw any standing grant (consent is always revocable).",
+      "promise": "POST {key} removes the grant and returns 200 {ok:true, grants:[...]}; the next GET reflects the removal.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/permgrants.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "permissions.test.js",
+          "gate": "test:fast"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "78351f3eeb3595ac7b1c8bfe5b227d3d2b6bf8f3",
+        "date": "2026-07-07T21:05:27.430Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE 8968: revoke → 200 {ok:true,grants:[]}; list confirmed empty. TRUTHFUL."
     },
     {
       "id": "route/post-api-roster",
       "kind": "route",
       "area": "routes",
       "name": "POST /api/roster",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The browser pushes the live crew identities to the server roster (single source of truth for headless runs).",
+      "promise": "POST {agents:[{agentId, system, name, model, provider}]} upserts the server roster and returns 200.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/station-store.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "roster-envelope.http.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -1774,14 +2550,17 @@
       "kind": "route",
       "area": "routes",
       "name": "POST /api/routing",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Persist the model-routing policy (which model handles which kind of turn).",
+      "promise": "POST {routing} persists the routing config and returns 200.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/routing"
+        ],
         "events": []
       },
       "coverage": [],
-      "status": "unmapped",
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -1793,52 +2572,100 @@
       "kind": "route",
       "area": "routes",
       "name": "POST /api/run",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The core agent loop entrypoint: run one interactive agent turn and stream its events back as NDJSON.",
+      "promise": "POST {model, messages, agentId} streams NDJSON agent.run.start→agent.token→agent.cost→agent.run.end through the real loop/provider/cost path; missing key/model → 400 \"missing key/model\".",
       "wiring": {
-        "files": [],
-        "events": []
+        "files": [
+          "sidecar/index.js",
+          "sidecar/loop.js",
+          "sidecar/runroute.js",
+          "sidecar/runstore.js",
+          "sidecar/billing.js"
+        ],
+        "events": [
+          "skynet.agent.run.start",
+          "skynet.agent.token",
+          "skynet.agent.cost",
+          "skynet.agent.run.end"
+        ]
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "e2e.run.test.js",
+          "gate": "test:http"
+        },
+        {
+          "kind": "test",
+          "ref": "runroute.test.js",
+          "gate": "test:fast"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "78351f3eeb3595ac7b1c8bfe5b227d3d2b6bf8f3",
+        "date": "2026-07-07T21:05:27.430Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE 8969 (mock provider): 200, streamed 5 NDJSON lines incl \"Hello from mock\", run recorded in /api/runs history (reason:done turns:1 tokens:8). 400 on missing model verified."
     },
     {
       "id": "route/post-api-run-steer",
       "kind": "route",
       "area": "routes",
       "name": "POST /api/run/steer",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Live mid-run steering: append a Commander note to an in-flight run's steer queue that the loop injects on its next turn.",
+      "promise": "POST {runId, text} on a LIVE run queues the note (200); an unknown runId → 404 {error:\"no in-flight run for that id\"}.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/loop.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "e2e.run.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "78351f3eeb3595ac7b1c8bfe5b227d3d2b6bf8f3",
+        "date": "2026-07-07T21:05:27.430Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE 8968: POST unknown runId → 404 with honest error shape. Live-note injection on an active run is covered by the e2e run suite."
     },
     {
       "id": "route/post-api-runtime-knobs",
       "kind": "route",
       "area": "routes",
       "name": "POST /api/runtime/knobs",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Persist advanced runtime knob overrides (apply on next boot).",
+      "promise": "POST persists knob values to runtime.knobs.json and returns 200; an env-locked knob is not overridable.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/runtimeinfo.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "sidecar.http.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -1850,14 +2677,24 @@
       "kind": "route",
       "area": "routes",
       "name": "POST /api/save",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Write-through the localStorage save to durable disk (the body IS the envelope).",
+      "promise": "POST <envelope> persists it via the store helpers and returns 200; survives a sidecar restart.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/savestore.js",
+          "sidecar/durable-store.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "sidecar.http.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -1869,33 +2706,58 @@
       "kind": "route",
       "area": "routes",
       "name": "POST /api/session",
-      "purpose": "",
-      "promise": "",
+      "purpose": "A token-gated liveness/handshake stub the client can POST to confirm its launch token is accepted before starting a session.",
+      "promise": "POST with a valid x-starnet-token returns 200 {ok:true}; a missing/bad token 403s at the auth seam.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/apiauth.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "sidecar.http.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "78351f3eeb3595ac7b1c8bfe5b227d3d2b6bf8f3",
+        "date": "2026-07-07T21:05:27.430Z"
+      },
+      "findings": [
+        "b1248295",
+        "6887ef72"
+      ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE 8968: POST returned 200 {ok:true}; no-token/bad-token 403. Handler is a pure no-op stub (index.js:2924) with no store effect and no current frontend caller — its only contract is the token gate. See finding routes-session-noop."
     },
     {
       "id": "route/post-api-skills-toggle",
       "kind": "route",
       "area": "routes",
       "name": "POST /api/skills/toggle",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Persist a station-wide enable/disable choice for a library recipe.",
+      "promise": "POST {slug, enabled} persists the choice and returns 200; GET /api/skills reflects it.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/skillstore.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "skills.test.js",
+          "gate": "test:fast"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -1907,33 +2769,54 @@
       "kind": "route",
       "area": "routes",
       "name": "POST /api/slash/dispatch",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Resolve a typed slash command string to a typed client/server directive (the input path that stopped arg-commands leaking as chat).",
+      "promise": "POST {input:\"/help\"} returns 200 {ok:true, command:{...}, directive:{type,action,args}} resolving the command; unknown commands resolve honestly.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/slash.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "slash.test.js",
+          "gate": "test:fast"
+        },
+        {
+          "kind": "test",
+          "ref": "slash.config.test.js",
+          "gate": "test:fast"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "78351f3eeb3595ac7b1c8bfe5b227d3d2b6bf8f3",
+        "date": "2026-07-07T21:05:27.430Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE 8968: /help → 200 with resolved builtin help directive (dispatch:client)."
     },
     {
       "id": "route/post-api-spotify-auth-start",
       "kind": "route",
       "area": "routes",
       "name": "POST /api/spotify/auth/start",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Begin Spotify OAuth for the jukebox object.",
+      "promise": "POST returns 200 with the Spotify authorize URL + state.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/spotify"
+        ],
         "events": []
       },
       "coverage": [],
-      "status": "unmapped",
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -1945,14 +2828,17 @@
       "kind": "route",
       "area": "routes",
       "name": "POST /api/spotify/disconnect",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Forget stored Spotify credentials.",
+      "promise": "POST clears the Spotify tokens and returns 200; status then reports disconnected.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/spotify"
+        ],
         "events": []
       },
       "coverage": [],
-      "status": "unmapped",
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -1964,33 +2850,50 @@
       "kind": "route",
       "area": "routes",
       "name": "POST /api/stt",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Speech-to-text of a recorded audio clip via OpenRouter (the voice-input sibling of /api/tts).",
+      "promise": "THE 200-ALWAYS LAW: any failure still answers 200 with {text:\"\", reason} rather than a 5xx — the frontend voice loop depends on it; success returns {text}.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "sidecar.http.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "78351f3eeb3595ac7b1c8bfe5b227d3d2b6bf8f3",
+        "date": "2026-07-07T21:05:27.430Z"
+      },
+      "findings": [
+        "6887ef72"
+      ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE 8968: with a fake key the upstream 401'd, yet the route returned 200 application/json {text:\"\",reason:\"...openrouter 401...\"}. 200-always law HOLDS."
     },
     {
       "id": "route/post-api-study-resolve",
       "kind": "route",
       "area": "routes",
       "name": "POST /api/study/resolve",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Consume one decided study proposal + mirror the denylist (GROWTH Tier 1).",
+      "promise": "POST {agentId, runId, id, declined:[]} resolves the proposal and updates the denylist, returning 200.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/memcore.js"
+        ],
         "events": []
       },
       "coverage": [],
-      "status": "unmapped",
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -2002,14 +2905,23 @@
       "kind": "route",
       "area": "routes",
       "name": "POST /api/subagents/interrupt",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Interrupt a running background sub-agent worker.",
+      "promise": "POST {id} aborts that worker and returns 200; E-STOP calls the same interruptAll path.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/subagents.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "e2e.subagent-background.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -2021,14 +2933,23 @@
       "kind": "route",
       "area": "routes",
       "name": "POST /api/summon/ack",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The browser's answer to a live crew.summon.request: it ran the spawn and reports the new agent id.",
+      "promise": "POST {runId, requestId, agentId} resolves the awaiting summon and returns 200; a stale id is a no-op.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/loop.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "e2e.summon.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -2040,14 +2961,17 @@
       "kind": "route",
       "area": "routes",
       "name": "POST /api/toolsets/",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Toggle a toolset on/off (path POST /api/toolsets/).",
+      "promise": "POST toggles the toolset and returns 200 with the updated state.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/tools"
+        ],
         "events": []
       },
       "coverage": [],
-      "status": "unmapped",
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -2059,33 +2983,61 @@
       "kind": "route",
       "area": "routes",
       "name": "POST /api/tts",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Neural text-to-speech via OpenRouter audio; returns mp3 bytes or a small fallback JSON.",
+      "promise": "THE 200-ALWAYS LAW: any failure (bad key, upstream 4xx/5xx) still answers 200 — either audio/mpeg bytes or {fallback:true, reason}; NEVER a 5xx (the frontend voice loop depends on it).",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "sidecar.http.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "78351f3eeb3595ac7b1c8bfe5b227d3d2b6bf8f3",
+        "date": "2026-07-07T21:05:27.430Z"
+      },
+      "findings": [
+        "6887ef72"
+      ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE 8968: with a fake key the upstream 401'd, yet the route returned 200 application/json {fallback:true,reason:\"openrouter 401 ...\"}. Locked voice law HOLDS."
     },
     {
       "id": "route/post-api-workshop-decide",
       "kind": "route",
       "area": "routes",
       "name": "POST /api/workshop/decide",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The return-card decision: keep/discard/later a built deliverable.",
+      "promise": "POST {agentId, runId, decision, destPath?} resolves the deliverable (keep copies the jailed file to destPath) and returns 200.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/workshop-store.js",
+          "sidecar/artifacts.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "journey",
+          "ref": "workshop"
+        },
+        {
+          "kind": "test",
+          "ref": "workshop.e2e.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -2097,14 +3049,27 @@
       "kind": "route",
       "area": "routes",
       "name": "POST /api/workshop/grant",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Record/clear the Commander's \"build things while I'm away\" consent for an agent.",
+      "promise": "POST {agentId, on} persists the workshop grant and returns 200; the away-shift path checks it.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/workshop-store.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "journey",
+          "ref": "workshop"
+        },
+        {
+          "kind": "test",
+          "ref": "workshop.e2e.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -2116,14 +3081,24 @@
       "kind": "route",
       "area": "routes",
       "name": "POST /api/workshop/open",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Shell-open a REAL jailed deliverable file with the OS default app (interactive user click).",
+      "promise": "POST {agentId, runId, path} opens the jailed file; path escapes are blocked.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/workshop-store.js",
+          "sidecar/shellbg.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "workshop.e2e.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -2135,14 +3110,27 @@
       "kind": "route",
       "area": "routes",
       "name": "POST /api/workshop/queue",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Add a build request to an agent's away-workshop backlog.",
+      "promise": "POST {agentId, title, detail?} queues the item and returns 200 with the queued record.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/workshop-store.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "journey",
+          "ref": "workshop"
+        },
+        {
+          "kind": "test",
+          "ref": "workshop.e2e.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -2154,14 +3142,28 @@
       "kind": "route",
       "area": "routes",
       "name": "POST /api/workshop/shift",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Force-fire ONE away-workshop shift now (attended test of the unattended path).",
+      "promise": "POST {agentId} runs one shift and returns 200 with the result.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/workshop-store.js",
+          "sidecar/loop.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "journey",
+          "ref": "workshop"
+        },
+        {
+          "kind": "test",
+          "ref": "workshop.e2e.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
