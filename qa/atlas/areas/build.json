@@ -1,6 +1,6 @@
 {
   "area": "build",
-  "updatedAt": "2026-07-07T08:38:22.559Z",
+  "updatedAt": "2026-07-07T20:28:13.738Z",
   "entries": [
     {
       "id": "state/build-connectors",
@@ -863,147 +863,223 @@
       "kind": "ui",
       "area": "build",
       "name": "finish + save (Esc)",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The REFIT primary button: finish build mode, persist the new station layout, re-bake the live world, and resume the sim.",
+      "promise": "Clicking DONE (or Esc) closes REFIT, saves the layout, and any capability props placed this session stay online in the live world after the re-bake.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/build.js",
+          "frontend/app/worldmodel.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "audit",
+          "ref": "moat"
+        },
+        {
+          "kind": "audit",
+          "ref": "prop-place"
+        },
+        {
+          "kind": "test",
+          "ref": "test/worldmodel.test.js:bayObjects"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "ce3211719a4a8b9dfcae70af5417d150be18c2e8",
+        "date": "2026-07-07T20:28:13.738Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#refit-done",
-      "state": "build-station"
+      "state": "build-station",
+      "notes": "Live-proven (.uiatlas/build2-evidence/refit-verify.json): refit-done/closes+persists — after DONE, World.heroCaps still holds the placed workbench cap through the re-bake."
     },
     {
       "id": "ui/build/refit-fit",
       "kind": "ui",
       "area": "build",
       "name": "frame the station",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Camera affordance: reframe the REFIT canvas so the whole station is centred and visible.",
+      "promise": "Clicking FIT (or F) recomputes zoom/pan from station bounds so the built station is framed inside the viewport.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/build.js"
+        ],
         "events": []
       },
       "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "ce3211719a4a8b9dfcae70af5417d150be18c2e8",
+        "date": "2026-07-07T20:28:13.738Z"
+      },
+      "findings": [
+        "b46cf4ac"
+      ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#refit-fit",
-      "state": "build-station"
+      "state": "build-station",
+      "notes": "Live-proven (.uiatlas/build2-evidence/refit-verify.json): refit-fit/reframes. UX-only (no truth-bearing state); no dedicated machine assertion => KNOWN finding b46cf4ac (stays audited, not perfected, per EL-3 no-unguarded-promise law)."
     },
     {
       "id": "ui/build/refit-guide-go",
       "kind": "ui",
       "area": "build",
       "name": "▸ START BUILDING",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The first-use guide dismiss button: closes the BUILD YOUR STATION coach card and marks it seen so it never re-nags.",
+      "promise": "Clicking START BUILDING removes the .refit-guide card and persists the seen flag (localStorage), returning to the live grid.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/build.js"
+        ],
         "events": []
       },
       "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "ce3211719a4a8b9dfcae70af5417d150be18c2e8",
+        "date": "2026-07-07T20:28:13.738Z"
+      },
+      "findings": [
+        "b46cf4ac"
+      ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#refit-guide-go",
-      "state": "build-station"
+      "state": "build-station",
+      "notes": "Live-proven (.uiatlas/build2-evidence/refit-verify.json): refit-help/guide+start — the START BUILDING button is present with correct label and dismisses. Shares KNOWN uncovered-UX finding b46cf4ac."
     },
     {
       "id": "ui/build/refit-help",
       "kind": "ui",
       "area": "build",
       "name": "how to build",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Opens the build-mode field guide: a first-use coach card explaining rooms, halls, props, belts, and the BAY->agent loop.",
+      "promise": "Clicking HELP shows the .refit-guide card with the build instructions and a START BUILDING dismiss button.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/build.js"
+        ],
         "events": []
       },
       "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "ce3211719a4a8b9dfcae70af5417d150be18c2e8",
+        "date": "2026-07-07T20:28:13.738Z"
+      },
+      "findings": [
+        "b46cf4ac"
+      ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#refit-help",
-      "state": "build-station"
+      "state": "build-station",
+      "notes": "Live-proven (.uiatlas/build2-evidence/refit-verify.json): refit-help/guide+start PASS. UX-only; no dedicated machine assertion => KNOWN finding b46cf4ac."
     },
     {
       "id": "ui/build/refit-redo",
       "kind": "ui",
       "area": "build",
       "name": "redo (Ctrl+Shift+Z)",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Redo the last undone build mutation, re-applying it (including any capability it re-grants).",
+      "promise": "Clicking REDO (or Ctrl+Shift+Z) re-applies the last undone station change; redoing a reclaimed cap-prop brings its real capability back online.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/build.js",
+          "frontend/app/worldmodel.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/worldmodel.test.js:undo-redo-roundtrip"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "ce3211719a4a8b9dfcae70af5417d150be18c2e8",
+        "date": "2026-07-07T20:28:13.738Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#refit-redo",
-      "state": "build-station"
+      "state": "build-station",
+      "notes": "Live-proven (.uiatlas/build2-evidence/refit-verify.json): refit-redo/regrants-cap — redo after undo re-adds the workbench and World.heroCaps regains workbench. Machine-guarded by worldmodel undo/redo round-trip test."
     },
     {
       "id": "ui/build/refit-test",
       "kind": "ui",
       "area": "build",
       "name": "send test work down your belts — watch it sort to the bays (no bot needed)",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Sends test work down the placed belts so the sort-to-bays loop can be watched without a live agent run.",
+      "promise": "Clicking TEST spawns narrated test boxes that travel the belt runs and sort into bays (a dry-run of the conveyor loop).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/build.js"
+        ],
         "events": []
       },
       "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "ce3211719a4a8b9dfcae70af5417d150be18c2e8",
+        "date": "2026-07-07T20:28:13.738Z"
+      },
+      "findings": [
+        "b46cf4ac"
+      ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#refit-test",
-      "state": "build-station"
+      "state": "build-station",
+      "notes": "Live-proven (.uiatlas/build2-evidence/refit-verify.json): refit-test/fires — button fires without throwing. The animated belt demo has no golden/journey guard => KNOWN finding b46cf4ac (stays audited)."
     },
     {
       "id": "ui/build/refit-undo",
       "kind": "ui",
       "area": "build",
       "name": "undo (Ctrl+Z)",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Undo the last build mutation, restoring prior station state (and REVOKING any capability that placement granted).",
+      "promise": "Clicking UNDO (or Ctrl+Z) reverts the last station change; undoing a placed cap-prop takes its real capability back offline (place=grant, undo=revoke).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/build.js",
+          "frontend/app/worldmodel.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/worldmodel.test.js:undo-redo-roundtrip"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "ce3211719a4a8b9dfcae70af5417d150be18c2e8",
+        "date": "2026-07-07T20:28:13.738Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#refit-undo",
-      "state": "build-station"
+      "state": "build-station",
+      "notes": "Live-proven (.uiatlas/build2-evidence/refit-verify.json): refit-undo/revokes-cap — after undo, World.heroCaps no longer holds workbench. Truthful inverse of place-grants-cap. Machine-guarded by worldmodel undo/redo round-trip test."
     },
     {
       "id": "ui/build/sp-client",
@@ -3062,21 +3138,37 @@
       "kind": "ui",
       "area": "build",
       "name": "CLICK one machine, then another — the belt lays itself · (or drag to lay tiles by hand)  (7)",
-      "purpose": "",
-      "promise": "",
+      "purpose": "BELT mode (7): wire machines together — click one machine then another and the belt lays itself.",
+      "promise": "With BELT selected, clicking one machine then another lays a belt run; complete INBOX->BAY->OUTBOX lines glow, broken pieces are flagged in words.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/build.js",
+          "frontend/app/worldmodel.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/conveyor.test.js:belt-model"
+        },
+        {
+          "kind": "test",
+          "ref": "test/worldmodel.test.js:placeBeltRun"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "ce3211719a4a8b9dfcae70af5417d150be18c2e8",
+        "date": "2026-07-07T20:28:13.738Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
-      "state": "build-station"
+      "state": "build-station",
+      "notes": "Live-proven (.uiatlas/build2-evidence/refit-verify.json): refit-modes/7-hints — belt tool present, hint CLICK one machine, then another (7); reclaim setup laid a 3-belt run via placeBeltRun. Machine-covered in conveyor + worldmodel belt tests."
     },
     {
       "id": "ui/build/txt-button-bridge-413",
@@ -3209,21 +3301,33 @@
       "kind": "ui",
       "area": "build",
       "name": "drag along an axis to run a corridor — any length  (2)",
-      "purpose": "",
-      "promise": "",
+      "purpose": "HALLWAY mode (2): drag along an axis to run a corridor of the chosen width.",
+      "promise": "With HALL selected, dragging along an axis lays a corridor any length; rooms/halls that touch auto-connect with a door.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/build.js",
+          "frontend/app/worldmodel.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/worldmodel.test.js:placeHallway"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "ce3211719a4a8b9dfcae70af5417d150be18c2e8",
+        "date": "2026-07-07T20:28:13.738Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
-      "state": "build-station"
+      "state": "build-station",
+      "notes": "Live-proven (.uiatlas/build2-evidence/refit-verify.json): refit-modes/7-hints — hall tool present, hint (2). placeHallway machine-covered in worldmodel test."
     },
     {
       "id": "ui/build/txt-button-http-442",
@@ -3272,21 +3376,33 @@
       "kind": "ui",
       "area": "build",
       "name": "drag a room to relocate it  (4)",
-      "purpose": "",
-      "promise": "",
+      "purpose": "MOVE mode (4): drag a placed room to relocate it.",
+      "promise": "With MOVE selected, dragging a room relocates it to a valid position (blocked drops refused with a tip).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/build.js",
+          "frontend/app/worldmodel.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/worldmodel.test.js:moveProp+undo"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "ce3211719a4a8b9dfcae70af5417d150be18c2e8",
+        "date": "2026-07-07T20:28:13.738Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
-      "state": "build-station"
+      "state": "build-station",
+      "notes": "Live-proven (.uiatlas/build2-evidence/refit-verify.json): refit-modes/7-hints — move tool present, hint (4). moveProp+undo machine-covered in worldmodel test."
     },
     {
       "id": "ui/build/txt-button-off-415",
@@ -4123,21 +4239,33 @@
       "kind": "ui",
       "area": "build",
       "name": "drag to paint deck tiles · click a room to fill it  (3)",
-      "purpose": "",
-      "promise": "",
+      "purpose": "PAINT mode (3): paint deck tiles or fill a room with the selected floor style.",
+      "promise": "With PAINT selected, dragging paints deck tiles and a click fills the whole room with the chosen swatch.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/build.js",
+          "frontend/app/worldmodel.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/worldmodel.test.js:setFloor+paintTiles"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "ce3211719a4a8b9dfcae70af5417d150be18c2e8",
+        "date": "2026-07-07T20:28:13.738Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
-      "state": "build-station"
+      "state": "build-station",
+      "notes": "Live-proven (.uiatlas/build2-evidence/refit-verify.json): refit-modes/7-hints — paint tool present, hint (3). setFloor/paintTiles machine-covered in worldmodel test."
     },
     {
       "id": "ui/build/txt-button-place-cabinet-416",
@@ -5099,21 +5227,41 @@
       "kind": "ui",
       "area": "build",
       "name": "click to place furniture · agents walk around it  (6)",
-      "purpose": "",
-      "promise": "",
+      "purpose": "PROP mode (6): place furniture/gear; a functional prop = a REAL capability grant (object=capability).",
+      "promise": "With PROP selected, clicking the grid places the chosen prop; placing a capability prop brings the matching real tool capability online for the agent whose room it lands in.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/build.js",
+          "frontend/app/worldmodel.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "audit",
+          "ref": "moat"
+        },
+        {
+          "kind": "audit",
+          "ref": "prop-place"
+        },
+        {
+          "kind": "test",
+          "ref": "test/worldmodel.test.js:bayObjects"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "ce3211719a4a8b9dfcae70af5417d150be18c2e8",
+        "date": "2026-07-07T20:28:13.738Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
-      "state": "build-station"
+      "state": "build-station",
+      "notes": "Live-proven (.uiatlas/build2-evidence/refit-verify.json): truthful/place-grants-cap — placeCapProp(workbench) makes World.heroCaps gain workbench; undo revokes it. Prop tile shows the truthful grant word (comms_dish -> WEB). Guarded by audit moat + prop-place and worldmodel bayObjects test."
     },
     {
       "id": "ui/build/txt-button-quarters-416",
@@ -5141,42 +5289,70 @@
       "kind": "ui",
       "area": "build",
       "name": "click a room, prop, or belt to tear it down · drag across a belt to clear the whole run (UNDO restores it)  (5)",
-      "purpose": "",
-      "promise": "",
+      "purpose": "RECLAIM mode (5): tear down a room, prop, or belt; drag across a belt to clear the whole run in one undo slot.",
+      "promise": "A click removes the room/prop/belt under it; a drag across belts clears the whole run — UNDO restores it. Reclaiming a cap-prop revokes its capability.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/build.js",
+          "frontend/app/worldmodel.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/worldmodel.test.js:removeProp+undo,one-undo-belt"
+        },
+        {
+          "kind": "test",
+          "ref": "test/conveyor.test.js:belt-model"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "ce3211719a4a8b9dfcae70af5417d150be18c2e8",
+        "date": "2026-07-07T20:28:13.738Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
-      "state": "build-station"
+      "state": "build-station",
+      "notes": "Live-proven (.uiatlas/build2-evidence/refit-verify.json): refit-reclaim/drag-clear-one-undo — a 3-belt run cleared to 0 and ONE undo restored all 3 (belt-reclaim one-undo-slot law, 7/06). removeProp+undo and one-undo belt removal machine-covered in worldmodel/conveyor tests."
     },
     {
       "id": "ui/build/txt-button-room-1-405",
       "kind": "ui",
       "area": "build",
       "name": "drag on the grid to place a room  (1)",
-      "purpose": "",
-      "promise": "",
+      "purpose": "ROOM mode (1): drag on the grid to place a room of the selected KIND.",
+      "promise": "With ROOM selected, dragging a rectangle adds a room (green=ok/red=blocked); the hint text names the gesture and key.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/build.js",
+          "frontend/app/worldmodel.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/worldmodel.test.js:addRoom"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "ce3211719a4a8b9dfcae70af5417d150be18c2e8",
+        "date": "2026-07-07T20:28:13.738Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
-      "state": "build-station"
+      "state": "build-station",
+      "notes": "Live-proven (.uiatlas/build2-evidence/refit-verify.json): refit-modes/7-hints — room tool present with hint drag on the grid to place a room (1). addRoom machine-covered in worldmodel test."
     },
     {
       "id": "ui/build/txt-button-sign-in-415",
