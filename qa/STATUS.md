@@ -16,7 +16,7 @@ own runner (Q1 Guardian, Q2 Beginner Run, Q4 Janitor) or the Overseer digest; th
 
 | Crew member | Question it answers | Last run | Result | Open findings |
 | --- | --- | --- | --- | --- |
-| Green Guardian | Is trunk green and does the app still boot + look right? | 2026-07-03 @ 91b9415e | GREEN | 0 |
+| Green Guardian | Is trunk green and does the app still boot + look right? | 2026-07-07 07:19Z @ 44a513e7 | GREEN | 0 |
 | Beginner Run | Can a brand-new user reach first value, unassisted? | 2026-07-01T23:30:22.312Z · ui-only · 84014ms | PASS | 0 |
 | Truth Auditor | Does the UI show what actually happened? | 2026-07-01 23:28Z (in Guardian cycle) | GREEN | 0 |
 | Visual Auditor | Is the rendered game coherent? (needs eyes) | — (local /loop; not headless) | — | 0 |
@@ -242,3 +242,4 @@ node scripts/qa/ledger.mjs --status
 - 2026-07-06 land: dev-infra-refresh launch.json prune (deferred tail) — 74 -> 24 configs: dead-worktree seeds dropped (re-validated against the live worktree list at land time, not the branch's snapshot), all SKYNET_DEFAULT_MODEL envs now live ids, zero port collisions, JSON re-parse proven. Registry was quiet (all perfection-pass + sprint lanes merged/reaped).
 
 - 2026-07-07: agent/taskboard-truth -> 3822e212 (gate green 260) · agent/provider-connect-timeout -> 46e1cf22 (gate green 260 + test:http full) — board shows tasks only; connect timer disarmed at headers, idle 300s.
+- 2026-07-07 merge: agent/journey-corps -> feat/harness-backend (44a513e7) — EL-1 Journey Corps: qa:journeys multi-step user-journey runner (J1 task-lifecycle+taskboard truth, J2 E-STOP/panel-close/reload interrupt honesty, J3 double-send/rapid-toggle, J4 summon→deliverable→OPEN serve contract, J5 parityCheck sweep) wired as Guardian 5th gate (ports 8943/9343, per-step P1 findings, BLOCKED=P0). Gate test:fast 260 green post-merge; orchestrator re-ran qa:journeys LIVE on merged trunk: 114/114 PASS. package.json strict-JSON/no-BOM verified; worktree reaped. SAME DAY: QA watch ACTIVATED (3 schtasks registered: Guardian-Hourly / Beginner-Daily / Janitor-Weekly + session guardian:watch) after golden re-bless 79016922 (7 stale-baseline findings triaged=intended redesigns, dismissed with notes).

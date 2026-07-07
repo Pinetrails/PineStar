@@ -131,17 +131,16 @@ automated. Merge ritual gains the question "which journey/assertion covers this 
 promise?" (sibling of "where's its UI?").
 
 **Queue:**
-- **EL-0 · Activate the watch** — needs Andrew (auto-mode blocks persistent-task
-  registration): `& scripts\qa\register-watch.ps1 -RepoRoot C:\Users\andro\Desktop\gen -Apply`
-  (hourly Guardian + daily Beginner + weekly Janitor) + a standing `npm run qa:guardian:watch`
-  process + the Overseer `/loop` (QA_STATION §6). Smoked 2026-07-07: full Guardian cycle runs,
-  detects, files, dedups.
-- **EL-1 · Journey Corps** — IN PROGRESS — journey-corps lane (spawned 2026-07-07, Fable
-  session). Multi-step user journeys with per-step sim↔truth parity, run inside every
-  Guardian cycle: task lifecycle incl. taskboard truth (the live round-trip taskboard-truth
-  skipped), interrupt/E-STOP/reload → truth-after-disconnect, double-send, summon→assign→
-  deliverable-open, long-stream survival (connectGuard class). Extend `scripts/audit.mjs`
-  scenarios, don't rebuild the cameras.
+- **EL-0 · Activate the watch** — ✅ DONE 2026-07-07 (Andrew-approved): 3 scheduled tasks
+  registered (`StarNet-QA-Guardian-Hourly` / `Beginner-Daily` / `Janitor-Weekly`, verified
+  via schtasks) + session `qa:guardian:watch` running. STILL OPEN: the Overseer `/loop`
+  session (QA_STATION §6, the digest+P0-notify half) and a reboot-surviving per-merge watch.
+- **EL-1 · Journey Corps** — ✅ MERGED 2026-07-07 (44a513e7, gate 260 green; orchestrator
+  live-ran qa:journeys on merged trunk 114/114 PASS). `npm run qa:journeys` = J1 task-
+  lifecycle+taskboard truth · J2 E-STOP/panel-close/reload interrupt honesty · J3 double-
+  send/rapid-toggle · J4 summon→deliverable→OPEN serve contract · J5 parityCheck sweep;
+  Guardian 5th gate (8943/9343). Known limits: mock-provider boundary (proves seams not
+  model output); J4 asserts the serve contract over HTTP, not a real tab-nav.
 - **EL-2 · Saboteur mutators** — adversarial twist layer over journeys (garbage input, rapid
   panel toggles mid-run, provider-error injection). After EL-1.
 - **EL-4 · Installed-app weekly smoke** — CDP-attach to the installed exe and run the parity
