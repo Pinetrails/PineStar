@@ -76,7 +76,8 @@ dirt — cron plan doc salvaged to docs/archive/).
 **KEPT — real value, in priority order:**
 1. `agent/belt-reclaim` (293c869e, 7/6) — drag-to-clear a whole belt run in one undo slot
    + hover tint + test; VERIFIED absent from trunk (trunk reclaim is single-tile only).
-   Small, recent, landable: rebase → gate → merge.
+   **IN PROGRESS — brain-session 2026-07-06 ~23:55: trunk merged into worktree (93187767),
+   gate running, will merge if green.**
 2. `agent/growth-t4` (ac7bf9f5) — T4 beat-balance pass (516 lines: prioritized ask stream,
    no-double-beats proof, beat-audit script + 201-line test) **plus ~411 lines UNCOMMITTED
    in its worktree** (iteration from 7/02). Needs its author-lane to finish or an explicit
