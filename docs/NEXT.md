@@ -7,7 +7,8 @@ Verification key: ✅ = grep/log-verified today · ❓ = doc claim, re-verify be
 ## Already DONE — do not rebuild (merged 2026-07-05..06)
 
 Release train v0.2.0→v0.2.2 (4-platform signed draft, runbook, gate-after-bump);
-polish-sprint lanes ALL MERGED except lane 8: ux-topbar-disconnect, ux-popup-escape,
+polish-sprint lanes **8/8 MERGED** (lane 8 truth-chrome-instruments landed 8e8e6eef while
+this file was being written): ux-topbar-disconnect, ux-popup-escape,
 voice-button-reliability, truth-run-lifecycle, truth-channel-tee, truth-props-glow,
 dossier-agent-mgmt (DELETE AGENT + CHANGE SKIN); update-safety P0.1 wv-cache-purge,
 P0.2 mirror-truth, P1.1+P1.2 roster-honesty; voice-desktop-key; comms-fresh-session;
@@ -15,21 +16,18 @@ multiplatform install docs. ✅ (all in git log)
 
 ## P0 — code (verify each is still open by grep before starting)
 
-1. **Finish lane 8 `truth-chrome-instruments`** — branch exists, unmerged ✅. UPLINK real
-   link state, ONLINE pill, widget staleness, model dock offline label, `shell.bg.exit`
-   consumer. Merge via `starnet-merge-ritual`.
-2. **Forward-version save guard** — `frontend/app/save.js:52` still silently adopts
+1. **Forward-version save guard** — `frontend/app/save.js:52` still silently adopts
    `doc.version > CURRENT` (downgrade eats newer saves) ✅ open. Refuse + surface.
    (UPDATE_STATE_SAFETY P0.3.)
-3. **Frontend token leak to provider hosts** — `frontend/app/harness.js:45`
+2. **Frontend token leak to provider hosts** — `frontend/app/harness.js:45`
    `/\/api\//.test(u)` attaches the local API token to ANY url containing `/api/`
    (e.g. openrouter.ai/api/v1) ✅ open. (GROUND_UP 0.6.)
-4. **`agent.tool_call` double-emit** — both `chat.js:3964` (local emit) and
+3. **`agent.tool_call` double-emit** — both `chat.js:3964` (local emit) and
    `harness.js:372` (SSE forward) fire ✅ both paths exist; audit says it corrupts the
    recruiter work-signal. Dedupe at one seam. (GROUND_UP 0.4.)
-5. **Sidecar spawn failure = silently dead app** — `src-tauri/src/main.rs` ~1161, no retry
+4. **Sidecar spawn failure = silently dead app** — `src-tauri/src/main.rs` ~1161, no retry
    or error dialog ❓. (GROUND_UP 0.2.)
-6. **Workspace migration resurrects deleted data on every boot** — `main.rs` ~385-397 ❓;
+5. **Workspace migration resurrects deleted data on every boot** — `main.rs` ~385-397 ❓;
    needs `.migrated` marker. (GROUND_UP 0.1.) NOTE: workshop CSP (GROUND_UP 0.3) appears
    FIXED — `sidecar/index.js:6049` now sends a sandbox CSP ✅ — verify coverage, then close.
 
