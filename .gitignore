@@ -73,6 +73,14 @@ scripts/STATUS.generated.md
 # these does not affect them. Keep the dir itself (via .gitkeep) + the README (a .md, not matched).
 qa/findings/*.json
 
+# Installed-exe smoke run artifacts (scripts/qa/installed-smoke.mjs). The pinned stamp
+# (last-smoke.json) + per-run evidence dirs are MACHINE-LOCAL: the stamp records THIS machine's
+# installed build + the local trunk head it ran against, and the qa:ready gate reads it via fs at
+# run time (never from git). Same reasoning as qa/findings above — keep the dir (.gitkeep + README),
+# ignore the run output.
+qa/installed/last-smoke.json
+qa/installed/smoke-*/
+
 # G0 lane visual-proof screenshots (headless capture output; never committed)
 .qa_g0/
 # G1a lane visual-proof screenshots (same pattern)

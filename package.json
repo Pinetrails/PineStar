@@ -80,6 +80,7 @@
     "qa:atlas:status": "node scripts/qa/cartographer.mjs --status",
     "qa:guardian": "node scripts/qa/guardian.mjs",
     "qa:guardian:watch": "node scripts/qa/guardian.mjs --watch",
+    "qa:smoke:installed": "node scripts/qa/installed-smoke.mjs",
     "serve": "node scripts/serve-ui-only.js",
     "serve:ui-only": "node scripts/serve-ui-only.js",
     "tauri": "tauri",
