@@ -808,7 +808,38 @@ const StationUI = (() => {
         ? '<div class="ag-mission-text">' + esc(a.purpose) + '</div>'
         : '<div class="ag-mission-cta">No purpose set — tell your agent what you need in COMMS, or write it in CONFIG › purpose.md.</div>') +
       '</div>' +
+      agCommand(a) +
       '<div class="ag-foot-row">on station since <b>' + since + '</b></div>';
+  }
+
+  // COMMANDER CONTROLS (dossier BRIEF): change this agent's SKIN and DELETE it. Both use the SAME genesis skin
+  // catalog (DATA.SKINS — single source of truth) and reuse the .skin-thumb visual vocabulary from the create
+  // screen. DELETE is a two-click armed confirm (ArmConfirm) and is disabled — with a stated reason, not a
+  // prompt — for the hero and for the last remaining agent. Wired in wireCommand.
+  function agCommand(a) {
+    const skins = (typeof DATA !== 'undefined' && DATA.SKINS) ? DATA.SKINS : {};
+    const cur = (a && a.skin && skins[a.skin]) ? a.skin : (typeof DATA !== 'undefined' ? DATA.DEFAULT_SKIN : '');
+    const thumbs = Object.keys(skins).map(id => {
+      const sk = skins[id];
+      return '<button type="button" class="skin-thumb ag-skin-thumb' + (id === cur ? ' sel' : '') + '" data-skin="' + esc(id) + '" title="' + esc(sk.name || id) + '" aria-label="' + esc(sk.name || id) + '">' +
+        '<img src="assets/sprites/' + esc(sk.set) + '/rot_south.png" alt="' + esc(sk.name || id) + '" draggable="false"></button>';
+    }).join('');
+    // DELETE gating: the hero (orchestrator / id 'agent') is undeletable; so is the last agent on station.
+    const isHero = (a && (a.id === 'agent' || a.role === 'orchestrator'));
+    const crewCount = (access.config && typeof access.config.crewCount === 'function') ? access.config.crewCount() : present.length;
+    const lastOne = crewCount <= 1;
+    const disabledReason = isHero ? 'the overseer can’t be deleted' : (lastOne ? 'the last agent can’t be deleted' : '');
+    const delBtn = disabledReason
+      ? '<button class="bb sm ag-del" id="ag-del-btn" disabled title="' + esc(disabledReason) + '">✕ DELETE AGENT</button>' +
+        '<span class="ag-del-why">' + esc(disabledReason) + '</span>'
+      : '<button class="bb sm ag-del" id="ag-del-btn" title="archive this agent and remove it from the station">✕ DELETE AGENT</button>' +
+        '<span class="ag-del-why">work is archived, not erased</span>';
+    return '<div class="ag-command">' +
+      '<div class="ag-cmd-sec"><div class="ag-cmd-lbl">SKIN</div>' +
+        '<div class="ag-skin-row skin-picker" role="listbox" aria-label="Agent skin">' + thumbs + '</div></div>' +
+      '<div class="ag-cmd-sec ag-cmd-danger"><div class="ag-cmd-lbl">DANGER</div>' +
+        '<div class="ag-del-row">' + delBtn + '</div></div>' +
+      '</div>';
   }
 
   // GROWTH tab — the premium agent-growth dossier: XP ladder, a physical satisfaction gauge (honest "—"
@@ -1292,6 +1323,44 @@ const StationUI = (() => {
     if (rsave) rsave.addEventListener('click', commit);
     const rcancel = body.querySelector('#ag-rename-cancel');
     if (rcancel) rcancel.addEventListener('click', () => { delete agEdit['__name']; sfx('click'); rerender('agents'); });
+    wireCommand(body, a);
+  }
+
+  // wire the COMMANDER CONTROLS block (agCommand): SKIN thumbs → access.config.setSkin (live sprite swap), and
+  // DELETE AGENT → an armed 2-click confirm (ArmConfirm) → access.config.deleteAgent. A disabled DELETE (hero /
+  // last agent) is left inert. Guarded so a section without the block (or a missing access hook) is a safe no-op.
+  function wireCommand(body, a) {
+    if (!a) return;
+    body.querySelectorAll('.ag-skin-thumb').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const skin = btn.dataset.skin;
+        if (!skin || skin === a.skin) return;
+        if (!(access.config && access.config.setSkin)) { notify('skin change unavailable', 'bad'); return; }
+        const ok = access.config.setSkin(a.id, skin);
+        if (ok === false) { notify('could not change skin', 'bad'); sfx('bad'); return; }
+        const nm = ((typeof DATA !== 'undefined' && DATA.SKINS && DATA.SKINS[skin] && DATA.SKINS[skin].name) || skin);
+        notify('skin → ' + String(nm).toUpperCase(), 'good');
+        sfx('click'); rerender('agents');
+      });
+    });
+    const del = body.querySelector('#ag-del-btn');
+    if (del && !del.disabled && typeof ArmConfirm !== 'undefined' && ArmConfirm.wire) {
+      ArmConfirm.wire(del, {
+        armedLabel: '✕ DELETE — sure?',
+        timeoutMs: 4000,
+        onConfirm: () => {
+          if (!(access.config && access.config.deleteAgent)) { notify('delete unavailable', 'bad'); return; }
+          const nm = a.name || a.id;
+          Promise.resolve(access.config.deleteAgent(a.id)).then(ok => {
+            if (ok === false) { notify('could not delete ' + String(nm).toUpperCase(), 'bad'); sfx('bad'); rerender('agents'); return; }
+            notify(String(nm).toUpperCase() + ' deleted — its work is archived', 'warn');
+            sfx('bad');
+            sel = 0;   // the deleted row is gone; land on the first surviving agent
+            rerender('agents');
+          });
+        }
+      });
+    }
   }
 
   function buildAgents(body) {

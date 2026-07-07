@@ -1659,6 +1659,19 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 .ag-foot-row { font-size: 11px; color: var(--ph-dim); letter-spacing: .4px; margin-top: 4px; }
 .ag-foot-row b { color: var(--ph); font-weight: normal; }
 
+/* COMMANDER CONTROLS — dossier BRIEF: change skin + delete agent */
+.ag-command { margin: 10px 0 8px; display: flex; flex-direction: column; gap: 12px; }
+.ag-cmd-sec { border-top: 1px solid var(--hair, rgba(255,255,255,.08)); padding-top: 8px; }
+.ag-cmd-lbl { font-size: 10px; color: var(--ph-dim); letter-spacing: 2px; margin-bottom: 6px; }
+.ag-skin-row { max-height: 108px; }   /* reuse .skin-picker/.skin-thumb; a shorter well in the narrower dossier pane */
+.ag-cmd-danger .ag-cmd-lbl { color: var(--bad, #e2604a); }
+.ag-del-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.ag-del { border-color: var(--bad, #e2604a) !important; color: var(--bad, #e2604a) !important; }
+.ag-del:hover:not(:disabled) { background: rgba(226,96,74,.12) !important; }
+.ag-del:disabled { opacity: .4; cursor: not-allowed; border-color: var(--ph-dim) !important; color: var(--ph-dim) !important; }
+.ag-del.armed { background: var(--bad, #e2604a) !important; color: #120404 !important; box-shadow: 0 0 12px rgba(226,96,74,.5); }
+.ag-del-why { font-size: 11px; color: var(--ph-dim); font-style: italic; }
+
 /* ============ PREMIUM GROWTH DOSSIER — the GROWTH tab ============
    Tactical-ops grid discipline, refined with hairline rules + engraved labels and breathing room.
    Honest gauges (confidence reads "—" while calibrating). Theme-aware: every colour rides the

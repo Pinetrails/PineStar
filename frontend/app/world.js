@@ -4731,6 +4731,30 @@ const World = (() => {
     if (b) { b.name = nm; return true; }
     return false;
   }
+  // DOSSIER › DELETE AGENT: pull a summoned crew body off the floor for real. Only ever removes a CREW body —
+  // the hero (agent) is never a crew entry and can't be reached here (guarded by the caller too). Idempotent:
+  // returns true if a body was removed. Any transient locks referencing the body (a chase, a social encounter)
+  // self-heal next tick because their partner-broken checks already treat a missing/absent body as torn.
+  function despawnAgent(agentId) {
+    if (!agentId || (agent && agentId === agent.id)) return false;   // never the hero
+    const i = crew.findIndex(b => b.agentId === agentId);
+    if (i < 0) return false;
+    if (chaseId === agentId) chaseId = null;   // drop any active chase lock addressed to the gone body (sweepChase would clear it next tick anyway)
+    crew.splice(i, 1);
+    return true;
+  }
+  // DOSSIER › CHANGE SKIN: repoint a live body's sprite set. Display-only — the agentId, position, engine state
+  // and foot-anchor are untouched; only which DATA.SKINS entry drawBody looks up changes, so the LOCKED
+  // pixelation + foot-padding rules still apply (we change WHICH skin, not how a skin renders). Works for the
+  // hero and for a summoned crew body.
+  function setSkin(agentId, skin) {
+    const sk = String(skin || '').trim();
+    if (!sk || (typeof DATA === 'undefined' || !DATA.SKINS || !DATA.SKINS[sk])) return false;
+    const b = bodyForAgent(agentId);
+    if (!b) return false;
+    b.skin = sk;
+    return true;
+  }
   // per-agent activity: the HERO routes to setActivity (byte-identical single-agent path); a summoned crew
   // body lights + takes the working pose while its run is live, and extinguishes when it ends.
   function setActivityFor(agentId, kind) {
@@ -5447,7 +5471,7 @@ const World = (() => {
     pollFeed: () => pollFeedState(),
     pollShip: () => pollShipStats()
   });
-  return { init, rebake, crt: CRT, slagLog: () => (slaglog ? slaglog.recent() : []), loadStation, spawn, spawnAgent, relabel, setActivityFor, focusBody, setChatFocus, chatFocusPing, start, stop, setActivity, wakeIn, beginAwakening, setWakeProgress, igniteSpark, armKindle, kindleHold, camPushIn, camCreep, camPunch, camPullBack, awakenTurn, truthPulse, beginFlood, collapseFlood, endAwakening, releaseAwakening, say, focusAgent, getActivity: () => activity, getUse: () => (agent ? agent.usingProp : null), setOnClick, setOnArcade, setOnOutbox, setOnMissionBoard, setOnTrophyCase, setOnBayAssign, setOnIntakeFeed, refit, pauseBridge, resumeBridge, _dbgSeedRun, _dbgAgeRun, _dbgReconcile, _dbgSweep, _dbgLinkState, _dbgDropBridge, _dbgBeltLegibility,
+  return { init, rebake, crt: CRT, slagLog: () => (slaglog ? slaglog.recent() : []), loadStation, spawn, spawnAgent, despawnAgent, setSkin, relabel, setActivityFor, focusBody, setChatFocus, chatFocusPing, start, stop, setActivity, wakeIn, beginAwakening, setWakeProgress, igniteSpark, armKindle, kindleHold, camPushIn, camCreep, camPunch, camPullBack, awakenTurn, truthPulse, beginFlood, collapseFlood, endAwakening, releaseAwakening, say, focusAgent, getActivity: () => activity, getUse: () => (agent ? agent.usingProp : null), setOnClick, setOnArcade, setOnOutbox, setOnMissionBoard, setOnTrophyCase, setOnBayAssign, setOnIntakeFeed, refit, pauseBridge, resumeBridge, _dbgSeedRun, _dbgAgeRun, _dbgReconcile, _dbgSweep, _dbgLinkState, _dbgDropBridge, _dbgBeltLegibility,
     // AGENT GROWTH: XpStore pushes pre-computed Xp.compute() snapshots here; pulseLevelUp fires
     // the addressed body's gold ring. The colony headline is the top-bar STATION chip.
     setXp: (agentId, a) => {

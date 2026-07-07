@@ -177,6 +177,16 @@
     if (activeId === id) activeId = generalId;
     return true;
   }
+  // DOSSIER › DELETE AGENT support: drop every (non-General) stream bound to a now-deleted agent so the rail
+  // can't reopen a stream with no agent behind it. General is never bound to a specialist, so it's untouched;
+  // if the active stream was one of the removed, activeId falls back to General (via del). Returns the count.
+  function removeByAgent(agentId) {
+    const aid = String(agentId == null ? '' : agentId);
+    if (!aid) return 0;
+    let n = 0;
+    for (const w of ws.slice()) { if (w.id !== generalId && w.agentId === aid && del(w.id)) n++; }
+    return n;
+  }
 
   // ---------- titles ----------
   function deriveTitle(text) {
@@ -284,7 +294,7 @@
   return {
     init, reset, serialize, all, list, search,
     create, adopt, get, active, activeId: getActiveId, generalId: getGeneralId,
-    switch: switchTo, rename, setAgent, setLane, pin, archive, del, touch, markRead, unread: isUnread,
+    switch: switchTo, rename, setAgent, setLane, pin, archive, del, removeByAgent, touch, markRead, unread: isUnread,
     autoTitle, retitle, deriveTitle,
     appendRun, recordDeliverable, addCost, costOf,
     migrateV1, importTasks,
