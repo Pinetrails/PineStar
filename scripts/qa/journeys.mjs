@@ -51,7 +51,7 @@
  *
  * Exit code: 0 all journeys green · 3 a hard assertion failed · 2 BLOCKED (could not run).
  */
-import { mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
+import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { join } from 'node:path';
 import { sleep, launchChrome, connectCDP, evalJS, capture, collectDiagnostics } from '../lib/cdp.mjs';
