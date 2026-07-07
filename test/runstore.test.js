@@ -123,6 +123,11 @@ const clock = { now: () => clk };
   A.eq(s.record({ runId: 'w6', agentId: 'a', reason: 'done', toolsOk: 4 }).toolsOk, 4, 'toolsOk recorded on the row');
   A.eq(s.record({ runId: 'w7', agentId: 'a', reason: 'done' }).toolsOk, 0, 'missing toolsOk defaults to 0 (old rows under-claim, never over)');
   A.eq(s.record({ runId: 'w8', agentId: 'a', toolsOk: 'nope' }).toolsOk, 0, 'non-numeric toolsOk clamps to 0');
+
+  // ---- (P1.2 identity-honesty) identityFallback rides the row: honest marker when the agentId missed the roster ----
+  A.eq(s.record({ runId: 'w9', agentId: 'a', reason: 'done', identityFallback: true }).identityFallback, true, 'identityFallback:true recorded on a fallback run (was not the named specialist)');
+  A.eq(s.record({ runId: 'w10', agentId: 'a', reason: 'done' }).identityFallback, false, 'missing identityFallback defaults to false (old rows / normal runs are not falsely flagged)');
+  A.eq(s.record({ runId: 'w11', agentId: 'a', identityFallback: 1 }).identityFallback, true, 'truthy identityFallback coerces to a strict boolean');
 }
 
 // ---- J. (work-visibility) OLD JSONL rows WITHOUT artifacts still parse + list (fail-open) ----

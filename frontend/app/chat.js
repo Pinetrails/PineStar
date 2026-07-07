@@ -456,9 +456,24 @@ const Chat = (() => {
       ? ModelDock.labels.short(model)
       : ((model.split('/').pop() || model).toUpperCase());
   }
+  // P1.2 (UPDATE_STATE_SAFETY_AUDIT) — an honest one-line notice shown in the COMMS header's model slot when the
+  // focused agent id is NOT in the live registry (roster out of sync). focusAgent sets it instead of silently
+  // rebinding to the overseer; a subsequent focus onto a REAL agent clears it (''). No new window, no .reply beat —
+  // it reuses the existing aria-live model-readout element + a modifier class, per frontend law.
+  let rosterStatusMsg = '';
+  function setRosterStatus(msg) {
+    rosterStatusMsg = String(msg == null ? '' : msg);
+    const modelEl = el('comms-agent-model');
+    if (modelEl && rosterStatusMsg) { modelEl.textContent = rosterStatusMsg; modelEl.classList.add('comms-agent-warn'); }
+    else if (modelEl) { modelEl.classList.remove('comms-agent-warn'); renderIdBar(); }
+  }
   function renderIdBar() {
     const sel = el('comms-agent-select'); const modelEl = el('comms-agent-model'); const bar = el('comms-idbar');
     if (!sel) return;
+    // an active roster-out-of-sync notice wins the model slot: don't overwrite the honest state with a stale
+    // model readout while the focused id can't be resolved (focusAgent clears it once a real agent is focused).
+    if (rosterStatusMsg) { if (modelEl) { modelEl.textContent = rosterStatusMsg; modelEl.classList.add('comms-agent-warn'); } if (bar) bar.hidden = false; return; }
+    if (modelEl) modelEl.classList.remove('comms-agent-warn');
     const list = (typeof App !== 'undefined' && App.agents) ? (App.agents() || []) : [];
     const activeId = activeWs ? (activeWs.agentId || 'agent') : null;
     // rebuild the <option> set only when the roster (ids+names) or selection changed, so a redundant re-render
@@ -4224,5 +4239,5 @@ const Chat = (() => {
   // only" gate maybeStandaloneRate uses — so a pure-chat run is never bottle-offered. Used by App.runBottleInfo (R5).
   function runDidWork(id) { const w = id ? runWork.get(id) : null; return !!(w && ((w.toolsOk || 0) >= 1 || (w.delivered || 0) >= 1)); }
 
-  return { init, load, send, status, localLine, broadcast, setSystem, getHistory, abort, isBusy, beginInterview, endInterview, echoUser, prefill, autoGrowInput, choices, clearChoices, typeLine, nudge, clearNudge, offerCuriosity, offerFork, briefingReceipt, runMeta, runDidWork, awayDigest, awayReview, workshopReturn, refreshIdBar: renderIdBar };
+  return { init, load, send, status, localLine, broadcast, setSystem, getHistory, abort, isBusy, beginInterview, endInterview, echoUser, prefill, autoGrowInput, choices, clearChoices, typeLine, nudge, clearNudge, offerCuriosity, offerFork, briefingReceipt, runMeta, runDidWork, awayDigest, awayReview, workshopReturn, refreshIdBar: renderIdBar, setRosterStatus };
 })();
