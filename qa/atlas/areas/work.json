@@ -780,7 +780,7 @@
         "date": "2026-07-07T21:47:32.573Z"
       },
       "findings": [
-        "c6470187"
+        "3717ef2e"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
@@ -817,14 +817,14 @@
         "date": "2026-07-07T21:47:32.573Z"
       },
       "findings": [
-        "c6470187"
+        "3717ef2e"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding c6470187 routed to work-recipes lane (EL-3 recorded reason)."
+      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding 3717ef2e routed to work-recipes lane (EL-3 recorded reason)."
     },
     {
       "id": "ui/work/txt-button-bldbuild-a-featureadd-something-end-to-429",
@@ -854,14 +854,14 @@
         "date": "2026-07-07T21:47:32.573Z"
       },
       "findings": [
-        "c6470187"
+        "3717ef2e"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding c6470187 routed to work-recipes lane (EL-3 recorded reason)."
+      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding 3717ef2e routed to work-recipes lane (EL-3 recorded reason)."
     },
     {
       "id": "ui/work/txt-button-brfmorning-briefdaily-what-changed-diges-424",
@@ -891,14 +891,14 @@
         "date": "2026-07-07T21:47:32.573Z"
       },
       "findings": [
-        "c6470187"
+        "3717ef2e"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding c6470187 routed to work-recipes lane (EL-3 recorded reason)."
+      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding 3717ef2e routed to work-recipes lane (EL-3 recorded reason)."
     },
     {
       "id": "ui/work/txt-button-bugbug-triagesort-a-pile-of-bugs-by-wha-434",
@@ -928,14 +928,14 @@
         "date": "2026-07-07T21:47:32.573Z"
       },
       "findings": [
-        "c6470187"
+        "3717ef2e"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding c6470187 routed to work-recipes lane (EL-3 recorded reason)."
+      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding 3717ef2e routed to work-recipes lane (EL-3 recorded reason)."
     },
     {
       "id": "ui/work/txt-button-capcaption-variantsthe-same-post-tuned-463",
@@ -965,14 +965,14 @@
         "date": "2026-07-07T21:47:32.573Z"
       },
       "findings": [
-        "c6470187"
+        "3717ef2e"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding c6470187 routed to work-recipes lane (EL-3 recorded reason)."
+      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding 3717ef2e routed to work-recipes lane (EL-3 recorded reason)."
     },
     {
       "id": "ui/work/txt-button-caption-variantsthe-same-post-tuned-pe-422",
@@ -1002,14 +1002,14 @@
         "date": "2026-07-07T21:47:32.573Z"
       },
       "findings": [
-        "c6470187"
+        "3717ef2e"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding c6470187 routed to work-recipes lane (EL-3 recorded reason)."
+      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding 3717ef2e routed to work-recipes lane (EL-3 recorded reason)."
     },
     {
       "id": "ui/work/txt-button-chachangelog-draftturn-commits-into-a-r-438",
@@ -1039,14 +1039,14 @@
         "date": "2026-07-07T21:47:32.573Z"
       },
       "findings": [
-        "c6470187"
+        "3717ef2e"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding c6470187 routed to work-recipes lane (EL-3 recorded reason)."
+      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding 3717ef2e routed to work-recipes lane (EL-3 recorded reason)."
     },
     {
       "id": "ui/work/txt-button-chkfact-checkverify-a-claim-with-source-426",
@@ -1076,14 +1076,14 @@
         "date": "2026-07-07T21:47:32.573Z"
       },
       "findings": [
-        "c6470187"
+        "3717ef2e"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding c6470187 routed to work-recipes lane (EL-3 recorded reason)."
+      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding 3717ef2e routed to work-recipes lane (EL-3 recorded reason)."
     },
     {
       "id": "ui/work/txt-button-comcomment-digestwhat-your-audience-is-457",
@@ -1113,14 +1113,14 @@
         "date": "2026-07-07T21:47:32.573Z"
       },
       "findings": [
-        "c6470187"
+        "3717ef2e"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding c6470187 routed to work-recipes lane (EL-3 recorded reason)."
+      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding 3717ef2e routed to work-recipes lane (EL-3 recorded reason)."
     },
     {
       "id": "ui/work/txt-button-comcompetitor-trackingwhat-a-rival-ship-446",
@@ -1150,14 +1150,14 @@
         "date": "2026-07-07T21:47:32.573Z"
       },
       "findings": [
-        "c6470187"
+        "3717ef2e"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding c6470187 routed to work-recipes lane (EL-3 recorded reason)."
+      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding 3717ef2e routed to work-recipes lane (EL-3 recorded reason)."
     },
     {
       "id": "ui/work/txt-button-creator12-410",
@@ -1186,7 +1186,7 @@
         "date": "2026-07-07T21:47:32.573Z"
       },
       "findings": [
-        "c6470187"
+        "3717ef2e"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
@@ -1223,14 +1223,14 @@
         "date": "2026-07-07T21:47:32.573Z"
       },
       "findings": [
-        "c6470187"
+        "3717ef2e"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding c6470187 routed to work-recipes lane (EL-3 recorded reason)."
+      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding 3717ef2e routed to work-recipes lane (EL-3 recorded reason)."
     },
     {
       "id": "ui/work/txt-button-cuttighten-thiscut-filler-keep-the-mean-431",
@@ -1260,14 +1260,14 @@
         "date": "2026-07-07T21:47:32.573Z"
       },
       "findings": [
-        "c6470187"
+        "3717ef2e"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding c6470187 routed to work-recipes lane (EL-3 recorded reason)."
+      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding 3717ef2e routed to work-recipes lane (EL-3 recorded reason)."
     },
     {
       "id": "ui/work/txt-button-daidaily-standupyour-day-focused-befor-472",
@@ -1297,14 +1297,14 @@
         "date": "2026-07-07T21:47:32.573Z"
       },
       "findings": [
-        "c6470187"
+        "3717ef2e"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding c6470187 routed to work-recipes lane (EL-3 recorded reason)."
+      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding 3717ef2e routed to work-recipes lane (EL-3 recorded reason)."
     },
     {
       "id": "ui/work/txt-button-decdecision-memoone-page-to-make-the-ca-470",
@@ -1334,14 +1334,14 @@
         "date": "2026-07-07T21:47:32.573Z"
       },
       "findings": [
-        "c6470187"
+        "3717ef2e"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding c6470187 routed to work-recipes lane (EL-3 recorded reason)."
+      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding 3717ef2e routed to work-recipes lane (EL-3 recorded reason)."
     },
     {
       "id": "ui/work/txt-button-deedeep-fact-checkverify-a-claim-across-447",
@@ -1371,14 +1371,14 @@
         "date": "2026-07-07T21:47:32.573Z"
       },
       "findings": [
-        "c6470187"
+        "3717ef2e"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding c6470187 routed to work-recipes lane (EL-3 recorded reason)."
+      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding 3717ef2e routed to work-recipes lane (EL-3 recorded reason)."
     },
     {
       "id": "ui/work/txt-button-depdependency-auditwhat-is-outdated-ri-436",
@@ -1408,14 +1408,14 @@
         "date": "2026-07-07T21:47:32.573Z"
       },
       "findings": [
-        "c6470187"
+        "3717ef2e"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding c6470187 routed to work-recipes lane (EL-3 recorded reason)."
+      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding 3717ef2e routed to work-recipes lane (EL-3 recorded reason)."
     },
     {
       "id": "ui/work/txt-button-developer13-408",
@@ -1444,7 +1444,7 @@
         "date": "2026-07-07T21:47:32.573Z"
       },
       "findings": [
-        "c6470187"
+        "3717ef2e"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
@@ -1481,14 +1481,14 @@
         "date": "2026-07-07T21:47:32.573Z"
       },
       "findings": [
-        "c6470187"
+        "3717ef2e"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding c6470187 routed to work-recipes lane (EL-3 recorded reason)."
+      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding 3717ef2e routed to work-recipes lane (EL-3 recorded reason)."
     },
     {
       "id": "ui/work/txt-button-errerror-log-triagecluster-the-noise-in-440",
@@ -1518,14 +1518,14 @@
         "date": "2026-07-07T21:47:32.573Z"
       },
       "findings": [
-        "c6470187"
+        "3717ef2e"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding c6470187 routed to work-recipes lane (EL-3 recorded reason)."
+      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding 3717ef2e routed to work-recipes lane (EL-3 recorded reason)."
     },
     {
       "id": "ui/work/txt-button-export-475",
@@ -1553,14 +1553,14 @@
         "date": "2026-07-07T21:47:32.573Z"
       },
       "findings": [
-        "c6470187"
+        "3717ef2e"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Live-proven .uiatlas/work2-evidence/probe-evidence.txt export-serialize: Recipes.exportRecipe('fix-bug') returns a starnetRecipe-stamped JSON object (keys starnetRecipe,id,name,emoji,tagline,blurb,accent,tags). recipes.test.js covers exportRecipe. AUDITED not PERFECTED: the browser download UI path is not driven (headless download out of scope) and the button seam is unguarded — finding c6470187 routed to work-recipes."
+      "notes": "Live-proven .uiatlas/work2-evidence/probe-evidence.txt export-serialize: Recipes.exportRecipe('fix-bug') returns a starnetRecipe-stamped JSON object (keys starnetRecipe,id,name,emoji,tagline,blurb,accent,tags). recipes.test.js covers exportRecipe. AUDITED not PERFECTED: the browser download UI path is not driven (headless download out of scope) and the button seam is unguarded — finding 3717ef2e routed to work-recipes."
     },
     {
       "id": "ui/work/txt-button-feefeed-watchkeep-an-eye-on-a-source-fo-444",
@@ -1590,14 +1590,14 @@
         "date": "2026-07-07T21:47:32.573Z"
       },
       "findings": [
-        "c6470187"
+        "3717ef2e"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding c6470187 routed to work-recipes lane (EL-3 recorded reason)."
+      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding 3717ef2e routed to work-recipes lane (EL-3 recorded reason)."
     },
     {
       "id": "ui/work/txt-button-fixfix-a-bugdiagnose-patch-a-defectcod-427",
@@ -1627,14 +1627,14 @@
         "date": "2026-07-07T21:47:32.573Z"
       },
       "findings": [
-        "c6470187"
+        "3717ef2e"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding c6470187 routed to work-recipes lane (EL-3 recorded reason)."
+      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding 3717ef2e routed to work-recipes lane (EL-3 recorded reason)."
     },
     {
       "id": "ui/work/txt-button-flaflaky-test-huntfind-the-tests-that-f-437",
@@ -1664,14 +1664,14 @@
         "date": "2026-07-07T21:47:32.573Z"
       },
       "findings": [
-        "c6470187"
+        "3717ef2e"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding c6470187 routed to work-recipes lane (EL-3 recorded reason)."
+      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding 3717ef2e routed to work-recipes lane (EL-3 recorded reason)."
     },
     {
       "id": "ui/work/txt-button-forget-419",
@@ -1734,7 +1734,7 @@
         "date": "2026-07-07T21:47:32.573Z"
       },
       "findings": [
-        "c6470187"
+        "3717ef2e"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
@@ -1802,14 +1802,14 @@
         "date": "2026-07-07T21:47:32.573Z"
       },
       "findings": [
-        "c6470187"
+        "3717ef2e"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding c6470187 routed to work-recipes lane (EL-3 recorded reason)."
+      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding 3717ef2e routed to work-recipes lane (EL-3 recorded reason)."
     },
     {
       "id": "ui/work/txt-button-import-414",
@@ -1834,14 +1834,14 @@
       "status": "mapped",
       "auditedAt": null,
       "findings": [
-        "c6470187"
+        "3717ef2e"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Traced seam (marketplace.js R6 hidden #mkt-import-file → Recipes.importRecipe). recipes.test.js covers importRecipe/exportRecipe round-trip at the store level. UI file-picker path not driven live (headless file upload out of scope). Left MAPPED. UI-dispatch coverage gap tracked by finding c6470187."
+      "notes": "Traced seam (marketplace.js R6 hidden #mkt-import-file → Recipes.importRecipe). recipes.test.js covers importRecipe/exportRecipe round-trip at the store level. UI file-picker path not driven live (headless file upload out of scope). Left MAPPED. UI-dispatch coverage gap tracked by finding 3717ef2e."
     },
     {
       "id": "ui/work/txt-button-inbinbox-triagewhat-in-your-inbox-actua-464",
@@ -1871,14 +1871,14 @@
         "date": "2026-07-07T21:47:32.573Z"
       },
       "findings": [
-        "c6470187"
+        "3717ef2e"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding c6470187 routed to work-recipes lane (EL-3 recorded reason)."
+      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding 3717ef2e routed to work-recipes lane (EL-3 recorded reason)."
     },
     {
       "id": "ui/work/txt-button-lealearning-plana-path-from-zero-to-com-471",
@@ -1908,14 +1908,14 @@
         "date": "2026-07-07T21:47:32.573Z"
       },
       "findings": [
-        "c6470187"
+        "3717ef2e"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding c6470187 routed to work-recipes lane (EL-3 recorded reason)."
+      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding 3717ef2e routed to work-recipes lane (EL-3 recorded reason)."
     },
     {
       "id": "ui/work/txt-button-litliterature-reviewmap-what-is-known-o-445",
@@ -1945,14 +1945,14 @@
         "date": "2026-07-07T21:47:32.573Z"
       },
       "findings": [
-        "c6470187"
+        "3717ef2e"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding c6470187 routed to work-recipes lane (EL-3 recorded reason)."
+      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding 3717ef2e routed to work-recipes lane (EL-3 recorded reason)."
     },
     {
       "id": "ui/work/txt-button-marmarket-watcha-pulse-on-what-you-hold-473",
@@ -1982,14 +1982,14 @@
         "date": "2026-07-07T21:47:32.573Z"
       },
       "findings": [
-        "c6470187"
+        "3717ef2e"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding c6470187 routed to work-recipes lane (EL-3 recorded reason)."
+      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding 3717ef2e routed to work-recipes lane (EL-3 recorded reason)."
     },
     {
       "id": "ui/work/txt-button-meemeeting-prepwalk-in-ready-not-coldo-465",
@@ -2019,14 +2019,14 @@
         "date": "2026-07-07T21:47:32.573Z"
       },
       "findings": [
-        "c6470187"
+        "3717ef2e"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding c6470187 routed to work-recipes lane (EL-3 recorded reason)."
+      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding 3717ef2e routed to work-recipes lane (EL-3 recorded reason)."
     },
     {
       "id": "ui/work/txt-button-mine0-413",
@@ -2055,7 +2055,7 @@
         "date": "2026-07-07T21:47:32.573Z"
       },
       "findings": [
-        "c6470187"
+        "3717ef2e"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
@@ -2092,14 +2092,14 @@
         "date": "2026-07-07T21:47:32.573Z"
       },
       "findings": [
-        "c6470187"
+        "3717ef2e"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding c6470187 routed to work-recipes lane (EL-3 recorded reason)."
+      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding 3717ef2e routed to work-recipes lane (EL-3 recorded reason)."
     },
     {
       "id": "ui/work/txt-button-novaagent-405",
@@ -2162,14 +2162,14 @@
         "date": "2026-07-07T21:47:32.573Z"
       },
       "findings": [
-        "c6470187"
+        "3717ef2e"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding c6470187 routed to work-recipes lane (EL-3 recorded reason)."
+      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding 3717ef2e routed to work-recipes lane (EL-3 recorded reason)."
     },
     {
       "id": "ui/work/txt-button-ops11-411",
@@ -2198,7 +2198,7 @@
         "date": "2026-07-07T21:47:32.573Z"
       },
       "findings": [
-        "c6470187"
+        "3717ef2e"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
@@ -2266,14 +2266,14 @@
         "date": "2026-07-07T21:47:32.573Z"
       },
       "findings": [
-        "c6470187"
+        "3717ef2e"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding c6470187 routed to work-recipes lane (EL-3 recorded reason)."
+      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding 3717ef2e routed to work-recipes lane (EL-3 recorded reason)."
     },
     {
       "id": "ui/work/txt-button-plnplan-a-projectbreak-a-goal-into-a-pla-432",
@@ -2303,14 +2303,14 @@
         "date": "2026-07-07T21:47:32.573Z"
       },
       "findings": [
-        "c6470187"
+        "3717ef2e"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding c6470187 routed to work-recipes lane (EL-3 recorded reason)."
+      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding 3717ef2e routed to work-recipes lane (EL-3 recorded reason)."
     },
     {
       "id": "ui/work/txt-button-posposting-plana-publishing-cadence-you-460",
@@ -2340,14 +2340,14 @@
         "date": "2026-07-07T21:47:32.573Z"
       },
       "findings": [
-        "c6470187"
+        "3717ef2e"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding c6470187 routed to work-recipes lane (EL-3 recorded reason)."
+      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding 3717ef2e routed to work-recipes lane (EL-3 recorded reason)."
     },
     {
       "id": "ui/work/txt-button-priprice-watchtell-me-when-it-movesops-468",
@@ -2377,14 +2377,14 @@
         "date": "2026-07-07T21:47:32.573Z"
       },
       "findings": [
-        "c6470187"
+        "3717ef2e"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding c6470187 routed to work-recipes lane (EL-3 recorded reason)."
+      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding 3717ef2e routed to work-recipes lane (EL-3 recorded reason)."
     },
     {
       "id": "ui/work/txt-button-prspr-sweepreview-the-open-prs-worst-r-435",
@@ -2414,14 +2414,14 @@
         "date": "2026-07-07T21:47:32.573Z"
       },
       "findings": [
-        "c6470187"
+        "3717ef2e"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding c6470187 routed to work-recipes lane (EL-3 recorded reason)."
+      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding 3717ef2e routed to work-recipes lane (EL-3 recorded reason)."
     },
     {
       "id": "ui/work/txt-button-quequestion-miningthe-content-ideas-hid-459",
@@ -2451,14 +2451,14 @@
         "date": "2026-07-07T21:47:32.573Z"
       },
       "findings": [
-        "c6470187"
+        "3717ef2e"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding c6470187 routed to work-recipes lane (EL-3 recorded reason)."
+      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding 3717ef2e routed to work-recipes lane (EL-3 recorded reason)."
     },
     {
       "id": "ui/work/txt-button-recipes-406",
@@ -2524,14 +2524,14 @@
         "date": "2026-07-07T21:47:32.573Z"
       },
       "findings": [
-        "c6470187"
+        "3717ef2e"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding c6470187 routed to work-recipes lane (EL-3 recorded reason)."
+      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding 3717ef2e routed to work-recipes lane (EL-3 recorded reason)."
     },
     {
       "id": "ui/work/txt-button-relrelease-noteswrite-the-notes-users-w-443",
@@ -2561,14 +2561,14 @@
         "date": "2026-07-07T21:47:32.573Z"
       },
       "findings": [
-        "c6470187"
+        "3717ef2e"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding c6470187 routed to work-recipes lane (EL-3 recorded reason)."
+      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding 3717ef2e routed to work-recipes lane (EL-3 recorded reason)."
     },
     {
       "id": "ui/work/txt-button-reprepurpose-contentone-piece-into-many-454",
@@ -2598,14 +2598,14 @@
         "date": "2026-07-07T21:47:32.573Z"
       },
       "findings": [
-        "c6470187"
+        "3717ef2e"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding c6470187 routed to work-recipes lane (EL-3 recorded reason)."
+      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding 3717ef2e routed to work-recipes lane (EL-3 recorded reason)."
     },
     {
       "id": "ui/work/txt-button-research13-409",
@@ -2634,7 +2634,7 @@
         "date": "2026-07-07T21:47:32.573Z"
       },
       "findings": [
-        "c6470187"
+        "3717ef2e"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
@@ -2671,14 +2671,14 @@
         "date": "2026-07-07T21:47:32.573Z"
       },
       "findings": [
-        "c6470187"
+        "3717ef2e"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding c6470187 routed to work-recipes lane (EL-3 recorded reason)."
+      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding 3717ef2e routed to work-recipes lane (EL-3 recorded reason)."
     },
     {
       "id": "ui/work/txt-button-rpldraft-a-replyanswer-a-message-in-your-430",
@@ -2708,14 +2708,14 @@
         "date": "2026-07-07T21:47:32.573Z"
       },
       "findings": [
-        "c6470187"
+        "3717ef2e"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding c6470187 routed to work-recipes lane (EL-3 recorded reason)."
+      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding 3717ef2e routed to work-recipes lane (EL-3 recorded reason)."
     },
     {
       "id": "ui/work/txt-button-save-a-recipe-415",
@@ -2781,14 +2781,14 @@
         "date": "2026-07-07T21:47:32.573Z"
       },
       "findings": [
-        "c6470187"
+        "3717ef2e"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding c6470187 routed to work-recipes lane (EL-3 recorded reason)."
+      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding 3717ef2e routed to work-recipes lane (EL-3 recorded reason)."
     },
     {
       "id": "ui/work/txt-button-set-up-launch-476",
@@ -2854,14 +2854,14 @@
         "date": "2026-07-07T21:47:32.573Z"
       },
       "findings": [
-        "c6470187"
+        "3717ef2e"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding c6470187 routed to work-recipes lane (EL-3 recorded reason)."
+      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding 3717ef2e routed to work-recipes lane (EL-3 recorded reason)."
     },
     {
       "id": "ui/work/txt-button-station-familiaritycalibratingstill-get-416",
@@ -2922,14 +2922,14 @@
         "date": "2026-07-07T21:47:32.573Z"
       },
       "findings": [
-        "c6470187"
+        "3717ef2e"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding c6470187 routed to work-recipes lane (EL-3 recorded reason)."
+      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding 3717ef2e routed to work-recipes lane (EL-3 recorded reason)."
     },
     {
       "id": "ui/work/txt-button-sumsummarize-a-paperthe-paper-minus-th-449",
@@ -2959,14 +2959,14 @@
         "date": "2026-07-07T21:47:32.573Z"
       },
       "findings": [
-        "c6470187"
+        "3717ef2e"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding c6470187 routed to work-recipes lane (EL-3 recorded reason)."
+      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding 3717ef2e routed to work-recipes lane (EL-3 recorded reason)."
     },
     {
       "id": "ui/work/txt-button-thumbnail-conceptsvisual-directions-for-421",
@@ -2996,14 +2996,14 @@
         "date": "2026-07-07T21:47:32.573Z"
       },
       "findings": [
-        "c6470187"
+        "3717ef2e"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding c6470187 routed to work-recipes lane (EL-3 recorded reason)."
+      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding 3717ef2e routed to work-recipes lane (EL-3 recorded reason)."
     },
     {
       "id": "ui/work/txt-button-thuthumbnail-conceptsvisual-directions-461",
@@ -3033,14 +3033,14 @@
         "date": "2026-07-07T21:47:32.573Z"
       },
       "findings": [
-        "c6470187"
+        "3717ef2e"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding c6470187 routed to work-recipes lane (EL-3 recorded reason)."
+      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding 3717ef2e routed to work-recipes lane (EL-3 recorded reason)."
     },
     {
       "id": "ui/work/txt-button-tighten-thiscut-filler-keep-the-meaning-423",
@@ -3070,14 +3070,14 @@
         "date": "2026-07-07T21:47:32.573Z"
       },
       "findings": [
-        "c6470187"
+        "3717ef2e"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding c6470187 routed to work-recipes lane (EL-3 recorded reason)."
+      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding 3717ef2e routed to work-recipes lane (EL-3 recorded reason)."
     },
     {
       "id": "ui/work/txt-button-title-a-b-ideastitles-worth-testing-aga-420",
@@ -3107,14 +3107,14 @@
         "date": "2026-07-07T21:47:32.573Z"
       },
       "findings": [
-        "c6470187"
+        "3717ef2e"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding c6470187 routed to work-recipes lane (EL-3 recorded reason)."
+      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding 3717ef2e routed to work-recipes lane (EL-3 recorded reason)."
     },
     {
       "id": "ui/work/txt-button-tittitle-a-b-ideastitles-worth-testing-456",
@@ -3144,14 +3144,14 @@
         "date": "2026-07-07T21:47:32.573Z"
       },
       "findings": [
-        "c6470187"
+        "3717ef2e"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding c6470187 routed to work-recipes lane (EL-3 recorded reason)."
+      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding 3717ef2e routed to work-recipes lane (EL-3 recorded reason)."
     },
     {
       "id": "ui/work/txt-button-tldsummarizetl-dr-of-anythingops-1-inpu-433",
@@ -3181,14 +3181,14 @@
         "date": "2026-07-07T21:47:32.573Z"
       },
       "findings": [
-        "c6470187"
+        "3717ef2e"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding c6470187 routed to work-recipes lane (EL-3 recorded reason)."
+      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding 3717ef2e routed to work-recipes lane (EL-3 recorded reason)."
     },
     {
       "id": "ui/work/txt-button-toptopic-monitorstanding-watch-on-a-sub-448",
@@ -3218,14 +3218,14 @@
         "date": "2026-07-07T21:47:32.573Z"
       },
       "findings": [
-        "c6470187"
+        "3717ef2e"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding c6470187 routed to work-recipes lane (EL-3 recorded reason)."
+      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding 3717ef2e routed to work-recipes lane (EL-3 recorded reason)."
     },
     {
       "id": "ui/work/txt-button-tratravel-plana-trip-mapped-end-to-endo-467",
@@ -3255,14 +3255,14 @@
         "date": "2026-07-07T21:47:32.573Z"
       },
       "findings": [
-        "c6470187"
+        "3717ef2e"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding c6470187 routed to work-recipes lane (EL-3 recorded reason)."
+      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding 3717ef2e routed to work-recipes lane (EL-3 recorded reason)."
     },
     {
       "id": "ui/work/txt-button-tretrend-scanwhat-is-rising-in-a-spacer-451",
@@ -3292,14 +3292,14 @@
         "date": "2026-07-07T21:47:32.573Z"
       },
       "findings": [
-        "c6470187"
+        "3717ef2e"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding c6470187 routed to work-recipes lane (EL-3 recorded reason)."
+      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding 3717ef2e routed to work-recipes lane (EL-3 recorded reason)."
     },
     {
       "id": "ui/work/txt-button-tweak-474",
@@ -3328,14 +3328,14 @@
         "date": "2026-07-07T21:47:32.573Z"
       },
       "findings": [
-        "c6470187"
+        "3717ef2e"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Live-proven .uiatlas/work2-evidence/probe-evidence.txt tweak-fork: clicking ✎ TWEAK on fix-bug opened the editor titled \"TWEAK RECIPE\" seeded \"Fix a Bug (my version)\" (fork path; builtin untouched, customsBefore 0). recipes.test.js R2 guards forkFrom (source:fork provenance). AUDITED not PERFECTED: the TWEAK button→editor UI seam has no dedicated assertion — finding c6470187 (recipe-catalog UI-dispatch) covers it, routed to work-recipes."
+      "notes": "Live-proven .uiatlas/work2-evidence/probe-evidence.txt tweak-fork: clicking ✎ TWEAK on fix-bug opened the editor titled \"TWEAK RECIPE\" seeded \"Fix a Bug (my version)\" (fork path; builtin untouched, customsBefore 0). recipes.test.js R2 guards forkFrom (source:fork provenance). AUDITED not PERFECTED: the TWEAK button→editor UI seam has no dedicated assertion — finding 3717ef2e (recipe-catalog UI-dispatch) covers it, routed to work-recipes."
     },
     {
       "id": "ui/work/txt-button-weeweekly-reviewclose-the-week-aim-the-466",
@@ -3365,14 +3365,14 @@
         "date": "2026-07-07T21:47:32.573Z"
       },
       "findings": [
-        "c6470187"
+        "3717ef2e"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding c6470187 routed to work-recipes lane (EL-3 recorded reason)."
+      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding 3717ef2e routed to work-recipes lane (EL-3 recorded reason)."
     }
   ]
 }
