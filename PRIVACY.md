@@ -19,7 +19,9 @@ Support questions: androo.agi@gmail.com.
   Windows: `%APPDATA%\ai.skynet.harness\workspaces\`; macOS:
   `~/Library/Application Support/ai.skynet.harness/workspaces/`; Linux:
   `~/.local/share/ai.skynet.harness/workspaces/`. (The developer-mode sidecar uses
-  `%LOCALAPPDATA%\StarNet\` on Windows.)
+  `%LOCALAPPDATA%\StarNet\` on Windows.) The `ai.skynet.harness` folder name is an intentional
+  back-compatibility alias kept from before the app was renamed to StarNet on 2026-06-22 — it
+  holds your StarNet data.
 - The app talks to the network **only** to do work you asked for, and only to the specific
   third parties described below.
 
