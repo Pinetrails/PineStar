@@ -132,5 +132,56 @@ function fakeDriver() {
     A.ok(!/I see:/.test(un.content), 'unavailable content never fabricates a description');
   }
 
+  // ---- HEADLESS-BY-DEFAULT (2026-07-07 direction: research must never open a window on the user's
+  //      screen; a visible window exists ONLY while the Commander asked to watch) ----
+  {
+    const made = [];   // capture every driver launch + its mode via the makeDriver seam
+    const mkSession = (env) => T.makeBrowserSession({
+      env: env || {},
+      makeDriver: (d) => { const drv = fakeDriver(); drv.headed = !!d.headed; drv.visible = () => !!d.headed; drv.close = () => { drv.closed = true; }; made.push(drv); return drv; }
+    });
+
+    const s = mkSession();
+    await s.navigate('https://example.com');                        // plain research navigate
+    A.eq(made.length, 1, 'first navigate launches one driver');
+    A.eq(made[0].headed, false, 'DEFAULT IS HEADLESS: research never opens a window');
+
+    await s.navigate('https://example.com/2');                       // still no visibility request
+    A.eq(made.length, 1, 'mode unchanged -> no relaunch');
+
+    await s.navigate('https://example.com/3', { visible: true });    // the Commander asked to watch
+    A.eq(made.length, 2, 'visible:true relaunches the driver');
+    A.eq(made[1].headed, true, 'visible:true opens the HEADED window');
+    A.eq(made[0].closed, true, 'the headless driver was closed on the mode switch');
+
+    await s.navigate('https://example.com/4');                       // follow-up drive of the SAME window
+    A.eq(made.length, 2, 'a plain navigate after visible:true keeps the watched window (no relaunch)');
+
+    await s.navigate('https://example.com/5', { visible: false });   // done watching
+    A.eq(made.length, 3, 'visible:false relaunches back');
+    A.eq(made[2].headed, false, 'visible:false returns to headless');
+
+    // a headless env pins the posture: even an explicit visible:true stays headless (CI/soak safety)
+    const s2 = mkSession({ SKYNET_BROWSER_HEADLESS: '1' });
+    await s2.navigate('https://example.com', { visible: true });
+    A.eq(made[made.length - 1].headed, false, 'SKYNET_BROWSER_HEADLESS=1 wins over visible:true');
+  }
+
+  // the tool surface: browser.navigate accepts visible and reports visibility truthfully
+  {
+    const made = [];
+    const B2 = makeBrowserTools({
+      makeDriver: (d) => { const drv = fakeDriver(); drv.headed = !!d.headed; drv.visible = () => !!d.headed; drv.close = () => {}; made.push(drv); return drv; }
+    });
+    const nav = B2.tools.find(t => t.name === 'browser.navigate');
+    A.ok(nav.schema.properties.visible, 'browser.navigate exposes the visible flag');
+    A.ok(/HEADLESS BY DEFAULT/i.test(nav.description), 'the description states the headless default');
+    const r1 = await nav.run({ url: 'https://example.com' }, {});
+    A.ok(/headless — not visible/.test(r1.content), 'a research navigate reports headless honestly');
+    const r2 = await nav.run({ url: 'https://example.com', visible: true }, {});
+    A.ok(/visible window/.test(r2.content), 'a visible:true navigate reports the window on screen');
+    A.eq(made.map(d => d.headed), [false, true], 'headless first, headed only on request');
+  }
+
   A.report('browser.test');
 })();

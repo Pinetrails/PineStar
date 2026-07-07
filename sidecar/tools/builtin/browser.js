@@ -165,8 +165,11 @@
     const fetchImpl = deps.fetchImpl || (typeof fetch !== 'undefined' ? fetch : null);
     const WebSocketImpl = deps.WebSocketImpl || (typeof WebSocket !== 'undefined' ? WebSocket : null);
     const spawn = deps.spawn || CP.spawn;
-    // Headed unless a headless env is set (or deps.headless forces it, e.g. tests/soak rigs).
-    const wantHeaded = deps.headless != null ? !deps.headless : !headlessRequested(deps.env);
+    // HEADLESS BY DEFAULT (2026-07-07 direction): research must never open a window on the user's screen.
+    // A window appears only when the CALL asked for one (deps.headed — browser.navigate visible:true, i.e.
+    // the Commander asked to watch) and no headless env pins it down (CI/soak rigs still win). Legacy
+    // deps.headless===true keeps forcing headless for injected test rigs.
+    const wantHeaded = !!deps.headed && !headlessRequested(deps.env) && deps.headless !== true;
     // Resolve the binary honoring the headed preference (skip headless-shell when headed).
     let chromePath = deps.chrome || null, binIsHeadlessOnly = false;
     if (!chromePath) {
@@ -302,11 +305,26 @@
   function makeBrowserSession(deps) {
     deps = deps || {};
     let driver = deps.driver || null;
+    const injected = !!deps.driver;            // a test-injected driver never mode-switches
+    const makeDriver = deps.makeDriver || makeCdpDriver;   // seam so tests can observe the headed flag
+    let driverHeaded = null;                    // the REAL driver's current mode (null = none yet)
     let version = 0, seq = 0;
     const refs = new Map();
-    function ensureDriver() {
-      if (driver) return driver;
-      driver = makeCdpDriver(deps);
+    /* ensureDriver(wantVisible):
+         undefined  -> reuse whatever is running (or start HEADLESS — the default posture).
+         false/true -> if the running driver's mode differs, RELAUNCH in the requested mode on the same
+                       profile dir (cookies/logins survive the swap). Headless is the default; a visible
+                       window exists only while the Commander asked for one. */
+    function ensureDriver(wantVisible) {
+      const headed = wantVisible === undefined ? (driverHeaded === null ? false : driverHeaded)
+        : (!!wantVisible && !headlessRequested(deps.env) && deps.headless !== true);
+      if (driver) {
+        if (injected || wantVisible === undefined || driverHeaded === headed) return driver;
+        try { driver.close(); } catch (_) {}   // mode change -> relaunch (SIGKILL frees the CDP port)
+        driver = null;
+      }
+      driver = makeDriver(Object.assign({}, deps, { headed }));
+      driverHeaded = headed;
       return driver;
     }
     function refFor(node) {
@@ -320,12 +338,13 @@
       if (r.version !== version) throw new Error('stale browser ref: ' + ref + ' (refs expire after each browser.snapshot)');
       return r.node;
     }
-    async function navigate(url) {
+    async function navigate(url, opts) {
       const u = assertSafeUrl(url);
-      const finalUrl = await ensureDriver().navigate(u.href);
+      const d = ensureDriver(opts && 'visible' in opts ? !!opts.visible : undefined);
+      const finalUrl = await d.navigate(u.href);
       if (finalUrl) {
         try { assertSafeUrl(finalUrl); } catch (e) {
-          try { await ensureDriver().navigate('about:blank'); } catch (_) {}
+          try { await d.navigate('about:blank'); } catch (_) {}
           throw new Error('blocked unsafe redirect: ' + e.message);
         }
       }
@@ -379,9 +398,9 @@
     const read = (name, description, schema, run) => ({ name, capability: 'web', scope: 'read', requiresConsent: false, timeoutMs: 20000, description, schema, run });
     const exec = (name, description, schema, run, consent) => ({ name, capability: 'web', scope: 'execute', requiresConsent: consent !== false, timeoutMs: 20000, description, schema, run });
     const tools = [
-      read('browser.navigate', 'Navigate the AGENT-CONTROLLED browser to a public http(s) URL. On a real desktop this opens a VISIBLE Chrome window the user can watch (and hear) while you drive it with browser.snapshot/click/type — the same window you control. (In headless/CI mode, set by STARNET_BROWSER_HEADLESS, no window is shown; the result says so.) Use this whenever the user wants to SEE you open/browse a page ("open youtube for me", "on my screen") AND you may then interact with it. For a fire-and-forget open in the user\'s OWN default browser that you will NOT control afterward, use desktop.open. Private, loopback, intranet, and unsafe redirects are refused, so local dev servers need shell/HTTP verification instead.', { type: 'object', required: ['url'], properties: { url: { type: 'string' } } },
+      read('browser.navigate', 'Navigate the AGENT-CONTROLLED browser to a public http(s) URL, then drive it with browser.snapshot/click/type. HEADLESS BY DEFAULT: research and background browsing must never open anything on the user\'s screen. Pass visible:true ONLY when the Commander explicitly asked to SEE the browsing ("open youtube for me", "show me", "on my screen") — that puts the controlled window on their desktop (visible:false sends it back to headless). For a fire-and-forget open in the user\'s OWN default browser that you will NOT control afterward, use desktop.open. Private, loopback, intranet, and unsafe redirects are refused, so local dev servers need shell/HTTP verification instead.', { type: 'object', required: ['url'], properties: { url: { type: 'string' }, visible: { type: 'boolean' } } },
         async a => {
-          const url = await session.navigate(a.url);
+          const url = await session.navigate(a.url, ('visible' in (a || {})) ? { visible: a.visible === true } : undefined);
           let vis = true;
           try { vis = session.visible(); } catch (_) {}
           const suffix = vis
