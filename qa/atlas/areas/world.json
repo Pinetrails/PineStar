@@ -7,19 +7,32 @@
    "kind": "state",
    "area": "world",
    "name": "shoot state: ingame",
-   "purpose": "",
-   "promise": "",
+   "purpose": "The base shoot state — the resting live station with all windows closed; the canonical view the Atlas sweep walks first.",
+   "promise": "buildStates() yields {name:\"ingame\", drive:closeOnly}: from any state, closing all windows returns to the interactive station canvas; every ingame-tagged UI entry is enumerated in this state.",
    "wiring": {
-    "files": [],
+    "files": [
+     "scripts/lib/states.mjs",
+     "scripts/lib/shootRun.mjs",
+     "scripts/qa/cartographer.mjs"
+    ],
     "events": []
    },
-   "coverage": [],
-   "status": "unmapped",
-   "auditedAt": null,
+   "coverage": [
+    {
+     "kind": "shoot",
+     "ref": "ingame"
+    }
+   ],
+   "status": "perfected",
+   "auditedAt": {
+    "sha": "296c8ee866614531a87cbb918070805c60928503",
+    "date": "2026-07-07T22:17:15.768Z"
+   },
    "findings": [],
    "firstSeen": "2026-07-07T08:09:25.409Z",
    "lastSeen": "2026-07-07T08:25:37.292Z",
-   "missing": false
+   "missing": false,
+   "notes": "Live-proven 2026-07-07T22:17:15.768Z (port 8968/CDP 9368): the seeded station loaded directly into the ingame state (376 model rows, dock tiles, widget rails all present). states.mjs:83 name:ingame drive:closeOnly. This IS the state every other world entry was harvested under."
   },
   {
    "id": "ui/world/adv-toggle",
@@ -47,63 +60,99 @@
    "kind": "ui",
    "area": "world",
    "name": "Add a widget to this rail",
-   "purpose": "",
-   "promise": "",
+   "purpose": "The ＋ \"add a widget\" button on a widget rail — opens the picker to pin a telemetry instrument to that rail.",
+   "promise": "Clicking opens a .wg-pop menu of .wg-pop-item feeds; picking one pins that instrument to the rail (persisted to the rail-layout localStorage key).",
    "wiring": {
-    "files": [],
+    "files": [
+     "frontend/app/widgets.js",
+     "frontend/css/app.css",
+     "frontend/index.html"
+    ],
     "events": []
    },
-   "coverage": [],
-   "status": "unmapped",
-   "auditedAt": null,
+   "coverage": [
+    {
+     "kind": "shoot",
+     "ref": "ingame"
+    }
+   ],
+   "status": "perfected",
+   "auditedAt": {
+    "sha": "296c8ee866614531a87cbb918070805c60928503",
+    "date": "2026-07-07T22:16:20.560Z"
+   },
    "findings": [],
    "firstSeen": "2026-07-07T08:11:07.402Z",
    "lastSeen": "2026-07-07T08:25:37.292Z",
    "missing": false,
    "selector": "button[aria-label=\"Add a widget to this rail\"]",
-   "state": "ingame"
+   "state": "ingame",
+   "notes": "CANONICAL widget-rail add. Live-proven 2026-07-07T22:16:20.560Z (port 8968): 2 add buttons (one per rail); clicking opened a .wg-pop with .wg-pop-item entries. makeAddBtn() widgets.js:298. Evidence dock-chrome.json. NOTE: 2 instances = one per rail (top/bot), same seam."
   },
   {
    "id": "ui/world/aria-remove-widget",
    "kind": "ui",
    "area": "world",
    "name": "Remove widget",
-   "purpose": "",
-   "promise": "",
+   "purpose": "The ✕ on a pinned widget — unpins that instrument from its rail.",
+   "promise": "Clicking removes the widget from the rail and its id from the persisted rail layout; the rail re-renders without it.",
    "wiring": {
-    "files": [],
+    "files": [
+     "frontend/app/widgets.js",
+     "frontend/css/app.css",
+     "frontend/index.html"
+    ],
     "events": []
    },
-   "coverage": [],
-   "status": "unmapped",
-   "auditedAt": null,
+   "coverage": [
+    {
+     "kind": "shoot",
+     "ref": "ingame"
+    }
+   ],
+   "status": "audited",
+   "auditedAt": {
+    "sha": "296c8ee866614531a87cbb918070805c60928503",
+    "date": "2026-07-07T22:16:20.560Z"
+   },
    "findings": [],
    "firstSeen": "2026-07-07T08:11:07.402Z",
    "lastSeen": "2026-07-07T08:25:37.292Z",
    "missing": false,
    "selector": "button[aria-label=\"Remove widget\"]",
-   "state": "ingame"
+   "state": "ingame",
+   "notes": "Present + wired (.wg-x button widgets.js:250, aria-label \"Remove widget\"). Live-seen 1 instance 2026-07-07T22:16:20.560Z. Audited (remove-then-persist round-trip not re-driven). Evidence dock-chrome.json."
   },
   {
    "id": "ui/world/aria-session-actions",
    "kind": "ui",
    "area": "world",
    "name": "session actions",
-   "purpose": "",
-   "promise": "",
+   "purpose": "The ⋯ kebab on a workstream row — opens per-session actions (rename/archive/etc).",
+   "promise": "Clicking the .ws-kebab opens that session's action menu; aria-label/title \"session actions\".",
    "wiring": {
-    "files": [],
+    "files": [
+     "frontend/app/app.js",
+     "frontend/css/app.css",
+     "frontend/index.html"
+    ],
     "events": []
    },
-   "coverage": [],
-   "status": "unmapped",
+   "coverage": [
+    {
+     "kind": "shoot",
+     "ref": "ingame"
+    }
+   ],
+   "status": "mapped",
    "auditedAt": null,
    "findings": [],
    "firstSeen": "2026-07-07T08:11:07.402Z",
    "lastSeen": "2026-07-07T08:25:37.292Z",
    "missing": false,
    "selector": "button[aria-label=\"session actions\"]",
-   "state": "ingame"
+   "state": "ingame",
+   "notes": "Per-row .ws-kebab (app.js:2338). Seam understood; action-menu open not driven live. Mapped."
   },
   {
    "id": "ui/world/bb-build",
@@ -1118,63 +1167,102 @@
    "kind": "ui",
    "area": "world",
    "name": "REFRESH",
-   "purpose": "",
-   "promise": "",
+   "purpose": "The REFRESH button in the model dock — re-fetches the live model catalog from every configured provider.",
+   "promise": "Clicking calls fetchModels(true) (force), re-hitting /api/models/* and rebuilding the row list.",
    "wiring": {
-    "files": [],
+    "files": [
+     "frontend/app/modeldock.js",
+     "frontend/index.html",
+     "frontend/css/comms.css"
+    ],
     "events": []
    },
-   "coverage": [],
-   "status": "unmapped",
-   "auditedAt": null,
+   "coverage": [
+    {
+     "kind": "test",
+     "ref": "test/modelpicker.test.js"
+    }
+   ],
+   "status": "audited",
+   "auditedAt": {
+    "sha": "296c8ee866614531a87cbb918070805c60928503",
+    "date": "2026-07-07T22:16:20.560Z"
+   },
    "findings": [],
    "firstSeen": "2026-07-07T08:11:07.405Z",
    "lastSeen": "2026-07-07T08:25:37.292Z",
    "missing": false,
    "selector": "#model-dock-refresh",
-   "state": "ingame"
+   "state": "ingame",
+   "notes": "Present + wired (modeldock.js:676 refresh.onclick→fetchModels(true)); label \"REFRESH\" live 2026-07-07T22:16:20.560Z. Audited (not perfected: force-refetch network effect not asserted by a test)."
   },
   {
    "id": "ui/world/model-dock-search",
    "kind": "ui",
    "area": "world",
    "name": "Search models",
-   "purpose": "",
-   "promise": "",
+   "purpose": "The search box inside the model dock — filters the model list by id/name/provider.",
+   "promise": "Typing filters .model-dock-row live (id+label+group substring match); clears to full list when emptied.",
    "wiring": {
-    "files": [],
+    "files": [
+     "frontend/app/modeldock.js",
+     "frontend/index.html",
+     "frontend/css/comms.css"
+    ],
     "events": []
    },
-   "coverage": [],
-   "status": "unmapped",
-   "auditedAt": null,
+   "coverage": [
+    {
+     "kind": "test",
+     "ref": "test/modelpicker.test.js"
+    }
+   ],
+   "status": "perfected",
+   "auditedAt": {
+    "sha": "296c8ee866614531a87cbb918070805c60928503",
+    "date": "2026-07-07T22:16:20.560Z"
+   },
    "findings": [],
    "firstSeen": "2026-07-07T08:11:07.402Z",
    "lastSeen": "2026-07-07T08:25:37.292Z",
    "missing": false,
    "selector": "#model-dock-search",
-   "state": "ingame"
+   "state": "ingame",
+   "notes": "Live-proven 2026-07-07T22:16:20.560Z (port 8968): typing \"opus\" filtered 376→10 rows. renderList() reads #model-dock-search value (modeldock.js:421-427); wired at :675. Evidence dock-chrome.json."
   },
   {
    "id": "ui/world/model-dock-settings",
    "kind": "ui",
    "area": "world",
    "name": "SETTINGS",
-   "purpose": "",
-   "promise": "",
+   "purpose": "The SETTINGS shortcut in the model dock — jumps to the Settings window (keys/models/voice/data).",
+   "promise": "Clicking closes the dock and clicks the .bb[data-term=\"settings\"] item (opens Settings).",
    "wiring": {
-    "files": [],
+    "files": [
+     "frontend/app/modeldock.js",
+     "frontend/index.html",
+     "frontend/css/comms.css"
+    ],
     "events": []
    },
-   "coverage": [],
-   "status": "unmapped",
-   "auditedAt": null,
+   "coverage": [
+    {
+     "kind": "test",
+     "ref": "test/modelpicker.test.js"
+    }
+   ],
+   "status": "audited",
+   "auditedAt": {
+    "sha": "296c8ee866614531a87cbb918070805c60928503",
+    "date": "2026-07-07T22:16:20.560Z"
+   },
    "findings": [],
    "firstSeen": "2026-07-07T08:11:07.405Z",
    "lastSeen": "2026-07-07T08:25:37.292Z",
    "missing": false,
    "selector": "#model-dock-settings",
-   "state": "ingame"
+   "state": "ingame",
+   "notes": "Present + wired (modeldock.js:677→openSettings→clicks settings bb); label \"SETTINGS\" live 2026-07-07T22:16:20.560Z. Audited (not perfected: Settings-open not asserted by a test)."
   },
   {
    "id": "ui/world/model-dock-toggle",
@@ -1215,21 +1303,32 @@
    "kind": "ui",
    "area": "world",
    "name": "dismiss hint",
-   "purpose": "",
-   "promise": "",
+   "purpose": "The ✕ on the nav coach-mark hint — dismisses the first-run \"where things live\" hint.",
+   "promise": "Clicking hides the #nav-coach hint (and persists dismissal so it does not re-nag); aria-label \"dismiss hint\".",
    "wiring": {
-    "files": [],
+    "files": [
+     "frontend/app/navdock.js"
+    ],
     "events": []
    },
-   "coverage": [],
-   "status": "unmapped",
-   "auditedAt": null,
+   "coverage": [
+    {
+     "kind": "shoot",
+     "ref": "ingame"
+    }
+   ],
+   "status": "audited",
+   "auditedAt": {
+    "sha": "296c8ee866614531a87cbb918070805c60928503",
+    "date": "2026-07-07T22:16:20.560Z"
+   },
    "findings": [],
    "firstSeen": "2026-07-07T08:11:07.405Z",
    "lastSeen": "2026-07-07T08:25:37.292Z",
    "missing": false,
    "selector": "#nav-coach-x",
-   "state": "ingame"
+   "state": "ingame",
+   "notes": "Present + wired (navdock.js:50/65 #nav-coach-x). Live-seen 2026-07-07T22:16:20.560Z, label \"dismiss hint\", hint container visible. Audited (dismiss-persist not re-driven)."
   },
   {
    "id": "ui/world/txt-button-accounts-fireworks-models-deepseek-v3p1m-392",
@@ -1344,21 +1443,31 @@
    "kind": "ui",
    "area": "world",
    "name": "⚙ ADD IN SETTINGS",
-   "purpose": "",
-   "promise": "",
+   "purpose": "The \"⚙ ADD IN SETTINGS\" row shown in the model dock when the active provider has no stored key.",
+   "promise": "Appears only when Harness.hasStoredCredential(provider) is false (truthful pre-RUN key warning); clicking opens Settings. Vanishes the instant a key is stored.",
    "wiring": {
-    "files": [],
+    "files": [
+     "frontend/app/modeldock.js",
+     "frontend/index.html",
+     "frontend/css/comms.css"
+    ],
     "events": []
    },
-   "coverage": [],
-   "status": "unmapped",
+   "coverage": [
+    {
+     "kind": "test",
+     "ref": "test/modelpicker.test.js"
+    }
+   ],
+   "status": "mapped",
    "auditedAt": null,
    "findings": [],
    "firstSeen": "2026-07-07T08:11:07.402Z",
    "lastSeen": "2026-07-07T08:25:37.292Z",
    "missing": false,
    "selector": "button",
-   "state": "ingame"
+   "state": "ingame",
+   "notes": "State-conditional model-dock chrome (renderKeyWarning modeldock.js:551-571). Not shown in the seeded key-present state, so not live-audited here; seam understood. Mapped."
   },
   {
    "id": "ui/world/txt-button-ai21-jamba-large-1-7off-38",
@@ -2698,21 +2807,31 @@
    "kind": "ui",
    "area": "world",
    "name": "Shape the station — refit the floor, skills, toolsets, channels",
-   "purpose": "",
-   "promise": "",
+   "purpose": "duplicate harvest of ui/world/txt-button-crew-401 (a .bb-grp dock-group tile; this one = BUILD).",
+   "promise": "Same contract as ui/world/txt-button-crew-401: click toggles aria-expanded and reveals its group flyout of .bb items.",
    "wiring": {
-    "files": [],
+    "files": [
+     "frontend/index.html",
+     "frontend/app/app.js",
+     "frontend/css/app.css"
+    ],
     "events": []
    },
-   "coverage": [],
-   "status": "unmapped",
+   "coverage": [
+    {
+     "kind": "shoot",
+     "ref": "ingame"
+    }
+   ],
+   "status": "mapped",
    "auditedAt": null,
    "findings": [],
    "firstSeen": "2026-07-07T08:11:07.405Z",
    "lastSeen": "2026-07-07T08:25:37.292Z",
    "missing": false,
    "selector": "button",
-   "state": "ingame"
+   "state": "ingame",
+   "notes": "CLONE of ui/world/txt-button-crew-401 — same .bb-grp flyout seam (index.html), differs only in group (BUILD — Shape the station: refit, skills, toolsets, channels). 4 tiles live-proven 2026-07-07T22:16:20.560Z. FUTURE-DEDUP."
   },
   {
    "id": "ui/world/txt-button-bytedance-seed-seed-1-6-flashmed-72",
@@ -2929,42 +3048,61 @@
    "kind": "ui",
    "area": "world",
    "name": "CHATGPT — NO KEY",
-   "purpose": "",
-   "promise": "",
+   "purpose": "duplicate harvest of the model-dock no-key warning (a provider-specific \"<PROVIDER> — NO KEY\" variant of the ADD IN SETTINGS chip).",
+   "promise": "Same contract as ui/world/txt-button-add-in-settings-17: shown only when the active provider lacks a stored credential; opens Settings.",
    "wiring": {
-    "files": [],
+    "files": [
+     "frontend/app/modeldock.js",
+     "frontend/index.html",
+     "frontend/css/comms.css"
+    ],
     "events": []
    },
-   "coverage": [],
-   "status": "unmapped",
+   "coverage": [
+    {
+     "kind": "test",
+     "ref": "test/modelpicker.test.js"
+    }
+   ],
+   "status": "mapped",
    "auditedAt": null,
    "findings": [],
    "firstSeen": "2026-07-07T08:11:07.402Z",
    "lastSeen": "2026-07-07T08:25:37.292Z",
    "missing": false,
    "selector": "button",
-   "state": "ingame"
+   "state": "ingame",
+   "notes": "CLONE of ui/world/txt-button-add-in-settings-17 — same renderKeyWarning seam, provider label differs (CHATGPT). State-conditional, not shown in seeded state. FUTURE-DEDUP."
   },
   {
    "id": "ui/world/txt-button-cinema-16",
    "kind": "ui",
    "area": "world",
    "name": "fill the frame with the station (C)",
-   "purpose": "",
-   "promise": "",
+   "purpose": "The ▣ CINEMA toggle in the war-room camera HUD — fills the frame with the living station feed (also bound to C).",
+   "promise": "Clicking toggles the \"cinema\" class on the war-room grid; label flips ▣ CINEMA ⇄ ▣ EXIT and a \"CINEMA — press C to exit\" hint shows.",
    "wiring": {
-    "files": [],
+    "files": [
+     "frontend/app/warroom.js",
+     "frontend/css/app.css"
+    ],
     "events": []
    },
-   "coverage": [],
-   "status": "unmapped",
+   "coverage": [
+    {
+     "kind": "shoot",
+     "ref": "ingame"
+    }
+   ],
+   "status": "mapped",
    "auditedAt": null,
    "findings": [],
    "firstSeen": "2026-07-07T08:11:07.402Z",
    "lastSeen": "2026-07-07T08:25:37.292Z",
    "missing": false,
    "selector": "button",
-   "state": "ingame"
+   "state": "ingame",
+   "notes": "Seam = warroom.js:106-123 (.cam-cine button, toggles cinema on the wr grid — NOT body). Button live-present 2026-07-07T22:16:20.560Z with title \"fill the frame with the station (C)\"; full toggle in the war-room feed state not driven here. Mapped (honest: not audited)."
   },
   {
    "id": "ui/world/txt-button-claude-haiku-4-5med-372",
@@ -3251,21 +3389,34 @@
    "kind": "ui",
    "area": "world",
    "name": "Your agents — dossiers, recruitment, and your own Commander file",
-   "purpose": "",
-   "promise": "",
+   "purpose": "The CREW dock-group button — opens the flyout of crew windows (Agents, Commander).",
+   "promise": "Clicking toggles aria-expanded and reveals its .bb-grp-menu of .bb item buttons; title reads \"Your agents — dossiers, recruitment, and your own Commander file\".",
    "wiring": {
-    "files": [],
+    "files": [
+     "frontend/index.html",
+     "frontend/app/app.js",
+     "frontend/css/app.css"
+    ],
     "events": []
    },
-   "coverage": [],
-   "status": "unmapped",
-   "auditedAt": null,
+   "coverage": [
+    {
+     "kind": "shoot",
+     "ref": "ingame"
+    }
+   ],
+   "status": "perfected",
+   "auditedAt": {
+    "sha": "296c8ee866614531a87cbb918070805c60928503",
+    "date": "2026-07-07T22:16:20.560Z"
+   },
    "findings": [],
    "firstSeen": "2026-07-07T08:11:07.405Z",
    "lastSeen": "2026-07-07T08:25:37.292Z",
    "missing": false,
    "selector": "button",
-   "state": "ingame"
+   "state": "ingame",
+   "notes": "CANONICAL dock-group tile. Live-proven 2026-07-07T22:16:20.560Z (port 8968): clicking CREW .bb-grp set aria-expanded false→true (flyout open). index.html:352. Evidence .uiatlas/world3-evidence/dock-chrome.json."
   },
   {
    "id": "ui/world/txt-button-custom-15",
@@ -14090,21 +14241,31 @@
    "kind": "ui",
    "area": "world",
    "name": "Station systems — manual, settings, updates, restore, logs, notifications",
-   "purpose": "",
-   "promise": "",
+   "purpose": "duplicate harvest of ui/world/txt-button-crew-401 (a .bb-grp dock-group tile; this one = SYSTEM).",
+   "promise": "Same contract as ui/world/txt-button-crew-401: click toggles aria-expanded and reveals its group flyout of .bb items.",
    "wiring": {
-    "files": [],
+    "files": [
+     "frontend/index.html",
+     "frontend/app/app.js",
+     "frontend/css/app.css"
+    ],
     "events": []
    },
-   "coverage": [],
-   "status": "unmapped",
+   "coverage": [
+    {
+     "kind": "shoot",
+     "ref": "ingame"
+    }
+   ],
+   "status": "mapped",
    "auditedAt": null,
    "findings": [],
    "firstSeen": "2026-07-07T08:11:07.405Z",
    "lastSeen": "2026-07-07T08:25:37.292Z",
    "missing": false,
    "selector": "button",
-   "state": "ingame"
+   "state": "ingame",
+   "notes": "CLONE of ui/world/txt-button-crew-401 — same .bb-grp flyout seam (index.html), differs only in group (SYSTEM — Station systems: manual, settings, updates, restore, logs, notifications). 4 tiles live-proven 2026-07-07T22:16:20.560Z. FUTURE-DEDUP."
   },
   {
    "id": "ui/world/txt-button-tencent-hunyuan-a13b-instructmed-343",
@@ -14531,21 +14692,31 @@
    "kind": "ui",
    "area": "world",
    "name": "The station's work — tasks, recipes, routines, quests",
-   "purpose": "",
-   "promise": "",
+   "purpose": "duplicate harvest of ui/world/txt-button-crew-401 (a .bb-grp dock-group tile; this one = WORK).",
+   "promise": "Same contract as ui/world/txt-button-crew-401: click toggles aria-expanded and reveals its group flyout of .bb items.",
    "wiring": {
-    "files": [],
+    "files": [
+     "frontend/index.html",
+     "frontend/app/app.js",
+     "frontend/css/app.css"
+    ],
     "events": []
    },
-   "coverage": [],
-   "status": "unmapped",
+   "coverage": [
+    {
+     "kind": "shoot",
+     "ref": "ingame"
+    }
+   ],
+   "status": "mapped",
    "auditedAt": null,
    "findings": [],
    "firstSeen": "2026-07-07T08:11:07.405Z",
    "lastSeen": "2026-07-07T08:25:37.292Z",
    "missing": false,
    "selector": "button",
-   "state": "ingame"
+   "state": "ingame",
+   "notes": "CLONE of ui/world/txt-button-crew-401 — same .bb-grp flyout seam (index.html), differs only in group (WORK — The station's work: tasks, recipes, routines, quests). 4 tiles live-proven 2026-07-07T22:16:20.560Z. FUTURE-DEDUP."
   },
   {
    "id": "ui/world/txt-button-writer-palmyra-x5off-353",
@@ -15368,42 +15539,68 @@
    "kind": "ui",
    "area": "world",
    "name": "show archived sessions",
-   "purpose": "",
-   "promise": "",
+   "purpose": "The \"show archived sessions\" toggle in the workstream strip — reveals/hides archived workstreams.",
+   "promise": "Clicking calls toggleArchived() and shows/hides archived session rows; label \"show archived sessions\".",
    "wiring": {
-    "files": [],
+    "files": [
+     "frontend/app/app.js",
+     "frontend/css/app.css",
+     "frontend/index.html"
+    ],
     "events": []
    },
-   "coverage": [],
-   "status": "unmapped",
-   "auditedAt": null,
+   "coverage": [
+    {
+     "kind": "shoot",
+     "ref": "ingame"
+    }
+   ],
+   "status": "audited",
+   "auditedAt": {
+    "sha": "296c8ee866614531a87cbb918070805c60928503",
+    "date": "2026-07-07T22:16:20.560Z"
+   },
    "findings": [],
    "firstSeen": "2026-07-07T08:11:07.402Z",
    "lastSeen": "2026-07-07T08:25:37.292Z",
    "missing": false,
    "selector": "#ws-archived",
-   "state": "ingame"
+   "state": "ingame",
+   "notes": "Present + wired (onclick=toggleArchived app.js:2246; state refreshed :2562). Live-seen 2026-07-07T22:16:20.560Z. Audited (archived-list toggle not re-driven)."
   },
   {
    "id": "ui/world/ws-new",
    "kind": "ui",
    "area": "world",
    "name": "start a new workstream",
-   "purpose": "",
-   "promise": "",
+   "purpose": "The \"＋ new workstream\" button — starts a fresh session/workstream in the strip.",
+   "promise": "Clicking calls newWorkstream() and adds a new workstream to the strip; title \"start a new workstream\".",
    "wiring": {
-    "files": [],
+    "files": [
+     "frontend/app/app.js",
+     "frontend/css/app.css",
+     "frontend/index.html"
+    ],
     "events": []
    },
-   "coverage": [],
-   "status": "unmapped",
-   "auditedAt": null,
+   "coverage": [
+    {
+     "kind": "shoot",
+     "ref": "ingame"
+    }
+   ],
+   "status": "perfected",
+   "auditedAt": {
+    "sha": "296c8ee866614531a87cbb918070805c60928503",
+    "date": "2026-07-07T22:16:20.560Z"
+   },
    "findings": [],
    "firstSeen": "2026-07-07T08:11:07.402Z",
    "lastSeen": "2026-07-07T08:25:37.292Z",
    "missing": false,
    "selector": "#ws-new",
-   "state": "ingame"
+   "state": "ingame",
+   "notes": "Live-proven 2026-07-07T22:16:20.560Z (port 8968): clicking #ws-new grew ws elements 8→14 (new workstream). onclick=newWorkstream app.js:2245. Evidence dock-chrome.json."
   }
  ]
 }
