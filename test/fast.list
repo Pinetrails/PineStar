@@ -7,6 +7,7 @@ test/context.test.js
 test/runtimeinfo.test.js
 test/diagnostics.test.js
 test/diagnostics-support-email.test.js
+test/diagnostics-build.test.js
 test/reflect.test.js
 test/memcore.test.js
 test/cost.test.js

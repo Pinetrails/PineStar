@@ -165,6 +165,56 @@ jobs:
           fi
           npm run tauri -- build --bundles ${{ matrix.bundles }} ${RUST_TARGET:+--target $RUST_TARGET}
 
+      # P1.5 build provenance assertion — prove the binary this leg produced was built from a CLEAN checkout at the
+      # tagged commit, and that build.rs actually embedded that commit into the exe. Two independent checks:
+      #   1. the CHECKOUT is clean (no dirty working tree) AND `git describe --tags` == the tag being built. A dirty
+      #      CI tree would embed "<commit>-dirty" and ship an unreproducible binary — exactly the P1.5 hazard.
+      #   2. the built binary CONTAINS the expected short commit string. The env!() string build.rs stamped lives in
+      #      the binary's read-only string data (survives `strip = true`, which only drops debug symbols), so a plain
+      #      byte-scan finds it. If it's absent, build.rs didn't run or the stamp was lost — fail the leg.
+      - name: Assert build provenance stamp (clean tree + commit embedded in binary)
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          # (1a) the working tree must be clean — a dirty tree ⇒ an unreproducible "-dirty" binary.
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "::error::[$TARGET] working tree is DIRTY at build time — a released binary must come from a clean, tagged checkout. Dirty files:"
+            git status --porcelain
+            exit 1
+          fi
+          # (1b) git describe must resolve to the tag we're building (guards a detached build off the wrong commit).
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG_INPUT='${{ github.event.inputs.tag }}'
+          else
+            TAG_INPUT="${GITHUB_REF#refs/tags/}"
+          fi
+          DESCRIBE=$(git describe --tags --always --dirty)
+          if [ "$DESCRIBE" != "$TAG_INPUT" ]; then
+            echo "::error::[$TARGET] git describe '$DESCRIBE' != tag '$TAG_INPUT' — the checkout is not exactly the tagged commit (or is dirty). Refusing to ship an unreproducible binary."
+            exit 1
+          fi
+          # the short commit build.rs stamps (git rev-parse --short HEAD) — the string that MUST be in the binary.
+          COMMIT=$(git rev-parse --short HEAD)
+          echo "::notice::[$TARGET] provenance: describe=$DESCRIBE commit=$COMMIT (clean tree)"
+          # (2) locate the built executable for this platform and byte-scan it for the commit string.
+          case "$RUNNER_OS" in
+            Windows) bin=$(find src-tauri/target -type f -path '*/release/*' -name 'skynet-desktop.exe' | head -1) ;;
+            *)       bin=$(find src-tauri/target -type f -path '*/release/*' -name 'skynet-desktop' -perm -u+x ! -name '*.d' | head -1) ;;
+          esac
+          if [ -z "${bin:-}" ] || [ ! -f "$bin" ]; then
+            echo "::error::[$TARGET] could not locate the built skynet-desktop binary to verify the provenance stamp."
+            exit 1
+          fi
+          echo "  scanning binary: $bin"
+          # grep -a treats the binary as text; the env!() literal is uncompressed in .rodata so a plain match finds it.
+          if ! grep -aq -- "$COMMIT" "$bin"; then
+            echo "::error::[$TARGET] the built binary does NOT contain the expected build commit '$COMMIT' — build.rs did not stamp it. The exe is not provenance-tagged; refusing to stage."
+            exit 1
+          fi
+          echo "::notice::[$TARGET] build binary contains commit stamp '$COMMIT' ✓"
+
       # Prove the leg produced its updater artifact + .sig. If updater signing silently no-op'd
       # (bad key, tauri config drift), the .sig would be missing and the whole feed would be
       # broken — catch it here on the leg that built it, not three jobs downstream.

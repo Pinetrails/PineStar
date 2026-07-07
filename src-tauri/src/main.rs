@@ -1258,6 +1258,28 @@ async fn starnet_update_install(
     app.restart()
 }
 
+/// P1.5 build provenance: the app version + the git commit/dirty state this binary was compiled from (stamped by
+/// build.rs). The frontend diagnostics panel renders "build <version> @ <commit>[ DIRTY]" so a user (or the release
+/// train) can prove exactly which source produced an installed exe. Commit is "unknown" when git was unavailable
+/// at build time (never a hard failure).
+#[derive(serde::Serialize)]
+struct BuildInfo {
+    version: String,
+    commit: String,
+    describe: String,
+    dirty: bool,
+}
+
+#[tauri::command]
+fn starnet_build_info(app: AppHandle) -> BuildInfo {
+    BuildInfo {
+        version: app.package_info().version.to_string(),
+        commit: env!("STARNET_BUILD_COMMIT").to_string(),
+        describe: env!("STARNET_BUILD_DESCRIBE").to_string(),
+        dirty: env!("STARNET_BUILD_DIRTY") == "1",
+    }
+}
+
 fn main() {
     tauri::Builder::default()
         // A second launch should focus the running window, not spin up a 2nd sidecar.
@@ -1283,7 +1305,8 @@ fn main() {
             starnet_keep_awake_status,
             starnet_update_status,
             starnet_update_check,
-            starnet_update_install
+            starnet_update_install,
+            starnet_build_info
         ])
         .setup(|app| {
             let root = project_root(app.handle());
