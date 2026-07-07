@@ -715,16 +715,25 @@ fn migrate_channel_tokens_from_plaintext(workspaces: &Path) {
             .filter(|t| !t.is_empty())
             .map(str::to_string);
         if let Some(token) = token {
-            // Only store into the keychain if it doesn't already hold this channel's token (idempotent re-runs).
+            // Store into the keychain if it doesn't already hold this channel's token (idempotent re-runs).
             if read_channel_token(channel).is_none() {
                 if let Ok(entry) = channel_keychain_entry(channel) {
                     let _ = entry.set_password(&token);
                 }
             }
-            // Strip the plaintext token from the on-disk record regardless (the keychain is now the home).
-            if let Some(rec) = json.get_mut(channel).and_then(|r| r.as_object_mut()) {
-                rec.remove("token");
-                changed = true;
+            // INVARIANT (Andrew): never remove the last copy of a secret without PROOF a durable home holds it.
+            // Only strip the plaintext token once read_channel_token() confirms the keychain actually has it. If the
+            // set_password above failed (locked keychain, permissions, no backend), leave the plaintext token in
+            // place — a token on disk is strictly better than a lost token. Best-effort; never blocks startup. The
+            // sidecar's own boot migration will re-attempt the keychain adoption on a later launch (self-healing).
+            let keychain_has_it = read_channel_token(channel)
+                .map(|t| t == token)
+                .unwrap_or(false);
+            if keychain_has_it {
+                if let Some(rec) = json.get_mut(channel).and_then(|r| r.as_object_mut()) {
+                    rec.remove("token");
+                    changed = true;
+                }
             }
         }
     }
