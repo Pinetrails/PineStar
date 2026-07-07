@@ -297,17 +297,22 @@
       for (let attempt = 0; ; attempt++) {
         if (signal && signal.aborted) throw abortError();
         let res;
+        // Fresh connect guard per attempt; disarmed the instant the fetch settles so the ceiling can't abort
+        // the streaming body (a connect expiry rejects as a `timeout`, a user-cancel as AbortError).
+        const guard = timeouts.connectGuard(signal);
         try {
           res = await doFetch(baseUrl + '/chat/completions', {
             method: 'POST',
             headers: { 'Authorization': 'Bearer ' + (key || ''), 'Content-Type': 'application/json', 'HTTP-Referer': referer, 'X-Title': 'STARNET' },
             body: JSON.stringify(body),
-            signal: timeouts.connectSignal(signal)   // caller-cancel + a connect-timeout ceiling on the POST itself
+            signal: guard.signal   // caller-cancel + a disarmable connect-timeout ceiling on the POST itself
           });
         } catch (e) {
           if (isAbort(e, signal)) throw e;
-          if (attempt < RETRY_DELAYS.length) { await delay(RETRY_DELAYS[attempt], signal); continue; }   // network error -> retry
+          if (attempt < RETRY_DELAYS.length) { await delay(RETRY_DELAYS[attempt], signal); continue; }   // network error / connect timeout -> retry
           throw e;
+        } finally {
+          guard.disarm();
         }
         if (res.ok && res.body) return res;
         let detail = res.statusText || '';

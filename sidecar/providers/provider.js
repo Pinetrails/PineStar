@@ -40,15 +40,23 @@
   //
   // Two independent timeouts protect a run from hanging on paid spend:
   //   · CONNECT — a ceiling on the POST/fetch itself (headers not received). Env SKYNET_PROVIDER_CONNECT_MS,
-  //     default 30s. Combined with the caller's signal via AbortSignal.any so a user-cancel still wins.
+  //     default 30s. Implemented by connectGuard(): a manual AbortController whose timer is DISARMED the moment
+  //     response headers arrive, so this ceiling can never abort a healthy streaming body. (A fetch `signal`
+  //     governs the ENTIRE response, so a bare AbortSignal.timeout kept ticking past headers and killed any
+  //     turn that streamed longer than the ceiling — the 2026-07-07 codex incident. The body is the idle
+  //     watchdog's job, not this timer's.)
   //   · IDLE    — a resettable watchdog around each reader.read(): if no bytes arrive for this long the reader
-  //     is cancelled and a `timeout`-classified error is thrown. Env SKYNET_PROVIDER_IDLE_MS, default 120s.
+  //     is cancelled and a `timeout`-classified error is thrown. Env SKYNET_PROVIDER_IDLE_MS, default 300s.
+  //     (Generous: once the connect guard is disarmed the idle watchdog is the body's ONLY ceiling, and a
+  //     deep-reasoning turn can stay byte-silent for a while — a healthy run must not be killed mid-flight.)
   //
   // CRITICAL invariant: a user-cancel (the original signal aborts) must classify as abort/cancelled, NOT
-  // timeout. connectSignal keeps the user's signal as a distinct input; the idle watchdog checks the user
-  // signal first and constructs a NAMED AbortError on cancel, but a genuine idle expiry throws a plain Error
-  // whose message contains "timed out" (errorClass.pickReason -> 'timeout'). Adapters' isAbort() keys off the
-  // original signal + AbortError name only, so a TimeoutError from AbortSignal.timeout is NEVER seen as a cancel.
+  // timeout. connectGuard keeps the user's signal as a distinct input and, on a user-cancel, aborts its
+  // controller with a NAMED AbortError; on a connect expiry it aborts with a plain Error whose message
+  // contains "timed out" (errorClass.pickReason -> 'timeout'). Node/undici rejects fetch with the abort
+  // REASON object, so the adapter sees exactly that error. Adapters' isAbort() keys off the original signal +
+  // AbortError name only, so a connect-timeout is NEVER seen as a cancel (it retries like a transient network
+  // error), and a user-cancel is NEVER seen as a timeout. The idle watchdog upholds the same split downstream.
   function envInt(name, dflt) {
     try {
       const v = (typeof process !== 'undefined' && process.env && process.env[name]);
@@ -57,11 +65,12 @@
     } catch (_) { return dflt; }
   }
   function connectMs() { return envInt('SKYNET_PROVIDER_CONNECT_MS', 30000); }
-  function idleMs() { return envInt('SKYNET_PROVIDER_IDLE_MS', 120000); }
+  function idleMs() { return envInt('SKYNET_PROVIDER_IDLE_MS', 300000); }
 
-  // Build the signal passed to fetch: the caller's signal (cancel) merged with a connect-timeout signal, so
-  // the POST can't hang forever waiting for response headers. Returns the caller's signal unchanged when the
-  // platform lacks AbortSignal.any/timeout (older Node) — connect protection then degrades to the idle watchdog.
+  // DEPRECATED for streaming fetches — new code MUST use connectGuard() instead. This merges the caller's
+  // signal with a NON-disarmable AbortSignal.timeout: because a fetch signal governs the whole response, the
+  // timeout keeps ticking after headers arrive and aborts a healthy streaming body (that killed a real >30s
+  // codex turn on 2026-07-07). Kept only for non-streaming callers/tests that reference it.
   function connectSignal(signal, ms) {
     const timeoutMs = (ms != null && ms > 0) ? ms : connectMs();
     try {
@@ -72,6 +81,42 @@
       }
     } catch (_) {}
     return signal;
+  }
+
+  // Connect-phase guard: a manual AbortController whose timer is DISARMED the moment response headers arrive
+  // (the adapter calls guard.disarm() in a finally around the fetch). Until then it enforces the connect
+  // ceiling; after that the streaming body is protected only by the idle watchdog — so a slow-but-alive turn
+  // can stream for as long as it keeps producing bytes.
+  //   · guard.signal — pass this to fetch().
+  //   · guard.disarm() — call once the fetch settles (headers arrived OR it rejected); idempotent.
+  // Reasons (undici rejects fetch with the abort reason object): a connect expiry -> timeoutError() (name
+  // 'Error', message "…timed out…", classifies as `timeout`, retryable); a user-cancel on the caller signal
+  // -> makeAbortError() (name 'AbortError', so adapters' isAbort() treats it as a clean cancel). Degrades to
+  // the caller's signal unchanged when AbortController is unavailable (older runtimes).
+  function connectGuard(signal, ms) {
+    const timeoutMs = (ms != null && ms > 0) ? ms : connectMs();
+    if (typeof AbortController === 'undefined') return { signal: signal, disarm: function () {} };
+    const ctrl = new AbortController();
+    let timer = setTimeout(function () {
+      timer = null;
+      try { ctrl.abort(timeoutError(timeoutMs, 'connect')); } catch (_) { ctrl.abort(); }
+    }, timeoutMs);
+    let onAbort = null;
+    if (signal) {
+      onAbort = function () {
+        if (timer) { clearTimeout(timer); timer = null; }
+        try { ctrl.abort(makeAbortError()); } catch (_) { ctrl.abort(); }
+      };
+      if (signal.aborted) onAbort();
+      else if (typeof signal.addEventListener === 'function') signal.addEventListener('abort', onAbort, { once: true });
+    }
+    return {
+      signal: ctrl.signal,
+      disarm: function () {
+        if (timer) { clearTimeout(timer); timer = null; }
+        if (onAbort && signal && typeof signal.removeEventListener === 'function') { signal.removeEventListener('abort', onAbort); onAbort = null; }
+      }
+    };
   }
 
   function timeoutError(ms, phase) {
@@ -122,7 +167,7 @@
     return { read, cancel, get _cancelledByTimeout() { return cancelled; } };
   }
 
-  const timeouts = { envInt, connectMs, idleMs, connectSignal, idleGuardedReader, timeoutError, makeAbortError };
+  const timeouts = { envInt, connectMs, idleMs, connectSignal, connectGuard, idleGuardedReader, timeoutError, makeAbortError };
 
   return { EVENT_TYPES, FINISH, normalizeFinish, timeouts };
 });
