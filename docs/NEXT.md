@@ -184,8 +184,11 @@ promise?" (sibling of "where's its UI?").
   panel toggles mid-run, provider-error injection). After EL-1.
 - **EL-4 · Installed-app weekly smoke** — CDP-attach to the installed exe and run the parity
   sweep there; the dev sidecar can never see the WebView2-cache class. Session task, weekly.
-- **EL-5 · ESCAPE 2026-07-07: Telegram bot token silently destroyed** — IN PROGRESS, Fable
-  session · lane `agent/token-durability`. Desktop keychain migration stripped the plaintext
+- **EL-5 · ESCAPE 2026-07-07: Telegram bot token silently destroyed** — ✅ FIX MERGED
+  a1f8cc66 (gates fast 261 + http green; failing scenario landed with the fix per EL-3;
+  lane live-smoked restart round-trips both directions). Andrew must re-paste the BotFather
+  token once (old one unrecoverable); it now persists plaintext until the keychain verifiably
+  adopts it. EL-5b lane `agent/secrets-durability` IN PROGRESS (Fable session). Desktop keychain migration stripped the plaintext
   token without read-back proof the keychain held it (3 paths: main.rs `let _=set_password`,
   saveChannelSecrets unconditional strip, sidecar boot migration). Live-verified on Andrew's
   install: `channel:telegram` absent from Credential Manager, config intact. Per EL-3 the
