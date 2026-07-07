@@ -113,6 +113,24 @@ Rule stands: land it or delete it — an unmerged branch is a claim nobody verif
 - Discovered in passing: sidecar/loop.js has a stray NUL byte (~offset 32377) — git/grep
   treat it as BINARY. Fix queued as a spawned task (byte-strip only, semantics untouched).
 
+## DONE 2026-07-07 — SKILLS panel legibility (Fable session) ✅
+
+- **skills-legibility MERGED 9b2c22a4**: the library read as broken ("can't enable
+  anything") — 36/38 recipes OFF on a fresh station, ◉/○ glyph didn't read as a switch,
+  enabling a gear-gated skill just changed text to "● ON · needs CABINET" with no path to
+  a cabinet. Shipped: real ON/OFF pill switch; user-choice vs floor-grant rendered as TWO
+  visuals (switch + READY/NEEDS GEAR chip, combined string deleted); `→ PLACE <OBJECT>`
+  deep-link that opens REFIT with the prop pre-selected; library regrouped READY→NEEDS
+  GEAR→OFF (category = inline tag); `OBJECT AT DESK → CAPABILITY → SKILL` strip +
+  capability locked copy now "○ NO DISH AT DESK"; all 5 no-gear recipes default-on
+  (catalog ceiling — only 5 empty-`requires` recipes exist, not ~12). Gates fast(260)+http
+  green; live-verified in-lane (switch round-trip, group moves, REFIT palette state).
+  ⚠️ compose budget now 11952/12000 chars with defaults — any default-on growth needs the
+  pinned test (`skills.library.test.js` asserts default⇒gear-free) revisited.
+- Guardian P1 `6feab179` (J2b run-survives-close "regression" at 00538abd) triaged at
+  merge-gate: 2× `qa:journeys --only J2` on merged trunk = 38/38 PASS. Flake in the
+  15×120ms busy-poll window, dismissed with evidence in the finding.
+
 ## DONE 2026-07-07 — Station Atlas: the perfection loop (Fable session) ✅
 
 - **Station Atlas MERGED 00538abd** (gate 261 green in-lane AND on merged trunk): the
