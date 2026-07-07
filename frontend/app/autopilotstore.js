@@ -29,6 +29,15 @@ const AutopilotStore = (() => {
   let acting = false;       // an async ACT run is in flight (guards re-entry across ticks)
   let installed = false;    // the DOM listeners + interval are installed exactly once
   let timer = null;
+  // NS-1: the server-owned NIGHT-SHIFT driver now owns the ACT branch (restart-safe, leash-enforced). When it is
+  // ACTIVE, this frontend loop must NOT double-act — it defers ACT to the sidecar and keeps only EARN (curiosity
+  // while the Commander is present) + activity stamping/beaconing. serverActs is a cached capability flag, refreshed
+  // lazily from GET /api/nightshift/status; null = unknown (fail toward the OLD behavior so a missing route or a
+  // node test is unaffected — the server no-ops its own beat when its posture gate is unmet, so a brief overlap on
+  // first load is harmless). lastBeacon throttles the /api/activity beacon to ≥60s.
+  let serverActs = null;    // null=unknown, true=sidecar night-shift active (defer ACT), false=inactive (act locally)
+  let lastBeacon = 0;       // wall-clock of the last activity beacon (throttle floor)
+  let statusChecked = 0;    // wall-clock of the last night-shift status poll (refresh floor)
 
   const ready = () => typeof Autopilot !== 'undefined';
   const now = () => {
@@ -84,11 +93,28 @@ const AutopilotStore = (() => {
     });
   }
 
+  // NS-1: is the SERVER-owned night-shift driver active (and thus owning the ACT branch)? Returns the cached flag
+  // and kicks a lazy, throttled refresh (GET /api/nightshift/status). Node/test + no-fetch envs read null forever
+  // (never defer — the old local behavior is preserved for the pure test). A refresh failure leaves the last known
+  // value. This is the one seam that prevents the frontend and the sidecar from BOTH acting on the same idle window.
+  function refreshServerActs() {
+    if (typeof fetch !== 'function') return;
+    const t = now();
+    if (t - statusChecked < 30000) return;   // at most every 30s
+    statusChecked = t;
+    try { fetch('/api/nightshift/status').then(r => r.ok ? r.json() : null).then(j => { if (j && typeof j.active === 'boolean') serverActs = j.active; }).catch(() => {}); } catch (_) {}
+  }
+
   // ONE autopilot beat per idle episode. Re-arms when the Commander next interacts (noteActivity).
   function tick() {
     if (!ready() || armed || acting) return null;
+    refreshServerActs();
     const d = decideNow();
     if (!d.go) return d;
+    // NS-1: when the sidecar night-shift driver is ACTIVE, the ACT branch is its job (restart-safe, leash-enforced)
+    // — this frontend loop DEFERS: it does not act, and it does NOT spend the idle episode's beat (so EARN can still
+    // fire this episode if the decision later resolves to earn). EARN (curiosity while present) stays local.
+    if (d.mode === 'act' && serverActs === true) return { go: false, mode: 'deferred', reason: 'server-owns-act', binding: d.binding };
     armed = true;   // spend this idle episode's single beat (re-armed by activity)
     if (d.mode === 'act') { act(); }   // async, fire-and-forget; `acting` guards overlap
     else { earn(); }
@@ -196,12 +222,24 @@ const AutopilotStore = (() => {
     }
   }
 
+  // NS-1: the throttled PRESENCE beacon. A watching-but-not-running-a-task Commander still stamps the server-owned
+  // away-clock (POST /api/activity) so the night-shift driver doesn't mistake "reading" for "gone". Throttled to
+  // ≥60s between beacons (interactions fire far more often than that). Guarded for node/test (no fetch → no-op).
+  function beacon() {
+    if (typeof fetch !== 'function') return;
+    const t = now();
+    if (t - lastBeacon < 60000) return;
+    lastBeacon = t;
+    try { fetch('/api/activity', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).catch(() => {}); } catch (_) {}
+  }
+
   // the Commander interacted — reset the idle clock, re-arm the next idle beat, and (if they were really away and
   // the autopilot worked) show the welcome-back digest.
   function noteActivity() {
     const prev = lastActivity;
     lastActivity = now();
     armed = false;
+    beacon();   // NS-1: tell the sidecar the Commander is PRESENT (throttled) so the server-owned away-clock is truthful
     maybeDigest(prev, lastActivity);
   }
   // WELCOME-BACK DIGEST: on the first interaction after a real absence, recap the drafts the autopilot left while
