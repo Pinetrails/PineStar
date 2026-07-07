@@ -127,7 +127,10 @@ async function startSse(url) {
   const mock = await startMockOpenRouter();
   const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-workshop-e2e-'));
   const openLog = path.join(ws, 'open-invocations.log');   // W7: the CI open-seam appends here instead of launching an app
-  const env = { SKYNET_WORKSPACES: ws, SKYNET_OPENROUTER_BASE: mock.base, SKYNET_OPENROUTER_KEY: 'sk-or-v1-workshop-fake', SKYNET_DEFAULT_MODEL: 'test/model', SKYNET_TEST_OPEN_LOG: openLog };
+  // SKYNET_DEV=1 marks this as a dev/CI context so the TEST open-seam (SKYNET_TEST_OPEN_LOG) is honored. The seam
+  // is now gated on DEV_MODE (audit 1.4): a production process carrying SKYNET_TEST_OPEN_LOG must NOT fake-launch,
+  // so the env var alone no longer installs the fake opener — the run must also declare itself dev/test.
+  const env = { SKYNET_WORKSPACES: ws, SKYNET_DEV: '1', SKYNET_OPENROUTER_BASE: mock.base, SKYNET_OPENROUTER_KEY: 'sk-or-v1-workshop-fake', SKYNET_DEFAULT_MODEL: 'test/model', SKYNET_TEST_OPEN_LOG: openLog };
   const { child, port } = await boot(8960 + (process.pid % 30), env, 20);
   const B = 'http://' + HOST + ':' + port;
   let sse = null;

@@ -821,6 +821,35 @@ let orModelCatalogIds = [];
 // jail helper reused by the read-only /api/file route (resolveInside proves a path stays in the workspace)
 const fsJail = makeFsTools({ fsp, pathMod: path, root: WORKSPACES })._internals;
 
+// Roots the read-only /api/fs/dirstat probe is allowed to stat (audit P2): the user's own HOME (covers every
+// realistic Keep destination — Desktop/Documents/Downloads all live under it) and the WORKSPACES root. Anything
+// outside these is refused, so a token-holder can't enumerate existence/type of arbitrary system paths
+// (/etc/shadow, C:\Windows\System32\config\SAM, ~/.ssh, ...). Literal + realpath'd forms of each root are kept so
+// the symlink check compares real-vs-real (same discipline as fsJail.resolveInside).
+const DIRSTAT_ROOTS = (() => {
+  const seen = new Set(); const roots = [];
+  const add = (d) => { if (!d) return; const abs = path.resolve(d); let real = abs; try { real = require('fs').realpathSync(abs); } catch (_) {} for (const r of [abs, real]) { const k = (path.sep === '\\') ? r.toLowerCase() : r; if (!seen.has(k)) { seen.add(k); roots.push(r); } } };
+  try { add(os.homedir()); } catch (_) {}
+  try { add(WORKSPACES); } catch (_) {}
+  return roots;
+})();
+// TRUE iff `abs` (already absolute) resolves inside one of DIRSTAT_ROOTS, following symlinks on the deepest
+// existing ancestor so a symlink can't hop the jail. Both the syntactic path and its realpath must land in a root.
+async function dirStatAllowed(abs) {
+  if (!DIRSTAT_ROOTS.length) return false;
+  if (!DIRSTAT_ROOTS.some(root => fsJail.pathInside(abs, root))) return false;   // fast syntactic reject
+  // symlink guard: realpath the deepest existing ancestor and require IT to be inside a root too.
+  let cur = abs;
+  for (;;) {
+    let real = null;
+    try { real = await fsp.realpath(cur); } catch (_) { real = null; }
+    if (real != null) return DIRSTAT_ROOTS.some(root => fsJail.pathInside(real, root));
+    const parent = path.dirname(cur);
+    if (!parent || parent === cur) return false;
+    cur = parent;
+  }
+}
+
 // SPOTIFY (the JUKEBOX skill): ONE durable OAuth session for the station, persisted OUTSIDE any agent jail
 // (WORKSPACES/.secrets/spotify.json — not reachable via /api/file). PKCE flow → client_id only, never a secret.
 // The redirect URI is fixed + must be registered verbatim in the user's Spotify app (loopback IP, not localhost).
@@ -876,11 +905,16 @@ let workshopOpener = _desktopInternals.makeShellOpener({});   // ({ kind, target
 function setWorkshopOpener(fn) { workshopOpener = fn; }   // test seam
 // CI seam (never in a shipping build): STARNET_TEST_OPEN_LOG points at a file the opener APPENDS the target path to
 // instead of launching anything — so the e2e can assert /api/workshop/open invoked the opener with the jailed ABS
-// path without spawning a real app on the runner. Guarded strictly to a non-empty env var; production uses the real
-// shell opener above. This proves the wiring (jail-proven abs path reaches the launcher) exactly as required.
+// path without spawning a real app on the runner. This proves the wiring (jail-proven abs path reaches the launcher).
+// HARD GATE: the fake opener installs ONLY in dev/test mode (DEV_MODE, i.e. SKYNET_DEV/STARNET_DEV — a flag the
+// packaged desktop build NEVER sets; dev/seed.js:19). Env-var-alone is NOT enough: without this gate, a production
+// process that happened to carry STARNET_TEST_OPEN_LOG would make /api/workshop/open report `launched` while opening
+// nothing (a truthful-telemetry violation — the app asserting state the harness didn't perform). If the var is set
+// outside dev mode we keep the REAL opener and warn, so the misconfiguration is visible rather than silently faked.
 (function installTestOpenLog() {
   const logFile = String(ENV('TEST_OPEN_LOG') || '').trim();
   if (!logFile) return;
+  if (!DEV_MODE) { try { console.warn('[workshop] STARNET_TEST_OPEN_LOG is set but DEV_MODE is off — ignoring the test open-seam; using the real shell opener.'); } catch (_) {} return; }
   workshopOpener = ({ kind, target }) => { try { fs.appendFileSync(logFile, JSON.stringify({ kind, target }) + '\n'); } catch (_) {} return Promise.resolve('launched'); };
 })();
 // honest run-liveness for the workshop zombie-claim reclaim: a runId is live iff its controller is still in the
@@ -5953,7 +5987,6 @@ async function handleStt(req, res) {
   const ok = (text) => { res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify({ text: String(text || '') })); };
   const degrade = (reason) => { console.warn('[stt] →', reason); res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify({ text: '', reason })); };
 
-  const u = new URL(req.url, 'http://127.0.0.1');
   const ctReq = String(req.headers['content-type'] || '').toLowerCase();
   let audioB64 = '', format = '', key = '';
   try {
@@ -5968,8 +6001,10 @@ async function handleStt(req, res) {
       // derive format from the content-type: audio/webm → webm, audio/wav|x-wav → wav, audio/ogg → ogg
       const m = ctReq.match(/audio\/(?:x-)?([a-z0-9]+)/);
       format = m ? m[1] : '';
-      // key travels out-of-band for the raw path: query ?key= or an X-OpenRouter-Key header
-      key = String(u.searchParams.get('key') || req.headers['x-openrouter-key'] || '').trim();
+      // key travels out-of-band for the raw path via the X-OpenRouter-Key HEADER only. A query ?key= was removed
+      // (audit P2): URLs land in access logs / proxy history / referrers, so a key on the query string is a leak.
+      // The desktop path sends no key at all (it lives in runtimeKey below); the browser recorder sends the header.
+      key = String(req.headers['x-openrouter-key'] || '').trim();
     }
   } catch (e) { return degrade('body: ' + ((e && e.message) || e)); }
 
@@ -6116,12 +6151,16 @@ async function serveWorkspaceDir(req, res) {
 // GET /api/fs/dirstat?path=<abs> — read-only existence/type check of a user-chosen KEEP destination folder.
 // Only stats the exact path (no listing, no traversal). Returns { exists, isDir }. ADDITIVE (Lane B): lets the
 // workshop return card validate a typed Keep path inline rather than failing silently at copy time.
+// JAILED (audit P2): the path must resolve inside the user's HOME or WORKSPACES (DIRSTAT_ROOTS). A path outside
+// those roots is NOT stat'd — it degrades like a not-yet-existing folder so the UX is unchanged, but a token-holder
+// can no longer probe existence/type of arbitrary absolute system paths.
 async function handleDirStat(req, res) {
   const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
   let p;
   try { p = new URL(req.url, 'http://127.0.0.1').searchParams.get('path') || ''; } catch (_) { p = ''; }
   p = String(p).trim();
   if (!p || !path.isAbsolute(p)) return json(200, { exists: false, isDir: false, reason: 'not-absolute' });
+  if (!(await dirStatAllowed(path.resolve(p)))) return json(200, { exists: false, isDir: false, reason: 'outside-allowed-roots' });
   let st;
   try { st = await fsp.stat(p); } catch (_) { return json(200, { exists: false, isDir: false }); }
   return json(200, { exists: true, isDir: !!(st && st.isDirectory()) });
