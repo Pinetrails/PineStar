@@ -5,7 +5,7 @@ description: Generate specific, non-obvious ideas by routing to a named creative
 category: Creative
 requires: []
 license: MIT
-default: false
+default: true
 ---
 
 Any open-ended generative ask — "help me make/build/write something", "I'm stuck", "inspire me", "make this weirder", "help me pick" — deserves method, not slop. Read the situation, pick ONE matching method, apply it, produce ideas that are specific and non-obvious.
