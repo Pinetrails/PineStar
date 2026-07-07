@@ -1,6 +1,6 @@
 {
   "area": "commands",
-  "updatedAt": "2026-07-07T20:30:00.000Z",
+  "updatedAt": "2026-07-07T21:06:49.519Z",
   "entries": [
     {
       "id": "command/agents",
@@ -18,7 +18,7 @@
         { "kind": "test", "ref": "test/slash.palette.test.js (agentsCommand mapped in palette)" }
       ],
       "status": "perfected",
-      "auditedAt": { "sha": "ce3211719a4a8b9dfcae70af5417d150be18c2e8", "date": "2026-07-07T20:30:00.000Z" },
+      "auditedAt": { "sha": "43e860b254af28741405216c2259a2226d106be7", "date": "2026-07-07T21:06:49.519Z" },
       "findings": [],
       "notes": "Live-proven via .uiatlas/commands-evidence/input-path-proof.json — '/agents' → 'Agents: NOVA. Streams: 1; running: none.' (truthful roster).",
       "firstSeen": "2026-07-07T08:09:25.408Z",
@@ -129,7 +129,7 @@
         { "kind": "test", "ref": "test/slash.palette.test.js (clearCommand path present)" }
       ],
       "status": "perfected",
-      "auditedAt": { "sha": "ce3211719a4a8b9dfcae70af5417d150be18c2e8", "date": "2026-07-07T20:30:00.000Z" },
+      "auditedAt": { "sha": "43e860b254af28741405216c2259a2226d106be7", "date": "2026-07-07T21:06:49.519Z" },
       "findings": [],
       "notes": "Live-proven via input-path-proof.json + HTTP dispatch (http-dispatch.txt): /clear resolves to {action:clear} and dispatches through the composer without echoing the slash as chat.",
       "firstSeen": "2026-07-07T08:09:25.408Z",
@@ -262,7 +262,7 @@
         { "kind": "test", "ref": "test/slash.palette.test.js (goalCommand mapped)" }
       ],
       "status": "perfected",
-      "auditedAt": { "sha": "ce3211719a4a8b9dfcae70af5417d150be18c2e8", "date": "2026-07-07T20:30:00.000Z" },
+      "auditedAt": { "sha": "43e860b254af28741405216c2259a2226d106be7", "date": "2026-07-07T21:06:49.519Z" },
       "findings": [],
       "notes": "HTTP dispatch proven (http-dispatch.txt): '/goal ship it' → {action:goal, args:'ship it'}; args flow to the GoalLoop create path. Live composer dispatch confirmed (input-path-proof.json).",
       "firstSeen": "2026-07-07T08:09:25.408Z",
@@ -285,7 +285,7 @@
         { "kind": "test", "ref": "test/slash.palette.test.js (palette fallback includes help)" }
       ],
       "status": "perfected",
-      "auditedAt": { "sha": "ce3211719a4a8b9dfcae70af5417d150be18c2e8", "date": "2026-07-07T20:30:00.000Z" },
+      "auditedAt": { "sha": "43e860b254af28741405216c2259a2226d106be7", "date": "2026-07-07T21:06:49.519Z" },
       "findings": [],
       "notes": "Live-proven via input-path-proof.json: '/help' → 'Commands - /retry, /stop, /copy, /help, /new, /branch, /status, /usage, plus 50 recipe commands. Type \"/\" to browse.' — honest, catalog-derived.",
       "firstSeen": "2026-07-07T08:09:25.408Z",
@@ -308,7 +308,7 @@
         { "kind": "test", "ref": "test/slash.palette.test.js (historyCommand path)" }
       ],
       "status": "perfected",
-      "auditedAt": { "sha": "ce3211719a4a8b9dfcae70af5417d150be18c2e8", "date": "2026-07-07T20:30:00.000Z" },
+      "auditedAt": { "sha": "43e860b254af28741405216c2259a2226d106be7", "date": "2026-07-07T21:06:49.519Z" },
       "findings": [],
       "notes": "Live-proven via input-path-proof.json: '/history 5' → 'No conversation history in this workstream yet.' (honest empty state on the seeded fresh stream).",
       "firstSeen": "2026-07-07T08:09:25.408Z",
@@ -375,7 +375,7 @@
         { "kind": "test", "ref": "test/slash.config.test.js (App.applyConfig applies model; chat uses App config seam)" }
       ],
       "status": "perfected",
-      "auditedAt": { "sha": "ce3211719a4a8b9dfcae70af5417d150be18c2e8", "date": "2026-07-07T20:30:00.000Z" },
+      "auditedAt": { "sha": "43e860b254af28741405216c2259a2226d106be7", "date": "2026-07-07T21:06:49.519Z" },
       "findings": ["070e8aca"],
       "notes": "Live-proven via input-path-proof.json: '/model anthropic/claude-opus-4' (palette open on first token) → 'Model set to anthropic/claude-opus-4 for future runs.' + subsequent /status & /whoami report the new model; userEchoedSlash=false. ROSTER LAW verified: app.js applyAgentConfig sets agent.model (per-agent) + persists, not per-chat. finding 070e8aca (P1) records that the INPUT path (palette->dispatch) has no BEHAVIORAL guard — only source-grep tests — the seam that escaped as the ARGS bug; the promise's dispatch resolution IS machine-guarded by test/slash.test.js, so this entry reaches perfected with the residual input-path gap recorded per the EL-3 escape law.",
       "firstSeen": "2026-07-07T08:09:25.408Z",
@@ -398,7 +398,7 @@
         { "kind": "test", "ref": "test/slash.palette.test.js (newWorkstreamCommand mapped)" }
       ],
       "status": "perfected",
-      "auditedAt": { "sha": "ce3211719a4a8b9dfcae70af5417d150be18c2e8", "date": "2026-07-07T20:30:00.000Z" },
+      "auditedAt": { "sha": "43e860b254af28741405216c2259a2226d106be7", "date": "2026-07-07T21:06:49.519Z" },
       "findings": [],
       "notes": "HTTP dispatch proven (http-dispatch.txt): '/new' and '/reset' both resolve to {action:new}; alias canonicalization verified. Shares the load()/create path proven by /clear live.",
       "firstSeen": "2026-07-07T08:09:25.408Z",
@@ -553,7 +553,7 @@
         { "kind": "test", "ref": "test/slash.palette.test.js (palette fallback includes retry)" }
       ],
       "status": "perfected",
-      "auditedAt": { "sha": "ce3211719a4a8b9dfcae70af5417d150be18c2e8", "date": "2026-07-07T20:30:00.000Z" },
+      "auditedAt": { "sha": "43e860b254af28741405216c2259a2226d106be7", "date": "2026-07-07T21:06:49.519Z" },
       "findings": [],
       "notes": "HTTP dispatch proven (http-dispatch.txt): '/retry' → {type:client, action:retry, args:''}. Client action retryLast wired in localSlashActions; live composer dispatch path proven via input-path-proof.json.",
       "firstSeen": "2026-07-07T08:09:25.408Z",
@@ -619,7 +619,7 @@
         { "kind": "test", "ref": "test/slash.config.test.js (App exposes currentAgent for status)" }
       ],
       "status": "perfected",
-      "auditedAt": { "sha": "ce3211719a4a8b9dfcae70af5417d150be18c2e8", "date": "2026-07-07T20:30:00.000Z" },
+      "auditedAt": { "sha": "43e860b254af28741405216c2259a2226d106be7", "date": "2026-07-07T21:06:49.519Z" },
       "findings": [],
       "notes": "Live-proven via input-path-proof.json: '/status' → 'Status: idle on General (0 turns, 0 queued); model anthropic/claude-opus-4 via openrouter.' — reflects the model just set by /model (truthful telemetry).",
       "firstSeen": "2026-07-07T08:09:25.408Z",
@@ -663,7 +663,7 @@
         { "kind": "test", "ref": "test/slash.palette.test.js (palette fallback includes stop)" }
       ],
       "status": "perfected",
-      "auditedAt": { "sha": "ce3211719a4a8b9dfcae70af5417d150be18c2e8", "date": "2026-07-07T20:30:00.000Z" },
+      "auditedAt": { "sha": "43e860b254af28741405216c2259a2226d106be7", "date": "2026-07-07T21:06:49.519Z" },
       "findings": [],
       "notes": "HTTP dispatch proven (http-dispatch.txt): '/stop' → {type:client, action:stop, args:''}. stopActive wired in localSlashActions (aborts fetch + Harness.cancel + pauses goal loop); live composer dispatch path proven via input-path-proof.json.",
       "firstSeen": "2026-07-07T08:09:25.408Z",
@@ -752,7 +752,7 @@
         { "kind": "test", "ref": "test/slash.palette.test.js (toolsCommand mapped)" }
       ],
       "status": "perfected",
-      "auditedAt": { "sha": "ce3211719a4a8b9dfcae70af5417d150be18c2e8", "date": "2026-07-07T20:30:00.000Z" },
+      "auditedAt": { "sha": "43e860b254af28741405216c2259a2226d106be7", "date": "2026-07-07T21:06:49.519Z" },
       "findings": [],
       "notes": "Live-proven via input-path-proof.json: '/tools' → 'Tools: compute (model.chat). Locked until placed: web, files, memory, terminal, image, spotify.' — truthful capability gating on the seeded (bare-floor) agent.",
       "firstSeen": "2026-07-07T08:09:25.408Z",
@@ -797,7 +797,7 @@
         { "kind": "test", "ref": "test/slash.palette.test.js (usageCommand mapped)" }
       ],
       "status": "perfected",
-      "auditedAt": { "sha": "ce3211719a4a8b9dfcae70af5417d150be18c2e8", "date": "2026-07-07T20:30:00.000Z" },
+      "auditedAt": { "sha": "43e860b254af28741405216c2259a2226d106be7", "date": "2026-07-07T21:06:49.519Z" },
       "findings": [],
       "notes": "Live-proven via input-path-proof.json: '/usage' → 'Usage: lifetime 0 tokens, $0.000000, 0 calls. This stream: 0 tokens, $0.000000, 0 calls.' — honest zeros on a fresh seeded station, no fabricated spend.",
       "firstSeen": "2026-07-07T08:09:25.408Z",
@@ -842,7 +842,7 @@
         { "kind": "test", "ref": "test/slash.config.test.js (Voice exposes setSpeakReplies for /voice)" }
       ],
       "status": "perfected",
-      "auditedAt": { "sha": "ce3211719a4a8b9dfcae70af5417d150be18c2e8", "date": "2026-07-07T20:30:00.000Z" },
+      "auditedAt": { "sha": "43e860b254af28741405216c2259a2226d106be7", "date": "2026-07-07T21:06:49.519Z" },
       "findings": [],
       "notes": "Live-proven via input-path-proof.json: '/voice status' → 'Voice: replies off, hands-free off, listening support yes, speech support yes.' — reflects real browser capability probes.",
       "firstSeen": "2026-07-07T08:09:25.408Z",
@@ -865,7 +865,7 @@
         { "kind": "test", "ref": "test/slash.config.test.js (App.currentAgent exposed for whoami)" }
       ],
       "status": "perfected",
-      "auditedAt": { "sha": "ce3211719a4a8b9dfcae70af5417d150be18c2e8", "date": "2026-07-07T20:30:00.000Z" },
+      "auditedAt": { "sha": "43e860b254af28741405216c2259a2226d106be7", "date": "2026-07-07T21:06:49.519Z" },
       "findings": [],
       "notes": "Live-proven via input-path-proof.json: '/whoami' → 'You are NOVA [agent] — orchestrator, Lv 1 (0 XP, 0% to Lv 2). Model: anthropic/claude-opus-4 via openrouter. Placed capabilities: none on the floor yet.' — matches the seeded roster + the model just set (truthful telemetry).",
       "firstSeen": "2026-07-07T08:09:25.408Z",
