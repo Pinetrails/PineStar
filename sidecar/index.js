@@ -39,6 +39,7 @@ const spotifyPkce = require('./spotify/pkce.js');                          // pu
 const { makeSaveStore } = require('./savestore.js');
 const { mergeNotes } = require('./notebookrestore.js');
 const { makeRunStore } = require('./runstore.js');
+const { makeAutonomyLedger } = require('./autonomy-ledger.js');   // NS-0: durable append-only ledger of autonomy decisions
 const { makeArtifactCollector } = require('./artifacts.js');   // work-visibility: per-run "what did it produce" ledger
 const { makeTranscriptStore } = require('./transcriptstore.js');
 const { makeSkillStore } = require('./skillstore.js');             // H4: per-agent owned skill library (singleton)
@@ -314,6 +315,14 @@ const CRON_MAX_RUN_MS = num(ENV('CRON_MAX_RUN_MS'), CAPS.maxIters * CAPS.toolTim
 // rather than flooding the run host / spend all at once. Threaded as an INJECTED int so the cron driver
 // stays determinism-clean (it never reads process.env itself). Default 4.
 const CRON_MAX_PARALLEL = num(ENV('CRON_MAX_PARALLEL'), 4);
+// NS-0 LEASE HEARTBEAT knobs. The lease sweep + one-shot fireClaim now reclaim on a STALE HEARTBEAT rather than a
+// fixed wall-clock age, so a genuinely-long run that keeps emitting progress fires exactly once (the duplicate-fire
+// fix). CRON_STALENESS_MULT scales maxRunMs into the no-heartbeat staleness ceiling (default 1 = pre-NS-0 timing for
+// a silent run); CRON_HEARTBEAT_STALE_MS overrides it outright; CRON_DURABLE_HEARTBEAT_MS throttles the durable
+// one-shot heartbeat write (default = staleMs/4) so the hot token stream never fsyncs on every delta.
+const CRON_STALENESS_MULT = (function () { const n = parseFloat(ENV('CRON_STALENESS_MULT')); return (Number.isFinite(n) && n > 0) ? n : 1; })();
+const CRON_HEARTBEAT_STALE_MS = num(ENV('CRON_HEARTBEAT_STALE_MS'), Math.round(CRON_MAX_RUN_MS * CRON_STALENESS_MULT));
+const CRON_DURABLE_HEARTBEAT_MS = num(ENV('CRON_DURABLE_HEARTBEAT_MS'), Math.max(1, Math.round(CRON_HEARTBEAT_STALE_MS / 4)));
 // Stage 2: the lead's team.dispatch awaits full worker agent-loops (minutes), so it CANNOT inherit the 30s
 // fast-tool timeout (CAPS.toolTimeoutMs) or it always times out before a real worker returns. Give it the same
 // ≈8-min single-run worst-case bound; env-tunable. Per-worker spend is still capped by ORCH_PER_WORKER.
@@ -541,6 +550,28 @@ const runsIo = {
   }
 };
 const runStore = makeRunStore({ io: runsIo, clock: { now: () => Date.now() } });
+
+// NS-0 AUTONOMY DECISION LEDGER: a durable, append-only, fsync'd JSONL sibling of runs.jsonl recording every
+// autonomous DECISION (cron fire/skip/defer today; night-shift beats next). runs.jsonl answers "what runs
+// happened"; this answers "what did the station DECIDE to do (or not do) unattended, and why" — the trace that
+// was missing when Andrew got ~nothing back overnight. Bounded on disk (rotateJsonl) + in RAM (ramMax), and
+// fail-open (a broken log never crashes a run). Served read-only at GET /api/autonomy/ledger.
+const AUTONOMY_LEDGER_FILE = path.join(WORKSPACES, 'autonomy.ledger.jsonl');
+const autonomyLedgerIo = {
+  readAll() {
+    try { return readBoundedJsonl(AUTONOMY_LEDGER_FILE); } catch (e) { return []; }   // bounded boot-load
+  },
+  append(entry) {
+    let fd = null;
+    try { fd = fs.openSync(AUTONOMY_LEDGER_FILE, 'a'); fs.writeSync(fd, JSON.stringify(entry) + '\n'); fs.fsyncSync(fd); }
+    catch (e) { console.warn('[autonomy-ledger] append failed:', (e && e.message) || e); }
+    finally { if (fd != null) { try { fs.closeSync(fd); } catch (_) {} } }
+    rotateJsonl(AUTONOMY_LEDGER_FILE);   // roll to <file>.1 once the live segment passes the cap (bounds disk)
+  }
+};
+const autonomyLedger = makeAutonomyLedger({ io: autonomyLedgerIo, clock: { now: () => Date.now() } });
+// record an autonomy decision without ever letting a ledger hiccup touch the caller (cron pass, run loop, …).
+function recordAutonomy(entry) { try { return autonomyLedger.record(entry); } catch (_) { return null; } }
 
 /* ---- T3.9 DIAGNOSTICS: process start + a small in-memory error ring feeding the paste-ready bug-report block
    (GET /api/diagnostics). The ring holds only the newest few run-error MESSAGES (already redacted on write) so a
@@ -2094,10 +2125,26 @@ const autoNotifier = makeAutoNotifier({
   jobName: (jobId) => { const j = (cronJobs || []).find(x => x && x.id === jobId); return (j && j.name) || 'a routine'; },
   jobAgent: (jobId) => { const j = (cronJobs || []).find(x => x && x.id === jobId); return (j && j.agentId) || null; }
 });
+// NS-0: fold a cron.fire / cron.skipped into the durable autonomy ledger — the ONE place every cron decision
+// already flows through (cronEmitNotify), so fire/skip/defer are recorded without threading a store into the
+// pure driver. A cron.skipped whose reason is 'at-capacity' is the DEFER kind (held back, still due); every
+// other skip reason is a genuine SKIP (disabled / no-capability / caught-up / already-running / stale-reclaim).
+// `binding` names the mechanism so a reader can answer "why didn't it act": concurrency-cap, no-capability, etc.
+const AUTONOMY_SKIP_BINDING = { 'at-capacity': 'concurrency-cap', 'no-capability': 'no-capability', 'disabled': 'paused', 'caught-up': 'stale-fast-forward', 'already-running': 'in-flight', 'stale-lock-reclaimed': 'lease-reclaim' };
+function ledgerFromCron(name, payload) {
+  const p = payload || {};
+  const agentOf = (jobId) => { const j = (cronJobs || []).find(x => x && x.id === jobId); return (j && j.agentId) || null; };
+  if (name === 'cron.fire') {
+    recordAutonomy({ source: 'cron', kind: 'fire', jobId: p.jobId, agentId: agentOf(p.jobId), runId: p.runId, binding: 'schedule', reason: 'due' });
+  } else if (name === 'cron.skipped') {
+    const isDefer = p.reason === 'at-capacity';
+    recordAutonomy({ source: 'cron', kind: isDefer ? 'defer' : 'skip', jobId: p.jobId, agentId: agentOf(p.jobId), reason: p.reason, binding: AUTONOMY_SKIP_BINDING[p.reason] || 'schedule' });
+  }
+}
 // feed every cron event to the notifier alongside the validated SSE/console emit; it never throws into the cron pass.
 // Also the settle point for autonomous work-items: a cron run's terminal agent.run.end drains its queue slot
 // (settleCronWorkitem is idempotent — the workshop finally-backstop may have settled it first).
-const cronEmitNotify = (name, payload) => { const r = cronEmit(name, payload); try { if (name === 'agent.run.end' && payload && payload.runId) settleCronWorkitem(payload.runId, payload.reason); } catch (_) {} try { autoNotifier.onEvent(name, payload); } catch (_) {} return r; };
+const cronEmitNotify = (name, payload) => { const r = cronEmit(name, payload); try { ledgerFromCron(name, payload); } catch (_) {} try { if (name === 'agent.run.end' && payload && payload.runId) settleCronWorkitem(payload.runId, payload.reason); } catch (_) {} try { autoNotifier.onEvent(name, payload); } catch (_) {} return r; };
 // TRUTHFUL CRON QUEUE (2026-07-06 audit): the old placeCronWorkitem hardcoded queueDepth: 0 and never
 // touched the shared queueDepth map — two stacked routine fires read as an empty queue on the HUD. Now a
 // cron/workshop item bumps the SAME per-agent queue a Telegram admit does and drains on its run's end.
@@ -2163,6 +2210,8 @@ const cronDriver = makeCronDriver({
   providerForJob: (job) => cronProviderFor(job),
   hasCredential: (provider, key) => cronHasCredential(provider, key),
   defaultModel: CRON_DEFAULT_MODEL, maxRunMs: CRON_MAX_RUN_MS,
+  // NS-0 lease heartbeat: reclaim on stale-heartbeat, not fixed wall-clock age (a live long run fires exactly once).
+  heartbeatStaleMs: CRON_HEARTBEAT_STALE_MS, stalenessMult: CRON_STALENESS_MULT, durableHeartbeatMs: CRON_DURABLE_HEARTBEAT_MS,
   maxParallel: CRON_MAX_PARALLEL,                          // G4.4 global concurrency cap: at most N cron runs in-flight; the rest defer
   defaultTz: CRON_HOST_TZ,                                 // boot-frozen host tz: a tz-less schedule fires on LOCAL wall-clock (G4.1)
   identityForAgent: (agentId) => cronIdentityFor(agentId),
@@ -2667,6 +2716,7 @@ function dispatchRoute(req, res) {
   if (req.method === 'POST' && req.url === '/api/save') return handleSaveWrite(req, res);
   if (req.method === 'GET' && req.url.indexOf('/api/insights') === 0) return serveInsights(req, res);
   if (req.method === 'GET' && req.url.indexOf('/api/runs') === 0) return serveRuns(req, res);
+  if (req.method === 'GET' && req.url.indexOf('/api/autonomy/ledger') === 0) return serveAutonomyLedger(req, res);   // NS-0: recent autonomy decisions
   if (req.method === 'GET' && req.url.indexOf('/api/transcript') === 0) return serveTranscript(req, res);
   if (req.method === 'GET' && req.url.indexOf('/api/memory/proposals') === 0) return serveProposals(req, res);
   if (req.method === 'POST' && req.url === '/api/memory/turnin') return handleMemoryTurnin(req, res);
@@ -3802,6 +3852,10 @@ async function handleCronRun(req, res) {
     else if (name === 'agent.run.end') state.reason = p.reason;
   };
   try { cronEmit('cron.fire', { jobId: job.id, runId: runId, scheduledFor: Date.now() }); } catch (_) {}
+  // NS-0: a manual Run Now is still a cron FIRE decision — record it in the autonomy ledger (binding:'run-now'
+  // distinguishes it from a scheduled fire). The scheduled tick path records via cronEmitNotify; this route uses
+  // the raw cronEmit, so record explicitly here so BOTH fire paths land in the durable decision trail.
+  recordAutonomy({ source: 'cron', kind: 'fire', jobId: job.id, agentId: job.agentId, runId: runId, binding: 'run-now', reason: 'manual' });
   placeCronWorkitem(job.agentId, job.prompt, runId);
   try {
     await runOnce({
@@ -6417,6 +6471,23 @@ function serveRuns(req, res) {
     // only a thrown error reaches here and now reports truthfully. Every /api/runs consumer already guards
     // on r.ok (chat.js, autosessions.js, returnstore.js, world.js) or a safe [] default (stationui.js).
     json(500, { error: 'could not read run history: ' + ((e && e.message) || e) });
+  }
+}
+
+// GET /api/autonomy/ledger?limit=N&source=&kind= — NS-0: the recent AUTONOMY DECISION LEDGER (cron fire/skip/
+// defer today; night-shift beats next), newest-first. Read-only + local telemetry (same class as /api/runs);
+// the store is append-only, fail-open, and a sibling of the fs jail so an agent can neither read nor rewrite it.
+// A store read that THROWS reports 500 truthfully (auth/crash ≠ "no decisions") — a genuinely-empty log is 200 {entries:[]}.
+function serveAutonomyLedger(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  try {
+    const u = new URL(req.url, 'http://127.0.0.1');
+    const limit = Math.max(1, Math.min(500, Number(u.searchParams.get('limit')) || 100));
+    const source = u.searchParams.get('source') || null;
+    const kind = u.searchParams.get('kind') || null;
+    json(200, { entries: autonomyLedger.list({ limit, source, kind }) });
+  } catch (e) {
+    json(500, { error: 'could not read autonomy ledger: ' + ((e && e.message) || e) });
   }
 }
 
