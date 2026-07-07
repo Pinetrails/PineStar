@@ -258,11 +258,23 @@ Gauge: `npm run qa:atlas:status`. Trunk re-sweep 2026-07-07 (39b9c569): **1339 e
 (1288 unmapped queue + 51 missing from the skills-legibility redesign — P2s filed, dedup holds).
 The whole surface is the queue. Areas: system, crew, work, build, world, commands, routes, events, props.
 
-_Active claims:_
-- IN PROGRESS — agent/perfect-final-a · **STALE-ONLY re-proof: system/events/commands/routes**
-  (wave-7 final sweep, orchestrator-sanctioned hold)
-- IN PROGRESS — agent/perfect-final-b · **world** (last 15 unmapped: hidden connect/settings/
-  voice/codex panels) **+ STALE-ONLY re-proof: world/work/crew/build** (wave 7, sanctioned hold)
+_Active claims: (none)._
+
+_**CAMPAIGN COMPLETE 2026-07-07** (7 waves, 17 lanes, every merge through the full ritual):
+**0 unmapped / 1288.** End gauge: 184 perfected·fresh · 235 audited · 842 mapped · 27
+honest-stale (conditional-render). The loop is now STANDING WORK, not a campaign:_
+1. _Promotions blocked ONLY on coverage — the chips are the unlock: probe layer
+   (task_6453f643, HIGHEST leverage), slash-input P1 (task_a3433760), then the coverage
+   set. Each landed chip lets the next Perfectionist pass promote dozens of audited
+   entries._
+2. _842 mapped = seam-traced clusters awaiting deeper per-instance passes — future
+   sessions pick areas per loops/perfectionist.md priority as needed; the registry is
+   the queue._
+3. _Cartographer re-sweep after any UI-adding merge (skeletons new surface); staleness
+   auto-requeues; nightly reprove once the probe layer lands._
+4. _Overseer morning triage owns the 10 open Guardian + 1 Beginner P0 from today's
+   merge storm (3 golden re-bless deltas · 4 collision-BLOCKED (lock chip!) · 1 flake-
+   class · beginner first-directive stall needs a quiet-machine re-run)._
 
 _Wave-6 DONE 2026-07-07 (3 lanes merged + gated 266 + reaped): **build/crew areas COMPLETE,
 world 429→15 unmapped**. 18 seals===catalog + 5 loadout-law dossiers + custom-class round-trip;
