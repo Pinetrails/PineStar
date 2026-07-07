@@ -1,6 +1,6 @@
 {
   "area": "crew",
-  "updatedAt": "2026-07-07T18:39:23Z",
+  "updatedAt": "2026-07-07T21:12:48Z",
   "entries": [
     {
       "id": "state/crew-agents",
@@ -26,19 +26,34 @@
       "kind": "state",
       "area": "crew",
       "name": "shoot state: crew-commander",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Shoot state: the COMMANDER DOSSIER open — the station-wide model of the USER (the glass box shared by every agent).",
+      "promise": "When this window is up, the sweep sees the familiarity meter, per-dimension belief cards (add/edit/pin/forget), and the interview trigger — all reading the real Commander dossier store.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "shoot",
+          "ref": "crew-commander"
+        },
+        {
+          "kind": "test",
+          "ref": "test/dossier.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "78351f3eeb3595ac7b1c8bfe5b227d3d2b6bf8f3",
+        "date": "2026-07-07T21:12:48Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false
+      "missing": false,
+      "notes": "Live 78351f3e: state entered via openTerm(\"commander\"); familiarity \"21%\" backed by \"3 of 7 dimensions known\", 7 dimension sections, interview trigger. dossier.test.js locks summary()/familiarity/7-dims. Ev crew2-proof.json."
     },
     {
       "id": "state/crew-recruit",
@@ -77,8 +92,8 @@
       "coverage": [],
       "status": "audited",
       "auditedAt": {
-        "sha": "77f1c7e62b7945453726686b49b02c52bbf43939",
-        "date": "2026-07-07T18:39:23Z"
+        "sha": "78351f3eeb3595ac7b1c8bfe5b227d3d2b6bf8f3",
+        "date": "2026-07-07T21:12:48Z"
       },
       "findings": [
         "0e475aad"
@@ -88,7 +103,7 @@
       "missing": false,
       "selector": "#ag-del-btn",
       "state": "crew-agents",
-      "notes": "Live-PROVEN (audited not perfected - no machine assertion, finding 0e475aad): first click armed DELETE - sure? and crew still [researcher] (no one-click delete); sub-copy work is archived, not erased matches sidecar handleAgentDelete. Did NOT confirm-delete the seeded agent. Ev .bugloops/crew-primary-flow-proof.json"
+      "notes": "Re-proof 78351f3e: hero dossier BRIEF #ag-del-btn present, disabled, title/why=\"the overseer can’t be deleted\" — hero delete gate HOLDS. Channels merge (b1af72a5..) touched only Telegram/Discord/codex-auth seams, not delete. Ev .uiatlas/crew2-evidence/crew2-proof.json"
     },
     {
       "id": "ui/crew/ag-model-clear",
@@ -112,8 +127,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "77f1c7e62b7945453726686b49b02c52bbf43939",
-        "date": "2026-07-07T18:39:23Z"
+        "sha": "78351f3eeb3595ac7b1c8bfe5b227d3d2b6bf8f3",
+        "date": "2026-07-07T21:12:48Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
@@ -121,7 +136,7 @@
       "missing": false,
       "selector": "#ag-model-clear",
       "state": "crew-agents",
-      "notes": "Live: clicked FOLLOW STATION DEFAULT -> .tag.model became dash and the clear button disappeared (only shows when pinned). Ev .bugloops/crew-primary-flow-proof.json"
+      "notes": "Re-proof 78351f3e: clicked FOLLOW STATION DEFAULT -> hero.model/provider/effort=null, clear btn vanished. HOLDS. Ev crew2-proof.json"
     },
     {
       "id": "ui/crew/ag-model-in",
@@ -145,8 +160,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "77f1c7e62b7945453726686b49b02c52bbf43939",
-        "date": "2026-07-07T18:39:23Z"
+        "sha": "78351f3eeb3595ac7b1c8bfe5b227d3d2b6bf8f3",
+        "date": "2026-07-07T21:12:48Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
@@ -154,7 +169,7 @@
       "missing": false,
       "selector": "#ag-model-in",
       "state": "crew-agents",
-      "notes": "Live: #ag-model-in present; confirmed picker-primary precedence (typed value ignored while picker held a selection - correct). Ev .bugloops/crew-primary-flow-proof.json"
+      "notes": "Re-proof 78351f3e: #ag-model-in present in CONFIG. HOLDS. Ev crew2-proof.json"
     },
     {
       "id": "ui/crew/ag-model-pick-effort",
@@ -182,8 +197,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "77f1c7e62b7945453726686b49b02c52bbf43939",
-        "date": "2026-07-07T18:39:23Z"
+        "sha": "78351f3eeb3595ac7b1c8bfe5b227d3d2b6bf8f3",
+        "date": "2026-07-07T21:12:48Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
@@ -191,7 +206,7 @@
       "missing": false,
       "selector": "#ag-model-pick-effort",
       "state": "crew-agents",
-      "notes": "Live: part of #ag-model-pick shell (effort:true); ModelPicker.onChange re-fits; test locks pick-only-effort guard. Ev .bugloops/crew-primary-flow-proof.json"
+      "notes": "Re-proof 78351f3e: #ag-model-pick-effort present [none..max]. HOLDS. Ev crew2-proof.json"
     },
     {
       "id": "ui/crew/ag-model-pick-model",
@@ -219,8 +234,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "77f1c7e62b7945453726686b49b02c52bbf43939",
-        "date": "2026-07-07T18:39:23Z"
+        "sha": "78351f3eeb3595ac7b1c8bfe5b227d3d2b6bf8f3",
+        "date": "2026-07-07T21:12:48Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
@@ -228,7 +243,7 @@
       "missing": false,
       "selector": "#ag-model-pick-model",
       "state": "crew-agents",
-      "notes": "Live: #ag-model-pick present; ModelPicker.read -> model anthropic/claude-haiku-4.5 provider openrouter effort medium, preselected from researcher pin. Ev .bugloops/crew-primary-flow-proof.json"
+      "notes": "Re-proof 78351f3e: #ag-model-pick-model populated 376 catalog opts, preselected from pin. HOLDS. Ev crew2-proof.json"
     },
     {
       "id": "ui/crew/ag-model-save",
@@ -256,8 +271,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "77f1c7e62b7945453726686b49b02c52bbf43939",
-        "date": "2026-07-07T18:39:23Z"
+        "sha": "78351f3eeb3595ac7b1c8bfe5b227d3d2b6bf8f3",
+        "date": "2026-07-07T21:12:48Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
@@ -265,28 +280,40 @@
       "missing": false,
       "selector": "#ag-model-save",
       "state": "crew-agents",
-      "notes": "Live: SAVE PIN present; setAgentModelPin app.js:266 writes a.model then pushRoster()+persist(). Source-locked by agent-model-select.test.js. Ev .bugloops/crew-primary-flow-proof.json"
+      "notes": "Re-proof 78351f3e: SAVE PIN wrote App.agents()[0].model (browser roster prop). HOLDS. Ev crew2-proof.json"
     },
     {
       "id": "ui/crew/ag-prov-in",
       "kind": "ui",
       "area": "crew",
       "name": "input",
-      "purpose": "",
-      "promise": "",
+      "purpose": "AGENT DOSSIER > CONFIG advanced provider free-text — pins the provider for a typed advanced model id not in the catalog.",
+      "promise": "Present in the CONFIG advanced row beside #ag-model-in; a typed provider pins alongside the advanced model (picker stays primary). Roster property, persisted.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/app.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/agent-model-select.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "78351f3eeb3595ac7b1c8bfe5b227d3d2b6bf8f3",
+        "date": "2026-07-07T21:12:48Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#ag-prov-in",
-      "state": "crew-agents"
+      "state": "crew-agents",
+      "notes": "Live 78351f3e: #ag-prov-in present in CONFIG advanced row. AUDITED not perfected: the provider-input-specific path (typed provider threading) is adjacent to but not directly named by agent-model-select.test.js — coverage of #ag-prov-in itself unconfirmed. Ev crew2-proof.json."
     },
     {
       "id": "ui/crew/ag-rename-btn",
@@ -310,8 +337,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "77f1c7e62b7945453726686b49b02c52bbf43939",
-        "date": "2026-07-07T18:39:23Z"
+        "sha": "78351f3eeb3595ac7b1c8bfe5b227d3d2b6bf8f3",
+        "date": "2026-07-07T21:12:48Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
@@ -319,7 +346,7 @@
       "missing": false,
       "selector": "#ag-rename-btn",
       "state": "crew-agents",
-      "notes": "Live: #ag-rename-btn present in dossier header; setAgentName app.js:318 reaches pushRoster()+persist(), source-locked by agent-model-select.test.js. Ev .bugloops/crew-primary-flow-proof.json"
+      "notes": "Re-proof 78351f3e: #ag-rename-btn -> inline field -> NOVA-TEST + Enter -> name changed; reverted. HOLDS. Ev crew2-proof.json"
     },
     {
       "id": "ui/crew/ag-workshop-on",
@@ -347,126 +374,210 @@
       "kind": "ui",
       "area": "crew",
       "name": "Alien",
-      "purpose": "",
-      "promise": "",
+      "purpose": "AGENT DOSSIER > BRIEF > CHANGE SKIN — one skin-picker tile (the aria-<name> button IS the .ag-skin-thumb); clicking it swaps this agent’s genesis skin.",
+      "promise": "Clicking the \"Alien\" tile calls World.setSkin so the agent’s floor sprite swaps live, the selected tile moves to it, and the skin persists as a roster property (survives reload).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/world.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "shoot",
+          "ref": "crew-agents"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "78351f3eeb3595ac7b1c8bfe5b227d3d2b6bf8f3",
+        "date": "2026-07-07T21:12:48Z"
+      },
+      "findings": [
+        "d2121f51"
+      ],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button[aria-label=\"Alien\"]",
-      "state": "crew-agents"
+      "state": "crew-agents",
+      "notes": "Live 78351f3e: this tile is a .ag-skin-thumb[data-skin] in the BRIEF skin picker (15 thumbs, \"blank\" selected = hero.skin). PROVEN the flow: clicked robot -> hero.skin blank->robot, selected tile moved, reverted to blank (World.setSkin round-trip + roster persist). AUDITED not perfected — no machine assertion guards setSkin (finding d2121f51, KNOWN coverage gap routed to crew feature lane). Ev crew2-proof.json (new_batch_proofs.skin_picker)."
     },
     {
       "id": "ui/crew/aria-blank",
       "kind": "ui",
       "area": "crew",
       "name": "Blank",
-      "purpose": "",
-      "promise": "",
+      "purpose": "AGENT DOSSIER > BRIEF > CHANGE SKIN — one skin-picker tile (the aria-<name> button IS the .ag-skin-thumb); clicking it swaps this agent’s genesis skin.",
+      "promise": "Clicking the \"Blank\" tile calls World.setSkin so the agent’s floor sprite swaps live, the selected tile moves to it, and the skin persists as a roster property (survives reload).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/world.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "shoot",
+          "ref": "crew-agents"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "78351f3eeb3595ac7b1c8bfe5b227d3d2b6bf8f3",
+        "date": "2026-07-07T21:12:48Z"
+      },
+      "findings": [
+        "d2121f51"
+      ],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button[aria-label=\"Blank\"]",
-      "state": "crew-agents"
+      "state": "crew-agents",
+      "notes": "Live 78351f3e: this tile is a .ag-skin-thumb[data-skin] in the BRIEF skin picker (15 thumbs, \"blank\" selected = hero.skin). PROVEN the flow: clicked robot -> hero.skin blank->robot, selected tile moved, reverted to blank (World.setSkin round-trip + roster persist). AUDITED not perfected — no machine assertion guards setSkin (finding d2121f51, KNOWN coverage gap routed to crew feature lane). Ev crew2-proof.json (new_batch_proofs.skin_picker)."
     },
     {
       "id": "ui/crew/aria-blank-amber",
       "kind": "ui",
       "area": "crew",
       "name": "Blank Amber",
-      "purpose": "",
-      "promise": "",
+      "purpose": "AGENT DOSSIER > BRIEF > CHANGE SKIN — one skin-picker tile (the aria-<name> button IS the .ag-skin-thumb); clicking it swaps this agent’s genesis skin.",
+      "promise": "Clicking the \"Blank Amber\" tile calls World.setSkin so the agent’s floor sprite swaps live, the selected tile moves to it, and the skin persists as a roster property (survives reload).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/world.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "shoot",
+          "ref": "crew-agents"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "78351f3eeb3595ac7b1c8bfe5b227d3d2b6bf8f3",
+        "date": "2026-07-07T21:12:48Z"
+      },
+      "findings": [
+        "d2121f51"
+      ],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button[aria-label=\"Blank Amber\"]",
-      "state": "crew-agents"
+      "state": "crew-agents",
+      "notes": "Live 78351f3e: this tile is a .ag-skin-thumb[data-skin] in the BRIEF skin picker (15 thumbs, \"blank\" selected = hero.skin). PROVEN the flow: clicked robot -> hero.skin blank->robot, selected tile moved, reverted to blank (World.setSkin round-trip + roster persist). AUDITED not perfected — no machine assertion guards setSkin (finding d2121f51, KNOWN coverage gap routed to crew feature lane). Ev crew2-proof.json (new_batch_proofs.skin_picker)."
     },
     {
       "id": "ui/crew/aria-blank-blue",
       "kind": "ui",
       "area": "crew",
       "name": "Blank Blue",
-      "purpose": "",
-      "promise": "",
+      "purpose": "AGENT DOSSIER > BRIEF > CHANGE SKIN — one skin-picker tile (the aria-<name> button IS the .ag-skin-thumb); clicking it swaps this agent’s genesis skin.",
+      "promise": "Clicking the \"Blank Blue\" tile calls World.setSkin so the agent’s floor sprite swaps live, the selected tile moves to it, and the skin persists as a roster property (survives reload).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/world.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "shoot",
+          "ref": "crew-agents"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "78351f3eeb3595ac7b1c8bfe5b227d3d2b6bf8f3",
+        "date": "2026-07-07T21:12:48Z"
+      },
+      "findings": [
+        "d2121f51"
+      ],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button[aria-label=\"Blank Blue\"]",
-      "state": "crew-agents"
+      "state": "crew-agents",
+      "notes": "Live 78351f3e: this tile is a .ag-skin-thumb[data-skin] in the BRIEF skin picker (15 thumbs, \"blank\" selected = hero.skin). PROVEN the flow: clicked robot -> hero.skin blank->robot, selected tile moved, reverted to blank (World.setSkin round-trip + roster persist). AUDITED not perfected — no machine assertion guards setSkin (finding d2121f51, KNOWN coverage gap routed to crew feature lane). Ev crew2-proof.json (new_batch_proofs.skin_picker)."
     },
     {
       "id": "ui/crew/aria-blank-green",
       "kind": "ui",
       "area": "crew",
       "name": "Blank Green",
-      "purpose": "",
-      "promise": "",
+      "purpose": "AGENT DOSSIER > BRIEF > CHANGE SKIN — one skin-picker tile (the aria-<name> button IS the .ag-skin-thumb); clicking it swaps this agent’s genesis skin.",
+      "promise": "Clicking the \"Blank Green\" tile calls World.setSkin so the agent’s floor sprite swaps live, the selected tile moves to it, and the skin persists as a roster property (survives reload).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/world.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "shoot",
+          "ref": "crew-agents"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "78351f3eeb3595ac7b1c8bfe5b227d3d2b6bf8f3",
+        "date": "2026-07-07T21:12:48Z"
+      },
+      "findings": [
+        "d2121f51"
+      ],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button[aria-label=\"Blank Green\"]",
-      "state": "crew-agents"
+      "state": "crew-agents",
+      "notes": "Live 78351f3e: this tile is a .ag-skin-thumb[data-skin] in the BRIEF skin picker (15 thumbs, \"blank\" selected = hero.skin). PROVEN the flow: clicked robot -> hero.skin blank->robot, selected tile moved, reverted to blank (World.setSkin round-trip + roster persist). AUDITED not perfected — no machine assertion guards setSkin (finding d2121f51, KNOWN coverage gap routed to crew feature lane). Ev crew2-proof.json (new_batch_proofs.skin_picker)."
     },
     {
       "id": "ui/crew/aria-blank-red",
       "kind": "ui",
       "area": "crew",
       "name": "Blank Red",
-      "purpose": "",
-      "promise": "",
+      "purpose": "AGENT DOSSIER > BRIEF > CHANGE SKIN — one skin-picker tile (the aria-<name> button IS the .ag-skin-thumb); clicking it swaps this agent’s genesis skin.",
+      "promise": "Clicking the \"Blank Red\" tile calls World.setSkin so the agent’s floor sprite swaps live, the selected tile moves to it, and the skin persists as a roster property (survives reload).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/world.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "shoot",
+          "ref": "crew-agents"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "78351f3eeb3595ac7b1c8bfe5b227d3d2b6bf8f3",
+        "date": "2026-07-07T21:12:48Z"
+      },
+      "findings": [
+        "d2121f51"
+      ],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button[aria-label=\"Blank Red\"]",
-      "state": "crew-agents"
+      "state": "crew-agents",
+      "notes": "Live 78351f3e: this tile is a .ag-skin-thumb[data-skin] in the BRIEF skin picker (15 thumbs, \"blank\" selected = hero.skin). PROVEN the flow: clicked robot -> hero.skin blank->robot, selected tile moved, reverted to blank (World.setSkin round-trip + roster persist). AUDITED not perfected — no machine assertion guards setSkin (finding d2121f51, KNOWN coverage gap routed to crew feature lane). Ev crew2-proof.json (new_batch_proofs.skin_picker)."
     },
     {
       "id": "ui/crew/aria-build-a-custom-class",
@@ -493,8 +604,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "77f1c7e62b7945453726686b49b02c52bbf43939",
-        "date": "2026-07-07T18:39:23Z"
+        "sha": "78351f3eeb3595ac7b1c8bfe5b227d3d2b6bf8f3",
+        "date": "2026-07-07T21:12:48Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
@@ -509,21 +620,35 @@
       "kind": "ui",
       "area": "crew",
       "name": "Capybara",
-      "purpose": "",
-      "promise": "",
+      "purpose": "AGENT DOSSIER > BRIEF > CHANGE SKIN — one skin-picker tile (the aria-<name> button IS the .ag-skin-thumb); clicking it swaps this agent’s genesis skin.",
+      "promise": "Clicking the \"Capybara\" tile calls World.setSkin so the agent’s floor sprite swaps live, the selected tile moves to it, and the skin persists as a roster property (survives reload).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/world.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "shoot",
+          "ref": "crew-agents"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "78351f3eeb3595ac7b1c8bfe5b227d3d2b6bf8f3",
+        "date": "2026-07-07T21:12:48Z"
+      },
+      "findings": [
+        "d2121f51"
+      ],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button[aria-label=\"Capybara\"]",
-      "state": "crew-agents"
+      "state": "crew-agents",
+      "notes": "Live 78351f3e: this tile is a .ag-skin-thumb[data-skin] in the BRIEF skin picker (15 thumbs, \"blank\" selected = hero.skin). PROVEN the flow: clicked robot -> hero.skin blank->robot, selected tile moved, reverted to blank (World.setSkin round-trip + roster persist). AUDITED not perfected — no machine assertion guards setSkin (finding d2121f51, KNOWN coverage gap routed to crew feature lane). Ev crew2-proof.json (new_batch_proofs.skin_picker)."
     },
     {
       "id": "ui/crew/aria-close-agent-dossier",
@@ -546,8 +671,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "77f1c7e62b7945453726686b49b02c52bbf43939",
-        "date": "2026-07-07T18:39:23Z"
+        "sha": "78351f3eeb3595ac7b1c8bfe5b227d3d2b6bf8f3",
+        "date": "2026-07-07T21:12:48Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
@@ -555,28 +680,39 @@
       "missing": false,
       "selector": "button[aria-label=\"Close AGENT DOSSIER\"]",
       "state": "crew-agents",
-      "notes": "Live: [aria-label=Close AGENT DOSSIER] present; dossier reachable via CREW console -> roster row -> dossier. Ev .bugloops/crew-primary-flow-proof.json"
+      "notes": "Re-proof 78351f3e: [aria-label=\"Close AGENT DOSSIER\"] present when open. HOLDS. Ev crew2-proof.json"
     },
     {
       "id": "ui/crew/aria-close-commander-dossier",
       "kind": "ui",
       "area": "crew",
       "name": "Close COMMANDER DOSSIER",
-      "purpose": "",
-      "promise": "",
+      "purpose": "COMMANDER DOSSIER close door — dismisses the station-wide user-model window.",
+      "promise": "Clicking it closes the commander dossier and returns to the station with no dangling focus.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "shoot",
+          "ref": "crew-commander"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "78351f3eeb3595ac7b1c8bfe5b227d3d2b6bf8f3",
+        "date": "2026-07-07T21:12:48Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button[aria-label=\"Close COMMANDER DOSSIER\"]",
-      "state": "crew-commander"
+      "state": "crew-commander",
+      "notes": "Live 78351f3e: opened via StationUI.openTerm(\"commander\"); [aria-label=\"Close COMMANDER DOSSIER\"] present. Window-chrome close (same toggleTerm path as the audited Close AGENT DOSSIER). Ev crew2-proof.json."
     },
     {
       "id": "ui/crew/aria-close-recruitment-bay",
@@ -599,8 +735,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "77f1c7e62b7945453726686b49b02c52bbf43939",
-        "date": "2026-07-07T18:39:23Z"
+        "sha": "78351f3eeb3595ac7b1c8bfe5b227d3d2b6bf8f3",
+        "date": "2026-07-07T21:12:48Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
@@ -636,105 +772,169 @@
       "kind": "ui",
       "area": "crew",
       "name": "Heisenberg",
-      "purpose": "",
-      "promise": "",
+      "purpose": "AGENT DOSSIER > BRIEF > CHANGE SKIN — one skin-picker tile (the aria-<name> button IS the .ag-skin-thumb); clicking it swaps this agent’s genesis skin.",
+      "promise": "Clicking the \"Heisenberg\" tile calls World.setSkin so the agent’s floor sprite swaps live, the selected tile moves to it, and the skin persists as a roster property (survives reload).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/world.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "shoot",
+          "ref": "crew-agents"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "78351f3eeb3595ac7b1c8bfe5b227d3d2b6bf8f3",
+        "date": "2026-07-07T21:12:48Z"
+      },
+      "findings": [
+        "d2121f51"
+      ],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button[aria-label=\"Heisenberg\"]",
-      "state": "crew-agents"
+      "state": "crew-agents",
+      "notes": "Live 78351f3e: this tile is a .ag-skin-thumb[data-skin] in the BRIEF skin picker (15 thumbs, \"blank\" selected = hero.skin). PROVEN the flow: clicked robot -> hero.skin blank->robot, selected tile moved, reverted to blank (World.setSkin round-trip + roster persist). AUDITED not perfected — no machine assertion guards setSkin (finding d2121f51, KNOWN coverage gap routed to crew feature lane). Ev crew2-proof.json (new_batch_proofs.skin_picker)."
     },
     {
       "id": "ui/crew/aria-minimize-agent-dossier",
       "kind": "ui",
       "area": "crew",
       "name": "Minimize AGENT DOSSIER",
-      "purpose": "",
-      "promise": "",
+      "purpose": "AGENT DOSSIER minimize control — folds the agent dossier window to the dock without losing selection.",
+      "promise": "Clicking it minimizes the agent dossier (reopenable from the dock via openAgent) with the selected agent + tab preserved.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "shoot",
+          "ref": "crew-agents"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "78351f3eeb3595ac7b1c8bfe5b227d3d2b6bf8f3",
+        "date": "2026-07-07T21:12:48Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button[aria-label=\"Minimize AGENT DOSSIER\"]",
-      "state": "crew-agents"
+      "state": "crew-agents",
+      "notes": "Live 78351f3e: [aria-label=\"Minimize AGENT DOSSIER\"] present on the open agent dossier (same window-chrome minimize path as its close, which is audited/perfected). Ev crew2-proof.json."
     },
     {
       "id": "ui/crew/aria-minimize-commander-dossier",
       "kind": "ui",
       "area": "crew",
       "name": "Minimize COMMANDER DOSSIER",
-      "purpose": "",
-      "promise": "",
+      "purpose": "COMMANDER DOSSIER minimize control — folds the window to the dock without losing its state.",
+      "promise": "Clicking it minimizes the commander dossier (window leaves the viewport, reopenable from the dock) with its dossier state intact.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "shoot",
+          "ref": "crew-commander"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "78351f3eeb3595ac7b1c8bfe5b227d3d2b6bf8f3",
+        "date": "2026-07-07T21:12:48Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button[aria-label=\"Minimize COMMANDER DOSSIER\"]",
-      "state": "crew-commander"
+      "state": "crew-commander",
+      "notes": "Live 78351f3e: [aria-label=\"Minimize COMMANDER DOSSIER\"] present on the open commander window. Standard window chrome (shared minimize path). Ev crew2-proof.json."
     },
     {
       "id": "ui/crew/aria-pepe",
       "kind": "ui",
       "area": "crew",
       "name": "Pepe",
-      "purpose": "",
-      "promise": "",
+      "purpose": "AGENT DOSSIER > BRIEF > CHANGE SKIN — one skin-picker tile (the aria-<name> button IS the .ag-skin-thumb); clicking it swaps this agent’s genesis skin.",
+      "promise": "Clicking the \"Pepe\" tile calls World.setSkin so the agent’s floor sprite swaps live, the selected tile moves to it, and the skin persists as a roster property (survives reload).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/world.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "shoot",
+          "ref": "crew-agents"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "78351f3eeb3595ac7b1c8bfe5b227d3d2b6bf8f3",
+        "date": "2026-07-07T21:12:48Z"
+      },
+      "findings": [
+        "d2121f51"
+      ],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button[aria-label=\"Pepe\"]",
-      "state": "crew-agents"
+      "state": "crew-agents",
+      "notes": "Live 78351f3e: this tile is a .ag-skin-thumb[data-skin] in the BRIEF skin picker (15 thumbs, \"blank\" selected = hero.skin). PROVEN the flow: clicked robot -> hero.skin blank->robot, selected tile moved, reverted to blank (World.setSkin round-trip + roster persist). AUDITED not perfected — no machine assertion guards setSkin (finding d2121f51, KNOWN coverage gap routed to crew feature lane). Ev crew2-proof.json (new_batch_proofs.skin_picker)."
     },
     {
       "id": "ui/crew/aria-robot",
       "kind": "ui",
       "area": "crew",
       "name": "Robot",
-      "purpose": "",
-      "promise": "",
+      "purpose": "AGENT DOSSIER > BRIEF > CHANGE SKIN — one skin-picker tile (the aria-<name> button IS the .ag-skin-thumb); clicking it swaps this agent’s genesis skin.",
+      "promise": "Clicking the \"Robot\" tile calls World.setSkin so the agent’s floor sprite swaps live, the selected tile moves to it, and the skin persists as a roster property (survives reload).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/world.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "shoot",
+          "ref": "crew-agents"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "78351f3eeb3595ac7b1c8bfe5b227d3d2b6bf8f3",
+        "date": "2026-07-07T21:12:48Z"
+      },
+      "findings": [
+        "d2121f51"
+      ],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button[aria-label=\"Robot\"]",
-      "state": "crew-agents"
+      "state": "crew-agents",
+      "notes": "Live 78351f3e: this tile is a .ag-skin-thumb[data-skin] in the BRIEF skin picker (15 thumbs, \"blank\" selected = hero.skin). PROVEN the flow: clicked robot -> hero.skin blank->robot, selected tile moved, reverted to blank (World.setSkin round-trip + roster persist). AUDITED not perfected — no machine assertion guards setSkin (finding d2121f51, KNOWN coverage gap routed to crew feature lane). Ev crew2-proof.json (new_batch_proofs.skin_picker)."
     },
     {
       "id": "ui/crew/aria-search-agents",
@@ -762,189 +962,328 @@
       "kind": "ui",
       "area": "crew",
       "name": "Skeleton",
-      "purpose": "",
-      "promise": "",
+      "purpose": "AGENT DOSSIER > BRIEF > CHANGE SKIN — one skin-picker tile (the aria-<name> button IS the .ag-skin-thumb); clicking it swaps this agent’s genesis skin.",
+      "promise": "Clicking the \"Skeleton\" tile calls World.setSkin so the agent’s floor sprite swaps live, the selected tile moves to it, and the skin persists as a roster property (survives reload).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/world.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "shoot",
+          "ref": "crew-agents"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "78351f3eeb3595ac7b1c8bfe5b227d3d2b6bf8f3",
+        "date": "2026-07-07T21:12:48Z"
+      },
+      "findings": [
+        "d2121f51"
+      ],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button[aria-label=\"Skeleton\"]",
-      "state": "crew-agents"
+      "state": "crew-agents",
+      "notes": "Live 78351f3e: this tile is a .ag-skin-thumb[data-skin] in the BRIEF skin picker (15 thumbs, \"blank\" selected = hero.skin). PROVEN the flow: clicked robot -> hero.skin blank->robot, selected tile moved, reverted to blank (World.setSkin round-trip + roster persist). AUDITED not perfected — no machine assertion guards setSkin (finding d2121f51, KNOWN coverage gap routed to crew feature lane). Ev crew2-proof.json (new_batch_proofs.skin_picker)."
     },
     {
       "id": "ui/crew/aria-steve",
       "kind": "ui",
       "area": "crew",
       "name": "Steve",
-      "purpose": "",
-      "promise": "",
+      "purpose": "AGENT DOSSIER > BRIEF > CHANGE SKIN — one skin-picker tile (the aria-<name> button IS the .ag-skin-thumb); clicking it swaps this agent’s genesis skin.",
+      "promise": "Clicking the \"Steve\" tile calls World.setSkin so the agent’s floor sprite swaps live, the selected tile moves to it, and the skin persists as a roster property (survives reload).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/world.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "shoot",
+          "ref": "crew-agents"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "78351f3eeb3595ac7b1c8bfe5b227d3d2b6bf8f3",
+        "date": "2026-07-07T21:12:48Z"
+      },
+      "findings": [
+        "d2121f51"
+      ],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button[aria-label=\"Steve\"]",
-      "state": "crew-agents"
+      "state": "crew-agents",
+      "notes": "Live 78351f3e: this tile is a .ag-skin-thumb[data-skin] in the BRIEF skin picker (15 thumbs, \"blank\" selected = hero.skin). PROVEN the flow: clicked robot -> hero.skin blank->robot, selected tile moved, reverted to blank (World.setSkin round-trip + roster persist). AUDITED not perfected — no machine assertion guards setSkin (finding d2121f51, KNOWN coverage gap routed to crew feature lane). Ev crew2-proof.json (new_batch_proofs.skin_picker)."
     },
     {
       "id": "ui/crew/aria-teddy-bear",
       "kind": "ui",
       "area": "crew",
       "name": "Teddy Bear",
-      "purpose": "",
-      "promise": "",
+      "purpose": "AGENT DOSSIER > BRIEF > CHANGE SKIN — one skin-picker tile (the aria-<name> button IS the .ag-skin-thumb); clicking it swaps this agent’s genesis skin.",
+      "promise": "Clicking the \"Teddy Bear\" tile calls World.setSkin so the agent’s floor sprite swaps live, the selected tile moves to it, and the skin persists as a roster property (survives reload).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/world.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "shoot",
+          "ref": "crew-agents"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "78351f3eeb3595ac7b1c8bfe5b227d3d2b6bf8f3",
+        "date": "2026-07-07T21:12:48Z"
+      },
+      "findings": [
+        "d2121f51"
+      ],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button[aria-label=\"Teddy Bear\"]",
-      "state": "crew-agents"
+      "state": "crew-agents",
+      "notes": "Live 78351f3e: this tile is a .ag-skin-thumb[data-skin] in the BRIEF skin picker (15 thumbs, \"blank\" selected = hero.skin). PROVEN the flow: clicked robot -> hero.skin blank->robot, selected tile moved, reverted to blank (World.setSkin round-trip + roster persist). AUDITED not perfected — no machine assertion guards setSkin (finding d2121f51, KNOWN coverage gap routed to crew feature lane). Ev crew2-proof.json (new_batch_proofs.skin_picker)."
     },
     {
       "id": "ui/crew/aria-vault-boy",
       "kind": "ui",
       "area": "crew",
       "name": "Vault Boy",
-      "purpose": "",
-      "promise": "",
+      "purpose": "AGENT DOSSIER > BRIEF > CHANGE SKIN — one skin-picker tile (the aria-<name> button IS the .ag-skin-thumb); clicking it swaps this agent’s genesis skin.",
+      "promise": "Clicking the \"Vault Boy\" tile calls World.setSkin so the agent’s floor sprite swaps live, the selected tile moves to it, and the skin persists as a roster property (survives reload).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/world.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "shoot",
+          "ref": "crew-agents"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "78351f3eeb3595ac7b1c8bfe5b227d3d2b6bf8f3",
+        "date": "2026-07-07T21:12:48Z"
+      },
+      "findings": [
+        "d2121f51"
+      ],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button[aria-label=\"Vault Boy\"]",
-      "state": "crew-agents"
+      "state": "crew-agents",
+      "notes": "Live 78351f3e: this tile is a .ag-skin-thumb[data-skin] in the BRIEF skin picker (15 thumbs, \"blank\" selected = hero.skin). PROVEN the flow: clicked robot -> hero.skin blank->robot, selected tile moved, reverted to blank (World.setSkin round-trip + roster persist). AUDITED not perfected — no machine assertion guards setSkin (finding d2121f51, KNOWN coverage gap routed to crew feature lane). Ev crew2-proof.json (new_batch_proofs.skin_picker)."
     },
     {
       "id": "ui/crew/con-tab-agents-brief",
       "kind": "ui",
       "area": "crew",
       "name": "▤BRIEF",
-      "purpose": "",
-      "promise": "",
+      "purpose": "AGENT DOSSIER > BRIEF tab — who this agent is right now: identity, level, purpose, live status, skin picker, and the delete-gate.",
+      "promise": "Clicking it shows the BRIEF pane (aria-selected true) with the agent name, an Lv chip, the skin picker, and the DELETE gate; it is the default-selected tab.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "shoot",
+          "ref": "crew-agents"
+        },
+        {
+          "kind": "test",
+          "ref": "test/agent-model-select.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "78351f3eeb3595ac7b1c8bfe5b227d3d2b6bf8f3",
+        "date": "2026-07-07T21:12:48Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#con-tab-agents-brief",
-      "state": "crew-agents"
+      "state": "crew-agents",
+      "notes": "Live 78351f3e: #con-tab-agents-brief aria-selected=true by default; renders name NOVA + \"Lv 1\" + 15 skin thumbs + delete gate. Ev crew2-proof.json (new_batch_proofs)."
     },
     {
       "id": "ui/crew/con-tab-agents-config",
       "kind": "ui",
       "area": "crew",
       "name": "▣CONFIG",
-      "purpose": "",
-      "promise": "",
+      "purpose": "AGENT DOSSIER > CONFIG tab — the markdown files that compose this agent’s prompt plus its per-agent model/provider/effort pin controls.",
+      "promise": "Clicking it shows the model picker (preselected from the pin), effort select, advanced model/provider inputs, SAVE PIN, and FOLLOW STATION DEFAULT — the pin write is a persisted roster property, not a per-chat choice.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/app.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/agent-model-select.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/modelpicker.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "crew-agents"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "78351f3eeb3595ac7b1c8bfe5b227d3d2b6bf8f3",
+        "date": "2026-07-07T21:12:48Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#con-tab-agents-config",
-      "state": "crew-agents"
+      "state": "crew-agents",
+      "notes": "Live 78351f3e: CONFIG renders #ag-model-pick-model(376 opts)/#ag-model-pick-effort/#ag-model-in/#ag-prov-in/#ag-model-save/#ag-model-clear/#ag-rename-btn. Pin write proven on the model-pin entries (roster property). Ev crew2-proof.json."
     },
     {
       "id": "ui/crew/con-tab-agents-growth",
       "kind": "ui",
       "area": "crew",
       "name": "★GROWTH",
-      "purpose": "",
-      "promise": "",
+      "purpose": "AGENT DOSSIER > GROWTH tab — the XP ladder, satisfaction gauge, trophy case, and station-prestige rollup, all read off the pure Xp engine.",
+      "promise": "Clicking it shows Progression (LV n->n+1, in-level/span XP, %), a Satisfaction gauge that reads \"FEEDBACK EWMA n=0\" while calibrating, and a trophy count — every number reduces from real Xp.compute(stats), never fabricated.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/app.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/xp.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/xpstore.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "crew-agents"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "78351f3eeb3595ac7b1c8bfe5b227d3d2b6bf8f3",
+        "date": "2026-07-07T21:12:48Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#con-tab-agents-growth",
-      "state": "crew-agents"
+      "state": "crew-agents",
+      "notes": "Live 78351f3e: GROWTH shows \"Progression LV 1->2\",\"0/50 XP\",\"Satisfaction FEEDBACK EWMA n=0\",\"Trophy case 00 earned 09 locked\". Xp.compute({xp:0,samples:0}) => level 1, band \"calibrating\", confLabel \"—\". TRUTHFUL — size-weighted rate-the-work engine reading zero real events; xp.test.js locks the size-weighted mint. Ev crew2-proof.json."
     },
     {
       "id": "ui/crew/con-tab-agents-memory",
       "kind": "ui",
       "area": "crew",
       "name": "◈MEMORY",
-      "purpose": "",
-      "promise": "",
+      "purpose": "AGENT DOSSIER > MEMORY tab — every belief this agent has kept (traced to the run that earned it) plus the station reflection on/off + cooldown controls.",
+      "promise": "Clicking it shows the reflection toggle + cooldown + SAVE, a stored-beliefs count, and (when empty) an honest \"NO MEMORIES YET\" state — the belief count reads from the real memory store, never a fabricated number.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "shoot",
+          "ref": "crew-agents"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "78351f3eeb3595ac7b1c8bfe5b227d3d2b6bf8f3",
+        "date": "2026-07-07T21:12:48Z"
+      },
+      "findings": [
+        "d2121f51"
+      ],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#con-tab-agents-memory",
-      "state": "crew-agents"
+      "state": "crew-agents",
+      "notes": "Live 78351f3e: MEMORY shows reflection toggle (checked, cooldown 3), SAVE, \"0 beliefs\", honest empty \"NO MEMORIES YET…\". Reads real store (truthful). AUDITED not perfected: reflection master toggle + belief render lack a dedicated machine assertion (coverage gap, tracked under finding d2121f51 family — memory-tab guard). Ev crew2-proof.json."
     },
     {
       "id": "ui/crew/con-tab-agents-skills",
       "kind": "ui",
       "area": "crew",
       "name": "◇SKILLS",
-      "purpose": "",
-      "promise": "",
+      "purpose": "AGENT DOSSIER > SKILLS tab — the capabilities granted by the objects at this agent’s workstation, shown as a perk grid with a \"GRANTED — N LIVE\" header.",
+      "promise": "The \"N LIVE\" count equals the run-path grant: a perk is LIVE iff its cap is null (the always-on compute freebie) OR its cap object is placed at the workstation (World.heroCaps). N == the count of .perk.on tiles == what composeOffice actually grants — never a decorative number.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/capgate.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "crew-agents"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "78351f3eeb3595ac7b1c8bfe5b227d3d2b6bf8f3",
+        "date": "2026-07-07T21:12:48Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#con-tab-agents-skills",
-      "state": "crew-agents"
+      "state": "crew-agents",
+      "notes": "Live 78351f3e: header \"GRANTED — 1 LIVE\"; exactly 1 perk .on (COMPUTE, cap===null freebie); World.heroCaps(hero)=[] (no placed cap objects) so only the freebie is LIVE. header N == perkOn == 1. This mirrors sidecar composeOffice (\"compute freebie + placed caps\", office.js) — the dossier-SKILLS-honesty law upheld; capgate.test.js locks the run-path grant. Ev crew2-proof.json + skills-honesty-final.json."
     },
     {
       "id": "ui/crew/mc-cooldown",
@@ -1035,8 +1374,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "77f1c7e62b7945453726686b49b02c52bbf43939",
-        "date": "2026-07-07T18:39:23Z"
+        "sha": "78351f3eeb3595ac7b1c8bfe5b227d3d2b6bf8f3",
+        "date": "2026-07-07T21:12:48Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
@@ -1044,7 +1383,7 @@
       "missing": false,
       "selector": "#mkt-model-effort",
       "state": "crew-recruit",
-      "notes": "Live: rendered in bay model card beside mkt-model-model; effort-leak guard covered by agent-model-select.test.js. Ev .bugloops/crew-primary-flow-proof.json"
+      "notes": "Re-proof 78351f3e: #mkt-model-effort present in recruit bay. HOLDS. Ev crew2-proof.json"
     },
     {
       "id": "ui/crew/mkt-model-model",
@@ -1072,8 +1411,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "77f1c7e62b7945453726686b49b02c52bbf43939",
-        "date": "2026-07-07T18:39:23Z"
+        "sha": "78351f3eeb3595ac7b1c8bfe5b227d3d2b6bf8f3",
+        "date": "2026-07-07T21:12:48Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
@@ -1081,7 +1420,7 @@
       "missing": false,
       "selector": "#mkt-model-model",
       "state": "crew-recruit",
-      "notes": "Live: .mp-model default Same as the orchestrator (model-is-roster-property law); test locks modelPin threading. Ev .bugloops/crew-primary-flow-proof.json"
+      "notes": "Re-proof 78351f3e: #mkt-model-model present, \"Same as the orchestrator\" default. HOLDS. Ev crew2-proof.json"
     },
     {
       "id": "ui/crew/mkt-q",
@@ -1108,8 +1447,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "77f1c7e62b7945453726686b49b02c52bbf43939",
-        "date": "2026-07-07T18:39:23Z"
+        "sha": "78351f3eeb3595ac7b1c8bfe5b227d3d2b6bf8f3",
+        "date": "2026-07-07T21:12:48Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
@@ -1460,21 +1799,36 @@
       "kind": "ui",
       "area": "crew",
       "name": "+ add",
-      "purpose": "",
-      "promise": "",
+      "purpose": "COMMANDER DOSSIER per-dimension \"+ add\" — opens an inline composer to add a new belief under that dimension of the user model.",
+      "promise": "Clicking it reveals a text composer whose SAVE upserts a belief (source \"commander\") into that dimension via CDS().upsert, then re-renders; one \"+ add\" exists per dimension.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "shoot",
+          "ref": "crew-commander"
+        },
+        {
+          "kind": "test",
+          "ref": "test/dossier.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "78351f3eeb3595ac7b1c8bfe5b227d3d2b6bf8f3",
+        "date": "2026-07-07T21:12:48Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
-      "state": "crew-commander"
+      "state": "crew-commander",
+      "notes": "Live 78351f3e: 7 \"+ add\" buttons render (one per known/blank dimension) on the open commander dossier. AUDITED not perfected: the add->compose->upsert->render round-trip not driven to a committed belief this session (dossier.test covers CDS.upsert, not the button wiring). Representative of the 7 \"+ add\" commander entries. Ev crew2-proof.json."
     },
     {
       "id": "ui/crew/txt-button-add-410",
@@ -1796,8 +2150,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "77f1c7e62b7945453726686b49b02c52bbf43939",
-        "date": "2026-07-07T18:39:23Z"
+        "sha": "78351f3eeb3595ac7b1c8bfe5b227d3d2b6bf8f3",
+        "date": "2026-07-07T21:12:48Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
@@ -1805,7 +2159,7 @@
       "missing": false,
       "selector": "button",
       "state": "crew-recruit",
-      "notes": "Live: DEPLOY renders DEPLOY TO <AGENT> with re-spec sub-copy; wireDossier .mkt-deploy -> ctx.onDeploy. Ev .bugloops/crew-primary-flow-proof.json"
+      "notes": "Re-proof 78351f3e: recruit ENGINEER detail rendered \"⏼ DEPLOY TO NOVA ▸\". HOLDS. Ev crew2-proof.json"
     },
     {
       "id": "ui/crew/txt-button-dsndesignervisuals-assetsops-balanc-435",
@@ -1979,8 +2333,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "77f1c7e62b7945453726686b49b02c52bbf43939",
-        "date": "2026-07-07T18:39:23Z"
+        "sha": "78351f3eeb3595ac7b1c8bfe5b227d3d2b6bf8f3",
+        "date": "2026-07-07T21:12:48Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
@@ -1995,21 +2349,36 @@
       "kind": "ui",
       "area": "crew",
       "name": "Forget",
-      "purpose": "",
-      "promise": "",
+      "purpose": "COMMANDER DOSSIER belief \"Forget\" — removes a belief from the user model.",
+      "promise": "Clicking Forget calls CDS().forget(dim,id) and the card leaves the dossier on re-render; the belief is dropped from the store (local-first, user-owned).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "shoot",
+          "ref": "crew-commander"
+        },
+        {
+          "kind": "test",
+          "ref": "test/dossier.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "78351f3eeb3595ac7b1c8bfe5b227d3d2b6bf8f3",
+        "date": "2026-07-07T21:12:48Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
-      "state": "crew-commander"
+      "state": "crew-commander",
+      "notes": "Live 78351f3e: Forget buttons render on commander belief cards. AUDITED not perfected: forget not driven live (would mutate the seeded dossier); dossier.test.js covers the store forget path. Ev crew2-proof.json."
     },
     {
       "id": "ui/crew/txt-button-forget-413",
@@ -2100,21 +2469,37 @@
       "kind": "ui",
       "area": "crew",
       "name": "▸ LET THE STATION GET TO KNOW YOU",
-      "purpose": "",
-      "promise": "",
+      "purpose": "COMMANDER DOSSIER interview trigger — launches the intake interview in COMMS, folding answers into the shared user dossier.",
+      "promise": "Clicking it starts the intake interview (gated on a free, awake agent); answers upsert into the dossier through the same path the belief cards use. Label reads \"GET TO KNOW YOU\" (blank dims) or \"REFINE\" (all known).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/app.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "shoot",
+          "ref": "crew-commander"
+        },
+        {
+          "kind": "test",
+          "ref": "test/dossier.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "78351f3eeb3595ac7b1c8bfe5b227d3d2b6bf8f3",
+        "date": "2026-07-07T21:12:48Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
-      "state": "crew-commander"
+      "state": "crew-commander",
+      "notes": "Live 78351f3e: rendered as \".cd-interview\" reading \"▸ LET THE STATION GET TO KNOW YOU\" (blank dims present). AUDITED not perfected: the Intake.start launch path is gated (agent busy/onboarding) and not driven to completion this session; dossier.test covers the upsert store not the interview launch button. Ev crew2-proof.json."
     },
     {
       "id": "ui/crew/txt-button-lialiaisontriage-draft-your-messagesop-437",
@@ -2205,21 +2590,36 @@
       "kind": "ui",
       "area": "crew",
       "name": "Pin",
-      "purpose": "",
-      "promise": "",
+      "purpose": "COMMANDER DOSSIER belief \"Pin\" — locks a belief to the top of recall so agents weight it first.",
+      "promise": "Clicking Pin toggles CDS().setPinned(dim,id,true) and re-renders the card as pinned (label flips to \"Unpin\"); pin state persists in the dossier store.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "shoot",
+          "ref": "crew-commander"
+        },
+        {
+          "kind": "test",
+          "ref": "test/dossier.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "78351f3eeb3595ac7b1c8bfe5b227d3d2b6bf8f3",
+        "date": "2026-07-07T21:12:48Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
-      "state": "crew-commander"
+      "state": "crew-commander",
+      "notes": "Live 78351f3e: Pin buttons render on commander belief cards (the seeded dossier has 3 known dimensions). AUDITED not perfected: setPinned toggle not driven live this session (no seeded pinnable belief exercised); dossier.test.js covers the store pin path. Ev crew2-proof.json."
     },
     {
       "id": "ui/crew/txt-button-pin-411",
@@ -2442,8 +2842,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "77f1c7e62b7945453726686b49b02c52bbf43939",
-        "date": "2026-07-07T18:39:23Z"
+        "sha": "78351f3eeb3595ac7b1c8bfe5b227d3d2b6bf8f3",
+        "date": "2026-07-07T21:12:48Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
@@ -2451,7 +2851,7 @@
       "missing": false,
       "selector": "button",
       "state": "crew-recruit",
-      "notes": "Live: clicked SUMMON RESEARCHER on 8966 -> crew []->[researcher] via window.__SKYNET_TEST__.crew. Truthful sub-copy. Ev .bugloops/crew-primary-flow-proof.json"
+      "notes": "Re-proof 78351f3e: recruit ENGINEER detail rendered \"⏼ SUMMON ENGINEER ▸\". HOLDS. Ev crew2-proof.json"
     },
     {
       "id": "ui/crew/txt-button-tuttutorexplains-topics-builds-study-p-440",
@@ -2496,8 +2896,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "77f1c7e62b7945453726686b49b02c52bbf43939",
-        "date": "2026-07-07T18:39:23Z"
+        "sha": "78351f3eeb3595ac7b1c8bfe5b227d3d2b6bf8f3",
+        "date": "2026-07-07T21:12:48Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
@@ -2505,7 +2905,7 @@
       "missing": false,
       "selector": "span",
       "state": "crew-agents",
-      "notes": "Live: .ag-tags .tag.model read anthropic/claude-haiku-4.5 (real seeded model), dropped to dash after clearing the pin - truthful both ways. Ev .bugloops/crew-primary-flow-proof.json"
+      "notes": "Re-proof 78351f3e: recruit model readout tag renders \"CLAUDE HAIKU / claude haiku latest OPENROUTER\" + full picker. HOLDS. Ev crew2-proof.json"
     },
     {
       "id": "ui/crew/txt-summary-advanced-type-a-model-id-1",
