@@ -73,3 +73,15 @@ many of these — they win on any wording conflict.
   burned proving this).
 - **QA baseline suppression:** known defects live in `qa/KNOWN_ISSUES.md` fingerprints; the
   ledger refuses re-filing. Retire a row only when the fix lands.
+- **The READY claim is machine-gated** (2026-07-07, EL-7). No session, report, or doc may claim
+  StarNet is "ready", "perfect standing", or "go-public-able" without pasting a fresh
+  `npm run qa:ready` receipt alongside the claim. `qa:ready` (`scripts/qa/ready.mjs`) prints ONE
+  verdict — `READY` or `NOT READY — <numbered reasons>` + a per-check receipts block — and exits 0
+  only when READY. It gates on five real artifacts: ledger open P0/P1 == 0 · Green Guardian last
+  cycle GREEN + fresh (≤24h) + on the current trunk head · qa:journeys last run pass · Beginner Run
+  not STUCK/FAIL · installed-exe smoke stamp GREEN + fresh (≤7d). No-fake-green: any check that can't
+  run (missing/unreadable artifact, git failure) is NOT READY, loudly — never a silent pass.
+  **Lane-level done stays lane-level:** an agent may say "lane X verified"; station-wide status is
+  whatever `qa:ready` says, nothing more. Why: session after session reported lane-green as
+  project-green while the Guardian sat RED with open findings — the aggregate claim was never gated
+  on anything. Now it is.

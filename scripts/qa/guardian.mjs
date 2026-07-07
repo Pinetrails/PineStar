@@ -598,6 +598,22 @@ if (INVOKED_DIRECTLY) {
       }, null, 2) + '\n', 'utf8');
     } catch (_) {}
 
+    // ADDITIVE (EL-7): a stable machine-readable last-cycle stamp the READY gate (scripts/qa/ready.mjs)
+    // reads. Lives at qa/guardian-last-cycle.json (NOT qa/findings/ — the ledger scans every .json there
+    // as a finding; a non-finding dropped in would pollute it). Survives the pinned checkout's next reset
+    // because it is written into the guardian's OWN repo qa/ dir. Best-effort: a write failure never
+    // changes the cycle verdict — the STATUS.md row + evidence bundle already stand.
+    try {
+      fs.mkdirSync(QA_DIR, { recursive: true });
+      fs.writeFileSync(path.join(QA_DIR, 'guardian-last-cycle.json'), JSON.stringify({
+        stampIso: new Date().toISOString(),
+        trunkHead: sha,
+        result: summary.verdict,                 // 'green' | 'red'
+        gatesRan: summary.ran, gatesSkipped: summary.skipped,
+        gates: stepResults.map(s => ({ id: s.id, exitCode: s.exitCode == null ? null : s.exitCode, blocked: !!s.blocked, timedOut: !!s.timedOut })),
+      }, null, 2) + '\n', 'utf8');
+    } catch (_) {}
+
     log('cycle ' + stamp + ' verdict: ' + summary.verdict.toUpperCase() +
       (summary.red.length ? ' — red: ' + summary.red.join(', ') : '') +
       (summary.blocked.length ? ' — BLOCKED: ' + summary.blocked.join(', ') : ''));

@@ -73,6 +73,15 @@ scripts/STATUS.generated.md
 # these does not affect them. Keep the dir itself (via .gitkeep) + the README (a .md, not matched).
 qa/findings/*.json
 
+# QA READY-GATE machine stamps (EL-7) — last-run state each crew runner writes at RUN TIME for
+# scripts/qa/ready.mjs to read. Same class as qa/findings: machine-local, ephemeral, regenerated
+# every cycle (carry local trunk shas + timestamps), read via fs never from git. The installed-exe
+# smoke stamp is written by the rc-soak lane's installed runner; qa:ready only READS it.
+qa/guardian-last-cycle.json
+qa/journeys-last-run.json
+qa/beginner-last-run.json
+qa/installed/
+
 # G0 lane visual-proof screenshots (headless capture output; never committed)
 .qa_g0/
 # G1a lane visual-proof screenshots (same pattern)
