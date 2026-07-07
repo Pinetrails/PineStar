@@ -2909,6 +2909,7 @@ function dispatchRoute(req, res) {
   if (req.method === 'GET' && req.url === '/api/autonomy/posture') return handleAutonomyPostureGet(req, res);
   if (req.method === 'POST' && req.url === '/api/activity') return handleActivityBeacon(req, res);
   if (req.method === 'GET' && req.url === '/api/nightshift/status') return handleNightshiftStatus(req, res);
+  if (req.method === 'GET' && req.url.indexOf('/api/nightshift/drafts') === 0) return handleNightshiftDrafts(req, res);   // NS-4: night-shift drafts for the morning report
   if (req.method === 'POST' && req.url === '/api/summon/ack') return handleSummonAck(req, res);
   if (req.method === 'POST' && req.url === '/api/key') return handleSetKey(req, res);
   if (req.method === 'POST' && req.url === '/api/channels/token') return handleSetChannelToken(req, res);
@@ -5871,6 +5872,28 @@ function handleNightshiftStatus(req, res) {
   };
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
   res.end(JSON.stringify(out));
+}
+
+// GET /api/nightshift/drafts?since=<ms>&limit=<n> — NS-4: the night-shift DRAFTS the beats left on the desk, so the
+// morning report can list each act by its real title (and show the body). Newest-first. Read-only, local telemetry
+// (same class as /api/nightshift/status); the store is a capped, restart-safe sibling of the dossier — an agent can
+// neither read nor rewrite it. A missing/empty log is 200 { drafts: [] }, never a 500 (an empty night is a fact).
+function handleNightshiftDrafts(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  try {
+    const u = new URL(req.url, 'http://127.0.0.1');
+    const since = Math.max(0, Number(u.searchParams.get('since')) || 0);
+    const limit = Math.max(1, Math.min(50, Number(u.searchParams.get('limit')) || 20));
+    const all = Array.isArray(nightshiftDrafts) ? nightshiftDrafts : [];
+    const out = all
+      .filter(d => d && Number(d.at) > since)
+      .slice(-limit)
+      .reverse()   // newest-first (mirrors the ledger's ordering so the report reads one way)
+      .map(d => ({ title: String(d.title || ''), archetype: d.archetype || '', at: Number(d.at) || 0, body: String(d.body || ''), note: String(d.note || '') }));
+    json(200, { drafts: out });
+  } catch (e) {
+    json(500, { error: 'could not read night-shift drafts: ' + ((e && e.message) || e) });
+  }
 }
 
 // POST /api/summon/ack { runId, requestId, agentId } — the browser's answer to a live crew.summon.request: it ran

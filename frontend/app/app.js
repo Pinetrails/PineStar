@@ -2109,6 +2109,11 @@ const App = (() => {
     // store reads /api/runs + /api/cron itself and hands the rows to Chat.awayDigest; rating a row
     // rides the same rate-the-work path as an attended run. Init AFTER Chat.init so the beat can render.
     if (typeof ReturnStore !== 'undefined') ReturnStore.init({ enabled: !opts.awaitingPurpose });
+    // NS-4 MORNING REPORT: once per session (never during the awakening), on a genuine return, fetch the night-shift
+    // status + autonomy ledger + drafts and surface ONE honest COMMS digest — the acts fired AND the declined half
+    // (which gate held them back), or the one plain "did nothing and why" sentence. Own durable away-stamp so it and
+    // ReturnStore never race one value; rides Chat.nudge (one-beat-at-a-time + vanish()). Init AFTER Chat.init.
+    if (typeof NightReportStore !== 'undefined') NightReportStore.init({ enabled: !opts.awaitingPurpose, agentId: agent.id });
     // W3 AWAY-WORKSHOP RETURN CARD: on attach (once per session, never during the awakening) poll
     // /api/workshop/pending and hand the oldest undecided manifest to Chat.workshopReturn — the same
     // one-post-run-beat slot the digest rides. Keep/Later/Discard route back through WorkshopStore.decide.

@@ -466,6 +466,7 @@
 <script src="app/postcard.js"></script><!-- shareable POSTCARD engine (G5 spectacle): pure honest-stat reducer + in-browser canvas capture → draggable/saveable run PNG -->
 <script src="app/clip.js"></script><!-- shareable CLIP engine (G5 spectacle slice 2): pure honest-overlay reducer + bounded #stage ring-buffer + vendored in-page GIF89a encoder → draggable/saveable ~10s run GIF -->
 <script src="app/autonomy.js"></script>
+<script src="app/nightreport.js"></script><!-- NS-4: pure MORNING-REPORT engine (night-shift status+ledger+drafts → one honest digest; local-time formatting) -->
 <script src="app/autojobs.js"></script>
 <script src="app/autopilot.js"></script>
 <script src="app/permissions.js"></script>
@@ -551,6 +552,7 @@ document.write('<script src="' + ((window.__STARNET_API__ || '') + '/shared/spec
 <script src="app/permissionsstore.js"></script>
 <script src="app/truststore.js"></script><!-- GROWTH Tier 3: EARNED-AUTONOMY wiring — folds the same events xpstore folds, mints/persists earned rungs with provenance, applies Accept via AutonomyStore/PermissionsStore, demotes with a notice; own key, never emits -->
 <script src="app/returnstore.js"></script><!-- return-ritual wiring: lastSeenAt heartbeat + the once-per-session while-away digest -->
+<script src="app/nightreportstore.js"></script><!-- NS-4: the once-per-session MORNING REPORT beat — fetches night-shift status/ledger/drafts on genuine return, surfaces one honest COMMS digest -->
 <script src="app/workshopstore.js"></script><!-- W3 away-workshop: queue POST + on-attach pending poll → the return-card beat (Keep/Later/Discard) -->
 <script src="app/pridestore.js"></script><!-- lifetime-record wiring (G3a): folds real run/deliver/routine events into the durable STATION RECORD (own key) -->
 <script src="app/seedreusestore.js"></script><!-- seed-reuse aggregate wiring (G3b): tallies provenance-matched digest rows; the living-tools shelf + the 5×-this-week callout (own key, never emits) -->
