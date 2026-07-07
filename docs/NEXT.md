@@ -1,7 +1,7 @@
 # NEXT.md — current priorities & task queue
 
 **The one moving file.** Update it when you land or invalidate an item; don't write a new
-plan doc. Reconciled against trunk `feat/harness-backend` + git log on **2026-07-06 (evening)**.
+plan doc. Reconciled against trunk `feat/harness-backend` + git log on **2026-07-06 (late night, trunk 7cb221ed)**.
 Verification key: ✅ = grep/log-verified today · ❓ = doc claim, re-verify before building.
 
 ## Already DONE — do not rebuild (merged 2026-07-05..06)
@@ -14,22 +14,27 @@ dossier-agent-mgmt (DELETE AGENT + CHANGE SKIN); update-safety P0.1 wv-cache-pur
 P0.2 mirror-truth, P1.1+P1.2 roster-honesty; voice-desktop-key; comms-fresh-session;
 multiplatform install docs. ✅ (all in git log)
 
-## P0 — code (verify each is still open by grep before starting)
+## P0 — code: ALL LANDED 2026-07-06 night ✅ (do not rebuild — verify in log/code)
 
-1. **Forward-version save guard** — `frontend/app/save.js:52` still silently adopts
-   `doc.version > CURRENT` (downgrade eats newer saves) ✅ open. Refuse + surface.
-   (UPDATE_STATE_SAFETY P0.3.)
-2. **Frontend token leak to provider hosts** — `frontend/app/harness.js:45`
-   `/\/api\//.test(u)` attaches the local API token to ANY url containing `/api/`
-   (e.g. openrouter.ai/api/v1) ✅ open. (GROUND_UP 0.6.)
-3. **`agent.tool_call` double-emit** — both `chat.js:3964` (local emit) and
-   `harness.js:372` (SSE forward) fire ✅ both paths exist; audit says it corrupts the
-   recruiter work-signal. Dedupe at one seam. (GROUND_UP 0.4.)
-4. **Sidecar spawn failure = silently dead app** — `src-tauri/src/main.rs` ~1161, no retry
-   or error dialog ❓. (GROUND_UP 0.2.)
-5. **Workspace migration resurrects deleted data on every boot** — `main.rs` ~385-397 ❓;
-   needs `.migrated` marker. (GROUND_UP 0.1.) NOTE: workshop CSP (GROUND_UP 0.3) appears
-   FIXED — `sidecar/index.js:6049` now sends a sandbox CSP ✅ — verify coverage, then close.
+The entire P0-code list from the evening reconcile merged during the update-safety /
+audit-fix night wave:
+
+1. Forward-version save guard — LANDED; `save.js` now refuses `doc.version > CURRENT`,
+   leaves the doc untouched, reports `{status:'future'}` to boot. (P0.3) ✅ code-verified.
+2. Frontend token leak — LANDED a17cb6b3; `X-StarNet-Token` scoped same-origin `/api` only
+   (GROUND_UP 0.6) ✅ code-verified.
+3. `agent.tool_call` double-emit — LANDED d9a79c6c; chat.js synthetic re-emit dropped
+   (GROUND_UP 0.4) ✅.
+4. + 5. Sidecar spawn failure + workspace-migration resurrect — LANDED e19aaa21
+   "three Tauri-shell data-safety fixes (audit 0.1/0.2/P2)" ✅ log-verified (code ❓ —
+   spot-check main.rs if touching that area). Workshop CSP (0.3) also landed efd22244
+   (opaque-origin sandbox) ✅.
+
+Also landed the same night from the old P1 list: plaintext BYOK provider key → keychain
+(03b07b0d), channel-hub runs in `runsMeta`/snapshot (f9d59968 + e19aaa21 test), approvalMode
+persisted (fe3fef98), schema provenance / `git describe` stamp (711f42da, P1.5+P2.1+P2.2),
+STT key off the query string (623202af), dirstat fs-jail (f9007c4d), deliverable blob-URL
+leak (0cccce2d), VT323 shipped locally (01570f17).
 
 ## P0 — Andrew only (nothing above matters to the public until these)
 
@@ -40,16 +45,13 @@ multiplatform install docs. ✅ (all in git log)
 - Then per `docs/ROADMAP_2026-07-04_BRUTAL.md`: 10 outside installs; days 8–30 = code-signing
   identity + weekly release cadence; days 31–90 = managed-key starter credits (one SKU).
 
-## P1 — after the P0s (from the 7/06 audits, unverified ❓ unless noted)
+## P1 — what actually remains open (post-night-wave reconcile)
 
-- Update flow: flush CloudSave before install (P1.3); automated "update preserves state"
-  parity gate (P1.4); stamp `git describe` into the exe (P1.5).
-- BYOK provider key still plaintext in `channels/secrets.js` (keychain has the channel
-  secrets only).
-- Channel-hub runs missing from `runsMeta` → SSE reconnect wipes state.
-- `approvalMode` not persisted across restart.
-- Prompt-injection via auto-granted `team.*` caps — genuine product fork, needs Andrew.
-- P2 hygiene list lives in `docs/GROUND_UP_AUDIT_2026-07-06.md` — do not copy it here.
+- **Prompt-injection via auto-granted `team.*` caps** — genuine product fork, needs Andrew
+  (see Parked decisions). This is now the ONLY surviving item from the old P1 list — the
+  rest landed (see DONE above; P1.3 flush ad8b8b5a, P1.4 parity gate a1a60967 ✅).
+- Branch triage below is now the main code queue, plus the P2 hygiene list in
+  `docs/GROUND_UP_AUDIT_2026-07-06.md` — do not copy it here.
 
 ## Branch triage (17 unmerged `agent/*` branches ✅)
 
