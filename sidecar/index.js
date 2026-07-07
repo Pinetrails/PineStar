@@ -598,11 +598,23 @@ function recordAutonomy(entry) { try { return autonomyLedger.record(entry); } ca
 const PROCESS_START = Date.now();
 const DIAG_ERR_RING = [];             // [{ ts, message }] newest-last, bounded
 const DIAG_ERR_MAX = 8;
+// 2026-07-07 escape: a multi-agent run failed, the user restarted, and diagnostics said "(none recorded
+// this session)" — the ring was RAM-only, so the one artifact that could explain the failure evaporated.
+// Persist the ring (already-redacted messages only, never transcript content) so a post-restart bug report
+// still carries the last few run errors. Best-effort on both paths: a diag write must never break a run.
+const DIAG_ERR_FILE = path.join(WORKSPACES, 'diag.errors.json');
+try {
+  const saved = JSON.parse(fs.readFileSync(DIAG_ERR_FILE, 'utf8'));
+  if (Array.isArray(saved)) for (const e of saved.slice(-DIAG_ERR_MAX)) {
+    if (e && e.message) DIAG_ERR_RING.push({ ts: num(e.ts) || 0, message: String(e.message) });
+  }
+} catch (_) {}   // no file yet / unreadable -> empty ring (first boot)
 function recordDiagError(message, ts) {
   const msg = String(message == null ? '' : message).trim();
   if (!msg) return;
   DIAG_ERR_RING.push({ ts: num(ts) || Date.now(), message: redact(msg) });   // redact on WRITE (context.js always-on scrubber)
   while (DIAG_ERR_RING.length > DIAG_ERR_MAX) DIAG_ERR_RING.shift();
+  try { fs.writeFileSync(DIAG_ERR_FILE, JSON.stringify(DIAG_ERR_RING)); } catch (_) {}   // survives restarts; tiny + rare
 }
 const diagnostics = makeDiagnostics({ redact });   // pure assembler; redact injected for the second sanitization backstop
 // wrap any run emit fn so an `agent.run.error` also lands in the diagnostics ring (one sink for every run path).
@@ -611,6 +623,20 @@ function wrapEmitDiag(emitFn) {
     try { if (name === 'agent.run.error' && payload && payload.message) recordDiagError(payload.message, payload.ts); } catch (_) {}
     return emitFn(name, payload);
   };
+}
+
+/* ---- NDJSON run-stream hold-open heartbeat ----
+   A run stream (/api/run, /api/cron/run, /api/workshop/shift) is byte-silent for MINUTES while a long tool
+   runs — team.dispatch awaits one or more WHOLE worker agent-loops — and silent responses are exactly what
+   socket-idle policies and interposed layers kill (2026-07-07 multi-agent escape: the watched run died
+   mid-dispatch with a generic error). A blank line every STREAM_KA_MS proves the socket is alive and is
+   contract-free: every NDJSON consumer (harness.js chat reader, the routines panel reader) skips empty
+   lines. Returns the detach fn; the route's finally MUST call it. Self-evicts on write failure. */
+const STREAM_KA_MS = Math.max(1, num(ENV('STREAM_KA_MS'), 20000));
+function attachStreamKeepAlive(res) {
+  const t = setInterval(() => { try { res.write('\n'); } catch (_) { clearInterval(t); } }, STREAM_KA_MS);
+  if (t && typeof t.unref === 'function') t.unref();
+  return () => clearInterval(t);
 }
 
 // durable per-workstream CONVERSATION transcript (P0.1): append-only + fsync'd like the runs log, a SIBLING of
@@ -4386,6 +4412,7 @@ async function handleCronRun(req, res) {
   }
 
   res.writeHead(200, { 'Content-Type': 'application/x-ndjson; charset=utf-8', 'Cache-Control': 'no-store', 'X-Accel-Buffering': 'no' });
+  const kaOff = attachStreamKeepAlive(res);   // hold-open heartbeat: a long tool phase must not leave the stream byte-silent
   const ac = new AbortController();
   const runId = crypto.randomUUID();
   runs.set(runId, ac);
@@ -4432,6 +4459,7 @@ async function handleCronRun(req, res) {
       await withCronWrite(jobs => cronStore.markRun(jobs, job.id, { runId: runId, status: ok ? 'ok' : 'error', reason: state.reason || (ok ? 'done' : 'error'), error: state.errMsg || undefined, transient: state.transient }, { now: Date.now() }));
     } catch (_) {}
     try { cronEmit('cron.result', { jobId: job.id, runId: runId, outcome: !ok ? 'failed' : ((state.buf || '').trim() === '[SILENT]' ? 'silent' : 'ok'), reason: state.reason || (ok ? 'done' : 'error') }); } catch (_) {}
+    kaOff();
     try { res.end(); } catch (_) {}
   }
 }
@@ -4819,11 +4847,13 @@ async function handleWorkshopShiftNow(req, res) {
   const agentId = String(body.agentId || '');
   if (!/^[A-Za-z0-9_-]{1,40}$/.test(agentId)) { res.writeHead(400, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ error: 'choose a valid agent' })); }
   res.writeHead(200, { 'Content-Type': 'application/x-ndjson; charset=utf-8', 'Cache-Control': 'no-store', 'X-Accel-Buffering': 'no' });
+  const kaOff = attachStreamKeepAlive(res);   // hold-open heartbeat (mirrors /api/run): shifts run whole tool phases silently
   const bus = { emit: (name, payload) => { try { res.write(JSON.stringify({ name, payload: redact(payload) }) + '\n'); } catch (_) {} } };
   const emit = wrapEmitDiag(makeEmitter(bus, e => { if (e && e.event !== 'tool.web') console.warn('[event]', e.kind, e.event, (e.errors || []).join(';')); }));
   let result;
   try { result = await runWorkshopShift(agentId, { emit: emit, broadcast: true }); }
   catch (e) { result = { fired: false, reason: 'error: ' + ((e && e.message) || e) }; }
+  kaOff();
   try { res.write(JSON.stringify({ name: 'workshop.shift.result', payload: result }) + '\n'); } catch (_) {}
   try { res.end(); } catch (_) {}
 }
@@ -5133,6 +5163,9 @@ async function handleRun(req, res) {
     'Cache-Control': 'no-store',
     'X-Accel-Buffering': 'no'
   });
+  // hold-open heartbeat: a lead awaiting team.dispatch produces NO events for minutes (only child lifecycle
+  // is forwarded) — the blank line keeps the watched run's socket provably alive through that silence.
+  const kaOff = attachStreamKeepAlive(res);
 
   const ac = new AbortController();
   const runId = crypto.randomUUID();
@@ -5236,6 +5269,7 @@ async function handleRun(req, res) {
     if (p) { for (const f of p.values()) { try { f('deny'); } catch (_) {} } pendingByRun.delete(runId); }
     const ps = pendingSummonByRun.get(runId);   // settle any summon request still open → null (no agent created)
     if (ps) { for (const f of ps.values()) { try { f(null); } catch (_) {} } pendingSummonByRun.delete(runId); }
+    kaOff();
     try { res.end(); } catch (_) {}
   }
 }

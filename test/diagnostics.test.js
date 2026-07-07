@@ -64,7 +64,7 @@ A.ok(empty.text.indexOf('App version:   unknown') >= 0, 'missing version -> unkn
 A.ok(empty.text.indexOf('Mode:          unknown') >= 0, 'missing mode -> unknown');
 A.ok(empty.text.indexOf('Provider:      unknown') >= 0, 'missing provider -> unknown');
 A.ok(empty.text.indexOf('Last run:      none yet') >= 0, 'no run yet is stated honestly');
-A.ok(empty.text.indexOf('(none recorded this session)') >= 0, 'no errors is stated honestly');
+A.ok(empty.text.indexOf('(none recorded)') >= 0, 'no errors is stated honestly (tail persists across restarts)');
 A.eq(empty.report.keyPresent, false, 'absent credential -> false, never a guessed true');
 A.eq(empty.report.workspacePresent, false, 'absent workspace flag -> false');
 

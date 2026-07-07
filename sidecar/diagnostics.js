@@ -132,7 +132,7 @@
       if (r.errors.length) {
         for (const e of r.errors) lines.push('  · ' + (e.ts ? iso(e.ts) + ' ' : '') + e.message);
       } else {
-        lines.push('  (none recorded this session)');
+        lines.push('  (none recorded)');   // the error tail persists across restarts (diag.errors.json) — "this session" would undersell it
       }
       lines.push('--- end diagnostics — contains no keys, tokens, or message content ---');
       return lines.join('\n');

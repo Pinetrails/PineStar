@@ -28,11 +28,16 @@ function startMockOpenRouter() {
         let body = ''; req.on('data', d => { body += d; }); req.on('end', () => {
           try { requests.push(JSON.parse(body)); } catch (_) {}
           res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' });
-          res.write('data: ' + JSON.stringify({ choices: [{ delta: { content: 'Hello' } }] }) + '\n\n');
-          res.write('data: ' + JSON.stringify({ choices: [{ delta: { content: ', world' } }] }) + '\n\n');
-          res.write('data: ' + JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop' }], usage: { prompt_tokens: 4, completion_tokens: 2, total_tokens: 6 } }) + '\n\n');
-          res.write('data: [DONE]\n\n');
-          res.end();
+          const write = () => {
+            res.write('data: ' + JSON.stringify({ choices: [{ delta: { content: 'Hello' } }] }) + '\n\n');
+            res.write('data: ' + JSON.stringify({ choices: [{ delta: { content: ', world' } }] }) + '\n\n');
+            res.write('data: ' + JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop' }], usage: { prompt_tokens: 4, completion_tokens: 2, total_tokens: 6 } }) + '\n\n');
+            res.write('data: [DONE]\n\n');
+            res.end();
+          };
+          // SLOWPOKE sentinel: stall before answering so the sidecar's run stream sits event-silent — the
+          // window the NDJSON keep-alive heartbeat must cover.
+          if (body.indexOf('SLOWPOKE') >= 0) setTimeout(write, 300); else write();
         });
         return;
       }
@@ -64,7 +69,7 @@ function boot(port, env, attemptsLeft) {
 (async () => {
   const mock = await startMockOpenRouter();
   const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-e2e-'));
-  const env = { SKYNET_WORKSPACES: ws, SKYNET_OPENROUTER_BASE: mock.base };
+  const env = { SKYNET_WORKSPACES: ws, SKYNET_OPENROUTER_BASE: mock.base, SKYNET_STREAM_KA_MS: '40' };   // fast heartbeat so the KA test observes it in ms, not 20s
   const { child, port } = await boot(8840 + (process.pid % 50), env, 20);
   const B = 'http://' + HOST + ':' + port;
   try {
@@ -131,9 +136,53 @@ function boot(port, env, attemptsLeft) {
     // H3.2: the RUNS history rows carry their streamId — the join that lets a row open its transcript.
     const runsJson = await (await fetch(B + '/api/runs?agent=e2e&limit=20', { headers: { 'X-StarNet-Token': token, Origin: B } })).json();
     A.ok((runsJson.runs || []).some(r => r.streamId === 's1'), 'H3.2: a RUNS row records its streamId (joins outcome -> transcript)');
+
+    // ---- NDJSON keep-alive heartbeat (2026-07-07 multi-agent escape): while the run produces no events
+    //      (provider stalled / a long tool like team.dispatch), the stream must NOT go byte-silent — blank
+    //      lines prove the socket is alive, and every consumer skips them. SLOWPOKE stalls the mock 300ms
+    //      with KA at 40ms, so heartbeats MUST appear between events; the run must still parse clean. ----
+    {
+      const r = await fetch(B + '/api/run', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-StarNet-Token': token, Origin: B },
+        body: JSON.stringify({ key: 'sk-or-v1-e2e-fake', model: 'test/model', agentId: 'e2e-ka', messages: [{ role: 'user', content: 'SLOWPOKE say hi' }] }) });
+      const rd = r.body.getReader(); const dc = new TextDecoder(); let raw = '';
+      while (true) { const { value, done } = await rd.read(); if (done) break; raw += dc.decode(value, { stream: true }); }
+      const kaLines = raw.split('\n').filter(l => l.trim() === '').length;
+      A.ok(kaLines >= 2, 'blank keep-alive lines rode the stream during the silent provider stall (got ' + kaLines + ')');
+      const evs = raw.split('\n').map(l => l.trim()).filter(Boolean).map(l => { try { return JSON.parse(l); } catch (_) { return null; } }).filter(Boolean);
+      A.ok(evs.some(e => e.name === 'agent.run.end' && e.payload.reason === 'done'), 'the heartbeated run still streams and completes clean');
+    }
+
+    // ---- diagnostics error tail SURVIVES A RESTART (2026-07-07 escape: run failed -> user restarted ->
+    //      "Recent errors: (none recorded this session)" — the one artifact that explained the failure was
+    //      RAM-only). Provoke a recorded run error (same-agent mutex), reboot on the same workspace, and
+    //      the error must still be in the report. ----
+    {
+      const drive2 = (agentId, text) => fetch(B + '/api/run', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-StarNet-Token': token, Origin: B },
+        body: JSON.stringify({ key: 'sk-or-v1-e2e-fake', model: 'test/model', agentId, messages: [{ role: 'user', content: text }] }) });
+      const slow = drive2('dup-agent', 'SLOWPOKE hold the desk');            // holds dup-agent in flight ~300ms
+      await new Promise(r => setTimeout(r, 60));                            // let the first run be admitted
+      const clash = await drive2('dup-agent', 'collide');                    // same agent -> run.error (mutex)
+      await clash.text(); await (await slow).text();                         // drain both
+      const d1 = await (await fetch(B + '/api/diagnostics', { headers: { 'X-StarNet-Token': token, Origin: B } })).json();
+      A.ok(d1.text.indexOf('already running a task') >= 0, 'the run error is in this session\'s diagnostics tail');
+    }
   } finally {
     try { child.kill(); } catch (_) {}
-    try { mock.server.close(); } catch (_) {}
+  }
+
+  // reboot the sidecar on the SAME workspace: the persisted diag tail must come back.
+  {
+    const boot2 = await boot(8890 + (process.pid % 50), env, 20);
+    const B2 = 'http://' + HOST + ':' + boot2.port;
+    try {
+      const token2 = await bootToken(B2, B2);
+      const d2 = await (await fetch(B2 + '/api/diagnostics', { headers: { 'X-StarNet-Token': token2, Origin: B2 } })).json();
+      A.ok(d2.text.indexOf('already running a task') >= 0, 'RESTART-SAFE: the error tail survived the sidecar restart (diag.errors.json)');
+      A.ok(d2.text.indexOf('(none recorded)') < 0, 'the report no longer claims an empty tail after restart');
+    } finally {
+      try { boot2.child.kill(); } catch (_) {}
+      try { mock.server.close(); } catch (_) {}
+    }
   }
   A.report('e2e.run.test');
 })().catch(e => { console.error(e); process.exit(1); });
