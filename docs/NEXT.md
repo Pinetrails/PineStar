@@ -193,6 +193,26 @@ promise?" (sibling of "where's its UI?").
   stores (provider keys / codex OAuth / connector OAuth / .bak recovery) — findings will be
   queued here. NEW MERGE-RITUAL QUESTION: "does this change move/strip/clear any credential —
   and where is the read-back proof?"
+- **EL-5b · Secrets-durability sweep findings (2026-07-07, re-verify in code before fixing —
+  claim here first):** shared root causes = silent `catch{warn}` on secret saves + multi-step
+  persists without confirmation.
+  - **F4 HIGH — Codex OAuth refresh persist:** `ensureCodexAccessToken` (sidecar/index.js
+    ~1737-46) rotates the refresh_token in memory; if `saveCodexTokens` write fails
+    (swallowed), a crash strands the OLD dead refresh_token on disk → forced re-sign-in.
+    Fix shape: verify the write (read-back) before treating the rotation as durable; surface
+    failure.
+  - **F1/F3 HIGH — Connector OAuth tokens/clientId:** `saveConnectorOauth` failures are
+    silent (index.js ~1837-39, ~3345-3400); DCR clientId + refresh_token can both exist only
+    in memory after a successful sign-in → next boot the connector is unsigned and the
+    orphaned clientId can't be reused. Fix shape: same read-back law + fail the sign-in flow
+    loudly if the token didn't reach disk.
+  - **F2 MED — Spotify refresh clear:** spotify/store.js ~86-108 — `clear()` must fire ONLY
+    on explicit `invalid_grant`; harden the malformed-response path (`res.json()→null`) so a
+    weird 400 can never wipe a live refresh_token.
+  - **F6 LOW — .bak scrub gap:** scrubChannelSecretsBak returns silently on unreadable .bak,
+    leaving plaintext key in the .bak (hygiene, not loss).
+  - Audited CLEAN: roster/knobs/budget/allowlist/cron/ledger via saveResilient+.bak;
+    localStorage creds not touched by version purge.
 
 ## Atlas — Perfectionist area claims (one session, one area)
 
