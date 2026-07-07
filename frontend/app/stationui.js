@@ -2203,6 +2203,28 @@ const StationUI = (() => {
     try { window.open(url, '_blank', 'noopener'); } catch (_) {}
   }
 
+  // Open an interactive sign-in / consent URL and report whether it ACTUALLY opened, so callers can keep
+  // their "waiting for sign-in…" copy + status poll honest (truthful-telemetry law: never claim a window
+  // exists when it doesn't). Two worlds:
+  //   • Desktop (Tauri): a raw window.open silently fails under the window policy, so hand the URL to the OS
+  //     browser via open_external_url — a real awaitable success/fail. No window.open fallback here: on desktop
+  //     that IS the failing path, so a reject means the browser genuinely didn't open — say so, don't pretend.
+  //   • Browser: window.open opens a popup, but returns null when popup-blocked — that null is the honest signal.
+  // Returns { opened, where:'browser'|'popup', win } — win is the popup handle (browser only) for a later close().
+  async function openSignIn(url) {
+    if (!url) return { opened: false, where: 'popup', win: null };
+    try {
+      const invoke = window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke;
+      if (invoke) {
+        try { await invoke('open_external_url', { url }); return { opened: true, where: 'browser', win: null }; }
+        catch (_) { return { opened: false, where: 'browser', win: null }; }
+      }
+    } catch (_) {}
+    let win = null;
+    try { win = window.open(url, 'starnet_oauth', 'width=540,height=720'); } catch (_) {}
+    return { opened: !!win, where: 'popup', win };
+  }
+
   // STORE / MANAGED CREDITS — populate #credits-store from the real /api/credits payload. The endpoint 404s unless
   // a credits backend is configured, so an UNconfigured install renders NOTHING here (no dead STORE, no fake balance
   // — the honesty law). Balance + history are read from the adapter; PURCHASE opens the external buy page.
@@ -3759,7 +3781,8 @@ const StationUI = (() => {
       ccRefresh();   // reflect the new installed state on the cards
       refresh();     // and repaint the MCP CONNECTORS list (same underlying connector set)
     }
-    // OAuth sign-in: start the flow, open the provider's consent in a popup, poll until the connector connects.
+    // OAuth sign-in: start the flow, open the provider's consent (browser tab on desktop, popup in a browser),
+    // then poll until the connector connects — but only if the consent window actually opened.
     async function ccSignIn(id) {
       if (ccPending.has(id)) { sfx('bad'); ccMsgEl.classList.remove('ok'); ccMsgEl.textContent = 'a sign-in is already in progress for this connector…'; return; }
       ccPending.add(id);   // one in-flight sign-in per connector — no duplicate popups / concurrent pollers
@@ -3771,8 +3794,15 @@ const StationUI = (() => {
         if (j.error || !j.url) { ccMsgEl.textContent = '✕ ' + (j.error || 'could not start sign-in'); sfx('bad'); ccPending.delete(id); return; }
         url = j.url;
       } catch (err) { ccMsgEl.textContent = '✕ ' + ((err && err.message) || 'request failed'); sfx('bad'); ccPending.delete(id); return; }
-      const win = window.open(url, 'starnet_oauth', 'width=540,height=720');
-      ccMsgEl.textContent = 'complete the sign-in for ' + label + ' in the popup window…';
+      const opened = await openSignIn(url);
+      if (!opened.opened) {
+        // The consent window never opened (popup-blocked in a browser, or the OS-browser hand-off failed on
+        // desktop). Do NOT start the poll — a "waiting for sign-in" claim against a window that doesn't exist
+        // is the exact lie this fix removes. Tell the truth and stop.
+        ccMsgEl.textContent = '✕ couldn’t open the sign-in page for ' + label + (opened.where === 'popup' ? ' — allow pop-ups for this site, then try again.' : ' — try again.'); sfx('bad'); ccPending.delete(id); return;
+      }
+      const win = opened.win;   // popup handle when in a browser; null on desktop (opened in the real browser)
+      ccMsgEl.textContent = 'complete the sign-in for ' + label + (opened.where === 'browser' ? ' in your browser…' : ' in the popup window…');
       let tries = 0;
       const timer = setInterval(async () => {
         tries++;
@@ -3836,8 +3866,12 @@ const StationUI = (() => {
       try {
         const j = await (await fetch('/api/spotify/auth/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(clientId ? { clientId } : {}) })).json();
         if (j.error) { msgEl.textContent = '✕ ' + j.error; sfx('bad'); return; }
-        window.open(j.url, '_blank', 'noopener');
-        msgEl.textContent = 'Approve access in the window that opened, then return here — this updates automatically.';
+        const opened = await openSignIn(j.url);
+        if (!opened.opened) {
+          // No consent window opened → don't poll and don't claim one is waiting (truthful-telemetry law).
+          msgEl.textContent = '✕ couldn’t open the Spotify sign-in page' + (opened.where === 'popup' ? ' — allow pop-ups for this site, then try again.' : ' — try again.'); sfx('bad'); return;
+        }
+        msgEl.textContent = 'Approve access in ' + (opened.where === 'browser' ? 'your browser' : 'the window that opened') + ', then return here — this updates automatically.';
         sfx('click');
         let n = 0, fails = 0; clearInterval(pollTimer);
         pollTimer = setInterval(async () => {
