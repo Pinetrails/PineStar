@@ -1,20 +1,36 @@
 {
   "area": "events",
-  "updatedAt": "2026-07-07T08:09:25.408Z",
+  "updatedAt": "2026-07-07T21:43:58.867Z",
   "entries": [
     {
       "id": "event/agent-compact",
       "kind": "event",
       "area": "events",
       "name": "agent.compact",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Reports context was compacted mid-run (tokens before/after, items removed) so the UI can note the compaction.",
+      "promise": "On a mid-run compaction agent.compact carries {agentId,runId,beforeTokens,afterTokens,removed,reason}; stationui marks it and world.js tickers it.",
       "wiring": {
-        "files": [],
-        "events": []
+        "files": [
+          "sidecar/loop.js",
+          "frontend/app/stationui.js",
+          "frontend/app/world.js",
+          "shared/events.js"
+        ],
+        "events": [
+          "agent.compact"
+        ]
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/events-contract.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/lint-emits.js"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -26,15 +42,40 @@
       "kind": "event",
       "area": "events",
       "name": "agent.cost",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The reconciled per-run cost — the single truthful spend figure the floor stats and topbar display.",
+      "promise": "At run end agent.cost carries {agentId,runId,usd,tokensIn,tokensOut,...,reconciled:true}; FloorStats folds it and topbar.js shows the cost. Observed live with reconciled:true.",
       "wiring": {
-        "files": [],
-        "events": []
+        "files": [
+          "sidecar/loop.js",
+          "sidecar/index.js",
+          "frontend/app/floorstats.js",
+          "frontend/app/world.js",
+          "frontend/app/topbar.js",
+          "shared/events.js"
+        ],
+        "events": [
+          "agent.cost"
+        ]
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/events-contract.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/lint-emits.js"
+        },
+        {
+          "kind": "audit",
+          "ref": ".uiatlas/events-evidence/run-events-result.json"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "393e8cdb92799ff1497ad40b1c61e2a59bc66c81",
+        "date": "2026-07-07T21:43:58.867Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
@@ -45,16 +86,31 @@
       "kind": "event",
       "area": "events",
       "name": "agent.reasoning",
-      "purpose": "",
-      "promise": "",
+      "purpose": "FROZEN CONTRACT SLOT: was meant to toggle a per-run reasoning-display indicator (on/off).",
+      "promise": "Would emit {agentId,runId,on:bool} when a model's reasoning stream opens/closes so the UI can show a 'thinking' state.",
       "wiring": {
-        "files": [],
-        "events": []
+        "files": [
+          "shared/events.js"
+        ],
+        "events": [
+          "agent.reasoning"
+        ]
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/events-contract.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/lint-emits.js"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
-      "findings": [],
+      "findings": [
+        "9c5ec90c"
+      ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false
@@ -64,15 +120,42 @@
       "kind": "event",
       "area": "events",
       "name": "agent.run.end",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Announces a run finished with its reason, turn count and cost — the terminal event that drives crate delivery, XP, and dozens of stores.",
+      "promise": "The LAST NDJSON line is agent.run.end {agentId,runId,reason:'done|max_iters|budget|cancelled|error|refusal|empty',turns,usd,finishReason?}; the frontend delivers a crate only on a clean 'done'. Observed live with reason:'done'.",
       "wiring": {
-        "files": [],
-        "events": []
+        "files": [
+          "sidecar/loop.js",
+          "sidecar/index.js",
+          "frontend/app/world.js",
+          "frontend/app/chat.js",
+          "frontend/app/floorstats.js",
+          "frontend/app/goalstore.js",
+          "frontend/app/understandingstore.js",
+          "shared/events.js"
+        ],
+        "events": [
+          "agent.run.end"
+        ]
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/events-contract.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/lint-emits.js"
+        },
+        {
+          "kind": "audit",
+          "ref": ".uiatlas/events-evidence/run-events-result.json"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "393e8cdb92799ff1497ad40b1c61e2a59bc66c81",
+        "date": "2026-07-07T21:43:58.867Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
@@ -83,14 +166,32 @@
       "kind": "event",
       "area": "events",
       "name": "agent.run.error",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Reports a run-level error (with transient flag) so the world can flash the desk and audio can alarm.",
+      "promise": "On a run failure agent.run.error carries {agentId,runId,message,transient}; world.js flashes the CAM-HUD and audio.js alarms; transient drives retry framing.",
       "wiring": {
-        "files": [],
-        "events": []
+        "files": [
+          "sidecar/loop.js",
+          "sidecar/index.js",
+          "frontend/app/world.js",
+          "frontend/js/audio.js",
+          "frontend/app/stationui.js",
+          "shared/events.js"
+        ],
+        "events": [
+          "agent.run.error"
+        ]
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/events-contract.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/lint-emits.js"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -102,15 +203,41 @@
       "kind": "event",
       "area": "events",
       "name": "agent.run.start",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Announces a run has begun so the world can start showing that agent as busy and the HUD can open a live run ticker.",
+      "promise": "When POST /api/run fires, the FIRST NDJSON line is agent.run.start with {agentId,runId,trigger:'directive|schedule|event',model}; the frontend marks the desk active and opens the CAM-HUD ticker.",
       "wiring": {
-        "files": [],
-        "events": []
+        "files": [
+          "sidecar/loop.js",
+          "sidecar/index.js",
+          "frontend/app/world.js",
+          "frontend/app/stationui.js",
+          "frontend/app/tutorial.js",
+          "frontend/app/workqueststore.js",
+          "shared/events.js"
+        ],
+        "events": [
+          "agent.run.start"
+        ]
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/events-contract.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/lint-emits.js"
+        },
+        {
+          "kind": "audit",
+          "ref": ".uiatlas/events-evidence/run-events-result.json"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "393e8cdb92799ff1497ad40b1c61e2a59bc66c81",
+        "date": "2026-07-07T21:43:58.867Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
@@ -121,15 +248,37 @@
       "kind": "event",
       "area": "events",
       "name": "agent.token",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Streams each assistant text delta so the world can treat token flow as a liveness/heat signal for the running agent.",
+      "promise": "During a run, agent.token lines carry {agentId,runId,delta:str}; the frontend bumps the agent's run TTL/heat on each (it is a liveness signal, not a transcript renderer).",
       "wiring": {
-        "files": [],
-        "events": []
+        "files": [
+          "sidecar/loop.js",
+          "frontend/app/world.js",
+          "shared/events.js"
+        ],
+        "events": [
+          "agent.token"
+        ]
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/events-contract.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/lint-emits.js"
+        },
+        {
+          "kind": "audit",
+          "ref": ".uiatlas/events-evidence/run-events-result.json"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "393e8cdb92799ff1497ad40b1c61e2a59bc66c81",
+        "date": "2026-07-07T21:43:58.867Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
@@ -140,14 +289,31 @@
       "kind": "event",
       "area": "events",
       "name": "agent.tool_call",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Signals the agent invoked a tool, so the world can show a work glyph and adaptive-recruitment/quest stores can learn what the agent does.",
+      "promise": "On each tool invocation, agent.tool_call carries {agentId,runId,callId,name,argsSummary?}; world.js paints a work glyph and worksignalstore/stationqueststore fold it.",
       "wiring": {
-        "files": [],
-        "events": []
+        "files": [
+          "sidecar/loop.js",
+          "frontend/app/world.js",
+          "frontend/app/worksignalstore.js",
+          "frontend/app/stationqueststore.js",
+          "shared/events.js"
+        ],
+        "events": [
+          "agent.tool_call"
+        ]
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/events-contract.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/lint-emits.js"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -159,14 +325,31 @@
       "kind": "event",
       "area": "events",
       "name": "agent.tool_result",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Reports a tool call's outcome so the world can tally work done and play an error alarm on failure.",
+      "promise": "After a tool runs, agent.tool_result carries {agentId,runId,callId,ok,isError,ms?,summary?}; world.js tallies runWork and audio.js alarms when isError.",
       "wiring": {
-        "files": [],
-        "events": []
+        "files": [
+          "sidecar/loop.js",
+          "frontend/app/world.js",
+          "frontend/js/audio.js",
+          "frontend/app/stationqueststore.js",
+          "shared/events.js"
+        ],
+        "events": [
+          "agent.tool_result"
+        ]
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/events-contract.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/lint-emits.js"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -178,14 +361,29 @@
       "kind": "event",
       "area": "events",
       "name": "budget.threshold",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Warns a spend cap (run/day/global) threshold was crossed so the UI can note remaining budget.",
+      "promise": "On a threshold crossing budget.threshold carries {scope:'run|day|global',usd,cap}; world.js hudNotes 'X of $Y spent'. De-duped per run.",
       "wiring": {
-        "files": [],
-        "events": []
+        "files": [
+          "sidecar/budget.js",
+          "frontend/app/world.js",
+          "shared/events.js"
+        ],
+        "events": [
+          "budget.threshold"
+        ]
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/events-contract.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/lint-emits.js"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -197,14 +395,30 @@
       "kind": "event",
       "area": "events",
       "name": "capdenied",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Reports a capability need was denied so the run is blocked visibly instead of silently failing.",
+      "promise": "On a capability denial capdenied carries {agentId,need,reason}; harness.js accumulates the error and world.js flashes the desk + hudNote 'run blocked'.",
       "wiring": {
-        "files": [],
-        "events": []
+        "files": [
+          "sidecar/loop.js",
+          "frontend/app/harness.js",
+          "frontend/app/world.js",
+          "shared/events.js"
+        ],
+        "events": [
+          "capdenied"
+        ]
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/events-contract.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/lint-emits.js"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -216,14 +430,30 @@
       "kind": "event",
       "area": "events",
       "name": "channel.connect",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Adapter transport health: poll up / network down / fatal token error.",
+      "promise": "On a health change channel.connect carries {channel,state:'up|down|error',detail?}; stationui refreshes the Telegram/Discord status lines in the Messaging panel.",
       "wiring": {
-        "files": [],
-        "events": []
+        "files": [
+          "sidecar/channels/hub.js",
+          "sidecar/index.js",
+          "frontend/app/stationui.js",
+          "shared/events.js"
+        ],
+        "events": [
+          "channel.connect"
+        ]
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/events-contract.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/lint-emits.js"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -235,14 +465,29 @@
       "kind": "event",
       "area": "events",
       "name": "channel.delivery",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The agent's reply was delivered back to the platform (chunk count + ok/why) — outbound telemetry.",
+      "promise": "On a delivery channel.delivery carries {channel,chatId,runId,ok,chunks?,reason?,agentId?}; world.js pulses the right agent's dish.",
       "wiring": {
-        "files": [],
-        "events": []
+        "files": [
+          "sidecar/channels/hub.js",
+          "frontend/app/world.js",
+          "shared/events.js"
+        ],
+        "events": [
+          "channel.delivery"
+        ]
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/events-contract.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/lint-emits.js"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -254,14 +499,30 @@
       "kind": "event",
       "area": "events",
       "name": "channel.inbound",
-      "purpose": "",
-      "promise": "",
+      "purpose": "A message arrived on a platform (Telegram/Discord), was admitted, and mapped to an agent — the trigger-source telemetry.",
+      "promise": "On admitted ingress channel.inbound carries {channel,chatId,agentId,userId?,kind:'dm|group'}; world.js pulses the agent's dish and audio plays msg SFX.",
       "wiring": {
-        "files": [],
-        "events": []
+        "files": [
+          "sidecar/channels/hub.js",
+          "frontend/app/world.js",
+          "frontend/js/audio.js",
+          "shared/events.js"
+        ],
+        "events": [
+          "channel.inbound"
+        ]
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/events-contract.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/lint-emits.js"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -273,16 +534,31 @@
       "kind": "event",
       "area": "events",
       "name": "chat",
-      "purpose": "",
-      "promise": "",
+      "purpose": "FROZEN v7-reused SLOT: a generic {from,txt} chat line. Not wired in the current harness (COMMS chat flows via /api/run + chat.js directly).",
+      "promise": "Would emit {from,txt}. NOTE: no emitter and no consumer in the current harness — a reserved v7 name.",
       "wiring": {
-        "files": [],
-        "events": []
+        "files": [
+          "shared/events.js"
+        ],
+        "events": [
+          "chat"
+        ]
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/events-contract.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/lint-emits.js"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
-      "findings": [],
+      "findings": [
+        "9c5ec90c"
+      ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false
@@ -292,14 +568,28 @@
       "kind": "event",
       "area": "events",
       "name": "checkpoint.created",
-      "purpose": "",
-      "promise": "",
+      "purpose": "A shadow-git workspace snapshot was taken before a mutating turn (the rollback net).",
+      "promise": "On a snapshot checkpoint.created carries {agentId,runId,turn,snapshotId,files?,bytes?}. Intentionally QUIET — frequent + no UI consumer by design (docs/GAME_SESSION_PLAN.md).  [emitted, intentionally no UI consumer (frequent/quiet snapshot telemetry).]",
       "wiring": {
-        "files": [],
-        "events": []
+        "files": [
+          "sidecar/index.js",
+          "shared/events.js"
+        ],
+        "events": [
+          "checkpoint.created"
+        ]
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/events-contract.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/lint-emits.js"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -311,14 +601,29 @@
       "kind": "event",
       "area": "events",
       "name": "checkpoint.restored",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The workspace was rolled back to a prior snapshot (manual rewind or policy auto-restore).",
+      "promise": "On a restore checkpoint.restored carries {agentId,runId,toSnapshotId,reason?}; world.js hudNotes '↶ rewound'.",
       "wiring": {
-        "files": [],
-        "events": []
+        "files": [
+          "sidecar/index.js",
+          "frontend/app/world.js",
+          "shared/events.js"
+        ],
+        "events": [
+          "checkpoint.restored"
+        ]
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/events-contract.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/lint-emits.js"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -330,14 +635,28 @@
       "kind": "event",
       "area": "events",
       "name": "cost.estimate",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Audit-only per-run cost estimate emitted before final reconciliation (superseded by agent.cost).",
+      "promise": "During a run cost.estimate carries {agentId,runId,usd,tokens}; observability only — no UI renderer (agent.cost is the reconciled truth the UI reads).  [emitted live (observed on 8966) but no UI consumer by design — the reconciled agent.cost is what the UI displays.]",
       "wiring": {
-        "files": [],
-        "events": []
+        "files": [
+          "sidecar/loop.js",
+          "shared/events.js"
+        ],
+        "events": [
+          "cost.estimate"
+        ]
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/events-contract.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/lint-emits.js"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -349,14 +668,29 @@
       "kind": "event",
       "area": "events",
       "name": "crew.summon.request",
-      "purpose": "",
-      "promise": "",
+      "purpose": "A backend->frontend COMMAND: the orchestrator's team.summon tool asks the live station to create a new worker agent (mirrors permission.prompt).",
+      "promise": "On team.summon crew.summon.request carries {requestId,agentId,name?,specId?,...}; harness runs the real summonAgent() and POSTs /api/summon/ack with the new agentId.",
       "wiring": {
-        "files": [],
-        "events": []
+        "files": [
+          "sidecar/index.js",
+          "frontend/app/harness.js",
+          "shared/events.js"
+        ],
+        "events": [
+          "crew.summon.request"
+        ]
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/events-contract.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/lint-emits.js"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -368,14 +702,32 @@
       "kind": "event",
       "area": "events",
       "name": "cron.fire",
-      "purpose": "",
-      "promise": "",
+      "purpose": "A scheduled job fired a run — links jobId to the agent run it launched so the floor shows a routine firing.",
+      "promise": "On a fire cron.fire carries {jobId,runId,scheduledFor?}; autosessions/maintqueststore fold it, widgets repaint, world.js hudNotes '◷ routine fired'.",
       "wiring": {
-        "files": [],
-        "events": []
+        "files": [
+          "sidecar/cron-driver.js",
+          "frontend/app/autosessions.js",
+          "frontend/app/maintqueststore.js",
+          "frontend/app/widgets.js",
+          "frontend/app/world.js",
+          "shared/events.js"
+        ],
+        "events": [
+          "cron.fire"
+        ]
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/events-contract.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/lint-emits.js"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -387,14 +739,31 @@
       "kind": "event",
       "area": "events",
       "name": "cron.result",
-      "purpose": "",
-      "promise": "",
+      "purpose": "A fired job's run finished (ok/failed/silent) — the terminal cron telemetry.",
+      "promise": "On completion cron.result carries {jobId,runId,outcome:'ok|failed|silent',reason?}; autosessions/maintqueststore clear and world.js hudNotes the reason.",
       "wiring": {
-        "files": [],
-        "events": []
+        "files": [
+          "sidecar/cron-driver.js",
+          "frontend/app/autosessions.js",
+          "frontend/app/maintqueststore.js",
+          "frontend/app/world.js",
+          "shared/events.js"
+        ],
+        "events": [
+          "cron.result"
+        ]
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/events-contract.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/lint-emits.js"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -406,14 +775,29 @@
       "kind": "event",
       "area": "events",
       "name": "cron.skipped",
-      "purpose": "",
-      "promise": "",
+      "purpose": "A due job was NOT fired this tick with the reason (already-running/disabled/caught-up/no-capability/stale-lock-reclaimed/at-capacity).",
+      "promise": "On a skip cron.skipped carries {jobId,reason:<enum>}; maintqueststore logs it (read-only subscription).",
       "wiring": {
-        "files": [],
-        "events": []
+        "files": [
+          "sidecar/cron-driver.js",
+          "frontend/app/maintqueststore.js",
+          "shared/events.js"
+        ],
+        "events": [
+          "cron.skipped"
+        ]
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/events-contract.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/lint-emits.js"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -425,14 +809,28 @@
       "kind": "event",
       "area": "events",
       "name": "cron.tick",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The scheduler pulse: how many due jobs it planned/fired/skipped/deferred this pass.",
+      "promise": "Each tick cron.tick carries {fired,skipped,planned?,deferred?}. NOTE: no frontend consumer — it is console/telemetry only (cron.fire/cron.result are the UI-facing cron events).  [emitted, no UI consumer — telemetry/console only; cron.fire+cron.result carry the UI signal.]",
       "wiring": {
-        "files": [],
-        "events": []
+        "files": [
+          "sidecar/cron-driver.js",
+          "shared/events.js"
+        ],
+        "events": [
+          "cron.tick"
+        ]
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/events-contract.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/lint-emits.js"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -444,16 +842,31 @@
       "kind": "event",
       "area": "events",
       "name": "day",
-      "purpose": "",
-      "promise": "",
+      "purpose": "RETIRED v7 cosmetic: a day-tick. Not emitted in the current harness.",
+      "promise": "Would carry a day payload. NOTE: no emitter and no consumer — a retired cosmetic kept VALID in the frozen registry.",
       "wiring": {
-        "files": [],
-        "events": []
+        "files": [
+          "shared/events.js"
+        ],
+        "events": [
+          "day"
+        ]
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/events-contract.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/lint-emits.js"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
-      "findings": [],
+      "findings": [
+        "9c5ec90c"
+      ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false
@@ -463,14 +876,36 @@
       "kind": "event",
       "area": "events",
       "name": "deliverable",
-      "purpose": "",
-      "promise": "",
+      "purpose": "A real deliverable was produced (skill/file/image/notebook) — opens the skill aside and plays a ship SFX.",
+      "promise": "On a produced deliverable it carries {id,agentId?,room?,kind?,title?}; chat.js opens a skill aside (kind:'skill'), stationui refreshes skills, world.js tallies dels, audio.js plays SFX.ship().",
       "wiring": {
-        "files": [],
-        "events": []
+        "files": [
+          "sidecar/index.js",
+          "sidecar/skillreview.js",
+          "sidecar/tools/builtin/fs.js",
+          "sidecar/tools/builtin/notebook.js",
+          "sidecar/tools/builtin/skills.js",
+          "frontend/app/chat.js",
+          "frontend/app/stationui.js",
+          "frontend/app/world.js",
+          "frontend/js/audio.js",
+          "shared/events.js"
+        ],
+        "events": [
+          "deliverable"
+        ]
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/events-contract.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/lint-emits.js"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -482,16 +917,32 @@
       "kind": "event",
       "area": "events",
       "name": "flagged",
-      "purpose": "",
-      "promise": "",
+      "purpose": "RETIRED v7 cosmetic: a consumer (audio.js SFX.alarm) is still wired but nothing emits it.",
+      "promise": "Would carry a flagged payload; audio.js:27 would alarm. NOTE: consumer wired, NO emitter — a retired cosmetic that never fires.",
       "wiring": {
-        "files": [],
-        "events": []
+        "files": [
+          "frontend/js/audio.js",
+          "shared/events.js"
+        ],
+        "events": [
+          "flagged"
+        ]
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/events-contract.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/lint-emits.js"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
-      "findings": [],
+      "findings": [
+        "1019f6e1"
+      ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false
@@ -501,16 +952,31 @@
       "kind": "event",
       "area": "events",
       "name": "hazard",
-      "purpose": "",
-      "promise": "",
+      "purpose": "RETIRED v7 cosmetic. Not emitted in the current harness.",
+      "promise": "Would carry a hazard payload. NOTE: no emitter and no consumer — a retired cosmetic.",
       "wiring": {
-        "files": [],
-        "events": []
+        "files": [
+          "shared/events.js"
+        ],
+        "events": [
+          "hazard"
+        ]
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/events-contract.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/lint-emits.js"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
-      "findings": [],
+      "findings": [
+        "9c5ec90c"
+      ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false
@@ -520,16 +986,31 @@
       "kind": "event",
       "area": "events",
       "name": "intel",
-      "purpose": "",
-      "promise": "",
+      "purpose": "RETIRED v7 cosmetic. Not emitted in the current harness.",
+      "promise": "Would carry an intel payload. NOTE: no emitter and no consumer — a retired cosmetic.",
       "wiring": {
-        "files": [],
-        "events": []
+        "files": [
+          "shared/events.js"
+        ],
+        "events": [
+          "intel"
+        ]
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/events-contract.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/lint-emits.js"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
-      "findings": [],
+      "findings": [
+        "9c5ec90c"
+      ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false
@@ -539,14 +1020,28 @@
       "kind": "event",
       "area": "events",
       "name": "iteration.refunded",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Audit/determinism telemetry: a no-op turn (empty/duplicate) was refunded from the iteration budget instead of counting against maxIters.",
+      "promise": "On a refunded no-op turn iteration.refunded carries {agentId,runId,turn?,reason:'empty|duplicate',refundsUsed}; observability only — no UI consumer by design.  [emitted, no UI consumer — legitimate observability-only telemetry.]",
       "wiring": {
-        "files": [],
-        "events": []
+        "files": [
+          "sidecar/loop.js",
+          "shared/events.js"
+        ],
+        "events": [
+          "iteration.refunded"
+        ]
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/events-contract.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/lint-emits.js"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -558,16 +1053,31 @@
       "kind": "event",
       "area": "events",
       "name": "level",
-      "purpose": "",
-      "promise": "",
+      "purpose": "FROZEN v7-reused SLOT: a level snapshot. Not wired on the bus (XP/level flows via xp.js reading run.end + memory events).",
+      "promise": "Would carry a level snapshot. NOTE: no emitter and no consumer — a reserved v7 name (the 'level' SFX key is unrelated).",
       "wiring": {
-        "files": [],
-        "events": []
+        "files": [
+          "shared/events.js"
+        ],
+        "events": [
+          "level"
+        ]
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/events-contract.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/lint-emits.js"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
-      "findings": [],
+      "findings": [
+        "9c5ec90c"
+      ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false
@@ -577,14 +1087,33 @@
       "kind": "event",
       "area": "events",
       "name": "memory.feedback",
-      "purpose": "",
-      "promise": "",
+      "purpose": "A signed trust adjustment for a memory record (Keep/Edit/Discard, pin, forget) folded into computed trust.",
+      "promise": "On a trust change memory.feedback carries {agentId,id,delta,reason?}; truststore folds it, confbeats shows a beat, xp reads quality.",
       "wiring": {
-        "files": [],
-        "events": []
+        "files": [
+          "sidecar/index.js",
+          "sidecar/tools/builtin/notebook.js",
+          "frontend/app/truststore.js",
+          "frontend/app/confbeats.js",
+          "frontend/app/stationui.js",
+          "frontend/app/xp.js",
+          "shared/events.js"
+        ],
+        "events": [
+          "memory.feedback"
+        ]
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/events-contract.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/lint-emits.js"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -596,14 +1125,30 @@
       "kind": "event",
       "area": "events",
       "name": "memory.forget",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Reports a memory record was removed (forget pressed or proposal discarded) so the UI drops it.",
+      "promise": "On a forget memory.forget carries {agentId,id,reason?}; stationui bumps and world.js hudNotes '✕ memory forgotten'.",
       "wiring": {
-        "files": [],
-        "events": []
+        "files": [
+          "sidecar/index.js",
+          "frontend/app/stationui.js",
+          "frontend/app/world.js",
+          "shared/events.js"
+        ],
+        "events": [
+          "memory.forget"
+        ]
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/events-contract.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/lint-emits.js"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -615,14 +1160,29 @@
       "kind": "event",
       "area": "events",
       "name": "memory.proposed",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Reports reflection PROPOSED a record for Keep/Edit/Discard turn-in (not yet committed) so a confirm-deck slot opens.",
+      "promise": "On a proposal memory.proposed carries {agentId,runId,id,kind,scope?}; chat.js reserves a confirm-deck slot.",
       "wiring": {
-        "files": [],
-        "events": []
+        "files": [
+          "sidecar/index.js",
+          "frontend/app/chat.js",
+          "shared/events.js"
+        ],
+        "events": [
+          "memory.proposed"
+        ]
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/events-contract.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/lint-emits.js"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -634,14 +1194,29 @@
       "kind": "event",
       "area": "events",
       "name": "memory.recall",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Reports a recalled-memory fence was injected into a run's prompt so the world can note 'recalled N memories'.",
+      "promise": "On recall injection memory.recall carries {agentId,runId,count,chars?}; world.js hudNote shows the recall count.",
       "wiring": {
-        "files": [],
-        "events": []
+        "files": [
+          "sidecar/index.js",
+          "frontend/app/world.js",
+          "shared/events.js"
+        ],
+        "events": [
+          "memory.recall"
+        ]
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/events-contract.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/lint-emits.js"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -653,14 +1228,30 @@
       "kind": "event",
       "area": "events",
       "name": "memory.used",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Reports a stored record was actually surfaced into a prompt this run (drives useCount/trust).",
+      "promise": "Per surfaced record memory.used carries {agentId,runId,id}; stationui bumps and xp folds it (zero XP by design).",
       "wiring": {
-        "files": [],
-        "events": []
+        "files": [
+          "sidecar/index.js",
+          "frontend/app/stationui.js",
+          "frontend/app/xp.js",
+          "shared/events.js"
+        ],
+        "events": [
+          "memory.used"
+        ]
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/events-contract.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/lint-emits.js"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -672,14 +1263,32 @@
       "kind": "event",
       "area": "events",
       "name": "memory.write",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Reports a memory record was committed (after approval or notebook.write) so the notebook prop glows and stores refresh.",
+      "promise": "On a memory commit memory.write carries {agentId,runId,id,kind,scope?,streamId?}; chat.js/stationui refresh and world.js glows the notebook.",
       "wiring": {
-        "files": [],
-        "events": []
+        "files": [
+          "sidecar/index.js",
+          "sidecar/tools/builtin/notebook.js",
+          "frontend/app/chat.js",
+          "frontend/app/stationui.js",
+          "frontend/app/world.js",
+          "shared/events.js"
+        ],
+        "events": [
+          "memory.write"
+        ]
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/events-contract.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/lint-emits.js"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -691,16 +1300,31 @@
       "kind": "event",
       "area": "events",
       "name": "notify",
-      "purpose": "",
-      "promise": "",
+      "purpose": "FROZEN v7-reused SLOT: a bare-string toast. Not wired on the bus in the current harness (the UI notify() helper is called directly, not via this event).",
+      "promise": "Would emit a bare string payload. NOTE: no bus emitter and no bus consumer — a reserved v7 name (the in-app notify() function is unrelated).",
       "wiring": {
-        "files": [],
-        "events": []
+        "files": [
+          "shared/events.js"
+        ],
+        "events": [
+          "notify"
+        ]
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/events-contract.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/lint-emits.js"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
-      "findings": [],
+      "findings": [
+        "9c5ec90c"
+      ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false
@@ -710,16 +1334,31 @@
       "kind": "event",
       "area": "events",
       "name": "object.place",
-      "purpose": "",
-      "promise": "",
+      "purpose": "RESERVED (P3 builder mutation API): would announce a capability object was placed in a room (object=capability projection).",
+      "promise": "Would emit {room,objectType,instanceId} when the builder places a prop. NOTE: documented in frontend/app/BUILDER.md as the placement vocabulary but not emitted or consumed on the bus in the current harness — a reserved P3 slot.",
       "wiring": {
-        "files": [],
-        "events": []
+        "files": [
+          "shared/events.js"
+        ],
+        "events": [
+          "object.place"
+        ]
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/events-contract.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/lint-emits.js"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
-      "findings": [],
+      "findings": [
+        "9c5ec90c"
+      ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false
@@ -729,16 +1368,31 @@
       "kind": "event",
       "area": "events",
       "name": "object.reclaim",
-      "purpose": "",
-      "promise": "",
+      "purpose": "RESERVED (P3 builder mutation API): would announce a capability object was reclaimed/removed from a room.",
+      "promise": "Would emit {room,objectType,instanceId} when the builder reclaims a prop. NOTE: not emitted or consumed on the bus in the current harness — a reserved P3 slot.",
       "wiring": {
-        "files": [],
-        "events": []
+        "files": [
+          "shared/events.js"
+        ],
+        "events": [
+          "object.reclaim"
+        ]
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/events-contract.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/lint-emits.js"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
-      "findings": [],
+      "findings": [
+        "9c5ec90c"
+      ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false
@@ -748,16 +1402,31 @@
       "kind": "event",
       "area": "events",
       "name": "objectives",
-      "purpose": "",
-      "promise": "",
+      "purpose": "FROZEN v7-reused SLOT: an objectives snapshot. Not wired in the current harness.",
+      "promise": "Would carry an objectives snapshot. NOTE: no emitter and no consumer — a reserved v7 name.",
       "wiring": {
-        "files": [],
-        "events": []
+        "files": [
+          "shared/events.js"
+        ],
+        "events": [
+          "objectives"
+        ]
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/events-contract.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/lint-emits.js"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
-      "findings": [],
+      "findings": [
+        "9c5ec90c"
+      ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false
@@ -767,16 +1436,31 @@
       "kind": "event",
       "area": "events",
       "name": "parcel",
-      "purpose": "",
-      "promise": "",
+      "purpose": "RETIRED v7 cosmetic. Not emitted in the current harness.",
+      "promise": "Would carry a parcel payload. NOTE: no emitter and no consumer — a retired cosmetic.",
       "wiring": {
-        "files": [],
-        "events": []
+        "files": [
+          "shared/events.js"
+        ],
+        "events": [
+          "parcel"
+        ]
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/events-contract.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/lint-emits.js"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
-      "findings": [],
+      "findings": [
+        "9c5ec90c"
+      ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false
@@ -786,16 +1470,31 @@
       "kind": "event",
       "area": "events",
       "name": "party",
-      "purpose": "",
-      "promise": "",
+      "purpose": "RETIRED v7 cosmetic. Not emitted in the current harness.",
+      "promise": "Would carry a party payload. NOTE: no emitter and no consumer — a retired cosmetic.",
       "wiring": {
-        "files": [],
-        "events": []
+        "files": [
+          "shared/events.js"
+        ],
+        "events": [
+          "party"
+        ]
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/events-contract.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/lint-emits.js"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
-      "findings": [],
+      "findings": [
+        "9c5ec90c"
+      ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false
@@ -805,14 +1504,31 @@
       "kind": "event",
       "area": "events",
       "name": "permission.prompt",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Asks the browser to show a consent prompt for a gated tool before it runs (the M1.4 consent gate).",
+      "promise": "On a gated tool permission.prompt carries {promptId,agentId,tool,scope,argsSummary?}; harness routes to onPermission and world.js enters an await state by promptId.",
       "wiring": {
-        "files": [],
-        "events": []
+        "files": [
+          "sidecar/index.js",
+          "frontend/app/harness.js",
+          "frontend/app/world.js",
+          "frontend/app/tutorial.js",
+          "shared/events.js"
+        ],
+        "events": [
+          "permission.prompt"
+        ]
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/events-contract.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/lint-emits.js"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -824,14 +1540,30 @@
       "kind": "event",
       "area": "events",
       "name": "permission.response",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The Commander's consent decision for a permission.prompt — a FRONTEND-originated bus event (browser POSTs /api/consent), consumed to clear the await state.",
+      "promise": "On a consent decision the browser emits permission.response {promptId,decision:'once|session|always|deny|full'}; world.js clears the await and tutorial narrates a Deny honestly. NOTE: emitted by the FRONTEND (chat.js), not the sidecar — no backend emitter by design.  [frontend-emitted event; backend has no emitter by design (asymmetry, not an orphan).]",
       "wiring": {
-        "files": [],
-        "events": []
+        "files": [
+          "frontend/app/chat.js",
+          "frontend/app/world.js",
+          "frontend/app/tutorial.js",
+          "shared/events.js"
+        ],
+        "events": [
+          "permission.response"
+        ]
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/events-contract.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/lint-emits.js"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -843,14 +1575,31 @@
       "kind": "event",
       "area": "events",
       "name": "provider.fallback",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Makes a mid-run provider/model failover or credential rotation VISIBLE telemetry (previously only inferable from the switched cost model).",
+      "promise": "When the loop advances its failover chain, provider.fallback carries {agentId,runId,fromModel,toModel,reason,...}; FloorStats increments failovers and stationui surfaces it (H3.1).",
       "wiring": {
-        "files": [],
-        "events": []
+        "files": [
+          "sidecar/loop.js",
+          "frontend/app/floorstats.js",
+          "frontend/app/world.js",
+          "frontend/app/stationui.js",
+          "shared/events.js"
+        ],
+        "events": [
+          "provider.fallback"
+        ]
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/events-contract.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/lint-emits.js"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -862,14 +1611,29 @@
       "kind": "event",
       "area": "events",
       "name": "queue.status",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Queue-depth telemetry for the backpressure HUD — emitted whenever a per-agent queue depth changes.",
+      "promise": "On a depth change queue.status carries {queueId,depth?,maxCapacity?,nextAdvanceAt?}; world.js updates chanQueues and the floor backpressure HUD.",
       "wiring": {
-        "files": [],
-        "events": []
+        "files": [
+          "sidecar/index.js",
+          "frontend/app/world.js",
+          "shared/events.js"
+        ],
+        "events": [
+          "queue.status"
+        ]
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/events-contract.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/lint-emits.js"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -881,16 +1645,31 @@
       "kind": "event",
       "area": "events",
       "name": "run.cancel",
-      "purpose": "",
-      "promise": "",
+      "purpose": "FROZEN CONTRACT SLOT: reserved to signal a run was cancelled over the bus by runId.",
+      "promise": "Would emit {runId} to tell listeners a specific run was cancelled. NOTE: cancellation currently flows via POST /api/cancel + agent.run.end reason:'cancelled'; run.cancel itself is not emitted anywhere.",
       "wiring": {
-        "files": [],
-        "events": []
+        "files": [
+          "shared/events.js"
+        ],
+        "events": [
+          "run.cancel"
+        ]
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/events-contract.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/lint-emits.js"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
-      "findings": [],
+      "findings": [
+        "9c5ec90c"
+      ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false
@@ -900,16 +1679,31 @@
       "kind": "event",
       "area": "events",
       "name": "sale",
-      "purpose": "",
-      "promise": "",
+      "purpose": "RETIRED v7 cosmetic: kept VALID as an optional cosmetic off real completions. Not emitted in the current harness.",
+      "promise": "Would carry a sale payload. NOTE: no emitter and no consumer — a retired cosmetic (the 'sale' SFX key is unrelated).",
       "wiring": {
-        "files": [],
-        "events": []
+        "files": [
+          "shared/events.js"
+        ],
+        "events": [
+          "sale"
+        ]
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/events-contract.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/lint-emits.js"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
-      "findings": [],
+      "findings": [
+        "9c5ec90c"
+      ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false
@@ -919,14 +1713,29 @@
       "kind": "event",
       "area": "events",
       "name": "shell.bg.exit",
-      "purpose": "",
-      "promise": "",
+      "purpose": "A background/long-running shell process ended AFTER its run's stream closed — rides the durable SSE bus.",
+      "promise": "On a bg exit shell.bg.exit carries {agentId,bgId,exitCode,ms?,killed?}; chat.js logs a terse COMMS system line.",
       "wiring": {
-        "files": [],
-        "events": []
+        "files": [
+          "sidecar/index.js",
+          "frontend/app/chat.js",
+          "shared/events.js"
+        ],
+        "events": [
+          "shell.bg.exit"
+        ]
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/events-contract.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/lint-emits.js"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -938,14 +1747,29 @@
       "kind": "event",
       "area": "events",
       "name": "shell.exec",
-      "purpose": "",
-      "promise": "",
+      "purpose": "A shell command ran (gated by consent + an auto-checkpoint) — pulses the workbench prop.",
+      "promise": "On a shell run shell.exec carries {agentId,runId,callId,cmdSummary?,cwd?,exitCode,ms?,truncated?}; world.js pulses the workbench.",
       "wiring": {
-        "files": [],
-        "events": []
+        "files": [
+          "sidecar/tools/builtin/shell.js",
+          "frontend/app/world.js",
+          "shared/events.js"
+        ],
+        "events": [
+          "shell.exec"
+        ]
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/events-contract.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/lint-emits.js"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -957,16 +1781,31 @@
       "kind": "event",
       "area": "events",
       "name": "stats",
-      "purpose": "",
-      "promise": "",
+      "purpose": "FROZEN v7-reused SLOT: listeners were meant to read a stats snapshot the telemetry layer maintains. Not wired in the current harness.",
+      "promise": "Would carry a snapshot object. NOTE: no emitter and no consumer — a reserved v7 name (floor stats fold agent.cost/run.end directly).",
       "wiring": {
-        "files": [],
-        "events": []
+        "files": [
+          "shared/events.js"
+        ],
+        "events": [
+          "stats"
+        ]
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/events-contract.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/lint-emits.js"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
-      "findings": [],
+      "findings": [
+        "9c5ec90c"
+      ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false
@@ -976,14 +1815,30 @@
       "kind": "event",
       "area": "events",
       "name": "task",
-      "purpose": "",
-      "promise": "",
+      "purpose": "A v7-reused name re-emitted from a REAL subagent lifecycle transition — drives desk progress + a SFX.",
+      "promise": "On a subagent status change task carries {id,agentId?,status:'queued|running|done|failed|todo',kind?,title?}; world.js stores deskProg and audio.js plays a SFX.",
       "wiring": {
-        "files": [],
-        "events": []
+        "files": [
+          "sidecar/subagents.js",
+          "frontend/app/world.js",
+          "frontend/js/audio.js",
+          "shared/events.js"
+        ],
+        "events": [
+          "task"
+        ]
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/events-contract.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/lint-emits.js"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -995,14 +1850,28 @@
       "kind": "event",
       "area": "events",
       "name": "tool.args.repaired",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Audit-only telemetry: a non-Anthropic model's mechanically-broken tool-call JSON args were repaired before use (L2).",
+      "promise": "When repairCalls fixes broken tool args, tool.args.repaired carries {agentId,runId,callId,name,before,after}; it is observability only — no frontend renderer consumes it (by design, it rides the NDJSON stream for the audit trail).  [emitted, no UI consumer — legitimate audit-only telemetry; not a purposeless surface.]",
       "wiring": {
-        "files": [],
-        "events": []
+        "files": [
+          "sidecar/loop.js",
+          "shared/events.js"
+        ],
+        "events": [
+          "tool.args.repaired"
+        ]
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/events-contract.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/lint-emits.js"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -1014,14 +1883,29 @@
       "kind": "event",
       "area": "events",
       "name": "verify.result",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Post-edit verification result (project check or LSP lint-delta) — pulses the workbench green/red.",
+      "promise": "On verification verify.result carries {agentId,runId,tool?,passed,added?,removed?,summary?}; world.js pulses the workbench red on fail, green on pass.",
       "wiring": {
-        "files": [],
-        "events": []
+        "files": [
+          "sidecar/tools/builtin/verify.js",
+          "frontend/app/world.js",
+          "shared/events.js"
+        ],
+        "events": [
+          "verify.result"
+        ]
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/events-contract.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/lint-emits.js"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -1033,14 +1917,29 @@
       "kind": "event",
       "area": "events",
       "name": "workitem.delivered",
-      "purpose": "",
-      "promise": "",
+      "purpose": "A work-item rode into a bay/sink and its payload was consumed — the end of the belt journey.",
+      "promise": "On delivery workitem.delivered carries {workitemId,finalQueueId,agentId?,box?,ms?,ts?}; world.js floor.onEvent drops it at the sink.",
       "wiring": {
-        "files": [],
-        "events": []
+        "files": [
+          "sidecar/index.js",
+          "frontend/app/world.js",
+          "shared/events.js"
+        ],
+        "events": [
+          "workitem.delivered"
+        ]
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/events-contract.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/lint-emits.js"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -1052,14 +1951,29 @@
       "kind": "event",
       "area": "events",
       "name": "workitem.placed",
-      "purpose": "",
-      "promise": "",
+      "purpose": "A real inbound work-item was queued at a SOURCE — the start of the belt journey.",
+      "promise": "On placement workitem.placed carries {workitemId,queueId,agentId?,kind?,preview?,queueDepth?,ts?}; world.js intakes it into the HUD and the floor conveyor.",
       "wiring": {
-        "files": [],
-        "events": []
+        "files": [
+          "sidecar/index.js",
+          "frontend/app/world.js",
+          "shared/events.js"
+        ],
+        "events": [
+          "workitem.placed"
+        ]
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/events-contract.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/lint-emits.js"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -1071,14 +1985,29 @@
       "kind": "event",
       "area": "events",
       "name": "workitem.superseded",
-      "purpose": "",
-      "promise": "",
+      "purpose": "A newer message for the same chat ABORTED this work-item's run (hub supersede) — its box drops off the belt.",
+      "promise": "On a supersede workitem.superseded carries {workitemId,agentId?,ts?}; world.js drops the workitem from the conveyor.",
       "wiring": {
-        "files": [],
-        "events": []
+        "files": [
+          "sidecar/index.js",
+          "frontend/app/world.js",
+          "shared/events.js"
+        ],
+        "events": [
+          "workitem.superseded"
+        ]
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/events-contract.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/lint-emits.js"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -1090,14 +2019,28 @@
       "kind": "event",
       "area": "events",
       "name": "workshop.built",
-      "purpose": "",
-      "promise": "",
+      "purpose": "An away-workshop shift finished with a VALIDATED manifest (files proven on disk) — the return-card trigger.",
+      "promise": "After validation workshop.built carries {agentId,runId,manifest}; emitted ONLY after the manifest validates. NOTE: no frontend bus consumer — the return card is driven by the /api/workshop pending-list fetch, not this event.  [emitted, no bus consumer — the workshop return card polls /api/workshop rather than listening to this event.]",
       "wiring": {
-        "files": [],
-        "events": []
+        "files": [
+          "sidecar/index.js",
+          "shared/events.js"
+        ],
+        "events": [
+          "workshop.built"
+        ]
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/events-contract.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/lint-emits.js"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -1109,14 +2052,28 @@
       "kind": "event",
       "area": "events",
       "name": "workshop.decided",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Records the Commander decided a pending deliverable: keep/discard/later.",
+      "promise": "On a decision workshop.decided carries {agentId,runId,decision:'keep|discard|later',destPath?}. NOTE: no frontend bus consumer — decision state flows via the /api/workshop/decide response.  [emitted, no bus consumer — state mutation confirmed by the HTTP response, not this event.]",
       "wiring": {
-        "files": [],
-        "events": []
+        "files": [
+          "sidecar/index.js",
+          "shared/events.js"
+        ],
+        "events": [
+          "workshop.decided"
+        ]
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/events-contract.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/lint-emits.js"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -1128,16 +2085,31 @@
       "kind": "event",
       "area": "events",
       "name": "worldChange",
-      "purpose": "",
-      "promise": "",
+      "purpose": "RESERVED (P3 mutation API): would carry a world-mutation seq + dirty tiles for incremental world sync.",
+      "promise": "Would emit {seq,dirtyTiles:[]} on a world mutation. NOTE: not emitted or consumed anywhere — a reserved P3 stub.",
       "wiring": {
-        "files": [],
-        "events": []
+        "files": [
+          "shared/events.js"
+        ],
+        "events": [
+          "worldChange"
+        ]
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/events-contract.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/lint-emits.js"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
-      "findings": [],
+      "findings": [
+        "9c5ec90c"
+      ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false
