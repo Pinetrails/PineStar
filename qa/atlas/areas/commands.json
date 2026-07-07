@@ -1,22 +1,26 @@
 {
   "area": "commands",
-  "updatedAt": "2026-07-07T08:18:15.162Z",
+  "updatedAt": "2026-07-07T20:30:00.000Z",
   "entries": [
     {
       "id": "command/agents",
       "kind": "command",
       "area": "commands",
       "name": "/agents — show active agents and running streams",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Give the Commander a one-line roll-call of the live roster and which workstreams are currently running.",
+      "promise": "Typing /agents prints an agent line naming the real roster agents plus the workstream count and which streams are busy — all read from App.agents()/workstreamList(), never hardcoded.",
       "wiring": {
-        "files": [],
+        "files": ["sidecar/slash.js", "sidecar/index.js", "frontend/app/chat.js"],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        { "kind": "test", "ref": "test/slash.test.js (catalog exposes agents; dispatch resolves to client directive)" },
+        { "kind": "test", "ref": "test/slash.palette.test.js (agentsCommand mapped in palette)" }
+      ],
+      "status": "perfected",
+      "auditedAt": { "sha": "ce3211719a4a8b9dfcae70af5417d150be18c2e8", "date": "2026-07-07T20:30:00.000Z" },
       "findings": [],
+      "notes": "Live-proven via .uiatlas/commands-evidence/input-path-proof.json — '/agents' → 'Agents: NOVA. Streams: 1; running: none.' (truthful roster).",
       "firstSeen": "2026-07-07T08:09:25.408Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false
@@ -26,14 +30,17 @@
       "kind": "command",
       "area": "commands",
       "name": "/background — run a prompt in a new background workstream",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Spin up a fresh board task workstream for a prompt and send it, then return focus to the current stream so the directive runs in the background.",
+      "promise": "Typing /background <prompt> creates a kind:task workstream (Workstreams.create), sends the prompt to it, switches back to the prior stream, and confirms with the new stream label; bare /background prints a usage line.",
       "wiring": {
-        "files": [],
+        "files": ["sidecar/slash.js", "sidecar/index.js", "frontend/app/chat.js"],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        { "kind": "test", "ref": "test/slash.test.js (bg alias canonicalizes; dispatch carries args)" },
+        { "kind": "test", "ref": "test/slash.palette.test.js (backgroundCommand mapped)" }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.408Z",
@@ -45,14 +52,17 @@
       "kind": "command",
       "area": "commands",
       "name": "/blueprint — load a recipe blueprint into the composer",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Insert a named recipe's directive text into the composer so the Commander can edit and launch it as a run.",
+      "promise": "Typing /blueprint <recipe> inserts the recipe's filled directive into the input (an insert-type directive), selecting the first placeholder; an unknown recipe reports it.",
       "wiring": {
-        "files": [],
+        "files": ["sidecar/slash.js", "sidecar/index.js", "frontend/app/chat.js", "frontend/app/recipes.js"],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        { "kind": "test", "ref": "test/slash.test.js (bp alias dispatches to blueprint with args)" },
+        { "kind": "test", "ref": "test/slash.palette.test.js (blueprintCommand mapped)" }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.408Z",
@@ -64,14 +74,17 @@
       "kind": "command",
       "area": "commands",
       "name": "/branch — fork this conversation into a new workstream",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Fork the current conversation into a new workstream so a tangent can proceed without disturbing the original thread.",
+      "promise": "Typing /branch (or /fork) creates a new workstream seeded from the current one and switches to it; args are carried through as the fork directive.",
       "wiring": {
-        "files": [],
+        "files": ["sidecar/slash.js", "sidecar/index.js", "frontend/app/chat.js"],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        { "kind": "test", "ref": "test/slash.test.js (fork alias canonicalizes to branch; client directive with args)" },
+        { "kind": "test", "ref": "test/slash.palette.test.js (branchWorkstreamCommand mapped)" }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.408Z",
@@ -83,14 +96,17 @@
       "kind": "command",
       "area": "commands",
       "name": "/bundles — list recipe and skill slash bundles",
-      "purpose": "",
-      "promise": "",
+      "purpose": "List the recipe and skill slash bundles available to the Commander so they know what /command shortcuts exist.",
+      "promise": "Typing /bundles prints a line summarizing the recipe and skill slash bundles currently exposed in the catalog.",
       "wiring": {
-        "files": [],
+        "files": ["sidecar/slash.js", "sidecar/index.js", "frontend/app/chat.js"],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        { "kind": "test", "ref": "test/slash.test.js (bundles in catalog; dispatch resolves)" },
+        { "kind": "test", "ref": "test/slash.palette.test.js (bundlesCommand mapped)" }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.408Z",
@@ -102,16 +118,20 @@
       "kind": "command",
       "area": "commands",
       "name": "/clear — clear COMMS and start a fresh workstream",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Wipe the rendered COMMS panel and start a brand-new workstream, giving a clean slate without touching any other stream's in-flight run.",
+      "promise": "Typing /clear (or /cls) empties the chat log and spins up a fresh workstream (via newWorkstreamCommand), confirming with 'Cleared COMMS and started a fresh workstream.'",
       "wiring": {
-        "files": [],
+        "files": ["sidecar/slash.js", "sidecar/index.js", "frontend/app/chat.js"],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        { "kind": "test", "ref": "test/slash.test.js (clear + cls alias dispatch to clear action)" },
+        { "kind": "test", "ref": "test/slash.palette.test.js (clearCommand path present)" }
+      ],
+      "status": "perfected",
+      "auditedAt": { "sha": "ce3211719a4a8b9dfcae70af5417d150be18c2e8", "date": "2026-07-07T20:30:00.000Z" },
       "findings": [],
+      "notes": "Live-proven via input-path-proof.json + HTTP dispatch (http-dispatch.txt): /clear resolves to {action:clear} and dispatches through the composer without echoing the slash as chat.",
       "firstSeen": "2026-07-07T08:09:25.408Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false
@@ -121,14 +141,17 @@
       "kind": "command",
       "area": "commands",
       "name": "/compress — show context compaction status",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Report the honest state of context compaction — how full the live prompt is and that compaction is automatic during a run (the run host is stateless, so there is no idle context to fold on demand).",
+      "promise": "Typing /compress prints the current context used/limit (when known) plus an honest explanation that compaction happens automatically inside a run and there is no manual between-run compaction.",
       "wiring": {
-        "files": [],
+        "files": ["sidecar/slash.js", "sidecar/index.js", "frontend/app/chat.js"],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        { "kind": "test", "ref": "test/slash.test.js (compress in catalog; dispatch resolves)" },
+        { "kind": "test", "ref": "test/slash.palette.test.js (compress fallback present)" }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.408Z",
@@ -140,14 +163,17 @@
       "kind": "command",
       "area": "commands",
       "name": "/copy — copy the agent's last reply",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Copy the agent's most recent reply text to the clipboard so the Commander can paste it elsewhere.",
+      "promise": "Typing /copy copies the last agent message's body text to the clipboard (copyLastReply) and confirms.",
       "wiring": {
-        "files": [],
+        "files": ["sidecar/slash.js", "sidecar/index.js", "frontend/app/chat.js"],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        { "kind": "test", "ref": "test/slash.test.js (copy in catalog; dispatch resolves)" },
+        { "kind": "test", "ref": "test/slash.palette.test.js (palette fallback includes copy)" }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.408Z",
@@ -159,14 +185,17 @@
       "kind": "command",
       "area": "commands",
       "name": "/cron — show or arm scheduled routines",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Show or arm the station's scheduled routines (cron), reading/writing the real /api/cron state.",
+      "promise": "Typing /cron shows the current routine schedule from /api/cron; with on|off|status it arms/disarms and reports the real armed state — never a faked status.",
       "wiring": {
-        "files": [],
+        "files": ["sidecar/slash.js", "sidecar/index.js", "frontend/app/chat.js"],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        { "kind": "test", "ref": "test/slash.test.js (cron in catalog; dispatch resolves)" },
+        { "kind": "test", "ref": "test/slash.palette.test.js (cronCommand + /api/cron endpoint use)" }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.408Z",
@@ -178,14 +207,17 @@
       "kind": "command",
       "area": "commands",
       "name": "/debug — show chat and slash debug state",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Print internal chat + slash debug state (loaded catalog size, active model, etc.) for diagnosing the composer.",
+      "promise": "Typing /debug prints a diagnostic line reporting the loaded slash-catalog count and current model — real internal values, not placeholders.",
       "wiring": {
-        "files": [],
+        "files": ["sidecar/slash.js", "sidecar/index.js", "frontend/app/chat.js"],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        { "kind": "test", "ref": "test/slash.test.js (debug in catalog; dispatch resolves)" },
+        { "kind": "test", "ref": "test/slash.palette.test.js (palette fallback includes debug)" }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -197,14 +229,17 @@
       "kind": "command",
       "area": "commands",
       "name": "/fast — show fast-mode support status",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Honestly report that there is no separate fast-mode runtime toggle and point the Commander to /model to switch to a cheaper/faster model.",
+      "promise": "Typing /fast prints the honest status ('no global toggle is active', current model), and any arg other than 'status' returns the guidance to use /model — it never claims a fast mode that does not exist.",
       "wiring": {
-        "files": [],
+        "files": ["sidecar/slash.js", "sidecar/index.js", "frontend/app/chat.js"],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        { "kind": "test", "ref": "test/slash.test.js (fast in catalog; dispatch resolves)" },
+        { "kind": "test", "ref": "test/slash.palette.test.js (fastCommand mapped)" }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.408Z",
@@ -216,16 +251,20 @@
       "kind": "command",
       "area": "commands",
       "name": "/goal — set an autonomous standing goal (status/pause/resume/clear)",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Set, inspect, or control an autonomous goal loop on the current workstream — the agent works toward the goal over a turn budget until satisfied.",
+      "promise": "Typing /goal <text> creates a GoalLoop and kicks off the first continuation; bare /goal (or status) prints the loop status line; pause/resume/clear control it, each confirming the real new state.",
       "wiring": {
-        "files": [],
+        "files": ["sidecar/slash.js", "sidecar/index.js", "frontend/app/chat.js"],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        { "kind": "test", "ref": "test/slash.test.js (goal in catalog; dispatch carries args)" },
+        { "kind": "test", "ref": "test/slash.palette.test.js (goalCommand mapped)" }
+      ],
+      "status": "perfected",
+      "auditedAt": { "sha": "ce3211719a4a8b9dfcae70af5417d150be18c2e8", "date": "2026-07-07T20:30:00.000Z" },
       "findings": [],
+      "notes": "HTTP dispatch proven (http-dispatch.txt): '/goal ship it' → {action:goal, args:'ship it'}; args flow to the GoalLoop create path. Live composer dispatch confirmed (input-path-proof.json).",
       "firstSeen": "2026-07-07T08:09:25.408Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false
@@ -235,16 +274,20 @@
       "kind": "command",
       "area": "commands",
       "name": "/help — list available commands",
-      "purpose": "",
-      "promise": "",
+      "purpose": "List the available slash commands so the Commander can discover what the composer can do.",
+      "promise": "Typing /help prints a line of the built-in command names plus an honest count of recipe commands and a hint to type '/' to browse — the names come from the live catalog, so it can only list commands that actually exist.",
       "wiring": {
-        "files": [],
+        "files": ["sidecar/slash.js", "sidecar/index.js", "frontend/app/chat.js"],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        { "kind": "test", "ref": "test/slash.test.js (help in catalog; dispatch accepts leading slash + args)" },
+        { "kind": "test", "ref": "test/slash.palette.test.js (palette fallback includes help)" }
+      ],
+      "status": "perfected",
+      "auditedAt": { "sha": "ce3211719a4a8b9dfcae70af5417d150be18c2e8", "date": "2026-07-07T20:30:00.000Z" },
       "findings": [],
+      "notes": "Live-proven via input-path-proof.json: '/help' → 'Commands - /retry, /stop, /copy, /help, /new, /branch, /status, /usage, plus 50 recipe commands. Type \"/\" to browse.' — honest, catalog-derived.",
       "firstSeen": "2026-07-07T08:09:25.408Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false
@@ -254,16 +297,20 @@
       "kind": "command",
       "area": "commands",
       "name": "/history — show recent turns of this workstream",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Print the last N turns of the active workstream's conversation, read-only, so the Commander can review the thread.",
+      "promise": "Typing /history [n] prints the last n (default 10, capped 30) user/assistant turns from ws.history, role-prefixed and truncated; an empty stream honestly says there is no history yet. Never mutates history.",
       "wiring": {
-        "files": [],
+        "files": ["sidecar/slash.js", "sidecar/index.js", "frontend/app/chat.js"],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        { "kind": "test", "ref": "test/slash.test.js (history + hist alias; dispatch carries count arg)" },
+        { "kind": "test", "ref": "test/slash.palette.test.js (historyCommand path)" }
+      ],
+      "status": "perfected",
+      "auditedAt": { "sha": "ce3211719a4a8b9dfcae70af5417d150be18c2e8", "date": "2026-07-07T20:30:00.000Z" },
       "findings": [],
+      "notes": "Live-proven via input-path-proof.json: '/history 5' → 'No conversation history in this workstream yet.' (honest empty state on the seeded fresh stream).",
       "firstSeen": "2026-07-07T08:09:25.408Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false
@@ -273,14 +320,17 @@
       "kind": "command",
       "area": "commands",
       "name": "/insights — usage rollup from the run history",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Show a lifetime usage rollup for this agent from the durable run history (GET /api/insights) — runs, spend, tokens, success rate, top models.",
+      "promise": "Typing /insights fetches /api/insights and prints the persisted lifetime rollup; when the sidecar is offline it falls back to a clearly-labelled session-only total — no number is ever fabricated.",
       "wiring": {
-        "files": [],
+        "files": ["sidecar/slash.js", "sidecar/index.js", "frontend/app/chat.js"],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        { "kind": "test", "ref": "test/slash.test.js (insights dispatches to insights action)" },
+        { "kind": "test", "ref": "test/slash.palette.test.js (insightsCommand mapped)" }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.408Z",
@@ -292,14 +342,17 @@
       "kind": "command",
       "area": "commands",
       "name": "/memory — show the active agent memory records",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Show the active agent's memory records (facts/preferences the agent has minted), optionally filtered by a query.",
+      "promise": "Typing /memory [query] prints the agent's current memory records (from the real memory store), filtered when a query is given — reflecting only records that actually exist.",
       "wiring": {
-        "files": [],
+        "files": ["sidecar/slash.js", "sidecar/index.js", "frontend/app/chat.js"],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        { "kind": "test", "ref": "test/slash.test.js (memory in catalog; dispatch resolves)" },
+        { "kind": "test", "ref": "test/slash.palette.test.js (memoryCommand mapped)" }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.408Z",
@@ -311,16 +364,20 @@
       "kind": "command",
       "area": "commands",
       "name": "/model — show or set the active model",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Show the active model or set it as a per-agent roster property (never a per-chat override), honoring the 'model is a roster property' law.",
+      "promise": "Typing /model prints the current model+provider; /model <id> applies it via App.applyConfig({model}) — patching agent.model on the roster agent and persisting it 'for future runs', not just this chat. Values read from Harness/App, never hardcoded.",
       "wiring": {
-        "files": [],
+        "files": ["sidecar/slash.js", "sidecar/index.js", "frontend/app/chat.js", "frontend/app/app.js"],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        { "kind": "test", "ref": "test/slash.test.js (model dispatch carries model-id args)" },
+        { "kind": "test", "ref": "test/slash.config.test.js (App.applyConfig applies model; chat uses App config seam)" }
+      ],
+      "status": "perfected",
+      "auditedAt": { "sha": "ce3211719a4a8b9dfcae70af5417d150be18c2e8", "date": "2026-07-07T20:30:00.000Z" },
+      "findings": ["070e8aca"],
+      "notes": "Live-proven via input-path-proof.json: '/model anthropic/claude-opus-4' (palette open on first token) → 'Model set to anthropic/claude-opus-4 for future runs.' + subsequent /status & /whoami report the new model; userEchoedSlash=false. ROSTER LAW verified: app.js applyAgentConfig sets agent.model (per-agent) + persists, not per-chat. finding 070e8aca (P1) records that the INPUT path (palette->dispatch) has no BEHAVIORAL guard — only source-grep tests — the seam that escaped as the ARGS bug; the promise's dispatch resolution IS machine-guarded by test/slash.test.js, so this entry reaches perfected with the residual input-path gap recorded per the EL-3 escape law.",
       "firstSeen": "2026-07-07T08:09:25.408Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false
@@ -330,16 +387,20 @@
       "kind": "command",
       "area": "commands",
       "name": "/new — start a fresh workstream",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Start a fresh, empty workstream and rebind the COMMS panel to it, leaving other streams untouched.",
+      "promise": "Typing /new (or /reset) creates a new workstream via Workstreams.create and loads it, giving a clean panel; it never touches another stream's in-flight run.",
       "wiring": {
-        "files": [],
+        "files": ["sidecar/slash.js", "sidecar/index.js", "frontend/app/chat.js"],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        { "kind": "test", "ref": "test/slash.test.js (new + reset alias dispatch to new)" },
+        { "kind": "test", "ref": "test/slash.palette.test.js (newWorkstreamCommand mapped)" }
+      ],
+      "status": "perfected",
+      "auditedAt": { "sha": "ce3211719a4a8b9dfcae70af5417d150be18c2e8", "date": "2026-07-07T20:30:00.000Z" },
       "findings": [],
+      "notes": "HTTP dispatch proven (http-dispatch.txt): '/new' and '/reset' both resolve to {action:new}; alias canonicalization verified. Shares the load()/create path proven by /clear live.",
       "firstSeen": "2026-07-07T08:09:25.408Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false
@@ -349,14 +410,17 @@
       "kind": "command",
       "area": "commands",
       "name": "/personality — show or set the active personality",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Show the active personality or set it as a per-agent roster property (persona), driving voice + prompt tone.",
+      "promise": "Typing /personality lists options and the current persona; /personality <id> applies a known persona via App.applyConfig({personaId}) on the roster agent (re-inits Voice); an unknown value is reported without changing anything.",
       "wiring": {
-        "files": [],
+        "files": ["sidecar/slash.js", "sidecar/index.js", "frontend/app/chat.js", "frontend/app/app.js"],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        { "kind": "test", "ref": "test/slash.test.js (personality in catalog; dispatch carries args)" },
+        { "kind": "test", "ref": "test/slash.config.test.js (App.applyConfig applies personaId)" }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.408Z",
@@ -368,14 +432,17 @@
       "kind": "command",
       "area": "commands",
       "name": "/queue — show or add queued follow-up text",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Show the pending follow-up queue for the active stream, or add a message to it (auto-sent when the stream frees).",
+      "promise": "Typing /queue <message> enqueues it (or sends immediately if idle); bare /queue lists the pending follow-ups for this stream — reflecting the real queued map, never a fabricated list.",
       "wiring": {
-        "files": [],
+        "files": ["sidecar/slash.js", "sidecar/index.js", "frontend/app/chat.js"],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        { "kind": "test", "ref": "test/slash.test.js (q alias canonicalizes to queue; dispatch runs queue action)" },
+        { "kind": "test", "ref": "test/slash.palette.test.js (queue fallback present)" }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.408Z",
@@ -387,14 +454,17 @@
       "kind": "command",
       "area": "commands",
       "name": "/reasoning — show reasoning-mode support status",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Honestly report that reasoning effort is controlled by the selected model (not a separate StarNet toggle) and show the context window.",
+      "promise": "Typing /reasoning prints that reasoning is controlled by the current model plus the context used/limit; a non-status arg returns the honest guidance to pick a reasoning-capable model — it never claims a toggle that does not exist.",
       "wiring": {
-        "files": [],
+        "files": ["sidecar/slash.js", "sidecar/index.js", "frontend/app/chat.js"],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        { "kind": "test", "ref": "test/slash.test.js (reasoning in catalog; dispatch resolves)" },
+        { "kind": "test", "ref": "test/slash.palette.test.js (reasoningCommand mapped)" }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.408Z",
@@ -406,14 +476,17 @@
       "kind": "command",
       "area": "commands",
       "name": "/reload-mcp — refresh configured MCP connectors",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Refresh the configured MCP connectors (re-read connector config and reconnect) via the real /api/connectors/refresh endpoint.",
+      "promise": "Typing /reload-mcp [connector-id] hits /api/connectors/refresh and reports the real refresh result; it acts on actual configured connectors, not a stub.",
       "wiring": {
-        "files": [],
+        "files": ["sidecar/slash.js", "sidecar/index.js", "frontend/app/chat.js"],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        { "kind": "test", "ref": "test/slash.test.js (reload_mcp alias canonicalizes; dispatch runs reload-mcp)" },
+        { "kind": "test", "ref": "test/slash.palette.test.js (reloadMcpCommand + /api/connectors/refresh)" }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.408Z",
@@ -425,14 +498,17 @@
       "kind": "command",
       "area": "commands",
       "name": "/reload-skills — refresh the slash skill catalog",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Invalidate and re-fetch the slash skill + command catalog for the active workstation so newly-authored skills appear.",
+      "promise": "Typing /reload-skills clears the cached catalog and re-warms it from /api/slash/catalog + /api/skills, confirming the refresh; the palette then reflects the current skills.",
       "wiring": {
-        "files": [],
+        "files": ["sidecar/slash.js", "sidecar/index.js", "frontend/app/chat.js"],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        { "kind": "test", "ref": "test/slash.test.js (reload_skills alias canonicalizes; dispatch runs reload-skills)" },
+        { "kind": "test", "ref": "test/slash.palette.test.js (reloadSkillsCommand mapped)" }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.408Z",
@@ -444,14 +520,17 @@
       "kind": "command",
       "area": "commands",
       "name": "/resume — list or switch workstreams",
-      "purpose": "",
-      "promise": "",
+      "purpose": "List the existing workstreams or switch to one by name/number, so the Commander can move between conversations.",
+      "promise": "Typing /resume lists the workstreams; /resume <name|number> switches to that stream and loads it; args flow through the dispatch (proven for /sessions 2).",
       "wiring": {
-        "files": [],
+        "files": ["sidecar/slash.js", "sidecar/index.js", "frontend/app/chat.js"],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        { "kind": "test", "ref": "test/slash.test.js (sessions alias dispatches to resume with args)" },
+        { "kind": "test", "ref": "test/slash.palette.test.js (resumeCommand mapped)" }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.408Z",
@@ -463,16 +542,20 @@
       "kind": "command",
       "area": "commands",
       "name": "/retry — re-run the last turn",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Re-run the last user turn after an outage/error, discarding the failed reply so the thread stays clean.",
+      "promise": "Typing /retry (when idle) drops a trailing errored reply, re-renders the thread, and resends the last user message without echoing it again; it no-ops when busy or when there is nothing to retry.",
       "wiring": {
-        "files": [],
+        "files": ["sidecar/slash.js", "sidecar/index.js", "frontend/app/chat.js"],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        { "kind": "test", "ref": "test/slash.test.js (dispatch resolves /retry to client directive)" },
+        { "kind": "test", "ref": "test/slash.palette.test.js (palette fallback includes retry)" }
+      ],
+      "status": "perfected",
+      "auditedAt": { "sha": "ce3211719a4a8b9dfcae70af5417d150be18c2e8", "date": "2026-07-07T20:30:00.000Z" },
       "findings": [],
+      "notes": "HTTP dispatch proven (http-dispatch.txt): '/retry' → {type:client, action:retry, args:''}. Client action retryLast wired in localSlashActions; live composer dispatch path proven via input-path-proof.json.",
       "firstSeen": "2026-07-07T08:09:25.408Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false
@@ -482,14 +565,16 @@
       "kind": "command",
       "area": "commands",
       "name": "/save — save the current station state",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Persist the current station state (agent save) on demand so the Commander can checkpoint their work.",
+      "promise": "Typing /save writes the current station/agent save and confirms; it persists the real save document, not a no-op.",
       "wiring": {
-        "files": [],
+        "files": ["sidecar/slash.js", "sidecar/index.js", "frontend/app/chat.js"],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        { "kind": "test", "ref": "test/slash.test.js (save in catalog; dispatch resolves)" }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.408Z",
@@ -501,14 +586,17 @@
       "kind": "command",
       "area": "commands",
       "name": "/skills — show installed skill recipes",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Show the installed skill recipes available to the active agent, reading the real /api/skills catalog scoped to placed capabilities.",
+      "promise": "Typing /skills fetches /api/skills?placed=<caps> and lists the skills available to this workstation (respecting placed-capability gating) — it reflects only skills that actually exist and are reachable.",
       "wiring": {
-        "files": [],
+        "files": ["sidecar/slash.js", "sidecar/index.js", "frontend/app/chat.js"],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        { "kind": "test", "ref": "test/slash.test.js (skills in catalog; dispatch resolves)" },
+        { "kind": "test", "ref": "test/slash.config.test.js (skills command reads /api/skills?placed=)" }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.408Z",
@@ -520,16 +608,20 @@
       "kind": "command",
       "area": "commands",
       "name": "/status — show current stream and run state",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Give the Commander a one-line snapshot of the current workstream: idle/working, turn count, queued follow-ups, active model, and any goal loop.",
+      "promise": "Typing /status prints working|idle on the current stream label with the real turn count, queued count, model+provider, and goal-loop status line — every value read from live state (Harness/GoalLoop/queued), never faked.",
       "wiring": {
-        "files": [],
+        "files": ["sidecar/slash.js", "sidecar/index.js", "frontend/app/chat.js"],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        { "kind": "test", "ref": "test/slash.test.js (status in catalog; dispatch resolves)" },
+        { "kind": "test", "ref": "test/slash.config.test.js (App exposes currentAgent for status)" }
+      ],
+      "status": "perfected",
+      "auditedAt": { "sha": "ce3211719a4a8b9dfcae70af5417d150be18c2e8", "date": "2026-07-07T20:30:00.000Z" },
       "findings": [],
+      "notes": "Live-proven via input-path-proof.json: '/status' → 'Status: idle on General (0 turns, 0 queued); model anthropic/claude-opus-4 via openrouter.' — reflects the model just set by /model (truthful telemetry).",
       "firstSeen": "2026-07-07T08:09:25.408Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false
@@ -539,14 +631,16 @@
       "kind": "command",
       "area": "commands",
       "name": "/steer — steer the live run (or queue guidance when idle)",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Inject mid-run guidance into the live turn (folded in before the next model call) or queue it to run next when idle — so a steer is never silently dropped.",
+      "promise": "Typing /steer <guidance> during a run POSTs /api/run/steer for the live runId (the loop folds it in before its next step); with no live runId or a failed POST it falls back to queueing the note; when idle it sends the note as the next turn.",
       "wiring": {
-        "files": [],
+        "files": ["sidecar/slash.js", "sidecar/index.js", "frontend/app/chat.js"],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        { "kind": "test", "ref": "test/slash.test.js (steer in catalog; dispatch carries args)" }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.408Z",
@@ -558,16 +652,20 @@
       "kind": "command",
       "area": "commands",
       "name": "/stop — interrupt the running turn",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Interrupt the running turn on the active stream (abort the fetch, kill the server run, pause any goal loop) — the Commander taking over.",
+      "promise": "Typing /stop (when busy) aborts the in-flight run, clears its pending approvals/queue, pauses an active goal loop, and shows 'stopping…'; it no-ops when the stream is idle.",
       "wiring": {
-        "files": [],
+        "files": ["sidecar/slash.js", "sidecar/index.js", "frontend/app/chat.js"],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        { "kind": "test", "ref": "test/slash.test.js (stop in catalog; dispatch resolves)" },
+        { "kind": "test", "ref": "test/slash.palette.test.js (palette fallback includes stop)" }
+      ],
+      "status": "perfected",
+      "auditedAt": { "sha": "ce3211719a4a8b9dfcae70af5417d150be18c2e8", "date": "2026-07-07T20:30:00.000Z" },
       "findings": [],
+      "notes": "HTTP dispatch proven (http-dispatch.txt): '/stop' → {type:client, action:stop, args:''}. stopActive wired in localSlashActions (aborts fetch + Harness.cancel + pauses goal loop); live composer dispatch path proven via input-path-proof.json.",
       "firstSeen": "2026-07-07T08:09:25.408Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false
@@ -577,14 +675,17 @@
       "kind": "command",
       "area": "commands",
       "name": "/subgoal — add a criterion the goal loop must also satisfy",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Append (or list/remove) a criterion that the active goal loop must ALSO satisfy before it declares the goal done.",
+      "promise": "Typing /subgoal <text> adds a criterion to the running goal loop; bare /subgoal lists them; /subgoal remove N and /subgoal clear edit them — each acting on the real GoalLoop subgoals and requiring a goal to exist first.",
       "wiring": {
-        "files": [],
+        "files": ["sidecar/slash.js", "sidecar/index.js", "frontend/app/chat.js"],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        { "kind": "test", "ref": "test/slash.test.js (subgoal in catalog; dispatch carries args)" },
+        { "kind": "test", "ref": "test/slash.palette.test.js (subgoalCommand mapped)" }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.408Z",
@@ -596,14 +697,17 @@
       "kind": "command",
       "area": "commands",
       "name": "/suggestions — review recurring-task recipe suggestions",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Review the recurring-task recipe suggestions the station has mined from run history, and accept/dismiss/clear them.",
+      "promise": "Typing /suggestions lists the mined candidates (MintStore.candidates); accept saves one as a recipe (Recipes.saveCustom), dismiss/reject denylists it, clear wipes the history — acting on the real suggestion store.",
       "wiring": {
-        "files": [],
+        "files": ["sidecar/slash.js", "sidecar/index.js", "frontend/app/chat.js"],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        { "kind": "test", "ref": "test/slash.test.js (suggest alias canonicalizes; dispatch resolves)" },
+        { "kind": "test", "ref": "test/slash.palette.test.js (suggestionsCommand + MintStore/Recipes.saveCustom)" }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.408Z",
@@ -615,14 +719,17 @@
       "kind": "command",
       "area": "commands",
       "name": "/title — show or rename the current workstream",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Show or rename the current workstream's title so the Commander can label conversations meaningfully.",
+      "promise": "Typing /title shows the current title; /title <name> renames the active workstream and refreshes the board — reflecting the real workstream title.",
       "wiring": {
-        "files": [],
+        "files": ["sidecar/slash.js", "sidecar/index.js", "frontend/app/chat.js"],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        { "kind": "test", "ref": "test/slash.test.js (title in catalog; dispatch carries args)" },
+        { "kind": "test", "ref": "test/slash.palette.test.js (titleCommand mapped)" }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.408Z",
@@ -634,16 +741,20 @@
       "kind": "command",
       "area": "commands",
       "name": "/tools — show tools granted by the workstation",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Show which tool families the active agent actually has, derived from the capabilities placed on its floor — and honestly mark the ones still locked.",
+      "promise": "Typing /tools lists the live tool families (always compute; web/files/memory/terminal/image/spotify only when the matching prop is placed) and names the locked ones; a placed-but-unconnected Jukebox is called out honestly rather than listed as live.",
       "wiring": {
-        "files": [],
+        "files": ["sidecar/slash.js", "sidecar/index.js", "frontend/app/chat.js"],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        { "kind": "test", "ref": "test/slash.test.js (tools in catalog; dispatch resolves)" },
+        { "kind": "test", "ref": "test/slash.palette.test.js (toolsCommand mapped)" }
+      ],
+      "status": "perfected",
+      "auditedAt": { "sha": "ce3211719a4a8b9dfcae70af5417d150be18c2e8", "date": "2026-07-07T20:30:00.000Z" },
       "findings": [],
+      "notes": "Live-proven via input-path-proof.json: '/tools' → 'Tools: compute (model.chat). Locked until placed: web, files, memory, terminal, image, spotify.' — truthful capability gating on the seeded (bare-floor) agent.",
       "firstSeen": "2026-07-07T08:09:25.408Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false
@@ -653,14 +764,17 @@
       "kind": "command",
       "area": "commands",
       "name": "/undo — remove the last local exchange",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Remove the last local user/assistant exchange from the active workstream's history (local edit only).",
+      "promise": "Typing /undo (when idle) pops the trailing assistant + user messages from ws.history, re-renders, and reports how many were removed; it refuses while a turn is running and no-ops on empty history.",
       "wiring": {
-        "files": [],
+        "files": ["sidecar/slash.js", "sidecar/index.js", "frontend/app/chat.js"],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        { "kind": "test", "ref": "test/slash.test.js (undo in catalog; dispatch resolves)" },
+        { "kind": "test", "ref": "test/slash.palette.test.js (undo fallback present)" }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.408Z",
@@ -672,16 +786,20 @@
       "kind": "command",
       "area": "commands",
       "name": "/usage — show token and spend totals",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Show lifetime and this-stream token/spend/call totals so the Commander can see real cost.",
+      "promise": "Typing /usage prints lifetime tokens/$/calls (Harness.totals) and this-stream tokens/$/calls (Workstreams.costOf) — real accumulated numbers, zero when nothing has run.",
       "wiring": {
-        "files": [],
+        "files": ["sidecar/slash.js", "sidecar/index.js", "frontend/app/chat.js"],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        { "kind": "test", "ref": "test/slash.test.js (usage in catalog; dispatch resolves)" },
+        { "kind": "test", "ref": "test/slash.palette.test.js (usageCommand mapped)" }
+      ],
+      "status": "perfected",
+      "auditedAt": { "sha": "ce3211719a4a8b9dfcae70af5417d150be18c2e8", "date": "2026-07-07T20:30:00.000Z" },
       "findings": [],
+      "notes": "Live-proven via input-path-proof.json: '/usage' → 'Usage: lifetime 0 tokens, $0.000000, 0 calls. This stream: 0 tokens, $0.000000, 0 calls.' — honest zeros on a fresh seeded station, no fabricated spend.",
       "firstSeen": "2026-07-07T08:09:25.408Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false
@@ -691,14 +809,17 @@
       "kind": "command",
       "area": "commands",
       "name": "/version — show StarNet version information",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Show the running StarNet version/build information so the Commander knows what they are on.",
+      "promise": "Typing /version (or /v) prints the real StarNet version/build string.",
       "wiring": {
-        "files": [],
+        "files": ["sidecar/slash.js", "sidecar/index.js", "frontend/app/chat.js"],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        { "kind": "test", "ref": "test/slash.test.js (v alias dispatches to version)" },
+        { "kind": "test", "ref": "test/slash.palette.test.js (versionCommand mapped)" }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
@@ -710,16 +831,20 @@
       "kind": "command",
       "area": "commands",
       "name": "/voice — show or toggle spoken replies",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Show or toggle spoken (TTS) replies and hands-free voice mode, reflecting real browser speech/listen capability.",
+      "promise": "Typing /voice status reports whether replies are on, hands-free is on, and whether the browser supports listen/speak; on|off|handsfree toggle those via the Voice module's safe setters — the status reflects real capability, never a claimed one.",
       "wiring": {
-        "files": [],
+        "files": ["sidecar/slash.js", "sidecar/index.js", "frontend/app/chat.js", "frontend/app/voice.js"],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        { "kind": "test", "ref": "test/slash.test.js (voice in catalog; dispatch carries args)" },
+        { "kind": "test", "ref": "test/slash.config.test.js (Voice exposes setSpeakReplies for /voice)" }
+      ],
+      "status": "perfected",
+      "auditedAt": { "sha": "ce3211719a4a8b9dfcae70af5417d150be18c2e8", "date": "2026-07-07T20:30:00.000Z" },
       "findings": [],
+      "notes": "Live-proven via input-path-proof.json: '/voice status' → 'Voice: replies off, hands-free off, listening support yes, speech support yes.' — reflects real browser capability probes.",
       "firstSeen": "2026-07-07T08:09:25.408Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false
@@ -729,16 +854,20 @@
       "kind": "command",
       "area": "commands",
       "name": "/whoami — show the current agent identity",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Tell the Commander who the active agent is: name, id, class/role, level, model, and its placed capabilities.",
+      "promise": "Typing /whoami prints the real active agent identity (name+id from the roster, class from Specialties/role, level from Xp.compute, model+provider from Harness, placed caps from World.heroCaps) — every field read from live state, none invented.",
       "wiring": {
-        "files": [],
+        "files": ["sidecar/slash.js", "sidecar/index.js", "frontend/app/chat.js"],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        { "kind": "test", "ref": "test/slash.test.js (whoami dispatches to whoami action)" },
+        { "kind": "test", "ref": "test/slash.config.test.js (App.currentAgent exposed for whoami)" }
+      ],
+      "status": "perfected",
+      "auditedAt": { "sha": "ce3211719a4a8b9dfcae70af5417d150be18c2e8", "date": "2026-07-07T20:30:00.000Z" },
       "findings": [],
+      "notes": "Live-proven via input-path-proof.json: '/whoami' → 'You are NOVA [agent] — orchestrator, Lv 1 (0 XP, 0% to Lv 2). Model: anthropic/claude-opus-4 via openrouter. Placed capabilities: none on the floor yet.' — matches the seeded roster + the model just set (truthful telemetry).",
       "firstSeen": "2026-07-07T08:09:25.408Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false
@@ -748,14 +877,17 @@
       "kind": "command",
       "area": "commands",
       "name": "/yolo — toggle full-access approval mode",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Toggle the active agent's approval mode between full-access (no consent prompts) and ask-first, as a per-agent roster property.",
+      "promise": "Typing /yolo flips (or sets, with on|off) agent.approvalMode via App.applyConfig({approvalMode}) and confirms the real new mode; it is a per-agent setting, not per-chat.",
       "wiring": {
-        "files": [],
+        "files": ["sidecar/slash.js", "sidecar/index.js", "frontend/app/chat.js", "frontend/app/app.js"],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        { "kind": "test", "ref": "test/slash.test.js (yolo in catalog; dispatch carries args)" },
+        { "kind": "test", "ref": "test/slash.config.test.js (App.applyConfig applies approvalMode)" }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.408Z",
