@@ -279,8 +279,27 @@ export function makeLedger(opts) {
     return { crews, markdown: md.join('\n') };
   }
 
+  // Count OPEN findings by severity, using the ledger's OWN severity()/statusOf() normalization so the
+  // count is authoritative — the READY gate (scripts/qa/ready.mjs) reads THIS and never re-parses
+  // status/severity itself. "Open" mirrors digest()'s `active` set exactly: everything that is NOT
+  // terminal (fixed/dismissed). A 'known'/'routed' finding still counts as open (a known P0 is still a
+  // release blocker; the anti-nag suppression only stops RE-FILING, it does not clear the defect).
+  // Returns { P0, P1, P2, open, blocking:(P0+P1), rows:[{id,severity,status,title,fingerprint,crew}] }.
+  function openBySeverity() {
+    const counts = { P0: 0, P1: 0, P2: 0 };
+    const openRows = [];
+    for (const r of rows) {
+      const st = statusOf(r.status);
+      if (st === 'fixed' || st === 'dismissed') continue;
+      const sev = severity(r.severity);
+      counts[sev]++;
+      openRows.push({ id: str(r.id), severity: sev, status: st, title: str(r.title).slice(0, TITLE_MAX), fingerprint: str(r.fingerprint), crew: crewOf(r.crew) });
+    }
+    return { P0: counts.P0, P1: counts.P1, P2: counts.P2, open: counts.P0 + counts.P1 + counts.P2, blocking: counts.P0 + counts.P1, rows: openRows };
+  }
+
   return {
-    add, dedupCheck, digest, status,
+    add, dedupCheck, digest, status, openBySeverity,
     fingerprint: fingerprintOf,
     all() { return rows.map(r => Object.assign({}, r)); },
     count() { return rows.length; },

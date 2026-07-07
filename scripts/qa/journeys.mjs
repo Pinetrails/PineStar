@@ -53,7 +53,8 @@
  */
 import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { createServer } from 'node:http';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { sleep, launchChrome, connectCDP, evalJS, capture, collectDiagnostics } from '../lib/cdp.mjs';
 import { materializeSeedWorkspace, bootSeededSidecar, isUp, waitUp, waitDevReady, DEFAULT_MODEL } from '../lib/seed.mjs';
 import { closeOnly, openSel } from '../lib/states.mjs';
@@ -639,6 +640,20 @@ async function main() {
     const passed = all.filter(a => a.pass).length;
     const softFails = all.filter(a => !a.pass && a.soft).length;
     const verdict = code === 0 ? 'JOURNEYS PASS' : code === 2 ? 'JOURNEYS BLOCKED' : 'JOURNEYS FAIL (exit ' + code + ')';
+
+    // ADDITIVE (EL-7): a stable machine-readable last-run stamp the READY gate (scripts/qa/ready.mjs)
+    // reads. Repo-rooted from this file (not cwd) so it always lands in the source repo's qa/ dir.
+    // result: 'pass' (exit 0) | 'blocked' (exit 2) | 'fail'. Best-effort — never changes the exit code.
+    try {
+      const REPO = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
+      const QA_DIR = join(REPO, 'qa');
+      mkdirSync(QA_DIR, { recursive: true });
+      writeFileSync(join(QA_DIR, 'journeys-last-run.json'), JSON.stringify({
+        stampIso: new Date().toISOString(),
+        result: code === 0 ? 'pass' : code === 2 ? 'blocked' : 'fail',
+        exitCode: code, passed, total: all.length, softFails,
+      }, null, 2) + '\n', 'utf8');
+    } catch (_) {}
     console.log(`\n${verdict} — ${passed}/${all.length} assertions passed${softFails ? ` (${softFails} soft)` : ''} → ${OUT_DIR}`);
     process.exit(code);
   };

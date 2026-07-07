@@ -359,6 +359,23 @@ if (INVOKED_DIRECTLY) (async () => {
     if (!hit) { log('no well-formed "Beginner Run" dashboard row in STATUS.md — leaving it untouched (Q5 seeds the rows)'); return; }
     try { fs.writeFileSync(STATUS_MD, lines.join('\n'), 'utf8'); log('STATUS.md Beginner Run row → ' + verdict); }
     catch (e) { log('could not write STATUS.md: ' + e.message); }
+    writeQaStamp(res, verdict);
+  }
+
+  // ADDITIVE (EL-7): a stable machine-readable last-run stamp the READY gate (scripts/qa/ready.mjs)
+  // reads. STATUS.md is a human dashboard (owned collectively, easy to reformat); this JSON is the
+  // machine truth. result: 'PASS' | 'STUCK@<step>' | 'FAIL', mirroring the dashboard verdict exactly.
+  // Written on every exit path (refreshStatus is called on success, stall, and fatal). Best-effort.
+  function writeQaStamp(res, verdict) {
+    try {
+      const QA_DIR = path.join(REPO, 'qa');
+      fs.mkdirSync(QA_DIR, { recursive: true });
+      fs.writeFileSync(path.join(QA_DIR, 'beginner-last-run.json'), JSON.stringify({
+        stampIso: new Date(now()).toISOString(),
+        result: verdict,                         // 'PASS' | 'STUCK@<step>' | 'FAIL'
+        mode: MODE, totalMs: res.totalMs, stalledStep: res.stalledStep || null,
+      }, null, 2) + '\n', 'utf8');
+    } catch (_) { /* the timings.json + STATUS.md row already stand as evidence */ }
   }
 
   /* ---- DOM probes (via evalJS): stable id/class selectors, re-derived from index.html/app.js ---- */
