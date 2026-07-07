@@ -4,7 +4,7 @@
 > (`scripts/qa/cartographer.mjs --status`). The source of truth is the sharded registry under
 > `qa/atlas/areas/*.json`; the charter is `qa/atlas/README.md`. Edit those, not this.
 
-**Gauge:** PERFECTED-fresh 0 / total 1339 (0%)
+**Gauge:** PERFECTED-fresh 0 / total 1288 (0%)
 
 The goal: every entry `perfected` AND fresh at the current trunk. `unmapped` + `stale` is the
 work queue a Perfectionist session (`loops/perfectionist.md`) burns down. `missing` = a surface
@@ -12,7 +12,7 @@ that vanished (retire it from the registry or fix the regression that hid it).
 
 | Area | Total | Unmapped | Mapped | Audited | Perfected | Stale | Missing |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| build | 323 | 272 | 0 | 0 | 0 | 0 | 51 |
+| build | 272 | 259 | 0 | 13 | 0 | 0 | 0 |
 | commands | 40 | 40 | 0 | 0 | 0 | 0 | 0 |
 | crew | 109 | 109 | 0 | 0 | 0 | 0 | 0 |
 | events | 60 | 60 | 0 | 0 | 0 | 0 | 0 |
@@ -20,7 +20,7 @@ that vanished (retire it from the registry or fix the regression that hid it).
 | system | 146 | 146 | 0 | 0 | 0 | 0 | 0 |
 | work | 94 | 94 | 0 | 0 | 0 | 0 | 0 |
 | world | 453 | 453 | 0 | 0 | 0 | 0 | 0 |
-| **all** | **1339** | 1288 | 0 | 0 | 0 | 0 | 51 |
+| **all** | **1288** | 1275 | 0 | 13 | 0 | 0 | 0 |
 
-_Last regenerated: 2026-07-07T08:26:25.110Z @ 00538abd._
+_Last regenerated: 2026-07-07T08:45:54.756Z @ 54e73311._
 

@@ -200,7 +200,9 @@ The whole surface is the queue. Areas: system, crew, work, build, world, command
 
 _Active claims:_
 - IN PROGRESS — agent/perfect-world · **world** (dock/topbar cluster batch; Fable-orchestrated wave 1)
-- IN PROGRESS — agent/perfect-build · **build** (51-missing triage + new SKILLS panel batch; wave 1)
+
+_Wave-1 build DONE 2026-07-07 (merged, lane reaped): pruned 51 redesign-removed · 13 SKILLS
+controls audited (blocked from perfected only by EL-3 coverage gap 11c69e21 → J-skills lane)._
 
 ## Parked product decisions (need Andrew, don't guess)
 
