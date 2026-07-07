@@ -880,6 +880,11 @@ fn sidecar_command(state: &AppState, entry: &Path, node: &Path) -> Command {
         // A headless/server/CI `node sidecar/index.js` never sets this, so it keeps the
         // safe no-driver stub. STARNET_COMPUTER_DRIVER still overrides either way.
         .env("STARNET_DESKTOP_SHELL", "1")
+        // The packaged build's true version — computeVersionSurface() reads this first, so
+        // /api/diagnostics reports the real build instead of "unknown" (the bundled sidecar
+        // has no src-tauri/tauri.conf.json to fall back to). CARGO_PKG_VERSION is the
+        // compile-time Cargo.toml version, kept in lockstep with tauri.conf.json by release-bump.
+        .env("STARNET_APP_VERSION", env!("CARGO_PKG_VERSION"))
         .current_dir(&state.root);
     if let Some(key) = read_key() {
         cmd.env("SKYNET_OPENROUTER_KEY", key);
