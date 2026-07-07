@@ -210,6 +210,7 @@ test/cron.dst.test.js
 test/cron.durability.test.js
 test/cron.lock.test.js
 test/cron.oneshot.test.js
+test/cron.run-now.test.js
 test/routine-tools.test.js
 test/workstreams.test.js
 test/prepare-node.test.js
@@ -220,11 +221,11 @@ test/orchestration.test.js
 test/channels.test.js
 test/toolprops.test.js
 test/worldmodel.test.js
+test/station-authority.test.js
 test/zones.test.js
 test/social-border.test.js
 test/g1bprops.test.js
 test/g3btrophy.test.js
-test/org-validator.test.js
 test/stationbake.chunk.test.js
 test/conveyor.test.js
 test/pipeline.test.js
