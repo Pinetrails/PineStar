@@ -305,6 +305,51 @@ async function waitUntil(fn, ms, label) {
     await sse.waitFor(events => events.some(e => e.name === 'agent.run.end' && e.payload && e.payload.agentId === 'tg_4243'), 5000, 'second SSE run end');
     // AFTER IT ENDS: the run drops out of the snapshot (inflight cleared in the hub's finally) — no phantom clock.
     await waitUntil(async () => { const s = await snapshot(); return !(s.runs || []).some(x => x && x.agentId === 'tg_4243'); }, 5000, 'tg_4243 run leaves the snapshot after it ends');
+
+    // ---- P2 supersede race: a SECOND message to the SAME busy chat must NOT be silently dropped on the transient
+    // "already running a task" refusal. Repro: HOLD run #1 for chat 5555 in-flight (slot held), then send message #2
+    // to 5555 — the hub aborts #1 and immediately starts #2, which loses the same-agent workspace-mutex race in the
+    // host (index.js concurrencyGate.inFlight>0) and is refused TRANSIENTLY. The hub must RETRY with backoff until
+    // #1's aborted run releases the slot, then deliver #2's real answer — never the raw mutex refusal to the user. --
+    const sendsToChatBefore = tg.sends.filter(s => String(s.chat_id) === '5555').length;
+    A.eq(sendsToChatBefore, 0, 'no prior reply to chat 5555');
+
+    llm.gate.arm();                                  // run #1 will HOLD after its first delta (keeps its slot)
+    tg.pushText(5555, 99, 'first message — will be held and superseded');
+    await llm.gate.started;                           // run #1 is provably in-flight (slot held) now
+    await sse.waitFor(events => events.some(e => e.name === 'agent.run.start' && e.payload && e.payload.agentId === 'tg_5555'), 5000, 'run #1 start (tg_5555)');
+
+    // SECOND message to the SAME chat: aborts #1, then races the still-held workspace slot -> transient refusal ->
+    // the hub's bounded retry recovers once #1's abort frees the slot.
+    tg.pushText(5555, 99, 'second message — should supersede and still get answered');
+
+    // the user's SECOND message must EVENTUALLY get a real answer delivered to chat 5555 (the whole point of the fix).
+    await waitUntil(() => tg.sends.some(s => String(s.chat_id) === '5555' && String(s.text || '').indexOf('Telegram answer') >= 0), 12000, 'chat 5555 eventually gets the real answer for message #2');
+
+    // TRUTHFUL TELEMETRY: the raw internal mutex message ("already running a task") must NEVER be delivered to the
+    // user on ANY reply to chat 5555 — the fix converts that transient refusal into a retry (or, if it truly never
+    // frees, an honest "still busy" reply), never a leaked internal string.
+    const chat5555Replies = tg.sends.filter(s => String(s.chat_id) === '5555');
+    A.ok(chat5555Replies.length >= 1, 'chat 5555 received at least one reply');
+    A.ok(chat5555Replies.every(s => String(s.text || '').indexOf('already running a task') === -1), 'no reply to chat 5555 leaked the internal "already running a task" mutex message');
+
+    // Prove the RETRY PATH actually engaged (not merely that the race happened not to fire): the transient
+    // "already running a task" refusal is teed whole to the channels SSE feed (sse.js runTeeView), and it must be
+    // FOLLOWED by a successful run.end for the same agent — i.e. the hub retried and recovered rather than giving up.
+    const sawTransientRefusal = sse.events.some(e => e.name === 'agent.run.error' && e.payload
+      && e.payload.agentId === 'tg_5555' && e.payload.transient === true
+      && String(e.payload.message || '').indexOf('already running a task') >= 0);
+    if (sawTransientRefusal) {
+      await sse.waitFor(events => {
+        // a run.end for tg_5555 that is NOT the aborted/error one: the recovered retry's clean finish.
+        return events.some(e => e.name === 'agent.run.end' && e.payload && e.payload.agentId === 'tg_5555' && e.payload.reason && e.payload.reason !== 'error');
+      }, 8000, 'tg_5555 recovered with a successful run after the transient refusal (retry worked)');
+      console.log('  · supersede race reproduced AND recovered (transient refusal -> retry -> real answer)');
+    } else {
+      // The race is timing-sensitive; if the slot happened to free before #2's admission, the message still got its
+      // real answer above (the invariant that matters). Note it so the run log is honest about what was exercised.
+      console.log('  · supersede race did not fire this run; #2 still delivered its real answer (invariant holds)');
+    }
   } finally {
     if (sse) sse.close();
     try { child.kill(); } catch (_) {}
