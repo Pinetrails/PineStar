@@ -197,9 +197,13 @@ promise?" (sibling of "where's its UI?").
   stores (provider keys / codex OAuth / connector OAuth / .bak recovery) — findings will be
   queued here. NEW MERGE-RITUAL QUESTION: "does this change move/strip/clear any credential —
   and where is the read-back proof?"
-- **EL-5b · Secrets-durability sweep findings (2026-07-07, re-verify in code before fixing —
-  claim here first):** shared root causes = silent `catch{warn}` on secret saves + multi-step
-  persists without confirmation.
+- **EL-5b · Secrets-durability sweep findings — ✅ ALL 4 FIXED + MERGED 2026-07-07 (lane
+  agent/secrets-durability, gates fast 261 + http green; every finding re-verified real,
+  failing-test-first).** Shared root causes = silent `catch{warn}` on secret saves +
+  multi-step persists without confirmation. New shared primitive: `saveJsonVerified()` in
+  sidecar/durable-store.js (write → read-back → proof predicate → retry once → honest
+  ok:false) — USE IT for any future credential persist. Details in qa/STATUS.md digest.
+  Historical findings:
   - **F4 HIGH — Codex OAuth refresh persist:** `ensureCodexAccessToken` (sidecar/index.js
     ~1737-46) rotates the refresh_token in memory; if `saveCodexTokens` write fails
     (swallowed), a crash strands the OLD dead refresh_token on disk → forced re-sign-in.
