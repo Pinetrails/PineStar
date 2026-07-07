@@ -18,6 +18,11 @@ debugging or claiming anything done. Companions: [BRAIN.md](BRAIN.md) · [DECISI
 4. **Parallel-agent breakage.** Editing outside your worktree, `git add -A`, touching owned
    contract files (`shared/events.js`, `shared/schema.js`), or feature-editing the
    integration tree. The protocol in CLAUDE.md exists because all of these happened.
+   Variant (2026-07-06): two sessions executed the SAME NEXT.md queue item concurrently —
+   one was deleting triaged branches while the other's agents were still diffing them
+   (refs vanished mid-read). Before executing any destructive queue item (branch
+   deletion, worktree teardown, trunk merge), claim it in NEXT.md first:
+   `IN PROGRESS — <session/lane>`. Deleted-tip insurance: `archive/*` tags.
 5. **Pattern-match fixes.** A signal that looks like a known failure often has a different
    cause. Reproduce first, one hypothesis at a time. Example: slash commands "not working"
    (2026-07-05) was an INPUT-path bug (palette prefix-match swallowed arg-taking commands
