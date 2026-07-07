@@ -819,7 +819,12 @@ const Chat = (() => {
     a.href = '#'; a.target = '_blank'; a.rel = 'noopener';
     a.addEventListener('click', ev => {
       ev.preventDefault();
-      fileBlobUrl(title, agentId).then(u => { try { window.open(u, '_blank', 'noopener'); } catch (_) {} })
+      fileBlobUrl(title, agentId).then(u => {
+        try { window.open(u, '_blank', 'noopener'); } catch (_) {}
+        // the new tab has taken the blob by now — revoke so a 24/7 station doesn't leak one object URL per
+        // deliverable opened (matches backup.js/clip.js delayed-revoke; every other createObjectURL site frees).
+        setTimeout(() => { try { URL.revokeObjectURL(u); } catch (_) {} }, 60000);
+      })
         .catch(() => { if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('could not open that file — the sidecar may be unreachable', 'warn'); });
     });
   }
@@ -903,7 +908,15 @@ const Chat = (() => {
     img.alt = String(title).split(/[\\/]/).pop() || title;
     a.appendChild(img);
     r.body.appendChild(a);
-    fileBlobUrl(title, agentId).then(u => { img.src = u; a.href = u; }).catch(() => {});
+    fileBlobUrl(title, agentId).then(u => {
+      img.src = u; a.href = u;
+      // once the <img> has decoded (or failed) it no longer needs the object URL — the decoded bitmap
+      // survives revocation, so the thumbnail keeps rendering. Revoke to avoid leaking one URL per image
+      // deliverable on a long-running station (mirrors voice.js freeing its audio blob after use).
+      const free = () => { try { URL.revokeObjectURL(u); } catch (_) {} };
+      img.addEventListener('load', free, { once: true });
+      img.addEventListener('error', free, { once: true });
+    }).catch(() => {});
     autoscroll();
   }
   // CLIENT-SIDE MEDIA KIND, keyed off the file extension (the reference harness's extension-keyed media model): the backend doesn't
@@ -948,7 +961,14 @@ const Chat = (() => {
     let blobUrl = '';
     el.addEventListener('error', () => openFallback(r.body, 'open ' + kind, blobUrl, title, agentId), { once: true });
     r.body.appendChild(el);
-    fileBlobUrl(title, agentId).then(u => { blobUrl = u; el.src = u; }).catch(() => openFallback(r.body, 'open ' + kind, '', title, agentId));
+    // a <video>/<audio> keeps needing its object URL for the WHOLE row lifetime (seek/replay re-read it, and
+    // the error fallback links to it), so we don't revoke on load here. But free any prior URL before we
+    // replace it (defensive against a double-resolve leaking the first one) — the general revoke-before-
+    // replace discipline every other createObjectURL site follows.
+    fileBlobUrl(title, agentId).then(u => {
+      if (blobUrl && blobUrl !== u) { try { URL.revokeObjectURL(blobUrl); } catch (_) {} }
+      blobUrl = u; el.src = u;
+    }).catch(() => openFallback(r.body, 'open ' + kind, '', title, agentId));
     autoscroll();
   }
 
