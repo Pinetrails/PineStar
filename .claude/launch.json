@@ -776,6 +776,20 @@
         "SKYNET_PORT": "8149",
         "SKYNET_DEFAULT_MODEL": "anthropic/claude-3.5-sonnet"
       }
+    },
+    {
+      "name": "roster-honesty-seed",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "C:/Users/andro/gen-trees/roster-honesty/dev/seed.js",
+        "--keep"
+      ],
+      "port": 8158,
+      "autoPort": false,
+      "env": {
+        "SKYNET_PORT": "8158",
+        "SKYNET_DEFAULT_MODEL": "anthropic/claude-3.5-sonnet"
+      }
     }
   ]
 }
