@@ -340,6 +340,57 @@ const App = (() => {
     return true;
   }
 
+  // DOSSIER › CHANGE SKIN: repoint an agent's sprite set to another entry in the SAME genesis skin catalog
+  // (DATA.SKINS — the single source of truth the create screen's picker reads). Display identity only: the
+  // agentId, model, prompt and every lookup are untouched; we persist the new skin on the record, live-update
+  // the floor body (World.setSkin), refresh an open dossier, and persist. Returns false on an unknown skin.
+  function setAgentSkin(agentId, skin) {
+    const a = agents.get(String(agentId || '')) || (agent && agent.id === agentId ? agent : null);
+    if (!a) return false;
+    const sk = String(skin || '').trim();
+    if (!sk || typeof DATA === 'undefined' || !DATA.SKINS || !DATA.SKINS[sk]) return false;   // must be a real catalog skin
+    a.skin = sk;
+    if (typeof World !== 'undefined' && World.setSkin) World.setSkin(a.id, sk);   // live-update the sprite on the floor
+    if (typeof StationUI !== 'undefined' && StationUI.setRoster) StationUI.setRoster(liveAgents());   // repaint the dossier portrait/picker
+    persist();
+    return true;
+  }
+
+  // DOSSIER › DELETE AGENT: remove a SUMMONED specialist from the crew for real — the roster, the world body, and
+  // the server-side stores (archived, not wiped, by /api/agent/delete). Refuses to delete the hero or the LAST
+  // remaining agent (the UI disables the button with a reason; this is the matching hard guard). The frontend
+  // owns the roster, so we mutate the live registry, re-push the surviving set, drop the floor body, retire any
+  // workstreams bound to the gone agent, then fire the server archive. Returns a Promise<bool>.
+  function deleteAgent(agentId) {
+    const id = String(agentId || '');
+    const a = agents.get(id);
+    if (!a) return Promise.resolve(false);
+    if (id === 'agent' || (agent && agent.id === 'agent' && a.role === 'orchestrator')) return Promise.resolve(false);   // never the hero
+    if (a.role === 'orchestrator') return Promise.resolve(false);   // the overseer is the founder — undeletable
+    if (agents.size <= 1) return Promise.resolve(false);   // never the last agent on station
+    // if the deleted agent is currently focused, hand COMMS back to the hero BEFORE dropping it.
+    const wasFocused = agent && agent.id === id;
+    agents.delete(id);
+    if (wasFocused) focusAgent('agent');
+    if (typeof World !== 'undefined' && World.despawnAgent) World.despawnAgent(id);   // pull its floor body
+    // retire workstreams bound to the gone agent so the rail can't reopen a stream with no agent behind it.
+    try {
+      if (typeof Workstreams !== 'undefined' && Workstreams.removeByAgent) Workstreams.removeByAgent(id);
+    } catch (_) {}
+    recomposeOrchestrators();   // the lead's YOUR CREW clause must drop the removed specialist
+    if (typeof StationUI !== 'undefined' && StationUI.setRoster) StationUI.setRoster(liveAgents());
+    renderRail();
+    pushRoster();   // the surviving crew replaces the whole server roster
+    persist();
+    // fire-and-honest: archive the server-side stores. The roster is already correct locally + re-pushed; this
+    // resolves off the real route so the caller can surface a truthful result, but a failure here never resurrects
+    // the agent (its stores just stay retained on disk, which is the safe direction).
+    return fetch('/api/agent/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ agentId: id }) })
+      .then(r => r.json().catch(() => null))
+      .then(j => !!(j && j.ok))
+      .catch(() => false);
+  }
+
   /* ---------- the live agent registry (multi-agent) ----------
      `agent` is the FOCUSED agent; `agents` holds the whole crew. liveAgents() is what the world / bay /
      builder / dossier read. focusAgent(id) repoints COMMS + the run identity at one crew member — the
@@ -1758,7 +1809,7 @@ const App = (() => {
         totals: () => Harness.totals(),
         context: () => Harness.contextState(agent ? agent.id : 'agent'),
         activity: () => (World.getActivity ? World.getActivity() : 'idle'),
-        config: { apply: applyAgentConfig, setModel: setAgentModelPin, setName: setAgentName, setWorkshop: setAgentWorkshop }   // dossier edits re-shape the live prompt; setModel pins per-agent model/provider/effort (P1-6); setName renames the agent; setWorkshop flips the away-build grant (W3)
+        config: { apply: applyAgentConfig, setModel: setAgentModelPin, setName: setAgentName, setWorkshop: setAgentWorkshop, setSkin: setAgentSkin, deleteAgent: deleteAgent, crewCount: () => agents.size }   // dossier edits re-shape the live prompt; setModel pins per-agent model/provider/effort (P1-6); setName renames the agent; setWorkshop flips the away-build grant (W3); setSkin repoints the sprite (genesis catalog); deleteAgent archives+removes a specialist; crewCount gates the last-agent delete guard
       });
       if (!opts.awaitingPurpose) StationUI.notify(agent.name + ' is online — ' + agent.model, 'good');   // during the awakening the finale announces it instead
     }

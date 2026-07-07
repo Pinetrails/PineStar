@@ -2328,6 +2328,7 @@ function dispatchRoute(req, res) {
   if (req.method === 'POST' && req.url === '/api/channels/telegram/connect') return handleChannelConnect(req, res);
   if (req.method === 'POST' && req.url === '/api/channels/telegram/sync') return handleChannelSync(req, res);
   if (req.method === 'POST' && req.url === '/api/roster') return handleRoster(req, res);
+  if (req.method === 'POST' && req.url === '/api/agent/delete') return handleAgentDelete(req, res);
   if (req.method === 'POST' && req.url === '/api/dossier') return handleDossier(req, res);
   if (req.method === 'POST' && req.url === '/api/goals') return handleGoals(req, res);   // GROWTH Tier 2: the active goal-arc summary for cron personas
   if (req.method === 'POST' && req.url === '/api/channels/telegram/disconnect') return handleChannelDisconnect(req, res);
@@ -4012,6 +4013,59 @@ async function handleRoster(req, res) {
   replaceAgentRoster(body.agents);
   saveAgentRoster();
   json(200, { ok: true, count: agentRoster.size });
+}
+
+// POST /api/agent/delete { agentId } — DOSSIER › DELETE AGENT. Removes a summoned agent from the SERVER roster
+// and ARCHIVES (never wipes) its durable per-agent state: the notebook/todo/declined/workshop sibling stores and
+// the agent's fs workspace dir are MOVED under WORKSPACES/_archive/<aid>-<ts>/. The append-only run-history and
+// cost ledger are keyed by agentId and left in place on purpose — deleting an agent must not erase the record of
+// what it did or what it cost (truthful telemetry / "retain, don't wipe"). The frontend is the roster's source of
+// truth and re-pushes the surviving crew via /api/roster right after; this route's job is the server-side stores
+// the roster push can't touch. The hero ('agent') is never deletable — refused here as a second line of defence
+// behind the UI guard (you can't archive the founder without corrupting resume).
+async function handleAgentDelete(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 1 << 16)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+  const agentId = String(body.agentId || body.agent || '');
+  if (!/^[A-Za-z0-9_-]{1,40}$/.test(agentId)) return json(400, { error: 'invalid agentId' });   // same id regex as roster/fs-jail surfaces
+  if (agentId === 'agent') return json(400, { error: 'cannot delete the hero agent' });   // the founder is undeletable (resume depends on it)
+
+  const archived = [];
+  try {
+    const ts = new Date().toISOString().replace(/[:.]/g, '-');
+    const archiveDir = path.join(WORKSPACES, '_archive', agentId + '-' + ts);
+    // move(src, destName) — rename a file/dir into the archive dir if it exists; tolerant of ENOENT.
+    const move = (src, destName) => {
+      try {
+        if (!fs.existsSync(src)) return;
+        if (!fs.existsSync(archiveDir)) fs.mkdirSync(archiveDir, { recursive: true });
+        fs.renameSync(src, path.join(archiveDir, destName));
+        archived.push(destName);
+      } catch (e) { console.warn('[agent.delete] archive move failed for ' + destName + ':', (e && e.message) || e); }
+    };
+    // per-agent sibling stores (+ their .bak last-known-good) live at WORKSPACES/<aid>.<kind>.json — see notebookStore/workshopStore.
+    for (const kind of ['notebook', 'todo', 'declined', 'workshop']) {
+      move(path.join(WORKSPACES, agentId + '.' + kind + '.json'), agentId + '.' + kind + '.json');
+      move(path.join(WORKSPACES, agentId + '.' + kind + '.json.bak'), agentId + '.' + kind + '.json.bak');
+    }
+    // the agent's fs workspace dir (WORKSPACES/<aid>/ — the deliverables/artifacts jail). Archived whole so the
+    // Commander can still recover a deleted agent's work off disk; it never touches another agent's jail.
+    move(path.join(WORKSPACES, agentId), agentId);
+  } catch (e) {
+    console.warn('[agent.delete] archive failed:', (e && e.message) || e);
+    // fall through — still drop the roster entry so the delete is honoured; the stores stay put (safe: retained).
+  }
+  // drop the in-memory + on-disk roster entry (the browser also re-pushes the surviving set right after).
+  let removed = false;
+  try { removed = agentRoster.delete(agentId); if (removed) saveAgentRoster(); } catch (e) { console.warn('[agent.delete] roster drop failed:', (e && e.message) || e); }
+  // clear any live in-RAM per-agent proposal/study queues so a gone agent can't land a turn-in later.
+  try {
+    for (const [rid, b] of proposalsByRun) { if (b && b.agentId === agentId) proposalsByRun.delete(rid); }
+    latestProposalRun.delete(agentId); lastReflectAt.delete(agentId); reflectingNow.delete(agentId);
+    for (const [rid, b] of studyByRun) { if (b && b.agentId === agentId) studyByRun.delete(rid); }
+    latestStudyRun.delete(agentId); lastStudyAt.delete(agentId); studyingNow.delete(agentId); studyDeclinedByAgent.delete(agentId);
+  } catch (_) {}
+  return json(200, { ok: true, agentId, rosterRemoved: removed, archived });
 }
 
 // POST /api/dossier { block } — the browser pushes the composed Commander-dossier block whenever it changes,

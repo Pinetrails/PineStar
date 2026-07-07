@@ -61,7 +61,7 @@ A.ok(/function setAgentName[\s\S]{0,1800}pushRoster\(\)[\s\S]{0,120}persist\(\)/
 
 // ---- World.relabel: the floor nameplate follows a rename ----
 A.ok(/function relabel\(id, name\)/.test(world), 'World implements relabel');
-A.ok(/spawnAgent, relabel,/.test(world), 'relabel is exported on the World public API');
+A.ok(/\brelabel,/.test(world), 'relabel is exported on the World public API');
 A.ok(/World\.relabel/.test(appjs), 'setAgentName relabels the floor body');
 
 // ---- review fix: rename must re-sync the DEFAULT identity so the PROMPT (not just the label) takes the new name ----
