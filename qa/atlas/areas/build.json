@@ -1,6 +1,6 @@
 {
   "area": "build",
-  "updatedAt": "2026-07-07T08:11:07.401Z",
+  "updatedAt": "2026-07-07T08:25:37.292Z",
   "entries": [
     {
       "id": "state/build-connectors",
@@ -18,7 +18,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false
     },
     {
@@ -37,7 +37,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false
     },
     {
@@ -56,7 +56,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false
     },
     {
@@ -75,7 +75,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false
     },
     {
@@ -94,7 +94,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
-      "lastSeen": "2026-07-07T08:11:07.406Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button[aria-label=\"Close FIELD MANUAL\"]",
       "state": "build-manual"
@@ -115,7 +115,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
-      "lastSeen": "2026-07-07T08:11:07.406Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button[aria-label=\"Close SKILLS & CAPABILITIES\"]",
       "state": "build-skills"
@@ -136,7 +136,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button[aria-label=\"Close TOOLSETS & CONNECTORS\"]",
       "state": "build-connectors"
@@ -157,7 +157,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "input[aria-label=\"Enable FILE CABINET\"]",
       "state": "build-connectors"
@@ -178,7 +178,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "input[aria-label=\"Enable JUKEBOX (SPOTIFY)\"]",
       "state": "build-connectors"
@@ -199,7 +199,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "input[aria-label=\"Enable MEDIA STUDIO\"]",
       "state": "build-connectors"
@@ -220,7 +220,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "input[aria-label=\"Enable MEMORY NOTEBOOK\"]",
       "state": "build-connectors"
@@ -241,7 +241,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "input[aria-label=\"Enable TASK DELEGATION\"]",
       "state": "build-connectors"
@@ -262,7 +262,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "input[aria-label=\"Enable WEB & BROWSER\"]",
       "state": "build-connectors"
@@ -283,7 +283,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "input[aria-label=\"Enable WORKBENCH (CODE EXECUTION)\"]",
       "state": "build-connectors"
@@ -304,7 +304,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
-      "lastSeen": "2026-07-07T08:11:07.406Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button[aria-label=\"Minimize FIELD MANUAL\"]",
       "state": "build-manual"
@@ -325,7 +325,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
-      "lastSeen": "2026-07-07T08:11:07.406Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button[aria-label=\"Minimize SKILLS & CAPABILITIES\"]",
       "state": "build-skills"
@@ -346,7 +346,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button[aria-label=\"Minimize TOOLSETS & CONNECTORS\"]",
       "state": "build-connectors"
@@ -367,7 +367,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "input[aria-label=\"Search connectors\"]",
       "state": "build-connectors"
@@ -388,7 +388,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
-      "lastSeen": "2026-07-07T08:11:07.406Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "input[aria-label=\"Search skills\"]",
       "state": "build-skills"
@@ -409,7 +409,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#con-tab-connectors-catalog",
       "state": "build-connectors"
@@ -430,7 +430,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#con-tab-connectors-mcp",
       "state": "build-connectors"
@@ -451,7 +451,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#con-tab-connectors-toolsets",
       "state": "build-connectors"
@@ -472,7 +472,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
-      "lastSeen": "2026-07-07T08:11:07.406Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#con-tab-skills-agent",
       "state": "build-skills"
@@ -493,7 +493,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
-      "lastSeen": "2026-07-07T08:11:07.406Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#con-tab-skills-caps",
       "state": "build-skills"
@@ -514,7 +514,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
-      "lastSeen": "2026-07-07T08:11:07.406Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#con-tab-skills-library",
       "state": "build-skills"
@@ -535,7 +535,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#mc-add",
       "state": "build-connectors"
@@ -556,7 +556,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#mc-args",
       "state": "build-connectors"
@@ -577,7 +577,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#mc-cancel",
       "state": "build-connectors"
@@ -598,7 +598,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#mc-command",
       "state": "build-connectors"
@@ -619,7 +619,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#mc-cwd",
       "state": "build-connectors"
@@ -640,7 +640,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#mc-empty-cta",
       "state": "build-connectors"
@@ -661,7 +661,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#mc-env",
       "state": "build-connectors"
@@ -682,7 +682,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#mc-headers",
       "state": "build-connectors"
@@ -703,7 +703,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#mc-id",
       "state": "build-connectors"
@@ -724,7 +724,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#mc-label",
       "state": "build-connectors"
@@ -745,7 +745,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#mc-timeout",
       "state": "build-connectors"
@@ -766,7 +766,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#mc-token",
       "state": "build-connectors"
@@ -787,7 +787,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#mc-url",
       "state": "build-connectors"
@@ -808,7 +808,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
-      "lastSeen": "2026-07-07T08:11:07.406Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#refit-done",
       "state": "build-station"
@@ -829,7 +829,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
-      "lastSeen": "2026-07-07T08:11:07.406Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#refit-fit",
       "state": "build-station"
@@ -850,7 +850,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
-      "lastSeen": "2026-07-07T08:11:07.406Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#refit-guide-go",
       "state": "build-station"
@@ -871,7 +871,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
-      "lastSeen": "2026-07-07T08:11:07.406Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#refit-help",
       "state": "build-station"
@@ -892,7 +892,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
-      "lastSeen": "2026-07-07T08:11:07.406Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#refit-redo",
       "state": "build-station"
@@ -913,7 +913,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
-      "lastSeen": "2026-07-07T08:11:07.406Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#refit-test",
       "state": "build-station"
@@ -934,7 +934,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
-      "lastSeen": "2026-07-07T08:11:07.406Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#refit-undo",
       "state": "build-station"
@@ -955,7 +955,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#sp-client",
       "state": "build-connectors"
@@ -976,7 +976,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#sp-connect",
       "state": "build-connectors"
@@ -997,7 +997,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#sp-disconnect",
       "state": "build-connectors"
@@ -1018,7 +1018,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors"
@@ -1039,7 +1039,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors"
@@ -1060,7 +1060,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors"
@@ -1081,7 +1081,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors"
@@ -1102,7 +1102,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors"
@@ -1123,7 +1123,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors"
@@ -1144,7 +1144,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors"
@@ -1165,7 +1165,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors"
@@ -1186,7 +1186,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors"
@@ -1207,7 +1207,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors"
@@ -1228,7 +1228,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors"
@@ -1249,7 +1249,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors"
@@ -1270,7 +1270,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors"
@@ -1291,7 +1291,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors"
@@ -1312,7 +1312,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors"
@@ -1333,7 +1333,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors"
@@ -1354,7 +1354,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors"
@@ -1375,7 +1375,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors"
@@ -1396,7 +1396,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors"
@@ -1417,7 +1417,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors"
@@ -1438,7 +1438,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors"
@@ -1459,7 +1459,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors"
@@ -1480,7 +1480,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors"
@@ -1501,7 +1501,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors"
@@ -1522,7 +1522,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors"
@@ -1543,7 +1543,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors"
@@ -1564,7 +1564,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors"
@@ -1585,7 +1585,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors"
@@ -1606,7 +1606,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors"
@@ -1627,7 +1627,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors"
@@ -1648,7 +1648,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors"
@@ -1669,7 +1669,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors"
@@ -1690,7 +1690,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors"
@@ -1711,7 +1711,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors"
@@ -1732,7 +1732,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors"
@@ -1753,7 +1753,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors"
@@ -1774,7 +1774,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors"
@@ -1796,7 +1796,7 @@
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:11:07.406Z",
-      "missing": false,
+      "missing": true,
       "selector": "button",
       "state": "build-skills"
     },
@@ -1816,7 +1816,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
-      "lastSeen": "2026-07-07T08:11:07.406Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "build-skills"
@@ -1838,7 +1838,7 @@
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:11:07.406Z",
-      "missing": false,
+      "missing": true,
       "selector": "button",
       "state": "build-skills"
     },
@@ -1858,7 +1858,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
-      "lastSeen": "2026-07-07T08:11:07.406Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "build-skills"
@@ -1880,7 +1880,7 @@
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:11:07.406Z",
-      "missing": false,
+      "missing": true,
       "selector": "button",
       "state": "build-skills"
     },
@@ -1900,7 +1900,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
-      "lastSeen": "2026-07-07T08:11:07.406Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "build-skills"
@@ -1922,7 +1922,7 @@
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:11:07.406Z",
-      "missing": false,
+      "missing": true,
       "selector": "button",
       "state": "build-skills"
     },
@@ -1942,7 +1942,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
-      "lastSeen": "2026-07-07T08:11:07.406Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "build-skills"
@@ -1964,7 +1964,7 @@
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:11:07.406Z",
-      "missing": false,
+      "missing": true,
       "selector": "button",
       "state": "build-skills"
     },
@@ -1984,7 +1984,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
-      "lastSeen": "2026-07-07T08:11:07.406Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "build-skills"
@@ -2006,7 +2006,7 @@
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.407Z",
       "lastSeen": "2026-07-07T08:11:07.407Z",
-      "missing": false,
+      "missing": true,
       "selector": "button",
       "state": "build-skills"
     },
@@ -2027,7 +2027,7 @@
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.407Z",
       "lastSeen": "2026-07-07T08:11:07.407Z",
-      "missing": false,
+      "missing": true,
       "selector": "button",
       "state": "build-skills"
     },
@@ -2035,7 +2035,7 @@
       "id": "ui/build/txt-button-417",
       "kind": "ui",
       "area": "build",
-      "name": "Enable this skill",
+      "name": "Read the recipe",
       "purpose": "",
       "promise": "",
       "wiring": {
@@ -2047,7 +2047,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.407Z",
-      "lastSeen": "2026-07-07T08:11:07.407Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "build-skills"
@@ -2069,7 +2069,7 @@
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.407Z",
       "lastSeen": "2026-07-07T08:11:07.407Z",
-      "missing": false,
+      "missing": true,
       "selector": "button",
       "state": "build-skills"
     },
@@ -2090,7 +2090,7 @@
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.407Z",
       "lastSeen": "2026-07-07T08:11:07.407Z",
-      "missing": false,
+      "missing": true,
       "selector": "button",
       "state": "build-skills"
     },
@@ -2110,7 +2110,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.407Z",
-      "lastSeen": "2026-07-07T08:11:07.407Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "build-skills"
@@ -2132,7 +2132,7 @@
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.407Z",
       "lastSeen": "2026-07-07T08:11:07.407Z",
-      "missing": false,
+      "missing": true,
       "selector": "button",
       "state": "build-skills"
     },
@@ -2153,7 +2153,7 @@
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.407Z",
       "lastSeen": "2026-07-07T08:11:07.407Z",
-      "missing": false,
+      "missing": true,
       "selector": "button",
       "state": "build-skills"
     },
@@ -2161,7 +2161,7 @@
       "id": "ui/build/txt-button-423",
       "kind": "ui",
       "area": "build",
-      "name": "Enable this skill",
+      "name": "Read the recipe",
       "purpose": "",
       "promise": "",
       "wiring": {
@@ -2173,7 +2173,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.407Z",
-      "lastSeen": "2026-07-07T08:11:07.407Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "build-skills"
@@ -2195,7 +2195,7 @@
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.407Z",
       "lastSeen": "2026-07-07T08:11:07.407Z",
-      "missing": false,
+      "missing": true,
       "selector": "button",
       "state": "build-skills"
     },
@@ -2216,7 +2216,7 @@
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.407Z",
       "lastSeen": "2026-07-07T08:11:07.407Z",
-      "missing": false,
+      "missing": true,
       "selector": "button",
       "state": "build-skills"
     },
@@ -2236,7 +2236,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.407Z",
-      "lastSeen": "2026-07-07T08:11:07.407Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "build-skills"
@@ -2258,7 +2258,7 @@
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.407Z",
       "lastSeen": "2026-07-07T08:11:07.407Z",
-      "missing": false,
+      "missing": true,
       "selector": "button",
       "state": "build-skills"
     },
@@ -2279,7 +2279,7 @@
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.407Z",
       "lastSeen": "2026-07-07T08:11:07.407Z",
-      "missing": false,
+      "missing": true,
       "selector": "button",
       "state": "build-skills"
     },
@@ -2287,7 +2287,7 @@
       "id": "ui/build/txt-button-429",
       "kind": "ui",
       "area": "build",
-      "name": "Enable this skill",
+      "name": "Read the recipe",
       "purpose": "",
       "promise": "",
       "wiring": {
@@ -2299,7 +2299,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.407Z",
-      "lastSeen": "2026-07-07T08:11:07.407Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "build-skills"
@@ -2321,7 +2321,7 @@
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.407Z",
       "lastSeen": "2026-07-07T08:11:07.407Z",
-      "missing": false,
+      "missing": true,
       "selector": "button",
       "state": "build-skills"
     },
@@ -2342,7 +2342,7 @@
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.407Z",
       "lastSeen": "2026-07-07T08:11:07.407Z",
-      "missing": false,
+      "missing": true,
       "selector": "button",
       "state": "build-skills"
     },
@@ -2362,7 +2362,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.407Z",
-      "lastSeen": "2026-07-07T08:11:07.407Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "build-skills"
@@ -2384,7 +2384,7 @@
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.407Z",
       "lastSeen": "2026-07-07T08:11:07.407Z",
-      "missing": false,
+      "missing": true,
       "selector": "button",
       "state": "build-skills"
     },
@@ -2405,7 +2405,7 @@
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.407Z",
       "lastSeen": "2026-07-07T08:11:07.407Z",
-      "missing": false,
+      "missing": true,
       "selector": "button",
       "state": "build-skills"
     },
@@ -2413,7 +2413,7 @@
       "id": "ui/build/txt-button-435",
       "kind": "ui",
       "area": "build",
-      "name": "Enable this skill",
+      "name": "Read the recipe",
       "purpose": "",
       "promise": "",
       "wiring": {
@@ -2425,7 +2425,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.407Z",
-      "lastSeen": "2026-07-07T08:11:07.407Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "build-skills"
@@ -2447,7 +2447,7 @@
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.407Z",
       "lastSeen": "2026-07-07T08:11:07.407Z",
-      "missing": false,
+      "missing": true,
       "selector": "button",
       "state": "build-skills"
     },
@@ -2468,7 +2468,7 @@
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.407Z",
       "lastSeen": "2026-07-07T08:11:07.407Z",
-      "missing": false,
+      "missing": true,
       "selector": "button",
       "state": "build-skills"
     },
@@ -2489,7 +2489,7 @@
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.407Z",
       "lastSeen": "2026-07-07T08:11:07.407Z",
-      "missing": false,
+      "missing": true,
       "selector": "button",
       "state": "build-skills"
     },
@@ -2497,7 +2497,7 @@
       "id": "ui/build/txt-button-439",
       "kind": "ui",
       "area": "build",
-      "name": "Enable this skill",
+      "name": "Read the recipe",
       "purpose": "",
       "promise": "",
       "wiring": {
@@ -2509,7 +2509,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.407Z",
-      "lastSeen": "2026-07-07T08:11:07.407Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "build-skills"
@@ -2531,7 +2531,7 @@
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.407Z",
       "lastSeen": "2026-07-07T08:11:07.407Z",
-      "missing": false,
+      "missing": true,
       "selector": "button",
       "state": "build-skills"
     },
@@ -2552,7 +2552,7 @@
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.407Z",
       "lastSeen": "2026-07-07T08:11:07.407Z",
-      "missing": false,
+      "missing": true,
       "selector": "button",
       "state": "build-skills"
     },
@@ -2572,7 +2572,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.407Z",
-      "lastSeen": "2026-07-07T08:11:07.407Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "build-skills"
@@ -2594,7 +2594,7 @@
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.407Z",
       "lastSeen": "2026-07-07T08:11:07.407Z",
-      "missing": false,
+      "missing": true,
       "selector": "button",
       "state": "build-skills"
     },
@@ -2615,7 +2615,7 @@
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.407Z",
       "lastSeen": "2026-07-07T08:11:07.407Z",
-      "missing": false,
+      "missing": true,
       "selector": "button",
       "state": "build-skills"
     },
@@ -2623,7 +2623,7 @@
       "id": "ui/build/txt-button-445",
       "kind": "ui",
       "area": "build",
-      "name": "Enable this skill",
+      "name": "Read the recipe",
       "purpose": "",
       "promise": "",
       "wiring": {
@@ -2635,7 +2635,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.407Z",
-      "lastSeen": "2026-07-07T08:11:07.407Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "build-skills"
@@ -2657,7 +2657,7 @@
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.407Z",
       "lastSeen": "2026-07-07T08:11:07.407Z",
-      "missing": false,
+      "missing": true,
       "selector": "button",
       "state": "build-skills"
     },
@@ -2678,7 +2678,7 @@
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.407Z",
       "lastSeen": "2026-07-07T08:11:07.407Z",
-      "missing": false,
+      "missing": true,
       "selector": "button",
       "state": "build-skills"
     },
@@ -2698,7 +2698,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.407Z",
-      "lastSeen": "2026-07-07T08:11:07.407Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "build-skills"
@@ -2720,7 +2720,7 @@
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.407Z",
       "lastSeen": "2026-07-07T08:11:07.407Z",
-      "missing": false,
+      "missing": true,
       "selector": "button",
       "state": "build-skills"
     },
@@ -2741,7 +2741,7 @@
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.407Z",
       "lastSeen": "2026-07-07T08:11:07.407Z",
-      "missing": false,
+      "missing": true,
       "selector": "button",
       "state": "build-skills"
     },
@@ -2749,7 +2749,7 @@
       "id": "ui/build/txt-button-451",
       "kind": "ui",
       "area": "build",
-      "name": "Disable this skill",
+      "name": "Read the recipe",
       "purpose": "",
       "promise": "",
       "wiring": {
@@ -2761,7 +2761,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.407Z",
-      "lastSeen": "2026-07-07T08:11:07.407Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "build-skills"
@@ -2783,7 +2783,7 @@
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.407Z",
       "lastSeen": "2026-07-07T08:11:07.407Z",
-      "missing": false,
+      "missing": true,
       "selector": "button",
       "state": "build-skills"
     },
@@ -2804,7 +2804,7 @@
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.407Z",
       "lastSeen": "2026-07-07T08:11:07.407Z",
-      "missing": false,
+      "missing": true,
       "selector": "button",
       "state": "build-skills"
     },
@@ -2824,7 +2824,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.407Z",
-      "lastSeen": "2026-07-07T08:11:07.407Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "build-skills"
@@ -2846,7 +2846,7 @@
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.407Z",
       "lastSeen": "2026-07-07T08:11:07.407Z",
-      "missing": false,
+      "missing": true,
       "selector": "button",
       "state": "build-skills"
     },
@@ -2867,7 +2867,7 @@
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.407Z",
       "lastSeen": "2026-07-07T08:11:07.407Z",
-      "missing": false,
+      "missing": true,
       "selector": "button",
       "state": "build-skills"
     },
@@ -2875,7 +2875,7 @@
       "id": "ui/build/txt-button-457",
       "kind": "ui",
       "area": "build",
-      "name": "Enable this skill",
+      "name": "Read the recipe",
       "purpose": "",
       "promise": "",
       "wiring": {
@@ -2887,7 +2887,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.407Z",
-      "lastSeen": "2026-07-07T08:11:07.407Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "build-skills"
@@ -2909,7 +2909,7 @@
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.407Z",
       "lastSeen": "2026-07-07T08:11:07.407Z",
-      "missing": false,
+      "missing": true,
       "selector": "button",
       "state": "build-skills"
     },
@@ -2930,7 +2930,7 @@
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.407Z",
       "lastSeen": "2026-07-07T08:11:07.407Z",
-      "missing": false,
+      "missing": true,
       "selector": "button",
       "state": "build-skills"
     },
@@ -2951,7 +2951,7 @@
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.407Z",
       "lastSeen": "2026-07-07T08:11:07.407Z",
-      "missing": false,
+      "missing": true,
       "selector": "button",
       "state": "build-skills"
     },
@@ -2959,7 +2959,7 @@
       "id": "ui/build/txt-button-461",
       "kind": "ui",
       "area": "build",
-      "name": "Enable this skill",
+      "name": "Read the recipe",
       "purpose": "",
       "promise": "",
       "wiring": {
@@ -2971,7 +2971,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.407Z",
-      "lastSeen": "2026-07-07T08:11:07.407Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "build-skills"
@@ -2993,7 +2993,7 @@
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.407Z",
       "lastSeen": "2026-07-07T08:11:07.407Z",
-      "missing": false,
+      "missing": true,
       "selector": "button",
       "state": "build-skills"
     },
@@ -3014,7 +3014,7 @@
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.407Z",
       "lastSeen": "2026-07-07T08:11:07.407Z",
-      "missing": false,
+      "missing": true,
       "selector": "button",
       "state": "build-skills"
     },
@@ -3034,7 +3034,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.407Z",
-      "lastSeen": "2026-07-07T08:11:07.407Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "build-skills"
@@ -3056,7 +3056,7 @@
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.407Z",
       "lastSeen": "2026-07-07T08:11:07.407Z",
-      "missing": false,
+      "missing": true,
       "selector": "button",
       "state": "build-skills"
     },
@@ -3077,7 +3077,7 @@
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.407Z",
       "lastSeen": "2026-07-07T08:11:07.407Z",
-      "missing": false,
+      "missing": true,
       "selector": "button",
       "state": "build-skills"
     },
@@ -3085,7 +3085,7 @@
       "id": "ui/build/txt-button-467",
       "kind": "ui",
       "area": "build",
-      "name": "Enable this skill",
+      "name": "Read the recipe",
       "purpose": "",
       "promise": "",
       "wiring": {
@@ -3097,7 +3097,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.407Z",
-      "lastSeen": "2026-07-07T08:11:07.407Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "build-skills"
@@ -3119,7 +3119,7 @@
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.407Z",
       "lastSeen": "2026-07-07T08:11:07.407Z",
-      "missing": false,
+      "missing": true,
       "selector": "button",
       "state": "build-skills"
     },
@@ -3140,7 +3140,7 @@
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.407Z",
       "lastSeen": "2026-07-07T08:11:07.407Z",
-      "missing": false,
+      "missing": true,
       "selector": "button",
       "state": "build-skills"
     },
@@ -3160,7 +3160,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.407Z",
-      "lastSeen": "2026-07-07T08:11:07.407Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "build-skills"
@@ -3182,7 +3182,7 @@
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.407Z",
       "lastSeen": "2026-07-07T08:11:07.407Z",
-      "missing": false,
+      "missing": true,
       "selector": "button",
       "state": "build-skills"
     },
@@ -3203,7 +3203,7 @@
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.407Z",
       "lastSeen": "2026-07-07T08:11:07.407Z",
-      "missing": false,
+      "missing": true,
       "selector": "button",
       "state": "build-skills"
     },
@@ -3211,7 +3211,7 @@
       "id": "ui/build/txt-button-473",
       "kind": "ui",
       "area": "build",
-      "name": "Enable this skill",
+      "name": "Read the recipe",
       "purpose": "",
       "promise": "",
       "wiring": {
@@ -3223,7 +3223,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.407Z",
-      "lastSeen": "2026-07-07T08:11:07.407Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "build-skills"
@@ -3245,7 +3245,7 @@
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
       "lastSeen": "2026-07-07T08:11:07.408Z",
-      "missing": false,
+      "missing": true,
       "selector": "button",
       "state": "build-skills"
     },
@@ -3266,7 +3266,7 @@
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
       "lastSeen": "2026-07-07T08:11:07.408Z",
-      "missing": false,
+      "missing": true,
       "selector": "button",
       "state": "build-skills"
     },
@@ -3287,7 +3287,7 @@
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
       "lastSeen": "2026-07-07T08:11:07.408Z",
-      "missing": false,
+      "missing": true,
       "selector": "button",
       "state": "build-skills"
     },
@@ -3295,7 +3295,7 @@
       "id": "ui/build/txt-button-477",
       "kind": "ui",
       "area": "build",
-      "name": "Disable this skill",
+      "name": "Read the recipe",
       "purpose": "",
       "promise": "",
       "wiring": {
@@ -3307,7 +3307,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "build-skills"
@@ -3329,7 +3329,7 @@
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
       "lastSeen": "2026-07-07T08:11:07.408Z",
-      "missing": false,
+      "missing": true,
       "selector": "button",
       "state": "build-skills"
     },
@@ -3350,7 +3350,7 @@
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
       "lastSeen": "2026-07-07T08:11:07.408Z",
-      "missing": false,
+      "missing": true,
       "selector": "button",
       "state": "build-skills"
     },
@@ -3371,6 +3371,279 @@
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
       "lastSeen": "2026-07-07T08:11:07.408Z",
+      "missing": true,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-481",
+      "kind": "ui",
+      "area": "build",
+      "name": "Read the recipe",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-484",
+      "kind": "ui",
+      "area": "build",
+      "name": "Read the recipe",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-487",
+      "kind": "ui",
+      "area": "build",
+      "name": "Read the recipe",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-491",
+      "kind": "ui",
+      "area": "build",
+      "name": "Read the recipe",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-494",
+      "kind": "ui",
+      "area": "build",
+      "name": "Read the recipe",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-497",
+      "kind": "ui",
+      "area": "build",
+      "name": "Read the recipe",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-500",
+      "kind": "ui",
+      "area": "build",
+      "name": "Read the recipe",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-504",
+      "kind": "ui",
+      "area": "build",
+      "name": "Read the recipe",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-508",
+      "kind": "ui",
+      "area": "build",
+      "name": "Read the recipe",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-512",
+      "kind": "ui",
+      "area": "build",
+      "name": "Read the recipe",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-516",
+      "kind": "ui",
+      "area": "build",
+      "name": "Read the recipe",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-520",
+      "kind": "ui",
+      "area": "build",
+      "name": "Read the recipe",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-523",
+      "kind": "ui",
+      "area": "build",
+      "name": "Read the recipe",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
       "missing": false,
       "selector": "button",
       "state": "build-skills"
@@ -3391,7 +3664,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors"
@@ -3412,7 +3685,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors"
@@ -3433,7 +3706,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors"
@@ -3454,7 +3727,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors"
@@ -3475,7 +3748,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors"
@@ -3496,7 +3769,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors"
@@ -3517,7 +3790,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors"
@@ -3538,7 +3811,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors"
@@ -3559,7 +3832,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors"
@@ -3580,7 +3853,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors"
@@ -3601,7 +3874,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors"
@@ -3622,7 +3895,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors"
@@ -3643,7 +3916,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors"
@@ -3664,7 +3937,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors"
@@ -3685,7 +3958,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors"
@@ -3706,7 +3979,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors"
@@ -3727,7 +4000,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors"
@@ -3748,7 +4021,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors"
@@ -3769,7 +4042,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors"
@@ -3790,7 +4063,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
-      "lastSeen": "2026-07-07T08:11:07.406Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "build-station"
@@ -3811,7 +4084,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
-      "lastSeen": "2026-07-07T08:11:07.406Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "build-station"
@@ -3832,7 +4105,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
-      "lastSeen": "2026-07-07T08:11:07.406Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "build-manual"
@@ -3853,7 +4126,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
-      "lastSeen": "2026-07-07T08:11:07.406Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "build-station"
@@ -3874,7 +4147,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
-      "lastSeen": "2026-07-07T08:11:07.406Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "build-manual"
@@ -3895,7 +4168,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
-      "lastSeen": "2026-07-07T08:11:07.406Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "build-manual"
@@ -3916,7 +4189,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
-      "lastSeen": "2026-07-07T08:11:07.406Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "build-station"
@@ -3937,7 +4210,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
-      "lastSeen": "2026-07-07T08:11:07.406Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "build-station"
@@ -3958,7 +4231,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors"
@@ -3979,7 +4252,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
-      "lastSeen": "2026-07-07T08:11:07.406Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "build-station"
@@ -4000,10 +4273,808 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
-      "lastSeen": "2026-07-07T08:11:07.406Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "build-station"
+    },
+    {
+      "id": "ui/build/txt-button-off-415",
+      "kind": "ui",
+      "area": "build",
+      "name": "Turn ON this skill station-wide",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-off-418",
+      "kind": "ui",
+      "area": "build",
+      "name": "Turn ON this skill station-wide",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-off-421",
+      "kind": "ui",
+      "area": "build",
+      "name": "Turn ON this skill station-wide",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-off-424",
+      "kind": "ui",
+      "area": "build",
+      "name": "Turn ON this skill station-wide",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-off-427",
+      "kind": "ui",
+      "area": "build",
+      "name": "Turn ON this skill station-wide",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-off-430",
+      "kind": "ui",
+      "area": "build",
+      "name": "Turn ON this skill station-wide",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-off-433",
+      "kind": "ui",
+      "area": "build",
+      "name": "Turn ON this skill station-wide",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-off-436",
+      "kind": "ui",
+      "area": "build",
+      "name": "Turn ON this skill station-wide",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-off-440",
+      "kind": "ui",
+      "area": "build",
+      "name": "Turn ON this skill station-wide",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-off-443",
+      "kind": "ui",
+      "area": "build",
+      "name": "Turn ON this skill station-wide",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-off-446",
+      "kind": "ui",
+      "area": "build",
+      "name": "Turn ON this skill station-wide",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-off-449",
+      "kind": "ui",
+      "area": "build",
+      "name": "Turn ON this skill station-wide",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-off-452",
+      "kind": "ui",
+      "area": "build",
+      "name": "Turn ON this skill station-wide",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-off-455",
+      "kind": "ui",
+      "area": "build",
+      "name": "Turn ON this skill station-wide",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-off-458",
+      "kind": "ui",
+      "area": "build",
+      "name": "Turn ON this skill station-wide",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-off-462",
+      "kind": "ui",
+      "area": "build",
+      "name": "Turn ON this skill station-wide",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-off-465",
+      "kind": "ui",
+      "area": "build",
+      "name": "Turn ON this skill station-wide",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-off-468",
+      "kind": "ui",
+      "area": "build",
+      "name": "Turn ON this skill station-wide",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-off-471",
+      "kind": "ui",
+      "area": "build",
+      "name": "Turn ON this skill station-wide",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-off-474",
+      "kind": "ui",
+      "area": "build",
+      "name": "Turn ON this skill station-wide",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-off-478",
+      "kind": "ui",
+      "area": "build",
+      "name": "Turn ON this skill station-wide",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-off-482",
+      "kind": "ui",
+      "area": "build",
+      "name": "Turn ON this skill station-wide",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-off-485",
+      "kind": "ui",
+      "area": "build",
+      "name": "Turn ON this skill station-wide",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-off-488",
+      "kind": "ui",
+      "area": "build",
+      "name": "Turn ON this skill station-wide",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-off-492",
+      "kind": "ui",
+      "area": "build",
+      "name": "Turn ON this skill station-wide",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-off-495",
+      "kind": "ui",
+      "area": "build",
+      "name": "Turn ON this skill station-wide",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-off-498",
+      "kind": "ui",
+      "area": "build",
+      "name": "Turn ON this skill station-wide",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-off-501",
+      "kind": "ui",
+      "area": "build",
+      "name": "Turn ON this skill station-wide",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-off-505",
+      "kind": "ui",
+      "area": "build",
+      "name": "Turn ON this skill station-wide",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-off-509",
+      "kind": "ui",
+      "area": "build",
+      "name": "Turn ON this skill station-wide",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-off-513",
+      "kind": "ui",
+      "area": "build",
+      "name": "Turn ON this skill station-wide",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-off-517",
+      "kind": "ui",
+      "area": "build",
+      "name": "Turn ON this skill station-wide",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-off-521",
+      "kind": "ui",
+      "area": "build",
+      "name": "Turn ON this skill station-wide",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-on-405",
+      "kind": "ui",
+      "area": "build",
+      "name": "Turn OFF this skill station-wide",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-on-407",
+      "kind": "ui",
+      "area": "build",
+      "name": "Turn OFF this skill station-wide",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-on-409",
+      "kind": "ui",
+      "area": "build",
+      "name": "Turn OFF this skill station-wide",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-on-411",
+      "kind": "ui",
+      "area": "build",
+      "name": "Turn OFF this skill station-wide",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-on-413",
+      "kind": "ui",
+      "area": "build",
+      "name": "Turn OFF this skill station-wide",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
     },
     {
       "id": "ui/build/txt-button-paint-3-407",
@@ -4021,10 +5092,913 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
-      "lastSeen": "2026-07-07T08:11:07.406Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "build-station"
+    },
+    {
+      "id": "ui/build/txt-button-place-cabinet-416",
+      "kind": "ui",
+      "area": "build",
+      "name": "Open REFIT to place a CABINET",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-place-cabinet-419",
+      "kind": "ui",
+      "area": "build",
+      "name": "Open REFIT to place a CABINET",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-place-cabinet-422",
+      "kind": "ui",
+      "area": "build",
+      "name": "Open REFIT to place a CABINET",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-place-cabinet-428",
+      "kind": "ui",
+      "area": "build",
+      "name": "Open REFIT to place a CABINET",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-place-cabinet-431",
+      "kind": "ui",
+      "area": "build",
+      "name": "Open REFIT to place a CABINET",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-place-cabinet-434",
+      "kind": "ui",
+      "area": "build",
+      "name": "Open REFIT to place a CABINET",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-place-cabinet-437",
+      "kind": "ui",
+      "area": "build",
+      "name": "Open REFIT to place a CABINET",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-place-cabinet-444",
+      "kind": "ui",
+      "area": "build",
+      "name": "Open REFIT to place a CABINET",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-place-cabinet-459",
+      "kind": "ui",
+      "area": "build",
+      "name": "Open REFIT to place a CABINET",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-place-cabinet-463",
+      "kind": "ui",
+      "area": "build",
+      "name": "Open REFIT to place a CABINET",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-place-cabinet-475",
+      "kind": "ui",
+      "area": "build",
+      "name": "Open REFIT to place a CABINET",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-place-cabinet-480",
+      "kind": "ui",
+      "area": "build",
+      "name": "Open REFIT to place a CABINET",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-place-cabinet-490",
+      "kind": "ui",
+      "area": "build",
+      "name": "Open REFIT to place a CABINET",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-place-cabinet-503",
+      "kind": "ui",
+      "area": "build",
+      "name": "Open REFIT to place a CABINET",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-place-cabinet-511",
+      "kind": "ui",
+      "area": "build",
+      "name": "Open REFIT to place a CABINET",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-place-cabinet-515",
+      "kind": "ui",
+      "area": "build",
+      "name": "Open REFIT to place a CABINET",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-place-cabinet-519",
+      "kind": "ui",
+      "area": "build",
+      "name": "Open REFIT to place a CABINET",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-place-cabinet-522",
+      "kind": "ui",
+      "area": "build",
+      "name": "Open REFIT to place a CABINET",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-place-dish-441",
+      "kind": "ui",
+      "area": "build",
+      "name": "Open REFIT to place a DISH",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-place-dish-479",
+      "kind": "ui",
+      "area": "build",
+      "name": "Open REFIT to place a DISH",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-place-dish-486",
+      "kind": "ui",
+      "area": "build",
+      "name": "Open REFIT to place a DISH",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-place-dish-489",
+      "kind": "ui",
+      "area": "build",
+      "name": "Open REFIT to place a DISH",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-place-dish-496",
+      "kind": "ui",
+      "area": "build",
+      "name": "Open REFIT to place a DISH",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-place-dish-499",
+      "kind": "ui",
+      "area": "build",
+      "name": "Open REFIT to place a DISH",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-place-dish-502",
+      "kind": "ui",
+      "area": "build",
+      "name": "Open REFIT to place a DISH",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-place-dish-507",
+      "kind": "ui",
+      "area": "build",
+      "name": "Open REFIT to place a DISH",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-place-dish-510",
+      "kind": "ui",
+      "area": "build",
+      "name": "Open REFIT to place a DISH",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-place-dish-514",
+      "kind": "ui",
+      "area": "build",
+      "name": "Open REFIT to place a DISH",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-place-dish-518",
+      "kind": "ui",
+      "area": "build",
+      "name": "Open REFIT to place a DISH",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-place-studio-425",
+      "kind": "ui",
+      "area": "build",
+      "name": "Open REFIT to place a STUDIO",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-place-workbench-438",
+      "kind": "ui",
+      "area": "build",
+      "name": "Open REFIT to place a WORKBENCH",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-place-workbench-447",
+      "kind": "ui",
+      "area": "build",
+      "name": "Open REFIT to place a WORKBENCH",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-place-workbench-450",
+      "kind": "ui",
+      "area": "build",
+      "name": "Open REFIT to place a WORKBENCH",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-place-workbench-453",
+      "kind": "ui",
+      "area": "build",
+      "name": "Open REFIT to place a WORKBENCH",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-place-workbench-456",
+      "kind": "ui",
+      "area": "build",
+      "name": "Open REFIT to place a WORKBENCH",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-place-workbench-460",
+      "kind": "ui",
+      "area": "build",
+      "name": "Open REFIT to place a WORKBENCH",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-place-workbench-466",
+      "kind": "ui",
+      "area": "build",
+      "name": "Open REFIT to place a WORKBENCH",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-place-workbench-469",
+      "kind": "ui",
+      "area": "build",
+      "name": "Open REFIT to place a WORKBENCH",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-place-workbench-472",
+      "kind": "ui",
+      "area": "build",
+      "name": "Open REFIT to place a WORKBENCH",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-place-workbench-476",
+      "kind": "ui",
+      "area": "build",
+      "name": "Open REFIT to place a WORKBENCH",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-place-workbench-483",
+      "kind": "ui",
+      "area": "build",
+      "name": "Open REFIT to place a WORKBENCH",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-place-workbench-493",
+      "kind": "ui",
+      "area": "build",
+      "name": "Open REFIT to place a WORKBENCH",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
+    },
+    {
+      "id": "ui/build/txt-button-place-workbench-506",
+      "kind": "ui",
+      "area": "build",
+      "name": "Open REFIT to place a WORKBENCH",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-07T08:25:37.301Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-skills"
     },
     {
       "id": "ui/build/txt-button-prop-6-410",
@@ -4042,7 +6016,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
-      "lastSeen": "2026-07-07T08:11:07.406Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "build-station"
@@ -4063,7 +6037,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
-      "lastSeen": "2026-07-07T08:11:07.406Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "build-station"
@@ -4084,7 +6058,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
-      "lastSeen": "2026-07-07T08:11:07.406Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "build-station"
@@ -4105,7 +6079,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
-      "lastSeen": "2026-07-07T08:11:07.406Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "build-station"
@@ -4126,7 +6100,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors"
@@ -4147,7 +6121,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors"
@@ -4168,7 +6142,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors"
@@ -4189,7 +6163,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors"
@@ -4210,7 +6184,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors"
@@ -4231,7 +6205,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors"
@@ -4252,7 +6226,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors"
@@ -4273,7 +6247,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors"
@@ -4294,7 +6268,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors"
@@ -4315,7 +6289,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors"
@@ -4336,7 +6310,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors"
@@ -4357,7 +6331,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors"
@@ -4378,7 +6352,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors"
@@ -4399,7 +6373,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors"
@@ -4420,7 +6394,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors"
@@ -4441,7 +6415,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors"
@@ -4462,7 +6436,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors"
@@ -4483,7 +6457,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors"
@@ -4504,7 +6478,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors"
@@ -4525,7 +6499,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
-      "lastSeen": "2026-07-07T08:11:07.406Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "build-station"
@@ -4546,7 +6520,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
-      "lastSeen": "2026-07-07T08:11:07.406Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "build-manual"
@@ -4567,7 +6541,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
-      "lastSeen": "2026-07-07T08:11:07.406Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "build-manual"
@@ -4588,7 +6562,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
-      "lastSeen": "2026-07-07T08:11:07.406Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "build-manual"
@@ -4609,7 +6583,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "input",
       "state": "build-connectors"
@@ -4630,7 +6604,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "input",
       "state": "build-connectors"
@@ -4651,7 +6625,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "input",
       "state": "build-connectors"
@@ -4672,7 +6646,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "input",
       "state": "build-connectors"
@@ -4693,7 +6667,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "input",
       "state": "build-connectors"
@@ -4714,7 +6688,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "input",
       "state": "build-connectors"
@@ -4735,7 +6709,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "input",
       "state": "build-connectors"
@@ -4756,7 +6730,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "input",
       "state": "build-connectors"
@@ -4777,7 +6751,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "input",
       "state": "build-connectors"
@@ -4798,7 +6772,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "input",
       "state": "build-connectors"

@@ -16,13 +16,13 @@ own runner (Q1 Guardian, Q2 Beginner Run, Q4 Janitor) or the Overseer digest; th
 
 | Crew member | Question it answers | Last run | Result | Open findings |
 | --- | --- | --- | --- | --- |
-| Green Guardian | Is trunk green and does the app still boot + look right? | 2026-07-07 08:06Z @ 070a1780 | GREEN | 1 |
+| Green Guardian | Is trunk green and does the app still boot + look right? | 2026-07-07 08:26Z @ 00538abd | RED | 3 |
 | Beginner Run | Can a brand-new user reach first value, unassisted? | 2026-07-01T23:30:22.312Z · ui-only · 84014ms | PASS | 0 |
 | Truth Auditor | Does the UI show what actually happened? | 2026-07-01 23:28Z (in Guardian cycle) | GREEN | 0 |
 | Visual Auditor | Is the rendered game coherent? (needs eyes) | — (local /loop; not headless) | — | 0 |
 | Overseer | What broke today, what needs Andrew? | 2026-07-01 (digest rendered) | 0 P0 · 106 P2 | — |
 | Janitor | What's rotting in the workshop? | 2026-07-01 | 106 findings | 106 |
-| Cartographer | Is every surface element mapped and perfected? | 2026-07-07 08:18Z @ 0e41d845 | PERFECTED-fresh 0 / total 1245 (0%) | 1245 |
+| Cartographer | Is every surface element mapped and perfected? | 2026-07-07 08:26Z @ 00538abd | PERFECTED-fresh 0 / total 1339 (0%) | 1288 |
 
 _The rows above are the Q5 **movie test** (2026-07-01): one real cycle of every headless
 crew member against trunk `ef47f9d`. Guardian ran all four gates GREEN (Truth Auditor is the

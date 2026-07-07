@@ -18,7 +18,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false
     },
     {
@@ -37,7 +37,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false
     },
     {
@@ -56,7 +56,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false
     },
     {
@@ -75,7 +75,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#ag-del-btn",
       "state": "crew-agents"
@@ -96,7 +96,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#ag-model-clear",
       "state": "crew-agents"
@@ -117,7 +117,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#ag-model-in",
       "state": "crew-agents"
@@ -138,7 +138,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#ag-model-pick-effort",
       "state": "crew-agents"
@@ -159,7 +159,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#ag-model-pick-model",
       "state": "crew-agents"
@@ -180,7 +180,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#ag-model-save",
       "state": "crew-agents"
@@ -201,7 +201,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#ag-prov-in",
       "state": "crew-agents"
@@ -222,7 +222,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#ag-rename-btn",
       "state": "crew-agents"
@@ -243,7 +243,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#ag-workshop-on",
       "state": "crew-agents"
@@ -264,7 +264,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button[aria-label=\"Alien\"]",
       "state": "crew-agents"
@@ -285,7 +285,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button[aria-label=\"Blank\"]",
       "state": "crew-agents"
@@ -306,7 +306,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button[aria-label=\"Blank Amber\"]",
       "state": "crew-agents"
@@ -327,7 +327,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button[aria-label=\"Blank Blue\"]",
       "state": "crew-agents"
@@ -348,7 +348,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button[aria-label=\"Blank Green\"]",
       "state": "crew-agents"
@@ -369,7 +369,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button[aria-label=\"Blank Red\"]",
       "state": "crew-agents"
@@ -390,7 +390,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button[aria-label=\"build a custom class\"]",
       "state": "crew-recruit"
@@ -411,7 +411,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button[aria-label=\"Capybara\"]",
       "state": "crew-agents"
@@ -432,7 +432,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button[aria-label=\"Close AGENT DOSSIER\"]",
       "state": "crew-agents"
@@ -453,7 +453,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button[aria-label=\"Close COMMANDER DOSSIER\"]",
       "state": "crew-commander"
@@ -474,7 +474,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button[aria-label=\"Close recruitment bay\"]",
       "state": "crew-recruit"
@@ -495,7 +495,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button[aria-label=\"Crewmate\"]",
       "state": "crew-agents"
@@ -516,7 +516,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button[aria-label=\"Heisenberg\"]",
       "state": "crew-agents"
@@ -537,7 +537,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button[aria-label=\"Minimize AGENT DOSSIER\"]",
       "state": "crew-agents"
@@ -558,7 +558,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button[aria-label=\"Minimize COMMANDER DOSSIER\"]",
       "state": "crew-commander"
@@ -579,7 +579,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button[aria-label=\"Pepe\"]",
       "state": "crew-agents"
@@ -600,7 +600,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button[aria-label=\"Robot\"]",
       "state": "crew-agents"
@@ -621,7 +621,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "input[aria-label=\"Search agents\"]",
       "state": "crew-agents"
@@ -642,7 +642,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button[aria-label=\"Skeleton\"]",
       "state": "crew-agents"
@@ -663,7 +663,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button[aria-label=\"Steve\"]",
       "state": "crew-agents"
@@ -684,7 +684,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button[aria-label=\"Teddy Bear\"]",
       "state": "crew-agents"
@@ -705,7 +705,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button[aria-label=\"Vault Boy\"]",
       "state": "crew-agents"
@@ -726,7 +726,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#con-tab-agents-brief",
       "state": "crew-agents"
@@ -747,7 +747,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#con-tab-agents-config",
       "state": "crew-agents"
@@ -768,7 +768,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#con-tab-agents-growth",
       "state": "crew-agents"
@@ -789,7 +789,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#con-tab-agents-memory",
       "state": "crew-agents"
@@ -810,7 +810,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#con-tab-agents-skills",
       "state": "crew-agents"
@@ -831,7 +831,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#mc-cooldown",
       "state": "crew-agents"
@@ -852,7 +852,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#mc-reflect-on",
       "state": "crew-agents"
@@ -873,7 +873,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#mc-reflect-save",
       "state": "crew-agents"
@@ -894,7 +894,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#mkt-model-effort",
       "state": "crew-recruit"
@@ -915,7 +915,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#mkt-model-model",
       "state": "crew-recruit"
@@ -936,7 +936,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#mkt-q",
       "state": "crew-recruit"
@@ -957,7 +957,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "crew-recruit"
@@ -978,7 +978,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "crew-recruit"
@@ -999,7 +999,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "crew-recruit"
@@ -1020,7 +1020,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "crew-recruit"
@@ -1041,7 +1041,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "crew-recruit"
@@ -1062,7 +1062,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "crew-recruit"
@@ -1083,7 +1083,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "crew-recruit"
@@ -1104,7 +1104,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "crew-recruit"
@@ -1125,7 +1125,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "crew-recruit"
@@ -1146,7 +1146,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "crew-recruit"
@@ -1167,7 +1167,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "crew-recruit"
@@ -1188,7 +1188,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "crew-recruit"
@@ -1209,7 +1209,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "crew-recruit"
@@ -1230,7 +1230,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "crew-recruit"
@@ -1251,7 +1251,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "crew-recruit"
@@ -1272,7 +1272,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "crew-recruit"
@@ -1293,7 +1293,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "crew-commander"
@@ -1314,7 +1314,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "crew-commander"
@@ -1335,7 +1335,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "crew-commander"
@@ -1356,7 +1356,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "crew-commander"
@@ -1377,7 +1377,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "crew-commander"
@@ -1398,7 +1398,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "crew-commander"
@@ -1419,7 +1419,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "crew-commander"
@@ -1440,7 +1440,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "crew-recruit"
@@ -1461,7 +1461,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "crew-recruit"
@@ -1482,7 +1482,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "crew-recruit"
@@ -1503,7 +1503,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "crew-recruit"
@@ -1524,7 +1524,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "crew-recruit"
@@ -1545,7 +1545,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "crew-recruit"
@@ -1566,7 +1566,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "crew-recruit"
@@ -1587,7 +1587,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "crew-recruit"
@@ -1608,7 +1608,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "crew-recruit"
@@ -1629,7 +1629,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "crew-recruit"
@@ -1650,7 +1650,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "crew-agents"
@@ -1671,7 +1671,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "crew-agents"
@@ -1692,7 +1692,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.401Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "crew-agents"
@@ -1713,7 +1713,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "crew-agents"
@@ -1734,7 +1734,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "crew-commander"
@@ -1755,7 +1755,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "crew-commander"
@@ -1776,7 +1776,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "crew-recruit"
@@ -1797,7 +1797,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "crew-commander"
@@ -1818,7 +1818,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "crew-commander"
@@ -1839,7 +1839,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "crew-commander"
@@ -1860,7 +1860,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "crew-recruit"
@@ -1881,7 +1881,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "crew-recruit"
@@ -1902,7 +1902,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "crew-commander"
@@ -1923,7 +1923,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "crew-recruit"
@@ -1944,7 +1944,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "crew-recruit"
@@ -1965,7 +1965,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "crew-recruit"
@@ -1986,7 +1986,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "crew-recruit"
@@ -2007,7 +2007,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "crew-commander"
@@ -2028,7 +2028,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "crew-commander"
@@ -2049,7 +2049,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "crew-commander"
@@ -2070,7 +2070,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "crew-recruit"
@@ -2091,7 +2091,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "crew-recruit"
@@ -2112,7 +2112,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "crew-recruit"
@@ -2133,7 +2133,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "crew-recruit"
@@ -2154,7 +2154,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "crew-recruit"
@@ -2175,7 +2175,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "crew-recruit"
@@ -2196,7 +2196,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "crew-recruit"
@@ -2217,7 +2217,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "crew-recruit"
@@ -2238,7 +2238,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "crew-recruit"
@@ -2259,7 +2259,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "span",
       "state": "crew-agents"
@@ -2280,7 +2280,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "summary",
       "state": "crew-agents"

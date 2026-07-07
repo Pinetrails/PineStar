@@ -18,7 +18,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false
     },
     {
@@ -37,7 +37,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false
     },
     {
@@ -56,7 +56,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false
     },
     {
@@ -75,7 +75,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false
     },
     {
@@ -94,7 +94,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:18:27.834Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false
     },
     {
@@ -113,7 +113,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
-      "lastSeen": "2026-07-07T08:11:07.411Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#adv-consentTimeoutMs",
       "state": "sys-settings"
@@ -134,7 +134,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
-      "lastSeen": "2026-07-07T08:11:07.411Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#adv-cronTickMs",
       "state": "sys-settings"
@@ -155,7 +155,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
-      "lastSeen": "2026-07-07T08:11:07.411Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#adv-maxConcurrentAgents",
       "state": "sys-settings"
@@ -176,7 +176,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
-      "lastSeen": "2026-07-07T08:11:07.411Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#adv-maxIters",
       "state": "sys-settings"
@@ -197,7 +197,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.412Z",
-      "lastSeen": "2026-07-07T08:11:07.412Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#adv-reset",
       "state": "sys-settings"
@@ -218,7 +218,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.412Z",
-      "lastSeen": "2026-07-07T08:11:07.412Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#adv-save",
       "state": "sys-settings"
@@ -239,7 +239,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.412Z",
-      "lastSeen": "2026-07-07T08:11:07.412Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button[aria-label=\"Close CHANNELS\"]",
       "state": "sys-messaging"
@@ -260,7 +260,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.412Z",
-      "lastSeen": "2026-07-07T08:11:07.412Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button[aria-label=\"Close LOGBOOK\"]",
       "state": "sys-logbook"
@@ -281,7 +281,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.412Z",
-      "lastSeen": "2026-07-07T08:11:07.412Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button[aria-label=\"Close NOTIFICATIONS\"]",
       "state": "sys-notifs"
@@ -302,7 +302,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.412Z",
-      "lastSeen": "2026-07-07T08:11:07.412Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button[aria-label=\"Close RESTORE POINTS\"]",
       "state": "sys-rewind"
@@ -323,7 +323,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button[aria-label=\"Close SETTINGS\"]",
       "state": "sys-settings"
@@ -344,7 +344,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.412Z",
-      "lastSeen": "2026-07-07T08:11:07.412Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button[aria-label=\"Minimize CHANNELS\"]",
       "state": "sys-messaging"
@@ -365,7 +365,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.412Z",
-      "lastSeen": "2026-07-07T08:11:07.412Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button[aria-label=\"Minimize LOGBOOK\"]",
       "state": "sys-logbook"
@@ -386,7 +386,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.412Z",
-      "lastSeen": "2026-07-07T08:11:07.412Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button[aria-label=\"Minimize NOTIFICATIONS\"]",
       "state": "sys-notifs"
@@ -407,7 +407,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.412Z",
-      "lastSeen": "2026-07-07T08:11:07.412Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button[aria-label=\"Minimize RESTORE POINTS\"]",
       "state": "sys-rewind"
@@ -428,7 +428,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button[aria-label=\"Minimize SETTINGS\"]",
       "state": "sys-settings"
@@ -449,7 +449,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "input[aria-label=\"Search settings\"]",
       "state": "sys-settings"
@@ -470,7 +470,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
-      "lastSeen": "2026-07-07T08:11:07.411Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#bg-global",
       "state": "sys-settings"
@@ -491,7 +491,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
-      "lastSeen": "2026-07-07T08:11:07.411Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#bg-perAgent",
       "state": "sys-settings"
@@ -512,7 +512,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
-      "lastSeen": "2026-07-07T08:11:07.411Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#bg-perDay",
       "state": "sys-settings"
@@ -533,7 +533,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#bg-perRun",
       "state": "sys-settings"
@@ -554,7 +554,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
-      "lastSeen": "2026-07-07T08:11:07.411Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#bg-reset",
       "state": "sys-settings"
@@ -575,7 +575,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
-      "lastSeen": "2026-07-07T08:11:07.411Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#bg-save",
       "state": "sys-settings"
@@ -596,7 +596,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.412Z",
-      "lastSeen": "2026-07-07T08:11:07.412Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#bk-export",
       "state": "sys-settings"
@@ -617,7 +617,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.412Z",
-      "lastSeen": "2026-07-07T08:11:07.412Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#bk-file",
       "state": "sys-settings"
@@ -638,7 +638,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.412Z",
-      "lastSeen": "2026-07-07T08:11:07.412Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#bk-import",
       "state": "sys-settings"
@@ -659,7 +659,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.412Z",
-      "lastSeen": "2026-07-07T08:11:07.412Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#con-tab-logbook-insights",
       "state": "sys-logbook"
@@ -680,7 +680,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.412Z",
-      "lastSeen": "2026-07-07T08:11:07.412Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#con-tab-logbook-runs",
       "state": "sys-logbook"
@@ -701,7 +701,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.412Z",
-      "lastSeen": "2026-07-07T08:11:07.412Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#con-tab-logbook-slag",
       "state": "sys-logbook"
@@ -722,7 +722,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#con-tab-settings-appearance",
       "state": "sys-settings"
@@ -743,7 +743,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#con-tab-settings-autonomy",
       "state": "sys-settings"
@@ -764,7 +764,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#con-tab-settings-budget",
       "state": "sys-settings"
@@ -785,7 +785,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#con-tab-settings-models",
       "state": "sys-settings"
@@ -806,7 +806,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#con-tab-settings-notifs",
       "state": "sys-settings"
@@ -827,7 +827,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#con-tab-settings-providers",
       "state": "sys-settings"
@@ -848,7 +848,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#con-tab-settings-system",
       "state": "sys-settings"
@@ -869,7 +869,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.412Z",
-      "lastSeen": "2026-07-07T08:11:07.412Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#dc-connect",
       "state": "sys-messaging"
@@ -890,7 +890,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.412Z",
-      "lastSeen": "2026-07-07T08:11:07.412Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#dc-disconnect",
       "state": "sys-messaging"
@@ -911,7 +911,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.412Z",
-      "lastSeen": "2026-07-07T08:11:07.412Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#dc-notify",
       "state": "sys-messaging"
@@ -932,7 +932,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.412Z",
-      "lastSeen": "2026-07-07T08:11:07.412Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#dc-token",
       "state": "sys-messaging"
@@ -953,7 +953,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.412Z",
-      "lastSeen": "2026-07-07T08:11:07.412Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#diag-copy",
       "state": "sys-settings"
@@ -974,7 +974,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
-      "lastSeen": "2026-07-07T08:11:07.411Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#fbc-add",
       "state": "sys-settings"
@@ -995,7 +995,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
-      "lastSeen": "2026-07-07T08:11:07.411Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#fbc-reset",
       "state": "sys-settings"
@@ -1016,7 +1016,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
-      "lastSeen": "2026-07-07T08:11:07.411Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#fbc-save",
       "state": "sys-settings"
@@ -1037,7 +1037,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#key-in-1",
       "state": "sys-settings"
@@ -1058,7 +1058,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.412Z",
-      "lastSeen": "2026-07-07T08:11:07.412Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#nf-clear",
       "state": "sys-notifs"
@@ -1079,7 +1079,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
-      "lastSeen": "2026-07-07T08:11:07.411Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#ntp-cronDigest",
       "state": "sys-settings"
@@ -1100,7 +1100,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
-      "lastSeen": "2026-07-07T08:11:07.411Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#ntp-needsApproval",
       "state": "sys-settings"
@@ -1121,7 +1121,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
-      "lastSeen": "2026-07-07T08:11:07.411Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#ntp-runComplete",
       "state": "sys-settings"
@@ -1142,7 +1142,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
-      "lastSeen": "2026-07-07T08:11:07.411Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#ntp-sound",
       "state": "sys-settings"
@@ -1163,7 +1163,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
-      "lastSeen": "2026-07-07T08:11:07.411Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#ntp-test",
       "state": "sys-settings"
@@ -1184,7 +1184,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#prov-key-in-anthropic",
       "state": "sys-settings"
@@ -1205,7 +1205,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#prov-key-in-cerebras",
       "state": "sys-settings"
@@ -1226,7 +1226,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#prov-key-in-custom",
       "state": "sys-settings"
@@ -1247,7 +1247,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#prov-key-in-deepseek",
       "state": "sys-settings"
@@ -1268,7 +1268,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#prov-key-in-fireworks",
       "state": "sys-settings"
@@ -1289,7 +1289,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#prov-key-in-gemini",
       "state": "sys-settings"
@@ -1310,7 +1310,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#prov-key-in-groq",
       "state": "sys-settings"
@@ -1331,7 +1331,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#prov-key-in-mistral",
       "state": "sys-settings"
@@ -1352,7 +1352,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#prov-key-in-openai",
       "state": "sys-settings"
@@ -1373,7 +1373,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#prov-key-in-perplexity",
       "state": "sys-settings"
@@ -1394,7 +1394,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#prov-key-in-together",
       "state": "sys-settings"
@@ -1415,7 +1415,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#prov-key-in-xai",
       "state": "sys-settings"
@@ -1436,7 +1436,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
-      "lastSeen": "2026-07-07T08:11:07.411Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#set-awake",
       "state": "sys-settings"
@@ -1457,7 +1457,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.412Z",
-      "lastSeen": "2026-07-07T08:11:07.412Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#set-clear",
       "state": "sys-settings"
@@ -1478,7 +1478,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
-      "lastSeen": "2026-07-07T08:11:07.411Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#set-flicker",
       "state": "sys-settings"
@@ -1499,7 +1499,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
-      "lastSeen": "2026-07-07T08:11:07.411Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#set-scan",
       "state": "sys-settings"
@@ -1520,7 +1520,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
-      "lastSeen": "2026-07-07T08:11:07.411Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#set-sound",
       "state": "sys-settings"
@@ -1541,7 +1541,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.412Z",
-      "lastSeen": "2026-07-07T08:11:07.412Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#set-updates-auto",
       "state": "sys-settings"
@@ -1562,7 +1562,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.412Z",
-      "lastSeen": "2026-07-07T08:11:07.412Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#set-updates-open",
       "state": "sys-settings"
@@ -1583,7 +1583,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.412Z",
-      "lastSeen": "2026-07-07T08:11:07.412Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#tg-connect",
       "state": "sys-messaging"
@@ -1604,7 +1604,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.412Z",
-      "lastSeen": "2026-07-07T08:11:07.412Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#tg-disconnect",
       "state": "sys-messaging"
@@ -1625,7 +1625,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.412Z",
-      "lastSeen": "2026-07-07T08:11:07.412Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#tg-notify",
       "state": "sys-messaging"
@@ -1646,7 +1646,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.412Z",
-      "lastSeen": "2026-07-07T08:11:07.412Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#tg-token",
       "state": "sys-messaging"
@@ -1667,7 +1667,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
-      "lastSeen": "2026-07-07T08:11:07.411Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#tm-balanced",
       "state": "sys-settings"
@@ -1688,7 +1688,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
-      "lastSeen": "2026-07-07T08:11:07.411Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#tm-fast",
       "state": "sys-settings"
@@ -1709,7 +1709,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
-      "lastSeen": "2026-07-07T08:11:07.411Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#tm-reasoning",
       "state": "sys-settings"
@@ -1730,7 +1730,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "sys-settings"
@@ -1751,7 +1751,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "sys-settings"
@@ -1772,7 +1772,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "sys-settings"
@@ -1793,7 +1793,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "sys-settings"
@@ -1814,7 +1814,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "sys-settings"
@@ -1835,7 +1835,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "sys-settings"
@@ -1856,7 +1856,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "sys-settings"
@@ -1877,7 +1877,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "sys-settings"
@@ -1898,7 +1898,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "sys-settings"
@@ -1919,7 +1919,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "sys-settings"
@@ -1940,7 +1940,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "sys-settings"
@@ -1961,7 +1961,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "sys-settings"
@@ -1982,7 +1982,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
-      "lastSeen": "2026-07-07T08:11:07.411Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "sys-settings"
@@ -2003,7 +2003,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
-      "lastSeen": "2026-07-07T08:11:07.411Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "sys-settings"
@@ -2024,7 +2024,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "sys-settings"
@@ -2045,7 +2045,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "sys-settings"
@@ -2066,7 +2066,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "sys-settings"
@@ -2087,7 +2087,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "sys-settings"
@@ -2108,7 +2108,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "sys-settings"
@@ -2129,7 +2129,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "sys-settings"
@@ -2150,7 +2150,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
-      "lastSeen": "2026-07-07T08:11:07.411Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "sys-settings"
@@ -2171,7 +2171,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "sys-settings"
@@ -2192,7 +2192,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "sys-settings"
@@ -2213,7 +2213,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "sys-settings"
@@ -2234,7 +2234,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "sys-settings"
@@ -2255,7 +2255,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
-      "lastSeen": "2026-07-07T08:11:07.411Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "sys-settings"
@@ -2276,7 +2276,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "sys-settings"
@@ -2297,7 +2297,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
-      "lastSeen": "2026-07-07T08:11:07.411Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "sys-settings"
@@ -2318,7 +2318,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "sys-settings"
@@ -2339,7 +2339,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "sys-settings"
@@ -2360,7 +2360,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "sys-settings"
@@ -2381,7 +2381,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "sys-settings"
@@ -2402,7 +2402,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "sys-settings"
@@ -2423,7 +2423,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "sys-settings"
@@ -2444,7 +2444,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "sys-settings"
@@ -2465,7 +2465,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "sys-settings"
@@ -2486,7 +2486,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "sys-settings"
@@ -2507,7 +2507,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "sys-settings"
@@ -2528,7 +2528,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "sys-settings"
@@ -2549,7 +2549,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "sys-settings"
@@ -2570,7 +2570,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "sys-settings"
@@ -2591,7 +2591,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "sys-settings"
@@ -2612,7 +2612,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "sys-settings"
@@ -2633,7 +2633,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "sys-settings"
@@ -2654,7 +2654,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "sys-settings"
@@ -2675,7 +2675,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "sys-settings"
@@ -2696,7 +2696,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "sys-settings"
@@ -2717,7 +2717,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "sys-settings"
@@ -2738,7 +2738,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
-      "lastSeen": "2026-07-07T08:11:07.411Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
       "state": "sys-settings"
@@ -2759,7 +2759,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "div",
       "state": "sys-settings"
@@ -2780,7 +2780,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "div",
       "state": "sys-settings"
@@ -2801,7 +2801,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "div",
       "state": "sys-settings"
@@ -2822,7 +2822,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "div",
       "state": "sys-settings"
@@ -2843,7 +2843,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "div",
       "state": "sys-settings"
@@ -2864,7 +2864,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "div",
       "state": "sys-settings"
@@ -2885,7 +2885,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "div",
       "state": "sys-settings"
@@ -2906,7 +2906,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "div",
       "state": "sys-settings"
@@ -2927,7 +2927,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "div",
       "state": "sys-settings"
@@ -2948,7 +2948,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "div",
       "state": "sys-settings"
@@ -2969,7 +2969,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "div",
       "state": "sys-settings"
@@ -2990,7 +2990,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "div",
       "state": "sys-settings"
@@ -3011,7 +3011,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "div",
       "state": "sys-settings"
@@ -3032,7 +3032,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "div",
       "state": "sys-settings"
@@ -3053,7 +3053,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "div",
       "state": "sys-settings"
