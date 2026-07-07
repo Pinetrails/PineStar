@@ -1378,7 +1378,11 @@ const World = (() => {
     if (!cands.length) return null;
     if (aid) { const own = cands.find(p => p.agentId === aid); if (own) return own; }
     const room = actingRoomId(aid);
-    if (room) { const inRoom = cands.find(p => roomOfLocalTile(p.x, p.y) === room); if (inRoom) return inRoom; }
+    // TRUTH: the pulse must land in the ACTING agent's OWN room — a matching prop in some OTHER room did not grant
+    // this tool, so lighting it is a lie (the audit's wrong-room surge). If we can resolve the acting room, require
+    // the prop be in it; no in-room match → no pulse. cands[0] is only a legitimate fallback when NO room can be
+    // resolved at all (a roomless single-agent floor, where the sole floor prop unambiguously granted the tool).
+    if (room) { return cands.find(p => roomOfLocalTile(p.x, p.y) === room) || null; }
     return cands[0];
   }
 
@@ -4366,6 +4370,7 @@ const World = (() => {
   function apiBase() { return (typeof window !== 'undefined' && window.__STARNET_API__) ? window.__STARNET_API__ : ''; }
   function apiUrl(path) { return apiBase() + path; }
   let chanES = null, connPollTimer = null, connPollFn = null, connOpenFn = null, bridgePaused = false;
+  let spotifyPollTimer = null, spotifyPollFn = null;   // JUKEBOX dead-vs-live poll (shares the bridge pause/resume lifecycle)
   // LINK-DOWN HONESTY (Lane E1): the live station telemetry (queue gauges, run clocks) is only truthful while
   // the SSE bridge is actually delivering events. Track the last DATA event's wall-clock and the socket's
   // readyState so a dead/stalled link renders an honest degraded state instead of freezing the last-known truth.
@@ -4390,12 +4395,14 @@ const World = (() => {
   function pauseBridge() {
     bridgePaused = true;
     if (connPollTimer) { clearInterval(connPollTimer); connPollTimer = null; }
+    if (spotifyPollTimer) { clearInterval(spotifyPollTimer); spotifyPollTimer = null; }
     if (chanES) { try { chanES.close(); } catch (_) {} chanES = null; }
   }
   function resumeBridge() {
     if (!bridged) return;                 // never set up yet (no agent has entered) — connectChannelBridge will open it
     bridgePaused = false;
     if (!connPollTimer && connPollFn) { connPollFn(); connPollTimer = setInterval(connPollFn, 5000); }
+    if (!spotifyPollTimer && spotifyPollFn) { spotifyPollFn(); spotifyPollTimer = setInterval(spotifyPollFn, 5000); }
     if (!chanES && connOpenFn) connOpenFn();
   }
   let floor = null, lastSlagAt = -1e9;   // FloorStats: the factory-floor economy fold + a fresh-slag pulse clock
@@ -5199,32 +5206,68 @@ const World = (() => {
           connIds.push(c.id);
           PropSprites.setConnectorState(c.id, c.state === 'up' ? 'connected' : (c.state === 'error' ? 'error' : 'offline'), c.toolCount);
         }
+        // T3: a SUCCESSFUL poll is authoritative — drop any tracked portal absent from it so a removed/unbound
+        // connector stops glowing green (a FAILED poll stays in .catch below and keeps the last-known state).
+        if (PropSprites.reconcileConnectors) PropSprites.reconcileConnectors(connIds);
       }).catch(() => {});   // E4/E6f: on failure keep the last-known portal states — never blank them from an error body
     }
     connPollFn = pollConnectors; pollConnectors(); connPollTimer = setInterval(pollConnectors, 5000);
+    // JUKEBOX dead-vs-live: poll Spotify's OAuth connected state so a placed jukebox reads DEAD (unplugged)
+    // until the user connects Spotify in Settings, then comes alive. Same keep-last-known-on-failure contract.
+    function pollSpotify() {
+      if (typeof fetch === 'undefined' || typeof PropSprites === 'undefined' || !PropSprites.setSpotifyConnected) return;
+      fetch(apiUrl('/api/spotify/status')).then(r => { if (!r.ok) throw new Error('http ' + r.status); return r.json(); })
+        .then(j => PropSprites.setSpotifyConnected(!!(j && j.connected)))
+        .catch(() => {});   // keep last-known on a failed poll (mirrors the connector contract)
+    }
+    spotifyPollFn = pollSpotify; pollSpotify(); spotifyPollTimer = setInterval(pollSpotify, 5000);
+    // TRUTH (audit T1 finding 5): the per-prop capability SURGE must reflect the tool's REAL OUTCOME, not the
+    // mere attempt. agent.tool_call fires BEFORE the capability/consent gate (loop.js), so a denied or errored
+    // call emits a tool_call identically to a success — pulsing the granting prop green on tool_call was a lie.
+    // We now DEFER the surge to agent.tool_result: success → the green capability surge; error → a distinct RED
+    // failure cue (the workbench verify-red model). agent.tool_result carries no `name`, so we correlate it back
+    // to the call via callId (surgeCall). Heat/run-TTL still stoke on tool_call — a call WAS made + tokens flowed,
+    // which is real activity regardless of the gate's verdict; only the object=capability SURGE waits for truth.
+    const surgeCall = new Map();   // callId -> { cap, agentId } captured at tool_call, consumed at tool_result
     U.bus.on('agent.tool_call', p => {            // chat.js re-emits the hero's tool calls here; routed agents arrive via SSE
       const n = p && p.name;
       if (!n) return;
       heatBump(p.agentId, 0.35);                  // G0.3: any real tool fire is activity — stoke the desk heat
       stampRun(p.agentId);                        // E2: a tool fire reinforces the run TTL
       if (typeof PropSprites === 'undefined') return;   // E6e: prop layer not loaded — heat still stoked, no throw
-      if (n.indexOf('mcp__') === 0) {             // connector portals: pulse the BOUND portal (unchanged)
+      if (n.indexOf('mcp__') === 0) {             // connector portals: pulse the BOUND portal (fires a packet on call — its LIVE/error glow is polled separately)
         if (!PropSprites.pulseConnector) return;
         for (const cid of connIds) if (n.indexOf('mcp__' + cid + '__') === 0) { PropSprites.pulseConnector(cid); break; }
         return;
       }
-      // G0.1 PER-TOOL PROP PULSE: a real tool fire lights the prop that GRANTS it (toolprops.js maps
-      // fs.*→cabinet · web/browser→dish · notebook/skill/recall/todo→notebook · image_*→studio ·
-      // spotify_*→jukebox), preferring the acting agent's own/room prop. shell/verify keep their dedicated
-      // workbench events below — the mapper returns null for them, so nothing ever double-fires.
+      // map the firing tool to the capability prop that GRANTS it (toolprops.js: fs.*→cabinet · web/browser→dish ·
+      // notebook/skill/recall/todo→notebook · image_*→studio · spotify_*→jukebox). shell/verify keep their dedicated
+      // workbench events below — the mapper returns null for them, so nothing ever double-fires. STASH it for the
+      // result to resolve the surge; the callId join keeps a denied call from ever lighting the prop green.
       const cap = (typeof ToolProps !== 'undefined') ? ToolProps.toolPropType(n) : null;
-      if (!cap || !PropSprites.pulseProp) return;
-      const tgt = capPropFor(cap, p.agentId);
-      if (tgt) PropSprites.pulseProp(tgt.id, cap);
+      if (cap && p.callId) surgeCall.set(p.callId, { cap: cap, agentId: p.agentId });
     });
+    U.bus.on('agent.tool_result', p => {
+      if (!p || typeof PropSprites === 'undefined' || !PropSprites.pulseProp) return;
+      const rec = p.callId ? surgeCall.get(p.callId) : null;
+      if (!rec) return;                           // not a capability-prop tool (or no callId join) — nothing to surge
+      surgeCall.delete(p.callId);
+      const tgt = capPropFor(rec.cap, rec.agentId);   // the granting prop in the ACTING agent's OWN room (or none)
+      if (tgt) PropSprites.pulseProp(tgt.id, rec.cap, !p.isError);   // green on success, RED on error/denied
+    });
+    // bound the correlation map: a run ending drops any of its still-open calls so a lost tool_result never leaks.
+    U.bus.on('agent.run.end', () => { if (surgeCall.size > 64) surgeCall.clear(); });
     // workbench pulse: a shell command running glows the bench green; a verify result glows green/red by outcome.
-    U.bus.on('shell.exec', () => { if (typeof PropSprites !== 'undefined' && PropSprites.pulseWorkbench) PropSprites.pulseWorkbench(true); });
-    U.bus.on('verify.result', p => { if (typeof PropSprites !== 'undefined' && PropSprites.pulseWorkbench) PropSprites.pulseWorkbench(!!(p && p.passed)); });
+    // ROOM-SCOPED: resolve the ACTING agent's OWN workbench (both events carry agentId) so only that bench glows —
+    // not every placed bench on the floor. A roomless fallback (no resolvable target) uses the global pulse.
+    const pulseWb = (agentId, ok) => {
+      if (typeof PropSprites === 'undefined' || !PropSprites.pulseWorkbench) return;
+      const tgt = capPropFor('workbench', agentId);
+      if (tgt) PropSprites.pulseWorkbench(ok, tgt.id);
+      else PropSprites.pulseWorkbench(ok);   // roomless single-bench floor — global fallback
+    };
+    U.bus.on('shell.exec', p => pulseWb(p && p.agentId, true));
+    U.bus.on('verify.result', p => pulseWb(p && p.agentId, !!(p && p.passed)));
     // G0.3 TOKEN HEAT: every streamed token stokes the acting agent's desk heat —
     // the working screens burn by REAL token flow, never a faked flicker.
     U.bus.on('agent.token', p => { heatBump(p && p.agentId, 0.06); stampRun(p && p.agentId); });   // E2: a token reinforces the run TTL

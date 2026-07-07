@@ -26,7 +26,8 @@
       gigs_servercart: 'notebook', bridge_relaystack: 'notebook', core: 'notebook',
       connector_portal: 'connector',
       workbench: 'workbench',
-      studio: 'studio'
+      studio: 'studio',
+      jukebox: 'jukebox'
     };
     return m[p && p.t] || null;
   };
