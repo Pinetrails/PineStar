@@ -410,6 +410,172 @@ fn log_startup(path: &Option<PathBuf>, message: impl AsRef<str>) {
     }
 }
 
+// ---- WebView2 stale-cache purge on version change ----------------------------------------
+//
+// The desktop webview loads the frontend COMPILED INTO the exe (tauri.localhost). WebView2
+// caches those assets (Cache / `Code Cache/js`) and never revalidates. After an exe swap, V8
+// can run OLD bytecode against NEW data — the 2026-07-06 incident (agents vanished from the
+// world sim, COMMS fell back to the overseer). Fix: on every version change, delete the
+// compiled/GPU caches while PRESERVING user state (Local Storage holds the world save under
+// `starnet.save`). See docs/UPDATE_STATE_SAFETY_AUDIT_2026-07-06.md P0.1.
+
+/// Pure decision: given the previously-recorded marker (if any) and the running version,
+/// should we purge the stale webview caches? Purge on first run (no marker) or on any change.
+/// Kept side-effect-free so it can be unit-tested without touching the filesystem.
+fn should_purge_webview_cache(last_marker: Option<&str>, current_version: &str) -> bool {
+    match last_marker {
+        Some(prev) => prev.trim() != current_version.trim(),
+        None => true,
+    }
+}
+
+/// Marker file recording the version that last ran, next to the workspaces root
+/// (`%APPDATA%\ai.skynet.harness\last-run-version`). Reused for the purge decision.
+fn last_run_version_marker(app: &tauri::AppHandle) -> Option<PathBuf> {
+    app.path().app_data_dir().ok().map(|dir| {
+        let _ = std::fs::create_dir_all(&dir);
+        dir.join("last-run-version")
+    })
+}
+
+/// Resolve the EBWebView user-data directory the webview will actually use. Honors the
+/// WEBVIEW2_USER_DATA_FOLDER override; otherwise the Tauri/WebView2 default of
+/// `%LOCALAPPDATA%\<identifier>\EBWebView`.
+#[cfg(windows)]
+fn webview2_user_data_dir(identifier: &str) -> Option<PathBuf> {
+    if let Some(override_dir) = std::env::var_os("WEBVIEW2_USER_DATA_FOLDER") {
+        let p = PathBuf::from(override_dir);
+        if !p.as_os_str().is_empty() {
+            return Some(p);
+        }
+    }
+    std::env::var_os("LOCALAPPDATA")
+        .map(PathBuf::from)
+        .map(|base| base.join(identifier).join("EBWebView"))
+}
+
+/// Compiled/GPU cache subdirs under `EBWebView\Default` that are safe to delete on version
+/// change. Deliberately EXCLUDES Local Storage / Session Storage / IndexedDB / Cookies —
+/// those hold the user's world save and must be byte-preserved.
+#[cfg(windows)]
+const WEBVIEW2_STALE_CACHE_DIRS: [&str; 5] = [
+    "Cache",
+    "Code Cache",
+    "GPUCache",
+    "DawnGraphiteCache",
+    "DawnWebGPUCache",
+];
+
+/// Delete the stale compiled/GPU caches under `<user_data>\Default`. Fails soft: a locked
+/// or missing dir is logged and skipped, never fatal to boot. Returns the dirs actually
+/// removed (for logging/telemetry).
+#[cfg(windows)]
+fn purge_webview2_caches(user_data_dir: &Path, startup_log: &Option<PathBuf>) -> Vec<String> {
+    let default_dir = user_data_dir.join("Default");
+    let mut removed = Vec::new();
+    for name in WEBVIEW2_STALE_CACHE_DIRS {
+        let target = default_dir.join(name);
+        if !target.exists() {
+            continue;
+        }
+        match std::fs::remove_dir_all(&target) {
+            Ok(()) => {
+                removed.push(name.to_string());
+                log_startup(
+                    startup_log,
+                    format!("webview-cache-purge: removed {}", target.display()),
+                );
+            }
+            Err(e) => {
+                // App likely running / files locked — never crash boot, just record it.
+                log_startup(
+                    startup_log,
+                    format!(
+                        "webview-cache-purge: SKIP {} (soft-fail: {e})",
+                        target.display()
+                    ),
+                );
+            }
+        }
+    }
+    removed
+}
+
+/// Top-level orchestration: compare the running version to the stored marker; on first run
+/// or any change, purge the stale webview caches (Windows/WebView2 today; other platforms
+/// hook in later), then record the new marker. Platform-neutral marker logic so a future
+/// mac/linux (WebKit) purge can reuse the same decision path.
+fn purge_stale_webview_cache_on_version_change(
+    app: &tauri::AppHandle,
+    identifier: &str,
+    current_version: &str,
+    startup_log: &Option<PathBuf>,
+) {
+    let marker_path = last_run_version_marker(app);
+    let last = marker_path
+        .as_ref()
+        .and_then(|p| std::fs::read_to_string(p).ok());
+    let last_trimmed = last.as_ref().map(|s| s.trim());
+
+    if !should_purge_webview_cache(last_trimmed, current_version) {
+        return;
+    }
+
+    log_startup(
+        startup_log,
+        format!(
+            "webview-cache-purge: version change {:?} -> {} — purging stale caches (preserving Local Storage/IndexedDB/cookies)",
+            last_trimmed, current_version
+        ),
+    );
+
+    #[cfg(windows)]
+    {
+        match webview2_user_data_dir(identifier) {
+            Some(user_data_dir) => {
+                let removed = purge_webview2_caches(&user_data_dir, startup_log);
+                log_startup(
+                    startup_log,
+                    format!(
+                        "webview-cache-purge: done ({} of {} cache dir(s) removed) under {}",
+                        removed.len(),
+                        WEBVIEW2_STALE_CACHE_DIRS.len(),
+                        user_data_dir.join("Default").display()
+                    ),
+                );
+            }
+            None => log_startup(
+                startup_log,
+                "webview-cache-purge: could not resolve EBWebView user-data dir — skipped",
+            ),
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        // WebKit (macOS/Linux) caches live elsewhere; no purge wired yet. Marker still
+        // advances so the decision path is exercised cross-platform.
+        let _ = identifier;
+        log_startup(
+            startup_log,
+            "webview-cache-purge: non-Windows platform — no cache purge wired yet",
+        );
+    }
+
+    // Record the new marker LAST, so a crash mid-purge re-triggers a purge next boot rather
+    // than leaving stale caches behind a satisfied marker.
+    if let Some(path) = marker_path {
+        if let Err(e) = std::fs::write(&path, current_version) {
+            log_startup(
+                startup_log,
+                format!(
+                    "webview-cache-purge: failed to write marker {} ({e})",
+                    path.display()
+                ),
+            );
+        }
+    }
+}
+
 // ---- keychain (OS Credential Manager / Keychain / Secret Service via `keyring`) ----
 
 fn normalize_provider(provider: &str) -> &'static str {
@@ -1172,6 +1338,22 @@ fn main() {
                 "window.__STARNET_API__='http://127.0.0.1:{port}';window.__STARNET_API_TOKEN__='{api_token}';var _sf=window.fetch;window.fetch=function(u,o){{if(typeof u==='string'&&u.indexOf('/api/')===0)u=window.__STARNET_API__+u;return _sf(u,o)}};"
             );
 
+            // Purge stale WebView2 compiled/GPU caches when the app version changed, BEFORE the
+            // webview window is created — otherwise V8 can run old bytecode against new data
+            // (see docs/UPDATE_STATE_SAFETY_AUDIT_2026-07-06.md P0.1). Fails soft; never blocks boot.
+            {
+                let handle = app.handle();
+                let identifier = handle.config().identifier.clone();
+                let current_version = handle.package_info().version.to_string();
+                let log = startup_log_path(handle);
+                purge_stale_webview_cache_on_version_change(
+                    handle,
+                    &identifier,
+                    &current_version,
+                    &log,
+                );
+            }
+
             WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
                 .title("StarNet")
                 .inner_size(1280.0, 832.0)
@@ -1198,4 +1380,122 @@ fn main() {
                 }
             }
         });
+}
+
+#[cfg(test)]
+mod webview_cache_purge_tests {
+    use super::*;
+
+    #[test]
+    fn purges_on_first_run_when_marker_missing() {
+        assert!(should_purge_webview_cache(None, "0.2.4"));
+    }
+
+    #[test]
+    fn purges_when_version_changed() {
+        assert!(should_purge_webview_cache(Some("0.2.3"), "0.2.4"));
+    }
+
+    #[test]
+    fn no_purge_when_version_unchanged() {
+        assert!(!should_purge_webview_cache(Some("0.2.4"), "0.2.4"));
+    }
+
+    #[test]
+    fn tolerates_whitespace_in_marker() {
+        // Markers are written via fs::write and read back with read_to_string; a trailing
+        // newline or stray whitespace must NOT be read as a version change (would purge every
+        // boot). trim() on both sides guards that.
+        assert!(!should_purge_webview_cache(Some("0.2.4\n"), "0.2.4"));
+        assert!(!should_purge_webview_cache(Some("  0.2.4  "), "0.2.4"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn honors_env_override_for_user_data_dir() {
+        // Serialize env mutation within this test; other tests don't touch these vars.
+        let key = "WEBVIEW2_USER_DATA_FOLDER";
+        let prev = std::env::var_os(key);
+        std::env::set_var(key, r"C:\some\custom\webview");
+        let got = webview2_user_data_dir("ai.skynet.harness");
+        match prev {
+            Some(v) => std::env::set_var(key, v),
+            None => std::env::remove_var(key),
+        }
+        assert_eq!(got, Some(PathBuf::from(r"C:\some\custom\webview")));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn purge_deletes_caches_but_preserves_user_state() {
+        use std::io::Write;
+
+        // Build a fake EBWebView\Default tree in a unique temp dir.
+        let base = std::env::temp_dir().join(format!(
+            "starnet-wvpurge-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let default_dir = base.join("Default");
+        std::fs::create_dir_all(&default_dir).unwrap();
+
+        // Caches that MUST be deleted.
+        for name in WEBVIEW2_STALE_CACHE_DIRS {
+            let d = default_dir.join(name);
+            std::fs::create_dir_all(&d).unwrap();
+            let mut f = std::fs::File::create(d.join("stale.bin")).unwrap();
+            f.write_all(b"old-bytecode").unwrap();
+        }
+
+        // User state that MUST be preserved (world save lives in Local Storage).
+        for name in ["Local Storage", "Session Storage", "IndexedDB"] {
+            let d = default_dir.join(name);
+            std::fs::create_dir_all(&d).unwrap();
+            let mut f = std::fs::File::create(d.join("keep.bin")).unwrap();
+            f.write_all(b"starnet.save").unwrap();
+        }
+        let cookies = default_dir.join("Cookies");
+        std::fs::write(&cookies, b"cookie-jar").unwrap();
+
+        let removed = purge_webview2_caches(&base, &None);
+
+        // Every cache dir gone.
+        for name in WEBVIEW2_STALE_CACHE_DIRS {
+            assert!(
+                !default_dir.join(name).exists(),
+                "cache dir {name} should have been removed"
+            );
+        }
+        assert_eq!(removed.len(), WEBVIEW2_STALE_CACHE_DIRS.len());
+
+        // Every user-state dir/file preserved.
+        for name in ["Local Storage", "Session Storage", "IndexedDB"] {
+            assert!(
+                default_dir.join(name).join("keep.bin").exists(),
+                "user state {name} must be preserved"
+            );
+        }
+        assert!(cookies.exists(), "Cookies must be preserved");
+
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn purge_is_soft_when_default_dir_absent() {
+        // Missing user-data dir must not panic and must remove nothing.
+        let base = std::env::temp_dir().join(format!(
+            "starnet-wvpurge-absent-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let removed = purge_webview2_caches(&base, &None);
+        assert!(removed.is_empty());
+    }
 }
