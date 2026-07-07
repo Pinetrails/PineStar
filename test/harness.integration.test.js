@@ -178,6 +178,38 @@ const fixture = {
     A.eq(JSON.stringify(empty), JSON.stringify(convo), 'empty notebook -> byte-identical messages (memoryless run unchanged)');
   }
 
+  // ---- Lane 5 (truthful telemetry): a PROVIDER-TRUNCATED reply must surface finishReason on BOTH the return
+  //      value (index.js gates reflection/study/skills on it) AND the emitted agent.run.end event (the frontend
+  //      renders a "cut short" recap instead of a delivered crate). A clean 'stop' still omits it. ----
+  {
+    const cutBus = A.makeBus();
+    const cutSeq = A.collectBus(cutBus, events.names());
+    const cutEmit = makeEmitter(cutBus, () => {});
+    // one-turn run whose stream ends with finish_reason 'length' (hit max_tokens mid-thought) and NO tool call.
+    const cutProvider = makeReplayProvider({
+      models: fixture.models,
+      turns: [[ { type: 'text', delta: 'The answer begins but is cut o' },
+                { type: 'usage', usage: { prompt_tokens: 30, completion_tokens: 7, total_tokens: 37 } },
+                { type: 'done', finishReason: 'length' } ]]
+    });
+    const cutCost = makeCostEngine({ priceOf: cutProvider.priceOf });
+    const cutRes = await runAgentLoop({
+      messages: [{ role: 'user', content: 'write me a long essay' }],
+      provider: cutProvider, emit: cutEmit, cost: cutCost, tools: toolDefs, dispatch, capCtx,
+      model: 'replay/model', agentId: 'agent', runId: 'cut1',
+      limits: { maxIters: 8, maxCostUsd: 1 }, clock: { now: () => 0 }
+    });
+    A.eq(cutRes.reason, 'done', 'a truncated turn with prose still ends reason:done (not a new run-end reason)');
+    A.eq(cutRes.finishReason, 'length', 'finishReason:length rides the RETURN value (index.js reflection gate)');
+    const cutEnd = cutSeq.find(e => e.name === 'agent.run.end' && e.payload.runId === 'cut1');
+    A.ok(cutEnd, 'agent.run.end emitted for the truncated run');
+    A.eq(cutEnd.payload.finishReason, 'length', 'finishReason:length rides the EMITTED event too (the frontend reads it)');
+    A.ok(events.validate('agent.run.end', cutEnd.payload).ok, 'the finishReason-carrying run-end payload is still schema-valid');
+    // a CLEAN stop omits finishReason entirely (old clean-run payloads stay byte-identical).
+    const cleanEnd = seq.find(e => e.name === 'agent.run.end' && e.payload.runId === 'itest');
+    A.ok(cleanEnd && cleanEnd.payload.finishReason === undefined, 'a clean run omits finishReason (additive, not always-on)');
+  }
+
   try { fs.rmSync(ROOT, { recursive: true, force: true }); } catch (e) {}
   A.report('harness.integration.test');
 })();

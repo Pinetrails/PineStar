@@ -124,12 +124,15 @@ const AutoSessions = (() => {
       if (content.trim() === '[SILENT]') { next.push(sysMarker('— routine ran, nothing to report —')); continue; }
       if (content.trim()) next.push({ role: 'assistant', content: content });
     }
-    const hasReply = next.some(m => m.role === 'assistant');
+    // "said something" = a real assistant reply OR an honest sys status line we already added (e.g. a [SILENT]
+    // marker). Only when NEITHER exists do we need the settled/couldn't-load fallback — so a silent run shows ONE
+    // marker, not two.
+    const saidSomething = next.some(m => m.role === 'assistant' || m.sys);
     // a FAILED run must never look like it produced nothing: append an honest error line from the outcome.
     if (outcome === 'failed') {
       const why = String(reason || 'run failed').trim();
       next.push(sysMarker('⚠ Routine failed — ' + why, true));
-    } else if (!hasReply) {
+    } else if (!saidSomething) {
       // no assistant prose AND not failed. Be precise about WHY there's nothing: a FAILED transcript fetch is NOT
       // the same as a run that settled quietly — never claim "nothing to report" when we simply couldn't read it.
       next.push(fetchOk
