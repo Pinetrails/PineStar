@@ -1049,11 +1049,11 @@ const App = (() => {
     for (const m of list) { const o = document.createElement('option'); o.value = m.id; dl.appendChild(o); }
     if (list.length) {
       countEl.textContent = '(' + list.length + ' available)';
-      if (!inp.value) {
-        const pref = list.find(m => /claude.*sonnet|gpt-4o|gpt-5/i.test(m.id)) || list[0];
-        inp.value = pref.id;   // DEFAULT-FILL so a first ⏼ WAKE never bounces on an empty model (matches the Codex path, which already defaults)
-        inp.placeholder = 'e.g. ' + pref.id;
-      }
+      const pref = list.find(m => /claude.*sonnet|gpt-4o|gpt-5/i.test(m.id)) || list[0];
+      if (!inp.value) inp.value = pref.id;   // DEFAULT-FILL so a first ⏼ WAKE never bounces on an empty model (matches the Codex path, which already defaults)
+      // Always retire the "loading models…" placeholder once the catalog resolves — otherwise a field that was
+      // already default-filled (prior provider, restored save) keeps asserting "loading" as its accessible name.
+      inp.placeholder = 'e.g. ' + pref.id;
     } else {
       // catalog unreachable (no network to openrouter.ai, or fetch blocked): DON'T leave the field
       // looking like it's still loading. Seed a few common slugs and make the placeholder actionable
@@ -1061,7 +1061,8 @@ const App = (() => {
       const FALLBACK = FALLBACK_MODELS[p] || FALLBACK_MODELS.openrouter;
       for (const id of FALLBACK) { const o = document.createElement('option'); o.value = id; dl.appendChild(o); }
       countEl.textContent = '(catalog offline — type or pick a slug)';
-      if (!inp.value) { inp.value = FALLBACK[0]; inp.placeholder = 'type a model slug — e.g. gpt-5.5'; }   // default-fill even offline so WAKE works; the Commander can overtype
+      if (!inp.value) inp.value = FALLBACK[0];   // default-fill even offline so WAKE works; the Commander can overtype
+      inp.placeholder = 'type a model slug — e.g. gpt-5.5';   // never leave "loading models…" up once we've resolved (even to the offline fallback)
     }
     updateHint();
   }
@@ -1279,6 +1280,7 @@ const App = (() => {
     for (const m of models) { const o = document.createElement('option'); o.value = m.id; if (m.displayName && m.displayName !== m.id) o.label = m.displayName; dl.appendChild(o); }
     el('model-count').textContent = '(ChatGPT subscription)';
     const mi = el('in-model'); if (!ids.includes(mi.value)) mi.value = def;
+    if (def) mi.placeholder = 'e.g. ' + def;   // retire "loading models…" here too, so the field's accessible name matches the loaded catalog
     updateHint();
   }
 
