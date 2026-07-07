@@ -814,9 +814,39 @@ function setAgentModelFromChannel(agentId, model) {
   saveAgentRoster();                                           // fsync-durable + .bak, survives restart
   return { ok: true, agentId: id, model: m, name: cur.name || id };
 }
-// A live snapshot of the OpenRouter model catalog, warmed at boot (see listModels warmup below). Lets the
-// channel `/model` command validate an id sync without an await; empty until warmed (then validation is skipped).
+// A live snapshot of the OpenRouter model catalog, warmed at boot (see the server.listen warmup) AND on demand
+// (see maybeRewarmModelCatalog). Lets the channel `/model` command validate an id sync without an await; empty
+// until warmed (then validation is skipped so a still-cold catalog never rejects a legitimate id).
 let orModelCatalogIds = [];
+// On-demand re-warm (GROUND_UP_AUDIT 2026-07-06 P2): the boot warm had an EMPTY rejection handler, so a single
+// boot-time /models failure disabled channel /model validation for the WHOLE session. Mirror the provider layer's
+// throttled catalog re-warm (openai-compatible.js maybeRewarmCatalog): when validation asks and the snapshot is
+// still empty, kick ONE non-blocking re-warm, at most once per MODEL_CATALOG_REWARM_MS. Fire-and-forget: this
+// turn's validation still skips (catalog empty), but the NEXT /model attempt gets the recovered catalog.
+const MODEL_CATALOG_REWARM_MS = 5 * 60 * 1000;   // matches REWARM_MIN_MS in the provider layer
+let _modelCatalogRewarmAt = 0;
+let _modelCatalogWarming = false;
+function warmModelCatalog() {
+  if (_modelCatalogWarming) return Promise.resolve();
+  _modelCatalogWarming = true;
+  return makeOpenRouterProvider({ fetch: globalThis.fetch, baseUrl: providerRuntimeBaseUrl('openrouter', '') || OPENROUTER_BASE }).listModels().then(
+    ms => {
+      if (ms && ms.length) {
+        // snapshot the ids so the channel /model command can validate an id synchronously (see setAgentModelFromChannel)
+        try { orModelCatalogIds = ms.map(x => String((x && (x.id || x.model || x.name)) || '')).filter(Boolean); } catch (_) {}
+      }
+      return ms;
+    }
+  ).finally(() => { _modelCatalogWarming = false; });
+}
+function maybeRewarmModelCatalog() {
+  if (orModelCatalogIds.length) return;   // already warm — nothing to do
+  if (_modelCatalogWarming) return;
+  const now = Date.now();
+  if (now - _modelCatalogRewarmAt < MODEL_CATALOG_REWARM_MS) return;   // throttle: at most one re-warm per window
+  _modelCatalogRewarmAt = now;
+  warmModelCatalog().catch(() => {});   // non-blocking; a failure just leaves it empty for the next attempt to retry
+}
 
 // jail helper reused by the read-only /api/file route (resolveInside proves a path stays in the workspace)
 const fsJail = makeFsTools({ fsp, pathMod: path, root: WORKSPACES })._internals;
@@ -2244,7 +2274,7 @@ function startTelegram(token, key, model, agentCfg) {
     // of truth, no per-chat override. modelCatalog is the boot-warmed OpenRouter id snapshot (empty -> skip check).
     roster: () => [...agentRoster].map(([agentId, a]) => ({ agentId, name: a.name, model: a.model, provider: a.provider })),
     setModel: (agentId, model) => setAgentModelFromChannel(agentId, model),
-    modelCatalog: () => orModelCatalogIds,
+    modelCatalog: () => { maybeRewarmModelCatalog(); return orModelCatalogIds; },   // re-warm on demand if a boot-time /models failure left it empty
     // ONE-RESOLVER LAW: the hub hands us the EXACT agentId the run executes as (floor plan > /talk binding >
     // configured > tg_<chatId>). This one-shot slot feeds the work-item intercept below, so the crate on the
     // belt and the queue HUD attribute to the SAME agent that actually works — never a parallel guess.
@@ -2372,7 +2402,7 @@ function startDiscord(token, key, model, agentCfg) {
       // modelCatalog are the SAME app roster + boot-warmed catalog; NO per-channel routing logic here).
       roster: () => [...agentRoster].map(([agentId, a]) => ({ agentId, name: a.name, model: a.model, provider: a.provider })),
       setModel: (agentId, model) => setAgentModelFromChannel(agentId, model),
-      modelCatalog: () => orModelCatalogIds
+      modelCatalog: () => { maybeRewarmModelCatalog(); return orModelCatalogIds; }   // re-warm on demand if a boot-time /models failure left it empty
     },
     adapter: {
       fetch: globalThis.fetch, token: token, clock: { now: () => Date.now() },
@@ -2629,15 +2659,11 @@ server.listen(PORT, '127.0.0.1', () => {
   console.log('     the agents/web-search/tools behind it are all served from here.');
   if (DEV_MODE) console.log('     ⚡ DEV SEED MODE — onboarding auto-skipped; the page resumes the seeded agent.');
   console.log(bar + '\n');
-  // warm the key-independent /models catalog once so priceOf / contextLimit are live for every run
-  makeOpenRouterProvider({ fetch: globalThis.fetch, baseUrl: providerRuntimeBaseUrl('openrouter', '') || OPENROUTER_BASE }).listModels().then(
-    ms => {
-      if (ms && ms.length) {
-        console.log('  · model catalog warmed (' + ms.length + ' models)');
-        // snapshot the ids so the channel /model command can validate an id synchronously (see setAgentModelFromChannel)
-        try { orModelCatalogIds = ms.map(x => String((x && (x.id || x.model || x.name)) || '')).filter(Boolean); } catch (_) {}
-      }
-    },
+  // warm the key-independent /models catalog once so priceOf / contextLimit are live for every run. A boot-time
+  // failure no longer disables channel /model validation for the session — maybeRewarmModelCatalog re-warms on
+  // demand (throttled) the next time a /model command asks (see the channel-hub modelCatalog accessor).
+  warmModelCatalog().then(
+    ms => { if (ms && ms.length) console.log('  · model catalog warmed (' + ms.length + ' models)'); },
     () => {}
   );
   // auto-start a previously-connected Telegram bot (saved config), else an env-provided one (headless deploys).
