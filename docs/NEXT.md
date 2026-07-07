@@ -198,11 +198,17 @@ Gauge: `npm run qa:atlas:status`. Trunk re-sweep 2026-07-07 (39b9c569): **1339 e
 (1288 unmapped queue + 51 missing from the skills-legibility redesign — P2s filed, dedup holds).
 The whole surface is the queue. Areas: system, crew, work, build, world, commands, routes, events, props.
 
-_Active claims:_
-- IN PROGRESS — agent/perfect-world · **world** (dock/topbar cluster batch; Fable-orchestrated wave 1)
+_Active claims: (none)._
 
-_Wave-1 build DONE 2026-07-07 (merged, lane reaped): pruned 51 redesign-removed · 13 SKILLS
-controls audited (blocked from perfected only by EL-3 coverage gap 11c69e21 → J-skills lane)._
+_Wave-1 DONE 2026-07-07 (both lanes merged + reaped, gate 261 green each merge):_
+- _build: pruned 51 redesign-removed · 13 SKILLS controls audited (blocked from perfected
+  only by EL-3 coverage gap 11c69e21 → J-skills lane chip)._
+- _world: **first 15 PERFECTED** (all 3 #bb-* doors + 12 dock items; live DOM round-trips,
+  label==title 14/14, dup-purpose 0) · 2 audited (updates 16193fd0 / quests 161206b5 — no
+  UI-open coverage → shoot-states chip). Product findings: **E-STOP undiscoverable**
+  (b0f9d09f, Alt+H-only — conservative fix chipped; visible-button restore = Andrew call) ·
+  topbar instruments un-enumerated (f0fddb55 → cartographer tooling chip)._
+- _Gauge after wave 1: **15/1288 perfected·fresh (1%)** + 15 audited. Queue: 1258 unmapped._
 
 ## Parked product decisions (need Andrew, don't guess)
 
