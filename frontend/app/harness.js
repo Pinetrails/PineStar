@@ -41,9 +41,25 @@ const Harness = (() => {
   let apiToken = (typeof window !== 'undefined' && window.__STARNET_API_TOKEN__) ? String(window.__STARNET_API_TOKEN__) : '';
   let apiTokenPromise = null;
 
+  // TRUE only for our OWN sidecar API — a same-origin request under /api/. The X-StarNet-Token this gates is a
+  // PRIVATE local credential; a naive substring match on '/api/' would attach it to third-party URLs that merely
+  // contain '/api/' (e.g. the OpenRouter fallback catalog https://openrouter.ai/api/v1/models), leaking the token
+  // cross-origin AND forcing a CORS preflight OpenRouter rejects (so the fallback fails exactly when it's needed).
+  // Same-origin = a leading-slash relative path ('/api/...') OR an absolute URL whose origin === location.origin.
+  function apiPath(s) {
+    s = String(s || '');
+    if (s.indexOf('/api/') === 0) return true;   // leading-slash relative — always same-origin
+    if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(s)) return false;   // other relative forms don't carry another origin
+    try {
+      const base = (typeof location !== 'undefined' && location.href) ? location.href : undefined;
+      const parsed = new URL(s, base);
+      const here = (typeof location !== 'undefined' && location.origin) ? location.origin : null;
+      return here != null && parsed.origin === here && parsed.pathname.indexOf('/api/') === 0;
+    } catch (_) { return false; }
+  }
   function isApiUrl(u) {
-    if (typeof u === 'string') return u.indexOf('/api/') === 0 || /\/api\//.test(u);
-    return !!(u && typeof u.url === 'string' && /\/api\//.test(u.url));
+    if (typeof u === 'string') return apiPath(u);
+    return !!(u && typeof u.url === 'string' && apiPath(u.url));
   }
   function withApiToken(init, token) {
     init = Object.assign({}, init || {});

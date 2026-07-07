@@ -83,4 +83,37 @@ A.ok(/shell_exec background:true/.test(sidecar) && /shell_bg_status/.test(sideca
 A.ok(/browser_navigate plus browser_console\/browser_snapshot\/browser_vision[\s\S]*local\/private dev servers/.test(sidecar), 'work discipline asks browser-capable runs to verify reachable UI/browser behavior without looping on blocked localhost');
 A.ok(/Final reports must name changed files, verification commands\/results/.test(sidecar), 'work discipline requires concrete final evidence');
 
+/* ---------- EGRESS/TOKEN SAFETY (audit 0.6): X-StarNet-Token is SAME-ORIGIN ONLY ----------
+   The fetch monkey-patch attaches the PRIVATE local X-StarNet-Token to every request isApiUrl() accepts.
+   A naive substring match on '/api/' would attach it to third-party URLs that merely contain '/api/' — most
+   critically the OpenRouter fallback catalog (OR + '/models' = https://openrouter.ai/api/v1/models), leaking the
+   local credential cross-origin AND forcing a CORS preflight OpenRouter rejects (so the fallback fails exactly
+   when it's needed). isApiUrl() must therefore gate on SAME ORIGIN, not on the substring '/api/'. harness.js is
+   browser-flow (not node-loadable), so we extract the two function bodies from source and exercise them against a
+   stubbed location — the same source-lock discipline the rest of this file uses. */
+{
+  const mApiPath = /function apiPath\(s\) \{[\s\S]*?\n  \}/.exec(src);
+  const mIsApi = /function isApiUrl\(u\) \{[\s\S]*?\n  \}/.exec(src);
+  A.ok(mApiPath, 'harness.js defines a same-origin apiPath() helper');
+  A.ok(mIsApi, 'harness.js defines isApiUrl()');
+  // isApiUrl must NOT be the old blanket-substring form (that was the leak).
+  A.ok(!/return\s+u\.indexOf\('\/api\/'\)\s*===\s*0\s*\|\|\s*\/\\\/api\\\//.test(src), 'isApiUrl no longer substring-matches /api/ anywhere (the token-leak form is gone)');
+  const factory = new Function('location', 'URL', mApiPath[0] + '\n' + mIsApi[0] + '\nreturn isApiUrl;');
+  const isApiUrl = factory({ origin: 'http://localhost:8787', href: 'http://localhost:8787/' }, URL);
+  // same-origin /api/ (relative + absolute) => token attaches
+  A.ok(isApiUrl('/api/models/openrouter') === true, 'same-origin relative /api/ is an API URL (token attaches)');
+  A.ok(isApiUrl('http://localhost:8787/api/version') === true, 'same-origin absolute /api/ is an API URL (token attaches)');
+  A.ok(isApiUrl({ url: '/api/stt' }) === true, 'Request-like same-origin object is an API URL');
+  // THE LEAK: third-party URL containing /api/ => token must NOT attach
+  A.ok(isApiUrl('https://openrouter.ai/api/v1/models') === false, 'the OpenRouter fallback catalog is NOT an API URL (token must NOT leak cross-origin)');
+  A.ok(isApiUrl('https://openrouter.ai/api/v1/chat/completions') === false, 'OpenRouter chat/completions is NOT an API URL');
+  A.ok(isApiUrl({ url: 'https://openrouter.ai/api/v1/models' }) === false, 'Request-like cross-origin object is NOT an API URL');
+  A.ok(isApiUrl('http://evil.example/api/steal') === false, 'a cross-origin host with /api/ is NOT an API URL');
+  A.ok(isApiUrl('/frontend/app/harness.js') === false, 'a same-origin non-/api path is not an API URL');
+  // the tauri app origin hitting its OWN sidecar /api must still count (desktop build)
+  const isApiUrlTauri = (new Function('location', 'URL', mApiPath[0] + '\n' + mIsApi[0] + '\nreturn isApiUrl;'))({ origin: 'https://tauri.localhost', href: 'https://tauri.localhost/' }, URL);
+  A.ok(isApiUrlTauri('/api/run') === true, 'tauri app origin: its own /api/ is an API URL');
+  A.ok(isApiUrlTauri('https://openrouter.ai/api/v1/models') === false, 'tauri app origin: OpenRouter is still NOT an API URL');
+}
+
 A.report('harness-internal.test');
