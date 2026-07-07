@@ -3961,7 +3961,13 @@ const Chat = (() => {
         // unchanged — replayChannel renders those via toolLine), but the LIVE surface renders a structured CHIP.
         // breakLive() closes the prose paragraph AND the prior chip rail only when it's a *call after prose*; a
         // run of consecutive calls shares one rail because onToolResult below never breaks it.
-        onToolCall: ev => { callNames[ev.callId] = ev.name; const t = '▶ ' + ev.name + ' ' + brief(ev.argsSummary); Channels.addTool(ws.id, t, false); walkToDesk(); presenceToolCall(ws, ev.name); if (skillFlavor(ev)) recentInRunSkill = Date.now(); if (isActiveWs(ws)) { if (activeLiveRow && activeLiveRow.breakSeg) activeLiveRow.breakSeg(); toolChip(ev); } if (typeof U !== 'undefined' && U.bus && ev.name && ev.name.indexOf('mcp__') === 0) U.bus.emit('agent.tool_call', { name: ev.name }); if (typeof U !== 'undefined' && U.bus && ev.callId) U.bus.emit('agent.tool_call', { name: ev.name, agentId: ws.agentId, callId: ev.callId }); },
+        // NOTE (truthful telemetry, audit 0.4): this callback RENDERS only — it must NOT re-emit agent.tool_call.
+        // harness.js already emits the AUTHORITATIVE agent.tool_call onto U.bus for EVERY hero tool step (the full
+        // frozen shape { agentId, runId, callId, name, argsSummary }) before invoking this onToolCall. A synthetic
+        // copy here double-counted worksignalstore's EWMA (recruiter signal) + printed duplicate ticker lines, and
+        // its name-only `{ name }` variant was schema-invalid. The world/worksignal/quest listeners consume the
+        // harness emit; this handler owns the transcript chips + desk walk + presence only.
+        onToolCall: ev => { callNames[ev.callId] = ev.name; const t = '▶ ' + ev.name + ' ' + brief(ev.argsSummary); Channels.addTool(ws.id, t, false); walkToDesk(); presenceToolCall(ws, ev.name); if (skillFlavor(ev)) recentInRunSkill = Date.now(); if (isActiveWs(ws)) { if (activeLiveRow && activeLiveRow.breakSeg) activeLiveRow.breakSeg(); toolChip(ev); } },
         // Re-emit the hero's tool RESULT onto U.bus so the world's per-prop capability surge fires on the REAL
         // outcome (the station SSE tee drops tool_result; the hero's interactive stream is the only place it's
         // seen). callId joins it to its tool_call; isError drives the success-vs-failure (green-vs-red) surge.
