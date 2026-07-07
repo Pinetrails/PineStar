@@ -185,5 +185,52 @@ function jwt(claims) {
     A.eq(migrated, legacyFile, 'reports the legacy source used for migration');
   }
 
+  // ---- persistCodexTokensVerified (EL-5b F4): rotated tokens must reach disk with READ-BACK PROOF ----
+  // A rotated refresh_token that silently fails to persist means a restart reloads a DEAD token -> forced re-login.
+  {
+    // Happy path: save succeeds, read-back proves the rotated refresh_token is on disk.
+    let disk = null;
+    let r = tokenStore.persistCodexTokensVerified({
+      tokens: { access_token: 'A2', refresh_token: 'R2', last_refresh: 't' },
+      save: (obj) => { disk = JSON.parse(JSON.stringify(obj)); },
+      load: () => disk
+    });
+    A.eq(r.ok, true, 'F4: a durable write with matching read-back is verified ok');
+    A.eq(r.attempts, 1, 'F4: succeeds on the first attempt when the write lands');
+    A.eq(disk.refresh_token, 'R2', 'F4: the rotated refresh_token is what reached disk');
+
+    // Write THROWS on the first attempt, succeeds on the second -> retry-once recovers, reports ok.
+    disk = { access_token: 'OLD', refresh_token: 'R_OLD' };
+    let n = 0;
+    r = tokenStore.persistCodexTokensVerified({
+      tokens: { access_token: 'A3', refresh_token: 'R3' },
+      save: (obj) => { n++; if (n === 1) throw new Error('ENOSPC'); disk = JSON.parse(JSON.stringify(obj)); },
+      load: () => disk
+    });
+    A.eq(r.ok, true, 'F4: a first-write failure is recovered by the single retry');
+    A.eq(r.attempts, 2, 'F4: it took two attempts');
+    A.eq(disk.refresh_token, 'R3', 'F4: the retry landed the rotated refresh_token on disk');
+
+    // Write ALWAYS fails: disk keeps the OLD (dead-after-rotation) refresh_token -> ok:false, honest error.
+    disk = { access_token: 'OLD', refresh_token: 'R_OLD' };
+    r = tokenStore.persistCodexTokensVerified({
+      tokens: { access_token: 'A4', refresh_token: 'R4' },
+      save: () => { throw new Error('EACCES'); },
+      load: () => disk
+    });
+    A.eq(r.ok, false, 'F4: a persistent write failure is reported ok:false (NOT swallowed)');
+    A.ok(/EACCES/.test(r.error), 'F4: the honest error text is surfaced to the caller');
+    A.eq(disk.refresh_token, 'R_OLD', 'F4: disk still holds the old token (the hazard the signal must flag)');
+
+    // Write "succeeds" but disk read-back shows a STALE refresh_token (torn write / wrong file) -> ok:false.
+    disk = { access_token: 'A5', refresh_token: 'R_STALE' };
+    r = tokenStore.persistCodexTokensVerified({
+      tokens: { access_token: 'A5', refresh_token: 'R5' },
+      save: () => { /* pretends to write but disk is unchanged */ },
+      load: () => disk
+    });
+    A.eq(r.ok, false, 'F4: read-back mismatch on the refresh_token is caught (no false durability claim)');
+  }
+
   A.report('provider.codex-auth.test');
 })();

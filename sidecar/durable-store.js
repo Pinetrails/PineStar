@@ -177,4 +177,38 @@ function makeDurableJsonStore(deps) {
   return { get: get, set: set, update: update, readKey: readKey, mutex: mutex };
 }
 
-module.exports = { makeKeyedMutex, readJsonResilient, writeJsonResilient, makeDurableJsonStore, _internals: { readOne } };
+/* ---- verifiable durable write (read-back proof + retry-once) ----
+   The LAW for irreplaceable credentials: never claim a secret is persisted without PROOF another durable copy
+   holds it. A swallowed write error on a rotated OAuth refresh_token means a restart reloads the DEAD token ->
+   forced re-sign-in; a swallowed write on freshly-exchanged connector tokens leaves the connector silently
+   unsigned next boot while the UI said "connected". This primitive writes, READS THE VALUE BACK, and runs a
+   caller-supplied proof predicate against the read-back; on failure it retries ONCE, then reports honestly.
+
+     saveJsonVerified({ save(), load(), proof(readBack)->bool, mkdir?() }) -> { ok, attempts, error }
+
+   `save()` performs the durable write (may throw). `load()` reads the value back (resilient loader; may return
+   undefined). `proof(readBack)` returns true when the read-back proves the intended secret reached disk. ok is
+   true ONLY when proof passes — the caller then knows durability is real and can safely report success; on
+   ok:false the caller keeps the value in memory but must surface the failure (never a false "saved"). */
+function saveJsonVerified(opts) {
+  opts = opts || {};
+  const save = opts.save, load = opts.load;
+  const proof = (typeof opts.proof === 'function') ? opts.proof : function () { return true; };
+  if (typeof save !== 'function' || typeof load !== 'function') {
+    return { ok: false, attempts: 0, error: 'saveJsonVerified requires save+load functions' };
+  }
+  let lastErr = '';
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    if (typeof opts.mkdir === 'function') { try { opts.mkdir(); } catch (_) {} }
+    try { save(); } catch (e) { lastErr = (e && e.message) || String(e); }
+    // A load() that THROWS proves nothing (the file is unreadable/locked) — never run proof on it, never call it
+    // proven. Only a successful read-back is eligible for the proof predicate.
+    let readBack, loadOk = true; try { readBack = load(); } catch (e) { loadOk = false; lastErr = lastErr || (e && e.message) || String(e); }
+    let proven = false; if (loadOk) { try { proven = !!proof(readBack); } catch (_) { proven = false; } }
+    if (proven) return { ok: true, attempts: attempt, error: '' };
+    if (!lastErr) lastErr = 'read-back did not prove the write reached disk';
+  }
+  return { ok: false, attempts: 2, error: lastErr };
+}
+
+module.exports = { makeKeyedMutex, readJsonResilient, writeJsonResilient, makeDurableJsonStore, saveJsonVerified, _internals: { readOne } };

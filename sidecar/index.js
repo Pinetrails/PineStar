@@ -98,7 +98,7 @@ const { makeCronDriver } = require('./cron-driver.js');    // the autonomous tic
 const { makeAutoNotifier } = require('./autonotify.js');   // B4: ping a connected channel when a cron run produces work
 const configExport = require('./configexport.js');   // P1-7: station backup — export/import/reset (pure shape+redaction; index wires the live stores)
 const { writeFileDurable } = require('./durable-write.js'); // G4.2: crash-safe atomic+durable single-file replace (fsync-before-rename)
-const { makeKeyedMutex, readJsonResilient, writeJsonResilient, makeDurableJsonStore } = require('./durable-store.js'); // P1/P2: per-key serialized + last-known-good-recoverable single-file JSON stores
+const { makeKeyedMutex, readJsonResilient, writeJsonResilient, makeDurableJsonStore, saveJsonVerified } = require('./durable-store.js'); // P1/P2: per-key serialized + last-known-good-recoverable single-file JSON stores
 const { makeWidgetTools } = require('./tools/builtin/widgets.js'); // WIDGET RAILS Phase 2: widget.set — agent-fed readouts for the chrome rails (polled via GET /api/widgets)
 const { makeMemoryStore, resetAgentMemory, restoreDeclined } = require('./memory-store.js'); // durable notebook:/todo:/declined: sibling stores
 const { makeWorkshopStore } = require('./workshop-store.js'); // durable per-agent away-workshop grant + backlog + discard denylist
@@ -1682,7 +1682,11 @@ function scrubChannelSecretsBak() {
   if (!DESKTOP_SHELL) return;
   const bak = CHANNEL_SECRETS_FILE + '.bak';
   let raw;
-  try { raw = fs.readFileSync(bak, 'utf8'); } catch (_) { return; }   // no .bak -> nothing to scrub
+  // no .bak (ENOENT) -> nothing to scrub. A PRESENT-but-unreadable .bak (locked/EACCES) may still hold a plaintext
+  // secret we can't see to strip; we do NOT blind-write over an unread .bak (that could destroy a live recovery
+  // copy), but we surface it once so the lingering plaintext isn't fully silent — a later boot (unlocked) re-scrubs.
+  try { raw = fs.readFileSync(bak, 'utf8'); }
+  catch (e) { if (e && e.code && e.code !== 'ENOENT') console.warn('[channels] could not read secrets.json.bak to scrub (' + e.code + ') — a plaintext secret may linger there until the next boot.'); return; }
   if (!raw || !String(raw).length) return;
   let parsed;
   try { parsed = JSON.parse(raw); } catch (_) { return; }             // corrupt .bak -> leave it (recovery may need bytes)
@@ -1746,14 +1750,29 @@ function loadCodexTokens() {
   }
   catch (e) { return null; }
 }
+// Truthful persist-failure signal for the ChatGPT-subscription token store. When a token WRITE cannot be proven
+// to have reached disk (read-back mismatch after a retry), we keep the rotated tokens live in memory for THIS
+// session but must NOT pretend they are durable — a restart would reload the old (rotation-invalidated) refresh
+// token and force a re-sign-in. `codexPersistError` carries the honest reason; the codex status endpoint surfaces
+// it so the connect UI can warn "signed in, but couldn't be saved — you may need to reconnect after a restart".
+let codexPersistError = '';
 function saveCodexTokens(obj) {
-  try {
-    fs.mkdirSync(path.dirname(CODEX_TOKENS_FILE), { recursive: true });
-    saveResilient(CODEX_TOKENS_FILE, obj);   // fsync-durable + .bak last-known-good (OAuth tokens survive power loss)
-  } catch (e) { console.warn('[codex] token persist failed:', (e && e.message) || e); }
+  try { fs.mkdirSync(path.dirname(CODEX_TOKENS_FILE), { recursive: true }); } catch (_) {}
+  // Verifiable persist: write, READ BACK, confirm the (possibly-rotated) refresh_token is on disk, retry once.
+  const r = codexTokenStore.persistCodexTokensVerified({
+    tokens: obj,
+    save: (o) => saveResilient(CODEX_TOKENS_FILE, o),   // fsync-durable + .bak last-known-good (OAuth tokens survive power loss)
+    load: () => loadResilient(CODEX_TOKENS_FILE, 'codex')
+  });
+  if (r.ok) { codexPersistError = ''; return true; }
+  // Read-back could NOT prove the token reached disk. Surface it honestly (console + status field) rather than
+  // swallowing — a lost rotated refresh_token is the exact "forced re-sign-in after restart" bug this guards.
+  codexPersistError = r.error || 'token could not be persisted to disk';
+  console.error('[codex] token persist UNVERIFIED after retry (' + codexPersistError + ') — tokens kept in memory for this session; a restart may require re-signing in to ChatGPT.');
+  return false;
 }
 // clear must also drop the .bak so a signed-out session can't be "recovered" from the last-known-good on reload.
-function clearCodexTokens() { try { fs.unlinkSync(CODEX_TOKENS_FILE); } catch (e) {} try { fs.unlinkSync(CODEX_TOKENS_FILE + '.bak'); } catch (e) {} }
+function clearCodexTokens() { try { fs.unlinkSync(CODEX_TOKENS_FILE); } catch (e) {} try { fs.unlinkSync(CODEX_TOKENS_FILE + '.bak'); } catch (e) {} codexPersistError = ''; }
 let codexTokens = loadCodexTokens();
 
 // Hand a Codex run a FRESH access_token: refresh when the JWT exp is within the skew window, persisting the
@@ -1859,9 +1878,26 @@ function loadConnectorOauth() {
   catch (_) { return { byId: {}, clients: {} }; }
 }
 let connectorOauth = loadConnectorOauth();
-function saveConnectorOauth() {
-  try { fs.mkdirSync(CONNECTORS_DIR, { recursive: true }); saveResilient(CONNECTORS_OAUTH_FILE, { version: 1, byId: connectorOauth.byId, clients: connectorOauth.clients }); }
-  catch (e) { console.warn('[connectors] oauth persist failed:', (e && e.message) || e); }
+// Persist the connector-OAuth store (DCR clientId cache + per-connector access/refresh tokens). Returns true ONLY
+// when a READ-BACK proves the write reached disk. `verifyId`, when given, additionally confirms that connector's
+// token bundle is on disk — so the sign-in callback can prove the tokens it just exchanged are durable before it
+// reports success (a silent write failure otherwise leaves the connector unsigned + the DCR clientId orphaned on
+// the NEXT boot, while the popup lied "connected"). Retries once. Never throws.
+function saveConnectorOauth(verifyId) {
+  const intended = String((verifyId && connectorOauth.byId[verifyId] && connectorOauth.byId[verifyId].accessToken) || '');
+  const r = saveJsonVerified({
+    mkdir: () => fs.mkdirSync(CONNECTORS_DIR, { recursive: true }),
+    save: () => saveResilient(CONNECTORS_OAUTH_FILE, { version: 1, byId: connectorOauth.byId, clients: connectorOauth.clients }),
+    load: () => loadResilient(CONNECTORS_OAUTH_FILE, 'connector-oauth'),
+    proof: (raw) => {
+      if (!raw || typeof raw !== 'object') return false;
+      if (!verifyId) return true;   // no per-connector proof requested (e.g. clientId-only save) -> a clean read-back is enough
+      const got = raw.byId && raw.byId[verifyId];
+      return !!(got && String(got.accessToken || '') === intended);   // prove THIS connector's exchanged token is on disk
+    }
+  });
+  if (!r.ok) console.warn('[connectors] oauth persist UNVERIFIED after retry (' + r.error + ')');
+  return r.ok;
 }
 // drop the cached dynamically-registered client for an authorization server (when the AS reports it invalid), so the
 // next sign-in RE-REGISTERS a fresh one instead of wedging forever on a pruned/rotated client id.
@@ -3380,7 +3416,11 @@ async function handleConnectorOauthStart(req, res) {
       if (!disc.registrationEndpoint) return json(502, { error: 'this server needs a pre-registered OAuth client (no dynamic registration)' });
       const reg = await mcpOauth.registerClient({ fetchImpl: globalThis.fetch, registrationEndpoint: disc.registrationEndpoint, redirectUri: CONNECTOR_OAUTH_REDIRECT, clientName: 'StarNet' });
       clientId = reg.clientId;
-      connectorOauth.clients[disc.authorizationServer] = { clientId: clientId, at: Date.now() }; saveConnectorOauth();
+      // Cache the freshly DCR-registered clientId. If it can't be proven on disk, warn but DON'T abort the sign-in:
+      // the clientId is still valid in-memory for this flow, and a failed cache only costs a re-registration next
+      // time (harmless — a fresh DCR client), unlike a lost token which forces a full re-sign-in.
+      connectorOauth.clients[disc.authorizationServer] = { clientId: clientId, at: Date.now() };
+      if (!saveConnectorOauth()) console.warn('[connectors] DCR clientId cache not persisted for ' + disc.authorizationServer + ' — a later sign-in will re-register a fresh client.');
     }
     const verifier = mcpOauth.makeVerifier(crypto.randomBytes(48));
     const state = crypto.randomBytes(16).toString('hex');
@@ -3426,7 +3466,14 @@ async function handleConnectorOauthCallback(req, res) {
     connectorOauth.byId[pending.id] = { accessToken: tok.accessToken, refreshToken: tok.refreshToken, expiresAt: tok.expiresAt,
       scope: tok.scope, tokenType: tok.tokenType, clientId: pending.clientId, tokenEndpoint: pending.tokenEndpoint,
       authorizationServer: pending.authorizationServer, resource: pending.resource, at: Date.now() };
-    saveConnectorOauth();
+    // FAIL THE SIGN-IN LOUDLY if the exchanged tokens can't be proven on disk (read-back + retry). A silent persist
+    // failure would leave the connector unsigned + the DCR clientId orphaned on the NEXT boot while the popup lied
+    // "connected" — never assert durable state the harness can't prove. Roll the in-memory entry back so this session
+    // is consistent with disk (unsigned) rather than a phantom-connected connector that vanishes on restart.
+    if (!saveConnectorOauth(pending.id)) {
+      delete connectorOauth.byId[pending.id];
+      return page('Sign-in could not be saved', pending.label + ' authorized, but the sign-in could NOT be saved to disk (it would be lost on restart), so it was not activated. Check the sidecar console for the write error and try Sign in again.', false);
+    }
     const cfg = { id: pending.id, transport: 'http', url: pending.serverUrl, label: pending.label, enabled: true, oauth: true };
     connectorConfigs = connectorConfigs.filter(c => c.id !== pending.id).concat([cfg]); saveConnectorConfigs();
     const result = await configureConnectorCfg(cfg);
@@ -5764,7 +5811,9 @@ async function handleCodexPoll(req, res) {
 // GET /api/auth/codex/status — booleans only; never the tokens.
 function handleCodexStatus(req, res) {
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-  res.end(JSON.stringify({ connected: !!(codexTokens && codexTokens.access_token), last_refresh: (codexTokens && codexTokens.last_refresh) || '' }));
+  // persistError: honest telemetry — the session is signed in (tokens live in memory) but a token WRITE could not
+  // be proven to reach disk, so a restart may require re-signing in. Empty string when persistence is healthy.
+  res.end(JSON.stringify({ connected: !!(codexTokens && codexTokens.access_token), last_refresh: (codexTokens && codexTokens.last_refresh) || '', persistError: codexPersistError || '' }));
 }
 
 // GET /api/auth/codex/models — the ACCOUNT's real Codex model list (live-discovered with a fresh token), so

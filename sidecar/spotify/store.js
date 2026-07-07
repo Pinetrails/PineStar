@@ -97,9 +97,16 @@
         });
         const json = await res.json().catch(() => null);
         if (!res.ok || !json || !json.access_token) {
-          const code = json && (json.error || (json.error && json.error.message));
-          if (res.status === 400 || code === 'invalid_grant') { await clear(); throw new Error('Spotify session expired — please reconnect in Settings.'); }
-          throw new Error('Spotify token refresh failed (' + res.status + (code ? ': ' + code : '') + ')');
+          // The OAuth error code is a STRING per RFC 6749 §5.2. Read it defensively (never assume `json` parsed).
+          const code = json && typeof json.error === 'string' ? json.error : '';
+          // LAW (never destroy the last copy of a credential without proof it is truly dead): clear() PERMANENTLY
+          // wipes the refresh token, so it fires ONLY on an explicit, well-formed `invalid_grant` — the one answer
+          // that means Spotify itself revoked the token. A transient 5xx, a 400 with a DIFFERENT error
+          // (invalid_request / temporarily_unavailable / rate-limit), or an unparseable body proves NOTHING about
+          // the token's validity, so we throw a RETRYABLE error and LEAVE the live refresh token on disk. A bare
+          // 400 status is NOT sufficient (that was the bug: a malformed 400 wiped a working session).
+          if (code === 'invalid_grant') { await clear(); throw new Error('Spotify session expired — please reconnect in Settings.'); }
+          throw new Error('Spotify token refresh failed (' + res.status + (code ? ': ' + code : '') + ') — retry later');
         }
         await setTokens(pkce.tokensFromResponse(json, fetchedAt, state.refreshToken));
         return state.accessToken;

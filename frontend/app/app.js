@@ -1291,8 +1291,15 @@ const App = (() => {
     try { const r = await fetch('/api/auth/codex/status'); j = await r.json(); } catch (_) {}
     codexConnected = !!j.connected;
     if (codexConnected) {
-      statusEl.innerHTML = '<span class="conn-dot"></span>connected to ChatGPT — your agents can run on your subscription';
-      statusEl.className = 'codex-status ok';
+      // Truthful telemetry: if the sidecar signed in but could NOT prove the (rotated) token reached disk, say so —
+      // the session works now, but a restart may require re-signing in. Never claim durable state the harness can't prove.
+      if (j.persistError) {
+        statusEl.innerHTML = '<span class="conn-dot"></span>connected to ChatGPT — but the sign-in could not be saved to disk; you may need to re-sign in after a restart';
+        statusEl.className = 'codex-status warn';
+      } else {
+        statusEl.innerHTML = '<span class="conn-dot"></span>connected to ChatGPT — your agents can run on your subscription';
+        statusEl.className = 'codex-status ok';
+      }
       signinBtn.textContent = '↻ RE-SIGN IN';
       logoutBtn.classList.remove('hidden');
     } else {
