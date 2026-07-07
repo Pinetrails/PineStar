@@ -2368,14 +2368,22 @@ function saveNightshiftState() { try { saveResilient(NIGHTSHIFT_STATE_FILE, nigh
    no parallel night-shift log. Best-effort (recordAutonomy already never throws into a tick). */
 function autonomyLedgerAppend(entry) {
   const e = entry || {};
+  // The tick 'beat' (accept) → 'act'; a 'decline' names its gate; the settle 'outcome' → 'note'. A tool-run that
+  // BUILT a real artifact records its OWN kind:'act' with the artifact paths inside runNightshiftActShift (the
+  // authoritative place that knows them), so this generic outcome stays 'note' — no duplicate 'act' row. The
+  // outcome's runId/artifacts still ride the detail bag for the morning-report trail.
   const kind = e.kind === 'beat' ? 'act' : (e.kind === 'decline' ? 'decline' : 'note');
   const detail = {};
   if (e.beatsLeft != null) detail.beatsLeft = e.beatsLeft;
   if (e.away != null) detail.away = !!e.away;
-  if (e.kind === 'outcome') { detail.phase = 'outcome'; detail.delivered = !!e.delivered; if (e.title) detail.title = e.title; if (e.archetype) detail.archetype = e.archetype; }
+  if (e.kind === 'outcome') {
+    detail.phase = 'outcome'; detail.delivered = !!e.delivered;
+    if (e.title) detail.title = e.title; if (e.archetype) detail.archetype = e.archetype;
+    if (e.artifactPaths) detail.artifacts = String(e.artifactPaths);
+  }
   recordAutonomy({
     ts: e.ts, source: 'nightshift', kind: kind,
-    agentId: e.agentId, binding: e.binding,
+    agentId: e.agentId, runId: (e.runId != null ? e.runId : undefined), binding: e.binding,
     reason: e.reason || (e.kind === 'outcome' ? (e.delivered ? 'delivered' : 'stood-down') : undefined),
     detail: detail
   });
@@ -2427,6 +2435,54 @@ function recordNightshiftDraft(entry) {
   try { saveResilient(NIGHTSHIFT_DRAFTS_FILE, { v: 1, drafts: nightshiftDrafts }); } catch (e) { console.warn('[nightshift] drafts persist failed:', (e && e.message) || e); }
 }
 
+/* ---- NS-3: the LEARN store — per-archetype { up, down } tallies the Commander's approve/deny verdicts feed, so
+   scoreAndSelect biases toward the archetypes THIS Commander actually keeps (the uncopyable compounding moat NS-1
+   left with empty server weights). Persisted durably (sibling of the drafts; survives restart). The pure math is
+   in autopilot.js (learnFold / learnWeightsFrom) — one definition shared with the frontend AutopilotStore.rate. */
+const NIGHTSHIFT_LEARN_FILE = path.join(WORKSPACES, 'nightshift.learn.json');
+function loadNightshiftLearn() { try { const o = loadResilient(NIGHTSHIFT_LEARN_FILE, 'nightshift-learn'); return (o && o.learn && typeof o.learn === 'object') ? o.learn : {}; } catch (_) { return {}; } }
+let nightshiftLearn = loadNightshiftLearn();
+function nightshiftLearnWeights() { try { return Autopilot.learnWeightsFrom(nightshiftLearn); } catch (_) { return {}; } }
+// record ONE verdict: approve (useful:true) up-weights the archetype, deny (useful:false) down-weights it. Best-effort
+// persist — a learn-write hiccup must never fail the decide route that calls it.
+function recordNightshiftVerdict(archetype, useful) {
+  const key = String(archetype || '').trim();
+  if (!key) return;
+  try { nightshiftLearn = Autopilot.learnFold(nightshiftLearn, key, !!useful); saveResilient(NIGHTSHIFT_LEARN_FILE, { v: 1, learn: nightshiftLearn }); }
+  catch (e) { console.warn('[nightshift] learn persist failed:', (e && e.message) || e); }
+}
+
+/* ---- NS-3: a small runId → archetype map so a return-card verdict (keep=approve / discard=deny in
+   handleWorkshopDecide) can feed the RIGHT archetype into the learn store. A night-shift act's backlog item is
+   generic (workshop-store doesn't carry an archetype field), so the archetype rides here, keyed by runId. Capped
+   + durable (sibling of the learn store). A workshop-shift (non-nightshift) build simply has no entry → no learn. */
+const NIGHTSHIFT_ACTS_FILE = path.join(WORKSPACES, 'nightshift.acts.json');
+function loadNightshiftActs() { try { const o = loadResilient(NIGHTSHIFT_ACTS_FILE, 'nightshift-acts'); return (o && o.acts && typeof o.acts === 'object') ? o.acts : {}; } catch (_) { return {}; } }
+let nightshiftActs = loadNightshiftActs();
+function recordNightshiftAct(runId, archetype) {
+  const rid = String(runId || ''); const arch = String(archetype || '').trim();
+  if (!rid || !arch) return;
+  try {
+    nightshiftActs[rid] = { archetype: arch, at: Date.now() };
+    const keys = Object.keys(nightshiftActs);
+    if (keys.length > 200) { keys.sort((a, b) => (nightshiftActs[a].at || 0) - (nightshiftActs[b].at || 0)); for (const k of keys.slice(0, keys.length - 200)) delete nightshiftActs[k]; }
+    saveResilient(NIGHTSHIFT_ACTS_FILE, { v: 1, acts: nightshiftActs });
+  } catch (e) { console.warn('[nightshift] acts persist failed:', (e && e.message) || e); }
+}
+function archetypeForRun(runId) { const r = nightshiftActs[String(runId || '')]; return (r && r.archetype) || null; }
+
+/* the return-card verdict → LEARN + LEDGER bridge (NS-3). A night-shift act's runId maps to an archetype; a keep
+   (approve) UP-weights it, a discard (deny) DOWN-weights it, so scoreAndSelect's per-archetype bias actually learns
+   from the Commander's verdicts (the compounding moat). Also records the verdict in the autonomy ledger as an
+   honest decision trail. A plain workshop-shift build (no archetype mapping) is a clean no-op. Best-effort. */
+function nightshiftDecideLearn(agentId, runId, useful) {
+  const arch = archetypeForRun(runId);
+  if (!arch) return;   // not a night-shift act (or already reaped) → nothing to learn
+  recordNightshiftVerdict(arch, useful);
+  try { recordAutonomy({ ts: Date.now(), source: 'nightshift', kind: 'note', agentId: String(agentId || ''), runId: String(runId || ''), reason: useful ? 'approved' : 'denied', detail: { phase: 'verdict', archetype: arch, useful: !!useful } }); } catch (_) {}
+  try { delete nightshiftActs[String(runId || '')]; saveResilient(NIGHTSHIFT_ACTS_FILE, { v: 1, acts: nightshiftActs }); } catch (_) {}   // decided once
+}
+
 // build the { dim:[texts] } grounding map from the synced read-only beliefs snapshot (commanderPosture.beliefs()).
 function nightshiftBeliefMap() {
   const snap = commanderPosture.beliefs();
@@ -2446,6 +2502,16 @@ async function runNightshiftBeat(opts) {
   opts = opts || {};
   const agentId = String(opts.agentId || NIGHTSHIFT_AGENT);
   const signal = opts.signal;
+  // NS-3 REACH GATE — the honest gate, not a decorative one: when the posture's Reach reaches 'sandbox' (and
+  // initiative already permits acting, guaranteed by the driver's posture gate), a beat becomes a REAL tool-using
+  // BUILD in the agent's jail (runNightshiftActShift) instead of a reason-only draft. buildsUnattended is exactly
+  // (initiative ≥ leash) AND (reach ≥ sandbox). At reach 'observe' this is false and the reason-only path below runs
+  // UNCHANGED (NS-1 behavior). A tool-run needs the away-workshop WRITE grant (workshopOf) to unlock its jailed
+  // writes through the SAME consent broker — without it the run would default-deny every write, so we require it.
+  const posture = (commanderPosture.summary() || {});
+  if (posture.buildsUnattended && workshopOf(agentId)) {
+    return runNightshiftActShift(Object.assign({}, opts, { agentId }));
+  }
   // readiness from the synced beliefs snapshot: a dim is usable iff known + fresh (Autopilot.readiness).
   const snap = commanderPosture.beliefs() || {};
   const summary = { known: Array.isArray(snap.known) ? snap.known : Object.keys((snap.beliefs) || {}) };
@@ -2462,8 +2528,8 @@ async function runNightshiftBeat(opts) {
   const cRes = await nightshiftChat({ agentId, system, signal, messages: [{ role: 'user', content: Autopilot.buildCandidateDirective({ beliefs, eligible }) }] });
   if (cRes.error) return { delivered: false, reason: cRes.error };
   const candidates = Autopilot.parseCandidates(cRes.text, { eligible, beliefs });
-  // 2) SELECT (confidence gate)
-  const sel = Autopilot.scoreAndSelect(candidates, {});
+  // 2) SELECT (confidence gate + the learned per-archetype bias — NS-3 wires the server LEARN store in here)
+  const sel = Autopilot.scoreAndSelect(candidates, { weights: nightshiftLearnWeights() });
   if (!sel.selected) return { delivered: false, reason: sel.reason };
   // 3) DO
   const dRes = await nightshiftChat({ agentId, system, signal, messages: [{ role: 'user', content: Autopilot.buildDoDirective(sel.selected, { name }) }] });
@@ -2485,6 +2551,96 @@ async function runNightshiftBeat(opts) {
   recordNightshiftDraft(entry);
   try { placeCronWorkitem(agentId, '✦ night-shift: ' + deliverable.title, crypto.randomUUID()); } catch (_) {}
   return { delivered: true, reason: 'delivered', title: deliverable.title, archetype: sel.selected.archetype, verdict: crit.verdict };
+}
+
+/* ============================ NS-3: the REACH-GATED REAL ACT (reach ≥ sandbox) ============================
+   When the Commander raises Reach to 'sandbox', a night-shift beat's DO step becomes a REAL runOnce TASK run
+   (surface:'autonomous', isTask:true, tools enabled) whose writes are confined to the away-workshop jail — the
+   SAME machinery runWorkshopShift uses, so the return card + approve-to-ship gate + jail confinement + the
+   consent default-deny (no send/publish/spend) are all REUSED, not reinvented. The one difference from a workshop
+   shift: the JOB is self-generated by the reason-only propose→grounding-veto→confidence-gate pipeline (still
+   grounded, still honestly rated, learn-biased) instead of popped from a user's backlog. The selected candidate is
+   registered as a synthetic backlog item so the built deliverable flows into /pending + /decide identically. */
+const NIGHTSHIFT_ACT_MARK = '[NIGHTSHIFT_ACT]';   // prompt sentinel (parallels WORKSHOP_MARK); e2e mock keys off it
+
+async function runNightshiftActShift(opts) {
+  opts = opts || {};
+  const agentId = String(opts.agentId || NIGHTSHIFT_AGENT);
+  const signal = opts.signal;
+  // GATE (defense in depth — runNightshiftBeat already checked, but this is the load-bearing boundary): the write
+  // grant must be on, or every jailed write default-denies and the build produces no manifest.
+  if (!workshopOf(agentId)) return { delivered: false, reason: 'not-granted' };
+  const model = cronModelFor({ agentId }); const provider = cronProviderFor({ agentId }); const key = cronKeyFor(provider);
+  if (!model || !cronHasCredential(provider, key)) return { delivered: false, reason: 'no-capability' };
+
+  // 1) PROPOSE + 2) SELECT — reason-only (nightshiftChat runs with NO tools), tool-capable CANDIDATE directive so
+  //    the ideas are BUILD-shaped, still grounding-vetoed + confidence-gated + learn-biased. Same anti-slop heart.
+  const snap = commanderPosture.beliefs() || {};
+  const summary = { known: Array.isArray(snap.known) ? snap.known : Object.keys((snap.beliefs) || {}) };
+  const beliefsByDim = (dim) => (snap.beliefs && snap.beliefs[dim]) || [];
+  const rd = Autopilot.readiness(summary, beliefsByDim, Date.now(), {});
+  const eligible = Autopilot.eligibleArchetypes(rd.usableDims);
+  if (rd.tier !== 'hot' || !eligible.length) return { delivered: false, reason: 'not-ready:' + rd.tier };
+  const beliefs = nightshiftBeliefMap();
+  const ident = cronIdentityFor(agentId) || {};
+  const system = (ident.system && String(ident.system)) || cronSystemFor(agentId);
+  const cRes = await nightshiftChat({ agentId, system, signal, messages: [{ role: 'user', content: Autopilot.buildCandidateDirectiveV2({ beliefs, eligible }) }] });
+  if (cRes.error) return { delivered: false, reason: cRes.error };
+  const candidates = Autopilot.parseCandidates(cRes.text, { eligible, beliefs });
+  const sel = Autopilot.scoreAndSelect(candidates, { weights: nightshiftLearnWeights() });
+  if (!sel.selected) return { delivered: false, reason: sel.reason };
+
+  // 3) BUILD — a REAL runOnce task run in the jail. Register the self-selected job as a synthetic backlog item so
+  //    the deliverable lands in /pending + /decide exactly like a workshop build (the return card + ship gate are
+  //    keyed on a backlog item carrying builtRunId). The item id is deterministic from the runId so it can't collide.
+  const runId = opts.runId || crypto.randomUUID();
+  const backlogId = 'ns-act-' + runId;
+  const title = String(sel.selected.title || 'Night-shift build').slice(0, 200);
+  try { await workshopStore.queue(agentId, { id: backlogId, title, detail: String(sel.selected.spec || ''), source: 'nightshift' }, Date.now()); }
+  catch (_) { /* a queue hiccup (e.g. a title the Commander earlier discarded) → stand down honestly */ return { delivered: false, reason: 'queue-refused' }; }
+  await workshopStore.claimNext(agentId, runId, isRunLive).catch(() => null);   // stamp buildingRunId (zombie-reap aware)
+
+  const dir = 'workshop/' + runId;
+  const prompt = NIGHTSHIFT_ACT_MARK + '\n' + Autopilot.buildDoDirectiveV2(sel.selected, { runId, dir, backlogId });
+  const ac = signal ? null : new AbortController();
+  const sig = signal || (ac && ac.signal);
+  if (ac) runs.set(runId, ac);
+  runsMeta.set(runId, { agentId, startedAt: Date.now(), source: 'nightshift' });
+  try { placeCronWorkitem(agentId, '✦ night-shift: ' + title, runId); } catch (_) {}
+  let threw = null;
+  try {
+    await runOnce({
+      key, model, provider, system,
+      messages: [{ role: 'user', content: prompt }],
+      agentId, isTask: true, emit: (typeof opts.emit === 'function' ? opts.emit : function () {}), signal: sig,
+      runId, streamId: 'nightshift-act-' + runId, surface: 'autonomous', trigger: 'nightshift', broadcast: !!opts.broadcast,
+      station: router.stationFor(agentId) || undefined
+    });
+  } catch (e) { threw = e; }
+  finally {
+    if (ac) runs.delete(runId); runsMeta.delete(runId); dropSteer(runId, 'nightshift-act');
+    try { settleCronWorkitem(runId, threw ? null : 'done'); } catch (_) {}
+  }
+
+  // 4) VALIDATE + REGISTER — only a disk-proven manifest surfaces (truthful telemetry). On success the item is
+  //    marked built (feeds /pending), workshop.built fires (the return card renders it), and the ledger records an
+  //    'act' with the artifact path(s) + runId. On no-manifest the claim releases (counts an attempt → eventual park).
+  const manifest = await validateWorkshopManifest(agentId, runId);
+  if (!manifest) {
+    try { await workshopStore.releaseClaim(agentId, runId, { failed: true }); } catch (_) {}
+    return { delivered: false, reason: threw ? 'run-failed' : 'no-manifest', runId };
+  }
+  try { await workshopStore.markBuilt(agentId, backlogId, runId); } catch (_) {}
+  recordNightshiftAct(runId, sel.selected.archetype);   // so a keep/discard verdict feeds the RIGHT archetype into LEARN
+  try { chanEmit('workshop.built', { agentId, runId, manifest }); } catch (_) {}
+  const paths = (manifest.files || []).map(f => dir + '/' + f.path).slice(0, 8).join(', ');
+  // LEDGER TRUTH (NS-3): a real tool-run that BUILT an artifact records kind 'act' here — the authoritative place
+  // that knows the artifact paths (this fires for BOTH the driver path and the force-fire route, since both call
+  // runNightshiftActShift). The driver's own generic outcome record stays a plain 'note' (no duplicate 'act').
+  try { recordAutonomy({ ts: Date.now(), source: 'nightshift', kind: 'act', agentId, runId, reason: 'built', detail: { phase: 'act', title: manifest.title, archetype: sel.selected.archetype, artifacts: paths } }); } catch (_) {}
+  // record the desk draft too, so the "while you were away" digest still lists this beat.
+  try { recordNightshiftDraft({ title: manifest.title, archetype: sel.selected.archetype, at: Date.now(), body: String(manifest.summary || '').slice(0, 4000), wrote: { path: paths } }); } catch (_) {}
+  return { delivered: true, reason: 'built', title: manifest.title, archetype: sel.selected.archetype, runId, backlogId, artifactPaths: paths };
 }
 
 // ---- the driver: all ambient deps injected, so nightshift-driver.js stays determinism-clean.
@@ -2909,6 +3065,7 @@ function dispatchRoute(req, res) {
   if (req.method === 'GET' && req.url === '/api/autonomy/posture') return handleAutonomyPostureGet(req, res);
   if (req.method === 'POST' && req.url === '/api/activity') return handleActivityBeacon(req, res);
   if (req.method === 'GET' && req.url === '/api/nightshift/status') return handleNightshiftStatus(req, res);
+  if (req.method === 'POST' && req.url === '/api/nightshift/beat') return handleNightshiftBeatNow(req, res);
   if (req.method === 'POST' && req.url === '/api/summon/ack') return handleSummonAck(req, res);
   if (req.method === 'POST' && req.url === '/api/key') return handleSetKey(req, res);
   if (req.method === 'POST' && req.url === '/api/channels/token') return handleSetChannelToken(req, res);
@@ -4448,6 +4605,10 @@ async function handleWorkshopDecide(req, res) {
     // wipe the run dir (jail-checked) and denylist the backlogId so it isn't silently rebuilt.
     try { const { abs } = await fsJail.resolveInside(agentId, relDir); await fsp.rm(abs, { recursive: true, force: true }); } catch (_) {}
     if (item) { try { await workshopStore.discard(agentId, item.id); } catch (_) {} }
+    // NS-3 DENY → LEARN: a night-shift-built deliverable the Commander rejects DOWN-weights its archetype, so
+    // scoreAndSelect proposes that kind less for THIS Commander next time (deny feeds the learning loop). Only a
+    // night-shift act has an archetype mapping; a plain workshop build has none → no-op. Recorded in the ledger too.
+    nightshiftDecideLearn(agentId, runId, false);
     try { chanEmit('workshop.decided', { agentId, runId, decision: 'discard' }); } catch (_) {}
     return json(200, { ok: true, decision: 'discard' });
   }
@@ -4486,6 +4647,11 @@ async function handleWorkshopDecide(req, res) {
   // undoes a successful copy, so `opened` reports honestly whether Explorer actually launched.
   let opened = false;
   if (body.open === true) { try { await workshopOpener({ kind: 'file', target: destPath }); opened = true; } catch (_) { opened = false; } }
+  // NS-3 APPROVE → SHIP + LEARN: keeping (copying the artifact OUT of the jail to the Commander's folder) IS the
+  // ship. For a night-shift-built deliverable it also UP-weights its archetype so the station proposes that kind
+  // more next time. Undo path: the run dir stays in the workshop as an archive (kept, not wiped) and the checkpoint
+  // rollback net covers the agent's workspace — the copy-out is additive to a user-chosen empty folder (COPYFILE_EXCL).
+  nightshiftDecideLearn(agentId, runId, true);
   try { chanEmit('workshop.decided', { agentId, runId, decision: 'keep', destPath: destPath }); } catch (_) {}
   json(200, { ok: true, decision: 'keep', destPath: destPath, copied: copied, opened: opened });
 }
@@ -5871,6 +6037,25 @@ function handleNightshiftStatus(req, res) {
   };
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
   res.end(JSON.stringify(out));
+}
+
+// POST /api/nightshift/beat { agentId? } — force-fire ONE night-shift beat NOW (attended test of the unattended
+// path, mirroring /api/workshop/shift). Routes through runNightshiftBeat, so the REACH GATE decides live: reach
+// 'observe' → a reason-only draft (delivered/stood-down, no jailed write); reach ≥ 'sandbox' + the away grant →
+// a REAL tool-run that builds an artifact in the jail and lands as a pending workshop deliverable. Streams NDJSON.
+async function handleNightshiftBeatNow(req, res) {
+  let body; try { body = JSON.parse(await readBody(req, 4096)) || {}; } catch (e) { res.writeHead(400); return res.end('bad json'); }
+  const agentId = String(body.agentId || NIGHTSHIFT_AGENT);
+  if (!/^[A-Za-z0-9_-]{1,40}$/.test(agentId)) { res.writeHead(400, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ error: 'choose a valid agent' })); }
+  res.writeHead(200, { 'Content-Type': 'application/x-ndjson; charset=utf-8', 'Cache-Control': 'no-store', 'X-Accel-Buffering': 'no' });
+  const bus = { emit: (name, payload) => { try { res.write(JSON.stringify({ name, payload: redact(payload) }) + '\n'); } catch (_) {} } };
+  const emit = wrapEmitDiag(makeEmitter(bus, e => { if (e && e.event !== 'tool.web') console.warn('[event]', e.kind, e.event, (e.errors || []).join(';')); }));
+  let result;
+  const ac = new AbortController();
+  try { result = await runNightshiftBeat({ agentId, emit, broadcast: true, signal: ac.signal }); }
+  catch (e) { result = { delivered: false, reason: 'error: ' + ((e && e.message) || e) }; }
+  try { res.write(JSON.stringify({ name: 'nightshift.beat.result', payload: result }) + '\n'); } catch (_) {}
+  try { res.end(); } catch (_) {}
 }
 
 // POST /api/summon/ack { runId, requestId, agentId } — the browser's answer to a live crew.summon.request: it ran

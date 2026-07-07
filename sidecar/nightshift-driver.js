@@ -129,7 +129,7 @@
       const at = now();
       const delivered = !!(result && result.delivered);
       const reason = threw ? ('error: ' + ((threw && threw.message) || threw)) : (result && result.reason) || (delivered ? 'delivered' : 'stood-down');
-      try { ledger({ ts: at, kind: 'outcome', agentId: agentId, delivered: delivered, reason: reason, title: (result && result.title) || null, archetype: (result && result.archetype) || null }); } catch (_) {}
+      try { ledger({ ts: at, kind: 'outcome', agentId: agentId, delivered: delivered, reason: reason, title: (result && result.title) || null, archetype: (result && result.archetype) || null, runId: (result && result.runId) || null, artifactPaths: (result && result.artifactPaths) || null }); } catch (_) {}
     }
 
     // abortBeat — the E-STOP hook: abort an in-flight beat's run so a HALT stops unattended night-shift spend too.
