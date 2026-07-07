@@ -771,6 +771,35 @@ let orModelCatalogIds = [];
 // jail helper reused by the read-only /api/file route (resolveInside proves a path stays in the workspace)
 const fsJail = makeFsTools({ fsp, pathMod: path, root: WORKSPACES })._internals;
 
+// Roots the read-only /api/fs/dirstat probe is allowed to stat (audit P2): the user's own HOME (covers every
+// realistic Keep destination — Desktop/Documents/Downloads all live under it) and the WORKSPACES root. Anything
+// outside these is refused, so a token-holder can't enumerate existence/type of arbitrary system paths
+// (/etc/shadow, C:\Windows\System32\config\SAM, ~/.ssh, ...). Literal + realpath'd forms of each root are kept so
+// the symlink check compares real-vs-real (same discipline as fsJail.resolveInside).
+const DIRSTAT_ROOTS = (() => {
+  const seen = new Set(); const roots = [];
+  const add = (d) => { if (!d) return; const abs = path.resolve(d); let real = abs; try { real = require('fs').realpathSync(abs); } catch (_) {} for (const r of [abs, real]) { const k = (path.sep === '\\') ? r.toLowerCase() : r; if (!seen.has(k)) { seen.add(k); roots.push(r); } } };
+  try { add(os.homedir()); } catch (_) {}
+  try { add(WORKSPACES); } catch (_) {}
+  return roots;
+})();
+// TRUE iff `abs` (already absolute) resolves inside one of DIRSTAT_ROOTS, following symlinks on the deepest
+// existing ancestor so a symlink can't hop the jail. Both the syntactic path and its realpath must land in a root.
+async function dirStatAllowed(abs) {
+  if (!DIRSTAT_ROOTS.length) return false;
+  if (!DIRSTAT_ROOTS.some(root => fsJail.pathInside(abs, root))) return false;   // fast syntactic reject
+  // symlink guard: realpath the deepest existing ancestor and require IT to be inside a root too.
+  let cur = abs;
+  for (;;) {
+    let real = null;
+    try { real = await fsp.realpath(cur); } catch (_) { real = null; }
+    if (real != null) return DIRSTAT_ROOTS.some(root => fsJail.pathInside(real, root));
+    const parent = path.dirname(cur);
+    if (!parent || parent === cur) return false;
+    cur = parent;
+  }
+}
+
 // SPOTIFY (the JUKEBOX skill): ONE durable OAuth session for the station, persisted OUTSIDE any agent jail
 // (WORKSPACES/.secrets/spotify.json — not reachable via /api/file). PKCE flow → client_id only, never a secret.
 // The redirect URI is fixed + must be registered verbatim in the user's Spotify app (loopback IP, not localhost).
@@ -6011,12 +6040,16 @@ async function serveWorkspaceDir(req, res) {
 // GET /api/fs/dirstat?path=<abs> — read-only existence/type check of a user-chosen KEEP destination folder.
 // Only stats the exact path (no listing, no traversal). Returns { exists, isDir }. ADDITIVE (Lane B): lets the
 // workshop return card validate a typed Keep path inline rather than failing silently at copy time.
+// JAILED (audit P2): the path must resolve inside the user's HOME or WORKSPACES (DIRSTAT_ROOTS). A path outside
+// those roots is NOT stat'd — it degrades like a not-yet-existing folder so the UX is unchanged, but a token-holder
+// can no longer probe existence/type of arbitrary absolute system paths.
 async function handleDirStat(req, res) {
   const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
   let p;
   try { p = new URL(req.url, 'http://127.0.0.1').searchParams.get('path') || ''; } catch (_) { p = ''; }
   p = String(p).trim();
   if (!p || !path.isAbsolute(p)) return json(200, { exists: false, isDir: false, reason: 'not-absolute' });
+  if (!(await dirStatAllowed(path.resolve(p)))) return json(200, { exists: false, isDir: false, reason: 'outside-allowed-roots' });
   let st;
   try { st = await fsp.stat(p); } catch (_) { return json(200, { exists: false, isDir: false }); }
   return json(200, { exists: true, isDir: !!(st && st.isDirectory()) });

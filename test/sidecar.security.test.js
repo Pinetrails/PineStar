@@ -85,6 +85,22 @@ async function tokenFromIndex(base) {
     A.ok(!fileWithToken.headers.get('content-security-policy').includes('allow-scripts'), 'deliverable sandbox does not allow scripts');
     const deliverableSession = await fetch(B + '/api/session', { method: 'POST', headers: { Origin: B, Referer: B + filePath } });
     A.eq(deliverableSession.status, 403, 'same-origin active deliverables cannot obtain API authority');
+
+    /* audit P2: /api/fs/dirstat is JAILED to the user HOME + WORKSPACES. It may report exists/type for paths
+       inside those roots, but must REFUSE (never stat) arbitrary absolute system paths so a token-holder can't
+       enumerate the filesystem. ws is the WORKSPACES root here, so it (and a folder under it) must stat; a real
+       system path outside HOME/WORKSPACES must come back exists:false + reason:'outside-allowed-roots'. */
+    const dirstat = async (p) => { const r = await fetch(B + '/api/fs/dirstat?path=' + encodeURIComponent(p), { headers: { Origin: B, 'X-StarNet-Token': browserToken } }); return { status: r.status, j: await r.json().catch(() => ({})) }; };
+    const dsRoot = await dirstat(ws);
+    A.ok(dsRoot.status === 200 && dsRoot.j.exists === true && dsRoot.j.isDir === true && dsRoot.j.reason == null, 'dirstat stats the WORKSPACES root (inside a jail root)');
+    const subDir = path.join(ws, 'keep-here'); fs.mkdirSync(subDir, { recursive: true });
+    const dsSub = await dirstat(subDir);
+    A.ok(dsSub.j.exists === true && dsSub.j.isDir === true && dsSub.j.reason == null, 'dirstat stats a folder under WORKSPACES');
+    const sysPath = process.platform === 'win32' ? 'C:\\Windows\\System32' : '/etc';
+    const dsSys = await dirstat(sysPath);
+    A.ok(dsSys.j.exists === false && dsSys.j.isDir === false && dsSys.j.reason === 'outside-allowed-roots', 'dirstat REFUSES an absolute system path outside HOME/WORKSPACES (no filesystem probe)');
+    const dsRel = await dirstat('not/absolute');
+    A.ok(dsRel.j.exists === false && dsRel.j.reason === 'not-absolute', 'dirstat rejects a non-absolute path');
   } finally {
     try { child.kill(); } catch (_) {}
     await sleep(150);
