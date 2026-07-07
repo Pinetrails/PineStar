@@ -315,7 +315,7 @@ const okRun = (text) => (o) => { o.emit('agent.run.start', { agentId: 'a', runId
     s.driver.applyTick(s.clock.now());
     const tick = firstOf(s.events, 'cron.tick');
     A.ok(tick != null, 'cron.tick emitted on an active tick');
-    A.eq(tick, { fired: 1, skipped: 0, planned: 1 }, 'cron.tick carries the real counts');
+    A.eq(tick, { fired: 1, skipped: 0, planned: 1, deferred: 0 }, 'cron.tick carries the real counts (+ NS-0 additive deferred:0 when nothing over-cap)');
   }
 
   // ---- 13. selected-agent identity: roster system/model are used when the job has no explicit model ----
@@ -357,8 +357,8 @@ const okRun = (text) => (o) => { o.emit('agent.run.start', { agentId: 'a', runId
   {
     // 3 interval jobs all due at the same instant, but only ONE may fire (cap=1). The other two are
     // DEFERRED — observable via the return value (summary.deferred) — and MUST stay due (nextRunAt NOT
-    // advanced) so the next tick fires them. The deferral does NOT emit a new event this iteration (the
-    // cron.skipped 'at-capacity' reason is enum-governed and pending the memory-cortex events batch).
+    // advanced) so the next tick fires them. NS-0: the deferral now ALSO emits cron.skipped{at-capacity}
+    // (asserted in the dedicated at-capacity test below); here we assert the return-value contract.
     const a = intervalJob('ca', 'every 1m');
     const b = intervalJob('cb', 'every 1m');
     const c = intervalJob('cc', 'every 1m');
@@ -448,6 +448,86 @@ const okRun = (text) => (o) => { o.emit('agent.run.start', { agentId: 'a', runId
     A.eq(afterOk.retryCount, 0, 'a successful retry resets retryCount');
     A.ok(afterOk.lastRunAt != null, 'the successful retry finalized the occurrence (lastRunAt stamped)');
     A.eq(afterOk.lastStatus, 'ok', 'lastStatus ok after the retry succeeds');
+  }
+
+  // ---- NS-0 HEARTBEAT (crown jewel): a run that OUTLIVES the old maxRunMs but keeps emitting progress fires
+  //      EXACTLY ONCE — no stale-lock reclaim, no duplicate fire (the real-world "AI news radar 4×" incident). ----
+  {
+    // A run that never resolves BUT keeps emitting progress events. Each event renews the lease heartbeat, so the
+    // lease sweep must never declare it a zombie no matter how far past maxRunMs the clock advances.
+    let emitProgress = null;
+    const liveLongRun = (o) => {
+      o.emit('agent.run.start', { agentId: 'a', runId: o.runId, trigger: o.trigger, model: o.model });
+      emitProgress = () => { try { o.emit('agent.token', { delta: '.' }); } catch (_) {} };   // a heartbeat pulse
+      return new Promise(() => {});                            // never settles (a genuinely long research run)
+    };
+    const j = intervalJob('hb', 'every 1m');
+    const s = setup([j], liveLongRun, { maxRunMs: 100000 });   // old fixed ceiling = 100s
+    s.clock.set(T0 + 60000);
+    s.driver.applyTick(s.clock.now());                         // fires once, lease held, run in flight
+    A.eq(s.runs.length, 1, 'the long run launched exactly once');
+    A.eq(s.driver.leases.size, 1, 'its lease is held');
+    // advance WELL past the old maxRunMs, pulsing a heartbeat each step (the run keeps proving it is alive).
+    for (let k = 1; k <= 10; k++) {
+      s.clock.advance(90000);                                  // 90s < staleMs(100s): each pulse keeps it fresh
+      emitProgress();                                          // the run emits progress -> heartbeat renews
+      s.driver.applyTick(s.clock.now());                       // its (advanced) nextRunAt is due, but lease held
+    }
+    A.eq(s.runs.length, 1, 'after ~15min of a LIVE heartbeating run it STILL fired exactly once (no duplicate)');
+    A.eq(countOf(s.events, 'cron.fire'), 1, 'exactly one cron.fire across the whole long run');
+    A.ok(!s.events.some(e => e.name === 'cron.skipped' && e.payload.reason === 'stale-lock-reclaimed'), 'a live heartbeating run is NEVER stale-lock-reclaimed');
+    // every re-tick while it was in flight skipped it as already-running (never a second launch).
+    A.ok(countOf(s.events, 'cron.skipped') >= 1 && s.events.filter(e => e.name === 'cron.skipped').every(e => e.payload.reason === 'already-running'), 'each due re-tick skipped the still-running job (already-running), never re-fired');
+  }
+
+  // ---- NS-0 HEARTBEAT: a run whose heartbeat STOPS (a crash mid-run) IS reclaimed after staleMs and refires. ----
+  {
+    // The run emits an initial progress event then goes silent (its process died). heartbeatAt freezes at that
+    // last pulse; once the clock is staleMs past it, the sweep reclaims + aborts + the freed job re-fires.
+    const silentAfterStart = (o) => {
+      o.emit('agent.run.start', { agentId: 'a', runId: o.runId, trigger: o.trigger, model: o.model });   // one heartbeat, then silence
+      return new Promise(() => {});
+    };
+    const j = intervalJob('hbx', 'every 1m');
+    const s = setup([j], silentAfterStart, { maxRunMs: 100000 });   // staleMs defaults to maxRunMs*1 = 100s
+    s.clock.set(T0 + 60000);
+    s.driver.applyTick(s.clock.now());                         // fires; last heartbeat = T0+60000 (the run.start)
+    const ac = s.runs[0].signal;
+    A.eq(ac.aborted, false, 'not aborted while heartbeat is fresh');
+    s.clock.set(T0 + 60000 + 100001);                          // 100.001s of silence > staleMs(100s)
+    s.driver.applyTick(s.clock.now());
+    A.eq(ac.aborted, true, 'a crashed (heartbeat-stopped) run is aborted by the sweep');
+    A.ok(s.events.some(e => e.name === 'cron.skipped' && e.payload.reason === 'stale-lock-reclaimed'), 'a heartbeat-stale run emits stale-lock-reclaimed');
+    A.eq(s.runs.length, 2, 'after reclaim the freed job re-fired (self-heal)');
+  }
+
+  // ---- NS-0 TELEMETRY: an at-capacity deferral now EMITS cron.skipped{at-capacity} + a cron.tick.deferred count. ----
+  {
+    const a = intervalJob('qa', 'every 1m');
+    const b = intervalJob('qb', 'every 1m');
+    const s = setup([a, b], () => new Promise(() => {}), { maxParallel: 1 });   // cap 1, both due -> one defers
+    s.clock.set(T0 + 60000);
+    const summary = s.driver.applyTick(s.clock.now());
+    A.eq(summary.deferred.length, 1, 'one job deferred past the cap');
+    A.ok(s.events.some(e => e.name === 'cron.skipped' && e.payload.reason === 'at-capacity'), 'the deferral is EMITTED as cron.skipped{at-capacity} (no longer silent)');
+    const tick = firstOf(s.events, 'cron.tick');
+    A.eq(tick.deferred, 1, 'cron.tick carries the additive deferred count');
+  }
+
+  // ---- NS-0 TELEMETRY: a DISABLED job whose time has come emits cron.skipped{disabled} — ONCE per due window. ----
+  {
+    const j = intervalJob('dq', 'every 1m');                   // armed nextRunAt = T0+60000
+    j.enabled = false; j.state = 'paused';                     // paused but its nextRunAt stays in the (soon) past
+    const s = setup([j], okRun());
+    s.clock.set(T0 + 120000);                                  // its frozen nextRunAt (T0+60000) is now past-due
+    s.driver.applyTick(s.clock.now());
+    A.eq(countOf(s.events, 'cron.skipped'), 1, 'a disabled-due job emits exactly one skip');
+    A.eq(firstOf(s.events, 'cron.skipped').reason, 'disabled', 'the reason is disabled');
+    A.eq(s.runs.length, 0, 'a disabled job never fires');
+    // a SECOND tick at the same due window does NOT re-emit (deduped — no per-tick spam).
+    s.clock.advance(60000);
+    s.driver.applyTick(s.clock.now());
+    A.eq(countOf(s.events, 'cron.skipped'), 1, 'the same disabled due-window is not re-reported (deduped, no spam)');
   }
 
   require('./cron.run-now.test.js');

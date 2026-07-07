@@ -278,6 +278,62 @@ const iso = ms => new Date(ms).toISOString();
     A.eq(plan.next[0].nextAt, dueAt + period, 'interval advances exactly one period');
   }
 
+  /* ---- 6. NS-0 HEARTBEAT (one-shot crown jewel): a durable FRESH heartbeat suppresses re-fire REGARDLESS of
+     wall-clock claim age, so a long one-shot research run that outlives maxRunMs fires EXACTLY ONCE; a STALE
+     heartbeat falls through to the zombie reclaim so a crashed holder is still recovered. Pure planTick level. ---- */
+  {
+    const dueAt = T0 + 5 * MIN;
+    const base = cronStore.makeJob({ id: 'hb1', prompt: 'p', schedule: cron.parseSchedule('in 5m', T0) }, { id: 'hb1', now: T0 });
+    // claim + a heartbeat renewed WELL past the old maxRunMs ceiling (the run is genuinely still emitting).
+    const farPast = dueAt + 5 * MAX_RUN;                 // claim age = 5×maxRunMs (would be a zombie by claim alone)
+    const live = Object.assign({}, base, { fireClaim: dueAt, lastFireAttemptAt: iso(dueAt), heartbeatAt: farPast });
+    // heartbeatStaleMs defaults to maxRunMs*1; the heartbeat age is 0 here (fresh) -> NOT re-fired.
+    A.eq(cron.planTick([live], farPast, { maxRunMs: MAX_RUN }).fire.length, 0,
+      'a one-shot with a FRESH heartbeat is NOT re-fired even though its claim is 5×maxRunMs old (long run fires once)');
+    // now the heartbeat goes stale (age > staleMs) AND the claim is a zombie -> reclaimed + re-fires.
+    const stale = Object.assign({}, base, { fireClaim: dueAt, lastFireAttemptAt: iso(dueAt), heartbeatAt: dueAt });
+    A.eq(cron.planTick([stale], dueAt + MAX_RUN + 1, { maxRunMs: MAX_RUN }).fire.length, 1,
+      'a one-shot whose heartbeat is STALE (>staleMs) AND claim zombie IS reclaimed and re-fires (crash recovery)');
+    // explicit staleMs knob: a bigger staleMs keeps a modestly-old heartbeat alive (env-tunable).
+    A.eq(cron.planTick([stale], dueAt + MAX_RUN + 1, { maxRunMs: MAX_RUN, heartbeatStaleMs: 100 * MAX_RUN }).fire.length, 0,
+      'a large heartbeatStaleMs keeps the same heartbeat fresh (the staleness knob is honored)');
+  }
+
+  /* ---- 7. NS-0 END-TO-END: the driver renews a one-shot's DURABLE heartbeat on run progress, so a long
+     one-shot run that outlives maxRunMs is NOT re-fired by a crash-restart driver at the same store. ---- */
+  {
+    const dueAt = T0 + 5 * MIN;
+    const once = cronStore.makeJob({ id: 'hbe2e', prompt: 'go', agentId: 'cron_hbe2e', schedule: cron.parseSchedule('in 5m', T0) }, { id: 'hbe2e', now: T0 });
+    let store = [once];
+    const clock = makeClock(dueAt);
+    let pulse = null;
+    const driver = makeCronDriver({
+      getJobs: () => store, setJobs: (j) => { store = j; },
+      runOnce: (o) => { o.emit('agent.run.start', { agentId: 'a', runId: o.runId, trigger: 'schedule', model: 'm' }); pulse = () => o.emit('agent.token', { delta: '.' }); return new Promise(() => {}); },
+      emit: () => {},
+      newId: () => 'rid', newAbort: () => new AbortController(), now: () => clock.now(),
+      // durableHeartbeatMs 0 so every pulse persists immediately (test determinism, not throttle-gated).
+      getKey: () => 'sk', defaultModel: 'm', maxRunMs: MAX_RUN, durableHeartbeatMs: 0
+    });
+    driver.applyTick(clock.now());                       // fires; run.start already renewed a durable heartbeat
+    A.ok(cronStore.getJob(store, 'hbe2e').heartbeatAt != null, 'the driver persisted a durable heartbeat on run progress');
+    // advance past maxRunMs, pulsing each step so the durable heartbeat stays fresh on disk.
+    for (let k = 0; k < 4; k++) { clock.advance(MAX_RUN - 1); pulse(); driver.applyTick(clock.now()); }
+    // a CRASH-RESTART driver over the SAME on-disk store, now far past the claim's maxRunMs age.
+    let restart = store.map(j => Object.assign({}, j));  // snapshot the persisted store (incl. the fresh heartbeat)
+    const rClock = makeClock(clock.now());
+    const fired = [];
+    const d2 = makeCronDriver({
+      getJobs: () => restart, setJobs: (j) => { restart = j; },
+      runOnce: () => new Promise(() => {}),
+      emit: (name, payload) => { if (name === 'cron.fire') fired.push(payload); },
+      newId: () => 'rid2', newAbort: () => new AbortController(), now: () => rClock.now(),
+      getKey: () => 'sk', defaultModel: 'm', maxRunMs: MAX_RUN
+    });
+    d2.applyTick(rClock.now());
+    A.eq(fired.length, 0, 'a crash-restart sees the FRESH durable heartbeat and does NOT re-fire the long one-shot (exactly-once across restart)');
+  }
+
   // tidy up (best-effort).
   try { for (const f of cleanup) { try { realFs.unlinkSync(f); } catch (_) {} } realFs.rmdirSync(tmpRoot, { recursive: true }); } catch (_) {}
 
