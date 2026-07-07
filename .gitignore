@@ -62,6 +62,15 @@ design/minion_backup_preset/
 # scripts/board.mjs --write output (a regenerated snapshot; the live board is `node scripts/board.mjs`)
 scripts/STATUS.generated.md
 
+# QA ledger findings — one <id>.json per finding, written at RUN TIME by scripts/qa/ledger.mjs
+# (and janitor.mjs) into whatever checkout the crew runs in. They are MACHINE-LOCAL run
+# artifacts: their evidence[] paths point at gitignored .bugloops/ output with absolute local
+# paths baked in, and dismissed/known triage state is ephemeral (the durable, portable baseline
+# lives in qa/KNOWN_ISSUES.md; re-blessed visual goldens live in scripts/goldens.json — both
+# tracked). The scripts read/create qa/findings/ physically via fs, never from git, so ignoring
+# these does not affect them. Keep the dir itself (via .gitkeep) + the README (a .md, not matched).
+qa/findings/*.json
+
 # G0 lane visual-proof screenshots (headless capture output; never committed)
 .qa_g0/
 # G1a lane visual-proof screenshots (same pattern)
