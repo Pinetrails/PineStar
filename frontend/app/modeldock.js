@@ -4,21 +4,25 @@
 const ModelDock = (() => {
   const el = id => document.getElementById(id);
   const CODEX_MODELS = ['gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini', 'gpt-5.3-codex-spark'];
-  const ANTHROPIC_MODELS = ['claude-sonnet-4-5', 'claude-opus-4-1', 'claude-3-5-haiku-latest'];
+  // Fallback seed only (used when the live /api/models fetch fails) — real, current model ids only.
+  // A missing fallback id is honest; an invented one is a lie. claude-3-5-haiku retired 2026-02-19,
+  // so it's dropped here; opus-4-8 / sonnet-5 / haiku-4-5 are the current confirmed-real set.
+  const ANTHROPIC_MODELS = ['claude-opus-4-8', 'claude-sonnet-5', 'claude-haiku-4-5'];
   const GEMINI_MODELS = ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.0-flash'];
   const HOSTED_FALLBACKS = {
     xai: ['grok-4.3', 'grok-4-fast', 'grok-4'],
     groq: ['openai/gpt-oss-120b', 'llama-3.3-70b-versatile', 'meta-llama/llama-4-scout-17b-16e-instruct'],
     mistral: ['mistral-large-latest', 'mistral-medium-latest', 'mistral-small-latest'],
-    deepseek: ['deepseek-chat', 'deepseek-reasoner', 'deepseek-v4-pro'],
+    deepseek: ['deepseek-chat', 'deepseek-reasoner'],   // dropped 'deepseek-v4-pro' — unconfirmed/invented; real line is chat + reasoner (+ v3 snapshots)
     together: ['meta-llama/Llama-3.3-70B-Instruct-Turbo', 'Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8', 'deepseek-ai/DeepSeek-V3'],
     fireworks: ['accounts/fireworks/models/deepseek-v3p1', 'accounts/fireworks/models/kimi-k2p5', 'accounts/fireworks/models/llama-v3p3-70b-instruct'],
     perplexity: ['sonar-pro', 'sonar', 'sonar-reasoning-pro'],
     cerebras: ['llama-4-scout-17b-16e-instruct', 'llama3.1-8b', 'qwen-3-coder-480b']
   };
+  // OpenRouter fallback seed — real slugs only (shown labelled "(catalog offline)" when the live fetch fails).
   const OPENROUTER_FALLBACK = [
-    'anthropic/claude-sonnet-4.6',
     'anthropic/claude-opus-4.8',
+    'anthropic/claude-sonnet-5',
     'openai/gpt-5',
     'google/gemini-2.5-pro',
     'x-ai/grok-4'
@@ -337,7 +341,11 @@ const ModelDock = (() => {
       }
     } catch (_) {}
     if (!list.length && (p === 'codex' || p === 'openrouter' || p === 'anthropic' || p === 'gemini' || HOSTED_FALLBACKS[p])) {
-      list = (p === 'codex' ? CODEX_MODELS : p === 'anthropic' ? ANTHROPIC_MODELS : p === 'gemini' ? GEMINI_MODELS : HOSTED_FALLBACKS[p] || OPENROUTER_FALLBACK).map(m => asModel(m, p));
+      // E4: the live catalog fetch found nothing (sidecar/provider unreachable) — fall back to the
+      // hardcoded seed list, but MARK each item so the UI can label it "(catalog offline)". Without the
+      // flag a seed list renders indistinguishably from a verified live catalog, asserting models the
+      // harness never confirmed exist.
+      list = (p === 'codex' ? CODEX_MODELS : p === 'anthropic' ? ANTHROPIC_MODELS : p === 'gemini' ? GEMINI_MODELS : HOSTED_FALLBACKS[p] || OPENROUTER_FALLBACK).map(m => { const item = asModel(m, p); item.fallback = true; return item; });
     }
     list.sort((a, b) => {
       if (p === 'openrouter') {
@@ -429,13 +437,24 @@ const ModelDock = (() => {
         group = g;
         const head = document.createElement('div');
         head.className = 'model-dock-group';
+        // E4: label a group whose rows came from the hardcoded seed list (the live catalog fetch failed
+        // for this provider) so an offline fallback never reads as a verified live catalog. Mirrors the
+        // connect screen's "(catalog offline — type or pick a slug)" honesty.
+        const groupFallback = list.some(x => groupOf(x) === g && x.fallback);
         head.textContent = group;
+        if (groupFallback) {
+          const off = document.createElement('i');
+          off.className = 'model-dock-group-offline';
+          off.textContent = ' (catalog offline)';
+          head.appendChild(off);
+          head.title = 'live catalog unreachable — showing a built-in fallback list; type a slug to use an unlisted model';
+        }
         frag.appendChild(head);
       }
       const row = document.createElement('button');
       row.type = 'button';
-      row.className = 'model-dock-row' + (m.id === current && normalizeProvider(m.provider) === activeProvider ? ' sel' : '');
-      row.title = m.id;
+      row.className = 'model-dock-row' + (m.id === current && normalizeProvider(m.provider) === activeProvider ? ' sel' : '') + (m.fallback ? ' fallback' : '');
+      row.title = m.fallback ? m.id + ' — fallback (catalog offline, unverified)' : m.id;
       row.dataset.provider = normalizeProvider(m.provider);
       row.setAttribute('role', 'option');
       row.setAttribute('aria-selected', String(m.id === current && normalizeProvider(m.provider) === activeProvider));

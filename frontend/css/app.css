@@ -908,6 +908,11 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 }
 .model-dock-row:hover { color: var(--ph-bright); background: var(--ph-faint); }
 .model-dock-row.sel { color: var(--ink); background: var(--ph); }
+/* E4: offline fallback — the live catalog was unreachable, these are a built-in unverified seed list.
+   Amber group tag + dimmed rows so they never read as a verified live catalog. */
+.model-dock-group-offline { color: var(--warn, #e8a13a); font-size: 9px; font-weight: 600; font-style: normal; letter-spacing: 0.5px; }
+.model-dock-row.fallback .model-dock-row-name { color: var(--ph-dim); }
+.model-dock-row.fallback.sel .model-dock-row-name { color: var(--ink); }
 .model-dock-row-name {
   min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px;
 }
