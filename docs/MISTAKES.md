@@ -85,6 +85,14 @@ debugging or claiming anything done. Companions: [BRAIN.md](BRAIN.md) · [DECISI
   `git diff` renders as text before committing.
 - **Merging Codex branches:** merge, never rebase; 29-hotfile no-touch set; grep for symbol
   collisions after each hotfile merge (`starnet-merge-ritual` has the full ritual).
+- **A fetch `signal` governs the WHOLE response, not just the connection.** Passing
+  `AbortSignal.timeout(30s)` (or any un-disarmed timer signal) to a streaming fetch aborts
+  the SSE body mid-stream — every model turn >30s died with "The operation was aborted due
+  to timeout" on ALL providers (fixed 2026-07-07, 46e1cf22). Connect ceilings must be
+  disarmable at headers (`timeouts.connectGuard` in provider.js); body protection is the
+  resettable idle watchdog's job, never a fixed wall-clock. Retry loops can MASK this for
+  short turns and make it look like flakiness — if a timeout correlates with turn LENGTH,
+  suspect a fixed timer on the stream.
 
 ## Judgment traps
 
