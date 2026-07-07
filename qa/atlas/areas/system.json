@@ -1,6 +1,6 @@
 {
   "area": "system",
-  "updatedAt": "2026-07-07T18:35:34Z",
+  "updatedAt": "2026-07-07T21:06:49.519Z",
   "entries": [
     {
       "id": "state/sys-logbook",
@@ -521,10 +521,7 @@
         }
       ],
       "status": "perfected",
-      "auditedAt": {
-        "sha": "e536b958b8b1f9175f4daeba3f72d044ba1b93e2",
-        "date": "2026-07-07T18:35:34Z"
-      },
+      "auditedAt": { "sha": "43e860b254af28741405216c2259a2226d106be7", "date": "2026-07-07T21:06:49.519Z" },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
@@ -558,10 +555,7 @@
         }
       ],
       "status": "perfected",
-      "auditedAt": {
-        "sha": "e536b958b8b1f9175f4daeba3f72d044ba1b93e2",
-        "date": "2026-07-07T18:35:34Z"
-      },
+      "auditedAt": { "sha": "43e860b254af28741405216c2259a2226d106be7", "date": "2026-07-07T21:06:49.519Z" },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
@@ -594,10 +588,7 @@
         }
       ],
       "status": "perfected",
-      "auditedAt": {
-        "sha": "e536b958b8b1f9175f4daeba3f72d044ba1b93e2",
-        "date": "2026-07-07T18:35:34Z"
-      },
+      "auditedAt": { "sha": "43e860b254af28741405216c2259a2226d106be7", "date": "2026-07-07T21:06:49.519Z" },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
@@ -630,10 +621,7 @@
         }
       ],
       "status": "perfected",
-      "auditedAt": {
-        "sha": "e536b958b8b1f9175f4daeba3f72d044ba1b93e2",
-        "date": "2026-07-07T18:35:34Z"
-      },
+      "auditedAt": { "sha": "43e860b254af28741405216c2259a2226d106be7", "date": "2026-07-07T21:06:49.519Z" },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
@@ -838,10 +826,7 @@
         }
       ],
       "status": "perfected",
-      "auditedAt": {
-        "sha": "e536b958b8b1f9175f4daeba3f72d044ba1b93e2",
-        "date": "2026-07-07T18:35:34Z"
-      },
+      "auditedAt": { "sha": "43e860b254af28741405216c2259a2226d106be7", "date": "2026-07-07T21:06:49.519Z" },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
@@ -878,10 +863,7 @@
         }
       ],
       "status": "perfected",
-      "auditedAt": {
-        "sha": "e536b958b8b1f9175f4daeba3f72d044ba1b93e2",
-        "date": "2026-07-07T18:35:34Z"
-      },
+      "auditedAt": { "sha": "43e860b254af28741405216c2259a2226d106be7", "date": "2026-07-07T21:06:49.519Z" },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
@@ -935,10 +917,7 @@
         }
       ],
       "status": "audited",
-      "auditedAt": {
-        "sha": "e536b958b8b1f9175f4daeba3f72d044ba1b93e2",
-        "date": "2026-07-07T18:35:34Z"
-      },
+      "auditedAt": { "sha": "43e860b254af28741405216c2259a2226d106be7", "date": "2026-07-07T21:06:49.519Z" },
       "findings": [
         "a48393ca"
       ],
@@ -1085,10 +1064,7 @@
         }
       ],
       "status": "perfected",
-      "auditedAt": {
-        "sha": "e536b958b8b1f9175f4daeba3f72d044ba1b93e2",
-        "date": "2026-07-07T18:35:34Z"
-      },
+      "auditedAt": { "sha": "43e860b254af28741405216c2259a2226d106be7", "date": "2026-07-07T21:06:49.519Z" },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.412Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
@@ -1164,10 +1140,7 @@
         }
       ],
       "status": "perfected",
-      "auditedAt": {
-        "sha": "e536b958b8b1f9175f4daeba3f72d044ba1b93e2",
-        "date": "2026-07-07T18:35:34Z"
-      },
+      "auditedAt": { "sha": "43e860b254af28741405216c2259a2226d106be7", "date": "2026-07-07T21:06:49.519Z" },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
@@ -1352,10 +1325,7 @@
         }
       ],
       "status": "audited",
-      "auditedAt": {
-        "sha": "e536b958b8b1f9175f4daeba3f72d044ba1b93e2",
-        "date": "2026-07-07T18:35:34Z"
-      },
+      "auditedAt": { "sha": "43e860b254af28741405216c2259a2226d106be7", "date": "2026-07-07T21:06:49.519Z" },
       "findings": [
         "a48393ca"
       ],
@@ -1853,10 +1823,7 @@
         }
       ],
       "status": "perfected",
-      "auditedAt": {
-        "sha": "e536b958b8b1f9175f4daeba3f72d044ba1b93e2",
-        "date": "2026-07-07T18:35:34Z"
-      },
+      "auditedAt": { "sha": "43e860b254af28741405216c2259a2226d106be7", "date": "2026-07-07T21:06:49.519Z" },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
@@ -1890,10 +1857,7 @@
         }
       ],
       "status": "perfected",
-      "auditedAt": {
-        "sha": "e536b958b8b1f9175f4daeba3f72d044ba1b93e2",
-        "date": "2026-07-07T18:35:34Z"
-      },
+      "auditedAt": { "sha": "43e860b254af28741405216c2259a2226d106be7", "date": "2026-07-07T21:06:49.519Z" },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
@@ -1927,10 +1891,7 @@
         }
       ],
       "status": "perfected",
-      "auditedAt": {
-        "sha": "e536b958b8b1f9175f4daeba3f72d044ba1b93e2",
-        "date": "2026-07-07T18:35:34Z"
-      },
+      "auditedAt": { "sha": "43e860b254af28741405216c2259a2226d106be7", "date": "2026-07-07T21:06:49.519Z" },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
@@ -1984,10 +1945,7 @@
         }
       ],
       "status": "audited",
-      "auditedAt": {
-        "sha": "e536b958b8b1f9175f4daeba3f72d044ba1b93e2",
-        "date": "2026-07-07T18:35:34Z"
-      },
+      "auditedAt": { "sha": "43e860b254af28741405216c2259a2226d106be7", "date": "2026-07-07T21:06:49.519Z" },
       "findings": [
         "a48393ca"
       ],
