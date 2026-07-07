@@ -184,6 +184,15 @@ promise?" (sibling of "where's its UI?").
   panel toggles mid-run, provider-error injection). After EL-1.
 - **EL-4 · Installed-app weekly smoke** — CDP-attach to the installed exe and run the parity
   sweep there; the dev sidecar can never see the WebView2-cache class. Session task, weekly.
+- **EL-5 · ESCAPE 2026-07-07: Telegram bot token silently destroyed** — IN PROGRESS, Fable
+  session · lane `agent/token-durability`. Desktop keychain migration stripped the plaintext
+  token without read-back proof the keychain held it (3 paths: main.rs `let _=set_password`,
+  saveChannelSecrets unconditional strip, sidecar boot migration). Live-verified on Andrew's
+  install: `channel:telegram` absent from Credential Manager, config intact. Per EL-3 the
+  failing scenario lands WITH the fix. Follow-on: secrets-durability sweep of ALL credential
+  stores (provider keys / codex OAuth / connector OAuth / .bak recovery) — findings will be
+  queued here. NEW MERGE-RITUAL QUESTION: "does this change move/strip/clear any credential —
+  and where is the read-back proof?"
 
 ## Atlas — Perfectionist area claims (one session, one area)
 

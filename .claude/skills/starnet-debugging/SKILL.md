@@ -31,6 +31,12 @@ description: How to diagnose a broken StarNet behavior — reproduce-first disci
   pixels via preview_eval; screenshots time out on the canvas.
 - **BOM/NUL file damage** from bad authoring — shows as parser errors on untouched-looking
   files; re-author via git binary-safe writes.
+- **Secret destroyed without proof of new home:** a migrate/strip/clear removes the last
+  durable copy of a credential while the write to its new home (keychain, new path) was
+  best-effort/swallowed. Symptom: config intact, `enabled:true`, but the token/key is
+  nowhere after a restart. Check every save/migration around the secret for
+  strip-without-read-back, catch-and-continue around keychain/fs writes, and "load failed →
+  save empty over good file" sequences. (Telegram-token escape, 2026-07-07.)
 
 ## Closing a bug
 The fix is done when the ORIGINAL reproduction now shows the correct behavior live, the gate

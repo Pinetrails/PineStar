@@ -94,6 +94,18 @@ debugging or claiming anything done. Companions: [BRAIN.md](BRAIN.md) · [DECISI
   short turns and make it look like flakiness — if a timeout correlates with turn LENGTH,
   suspect a fixed timer on the stream.
 
+- **Never destroy the last copy of a secret without read-back proof of its new home.**
+  The 2026-07-07 Telegram-token escape: desktop "keychain migration" stripped the plaintext
+  bot token from `channels/secrets.json` while the keychain write was best-effort
+  (`let _ = set_password(...)` swallowed errors; frontend keychain-store failures fell back
+  to an in-memory-only token; sidecar boot migration stripped even when the keychain env
+  proved the token absent). Session worked, next launch the credential was GONE — config
+  intact, secret nowhere. The law: a strip/clear/migrate of any credential must first
+  VERIFY (read back) that the destination durably holds it; a plaintext fallback on disk is
+  honest, a lost secret is not. Applies to channel tokens, provider keys, OAuth
+  refresh tokens, connector secrets. Related shape: a load failure treated as "not
+  configured" followed by a save that persists the empty state over the good file.
+
 ## Judgment traps
 
 - **"Audit says missing" ≠ missing** — the FULL_RELEASE_POLISH sprint found audit claims

@@ -30,7 +30,12 @@ merge at a time, always from the integration tree.
    output, and move on. Never merge-then-fix-forward on trunk.
 6. **shared/events.js / shared/schema.js in the diff?** Verify the change is purely additive
    (new events/fields only). A rename or removal there fails the merge regardless of tests.
-7. Post-merge: one-line digest (branch → trunk SHA, gate result) to qa/STATUS.md.
+7. **Does the diff move/strip/clear/migrate any credential** (bot token, provider key, OAuth
+   token, connector secret, keychain entry)? Then demand the read-back proof: the code must
+   verify the new home durably holds the secret BEFORE the old copy is removed, and a test
+   must cover the write-failure path. No proof → the merge fails regardless of green tests
+   (Telegram-token escape, 2026-07-07; docs/MISTAKES.md "never destroy the last copy").
+8. Post-merge: one-line digest (branch → trunk SHA, gate result) to qa/STATUS.md.
 
 ## Reaping
 Merged + clean worktree → `git worktree remove <path>` + `git branch -d` (`-d` only; if git
