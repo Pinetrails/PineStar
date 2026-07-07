@@ -70,6 +70,11 @@ export const GUARDIAN_STEPS = [
   { id: 'shoot',     title: 'In-game UI screenshot sweep',   npm: 'shoot',     visual: true,  severity: 'P1' },
   { id: 'golden',    title: 'Visual golden-frame diff',       npm: 'golden',    visual: true,  severity: 'P1' },
   { id: 'audit',     title: 'Behavioral truthfulness audit',  npm: 'audit',     visual: true,  severity: 'P1' },
+  // JOURNEY CORPS (EL-1): multi-step user journeys with per-step sim↔truth parity — catches the DYNAMIC seam
+  // bugs the single-shot audit can't (taskboard truth under real use, interrupt honesty, double-send). Runs
+  // after audit (a heavier, longer detector); one finding per failing journey STEP (P1). A journey that CANNOT
+  // run (BLOCKED, exit 2) is caught by the same blocked/exit-code path as every other gate (no-fake-green).
+  { id: 'journeys', title: 'Multi-step journey parity',        npm: 'qa:journeys', visual: true, severity: 'P1' },
 ];
 
 function str(v) { return v == null ? '' : String(v); }
@@ -114,6 +119,25 @@ export function parseAuditReport(report) {
   return out;
 }
 
+// Parse `journeys-report.json` -> the HARD-failing journey assertions (soft failures are environment signals,
+// never build failures — mirror audit.mjs's own rule). Shape mirrors the audit report: { journeys: [{ name,
+// assertions:[{ name, pass, soft, detail }] }] }. A journey marked blocked:true whose assertions all "pass"
+// still surfaces as a step-level BLOCKED via the step exit code (findingsFor's blocked path), so we only need
+// to attribute the per-assertion hard fails here.
+export function parseJourneysReport(report) {
+  if (!report || !Array.isArray(report.journeys)) return [];
+  const out = [];
+  for (const jr of report.journeys) {
+    const assertions = (jr && Array.isArray(jr.assertions)) ? jr.assertions : [];
+    for (const a of assertions) {
+      if (a && a.pass === false && a.soft !== true) {
+        out.push({ journey: str(jr.name), name: str(a.name), detail: str(a.detail) });
+      }
+    }
+  }
+  return out;
+}
+
 // Parse `manifest.json` from shoot -> the states that FAILED to open (ok:false).
 export function parseShootManifest(manifest) {
   if (!manifest || !Array.isArray(manifest.states)) return [];
@@ -132,6 +156,7 @@ export function makeGuardianCore(opts) {
   const readGolden = typeof io.readGolden === 'function' ? io.readGolden.bind(io) : () => null;
   const readAudit  = typeof io.readAudit  === 'function' ? io.readAudit.bind(io)  : () => null;
   const readShoot  = typeof io.readShoot  === 'function' ? io.readShoot.bind(io)  : () => null;
+  const readJourneys = typeof io.readJourneys === 'function' ? io.readJourneys.bind(io) : () => null;
   const evidencePath = typeof io.evidencePath === 'function' ? io.evidencePath.bind(io) : (n) => str(n);
 
   function fingerprint(parts) { return guardianFingerprint(parts); }
@@ -214,6 +239,28 @@ export function makeGuardianCore(opts) {
         severity: 'P1',
         title: 'Behavioral audit failed (no parseable assertion report)',
         detail: 'trunk ' + sha + ' — audit exited ' + result.exitCode + ' but audit-report.json had no hard-failing assertions to attribute. See log.',
+      })];
+    }
+
+    // JOURNEYS red: one finding per hard-failing journey step (P1). Same structure as the audit branch.
+    if (stepId === 'journeys') {
+      const fails = parseJourneysReport(readJourneys());
+      if (fails.length) {
+        return fails.map(a => mk({
+          fingerprint: fingerprint({ step: stepId, subject: 'journey/' + a.journey + '/' + a.name }),
+          severity: 'P1',
+          title: 'Journey parity regression: `' + a.name + '` failed (' + a.journey + ')',
+          detail: 'trunk ' + sha + ' — ' + (a.detail || 'assertion failed') + '. A multi-step user journey diverged (sim↔UI↔task-truth) — the dynamic-seam bug class.',
+        }));
+      }
+      // red but unparseable -> step-level (still deduped). exit 2 is BLOCKED (already handled above); a bare
+      // nonzero with no attributable assertion means the report was lost or the driver failed whole.
+      const subject = 'journeys/step';
+      return [mk({
+        fingerprint: fingerprint({ step: stepId, subject }),
+        severity: 'P1',
+        title: 'Journey run failed (no parseable journey report)',
+        detail: 'trunk ' + sha + ' — qa:journeys exited ' + result.exitCode + ' but journeys-report.json had no hard-failing assertions to attribute. See log.',
       })];
     }
 
@@ -330,9 +377,10 @@ if (INVOKED_DIRECTLY) {
 
   // Guardian port range (Part 3/5 port law): 8940-8949 sidecar, 9340-9349 CDP.
   const PORTS = {
-    shoot:  { SKYNET_SHOT_PORT:   '8940', SKYNET_CDP_PORT:    '9340' },
-    golden: { SKYNET_GOLDEN_PORT: '8941', SKYNET_GOLDEN_CDP:  '9341' },
-    audit:  { SKYNET_AUDIT_PORT:  '8942', SKYNET_AUDIT_CDP:   '9342' },
+    shoot:    { SKYNET_SHOT_PORT:    '8940', SKYNET_CDP_PORT:     '9340' },
+    golden:   { SKYNET_GOLDEN_PORT:  '8941', SKYNET_GOLDEN_CDP:   '9341' },
+    audit:    { SKYNET_AUDIT_PORT:   '8942', SKYNET_AUDIT_CDP:    '9342' },
+    journeys: { SKYNET_JOURNEY_PORT: '8943', SKYNET_JOURNEY_CDP:  '9343' },   // stays in the Guardian range (Part 3/5)
   };
 
   const STEP_TIMEOUT_MS = coerceTimeoutMs(process.env.SKYNET_GUARDIAN_STEP_TIMEOUT_MS || 900000);
@@ -422,6 +470,15 @@ if (INVOKED_DIRECTLY) {
       for (const f of flagged) if (f.frame) copyInto(f.frame, path.join(cycleDir, 'golden-frames'), path.basename(f.frame));
     } else if (step.id === 'audit') {
       copyInto(path.join(PIN_DIR, '.uiaudit', 'audit-report.json'), cycleDir, 'audit-report.json');
+    } else if (step.id === 'journeys') {
+      copyInto(path.join(PIN_DIR, '.uijourneys', 'journeys-report.json'), cycleDir, 'journeys-report.json');
+      // copy every per-journey failure screenshot the runner captured (_FAIL-*.png / <id>.png) into the bundle.
+      try {
+        const shotDir = path.join(PIN_DIR, '.uijourneys');
+        for (const f of (fs.existsSync(shotDir) ? fs.readdirSync(shotDir) : [])) {
+          if (/\.png$/i.test(f)) copyInto(path.join(shotDir, f), path.join(cycleDir, 'journey-shots'), f);
+        }
+      } catch (_) {}
     } else if (step.id === 'shoot') {
       copyInto(path.join(PIN_DIR, '.uishots', 'manifest.json'), cycleDir, 'shoot-manifest.json');
     }
@@ -441,13 +498,17 @@ if (INVOKED_DIRECTLY) {
       readGolden() { return readJsonMaybe(path.join(cycleDir, 'golden-report.json')); },
       readAudit()  { return readJsonMaybe(path.join(cycleDir, 'audit-report.json')); },
       readShoot()  { return readJsonMaybe(path.join(cycleDir, 'shoot-manifest.json')); },
+      readJourneys() { return readJsonMaybe(path.join(cycleDir, 'journeys-report.json')); },
       evidencePath(p) {
         const s = str(p);
-        // Log files already live in the cycle bundle; golden frames were copied to golden-frames/.
+        // Log files already live in the cycle bundle; golden frames were copied to golden-frames/, journey
+        // failure shots to journey-shots/.
         if (s.startsWith(cycleDir)) return s;
         const base = path.basename(s);
         const inFrames = path.join(cycleDir, 'golden-frames', base);
         if (fs.existsSync(inFrames)) return inFrames;
+        const inShots = path.join(cycleDir, 'journey-shots', base);
+        if (fs.existsSync(inShots)) return inShots;
         const inRoot = path.join(cycleDir, base);
         if (fs.existsSync(inRoot)) return inRoot;
         return s;

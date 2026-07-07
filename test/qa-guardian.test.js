@@ -9,7 +9,7 @@
 const A = require('./_assert.js');
 const {
   makeGuardianCore, guardianFingerprint,
-  parseGoldenReport, parseAuditReport, parseShootManifest,
+  parseGoldenReport, parseAuditReport, parseShootManifest, parseJourneysReport,
   GUARDIAN_STEPS,
 } = require('../scripts/qa/guardian.mjs');
 const { fingerprintOf } = require('../scripts/qa/ledger.mjs');
@@ -21,6 +21,7 @@ function io(over) {
     readGolden() { return null; },
     readAudit() { return null; },
     readShoot() { return null; },
+    readJourneys() { return null; },
     evidencePath(p) { return p; },
   }, over || {});
 }
@@ -42,7 +43,7 @@ const step = (id) => GUARDIAN_STEPS.find(s => s.id === id);
 // ---- B. a clean exit files NOTHING (green cycle is silent) ----
 {
   const core = makeGuardianCore({ io: io(), clock });
-  for (const id of ['test-fast', 'shoot', 'golden', 'audit']) {
+  for (const id of ['test-fast', 'shoot', 'golden', 'audit', 'journeys']) {
     A.eq(core.findingsFor(step(id), { exitCode: 0, sha: 'abc1234def' }).length, 0, id + ' clean exit -> zero findings');
   }
 }
@@ -120,6 +121,43 @@ const step = (id) => GUARDIAN_STEPS.find(s => s.id === id);
   const fs = core.findingsFor(step('audit'), { exitCode: 3, sha: 'x', logFile: 'a.log' });
   A.eq(fs.length, 1, 'unparseable audit red still files one finding');
   A.ok(/no parseable assertion report/.test(fs[0].title) || /no hard-failing assertions/.test(fs[0].detail), 'names the unparseable case');
+}
+
+// ---- E3. JOURNEYS red -> one P1 finding per HARD-failing journey step (soft fails ignored) ----
+{
+  const journeysReport = { journeys: [
+    { name: 'J1 task-lifecycle', passed: true, assertions: [{ name: 'J1/task-created', pass: true }] },
+    { name: 'J2a interrupt: E-STOP', passed: false, assertions: [
+      { name: 'J2/estop/settles-idle', pass: false, soft: false, detail: 'a channel stayed busy' },
+      { name: 'J2.estop::topbar/spend', pass: false, soft: true, detail: 'env' }, // SOFT -> ignored
+    ] },
+    { name: 'J4 deliverable', passed: false, assertions: [{ name: 'J4/workshop-run-200', pass: false, soft: false, detail: 'got 404' }] },
+  ] };
+  const core = makeGuardianCore({ io: io({ readJourneys: () => journeysReport }), clock });
+  const fs = core.findingsFor(step('journeys'), { exitCode: 3, sha: 'abc1234def', logFile: 'journeys.log' });
+  A.eq(fs.length, 2, 'two hard-failing journey assertions -> two findings (soft excluded)');
+  A.ok(fs.every(f => f.severity === 'P1'), 'journey regressions are P1');
+  A.ok(fs.some(f => /settles-idle/.test(f.title)), 'a failing journey assertion is named in the title');
+  A.ok(fs.some(f => /workshop-run-200/.test(f.title)), 'the deliverable assertion is captured');
+  A.ok(!fs.some(f => /spend/.test(f.title)), 'the SOFT journey assertion did NOT file');
+  A.eq(fs[0].fingerprint, guardianFingerprint({ step: 'journeys', subject: 'journey/J2a interrupt: E-STOP/J2/estop/settles-idle' }), 'journey fingerprint is per (journey+assertion)');
+}
+
+// ---- E4. journeys red but unparseable report -> one P1 step-level (never silent) ----
+{
+  const core = makeGuardianCore({ io: io({ readJourneys: () => null }), clock });
+  const fs = core.findingsFor(step('journeys'), { exitCode: 3, sha: 'x', logFile: 'j.log' });
+  A.eq(fs.length, 1, 'unparseable journeys red still files one finding');
+  A.ok(/no parseable journey report/.test(fs[0].title), 'names the unparseable journeys case');
+}
+
+// ---- E5. journeys BLOCKED (exit 2 / spawn / timeout) -> ONE loud P0 (no-fake-green) ----
+{
+  const core = makeGuardianCore({ io: io(), clock });
+  const fs = core.findingsFor(step('journeys'), { timedOut: true, durationMs: 900000, sha: 'deadbeef', logFile: 'j.log' });
+  A.eq(fs.length, 1, 'a BLOCKED journeys step files exactly one finding');
+  A.eq(fs[0].severity, 'P0', 'a journeys detector that cannot run is a P0');
+  A.ok(/BLOCKED/.test(fs[0].title), 'the blocked title is loud');
 }
 
 // ---- F. SHOOT red -> one P1 finding per failed state; whole-boot failure -> one P0 ----
@@ -213,6 +251,10 @@ const step = (id) => GUARDIAN_STEPS.find(s => s.id === id);
   A.eq(parseAuditReport({ scenarios: [{ assertions: [{ pass: false, soft: true }] }] }).length, 0, 'soft-only audit -> []');
   A.eq(parseShootManifest(null).length, 0, 'null shoot manifest -> []');
   A.eq(parseShootManifest({ states: [{ name: 'x', ok: true }] }).length, 0, 'all-ok manifest -> []');
+  A.eq(parseJourneysReport(null).length, 0, 'null journeys report -> []');
+  A.eq(parseJourneysReport({ journeys: 'nope' }).length, 0, 'non-array journeys -> []');
+  A.eq(parseJourneysReport({ journeys: [{ name: 'J1', assertions: [{ name: 'a', pass: false, soft: true }] }] }).length, 0, 'soft-only journeys -> []');
+  A.eq(parseJourneysReport({ journeys: [{ name: 'J1', assertions: [{ name: 'a', pass: true }] }] }).length, 0, 'all-pass journeys -> []');
 }
 
 A.report('qa-guardian.test');
