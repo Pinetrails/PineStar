@@ -54,6 +54,13 @@
 
   const SILENT_MARKER = '[SILENT]';
   const iso = cron._internals.iso;   // ms(arg) -> ISO; deterministic (the lint bans only the zero-arg new Date)
+  // B4 redacted-egress: the SAME structural redaction the channel tee applies, so both autonomous lanes
+  // (routed messages + scheduled cron) ship one shape to the floor — tool_call name-only, tool_result
+  // outcome-only, metadata events whole, everything else dropped. Pure (no time/rng) so this stays
+  // determinism-clean; require is resolved at load in the sidecar (the only host that runs the driver).
+  const runTeeView = (typeof require === 'function')
+    ? require('./channels/sse.js').runTeeView
+    : ((root.SK && root.SK.channels && root.SK.channels.sse && root.SK.channels.sse.runTeeView) || function (n, p) { return p; });
 
   function makeCronDriver(deps) {
     const d = deps || {};
@@ -141,16 +148,21 @@
       try { placeWorkitem(job.agentId, job.prompt, runId); } catch (_) {}
 
       // in-process emit sink: assemble the reply from agent.token deltas (the SAME contract harness.js/hub.js use —
-      // there is no agent.message event), capture the end reason / error / transient flag, and FORWARD every
-      // non-token event to the HUD so an unattended run is observable live (token deltas are dropped to stay quiet).
+      // there is no agent.message event), capture the end reason / error / transient flag off the RAW payload
+      // (internal outcome bookkeeping stays whole), then FORWARD each event to the HUD through the SHARED tee
+      // redaction so an unattended run is observable live in the SAME redacted shape a routed channel run ships
+      // (tool_call name-only, tool_result outcome-only, metadata events whole; token deltas dropped to stay quiet,
+      // and any event runTeeView maps to null — e.g. the noisy inner streams — is dropped rather than leaked raw).
       const state = { buf: '', errMsg: null, reason: null, transient: false };
       const sink = function (name, payload) {
         const p = payload || {};
-        if (name === 'agent.token') state.buf += (p.delta || '');
-        else if (name === 'agent.run.error') { state.errMsg = p.message || 'run error'; state.transient = !!p.transient; }
+        if (name === 'agent.token') { state.buf += (p.delta || ''); return; }   // token stream never leaves the driver
+        if (name === 'agent.run.error') { state.errMsg = p.message || 'run error'; state.transient = !!p.transient; }
         else if (name === 'capdenied') state.errMsg = state.errMsg || ('no ' + (p.need || 'capability') + ' — ' + (p.reason || ''));
         else if (name === 'agent.run.end') state.reason = p.reason;
-        if (name !== 'agent.token') { try { emit(name, payload); } catch (_) {} }
+        // forward only what the shared egress policy permits, in its redacted shape (B4). null -> not teed.
+        const view = runTeeView(name, p);
+        if (view) { try { emit(name, view); } catch (_) {} }
       };
 
       const messages = [{ role: 'user', content: String(job.prompt || '') }];
