@@ -75,6 +75,34 @@
     try { if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify(msg, kind || 'good'); } catch (_) {}
   }
 
+  /* P1.5 build provenance: the git commit + dirty state this desktop binary was compiled from (stamped by
+     src-tauri/build.rs, exposed via the starnet_build_info Tauri command). Returns a formatted one-liner
+     "build <version> @ <commit>[ DIRTY]" or '' when unavailable — in a plain browser (no Tauri shell) there is NO
+     binary provenance to report, so this MUST fail soft to '' and the caller omits the line. Truthful-telemetry:
+     never render a fake commit for a browser session that wasn't built from any binary. */
+  function tauriCore() {
+    try {
+      return (typeof window !== 'undefined' && window.__TAURI__ && window.__TAURI__.core &&
+        typeof window.__TAURI__.core.invoke === 'function') ? window.__TAURI__.core : null;
+    } catch (_) { return null; }
+  }
+  // Format a build-info object into the one honest line, or '' if it's missing/malformed.
+  function formatBuild(info) {
+    if (!info || typeof info !== 'object') return '';
+    const version = String(info.version || '').trim();
+    const commit = String(info.commit || '').trim();
+    if (!version && !commit) return '';
+    let line = 'build ' + (version || '?') + ' @ ' + (commit || 'unknown');
+    if (info.dirty) line += ' DIRTY';
+    return line;
+  }
+  // Resolve the build line asynchronously. In browser mode (no Tauri) → '' (no binary, nothing to prove).
+  function buildLine() {
+    const core = tauriCore();
+    if (!core) return Promise.resolve('');   // browser session — fail soft, omit the line
+    return Promise.resolve(core.invoke('starnet_build_info')).then(formatBuild).catch(() => '');   // old shell w/o the command → ''
+  }
+
   /* Fetch → copy → tell the user. opts.notify (default true) shows a toast; opts.onDone(ok, text) fires after.
      Always resolves (never throws) with the boolean success so a caller can flip button state. */
   function copy(opts) {
@@ -149,5 +177,5 @@
     return fetchText().then(paint).catch(() => paint(''));
   }
 
-  return { SUPPORT_EMAIL, supportEmail, hasSupport, fetchText, copy, showBlock, _internals: { copyToClipboard, fallbackCopy, normSupport, SUPPORT_PLACEHOLDER } };
+  return { SUPPORT_EMAIL, supportEmail, hasSupport, fetchText, copy, showBlock, buildLine, _internals: { copyToClipboard, fallbackCopy, normSupport, SUPPORT_PLACEHOLDER, formatBuild, tauriCore } };
 });

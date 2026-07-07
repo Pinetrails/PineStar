@@ -2547,6 +2547,14 @@ const StationUI = (() => {
   function wireDiagnostics(body) {
     const btn = body.querySelector('#diag-copy');
     const msgEl = body.querySelector('#diag-msg');
+    // P1.5: surface one honest build-provenance line "build <version> @ <commit>[ DIRTY]". Diag.buildLine() returns
+    // '' in browser mode (no Tauri binary) — we then leave the element hidden, never faking a commit for a session
+    // that wasn't built from any binary. Defensive: Diag may be absent in a stripped build.
+    (function paintBuild() {
+      const el = body.querySelector('#diag-build');
+      if (!el || typeof Diag === 'undefined' || typeof Diag.buildLine !== 'function') return;
+      Diag.buildLine().then(line => { if (line) { el.textContent = line; el.hidden = false; } }).catch(() => {});
+    })();
     if (!btn) return;
     const setMsg = (t, ok) => { if (msgEl) { msgEl.textContent = t || ''; msgEl.className = 'msg' + (ok ? ' ok' : ''); } };
     btn.addEventListener('click', () => {
@@ -2798,6 +2806,9 @@ const StationUI = (() => {
       })()) +
       '<div class="set-save"><button class="bb sm" id="diag-copy">📋 COPY DIAGNOSTICS</button></div>' +
       '<div id="diag-msg" class="msg"></div>' +
+      // P1.5 build provenance — the git commit this desktop binary was compiled from. Hidden until resolved (and
+      // stays hidden in a plain browser, where there is no binary to prove). Populated in wireDiagnostics().
+      '<div id="diag-build" class="dim" style="margin-top:6px;font-size:11px" hidden></div>' +
       '<h4 class="ms-h">STATION DATA</h4>' +
       '<div class="set-save"><button class="bb sm danger" id="set-clear">CLEAR NOTIFICATIONS</button></div>' +
       '<p class="set-about">STARNET — gamified AI-agent harness.<br>Theme, display & audio preferences are saved locally on this machine. Manage workstreams from the TASK BOARD or the COMMS rail.</p>';
