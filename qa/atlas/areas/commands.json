@@ -1,6 +1,6 @@
 {
   "area": "commands",
-  "updatedAt": "2026-07-07T08:09:25.408Z",
+  "updatedAt": "2026-07-07T08:18:15.162Z",
   "entries": [
     {
       "id": "command/agents",
@@ -18,7 +18,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.408Z",
-      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
       "missing": false
     },
     {
@@ -37,7 +37,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.408Z",
-      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
       "missing": false
     },
     {
@@ -56,7 +56,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.408Z",
-      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
       "missing": false
     },
     {
@@ -75,7 +75,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.408Z",
-      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
       "missing": false
     },
     {
@@ -94,7 +94,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.408Z",
-      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
       "missing": false
     },
     {
@@ -113,7 +113,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.408Z",
-      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
       "missing": false
     },
     {
@@ -132,7 +132,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.408Z",
-      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
       "missing": false
     },
     {
@@ -151,7 +151,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.408Z",
-      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
       "missing": false
     },
     {
@@ -170,7 +170,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.408Z",
-      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
       "missing": false
     },
     {
@@ -189,7 +189,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
       "missing": false
     },
     {
@@ -208,7 +208,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.408Z",
-      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
       "missing": false
     },
     {
@@ -227,7 +227,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.408Z",
-      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
       "missing": false
     },
     {
@@ -246,7 +246,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.408Z",
-      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
       "missing": false
     },
     {
@@ -265,7 +265,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.408Z",
-      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
       "missing": false
     },
     {
@@ -284,7 +284,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.408Z",
-      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
       "missing": false
     },
     {
@@ -303,7 +303,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.408Z",
-      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
       "missing": false
     },
     {
@@ -322,7 +322,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.408Z",
-      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
       "missing": false
     },
     {
@@ -341,7 +341,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.408Z",
-      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
       "missing": false
     },
     {
@@ -360,7 +360,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.408Z",
-      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
       "missing": false
     },
     {
@@ -379,7 +379,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.408Z",
-      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
       "missing": false
     },
     {
@@ -398,7 +398,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.408Z",
-      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
       "missing": false
     },
     {
@@ -417,7 +417,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.408Z",
-      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
       "missing": false
     },
     {
@@ -436,7 +436,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.408Z",
-      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
       "missing": false
     },
     {
@@ -455,7 +455,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.408Z",
-      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
       "missing": false
     },
     {
@@ -474,7 +474,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.408Z",
-      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
       "missing": false
     },
     {
@@ -493,7 +493,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.408Z",
-      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
       "missing": false
     },
     {
@@ -512,7 +512,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.408Z",
-      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
       "missing": false
     },
     {
@@ -531,7 +531,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.408Z",
-      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
       "missing": false
     },
     {
@@ -550,7 +550,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.408Z",
-      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
       "missing": false
     },
     {
@@ -569,7 +569,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.408Z",
-      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
       "missing": false
     },
     {
@@ -588,7 +588,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.408Z",
-      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
       "missing": false
     },
     {
@@ -607,7 +607,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.408Z",
-      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
       "missing": false
     },
     {
@@ -626,7 +626,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.408Z",
-      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
       "missing": false
     },
     {
@@ -645,7 +645,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.408Z",
-      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
       "missing": false
     },
     {
@@ -664,7 +664,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.408Z",
-      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
       "missing": false
     },
     {
@@ -683,7 +683,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.408Z",
-      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
       "missing": false
     },
     {
@@ -702,7 +702,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
       "missing": false
     },
     {
@@ -721,7 +721,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.408Z",
-      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
       "missing": false
     },
     {
@@ -740,7 +740,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.408Z",
-      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
       "missing": false
     },
     {
@@ -759,7 +759,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.408Z",
-      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "lastSeen": "2026-07-07T08:18:27.834Z",
       "missing": false
     }
   ]

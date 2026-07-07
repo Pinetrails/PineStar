@@ -22,5 +22,5 @@ that vanished (retire it from the registry or fix the regression that hid it).
 | world | 453 | 453 | 0 | 0 | 0 | 0 | 0 |
 | **all** | **1245** | 1245 | 0 | 0 | 0 | 0 | 0 |
 
-_Last regenerated: 2026-07-07T08:12:21.625Z @ 85dd28c4._
+_Last regenerated: 2026-07-07T08:18:28.185Z @ 0e41d845._
 
