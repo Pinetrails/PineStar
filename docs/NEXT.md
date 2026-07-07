@@ -301,6 +301,71 @@ E-STOP visibility + get-a-key link already chipped by Atlas — not re-listed.**
 - GB-27 .bugloops unbounded (395MB/2066 files) — TTL sweep.
 - GB-28 Multi-agent status dashboard (which of N agents stuck/failed/done — superset of GB-7).
 
+## NIGHT SHIFT — autonomy rebuild (added 2026-07-07, Fable session; Andrew-approved direction)
+
+**Escape:** Andrew left the station overnight at MAX autonomy → exactly 1 autonomous act, then
+10.7h of silence (live-verified in `runs.jsonl`: last self-directed beat 02:24, next activity =
+the 1PM cron). Root causes code-verified this session — the autonomy layer is a demo, not a shift:
+
+1. **One-beat-per-idle-episode**: `armed` flag (autopilotstore.js:92) spends the single beat on
+   first idle fire and only re-arms on pointerdown/keydown. Overnight ceiling = 1, by design.
+2. **Acts are reason-only**: "Do not run any tools" hardcoded in both directives
+   (autopilot.js:196,273). Max overnight output = one text draft (its own self-review called one
+   "Busywork"). Leash cap 3/day on top.
+3. **The scheduler is a webview setInterval** (autopilotstore.js:229) with state in localStorage —
+   sleep/throttle/restart kills autonomy silently. Nothing server-side drives idle work.
+4. **leashPerDay is decorative** — no runtime enforcement anywhere; conversely cron ignores the
+   dial entirely (routines fire even at initiative 'wait').
+5. **Cron lease timeout duplicates long runs**: maxRunMs 8min < a real research run → live run
+   declared zombie, reclaimed, re-fired. LIVE EVIDENCE: daily news routine fired 4× in ~6min on
+   2026-07-07 (runs 03f65b81/d5324ce4/fa179d96/be6646e3, one errored).
+6. **Silent decisions**: at-capacity deferral event stubbed "pending" (cron-driver.js:237),
+   disabled/no-capability skips invisible, autopilot logs nothing about why it did/didn't act.
+7. **AutoJobs `proposed` flag is fire-once-per-lifetime** (autojobstore.js:95) — standing-job
+   proposals can never re-offer.
+
+**Andrew's locked direction (2026-07-07):** the SOUL is dossier/understanding-driven improv —
+the agent digests what the user actually works on daily (runs, chats, projects, habits, values)
+and self-generates genuinely useful needle-moving work. NO explicit night queue ("that's just a
+cron with extra steps"). Acts = REAL tool runs confined to the jail. Pacing = steady beats,
+leash-capped. Deliverable shape = "while you were gone I finished X — approve and I'll ship"
+(approve/deny; deny feeds learning). Simple, powerful.
+
+**Lane queue (claim in-file before building; shared/events.js changes are additive-only via its
+owner):**
+
+- **NS-0 · truth first (small, immediate):** (a) cron lease HEARTBEAT — renew while the run is
+  provably alive, reclaim only on dead heartbeat; kills the duplicate-fire storm (test: run
+  longer than maxRunMs fires exactly once). (b) emit the stubbed skip/defer reasons
+  (at-capacity, disabled, no-capability) — needs the governed event-enum addition. (c) autonomy
+  DECISION LEDGER: every beat records inputs + outcome (acted/earned/declined + which gate
+  bound) durably; morning-readable. Truthful-telemetry law: if the dial shows "free", the
+  station must be able to prove what it did with that freedom.
+- **NS-1 · sidecar night-shift driver:** move the loop out of the webview. Server-owned
+  away-detection (last user-triggered activity, frontend beacons on input; NOT DOM-only),
+  beat attempt every ~30–60min while away, leash enforced + persisted server-side (survives
+  restart), respects E-STOP/budget caps/same-agent mutex. Dial posture synced to sidecar
+  (POST /api/autonomy/write exists). Frontend autopilot demotes to UI + activity beacon;
+  `armed` one-shot logic retired. AutoJobs `proposed` fire-once reworked (re-offer on cadence).
+- **NS-2 · the brain (understanding-fed improv):** context-pack builder — digest of recent runs
+  /chat topics/projects touched/dossier dims/approve-deny history feeds the propose step, so
+  grounding = what the user ACTUALLY did lately, not 6 static dossier strings. Reuse the pure
+  propose→grounding-veto→score→select pipeline (autopilot.js) with the richer evidence; keep
+  the confidence gate + learn-weights (deny = down-weight archetype).
+- **NS-3 · real hands + approve-to-ship:** selected job executes as a REAL runOnce task run
+  (surface 'autonomous', isTask), reach-gated: sandbox = jailed writes (workshop/cabinet) +
+  web read; NEVER send/publish/spend (consent default-deny stays). Deliverable lands as a
+  return card: "finished X while you were gone — approve to ship" with open-it action;
+  approve = apply/unjail, deny = one-tap reason → NS-2 learning.
+- **NS-4 · morning report + honest dial:** one welcome-back beat (one at a time law): what ran,
+  what it built (open links), what it declined and WHY (from the ledger), one-tap undo
+  (digestSummary/undo snapshot plumbing exists in autopilot.js B3). Dial copy updated to match
+  enforced reality; GA-9/GB-13 routine UI items pair naturally here.
+
+Done means (per lane, live-app): leave the station idle with dial at 'free' + dev clock/short
+beat interval → observe ≥2 real jailed tool-run deliverables + a truthful ledger of every
+decision, gate green. NS-0a done means the >8min-run duplicate repro fires once.
+
 ## Parked product decisions (need Andrew, don't guess)
 
 - `fullOffice()` autonomous prop placement vs. hand-placed only.
