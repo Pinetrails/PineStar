@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Window polish — v1 (before / after)</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=VT323&display=swap">
+<style>
+  html,body{margin:0;background:#030201;}
+  body{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;}
+  .wrap{width:720px;max-width:100%;}
+</style>
+</head>
+<body>
+<div class="wrap">
+<div class="sky" style="padding:2px 0;">
+<style>
+.sky{--ph:#ffaa33;--phb:#ffd9a3;--phd:#b9791c;--phf:#1e1404;--ink:#190f02;--g:rgba(255,170,51,.5);--g2:rgba(255,170,51,.14);--gold:#ffd34a;--ok:#69ff8e;--bad:#ff5c4d;font-family:'VT323','Courier New',monospace;color:#eec88f;line-height:1.2;}
+.sky *{box-sizing:border-box;}
+.stage{position:relative;border-radius:10px;overflow:hidden;background:#050301;min-height:440px;display:flex;align-items:center;justify-content:center;padding:26px;}
+.scan{position:absolute;inset:0;pointer-events:none;z-index:12;background:repeating-linear-gradient(0deg,rgba(0,0,0,.26) 0 1px,transparent 1px 3px);}
+.fp{position:absolute;z-index:1;border:2px solid var(--phd);border-radius:7px;background:rgba(5,3,1,.92);box-shadow:0 0 0 2px var(--ph),0 0 18px var(--g2),inset 0 0 30px rgba(0,0,0,.8);padding:6px 8px;}
+.fp .bar{height:5px;background:var(--phf);box-shadow:inset 0 0 0 1px var(--phd);margin:5px 0;}
+.fp .hd{color:var(--ph);font-size:12px;letter-spacing:2px;opacity:.85;}
+.scrim{position:absolute;inset:0;z-index:9;background:radial-gradient(ellipse 58% 56% at 50% 50%,rgba(0,0,0,.42) 0%,rgba(0,0,0,.8) 100%);backdrop-filter:saturate(.55) blur(1.6px);-webkit-backdrop-filter:saturate(.55) blur(1.6px);}
+.tag{position:absolute;top:10px;left:12px;z-index:13;font-size:13px;letter-spacing:3px;padding:2px 9px;border:1px solid var(--phd);color:var(--phd);background:rgba(0,0,0,.5);}
+.tag.good{color:var(--gold);border-color:var(--gold);}
+.win{width:432px;max-width:94%;position:relative;z-index:10;display:flex;flex-direction:column;}
+.before{background:rgba(4,2,1,.97);border:2px solid var(--ph);border-radius:7px;outline:1px solid rgba(0,0,0,.9);outline-offset:2px;box-shadow:0 0 30px rgba(0,0,0,.9),0 0 16px var(--g2),inset 0 0 40px rgba(0,0,0,.6);}
+.after{border-radius:9px;transform-origin:center;animation:power .4s ease-out;background:radial-gradient(ellipse 130% 100% at 50% 0%,var(--g2),transparent 42%),rgba(5,3,1,.96);box-shadow:0 0 0 2px var(--ph),0 0 0 3.5px rgba(0,0,0,.9),0 0 26px var(--g2),0 12px 34px rgba(0,0,0,.85),inset 0 0 60px rgba(0,0,0,.85),inset 0 1px 0 rgba(255,228,180,.07);}
+.after::before{content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;z-index:5;background:radial-gradient(ellipse 108% 96% at 50% 45%,transparent 62%,rgba(0,0,0,.5) 100%),linear-gradient(115deg,rgba(255,238,210,.06) 0%,transparent 16%);}
+@keyframes power{0%{transform:scaleY(.006);filter:brightness(8);}55%{transform:scaleY(1.02);filter:brightness(2.2);}100%{transform:scaleY(1);filter:brightness(1);}}
+.wh{display:flex;justify-content:space-between;align-items:center;}
+.before .wh{background:rgba(0,0,0,.45);border-bottom:2px solid var(--ph);padding:3px 10px;}
+.before .wt{color:var(--ph);letter-spacing:3px;font-size:16px;text-shadow:0 0 6px var(--g2);}
+.before .wx{border:2px solid var(--ph);color:var(--ph);background:none;font-family:inherit;font-size:13px;padding:0 6px;cursor:pointer;}
+.after .wh{background:var(--ph);color:var(--ink);padding:6px 12px;border-radius:7px 7px 0 0;position:relative;z-index:6;}
+.after .wt{color:var(--ink);letter-spacing:3px;font-size:16px;}
+.after .wx{border:1px solid rgba(0,0,0,.55);color:var(--ink);background:rgba(0,0,0,.08);font-family:inherit;font-size:13px;padding:0 6px;cursor:pointer;border-radius:2px;}
+.wb{position:relative;z-index:6;}
+.before .wb{padding:9px 11px;}
+.after .wb{padding:15px 16px;}
+.hero{display:flex;gap:12px;align-items:flex-start;}
+.after .hero{padding-bottom:12px;margin-bottom:12px;border-bottom:1px solid var(--phf);}
+.before .hero{padding-bottom:7px;margin-bottom:7px;}
+.port{flex:0 0 auto;width:50px;border:2px solid var(--phd);background:#02080a;text-align:center;padding:5px 0 3px;}
+.after .port{box-shadow:inset 0 0 14px rgba(0,0,0,.7),0 0 8px var(--g2);}
+.port pre{margin:0;font-size:15px;line-height:1;color:var(--ph);text-shadow:0 0 7px var(--g2);}
+.info{min-width:0;flex:1;}
+.nm{font-size:25px;letter-spacing:3px;color:var(--phb);line-height:1;}
+.after .nm{text-shadow:0 0 12px var(--g2);}
+.lv{font-size:11px;letter-spacing:1px;color:var(--gold);border:1px solid var(--gold);border-radius:2px;padding:0 5px;margin-left:8px;vertical-align:3px;}
+.rl{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--ph);letter-spacing:1.5px;margin:5px 0 6px;}
+.sd{width:7px;height:7px;border-radius:50%;background:var(--ok);box-shadow:0 0 6px rgba(105,255,142,.7);animation:pul 2.2s infinite;}
+@keyframes pul{0%,100%{opacity:1;}50%{opacity:.35;}}
+.tags{display:flex;gap:5px;flex-wrap:wrap;}
+.tg{border:1px solid var(--phd);padding:0 6px;font-size:12px;color:var(--ph);letter-spacing:1px;}
+.tg.m{color:var(--gold);border-color:var(--gold);}
+.sg{display:grid;grid-template-columns:1fr 1fr 1fr;}
+.before .sg{gap:5px;margin:7px 0;}
+.after .sg{gap:7px;margin:12px 0;}
+.sc{background:var(--phf);border:1px solid var(--phd);text-align:center;}
+.before .sc{padding:6px 4px;}
+.after .sc{padding:10px 6px;box-shadow:inset 0 1px 0 rgba(255,228,180,.06);}
+.sc b{display:block;color:var(--phb);line-height:1;}
+.before .sc b{font-size:18px;}
+.after .sc b{font-size:23px;text-shadow:0 0 10px var(--g2);}
+.sc b.g{color:var(--gold);}
+.sc i{display:block;font-style:normal;color:var(--phd);}
+.before .sc i{font-size:10px;letter-spacing:1px;margin-top:2px;}
+.after .sc i{font-size:11px;letter-spacing:2px;margin-top:5px;}
+.sec{display:flex;align-items:center;gap:8px;color:var(--ph);letter-spacing:2px;font-size:13px;margin:14px 0 9px;}
+.sec::after{content:'';flex:1;height:1px;background:linear-gradient(90deg,var(--phd),transparent);}
+.tabs{display:flex;gap:4px;}
+.before .tabs{margin:8px 0 6px;border-bottom:1px solid var(--phf);}
+.after .tabs{margin:4px 0 11px;border-bottom:1px solid var(--phf);}
+.tb{font-size:13px;letter-spacing:2px;padding:4px 12px;cursor:pointer;color:var(--phd);border:1px solid transparent;border-bottom:none;}
+.before .tb.on{color:var(--phb);}
+.after .tb.on{color:var(--ink);background:var(--ph);border-radius:3px 3px 0 0;margin-bottom:-1px;}
+.mis{background:rgba(0,0,0,.22);}
+.before .mis{border-left:2px solid var(--ph);padding:6px 9px;margin:7px 0;}
+.after .mis{border-left:2px solid var(--ph);padding:9px 12px;margin:0;box-shadow:0 0 10px var(--g2);}
+.ml{font-size:10px;color:var(--phd);letter-spacing:2px;margin-bottom:4px;}
+.mt{font-size:13px;color:#eec88f;line-height:1.5;}
+.task{border:1px solid var(--phd);background:rgba(0,0,0,.35);}
+.before .task{border-left:3px solid var(--phd);padding:5px 7px;margin-top:7px;}
+.after .task{border-left:3px solid var(--ph);padding:9px 11px;margin-top:13px;box-shadow:0 0 8px var(--g2);}
+.tl{font-size:10px;color:var(--phd);letter-spacing:2px;}
+.tt{font-size:13px;color:var(--phb);margin:3px 0;}
+.trk{height:8px;background:var(--phf);border:1px solid var(--phd);margin-top:5px;}
+.trk>div{height:100%;background:repeating-linear-gradient(90deg,var(--ph) 0 6px,rgba(0,0,0,.35) 6px 8px);box-shadow:0 0 6px var(--g);}
+.cap{text-align:center;font-size:13px;letter-spacing:1px;color:var(--phd);padding:9px 0 2px;}
+.cap b{color:var(--ph);font-weight:normal;}
+</style>
+
+<div class="stage" style="margin-bottom:14px;">
+  <div class="tag">BEFORE — CURRENT</div>
+  <div class="scan"></div>
+  <div class="fp" style="top:24px;left:26px;width:150px;"><div class="hd">CREW</div><div class="bar"></div><div class="bar" style="width:80%"></div><div class="bar" style="width:60%"></div></div>
+  <div class="fp" style="bottom:22px;right:26px;width:170px;"><div class="hd">OPS LOG</div><div class="bar" style="width:90%"></div><div class="bar" style="width:70%"></div><div class="bar"></div></div>
+  <div class="fp" style="bottom:26px;left:30px;width:120px;"><div class="hd">METRICS</div><div class="bar" style="width:75%"></div><div class="bar"></div></div>
+  <div class="win before">
+    <div class="wh"><span class="wt">&#9646; AGENT DOSSIER</span><button class="wx" aria-label="close">&#10005;</button></div>
+    <div class="wb">
+      <div class="hero">
+        <div class="port"><pre>&#9621;&#9620;&#9620;&#9622;
+&#9616;&#9679;&#9679;&#9612;
+&#9629;&#9600;&#9600;&#9628;</pre></div>
+        <div class="info">
+          <div class="nm">ULTRON</div>
+          <div class="rl"><span class="sd"></span> ORCHESTRATOR &middot; ONLINE</div>
+          <div class="tags"><span class="tg">MAIN</span><span class="tg m">OPUS-4.8</span><span class="tg">CORTEX</span></div>
+        </div>
+      </div>
+      <div class="tabs"><span class="tb on">BRIEF</span><span class="tb">CONFIG</span><span class="tb">GROWTH</span></div>
+      <div class="sg">
+        <div class="sc"><b>142</b><i>TASKS</i></div>
+        <div class="sc"><b>128</b><i>SHIPPED</i></div>
+        <div class="sc"><b class="g">94%</b><i>CONF</i></div>
+      </div>
+      <div class="mis"><div class="ml">MISSION</div><div class="mt">Coordinate the build fleet; merge green branches into trunk.</div></div>
+      <div class="task"><div class="tl">CURRENT TASK &middot; 64%</div><div class="tt">Wiring connectors into the run host</div><div class="trk"><div style="width:64%"></div></div></div>
+    </div>
+  </div>
+</div>
+
+<div class="stage focus">
+  <div class="tag good">AFTER — UPGRADED</div>
+  <div class="scan"></div>
+  <div class="fp" style="top:24px;left:26px;width:150px;"><div class="hd">CREW</div><div class="bar"></div><div class="bar" style="width:80%"></div><div class="bar" style="width:60%"></div></div>
+  <div class="fp" style="bottom:22px;right:26px;width:170px;"><div class="hd">OPS LOG</div><div class="bar" style="width:90%"></div><div class="bar" style="width:70%"></div><div class="bar"></div></div>
+  <div class="fp" style="bottom:26px;left:30px;width:120px;"><div class="hd">METRICS</div><div class="bar" style="width:75%"></div><div class="bar"></div></div>
+  <div class="scrim"></div>
+  <div class="win after">
+    <div class="wh"><span class="wt">&#9646; AGENT DOSSIER</span><button class="wx" aria-label="close">&#10005;</button></div>
+    <div class="wb">
+      <div class="hero">
+        <div class="port"><pre>&#9621;&#9620;&#9620;&#9622;
+&#9616;&#9679;&#9679;&#9612;
+&#9629;&#9600;&#9600;&#9628;</pre></div>
+        <div class="info">
+          <div class="nm">ULTRON<span class="lv">LV 7</span></div>
+          <div class="rl"><span class="sd"></span> ORCHESTRATOR &middot; ONLINE</div>
+          <div class="tags"><span class="tg">MAIN</span><span class="tg m">OPUS-4.8</span><span class="tg">CORTEX</span></div>
+        </div>
+      </div>
+      <div class="tabs"><span class="tb on">BRIEF</span><span class="tb">CONFIG</span><span class="tb">GROWTH</span></div>
+      <div class="sg">
+        <div class="sc"><b>142</b><i>TASKS</i></div>
+        <div class="sc"><b>128</b><i>SHIPPED</i></div>
+        <div class="sc"><b class="g">94%</b><i>CONF</i></div>
+      </div>
+      <div class="sec">&#9646; BRIEFING</div>
+      <div class="mis"><div class="ml">MISSION</div><div class="mt">Coordinate the build fleet; merge green branches into trunk.</div></div>
+      <div class="task"><div class="tl">CURRENT TASK &middot; 64%</div><div class="tt">Wiring connectors into the run host</div><div class="trk"><div style="width:64%"></div></div></div>
+    </div>
+  </div>
+</div>
+
+<div class="cap">Same skin, same amber &mdash; the difference is <b>material, depth &amp; rhythm</b>, not the aesthetic.</div>
+</div>
+</div>
+</body>
+</html>
