@@ -113,6 +113,40 @@ Rule stands: land it or delete it — an unmerged branch is a claim nobody verif
 - Discovered in passing: sidecar/loop.js has a stray NUL byte (~offset 32377) — git/grep
   treat it as BINARY. Fix queued as a spawned task (byte-strip only, semantics untouched).
 
+## QA Escape Loop — standing directive (added 2026-07-07, Fable session)
+
+**Why:** Andrew keeps finding bugs that audits called "up to par." Diagnosed causes:
+(1) the QA Station (`qa/QA_STATION.md`) was built 7/01, movie-tested green, and **never
+activated** — Guardian last ran 7/03 while ~40 lanes merged unwatched (first re-run 7/07
+immediately went RED on 7 stale-baseline golden findings; triaged + re-blessed 79016922);
+(2) station coverage is **static/seeded/happy-path** while Andrew's bugs are **dynamic seam
+bugs** — sim↔UI↔task-truth diverging *during* real use (taskboard flood, >30s stream abort,
+features breaking under interruption); (3) nothing converts an Andrew-found bug into
+permanent machine coverage, so coverage never converges on his bug distribution.
+
+**The law (EL-3, mirror into skills when EL-1 lands):** *an escape is a coverage gap, not
+just a bug.* Every bug Andrew reports: BEFORE the fix merges, the lane must land a failing
+journey/audit assertion that reproduces it — or a ledger KNOWN entry naming why it can't be
+automated. Merge ritual gains the question "which journey/assertion covers this feature's
+promise?" (sibling of "where's its UI?").
+
+**Queue:**
+- **EL-0 · Activate the watch** — needs Andrew (auto-mode blocks persistent-task
+  registration): `& scripts\qa\register-watch.ps1 -RepoRoot C:\Users\andro\Desktop\gen -Apply`
+  (hourly Guardian + daily Beginner + weekly Janitor) + a standing `npm run qa:guardian:watch`
+  process + the Overseer `/loop` (QA_STATION §6). Smoked 2026-07-07: full Guardian cycle runs,
+  detects, files, dedups.
+- **EL-1 · Journey Corps** — IN PROGRESS — journey-corps lane (spawned 2026-07-07, Fable
+  session). Multi-step user journeys with per-step sim↔truth parity, run inside every
+  Guardian cycle: task lifecycle incl. taskboard truth (the live round-trip taskboard-truth
+  skipped), interrupt/E-STOP/reload → truth-after-disconnect, double-send, summon→assign→
+  deliverable-open, long-stream survival (connectGuard class). Extend `scripts/audit.mjs`
+  scenarios, don't rebuild the cameras.
+- **EL-2 · Saboteur mutators** — adversarial twist layer over journeys (garbage input, rapid
+  panel toggles mid-run, provider-error injection). After EL-1.
+- **EL-4 · Installed-app weekly smoke** — CDP-attach to the installed exe and run the parity
+  sweep there; the dev sidecar can never see the WebView2-cache class. Session task, weekly.
+
 ## Parked product decisions (need Andrew, don't guess)
 
 - `fullOffice()` autonomous prop placement vs. hand-placed only.
