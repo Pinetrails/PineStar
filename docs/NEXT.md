@@ -259,9 +259,16 @@ Gauge: `npm run qa:atlas:status`. Trunk re-sweep 2026-07-07 (39b9c569): **1339 e
 The whole surface is the queue. Areas: system, crew, work, build, world, commands, routes, events, props.
 
 _Active claims:_
-- IN PROGRESS — agent/perfect-build3 · **build** (full remainder ~245: prop gallery/palette; wave 6)
-- IN PROGRESS — agent/perfect-crew3 · **crew** (full remainder ~64: recruit seals cluster; wave 6)
-- IN PROGRESS — agent/perfect-world3 · **world** (remainder part 1 of 2, ~429 unmapped; wave 6)
+- IN PROGRESS — agent/perfect-final-a · **STALE-ONLY re-proof: system/events/commands/routes**
+  (wave-7 final sweep, orchestrator-sanctioned hold)
+- IN PROGRESS — agent/perfect-final-b · **world** (last 15 unmapped: hidden connect/settings/
+  voice/codex panels) **+ STALE-ONLY re-proof: world/work/crew/build** (wave 7, sanctioned hold)
+
+_Wave-6 DONE 2026-07-07 (3 lanes merged + gated 266 + reaped): **build/crew areas COMPLETE,
+world 429→15 unmapped**. 18 seals===catalog + 5 loadout-law dossiers + custom-class round-trip;
+props gallery contracts (38/38 skills, 37/37 connectors, mouse-place dish=cap re-proven);
+model-dock family 376 rows + honest offline-fallback labels. Zero truth defects; 3 KNOWN
+coverage notes (75af5388, cbc5b114, fc9beb65) — all probe-layer candidates._
 
 _Wave-5 DONE 2026-07-07 (3 lanes merged + gated 265 + reaped): **work / system / events areas
 COMPLETE (0 unmapped each)**. Truth bug found+chipped: telegram connect lies 'connected'
