@@ -4127,7 +4127,8 @@ async function handleRun(req, res) {
   const streamId = (body && body.streamId && /^[A-Za-z0-9_-]{1,64}$/.test(String(body.streamId))) ? String(body.streamId) : null;   // M-mem.2b: the active workstream (bounded; bad → global)
   // THE MOAT (FLOOR-REAL): the browser sends the agent's REAL placed capability objects (World.heroCaps) so this
   // interactive run grants exactly what's ON THE FLOOR — additive on top of the compute-only interactive office
-  // (see runOnce). dish→web · cabinet→files · workbench→terminal · notebook→memory · studio→image · jukebox→spotify.
+  // (see runOnce). dish→web · cabinet→files · workbench→terminal · notebook→memory · studio→image · jukebox→spotify
+  // (a placed JUKEBOX grants the Spotify tools, but they stay inert until the user connects Spotify in Settings).
   // A placed WORKBENCH still walks the full consent ladder + auto-checkpoints before every command. Legacy clients
   // send just `workbench:true`; that path is preserved so an older build still grants the terminal.
   let extraObjects = [];

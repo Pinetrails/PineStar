@@ -3374,13 +3374,23 @@ const Chat = (() => {
       { cap: 'jukebox', label: 'spotify', tools: 'spotify controls' }
     ];
   }
-  function toolsCommand() {
+  async function toolsCommand() {
     const placed = slashPlacedTypes();
     const have = {}; placed.forEach(t => { have[t] = true; });
     const active = toolRows().filter(r => r.cap == null || have[r.cap]);
     const missing = toolRows().filter(r => r.cap && !have[r.cap]).map(r => r.label);
+    // JUKEBOX is a two-step unlock: place the prop (grants the tools) AND connect Spotify in Settings (the tools
+    // are inert until the OAuth session exists). If it's placed but Spotify isn't connected, say so honestly
+    // rather than listing spotify as fully live — the truthful-telemetry law applies to /tools too.
+    let jukeNote = '';
+    if (have.jukebox) {
+      let connected = false;
+      try { const j = await (await fetch('/api/spotify/status', { cache: 'no-store' })).json(); connected = !!(j && j.connected); } catch (_) {}
+      if (!connected) jukeNote = ' Spotify not connected — connect it in Settings to use the JUKEBOX.';
+    }
     localLine('Tools: ' + active.map(r => r.label + ' (' + r.tools + ')').join('; ')
-      + (missing.length ? '. Locked until placed: ' + missing.join(', ') + '.' : '.'));
+      + (missing.length ? '. Locked until placed: ' + missing.join(', ') + '.' : '.')
+      + jukeNote);
   }
   async function skillsCommand() {
     try {
@@ -3889,8 +3899,11 @@ const Chat = (() => {
         // unchanged — replayChannel renders those via toolLine), but the LIVE surface renders a structured CHIP.
         // breakLive() closes the prose paragraph AND the prior chip rail only when it's a *call after prose*; a
         // run of consecutive calls shares one rail because onToolResult below never breaks it.
-        onToolCall: ev => { callNames[ev.callId] = ev.name; const t = '▶ ' + ev.name + ' ' + brief(ev.argsSummary); Channels.addTool(ws.id, t, false); walkToDesk(); presenceToolCall(ws, ev.name); if (skillFlavor(ev)) recentInRunSkill = Date.now(); if (isActiveWs(ws)) { if (activeLiveRow && activeLiveRow.breakSeg) activeLiveRow.breakSeg(); toolChip(ev); } if (typeof U !== 'undefined' && U.bus && ev.name && ev.name.indexOf('mcp__') === 0) U.bus.emit('agent.tool_call', { name: ev.name }); },
-        onToolResult: ev => { if (!ev.isError) runToolsOk++; const nm = callNames[ev.callId] || 'tool'; const t = (ev.isError ? '✕ ' : '◀ ') + nm + ' · ' + brief(ev.summary || (ev.isError ? 'error' : 'ok')) + (ev.isError ? ' — failed' : '') + (ev.ms ? ' (' + fmtMs(ev.ms) + ')' : ''); Channels.addTool(ws.id, t, ev.isError); presenceToolResult(ws); if (isActiveWs(ws)) resolveChip(ev, nm); },
+        onToolCall: ev => { callNames[ev.callId] = ev.name; const t = '▶ ' + ev.name + ' ' + brief(ev.argsSummary); Channels.addTool(ws.id, t, false); walkToDesk(); presenceToolCall(ws, ev.name); if (skillFlavor(ev)) recentInRunSkill = Date.now(); if (isActiveWs(ws)) { if (activeLiveRow && activeLiveRow.breakSeg) activeLiveRow.breakSeg(); toolChip(ev); } if (typeof U !== 'undefined' && U.bus && ev.name && ev.name.indexOf('mcp__') === 0) U.bus.emit('agent.tool_call', { name: ev.name }); if (typeof U !== 'undefined' && U.bus && ev.callId) U.bus.emit('agent.tool_call', { name: ev.name, agentId: ws.agentId, callId: ev.callId }); },
+        // Re-emit the hero's tool RESULT onto U.bus so the world's per-prop capability surge fires on the REAL
+        // outcome (the station SSE tee drops tool_result; the hero's interactive stream is the only place it's
+        // seen). callId joins it to its tool_call; isError drives the success-vs-failure (green-vs-red) surge.
+        onToolResult: ev => { if (!ev.isError) runToolsOk++; const nm = callNames[ev.callId] || 'tool'; const t = (ev.isError ? '✕ ' : '◀ ') + nm + ' · ' + brief(ev.summary || (ev.isError ? 'error' : 'ok')) + (ev.isError ? ' — failed' : '') + (ev.ms ? ' (' + fmtMs(ev.ms) + ')' : ''); Channels.addTool(ws.id, t, ev.isError); presenceToolResult(ws); if (isActiveWs(ws)) resolveChip(ev, nm); if (typeof U !== 'undefined' && U.bus && ev.callId) U.bus.emit('agent.tool_result', { name: nm, agentId: ws.agentId, callId: ev.callId, ok: !ev.isError, isError: !!ev.isError }); },
         onDeliverable: ev => {
           // Any produced file is an openable product (image_generate emits kind:'image', fs.write emits
           // kind:'file'). How we RENDER it is decided client-side from the EXTENSION (the reference harness's model), not
