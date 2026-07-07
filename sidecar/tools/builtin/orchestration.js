@@ -62,6 +62,23 @@
     const workerMaxIters = (typeof deps.workerMaxIters === 'number' && isFinite(deps.workerMaxIters) && deps.workerMaxIters > 0) ? Math.floor(deps.workerMaxIters) : 10;
     let _seq = 0;
     const newId = (typeof deps.newId === 'function') ? deps.newId : (() => 'child_' + (++_seq));
+    // Cross-provider dispatch: a roster identity carries its OWN mirrored provider (model is a roster
+    // property). Sending a worker's model down the LEAD's wire when they differ is an instant 400 (e.g. an
+    // anthropic slug at the codex backend), so the host injects providerAuth(providerId) -> { provider, key,
+    // baseUrl } | null to resolve the worker's own server-held credential. No resolver / no credential ->
+    // the worker runs on the LEAD's provider+model (never a foreign model on the lead's wire) with an honest
+    // note in the dispatch result.
+    const providerAuth = (typeof deps.providerAuth === 'function') ? deps.providerAuth : null;
+    function workerWire(ident) {
+      const wanted = (ident && ident.provider) ? String(ident.provider) : '';
+      const ownModel = (ident && ident.model) ? String(ident.model) : '';
+      if (!wanted || wanted === provider || !ownModel) {
+        return { provider, key, baseUrl, model: ownModel || model, note: '' };
+      }
+      const auth = providerAuth ? providerAuth(wanted) : null;
+      if (auth) return { provider: auth.provider || wanted, key: auth.key || '', baseUrl: auth.baseUrl || '', model: ownModel, note: '' };
+      return { provider, key, baseUrl, model, note: 'worker provider "' + wanted + '" has no credential on this station — ran on the lead\'s model instead' };
+    }
     const maxWorkers = (typeof deps.maxWorkers === 'number' && deps.maxWorkers > 0) ? deps.maxWorkers : 4;
     // A dispatch AWAITS one or more full worker agent-loops (each web-searching + multi-turn), which routinely
     // run for minutes. The host wraps every tool call in CAPS.toolTimeoutMs (30s — sized for fast web/file
@@ -114,14 +131,15 @@
         const runWorker = async (job, o2) => {
           o2 = o2 || {};
           if (job.error) return { agentId: job.agentId, reason: 'error', result: job.error, usd: 0 };
+          const wire = workerWire(job.ident);   // the worker's OWN provider+model when resolvable (see workerWire)
           let result;
           try {
             result = await runOnce({
-              key, provider, baseUrl,
+              key: wire.key, provider: wire.provider, baseUrl: wire.baseUrl,
               // Class Loadouts S1: the WORKER runs at its OWN class-applied reasoning effort (roster record), not the
               // lead's — a dispatched specialist honors its loadout. Falls back to the lead's effort when unset.
               reasoningEffort: (job.ident && job.ident.reasoningEffort) || reasoningEffort,
-              model: (job.ident && job.ident.model) || model,
+              model: wire.model,
               system: (job.ident && job.ident.system) || '',
               messages: [{ role: 'user', content: job.prompt }],
               agentId: job.agentId, isTask: true,
@@ -141,12 +159,14 @@
             return { agentId: job.agentId, reason: 'error', result: 'worker run failed: ' + ((e && e.message) || e), usd: 0 };
           }
           if (!result) return { agentId: job.agentId, reason: 'refused', result: 'worker could not start — the concurrency cap (STARNET_MAX_CONCURRENT_AGENTS) is full or a sign-in is needed. Try fewer at once, or run sequentially.', usd: 0 };
-          return {
+          const row = {
             agentId: job.agentId,
             reason: result.reason || 'done',
             result: lastAssistant(result.messages) || '(the worker returned no text)',
             usd: result.usd || 0
           };
+          if (wire.note) row.note = wire.note;   // honest credential-fallback disclosure (never silent)
+          return row;
         };
 
         const runJob = async (job) => runWorker(job);
@@ -325,12 +345,13 @@
         const crew = roster() || new Map();
         const ident = crew.get(rec.agentId);
         if (!ident) return { status: 'error', reason: 'error', result: 'worker is no longer in the live roster', usd: 0 };
+        const wire = workerWire(ident);   // same cross-provider resolution as a fresh dispatch
         let result;
         try {
           result = await runOnce({
-            key, provider, baseUrl,
+            key: wire.key, provider: wire.provider, baseUrl: wire.baseUrl,
             reasoningEffort: (ident && ident.reasoningEffort) || reasoningEffort,   // Class Loadouts S1: worker's own class effort (see runWorker)
-            model: (ident && ident.model) || model,
+            model: wire.model,
             system: (ident && ident.system) || '',
             messages: [{ role: 'user', content: rec.prompt || '' }],
             agentId: rec.agentId, isTask: true,

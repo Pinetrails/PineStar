@@ -62,6 +62,48 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
   A.ok(Math.abs(parsed[0].usd - 0.2) < 1e-9, 'result carries the worker spend');
 }
 
+// ---- cross-provider dispatch: a worker with its OWN roster provider runs on THAT wire (2026-07-07 escape:
+//      overseer on codex delegated to a worker whose roster model was another provider's slug — the worker's
+//      model went down the codex wire and 400'd instantly, so the "researcher" died seconds after run.start) ----
+{
+  const ro = fakeRunOnce();
+  const roster = new Map([
+    ['researcher', { system: 'R', model: 'claude-x', provider: 'anthropic' }],
+    ['peter', { system: 'P', model: 'gpt-5.5', provider: 'codex' }]
+  ]);
+  const auth = (pid) => (pid === 'anthropic' ? { provider: 'anthropic', key: 'ANT-KEY', baseUrl: '' } : null);
+  const { dispatchTool } = makeOrchestrationTools({ runOnce: ro, roster: () => roster, key: 'LEAD-KEY', model: 'gpt-5.5', provider: 'codex', baseUrl: '', newId: counter(), providerAuth: auth });
+  await dispatchTool.run({ workers: [{ agentId: 'researcher', prompt: 'x' }, { agentId: 'peter', prompt: 'y' }] }, { agentId: 'lead', emit: () => {} });
+  A.eq(ro.calls[0].provider, 'anthropic', "worker runs on its OWN roster provider, not the lead's wire");
+  A.eq(ro.calls[0].key, 'ANT-KEY', "worker's provider credential is resolved server-side (never the lead's key)");
+  A.eq(ro.calls[0].model, 'claude-x', "worker keeps its own roster model on its own wire");
+  A.eq(ro.calls[1].provider, 'codex', 'same-provider worker is untouched (lead wire)');
+  A.eq(ro.calls[1].key, 'LEAD-KEY', 'same-provider worker uses the lead run key');
+}
+
+// ---- cross-provider fallback: no credential for the worker's provider -> lead's provider+MODEL (never the
+//      foreign model down the lead's wire), with an honest note in the dispatch result ----
+{
+  const ro = fakeRunOnce();
+  const roster = new Map([['researcher', { system: 'R', model: 'claude-x', provider: 'anthropic' }]]);
+  const { dispatchTool } = makeOrchestrationTools({ runOnce: ro, roster: () => roster, key: 'LEAD-KEY', model: 'gpt-5.5', provider: 'codex', newId: counter(), providerAuth: () => null });
+  const out = await dispatchTool.run({ workers: [{ agentId: 'researcher', prompt: 'x' }] }, { agentId: 'lead', emit: () => {} });
+  A.eq(ro.calls[0].provider, 'codex', 'no credential -> worker falls back to the lead provider');
+  A.eq(ro.calls[0].model, 'gpt-5.5', "no credential -> lead's MODEL too (a foreign model on the lead wire is an instant 400)");
+  const parsed = JSON.parse(out.content);
+  A.ok(/no credential/.test(parsed[0].note || ''), 'the fallback is disclosed in the dispatch result (never silent)');
+}
+
+// ---- no providerAuth injected (bare/legacy host): behavior degrades to the safe fallback, not a crash ----
+{
+  const ro = fakeRunOnce();
+  const roster = new Map([['researcher', { system: 'R', model: 'claude-x', provider: 'anthropic' }]]);
+  const { dispatchTool } = makeOrchestrationTools({ runOnce: ro, roster: () => roster, key: 'k', model: 'lead-model', provider: 'codex', newId: counter() });
+  await dispatchTool.run({ workers: [{ agentId: 'researcher', prompt: 'x' }] }, { agentId: 'lead', emit: () => {} });
+  A.eq(ro.calls[0].provider, 'codex', 'no resolver -> lead provider');
+  A.eq(ro.calls[0].model, 'lead-model', 'no resolver -> lead model (never a cross-wire 400)');
+}
+
 // ---- worker maxIters can be tuned without changing the lead's loop default ----
 {
   const ro = fakeRunOnce();

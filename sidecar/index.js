@@ -5412,7 +5412,16 @@ async function runOnce(o) {
     classes: SPECIALIST_CLASSES,   // Class Loadouts S1: the summon-tool class list, composed from the shared catalog (no hardcoded prose)
     selfSystem: system,   // team.spawn clones the LEAD's OWN base identity into each ephemeral subagent (Meeseeks)
     perWorker: ORCH_PER_WORKER, newId: () => crypto.randomUUID(),
-    dispatchTimeoutMs: ORCH_DISPATCH_TIMEOUT_MS   // minutes, not the 30s fast-tool cap (see constant)
+    dispatchTimeoutMs: ORCH_DISPATCH_TIMEOUT_MS,   // minutes, not the 30s fast-tool cap (see constant)
+    // Cross-provider dispatch: resolve a WORKER's own roster provider to the station's server-held credential
+    // (BYOK keys / codex OAuth). null when the station holds none -> orchestration falls back to the lead's
+    // provider+model honestly instead of 400ing the worker's model down the wrong wire.
+    providerAuth: (pid) => {
+      const id = normalizeProviderId(pid);
+      const k = providerRuntimeKey(id, '');
+      const b = providerRuntimeBaseUrl(id, '');
+      return providerHasCredential(id, k, b) ? { provider: id, key: k, baseUrl: b } : null;
+    }
   }).register(registry);
   // routine.create/list: the lead can schedule real StarNet ROUTINES through the same cron store the panel uses.
   makeRoutineTools({
