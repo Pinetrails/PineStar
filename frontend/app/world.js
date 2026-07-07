@@ -5091,11 +5091,27 @@ const World = (() => {
       hudNote('📡 message received — ' + String((p && p.channel) || 'channel').toUpperCase(), 'good');
     });
     // G0.6 CHANNEL REPLY MADE VISIBLE: the outbound side of the same on-ramp. hub.js emits channel.delivery
-    // { channel, chatId, runId, ok, chunks, reason } on every reply-send. Mirror the inbound copy (pulse the
-    // DISH, name the channel), only on a genuine successful send — a failed delivery isn't a reply out.
+    // { channel, chatId, runId, ok, chunks, reason, agentId? } on every reply-send. Mirror the inbound copy
+    // (pulse the DISH, name the channel), only on a genuine successful send — a failed delivery isn't a reply out.
     U.bus.on('channel.delivery', p => {
-      if (!p || !p.ok) return;   // honesty: only confirm a reply that actually left (no agentId on this event — fall back to any DISH)
-      const dish = capPropFor('dish', p.agentId);
+      if (!p || !p.ok) return;   // honesty: only confirm a reply that actually left
+      // agentId (additive 2026-07-06) names WHICH agent replied. On a multi-agent floor, pulse ONLY that agent's
+      // dish: its own dish, else a dish in its room. If the acting agent has NO dish in its room, pulse NOTHING —
+      // it is a lie to strobe an unrelated agent's dish (do NOT fall back to any/cands[0]). Legacy sends with no
+      // agentId keep the old any-dish behavior so a single-agent station still lights.
+      let dish;
+      if (p.agentId) {
+        dish = (geo && geo.props) ? geo.props.filter(pr => (station && station.capForProp && station.capForProp(pr.t) === 'dish') || pr.t === 'dish')
+          .find(pr => pr.agentId === p.agentId) : null;
+        if (!dish) {
+          const room = actingRoomId(p.agentId);
+          if (room && geo && geo.props) dish = geo.props.filter(pr => (station && station.capForProp && station.capForProp(pr.t) === 'dish') || pr.t === 'dish')
+            .find(pr => roomOfLocalTile(pr.x, pr.y) === room);
+        }
+        if (!dish) return;   // acting agent has no dish in reach -> no pulse (truthful telemetry, no wrong-dish strobe)
+      } else {
+        dish = capPropFor('dish', null);   // legacy/command send (no attribution): any dish, single-agent floor
+      }
       if (dish && PropSprites.pulseProp) PropSprites.pulseProp(dish.id, 'dish');
       hudNote('📤 reply sent · ' + String(p.channel || 'channel').toLowerCase(), 'good');
     });

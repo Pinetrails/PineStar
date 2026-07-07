@@ -155,8 +155,10 @@
       channel: str, chatId: str, agentId: str, userId: str, kind: { enum: ['dm', 'group'] }
     }),
     // the agent's reply was delivered back to the platform (chunk count + ok/why) — outbound delivery telemetry.
+    // agentId (additive, optional 2026-07-06): WHICH roster agent produced the reply, so the floor pulses the
+    // RIGHT agent's dish on a multi-agent station instead of any dish. Optional — absent on legacy/command sends.
     'channel.delivery': obj(['channel', 'chatId', 'runId', 'ok'], {
-      channel: str, chatId: str, runId: str, ok: bool, chunks: int, reason: str
+      channel: str, chatId: str, runId: str, ok: bool, chunks: int, reason: str, agentId: str
     }),
     // adapter transport health: poll up / network down / fatal token error (in-memory health state).
     'channel.connect': obj(['channel', 'state'], {

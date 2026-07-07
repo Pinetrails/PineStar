@@ -11,15 +11,26 @@
 'use strict';
 
 /* G2.1 — the server-initiated-run egress policy: which runOnce lifecycle events a broadcast-opted
-   run may tee onto the SSE bus, and in what SHAPE. Pure (no IO/clock) so the redaction contract is
-   unit-testable. Returns the payload VIEW to broadcast, or null for "never teed".
+   AUTONOMOUS run (a routed channel message, a scheduled cron fire) may tee onto the SSE bus, and in
+   what SHAPE. Pure (no IO/clock) so the redaction contract is unit-testable. ONE policy owned here so
+   BOTH autonomous lanes — channels/sse.js's broadcast tee AND cron-driver.js's emit sink — obey the
+   same B4 redacted-egress rule (2026-07-06 audit: the two lanes had drifted apart — the tee shipped
+   too FEW events, the cron sink shipped tool_call args it should have stripped). runTeeView returns
+   the payload VIEW to broadcast, or null for "never teed".
      • agent.run.start / agent.cost / agent.run.end — teed whole (the floor's run lifecycle).
      • agent.tool_call — teed NAME-ONLY: { agentId, runId, callId, name }. args/argsSummary are
        stripped STRUCTURALLY (never copied), so a routed run's tool arguments — which can carry user
-       text, file paths, or fetched content — never leave the sidecar on this path (the B4
-       redacted-egress rule). The four kept fields satisfy the frozen agent.tool_call schema, so
-       every existing consumer (connector-portal pulse, G0 per-tool prop pulse, desk heat,
-       delegation window) still fires for autonomous/cron runs.
+       text, file paths, or fetched content — never leave the sidecar on this path. The four kept
+       fields satisfy the frozen agent.tool_call schema, so every existing consumer (connector-portal
+       pulse, G0 per-tool prop pulse, desk heat, delegation window) still fires for autonomous runs.
+     • agent.tool_result — teed OUTCOME-ONLY: { agentId, runId, callId, ok, isError, ms }. The
+       payload-bearing `summary` (a stringified tool result — may carry fetched content / file text)
+       is stripped STRUCTURALLY. Lets the floor render a FAILED/denied tool call as a red/dim surge
+       for autonomous runs without the result body ever leaving the sidecar.
+     • deliverable / agent.run.error / memory.write / memory.recall / capdenied — teed whole. Their
+       frozen schemas carry only metadata (ids, kinds, counts, a short error MESSAGE that context.js's
+       redact() scrubs as a second backstop) — no tool args or result payloads — so an unattended run
+       ships crates, pulses memory, and strobes errors on the floor exactly like a browser-watched one.
      • agent.token (and everything else) — null. The token stream stays off the SSE bus by design
        (that noise decision stands; desk heat for UNWATCHED runs rides tool_call instead). */
 function runTeeView(name, payload) {
@@ -33,6 +44,22 @@ function runTeeView(name, payload) {
       name: String(p.name == null ? '' : p.name)
     };
   }
+  if (name === 'agent.tool_result') {
+    // OUTCOME-ONLY: keep the frozen schema's required fields + timing/error-kind; NEVER copy `summary`
+    // (the result body). Structural strip — the payload text is never in the returned object at all.
+    return {
+      agentId: String(p.agentId == null ? '' : p.agentId),
+      runId: String(p.runId == null ? '' : p.runId),
+      callId: String(p.callId == null ? '' : p.callId),
+      ok: !!p.ok,
+      isError: !!p.isError,
+      ms: Number(p.ms) || 0
+    };
+  }
+  // metadata-only lifecycle events: no args/result payloads in their frozen schemas -> teed whole so an
+  // autonomous run is as observable as a browser one (crates, memory pulses, error strobes, cap denials).
+  if (name === 'deliverable' || name === 'agent.run.error' || name === 'memory.write'
+      || name === 'memory.recall' || name === 'capdenied') return p;
   return null;
 }
 

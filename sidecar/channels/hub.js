@@ -148,7 +148,10 @@
       return agentPrefix + (tail || '0');
     }
 
-    async function deliver(chatId, text, runId, reason) {
+    // agentId (optional, last arg) names WHICH roster agent produced this reply, so the floor can pulse the RIGHT
+    // agent's dish on a multi-agent station. Passed only for a real RUN reply (onInbound); administrative command
+    // replies (/agents, /model…) omit it — no agent "produced" them, so the floor should not attribute a dish.
+    async function deliver(chatId, text, runId, reason, agentId) {
       const chunks = chunkText(text, maxMessageLength);
       let ok = true;
       for (const c of chunks) {
@@ -156,7 +159,9 @@
         try { r = await send(chatId, c); } catch (e) { r = { ok: false, error: (e && e.message) || 'send threw' }; }
         if (!r || r.ok === false) { ok = false; break; }
       }
-      try { emit('channel.delivery', { channel, chatId: String(chatId), runId: runId || '', ok, chunks: chunks.length, reason: reason || '' }); } catch (_) {}
+      const ev = { channel, chatId: String(chatId), runId: runId || '', ok, chunks: chunks.length, reason: reason || '' };
+      if (agentId) ev.agentId = String(agentId);   // additive/optional — attribute the dish to the acting agent
+      try { emit('channel.delivery', ev); } catch (_) {}
       return ok;
     }
 
@@ -362,7 +367,7 @@
         reply = state.buf || '(no reply)';
         if (state.reason && state.reason !== 'done') reply += endNote(state.reason);
       }
-      await deliver(chatId, reply, runId, state.errMsg ? 'error' : (state.reason || 'done'));
+      await deliver(chatId, reply, runId, state.errMsg ? 'error' : (state.reason || 'done'), agentId);
     }
 
     // inline-keyboard taps (consent buttons) — wired in C6; a noop under the autonomous MVP.
