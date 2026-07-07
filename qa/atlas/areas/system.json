@@ -1,6 +1,6 @@
 {
   "area": "system",
-  "updatedAt": "2026-07-07T08:11:07.401Z",
+  "updatedAt": "2026-07-07T18:35:34Z",
   "entries": [
     {
       "id": "state/sys-logbook",
@@ -501,84 +501,146 @@
       "kind": "ui",
       "area": "system",
       "name": "environment default (not yet saved here)",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Sets the per-DAY USD spend cap the governor enforces across all agents.",
+      "promise": "The field shows the effective cap (saved-or-env) with a truthful \"saved here\"/\"environment default\" badge; blank or 0 means no cap; SAVE persists it server-side and it applies live.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/budgetcaps.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/budget-caps.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "e536b958b8b1f9175f4daeba3f72d044ba1b93e2",
+        "date": "2026-07-07T18:35:34Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#bg-perDay",
-      "state": "sys-settings"
+      "state": "sys-settings",
+      "notes": "Live: input painted \"40\" == /api/budget/status envDefaults.perDay, badge \"environment default\" (saved:{}) — truthful. Save round-trip perDay=7 -> saved:{perDay:7}, day.cap:7; reset -> saved:{}. Evidence .uiatlas/system-evidence/budget-save.json + roundtrip-out.json."
     },
     {
       "id": "ui/system/bg-perrun",
       "kind": "ui",
       "area": "system",
       "name": "environment default (not yet saved here)",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Sets the per-RUN USD budget a single run may reserve/spend.",
+      "promise": "Shows the effective per-run cap with a saved-vs-env badge; blank/0 = no cap; SAVE persists via /api/budget/caps and applies live.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/budgetcaps.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/budget-caps.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "e536b958b8b1f9175f4daeba3f72d044ba1b93e2",
+        "date": "2026-07-07T18:35:34Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#bg-perRun",
-      "state": "sys-settings"
+      "state": "sys-settings",
+      "notes": "Backend /api/budget/status returns perRun:3 (env default), painted into #bg-perRun. Save/reset round-trip proven via bg-save. Evidence .uiatlas/system-evidence/budget-status.json."
     },
     {
       "id": "ui/system/bg-reset",
       "kind": "ui",
       "area": "system",
       "name": "clear the saved value so this cap follows the environment default again",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Clears every saved cap override so each cap falls back to its environment default.",
+      "promise": "Visible only when at least one cap is saved; clicking it POSTs nulls to /api/budget/caps and repaints with all badges back to \"environment default\".",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/budget-caps.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "e536b958b8b1f9175f4daeba3f72d044ba1b93e2",
+        "date": "2026-07-07T18:35:34Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#bg-reset",
-      "state": "sys-settings"
+      "state": "sys-settings",
+      "notes": "Live: after saving perDay=7 then POST nulls -> saved:{} (all env defaults). resetBtn display gated on anySaved (line 2412). Evidence .uiatlas/system-evidence/budget-save.json."
     },
     {
       "id": "ui/system/bg-save",
       "kind": "ui",
       "area": "system",
       "name": "SAVE LIMITS",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Persists the four budget caps to the sidecar so they apply to every subsequent run.",
+      "promise": "Clicking it POSTs the caps to /api/budget/caps; a valid save shows \"✓ limits saved & applied\" and re-paints from the response; a negative/NaN cap is rejected inline before the POST.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/budget-caps.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "e536b958b8b1f9175f4daeba3f72d044ba1b93e2",
+        "date": "2026-07-07T18:35:34Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#bg-save",
-      "state": "sys-settings"
+      "state": "sys-settings",
+      "notes": "Live POST /api/budget/caps {perDay:7} -> {saved:{perDay:7}, day.cap:7}, re-read confirms; reset clears. Evidence .uiatlas/system-evidence/budget-save.json."
     },
     {
       "id": "ui/system/bk-export",
@@ -753,42 +815,80 @@
       "kind": "ui",
       "area": "system",
       "name": "$BUDGET",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Switches the SETTINGS console to the BUDGET panel — the only in-app UI for money caps + spend.",
+      "promise": "Clicking it shows the four cap inputs (per run/agent/day/global), a live SPENT-TODAY/LIFETIME readout, and SAVE/RESET — all painted from /api/budget/status.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/budget-caps.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/budget.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "e536b958b8b1f9175f4daeba3f72d044ba1b93e2",
+        "date": "2026-07-07T18:35:34Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#con-tab-settings-budget",
-      "state": "sys-settings"
+      "state": "sys-settings",
+      "notes": "Live DOM: BUDGET tab renders #bg-save + spend readout \"$0.00 · LIFETIME $0.00 (0 runs)\" matching /api/budget/status. Evidence .uiatlas/system-evidence/roundtrip-out.json + budget-status.json."
     },
     {
       "id": "ui/system/con-tab-settings-models",
       "kind": "ui",
       "area": "system",
       "name": "⇄MODELS",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Switches the SETTINGS console to the MODELS panel (tier-model pins + ordered fallback chain).",
+      "promise": "Clicking it shows the three class-tier selects and the fallback-chain editor, each filled from the live OpenRouter catalog (/api/models/openrouter).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/fallback-chain.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/agent-model-select.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "e536b958b8b1f9175f4daeba3f72d044ba1b93e2",
+        "date": "2026-07-07T18:35:34Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#con-tab-settings-models",
-      "state": "sys-settings"
+      "state": "sys-settings",
+      "notes": "Live: MODELS tab renders #tm-balanced with 342 catalog options + #fbc-save. Evidence .uiatlas/system-evidence/roundtrip-out.json."
     },
     {
       "id": "ui/system/con-tab-settings-notifs",
@@ -816,21 +916,38 @@
       "kind": "ui",
       "area": "system",
       "name": "⌁PROVIDERS",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Switches the SETTINGS console to the PROVIDERS panel where a beginner picks a provider and pastes a BYOK key.",
+      "promise": "Clicking it reveals the provider cards + API-key rows; the active provider is marked and each card offers an inline ADD KEY paste field.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/provider-connections-ui.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "e536b958b8b1f9175f4daeba3f72d044ba1b93e2",
+        "date": "2026-07-07T18:35:34Z"
+      },
+      "findings": [
+        "a48393ca"
+      ],
       "firstSeen": "2026-07-07T08:11:07.410Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#con-tab-settings-providers",
-      "state": "sys-settings"
+      "state": "sys-settings",
+      "notes": "Live DOM: tab click renders #prov-key-in-anthropic + prov-card. Evidence .uiatlas/system-evidence/roundtrip-out.json. Held at audited pending the signup-link discoverability finding."
     },
     {
       "id": "ui/system/con-tab-settings-system",
@@ -942,21 +1059,43 @@
       "kind": "ui",
       "area": "system",
       "name": "📋 COPY DIAGNOSTICS",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Copies a paste-ready, secret-free diagnostics report to the clipboard for bug reports.",
+      "promise": "Clicking it fetches /api/diagnostics (sidecar-assembled + redacted), puts the text on the clipboard, and confirms \"✓ copied\"; the report NEVER contains an API key/token/message content.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/diagnostics.js",
+          "sidecar/diagnostics.js",
+          "sidecar/context.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/diagnostics.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/diagnostics-build.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "e536b958b8b1f9175f4daeba3f72d044ba1b93e2",
+        "date": "2026-07-07T18:35:34Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.412Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#diag-copy",
-      "state": "sys-settings"
+      "state": "sys-settings",
+      "notes": "Live: /api/diagnostics -> {report,text}, states \"no keys, tokens, or message content\", and the fake key passed as SKYNET_OPENROUTER_KEY does NOT appear (0 matches). Secret-free enforced by the 8-secret leak battery in diagnostics.test.js. Evidence .uiatlas/system-evidence/diagnostics.json + roundtrip-out.json."
     },
     {
       "id": "ui/system/fbc-add",
@@ -1005,21 +1144,37 @@
       "kind": "ui",
       "area": "system",
       "name": "SAVE CHAIN",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Persists the ordered fallback model chain the run loop walks when the primary model fails mid-run.",
+      "promise": "Clicking it POSTs the whole ordered list to /api/fallback/chain; a valid save shows \"✓ chain saved & applied\", surfaces any not-in-catalog warnings, and the host actually consumes the persisted chain.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/fallbackchain.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/fallback-chain.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "e536b958b8b1f9175f4daeba3f72d044ba1b93e2",
+        "date": "2026-07-07T18:35:34Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#fbc-save",
-      "state": "sys-settings"
+      "state": "sys-settings",
+      "notes": "Live: /api/fallback/chain returns {chain:[],saved:false,maxEntries:8} (env default, truthful). Persistence + host-consumption guarded by fallback-chain.test.js. Evidence .uiatlas/system-evidence/fallback-chain.json."
     },
     {
       "id": "ui/system/key-in-1",
@@ -1173,21 +1328,43 @@
       "kind": "ui",
       "area": "system",
       "name": "input",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Inline paste field to add a BYOK Anthropic API key from the provider card without leaving SETTINGS.",
+      "promise": "Typing a key and pressing Enter/SAVE routes it through Harness.setKey — desktop stores it in the OS keychain, browser/dev in scoped localStorage; the field is type=password (never shows the key), and the card flips to a connected state.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/harness.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/provider-connections-ui.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/provider.anthropic.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "e536b958b8b1f9175f4daeba3f72d044ba1b93e2",
+        "date": "2026-07-07T18:35:34Z"
+      },
+      "findings": [
+        "a48393ca"
+      ],
       "firstSeen": "2026-07-07T08:11:07.410Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#prov-key-in-anthropic",
-      "state": "sys-settings"
+      "state": "sys-settings",
+      "notes": "Live DOM: input present, type=\"password\" (masked). setKey path -> keychain (desktop) / scoped LS (dev). keyStoreClause() truthfully reports the real store. Evidence .uiatlas/system-evidence/roundtrip-out.json. Held at audited pending signup-link finding."
     },
     {
       "id": "ui/system/prov-key-in-cerebras",
@@ -1656,63 +1833,111 @@
       "kind": "ui",
       "area": "system",
       "name": "(station default)Anthropic: Claude Fable Latest · ~anthropic",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Pins which concrete model BALANCED-class agents summon on (overriding the station default).",
+      "promise": "Choosing a model saves it to localStorage starnet.tierModels.v1 (the same key app.resolveTierModel reads at summon), so BALANCED agents actually summon on it; \"(station default)\" clears the pin.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/app.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/agent-model-select.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "e536b958b8b1f9175f4daeba3f72d044ba1b93e2",
+        "date": "2026-07-07T18:35:34Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#tm-balanced",
-      "state": "sys-settings"
+      "state": "sys-settings",
+      "notes": "Live: select present, 342 options, value=\"\" = station default (truthful, nothing pinned). Consumer confirmed: app.js:659/667/680 reads starnet.tierModels.v1 via resolveTierModel at summon. Evidence .uiatlas/system-evidence/roundtrip-out.json."
     },
     {
       "id": "ui/system/tm-fast",
       "kind": "ui",
       "area": "system",
       "name": "(station default)Anthropic: Claude Fable Latest · ~anthropic",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Pins which concrete model FAST-class agents summon on.",
+      "promise": "Choosing a model saves it to starnet.tierModels.v1 so FAST agents summon on it; \"(station default)\" clears the pin.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/app.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/agent-model-select.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "e536b958b8b1f9175f4daeba3f72d044ba1b93e2",
+        "date": "2026-07-07T18:35:34Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#tm-fast",
-      "state": "sys-settings"
+      "state": "sys-settings",
+      "notes": "Live: select present, 342 options, value=\"\" default. Same tierModels.v1 consumer path as tm-balanced. Evidence .uiatlas/system-evidence/roundtrip-out.json."
     },
     {
       "id": "ui/system/tm-reasoning",
       "kind": "ui",
       "area": "system",
       "name": "(station default)Anthropic: Claude Fable Latest · ~anthropic",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Pins which concrete model REASONING-class agents summon on.",
+      "promise": "Choosing a model saves it to starnet.tierModels.v1 so REASONING agents summon on it; \"(station default)\" clears the pin.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/app.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/agent-model-select.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "e536b958b8b1f9175f4daeba3f72d044ba1b93e2",
+        "date": "2026-07-07T18:35:34Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#tm-reasoning",
-      "state": "sys-settings"
+      "state": "sys-settings",
+      "notes": "Live: select present, 342 options, value=\"\" default. Same tierModels.v1 consumer path. Evidence .uiatlas/system-evidence/roundtrip-out.json."
     },
     {
       "id": "ui/system/txt-button-add-key-405",
@@ -1740,21 +1965,38 @@
       "kind": "ui",
       "area": "system",
       "name": "paste a ANTHROPIC key without leaving this card",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Reveals the inline paste-a-key row on the ANTHROPIC provider card so a user can connect without opening the full key list.",
+      "promise": "Clicking it toggles the hidden .prov-key-edit row visible and focuses the password input; it does not select/switch the provider (click does not bubble).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/provider-connections-ui.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "e536b958b8b1f9175f4daeba3f72d044ba1b93e2",
+        "date": "2026-07-07T18:35:34Z"
+      },
+      "findings": [
+        "a48393ca"
+      ],
       "firstSeen": "2026-07-07T08:11:07.410Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
-      "state": "sys-settings"
+      "state": "sys-settings",
+      "notes": "Card label \"○ NO KEY + ADD KEY\" verified live (roundtrip-out.json anthropicCard). Held at audited pending signup-link finding (no get-a-key link to obtain the key this button asks for)."
     },
     {
       "id": "ui/system/txt-button-add-key-409",
