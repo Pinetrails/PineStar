@@ -3,6 +3,32 @@
    Inverted blocks for headers & selection. Segmented bars. Heavy bloom.
    No rounded corners, no gradients-as-decoration, no "web app" softness. */
 
+/* ============================================================
+   VT323 — the house typeface, shipped LOCALLY so the locked CRT
+   look survives an offline / air-gapped first boot (the local-first
+   pitch invites exactly that). Without this, no-network boot silently
+   drops VT323 → DOM falls back to Courier and the canvas to default
+   monospace, degrading the whole phosphor grade.
+
+   This @font-face is the PRIMARY, zero-network source: the woff2 lives
+   in the bundle at frontend/assets/fonts/vt323.woff2 (SIL OFL, see
+   NOTICE.md). The Google Fonts <link> in index.html stays only as a
+   secondary online enhancement (fuller unicode subsets) — it is NOT
+   required for the app to render in VT323.
+
+   font-family MUST be exactly 'VT323' (unquoted matches too) so every
+   existing `font-family: 'VT323', monospace` rule and the canvas
+   `ctx.font = "...px VT323"` calls resolve to this local face first.
+   ============================================================ */
+@font-face {
+  font-family: 'VT323';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  /* path is relative to this file (css/style.css) → up one to frontend/ */
+  src: url('../assets/fonts/vt323.woff2') format('woff2');
+}
+
 :root {
   /* NV pip-boy amber (reference build) — dark interiors, the glow lives on borders */
   --ph: #ffaa33;
@@ -55,7 +81,7 @@
 body.theme-amber {
   --ph: #ffaa33; --ph-bright: #ffd9a3; --ph-dim: #b9791c; --ph-faint: #1e1404;
   --ink: #190f02; --ph-glow: rgba(255, 170, 51, 0.5); --ph-glow2: rgba(255,170,51,0.14);
-  --bg: #030201; --panel: rgba(5, 3, 1, 0.95); --panel2: #0c0704; --text: #eec88f;
+  --bg: #030201; --panel: rgba(5, 3, 1, 0.95); --panel2: #0c0704; --warn: #ffe97a; --text: #eec88f;
   --gold: #ffd34a; --ph-rgb: 255, 170, 51; --ph-bright-rgb: 255, 228, 180; --gold-rgb: 255, 211, 74;
   --cam-grade: saturate(0.82) sepia(0.12) hue-rotate(-5deg) contrast(1.10) brightness(1.06);
 }
@@ -69,28 +95,28 @@ body.theme-green {
 body.theme-blue {
   --ph: #46c8ff; --ph-bright: #c8efff; --ph-dim: #1e87ba; --ph-faint: #0a2c40;
   --ink: #021320; --ph-glow: rgba(70, 200, 255, 0.45); --ph-glow2: rgba(70,200,255,0.14);
-  --bg: #010305; --panel: rgba(2, 12, 20, 0.92); --panel2: #051826; --text: #97d5ee;
+  --bg: #010305; --panel: rgba(2, 12, 20, 0.92); --panel2: #051826; --warn: #ffc861; --text: #97d5ee;
   --gold: #5ce8c8; --ph-rgb: 70, 200, 255; --ph-bright-rgb: 200, 239, 255; --gold-rgb: 92, 232, 200;
   --cam-grade: saturate(0.72) contrast(1.08) brightness(0.88);
 }
 body.theme-purple {
   --ph: #b46bff; --ph-bright: #e6d4ff; --ph-dim: #7d3fc4; --ph-faint: #251038;
   --ink: #120720; --ph-glow: rgba(180, 107, 255, 0.45); --ph-glow2: rgba(180,107,255,0.14);
-  --bg: #040208; --panel: rgba(10, 4, 20, 0.92); --panel2: #150a26; --text: #c8a9ee;
+  --bg: #040208; --panel: rgba(10, 4, 20, 0.92); --panel2: #150a26; --warn: #ffb84a; --text: #c8a9ee;
   --gold: #f07ae0; --ph-rgb: 180, 107, 255; --ph-bright-rgb: 230, 212, 255; --gold-rgb: 240, 122, 224;
   --cam-grade: saturate(0.72) hue-rotate(8deg) contrast(1.08) brightness(0.88);
 }
 body.theme-red {
   --ph: #ff4136; --ph-bright: #ffc9c2; --ph-dim: #b3271c; --ph-faint: #3a0c08;
   --ink: #1f0603; --ph-glow: rgba(255, 65, 54, 0.45); --ph-glow2: rgba(255,65,54,0.14);
-  --bg: #080201; --panel: rgba(18, 4, 3, 0.92); --panel2: #1a0705; --text: #f0a89f;
+  --bg: #080201; --panel: rgba(18, 4, 3, 0.92); --panel2: #1a0705; --warn: #ffd24a; --text: #f0a89f;
   --gold: #ffab4a; --ph-rgb: 255, 65, 54; --ph-bright-rgb: 255, 201, 194; --gold-rgb: 255, 171, 74;
   --cam-grade: saturate(0.78) hue-rotate(-12deg) contrast(1.08) brightness(0.88);
 }
 body.theme-white {
   --ph: #e8f0e8; --ph-bright: #ffffff; --ph-dim: #97a397; --ph-faint: #2c322c;
   --ink: #0c0f0c; --ph-glow: rgba(232, 240, 232, 0.35); --ph-glow2: rgba(232,240,232,0.10);
-  --bg: #030403; --panel: rgba(10, 12, 10, 0.92); --panel2: #131713; --text: #d2dcd2;
+  --bg: #030403; --panel: rgba(10, 12, 10, 0.92); --panel2: #131713; --warn: #ffc247; --text: #d2dcd2;
   --gold: #ffe9a3; --ph-rgb: 232, 240, 232; --ph-bright-rgb: 255, 255, 255; --gold-rgb: 255, 233, 163;
   --cam-grade: saturate(0.7) contrast(1.06) brightness(0.92);
 }
