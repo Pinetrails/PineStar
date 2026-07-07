@@ -21,6 +21,7 @@ Every loop obeys AGENTS.md (worktree protocol) and appends a terse dated digest 
 | L7 | Debt Burner | debt-burner.md | daily | own worktree | complexity creep in hotfiles |
 | L8 | Security Sweep | security-sweep.md | weekly | own worktree | leaked secrets/PII, unsafe surfaces |
 | L9 | Perfectionist | perfectionist.md | self-paced | own worktree | un-mapped/imperfect surface (drives the Station Atlas to `perfected`) |
+| L10 | Dogfood | dogfood.md | daily / self-paced (RC-soak driver) | own worktree | seam bugs that only appear when the product is USED like a real user (recruit→assign→interrupt→restart→open); the reason Andrew is the first tester |
 
 ## Priority if running fewer sessions
 Minimum viable set: **L1 + L3** (nothing merges wrong, nothing stays broken).

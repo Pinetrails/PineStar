@@ -23,6 +23,7 @@ own runner (Q1 Guardian, Q2 Beginner Run, Q4 Janitor) or the Overseer digest; th
 | Overseer | What broke today, what needs Andrew? | 2026-07-01 (digest rendered) | 0 P0 · 106 P2 | — |
 | Janitor | What's rotting in the workshop? | 2026-07-01 | 106 findings | 106 |
 | Cartographer | Is every surface element mapped and perfected? | 2026-07-07 22:59Z @ 6290b3bb | PERFECTED-fresh 184 / total 1288 (14%) | 0 |
+| Dogfood | Does StarNet survive being USED like a real user uses it? | 2026-07-07 (proof shift · mock) @ e01831ab | SURVIVED — 0 anomalies (mock seam shift) | 0 |
 
 _The rows above are the Q5 **movie test** (2026-07-01): one real cycle of every headless
 crew member against trunk `ef47f9d`. Guardian ran all four gates GREEN (Truth Auditor is the
@@ -44,7 +45,8 @@ Loops must not collide — multiple sidecars may run at once. Each crew boots si
 | 8930–8939 | Visual Auditor (documented; see `scripts/VISUAL_AUDITOR.md`) |
 | 8940–8949 | Green Guardian |
 | 8950–8959 | Beginner Run |
-| 8960+ | Ad-hoc / manual (Perfectionist sessions) |
+| 8960–8969 | Ad-hoc / manual (Perfectionist sessions) |
+| 8970–8979 | Dogfood (`loops/dogfood.md`; real-user shifts) |
 
 ## Green Guardian (lane Q1)
 
