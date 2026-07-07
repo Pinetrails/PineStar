@@ -1746,14 +1746,29 @@ function loadCodexTokens() {
   }
   catch (e) { return null; }
 }
+// Truthful persist-failure signal for the ChatGPT-subscription token store. When a token WRITE cannot be proven
+// to have reached disk (read-back mismatch after a retry), we keep the rotated tokens live in memory for THIS
+// session but must NOT pretend they are durable — a restart would reload the old (rotation-invalidated) refresh
+// token and force a re-sign-in. `codexPersistError` carries the honest reason; the codex status endpoint surfaces
+// it so the connect UI can warn "signed in, but couldn't be saved — you may need to reconnect after a restart".
+let codexPersistError = '';
 function saveCodexTokens(obj) {
-  try {
-    fs.mkdirSync(path.dirname(CODEX_TOKENS_FILE), { recursive: true });
-    saveResilient(CODEX_TOKENS_FILE, obj);   // fsync-durable + .bak last-known-good (OAuth tokens survive power loss)
-  } catch (e) { console.warn('[codex] token persist failed:', (e && e.message) || e); }
+  try { fs.mkdirSync(path.dirname(CODEX_TOKENS_FILE), { recursive: true }); } catch (_) {}
+  // Verifiable persist: write, READ BACK, confirm the (possibly-rotated) refresh_token is on disk, retry once.
+  const r = codexTokenStore.persistCodexTokensVerified({
+    tokens: obj,
+    save: (o) => saveResilient(CODEX_TOKENS_FILE, o),   // fsync-durable + .bak last-known-good (OAuth tokens survive power loss)
+    load: () => loadResilient(CODEX_TOKENS_FILE, 'codex')
+  });
+  if (r.ok) { codexPersistError = ''; return true; }
+  // Read-back could NOT prove the token reached disk. Surface it honestly (console + status field) rather than
+  // swallowing — a lost rotated refresh_token is the exact "forced re-sign-in after restart" bug this guards.
+  codexPersistError = r.error || 'token could not be persisted to disk';
+  console.error('[codex] token persist UNVERIFIED after retry (' + codexPersistError + ') — tokens kept in memory for this session; a restart may require re-signing in to ChatGPT.');
+  return false;
 }
 // clear must also drop the .bak so a signed-out session can't be "recovered" from the last-known-good on reload.
-function clearCodexTokens() { try { fs.unlinkSync(CODEX_TOKENS_FILE); } catch (e) {} try { fs.unlinkSync(CODEX_TOKENS_FILE + '.bak'); } catch (e) {} }
+function clearCodexTokens() { try { fs.unlinkSync(CODEX_TOKENS_FILE); } catch (e) {} try { fs.unlinkSync(CODEX_TOKENS_FILE + '.bak'); } catch (e) {} codexPersistError = ''; }
 let codexTokens = loadCodexTokens();
 
 // Hand a Codex run a FRESH access_token: refresh when the JWT exp is within the skew window, persisting the
@@ -5764,7 +5779,9 @@ async function handleCodexPoll(req, res) {
 // GET /api/auth/codex/status — booleans only; never the tokens.
 function handleCodexStatus(req, res) {
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-  res.end(JSON.stringify({ connected: !!(codexTokens && codexTokens.access_token), last_refresh: (codexTokens && codexTokens.last_refresh) || '' }));
+  // persistError: honest telemetry — the session is signed in (tokens live in memory) but a token WRITE could not
+  // be proven to reach disk, so a restart may require re-signing in. Empty string when persistence is healthy.
+  res.end(JSON.stringify({ connected: !!(codexTokens && codexTokens.access_token), last_refresh: (codexTokens && codexTokens.last_refresh) || '', persistError: codexPersistError || '' }));
 }
 
 // GET /api/auth/codex/models — the ACCOUNT's real Codex model list (live-discovered with a fresh token), so

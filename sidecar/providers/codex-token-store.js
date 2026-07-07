@@ -82,5 +82,46 @@
     return null;
   }
 
-  return { validCodexTokens, candidateCodexTokenFiles, loadCodexTokensWithMigration };
+  // Persist Codex OAuth tokens with READ-BACK PROOF, then RETRY ONCE. Motivation: after codexAuth.refreshTokens()
+  // the provider may ROTATE the refresh_token and invalidate the old one; if the write to disk silently fails, a
+  // sidecar restart reloads the OLD (now-dead) refresh_token -> forced re-sign-in. So a swallowed write error is a
+  // real credential-durability hazard. This helper writes, reads the file BACK, and confirms the refresh_token on
+  // disk matches what we intended to store. On mismatch/throw it retries once; if it still can't prove the token
+  // reached disk, it returns { ok:false } so the caller can surface an HONEST persist-failure signal AND keep the
+  // rotated tokens in memory (this session stays live; the truth-telemetry law forbids pretending it's durable).
+  //
+  // Pure/injectable: caller passes save(obj) (durable write) + load() (resilient read-back). No ambient I/O here.
+  //   opts.save(obj)  -> void (may throw)   persist the token object
+  //   opts.load()     -> obj|undefined      read the token object back from disk (resilient loader)
+  //   opts.tokens                            the token object we are trying to persist (must carry refresh_token)
+  // Returns { ok, attempts, verified, error } — ok true ONLY when the read-back proves the intended refresh_token
+  // (and access_token) are on disk. When the token being saved has no refresh_token, access_token alone is proof.
+  function persistCodexTokensVerified(opts) {
+    opts = opts || {};
+    const tokens = opts.tokens || {};
+    const save = opts.save, load = opts.load;
+    if (typeof save !== 'function' || typeof load !== 'function') {
+      return { ok: false, attempts: 0, verified: false, error: 'persistCodexTokensVerified requires save+load' };
+    }
+    const wantRefresh = String(tokens.refresh_token || '');
+    const wantAccess = String(tokens.access_token || '');
+    // proof = the durable copy carries the SAME access_token AND (when we have one) the SAME refresh_token. Matching
+    // the rotated refresh_token is the whole point: an old refresh_token lingering on disk is the exact bug.
+    function onDisk() {
+      let raw; try { raw = load(); } catch (_) { return false; }
+      if (!raw || typeof raw !== 'object') return false;
+      if (wantAccess && String(raw.access_token || '') !== wantAccess) return false;
+      if (wantRefresh && String(raw.refresh_token || '') !== wantRefresh) return false;
+      return true;
+    }
+    let lastErr = '';
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try { save(tokens); } catch (e) { lastErr = (e && e.message) || String(e); }
+      if (onDisk()) return { ok: true, attempts: attempt, verified: true, error: '' };
+      if (!lastErr) lastErr = 'read-back did not find the intended refresh_token on disk';
+    }
+    return { ok: false, attempts: 2, verified: false, error: lastErr };
+  }
+
+  return { validCodexTokens, candidateCodexTokenFiles, loadCodexTokensWithMigration, persistCodexTokensVerified };
 });
