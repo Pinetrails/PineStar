@@ -22,7 +22,7 @@ own runner (Q1 Guardian, Q2 Beginner Run, Q4 Janitor) or the Overseer digest; th
 | Visual Auditor | Is the rendered game coherent? (needs eyes) | — (local /loop; not headless) | — | 0 |
 | Overseer | What broke today, what needs Andrew? | 2026-07-01 (digest rendered) | 0 P0 · 106 P2 | — |
 | Janitor | What's rotting in the workshop? | 2026-07-01 | 106 findings | 106 |
-| Cartographer | Is every surface element mapped and perfected? | 2026-07-07 08:45Z @ 54e73311 | PERFECTED-fresh 0 / total 1288 (0%) | 1275 |
+| Cartographer | Is every surface element mapped and perfected? | 2026-07-07 08:48Z @ 80dc9085 | PERFECTED-fresh 15 / total 1288 (1%) | 1258 |
 
 _The rows above are the Q5 **movie test** (2026-07-01): one real cycle of every headless
 crew member against trunk `ef47f9d`. Guardian ran all four gates GREEN (Truth Auditor is the
