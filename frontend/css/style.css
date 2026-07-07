@@ -467,6 +467,11 @@ body.no-scan .crt-scan { display: none; }
 }
 #save-dot { color: var(--ph-faint); font-size: 13px; transition: color 0.3s; }
 #save-dot.flash { color: var(--ph); text-shadow: 0 0 8px var(--ph-glow); }
+/* durable-mirror STALE: local cache is fine, but the backup copy hasn't synced. Amber/warn, in-vocabulary
+   (same --warn token the ctx-gauge + refit notes use), with a slow pulse so it reads as "attention" not
+   "error". Truthful telemetry: this only lights when CloudSave can't PROVE a recent backup. */
+#save-dot.stale { color: var(--warn); text-shadow: 0 0 8px rgba(255,233,122,0.55); animation: save-dot-stale 2.4s ease-in-out infinite; }
+@keyframes save-dot-stale { 0%,100% { opacity: 0.55; } 50% { opacity: 1; } }
 
 /* ---- CONTEXT-WINDOW gauge: engraved into the bottom bar ----
    The agent's live context occupancy, moved off the desk and recessed into the
