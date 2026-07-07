@@ -826,11 +826,16 @@ let workshopOpener = _desktopInternals.makeShellOpener({});   // ({ kind, target
 function setWorkshopOpener(fn) { workshopOpener = fn; }   // test seam
 // CI seam (never in a shipping build): STARNET_TEST_OPEN_LOG points at a file the opener APPENDS the target path to
 // instead of launching anything — so the e2e can assert /api/workshop/open invoked the opener with the jailed ABS
-// path without spawning a real app on the runner. Guarded strictly to a non-empty env var; production uses the real
-// shell opener above. This proves the wiring (jail-proven abs path reaches the launcher) exactly as required.
+// path without spawning a real app on the runner. This proves the wiring (jail-proven abs path reaches the launcher).
+// HARD GATE: the fake opener installs ONLY in dev/test mode (DEV_MODE, i.e. SKYNET_DEV/STARNET_DEV — a flag the
+// packaged desktop build NEVER sets; dev/seed.js:19). Env-var-alone is NOT enough: without this gate, a production
+// process that happened to carry STARNET_TEST_OPEN_LOG would make /api/workshop/open report `launched` while opening
+// nothing (a truthful-telemetry violation — the app asserting state the harness didn't perform). If the var is set
+// outside dev mode we keep the REAL opener and warn, so the misconfiguration is visible rather than silently faked.
 (function installTestOpenLog() {
   const logFile = String(ENV('TEST_OPEN_LOG') || '').trim();
   if (!logFile) return;
+  if (!DEV_MODE) { try { console.warn('[workshop] STARNET_TEST_OPEN_LOG is set but DEV_MODE is off — ignoring the test open-seam; using the real shell opener.'); } catch (_) {} return; }
   workshopOpener = ({ kind, target }) => { try { fs.appendFileSync(logFile, JSON.stringify({ kind, target }) + '\n'); } catch (_) {} return Promise.resolve('launched'); };
 })();
 // honest run-liveness for the workshop zombie-claim reclaim: a runId is live iff its controller is still in the
