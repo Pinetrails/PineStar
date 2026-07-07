@@ -61,12 +61,25 @@
     return mx;
   }
 
-  // READINESS — derive the confidence tier from the dossier, purely. A dim is USABLE iff it is known AND its
-  // freshest belief is not stale (recency matters: old context shouldn't license acting). An undated belief
-  // (legacy/seeded, pre-timestamps) counts as fresh — never punish an old save. The dossier is confirmed-only
-  // (never auto-inferred), so a usable dim is trustworthy grounding; we only measure breadth + the keystone + age.
+  // ACTIVITY-AS-GROUNDING (NS-2): with the context pack, a "cold dossier" no longer means the station can do
+  // nothing. If the Commander has been visibly working — enough recent USER-INITIATED runs (real evidence of what
+  // he's doing) — the station has honest grounding to act on that work even before the six dossier dims are filled.
+  // These bars are deliberately CONSERVATIVE (activity must be substantial, not a single stray run) and the grant is
+  // capped at HOT so heavy activity can license real acting, exactly as a full dossier does. It is a SEPARATE path,
+  // never a discount on the dossier bars — a thin-activity night still falls back to the dossier tier.
+  const ACTIVITY_WARM_MIN = 2;      // ≥ this many recent user runs → the station has enough to usefully PROPOSE
+  const ACTIVITY_HOT_MIN = 4;       // ≥ this many recent user runs → the station has EARNED the right to ACT on it
+
+  // READINESS — derive the confidence tier, purely. TWO grounding paths, take the HIGHER:
+  //   (a) DOSSIER — a dim is USABLE iff known AND its freshest belief is not stale (recency gates acting). An undated
+  //       belief (legacy/seeded) counts as fresh — never punish an old save. goals is the keystone; breadth sets warm/hot.
+  //   (b) ACTIVITY (NS-2) — substantial recent user-run activity is its own grounding: it directly evidences the work
+  //       the Commander is doing, so a brand-new-dossier user who is heavily active gets useful beats, not endless
+  //       get-to-know-you stand-downs. Conservative bars; capped at HOT. opts.activityCount (a count the caller derives
+  //       from the context pack's user-run evidence) drives it; 0/absent → this path contributes nothing (pure dossier).
   //   dossierSummary — DossierStore.summary() shape: { known:[dim], familiarity:0..1, ... }
   //   beliefsByDim   — fn(dim)->[belief] OR a { dim:[belief] } map (each belief carries updatedAt/createdAt)
+  //   opts.activityCount — count of recent user-initiated runs (grounding evidence); default 0
   function readiness(dossierSummary, beliefsByDim, now, opts) {
     opts = opts || {};
     const staleMs = Number.isFinite(opts.staleMs) ? opts.staleMs : STALE_MS;
@@ -84,11 +97,22 @@
       (fresh ? usableDims : staleDims).push(dim);
     }
     const goalsUsable = usableDims.indexOf(REQUIRE_DIM) >= 0;
-    let tier = 'cold';
-    if (goalsUsable && usableDims.length >= HOT_MIN) tier = 'hot';
-    else if (goalsUsable && usableDims.length >= WARM_MIN) tier = 'warm';
+    let dossierTier = 'cold';
+    if (goalsUsable && usableDims.length >= HOT_MIN) dossierTier = 'hot';
+    else if (goalsUsable && usableDims.length >= WARM_MIN) dossierTier = 'warm';
+
+    // the ACTIVITY path (NS-2): a conservative tier derived purely from recent user-run count.
+    const activityCount = Math.max(0, Math.floor(Number(opts.activityCount) || 0));
+    let activityTier = 'cold';
+    if (activityCount >= ACTIVITY_HOT_MIN) activityTier = 'hot';
+    else if (activityCount >= ACTIVITY_WARM_MIN) activityTier = 'warm';
+
+    // take the HIGHER of the two (either grounding suffices); name which one licensed acting, for honest telemetry.
+    const rank = { cold: 0, warm: 1, hot: 2 };
+    const tier = rank[activityTier] > rank[dossierTier] ? activityTier : dossierTier;
+    const groundedBy = tier === 'cold' ? null : (rank[activityTier] > rank[dossierTier] ? 'activity' : 'dossier');
     return {
-      tier, goalsUsable, usableDims, staleDims,
+      tier, dossierTier, activityTier, groundedBy, activityCount, goalsUsable, usableDims, staleDims,
       familiarity: Number.isFinite(sum.familiarity) ? sum.familiarity : 0
     };
   }
@@ -142,8 +166,14 @@
   const MIN_ACT_SCORE = 2;          // the confidence gate: nothing scoring below this acts (low-confidence → stay silent)
   const STOPWORDS = { about: 1, there: 1, their: 1, would: 1, could: 1, should: 1, which: 1, where: 1, while: 1, these: 1, those: 1, after: 1, before: 1, every: 1, other: 1, thing: 1, things: 1, stuff: 1, really: 1, around: 1 };
 
-  // which archetypes can even be proposed, given which dims are USABLE grounding (from readiness().usableDims).
-  function eligibleArchetypes(usableDims) {
+  // which archetypes can even be proposed, given which dims are USABLE grounding (from readiness().usableDims). When
+  // the grounding is ACTIVITY rather than the dossier (NS-2: opts.activityGrounded), the per-dim gate does not apply
+  // — the candidate grounds on a real recent run/chat line, not a dossier dim, and the grounding VETO (over the
+  // activity evidence pool) still enforces honesty. So an activity-grounded station may propose ANY archetype; the
+  // veto, not the dim map, is what keeps it honest. Default (no flag) is unchanged: dossier-dim eligibility.
+  function eligibleArchetypes(usableDims, opts) {
+    opts = opts || {};
+    if (opts.activityGrounded) return ARCHETYPES.slice();
     const u = Array.isArray(usableDims) ? usableDims : [];
     return ARCHETYPES.filter(a => u.indexOf(a.dim) >= 0);
   }
@@ -183,10 +213,23 @@
     return out;
   }
 
+  // the RECENT-ACTIVITY block (NS-2) — dated lines of what the Commander ACTUALLY did lately (from the context
+  // pack: recent runs, chats, the goal arc, kept/discarded work). Pushed into the directive so proposals aim at
+  // REAL current work, not a static personality sketch. Returns whether any activity was rendered (so the directive
+  // can add the "aim at their recent work" rule only when there IS recent work — never inviting fabrication). Pure.
+  function pushActivityBlock(lines, activity) {
+    const act = Array.isArray(activity) ? activity.filter(Boolean).map(String) : [];
+    if (!act.length) return false;
+    lines.push('What they worked on recently (aim your ideas at THIS — continue, unblock, or extend it):');
+    for (const l of act) lines.push('- ' + l);
+    return true;
+  }
+
   // THE CANDIDATE DIRECTIVE — the reason-only task that asks the model for a few grounded, achievable-now job ideas
-  // (it carries the dossier in its live system prompt; this hands the beliefs + the eligible archetypes explicitly so
-  // a weak model can't miss them, and hard-constrains output to the reason/draft envelope + a strict tagged format).
-  //   ctx: { beliefs:{dim:[texts]}, eligible:[archetype], max }
+  // (it carries the dossier in its live system prompt; this hands the beliefs + the recent activity + the eligible
+  // archetypes explicitly so a weak model can't miss them, and hard-constrains output to the reason/draft envelope
+  // + a strict tagged format).
+  //   ctx: { beliefs:{dim:[texts]}, activity:[line], eligible:[archetype], max }
   function buildCandidateDirective(ctx) {
     ctx = ctx || {};
     const beliefs = (ctx.beliefs && typeof ctx.beliefs === 'object') ? ctx.beliefs : {};
@@ -195,12 +238,14 @@
     const lines = [];
     lines.push('INTERNAL — SELF-DIRECTED WORK. The Commander is away. Do not run any tools. Reason only, then reply in the exact format below.');
     lines.push('Propose up to ' + max + ' small jobs you could do RIGHT NOW, unattended, to help them — then you will be asked to do the single best one and leave a draft on their desk.');
+    const hasActivity = pushActivityBlock(lines, ctx.activity);
     const dimLine = (key, label) => { const arr = Array.isArray(beliefs[key]) ? beliefs[key].filter(Boolean) : []; if (arr.length) lines.push('- ' + label + ': ' + arr.join(' | ')); };
     lines.push('What you know about them:');
     dimLine('goals', 'Goals'); dimLine('pain', 'Pain points'); dimLine('ambition', 'Ambitions'); dimLine('stack', 'Stack & tools'); dimLine('standing_orders', 'Standing orders'); dimLine('style', 'Working style');
     lines.push('Each job must be ONE of these kinds: ' + eligible.map(a => a.id + ' (' + a.blurb + ')').join(', ') + '.');
     lines.push('Hard rules:');
-    lines.push('- GROUNDED: every job must aim at a SPECIFIC thing above (a real goal / pain / etc). Quote the exact thing in GROUNDS. If you cannot ground it in something you actually know, do not propose it.');
+    if (hasActivity) lines.push('- CONTINUE THEIR WORK: prefer a job that directly advances, unblocks, or extends something in "What they worked on recently" above — that beats a generic idea. But stay HONEST: only cite work that is actually listed; never invent activity.');
+    lines.push('- GROUNDED: every job must aim at a SPECIFIC thing above (a real recent job / goal / pain / etc). Quote the exact thing in GROUNDS. If you cannot ground it in something you actually know or they actually did, do not propose it.');
     lines.push('- ACHIEVABLE NOW, UNATTENDED: NO tools, NO web, NO file writes, NO sending. It must be REASONING / DRAFTING / PLANNING you can finish from what you know and leave as a draft. Never propose searching, fetching, posting, or messaging.');
     lines.push('- HONEST CONFIDENCE: rate how sure you are it is genuinely useful AND that you can do it well now (high/medium/low). Low is fine — it is better to admit it than to pad.');
     lines.push('Reply with one block PER job, EXACTLY this format, nothing else:');
@@ -213,13 +258,17 @@
   }
 
   // parse the candidate reply, tolerantly + with the GROUNDING VETO. Keeps a candidate only with a title, an
-  // eligible KIND, a non-empty SPEC, and GROUNDS that is actually anchored in the provided beliefs (structure
-  // overrules the model). opts: { eligible:[archetype], beliefs (map|array), requireGrounding:true }
+  // eligible KIND, a non-empty SPEC, and GROUNDS that is actually anchored in the provided EVIDENCE (structure
+  // overrules the model). NS-2 widens the evidence pool: a candidate's GROUNDS may cite a static dossier BELIEF OR a
+  // recent-ACTIVITY line (a real run/chat/goal/landed-work line from the context pack) — the token-overlap mechanics
+  // are unchanged, so invented grounding (zero overlap with EITHER pool) still dies. opts: { eligible:[archetype],
+  // beliefs (map|array), activity:[line], requireGrounding:true }
   function parseCandidates(text, opts) {
     opts = opts || {};
     const eligibleIds = {};
     for (const a of (Array.isArray(opts.eligible) && opts.eligible.length ? opts.eligible : ARCHETYPES)) eligibleIds[a.id] = 1;
-    const beliefTexts = flattenBeliefs(opts.beliefs);
+    const activityTexts = Array.isArray(opts.activity) ? opts.activity.filter(Boolean).map(String) : [];
+    const beliefTexts = flattenBeliefs(opts.beliefs).concat(activityTexts);   // the veto evidence pool = beliefs + activity lines
     const requireGrounding = opts.requireGrounding !== false;
     const raw = String(text == null ? '' : text);
     const grab = (block, label) => { const m = new RegExp('^\\s*' + label + '\\s*:\\s*(.+?)\\s*$', 'im').exec(block); return m ? m[1].trim() : ''; };
@@ -317,12 +366,14 @@
     const lines = [];
     lines.push('INTERNAL — SELF-DIRECTED WORK. The Commander is away and has cleared you to BUILD in your private sandbox. Reason first, then reply in the exact format below.');
     lines.push('Propose up to ' + max + ' small jobs you could do RIGHT NOW, unattended, that each end in a REAL, reviewable artifact left in your workshop — then you will be asked to build the single best one.');
+    const hasActivity = pushActivityBlock(lines, ctx.activity);
     const dimLine = (key, label) => { const arr = Array.isArray(beliefs[key]) ? beliefs[key].filter(Boolean) : []; if (arr.length) lines.push('- ' + label + ': ' + arr.join(' | ')); };
     lines.push('What you know about them:');
     dimLine('goals', 'Goals'); dimLine('pain', 'Pain points'); dimLine('ambition', 'Ambitions'); dimLine('stack', 'Stack & tools'); dimLine('standing_orders', 'Standing orders'); dimLine('style', 'Working style');
     lines.push('Each job must be ONE of these kinds: ' + eligible.map(a => a.id + ' (' + a.blurb + ')').join(', ') + '.');
     lines.push('Hard rules:');
-    lines.push('- GROUNDED: every job must aim at a SPECIFIC thing above (a real goal / pain / etc). Quote the exact thing in GROUNDS. If you cannot ground it in something you actually know, do not propose it.');
+    if (hasActivity) lines.push('- CONTINUE THEIR WORK: prefer a job that directly advances, unblocks, or extends something in "What they worked on recently" above — that beats a generic idea. But stay HONEST: only cite work that is actually listed; never invent activity.');
+    lines.push('- GROUNDED: every job must aim at a SPECIFIC thing above (a real recent job / goal / pain / etc). Quote the exact thing in GROUNDS. If you cannot ground it in something you actually know or they actually did, do not propose it.');
     lines.push('- BUILDABLE NOW, UNATTENDED, LOCAL: it must finish as a FILE or small self-contained tool you write into your workshop folder. You MAY read/research with your tools first. You may NOT send, publish, spend, message, or touch anything outside your sandbox — the artifact stays local for the Commander to review.');
     lines.push('- HONEST CONFIDENCE: rate how sure you are it is genuinely useful AND that you can build it well now (high/medium/low). Low is fine — better than padding.');
     lines.push('Reply with one block PER job, EXACTLY this format, nothing else:');
@@ -477,12 +528,13 @@
 
   return {
     idleFor, readiness, decide, newestStamp,
-    eligibleArchetypes, grounded, sigTokens, flattenBeliefs,
+    eligibleArchetypes, grounded, sigTokens, flattenBeliefs, pushActivityBlock,
     buildCandidateDirective, parseCandidates, scoreAndSelect, buildDoDirective, parseDeliverable,
     buildCandidateDirectiveV2, buildDoDirectiveV2, learnFold, learnWeightsFrom,
     buildCritiqueDirective, parseCritique, digestLines, digestSummary, digestHeadline,
     writePath, canWrite, fileBody,
     DEFAULT_IDLE_MS, DEFAULT_TICK_MS, REQUIRE_DIM, WARM_MIN, HOT_MIN, STALE_MS,
-    ARCHETYPES, CANDIDATE_MAX, MIN_ACT_SCORE, CONFIDENCE_RANK
+    ARCHETYPES, CANDIDATE_MAX, MIN_ACT_SCORE, CONFIDENCE_RANK,
+    ACTIVITY_WARM_MIN, ACTIVITY_HOT_MIN
   };
 });

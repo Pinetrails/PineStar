@@ -184,4 +184,55 @@ A.eq(Autopilot.learnWeightsFrom(null).constructor, Object, 'learnWeightsFrom is 
 const tie2 = [{ title: 'a', archetype: 'advance-goal', grounds: 'g', confidence: 'high', spec: 's' }, { title: 'b', archetype: 'scout', grounds: 'g', confidence: 'high', spec: 's' }];
 A.eq(Autopilot.scoreAndSelect(tie2, { weights: Autopilot.learnWeightsFrom(Autopilot.learnFold(Autopilot.learnFold({}, 'scout', true), 'scout', true)) }).selected.archetype, 'scout', 'approvals of scout up-weight it enough to win a tie against the default-order winner');
 
+/* ---------- NS-2: activity-as-grounding readiness + the extended grounding veto + the activity directive block ---------- */
+
+// (a) READINESS folds a SECOND grounding path: substantial recent user-run activity. A brand-new (empty) dossier
+//     with heavy activity still reaches hot — no more endless get-to-know-you stand-downs for an active user.
+let rdA = Autopilot.readiness({ known: [], familiarity: 0 }, {}, t, { activityCount: 0 });
+A.eq(rdA.tier, 'cold', 'empty dossier + no activity → cold (nothing to ground on)');
+rdA = Autopilot.readiness({ known: [], familiarity: 0 }, {}, t, { activityCount: 2 });
+A.eq([rdA.tier, rdA.groundedBy], ['warm', 'activity'], 'empty dossier + 2 recent runs → warm, grounded BY activity');
+rdA = Autopilot.readiness({ known: [], familiarity: 0 }, {}, t, { activityCount: 4 });
+A.eq([rdA.tier, rdA.groundedBy], ['hot', 'activity'], 'empty dossier + 4 recent runs → HOT on activity alone (heavy-activity new user gets useful beats)');
+// the dossier path still wins when it is higher (activity never DISCOUNTS the dossier bars).
+rdA = Autopilot.readiness({ known: ['goals', 'stack', 'pain', 'identity'], familiarity: 4 / 7 }, { goals: fresh(), stack: fresh(), pain: fresh(), identity: fresh() }, t, { activityCount: 0 });
+A.eq([rdA.tier, rdA.groundedBy], ['hot', 'dossier'], 'a full dossier is hot on its own; groundedBy names dossier');
+A.eq(Autopilot.readiness({ known: [] }, {}, t, {}).tier, 'cold', 'no activityCount at all → pure dossier path (unchanged)');
+
+// (b) ELIGIBILITY opens to ALL archetypes when the grounding is activity (candidates cite a run/chat line, not a dim).
+A.eq(Autopilot.eligibleArchetypes([], { activityGrounded: true }).length, Autopilot.ARCHETYPES.length, 'activity-grounded → all archetypes eligible (the veto, not the dim map, keeps it honest)');
+A.eq(Autopilot.eligibleArchetypes([]).length, 0, 'without the flag, empty dims → no eligible archetypes (unchanged)');
+
+// (c) the GROUNDING VETO evidence pool extends to activity lines: an activity-grounded candidate SURVIVES, invented dies.
+const activityLines = ['Ship the StarNet beta (yesterday)', '"help me automate release notes" (2d ago)'];
+const vetoReply = [
+  'JOB: Continue the beta ship',
+  'KIND: advance-goal',
+  'GROUNDS: Ship the StarNet beta',            // cites a RECENT RUN line, NOT a dossier belief
+  'CONFIDENCE: high',
+  'SPEC: a checklist',
+  '',
+  'JOB: Invented busywork',
+  'KIND: advance-goal',
+  'GROUNDS: reorganize the quarterly taxonomy widgets',   // grounded in NOTHING (not belief, not activity)
+  'CONFIDENCE: high',
+  'SPEC: nope'
+].join('\n');
+// with EMPTY beliefs, the only evidence is the activity pool:
+const vetoCands = Autopilot.parseCandidates(vetoReply, { eligible: Autopilot.ARCHETYPES, beliefs: {}, activity: activityLines });
+A.eq(vetoCands.length, 1, 'the activity-grounded candidate survives; the invented one dies (veto over beliefs+activity)');
+A.eq(vetoCands[0].title, 'Continue the beta ship', 'the surviving candidate is the one grounded in a real recent run');
+// without the activity pool, the same real candidate would have NO evidence and also die (proves activity is what saved it):
+A.eq(Autopilot.parseCandidates(vetoReply, { eligible: Autopilot.ARCHETYPES, beliefs: {} }).length, 0, 'with no beliefs AND no activity, even the real candidate dies (activity is the load-bearing evidence)');
+
+// (d) the DIRECTIVE carries the recent-activity block + the "continue their work" rule, only when there IS activity.
+const cdAct = Autopilot.buildCandidateDirective({ beliefs: b2, activity: activityLines, eligible: eligAll });
+A.ok(/worked on recently/i.test(cdAct) && /Ship the StarNet beta/.test(cdAct), 'the candidate directive renders the recent-activity block with dated lines');
+A.ok(/CONTINUE THEIR WORK/i.test(cdAct), 'with activity present, the directive adds the continue/unblock/extend rule');
+const cdNoAct = Autopilot.buildCandidateDirective({ beliefs: b2, eligible: eligAll });
+A.ok(!/worked on recently/i.test(cdNoAct) && !/CONTINUE THEIR WORK/i.test(cdNoAct), 'with NO activity, no activity block + no continue rule (never invites fabrication)');
+// the V2 (build) directive carries it too.
+const cd2Act = Autopilot.buildCandidateDirectiveV2({ beliefs: b2, activity: activityLines, eligible: eligAll });
+A.ok(/worked on recently/i.test(cd2Act) && /CONTINUE THEIR WORK/i.test(cd2Act), 'the V2 build directive also carries the recent-activity block + continue rule');
+
 A.report('autopilot.test');

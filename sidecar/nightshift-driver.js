@@ -15,6 +15,10 @@
      deps.lastActivity()             -> int ms           // lastUserActivityAt (index.js tracks it)
      deps.isHalted()                 -> bool             // the E-STOP is engaged (index.js: no live run + a halt flag)
      deps.concurrencyFree(agentId)   -> bool             // the same-agent run mutex is free for this agent
+     deps.precheck({ agentId })      -> { ok, reason } | bool | undefined   // OPTIONAL (NS-2): a PURELY-LOCAL readiness/
+     //   eligibility gate that needs NO model call. When present and it returns not-ok, the beat stands down BEFORE the
+     //   leash is spent (the cold-leash fix) — a stand-down that no model call could have avoided must not cost budget.
+     //   Absent/undefined → treated as ok (NS-1 behavior: spend at accept-time, the pipeline decides). See applyTick.
      deps.beat({ agentId, signal }) -> Promise<{ delivered, reason, title?, archetype? }>   // the ported act pipeline
      deps.newAbort()                 -> AbortController
      deps.now()                      -> int ms           // wall clock for beat-COMPLETION timestamps
@@ -42,6 +46,7 @@
     const lastActivity = typeof d.lastActivity === 'function' ? d.lastActivity : function () { return 0; };
     const isHalted = typeof d.isHalted === 'function' ? d.isHalted : function () { return false; };
     const concurrencyFree = typeof d.concurrencyFree === 'function' ? d.concurrencyFree : function () { return true; };
+    const precheck = typeof d.precheck === 'function' ? d.precheck : null;   // NS-2: optional pre-spend local gate
     const beat = d.beat;
     const newAbort = typeof d.newAbort === 'function' ? d.newAbort : function () { return { signal: null, abort: function () {} }; };
     const now = typeof d.now === 'function' ? d.now : function () { return 0; };
@@ -76,6 +81,24 @@
       return nightshift.decide(rolled, gather(nowMs));
     }
 
+    // decideNow + the pre-spend readiness precheck folded in, for the STATUS route: when the pure gates clear but the
+    // local precheck says the beat couldn't reach a model call, report binding:'readiness' (the pre-spend stand-down)
+    // so status == what the tick would actually do. Side-effect free (the precheck must be a pure read). No precheck →
+    // identical to decideNow. Never throws (a precheck hiccup falls back to the pure decision).
+    function statusDecision(nowMs) {
+      const decision = decideNow(nowMs);
+      if (!decision.fire || !precheck) return decision;
+      try {
+        const pr = precheck({ agentId: agentId });
+        const notOk = (pr === false) || (pr && typeof pr === 'object' && pr.ok === false);
+        if (notOk) {
+          const reason = (pr && typeof pr === 'object' && pr.reason) ? String(pr.reason) : 'readiness';
+          return Object.assign({}, decision, { fire: false, binding: reason || 'readiness' });
+        }
+      } catch (_) { /* fall back to the pure decision */ }
+      return decision;
+    }
+
     /* applyTick — ONE night-shift pass at wall-clock `nowMs`. Synchronous decision; if a beat is accepted it is
        launched (settles later) and the accounting is persisted IMMEDIATELY. Returns a small summary. Never throws
        (the host also wraps it, but each step is guarded). A tick during an in-flight beat is a no-op. */
@@ -93,14 +116,33 @@
       if (beatRunning) return { fired: false, binding: 'in-flight', decision: null };
 
       const decision = decideNow(nowMs);
-      // record EVERY tick's decision — acted, or declined-with-which-gate-bound (the honest decision trail).
-      try { ledger({ ts: nowMs, kind: decision.fire ? 'beat' : 'decline', binding: decision.binding, agentId: agentId, beatsLeft: decision.beatsLeft, away: decision.away }); } catch (_) {}
 
-      if (!decision.fire) return { fired: false, binding: decision.binding, decision: decision };
+      // COLD-LEASH FIX (NS-2). The pure gates (posture/present/halt/leash/cooldown/concurrency) cleared, so a beat
+      // WOULD fire. But before spending a leash unit, ask the optional PURELY-LOCAL precheck whether this beat could
+      // even reach a model call — the readiness/eligibility conditions the act pipeline itself checks with NO model
+      // call (dossier+activity too thin → tier not hot, no eligible archetypes, no grounding). If it can't, standing
+      // down here is FREE work: no model call, no draft, nothing the budget bought. So we DECLINE WITHOUT SPENDING —
+      // binding 'readiness' — instead of NS-1's wart where the unit was burned on a stand-down needing no model call.
+      // Anything that PASSES the precheck still spends at accept-time below (a beat that reached a model call and then
+      // stood down DID cost the budget — the anti-runaway guarantee stays intact). Absent precheck → always ok.
+      let preOk = true, preReason = 'readiness';
+      if (decision.fire && precheck) {
+        try { const pr = precheck({ agentId: agentId }); if (pr === false) { preOk = false; } else if (pr && typeof pr === 'object' && pr.ok === false) { preOk = false; preReason = String(pr.reason || 'readiness') || 'readiness'; } }
+        catch (_) { /* a precheck hiccup must never wedge the tick; fail OPEN to NS-1 behavior (spend + let the pipeline decide) */ }
+      }
+      const fireNow = decision.fire && preOk;
+      const binding = decision.fire ? (preOk ? null : preReason) : decision.binding;
+
+      // record EVERY tick's decision — acted, or declined-with-which-gate-bound (the honest decision trail). A
+      // pre-spend readiness stand-down is an honest 'decline' with binding:'readiness' (the new pre-spend decline kind).
+      try { ledger({ ts: nowMs, kind: fireNow ? 'beat' : 'decline', binding: binding, agentId: agentId, beatsLeft: decision.beatsLeft, away: decision.away, preSpend: (decision.fire && !preOk) || undefined }); } catch (_) {}
+
+      if (!fireNow) return { fired: false, binding: binding, decision: decision };
 
       // ACCEPT the beat: increment the leash + stamp lastBeatAt and PERSIST NOW (before the async pipeline
       // resolves), so a crash mid-beat cannot both spend nothing and re-fire on restart. This is the leash's
-      // server-enforcement point.
+      // server-enforcement point. We are past the precheck, so this beat WILL reach a model call — spending here is
+      // correct even if the pipeline then stands down (that stand-down cost a model call; anti-runaway holds).
       try { setState(nightshift.recordBeat(getState(), nowMs)); } catch (e) { /* if we can't persist the spend, do NOT fire (fail closed) */ return { fired: false, binding: 'persist-failed', decision: decision }; }
 
       beatRunning = true;
@@ -143,6 +185,7 @@
     return {
       applyTick: applyTick,
       decideNow: decideNow,
+      statusDecision: statusDecision,
       runInFlight: function () { return beatRunning; },
       abortBeat: abortBeat,
       _internals: { finishBeat: finishBeat, gather: gather }
