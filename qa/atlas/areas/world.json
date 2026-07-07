@@ -1,6 +1,6 @@
 {
   "area": "world",
-  "updatedAt": "2026-07-07T08:11:07.401Z",
+  "updatedAt": "2026-07-07T08:41:01.512Z",
   "entries": [
     {
       "id": "state/ingame",
@@ -110,63 +110,101 @@
       "kind": "ui",
       "area": "world",
       "name": "⌂REFIT STATIONplace rooms, corridors & gear",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Opens REFIT MODE — the floor editor to place rooms, run corridors, and paint decks (station refit).",
+      "promise": "Clicking it enters Refit mode (.refit-canvas + 'REFIT MODE — DRAG TO PLACE ROOMS' overlay); pulses a refit-nudge until first opened.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/index.html",
+          "frontend/app/app.js",
+          "frontend/app/dockglow.js",
+          "frontend/app/tutorial.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "shoot",
+          "ref": "build-station"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "39b9c5690b46a41fb3541b4ab92882dca7c774e9",
+        "date": "2026-07-07T08:41:01.512Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#bb-build",
-      "state": "ingame"
+      "state": "ingame",
+      "notes": "Live-proven 2026-07-07T08:41:01.512Z: click→ '.refit-canvas' + '.refit-title' REFIT MODE overlay visible (probe2 build-door). Evidence .uiatlas/world-dock-evidence/doors-and-structure.json. onclick=Build.toggle() (app.js); refit-nudge until starnet.refit.seen. Shoot state build-station."
     },
     {
       "id": "ui/world/bb-missions",
       "kind": "ui",
       "area": "world",
       "name": "❒RECIPESready-made missions to launch",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Opens the recipe (ready-made mission) library straight to the RECIPES tab so you can launch a pre-built mission.",
+      "promise": "Clicking it opens the deploy bay on the recipes tab (a 'SAVE A RECIPE' / recipe library surface).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/index.html",
+          "frontend/app/app.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "shoot",
+          "ref": "work-recipes"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "39b9c5690b46a41fb3541b4ab92882dca7c774e9",
+        "date": "2026-07-07T08:41:01.512Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#bb-missions",
-      "state": "ingame"
+      "state": "ingame",
+      "notes": "Live-proven 2026-07-07T08:41:01.512Z: click→ recipe library overlay visible ('＋ SAVE A RECIPE', probe dock-door). Evidence .uiatlas/world-dock-evidence/doors-and-structure.json. onclick=openDeployBay('recipes') (app.js). Shoot state work-recipes."
     },
     {
       "id": "ui/world/bb-recruit",
       "kind": "ui",
       "area": "world",
       "name": "＋RECRUITgrow the crew — summon a class, or re-spec your agen",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The ONE recruit door — opens the RECRUITMENT BAY to summon a new agent (class dossier) or re-spec the current one.",
+      "promise": "Clicking it opens the Recruitment Bay overlay (.mkt-scrim + CLASS DOSSIER) offering both verbs: summon new / deploy to current.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/index.html",
+          "frontend/app/app.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "shoot",
+          "ref": "crew-recruit"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "39b9c5690b46a41fb3541b4ab92882dca7c774e9",
+        "date": "2026-07-07T08:41:01.512Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#bb-recruit",
-      "state": "ingame"
+      "state": "ingame",
+      "notes": "Live-proven 2026-07-07T08:41:01.512Z: click→ '.mkt-scrim' + '.mkt-dossier' RECRUITMENT BAY / CLASS DOSSIER visible (probe2 recruit-door). Evidence .uiatlas/world-dock-evidence/doors-and-structure.json. onclick=openSummonBay (app.js). One-recruit-door law (index.html comment). Shoot state crew-recruit."
     },
     {
       "id": "ui/world/btn-back",
@@ -425,294 +463,494 @@
       "kind": "ui",
       "area": "world",
       "name": "◉AGENTSeach crew member's dossier — config, memory, record",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Opens the AGENT DOSSIER window — the per-agent config/memory/record surface for every crew member.",
+      "promise": "Clicking it opens a window titled 'AGENT DOSSIER' rendering the live roster's dossiers (config, memory, run record).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/index.html",
+          "frontend/app/stationui.js",
+          "frontend/app/navdock.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "shoot",
+          "ref": "crew-agents"
+        },
+        {
+          "kind": "journey",
+          "ref": "J1"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "39b9c5690b46a41fb3541b4ab92882dca7c774e9",
+        "date": "2026-07-07T08:41:01.512Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "[data-term=\"agents\"]",
-      "state": "ingame"
+      "state": "ingame",
+      "notes": "Live-proven 2026-07-07T08:41:01.512Z: click→window 'AGENT DOSSIER' opened, body 13964 chars real content. Evidence .uiatlas/world-dock-evidence/label-law.json. Label 'AGENTS' prefix-matches title 'AGENT DOSSIER' (label law). Covered by shoot state crew-agents + journeys J1 drive [data-term=agents]."
     },
     {
       "id": "ui/world/data-term-commander",
       "kind": "ui",
       "area": "world",
       "name": "◈COMMANDERwhat the station has learned about you",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Opens the COMMANDER DOSSIER — what the station has learned about the human operator (your own file).",
+      "promise": "Clicking it opens a window titled 'COMMANDER DOSSIER' rendering the learned-facts/preferences profile.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/index.html",
+          "frontend/app/stationui.js",
+          "frontend/app/navdock.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "shoot",
+          "ref": "crew-commander"
+        },
+        {
+          "kind": "journey",
+          "ref": "J1"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "39b9c5690b46a41fb3541b4ab92882dca7c774e9",
+        "date": "2026-07-07T08:41:01.512Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "[data-term=\"commander\"]",
-      "state": "ingame"
+      "state": "ingame",
+      "notes": "Live-proven 2026-07-07T08:41:01.512Z: click→'COMMANDER DOSSIER' opened, body 1459 chars. Evidence .uiatlas/world-dock-evidence/label-law.json. Label law OK. Shoot state crew-commander; J1 drives [data-term=commander]."
     },
     {
       "id": "ui/world/data-term-connectors",
       "kind": "ui",
       "area": "world",
       "name": "⇄TOOLSETSwire external tools in",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Opens TOOLSETS & CONNECTORS — wire external tools (MCP connectors) into agents.",
+      "promise": "Clicking it opens a console window titled 'TOOLSETS & CONNECTORS' listing available/wired connectors.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/index.html",
+          "frontend/app/stationui.js",
+          "frontend/app/navdock.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "shoot",
+          "ref": "build-connectors"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "39b9c5690b46a41fb3541b4ab92882dca7c774e9",
+        "date": "2026-07-07T08:41:01.512Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "[data-term=\"connectors\"]",
-      "state": "ingame"
+      "state": "ingame",
+      "notes": "Live-proven 2026-07-07T08:41:01.512Z: click→'TOOLSETS & CONNECTORS' opened, body 10056 chars. Evidence .uiatlas/world-dock-evidence/label-law.json. Label 'TOOLSETS' prefix of title. Shoot state build-connectors."
     },
     {
       "id": "ui/world/data-term-logbook",
       "kind": "ui",
       "area": "world",
       "name": "▦LOGBOOKthe station's event record",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Opens the LOGBOOK — the station's event record.",
+      "promise": "Clicking it opens a console window titled 'LOGBOOK' showing the station's event log.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/index.html",
+          "frontend/app/stationui.js",
+          "frontend/app/navdock.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "shoot",
+          "ref": "sys-logbook"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "39b9c5690b46a41fb3541b4ab92882dca7c774e9",
+        "date": "2026-07-07T08:41:01.512Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "[data-term=\"logbook\"]",
-      "state": "ingame"
+      "state": "ingame",
+      "notes": "Live-proven 2026-07-07T08:41:01.512Z: click→'LOGBOOK' opened, body 469 chars. Evidence .uiatlas/world-dock-evidence/label-law.json. Exact label==title. Shoot state sys-logbook."
     },
     {
       "id": "ui/world/data-term-manual",
       "kind": "ui",
       "area": "world",
       "name": "§FIELD MANUALevery prop & mechanic, explained",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Opens the FIELD MANUAL — the in-app codex explaining every prop & mechanic.",
+      "promise": "Clicking it opens a window titled 'FIELD MANUAL' filled by Tutorial.fillFieldManual.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/index.html",
+          "frontend/app/stationui.js",
+          "frontend/app/navdock.js",
+          "frontend/app/tutorial.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "shoot",
+          "ref": "build-manual"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "39b9c5690b46a41fb3541b4ab92882dca7c774e9",
+        "date": "2026-07-07T08:41:01.512Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "[data-term=\"manual\"]",
-      "state": "ingame"
+      "state": "ingame",
+      "notes": "Live-proven 2026-07-07T08:41:01.512Z: click→'FIELD MANUAL' opened, body 270 chars. Evidence .uiatlas/world-dock-evidence/label-law.json. Exact label==title. Builder delegates to tutorial.js fillFieldManual. Shoot state build-manual."
     },
     {
       "id": "ui/world/data-term-messaging",
       "kind": "ui",
       "area": "world",
       "name": "✉CHANNELSreach your agents from Telegram",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Opens CHANNELS — wire external messaging channels (Telegram) to reach your agents.",
+      "promise": "Clicking it opens a window titled 'CHANNELS' for connecting Telegram/external channels.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/index.html",
+          "frontend/app/stationui.js",
+          "frontend/app/navdock.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "shoot",
+          "ref": "sys-messaging"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "39b9c5690b46a41fb3541b4ab92882dca7c774e9",
+        "date": "2026-07-07T08:41:01.512Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "[data-term=\"messaging\"]",
-      "state": "ingame"
+      "state": "ingame",
+      "notes": "Live-proven 2026-07-07T08:41:01.512Z: click→'CHANNELS' opened, body 1151 chars. Evidence .uiatlas/world-dock-evidence/label-law.json. Exact label==title (deliberately 'CHANNELS' not 'COMMS' — comment at stationui.js BUILDERS). Shoot state sys-messaging."
     },
     {
       "id": "ui/world/data-term-notifs",
       "kind": "ui",
       "area": "world",
       "name": "▲NOTIFSalerts & unread events1",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Opens NOTIFICATIONS — alerts & unread station events (also badged with an unread count).",
+      "promise": "Clicking it opens a window titled 'NOTIFICATIONS'; the #nf-badge count reflects unread events.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/index.html",
+          "frontend/app/stationui.js",
+          "frontend/app/navdock.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "shoot",
+          "ref": "sys-notifs"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "39b9c5690b46a41fb3541b4ab92882dca7c774e9",
+        "date": "2026-07-07T08:41:01.512Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "[data-term=\"notifs\"]",
-      "state": "ingame"
+      "state": "ingame",
+      "notes": "Live-proven 2026-07-07T08:41:01.512Z: click→'NOTIFICATIONS' opened. Evidence .uiatlas/world-dock-evidence/label-law.json. Label 'NOTIFS' is the standard abbreviation of title 'NOTIFICATIONS' (first-5 'NOTIF' shared) — satisfies the label-prefix law in spirit; not flagged. Shoot state sys-notifs (openStableNotifs)."
     },
     {
       "id": "ui/world/data-term-quests",
       "kind": "ui",
       "area": "world",
       "name": "⚑QUESTSyour progress & next moves",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Opens the QUEST LOG — your progress & next moves (the growth/goal-arc surface).",
+      "promise": "Clicking it opens a window titled 'QUEST LOG' showing quest progress and next moves.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/index.html",
+          "frontend/app/stationui.js",
+          "frontend/app/navdock.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/queststore.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/queststatestore.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "39b9c5690b46a41fb3541b4ab92882dca7c774e9",
+        "date": "2026-07-07T08:41:01.512Z"
+      },
+      "findings": [
+        "perf-world-quests-ui-uncovered"
+      ],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "[data-term=\"quests\"]",
-      "state": "ingame"
+      "state": "ingame",
+      "notes": "Live-proven 2026-07-07T08:41:01.512Z: click→'QUEST LOG' opened, body 1362 chars. Evidence .uiatlas/world-dock-evidence/label-law.json. Label 'QUESTS' prefix of title. NOT perfected: rubric #7 partial — the quest STORE is well tested (queststore/queststatestore/stationquest tests) but NO machine assertion guards the DOCK ITEM opening the QUEST LOG window (no shoot state) — see finding perf-world-quests-ui-uncovered."
     },
     {
       "id": "ui/world/data-term-rewind",
       "kind": "ui",
       "area": "world",
       "name": "↶RESTORErewind to an earlier save",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Opens RESTORE POINTS — rewind the station to an earlier save/checkpoint.",
+      "promise": "Clicking it opens a window titled 'RESTORE POINTS' listing available restore points.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/index.html",
+          "frontend/app/stationui.js",
+          "frontend/app/navdock.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "shoot",
+          "ref": "sys-rewind"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "39b9c5690b46a41fb3541b4ab92882dca7c774e9",
+        "date": "2026-07-07T08:41:01.512Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "[data-term=\"rewind\"]",
-      "state": "ingame"
+      "state": "ingame",
+      "notes": "Live-proven 2026-07-07T08:41:01.512Z: click→'RESTORE POINTS' opened, body 373 chars. Evidence .uiatlas/world-dock-evidence/label-law.json. Label 'RESTORE' prefix of title. Shoot state sys-rewind."
     },
     {
       "id": "ui/world/data-term-routines",
       "kind": "ui",
       "area": "world",
       "name": "⏱ROUTINESwork that runs on a schedule",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Opens ROUTINES — work that runs on a schedule (cron routines).",
+      "promise": "Clicking it opens a console window titled 'ROUTINES' listing scheduled work.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/index.html",
+          "frontend/app/stationui.js",
+          "frontend/app/navdock.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "shoot",
+          "ref": "work-routines"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "39b9c5690b46a41fb3541b4ab92882dca7c774e9",
+        "date": "2026-07-07T08:41:01.512Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "[data-term=\"routines\"]",
-      "state": "ingame"
+      "state": "ingame",
+      "notes": "Live-proven 2026-07-07T08:41:01.512Z: click→'ROUTINES' opened, body 863 chars. Evidence .uiatlas/world-dock-evidence/label-law.json. Exact label==title. Shoot state work-routines."
     },
     {
       "id": "ui/world/data-term-settings",
       "kind": "ui",
       "area": "world",
       "name": "⚙SETTINGSkeys, models, voice, data",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Opens SETTINGS — the console for keys, models, voice, autonomy, budget, and data.",
+      "promise": "Clicking it opens a console window titled 'SETTINGS' with the PROVIDERS/AUTONOMY/BUDGET/MODELS rails.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/index.html",
+          "frontend/app/stationui.js",
+          "frontend/app/navdock.js",
+          "frontend/app/keycta.js",
+          "frontend/app/modeldock.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "39b9c5690b46a41fb3541b4ab92882dca7c774e9",
+        "date": "2026-07-07T08:41:01.512Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "[data-term=\"settings\"]",
-      "state": "ingame"
+      "state": "ingame",
+      "notes": "Live-proven 2026-07-07T08:41:01.512Z: click→'SETTINGS' console opened, body 80063 chars, rails PROVIDERS/AUTONOMY/BUDGET/MODELS present (probe2). Evidence .uiatlas/world-dock-evidence/label-law.json+.uiatlas/world-dock-evidence/doors-and-structure.json. Exact label==title. Shoot state sys-settings. Also the deep-link target of the COMMS error chip (keycta.js) and model dock SETTINGS button."
     },
     {
       "id": "ui/world/data-term-skills",
       "kind": "ui",
       "area": "world",
       "name": "✦SKILLSwhat agents are equipped to do",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Opens SKILLS & CAPABILITIES — the capability-gated recipe/skill library showing what agents are equipped to do.",
+      "promise": "Clicking it opens a console window titled 'SKILLS & CAPABILITIES' listing the station's skills/capabilities.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/index.html",
+          "frontend/app/stationui.js",
+          "frontend/app/navdock.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "shoot",
+          "ref": "build-skills"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "39b9c5690b46a41fb3541b4ab92882dca7c774e9",
+        "date": "2026-07-07T08:41:01.512Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "[data-term=\"skills\"]",
-      "state": "ingame"
+      "state": "ingame",
+      "notes": "Live-proven 2026-07-07T08:41:01.512Z: click→'SKILLS & CAPABILITIES' opened, body 76181 chars. Evidence .uiatlas/world-dock-evidence/label-law.json. Label 'SKILLS' prefix of title. Shoot state build-skills."
     },
     {
       "id": "ui/world/data-term-tasks",
       "kind": "ui",
       "area": "world",
       "name": "☑TASKSqueued, running & done work",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Opens the TASK BOARD — queued, running, and done work across the station.",
+      "promise": "Clicking it opens a window titled 'TASK BOARD' whose rows equal the live task store (event-reduced truth).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/index.html",
+          "frontend/app/stationui.js",
+          "frontend/app/navdock.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "shoot",
+          "ref": "work-tasks"
+        },
+        {
+          "kind": "journey",
+          "ref": "J1"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "39b9c5690b46a41fb3541b4ab92882dca7c774e9",
+        "date": "2026-07-07T08:41:01.512Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "[data-term=\"tasks\"]",
-      "state": "ingame"
+      "state": "ingame",
+      "notes": "Live-proven 2026-07-07T08:41:01.512Z: click→'TASK BOARD' opened. Evidence .uiatlas/world-dock-evidence/label-law.json. Journey J1 asserts board rows == task store (board/rows-match-task-store), the truthfulness guard. Shoot state work-tasks."
     },
     {
       "id": "ui/world/data-term-updates",
       "kind": "ui",
       "area": "world",
       "name": "↑UPDATESversion & release notes",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Opens the UPDATE CENTER — the app version + release-notes surface.",
+      "promise": "Clicking it opens a window titled 'UPDATE CENTER' showing the current version and release notes.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/index.html",
+          "frontend/app/stationui.js",
+          "frontend/app/navdock.js"
+        ],
         "events": []
       },
       "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "39b9c5690b46a41fb3541b4ab92882dca7c774e9",
+        "date": "2026-07-07T08:41:01.512Z"
+      },
+      "findings": [
+        "perf-world-updates-uncovered"
+      ],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "[data-term=\"updates\"]",
-      "state": "ingame"
+      "state": "ingame",
+      "notes": "Live-proven 2026-07-07T08:41:01.512Z: click→'UPDATE CENTER' opened, body 110 chars. Evidence .uiatlas/world-dock-evidence/label-law.json. Label 'UPDATES' prefix of title. NOT perfected: rubric #7 fails — no shoot state, no UI test guards this dock item's promise (see finding perf-world-updates-uncovered)."
     },
     {
       "id": "ui/world/file-import",
