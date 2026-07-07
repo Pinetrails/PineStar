@@ -4939,7 +4939,7 @@ const World = (() => {
     let html;
     const sep = ' ▸ ';
     const i = text.indexOf(sep);
-    const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const esc = s => U.esc(s == null ? '' : s);   // one complete impl (escapes & < > " ' — quote-safe if this ever moves into an attr)
     if (i > 0) {
       const nm = esc(text.slice(0, i)), rest = esc(text.slice(i + sep.length));
       const style = suit ? ' style="color:' + suit + '"' : '';
