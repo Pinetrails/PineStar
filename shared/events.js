@@ -44,7 +44,11 @@
     'agent.run.end': obj(['agentId', 'runId', 'reason', 'turns', 'usd'], {
       agentId: str, runId: str,
       reason: { enum: ['done', 'max_iters', 'budget', 'cancelled', 'error', 'refusal'] },
-      turns: int, usd: num
+      turns: int, usd: num,
+      // ADDITIVE (optional, Lane 5): WHY the provider stopped when it was a truncation/policy cut. Present ONLY
+      // for the non-clean stops so the frontend can render a "cut short" recap instead of a delivered crate; a
+      // clean run omits it entirely (old payloads stay valid — not required, no additionalProperties:false).
+      finishReason: { enum: ['length', 'content_filter'] }
     }),
     'agent.run.error': obj(['agentId', 'runId', 'message', 'transient'], {
       agentId: str, runId: str, message: str, transient: bool

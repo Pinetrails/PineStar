@@ -187,12 +187,16 @@
       unpricedUsage.push({ model: modelId || '(unknown)', tokensIn: c.tokensIn || 0, tokensOut: c.tokensOut || 0 });
     }
     function end(reason) {
-      emit('agent.run.end', { agentId, runId, reason, turns, usd: spentUsd });
+      // A3/Lane5: surface WHY the model stopped when it's a truncation/policy stop, ADDITIVELY — on BOTH the return
+      // value (index.js gates reflection/study/skills on it) AND the agent.run.end event (the frontend renders a
+      // "cut short" recap instead of a delivered crate). The event field is now schema-declared (optional) so old
+      // clean-run payloads — which omit it — stay valid. Only the non-clean reasons are worth surfacing.
+      const cut = (lastFinishReason === 'length' || lastFinishReason === 'content_filter') ? lastFinishReason : null;
+      const endPayload = { agentId, runId, reason, turns, usd: spentUsd };
+      if (cut) endPayload.finishReason = cut;
+      emit('agent.run.end', endPayload);
       const out = { reason, messages, usd: spentUsd, turns, tokens: spentTokens, model, unpricedUsage: unpricedUsage.slice() };
-      // A3: surface WHY the model stopped when it's a truncation/policy stop, ADDITIVELY (the frontend + index.js
-      // gate on reason==='done'; finishReason is an extra field on the return value, never a new run-end reason,
-      // never on the schema-frozen agent.run.end event). Only the non-clean reasons are worth surfacing.
-      if (lastFinishReason === 'length' || lastFinishReason === 'content_filter') out.finishReason = lastFinishReason;
+      if (cut) out.finishReason = cut;
       return out;
     }
 
