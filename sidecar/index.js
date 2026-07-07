@@ -5847,7 +5847,6 @@ async function handleStt(req, res) {
   const ok = (text) => { res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify({ text: String(text || '') })); };
   const degrade = (reason) => { console.warn('[stt] →', reason); res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify({ text: '', reason })); };
 
-  const u = new URL(req.url, 'http://127.0.0.1');
   const ctReq = String(req.headers['content-type'] || '').toLowerCase();
   let audioB64 = '', format = '', key = '';
   try {
@@ -5862,8 +5861,10 @@ async function handleStt(req, res) {
       // derive format from the content-type: audio/webm → webm, audio/wav|x-wav → wav, audio/ogg → ogg
       const m = ctReq.match(/audio\/(?:x-)?([a-z0-9]+)/);
       format = m ? m[1] : '';
-      // key travels out-of-band for the raw path: query ?key= or an X-OpenRouter-Key header
-      key = String(u.searchParams.get('key') || req.headers['x-openrouter-key'] || '').trim();
+      // key travels out-of-band for the raw path via the X-OpenRouter-Key HEADER only. A query ?key= was removed
+      // (audit P2): URLs land in access logs / proxy history / referrers, so a key on the query string is a leak.
+      // The desktop path sends no key at all (it lives in runtimeKey below); the browser recorder sends the header.
+      key = String(req.headers['x-openrouter-key'] || '').trim();
     }
   } catch (e) { return degrade('body: ' + ((e && e.message) || e)); }
 
