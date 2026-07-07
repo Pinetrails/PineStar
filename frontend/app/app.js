@@ -1643,7 +1643,12 @@ const App = (() => {
     SFX.boot(); SFX.open();
     stopCodexPoll();   // leaving the connect screen — drop any in-flight sign-in poll
     const model = el('in-model').value.trim();
-    const name = (el('in-name').value.trim() || 'AGENT').toUpperCase().slice(0, 18);   // single funnel for agent.name → honor the 18-char design cap (covers the roster-pick path too)
+    // single funnel for agent.name → honor the 18-char design cap (covers the roster-pick path too).
+    // A blank/sentinel name mints a station codename (never the bland 'AGENT'), matching the awakening
+    // speaker — dialogue.js owns the generator so both surfaces stay consistent.
+    let rawName = el('in-name').value.trim();
+    if (typeof Dialogue !== 'undefined' && Dialogue.isUnnamed && Dialogue.isUnnamed(rawName)) rawName = Dialogue.codename();
+    const name = (rawName || 'AGENT').toUpperCase().slice(0, 18);
     const msg = el('connect-msg'); msg.className = 'msg';
     if (!model) {
       // COLD-START: never strand a beginner on an empty required field. Pre-fill a sensible default for the
