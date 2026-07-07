@@ -561,6 +561,7 @@ const Harness = (() => {
   const memoryRestore = o => memoryMutate('declined/restore', o);   // undo a discard — remove one entry from the reject-list
 
   return {
+    isDesktop: () => DESKTOP,   // lets the UI tell a desktop keychain-store failure (token saved locally) from a browser no-op
     getKey, setKey, storeChannelToken, getModel, setModel, getProv, setProv, getBaseUrl, setBaseUrl, getReasoningEffort, setReasoningEffort, normalizeReasoningEffort, init, configured, hasStoredCredential,
     listModels, priceOf, contextLimitOf, contextState, chat, cancel, haltAll, consent, summonAck, notebook,
     memoryProposals, memoryTurnin, memoryVeto, memoryReset, memoryRecords, memoryDeclined, memoryRestore, memoryPin, memoryEdit, memoryForget,
