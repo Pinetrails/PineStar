@@ -118,7 +118,7 @@ function chatFixture() {
     const { seq, emit } = setup();
     const provider = makeReplayProvider({ turns: [[{ type: 'done', finishReason: 'stop' }]] });
     const res = await runAgentLoop({ messages: [{ role: 'user', content: 'x' }], provider, emit, cost: makeCostEngine({ priceOf: provider.priceOf }), model: 'replay/model', limits: { maxIters: 1, grace: false } });
-    A.eq(res.reason, 'done', 'empty no-tool turn still ends cleanly');
+    A.eq(res.reason, 'empty', 'a final turn with no tool call AND no text ends reason:empty (audit 1.7 — distinct from a clean done so a degraded provider streaming empties is not read as a delivery)');
     A.eq(res.turns, 0, 'empty no-tool turn is refunded to the turn starting count');
     A.eq(seq.find(e => e.name === 'agent.run.end').payload.turns, 0, 'run.end reports the refunded effective turn count');
   }
@@ -134,7 +134,7 @@ function chatFixture() {
     ] });
     const res = await runAgentLoop({ messages: [{ role: 'user', content: 'x' }], provider, emit, cost: makeCostEngine({ priceOf: provider.priceOf }),
       model: 'replay/model', limits: { maxIters: 2, grace: false }, dispatch: (c, ctx) => reg.dispatch(c, ctx), capCtx: openCtx() });
-    A.eq(res.reason, 'done', 'productive turn followed by empty final turn ends cleanly');
+    A.eq(res.reason, 'empty', 'a productive turn followed by an empty final turn ends reason:empty — the LAST turn produced nothing (audit 1.7)');
     A.eq(res.turns, 1, 'refund restores only the empty turn, not the earlier productive turn');
   }
 
