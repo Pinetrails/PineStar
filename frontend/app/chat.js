@@ -1241,7 +1241,21 @@ const Chat = (() => {
     }
   }
   // render the rate-the-work control into `host` (a span/div). onSettle fires after the verdict flashes.
+  const WORKRATE_COACH_KEY = 'starnet.workrate.seen';
   function workRateControl(host, agentId, runId, onSettle) {
+    // one-time explainer: the FIRST rate surface a Commander ever sees gets one honest line about what a
+    // verdict does (👍 mints size-weighted XP + raises satisfaction/trust; 👌/👎 only move the satisfaction
+    // meter, never XP, never a penalty — see xp.js scoreEvent/verdictQuality). Retired permanently after one
+    // render via the house one-shot pattern (cf. navcoach.seen / modeldock.seen). Fail-open — a storage
+    // block just shows the line again next time, never breaks the control.
+    let coached = false;
+    try { coached = localStorage.getItem(WORKRATE_COACH_KEY) === '1'; } catch (_) {}
+    if (!coached) {
+      const hint = document.createElement('span'); hint.className = 'work-rate-hint';
+      hint.textContent = 'rating trains your agent — 👍 earns XP and builds trust';
+      host.appendChild(hint);
+      try { localStorage.setItem(WORKRATE_COACH_KEY, '1'); } catch (_) {}
+    }
     const lbl = document.createElement('span'); lbl.className = 'work-rate-label';
     lbl.textContent = '◈ rate ' + name + '’s work — ';
     const btns = document.createElement('span'); btns.className = 'consent-btns';
@@ -4264,7 +4278,7 @@ const Chat = (() => {
   function endInterview() {
     interview = null;
     clearChoices();
-    if (input) input.placeholder = 'speak to your agent…';
+    if (input) input.placeholder = 'speak to your agent… ( / for commands )';
     status('online');
     // a memory deck that arrived MID-interview queued behind the focused flow — drain it now that the
     // question is answered (short hold so the interview's closing line lands first, not under the deck).
