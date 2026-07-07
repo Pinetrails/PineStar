@@ -94,17 +94,24 @@ skins (14), starnet-build-skills-crop, starnet-security-check, starnet-spend-mod
 truth-chrome-instruments (tonight's; its orchestrator tears down).
 Rule stands: land it or delete it — an unmerged branch is a claim nobody verified.
 
-## CLAIMED — in flight 2026-07-07 (Fable orchestrator session)
+## DONE 2026-07-07 — timeout + task board fixes (Fable session) ✅
 
-- **provider-connect-timeout** (`agent/provider-connect-timeout`): `timeouts.connectSignal`
-  passes `AbortSignal.timeout(30s)` to fetch, which aborts the RESPONSE BODY mid-stream —
-  any turn streaming >30s dies with "The operation was aborted due to timeout" (killed
-  Andrew's tetris run 2026-07-07, codex/gpt-5.5). Fix: disarmable connect guard (timer
-  cleared at headers), all 5 adapters + regression tests.
-- **taskboard-truth** (`agent/taskboard-truth`): every non-General workstream floods the
-  TASK BOARD's IN PROGRESS forever (chat sessions, summon homes, cron autosessions all
-  auto-advance on appendRun, only human SHIP exits). Fix: `kind: task|chat` on workstreams,
-  board shows tasks only, truthful running/done chip on active cards.
+- **provider-connect-timeout** MERGED 46e1cf22: `connectSignal` passed
+  `AbortSignal.timeout(30s)` to fetch, which aborts the RESPONSE BODY mid-stream — any turn
+  streaming >30s died with "The operation was aborted due to timeout" (killed Andrew's
+  tetris run, codex/gpt-5.5). Fixed: `timeouts.connectGuard` (timer disarmed at headers),
+  adopted in all 5 adapters; idle watchdog default 120s→300s (env knob kept); regression
+  tests (stream-past-connect-window survives, connect expiry = retryable 'timeout', user
+  cancel = AbortError). Gate green fast+http. NOT live-run-smoked (transport seam, unit+e2e
+  proven).
+- **taskboard-truth** MERGED 3822e212: board flooded with every session in IN PROGRESS
+  forever. Fixed: `kind: task|chat` on workstreams (board-add/recipe/goal//background =
+  task; summon/chat/cron sessions = chat, off the board); legacy saves inferred by lane
+  (todo/shipped→task, active→chat — old session flood self-clears); truthful RUNNING /
+  DONE—REVIEW & SHIP chip on active cards via Channels.isBusy. SHIP stays human-only.
+  Live DOM round-trip NOT done (predicate proven against real module + dev seed).
+- Discovered in passing: sidecar/loop.js has a stray NUL byte (~offset 32377) — git/grep
+  treat it as BINARY. Fix queued as a spawned task (byte-strip only, semantics untouched).
 
 ## Parked product decisions (need Andrew, don't guess)
 
