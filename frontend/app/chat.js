@@ -240,9 +240,9 @@ const Chat = (() => {
     if (!card) return;
     card.classList.remove('cp-live');
     presenceCurTool = null;
-    const isErr = !!opts.error, isStop = !!opts.stopped || (opts.endReason && opts.endReason !== 'done');
+    const isErr = !!opts.error, isStop = !!opts.stopped || (opts.endReason && opts.endReason !== 'done') || !!opts.cutShort;
     card.classList.add('resolved'); if (isErr) card.classList.add('err'); else if (isStop) card.classList.add('stopped');
-    let label = isErr ? '■ RUN FAILED' : isStop ? '■ RUN STOPPED' : '■ RUN COMPLETE';
+    let label = isErr ? '■ RUN FAILED' : opts.cutShort ? '■ CUT SHORT' : isStop ? '■ RUN STOPPED' : '■ RUN COMPLETE';
     const bits = [];
     if (dur) bits.push(dur);
     if (typeof opts.steps === 'number' && opts.steps > 0) bits.push(opts.steps + (opts.steps === 1 ? ' step' : ' steps'));
@@ -3878,7 +3878,7 @@ const Chat = (() => {
       if (chunk.trim()) { Voice.speakChunk(chunk, name); spokenIdx += cut; }
     };
     try {
-      const { text: reply, error, endReason } = await Harness.chat({
+      const { text: reply, error, endReason, finishReason } = await Harness.chat({
         system: sys, messages: historyWindow(ws), agentId: ws.agentId || 'agent', isTask, recurring, signal: ac.signal, streamId: ws.id,
         placed: (typeof World !== 'undefined' && World.heroCaps) ? World.heroCaps(ws.agentId || 'agent') : [],   // THE MOAT: this run's TOOL reach = the agent's REAL placed props (dish→web · cabinet→files · workbench→terminal · …); compute is the freebie
         stationPlaced: (typeof World !== 'undefined' && World.stationCaps) ? World.stationCaps() : [],   // Class Loadouts (shared-gear): station-wide gear for SKILL availability — a desk-only specialist still gets its class skills when the STATION has the gear (tools stay room-scoped via `placed`)
@@ -3941,10 +3941,15 @@ const Chat = (() => {
         finalReply = replyText;
         titleOk = !!replyText.trim();   // a real, non-empty reply landed → this stream is eligible for a summary title
         if (replyText.trim()) ws.history.push({ role: 'assistant', content: replyText });   // never persist an empty turn
+        // Lane 5 (truthful telemetry): a reply the PROVIDER cut off — finishReason 'length' (hit max_tokens
+        // mid-thought) or 'content_filter' (output filtered) — is an AMPUTATED turn even though endReason==='done'.
+        // It must NOT ship a "◈ delivered" crate / XP / workitem.delivered as if it were complete. Treat it like a
+        // non-clean stop for the delivery decision (but keep the partial text above — it's real, just incomplete).
+        const cutShort = finishReason === 'length' || finishReason === 'content_filter';
         // GOAL LOOP: a clean turn (done / no endReason) with a real reply is judgeable. A max_iters/budget/refusal
-        // stop is NOT — the agent didn't get to finish its thought, so re-judging would be premature. The judge runs
-        // in the finally (after teardown) so it never delays this turn's unwind.
-        if ((!endReason || endReason === 'done') && replyText.trim() && typeof GoalLoop !== 'undefined' && goalOf(ws)) goalJudgeReply = replyText;
+        // stop — or a provider-truncated reply — is NOT — the agent didn't get to finish its thought, so re-judging
+        // would be premature. The judge runs in the finally (after teardown) so it never delays this turn's unwind.
+        if ((!endReason || endReason === 'done') && !cutShort && replyText.trim() && typeof GoalLoop !== 'undefined' && goalOf(ws)) goalJudgeReply = replyText;
         // the stop-reason is part of the WORK log → close the live paragraph, then drop it in chronologically.
         if (endReason && endReason !== 'done') {
           if (isActiveWs(ws)) breakLive(), toolLine('⏹ ' + (endReason === 'max_iters' ? 'reached the step limit — say "continue" to keep going'
@@ -3952,6 +3957,12 @@ const Chat = (() => {
             : endReason === 'cancelled' ? (interrupted.has(ws.id) ? 'stopped' : 'run cancelled')
             : 'stopped (' + endReason + ')'));
           if (typeof StationUI !== 'undefined') StationUI.notify('run stopped: ' + endReason, 'warn');
+        } else if (cutShort) {
+          // distinct honest "cut short" recap: the reply is truncated/filtered, not a clean delivery.
+          if (isActiveWs(ws)) breakLive(), toolLine('⏹ ' + (finishReason === 'content_filter'
+            ? 'reply cut short — the model\'s output was filtered'
+            : 'reply cut short — hit the response length limit; say "continue" for the rest'));
+          if (typeof StationUI !== 'undefined') StationUI.notify('reply cut short: ' + finishReason, 'warn');
         }
         if (isActiveWs(ws) && activeLiveRow) activeLiveRow.done();
         // R1 MID-TASK FORK: the agent may have ended this reply with one FORK marker (earned only while the
@@ -3968,17 +3979,20 @@ const Chat = (() => {
         // profile/XP ship-signal + the "tasks shipped" milestone. Only on done/undefined — a max_iters/budget/
         // error/refusal stop is an unproductive run (the agent.run.end SLAG path owns that); abort/hard-error never
         // reach this branch. (Not gated on isActiveWs: a background stream's work still ships.)
-        if (wiPlaced && (!endReason || endReason === 'done')) wiEmit('workitem.delivered', { workitemId: wiId, finalQueueId: 'outbox', agentId: wiAid, box: '', ms: Date.now() - wiPlacedTs, ts: Date.now() });
+        if (wiPlaced && (!endReason || endReason === 'done') && !cutShort) wiEmit('workitem.delivered', { workitemId: wiId, finalQueueId: 'outbox', agentId: wiAid, box: '', ms: Date.now() - wiPlacedTs, ts: Date.now() });
         // stash this run's REAL work so the post-run "rate the work" beat can size the XP honestly + gate on real work.
+        // Lane 5: a cut-short run (provider truncated/filtered) is NOT rateable work — leaving no runWork stash makes
+        // maybeStandaloneRate return 'never', so no XP is ever minted for an amputated reply. runCost is still computed
+        // for the honest presence/recap readout.
         let runCost = 0;
-        if (thisRunId) { runCost = Math.max(0, (Harness.totals().cost || 0) - (before.cost || 0)); runWork.set(thisRunId, { toolsOk: runToolsOk, delivered: runDeliv, cost: runCost, agentId: ws.agentId || 'agent' }); if (runWork.size > 60) runWork.delete(runWork.keys().next().value); }
+        if (thisRunId) { runCost = Math.max(0, (Harness.totals().cost || 0) - (before.cost || 0)); if (!cutShort) { runWork.set(thisRunId, { toolsOk: runToolsOk, delivered: runDeliv, cost: runCost, agentId: ws.agentId || 'agent' }); if (runWork.size > 60) runWork.delete(runWork.keys().next().value); } }
         // P3.2 — CLAIM this lead run's dispatched crew (workers whose forwarded run.end fell inside its live window)
         // so a 👍 verdict can split its XP mint honestly. A run that dispatched no crew records nothing (empty list),
         // and the split falls back to lead-only — no fabricated attribution. Only a HERO lead run has crew to claim.
         if (thisRunId && (ws.agentId || 'agent') === 'agent') { const crew = claimCrew(runStartedAt); if (crew.length) { runCrew.set(thisRunId, crew); if (runCrew.size > 60) runCrew.delete(runCrew.keys().next().value); } }
         // COMMS-PREMIUM: resolve the presence card into a compact summary. steps = real successful tool rounds,
         // cost = this run's REAL usd delta — both truthful (shown only when > 0), never fabricated.
-        if (isActiveWs(ws)) resolvePresence(ws, { endReason: endReason, steps: runToolsOk, cost: runCost });
+        if (isActiveWs(ws)) resolvePresence(ws, { endReason: endReason, cutShort: cutShort, steps: runToolsOk, cost: runCost });
         // G5 SPECTACLE — snapshot the clip ring's tail (the run's last ~10s of floor) for THIS run so the recap
         // card's ⏺ affordance can mint it. Taken at run end while the ring is freshest; disarm happens in finally.
         if (thisRunId && isTask) { const r = clipRecorder; const fr = (r && r.frames) ? r.frames() : []; if (fr.length) { runClip.set(thisRunId, fr); if (runClip.size > 8) runClip.delete(runClip.keys().next().value); } }

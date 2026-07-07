@@ -340,7 +340,7 @@ const Harness = (() => {
 
     const reader = res.body.getReader();
     const dec = new TextDecoder();
-    let buf = '', full = '', lastUsage = null, runId = null, errMsg = null, endReason = null;
+    let buf = '', full = '', lastUsage = null, runId = null, errMsg = null, endReason = null, finishReason = null;
 
     for (;;) {
       const { value, done } = await reader.read();
@@ -393,7 +393,9 @@ const Harness = (() => {
           case 'agent.run.error': if (!payload.runId || payload.runId === runId) errMsg = payload.message; break;   // the lead's own error (a worker's rides the tool result)
           case 'agent.run.end':
             if (payload.runId) delete runModels[payload.runId];
-            if (!payload.runId || payload.runId === runId) endReason = payload.reason;
+            // latch the lead's stop reason AND (Lane 5, additive) WHY it stopped when the provider truncated/
+            // filtered it — the caller renders a "cut short" recap instead of a delivered crate for those.
+            if (!payload.runId || payload.runId === runId) { endReason = payload.reason; finishReason = payload.finishReason || null; }
             break;   // the lead's own end, not a forwarded worker's
         }
       }
@@ -401,8 +403,8 @@ const Harness = (() => {
     totals.calls++;
     // surface the error to the caller (do NOT swallow it just because some text streamed first) —
     // a network/fetch failure still throws below; this is for in-band run errors / capdenied.
-    if (errMsg) return { text: full, usage: lastUsage, runId, error: errMsg, endReason };
-    return { text: full, usage: lastUsage, runId, endReason };
+    if (errMsg) return { text: full, usage: lastUsage, runId, error: errMsg, endReason, finishReason };
+    return { text: full, usage: lastUsage, runId, endReason, finishReason };
   }
 
   /* Read-only fetch of an agent's notebook (its memory.md) from the sidecar. The agent writes these notes
