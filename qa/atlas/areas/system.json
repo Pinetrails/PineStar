@@ -1,6 +1,6 @@
 {
   "area": "system",
-  "updatedAt": "2026-07-07T21:06:49.519Z",
+  "updatedAt": "2026-07-07T22:40:51.000Z",
   "entries": [
     {
       "id": "state/sys-logbook",
@@ -61,14 +61,14 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
-      "notes": "Live CDP :8967 — both cards render, token inputs type=password, status pills read \"○ not connected\" matching /api/channels/*/status connected:false. Evidence channel-status.json."
+      "notes": "Live CDP :8967 — both cards render, token inputs type=password, status pills read \"○ not connected\" matching /api/channels/*/status connected:false. Evidence channel-status.json. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "state/sys-notifs",
@@ -94,8 +94,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [
         "316baa58"
@@ -103,7 +103,7 @@
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
-      "notes": "Live CDP :8967 — window lists 2 items, chip 1->2 on TEST NOTIFICATION, 2->\"\" on MARK ALL READ. TRUTH holds. Held at audited: no committed machine assertion for the chip flow (finding 316baa58). Evidence notif-flow.json."
+      "notes": "Live CDP :8967 — window lists 2 items, chip 1->2 on TEST NOTIFICATION, 2->\"\" on MARK ALL READ. TRUTH holds. Held at audited: no committed machine assertion for the chip flow (finding 316baa58). Evidence notif-flow.json. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "state/sys-rewind",
@@ -134,14 +134,14 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
-      "notes": "Live CDP :8967 — list shows honest \"NO RESTORE POINTS YET\" matching /api/checkpoint {enabled:false,snapshots:[]} and empty .checkpoints/ on disk. Confirm door = stationui.js:4288-4300 (5s armed two-step); no restore fired. Evidence channel-status.json#restore_points_window."
+      "notes": "Live CDP :8967 — list shows honest \"NO RESTORE POINTS YET\" matching /api/checkpoint {enabled:false,snapshots:[]} and empty .checkpoints/ on disk. Confirm door = stationui.js:4288-4300 (5s armed two-step); no restore fired. Evidence channel-status.json#restore_points_window. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "state/sys-settings",
@@ -168,14 +168,14 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
-      "notes": "Live CDP :8967 — SETTINGS opens, PROVIDERS tab active by default, tabs switch (system=adv knobs value 40, notifs=ntp toggles, appearance=theme). Evidence .uiatlas/system2-evidence/settings-dom.json."
+      "notes": "Live CDP :8967 — SETTINGS opens, PROVIDERS tab active by default, tabs switch (system=adv knobs value 40, notifs=ntp toggles, appearance=theme). Evidence .uiatlas/system2-evidence/settings-dom.json. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/adv-consenttimeoutms",
@@ -207,8 +207,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
@@ -216,7 +216,7 @@
       "missing": false,
       "selector": "#adv-consentTimeoutMs",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — #adv-consentTimeoutMs renders type=number; GET returned effective for consentTimeoutMs, maxIters value=40 matches API. Evidence api-contracts.json."
+      "notes": "Live CDP :8967 — #adv-consentTimeoutMs renders type=number; GET returned effective for consentTimeoutMs, maxIters value=40 matches API. Evidence api-contracts.json. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/adv-crontickms",
@@ -248,8 +248,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
@@ -257,7 +257,7 @@
       "missing": false,
       "selector": "#adv-cronTickMs",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — #adv-cronTickMs renders type=number; GET returned effective for cronTickMs, maxIters value=40 matches API. Evidence api-contracts.json."
+      "notes": "Live CDP :8967 — #adv-cronTickMs renders type=number; GET returned effective for cronTickMs, maxIters value=40 matches API. Evidence api-contracts.json. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/adv-maxconcurrentagents",
@@ -289,8 +289,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
@@ -298,7 +298,7 @@
       "missing": false,
       "selector": "#adv-maxConcurrentAgents",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — #adv-maxConcurrentAgents renders type=number; GET returned effective for maxConcurrentAgents, maxIters value=40 matches API. Evidence api-contracts.json."
+      "notes": "Live CDP :8967 — #adv-maxConcurrentAgents renders type=number; GET returned effective for maxConcurrentAgents, maxIters value=40 matches API. Evidence api-contracts.json. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/adv-maxiters",
@@ -330,8 +330,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
@@ -339,7 +339,7 @@
       "missing": false,
       "selector": "#adv-maxIters",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — #adv-maxIters renders type=number; GET returned effective for maxIters, maxIters value=40 matches API. Evidence api-contracts.json."
+      "notes": "Live CDP :8967 — #adv-maxIters renders type=number; GET returned effective for maxIters, maxIters value=40 matches API. Evidence api-contracts.json. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/adv-reset",
@@ -371,8 +371,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.412Z",
@@ -380,7 +380,7 @@
       "missing": false,
       "selector": "#adv-reset",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — #adv-reset present; same /api/runtime/knobs route (null clears overrides). Covered by settings-p1 tests."
+      "notes": "Live CDP :8967 — #adv-reset present; same /api/runtime/knobs route (null clears overrides). Covered by settings-p1 tests. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/adv-save",
@@ -412,8 +412,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.412Z",
@@ -421,7 +421,7 @@
       "missing": false,
       "selector": "#adv-save",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — #adv-save present; POST path proven by GET round-trip + settings-p1-backend.test.js (resolveKnob env>saved>default). No override written in-audit."
+      "notes": "Live CDP :8967 — #adv-save present; POST path proven by GET round-trip + settings-p1-backend.test.js (resolveKnob env>saved>default). No override written in-audit. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/aria-close-channels",
@@ -452,8 +452,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.412Z",
@@ -461,7 +461,7 @@
       "missing": false,
       "selector": "button[aria-label=\"Close CHANNELS\"]",
       "state": "sys-messaging",
-      "notes": "Live CDP :8967 — button[aria-label=\"Close CHANNELS\"] present on the open window (openTerm chrome, stationui.js:384)."
+      "notes": "Live CDP :8967 — button[aria-label=\"Close CHANNELS\"] present on the open window (openTerm chrome, stationui.js:384). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/aria-close-logbook",
@@ -484,8 +484,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.412Z",
@@ -493,7 +493,7 @@
       "missing": false,
       "selector": "button[aria-label=\"Close LOGBOOK\"]",
       "state": "sys-logbook",
-      "notes": "Live CDP :8967 — button[aria-label=\"Close LOGBOOK\"] present on the open window (openTerm chrome, stationui.js:384)."
+      "notes": "Live CDP :8967 — button[aria-label=\"Close LOGBOOK\"] present on the open window (openTerm chrome, stationui.js:384). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/aria-close-notifications",
@@ -516,8 +516,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.412Z",
@@ -525,7 +525,7 @@
       "missing": false,
       "selector": "button[aria-label=\"Close NOTIFICATIONS\"]",
       "state": "sys-notifs",
-      "notes": "Live CDP :8967 — button[aria-label=\"Close NOTIFICATIONS\"] present on the open window (openTerm chrome, stationui.js:384)."
+      "notes": "Live CDP :8967 — button[aria-label=\"Close NOTIFICATIONS\"] present on the open window (openTerm chrome, stationui.js:384). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/aria-close-restore-points",
@@ -552,8 +552,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.412Z",
@@ -561,7 +561,7 @@
       "missing": false,
       "selector": "button[aria-label=\"Close RESTORE POINTS\"]",
       "state": "sys-rewind",
-      "notes": "Live CDP :8967 — button[aria-label=\"Close RESTORE POINTS\"] present on the open window (openTerm chrome, stationui.js:384)."
+      "notes": "Live CDP :8967 — button[aria-label=\"Close RESTORE POINTS\"] present on the open window (openTerm chrome, stationui.js:384). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/aria-close-settings",
@@ -592,8 +592,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
@@ -601,7 +601,7 @@
       "missing": false,
       "selector": "button[aria-label=\"Close SETTINGS\"]",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — button[aria-label=\"Close SETTINGS\"] present on the open window (openTerm chrome, stationui.js:384)."
+      "notes": "Live CDP :8967 — button[aria-label=\"Close SETTINGS\"] present on the open window (openTerm chrome, stationui.js:384). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/aria-minimize-channels",
@@ -632,8 +632,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.412Z",
@@ -641,7 +641,7 @@
       "missing": false,
       "selector": "button[aria-label=\"Minimize CHANNELS\"]",
       "state": "sys-messaging",
-      "notes": "Live CDP :8967 — button[aria-label=\"Minimize CHANNELS\"] present (openTerm chrome, stationui.js:379)."
+      "notes": "Live CDP :8967 — button[aria-label=\"Minimize CHANNELS\"] present (openTerm chrome, stationui.js:379). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/aria-minimize-logbook",
@@ -664,8 +664,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.412Z",
@@ -673,7 +673,7 @@
       "missing": false,
       "selector": "button[aria-label=\"Minimize LOGBOOK\"]",
       "state": "sys-logbook",
-      "notes": "Live CDP :8967 — button[aria-label=\"Minimize LOGBOOK\"] present (openTerm chrome, stationui.js:379)."
+      "notes": "Live CDP :8967 — button[aria-label=\"Minimize LOGBOOK\"] present (openTerm chrome, stationui.js:379). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/aria-minimize-notifications",
@@ -696,8 +696,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.412Z",
@@ -705,7 +705,7 @@
       "missing": false,
       "selector": "button[aria-label=\"Minimize NOTIFICATIONS\"]",
       "state": "sys-notifs",
-      "notes": "Live CDP :8967 — button[aria-label=\"Minimize NOTIFICATIONS\"] present (openTerm chrome, stationui.js:379)."
+      "notes": "Live CDP :8967 — button[aria-label=\"Minimize NOTIFICATIONS\"] present (openTerm chrome, stationui.js:379). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/aria-minimize-restore-points",
@@ -732,8 +732,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.412Z",
@@ -741,7 +741,7 @@
       "missing": false,
       "selector": "button[aria-label=\"Minimize RESTORE POINTS\"]",
       "state": "sys-rewind",
-      "notes": "Live CDP :8967 — button[aria-label=\"Minimize RESTORE POINTS\"] present (openTerm chrome, stationui.js:379)."
+      "notes": "Live CDP :8967 — button[aria-label=\"Minimize RESTORE POINTS\"] present (openTerm chrome, stationui.js:379). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/aria-minimize-settings",
@@ -772,8 +772,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
@@ -781,7 +781,7 @@
       "missing": false,
       "selector": "button[aria-label=\"Minimize SETTINGS\"]",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — button[aria-label=\"Minimize SETTINGS\"] present (openTerm chrome, stationui.js:379)."
+      "notes": "Live CDP :8967 — button[aria-label=\"Minimize SETTINGS\"] present (openTerm chrome, stationui.js:379). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/aria-search-settings",
@@ -804,8 +804,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
@@ -813,7 +813,7 @@
       "missing": false,
       "selector": "input[aria-label=\"Search settings\"]",
       "state": "sys-settings",
-      "notes": "Live: input[aria-label=\"Search settings\"] rendered by mountConsole({search:true}). Held at audited: search-filter behavior not machine-asserted."
+      "notes": "Live: input[aria-label=\"Search settings\"] rendered by mountConsole({search:true}). Held at audited: search-filter behavior not machine-asserted. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/bg-global",
@@ -841,8 +841,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
@@ -850,7 +850,7 @@
       "missing": false,
       "selector": "#bg-global",
       "state": "sys-settings",
-      "notes": "Budget cap field in the BUDGET tab; the placeholder truthfully says \"not yet saved here\" when unset. Held at audited: the specific field save is not independently machine-asserted (bg-save is)."
+      "notes": "Budget cap field in the BUDGET tab; the placeholder truthfully says \"not yet saved here\" when unset. Held at audited: the specific field save is not independently machine-asserted (bg-save is). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/bg-peragent",
@@ -878,8 +878,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
@@ -887,7 +887,7 @@
       "missing": false,
       "selector": "#bg-perAgent",
       "state": "sys-settings",
-      "notes": "Budget cap field in the BUDGET tab; the placeholder truthfully says \"not yet saved here\" when unset. Held at audited: the specific field save is not independently machine-asserted (bg-save is)."
+      "notes": "Budget cap field in the BUDGET tab; the placeholder truthfully says \"not yet saved here\" when unset. Held at audited: the specific field save is not independently machine-asserted (bg-save is). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/bg-perday",
@@ -915,8 +915,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "43e860b254af28741405216c2259a2226d106be7",
-        "date": "2026-07-07T21:06:49.519Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
@@ -924,7 +924,7 @@
       "missing": false,
       "selector": "#bg-perDay",
       "state": "sys-settings",
-      "notes": "Live: input painted \"40\" == /api/budget/status envDefaults.perDay, badge \"environment default\" (saved:{}) — truthful. Save round-trip perDay=7 -> saved:{perDay:7}, day.cap:7; reset -> saved:{}. Evidence .uiatlas/system-evidence/budget-save.json + roundtrip-out.json."
+      "notes": "Live: input painted \"40\" == /api/budget/status envDefaults.perDay, badge \"environment default\" (saved:{}) — truthful. Save round-trip perDay=7 -> saved:{perDay:7}, day.cap:7; reset -> saved:{}. Evidence .uiatlas/system-evidence/budget-save.json + roundtrip-out.json. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/bg-perrun",
@@ -952,8 +952,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "43e860b254af28741405216c2259a2226d106be7",
-        "date": "2026-07-07T21:06:49.519Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
@@ -961,7 +961,7 @@
       "missing": false,
       "selector": "#bg-perRun",
       "state": "sys-settings",
-      "notes": "Backend /api/budget/status returns perRun:3 (env default), painted into #bg-perRun. Save/reset round-trip proven via bg-save. Evidence .uiatlas/system-evidence/budget-status.json."
+      "notes": "Backend /api/budget/status returns perRun:3 (env default), painted into #bg-perRun. Save/reset round-trip proven via bg-save. Evidence .uiatlas/system-evidence/budget-status.json. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/bg-reset",
@@ -988,8 +988,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "43e860b254af28741405216c2259a2226d106be7",
-        "date": "2026-07-07T21:06:49.519Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
@@ -997,7 +997,7 @@
       "missing": false,
       "selector": "#bg-reset",
       "state": "sys-settings",
-      "notes": "Live: after saving perDay=7 then POST nulls -> saved:{} (all env defaults). resetBtn display gated on anySaved (line 2412). Evidence .uiatlas/system-evidence/budget-save.json."
+      "notes": "Live: after saving perDay=7 then POST nulls -> saved:{} (all env defaults). resetBtn display gated on anySaved (line 2412). Evidence .uiatlas/system-evidence/budget-save.json. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/bg-save",
@@ -1024,8 +1024,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "43e860b254af28741405216c2259a2226d106be7",
-        "date": "2026-07-07T21:06:49.519Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
@@ -1033,7 +1033,7 @@
       "missing": false,
       "selector": "#bg-save",
       "state": "sys-settings",
-      "notes": "Live POST /api/budget/caps {perDay:7} -> {saved:{perDay:7}, day.cap:7}, re-read confirms; reset clears. Evidence .uiatlas/system-evidence/budget-save.json."
+      "notes": "Live POST /api/budget/caps {perDay:7} -> {saved:{perDay:7}, day.cap:7}, re-read confirms; reset clears. Evidence .uiatlas/system-evidence/budget-save.json. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/bk-export",
@@ -1065,8 +1065,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.412Z",
@@ -1074,7 +1074,7 @@
       "missing": false,
       "selector": "#bk-export",
       "state": "sys-settings",
-      "notes": "buildExport pure-engine covered by configexport.test.js (schema-versioned, secret-free). Live: #bk-export present in SYSTEM card."
+      "notes": "buildExport pure-engine covered by configexport.test.js (schema-versioned, secret-free). Live: #bk-export present in SYSTEM card. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/bk-file",
@@ -1105,8 +1105,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.412Z",
@@ -1114,7 +1114,7 @@
       "missing": false,
       "selector": "#bk-file",
       "state": "sys-settings",
-      "notes": "Live: #bk-file present (type=file, hidden). Held at audited: the file-picker DOM event is not machine-asserted (only the parse engine is)."
+      "notes": "Live: #bk-file present (type=file, hidden). Held at audited: the file-picker DOM event is not machine-asserted (only the parse engine is). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/bk-import",
@@ -1146,8 +1146,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.412Z",
@@ -1155,7 +1155,7 @@
       "missing": false,
       "selector": "#bk-import",
       "state": "sys-settings",
-      "notes": "parseImport forward-tolerant + fail-soft covered by configexport.test.js. Live: #bk-import present."
+      "notes": "parseImport forward-tolerant + fail-soft covered by configexport.test.js. Live: #bk-import present. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/con-tab-logbook-insights",
@@ -1178,8 +1178,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.412Z",
@@ -1187,7 +1187,7 @@
       "missing": false,
       "selector": "#con-tab-logbook-insights",
       "state": "sys-logbook",
-      "notes": "Live CDP :8967 — tab activates (active class set). Held at audited: no committed assertion enumerating logbook tab contents."
+      "notes": "Live CDP :8967 — tab activates (active class set). Held at audited: no committed assertion enumerating logbook tab contents. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/con-tab-logbook-runs",
@@ -1210,8 +1210,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.412Z",
@@ -1219,7 +1219,7 @@
       "missing": false,
       "selector": "#con-tab-logbook-runs",
       "state": "sys-logbook",
-      "notes": "Live CDP :8967 — tab activates (active class set). Held at audited: no committed assertion enumerating logbook tab contents."
+      "notes": "Live CDP :8967 — tab activates (active class set). Held at audited: no committed assertion enumerating logbook tab contents. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/con-tab-logbook-slag",
@@ -1242,8 +1242,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.412Z",
@@ -1251,7 +1251,7 @@
       "missing": false,
       "selector": "#con-tab-logbook-slag",
       "state": "sys-logbook",
-      "notes": "Live CDP :8967 — tab activates (active class set). Held at audited: no committed assertion enumerating logbook tab contents."
+      "notes": "Live CDP :8967 — tab activates (active class set). Held at audited: no committed assertion enumerating logbook tab contents. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/con-tab-settings-appearance",
@@ -1278,8 +1278,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
@@ -1287,7 +1287,7 @@
       "missing": false,
       "selector": "#con-tab-settings-appearance",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — tab click sets rail item active and renders panel controls (appearance: proven contents)."
+      "notes": "Live CDP :8967 — tab click sets rail item active and renders panel controls (appearance: proven contents). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/con-tab-settings-autonomy",
@@ -1314,8 +1314,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
@@ -1323,7 +1323,7 @@
       "missing": false,
       "selector": "#con-tab-settings-autonomy",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — tab click sets rail item active and renders panel controls (autonomy: proven contents)."
+      "notes": "Live CDP :8967 — tab click sets rail item active and renders panel controls (autonomy: proven contents). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/con-tab-settings-budget",
@@ -1354,8 +1354,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "43e860b254af28741405216c2259a2226d106be7",
-        "date": "2026-07-07T21:06:49.519Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
@@ -1363,7 +1363,7 @@
       "missing": false,
       "selector": "#con-tab-settings-budget",
       "state": "sys-settings",
-      "notes": "Live DOM: BUDGET tab renders #bg-save + spend readout \"$0.00 · LIFETIME $0.00 (0 runs)\" matching /api/budget/status. Evidence .uiatlas/system-evidence/roundtrip-out.json + budget-status.json."
+      "notes": "Live DOM: BUDGET tab renders #bg-save + spend readout \"$0.00 · LIFETIME $0.00 (0 runs)\" matching /api/budget/status. Evidence .uiatlas/system-evidence/roundtrip-out.json + budget-status.json. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/con-tab-settings-models",
@@ -1394,8 +1394,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "43e860b254af28741405216c2259a2226d106be7",
-        "date": "2026-07-07T21:06:49.519Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
@@ -1403,7 +1403,7 @@
       "missing": false,
       "selector": "#con-tab-settings-models",
       "state": "sys-settings",
-      "notes": "Live: MODELS tab renders #tm-balanced with 342 catalog options + #fbc-save. Evidence .uiatlas/system-evidence/roundtrip-out.json."
+      "notes": "Live: MODELS tab renders #tm-balanced with 342 catalog options + #fbc-save. Evidence .uiatlas/system-evidence/roundtrip-out.json. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/con-tab-settings-notifs",
@@ -1430,8 +1430,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
@@ -1439,7 +1439,7 @@
       "missing": false,
       "selector": "#con-tab-settings-notifs",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — tab click sets rail item active and renders panel controls (notifs: proven contents)."
+      "notes": "Live CDP :8967 — tab click sets rail item active and renders panel controls (notifs: proven contents). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/con-tab-settings-providers",
@@ -1466,8 +1466,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "43e860b254af28741405216c2259a2226d106be7",
-        "date": "2026-07-07T21:06:49.519Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [
         "a48393ca"
@@ -1477,7 +1477,7 @@
       "missing": false,
       "selector": "#con-tab-settings-providers",
       "state": "sys-settings",
-      "notes": "Live DOM: tab click renders #prov-key-in-anthropic + prov-card. Evidence .uiatlas/system-evidence/roundtrip-out.json. Held at audited pending the signup-link discoverability finding."
+      "notes": "Live DOM: tab click renders #prov-key-in-anthropic + prov-card. Evidence .uiatlas/system-evidence/roundtrip-out.json. Held at audited pending the signup-link discoverability finding. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/con-tab-settings-system",
@@ -1504,8 +1504,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
@@ -1513,7 +1513,7 @@
       "missing": false,
       "selector": "#con-tab-settings-system",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — tab click sets rail item active and renders panel controls (system: proven contents)."
+      "notes": "Live CDP :8967 — tab click sets rail item active and renders panel controls (system: proven contents). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/dc-connect",
@@ -1547,8 +1547,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.412Z",
@@ -1556,7 +1556,7 @@
       "missing": false,
       "selector": "#dc-connect",
       "state": "sys-messaging",
-      "notes": "Live CDP :8967 — #dc-connect present; /api/channels/discord/status connected:false at rest. startDiscord sets connected:false,state:connecting (index.js:2996) — truthful (unlike telegram, finding 1c09b36f). Evidence channel-status.json."
+      "notes": "Live CDP :8967 — #dc-connect present; /api/channels/discord/status connected:false at rest. startDiscord sets connected:false,state:connecting (index.js:2996) — truthful (unlike telegram, finding 1c09b36f). Evidence channel-status.json. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/dc-disconnect",
@@ -1590,8 +1590,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.412Z",
@@ -1599,7 +1599,7 @@
       "missing": false,
       "selector": "#dc-disconnect",
       "state": "sys-messaging",
-      "notes": "Live CDP :8967 — #dc-disconnect present; stopDiscord sets connected:false,state:down (index.js:3003). Covered by channels.discord-wire.test.js."
+      "notes": "Live CDP :8967 — #dc-disconnect present; stopDiscord sets connected:false,state:down (index.js:3003). Covered by channels.discord-wire.test.js. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/dc-notify",
@@ -1627,8 +1627,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.412Z",
@@ -1636,7 +1636,7 @@
       "missing": false,
       "selector": "#dc-notify",
       "state": "sys-messaging",
-      "notes": "Live CDP :8967 — #dc-notify type=checkbox. Same notify route as tg-notify. Covered by autonotify.test.js."
+      "notes": "Live CDP :8967 — #dc-notify type=checkbox. Same notify route as tg-notify. Covered by autonotify.test.js. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/dc-token",
@@ -1668,8 +1668,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.412Z",
@@ -1677,7 +1677,7 @@
       "missing": false,
       "selector": "#dc-token",
       "state": "sys-messaging",
-      "notes": "Live CDP :8967 — #dc-token type=password. Covered by channels.discord-wire.test.js."
+      "notes": "Live CDP :8967 — #dc-token type=password. Covered by channels.discord-wire.test.js. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/diag-copy",
@@ -1711,8 +1711,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "43e860b254af28741405216c2259a2226d106be7",
-        "date": "2026-07-07T21:06:49.519Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.412Z",
@@ -1720,7 +1720,7 @@
       "missing": false,
       "selector": "#diag-copy",
       "state": "sys-settings",
-      "notes": "Live: /api/diagnostics -> {report,text}, states \"no keys, tokens, or message content\", and the fake key passed as SKYNET_OPENROUTER_KEY does NOT appear (0 matches). Secret-free enforced by the 8-secret leak battery in diagnostics.test.js. Evidence .uiatlas/system-evidence/diagnostics.json + roundtrip-out.json."
+      "notes": "Live: /api/diagnostics -> {report,text}, states \"no keys, tokens, or message content\", and the fake key passed as SKYNET_OPENROUTER_KEY does NOT appear (0 matches). Secret-free enforced by the 8-secret leak battery in diagnostics.test.js. Evidence .uiatlas/system-evidence/diagnostics.json + roundtrip-out.json. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/fbc-add",
@@ -1748,8 +1748,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
@@ -1757,7 +1757,7 @@
       "missing": false,
       "selector": "#fbc-add",
       "state": "sys-settings",
-      "notes": "Sibling of fbc-save (perfected). Chain persistence + host-consumption guarded by fallback-chain.test.js. Live: #fbc-add present in MODELS tab."
+      "notes": "Sibling of fbc-save (perfected). Chain persistence + host-consumption guarded by fallback-chain.test.js. Live: #fbc-add present in MODELS tab. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/fbc-reset",
@@ -1785,8 +1785,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
@@ -1794,7 +1794,7 @@
       "missing": false,
       "selector": "#fbc-reset",
       "state": "sys-settings",
-      "notes": "Sibling of fbc-save. Live: /api/fallback/chain returns env-default {saved:false} (truthful). Covered by fallback-chain.test.js."
+      "notes": "Sibling of fbc-save. Live: /api/fallback/chain returns env-default {saved:false} (truthful). Covered by fallback-chain.test.js. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/fbc-save",
@@ -1822,8 +1822,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "43e860b254af28741405216c2259a2226d106be7",
-        "date": "2026-07-07T21:06:49.519Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
@@ -1831,7 +1831,7 @@
       "missing": false,
       "selector": "#fbc-save",
       "state": "sys-settings",
-      "notes": "Live: /api/fallback/chain returns {chain:[],saved:false,maxEntries:8} (env default, truthful). Persistence + host-consumption guarded by fallback-chain.test.js. Evidence .uiatlas/system-evidence/fallback-chain.json."
+      "notes": "Live: /api/fallback/chain returns {chain:[],saved:false,maxEntries:8} (env default, truthful). Persistence + host-consumption guarded by fallback-chain.test.js. Evidence .uiatlas/system-evidence/fallback-chain.json. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/key-in-1",
@@ -1859,8 +1859,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
@@ -1868,7 +1868,7 @@
       "missing": false,
       "selector": "#key-in-1",
       "state": "sys-settings",
-      "notes": "Shares the setKey seam proven for prov-key-in-anthropic (audited). Held at audited pending the signup-link discoverability finding a48393ca that gates the provider cluster."
+      "notes": "Shares the setKey seam proven for prov-key-in-anthropic (audited). Held at audited pending the signup-link discoverability finding a48393ca that gates the provider cluster. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/nf-clear",
@@ -1931,8 +1931,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
@@ -1940,7 +1940,7 @@
       "missing": false,
       "selector": "#ntp-cronDigest",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — #ntp-crondigest renders type=checkbox; wired via wireNotifyPrefs bind(). Covered by settings-p1-ui.test.js (per-category toggle assertion)."
+      "notes": "Live CDP :8967 — #ntp-crondigest renders type=checkbox; wired via wireNotifyPrefs bind(). Covered by settings-p1-ui.test.js (per-category toggle assertion). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/ntp-needsapproval",
@@ -1969,8 +1969,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
@@ -1978,7 +1978,7 @@
       "missing": false,
       "selector": "#ntp-needsApproval",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — #ntp-needsapproval renders type=checkbox; wired via wireNotifyPrefs bind(). Covered by settings-p1-ui.test.js (per-category toggle assertion)."
+      "notes": "Live CDP :8967 — #ntp-needsapproval renders type=checkbox; wired via wireNotifyPrefs bind(). Covered by settings-p1-ui.test.js (per-category toggle assertion). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/ntp-runcomplete",
@@ -2007,8 +2007,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
@@ -2016,7 +2016,7 @@
       "missing": false,
       "selector": "#ntp-runComplete",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — #ntp-runcomplete renders type=checkbox; wired via wireNotifyPrefs bind(). Covered by settings-p1-ui.test.js (per-category toggle assertion)."
+      "notes": "Live CDP :8967 — #ntp-runcomplete renders type=checkbox; wired via wireNotifyPrefs bind(). Covered by settings-p1-ui.test.js (per-category toggle assertion). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/ntp-sound",
@@ -2045,8 +2045,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
@@ -2054,7 +2054,7 @@
       "missing": false,
       "selector": "#ntp-sound",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — #ntp-sound renders type=checkbox; wired via wireNotifyPrefs bind(). Covered by settings-p1-ui.test.js (per-category toggle assertion)."
+      "notes": "Live CDP :8967 — #ntp-sound renders type=checkbox; wired via wireNotifyPrefs bind(). Covered by settings-p1-ui.test.js (per-category toggle assertion). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/ntp-test",
@@ -2083,8 +2083,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
@@ -2092,7 +2092,7 @@
       "missing": false,
       "selector": "#ntp-test",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — #ntp-test click bumped #nf-badge 1->2 (event-backed). Evidence notif-flow.json."
+      "notes": "Live CDP :8967 — #ntp-test click bumped #nf-badge 1->2 (event-backed). Evidence notif-flow.json. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/prov-key-in-anthropic",
@@ -2124,8 +2124,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "43e860b254af28741405216c2259a2226d106be7",
-        "date": "2026-07-07T21:06:49.519Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [
         "a48393ca"
@@ -2135,7 +2135,7 @@
       "missing": false,
       "selector": "#prov-key-in-anthropic",
       "state": "sys-settings",
-      "notes": "Live DOM: input present, type=\"password\" (masked). setKey path -> keychain (desktop) / scoped LS (dev). keyStoreClause() truthfully reports the real store. Evidence .uiatlas/system-evidence/roundtrip-out.json. Held at audited pending signup-link finding."
+      "notes": "Live DOM: input present, type=\"password\" (masked). setKey path -> keychain (desktop) / scoped LS (dev). keyStoreClause() truthfully reports the real store. Evidence .uiatlas/system-evidence/roundtrip-out.json. Held at audited pending signup-link finding. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/prov-key-in-cerebras",
@@ -2163,8 +2163,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [
         "a48393ca"
@@ -2174,7 +2174,7 @@
       "missing": false,
       "selector": "#prov-key-in-cerebras",
       "state": "sys-settings",
-      "notes": "Homogeneous clone of the anthropic setKey seam (saveInline, stationui.js:2238). Class-proof: same saveInline path + provider-connections-ui.test.js asserts the PROVIDERS.forEach(addProvider) family loop. Held at audited pending signup-link finding a48393ca (same hold as prov-key-in-anthropic)."
+      "notes": "Homogeneous clone of the anthropic setKey seam (saveInline, stationui.js:2238). Class-proof: same saveInline path + provider-connections-ui.test.js asserts the PROVIDERS.forEach(addProvider) family loop. Held at audited pending signup-link finding a48393ca (same hold as prov-key-in-anthropic). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/prov-key-in-custom",
@@ -2202,8 +2202,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [
         "a48393ca"
@@ -2213,7 +2213,7 @@
       "missing": false,
       "selector": "#prov-key-in-custom",
       "state": "sys-settings",
-      "notes": "Homogeneous clone of the anthropic setKey seam (saveInline, stationui.js:2238). Class-proof: same saveInline path + provider-connections-ui.test.js asserts the PROVIDERS.forEach(addProvider) family loop. Held at audited pending signup-link finding a48393ca (same hold as prov-key-in-anthropic)."
+      "notes": "Homogeneous clone of the anthropic setKey seam (saveInline, stationui.js:2238). Class-proof: same saveInline path + provider-connections-ui.test.js asserts the PROVIDERS.forEach(addProvider) family loop. Held at audited pending signup-link finding a48393ca (same hold as prov-key-in-anthropic). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/prov-key-in-deepseek",
@@ -2241,8 +2241,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [
         "a48393ca"
@@ -2252,7 +2252,7 @@
       "missing": false,
       "selector": "#prov-key-in-deepseek",
       "state": "sys-settings",
-      "notes": "Homogeneous clone of the anthropic setKey seam (saveInline, stationui.js:2238). Class-proof: same saveInline path + provider-connections-ui.test.js asserts the PROVIDERS.forEach(addProvider) family loop. Held at audited pending signup-link finding a48393ca (same hold as prov-key-in-anthropic)."
+      "notes": "Homogeneous clone of the anthropic setKey seam (saveInline, stationui.js:2238). Class-proof: same saveInline path + provider-connections-ui.test.js asserts the PROVIDERS.forEach(addProvider) family loop. Held at audited pending signup-link finding a48393ca (same hold as prov-key-in-anthropic). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/prov-key-in-fireworks",
@@ -2280,8 +2280,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [
         "a48393ca"
@@ -2291,7 +2291,7 @@
       "missing": false,
       "selector": "#prov-key-in-fireworks",
       "state": "sys-settings",
-      "notes": "Homogeneous clone of the anthropic setKey seam (saveInline, stationui.js:2238). Class-proof: same saveInline path + provider-connections-ui.test.js asserts the PROVIDERS.forEach(addProvider) family loop. Held at audited pending signup-link finding a48393ca (same hold as prov-key-in-anthropic)."
+      "notes": "Homogeneous clone of the anthropic setKey seam (saveInline, stationui.js:2238). Class-proof: same saveInline path + provider-connections-ui.test.js asserts the PROVIDERS.forEach(addProvider) family loop. Held at audited pending signup-link finding a48393ca (same hold as prov-key-in-anthropic). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/prov-key-in-gemini",
@@ -2319,8 +2319,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [
         "a48393ca"
@@ -2330,7 +2330,7 @@
       "missing": false,
       "selector": "#prov-key-in-gemini",
       "state": "sys-settings",
-      "notes": "Homogeneous clone of the anthropic setKey seam (saveInline, stationui.js:2238). Live CDP :8967 — #prov-key-in-gemini rendered type=password. Held at audited pending signup-link finding a48393ca (same hold as prov-key-in-anthropic)."
+      "notes": "Homogeneous clone of the anthropic setKey seam (saveInline, stationui.js:2238). Live CDP :8967 — #prov-key-in-gemini rendered type=password. Held at audited pending signup-link finding a48393ca (same hold as prov-key-in-anthropic). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/prov-key-in-groq",
@@ -2358,8 +2358,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [
         "a48393ca"
@@ -2369,7 +2369,7 @@
       "missing": false,
       "selector": "#prov-key-in-groq",
       "state": "sys-settings",
-      "notes": "Homogeneous clone of the anthropic setKey seam (saveInline, stationui.js:2238). Class-proof: same saveInline path + provider-connections-ui.test.js asserts the PROVIDERS.forEach(addProvider) family loop. Held at audited pending signup-link finding a48393ca (same hold as prov-key-in-anthropic)."
+      "notes": "Homogeneous clone of the anthropic setKey seam (saveInline, stationui.js:2238). Class-proof: same saveInline path + provider-connections-ui.test.js asserts the PROVIDERS.forEach(addProvider) family loop. Held at audited pending signup-link finding a48393ca (same hold as prov-key-in-anthropic). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/prov-key-in-mistral",
@@ -2397,8 +2397,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [
         "a48393ca"
@@ -2408,7 +2408,7 @@
       "missing": false,
       "selector": "#prov-key-in-mistral",
       "state": "sys-settings",
-      "notes": "Homogeneous clone of the anthropic setKey seam (saveInline, stationui.js:2238). Class-proof: same saveInline path + provider-connections-ui.test.js asserts the PROVIDERS.forEach(addProvider) family loop. Held at audited pending signup-link finding a48393ca (same hold as prov-key-in-anthropic)."
+      "notes": "Homogeneous clone of the anthropic setKey seam (saveInline, stationui.js:2238). Class-proof: same saveInline path + provider-connections-ui.test.js asserts the PROVIDERS.forEach(addProvider) family loop. Held at audited pending signup-link finding a48393ca (same hold as prov-key-in-anthropic). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/prov-key-in-openai",
@@ -2436,8 +2436,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [
         "a48393ca"
@@ -2447,7 +2447,7 @@
       "missing": false,
       "selector": "#prov-key-in-openai",
       "state": "sys-settings",
-      "notes": "Homogeneous clone of the anthropic setKey seam (saveInline, stationui.js:2238). Live CDP :8967 — #prov-key-in-openai rendered type=password. Held at audited pending signup-link finding a48393ca (same hold as prov-key-in-anthropic)."
+      "notes": "Homogeneous clone of the anthropic setKey seam (saveInline, stationui.js:2238). Live CDP :8967 — #prov-key-in-openai rendered type=password. Held at audited pending signup-link finding a48393ca (same hold as prov-key-in-anthropic). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/prov-key-in-perplexity",
@@ -2475,8 +2475,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [
         "a48393ca"
@@ -2486,7 +2486,7 @@
       "missing": false,
       "selector": "#prov-key-in-perplexity",
       "state": "sys-settings",
-      "notes": "Homogeneous clone of the anthropic setKey seam (saveInline, stationui.js:2238). Class-proof: same saveInline path + provider-connections-ui.test.js asserts the PROVIDERS.forEach(addProvider) family loop. Held at audited pending signup-link finding a48393ca (same hold as prov-key-in-anthropic)."
+      "notes": "Homogeneous clone of the anthropic setKey seam (saveInline, stationui.js:2238). Class-proof: same saveInline path + provider-connections-ui.test.js asserts the PROVIDERS.forEach(addProvider) family loop. Held at audited pending signup-link finding a48393ca (same hold as prov-key-in-anthropic). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/prov-key-in-together",
@@ -2514,8 +2514,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [
         "a48393ca"
@@ -2525,7 +2525,7 @@
       "missing": false,
       "selector": "#prov-key-in-together",
       "state": "sys-settings",
-      "notes": "Homogeneous clone of the anthropic setKey seam (saveInline, stationui.js:2238). Class-proof: same saveInline path + provider-connections-ui.test.js asserts the PROVIDERS.forEach(addProvider) family loop. Held at audited pending signup-link finding a48393ca (same hold as prov-key-in-anthropic)."
+      "notes": "Homogeneous clone of the anthropic setKey seam (saveInline, stationui.js:2238). Class-proof: same saveInline path + provider-connections-ui.test.js asserts the PROVIDERS.forEach(addProvider) family loop. Held at audited pending signup-link finding a48393ca (same hold as prov-key-in-anthropic). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/prov-key-in-xai",
@@ -2553,8 +2553,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [
         "a48393ca"
@@ -2564,7 +2564,7 @@
       "missing": false,
       "selector": "#prov-key-in-xai",
       "state": "sys-settings",
-      "notes": "Homogeneous clone of the anthropic setKey seam (saveInline, stationui.js:2238). Class-proof: same saveInline path + provider-connections-ui.test.js asserts the PROVIDERS.forEach(addProvider) family loop. Held at audited pending signup-link finding a48393ca (same hold as prov-key-in-anthropic)."
+      "notes": "Homogeneous clone of the anthropic setKey seam (saveInline, stationui.js:2238). Class-proof: same saveInline path + provider-connections-ui.test.js asserts the PROVIDERS.forEach(addProvider) family loop. Held at audited pending signup-link finding a48393ca (same hold as prov-key-in-anthropic). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/set-awake",
@@ -2587,8 +2587,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
@@ -2596,7 +2596,7 @@
       "missing": false,
       "selector": "#set-awake",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — #set-awake type=checkbox present, disabled in dev (browser) matching the desktop-only guard — truthful. Held at audited: no committed assertion; desktop wake-lock path unverifiable in dev."
+      "notes": "Live CDP :8967 — #set-awake type=checkbox present, disabled in dev (browser) matching the desktop-only guard — truthful. Held at audited: no committed assertion; desktop wake-lock path unverifiable in dev. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/set-clear",
@@ -2620,8 +2620,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [
         "316baa58"
@@ -2631,7 +2631,7 @@
       "missing": false,
       "selector": "#set-clear",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — #set-clear present. Shares the store.notifs+badges() seam as nf-clear (finding 316baa58 covers the uncovered chip flow)."
+      "notes": "Live CDP :8967 — #set-clear present. Shares the store.notifs+badges() seam as nf-clear (finding 316baa58 covers the uncovered chip flow). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/set-flicker",
@@ -2658,8 +2658,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
@@ -2667,7 +2667,7 @@
       "missing": false,
       "selector": "#set-flicker",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — #set-flicker renders type=checkbox (APPEARANCE tab). Held at audited: settings-p1-ui asserts the notif/adv cards but not the CRT toggle apply-path; visual apply not machine-guarded."
+      "notes": "Live CDP :8967 — #set-flicker renders type=checkbox (APPEARANCE tab). Held at audited: settings-p1-ui asserts the notif/adv cards but not the CRT toggle apply-path; visual apply not machine-guarded. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/set-scan",
@@ -2694,8 +2694,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
@@ -2703,7 +2703,7 @@
       "missing": false,
       "selector": "#set-scan",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — #set-scan renders type=checkbox (APPEARANCE tab). Held at audited: settings-p1-ui asserts the notif/adv cards but not the CRT toggle apply-path; visual apply not machine-guarded."
+      "notes": "Live CDP :8967 — #set-scan renders type=checkbox (APPEARANCE tab). Held at audited: settings-p1-ui asserts the notif/adv cards but not the CRT toggle apply-path; visual apply not machine-guarded. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/set-sound",
@@ -2730,8 +2730,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
@@ -2739,7 +2739,7 @@
       "missing": false,
       "selector": "#set-sound",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — #set-sound type=checkbox present (APPEARANCE). Held at audited: audio apply-path not machine-guarded."
+      "notes": "Live CDP :8967 — #set-sound type=checkbox present (APPEARANCE). Held at audited: audio apply-path not machine-guarded. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/set-updates-auto",
@@ -2766,8 +2766,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.412Z",
@@ -2775,7 +2775,7 @@
       "missing": false,
       "selector": "#set-updates-auto",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — #set-updates-auto present. Held at audited: auto-apply path is desktop-only, not exercisable in dev."
+      "notes": "Live CDP :8967 — #set-updates-auto present. Held at audited: auto-apply path is desktop-only, not exercisable in dev. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/set-updates-open",
@@ -2802,8 +2802,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.412Z",
@@ -2811,7 +2811,7 @@
       "missing": false,
       "selector": "#set-updates-open",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — #set-updates-open present in SYSTEM card. Held at audited: opens a separate window (updates area, out of this batch); update engine covered by updatecore.test.js."
+      "notes": "Live CDP :8967 — #set-updates-open present in SYSTEM card. Held at audited: opens a separate window (updates area, out of this batch); update engine covered by updatecore.test.js. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/tg-connect",
@@ -2887,8 +2887,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.412Z",
@@ -2896,7 +2896,7 @@
       "missing": false,
       "selector": "#tg-disconnect",
       "state": "sys-messaging",
-      "notes": "Live CDP :8967 — #tg-disconnect present; stopTelegram sets connected:false (index.js:2900+). Covered by channels.telegram.e2e.test.js."
+      "notes": "Live CDP :8967 — #tg-disconnect present; stopTelegram sets connected:false (index.js:2900+). Covered by channels.telegram.e2e.test.js. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/tg-notify",
@@ -2924,8 +2924,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.412Z",
@@ -2933,7 +2933,7 @@
       "missing": false,
       "selector": "#tg-notify",
       "state": "sys-messaging",
-      "notes": "Live CDP :8967 — #tg-notify type=checkbox. /api/channels/notify + notifyAutonomous covered by autonotify.test.js. Status API reports notifyAutonomous:false (truthful)."
+      "notes": "Live CDP :8967 — #tg-notify type=checkbox. /api/channels/notify + notifyAutonomous covered by autonotify.test.js. Status API reports notifyAutonomous:false (truthful). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/tg-token",
@@ -2965,8 +2965,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.412Z",
@@ -2974,7 +2974,7 @@
       "missing": false,
       "selector": "#tg-token",
       "state": "sys-messaging",
-      "notes": "Live CDP :8967 — #tg-token type=password. Covered by channels.telegram.e2e.test.js. Evidence channel-status.json."
+      "notes": "Live CDP :8967 — #tg-token type=password. Covered by channels.telegram.e2e.test.js. Evidence channel-status.json. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/tm-balanced",
@@ -3002,8 +3002,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "43e860b254af28741405216c2259a2226d106be7",
-        "date": "2026-07-07T21:06:49.519Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
@@ -3011,7 +3011,7 @@
       "missing": false,
       "selector": "#tm-balanced",
       "state": "sys-settings",
-      "notes": "Live: select present, 342 options, value=\"\" = station default (truthful, nothing pinned). Consumer confirmed: app.js:659/667/680 reads starnet.tierModels.v1 via resolveTierModel at summon. Evidence .uiatlas/system-evidence/roundtrip-out.json."
+      "notes": "Live: select present, 342 options, value=\"\" = station default (truthful, nothing pinned). Consumer confirmed: app.js:659/667/680 reads starnet.tierModels.v1 via resolveTierModel at summon. Evidence .uiatlas/system-evidence/roundtrip-out.json. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/tm-fast",
@@ -3039,8 +3039,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "43e860b254af28741405216c2259a2226d106be7",
-        "date": "2026-07-07T21:06:49.519Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
@@ -3048,7 +3048,7 @@
       "missing": false,
       "selector": "#tm-fast",
       "state": "sys-settings",
-      "notes": "Live: select present, 342 options, value=\"\" default. Same tierModels.v1 consumer path as tm-balanced. Evidence .uiatlas/system-evidence/roundtrip-out.json."
+      "notes": "Live: select present, 342 options, value=\"\" default. Same tierModels.v1 consumer path as tm-balanced. Evidence .uiatlas/system-evidence/roundtrip-out.json. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/tm-reasoning",
@@ -3076,8 +3076,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "43e860b254af28741405216c2259a2226d106be7",
-        "date": "2026-07-07T21:06:49.519Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
@@ -3085,7 +3085,7 @@
       "missing": false,
       "selector": "#tm-reasoning",
       "state": "sys-settings",
-      "notes": "Live: select present, 342 options, value=\"\" default. Same tierModels.v1 consumer path. Evidence .uiatlas/system-evidence/roundtrip-out.json."
+      "notes": "Live: select present, 342 options, value=\"\" default. Same tierModels.v1 consumer path. Evidence .uiatlas/system-evidence/roundtrip-out.json. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/txt-button-add-key-405",
@@ -3112,8 +3112,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [
         "a48393ca"
@@ -3123,7 +3123,7 @@
       "missing": false,
       "selector": "button",
       "state": "sys-settings",
-      "notes": "Homogeneous clone: inlineToggle handler (stationui.js:2266) per prov-card. Class-proof via provider-connections-ui.test.js. Held at audited on a48393ca."
+      "notes": "Homogeneous clone: inlineToggle handler (stationui.js:2266) per prov-card. Class-proof via provider-connections-ui.test.js. Held at audited on a48393ca. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/txt-button-add-key-407",
@@ -3150,8 +3150,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "43e860b254af28741405216c2259a2226d106be7",
-        "date": "2026-07-07T21:06:49.519Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [
         "a48393ca"
@@ -3161,7 +3161,7 @@
       "missing": false,
       "selector": "button",
       "state": "sys-settings",
-      "notes": "Card label \"○ NO KEY + ADD KEY\" verified live (roundtrip-out.json anthropicCard). Held at audited pending signup-link finding (no get-a-key link to obtain the key this button asks for)."
+      "notes": "Card label \"○ NO KEY + ADD KEY\" verified live (roundtrip-out.json anthropicCard). Held at audited pending signup-link finding (no get-a-key link to obtain the key this button asks for). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/txt-button-add-key-409",
@@ -3188,8 +3188,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [
         "a48393ca"
@@ -3199,7 +3199,7 @@
       "missing": false,
       "selector": "button",
       "state": "sys-settings",
-      "notes": "Homogeneous clone: inlineToggle handler (stationui.js:2266) per prov-card. Class-proof via provider-connections-ui.test.js. Held at audited on a48393ca."
+      "notes": "Homogeneous clone: inlineToggle handler (stationui.js:2266) per prov-card. Class-proof via provider-connections-ui.test.js. Held at audited on a48393ca. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/txt-button-add-key-411",
@@ -3226,8 +3226,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [
         "a48393ca"
@@ -3237,7 +3237,7 @@
       "missing": false,
       "selector": "button",
       "state": "sys-settings",
-      "notes": "Homogeneous clone: inlineToggle handler (stationui.js:2266) per prov-card. Class-proof via provider-connections-ui.test.js. Held at audited on a48393ca."
+      "notes": "Homogeneous clone: inlineToggle handler (stationui.js:2266) per prov-card. Class-proof via provider-connections-ui.test.js. Held at audited on a48393ca. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/txt-button-add-key-413",
@@ -3264,8 +3264,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [
         "a48393ca"
@@ -3275,7 +3275,7 @@
       "missing": false,
       "selector": "button",
       "state": "sys-settings",
-      "notes": "Homogeneous clone: inlineToggle handler (stationui.js:2266) per prov-card. Class-proof via provider-connections-ui.test.js. Held at audited on a48393ca."
+      "notes": "Homogeneous clone: inlineToggle handler (stationui.js:2266) per prov-card. Class-proof via provider-connections-ui.test.js. Held at audited on a48393ca. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/txt-button-add-key-415",
@@ -3302,8 +3302,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [
         "a48393ca"
@@ -3313,7 +3313,7 @@
       "missing": false,
       "selector": "button",
       "state": "sys-settings",
-      "notes": "Homogeneous clone: inlineToggle handler (stationui.js:2266) per prov-card. Class-proof via provider-connections-ui.test.js. Held at audited on a48393ca."
+      "notes": "Homogeneous clone: inlineToggle handler (stationui.js:2266) per prov-card. Class-proof via provider-connections-ui.test.js. Held at audited on a48393ca. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/txt-button-add-key-417",
@@ -3340,8 +3340,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [
         "a48393ca"
@@ -3351,7 +3351,7 @@
       "missing": false,
       "selector": "button",
       "state": "sys-settings",
-      "notes": "Homogeneous clone: inlineToggle handler (stationui.js:2266) per prov-card. Class-proof via provider-connections-ui.test.js. Held at audited on a48393ca."
+      "notes": "Homogeneous clone: inlineToggle handler (stationui.js:2266) per prov-card. Class-proof via provider-connections-ui.test.js. Held at audited on a48393ca. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/txt-button-add-key-419",
@@ -3378,8 +3378,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [
         "a48393ca"
@@ -3389,7 +3389,7 @@
       "missing": false,
       "selector": "button",
       "state": "sys-settings",
-      "notes": "Homogeneous clone: inlineToggle handler (stationui.js:2266) per prov-card. Class-proof via provider-connections-ui.test.js. Held at audited on a48393ca."
+      "notes": "Homogeneous clone: inlineToggle handler (stationui.js:2266) per prov-card. Class-proof via provider-connections-ui.test.js. Held at audited on a48393ca. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/txt-button-add-key-421",
@@ -3416,8 +3416,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [
         "a48393ca"
@@ -3427,7 +3427,7 @@
       "missing": false,
       "selector": "button",
       "state": "sys-settings",
-      "notes": "Homogeneous clone: inlineToggle handler (stationui.js:2266) per prov-card. Class-proof via provider-connections-ui.test.js. Held at audited on a48393ca."
+      "notes": "Homogeneous clone: inlineToggle handler (stationui.js:2266) per prov-card. Class-proof via provider-connections-ui.test.js. Held at audited on a48393ca. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/txt-button-add-key-423",
@@ -3454,8 +3454,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [
         "a48393ca"
@@ -3465,7 +3465,7 @@
       "missing": false,
       "selector": "button",
       "state": "sys-settings",
-      "notes": "Homogeneous clone: inlineToggle handler (stationui.js:2266) per prov-card. Class-proof via provider-connections-ui.test.js. Held at audited on a48393ca."
+      "notes": "Homogeneous clone: inlineToggle handler (stationui.js:2266) per prov-card. Class-proof via provider-connections-ui.test.js. Held at audited on a48393ca. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/txt-button-add-key-425",
@@ -3492,8 +3492,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [
         "a48393ca"
@@ -3503,7 +3503,7 @@
       "missing": false,
       "selector": "button",
       "state": "sys-settings",
-      "notes": "Homogeneous clone: inlineToggle handler (stationui.js:2266) per prov-card. Class-proof via provider-connections-ui.test.js. Held at audited on a48393ca."
+      "notes": "Homogeneous clone: inlineToggle handler (stationui.js:2266) per prov-card. Class-proof via provider-connections-ui.test.js. Held at audited on a48393ca. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/txt-button-add-key-427",
@@ -3530,8 +3530,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [
         "a48393ca"
@@ -3541,7 +3541,7 @@
       "missing": false,
       "selector": "button",
       "state": "sys-settings",
-      "notes": "Homogeneous clone: inlineToggle handler (stationui.js:2266) per prov-card. Class-proof via provider-connections-ui.test.js. Held at audited on a48393ca."
+      "notes": "Homogeneous clone: inlineToggle handler (stationui.js:2266) per prov-card. Class-proof via provider-connections-ui.test.js. Held at audited on a48393ca. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/txt-button-amber-448",
@@ -3568,8 +3568,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
@@ -3577,7 +3577,7 @@
       "missing": false,
       "selector": "button",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — theme button \"AMBER\" rendered (APPEARANCE tab). Held at audited: theme apply-path (applySettings palette swap) is not machine-asserted (settings-p1-ui asserts the notif/adv cards, not theme swatches)."
+      "notes": "Live CDP :8967 — theme button \"AMBER\" rendered (APPEARANCE tab). Held at audited: theme apply-path (applySettings palette swap) is not machine-asserted (settings-p1-ui asserts the notif/adv cards, not theme swatches). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/txt-button-blue-450",
@@ -3604,8 +3604,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
@@ -3613,7 +3613,7 @@
       "missing": false,
       "selector": "button",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — theme button \"BLUE\" rendered (APPEARANCE tab). Held at audited: theme apply-path (applySettings palette swap) is not machine-asserted (settings-p1-ui asserts the notif/adv cards, not theme swatches)."
+      "notes": "Live CDP :8967 — theme button \"BLUE\" rendered (APPEARANCE tab). Held at audited: theme apply-path (applySettings palette swap) is not machine-asserted (settings-p1-ui asserts the notif/adv cards, not theme swatches). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/txt-button-build-434",
@@ -3641,8 +3641,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
@@ -3650,7 +3650,7 @@
       "missing": false,
       "selector": "button",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — button \"BUILD\" rendered with tooltip \"does a few small grounded jobs a day on \". autonomy-ui.test.js asserts a button for EVERY data-init/data-reach enum level."
+      "notes": "Live CDP :8967 — button \"BUILD\" rendered with tooltip \"does a few small grounded jobs a day on \". autonomy-ui.test.js asserts a button for EVERY data-init/data-reach enum level. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/txt-button-busy-441",
@@ -3678,8 +3678,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
@@ -3687,7 +3687,7 @@
       "missing": false,
       "selector": "button",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — button \"BUSY\" rendered with tooltip \"a busier station — up to 6 jobs a day\". autonomy-ui.test.js asserts a button for EVERY data-init/data-reach enum level."
+      "notes": "Live CDP :8967 — button \"BUSY\" rendered with tooltip \"a busier station — up to 6 jobs a day\". autonomy-ui.test.js asserts a button for EVERY data-init/data-reach enum level. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/txt-button-draft-for-me-445",
@@ -3715,8 +3715,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
@@ -3724,7 +3724,7 @@
       "missing": false,
       "selector": "button",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — button \"DRAFT FOR ME\" rendered with tooltip \"acts on its own and leaves drafts — writ\". autonomy-ui.test.js asserts a button for EVERY data-init/data-reach enum level."
+      "notes": "Live CDP :8967 — button \"DRAFT FOR ME\" rendered with tooltip \"acts on its own and leaves drafts — writ\". autonomy-ui.test.js asserts a button for EVERY data-init/data-reach enum level. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/txt-button-free-435",
@@ -3752,8 +3752,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
@@ -3761,7 +3761,7 @@
       "missing": false,
       "selector": "button",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — button \"FREE\" rendered with tooltip \"picks & does work toward your goals whil\". autonomy-ui.test.js asserts a button for EVERY data-init/data-reach enum level."
+      "notes": "Live CDP :8967 — button \"FREE\" rendered with tooltip \"picks & does work toward your goals whil\". autonomy-ui.test.js asserts a button for EVERY data-init/data-reach enum level. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/txt-button-fully-autonomous-446",
@@ -3789,8 +3789,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
@@ -3798,7 +3798,7 @@
       "missing": false,
       "selector": "button",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — button \"FULLY AUTONOMOUS\" rendered with tooltip \"acts AND writes real files on its own — \". autonomy-ui.test.js asserts a button for EVERY data-init/data-reach enum level."
+      "notes": "Live CDP :8967 — button \"FULLY AUTONOMOUS\" rendered with tooltip \"acts AND writes real files on its own — \". autonomy-ui.test.js asserts a button for EVERY data-init/data-reach enum level. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/txt-button-grant-447",
@@ -3831,8 +3831,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
@@ -3840,7 +3840,7 @@
       "missing": false,
       "selector": "button",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — GRANT button present. Autonomy write + ledger covered by autonomy-ui/autonomy-ledger tests."
+      "notes": "Live CDP :8967 — GRANT button present. Autonomy write + ledger covered by autonomy-ui/autonomy-ledger tests. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/txt-button-green-449",
@@ -3867,8 +3867,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
@@ -3876,7 +3876,7 @@
       "missing": false,
       "selector": "button",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — theme button \"GREEN\" rendered (APPEARANCE tab). Held at audited: theme apply-path (applySettings palette swap) is not machine-asserted (settings-p1-ui asserts the notif/adv cards, not theme swatches)."
+      "notes": "Live CDP :8967 — theme button \"GREEN\" rendered (APPEARANCE tab). Held at audited: theme apply-path (applySettings palette swap) is not machine-asserted (settings-p1-ui asserts the notif/adv cards, not theme swatches). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/txt-button-light-439",
@@ -3904,8 +3904,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
@@ -3913,7 +3913,7 @@
       "missing": false,
       "selector": "button",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — button \"LIGHT\" rendered with tooltip \"one small job a day\". autonomy-ui.test.js asserts a button for EVERY data-init/data-reach enum level."
+      "notes": "Live CDP :8967 — button \"LIGHT\" rendered with tooltip \"one small job a day\". autonomy-ui.test.js asserts a button for EVERY data-init/data-reach enum level. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/txt-button-max-442",
@@ -3941,8 +3941,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
@@ -3950,7 +3950,7 @@
       "missing": false,
       "selector": "button",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — button \"MAX\" rendered with tooltip \"as much as it's allowed — up to 12 jobs \". autonomy-ui.test.js asserts a button for EVERY data-init/data-reach enum level."
+      "notes": "Live CDP :8967 — button \"MAX\" rendered with tooltip \"as much as it's allowed — up to 12 jobs \". autonomy-ui.test.js asserts a button for EVERY data-init/data-reach enum level. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/txt-button-never-443",
@@ -3978,8 +3978,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
@@ -3987,7 +3987,7 @@
       "missing": false,
       "selector": "button",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — button \"NEVER\" rendered with tooltip \"does nothing on its own — you drive ever\". autonomy-ui.test.js asserts a button for EVERY data-init/data-reach enum level."
+      "notes": "Live CDP :8967 — button \"NEVER\" rendered with tooltip \"does nothing on its own — you drive ever\". autonomy-ui.test.js asserts a button for EVERY data-init/data-reach enum level. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/txt-button-observe-436",
@@ -4015,8 +4015,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
@@ -4024,7 +4024,7 @@
       "missing": false,
       "selector": "button",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — button \"OBSERVE\" rendered with tooltip \"read / research only — writes nothing\". autonomy-ui.test.js asserts a button for EVERY data-init/data-reach enum level."
+      "notes": "Live CDP :8967 — button \"OBSERVE\" rendered with tooltip \"read / research only — writes nothing\". autonomy-ui.test.js asserts a button for EVERY data-init/data-reach enum level. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/txt-button-purple-451",
@@ -4051,8 +4051,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
@@ -4060,7 +4060,7 @@
       "missing": false,
       "selector": "button",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — theme button \"PURPLE\" rendered (APPEARANCE tab). Held at audited: theme apply-path (applySettings palette swap) is not machine-asserted (settings-p1-ui asserts the notif/adv cards, not theme swatches)."
+      "notes": "Live CDP :8967 — theme button \"PURPLE\" rendered (APPEARANCE tab). Held at audited: theme apply-path (applySettings palette swap) is not machine-asserted (settings-p1-ui asserts the notif/adv cards, not theme swatches). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/txt-button-reach-out-438",
@@ -4088,8 +4088,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
@@ -4097,7 +4097,7 @@
       "missing": false,
       "selector": "button",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — button \"REACH OUT\" rendered with tooltip \"can send, publish, or contact external s\". autonomy-ui.test.js asserts a button for EVERY data-init/data-reach enum level."
+      "notes": "Live CDP :8967 — button \"REACH OUT\" rendered with tooltip \"can send, publish, or contact external s\". autonomy-ui.test.js asserts a button for EVERY data-init/data-reach enum level. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/txt-button-red-452",
@@ -4124,8 +4124,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
@@ -4133,7 +4133,7 @@
       "missing": false,
       "selector": "button",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — theme button \"RED\" rendered (APPEARANCE tab). Held at audited: theme apply-path (applySettings palette swap) is not machine-asserted (settings-p1-ui asserts the notif/adv cards, not theme swatches)."
+      "notes": "Live CDP :8967 — theme button \"RED\" rendered (APPEARANCE tab). Held at audited: theme apply-path (applySettings palette swap) is not machine-asserted (settings-p1-ui asserts the notif/adv cards, not theme swatches). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/txt-button-remove-430",
@@ -4161,8 +4161,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [
         "a48393ca"
@@ -4172,7 +4172,7 @@
       "missing": false,
       "selector": "button",
       "state": "sys-settings",
-      "notes": "Armed-remove handler stationui.js:2213 (dataset.armed). Destructive-key clear guarded by a two-step. Held at audited on a48393ca; not fired in-audit."
+      "notes": "Armed-remove handler stationui.js:2213 (dataset.armed). Destructive-key clear guarded by a two-step. Held at audited on a48393ca; not fired in-audit. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/txt-button-sandbox-437",
@@ -4200,8 +4200,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
@@ -4209,7 +4209,7 @@
       "missing": false,
       "selector": "button",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — button \"SANDBOX\" rendered with tooltip \"build & write locally — nothing leaves t\". autonomy-ui.test.js asserts a button for EVERY data-init/data-reach enum level."
+      "notes": "Live CDP :8967 — button \"SANDBOX\" rendered with tooltip \"build & write locally — nothing leaves t\". autonomy-ui.test.js asserts a button for EVERY data-init/data-reach enum level. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/txt-button-save-406",
@@ -4237,8 +4237,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [
         "a48393ca"
@@ -4248,7 +4248,7 @@
       "missing": false,
       "selector": "button",
       "state": "sys-settings",
-      "notes": "Homogeneous clone: inlineSave handler (stationui.js:2271) → saveInline. Class-proof via provider-connections-ui.test.js. Held at audited on a48393ca."
+      "notes": "Homogeneous clone: inlineSave handler (stationui.js:2271) → saveInline. Class-proof via provider-connections-ui.test.js. Held at audited on a48393ca. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/txt-button-save-408",
@@ -4276,8 +4276,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [
         "a48393ca"
@@ -4287,7 +4287,7 @@
       "missing": false,
       "selector": "button",
       "state": "sys-settings",
-      "notes": "Homogeneous clone: inlineSave handler (stationui.js:2271) → saveInline. Class-proof via provider-connections-ui.test.js. Held at audited on a48393ca."
+      "notes": "Homogeneous clone: inlineSave handler (stationui.js:2271) → saveInline. Class-proof via provider-connections-ui.test.js. Held at audited on a48393ca. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/txt-button-save-410",
@@ -4315,8 +4315,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [
         "a48393ca"
@@ -4326,7 +4326,7 @@
       "missing": false,
       "selector": "button",
       "state": "sys-settings",
-      "notes": "Homogeneous clone: inlineSave handler (stationui.js:2271) → saveInline. Class-proof via provider-connections-ui.test.js. Held at audited on a48393ca."
+      "notes": "Homogeneous clone: inlineSave handler (stationui.js:2271) → saveInline. Class-proof via provider-connections-ui.test.js. Held at audited on a48393ca. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/txt-button-save-412",
@@ -4354,8 +4354,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [
         "a48393ca"
@@ -4365,7 +4365,7 @@
       "missing": false,
       "selector": "button",
       "state": "sys-settings",
-      "notes": "Homogeneous clone: inlineSave handler (stationui.js:2271) → saveInline. Class-proof via provider-connections-ui.test.js. Held at audited on a48393ca."
+      "notes": "Homogeneous clone: inlineSave handler (stationui.js:2271) → saveInline. Class-proof via provider-connections-ui.test.js. Held at audited on a48393ca. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/txt-button-save-414",
@@ -4393,8 +4393,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [
         "a48393ca"
@@ -4404,7 +4404,7 @@
       "missing": false,
       "selector": "button",
       "state": "sys-settings",
-      "notes": "Homogeneous clone: inlineSave handler (stationui.js:2271) → saveInline. Class-proof via provider-connections-ui.test.js. Held at audited on a48393ca."
+      "notes": "Homogeneous clone: inlineSave handler (stationui.js:2271) → saveInline. Class-proof via provider-connections-ui.test.js. Held at audited on a48393ca. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/txt-button-save-416",
@@ -4432,8 +4432,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [
         "a48393ca"
@@ -4443,7 +4443,7 @@
       "missing": false,
       "selector": "button",
       "state": "sys-settings",
-      "notes": "Homogeneous clone: inlineSave handler (stationui.js:2271) → saveInline. Class-proof via provider-connections-ui.test.js. Held at audited on a48393ca."
+      "notes": "Homogeneous clone: inlineSave handler (stationui.js:2271) → saveInline. Class-proof via provider-connections-ui.test.js. Held at audited on a48393ca. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/txt-button-save-418",
@@ -4471,8 +4471,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [
         "a48393ca"
@@ -4482,7 +4482,7 @@
       "missing": false,
       "selector": "button",
       "state": "sys-settings",
-      "notes": "Homogeneous clone: inlineSave handler (stationui.js:2271) → saveInline. Class-proof via provider-connections-ui.test.js. Held at audited on a48393ca."
+      "notes": "Homogeneous clone: inlineSave handler (stationui.js:2271) → saveInline. Class-proof via provider-connections-ui.test.js. Held at audited on a48393ca. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/txt-button-save-420",
@@ -4510,8 +4510,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [
         "a48393ca"
@@ -4521,7 +4521,7 @@
       "missing": false,
       "selector": "button",
       "state": "sys-settings",
-      "notes": "Homogeneous clone: inlineSave handler (stationui.js:2271) → saveInline. Class-proof via provider-connections-ui.test.js. Held at audited on a48393ca."
+      "notes": "Homogeneous clone: inlineSave handler (stationui.js:2271) → saveInline. Class-proof via provider-connections-ui.test.js. Held at audited on a48393ca. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/txt-button-save-422",
@@ -4549,8 +4549,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [
         "a48393ca"
@@ -4560,7 +4560,7 @@
       "missing": false,
       "selector": "button",
       "state": "sys-settings",
-      "notes": "Homogeneous clone: inlineSave handler (stationui.js:2271) → saveInline. Class-proof via provider-connections-ui.test.js. Held at audited on a48393ca."
+      "notes": "Homogeneous clone: inlineSave handler (stationui.js:2271) → saveInline. Class-proof via provider-connections-ui.test.js. Held at audited on a48393ca. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/txt-button-save-424",
@@ -4588,8 +4588,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [
         "a48393ca"
@@ -4599,7 +4599,7 @@
       "missing": false,
       "selector": "button",
       "state": "sys-settings",
-      "notes": "Homogeneous clone: inlineSave handler (stationui.js:2271) → saveInline. Class-proof via provider-connections-ui.test.js. Held at audited on a48393ca."
+      "notes": "Homogeneous clone: inlineSave handler (stationui.js:2271) → saveInline. Class-proof via provider-connections-ui.test.js. Held at audited on a48393ca. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/txt-button-save-426",
@@ -4627,8 +4627,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [
         "a48393ca"
@@ -4638,7 +4638,7 @@
       "missing": false,
       "selector": "button",
       "state": "sys-settings",
-      "notes": "Homogeneous clone: inlineSave handler (stationui.js:2271) → saveInline. Class-proof via provider-connections-ui.test.js. Held at audited on a48393ca."
+      "notes": "Homogeneous clone: inlineSave handler (stationui.js:2271) → saveInline. Class-proof via provider-connections-ui.test.js. Held at audited on a48393ca. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/txt-button-save-428",
@@ -4666,8 +4666,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [
         "a48393ca"
@@ -4677,7 +4677,7 @@
       "missing": false,
       "selector": "button",
       "state": "sys-settings",
-      "notes": "Homogeneous clone: inlineSave handler (stationui.js:2271) → saveInline. Class-proof via provider-connections-ui.test.js. Held at audited on a48393ca."
+      "notes": "Homogeneous clone: inlineSave handler (stationui.js:2271) → saveInline. Class-proof via provider-connections-ui.test.js. Held at audited on a48393ca. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/txt-button-save-431",
@@ -4705,8 +4705,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [
         "a48393ca"
@@ -4716,7 +4716,7 @@
       "missing": false,
       "selector": "button",
       "state": "sys-settings",
-      "notes": "Key-list row save (stationui.js:2249 rerender). Same setKey seam. Held at audited on a48393ca."
+      "notes": "Key-list row save (stationui.js:2249 rerender). Same setKey seam. Held at audited on a48393ca. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/txt-button-standard-440",
@@ -4744,8 +4744,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
@@ -4753,7 +4753,7 @@
       "missing": false,
       "selector": "button",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — button \"STANDARD\" rendered with tooltip \"a few small jobs a day — the default\". autonomy-ui.test.js asserts a button for EVERY data-init/data-reach enum level."
+      "notes": "Live CDP :8967 — button \"STANDARD\" rendered with tooltip \"a few small jobs a day — the default\". autonomy-ui.test.js asserts a button for EVERY data-init/data-reach enum level. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/txt-button-suggest-433",
@@ -4781,8 +4781,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
@@ -4790,7 +4790,7 @@
       "missing": false,
       "selector": "button",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — button \"SUGGEST\" rendered with tooltip \"lines up suggestions you approve — never\". autonomy-ui.test.js asserts a button for EVERY data-init/data-reach enum level."
+      "notes": "Live CDP :8967 — button \"SUGGEST\" rendered with tooltip \"lines up suggestions you approve — never\". autonomy-ui.test.js asserts a button for EVERY data-init/data-reach enum level. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/txt-button-suggest-444",
@@ -4818,8 +4818,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
@@ -4827,7 +4827,7 @@
       "missing": false,
       "selector": "button",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — button \"SUGGEST\" rendered with tooltip \"lines up ideas you approve — never acts \". autonomy-ui.test.js asserts a button for EVERY data-init/data-reach enum level."
+      "notes": "Live CDP :8967 — button \"SUGGEST\" rendered with tooltip \"lines up ideas you approve — never acts \". autonomy-ui.test.js asserts a button for EVERY data-init/data-reach enum level. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/txt-button-update-429",
@@ -4855,8 +4855,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [
         "a48393ca"
@@ -4866,7 +4866,7 @@
       "missing": false,
       "selector": "button",
       "state": "sys-settings",
-      "notes": "Edit-toggle in the key-list row. Same setKey seam. Held at audited on a48393ca."
+      "notes": "Edit-toggle in the key-list row. Same setKey seam. Held at audited on a48393ca. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/txt-button-wait-432",
@@ -4894,8 +4894,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
@@ -4903,7 +4903,7 @@
       "missing": false,
       "selector": "button",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — button \"WAIT\" rendered with tooltip \"nothing runs unless you ask\". autonomy-ui.test.js asserts a button for EVERY data-init/data-reach enum level."
+      "notes": "Live CDP :8967 — button \"WAIT\" rendered with tooltip \"nothing runs unless you ask\". autonomy-ui.test.js asserts a button for EVERY data-init/data-reach enum level. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/txt-button-white-453",
@@ -4930,8 +4930,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
@@ -4939,7 +4939,7 @@
       "missing": false,
       "selector": "button",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — theme button \"WHITE\" rendered (APPEARANCE tab). Held at audited: theme apply-path (applySettings palette swap) is not machine-asserted (settings-p1-ui asserts the notif/adv cards, not theme swatches)."
+      "notes": "Live CDP :8967 — theme button \"WHITE\" rendered (APPEARANCE tab). Held at audited: theme apply-path (applySettings palette swap) is not machine-asserted (settings-p1-ui asserts the notif/adv cards, not theme swatches). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/txt-div-anthropicapi-anthropic-com-v1-claude-n-4",
@@ -4967,8 +4967,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [
         "a48393ca"
@@ -4978,7 +4978,7 @@
       "missing": false,
       "selector": "div",
       "state": "sys-settings",
-      "notes": "Homogeneous clone: prov-card click activate() (stationui.js:2251). Card status text (\"○ NO KEY\"/\"LOCAL\") is store-derived — truthful. Held at audited on a48393ca (provider cluster hold)."
+      "notes": "Homogeneous clone: prov-card click activate() (stationui.js:2251). Card status text (\"○ NO KEY\"/\"LOCAL\") is store-derived — truthful. Held at audited on a48393ca (provider cluster hold). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/txt-div-cerebrasapi-cerebras-ai-v1-cerebras-ap-13",
@@ -5006,8 +5006,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [
         "a48393ca"
@@ -5017,7 +5017,7 @@
       "missing": false,
       "selector": "div",
       "state": "sys-settings",
-      "notes": "Homogeneous clone: prov-card click activate() (stationui.js:2251). Card status text (\"○ NO KEY\"/\"LOCAL\") is store-derived — truthful. Held at audited on a48393ca (provider cluster hold)."
+      "notes": "Homogeneous clone: prov-card click activate() (stationui.js:2251). Card status text (\"○ NO KEY\"/\"LOCAL\") is store-derived — truthful. Held at audited on a48393ca (provider cluster hold). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/txt-div-chatgpt-codex-oauth-chatgpt-subscript-2",
@@ -5045,8 +5045,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [
         "a48393ca"
@@ -5056,7 +5056,7 @@
       "missing": false,
       "selector": "div",
       "state": "sys-settings",
-      "notes": "Homogeneous clone: prov-card click activate() (stationui.js:2251). Card status text (\"○ NO KEY\"/\"LOCAL\") is store-derived — truthful. Held at audited on a48393ca (provider cluster hold)."
+      "notes": "Homogeneous clone: prov-card click activate() (stationui.js:2251). Card status text (\"○ NO KEY\"/\"LOCAL\") is store-derived — truthful. Held at audited on a48393ca (provider cluster hold). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/txt-div-customany-v1-base-url-bring-your-endp-15",
@@ -5084,8 +5084,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [
         "a48393ca"
@@ -5095,7 +5095,7 @@
       "missing": false,
       "selector": "div",
       "state": "sys-settings",
-      "notes": "Homogeneous clone: prov-card click activate() (stationui.js:2251). Card status text (\"○ NO KEY\"/\"LOCAL\") is store-derived — truthful. Held at audited on a48393ca (provider cluster hold)."
+      "notes": "Homogeneous clone: prov-card click activate() (stationui.js:2251). Card status text (\"○ NO KEY\"/\"LOCAL\") is store-derived — truthful. Held at audited on a48393ca (provider cluster hold). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/txt-div-deepseekapi-deepseek-com-deepseek-api-9",
@@ -5123,8 +5123,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [
         "a48393ca"
@@ -5134,7 +5134,7 @@
       "missing": false,
       "selector": "div",
       "state": "sys-settings",
-      "notes": "Homogeneous clone: prov-card click activate() (stationui.js:2251). Card status text (\"○ NO KEY\"/\"LOCAL\") is store-derived — truthful. Held at audited on a48393ca (provider cluster hold)."
+      "notes": "Homogeneous clone: prov-card click activate() (stationui.js:2251). Card status text (\"○ NO KEY\"/\"LOCAL\") is store-derived — truthful. Held at audited on a48393ca (provider cluster hold). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/txt-div-fireworksapi-fireworks-ai-inference-v1-11",
@@ -5162,8 +5162,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [
         "a48393ca"
@@ -5173,7 +5173,7 @@
       "missing": false,
       "selector": "div",
       "state": "sys-settings",
-      "notes": "Homogeneous clone: prov-card click activate() (stationui.js:2251). Card status text (\"○ NO KEY\"/\"LOCAL\") is store-derived — truthful. Held at audited on a48393ca (provider cluster hold)."
+      "notes": "Homogeneous clone: prov-card click activate() (stationui.js:2251). Card status text (\"○ NO KEY\"/\"LOCAL\") is store-derived — truthful. Held at audited on a48393ca (provider cluster hold). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/txt-div-geminigenerativelanguage-googleapis-com-5",
@@ -5201,8 +5201,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [
         "a48393ca"
@@ -5212,7 +5212,7 @@
       "missing": false,
       "selector": "div",
       "state": "sys-settings",
-      "notes": "Homogeneous clone: prov-card click activate() (stationui.js:2251). Card status text (\"○ NO KEY\"/\"LOCAL\") is store-derived — truthful. Held at audited on a48393ca (provider cluster hold)."
+      "notes": "Homogeneous clone: prov-card click activate() (stationui.js:2251). Card status text (\"○ NO KEY\"/\"LOCAL\") is store-derived — truthful. Held at audited on a48393ca (provider cluster hold). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/txt-div-groqapi-groq-com-openai-v1-fast-infere-7",
@@ -5240,8 +5240,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [
         "a48393ca"
@@ -5251,7 +5251,7 @@
       "missing": false,
       "selector": "div",
       "state": "sys-settings",
-      "notes": "Homogeneous clone: prov-card click activate() (stationui.js:2251). Card status text (\"○ NO KEY\"/\"LOCAL\") is store-derived — truthful. Held at audited on a48393ca (provider cluster hold)."
+      "notes": "Homogeneous clone: prov-card click activate() (stationui.js:2251). Card status text (\"○ NO KEY\"/\"LOCAL\") is store-derived — truthful. Held at audited on a48393ca (provider cluster hold). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/txt-div-mistralapi-mistral-ai-v1-mistral-api-8",
@@ -5279,8 +5279,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [
         "a48393ca"
@@ -5290,7 +5290,7 @@
       "missing": false,
       "selector": "div",
       "state": "sys-settings",
-      "notes": "Homogeneous clone: prov-card click activate() (stationui.js:2251). Card status text (\"○ NO KEY\"/\"LOCAL\") is store-derived — truthful. Held at audited on a48393ca (provider cluster hold)."
+      "notes": "Homogeneous clone: prov-card click activate() (stationui.js:2251). Card status text (\"○ NO KEY\"/\"LOCAL\") is store-derived — truthful. Held at audited on a48393ca (provider cluster hold). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/txt-div-ollama127-0-0-1-11434-v1-local-models-14",
@@ -5318,8 +5318,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [
         "a48393ca"
@@ -5329,7 +5329,7 @@
       "missing": false,
       "selector": "div",
       "state": "sys-settings",
-      "notes": "Homogeneous clone: prov-card click activate() (stationui.js:2251). Card status text (\"○ NO KEY\"/\"LOCAL\") is store-derived — truthful. Held at audited on a48393ca (provider cluster hold)."
+      "notes": "Homogeneous clone: prov-card click activate() (stationui.js:2251). Card status text (\"○ NO KEY\"/\"LOCAL\") is store-derived — truthful. Held at audited on a48393ca (provider cluster hold). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/txt-div-openai-apiapi-openai-com-v1-openai-com-3",
@@ -5357,8 +5357,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [
         "a48393ca"
@@ -5368,7 +5368,7 @@
       "missing": false,
       "selector": "div",
       "state": "sys-settings",
-      "notes": "Homogeneous clone: prov-card click activate() (stationui.js:2251). Card status text (\"○ NO KEY\"/\"LOCAL\") is store-derived — truthful. Held at audited on a48393ca (provider cluster hold)."
+      "notes": "Homogeneous clone: prov-card click activate() (stationui.js:2251). Card status text (\"○ NO KEY\"/\"LOCAL\") is store-derived — truthful. Held at audited on a48393ca (provider cluster hold). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/txt-div-openrouteractiveopenrouter-ai-api-v1-o-1",
@@ -5396,8 +5396,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [
         "a48393ca"
@@ -5407,7 +5407,7 @@
       "missing": false,
       "selector": "div",
       "state": "sys-settings",
-      "notes": "Homogeneous clone: prov-card click activate() (stationui.js:2251). Card status text (\"○ NO KEY\"/\"LOCAL\") is store-derived — truthful. Held at audited on a48393ca (provider cluster hold)."
+      "notes": "Homogeneous clone: prov-card click activate() (stationui.js:2251). Card status text (\"○ NO KEY\"/\"LOCAL\") is store-derived — truthful. Held at audited on a48393ca (provider cluster hold). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/txt-div-perplexityapi-perplexity-ai-sonar-api-12",
@@ -5435,8 +5435,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [
         "a48393ca"
@@ -5446,7 +5446,7 @@
       "missing": false,
       "selector": "div",
       "state": "sys-settings",
-      "notes": "Homogeneous clone: prov-card click activate() (stationui.js:2251). Card status text (\"○ NO KEY\"/\"LOCAL\") is store-derived — truthful. Held at audited on a48393ca (provider cluster hold)."
+      "notes": "Homogeneous clone: prov-card click activate() (stationui.js:2251). Card status text (\"○ NO KEY\"/\"LOCAL\") is store-derived — truthful. Held at audited on a48393ca (provider cluster hold). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/txt-div-togetherapi-together-ai-v1-together-ap-10",
@@ -5474,8 +5474,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [
         "a48393ca"
@@ -5485,7 +5485,7 @@
       "missing": false,
       "selector": "div",
       "state": "sys-settings",
-      "notes": "Homogeneous clone: prov-card click activate() (stationui.js:2251). Card status text (\"○ NO KEY\"/\"LOCAL\") is store-derived — truthful. Held at audited on a48393ca (provider cluster hold)."
+      "notes": "Homogeneous clone: prov-card click activate() (stationui.js:2251). Card status text (\"○ NO KEY\"/\"LOCAL\") is store-derived — truthful. Held at audited on a48393ca (provider cluster hold). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/txt-div-xaiapi-x-ai-v1-grok-api-no-key-add-k-6",
@@ -5513,8 +5513,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "65710202ffc3129b67f3724152eca5931d1d33c9",
-        "date": "2026-07-07T21:50:00.000Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [
         "a48393ca"
@@ -5524,7 +5524,7 @@
       "missing": false,
       "selector": "div",
       "state": "sys-settings",
-      "notes": "Homogeneous clone: prov-card click activate() (stationui.js:2251). Card status text (\"○ NO KEY\"/\"LOCAL\") is store-derived — truthful. Held at audited on a48393ca (provider cluster hold)."
+      "notes": "Homogeneous clone: prov-card click activate() (stationui.js:2251). Card status text (\"○ NO KEY\"/\"LOCAL\") is store-derived — truthful. Held at audited on a48393ca (provider cluster hold). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     }
   ]
 }

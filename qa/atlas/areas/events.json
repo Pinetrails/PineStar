@@ -1,6 +1,6 @@
 {
   "area": "events",
-  "updatedAt": "2026-07-07T21:43:58.867Z",
+  "updatedAt": "2026-07-07T22:40:51.000Z",
   "entries": [
     {
       "id": "event/agent-compact",
@@ -73,13 +73,14 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "393e8cdb92799ff1497ad40b1c61e2a59bc66c81",
-        "date": "2026-07-07T21:43:58.867Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false
+      "missing": false,
+      "notes": "[wave-7 final-a re-stale: re-proven via POST /api/run NDJSON chain on :8966. Evidence events-result.json.]"
     },
     {
       "id": "event/agent-reasoning",
@@ -153,13 +154,14 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "393e8cdb92799ff1497ad40b1c61e2a59bc66c81",
-        "date": "2026-07-07T21:43:58.867Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false
+      "missing": false,
+      "notes": "[wave-7 final-a re-stale: re-proven via POST /api/run NDJSON chain on :8966. Evidence events-result.json.]"
     },
     {
       "id": "event/agent-run-error",
@@ -235,13 +237,14 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "393e8cdb92799ff1497ad40b1c61e2a59bc66c81",
-        "date": "2026-07-07T21:43:58.867Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false
+      "missing": false,
+      "notes": "[wave-7 final-a re-stale: re-proven via POST /api/run NDJSON chain on :8966. Evidence events-result.json.]"
     },
     {
       "id": "event/agent-token",
@@ -276,13 +279,14 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "393e8cdb92799ff1497ad40b1c61e2a59bc66c81",
-        "date": "2026-07-07T21:43:58.867Z"
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false
+      "missing": false,
+      "notes": "[wave-7 final-a re-stale: re-proven via POST /api/run NDJSON chain on :8966. Evidence events-result.json.]"
     },
     {
       "id": "event/agent-tool-call",
