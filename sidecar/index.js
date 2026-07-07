@@ -1629,10 +1629,21 @@ const CHANNEL_SECRETS_FILE = path.join(CHANNELS_DIR, 'secrets.json');
 // bare sidecar has no keychain, so the token stays in the file exactly as before.
 const CHANNEL_TOKEN_ENV = { telegram: 'TELEGRAM_TOKEN', discord: 'DISCORD_TOKEN' };
 const channelTokenRuntime = Object.create(null);
+// DURABILITY LEDGER (the invariant Andrew locked): channelTokenDurable[id] === true ONLY when this channel's token
+// is proven to live in a durable home OTHER than the plaintext file — i.e. it arrived from the spawn env
+// (SKYNET_<ID>_TOKEN, which the shell only injects from the keychain) OR from a POST /api/channels/token push (the
+// shell only pushes AFTER a successful keychain set_password). A token that arrives via a connect POST BODY on
+// desktop is NOT durable: it means the frontend keychain store failed (or a stale cached frontend sent it inline),
+// so the plaintext file is its only surviving home and MUST be persisted. saveChannelSecrets strips only durable
+// channels' tokens; a non-durable token stays plaintext, exactly like the bare sidecar's honest fallback.
+const channelTokenDurable = Object.create(null);
 for (const id of channelSecretsMod.CHANNEL_IDS) {
   const v = String(ENV(CHANNEL_TOKEN_ENV[id]) || '').trim();
-  if (v) channelTokenRuntime[id] = v;
+  if (v) { channelTokenRuntime[id] = v; channelTokenDurable[id] = true; }   // spawn env == keychain-backed == durable
 }
+// Is this channel's token durable elsewhere (keychain/spawn-env)? Used by saveChannelSecrets to decide whether the
+// plaintext token may be stripped. Defaults false — a token with no proven durable home keeps its plaintext copy.
+function isChannelTokenDurable(id) { return !!channelTokenDurable[id]; }
 // Resolve the effective bot token for a channel: an explicit value (a fresh paste) wins; else the keychain-
 // injected/live-pushed runtime token; else — bare sidecar only — the token saved in the plaintext record.
 function channelToken(id, explicit, savedRecord) {
@@ -1640,7 +1651,11 @@ function channelToken(id, explicit, savedRecord) {
   if (e) return e;
   const rt = String(channelTokenRuntime[id] || '').trim();
   if (rt) return rt;
-  if (!DESKTOP_SHELL && savedRecord && savedRecord.token) return String(savedRecord.token);   // plaintext fallback
+  // Plaintext-record fallback — allowed on DESKTOP too now. The desktop persist path only ever leaves a token in the
+  // file when it is NOT durable in the keychain (saveChannelSecrets strips durable tokens), so a token present here
+  // is by construction the last surviving copy; ignoring it would recreate Andrew's loss (configured:false after
+  // restart despite a token on disk). Bare sidecar relies on this fallback exactly as before.
+  if (savedRecord && savedRecord.token) return String(savedRecord.token);
   return '';
 }
 function loadChannelSecrets() {
@@ -1650,9 +1665,11 @@ function loadChannelSecrets() {
 function saveChannelSecrets(obj) {   // protected sibling of the fs jail; the agent's own fs.* tools can't read/write it
   try {
     fs.mkdirSync(CHANNELS_DIR, { recursive: true });
-    // Desktop: never let a bot token OR the provider API key touch the plaintext file — both live in the keychain.
-    // Strip before writing. (stripTokens now removes `token` AND `key`; see sidecar/channels/secrets.js.)
-    const toPersist = DESKTOP_SHELL ? channelSecretsMod.stripTokens(obj) : obj;
+    // Desktop: the provider API key never touches the file (it lives in the keychain). The bot token is stripped
+    // ONLY when it is DURABLE elsewhere (keychain/spawn-env) — a non-durable token (keychain store failed / stale
+    // cached frontend sent it inline) has no other home, so its plaintext copy is the honest last-known-good
+    // fallback and MUST survive, exactly like the bare sidecar. (see sidecar/channels/secrets.js stripTokens.)
+    const toPersist = DESKTOP_SHELL ? channelSecretsMod.stripTokens(obj, isChannelTokenDurable) : obj;
     saveResilient(CHANNEL_SECRETS_FILE, toPersist);   // fsync-durable + .bak last-known-good (config survives power loss)
   } catch (e) { console.warn('[channels] secrets persist failed:', (e && e.message) || e); }
 }
@@ -1670,7 +1687,10 @@ function scrubChannelSecretsBak() {
   let parsed;
   try { parsed = JSON.parse(raw); } catch (_) { return; }             // corrupt .bak -> leave it (recovery may need bytes)
   if (!parsed || typeof parsed !== 'object') return;
-  const stripped = channelSecretsMod.stripTokens(parsed);
+  // Durability-aware: scrub the provider `key` always, but the bot `token` ONLY for channels whose token is durable
+  // elsewhere. A non-durable token in the .bak is a last-known-good copy — never destroy it (same invariant as the
+  // main file). Once the token becomes keychain-backed a later boot re-scrubs it here.
+  const stripped = channelSecretsMod.stripTokens(parsed, isChannelTokenDurable);
   if (JSON.stringify(stripped) === JSON.stringify(parsed)) return;    // already clean -> no needless rewrite
   try {
     writeFileDurable({ fs: fs, path: path }, bak, JSON.stringify(stripped));
@@ -1690,11 +1710,16 @@ let channelSecrets = loadChannelSecrets();
       keychainMode: DESKTOP_SHELL,
       hasChannelToken: (id) => !!String(ENV(CHANNEL_TOKEN_ENV[id]) || '').trim()
     });
+    // Adopt every imported token into the runtime layer so this session stays live. Do NOT mark it durable here: a
+    // token reported by migratePlaintext came off the plaintext file, which by construction means the keychain did
+    // NOT hold it (an env/keychain-backed token seeds channelTokenDurable above and is never re-imported). The shell
+    // re-pushes it via /api/channels/token after a successful keychain set_password, which is what marks it durable.
+    if (res.changed || res.imports.length) {
+      for (const imp of res.imports) { if (!channelTokenRuntime[imp.id]) channelTokenRuntime[imp.id] = imp.token; }
+    }
     if (res.changed) {
-      for (const imp of res.imports) { if (!channelTokenRuntime[imp.id]) channelTokenRuntime[imp.id] = imp.token; }   // keep this session live
-      channelSecrets = res.config;
-      saveChannelSecrets(channelSecrets);   // rewrite the file stripped of token AND key (no-ops what's already gone)
-      if (res.imports.length) console.warn('[channels] migrated ' + res.imports.map(i => i.id).join('+') + ' bot token(s) out of plaintext secrets.json — reconnect once to store them in the OS keychain.');
+      channelSecrets = res.config;   // key stripped; a keychain-backed token also stripped; a non-durable token KEPT
+      saveChannelSecrets(channelSecrets);
     }
     // Always sweep the .bak too — the main rewrite above snapshots the pre-scrub (leaky) main into .bak, and a
     // legacy .bak can independently still hold a secret even when the current main is already clean. Cheap no-op
@@ -3172,8 +3197,16 @@ async function handleSetChannelToken(req, res) {
   const channel = String(body.channel || body.id || '').trim().toLowerCase();
   if (channelSecretsMod.CHANNEL_IDS.indexOf(channel) < 0) return json(400, { error: 'unknown channel' });
   const tok = String(body.token || '').trim();
-  if (tok) channelTokenRuntime[channel] = tok;
-  else delete channelTokenRuntime[channel];
+  if (tok) {
+    channelTokenRuntime[channel] = tok;
+    // The shell only reaches this endpoint AFTER a successful keychain set_password, so a pushed token IS durable.
+    // This lets saveChannelSecrets strip it from the plaintext file (its durable home is now the keychain), and
+    // upgrades a token that first arrived non-durably (connect body) once the shell manages to store it.
+    channelTokenDurable[channel] = true;
+  } else {
+    delete channelTokenRuntime[channel];
+    delete channelTokenDurable[channel];   // cleared token -> durability irrelevant
+  }
   return json(200, { ok: true, channel: channel, configured: !!channelTokenRuntime[channel] });
 }
 
@@ -5604,8 +5637,12 @@ async function handleChannelDisconnect(req, res) {
 function handleChannelStatus(req, res) {
   const t = (channelSecrets && channelSecrets.telegram) || {};
   const configured = !!channelToken('telegram', '', t);   // keychain/runtime token (desktop) or plaintext record (bare)
+  // `durable` = the token has a home that survives an update/migration: the keychain/spawn-env (durable flag) OR a
+  // plaintext copy on disk. It is false ONLY for the pathological runtime-only state (token in memory, nowhere on
+  // disk, not in the keychain) — which the durability fix prevents, but truthful telemetry must be able to say it.
+  const durable = configured && (isChannelTokenDurable('telegram') || !!t.token);
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-  res.end(JSON.stringify({ connected: telegramStatus.connected, configured: configured, state: telegramStatus.state, detail: telegramStatus.detail || '', notifyAutonomous: !!(channelSecrets && channelSecrets.notifyAutonomous) }));
+  res.end(JSON.stringify({ connected: telegramStatus.connected, configured: configured, durable: durable, state: telegramStatus.state, detail: telegramStatus.detail || '', notifyAutonomous: !!(channelSecrets && channelSecrets.notifyAutonomous) }));
 }
 
 // POST /api/channels/discord/connect { token, key?, model, provider? } — the Messaging tab's Discord card hands over
@@ -5667,9 +5704,10 @@ async function handleDiscordDisconnect(req, res) {
 function handleDiscordStatus(req, res) {
   const d = (channelSecrets && channelSecrets.discord) || {};
   const configured = !!channelToken('discord', '', d);   // keychain/runtime token (desktop) or plaintext record (bare)
+  const durable = configured && (isChannelTokenDurable('discord') || !!d.token);   // keychain/env OR plaintext-on-disk (see telegram)
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
   // `ownerLocked` proves a saved Discord owner survived restart without disclosing who that owner is.
-  res.end(JSON.stringify({ connected: discordStatus.connected, configured: configured, state: discordStatus.state, detail: discordStatus.detail || '', notifyAutonomous: !!(channelSecrets && channelSecrets.notifyAutonomous), ownerLocked: !!d.ownerId }));
+  res.end(JSON.stringify({ connected: discordStatus.connected, configured: configured, durable: durable, state: discordStatus.state, detail: discordStatus.detail || '', notifyAutonomous: !!(channelSecrets && channelSecrets.notifyAutonomous), ownerLocked: !!d.ownerId }));
 }
 
 // POST /api/channels/notify { on } — the GLOBAL opt-in (default off): ping a connected channel when an AUTONOMOUS
