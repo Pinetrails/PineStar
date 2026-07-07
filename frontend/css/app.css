@@ -472,6 +472,10 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 /* "rate the work" — the primary leveling beat: a gold label + the shared consent buttons (reused styling). */
 .turnin-rate { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; margin: 5px 0 9px; }
 .work-rate-label { color: var(--gold); font-size: 12px; letter-spacing: .4px; opacity: .95; }
+/* one-time explainer above the very first rate control (chat.js WORKRATE_COACH_KEY) — a quiet full-width
+   line so it reads as coaching, not part of the label. flex-basis 100% breaks it onto its own row in the
+   .turnin-rate / consent-btns flex hosts. */
+.work-rate-hint { flex-basis: 100%; width: 100%; color: var(--ph); font-size: 11px; letter-spacing: .3px; opacity: .8; margin-bottom: 2px; }
 .turnin-rate .consent-btns, .cmsg.work-rate .consent-btns { margin-top: 0; }
 .turnin-item {
   display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: 7px 8px;
