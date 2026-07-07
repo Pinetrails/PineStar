@@ -40,3 +40,21 @@ description: How to actually prove a StarNet change works — live-app verificat
 ## Reporting the evidence
 Paste the actual artifact into your report: the eval result, the log line, the test summary.
 Say explicitly what was NOT verified. Unverifiable ≠ done — report it as unverified.
+
+## The READY-GATE law (station-wide claims are machine-gated)
+Lane-level done is lane-level: "lane X verified" is a claim you can earn. **Station-wide status
+is NOT.** Never call StarNet "ready", "in perfect standing", or "go-public-able" from your own
+judgement — that exact false-green wasted the most time on this project (sessions reported
+lane-green as project-green while the Guardian sat RED with open findings).
+
+The ONLY way to make a readiness claim: run `npm run qa:ready` and paste its receipt.
+- It prints ONE verdict — `READY` or `NOT READY — <numbered reasons>` + a per-check receipts
+  block — and exits 0 only when READY.
+- It gates on five real artifacts: ledger open P0/P1 == 0 · Guardian last cycle GREEN + fresh
+  (≤24h) + on the current trunk head · qa:journeys pass · Beginner Run not STUCK/FAIL ·
+  installed-exe smoke stamp GREEN + fresh (≤7d).
+- No-fake-green: any check that can't run (missing/unreadable artifact, git failure) is NOT
+  READY, loudly. A green `qa:ready` today is not guaranteed — that is the point.
+
+So: verify YOUR lane by the mechanics above; for anything wider than your lane, `qa:ready` is
+the authority and its receipt is the evidence you paste. (Locked: docs/DECISIONS.md.)
