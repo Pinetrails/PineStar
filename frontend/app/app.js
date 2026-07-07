@@ -845,7 +845,7 @@ const App = (() => {
     if (!agent || typeof Recipes === 'undefined' || !recipe) return false;
     const text = Recipes.fillTask(recipe, values || {});
     if (!text) return false;                                              // nothing to send → report the no-op honestly
-    const ws = (typeof Workstreams !== 'undefined') ? Workstreams.create(recipe.name || 'Mission') : null;
+    const ws = (typeof Workstreams !== 'undefined') ? Workstreams.create(recipe.name || 'Mission', { kind: 'task' }) : null;   // a recipe mission is a board task
     if (ws && typeof Chat !== 'undefined' && Chat.load) Chat.load(ws);   // make the new stream the compose target before sending
     refreshUsage(); renderRail();
     // fromRecipe marks this run as recipe-launched so R5 "Bottle a run" never offers to re-bottle a recipe (it
@@ -1926,7 +1926,7 @@ const App = (() => {
     if (typeof GoalStore !== 'undefined') GoalStore.init({
       now: () => Date.now(),
       getSystem: () => agent ? agent.systemPrompt : '',
-      launchDirective: (text) => { const ws = (typeof Workstreams !== 'undefined') ? Workstreams.create('Goal milestone') : null; if (ws && typeof Chat !== 'undefined' && Chat.load) Chat.load(ws); if (typeof Chat !== 'undefined' && Chat.send && !Chat.isBusy()) Chat.send(text); persist(); },
+      launchDirective: (text) => { const ws = (typeof Workstreams !== 'undefined') ? Workstreams.create('Goal milestone', { kind: 'task' }) : null; if (ws && typeof Chat !== 'undefined' && Chat.load) Chat.load(ws); if (typeof Chat !== 'undefined' && Chat.send && !Chat.isBusy()) Chat.send(text); persist(); },
       getRunSummary: (runId) => { const m = (runId && typeof Chat !== 'undefined' && Chat.runMeta) ? Chat.runMeta(runId) : null; return (m && m.title) ? m.title : ''; }
     });
     // UNDERSTANDING: the one honest, adaptive "how well the station understands the Commander" read
@@ -1974,7 +1974,7 @@ const App = (() => {
       // can't mislabel it), falling back to the active workstream when the runId is unknown (e.g. a direct call).
       getRecentTask: (runId) => { const m = (runId && typeof Chat !== 'undefined' && Chat.runMeta) ? Chat.runMeta(runId) : null; if (m && m.title) return m.title; const ws = (typeof Workstreams !== 'undefined' && Workstreams.active) ? Workstreams.active() : null; return ws ? (ws.title || '') : ''; },
       launchRecipe: launchRecipe,
-      launchDirective: (text) => { const ws = (typeof Workstreams !== 'undefined') ? Workstreams.create('First build') : null; if (ws && typeof Chat !== 'undefined' && Chat.load) Chat.load(ws); if (typeof Chat !== 'undefined' && Chat.send && !Chat.isBusy()) Chat.send(text); persist(); }
+      launchDirective: (text) => { const ws = (typeof Workstreams !== 'undefined') ? Workstreams.create('First build', { kind: 'task' }) : null; if (ws && typeof Chat !== 'undefined' && Chat.load) Chat.load(ws); if (typeof Chat !== 'undefined' && Chat.send && !Chat.isBusy()) Chat.send(text); persist(); }
     };
     if (typeof PitchStore !== 'undefined') PitchStore.init(adviceDeps);
     if (typeof SuggestStore !== 'undefined') SuggestStore.init(adviceDeps);

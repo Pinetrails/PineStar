@@ -1365,6 +1365,12 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 .kb-acts button:hover { color: var(--ph-bright); border-color: var(--ph); background: var(--ph-faint); }
 .kb-acts .assign { color: var(--gold); border-color: var(--ph-dim); }
 .kb-empty-col { font-size: 12px; opacity: 0.4; padding: 6px 2px; }
+/* IN-PROGRESS run-state chip — truthful: RUNNING only while Channels.isBusy, else DONE — REVIEW & SHIP.
+   Reuses the rail's live pulse (.ws-dot.running / @keyframes wsPulse) so the world speaks one visual language. */
+.kb-state { display: flex; align-items: center; gap: 5px; margin-top: 4px; font-size: 11px; letter-spacing: 1px; }
+.kb-state.running { color: var(--ph-bright); }
+.kb-state.done { color: var(--gold); }
+.kb-live { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; background: var(--ph-bright); animation: wsPulse 1.15s ease-in-out infinite; }
 
 /* SKILLS — honest capability readout (reuses v7 .perk-grid/.perk) */
 .term.skills-term { max-height: calc(100vh - 96px); }

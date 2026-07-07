@@ -193,4 +193,57 @@ const ad2 = W.adopt({ id: cronId, title: 'different title' });
 A.ok(ad2 === ad, 'adopt is idempotent — re-adopting the same id returns the existing record untouched');
 A.eq(W.get(cronId).title, 'Daily digest', 'a re-adopt never stomps the existing title/history');
 
+/* ---------- TASK-BOARD TRUTH: kind field ('task' = board card, 'chat' = rail-only session) ---------- */
+W.reset();
+// create() defaults to 'chat' — a plain new stream (summon/newWorkstream) is a session, not a board task.
+const chatWs = W.create('plain session');
+A.eq(chatWs.kind, 'chat', 'create() defaults kind to chat (a session is not a board task)');
+// create({kind:'task'}) mints a board card (addTask / recipe mission / goal milestone / /background).
+const taskWs = W.create('board directive', { kind: 'task', activate: false });
+A.eq(taskWs.kind, 'task', 'create({kind:task}) mints a board task');
+A.eq(taskWs.lane, 'todo', 'a new task still starts in to-do');
+// appendRun advances a task todo->active but the kind is unchanged (still a board card while running).
+A.ok(W.appendRun(taskWs.id, 'run_t1') === true, 'appendRun files the run on the task');
+A.eq(taskWs.lane, 'active', 'appendRun still advances todo->active');
+A.eq(taskWs.kind, 'task', 'a run does NOT change kind — a task stays a task while in progress');
+// a chat that gets a run auto-advances to active too, but must NEVER become a board task.
+A.ok(W.appendRun(chatWs.id, 'run_c1') === true, 'appendRun files the run on the chat');
+A.eq(chatWs.lane, 'active', 'a chat with a real run auto-advances todo->active (rail state)');
+A.eq(chatWs.kind, 'chat', 'a run does NOT promote a chat to a task (it stays off the board)');
+
+/* ---------- init() upgrade inference for PRE-UPGRADE saves (no kind field) ---------- */
+// A saved slice from before this change carries no `kind`. Infer: the two lanes only a deliberate board action
+// can produce (todo/shipped) => task; everything else (active sessions, General) => chat.
+W.init({
+  workstreams: [
+    { id: 'ws_general', title: null, lane: 'active' },      // General (no kind) -> chat
+    { id: 'old_todo', title: 'queued task', lane: 'todo' },   // a board card that never ran -> task
+    { id: 'old_shipped', title: 'finished task', lane: 'shipped' }, // a shipped card -> task
+    { id: 'old_active', title: 'ran session', lane: 'active' }       // an auto-advanced session -> chat
+  ],
+  activeId: 'ws_general', generalId: 'ws_general'
+});
+A.eq(W.get('ws_general').kind, 'chat', 'upgrade infer: General (active, no kind) -> chat');
+A.eq(W.get('old_todo').kind, 'task', 'upgrade infer: a todo card with no kind -> task');
+A.eq(W.get('old_shipped').kind, 'task', 'upgrade infer: a shipped card with no kind -> task');
+A.eq(W.get('old_active').kind, 'chat', 'upgrade infer: an active (auto-advanced) session with no kind -> chat');
+
+/* ---------- kind is preserved verbatim through serialize/init (no re-inference on a saved kind) ---------- */
+// a chat card that was manually pushed to a board lane (todo/shipped) still round-trips as chat — the saved
+// kind wins over the lane inference, so init never re-classifies a record that already declared its kind.
+W.init({
+  workstreams: [
+    { id: 'ws_general', title: null, lane: 'active', kind: 'chat' },
+    { id: 'kept_task', title: 'a task in active', lane: 'active', kind: 'task' },   // task in active lane, kept
+    { id: 'kept_chat', title: 'a chat in todo', lane: 'todo', kind: 'chat' }         // chat in todo lane, kept
+  ],
+  activeId: 'ws_general', generalId: 'ws_general'
+});
+A.eq(W.get('kept_task').kind, 'task', 'a saved kind:task in the active lane is kept (not re-inferred to chat)');
+A.eq(W.get('kept_chat').kind, 'chat', 'a saved kind:chat in the todo lane is kept (not re-inferred to task)');
+const dumpedKind = JSON.parse(JSON.stringify(W.serialize()));
+W.init(dumpedKind);
+A.eq(W.get('kept_task').kind, 'task', 'kind survives a serialize/init round-trip (task)');
+A.eq(W.get('kept_chat').kind, 'chat', 'kind survives a serialize/init round-trip (chat)');
+
 A.report('workstreams.test');

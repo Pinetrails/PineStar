@@ -1757,7 +1757,10 @@ const StationUI = (() => {
   function boardStreams() {
     const w = WS(); if (!w) return [];
     const gid = w.generalId();
-    return w.list().filter(x => x.id !== gid);   // list() already drops archived; the board also drops General
+    // TASK-BOARD TRUTH: the board is for TASKS, not sessions. Only kind:'task' streams render here (deliberate
+    // board directives / recipe missions / goal milestones / /background). Plain chat, summoned-agent home
+    // streams, and cron autosessions are kind:'chat' — they live in the COMMS rail, never on the board.
+    return w.list().filter(x => x.id !== gid && x.kind === 'task');   // list() already drops archived; board also drops General + all chats
   }
   function persistWS() { if (typeof App !== 'undefined' && App.persist) App.persist(); }
   // a board mutation must refresh BOTH views — App.refreshRail re-renders the rail AND calls back into
@@ -1767,7 +1770,7 @@ const StationUI = (() => {
   function addTask(title) {
     const w = WS(); if (!w) return;
     title = String(title || '').trim(); if (!title) return;
-    w.create(title.slice(0, 160), { activate: false });   // a new TO DO workstream; don't hijack the active chat
+    w.create(title.slice(0, 160), { activate: false, kind: 'task' });   // a new TO DO task card; don't hijack the active chat
     persistWS(); sync();
   }
   // open a card's conversation in COMMS (switch the active workstream) — safe mid-run now (per-stream channels)
@@ -1813,6 +1816,17 @@ const StationUI = (() => {
       '<span class="es-glyph">✓</span><b>NOTHING SHIPPED YET</b>' +
       '<span>Finished workstreams land here as proof of work.</span></div></div>';
   }
+  // TRUTHFUL RUN-STATE (IN PROGRESS cards only): the chip maps to a PROVABLE backend state — RUNNING when a run
+  // is actually in flight on this stream (Channels.isBusy), else DONE — REVIEW & SHIP once at least one run has
+  // landed (the human's SHIP click is the only exit to SHIPPED — never auto-ship). A brand-new active card with
+  // no run yet shows nothing. Reuses the rail's live-pulse vocabulary (.kb-live mirrors .ws-dot.running).
+  function stateChip(s) {
+    if (s.lane !== 'active') return '';
+    const running = (typeof Channels !== 'undefined' && Channels.isBusy && Channels.isBusy(s.id));
+    if (running) return '<div class="kb-state running"><span class="kb-live"></span>RUNNING</div>';
+    if (s.runIds && s.runIds.length) return '<div class="kb-state done">DONE — REVIEW &amp; SHIP</div>';
+    return '';
+  }
   function card(s, i) {
     const n = s.runIds.length, runs = n ? n + (n === 1 ? ' run' : ' runs') : '';
     const acts = s.lane === 'todo'
@@ -1824,6 +1838,7 @@ const StationUI = (() => {
       '<div class="kb-title">' + esc(s.title || 'untitled') + '</div>' +
       '<div class="kb-meta"><span>' + clock(s.lastActiveAt || s.createdAt) + '</span>' +
       (runs ? '<span>' + runs + '</span>' : '') + '</div>' +
+      stateChip(s) +
       '<div class="kb-acts">' + acts + '</div></div>';
   }
   function buildTasks(body) {
