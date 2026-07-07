@@ -64,6 +64,41 @@ async function collect(p, req) { const out = []; for await (const e of p.stream(
     A.eq(merged.aborted, true, 'a caller-abort aborts the merged signal');
   }
 
+  // 3a. connectGuard unit behavior — the DISARMABLE connect ceiling. The reason objects it aborts with are
+  //     exactly what undici surfaces as the fetch rejection (verified on Node v22: fetch rejects with the
+  //     abort REASON object).
+  {
+    // connect expiry: the timer fires -> signal aborts with a `timeout`-classified reason (not an AbortError).
+    const g = timeouts.connectGuard(null, 15);
+    await new Promise(r => setTimeout(r, 40));
+    A.eq(g.signal.aborted, true, 'connectGuard signal aborts once the connect window elapses');
+    const reason = g.signal.reason;
+    A.ok(reason && /timed out/i.test(reason.message), 'the connect-expiry reason message contains "timed out"');
+    A.ok(reason && reason.name !== 'AbortError', 'a connect expiry is NOT an AbortError (so it retries like a transient error)');
+    A.eq(classifyApiError(reason, {}).reason, 'timeout', 'the connect-expiry reason classifies as timeout');
+  }
+  {
+    // disarm() stops the timer: after disarm the signal must never abort on its own, even long past the window.
+    const g = timeouts.connectGuard(null, 15);
+    g.disarm();
+    await new Promise(r => setTimeout(r, 40));
+    A.eq(g.signal.aborted, false, 'a disarmed connectGuard never aborts (the streaming body is safe)');
+  }
+  {
+    // user-cancel wins over the connect timer and surfaces as a NAMED AbortError.
+    const ac = new AbortController();
+    const g = timeouts.connectGuard(ac.signal, 10000);
+    ac.abort();
+    A.eq(g.signal.aborted, true, 'a caller-abort aborts the guard signal');
+    A.eq(g.signal.reason && g.signal.reason.name, 'AbortError', 'a caller-abort surfaces as an AbortError reason, never a timeout');
+  }
+  {
+    // a pre-aborted caller signal aborts the guard immediately as an AbortError.
+    const g = timeouts.connectGuard({ aborted: true }, 10000);
+    A.eq(g.signal.aborted, true, 'a pre-aborted caller signal aborts the guard at once');
+    A.eq(g.signal.reason && g.signal.reason.name, 'AbortError', 'pre-aborted -> AbortError, not timeout');
+  }
+
   // 4. Retry-After honored: a 429 with Retry-After: 2 makes requestWithRetry wait ~2s (capped at 60s). We
   //    prove the MATH by classifying the same error and checking the delay formula, and prove it is WIRED by
   //    timing a retry against a short Retry-After. Use a small value so the test stays fast.
@@ -117,14 +152,128 @@ async function collect(p, req) { const out = []; for await (const e of p.stream(
     A.eq(p.contextLimit('m'), 123, 'the re-warmed catalog now answers contextLimit');
   }
 
-  // 6. env-tunable idle timeout is read from SKYNET_PROVIDER_IDLE_MS (default 120s).
+  // 6. env-tunable idle timeout is read from SKYNET_PROVIDER_IDLE_MS (default 300s — generous, since after the
+  //    connect guard disarms this is the streaming body's only ceiling and deep-reasoning turns go byte-silent).
   {
     const saved = process.env.SKYNET_PROVIDER_IDLE_MS;
     process.env.SKYNET_PROVIDER_IDLE_MS = '25';
     A.eq(timeouts.idleMs(), 25, 'idle timeout honors SKYNET_PROVIDER_IDLE_MS');
     delete process.env.SKYNET_PROVIDER_IDLE_MS;
-    A.eq(timeouts.idleMs(), 120000, 'idle timeout defaults to 120s when unset');
+    A.eq(timeouts.idleMs(), 300000, 'idle timeout defaults to 300s when unset');
     if (saved != null) process.env.SKYNET_PROVIDER_IDLE_MS = saved;
+  }
+
+  // ---- connect-guard end-to-end through a real adapter (makeOpenRouterProvider) ----
+  // A fetch stand-in that honors the AbortSignal the way undici does: if the signal aborts before it decides to
+  // respond, it rejects with the signal's REASON object (verified live on Node v22). Streams a body via a real
+  // ReadableStream so res.body.getReader() drives the idle-guarded reader path.
+  function sseResponse(chunks, perChunkMs) {
+    let i = 0;
+    const stream = new ReadableStream({
+      pull(controller) {
+        return new Promise(resolve => {
+          setTimeout(() => {
+            if (i < chunks.length) controller.enqueue(new TextEncoder().encode(chunks[i++]));
+            else controller.close();
+            resolve();
+          }, perChunkMs);
+        });
+      }
+    });
+    return new Response(stream, { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
+  }
+  function abortWhenSignalled(signal) {
+    // never resolves on its own; rejects with the abort reason if/when the signal fires (undici semantics).
+    return new Promise((_res, rej) => {
+      if (signal && signal.aborted) return rej(signal.reason || Object.assign(new Error('aborted'), { name: 'AbortError' }));
+      if (signal && typeof signal.addEventListener === 'function') {
+        signal.addEventListener('abort', () => rej(signal.reason || Object.assign(new Error('aborted'), { name: 'AbortError' })), { once: true });
+      }
+    });
+  }
+
+  // 7. REGRESSION (the bug): headers arrive fast, then the body streams for LONGER than the connect window.
+  //    With a tiny connect ms the OLD code aborted the body mid-stream; the disarmable guard must let it finish.
+  {
+    const savedC = process.env.SKYNET_PROVIDER_CONNECT_MS;
+    process.env.SKYNET_PROVIDER_CONNECT_MS = '30';   // connect ceiling far SHORTER than the total stream time
+    const chunks = [
+      'data: ' + JSON.stringify({ choices: [{ delta: { content: 'hel' } }] }) + '\n',
+      'data: ' + JSON.stringify({ choices: [{ delta: { content: 'lo' } }] }) + '\n',
+      'data: [DONE]\n'
+    ];
+    const fetchImpl = async (url, opts) => {
+      if (!/chat\/completions/.test(url)) return new Response('{"data":[]}', { status: 200 });
+      // headers resolve immediately; each body chunk arrives ~50ms apart -> whole body > the 30ms connect window.
+      return sseResponse(chunks, 50);
+    };
+    const p = makeOpenRouterProvider({ fetch: fetchImpl, key: 'k' });
+    let err = null, text = '';
+    try {
+      for await (const e of p.stream({ model: 'm', messages: [] })) if (e.type === 'text') text += e.delta;
+    } catch (e) { err = e; }
+    A.ok(!err, 'a body that streams longer than the connect window completes WITHOUT a timeout error');
+    A.eq(text, 'hello', 'the full streamed body is delivered after the connect guard is disarmed');
+    if (savedC != null) process.env.SKYNET_PROVIDER_CONNECT_MS = savedC; else delete process.env.SKYNET_PROVIDER_CONNECT_MS;
+  }
+
+  // 8. CONNECT EXPIRY: a fetch that never returns headers -> the guard fires -> after retries the stream() rejects
+  //    with a `timeout`-classified error (message contains "timed out"), NOT an AbortError.
+  {
+    const savedC = process.env.SKYNET_PROVIDER_CONNECT_MS;
+    process.env.SKYNET_PROVIDER_CONNECT_MS = '15';
+    let attempts = 0;
+    const fetchImpl = async (url, opts) => {
+      if (!/chat\/completions/.test(url)) return new Response('{"data":[]}', { status: 200 });
+      attempts++;
+      return abortWhenSignalled(opts && opts.signal);   // headers never arrive; only the guard can end this
+    };
+    const p = makeOpenRouterProvider({ fetch: fetchImpl, key: 'k' });
+    let err = null;
+    try { for await (const _ of p.stream({ model: 'm', messages: [] })) {} } catch (e) { err = e; }
+    A.ok(err, 'a never-connecting fetch eventually rejects');
+    A.ok(err && /timed out/i.test(err.message), 'the connect-expiry error message contains "timed out"');
+    A.ok(err && err.name !== 'AbortError', 'a connect expiry is NOT surfaced as a cancel/AbortError');
+    A.eq(classifyApiError(err, {}).reason, 'timeout', 'the connect-expiry error classifies as timeout (retryable)');
+    A.ok(attempts >= 2, 'a connect timeout retried like a transient network error (>=2 attempts)');
+    if (savedC != null) process.env.SKYNET_PROVIDER_CONNECT_MS = savedC; else delete process.env.SKYNET_PROVIDER_CONNECT_MS;
+  }
+
+  // 9. USER CANCEL never classifies as timeout — pre-headers AND mid-body both surface as a clean cancel.
+  {
+    // 9a. cancel BEFORE headers arrive -> stream() ends cleanly (isAbort -> return), no timeout, no throw.
+    {
+      const ac = new AbortController();
+      const fetchImpl = async (url, opts) => {
+        if (!/chat\/completions/.test(url)) return new Response('{"data":[]}', { status: 200 });
+        setTimeout(() => ac.abort(), 10);               // user cancels while the POST is still in flight
+        return abortWhenSignalled(opts && opts.signal);
+      };
+      const p = makeOpenRouterProvider({ fetch: fetchImpl, key: 'k' });
+      let err = null; const out = [];
+      try { for await (const e of p.stream({ model: 'm', messages: [], signal: ac.signal })) out.push(e); } catch (e) { err = e; }
+      A.ok(!err, 'a pre-headers user-cancel ends the stream cleanly (no throw)');
+      A.eq(out.length, 0, 'nothing is emitted after a pre-headers cancel');
+    }
+    // 9b. cancel MID-BODY -> the idle-guarded reader sees the caller signal and ends cleanly, never as a timeout.
+    {
+      const ac = new AbortController();
+      const chunks = [
+        'data: ' + JSON.stringify({ choices: [{ delta: { content: 'part' } }] }) + '\n',
+        'data: ' + JSON.stringify({ choices: [{ delta: { content: 'ial' } }] }) + '\n',
+        'data: [DONE]\n'
+      ];
+      const fetchImpl = async (url) => {
+        if (!/chat\/completions/.test(url)) return new Response('{"data":[]}', { status: 200 });
+        return sseResponse(chunks, 40);                 // slow body so we can cancel mid-stream
+      };
+      const p = makeOpenRouterProvider({ fetch: fetchImpl, key: 'k' });
+      let err = null; let text = '';
+      setTimeout(() => ac.abort(), 60);                  // fire after the first chunk, before [DONE]
+      try { for await (const e of p.stream({ model: 'm', messages: [], signal: ac.signal })) if (e.type === 'text') text += e.delta; } catch (e) { err = e; }
+      A.ok(!err || err.name === 'AbortError', 'a mid-body user-cancel is a clean cancel, never a timeout error');
+      A.ok(!/timed out/i.test((err && err.message) || ''), 'a mid-body cancel is NOT reported as a timeout');
+    }
   }
 
   A.report('provider.timeouts.test');
