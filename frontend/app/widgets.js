@@ -51,6 +51,29 @@ const Widgets = (() => {
   const feed = new Map();     // slug -> agent-fed record (each /api/widgets poll rebuilds it whole)
   let tickerStep = 0;         // shared ticker phase — every list widget cycles in step
 
+  // E3: per-source staleness — the honest "this last-good number is no longer live" flag. A silent
+  // poll failure used to keep painting the last-good figure with a hardcoded 'live' tag; now the
+  // failing source flips stale (value dims + source tag reads 'stale', mirroring the canvas
+  // linkStaleDim). Cleared on the next SUCCESSFUL poll. Keyed by the widget's real data source.
+  const pollFail = { insights: false, cron: false, feed: false };
+  // whether the live SSE bridge is down — the event-driven QUEUE widget's staleness signal (its depth
+  // is fed by queue.status events, so a dropped bridge means the latched depth is last-known, not live).
+  function linkDownNow() {
+    try { if (typeof World !== 'undefined' && World.linkState) { const ls = World.linkState(); return !!(ls && ls.bridged && !ls.paused && ls.down); } } catch (_) {}
+    return false;
+  }
+  // is a static widget's source stale RIGHT NOW? poll-fed widgets: their poll failed, OR the SSE bridge
+  // is down (the sidecar is gone, so the next poll is already doomed — flag it now rather than waiting
+  // ~30s for the poll to time out). Event-fed QUEUE: only the SSE bridge going down. Agent-fed widgets
+  // keep their own provenance/"no signal" honesty and are never marked here.
+  const SRC_OF = { runs24: 'insights', tokens: 'insights', cron: 'cron', queue: 'queue' };
+  function staleFor(id) {
+    const src = SRC_OF[id];
+    if (src === 'queue') return linkDownNow();
+    if (src === 'insights' || src === 'cron') return pollFail[src] || linkDownNow();
+    return false;
+  }
+
   const $ = sel => document.querySelector(sel);
 
   /* ================= pure folds (node-tested; no DOM) ================= */
@@ -253,6 +276,14 @@ const Widgets = (() => {
     }
     if (slot) slot.innerHTML = (p.val == null || p.tick != null) ? '' : sparkSvg(p.series);
     if (def.fed && srct) srct.textContent = p.prov || 'no signal';   // provenance: who fed it · how long ago
+    // E3: STATIC widgets carry a hardcoded 'live' source tag. When the source goes stale (poll failure
+    // or SSE drop) flip it to 'stale' and dim the value — but ONLY when a real latched value is showing.
+    // A first-paint '—' (no value yet) stays honestly '—'/'live', never dressed as stale data.
+    if (!def.fed) {
+      const stale = staleFor(id) && p.val != null && p.tick == null;
+      el.setAttribute('data-stale', stale ? '1' : '0');
+      if (srct) srct.textContent = stale ? 'stale' : 'live';
+    }
   }
 
   function paintAll(pulseId) {
@@ -420,14 +451,14 @@ const Widgets = (() => {
   function pollInsights() {
     fetch('/api/insights', { cache: 'no-store' })
       .then(r => (r && r.ok) ? r.json() : null)
-      .then(st => { if (st) { insights = st; liveRunEnds = 0; paintAll(); } })
-      .catch(() => { /* sidecar absent: widgets keep their honest "—" */ });
+      .then(st => { if (st) { insights = st; liveRunEnds = 0; pollFail.insights = false; paintAll(); } else { pollFail.insights = true; paintAll(); } })
+      .catch(() => { pollFail.insights = true; paintAll(); });   // E3: silent failure now flips the source stale, not a frozen 'live'
   }
   function pollCron() {
     fetch('/api/cron', { cache: 'no-store' })
       .then(r => (r && r.ok) ? r.json() : null)
-      .then(st => { if (st && Array.isArray(st.jobs)) { cron = st; paintAll(); } })
-      .catch(() => {});
+      .then(st => { if (st && Array.isArray(st.jobs)) { cron = st; pollFail.cron = false; paintAll(); } else { pollFail.cron = true; paintAll(); } })
+      .catch(() => { pollFail.cron = true; paintAll(); });
   }
   function pollFeed() {
     fetch('/api/widgets', { cache: 'no-store' })
@@ -471,6 +502,9 @@ const Widgets = (() => {
     pollCron(); setInterval(pollCron, POLL_CRON_MS);
     pollFeed(); setInterval(pollFeed, POLL_FEED_MS);
     setInterval(tickTicker, TICKER_MS);
+    // E3: repaint on a short cadence so an SSE bridge drop surfaces the stale cue promptly (the QUEUE
+    // widget is event-driven, so nothing else would repaint it) instead of waiting for the next poll.
+    setInterval(() => { try { paintAll(); } catch (_) {} }, 4000);
   }
 
   // browser boot only — under node (the pure-fold tests require this file) there is no DOM
@@ -482,7 +516,8 @@ const Widgets = (() => {
   // read-only dev/verification surface (mirrors topbar.js; inert otherwise)
   return { init, _layout: () => ({ top: layout.top.slice(), bot: layout.bot.slice() }), _paintAll: paintAll,
            _foldRuns: foldRuns, _foldTokens: foldTokens, _fmtCount: fmtCount, _sanitizeLayout: sanitizeLayout,
-           _sanitizeFeedRecord: sanitizeFeedRecord, _fmtAge: fmtAge, _FEED_RE: FEED_RE, _pollFeed: pollFeed };
+           _sanitizeFeedRecord: sanitizeFeedRecord, _fmtAge: fmtAge, _FEED_RE: FEED_RE, _pollFeed: pollFeed,
+           _staleFor: staleFor, _pollFail: pollFail, _setInsights: (v) => { insights = v; } };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = { Widgets };

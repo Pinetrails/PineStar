@@ -907,6 +907,11 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 }
 .model-dock-row:hover { color: var(--ph-bright); background: var(--ph-faint); }
 .model-dock-row.sel { color: var(--ink); background: var(--ph); }
+/* E4: offline fallback — the live catalog was unreachable, these are a built-in unverified seed list.
+   Amber group tag + dimmed rows so they never read as a verified live catalog. */
+.model-dock-group-offline { color: var(--warn, #e8a13a); font-size: 9px; font-weight: 600; font-style: normal; letter-spacing: 0.5px; }
+.model-dock-row.fallback .model-dock-row-name { color: var(--ph-dim); }
+.model-dock-row.fallback.sel .model-dock-row-name { color: var(--ink); }
 .model-dock-row-name {
   min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px;
 }
@@ -1245,6 +1250,16 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 }
 #status-pill.working { color: var(--gold); border-color: var(--gold); box-shadow: 0 0 12px rgba(var(--gold-rgb),0.35); }
 #status-pill.thinking { color: var(--ph-bright); }
+/* E1: LINK DOWN — the pill can only read ONLINE while the sidecar bridge is actually up. When the
+   link dies it flips to a red-phosphor OFFLINE, matching the canvas LINK DOWN marker (#ff6a4c) with
+   a slow breathing pulse so it reads as a live fault, never a frozen label. */
+#status-pill.down {
+  color: #ff6a4c; border-color: rgba(255,80,60,0.6);
+  text-shadow: 0 0 6px rgba(255,80,60,0.9);
+  box-shadow: 0 0 12px rgba(255,80,60,0.35), inset 0 0 10px rgba(0,0,0,0.6);
+  animation: pill-down-breathe 2.2s ease-in-out infinite;
+}
+@keyframes pill-down-breathe { 0%,100% { opacity: 0.62; } 50% { opacity: 1; } }
 
 /* ============================================================
    GROUPED BOTTOM-BAR DOCKS (navdock.js) — the flat panel
@@ -1631,6 +1646,8 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 .ag-sdot.on { background: var(--ok); box-shadow: 0 0 5px rgba(123,200,138,.55); }
 .ag-sdot.working { background: var(--gold); box-shadow: 0 0 7px rgba(var(--gold-rgb),.7); animation: sdot-pulse 1.1s infinite; }
 .ag-sdot.thinking { background: var(--ph-bright); box-shadow: 0 0 6px var(--ph-glow); animation: sdot-pulse .7s infinite; }
+/* E2: link down → OFFLINE dot, red-phosphor breathing, matching the canvas LINK DOWN marker */
+.ag-sdot.down { background: #ff6a4c; box-shadow: 0 0 6px rgba(255,80,60,.75); animation: sdot-pulse 2.2s infinite; }
 @keyframes sdot-pulse { 0%,100%{ opacity:1; } 50%{ opacity:.3; } }
 
 /* 3-cell RPG stat grid */

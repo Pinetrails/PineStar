@@ -74,8 +74,11 @@ const ModelPicker = (() => {
       if (gl !== group) { group = gl; og = document.createElement('optgroup'); og.label = gl; sel.appendChild(og); }
       const opt = document.createElement('option');
       opt.value = optValue(item);
-      opt.textContent = M ? M.labels.model(item) : item.id;
-      opt.title = item.id + '  ·  ' + norm(item.provider);
+      // E4: an item flagged `fallback` came from the hardcoded seed list (live catalog fetch failed for
+      // its provider) — label it so this picker doesn't assert an unverified model as a live one, the
+      // same honesty the model dock and the connect screen's "(catalog offline)" carry.
+      opt.textContent = (M ? M.labels.model(item) : item.id) + (item.fallback ? '  (catalog offline)' : '');
+      opt.title = item.id + '  ·  ' + norm(item.provider) + (item.fallback ? '  ·  fallback (catalog offline, unverified)' : '');
       (og || sel).appendChild(opt);
     }
     if (!list.length) { const o2 = document.createElement('option'); o2.value = '__none'; o2.disabled = true; o2.textContent = 'no models found — add a provider key in Settings'; sel.appendChild(o2); }

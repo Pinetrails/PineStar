@@ -394,6 +394,7 @@ const Chat = (() => {
     wireTrust();       // GROWTH Tier 3: after a clean run, offer ONE earned-autonomy raise at the LOWEST beat priority — below the arc (registers once)
     wireCrewCapture(); // P3.2: record each dispatched worker's forwarded run-end spend so a 👍 on a crew run splits XP honestly (registers once)
     wireCuriosity();   // Commander Dossier: one gentle "tell me about X" nudge after a clean run (registers once)
+    wireBgExit();      // E6: surface shell.bg.exit (a background dev-server/watcher ended) as a terse COMMS system line — was a zero-listener event (registers once)
     wireSkillAside();  // A2: after a background review distills a skill, ONE quiet "distilled this run…" aside (registers once)
     wireIdBar();       // COMMS agent selector: a change switches to (or mints) a workstream bound to that agent (registers once)
     load(opts.ws);
@@ -2536,6 +2537,43 @@ const Chat = (() => {
       crewSeen.splice(i, 1);       // consumed — never double-attributed to a second lead run
     }
     return Array.from(byAgent.values());
+  }
+  /* E6 — shell.bg.exit consumer. The sidecar announces when a background/long-running shell process
+     (shell.exec background:true — a dev server, a watcher) ends, riding the durable SSE bus. That event
+     existed SOLELY for the UI yet had zero listeners, so a crashed dev server kept reading as alive with
+     no surface anywhere. Give it a minimal honest system line in COMMS: a terse station broadcast (not a
+     beat-slot card — never competes for the post-run slot). Renders directly (no coalesce/screen gate),
+     because a process fault must never be silently dropped. Scoped to the owning agent's name when
+     resolvable. Truthful telemetry: it states what the harness proved — the process exited, with its code. */
+  let bgExitWired = false;
+  function wireBgExit() {
+    if (bgExitWired || typeof U === 'undefined' || !U.bus) return;
+    bgExitWired = true;
+    U.bus.on('shell.bg.exit', p => {
+      try {
+        if (!p || !p.bgId || !log) return;
+        const code = (typeof p.exitCode === 'number') ? p.exitCode : null;
+        const killed = !!p.killed;
+        const nm = (typeof App !== 'undefined' && App.agentName) ? (App.agentName(p.agentId || 'agent') || '') : '';
+        // terse, honest: WHO (if known) · WHAT · the proven exit code / killed state
+        const verb = killed ? 'was stopped' : (code === 0 ? 'exited cleanly' : 'exited');
+        const codeStr = killed ? '' : (code == null ? '' : ' (code ' + code + ')');
+        const who = nm ? nm + '’s ' : '';
+        const line = who + 'background process ' + String(p.bgId) + ' ' + verb + codeStr;
+        // render as a station system line (broadcast register) — dim, centered, hairline; NOT a card.
+        const d = document.createElement('div');
+        d.className = 'cmsg broadcast' + (killed || code === 0 ? '' : ' broadcast-warn');
+        d.setAttribute('role', 'status');
+        const span = document.createElement('span'); span.className = 'bc-line';
+        const pre = document.createElement('span'); pre.className = 'bc-glyph'; pre.textContent = '▸ ';
+        span.appendChild(pre);
+        span.appendChild(document.createTextNode(line));
+        d.appendChild(span);
+        if (typeof clearEmptyState === 'function') clearEmptyState();
+        log.appendChild(d);
+        autoscroll();
+      } catch (_) {}
+    });
   }
   function wireCuriosity() {
     if (curiosityWired || typeof U === 'undefined' || !U.bus) return;

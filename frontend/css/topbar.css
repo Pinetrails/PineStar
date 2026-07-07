@@ -61,6 +61,9 @@
 /* ---- SPEND TODAY well: dim label, bright dollar value, glow-pulse on a fresh cost ---- */
 #tb-spend .tb-val { color: var(--ph-bright); }
 #tb-spend[data-zero="1"] .tb-val { color: var(--ph-dim); text-shadow: none; }   /* $0.00 sits quiet */
+/* E3: ledger poll dead → the shown spend is last-known, not live. Dim + amber tint, mirroring the
+   widget-rail stale cue and the canvas linkStaleDim (value present but not fresh). */
+#tb-spend[data-stale="1"] .tb-val { color: var(--warn, #e8a13a); opacity: 0.55; text-shadow: none; }
 /* a cost event just landed — brief phosphor bloom on the value (opacity/text only) */
 #tb-spend.tb-tick .tb-val { animation: tb-spend-tick var(--t-slow, 400ms) var(--ease-out, ease); }
 @keyframes tb-spend-tick {
