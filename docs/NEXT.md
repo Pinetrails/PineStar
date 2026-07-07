@@ -251,6 +251,56 @@ building it (same law as Atlas areas).
 - GA-21 Prompt templates / quick replies.
 - GA-22 Bulk session ops (clear completed, archive old).
 
+**Round 2 (GB) — six deeper audits 2026-07-07: world, REFIT/workshop, skills/routines/voice,
+lifecycle, micro-UX, journey-walk. Corrections applied: CHANNELS window EXISTS
+(stationui.js:3360-3488 TG+Discord+health), ROUTINES console EXISTS (#rt-add/#rt-arm/run-now);
+E-STOP visibility + get-a-key link already chipped by Atlas — not re-listed.**
+
+*GB-T1 — highest pain:*
+- GB-1 Transcript SEARCH UI: BM25 search already in transcriptstore.js:81 — zero frontend. One
+  search box over all conversations. (Absorbs GA-6.)
+- GB-2 Deliverables LIBRARY: browse/search ALL past outputs (returns.js caps at 8/24 pending;
+  no archive view, no re-open old runs).
+- GB-3 RECORDING MODE: one toggle hiding keys/spend/PII for screen capture (zero code; GTM —
+  spectacle is the growth engine and Andrew records constantly).
+- GB-4 Quit/update-while-running guards: no "N agents still working" on close (beforeunload
+  saves only); updater installs over live runs (main.rs:1418).
+- GB-5 Crew bodies: pointer cursor but click falls through (world.js:720 hero-only) — click →
+  quick actions (talk/dossier/locate); plus click-roster-name → camera jump to agent.
+- GB-6 Prop hover tooltips (name + grants) — belts have tags (world.js:4080), props silent.
+- GB-7 Needs-input triage: no roll-up of runs blocked on permission prompts across sessions
+  (board shows RUNNING/DONE only; a stuck approval in a background stream is invisible).
+- GB-8 "Resume/restore" discoverability: /restore + /resume slash-only; no UI on old sessions.
+
+*GB-T2 — truthful-telemetry violations (backend knows, UI never shows):*
+- GB-9 workspaceDegraded flag set (index.js:796) but never rendered — user unaware workspace
+  is newer than app.
+- GB-10 Disk-write failures fail-open silently (grants degrade to deny on ENOSPC, no surface).
+- GB-11 Guardian sidecar respawn is silent — no "connection recovered" toast.
+- GB-12 Skill last-fired/last-result never shown ("is this skill even used?").
+- GB-13 Routine fire HISTORY absent + timezone mislabel (server ISO labeled "local",
+  stationui.js:4168).
+- GB-14 Per-run cost breakdown (in/out tokens, per-tool) — totals only.
+
+*GB-T3 — build/world/workshop QoL:*
+- GB-15 Prop palette search/filter + per-category counts (build.js:255-280).
+- GB-16 Copy/duplicate placed prop; multi-select/bulk ops in REFIT.
+- GB-17 Camera: reset/fit + follow exist in code (world.js:812,925) — expose UI + keyboard
+  (+/-/F/arrows); mute-all quick toggle in chrome.
+- GB-18 Workshop bulk cleanup UI (janitor sees 106 rot findings; user has per-card Discard only).
+- GB-19 Inline preview for image/md/csv deliverables (html-only today).
+- GB-20 Station layout blueprints (save/share/load layout templates).
+
+*GB-T4 — micro-UX & hygiene:*
+- GB-21 Focus trap + focus-restore in modal windows (aria-modal set, no trap; stationui.js:115).
+- GB-22 Empty-input guards on create/rename (empty routine name → raw 400).
+- GB-23 Copy buttons on ids/paths/tokens beyond diagnostics.
+- GB-24 Goal abandon button + quest dismiss beyond dossier-kind (queststate.js:88 gates).
+- GB-25 Voice: level indicator while listening, per-agent voice preview, STT language picker.
+- GB-26 Automated periodic backup + backup-before-update (manual export only).
+- GB-27 .bugloops unbounded (395MB/2066 files) — TTL sweep.
+- GB-28 Multi-agent status dashboard (which of N agents stuck/failed/done — superset of GB-7).
+
 ## Parked product decisions (need Andrew, don't guess)
 
 - `fullOffice()` autonomous prop placement vs. hand-placed only.
