@@ -439,11 +439,27 @@ leash-capped. Deliverable shape = "while you were gone I finished X — approve 
 **Lane queue (claim in-file before building; shared/events.js changes are additive-only via its
 owner):**
 
-_Claims: NS-3 IN PROGRESS — agent/night-hands · NS-4 IN PROGRESS — agent/night-report
-(Fable-orchestrated wave 2, 2026-07-07). NS-2 queued behind NS-3 (same beat-pipeline seam).
-DONE: NS-0 MERGED (night-core — heartbeat leases + skip telemetry + decision ledger, gates
-264+http green) · NS-1 MERGED (night-shift — server-owned driver, enforced leash, restart
-resume, status route; KNOWN: cold-dossier beat spends leash pre-model-call → NS-2 fixes)._
+**ALL FIVE LANES MERGED 2026-07-07 (same day as diagnosis)** — NS-0 night-core · NS-1
+night-shift · NS-3 night-hands · NS-4 night-report · NS-2 night-brain. Gates green after
+every merge (final trunk: test:fast 266 + test:http full). **Composed live proof on merged
+trunk (orchestrator-run, no force-fire):** seeded activity + mock provider + shrunk knobs,
+posture free/sandbox/leash 3, zero user input → the SCHEDULED driver fired 3 real tool-run
+beats at steady cadence, each built a real artifact in the workshop jail (3 jail dirs on
+disk), the 4th tick declined binding:'leash', and /api/autonomy/ledger tells the entire
+night truthfully (present→act/outcome→cooldown→leash). The overnight-1-task failure mode is
+structurally gone: server-owned timer (webview demoted to EARN-only), restart-resume state,
+enforced leash, multi-beat cadence, every decision ledgered.
+
+**Residuals (honest):**
+- End-to-end beat with a REAL keyed provider not yet observed (all lanes + orchestrator
+  proved against mock providers per repo convention; first real overnight = the true test).
+- NS-4 morning-report beat proven via real modules against a live sidecar in a node/vm shim —
+  rendered-canvas DOM round-trip in the installed app still worth one attended morning.
+- Workshop "kept vs discarded" context only joins night-shift deliverables, not user-workshop
+  verdicts (no clean title+verdict source; NS-2 report).
+- PRODUCT FORK for Andrew: should reach ≥ sandbox auto-imply the away-workshop write grant?
+  Kept separate (no silent consent widening) — dial 'build'/'free' still needs the workshop
+  grant once before night acts can write. Flip = ~5 lines in the posture write handler.
 
 - **NS-0 · truth first (small, immediate):** (a) cron lease HEARTBEAT — renew while the run is
   provably alive, reclaim only on dead heartbeat; kills the duplicate-fire storm (test: run
