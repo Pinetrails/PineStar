@@ -113,6 +113,27 @@ Rule stands: land it or delete it — an unmerged branch is a claim nobody verif
 - Discovered in passing: sidecar/loop.js has a stray NUL byte (~offset 32377) — git/grep
   treat it as BINARY. Fix queued as a spawned task (byte-strip only, semantics untouched).
 
+## DONE 2026-07-07 — Station Atlas: the perfection loop (Fable session) ✅
+
+- **Station Atlas MERGED 00538abd** (gate 261 green in-lane AND on merged trunk): the
+  goal+loop system for perfecting every surface element. `qa/atlas/` sharded registry
+  (every UI control / slash command / API route / bus event / shoot state gets a dossier:
+  purpose · promise · wiring · coverage · status), `scripts/qa/cartographer.mjs` mapper
+  (sweep enumerates the REAL surface — 1059 live DOM elements across all 16 states + 40
+  cmds / 114 routes / 60 events — diffs vs registry, skeletons new, flags missing, files
+  deduped P2s; no-fake-green exit 2 on BLOCKED; ports 8920-8929/9320-9329),
+  `loops/perfectionist.md` judgment loop (7-point rubric: purpose/promise/works/truthful/
+  discoverable/polished/covered; sessions judge, fixes route to feature lanes; staleness
+  via git re-queues perfected entries whose wiring files moved). Goal gauge =
+  `npm run qa:atlas:status` (PERFECTED-fresh X/Y).
+- **Live-proven same session:** trunk re-sweep after the parallel skills-legibility merge
+  caught the drift unassisted — created 94 / missing 51 → the mapper detects surface
+  change with zero human eyes (39b9c569).
+- **Guardian collision diagnosed + routed:** 07:21Z RED (finding 69eff742) = hourly task ×
+  watch session overlapping on shared pin/ports; clean re-run all-5-gates GREEN; finding
+  routed; guardian-lockfile fix lane spawned (chip). QA_STATION §2 "overlap harmlessly"
+  claim is FALSE physically — lock lane updates it.
+
 ## QA Escape Loop — standing directive (added 2026-07-07, Fable session)
 
 **Why:** Andrew keeps finding bugs that audits called "up to par." Diagnosed causes:
@@ -155,10 +176,13 @@ as `IN PROGRESS — <lane> · <area>`; release it (delete the line) when the bat
 an area another session has claimed. Priority: escapes-adjacent first, then
 `system → crew → work → build → world → commands → routes → events`; stale before unmapped.
 
-Gauge: `npm run qa:atlas:status`. Seed sweep 2026-07-07: **1245 entries, 0 perfected (all unmapped)** —
-the whole surface is the queue. Areas: system, crew, work, build, world, commands, routes, events, props.
+Gauge: `npm run qa:atlas:status`. Trunk re-sweep 2026-07-07 (39b9c569): **1339 entries, 0 perfected**
+(1288 unmapped queue + 51 missing from the skills-legibility redesign — P2s filed, dedup holds).
+The whole surface is the queue. Areas: system, crew, work, build, world, commands, routes, events, props.
 
-_Active claims: (none yet)._
+_Active claims:_
+- IN PROGRESS — agent/perfect-world · **world** (dock/topbar cluster batch; Fable-orchestrated wave 1)
+- IN PROGRESS — agent/perfect-build · **build** (51-missing triage + new SKILLS panel batch; wave 1)
 
 ## Parked product decisions (need Andrew, don't guess)
 
