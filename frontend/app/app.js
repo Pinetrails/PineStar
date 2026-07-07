@@ -889,13 +889,24 @@ const App = (() => {
   // the most recent /api/roster POST. A backend-initiated summon must AWAIT this before acking, so the lead's
   // immediate team.dispatch sees the new worker in agentRoster (the POST is otherwise fire-and-forget → a race).
   let lastRosterPush = Promise.resolve();
+  // like the cloudsave mirror, a roster POST used to swallow every failure silently. Lighter treatment than
+  // the full backoff loop (the roster is re-derivable from local state and re-pushed constantly): track a
+  // single failed flag, warn EXACTLY once on the healthy→failing edge, and let the next persist re-attempt.
+  let rosterPushFailed = false;
   function pushRoster() {
     try {
       const fallbackProv = (typeof Harness !== 'undefined' && Harness.getProv) ? Harness.getProv() : 'openrouter';
       const list = liveAgents().map(a => ({ agentId: a.id, system: a.systemPrompt || '', name: a.name || a.id, model: a.model || '', provider: a.provider || fallbackProv, role: rosterRole(a), approvalMode: (a.approvalMode === 'full' ? 'full' : 'ask'),
         workshop: !!a.workshop,   // W3: the away-build grant travels with the roster so the consent broker can honor it
         skills: Array.isArray(a.skills) ? a.skills : [], reasoningEffort: a.reasoningEffort || null }));   // #4: each agent's OWN provider; Class Loadouts S1: per-agent skill package + applied effort
-      lastRosterPush = fetch('/api/roster', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ agents: list }) }).catch(() => {});
+      lastRosterPush = fetch('/api/roster', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ agents: list }) })
+        .then(r => {
+          if (r && r.ok === false) throw new Error('roster HTTP ' + r.status);
+          if (rosterPushFailed) { rosterPushFailed = false; try { console.info('[roster] sidecar roster sync recovered.'); } catch (_) {} }
+        })
+        .catch(() => {
+          if (!rosterPushFailed) { rosterPushFailed = true; try { console.warn('[roster] sidecar roster sync failed; will retry on next persist. Local roster is intact.'); } catch (_) {} }
+        });
       return lastRosterPush;
     } catch (_) { return Promise.resolve(); }
   }
@@ -937,6 +948,7 @@ const App = (() => {
     const dossier = (typeof DossierStore !== 'undefined') ? DossierStore.serialize() : undefined;   // the station-wide Commander model
     const doc = Save.write(Object.assign({ agent: hero, agents: roster.length > 1 ? roster.map(serializeAgentLite) : undefined, usage: Harness.totals(), prov, reasoningEffort, station: station ? station.serialize() : undefined, stationStats, profile, worksignal, dossier }, Workstreams.serialize()));
     if (doc && typeof CloudSave !== 'undefined') CloudSave.push(doc);   // durable write-through to the sidecar (debounced, best-effort)
+    if (rosterPushFailed) pushRoster();   // a prior roster POST failed — retry it opportunistically on this persist
     if (typeof StationUI !== 'undefined') StationUI.flashSave();
   }
 

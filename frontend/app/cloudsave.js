@@ -20,9 +20,18 @@ const CloudSave = (() => {
   const DEBOUNCE_MS = 1200;
   const ENDPOINT = '/api/save';        // same-origin: the sidecar serves the frontend in the real app
 
-  let timer = null;
-  let pending = null;                  // newest doc awaiting a flush (older queued docs are superseded)
+  // pure retry/health brain — see cloudsavecore.js (unit-tested in Node). Fail soft if it's absent
+  // (order-of-load safety): a null-object Core keeps the old best-effort behavior with no retry/health.
+  const Core = (typeof CloudSaveCore !== 'undefined') ? CloudSaveCore
+    : (typeof require !== 'undefined' ? (() => { try { return require('./cloudsavecore.js'); } catch (_) { return null; } })() : null);
 
+  let timer = null;                    // debounce timer for a fresh push
+  let retryTimer = null;               // backoff timer scheduling the next attempt after a failure
+  let pending = null;                  // newest doc awaiting a flush (older queued docs are superseded)
+  let health = Core ? Core.freshHealth() : { lastPushOkAt: 0, lastPushFailAt: 0, consecutiveFailures: 0, nextRetryAt: 0 };
+  let warnedStale = false;             // ONE console warn per failing↔healthy transition, never per attempt
+
+  function now() { return Date.now(); }
   function num(v) { const n = Number(v); return Number.isFinite(n) ? n : 0; }
   function isSave(d) { return !!(d && typeof d === 'object' && d.schema === 'starnet.save' && d.agent && typeof d.agent === 'object'); }
 
@@ -36,11 +45,57 @@ const CloudSave = (() => {
     });
   }
 
+  // record a push outcome into the health brain + drive the one-warn-per-state-change console policy.
+  // Kept fail-soft: a missing Core (order-of-load) just no-ops the telemetry, never throws.
+  function markOk() {
+    if (Core) health = Core.recordSuccess(health, now());
+    else health = { lastPushOkAt: now(), lastPushFailAt: health.lastPushFailAt, consecutiveFailures: 0, nextRetryAt: 0 };
+    if (warnedStale) { warnedStale = false; try { console.info('[cloudsave] durable mirror sync recovered.'); } catch (_) {} }
+  }
+  function markFail() {
+    if (Core) health = Core.recordFailure(health, now());
+    else health = { lastPushOkAt: health.lastPushOkAt, lastPushFailAt: now(), consecutiveFailures: health.consecutiveFailures + 1, nextRetryAt: 0 };
+    // warn EXACTLY once when we first cross into stale territory — not once per attempt (no console spam,
+    // no throw into callers). The UI save-dot carries the ongoing signal; this is just a dev breadcrumb.
+    const stale = Core ? Core.isStale(health, now()) : false;
+    if (stale && !warnedStale) {
+      warnedStale = true;
+      try { console.warn('[cloudsave] durable mirror has not synced; retrying with backoff. Local cache is intact.'); } catch (_) {}
+    }
+  }
+
+  // (re)arm the backoff retry so a dropped push is never silently abandoned. Newest-wins: whatever is
+  // in `pending` when the timer fires is what gets sent, so a burst during backoff still coalesces to one.
+  function scheduleRetry() {
+    if (retryTimer || !isSave(pending)) return;
+    const delay = Core ? Math.max(0, num(health.nextRetryAt) - now()) : 5000;
+    try { retryTimer = setTimeout(() => { retryTimer = null; flush(); }, delay); } catch (_) { retryTimer = null; }
+  }
+
   function flush() {
     if (timer) { clearTimeout(timer); timer = null; }
+    if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
+    // honor the backoff window — if a failure streak is live and the next attempt isn't due yet, hold the
+    // doc in `pending` and re-arm rather than hammering the sidecar every debounce.
+    if (Core && isSave(pending) && !Core.retryDue(health, now())) { scheduleRetry(); return Promise.resolve(false); }
     const doc = pending; pending = null;
     if (!isSave(doc)) return Promise.resolve(false);
-    return postNow(doc).then(() => true).catch(() => false);   // fail soft — the cache is still authoritative locally
+    return postNow(doc)
+      .then(r => {
+        // a non-ok HTTP status (e.g. 409 stale, 500) is a FAILURE, not a success — fetch only rejects on
+        // network error, so we must inspect r.ok ourselves or we'd stamp health OK on a rejected write.
+        if (r && r.ok === false) { throw new Error('save HTTP ' + r.status); }
+        markOk();
+        return true;
+      })
+      .catch(() => {
+        markFail();
+        // re-queue the newest doc (newest-wins: a fresher push during the attempt already replaced it) and
+        // arm the backoff retry. Fail soft — the cache is still authoritative locally, nothing throws out.
+        if (!isSave(pending)) pending = doc;
+        scheduleRetry();
+        return false;
+      });
   }
 
   // queue a write-through; coalesces a burst of persists into one POST after the debounce settles.
@@ -95,7 +150,10 @@ const CloudSave = (() => {
       if (!isSave(pending)) return;
       try {
         const blob = new Blob([JSON.stringify(pending)], { type: 'application/json' });
-        if (navigator.sendBeacon && navigator.sendBeacon(ENDPOINT, blob)) { pending = null; return; }
+        // sendBeacon returns true only when the browser accepts the payload for background send. That's a
+        // best-effort dispatch (not a confirmed 200), but it's the strongest signal we get on unload, so
+        // stamp health OK on it — leaving the record frozen here would falsely read stale on the NEXT boot.
+        if (navigator.sendBeacon && navigator.sendBeacon(ENDPOINT, blob)) { pending = null; markOk(); return; }
       } catch (_) {}
       flush();                         // fallback if sendBeacon is unavailable/rejected
     };
@@ -105,6 +163,14 @@ const CloudSave = (() => {
     } catch (_) {}
   }
 
-  return { push, pull, reconcile, flush, installUnloadFlush, _isSave: isSave };
+  // live durability health for the UI (save-dot) + diagnostics. `stale` is the TRUTHFUL verdict the
+  // dot renders: persists are landing locally but the durable backup hasn't confirmed a write in > 60 min
+  // AND there's a live failure streak. Never asserts "backed up" the harness can't prove.
+  function healthNow() {
+    return Core ? Core.snapshot(health, now())
+      : { lastPushOkAt: health.lastPushOkAt, lastPushFailAt: health.lastPushFailAt, consecutiveFailures: health.consecutiveFailures, nextRetryAt: 0, stale: false };
+  }
+
+  return { push, pull, reconcile, flush, installUnloadFlush, health: healthNow, _isSave: isSave };
 })();
 if (typeof module !== 'undefined' && module.exports) module.exports = CloudSave;

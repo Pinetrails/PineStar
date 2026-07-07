@@ -3049,6 +3049,9 @@ const StationUI = (() => {
     const [txt, cls] = pillFor(activity());
     const p = $('#status-pill');
     if (p) { p.textContent = txt; p.className = cls; }
+    // keep the save-dot's durability state honest even between persists — a mirror can go stale (cross the
+    // 60-min line while a failure streak is live) or recover (a backoff retry lands) without a fresh save.
+    refreshSaveDurability();
     // refresh BRIEF's live telemetry only. CONSOLE MODE keeps every section pane in the DOM at once, so a full
     // rerender would rebuild (and wipe) an open CONFIG editor / MEMORY list even when BRIEF is showing. Instead
     // surgically repaint just the live nodes (hero status dot + line, roster idle/working hints) in place — no
@@ -3058,6 +3061,25 @@ const StationUI = (() => {
   function flashSave() {
     const d = $('#save-dot'); if (!d) return;
     d.classList.add('flash'); setTimeout(() => d.classList.remove('flash'), 600);
+    refreshSaveDurability(d);
+  }
+  // TRUTHFUL save-dot: the green flash means "the LOCAL cache was written" — but the durable mirror
+  // (the sidecar copy that survives a webview-profile wipe) can be silently frozen while pushes fail.
+  // When CloudSave reports a stale mirror (no confirmed backup in > 60 min + a live failure streak),
+  // flip the dot to a distinct amber/warn state + explain it in the title. NO new window, NO nag — just
+  // an honest dot state. Never asserts durability the harness can't prove (truthful-telemetry law).
+  function refreshSaveDurability(d) {
+    d = d || $('#save-dot'); if (!d) return;
+    let h = null;
+    try { h = (typeof CloudSave !== 'undefined' && CloudSave.health) ? CloudSave.health() : null; } catch (_) { h = null; }
+    if (h && h.stale) {
+      d.classList.add('stale');
+      const since = h.lastPushOkAt ? new Date(h.lastPushOkAt).toLocaleString() : 'never';
+      d.title = 'world is saved locally; the durable backup copy hasn’t synced since ' + since;
+    } else {
+      d.classList.remove('stale');
+      d.title = 'autosave';
+    }
   }
 
   /* ============== MESSAGING — connect a Telegram bot so the Commander can DM the agent ==============
