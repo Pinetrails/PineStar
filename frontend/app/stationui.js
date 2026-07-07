@@ -2808,6 +2808,17 @@ const StationUI = (() => {
         '<button class="set-theme" data-pace="6" title="a busier station — up to 6 jobs a day">BUSY</button>' +
         '<button class="set-theme" data-pace="12" title="as much as it&#39;s allowed — up to 12 jobs a day">MAX</button>' +
       '</div>' +
+      // NIGHT SHIFT — the honest live status of the server-owned night shift (NS-4). Every line maps to a field of
+      // GET /api/nightshift/status + /api/autonomy/ledger; painted live from the routes (never invented). The
+      // decision trail is the scrollable recent act/decline log. Loading/error states are honest, never fake-zero.
+      '<h4 class="ms-h">NIGHT SHIFT <span class="dim">— what it’s doing while you’re away, right now</span></h4>' +
+      '<div class="set-row"><span class="dim">STATE</span> <span id="ns-state" class="dim">…</span></div>' +
+      '<p class="set-about" id="ns-why"></p>' +
+      '<div class="set-row"><span class="dim">LEASH</span> <span id="ns-leash" class="dim">…</span></div>' +
+      '<div class="set-row"><span class="dim">LAST BEAT</span> <span id="ns-last" class="dim">…</span></div>' +
+      '<div class="set-row"><span class="dim">NEXT ELIGIBLE</span> <span id="ns-next" class="dim">…</span></div>' +
+      '<div class="set-row"><span class="dim">RECENT DECISIONS</span></div>' +
+      '<div class="key-list" id="ns-trail"><p class="set-about">reading the decision trail…</p></div>' +
       // PERMISSIONS — the OS-style standing-grant panel (permissions.js / permissionsstore.js). The LEVEL row is
       // the simple "never → fully autonomous" chooser (sets the posture preset AND the write grant together); the
       // grant list shows + revokes every standing capability. #perm-desc spells out the COMBINED truth, live.
@@ -3029,6 +3040,44 @@ const StationUI = (() => {
       if (paceWrap) paceWrap.querySelectorAll('[data-pace]').forEach(b => b.addEventListener('click', () => { AutonomyStore.setLeash(Number(b.dataset.pace)); paintAuto(); sfx('click'); }));
       repaintAutonomyDial = paintAuto;   // GROWTH Tier 3: let an accepted trust offer repaint the open panel's EARNED badge live
       paintAuto();
+    }
+    // NIGHT SHIFT status surface (NS-4) — the honest live telemetry for the server-owned night shift. Paints from
+    // GET /api/nightshift/status + /api/autonomy/ledger through the PURE nightreport engine (panelModel/trailLine),
+    // so every rendered value maps to a route field (truthful telemetry). Fail-open, honest loading/error states.
+    if (typeof NightReport !== 'undefined') {
+      const nsState = host.querySelector('#ns-state'), nsWhy = host.querySelector('#ns-why'), nsLeash = host.querySelector('#ns-leash'),
+            nsLast = host.querySelector('#ns-last'), nsNext = host.querySelector('#ns-next'), nsTrail = host.querySelector('#ns-trail');
+      const tz = () => { try { return -new Date().getTimezoneOffset(); } catch (_) { return 0; } };
+      const setDim = (el, txt) => { if (el) el.textContent = txt; };
+      const paintPanel = (status) => {
+        const m = NightReport.panelModel({ status: status, tzOffsetMin: tz() });
+        if (!m.reachable) {
+          setDim(nsState, m.stateText);        // "station telemetry unreachable" — never a fake 0/3
+          setDim(nsWhy, ''); setDim(nsLeash, '—'); setDim(nsLast, '—'); setDim(nsNext, '—');
+          return;
+        }
+        setDim(nsState, m.stateText);
+        setDim(nsWhy, m.why || '');
+        setDim(nsLeash, m.leashText + ' · ' + m.presence);
+        setDim(nsLast, m.lastBeatText);
+        setDim(nsNext, m.nextEligibleText);
+      };
+      const paintTrail = (entries) => {
+        if (!nsTrail) return;
+        const rows = (Array.isArray(entries) ? entries : []).slice(0, 12);
+        if (!rows.length) { nsTrail.innerHTML = '<p class="set-about">no night-shift decisions yet — nothing has run unattended.</p>'; return; }
+        nsTrail.innerHTML = rows.map(e => '<div class="set-row"><span class="dim">' + esc(NightReport.trailLine(e, tz())) + '</span></div>').join('');
+      };
+      // paint honest "reading…" first, then replace with the live truth (or an honest unreachable/error state).
+      const refreshPanel = () => {
+        fetch('/api/nightshift/status', { cache: 'no-store' })
+          .then(r => r.ok ? r.json() : null).catch(() => null)
+          .then(paintPanel);
+        fetch('/api/autonomy/ledger?source=nightshift&limit=12', { cache: 'no-store' })
+          .then(r => r.ok ? r.json() : null).catch(() => null)
+          .then(j => { if (j && Array.isArray(j.entries)) paintTrail(j.entries); else if (nsTrail) nsTrail.innerHTML = '<p class="set-about">the decision trail is unreachable right now.</p>'; });
+      };
+      refreshPanel();
     }
     // PERMISSIONS panel — the never→fully-autonomous LEVEL chooser + the OS-style standing-grant list
     // (permissionsstore). Grants live server-side, so paint from cache now, refresh from the sidecar, repaint. A

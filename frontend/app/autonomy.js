@@ -92,8 +92,8 @@
     return [
       { id: 'wait',    initiative: 'wait',    reach: 'observe', label: "wait for me — do nothing until i'm back" },
       { id: 'suggest', initiative: 'propose', reach: 'observe', label: 'line up suggestions i can one-tap when i return' },
-      { id: 'build',   initiative: 'leash',   reach: 'sandbox', label: 'quietly build a few small things and leave them on my desk to review' },
-      { id: 'free',    initiative: 'free',    reach: 'sandbox', label: 'run free toward my goals — show me everything you did' }
+      { id: 'build',   initiative: 'leash',   reach: 'sandbox', label: 'quietly build a few small things while i’m away (a beat every ~45 min, up to the daily leash) and leave them on my desk to review' },
+      { id: 'free',    initiative: 'free',    reach: 'sandbox', label: 'run free toward my goals while i’m away — build all night up to the leash, show me everything on my desk when i’m back' }
     ];
   }
   function presetById(id) { return cadencePresets().filter(p => p.id === id)[0] || null; }
@@ -128,8 +128,10 @@
     };
   }
 
-  // one-line plain-English posture for the dial header + the digest. Legibility (you always see what it did) is the
-  // universal tail — true at every level, including Reach-out.
+  // one-line plain-English posture for the dial header + the digest. This describes the ENFORCED reality (NS-1): the
+  // night shift is server-owned — while you're away it considers ONE beat about every 45 minutes, the daily leash is
+  // actually counted and enforced, and each act leaves a draft on your desk to review. Legibility (you always see
+  // what it did, next time you're back) is the universal tail — true at every level, including Reach-out.
   function describe(state) {
     const s = normalize(state);
     if (s.initiative === 'wait') return 'Waiting for you — nothing runs on its own.';
@@ -138,7 +140,7 @@
       : s.reach === 'sandbox' ? 'builds locally, nothing leaves the machine'
       : 'can send, publish, or contact external services';
     const how = s.initiative === 'leash' ? ('up to ' + s.leashPerDay + ' small jobs a day') : ('freely toward your goals (up to ' + s.leashPerDay + ' jobs a day)');
-    return 'Works on its own ' + how + ' — ' + reachWord + '. You see everything it did.';
+    return 'While you’re away it works on its own ' + how + ' — a beat about every 45 min — ' + reachWord + ', leaving each one on your desk to review. You see everything it did.';
   }
 
   return {
