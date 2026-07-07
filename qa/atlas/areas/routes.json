@@ -1,0 +1,2172 @@
+{
+  "area": "routes",
+  "updatedAt": "2026-07-07T08:09:25.408Z",
+  "entries": [
+    {
+      "id": "route/get-api-agent-skills",
+      "kind": "route",
+      "area": "routes",
+      "name": "GET /api/agent-skills",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/get-api-auth-codex-logout",
+      "kind": "route",
+      "area": "routes",
+      "name": "GET /api/auth/codex/logout",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/get-api-auth-codex-models",
+      "kind": "route",
+      "area": "routes",
+      "name": "GET /api/auth/codex/models",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/get-api-auth-codex-status",
+      "kind": "route",
+      "area": "routes",
+      "name": "GET /api/auth/codex/status",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/get-api-budget-status",
+      "kind": "route",
+      "area": "routes",
+      "name": "GET /api/budget/status",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/get-api-channels-discord-status",
+      "kind": "route",
+      "area": "routes",
+      "name": "GET /api/channels/discord/status",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/get-api-channels-events",
+      "kind": "route",
+      "area": "routes",
+      "name": "GET /api/channels/events",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/get-api-channels-telegram-status",
+      "kind": "route",
+      "area": "routes",
+      "name": "GET /api/channels/telegram/status",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/get-api-checkpoint",
+      "kind": "route",
+      "area": "routes",
+      "name": "GET /api/checkpoint",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/get-api-connectors",
+      "kind": "route",
+      "area": "routes",
+      "name": "GET /api/connectors",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/get-api-connectors-catalog",
+      "kind": "route",
+      "area": "routes",
+      "name": "GET /api/connectors/catalog",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/get-api-connectors-oauth-callback",
+      "kind": "route",
+      "area": "routes",
+      "name": "GET /api/connectors/oauth/callback",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/get-api-credits",
+      "kind": "route",
+      "area": "routes",
+      "name": "GET /api/credits",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/get-api-cron",
+      "kind": "route",
+      "area": "routes",
+      "name": "GET /api/cron",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/get-api-diagnostics",
+      "kind": "route",
+      "area": "routes",
+      "name": "GET /api/diagnostics",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/get-api-execution",
+      "kind": "route",
+      "area": "routes",
+      "name": "GET /api/execution",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/get-api-fallback-chain",
+      "kind": "route",
+      "area": "routes",
+      "name": "GET /api/fallback/chain",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/get-api-file",
+      "kind": "route",
+      "area": "routes",
+      "name": "GET /api/file",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/get-api-fs-dirstat",
+      "kind": "route",
+      "area": "routes",
+      "name": "GET /api/fs/dirstat",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/get-api-health",
+      "kind": "route",
+      "area": "routes",
+      "name": "GET /api/health",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/get-api-insights",
+      "kind": "route",
+      "area": "routes",
+      "name": "GET /api/insights",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/get-api-limits",
+      "kind": "route",
+      "area": "routes",
+      "name": "GET /api/limits",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/get-api-memory-config",
+      "kind": "route",
+      "area": "routes",
+      "name": "GET /api/memory/config",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/get-api-memory-declined",
+      "kind": "route",
+      "area": "routes",
+      "name": "GET /api/memory/declined",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/get-api-memory-proposals",
+      "kind": "route",
+      "area": "routes",
+      "name": "GET /api/memory/proposals",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/get-api-memory-records",
+      "kind": "route",
+      "area": "routes",
+      "name": "GET /api/memory/records",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/get-api-notebook",
+      "kind": "route",
+      "area": "routes",
+      "name": "GET /api/notebook",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/get-api-permissions",
+      "kind": "route",
+      "area": "routes",
+      "name": "GET /api/permissions",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/get-api-providers",
+      "kind": "route",
+      "area": "routes",
+      "name": "GET /api/providers",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/get-api-runs",
+      "kind": "route",
+      "area": "routes",
+      "name": "GET /api/runs",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/get-api-runtime-knobs",
+      "kind": "route",
+      "area": "routes",
+      "name": "GET /api/runtime/knobs",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/get-api-save",
+      "kind": "route",
+      "area": "routes",
+      "name": "GET /api/save",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/get-api-skills",
+      "kind": "route",
+      "area": "routes",
+      "name": "GET /api/skills",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/get-api-slash-catalog",
+      "kind": "route",
+      "area": "routes",
+      "name": "GET /api/slash/catalog",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/get-api-spotify-callback",
+      "kind": "route",
+      "area": "routes",
+      "name": "GET /api/spotify/callback",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/get-api-spotify-status",
+      "kind": "route",
+      "area": "routes",
+      "name": "GET /api/spotify/status",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/get-api-state-snapshot",
+      "kind": "route",
+      "area": "routes",
+      "name": "GET /api/state/snapshot",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/get-api-study-proposals",
+      "kind": "route",
+      "area": "routes",
+      "name": "GET /api/study/proposals",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/get-api-subagents",
+      "kind": "route",
+      "area": "routes",
+      "name": "GET /api/subagents",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/get-api-toolsets",
+      "kind": "route",
+      "area": "routes",
+      "name": "GET /api/toolsets",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/get-api-transcript",
+      "kind": "route",
+      "area": "routes",
+      "name": "GET /api/transcript",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/get-api-version",
+      "kind": "route",
+      "area": "routes",
+      "name": "GET /api/version",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/get-api-widgets",
+      "kind": "route",
+      "area": "routes",
+      "name": "GET /api/widgets",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/get-api-workshop-backlog",
+      "kind": "route",
+      "area": "routes",
+      "name": "GET /api/workshop/backlog",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/get-api-workshop-pending",
+      "kind": "route",
+      "area": "routes",
+      "name": "GET /api/workshop/pending",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/get-api-workspace-dir",
+      "kind": "route",
+      "area": "routes",
+      "name": "GET /api/workspace/dir",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/post-api-agent-delete",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/agent/delete",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/post-api-agent-skills-manage",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/agent-skills/manage",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/post-api-auth-codex-poll",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/auth/codex/poll",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/post-api-auth-codex-start",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/auth/codex/start",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/post-api-autonomy-write",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/autonomy/write",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/post-api-budget-caps",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/budget/caps",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/post-api-budget-resume",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/budget/resume",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/post-api-cancel",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/cancel",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/post-api-channels-discord-connect",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/channels/discord/connect",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/post-api-channels-discord-disconnect",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/channels/discord/disconnect",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/post-api-channels-discord-sync",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/channels/discord/sync",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/post-api-channels-notify",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/channels/notify",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/post-api-channels-telegram-connect",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/channels/telegram/connect",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/post-api-channels-telegram-disconnect",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/channels/telegram/disconnect",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/post-api-channels-telegram-sync",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/channels/telegram/sync",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/post-api-channels-token",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/channels/token",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/post-api-checkpoint-restore",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/checkpoint/restore",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/post-api-config-export",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/config/export",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/post-api-config-import",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/config/import",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/post-api-config-reset",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/config/reset",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/post-api-connectors",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/connectors",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/post-api-connectors-oauth-start",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/connectors/oauth/start",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/post-api-connectors-refresh",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/connectors/refresh",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/post-api-connectors-remove",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/connectors/remove",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/post-api-consent",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/consent",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/post-api-cron",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/cron",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/post-api-cron-arm",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/cron/arm",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/post-api-cron-preview",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/cron/preview",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/post-api-cron-remove",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/cron/remove",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/post-api-cron-run",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/cron/run",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/post-api-cron-update",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/cron/update",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/post-api-dossier",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/dossier",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/post-api-fallback-chain",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/fallback/chain",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/post-api-goals",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/goals",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/post-api-halt",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/halt",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/post-api-key",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/key",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/post-api-memory-config",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/memory/config",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/post-api-memory-declined-restore",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/memory/declined/restore",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/post-api-memory-edit",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/memory/edit",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/post-api-memory-forget",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/memory/forget",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/post-api-memory-pin",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/memory/pin",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/post-api-memory-reset",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/memory/reset",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/post-api-memory-turnin",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/memory/turnin",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/post-api-notebook-restore",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/notebook/restore",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/post-api-permissions-grant",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/permissions/grant",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/post-api-permissions-revoke",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/permissions/revoke",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/post-api-roster",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/roster",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/post-api-routing",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/routing",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/post-api-run",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/run",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/post-api-run-steer",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/run/steer",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/post-api-runtime-knobs",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/runtime/knobs",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/post-api-save",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/save",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/post-api-session",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/session",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/post-api-skills-toggle",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/skills/toggle",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/post-api-slash-dispatch",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/slash/dispatch",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/post-api-spotify-auth-start",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/spotify/auth/start",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/post-api-spotify-disconnect",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/spotify/disconnect",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/post-api-stt",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/stt",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/post-api-study-resolve",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/study/resolve",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/post-api-subagents-interrupt",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/subagents/interrupt",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/post-api-summon-ack",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/summon/ack",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/post-api-toolsets",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/toolsets/",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/post-api-tts",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/tts",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/post-api-workshop-decide",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/workshop/decide",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/post-api-workshop-grant",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/workshop/grant",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/post-api-workshop-open",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/workshop/open",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/post-api-workshop-queue",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/workshop/queue",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    },
+    {
+      "id": "route/post-api-workshop-shift",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/workshop/shift",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-07T08:11:54.931Z",
+      "missing": false
+    }
+  ]
+}
