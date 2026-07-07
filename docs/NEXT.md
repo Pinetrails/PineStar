@@ -74,9 +74,10 @@ retention-p3, ux-hints, cron-visibility-plan, prop-upgrade had only launch-confi
 dirt — cron plan doc salvaged to docs/archive/).
 
 **KEPT — real value, in priority order:**
-1. ~~`agent/belt-reclaim`~~ **MERGED 2026-07-06 ~23:59** (gate green, 260 steps, in the
-   synced worktree). Live-app check of drag-clear NOT yet done — next session: RECLAIM
-   mode, drag across a belt run, confirm one-undo-slot removal. Worktree teardown pending.
+1. ~~`agent/belt-reclaim`~~ **MERGED 2026-07-06 ~23:59** (gate green, 260 steps). Live-app
+   check ✅ DONE 2026-07-07 by Atlas wave-3 REFIT lane: drag-clear of a 3-belt run → 0,
+   ONE undo restored all 3 (evidence .bugloops/perfectionist-build2-20260707/refit-verify.json).
+   Worktree teardown pending.
 2. `agent/growth-t4` (ac7bf9f5) — T4 beat-balance pass (516 lines: prioritized ask stream,
    no-double-beats proof, beat-audit script + 201-line test) **plus ~411 lines UNCOMMITTED
    in its worktree** (iteration from 7/02). Needs its author-lane to finish or an explicit
@@ -230,10 +231,18 @@ Gauge: `npm run qa:atlas:status`. Trunk re-sweep 2026-07-07 (39b9c569): **1339 e
 (1288 unmapped queue + 51 missing from the skills-legibility redesign — P2s filed, dedup holds).
 The whole surface is the queue. Areas: system, crew, work, build, world, commands, routes, events, props.
 
-_Active claims:_
-- IN PROGRESS — agent/perfect-world2 · **world** (COMMS composer cluster; wave 3)
-- IN PROGRESS — agent/perfect-build2 · **build** (REFIT palette/prop tiles; wave 3)
-- IN PROGRESS — agent/perfect-commands · **commands** (slash command surface; wave 3)
+_Active claims: (none)._
+
+_Wave-3 DONE 2026-07-07 (3 lanes merged + gated 261 + reaped): world/COMMS +4P/+3A
+(chat-stop never machine-clicked bd391f68 · voice press-flips c3fa1f39) · build/REFIT +11P
+(**object=capability proven live: place=grant/undo=revoke/redo=re-grant**; belt-reclaim
+one-undo live check DONE — item #1 above closed) · commands ALL 40 mapped, 14P via the real
+input path (**P1 070e8aca: the 7/05 args-bug seam has only source-grep tests — behavioral
+journey chipped**). **Staleness fired for real**: parallel merge b1af72a5 touched
+sidecar/index.js → 76 wired entries decayed perfected→stale (re-proof queue, by design).
+Gauge: 25 fresh / 76 stale / 11 audited / 30 mapped / 1146 unmapped. Next wave: re-proof
+the 76 stale (cheap — behavior unchanged unless channels-token work moved seams) · crew
+remainder (92) · routes/events._
 
 _Wave-2 DONE 2026-07-07 (3 lanes merged + gated + reaped; **gauge 45/1288 (3%)** + 32 audited):
 system +11P/+3A (get-a-key gap a48393ca) · work +3P/+13A/+4M (UI-seam gaps e74ea483,
