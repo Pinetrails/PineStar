@@ -3,10 +3,12 @@
 This project is built by **many agents at once** (commonly 7–10). This file is the contract
 that keeps them from overwriting each other. Read it before you touch anything.
 
-**Orientation (the project brain):** [docs/BRAIN.md](docs/BRAIN.md) — what StarNet is,
-architecture, where truth lives. Then [docs/DECISIONS.md](docs/DECISIONS.md) (locked
-decisions), [docs/MISTAKES.md](docs/MISTAKES.md) (recurring failures), and
-[docs/NEXT.md](docs/NEXT.md) (current priorities + task queue).
+**Orientation:** read [docs/BRAIN.md](docs/BRAIN.md) first (what this is, architecture,
+where truth lives), then [docs/DECISIONS.md](docs/DECISIONS.md) (locked — don't re-litigate),
+[docs/MISTAKES.md](docs/MISTAKES.md) (don't repeat), and [docs/NEXT.md](docs/NEXT.md)
+(current queue). The operating doctrine lives in `.claude/skills/starnet-*` — those files
+are plain markdown; non-Claude agents must read `starnet-task-doctrine/SKILL.md` and follow
+it too.
 
 ## Prime directive
 
@@ -40,13 +42,18 @@ data loss — that is the single failure mode this protocol exists to prevent.
    (`git add path/to/file ...`). Never `git add -A` / `git add .` — that sweeps up other
    agents' in-flight work.
 4. **The shared contract is owned.** `shared/events.js` and `shared/schema.js` are the files
-   everything depends on. They are owned by ONE agent (currently the `cortex-memory`
-   workstream). Changes there must be **additive only** (new events/fields — never rename or
-   remove). If you need a change, request it from the owner; do not edit these yourself.
+   everything depends on. Changes there must be **additive only** (new events/fields — never
+   rename or remove), and only by request to the owner lane; do not edit these yourself.
 5. **Green before merge.** `npm run test:fast` must pass fully before your branch merges into
    `feat/harness-backend`.
 6. **Sync before merge.** Rebase your branch onto trunk first (`sync-agent-tree.ps1`) so any
-   conflict surfaces in YOUR worktree, not on the shared trunk.
+   conflict surfaces in YOUR worktree, not on the shared trunk. (Exception: Codex-authored
+   branches are MERGED, never rebased — see `.claude/skills/starnet-merge-ritual`.)
+
+## The two laws above everything
+
+- **Only claim what you verified in the live running app** (tests green ≠ done).
+- **The app must never assert state the harness can't prove** (truthful telemetry).
 
 ## Commands
 
@@ -55,27 +62,14 @@ data loss — that is the single failure mode this protocol exists to prevent.
 | Create your workspace       | `gen-trees\new-agent-tree.ps1 <name>`                           |
 | Pull latest trunk into it   | `gen-trees\sync-agent-tree.ps1 <name>`                          |
 | Run the test gate           | `npm run test:fast`                                             |
+| Run the app for live proof  | `node dev/seed.js --keep` (dev-seeded; NEVER `npm run serve`)   |
 | Merge your branch to trunk  | (from integration tree) `git merge agent/<name>` then test gate |
 | Tear down when merged       | `gen-trees\remove-agent-tree.ps1 <name> -DeleteBranch`         |
-
-## Operating doctrine — MANDATORY skills (all models)
-
-This repo ships its senior engineer's judgment as skills in `.claude/skills/`. They are not
-optional reading; they encode the project's locked decisions and recurring failure modes.
-
-1. **Before your first edit on any task**, invoke the Skill tool with `starnet-task-doctrine`
-   and follow it. It routes you to the others:
-   - `starnet-verify` — before claiming ANYTHING done (live-app proof, canvas gotchas).
-   - `starnet-frontend-law` — any change under frontend/ or to the rendered world.
-   - `starnet-backend-law` — any change under sidecar/ or shared/.
-   - `starnet-debugging` — when a behavior is broken and the cause is unknown.
-   - `starnet-merge-ritual` — when integrating any branch into trunk.
-2. The two laws that override everything else: **only claim what you verified live**, and
-   **the app must never assert state the harness can't prove** (truthful telemetry).
 
 ## Why this is set up this way
 
 Many agents sharing a single checkout overwrite each other with no warning (last-write-wins;
 git never even sees a conflict because it's all one uncommitted tree). Separate worktrees turn
 that invisible overlap into **visible, resolvable merge conflicts**. The full control-plane
-doc (with the migration steps and gotchas) lives at `C:\Users\andro\gen-trees\README.md`.
+doc (with the migration steps and gotchas) lives at `C:\Users\andro\gen-trees\README.md`
+(note: its "current worktree map" section is stale — trust `git worktree list`).
