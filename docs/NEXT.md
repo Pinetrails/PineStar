@@ -53,15 +53,46 @@ leak (0cccce2d), VT323 shipped locally (01570f17).
 - Branch triage below is now the main code queue, plus the P2 hygiene list in
   `docs/GROUND_UP_AUDIT_2026-07-06.md` — do not copy it here.
 
-## Branch triage (17 unmerged `agent/*` branches ✅)
+## Branch triage — EXECUTED 2026-07-06 night ✅ (content-verified per branch, then deleted or parked)
 
-Likely-value parked: `honest-states`,
-`quick-model-selector`, `ui-number-format`, `workstreams-sessions-ui`, `cron-staylive`.
-Probably stale (pre-date recent reworks — diff before deciding): `belt-reclaim`,
-`commission-redux`, `cortex-hermes-plus`, `growth-t4`, `hermes-parity-loop`,
-`messaging-platforms`, `parity-finish`, `starnet-api-gate`, `starnet-hardening-5-6-*`,
-`starnet-memory-consent`, `starnet-memory-loop`, `starnet-tests-tauri`.
-Rule: land it or delete it — an unmerged branch is a claim nobody verified.
+**Deleted (13 unmerged — content proven in trunk or superseded; SHAs recoverable from
+reflog ~30 days):** commission-redux 9f8cf7c2 (cherry-equiv in trunk) · cron-staylive
+d30dfdd0 (KeepAwake + watchdog in main.rs) · honest-states f1011fe0 (launch.json chore
+only) · messaging-platforms 16a0fadd (superseded by MCP connector catalog) ·
+starnet-api-gate e4a6fd28 (landed as 9574cb74) · cortex-hermes-plus 80583d9a
+(memory-store/transcript/recall/skills all in trunk; its provider abstraction was
+abandoned) · hermes-parity-loop 8879b646 (42 commits of proof-plumbing superseded by
+release-train + t0–t5) · starnet-hardening-5-6-memory-consent 87b04cd7 +
+starnet-memory-consent 3b1470b1 (durable todo: keys + test in trunk) · starnet-memory-loop
+bb9369a3 (declined: store in trunk) · quick-model-selector 8a40ddd1 (modeldock + reasoning
+efforts in openrouter.js) · starnet-tests-tauri cbb155b9 (landed as 4c8b0f98) ·
+workstreams-sessions-ui 9ae72942 (23-line net change, rail evolved past it).
+
+**Also torn down: 10 already-MERGED branches + worktrees** (byok-coldstart,
+connector-catalog, secrets-keychain, update-host clean; comms-picker, honest-errors,
+retention-p3, ux-hints, cron-visibility-plan, prop-upgrade had only launch-config/QA-artifact
+dirt — cron plan doc salvaged to docs/archive/).
+
+**KEPT — real value, in priority order:**
+1. `agent/belt-reclaim` (293c869e, 7/6) — drag-to-clear a whole belt run in one undo slot
+   + hover tint + test; VERIFIED absent from trunk (trunk reclaim is single-tile only).
+   Small, recent, landable: rebase → gate → merge.
+2. `agent/growth-t4` (ac7bf9f5) — T4 beat-balance pass (516 lines: prioritized ask stream,
+   no-double-beats proof, beat-audit script + 201-line test) **plus ~411 lines UNCOMMITTED
+   in its worktree** (iteration from 7/02). Needs its author-lane to finish or an explicit
+   decision to adopt/discard the dirty work. Do NOT tear down.
+3. `agent/parity-finish` (1c203a50) — code all landed (fs.patch, V4A parser, mcp stdio),
+   but the branch carries far richer tests (549-line fs.patch.test vs trunk's 131).
+   Harvest-tests task: port the extra cases against trunk's stricter parser, then delete.
+4. `agent/ui-number-format` (4af14e29) — canonical U.usd/U.tokens exist in util.js but
+   dupes remain (clip.js fmtUsd, etc.). Low-risk consolidation refactor; low priority.
+
+**Merged-but-DIRTY worktrees left in place** (real uncommitted code deltas — inspect
+before any teardown; `-Force` discards): auto-memory, bug-patterns, connector-spine (50
+files!), hermes-settings-audit, live-polish, mac-linux-support (23), meeseeks-subagents,
+skins (14), starnet-build-skills-crop, starnet-security-check, starnet-spend-model-honesty,
+truth-chrome-instruments (tonight's; its orchestrator tears down).
+Rule stands: land it or delete it — an unmerged branch is a claim nobody verified.
 
 ## Parked product decisions (need Andrew, don't guess)
 
