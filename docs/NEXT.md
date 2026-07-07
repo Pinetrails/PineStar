@@ -236,10 +236,16 @@ Gauge: `npm run qa:atlas:status`. Trunk re-sweep 2026-07-07 (39b9c569): **1339 e
 The whole surface is the queue. Areas: system, crew, work, build, world, commands, routes, events, props.
 
 _Active claims:_
-- IN PROGRESS — agent/perfect-events · **events** (all 60, static contract mapping) **+ STALE-ONLY
-  re-proof hold on commands/routes/build/crew** (orchestrator-sanctioned; wave 5)
-- IN PROGRESS — agent/perfect-system2 · **system** (full remainder ~132; wave 5)
-- IN PROGRESS — agent/perfect-work2 · **work** (full remainder ~74 incl. 5 stale; wave 5)
+- IN PROGRESS — agent/perfect-build3 · **build** (full remainder ~245: prop gallery/palette; wave 6)
+- IN PROGRESS — agent/perfect-crew3 · **crew** (full remainder ~64: recruit seals cluster; wave 6)
+- IN PROGRESS — agent/perfect-world3 · **world** (remainder part 1 of 2, ~429 unmapped; wave 6)
+
+_Wave-5 DONE 2026-07-07 (3 lanes merged + gated 265 + reaped): **work / system / events areas
+COMPLETE (0 unmapped each)**. Truth bug found+chipped: telegram connect lies 'connected'
+pre-auth (1c09b36f). Dead listener 'flagged' + 16 aspirational event slots → cortex-memory
+wire-or-retire (1019f6e1, 9c5ec90c). Catalog UI-dispatch seam unguarded (3717ef2e). Restale
+37/37 HELD mid-wave, then NS-4 (stationui.js+index.js) re-decayed 329 — final restale sweep
+scheduled as wave-7 closing step; probe chip = the structural fix._
 
 _Wave-4 DONE 2026-07-07 (3 lanes merged + gated + reaped; gate 261→264 under parallel
 merges): **restale 76/76 HELD, 0 regressions** (sidecar token/OAuth commits moved no
