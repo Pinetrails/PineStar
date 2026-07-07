@@ -1,6 +1,6 @@
 {
   "area": "crew",
-  "updatedAt": "2026-07-07T08:11:07.401Z",
+  "updatedAt": "2026-07-07T18:39:23Z",
   "entries": [
     {
       "id": "state/crew-agents",
@@ -64,126 +64,208 @@
       "kind": "ui",
       "area": "crew",
       "name": "the overseer can’t be deleted",
-      "purpose": "",
-      "promise": "",
+      "purpose": "AGENT DOSSIER > BRIEF > DELETE AGENT — removes a summoned specialist (roster, floor body, server stores archived not wiped).",
+      "promise": "A 2-click armed confirm (first click arms DELETE - sure?, never deletes on one click); disabled with a stated reason for hero/last agent; on confirm the agent leaves the roster and /api/agent/delete archives its stores.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/app.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
       "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "77f1c7e62b7945453726686b49b02c52bbf43939",
+        "date": "2026-07-07T18:39:23Z"
+      },
+      "findings": [
+        "0e475aad"
+      ],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#ag-del-btn",
-      "state": "crew-agents"
+      "state": "crew-agents",
+      "notes": "Live-PROVEN (audited not perfected - no machine assertion, finding 0e475aad): first click armed DELETE - sure? and crew still [researcher] (no one-click delete); sub-copy work is archived, not erased matches sidecar handleAgentDelete. Did NOT confirm-delete the seeded agent. Ev .bugloops/crew-primary-flow-proof.json"
     },
     {
       "id": "ui/crew/ag-model-clear",
       "kind": "ui",
       "area": "crew",
       "name": "run this agent on the station default model again",
-      "purpose": "",
-      "promise": "",
+      "purpose": "AGENT DOSSIER > CONFIG > FOLLOW STATION DEFAULT — clears the per-agent model pin so the agent runs on the station default again.",
+      "promise": "Clicking it clears a.model/provider/effort and the model readout drops to dash (inherit); the button only appears while a pin exists.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/app.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/agent-model-select.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "77f1c7e62b7945453726686b49b02c52bbf43939",
+        "date": "2026-07-07T18:39:23Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#ag-model-clear",
-      "state": "crew-agents"
+      "state": "crew-agents",
+      "notes": "Live: clicked FOLLOW STATION DEFAULT -> .tag.model became dash and the clear button disappeared (only shows when pinned). Ev .bugloops/crew-primary-flow-proof.json"
     },
     {
       "id": "ui/crew/ag-model-in",
       "kind": "ui",
       "area": "crew",
       "name": "input",
-      "purpose": "",
-      "promise": "",
+      "purpose": "AGENT DOSSIER > CONFIG advanced model free-text — the escape hatch to pin a model id not in the catalog.",
+      "promise": "Used only when the picker has no selection (picker is primary: model = pick.model || advModel); a typed id pins the agent model with no effort leaked onto it.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/app.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/agent-model-select.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "77f1c7e62b7945453726686b49b02c52bbf43939",
+        "date": "2026-07-07T18:39:23Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#ag-model-in",
-      "state": "crew-agents"
+      "state": "crew-agents",
+      "notes": "Live: #ag-model-in present; confirmed picker-primary precedence (typed value ignored while picker held a selection - correct). Ev .bugloops/crew-primary-flow-proof.json"
     },
     {
       "id": "ui/crew/ag-model-pick-effort",
       "kind": "ui",
       "area": "crew",
       "name": "Reasoning effort",
-      "purpose": "",
-      "promise": "",
+      "purpose": "AGENT DOSSIER > CONFIG reasoning-effort select — sets this agent effort, clamped to what the picked model supports.",
+      "promise": "Re-fitted on every model change (an effort the new model cannot do is cleared); only persisted for the picked model, never leaked onto a typed advanced model or a cleared pin.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/app.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/agent-model-select.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/modelpicker.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "77f1c7e62b7945453726686b49b02c52bbf43939",
+        "date": "2026-07-07T18:39:23Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#ag-model-pick-effort",
-      "state": "crew-agents"
+      "state": "crew-agents",
+      "notes": "Live: part of #ag-model-pick shell (effort:true); ModelPicker.onChange re-fits; test locks pick-only-effort guard. Ev .bugloops/crew-primary-flow-proof.json"
     },
     {
       "id": "ui/crew/ag-model-pick-model",
       "kind": "ui",
       "area": "crew",
       "name": "Agent model",
-      "purpose": "",
-      "promise": "",
+      "purpose": "AGENT DOSSIER > CONFIG model picker — the primary control to change this agent model (preselected from its pin).",
+      "promise": "Populates + preselects from the agent current pin; a change re-fits the effort select; the read feeds SAVE PIN so the choice becomes a persisted roster property.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/app.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/agent-model-select.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/modelpicker.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "77f1c7e62b7945453726686b49b02c52bbf43939",
+        "date": "2026-07-07T18:39:23Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#ag-model-pick-model",
-      "state": "crew-agents"
+      "state": "crew-agents",
+      "notes": "Live: #ag-model-pick present; ModelPicker.read -> model anthropic/claude-haiku-4.5 provider openrouter effort medium, preselected from researcher pin. Ev .bugloops/crew-primary-flow-proof.json"
     },
     {
       "id": "ui/crew/ag-model-save",
       "kind": "ui",
       "area": "crew",
       "name": "SAVE PIN",
-      "purpose": "",
-      "promise": "",
+      "purpose": "AGENT DOSSIER > CONFIG > SAVE PIN — pins this agent model/provider/effort as a persisted roster property.",
+      "promise": "Saving writes a.model/provider/effort on the agent record and pushes it to the sidecar roster + persists (honored by runOnce + cron) — the model is a roster property, never a per-chat choice.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/app.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/agent-model-select.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/modelpicker.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "77f1c7e62b7945453726686b49b02c52bbf43939",
+        "date": "2026-07-07T18:39:23Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#ag-model-save",
-      "state": "crew-agents"
+      "state": "crew-agents",
+      "notes": "Live: SAVE PIN present; setAgentModelPin app.js:266 writes a.model then pushRoster()+persist(). Source-locked by agent-model-select.test.js. Ev .bugloops/crew-primary-flow-proof.json"
     },
     {
       "id": "ui/crew/ag-prov-in",
@@ -211,21 +293,33 @@
       "kind": "ui",
       "area": "crew",
       "name": "Rename agent",
-      "purpose": "",
-      "promise": "",
+      "purpose": "AGENT DOSSIER header rename affordance — opens an inline field to rename this agent.",
+      "promise": "Clicking it swaps the name to an inline input; committing a non-empty name calls setName which renames the agent, pushes the roster + persists (rename is a roster property).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/app.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/agent-model-select.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "77f1c7e62b7945453726686b49b02c52bbf43939",
+        "date": "2026-07-07T18:39:23Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#ag-rename-btn",
-      "state": "crew-agents"
+      "state": "crew-agents",
+      "notes": "Live: #ag-rename-btn present in dossier header; setAgentName app.js:318 reaches pushRoster()+persist(), source-locked by agent-model-select.test.js. Ev .bugloops/crew-primary-flow-proof.json"
     },
     {
       "id": "ui/crew/ag-workshop-on",
@@ -379,21 +473,36 @@
       "kind": "ui",
       "area": "crew",
       "name": "build a custom class",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The + tile that opens the custom-class builder — define your own class (job, standing orders, look) that joins YOUR SPECIALISTS.",
+      "promise": "Clicking it opens the BUILD A CUSTOM CLASS stage with a live class-seal preview and icon/name/accent/tagline/clearance fields; the built class becomes summonable/deployable.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/marketplace.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/class-loadouts.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/specialties.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "77f1c7e62b7945453726686b49b02c52bbf43939",
+        "date": "2026-07-07T18:39:23Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button[aria-label=\"build a custom class\"]",
-      "state": "crew-recruit"
+      "state": "crew-recruit",
+      "notes": "Live: clicked build-a-custom-class -> stage BUILD A CUSTOM CLASS ... ready to deploy or summon + live preview - your class seal. Ev .bugloops/crew-primary-flow-proof.json"
     },
     {
       "id": "ui/crew/aria-capybara",
@@ -421,21 +530,32 @@
       "kind": "ui",
       "area": "crew",
       "name": "Close AGENT DOSSIER",
-      "purpose": "",
-      "promise": "",
+      "purpose": "AGENT DOSSIER close door — dismisses the dossier window.",
+      "promise": "Clicking it closes the dossier and returns to the station/roster with no dangling focus.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "shoot",
+          "ref": "crew-agents"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "77f1c7e62b7945453726686b49b02c52bbf43939",
+        "date": "2026-07-07T18:39:23Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button[aria-label=\"Close AGENT DOSSIER\"]",
-      "state": "crew-agents"
+      "state": "crew-agents",
+      "notes": "Live: [aria-label=Close AGENT DOSSIER] present; dossier reachable via CREW console -> roster row -> dossier. Ev .bugloops/crew-primary-flow-proof.json"
     },
     {
       "id": "ui/crew/aria-close-commander-dossier",
@@ -463,21 +583,32 @@
       "kind": "ui",
       "area": "crew",
       "name": "Close recruitment bay",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The RECRUITMENT BAY close door — dismisses the bay window and returns to the station.",
+      "promise": "Clicking it closes the bay (its controls leave the DOM / become non-visible) with no state left dangling.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/marketplace.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "shoot",
+          "ref": "crew-recruit"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "77f1c7e62b7945453726686b49b02c52bbf43939",
+        "date": "2026-07-07T18:39:23Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button[aria-label=\"Close recruitment bay\"]",
-      "state": "crew-recruit"
+      "state": "crew-recruit",
+      "notes": "Live: clicked Close recruitment bay -> #mkt-q gone, .mkt-x offsetParent null. Ev .bugloops/crew-primary-flow-proof.json"
     },
     {
       "id": "ui/crew/aria-crewmate",
@@ -883,63 +1014,110 @@
       "kind": "ui",
       "area": "crew",
       "name": "Reasoning effort",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The RECRUITMENT BAY per-summon reasoning-effort picker — sets the new agent effort, applied to the agent record at summon.",
+      "promise": "The chosen effort threads into spec.modelPin.effort and is applied at summon; only persisted for a picked model, never leaked onto an inherit/cleared pin.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/app.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/agent-model-select.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/modelpicker.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "77f1c7e62b7945453726686b49b02c52bbf43939",
+        "date": "2026-07-07T18:39:23Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#mkt-model-effort",
-      "state": "crew-recruit"
+      "state": "crew-recruit",
+      "notes": "Live: rendered in bay model card beside mkt-model-model; effort-leak guard covered by agent-model-select.test.js. Ev .bugloops/crew-primary-flow-proof.json"
     },
     {
       "id": "ui/crew/mkt-model-model",
       "kind": "ui",
       "area": "crew",
       "name": "New agent model",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The RECRUITMENT BAY per-summon MODEL picker — chooses which model the NEW agent runs on (or inherits the orchestrator).",
+      "promise": "Defaults to Same as the orchestrator (roster-property inherit, not per-chat); a pick threads into spec.modelPin so the summoned agent model is a persisted roster property.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/app.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/agent-model-select.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/modelpicker.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "77f1c7e62b7945453726686b49b02c52bbf43939",
+        "date": "2026-07-07T18:39:23Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#mkt-model-model",
-      "state": "crew-recruit"
+      "state": "crew-recruit",
+      "notes": "Live: .mp-model default Same as the orchestrator (model-is-roster-property law); test locks modelPin threading. Ev .bugloops/crew-primary-flow-proof.json"
     },
     {
       "id": "ui/crew/mkt-q",
       "kind": "ui",
       "area": "crew",
       "name": "Search classes",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The RECRUITMENT BAY class search box — filters the class-seal grid by name/tag as you type.",
+      "promise": "Typing narrows the visible class tiles to matches in real time (empty query shows all); a no-match query yields an honest empty grid.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/marketplace.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/specialties.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/class-loadouts.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "77f1c7e62b7945453726686b49b02c52bbf43939",
+        "date": "2026-07-07T18:39:23Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#mkt-q",
-      "state": "crew-recruit"
+      "state": "crew-recruit",
+      "notes": "Live: typed engineer into #mkt-q -> .mkt-seal 44->5. Ev .bugloops/crew-primary-flow-proof.json"
     },
     {
       "id": "ui/crew/txt-button-409",
@@ -1597,21 +1775,37 @@
       "kind": "ui",
       "area": "crew",
       "name": "⏼ DEPLOY TO NOVA ▸",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The RECRUITMENT BAY DEPLOY verb — re-specs the CURRENT agent as the focused class instead of minting a new one.",
+      "promise": "In deploy context it re-specs the named agent purpose and standing orders (no new crew member); label and sub-copy name the exact target agent.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/app.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/agent-model-select.test.js"
+        },
+        {
+          "kind": "audit",
+          "ref": "summon"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "77f1c7e62b7945453726686b49b02c52bbf43939",
+        "date": "2026-07-07T18:39:23Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
-      "state": "crew-recruit"
+      "state": "crew-recruit",
+      "notes": "Live: DEPLOY renders DEPLOY TO <AGENT> with re-spec sub-copy; wireDossier .mkt-deploy -> ctx.onDeploy. Ev .bugloops/crew-primary-flow-proof.json"
     },
     {
       "id": "ui/crew/txt-button-dsndesignervisuals-assetsops-balanc-435",
@@ -1765,21 +1959,36 @@
       "kind": "ui",
       "area": "crew",
       "name": "ENGEngineerWrite, debug & ship codeCODE◆◆◆ DEEP REASONING",
-      "purpose": "",
-      "promise": "",
+      "purpose": "A class seal/tile in the RECRUITMENT BAY grid (Engineer) — selecting it focuses the class dossier for summon/deploy.",
+      "promise": "The tile renders the engraved-coin class seal with code/tagline/lane/clearance; clicking it focuses that class in the dossier (its SUMMON/DEPLOY CTA re-targets).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/marketplace.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/class-loadouts.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/specialties.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "77f1c7e62b7945453726686b49b02c52bbf43939",
+        "date": "2026-07-07T18:39:23Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
-      "state": "crew-recruit"
+      "state": "crew-recruit",
+      "notes": "Live: 44 class seals rendered in crew-recruit; representative for the class-seal grid; filter 44->5 on engineer. Ev .bugloops/crew-primary-flow-proof.json"
     },
     {
       "id": "ui/crew/txt-button-forget-408",
@@ -2206,21 +2415,43 @@
       "kind": "ui",
       "area": "crew",
       "name": "⏼ SUMMON RESEARCHER ▸",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The RECRUITMENT BAY primary SUMMON CTA — mints a brand-new crew member from the focused class and opens its own chat thread.",
+      "promise": "Clicking it creates a real roster agent (crew grows by one) whose name/voice/purpose are pre-filled from the class; it opens its own workstream — never a silent no-op.",
       "wiring": {
-        "files": [],
-        "events": []
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/app.js"
+        ],
+        "events": [
+          "crew.summon.request"
+        ]
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/e2e.summon.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/agent-model-select.test.js"
+        },
+        {
+          "kind": "audit",
+          "ref": "summon"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "77f1c7e62b7945453726686b49b02c52bbf43939",
+        "date": "2026-07-07T18:39:23Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
-      "state": "crew-recruit"
+      "state": "crew-recruit",
+      "notes": "Live: clicked SUMMON RESEARCHER on 8966 -> crew []->[researcher] via window.__SKYNET_TEST__.crew. Truthful sub-copy. Ev .bugloops/crew-primary-flow-proof.json"
     },
     {
       "id": "ui/crew/txt-button-tuttutorexplains-topics-builds-study-p-440",
@@ -2248,21 +2479,33 @@
       "kind": "ui",
       "area": "crew",
       "name": "change this agent’s model",
-      "purpose": "",
-      "promise": "",
+      "purpose": "AGENT DOSSIER header model readout — shows the agent current model and is a shortcut that jumps to the CONFIG tab.",
+      "promise": "Displays the real per-agent model (or dash when unpinned/inherit) - truthful telemetry; clicking/Enter lands the console on the CONFIG section.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/app.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/agent-model-select.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "77f1c7e62b7945453726686b49b02c52bbf43939",
+        "date": "2026-07-07T18:39:23Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "span",
-      "state": "crew-agents"
+      "state": "crew-agents",
+      "notes": "Live: .ag-tags .tag.model read anthropic/claude-haiku-4.5 (real seeded model), dropped to dash after clearing the pin - truthful both ways. Ev .bugloops/crew-primary-flow-proof.json"
     },
     {
       "id": "ui/crew/txt-summary-advanced-type-a-model-id-1",
