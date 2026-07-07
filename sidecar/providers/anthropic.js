@@ -343,17 +343,22 @@
       for (let attempt = 0; ; attempt++) {
         if (signal && signal.aborted) throw abortError();
         let res;
+        // Fresh connect guard per attempt; disarmed the instant the fetch settles so the ceiling can't abort
+        // the streaming body (a connect expiry rejects as a `timeout`, a user-cancel as AbortError).
+        const guard = timeouts.connectGuard(signal);
         try {
           res = await doFetch(baseUrl + '/messages', {
             method: 'POST',
             headers: headerBag(key),
             body: JSON.stringify(body),
-            signal: timeouts.connectSignal(signal)
+            signal: guard.signal
           });
         } catch (e) {
           if (isAbort(e, signal)) throw e;
           if (attempt < RETRY_DELAYS.length) { await delay(RETRY_DELAYS[attempt], signal); continue; }
           throw e;
+        } finally {
+          guard.disarm();
         }
         if (res.ok && res.body) return res;
         let detail = res.statusText || '';
