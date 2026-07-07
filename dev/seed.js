@@ -76,7 +76,53 @@ function materializeWorkspace(model) {
   } catch (e) { /* roster is optional for the browser loop */ }
 }
 
-function main() {
+// print a LOUD boxed warning to stderr (used when the configured model is dead on the live catalog).
+function warnBox(lines) {
+  const width = Math.max(58, ...lines.map(l => l.length)) + 2;
+  const top = '  ┏' + '━'.repeat(width) + '┓';
+  const bot = '  ┗' + '━'.repeat(width) + '┛';
+  console.error('');
+  console.error(top);
+  for (const l of lines) console.error('  ┃ ' + l.padEnd(width - 1) + '┃');
+  console.error(bot);
+  console.error('');
+}
+
+// Fail-open pre-flight: fetch the KEY-INDEPENDENT public OpenRouter catalog (same source the sidecar warms
+// at boot) and check the configured model id is present. If it's ABSENT, warn LOUDLY that the first run will
+// fail — model ids rot and a dead default 404s ("No endpoints found"). We WARN, never block: an unreachable
+// catalog, a fetch error, or a brand-new-but-real slug must not stop a dev launch (mirrors the sidecar's
+// warmModelCatalogSet() returning null => skip the check). Returns a promise that always resolves.
+async function checkModelInCatalog(model) {
+  if (typeof globalThis.fetch !== 'function') return;   // ancient node; sidecar warm will still run
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 6000);
+  try {
+    const r = await fetch('https://openrouter.ai/api/v1/models', { signal: ctrl.signal });
+    if (!r.ok) return;                                  // catalog unreachable -> stay quiet, sidecar decides
+    const body = await r.json();
+    const list = (body && body.data) || body;
+    if (!Array.isArray(list) || !list.length) return;   // empty/odd payload -> don't false-alarm
+    const ids = list.map(m => String((m && m.id) || '')).filter(Boolean);
+    if (ids.indexOf(model) !== -1) return;              // present -> all good, no noise
+    const near = ids.filter(id => id.toLowerCase().indexOf('anthropic/') === 0).slice(0, 4);
+    warnBox([
+      'default model NOT in live catalog — first runs WILL fail.',
+      '',
+      '  SKYNET_DEFAULT_MODEL = ' + model,
+      '  This id is not on openrouter.ai/api/v1/models (it 404s:',
+      '  "No endpoints found"). Set SKYNET_DEFAULT_MODEL to a live id',
+      '  in dev/.env.dev, then relaunch.' ,
+      ...(near.length ? ['', '  Live Anthropic ids right now, e.g.:', ...near.map(x => '    ' + x)] : [])
+    ]);
+  } catch (_) {
+    /* fetch error / abort -> fail-open: say nothing, let the sidecar warm + the first run report the truth */
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function main() {
   const hadEnvDev = loadEnvDev();
   if (!fs.existsSync(SIDECAR)) die('cannot find sidecar at ' + SIDECAR);
   if (!fs.existsSync(FIXTURE)) die('cannot find the seed fixture at ' + FIXTURE);
@@ -88,7 +134,7 @@ function main() {
   if (!model) {
     die('no SKYNET_DEFAULT_MODEL set.\n' +
         '  Set it once in dev/.env.dev (copy dev/.env.dev.example), e.g.\n' +
-        '    SKYNET_DEFAULT_MODEL=anthropic/claude-3.5-sonnet\n' +
+        '    SKYNET_DEFAULT_MODEL=anthropic/claude-haiku-4.5   # a live id (ids rot — see .env.dev.example)\n' +
         (hadEnvDev ? '  (dev/.env.dev was found but had no SKYNET_DEFAULT_MODEL)' : '  (no dev/.env.dev found yet)'));
   }
   if (!key) {
@@ -96,6 +142,10 @@ function main() {
                  '           runs will fail until a key is provided (set it in dev/.env.dev). If you sign in\n' +
                  '           with ChatGPT/Codex instead, ignore this.');
   }
+
+  // Pre-flight the live catalog so a dead default model is called out LOUDLY here, not silently swallowed
+  // until the agent's first chat fails. Fail-open: never blocks the launch (see checkModelInCatalog).
+  await checkModelInCatalog(model);
 
   materializeWorkspace(model);
 
@@ -126,4 +176,4 @@ function main() {
   child.on('exit', code => process.exit(code == null ? 0 : code));
 }
 
-main();
+main().catch(e => die('unexpected: ' + (e && e.message || e)));

@@ -2,7 +2,10 @@
   "name": "starnet-harness",
   "version": "0.0.0",
   "private": true,
-  "description": "StarNet ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â a real, gamified, downloadable AI-agent harness. Phase 0.0 scaffold: the v7 engine ported verbatim into frontend/, with the v7 headless tests running from test/.",
+  "description": "StarNet — a real, gamified, downloadable AI-agent harness. Phase 0.0 scaffold: the v7 engine ported verbatim into frontend/, with the v7 headless tests running from test/.",
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "validate": "node scripts/timeout.mjs --label validate --timeout=120000 -- node test/validate_map.js",
     "validate:raw": "node test/validate_map.js",
