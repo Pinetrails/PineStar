@@ -23,15 +23,22 @@
      STRIP_FIELDS                      -> every secret key removed from plaintext in keychain mode (`token` + `key`)
      splitSecret(record)               -> { config, token }   // config = non-secret remainder (both secrets out);
                                                                // token = the extracted bot token (import candidate)
-     stripTokens(secrets)              -> secrets with every channel's token AND key removed (what desktop persists)
+     splitKeyOnly(record)              -> config              // config MINUS strip-only secrets (key) but KEEPING token
+     stripTokens(secrets, isDurable)   -> secrets with the provider key removed everywhere, and the bot token removed
+                                          ONLY for channels where isDurable(id) is true (default: all durable = legacy
+                                          behaviour). A NON-durable channel keeps its plaintext token — that plaintext
+                                          copy is the honest last-known-good fallback, exactly like the bare sidecar.
      migratePlaintext(secrets, { keychainMode, hasChannelToken }) ->
          { config, imports, changed }  // config to persist; imports=[{id,token}] to hand the keychain; changed=did we strip anything
 
    `keychainMode` = "is this the desktop shell?" (host passes STARNET_DESKTOP_SHELL === '1'). When false the record
    is returned untouched (browser/dev keeps its plaintext secrets). When true, any plaintext bot token is reported
-   as an `import` and stripped, and any plaintext provider key is stripped (never imported); an already-migrated
-   token (hasChannelToken(id) true) is stripped without a duplicate import. `changed` is true if ANY secret (token
-   OR key) was stripped, so a legacy file carrying only a plaintext `key` still triggers the scrub-rewrite. */
+   as an `import` — but it is ONLY removed from the persisted config when hasChannelToken(id) proves the keychain
+   already holds it. When the keychain does NOT (yet) hold it, the token is reported as an import AND kept in the
+   persisted config: a plaintext token on disk is strictly better than a lost token (the invariant: never remove the
+   last copy of a secret without proof another durable home holds it). A plaintext provider key is always stripped
+   (never imported — it lives in the shell keychain and is pushed via /api/key). `changed` is true if ANY secret was
+   removed OR re-homed, so a legacy file still triggers the scrub-rewrite. */
 'use strict';
 (function (root, factory) {
   const api = factory();
@@ -65,13 +72,34 @@
     return { config, token };
   }
 
-  // return a deep-ish clone of `secrets` with every channel's secret fields (token AND key) removed (config only).
-  function stripTokens(secrets) {
+  // clone ONE channel record MINUS the strip-only secrets (key) but KEEPING the bot token. Used for a NON-durable
+  // channel: the provider key still lives in the shell keychain (safe to drop), but the bot token has no proven
+  // durable home, so its plaintext copy on disk is the honest last-known-good fallback and must survive.
+  function splitKeyOnly(record) {
+    const config = {};
+    if (isChannelRecord(record)) {
+      for (const k of Object.keys(record)) {
+        if (TOKEN_FIELDS.indexOf(k) >= 0) { config[k] = record[k]; continue; }   // KEEP the token (not durable elsewhere)
+        if (STRIP_FIELDS.indexOf(k) >= 0) continue;                               // drop the strip-only secrets (key)
+        config[k] = record[k];
+      }
+    }
+    return config;
+  }
+
+  // return a deep-ish clone of `secrets` for the desktop persist path. The provider `key` is ALWAYS stripped (it
+  // lives in the shell keychain / env). The bot `token` is stripped ONLY for channels whose token is DURABLE
+  // elsewhere (isDurable(id) true — in the keychain or spawn-env). A non-durable channel KEEPS its plaintext token:
+  // that plaintext copy is the only surviving home, and losing it is the exact bug this guard closes. `isDurable`
+  // defaults to always-true so a caller that omits it gets the legacy "strip every token" behaviour.
+  function stripTokens(secrets, isDurable) {
     const out = {};
     const src = (secrets && typeof secrets === 'object') ? secrets : {};
+    const durable = (typeof isDurable === 'function') ? isDurable : function () { return true; };
     for (const k of Object.keys(src)) {
-      if (CHANNEL_IDS.indexOf(k) >= 0 && isChannelRecord(src[k])) { out[k] = splitSecret(src[k]).config; }
-      else out[k] = src[k];
+      if (CHANNEL_IDS.indexOf(k) >= 0 && isChannelRecord(src[k])) {
+        out[k] = durable(k) ? splitSecret(src[k]).config : splitKeyOnly(src[k]);
+      } else out[k] = src[k];
     }
     return out;
   }
@@ -104,11 +132,24 @@
         const hadStrippable = hasStrippableSecret(src[k]);      // a plaintext `key` (or other strip-only secret)
         const s = splitSecret(src[k]);
         if (s.token) {
-          changed = true;                                   // there WAS a plaintext token -> we must strip it
-          if (!has(k)) imports.push({ id: k, token: s.token });   // keychain doesn't have it yet -> import it
+          if (has(k)) {
+            // The keychain PROVABLY holds this token -> the plaintext copy is now redundant; strip it. Also report
+            // it as an import so the runtime layer stays live this session (harmless duplicate the host de-dupes).
+            changed = true;
+            imports.push({ id: k, token: s.token });
+            config[k] = s.config;                            // token removed from persisted config
+          } else {
+            // The keychain does NOT (yet) hold it. NEVER remove the last copy: keep the token in the persisted
+            // config, but still report it as an import so the shell can adopt it into the keychain on this launch
+            // (self-healing — once stored, a later boot with has(k) true strips it). Only the `key` is dropped.
+            if (hadStrippable) changed = true;                // dropping the plaintext key is the only rewrite here
+            imports.push({ id: k, token: s.token });
+            config[k] = splitKeyOnly(src[k]);                 // KEEP token, drop key
+          }
+        } else {
+          if (hadStrippable) changed = true;                // a plaintext provider key alone forces the scrub-rewrite
+          config[k] = s.config;
         }
-        if (hadStrippable) changed = true;                  // a plaintext provider key alone forces the scrub-rewrite
-        config[k] = s.config;
       } else {
         config[k] = src[k];
       }
@@ -116,5 +157,5 @@
     return { config, imports, changed };
   }
 
-  return { CHANNEL_IDS, TOKEN_FIELDS, STRIP_FIELDS, splitSecret, stripTokens, hasStrippableSecret, migratePlaintext };
+  return { CHANNEL_IDS, TOKEN_FIELDS, STRIP_FIELDS, splitSecret, splitKeyOnly, stripTokens, hasStrippableSecret, migratePlaintext };
 });

@@ -64,30 +64,94 @@ const root = path.resolve(__dirname, '..');
   A.eq(res.changed, false, 'bare mode: unchanged');
 }
 
-// ---- D. migratePlaintext: desktop mode imports the token + strips BOTH token and key ----
+// ---- D. migratePlaintext: desktop mode WITHOUT keychain proof KEEPS the token (never destroys the last copy) ----
+//   Andrew's invariant: never remove the last copy of a secret without proof another durable home holds it. When
+//   hasChannelToken(id) is false the keychain provably does NOT have the token, so the plaintext copy is the only
+//   home — keep it. The provider `key` is still dropped (it lives in the shell keychain). The token is STILL reported
+//   as an import so the shell can adopt it into the keychain this launch (self-heal).
 {
   const secrets = { telegram: { token: 'T:1', key: 'sk-tg', model: 'm', enabled: true }, discord: { token: 'D:2', key: 'sk-dc', model: 'm2' }, notifyAutonomous: true };
   const res = S.migratePlaintext(secrets, { keychainMode: true, hasChannelToken: () => false });
-  A.eq(res.changed, true, 'desktop: a plaintext token forces a change');
-  A.ok(!res.config.telegram.token && !res.config.discord.token, 'desktop: tokens stripped from persisted config');
+  A.eq(res.changed, true, 'desktop: dropping the plaintext key forces a change');
+  A.eq(res.config.telegram.token, 'T:1', 'desktop w/o keychain: token KEPT in persisted config (last copy)');
+  A.eq(res.config.discord.token, 'D:2', 'desktop w/o keychain: discord token KEPT too');
   A.ok(!('key' in res.config.telegram) && !('key' in res.config.discord), 'desktop: provider keys stripped from persisted config (P1)');
-  A.eq(res.config.telegram, { model: 'm', enabled: true }, 'desktop: telegram config preserved');
+  A.eq(res.config.telegram, { token: 'T:1', model: 'm', enabled: true }, 'desktop: telegram config preserved minus key');
   A.eq(res.config.notifyAutonomous, true, 'desktop: non-channel keys preserved');
   const ids = res.imports.map(i => i.id).sort();
-  A.eq(ids, ['discord', 'telegram'], 'desktop: both tokens reported for keychain import');
+  A.eq(ids, ['discord', 'telegram'], 'desktop: both tokens reported for keychain import (self-heal)');
   A.eq(res.imports.find(i => i.id === 'telegram').token, 'T:1', 'desktop: import carries the real token');
   // the KEY is stripped but NEVER handed back as an import (nothing for the sidecar to adopt — it lives in the shell)
   A.ok(!res.imports.some(i => 'key' in i || i.token === 'sk-tg' || i.token === 'sk-dc'), 'desktop: provider key is strip-only, never imported');
 }
 
-// ---- E. migratePlaintext: an already-migrated channel is stripped but NOT re-imported ----
+// ---- D2. migratePlaintext: desktop mode WITH keychain proof strips the token (durable home exists) ----
+{
+  const secrets = { telegram: { token: 'T:1', key: 'sk-tg', model: 'm', enabled: true }, notifyAutonomous: true };
+  const res = S.migratePlaintext(secrets, { keychainMode: true, hasChannelToken: () => true });
+  A.eq(res.changed, true, 'desktop w/ keychain: token+key stripped -> change');
+  A.ok(!('token' in res.config.telegram), 'desktop w/ keychain: token stripped (keychain proves the durable home)');
+  A.ok(!('key' in res.config.telegram), 'desktop w/ keychain: key stripped');
+  A.eq(res.config.telegram, { model: 'm', enabled: true }, 'desktop w/ keychain: config minus both secrets');
+  A.eq(res.imports.map(i => i.id), ['telegram'], 'desktop w/ keychain: token still reported to keep the session live');
+}
+
+// ---- E. migratePlaintext: mixed — a keychain-backed channel is stripped, an un-backed one keeps its token ----
 {
   const secrets = { telegram: { token: 'T:1', model: 'm' }, discord: { token: 'D:2', model: 'm2' } };
   const res = S.migratePlaintext(secrets, { keychainMode: true, hasChannelToken: (id) => id === 'telegram' });
-  A.eq(res.changed, true, 'desktop: still changed (discord needs stripping)');
-  const ids = res.imports.map(i => i.id);
-  A.eq(ids, ['discord'], 'desktop: only the un-migrated channel is imported');
-  A.ok(!res.config.telegram.token, 'desktop: the already-migrated token is still stripped from plaintext');
+  A.eq(res.changed, true, 'desktop: changed (telegram stripped)');
+  const ids = res.imports.map(i => i.id).sort();
+  A.eq(ids, ['discord', 'telegram'], 'desktop: both reported (telegram to keep live, discord to adopt)');
+  A.ok(!('token' in res.config.telegram), 'desktop: the keychain-backed token is stripped from plaintext');
+  A.eq(res.config.discord.token, 'D:2', 'desktop: the un-backed token is KEPT in plaintext (last copy survives)');
+}
+
+// ---- E2. stripTokens(isDurable): the desktop persist path keeps a NON-durable token, drops a durable one + all keys ----
+{
+  const secrets = {
+    telegram: { token: 'T:dur', key: 'sk-tg', model: 'm1', enabled: true },   // durable -> token dropped
+    discord: { token: 'D:nondur', key: 'sk-dc', model: 'm2', ownerId: 'o' },  // NOT durable -> token kept
+    notifyAutonomous: true
+  };
+  const out = S.stripTokens(secrets, (id) => id === 'telegram');
+  A.ok(!('token' in out.telegram), 'stripTokens: durable channel token removed');
+  A.eq(out.discord.token, 'D:nondur', 'stripTokens: NON-durable channel token KEPT (honest plaintext fallback)');
+  A.ok(!('key' in out.telegram) && !('key' in out.discord), 'stripTokens: provider keys always removed');
+  A.eq(out.discord, { token: 'D:nondur', model: 'm2', ownerId: 'o' }, 'stripTokens: non-durable config keeps token, drops key');
+  A.eq(out.notifyAutonomous, true, 'stripTokens: non-channel keys untouched');
+  // legacy 1-arg call still strips every token (back-compat)
+  const legacy = S.stripTokens(secrets);
+  A.ok(!('token' in legacy.telegram) && !('token' in legacy.discord), 'stripTokens (no isDurable) strips every token (back-compat)');
+}
+
+// ---- E3. REPRODUCTION (Andrew's loss): desktop, token via connect body (keychain store failed), sidecar "restart".
+//   Before this fix stripTokens() unconditionally removed the token, so the reloaded config had NO token and
+//   channelToken() (blocked from the plaintext fallback on desktop) returned '' -> configured:false, token GONE.
+//   After the fix: a NON-durable token is persisted plaintext + resolvable after reload -> configured stays true. ----
+{
+  const DS = require('../sidecar/durable-store.js');
+  const os = require('os');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'chan-loss-'));
+  const file = path.join(dir, 'secrets.json');
+  const deps = { fs: fs, path: path };
+  try {
+    // startTelegram persisted this record; the token came from the connect POST body (frontend keychain store
+    // returned false) so it is NOT durable. The desktop persist path is stripTokens(record, isDurable).
+    const record = { telegram: { token: 'BOT:from-body', key: 'sk-x', model: 'm', enabled: true, ownerId: '42' } };
+    const isDurable = (id) => false;   // keychain does NOT hold it, not from spawn env either
+    DS.writeJsonResilient(deps, file, S.stripTokens(record, isDurable));   // == saveChannelSecrets under DESKTOP_SHELL
+    // --- simulate a sidecar RESTART: reload from disk, no env token, empty runtime layer ---
+    const reloaded = DS.readJsonResilient(deps, file).value;
+    A.eq(reloaded.telegram.token, 'BOT:from-body', 'RESTART: the non-durable token survived on disk');
+    A.ok(!('key' in reloaded.telegram), 'RESTART: the provider key did NOT survive (lives in keychain)');
+    // channelToken() desktop resolution AFTER the fix: runtime empty -> the plaintext record fallback is allowed.
+    // (mirrors the index.js change; asserted structurally in section G below.)
+    const resolved = reloaded.telegram.token || '';
+    A.ok(!!resolved, 'RESTART: configured stays TRUE — the token is resolvable (Andrew\'s loss is fixed)');
+  } finally {
+    try { fs.rmSync(dir, { recursive: true, force: true }); } catch (_) {}
+  }
 }
 
 // ---- F. migratePlaintext: a secret-free desktop config is a no-op (no needless rewrite) ----
@@ -125,9 +189,20 @@ const root = path.resolve(__dirname, '..');
   A.ok(/DESKTOP_SHELL\s*=\s*\/\^\(1\|true\|yes\|on\)/.test(src), 'index.js derives DESKTOP_SHELL from the shell env');
   A.ok(/channelTokenRuntime/.test(src), 'index.js has a runtime channel-token layer');
   A.ok(/SKYNET_TELEGRAM_TOKEN|TELEGRAM_TOKEN/.test(src) && /DISCORD_TOKEN/.test(src), 'index.js seeds tokens from env');
-  A.ok(/DESKTOP_SHELL\s*\?\s*channelSecretsMod\.stripTokens/.test(src), 'saveChannelSecrets strips secrets under the desktop shell');
+  A.ok(/DESKTOP_SHELL\s*\?\s*channelSecretsMod\.stripTokens\(obj,\s*isChannelTokenDurable\)/.test(src), 'saveChannelSecrets strips secrets DURABILITY-AWARE under the desktop shell (never the last copy)');
   A.ok(/migratePlaintext/.test(src), 'index.js runs the boot migration');
   A.ok(/'\/api\/channels\/token'/.test(src) && /handleSetChannelToken/.test(src), 'index.js wires the token-push route');
+  // DURABILITY LEDGER (Andrew's invariant): a ledger exists, spawn-env seeds it durable, and a body-token stays non-durable.
+  A.ok(/channelTokenDurable/.test(src), 'index.js tracks per-channel token durability');
+  A.ok(/function isChannelTokenDurable/.test(src), 'index.js exposes isChannelTokenDurable(id)');
+  A.ok(/channelTokenRuntime\[id\]\s*=\s*v;\s*channelTokenDurable\[id\]\s*=\s*true/.test(src), 'spawn-env token is seeded durable (keychain-backed)');
+  A.ok(/scrubChannelSecretsBak[\s\S]*?stripTokens\(parsed,\s*isChannelTokenDurable\)/.test(src), 'the .bak scrub is durability-aware (never destroys the last copy in .bak)');
+  // channelToken() now allows the plaintext-record fallback on desktop too (it only exists there when non-durable).
+  A.ok(/if\s*\(savedRecord\s*&&\s*savedRecord\.token\)\s*return String\(savedRecord\.token\)/.test(src), 'channelToken() allows the plaintext-record fallback (desktop included)');
+  A.ok(!/!DESKTOP_SHELL\s*&&\s*savedRecord\s*&&\s*savedRecord\.token/.test(src), 'channelToken() no longer blocks the plaintext fallback on desktop');
+  // /status exposes a truthful `durable` flag (keychain/env OR plaintext-on-disk).
+  A.ok(/durable:\s*durable/.test(src), '/status endpoints report a truthful durable flag');
+  A.ok(/channelTokenDurable\[channel\]\s*=\s*true/.test(src), 'a /api/channels/token push marks the token durable (keychain-backed)');
   // P1 key hygiene: the boot migration also sweeps the .bak, and the provider key is resolved from the runtime
   // layer (never persisted). Guard the .bak-scrub wiring and that no write path re-persists a resolved key.
   A.ok(/function scrubChannelSecretsBak/.test(src), 'index.js defines the .bak secret scrub');
@@ -204,6 +279,9 @@ const root = path.resolve(__dirname, '..');
   A.ok(/harness_store_channel_token,\s*\n\s*harness_has_channel_token/.test(rs), 'both channel-token commands are registered in the invoke handler');
   // the store command must write the keychain (set_password/delete) and push, never return the token
   A.ok(/fn harness_store_channel_token[\s\S]*?set_password[\s\S]*?push_channel_token/.test(rs), 'store command writes the keychain then pushes to the sidecar');
+  // DURABILITY (Andrew's invariant): the plaintext-token migration only strips the file token AFTER a keychain
+  // read-back confirms the keychain actually holds it — a failed set_password must leave the plaintext copy intact.
+  A.ok(/fn migrate_channel_tokens_from_plaintext[\s\S]*?read_channel_token\(channel\)[\s\S]*?keychain_has_it[\s\S]*?rec\.remove\("token"\)/.test(rs), 'migrate strips the plaintext token only after a keychain read-back confirms it (never destroys the last copy)');
 }
 
 // ---- J. frontend routes the token through the keychain on desktop, POST-body on browser ----
@@ -215,6 +293,11 @@ const root = path.resolve(__dirname, '..');
   const ui = fs.readFileSync(path.join(root, 'frontend', 'app', 'stationui.js'), 'utf8');
   A.ok(/Harness\.storeChannelToken\('telegram'/.test(ui) && /Harness\.storeChannelToken\('discord'/.test(ui), 'both connect handlers park the token in the keychain first');
   A.ok((ui.match(/if \(stored\) bodyToken = ''/g) || []).length >= 2, 'a keychain-stored token is omitted from the connect POST body');
+  // DURABILITY UX: when the desktop keychain store fails, the token still rides the body (now persisted safely as a
+  // plaintext fallback) and the UI says so honestly — no scary modal, one short line.
+  A.ok(/isDesktop/.test(harness), 'harness.js exposes isDesktop() so the UI can tell a desktop store failure from a browser no-op');
+  A.ok((ui.match(/localFallback = true/g) || []).length >= 2, 'both connect handlers flag a desktop keychain-store failure');
+  A.ok(/token saved locally, not the OS keychain/.test(ui), 'the connect handler notes a local (non-keychain) save honestly');
 }
 
 A.report('channels.secrets.test');
