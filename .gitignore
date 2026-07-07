@@ -75,12 +75,18 @@ qa/findings/*.json
 
 # QA READY-GATE machine stamps (EL-7) — last-run state each crew runner writes at RUN TIME for
 # scripts/qa/ready.mjs to read. Same class as qa/findings: machine-local, ephemeral, regenerated
-# every cycle (carry local trunk shas + timestamps), read via fs never from git. The installed-exe
-# smoke stamp is written by the rc-soak lane's installed runner; qa:ready only READS it.
+# every cycle (carry local trunk shas + timestamps), read via fs never from git.
 qa/guardian-last-cycle.json
 qa/journeys-last-run.json
 qa/beginner-last-run.json
-qa/installed/
+
+# Installed-exe smoke run artifacts (scripts/qa/installed-smoke.mjs). The pinned stamp
+# (last-smoke.json) + per-run evidence dirs are MACHINE-LOCAL: the stamp records THIS machine's
+# installed build + the local trunk head it ran against, and the qa:ready gate reads it via fs at
+# run time (never from git). Same reasoning as qa/findings above — keep the dir (.gitkeep + README),
+# ignore the run output. (Granular entries, NOT a dir-level ignore: .gitkeep + README are tracked.)
+qa/installed/last-smoke.json
+qa/installed/smoke-*/
 
 # G0 lane visual-proof screenshots (headless capture output; never committed)
 .qa_g0/

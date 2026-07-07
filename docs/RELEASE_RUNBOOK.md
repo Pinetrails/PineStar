@@ -27,6 +27,31 @@ see or download anything.
 
 ---
 
+## 0. READY GATE (do this BEFORE you bump anything)
+
+Before `release:bump`, before the tag, before you touch a version number:
+
+```
+npm run qa:ready
+```
+
+Read the last line. There are exactly two outcomes:
+
+- **READY** → proceed to section 1. The house is green: zero open P0/P1 findings, the Guardian's last
+  cycle is green and fresh, `qa:journeys` passes, the Beginner Run isn't stuck, and the installed-exe
+  smoke stamp (`qa/installed/last-smoke.json`) is fresh + GREEN. You're clear to cut.
+- **NOT READY** → **stop. Do not bump. Do not tag.** Every NOT-READY line names the check that failed.
+  Route those findings (`node scripts/qa/ledger.mjs --digest`), fix them on trunk, and re-run
+  `npm run qa:ready` until it prints READY. No version is cut against a red house — that's the whole
+  point of the gate (READY-GATE law, `docs/RELEASE_READINESS.md`).
+
+No-fake-green: if `qa:ready` itself can't run (missing script, a check that errors), that is a NOT
+READY — treat it as red, not as permission to proceed. And if you're cutting the real release off an RC
+you soaked, the READY receipt you earned at soak end (`docs/RELEASE_READINESS.md` §2.3) is exactly this
+gate — re-run it here to confirm it's still green at cut time.
+
+---
+
 ## 1. NORMAL CUT
 
 You are cutting version `<VER>` (example below uses `0.2.0`). Do these in order.
