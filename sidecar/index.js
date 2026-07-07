@@ -3918,6 +3918,8 @@ const WORKSHOP_RUN_PREFIX = '/workshop-run/';
 // (fsJail.resolveInside — the '..'/absolute/symlink escape all throw); correct Content-Type by extension; NO
 // directory listing (a dir 404s); Cache-Control no-store. Browser navigation can't send a header, so the per-launch
 // token rides ?token= on GET/HEAD exactly like /api/file (this route is NOT under /api/, so we enforce it here).
+// EVERY response carries `Content-Security-Policy: sandbox allow-scripts` (opaque origin, scripts allowed but NO
+// same-origin) so a running deliverable can't read the app token or drive the API — see the headers block below.
 async function serveWorkshopRun(req, res) {
   // token gate: same per-launch secret as every API route, accepted as ?token= (a tab navigation has no header seam).
   if (!apiauth.queryTokenOk(req, API_TOKEN)) { res.writeHead(403); return res.end('forbidden token'); }
@@ -3944,7 +3946,14 @@ async function serveWorkshopRun(req, res) {
   const headers = {
     'Content-Type': MIME[ext] || 'application/octet-stream',
     'Cache-Control': 'no-store',
-    'X-Content-Type-Options': 'nosniff'
+    'X-Content-Type-Options': 'nosniff',
+    // OPAQUE-ORIGIN SANDBOX: `sandbox allow-scripts` (deliberately WITHOUT allow-same-origin) puts every served
+    // deliverable in a unique opaque origin. Inline <script> STILL RUNS (interactive tools keep working), but the
+    // page can't read the app's DOM/`window.__STARNET_API_TOKEN__` and any fetch('/') or fetch('/api/*') it makes is
+    // cross-origin + uncredentialed — so an agent-built deliverable can't exfiltrate the launch token or drive the
+    // API (self-approve consent, write files, dump config). /api/file sandboxes the SAME bytes with script-src 'none'
+    // to STOP them running; here scripts must run, so we sandbox the ORIGIN instead of killing the scripts.
+    'Content-Security-Policy': 'sandbox allow-scripts'
   };
   if (req.method === 'HEAD') { headers['Content-Length'] = st.size; res.writeHead(200, headers); return res.end(); }
   res.writeHead(200, headers);
