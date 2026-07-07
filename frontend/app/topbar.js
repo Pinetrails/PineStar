@@ -27,6 +27,10 @@ const Topbar = (() => {
   let liveSpend = 0;          // running sum of agent.cost usd this session — the between-poll live tick
   let ledgerToday = null;     // last authoritative /api/budget/status spentToday ($/day), null until first good poll
   let ledgerLiveBase = 0;     // liveSpend value AT the moment of the last good poll, so we add only the delta since
+  let ledgerDay = null;       // E3: local date-string the last good ledger poll landed on — so a figure captured
+                              // yesterday isn't displayed as TODAY once the clock rolls past midnight
+  let ledgerStale = false;    // E3: the ledger poll failed (sidecar gone) — the displayed spend is last-known, not live
+  const dayKey = () => { const d = new Date(); return d.getFullYear() + '-' + d.getMonth() + '-' + d.getDate(); };
 
   const $ = sel => document.querySelector(sel);
 
@@ -34,10 +38,14 @@ const Topbar = (() => {
      whole dollars with separators above) — one source of truth for spend display. */
   function fmtSpend(v) { return U.usd(v); }
 
-  // the number to display = the authoritative ledger day-total (if we have one) PLUS any
-  // live cost that has landed since that poll; else just the live session sum.
+  // the number to display = the authoritative ledger day-total (if we have one AND it's still TODAY's)
+  // PLUS any live cost that has landed since that poll; else just the live session sum.
+  // E3 day-boundary: a ledgerToday captured yesterday is NOT today's spend — past midnight the ledger
+  // figure is dropped and we fall back to the live session sum (which the next poll reconciles to the
+  // new day's real total) rather than displaying a stale day-total as if it were today.
+  function ledgerIsToday() { return ledgerToday != null && ledgerDay === dayKey(); }
   function displaySpend() {
-    if (ledgerToday != null) return ledgerToday + Math.max(0, liveSpend - ledgerLiveBase);
+    if (ledgerIsToday()) return ledgerToday + Math.max(0, liveSpend - ledgerLiveBase);
     return liveSpend;
   }
 
@@ -47,6 +55,11 @@ const Topbar = (() => {
     const v = displaySpend();
     valEl.textContent = fmtSpend(v);
     inst.setAttribute('data-zero', v > 0 ? '0' : '1');
+    // E3: stale cue when the ledger poll has failed AND we're still leaning on a prior ledger figure.
+    // The displayed dollars are then last-known (live tick continues, but the day-total isn't fresh) —
+    // dim it + mark stale, mirroring the widget rail / canvas linkStaleDim. Pure live-sum boot (no
+    // ledger yet) is NOT stale — it's honestly just the session sum.
+    inst.setAttribute('data-stale', (ledgerStale && ledgerIsToday()) ? '1' : '0');
     if (pulse) {
       inst.classList.remove('tb-tick'); void inst.offsetWidth; inst.classList.add('tb-tick');
     }
@@ -75,11 +88,11 @@ const Topbar = (() => {
     fetch('/api/budget/status', { cache: 'no-store' })
       .then(r => (r && r.ok) ? r.json() : null)
       .then(st => {
-        if (!st) return;                 // no sidecar / bad response: keep the live-sum fallback
+        if (!st) { ledgerStale = true; paintSpend(false); return; }   // bad response: last-good figure is now stale
         const today = Number(st.spentToday);
-        if (isFinite(today)) { ledgerToday = today; ledgerLiveBase = liveSpend; paintSpend(false); }
+        if (isFinite(today)) { ledgerToday = today; ledgerLiveBase = liveSpend; ledgerDay = dayKey(); ledgerStale = false; paintSpend(false); }
       })
-      .catch(() => { /* sidecar absent (localStorage boot): live-sum fallback already shows */ });
+      .catch(() => { ledgerStale = true; paintSpend(false); });   // E3: sidecar gone → mark the shown spend stale, don't keep painting it as live
   }
 
   // ---- live cost event: fold usd, repaint with a brief glow-pulse ----
