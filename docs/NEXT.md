@@ -94,6 +94,18 @@ skins (14), starnet-build-skills-crop, starnet-security-check, starnet-spend-mod
 truth-chrome-instruments (tonight's; its orchestrator tears down).
 Rule stands: land it or delete it — an unmerged branch is a claim nobody verified.
 
+## CLAIMED — in flight 2026-07-07 (Fable orchestrator session)
+
+- **provider-connect-timeout** (`agent/provider-connect-timeout`): `timeouts.connectSignal`
+  passes `AbortSignal.timeout(30s)` to fetch, which aborts the RESPONSE BODY mid-stream —
+  any turn streaming >30s dies with "The operation was aborted due to timeout" (killed
+  Andrew's tetris run 2026-07-07, codex/gpt-5.5). Fix: disarmable connect guard (timer
+  cleared at headers), all 5 adapters + regression tests.
+- **taskboard-truth** (`agent/taskboard-truth`): every non-General workstream floods the
+  TASK BOARD's IN PROGRESS forever (chat sessions, summon homes, cron autosessions all
+  auto-advance on appendRun, only human SHIP exits). Fix: `kind: task|chat` on workstreams,
+  board shows tasks only, truthful running/done chip on active cards.
+
 ## Parked product decisions (need Andrew, don't guess)
 
 - `fullOffice()` autonomous prop placement vs. hand-placed only.
