@@ -235,7 +235,11 @@ Gauge: `npm run qa:atlas:status`. Trunk re-sweep 2026-07-07 (39b9c569): **1339 e
 (1288 unmapped queue + 51 missing from the skills-legibility redesign — P2s filed, dedup holds).
 The whole surface is the queue. Areas: system, crew, work, build, world, commands, routes, events, props.
 
-_Active claims: (none)._
+_Active claims:_
+- IN PROGRESS — agent/perfect-events · **events** (all 60, static contract mapping) **+ STALE-ONLY
+  re-proof hold on commands/routes/build/crew** (orchestrator-sanctioned; wave 5)
+- IN PROGRESS — agent/perfect-system2 · **system** (full remainder ~132; wave 5)
+- IN PROGRESS — agent/perfect-work2 · **work** (full remainder ~74 incl. 5 stale; wave 5)
 
 _Wave-4 DONE 2026-07-07 (3 lanes merged + gated + reaped; gate 261→264 under parallel
 merges): **restale 76/76 HELD, 0 regressions** (sidecar token/OAuth commits moved no
