@@ -45,12 +45,22 @@
     opts = opts || {};
     const t = opts.t || opts.createdAt || now();
     const c = opts.cost || {};
+    const lane = LANES.indexOf(opts.lane) >= 0 ? opts.lane : 'todo';
     return {
       id: opts.id || uid(),
       title: opts.title != null ? clamp(opts.title, 80) : null,    // null = the General default stream
       agentId: opts.agentId || 'agent',
       roomId: opts.roomId != null ? opts.roomId : null,            // dormant builder seam: a room IS a channel, later
-      lane: LANES.indexOf(opts.lane) >= 0 ? opts.lane : 'todo',
+      lane: lane,
+      // TASK-BOARD TRUTH: 'task' = a deliberate board directive (renders as a card); 'chat' = a plain session
+      // (rail-only, never on the board). A NEW record honours opts.kind ('task' only when asked, else 'chat').
+      // On the idempotent re-normalize of a SAVED record, kind is preserved verbatim; a pre-upgrade save with NO
+      // kind is INFERRED — only the two lanes a human board action can produce (todo/shipped) imply a task; every
+      // other saved stream (including auto-advanced 'active' sessions) was a chat. The inference runs ONLY when
+      // opts.kind is absent/invalid, so a saved 'chat' in the 'shipped' lane (impossible today) still can't lie.
+      kind: (opts.kind === 'task' || opts.kind === 'chat')
+        ? opts.kind
+        : ((lane === 'todo' || lane === 'shipped') ? 'task' : 'chat'),
       history: Array.isArray(opts.history) ? opts.history.slice() : [],
       runIds: Array.isArray(opts.runIds) ? opts.runIds.slice() : [],
       deliverables: Array.isArray(opts.deliverables) ? opts.deliverables.slice() : [],
@@ -128,7 +138,9 @@
   // start a new (untitled) workstream and make it active; it auto-titles on its first message.
   function create(title, opts) {
     opts = opts || {};
-    const w = make({ title: title || null, lane: 'todo', agentId: opts.agentId });   // summon binds a stream to its NEW agent
+    // create() always mints a 'todo' record, so make()'s lane-inference would read it as a task — pass an
+    // EXPLICIT kind so a freshly-created stream is 'chat' UNLESS the caller is a board directive (kind:'task').
+    const w = make({ title: title || null, lane: 'todo', agentId: opts.agentId, kind: opts.kind === 'task' ? 'task' : 'chat' });   // summon binds a stream to its NEW agent
     ws.push(w);
     if (opts.activate !== false) activeId = w.id;   // board "add" passes {activate:false} so it won't hijack the active chat
     return w;

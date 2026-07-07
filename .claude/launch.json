@@ -307,6 +307,20 @@
       }
     },
     {
+      "name": "taskboard-truth-seed",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "dev/seed.js",
+        "--keep"
+      ],
+      "port": 8861,
+      "autoPort": false,
+      "env": {
+        "SKYNET_PORT": "8861",
+        "SKYNET_DEFAULT_MODEL": "anthropic/claude-haiku-4.5"
+      }
+    },
+    {
       "name": "blank-default-trunk",
       "runtimeExecutable": "node",
       "runtimeArgs": [

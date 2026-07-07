@@ -3046,7 +3046,7 @@ const Chat = (() => {
     if (typeof Workstreams === 'undefined' || !Workstreams.create) return localLine('Workstreams are not available yet.');
     const prev = activeWs;
     const title = Workstreams.deriveTitle ? (Workstreams.deriveTitle(text) || 'Background task') : 'Background task';
-    const ws = Workstreams.create(title, { agentId: (activeWs && activeWs.agentId) || 'agent' });
+    const ws = Workstreams.create(title, { agentId: (activeWs && activeWs.agentId) || 'agent', kind: 'task' });   // /background is a directive → a board task
     load(ws);
     send(text);
     if (prev && Workstreams.switch) {
@@ -3198,7 +3198,7 @@ const Chat = (() => {
     if (!activeWs || typeof Workstreams === 'undefined' || !Workstreams.create) return localLine('No active workstream to branch.');
     const src = activeWs;
     const title = String(args || '').trim() || ((src.title || 'General') + ' branch');
-    const ws = Workstreams.create(title, { agentId: src.agentId || 'agent' });
+    const ws = Workstreams.create(title, { agentId: src.agentId || 'agent', kind: src.kind === 'task' ? 'task' : 'chat' });   // a branch inherits the SOURCE stream's kind
     ws.history = (src.history || []).map(m => Object.assign({}, m));
     ws.lane = 'todo';
     load(ws); refreshWorkflowViews();
