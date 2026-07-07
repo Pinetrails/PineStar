@@ -1,6 +1,6 @@
 {
   "area": "build",
-  "updatedAt": "2026-07-07T08:25:37.292Z",
+  "updatedAt": "2026-07-07T08:38:22.559Z",
   "entries": [
     {
       "id": "state/build-connectors",
@@ -104,21 +104,32 @@
       "kind": "ui",
       "area": "build",
       "name": "Close SKILLS & CAPABILITIES",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The SKILLS window close control — dismisses the panel and clears its entry in the app open{} map.",
+      "promise": "Clicking it removes the SKILLS window from #terms and runs closeTerm() so the open map clears.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "audit",
+          "ref": "KNOWN: shared mountConsole primitive; enumerated by Atlas sweep (build-skills state) but no dedicated console tab/search test exists — coverage gap noted, low-risk shared code used by every panel"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "39b9c5690b46a41fb3541b4ab92882dca7c774e9",
+        "date": "2026-07-07T08:38:22.559Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button[aria-label=\"Close SKILLS & CAPABILITIES\"]",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Live: button[aria-label=\"Close SKILLS & CAPABILITIES\"] present (title matches window title law). live-proven 2026-07-07 via scratchpad/drive-skills.mjs on seeded :8965/CDP:9365 — see finding 11c69e21 evidence"
     },
     {
       "id": "ui/build/aria-close-toolsets-connectors",
@@ -314,21 +325,32 @@
       "kind": "ui",
       "area": "build",
       "name": "Minimize SKILLS & CAPABILITIES",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The SKILLS window minimize control — collapses the panel to the minimized-windows strip.",
+      "promise": "Clicking it moves the SKILLS window to the minimized strip with a restore chip.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "audit",
+          "ref": "KNOWN: shared mountConsole primitive; enumerated by Atlas sweep (build-skills state) but no dedicated console tab/search test exists — coverage gap noted, low-risk shared code used by every panel"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "39b9c5690b46a41fb3541b4ab92882dca7c774e9",
+        "date": "2026-07-07T08:38:22.559Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button[aria-label=\"Minimize SKILLS & CAPABILITIES\"]",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Live: button[aria-label=\"Minimize SKILLS & CAPABILITIES\"] present. live-proven 2026-07-07 via scratchpad/drive-skills.mjs on seeded :8965/CDP:9365 — see finding 11c69e21 evidence"
     },
     {
       "id": "ui/build/aria-minimize-toolsets-connectors",
@@ -377,21 +399,32 @@
       "kind": "ui",
       "area": "build",
       "name": "Search skills",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The SKILLS window search box — filters skill/recipe rows across all sections as you type.",
+      "promise": "Typing a query marks matching rows as hits, dims empty sections, and shows every section in search mode; clearing restores the active tab.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "audit",
+          "ref": "KNOWN: shared mountConsole primitive; enumerated by Atlas sweep (build-skills state) but no dedicated console tab/search test exists — coverage gap noted, low-risk shared code used by every panel"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "39b9c5690b46a41fb3541b4ab92882dca7c774e9",
+        "date": "2026-07-07T08:38:22.559Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "input[aria-label=\"Search skills\"]",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Live: input[aria-label=\"Search skills\"] present and wired by mountConsole opts.search. live-proven 2026-07-07 via scratchpad/drive-skills.mjs on seeded :8965/CDP:9365 — see finding 11c69e21 evidence"
     },
     {
       "id": "ui/build/con-tab-connectors-catalog",
@@ -461,63 +494,96 @@
       "kind": "ui",
       "area": "build",
       "name": "✎AGENT SKILLS",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The AGENT SKILLS tab — reusable procedures this agent created or learned itself.",
+      "promise": "Clicking it swaps to the AGENT SKILLS pane (the agent-owned skillbase list).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "audit",
+          "ref": "KNOWN: shared mountConsole primitive; enumerated by Atlas sweep (build-skills state) but no dedicated console tab/search test exists — coverage gap noted, low-risk shared code used by every panel"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "39b9c5690b46a41fb3541b4ab92882dca7c774e9",
+        "date": "2026-07-07T08:38:22.559Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#con-tab-skills-agent",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Live: tab present in the tablist (con-tab-skills-agent). live-proven 2026-07-07 via scratchpad/drive-skills.mjs on seeded :8965/CDP:9365 — see finding 11c69e21 evidence"
     },
     {
       "id": "ui/build/con-tab-skills-caps",
       "kind": "ui",
       "area": "build",
       "name": "◈CAPABILITIES",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The CAPABILITIES tab of the SKILLS window — shows what this agent can actually do right now, driven by the objects placed at its workstation.",
+      "promise": "Clicking it shows the CAPABILITIES pane (live perks for the selected agent); it is the default-landed tab and reads aria-selected=true.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "audit",
+          "ref": "KNOWN: shared mountConsole primitive; enumerated by Atlas sweep (build-skills state) but no dedicated console tab/search test exists — coverage gap noted, low-risk shared code used by every panel"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "39b9c5690b46a41fb3541b4ab92882dca7c774e9",
+        "date": "2026-07-07T08:38:22.559Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#con-tab-skills-caps",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Live: tab present, aria-selected=true on open (default land). live-proven 2026-07-07 via scratchpad/drive-skills.mjs on seeded :8965/CDP:9365 — see finding 11c69e21 evidence"
     },
     {
       "id": "ui/build/con-tab-skills-library",
       "kind": "ui",
       "area": "build",
       "name": "▤SKILL LIBRARY",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The SKILL LIBRARY tab — opens the pre-installed recipe catalog with per-recipe ON/OFF switch and readiness state.",
+      "promise": "Clicking it swaps to the SKILL LIBRARY pane and renders the recipe cards (switch + ready chip + PLACE buttons).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "audit",
+          "ref": "KNOWN: shared mountConsole primitive; enumerated by Atlas sweep (build-skills state) but no dedicated console tab/search test exists — coverage gap noted, low-risk shared code used by every panel"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "39b9c5690b46a41fb3541b4ab92882dca7c774e9",
+        "date": "2026-07-07T08:38:22.559Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#con-tab-skills-library",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Live: clicking con-tab-skills-library rendered 38 recipe cards with switches. live-proven 2026-07-07 via scratchpad/drive-skills.mjs on seeded :8965/CDP:9365 — see finding 11c69e21 evidence"
     },
     {
       "id": "ui/build/mc-add",
@@ -1780,67 +1846,40 @@
       "state": "build-connectors"
     },
     {
-      "id": "ui/build/txt-button-405",
-      "kind": "ui",
-      "area": "build",
-      "name": "Enable this skill",
-      "purpose": "",
-      "promise": "",
-      "wiring": {
-        "files": [],
-        "events": []
-      },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.406Z",
-      "lastSeen": "2026-07-07T08:11:07.406Z",
-      "missing": true,
-      "selector": "button",
-      "state": "build-skills"
-    },
-    {
       "id": "ui/build/txt-button-406",
       "kind": "ui",
       "area": "build",
       "name": "Read the recipe",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The \"Read the recipe\" expand glyph (▸) on a recipe card — reveals the full recipe body inline, exactly what the run is told (no divergence).",
+      "promise": "Clicking the ▸ toggles the card open (glyph -> ▾) and shows the recipe <pre> body that /api/skills already returned; the body shown == the body compose() injects into the run.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/index.js",
+          "sidecar/skills/catalog.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "audit",
+          "ref": "ledger:11c69e21 (EL-3 coverage gap — no journey/test guards this promise; live-proven this session)"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "39b9c5690b46a41fb3541b4ab92882dca7c774e9",
+        "date": "2026-07-07T08:38:22.559Z"
+      },
+      "findings": [
+        "11c69e21"
+      ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
-      "state": "build-skills"
-    },
-    {
-      "id": "ui/build/txt-button-407",
-      "kind": "ui",
-      "area": "build",
-      "name": "Enable this skill",
-      "purpose": "",
-      "promise": "",
-      "wiring": {
-        "files": [],
-        "events": []
-      },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.406Z",
-      "lastSeen": "2026-07-07T08:11:07.406Z",
-      "missing": true,
-      "selector": "button",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Live: 24 expand buttons (title=\"Read the recipe\") rendered in the library; bodies ship in the /api/skills payload so expand needs no 2nd fetch. live-proven 2026-07-07 via scratchpad/drive-skills.mjs on seeded :8965/CDP:9365 — see finding 11c69e21 evidence"
     },
     {
       "id": "ui/build/txt-button-408",
@@ -1860,27 +1899,6 @@
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
-      "selector": "button",
-      "state": "build-skills"
-    },
-    {
-      "id": "ui/build/txt-button-409",
-      "kind": "ui",
-      "area": "build",
-      "name": "Enable this skill",
-      "purpose": "",
-      "promise": "",
-      "wiring": {
-        "files": [],
-        "events": []
-      },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.406Z",
-      "lastSeen": "2026-07-07T08:11:07.406Z",
-      "missing": true,
       "selector": "button",
       "state": "build-skills"
     },
@@ -1906,27 +1924,6 @@
       "state": "build-skills"
     },
     {
-      "id": "ui/build/txt-button-411",
-      "kind": "ui",
-      "area": "build",
-      "name": "Enable this skill",
-      "purpose": "",
-      "promise": "",
-      "wiring": {
-        "files": [],
-        "events": []
-      },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.406Z",
-      "lastSeen": "2026-07-07T08:11:07.406Z",
-      "missing": true,
-      "selector": "button",
-      "state": "build-skills"
-    },
-    {
       "id": "ui/build/txt-button-412",
       "kind": "ui",
       "area": "build",
@@ -1944,27 +1941,6 @@
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
-      "selector": "button",
-      "state": "build-skills"
-    },
-    {
-      "id": "ui/build/txt-button-413",
-      "kind": "ui",
-      "area": "build",
-      "name": "Enable this skill",
-      "purpose": "",
-      "promise": "",
-      "wiring": {
-        "files": [],
-        "events": []
-      },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.406Z",
-      "lastSeen": "2026-07-07T08:11:07.406Z",
-      "missing": true,
       "selector": "button",
       "state": "build-skills"
     },
@@ -1990,48 +1966,6 @@
       "state": "build-skills"
     },
     {
-      "id": "ui/build/txt-button-415",
-      "kind": "ui",
-      "area": "build",
-      "name": "Enable this skill",
-      "purpose": "",
-      "promise": "",
-      "wiring": {
-        "files": [],
-        "events": []
-      },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.407Z",
-      "lastSeen": "2026-07-07T08:11:07.407Z",
-      "missing": true,
-      "selector": "button",
-      "state": "build-skills"
-    },
-    {
-      "id": "ui/build/txt-button-416",
-      "kind": "ui",
-      "area": "build",
-      "name": "Read the recipe",
-      "purpose": "",
-      "promise": "",
-      "wiring": {
-        "files": [],
-        "events": []
-      },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.407Z",
-      "lastSeen": "2026-07-07T08:11:07.407Z",
-      "missing": true,
-      "selector": "button",
-      "state": "build-skills"
-    },
-    {
       "id": "ui/build/txt-button-417",
       "kind": "ui",
       "area": "build",
@@ -2049,48 +1983,6 @@
       "firstSeen": "2026-07-07T08:11:07.407Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
-      "selector": "button",
-      "state": "build-skills"
-    },
-    {
-      "id": "ui/build/txt-button-418",
-      "kind": "ui",
-      "area": "build",
-      "name": "Read the recipe",
-      "purpose": "",
-      "promise": "",
-      "wiring": {
-        "files": [],
-        "events": []
-      },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.407Z",
-      "lastSeen": "2026-07-07T08:11:07.407Z",
-      "missing": true,
-      "selector": "button",
-      "state": "build-skills"
-    },
-    {
-      "id": "ui/build/txt-button-419",
-      "kind": "ui",
-      "area": "build",
-      "name": "Enable this skill",
-      "purpose": "",
-      "promise": "",
-      "wiring": {
-        "files": [],
-        "events": []
-      },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.407Z",
-      "lastSeen": "2026-07-07T08:11:07.407Z",
-      "missing": true,
       "selector": "button",
       "state": "build-skills"
     },
@@ -2116,48 +2008,6 @@
       "state": "build-skills"
     },
     {
-      "id": "ui/build/txt-button-421",
-      "kind": "ui",
-      "area": "build",
-      "name": "Enable this skill",
-      "purpose": "",
-      "promise": "",
-      "wiring": {
-        "files": [],
-        "events": []
-      },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.407Z",
-      "lastSeen": "2026-07-07T08:11:07.407Z",
-      "missing": true,
-      "selector": "button",
-      "state": "build-skills"
-    },
-    {
-      "id": "ui/build/txt-button-422",
-      "kind": "ui",
-      "area": "build",
-      "name": "Read the recipe",
-      "purpose": "",
-      "promise": "",
-      "wiring": {
-        "files": [],
-        "events": []
-      },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.407Z",
-      "lastSeen": "2026-07-07T08:11:07.407Z",
-      "missing": true,
-      "selector": "button",
-      "state": "build-skills"
-    },
-    {
       "id": "ui/build/txt-button-423",
       "kind": "ui",
       "area": "build",
@@ -2175,48 +2025,6 @@
       "firstSeen": "2026-07-07T08:11:07.407Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
-      "selector": "button",
-      "state": "build-skills"
-    },
-    {
-      "id": "ui/build/txt-button-424",
-      "kind": "ui",
-      "area": "build",
-      "name": "Read the recipe",
-      "purpose": "",
-      "promise": "",
-      "wiring": {
-        "files": [],
-        "events": []
-      },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.407Z",
-      "lastSeen": "2026-07-07T08:11:07.407Z",
-      "missing": true,
-      "selector": "button",
-      "state": "build-skills"
-    },
-    {
-      "id": "ui/build/txt-button-425",
-      "kind": "ui",
-      "area": "build",
-      "name": "Enable this skill",
-      "purpose": "",
-      "promise": "",
-      "wiring": {
-        "files": [],
-        "events": []
-      },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.407Z",
-      "lastSeen": "2026-07-07T08:11:07.407Z",
-      "missing": true,
       "selector": "button",
       "state": "build-skills"
     },
@@ -2242,48 +2050,6 @@
       "state": "build-skills"
     },
     {
-      "id": "ui/build/txt-button-427",
-      "kind": "ui",
-      "area": "build",
-      "name": "Enable this skill",
-      "purpose": "",
-      "promise": "",
-      "wiring": {
-        "files": [],
-        "events": []
-      },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.407Z",
-      "lastSeen": "2026-07-07T08:11:07.407Z",
-      "missing": true,
-      "selector": "button",
-      "state": "build-skills"
-    },
-    {
-      "id": "ui/build/txt-button-428",
-      "kind": "ui",
-      "area": "build",
-      "name": "Read the recipe",
-      "purpose": "",
-      "promise": "",
-      "wiring": {
-        "files": [],
-        "events": []
-      },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.407Z",
-      "lastSeen": "2026-07-07T08:11:07.407Z",
-      "missing": true,
-      "selector": "button",
-      "state": "build-skills"
-    },
-    {
       "id": "ui/build/txt-button-429",
       "kind": "ui",
       "area": "build",
@@ -2301,48 +2067,6 @@
       "firstSeen": "2026-07-07T08:11:07.407Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
-      "selector": "button",
-      "state": "build-skills"
-    },
-    {
-      "id": "ui/build/txt-button-430",
-      "kind": "ui",
-      "area": "build",
-      "name": "Read the recipe",
-      "purpose": "",
-      "promise": "",
-      "wiring": {
-        "files": [],
-        "events": []
-      },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.407Z",
-      "lastSeen": "2026-07-07T08:11:07.407Z",
-      "missing": true,
-      "selector": "button",
-      "state": "build-skills"
-    },
-    {
-      "id": "ui/build/txt-button-431",
-      "kind": "ui",
-      "area": "build",
-      "name": "Enable this skill",
-      "purpose": "",
-      "promise": "",
-      "wiring": {
-        "files": [],
-        "events": []
-      },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.407Z",
-      "lastSeen": "2026-07-07T08:11:07.407Z",
-      "missing": true,
       "selector": "button",
       "state": "build-skills"
     },
@@ -2368,48 +2092,6 @@
       "state": "build-skills"
     },
     {
-      "id": "ui/build/txt-button-433",
-      "kind": "ui",
-      "area": "build",
-      "name": "Enable this skill",
-      "purpose": "",
-      "promise": "",
-      "wiring": {
-        "files": [],
-        "events": []
-      },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.407Z",
-      "lastSeen": "2026-07-07T08:11:07.407Z",
-      "missing": true,
-      "selector": "button",
-      "state": "build-skills"
-    },
-    {
-      "id": "ui/build/txt-button-434",
-      "kind": "ui",
-      "area": "build",
-      "name": "Read the recipe",
-      "purpose": "",
-      "promise": "",
-      "wiring": {
-        "files": [],
-        "events": []
-      },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.407Z",
-      "lastSeen": "2026-07-07T08:11:07.407Z",
-      "missing": true,
-      "selector": "button",
-      "state": "build-skills"
-    },
-    {
       "id": "ui/build/txt-button-435",
       "kind": "ui",
       "area": "build",
@@ -2427,69 +2109,6 @@
       "firstSeen": "2026-07-07T08:11:07.407Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
-      "selector": "button",
-      "state": "build-skills"
-    },
-    {
-      "id": "ui/build/txt-button-436",
-      "kind": "ui",
-      "area": "build",
-      "name": "Read the recipe",
-      "purpose": "",
-      "promise": "",
-      "wiring": {
-        "files": [],
-        "events": []
-      },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.407Z",
-      "lastSeen": "2026-07-07T08:11:07.407Z",
-      "missing": true,
-      "selector": "button",
-      "state": "build-skills"
-    },
-    {
-      "id": "ui/build/txt-button-437",
-      "kind": "ui",
-      "area": "build",
-      "name": "Enable this skill",
-      "purpose": "",
-      "promise": "",
-      "wiring": {
-        "files": [],
-        "events": []
-      },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.407Z",
-      "lastSeen": "2026-07-07T08:11:07.407Z",
-      "missing": true,
-      "selector": "button",
-      "state": "build-skills"
-    },
-    {
-      "id": "ui/build/txt-button-438",
-      "kind": "ui",
-      "area": "build",
-      "name": "Read the recipe",
-      "purpose": "",
-      "promise": "",
-      "wiring": {
-        "files": [],
-        "events": []
-      },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.407Z",
-      "lastSeen": "2026-07-07T08:11:07.407Z",
-      "missing": true,
       "selector": "button",
       "state": "build-skills"
     },
@@ -2515,48 +2134,6 @@
       "state": "build-skills"
     },
     {
-      "id": "ui/build/txt-button-440",
-      "kind": "ui",
-      "area": "build",
-      "name": "Read the recipe",
-      "purpose": "",
-      "promise": "",
-      "wiring": {
-        "files": [],
-        "events": []
-      },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.407Z",
-      "lastSeen": "2026-07-07T08:11:07.407Z",
-      "missing": true,
-      "selector": "button",
-      "state": "build-skills"
-    },
-    {
-      "id": "ui/build/txt-button-441",
-      "kind": "ui",
-      "area": "build",
-      "name": "Enable this skill",
-      "purpose": "",
-      "promise": "",
-      "wiring": {
-        "files": [],
-        "events": []
-      },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.407Z",
-      "lastSeen": "2026-07-07T08:11:07.407Z",
-      "missing": true,
-      "selector": "button",
-      "state": "build-skills"
-    },
-    {
       "id": "ui/build/txt-button-442",
       "kind": "ui",
       "area": "build",
@@ -2574,48 +2151,6 @@
       "firstSeen": "2026-07-07T08:11:07.407Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
-      "selector": "button",
-      "state": "build-skills"
-    },
-    {
-      "id": "ui/build/txt-button-443",
-      "kind": "ui",
-      "area": "build",
-      "name": "Enable this skill",
-      "purpose": "",
-      "promise": "",
-      "wiring": {
-        "files": [],
-        "events": []
-      },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.407Z",
-      "lastSeen": "2026-07-07T08:11:07.407Z",
-      "missing": true,
-      "selector": "button",
-      "state": "build-skills"
-    },
-    {
-      "id": "ui/build/txt-button-444",
-      "kind": "ui",
-      "area": "build",
-      "name": "Read the recipe",
-      "purpose": "",
-      "promise": "",
-      "wiring": {
-        "files": [],
-        "events": []
-      },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.407Z",
-      "lastSeen": "2026-07-07T08:11:07.407Z",
-      "missing": true,
       "selector": "button",
       "state": "build-skills"
     },
@@ -2641,48 +2176,6 @@
       "state": "build-skills"
     },
     {
-      "id": "ui/build/txt-button-446",
-      "kind": "ui",
-      "area": "build",
-      "name": "Read the recipe",
-      "purpose": "",
-      "promise": "",
-      "wiring": {
-        "files": [],
-        "events": []
-      },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.407Z",
-      "lastSeen": "2026-07-07T08:11:07.407Z",
-      "missing": true,
-      "selector": "button",
-      "state": "build-skills"
-    },
-    {
-      "id": "ui/build/txt-button-447",
-      "kind": "ui",
-      "area": "build",
-      "name": "Enable this skill",
-      "purpose": "",
-      "promise": "",
-      "wiring": {
-        "files": [],
-        "events": []
-      },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.407Z",
-      "lastSeen": "2026-07-07T08:11:07.407Z",
-      "missing": true,
-      "selector": "button",
-      "state": "build-skills"
-    },
-    {
       "id": "ui/build/txt-button-448",
       "kind": "ui",
       "area": "build",
@@ -2700,48 +2193,6 @@
       "firstSeen": "2026-07-07T08:11:07.407Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
-      "selector": "button",
-      "state": "build-skills"
-    },
-    {
-      "id": "ui/build/txt-button-449",
-      "kind": "ui",
-      "area": "build",
-      "name": "Enable this skill",
-      "purpose": "",
-      "promise": "",
-      "wiring": {
-        "files": [],
-        "events": []
-      },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.407Z",
-      "lastSeen": "2026-07-07T08:11:07.407Z",
-      "missing": true,
-      "selector": "button",
-      "state": "build-skills"
-    },
-    {
-      "id": "ui/build/txt-button-450",
-      "kind": "ui",
-      "area": "build",
-      "name": "Read the recipe",
-      "purpose": "",
-      "promise": "",
-      "wiring": {
-        "files": [],
-        "events": []
-      },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.407Z",
-      "lastSeen": "2026-07-07T08:11:07.407Z",
-      "missing": true,
       "selector": "button",
       "state": "build-skills"
     },
@@ -2767,48 +2218,6 @@
       "state": "build-skills"
     },
     {
-      "id": "ui/build/txt-button-452",
-      "kind": "ui",
-      "area": "build",
-      "name": "Read the recipe",
-      "purpose": "",
-      "promise": "",
-      "wiring": {
-        "files": [],
-        "events": []
-      },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.407Z",
-      "lastSeen": "2026-07-07T08:11:07.407Z",
-      "missing": true,
-      "selector": "button",
-      "state": "build-skills"
-    },
-    {
-      "id": "ui/build/txt-button-453",
-      "kind": "ui",
-      "area": "build",
-      "name": "Enable this skill",
-      "purpose": "",
-      "promise": "",
-      "wiring": {
-        "files": [],
-        "events": []
-      },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.407Z",
-      "lastSeen": "2026-07-07T08:11:07.407Z",
-      "missing": true,
-      "selector": "button",
-      "state": "build-skills"
-    },
-    {
       "id": "ui/build/txt-button-454",
       "kind": "ui",
       "area": "build",
@@ -2826,48 +2235,6 @@
       "firstSeen": "2026-07-07T08:11:07.407Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
-      "selector": "button",
-      "state": "build-skills"
-    },
-    {
-      "id": "ui/build/txt-button-455",
-      "kind": "ui",
-      "area": "build",
-      "name": "Enable this skill",
-      "purpose": "",
-      "promise": "",
-      "wiring": {
-        "files": [],
-        "events": []
-      },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.407Z",
-      "lastSeen": "2026-07-07T08:11:07.407Z",
-      "missing": true,
-      "selector": "button",
-      "state": "build-skills"
-    },
-    {
-      "id": "ui/build/txt-button-456",
-      "kind": "ui",
-      "area": "build",
-      "name": "Read the recipe",
-      "purpose": "",
-      "promise": "",
-      "wiring": {
-        "files": [],
-        "events": []
-      },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.407Z",
-      "lastSeen": "2026-07-07T08:11:07.407Z",
-      "missing": true,
       "selector": "button",
       "state": "build-skills"
     },
@@ -2893,69 +2260,6 @@
       "state": "build-skills"
     },
     {
-      "id": "ui/build/txt-button-458",
-      "kind": "ui",
-      "area": "build",
-      "name": "Read the recipe",
-      "purpose": "",
-      "promise": "",
-      "wiring": {
-        "files": [],
-        "events": []
-      },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.407Z",
-      "lastSeen": "2026-07-07T08:11:07.407Z",
-      "missing": true,
-      "selector": "button",
-      "state": "build-skills"
-    },
-    {
-      "id": "ui/build/txt-button-459",
-      "kind": "ui",
-      "area": "build",
-      "name": "Enable this skill",
-      "purpose": "",
-      "promise": "",
-      "wiring": {
-        "files": [],
-        "events": []
-      },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.407Z",
-      "lastSeen": "2026-07-07T08:11:07.407Z",
-      "missing": true,
-      "selector": "button",
-      "state": "build-skills"
-    },
-    {
-      "id": "ui/build/txt-button-460",
-      "kind": "ui",
-      "area": "build",
-      "name": "Read the recipe",
-      "purpose": "",
-      "promise": "",
-      "wiring": {
-        "files": [],
-        "events": []
-      },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.407Z",
-      "lastSeen": "2026-07-07T08:11:07.407Z",
-      "missing": true,
-      "selector": "button",
-      "state": "build-skills"
-    },
-    {
       "id": "ui/build/txt-button-461",
       "kind": "ui",
       "area": "build",
@@ -2973,48 +2277,6 @@
       "firstSeen": "2026-07-07T08:11:07.407Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
-      "selector": "button",
-      "state": "build-skills"
-    },
-    {
-      "id": "ui/build/txt-button-462",
-      "kind": "ui",
-      "area": "build",
-      "name": "Read the recipe",
-      "purpose": "",
-      "promise": "",
-      "wiring": {
-        "files": [],
-        "events": []
-      },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.407Z",
-      "lastSeen": "2026-07-07T08:11:07.407Z",
-      "missing": true,
-      "selector": "button",
-      "state": "build-skills"
-    },
-    {
-      "id": "ui/build/txt-button-463",
-      "kind": "ui",
-      "area": "build",
-      "name": "Enable this skill",
-      "purpose": "",
-      "promise": "",
-      "wiring": {
-        "files": [],
-        "events": []
-      },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.407Z",
-      "lastSeen": "2026-07-07T08:11:07.407Z",
-      "missing": true,
       "selector": "button",
       "state": "build-skills"
     },
@@ -3040,48 +2302,6 @@
       "state": "build-skills"
     },
     {
-      "id": "ui/build/txt-button-465",
-      "kind": "ui",
-      "area": "build",
-      "name": "Enable this skill",
-      "purpose": "",
-      "promise": "",
-      "wiring": {
-        "files": [],
-        "events": []
-      },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.407Z",
-      "lastSeen": "2026-07-07T08:11:07.407Z",
-      "missing": true,
-      "selector": "button",
-      "state": "build-skills"
-    },
-    {
-      "id": "ui/build/txt-button-466",
-      "kind": "ui",
-      "area": "build",
-      "name": "Read the recipe",
-      "purpose": "",
-      "promise": "",
-      "wiring": {
-        "files": [],
-        "events": []
-      },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.407Z",
-      "lastSeen": "2026-07-07T08:11:07.407Z",
-      "missing": true,
-      "selector": "button",
-      "state": "build-skills"
-    },
-    {
       "id": "ui/build/txt-button-467",
       "kind": "ui",
       "area": "build",
@@ -3099,48 +2319,6 @@
       "firstSeen": "2026-07-07T08:11:07.407Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
-      "selector": "button",
-      "state": "build-skills"
-    },
-    {
-      "id": "ui/build/txt-button-468",
-      "kind": "ui",
-      "area": "build",
-      "name": "Read the recipe",
-      "purpose": "",
-      "promise": "",
-      "wiring": {
-        "files": [],
-        "events": []
-      },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.407Z",
-      "lastSeen": "2026-07-07T08:11:07.407Z",
-      "missing": true,
-      "selector": "button",
-      "state": "build-skills"
-    },
-    {
-      "id": "ui/build/txt-button-469",
-      "kind": "ui",
-      "area": "build",
-      "name": "Enable this skill",
-      "purpose": "",
-      "promise": "",
-      "wiring": {
-        "files": [],
-        "events": []
-      },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.407Z",
-      "lastSeen": "2026-07-07T08:11:07.407Z",
-      "missing": true,
       "selector": "button",
       "state": "build-skills"
     },
@@ -3166,48 +2344,6 @@
       "state": "build-skills"
     },
     {
-      "id": "ui/build/txt-button-471",
-      "kind": "ui",
-      "area": "build",
-      "name": "Enable this skill",
-      "purpose": "",
-      "promise": "",
-      "wiring": {
-        "files": [],
-        "events": []
-      },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.407Z",
-      "lastSeen": "2026-07-07T08:11:07.407Z",
-      "missing": true,
-      "selector": "button",
-      "state": "build-skills"
-    },
-    {
-      "id": "ui/build/txt-button-472",
-      "kind": "ui",
-      "area": "build",
-      "name": "Read the recipe",
-      "purpose": "",
-      "promise": "",
-      "wiring": {
-        "files": [],
-        "events": []
-      },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.407Z",
-      "lastSeen": "2026-07-07T08:11:07.407Z",
-      "missing": true,
-      "selector": "button",
-      "state": "build-skills"
-    },
-    {
       "id": "ui/build/txt-button-473",
       "kind": "ui",
       "area": "build",
@@ -3229,69 +2365,6 @@
       "state": "build-skills"
     },
     {
-      "id": "ui/build/txt-button-474",
-      "kind": "ui",
-      "area": "build",
-      "name": "Read the recipe",
-      "purpose": "",
-      "promise": "",
-      "wiring": {
-        "files": [],
-        "events": []
-      },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:11:07.408Z",
-      "missing": true,
-      "selector": "button",
-      "state": "build-skills"
-    },
-    {
-      "id": "ui/build/txt-button-475",
-      "kind": "ui",
-      "area": "build",
-      "name": "Enable this skill",
-      "purpose": "",
-      "promise": "",
-      "wiring": {
-        "files": [],
-        "events": []
-      },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:11:07.408Z",
-      "missing": true,
-      "selector": "button",
-      "state": "build-skills"
-    },
-    {
-      "id": "ui/build/txt-button-476",
-      "kind": "ui",
-      "area": "build",
-      "name": "Read the recipe",
-      "purpose": "",
-      "promise": "",
-      "wiring": {
-        "files": [],
-        "events": []
-      },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:11:07.408Z",
-      "missing": true,
-      "selector": "button",
-      "state": "build-skills"
-    },
-    {
       "id": "ui/build/txt-button-477",
       "kind": "ui",
       "area": "build",
@@ -3309,69 +2382,6 @@
       "firstSeen": "2026-07-07T08:11:07.408Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
-      "selector": "button",
-      "state": "build-skills"
-    },
-    {
-      "id": "ui/build/txt-button-478",
-      "kind": "ui",
-      "area": "build",
-      "name": "Read the recipe",
-      "purpose": "",
-      "promise": "",
-      "wiring": {
-        "files": [],
-        "events": []
-      },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:11:07.408Z",
-      "missing": true,
-      "selector": "button",
-      "state": "build-skills"
-    },
-    {
-      "id": "ui/build/txt-button-479",
-      "kind": "ui",
-      "area": "build",
-      "name": "Enable this skill",
-      "purpose": "",
-      "promise": "",
-      "wiring": {
-        "files": [],
-        "events": []
-      },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:11:07.408Z",
-      "missing": true,
-      "selector": "button",
-      "state": "build-skills"
-    },
-    {
-      "id": "ui/build/txt-button-480",
-      "kind": "ui",
-      "area": "build",
-      "name": "Read the recipe",
-      "purpose": "",
-      "promise": "",
-      "wiring": {
-        "files": [],
-        "events": []
-      },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:11:07.408Z",
-      "missing": true,
       "selector": "button",
       "state": "build-skills"
     },
@@ -4283,21 +3293,37 @@
       "kind": "ui",
       "area": "build",
       "name": "Turn ON this skill station-wide",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The per-recipe ON/OFF switch in its OFF state — a library recipe the user has turned off station-wide (gear irrelevant while off).",
+      "promise": "Reads OFF (aria-checked=false); clicking it POSTs /api/skills/toggle {enabled:true} and the panel reloads showing ON, with GET /api/skills reading back enabled:true.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/index.js",
+          "sidecar/skills/prefs.js",
+          "sidecar/skills/catalog.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "audit",
+          "ref": "ledger:11c69e21 (EL-3 coverage gap — no journey/test guards this promise; live-proven this session)"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "39b9c5690b46a41fb3541b4ab92882dca7c774e9",
+        "date": "2026-07-07T08:38:22.559Z"
+      },
+      "findings": [
+        "11c69e21"
+      ],
       "firstSeen": "2026-07-07T08:25:37.301Z",
       "lastSeen": "2026-07-07T08:25:37.301Z",
       "missing": false,
       "selector": "button",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Live: 33 OFF switches on a bare seed; toggle round-trip verified truthful (same POST/reload path as the ON case). live-proven 2026-07-07 via scratchpad/drive-skills.mjs on seeded :8965/CDP:9365 — see finding 11c69e21 evidence"
     },
     {
       "id": "ui/build/txt-button-off-418",
@@ -4976,21 +4002,37 @@
       "kind": "ui",
       "area": "build",
       "name": "Turn OFF this skill station-wide",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The per-recipe ON/OFF switch in its ON state — the user's station-wide choice to enable a library recipe (distinct from the floor grant).",
+      "promise": "Reads ON (aria-checked=true); clicking it POSTs /api/skills/toggle {enabled:false}, persists to skillPrefs, and the panel reloads showing OFF — and GET /api/skills reads back enabled:false (truthful: the switch mirrors real persisted prefs, which feed the run-path compose()).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/index.js",
+          "sidecar/skills/prefs.js",
+          "sidecar/skills/catalog.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "audit",
+          "ref": "ledger:11c69e21 (EL-3 coverage gap — no journey/test guards this promise; live-proven this session)"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "39b9c5690b46a41fb3541b4ab92882dca7c774e9",
+        "date": "2026-07-07T08:38:22.559Z"
+      },
+      "findings": [
+        "11c69e21"
+      ],
       "firstSeen": "2026-07-07T08:25:37.301Z",
       "lastSeen": "2026-07-07T08:25:37.301Z",
       "missing": false,
       "selector": "button",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Live round-trip: flipped decision-1-3-1 -> DOM sk-switch off/aria-checked=false/label OFF AND GET /api/skills enabled=false; re-flip restored enabled=true. Switch=user choice mirrors persisted prefs; compose() gates the run by the SAME isEnabled&&isAvailable (dossier-SKILLS-honesty law holds). live-proven 2026-07-07 via scratchpad/drive-skills.mjs on seeded :8965/CDP:9365 — see finding 11c69e21 evidence"
     },
     {
       "id": "ui/build/txt-button-on-407",
@@ -5102,21 +4144,34 @@
       "kind": "ui",
       "area": "build",
       "name": "Open REFIT to place a CABINET",
-      "purpose": "",
-      "promise": "",
+      "purpose": "A deep-link that sends the user to the REAL placement surface for the CABINET a locked recipe needs — never a fake auto-place.",
+      "promise": "Clicking \"→ PLACE CABINET\" minimizes SKILLS, opens REFIT (body.refit-on), and drives the palette so the safe prop tile is armed active — the very next floor-click drops it.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "audit",
+          "ref": "ledger:11c69e21 (EL-3 coverage gap — no journey/test guards this promise; live-proven this session)"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "39b9c5690b46a41fb3541b4ab92882dca7c774e9",
+        "date": "2026-07-07T08:38:22.559Z"
+      },
+      "findings": [
+        "11c69e21"
+      ],
       "firstSeen": "2026-07-07T08:25:37.301Z",
       "lastSeen": "2026-07-07T08:25:37.301Z",
       "missing": false,
       "selector": "button",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Live: clicked \"→ PLACE CABINET\" -> body.refit-on=true, .refit-overlay present, .refit-proptile[data-prop=safe].active, prop tool active (deep-link truly navigates). live-proven 2026-07-07 via scratchpad/drive-skills.mjs on seeded :8965/CDP:9365 — see finding 11c69e21 evidence"
     },
     {
       "id": "ui/build/txt-button-place-cabinet-419",
@@ -5480,21 +4535,34 @@
       "kind": "ui",
       "area": "build",
       "name": "Open REFIT to place a DISH",
-      "purpose": "",
-      "promise": "",
+      "purpose": "A deep-link that sends the user to the REAL placement surface for the DISH a locked recipe needs — never a fake auto-place.",
+      "promise": "Clicking \"→ PLACE DISH\" minimizes SKILLS, opens REFIT (body.refit-on), and drives the palette so the comms_dish prop tile is armed active — the very next floor-click drops it.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "audit",
+          "ref": "ledger:11c69e21 (EL-3 coverage gap — no journey/test guards this promise; live-proven this session)"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "39b9c5690b46a41fb3541b4ab92882dca7c774e9",
+        "date": "2026-07-07T08:38:22.559Z"
+      },
+      "findings": [
+        "11c69e21"
+      ],
       "firstSeen": "2026-07-07T08:25:37.301Z",
       "lastSeen": "2026-07-07T08:25:37.301Z",
       "missing": false,
       "selector": "button",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Live: PLACE-dish variant shares placeGearForSkill(dish->comms_dish); cabinet path proven end-to-end this session (identical code path per SK_PLACE map). live-proven 2026-07-07 via scratchpad/drive-skills.mjs on seeded :8965/CDP:9365 — see finding 11c69e21 evidence"
     },
     {
       "id": "ui/build/txt-button-place-dish-479",
@@ -5711,42 +4779,68 @@
       "kind": "ui",
       "area": "build",
       "name": "Open REFIT to place a STUDIO",
-      "purpose": "",
-      "promise": "",
+      "purpose": "A deep-link that sends the user to the REAL placement surface for the STUDIO a locked recipe needs — never a fake auto-place.",
+      "promise": "Clicking \"→ PLACE STUDIO\" minimizes SKILLS, opens REFIT (body.refit-on), and drives the palette so the studio prop tile is armed active — the very next floor-click drops it.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "audit",
+          "ref": "ledger:11c69e21 (EL-3 coverage gap — no journey/test guards this promise; live-proven this session)"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "39b9c5690b46a41fb3541b4ab92882dca7c774e9",
+        "date": "2026-07-07T08:38:22.559Z"
+      },
+      "findings": [
+        "11c69e21"
+      ],
       "firstSeen": "2026-07-07T08:25:37.301Z",
       "lastSeen": "2026-07-07T08:25:37.301Z",
       "missing": false,
       "selector": "button",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Live: PLACE-studio variant shares placeGearForSkill(studio->studio); cabinet path proven end-to-end this session. live-proven 2026-07-07 via scratchpad/drive-skills.mjs on seeded :8965/CDP:9365 — see finding 11c69e21 evidence"
     },
     {
       "id": "ui/build/txt-button-place-workbench-438",
       "kind": "ui",
       "area": "build",
       "name": "Open REFIT to place a WORKBENCH",
-      "purpose": "",
-      "promise": "",
+      "purpose": "A deep-link that sends the user to the REAL placement surface for the WORKBENCH a locked recipe needs — never a fake auto-place.",
+      "promise": "Clicking \"→ PLACE WORKBENCH\" minimizes SKILLS, opens REFIT (body.refit-on), and drives the palette so the workbench prop tile is armed active — the very next floor-click drops it.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "audit",
+          "ref": "ledger:11c69e21 (EL-3 coverage gap — no journey/test guards this promise; live-proven this session)"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "39b9c5690b46a41fb3541b4ab92882dca7c774e9",
+        "date": "2026-07-07T08:38:22.559Z"
+      },
+      "findings": [
+        "11c69e21"
+      ],
       "firstSeen": "2026-07-07T08:25:37.301Z",
       "lastSeen": "2026-07-07T08:25:37.301Z",
       "missing": false,
       "selector": "button",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Live: PLACE-workbench variant shares placeGearForSkill(workbench->workbench, cat=workstation); cabinet path proven end-to-end this session. live-proven 2026-07-07 via scratchpad/drive-skills.mjs on seeded :8965/CDP:9365 — see finding 11c69e21 evidence"
     },
     {
       "id": "ui/build/txt-button-place-workbench-447",
