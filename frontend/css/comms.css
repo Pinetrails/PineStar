@@ -341,6 +341,57 @@
 .chat-tools #voice-toggle { margin-left: auto; }
 
 /* ============================================================
+   ATTACHMENTS — the paperclip button, the composer preview strip
+   of attached photos/files (chips with a thumbnail + remove ×),
+   and the drop-target glow. Phosphor tokens only; the button
+   matches the mic/voice register (app.css .mic-btn family).
+   ============================================================ */
+.chat-attach-btn {
+  flex: 0 0 auto; font-size: 17px; line-height: 0; color: var(--ph);
+  background: var(--panel2); border: 2px solid var(--ph-dim);
+  padding: 6px; cursor: pointer; border-radius: 4px; user-select: none;
+  display: inline-flex; align-items: center; justify-content: center;
+  transition: color .12s, border-color .12s, background .12s, box-shadow .12s;
+}
+.chat-attach-btn svg { width: 1em; height: 1em; display: block; pointer-events: none; }
+.chat-attach-btn:hover { border-color: var(--ph); background: var(--ph-faint); color: var(--ph-bright); }
+
+/* the preview strip sits above the edit line; hidden (via [hidden]) until at least one chip exists */
+.chat-attach-strip { display: flex; flex-wrap: wrap; gap: 6px; }
+.chat-attach-strip[hidden] { display: none; }
+
+/* one attached file: a small phosphor pill. Images carry a thumbnail; others a file glyph + name. */
+.chat-attach-chip {
+  display: inline-flex; align-items: center; gap: 6px; max-width: 190px;
+  padding: 3px 5px 3px 4px; border: 1px solid var(--ph-dim); border-radius: 5px;
+  background: var(--panel2); color: var(--ph); font-size: 12px; line-height: 1.2;
+}
+.chat-attach-chip.uploading { opacity: .55; }
+.chat-attach-chip.err { border-color: var(--bad); color: var(--bad); }
+.chat-attach-chip .thumb { flex: 0 0 auto; width: 26px; height: 26px; border-radius: 3px; object-fit: cover; display: block; border: 1px solid var(--ph-faint); }
+.chat-attach-chip .glyph { flex: 0 0 auto; width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center; font-size: 15px; border-radius: 3px; background: var(--ph-faint); }
+.chat-attach-chip .nm { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-attach-chip .rm {
+  flex: 0 0 auto; cursor: pointer; border: none; background: none; color: var(--ph-dim);
+  font-size: 15px; line-height: 1; padding: 0 2px; border-radius: 3px;
+}
+.chat-attach-chip .rm:hover { color: var(--bad); }
+
+/* drop-target: dragging a file over the whole composer glows its border so the target reads as live */
+#chat-inputrow.attach-dragover { outline: 2px dashed var(--ph); outline-offset: 3px; border-radius: 5px; }
+
+/* a SENT user message's attachments render under its text in the transcript (thumbnails + file chips) */
+.chat-attach-view { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 5px; }
+.chat-attach-view a.thumb { display: inline-block; line-height: 0; border: 1px solid var(--ph-dim); border-radius: 4px; overflow: hidden; cursor: pointer; }
+.chat-attach-view a.thumb img { display: block; max-width: 148px; max-height: 118px; }
+.chat-attach-view a.thumb:hover { border-color: var(--ph-bright); box-shadow: 0 0 6px var(--ph-glow); }
+.chat-attach-view a.filechip {
+  display: inline-flex; align-items: center; gap: 5px; padding: 3px 7px; border: 1px solid var(--ph-dim);
+  border-radius: 5px; color: var(--ph); font-size: 12px; text-decoration: none; cursor: pointer;
+}
+.chat-attach-view a.filechip:hover { border-color: var(--ph-bright); color: var(--ph-bright); }
+
+/* ============================================================
    AGENT LINE — the top-of-panel identity row: who's on the line
    (a native <select> dressed as a phosphor plate) + a truthful
    readout of that agent's model. Sits between the ▮ COMMS title

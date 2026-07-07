@@ -73,6 +73,37 @@
     const text = textFromContent(content);
     return text ? [{ type: 'text', text }] : [];
   }
+  // USER ATTACHMENTS (COMMS): a user turn may carry image parts alongside its text — the run path expands a
+  // Commander's attached photo into an {type:'image_url', image_url:{url}} block before this adapter sees it.
+  // Anthropic's native vision shape is {type:'image', source:{type:'base64'|'url', …}}, so map image_url → that.
+  // Only USER messages get this (assistant/tool turns never carry images); an unrecognized part degrades to its
+  // text or is dropped — never throws.
+  function anthImageBlock(url) {
+    const s = String(url == null ? '' : url);
+    const m = /^data:([^;,]*?)(;base64)?,([\s\S]*)$/.exec(s);
+    if (m) {
+      const media_type = (m[1] || 'image/png').toLowerCase();
+      const data = m[2] ? (m[3] || '') : Buffer.from(decodeURIComponent(m[3] || ''), 'utf8').toString('base64');
+      return { type: 'image', source: { type: 'base64', media_type, data } };
+    }
+    if (/^https?:\/\//i.test(s)) return { type: 'image', source: { type: 'url', url: s } };
+    return null;
+  }
+  function userContentToBlocks(content) {
+    if (content == null) return [];
+    if (typeof content === 'string') return content ? [{ type: 'text', text: content }] : [];
+    if (!Array.isArray(content)) return contentToTextBlocks(content);
+    const out = [];
+    for (const p of content) {
+      if (typeof p === 'string') { if (p) out.push({ type: 'text', text: p }); continue; }
+      if (!p || typeof p !== 'object') continue;
+      if (p.type === 'text' && typeof p.text === 'string') { if (p.text) out.push({ type: 'text', text: p.text }); continue; }
+      if (p.type === 'image_url') { const b = anthImageBlock(p.image_url && (p.image_url.url != null ? p.image_url.url : p.image_url)); if (b) out.push(b); continue; }
+      if (p.type === 'image' && p.source) { out.push(p); continue; }   // already a native Anthropic image block
+      if (typeof p.text === 'string' && p.text) out.push({ type: 'text', text: p.text });
+    }
+    return out;
+  }
   function appendMessage(out, role, content) {
     if (!content || !content.length) return;
     const last = out[out.length - 1];
@@ -127,7 +158,7 @@
         appendMessage(out, 'assistant', contentToTextBlocks(msg.content).concat(assistantToolBlocks(msg.tool_calls)));
         continue;
       }
-      appendMessage(out, 'user', contentToTextBlocks(msg.content));
+      appendMessage(out, 'user', userContentToBlocks(msg.content));
     }
     return { system: picked.system, messages: out };
   }

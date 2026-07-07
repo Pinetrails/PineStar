@@ -959,6 +959,10 @@ function maybeRewarmModelCatalog() {
 // jail helper reused by the read-only /api/file route (resolveInside proves a path stays in the workspace)
 const fsJail = makeFsTools({ fsp, pathMod: path, root: WORKSPACES })._internals;
 
+// USER ATTACHMENTS (COMMS): save Commander-attached photos/files into the workspace + expand their history
+// references into provider content blocks at run time. Jailed writes/reads reuse the same resolveInside proof.
+const attachments = require('./attachments.js')({ fsp, path, crypto, resolveInside: (aid, rel) => fsJail.resolveInside(aid, rel) });
+
 // Roots the read-only /api/fs/dirstat probe is allowed to stat (audit P2): the user's own HOME (covers every
 // realistic Keep destination — Desktop/Documents/Downloads all live under it) and the WORKSPACES root. Anything
 // outside these is refused, so a token-holder can't enumerate existence/type of arbitrary system paths
@@ -4004,6 +4008,10 @@ function dispatchRoute(req, res) {
   // inside the model's tool result. (WIRING_AUDIT P4: lie #7.)
   if (req.method === 'GET' && req.url === '/api/limits') { res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); return res.end(JSON.stringify({ maxConcurrentAgents: concurrencyGate.max() })); }
   if ((req.method === 'GET' || req.method === 'HEAD') && req.url.indexOf('/api/file') === 0) return serveWorkspaceFile(req, res);
+  // USER ATTACHMENTS (COMMS): the Commander attached a photo/file to a message. Saves it into the agent's
+  // workspace (.attachments/, jailed) and returns a lightweight reference the message history stores; the run
+  // path later expands the reference into a provider content block. Served back for thumbnails via /api/file.
+  if (req.method === 'POST' && req.url === '/api/attachments') return handleAttachmentUpload(req, res).catch((e) => { try { if (!res.headersSent) { res.writeHead(500, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify({ ok: false, error: redact('upload failure: ' + ((e && e.message) || e)) })); } else res.end(); } catch (_) { try { res.end(); } catch (_) {} } });
   // ADDITIVE (Lane B / ux-run-truth): the absolute per-agent workspace directory, so the COMMS
   // "open folder" affordance on a file deliverable can show the Commander the REAL path on disk
   // where their output landed (the frontend otherwise only knows the relative filename). Read-only,
@@ -6147,10 +6155,14 @@ async function handleRun(req, res) {
 
   // all setup + the run live inside ONE try, so any failure becomes a clean agent.run.error + closed stream
   try {
+    // USER ATTACHMENTS: expand any Commander-attached photos/files (carried as lightweight references on the
+    // user turns) into real provider content blocks before the model call. Degrades per-attachment, never throws.
+    let runMessages = messages;
+    try { runMessages = await attachments.expandUserAttachments(messages, agentId); } catch (_) { runMessages = messages; }
     // The browser is WATCHED, so an ungranted mutation asks live (interactive surface + promptConsent) instead
     // of default-denying. The SAME run host (runOnce) is reused by the messaging hub with surface:'autonomous'.
     await runOnce({
-      key, model, system, messages, agentId, isTask, provider: runProvider, baseUrl, reasoningEffort, fallbackModels, fallbackProviders,
+      key, model, system, messages: runMessages, agentId, isTask, provider: runProvider, baseUrl, reasoningEffort, fallbackModels, fallbackProviders,
       emit, signal: ac.signal, runId, trigger: 'directive',
       surface: 'interactive', prompt: promptConsent, pathPrompt: promptPathTrust, summon: summonRequest,   // team.summon → live summonAgent() round-trip; pathPrompt → NS-5 "work in <root>?" bless
 
@@ -8245,6 +8257,25 @@ async function handleDirStat(req, res) {
   let st;
   try { st = await fsp.stat(p); } catch (_) { return json(200, { exists: false, isDir: false }); }
   return json(200, { exists: true, isDir: !!(st && st.isDirectory()) });
+}
+
+// USER ATTACHMENTS (COMMS): the Commander can attach photos/files to a message (like Claude Code / Codex). The
+// jailed save + run-time expansion logic lives in ./attachments.js (unit-tested); index.js only wires the HTTP
+// body-read to it. Uploaded bytes live in the agent's workspace under .attachments/; history carries only a
+// lightweight reference, and attachments.expandUserAttachments() turns those back into provider content blocks.
+/* POST /api/attachments — body { agent, name, dataUrl }. Saves into the agent's workspace and returns
+   { ok, id, name, path, mediaType, kind, size }; { ok:false, error } (with an HTTP code) on rejection. */
+async function handleAttachmentUpload(req, res) {
+  const json = (code, obj) => { if (!res.headersSent) res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body;
+  try { body = JSON.parse((await readBodyBuffer(req, Math.ceil(attachments.MAX_BYTES * 1.4), res)).toString('utf8') || '{}'); }
+  catch (e) { if (res.headersSent) return; return json(400, { ok: false, error: 'bad json' }); }
+  const agent = String((body && body.agent) || 'agent');
+  // op:'delete' prunes an attachment the Commander removed from the composer before sending (no orphan bytes).
+  if (body && body.op === 'delete') { const d = await attachments.removeAttachment(agent, String((body && body.path) || '')); return json(d.ok ? 200 : 400, d); }
+  const r = await attachments.saveAttachment(agent, String((body && body.name) || 'file'), body && body.dataUrl);
+  if (r.ok) return json(200, r);
+  return json(r.code || 400, { ok: false, error: r.error });
 }
 
 // GET /api/file?agent=<id>&path=<rel> — read-only view of a file the agent produced, jailed to its

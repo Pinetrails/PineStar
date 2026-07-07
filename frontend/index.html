@@ -367,6 +367,10 @@
     <div id="chat-inputrow">
       <!-- SLASH COMMANDS: a leading "/" opens this filterable palette of turn controls + the recipe library (chat.js) -->
       <div id="chat-slash" class="chat-slash" role="listbox" aria-label="Commands" hidden></div>
+      <!-- ATTACHMENTS: photos/files the Commander attaches (paperclip · paste · drag-drop) preview here as chips
+           BEFORE the edit line; the hidden input feeds the file picker. chat.js uploads them + threads refs into send(). -->
+      <div id="chat-attach-strip" class="chat-attach-strip" aria-label="Attachments" hidden></div>
+      <input id="chat-attach-input" class="chat-attach-input" type="file" multiple accept="image/*,text/*,.md,.csv,.json,.log,.js,.ts,.py,.html,.css,.xml,.yml,.yaml,.svg" hidden aria-hidden="true" tabindex="-1">
       <!-- EDIT LINE: the ">" prompt + a full-width auto-growing textarea (chat.js sizes it to its content).
            On its OWN row so the message always spans the panel and a long message stays fully visible while typing. -->
       <div class="chat-editline">
@@ -377,6 +381,8 @@
       <div class="chat-tools">
       <!-- INTERRUPT: cancel just the active stream's run (also bound to Esc while COMMS is focused); hidden unless busy -->
       <button id="chat-stop" class="chat-stop" type="button" title="Stop the running turn (Esc)" aria-label="Stop the running turn" hidden><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="4" y="4" width="8" height="8" rx="1.5" fill="currentColor"/></svg></button>
+      <!-- ATTACH: open the file picker; also served by paste + drag-drop onto the composer (chat.js) -->
+      <button id="chat-attach" class="chat-attach-btn" type="button" title="Attach a photo or file" aria-label="Attach a photo or file"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M11.5 5.2 6.7 10a1.6 1.6 0 0 0 2.3 2.3l4.8-4.8a3 3 0 0 0-4.3-4.3L4.4 8.4a4.4 4.4 0 0 0 6.3 6.3l4.1-4.1" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
       <button id="model-dock-toggle" class="model-dock-toggle" type="button" title="Model selector" aria-label="Model selector" aria-haspopup="dialog" aria-expanded="false">
         <span class="model-dock-sigil" aria-hidden="true">M</span><span id="model-dock-effort-chip" class="model-dock-effort-chip">MED</span>
       </button>
