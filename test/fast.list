@@ -139,6 +139,7 @@ test/truststore.test.js
 test/goalloop.test.js
 test/interview.test.js
 test/onboarding.test.js
+test/dialogue.test.js
 test/wakemind.test.js
 test/curiosity.test.js
 test/dossierinject.test.js
