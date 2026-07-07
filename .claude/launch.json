@@ -2,98 +2,17 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "truth-props-glow-seed",
-      "runtimeExecutable": "node",
-      "runtimeArgs": [
-        "C:/Users/andro/gen-trees/truth-props-glow/dev/seed.js",
-        "--keep"
-      ],
-      "port": 8161,
-      "autoPort": false,
-      "env": {
-        "SKYNET_PORT": "8161",
-        "SKYNET_DEFAULT_MODEL": "anthropic/claude-3.5-sonnet"
-      }
-    },
-    {
-      "name": "comms-fresh-session-seed",
-      "runtimeExecutable": "node",
-      "runtimeArgs": [
-        "C:/Users/andro/gen-trees/comms-fresh-session/dev/seed.js",
-        "--keep"
-      ],
-      "port": 8836,
-      "autoPort": false,
-      "env": {
-        "SKYNET_PORT": "8836",
-        "SKYNET_DEFAULT_MODEL": "anthropic/claude-3.5-sonnet"
-      }
-    },
-    {
-      "name": "belt-connect-seed",
-      "runtimeExecutable": "node",
-      "runtimeArgs": [
-        "C:/Users/andro/gen-trees/belt-connect/dev/seed.js"
-      ],
-      "port": 8157,
-      "autoPort": false,
-      "env": {
-        "SKYNET_PORT": "8157",
-        "SKYNET_DEFAULT_MODEL": "openai/gpt-4o-mini"
-      }
-    },
-    {
-      "name": "belt-teach-seed",
-      "runtimeExecutable": "node",
-      "runtimeArgs": [
-        "C:/Users/andro/gen-trees/belt-teach/dev/seed.js"
-      ],
-      "port": 8156,
-      "autoPort": false,
-      "env": {
-        "SKYNET_PORT": "8156",
-        "SKYNET_DEFAULT_MODEL": "openai/gpt-4o-mini"
-      }
-    },
-    {
-      "name": "crate-honesty-seed",
-      "runtimeExecutable": "node",
-      "runtimeArgs": [
-        "C:/Users/andro/gen-trees/crate-honesty/dev/seed.js"
-      ],
-      "port": 8155,
-      "autoPort": false,
-      "env": {
-        "SKYNET_PORT": "8155",
-        "SKYNET_DEFAULT_MODEL": "openai/gpt-4o-mini"
-      }
-    },
-    {
-      "name": "honest-states-seed",
-      "runtimeExecutable": "node",
-      "runtimeArgs": [
-        "C:/Users/andro/gen-trees/honest-states/dev/seed.js",
-        "--keep"
-      ],
-      "port": 8960,
-      "autoPort": false,
-      "env": {
-        "SKYNET_PORT": "8960",
-        "SKYNET_DEFAULT_MODEL": "anthropic/claude-3.5-sonnet"
-      }
-    },
-    {
       "name": "harden-frontend-seed",
       "runtimeExecutable": "node",
       "runtimeArgs": [
         "C:/Users/andro/gen-trees/harden-frontend/dev/seed.js",
         "--keep"
       ],
-      "port": 8848,
+      "port": 8849,
       "autoPort": false,
       "env": {
-        "SKYNET_PORT": "8848",
-        "SKYNET_DEFAULT_MODEL": "anthropic/claude-3.5-sonnet"
+        "SKYNET_PORT": "8849",
+        "SKYNET_DEFAULT_MODEL": "anthropic/claude-haiku-4.5"
       }
     },
     {
@@ -107,7 +26,7 @@
       "autoPort": false,
       "env": {
         "SKYNET_PORT": "8842",
-        "SKYNET_DEFAULT_MODEL": "anthropic/claude-3.5-sonnet"
+        "SKYNET_DEFAULT_MODEL": "anthropic/claude-haiku-4.5"
       }
     },
     {
@@ -121,7 +40,7 @@
       "autoPort": false,
       "env": {
         "SKYNET_PORT": "8817",
-        "SKYNET_DEFAULT_MODEL": "anthropic/claude-3.5-sonnet"
+        "SKYNET_DEFAULT_MODEL": "anthropic/claude-haiku-4.5"
       }
     },
     {
@@ -135,7 +54,7 @@
       "autoPort": false,
       "env": {
         "SKYNET_PORT": "8845",
-        "SKYNET_DEFAULT_MODEL": "anthropic/claude-3.5-sonnet"
+        "SKYNET_DEFAULT_MODEL": "anthropic/claude-haiku-4.5"
       }
     },
     {
@@ -149,7 +68,7 @@
       "autoPort": false,
       "env": {
         "SKYNET_PORT": "8853",
-        "SKYNET_DEFAULT_MODEL": "anthropic/claude-3.5-sonnet"
+        "SKYNET_DEFAULT_MODEL": "anthropic/claude-haiku-4.5"
       }
     },
     {
@@ -197,20 +116,7 @@
       "autoPort": false,
       "env": {
         "SKYNET_PORT": "8786",
-        "SKYNET_DEFAULT_MODEL": "anthropic/claude-3.5-sonnet"
-      }
-    },
-    {
-      "name": "ws-titles-dev",
-      "runtimeExecutable": "node",
-      "runtimeArgs": [
-        "C:/Users/andro/gen-trees/ws-titles-status/sidecar/index.js"
-      ],
-      "port": 8788,
-      "autoPort": false,
-      "env": {
-        "SKYNET_PORT": "8788",
-        "DEV": "1"
+        "SKYNET_DEFAULT_MODEL": "anthropic/claude-haiku-4.5"
       }
     },
     {
@@ -251,110 +157,6 @@
       "autoPort": true
     },
     {
-      "name": "design-system",
-      "runtimeExecutable": "npx",
-      "runtimeArgs": [
-        "-y",
-        "http-server",
-        "C:/Users/andro/gen-trees/design-system/frontend",
-        "-c-1",
-        "-p",
-        "8089"
-      ],
-      "port": 8089
-    },
-    {
-      "name": "props-frontend",
-      "runtimeExecutable": "npx",
-      "runtimeArgs": [
-        "-y",
-        "http-server",
-        "C:/Users/andro/gen-trees/props/frontend",
-        "-c-1",
-        "-p",
-        "8091"
-      ],
-      "port": 8091
-    },
-    {
-      "name": "conveyor-frontend",
-      "runtimeExecutable": "npx",
-      "runtimeArgs": [
-        "-y",
-        "http-server",
-        "C:/Users/andro/gen-trees/conveyor/frontend",
-        "-c-1",
-        "-p",
-        "8092"
-      ],
-      "port": 8092
-    },
-    {
-      "name": "workpipe-frontend",
-      "runtimeExecutable": "npx",
-      "runtimeArgs": [
-        "-y",
-        "http-server",
-        "C:/Users/andro/gen-trees/workpipe/frontend",
-        "-c-1",
-        "-p",
-        "8093"
-      ],
-      "port": 8093
-    },
-    {
-      "name": "onboarding-frontend",
-      "runtimeExecutable": "npx",
-      "runtimeArgs": [
-        "-y",
-        "http-server",
-        "C:/Users/andro/gen-trees/onboarding/frontend",
-        "-c-1",
-        "-p",
-        "8094"
-      ],
-      "port": 8094
-    },
-    {
-      "name": "voice-frontend",
-      "runtimeExecutable": "npx",
-      "runtimeArgs": [
-        "-y",
-        "http-server",
-        "C:/Users/andro/gen-trees/voice/frontend",
-        "-c-1",
-        "-p",
-        "8095"
-      ],
-      "port": 8095
-    },
-    {
-      "name": "arcade-game-frontend",
-      "runtimeExecutable": "npx",
-      "runtimeArgs": [
-        "-y",
-        "http-server",
-        "C:/Users/andro/gen-trees/arcade-game/frontend",
-        "-c-1",
-        "-p",
-        "8096"
-      ],
-      "port": 8096
-    },
-    {
-      "name": "onboarding-remaster-frontend",
-      "runtimeExecutable": "npx",
-      "runtimeArgs": [
-        "-y",
-        "http-server",
-        "C:/Users/andro/gen-trees/onboarding-remaster/frontend",
-        "-c-1",
-        "-p",
-        "8097"
-      ],
-      "port": 8097
-    },
-    {
       "name": "skins-frontend",
       "runtimeExecutable": "npx",
       "runtimeArgs": [
@@ -366,19 +168,6 @@
         "8098"
       ],
       "port": 8098
-    },
-    {
-      "name": "commission-redux-frontend",
-      "runtimeExecutable": "npx",
-      "runtimeArgs": [
-        "-y",
-        "http-server",
-        "C:/Users/andro/gen-trees/commission-redux/frontend",
-        "-c-1",
-        "-p",
-        "8099"
-      ],
-      "port": 8099
     },
     {
       "name": "card-preview",
@@ -394,108 +183,6 @@
       "port": 8101
     },
     {
-      "name": "recruit-bay-frontend",
-      "runtimeExecutable": "npx",
-      "runtimeArgs": [
-        "-y",
-        "http-server",
-        "C:/Users/andro/gen-trees/recruit-bay/frontend",
-        "-c-1",
-        "-p",
-        "8124"
-      ],
-      "port": 8124
-    },
-    {
-      "name": "awakening-frontend",
-      "runtimeExecutable": "npx",
-      "runtimeArgs": [
-        "-y",
-        "http-server",
-        "C:/Users/andro/gen-trees/awakening-dialogue/frontend",
-        "-c-1",
-        "-p",
-        "8125"
-      ],
-      "port": 8125
-    },
-    {
-      "name": "create-overseer-frontend",
-      "runtimeExecutable": "npx",
-      "runtimeArgs": [
-        "-y",
-        "http-server",
-        "C:/Users/andro/gen-trees/create-overseer/frontend",
-        "-c-1",
-        "-p",
-        "8126"
-      ],
-      "port": 8126
-    },
-    {
-      "name": "tutorial-fix-seed",
-      "runtimeExecutable": "node",
-      "runtimeArgs": [
-        "C:/Users/andro/gen-trees/tutorial-fix/dev/seed.js"
-      ],
-      "port": 8811,
-      "autoPort": false,
-      "env": {
-        "SKYNET_PORT": "8811",
-        "SKYNET_DEFAULT_MODEL": "anthropic/claude-3.5-sonnet"
-      }
-    },
-    {
-      "name": "modelfix",
-      "runtimeExecutable": "node",
-      "runtimeArgs": [
-        "C:/Users/andro/gen-trees/modelfix/sidecar/index.js"
-      ],
-      "port": 8799,
-      "autoPort": false,
-      "env": {
-        "SKYNET_PORT": "8799"
-      }
-    },
-    {
-      "name": "rate-work",
-      "runtimeExecutable": "node",
-      "runtimeArgs": [
-        "C:/Users/andro/gen-trees/rate-work/sidecar/index.js"
-      ],
-      "port": 8798,
-      "autoPort": false,
-      "env": {
-        "SKYNET_PORT": "8798"
-      }
-    },
-    {
-      "name": "first-ten",
-      "runtimeExecutable": "node",
-      "runtimeArgs": [
-        "C:/Users/andro/gen-trees/first-ten/sidecar/index.js"
-      ],
-      "port": 8802,
-      "autoPort": false,
-      "env": {
-        "SKYNET_PORT": "8802",
-        "SKYNET_WORKSPACES": "C:/Users/andro/gen-trees/first-ten/.dev-workspaces"
-      }
-    },
-    {
-      "name": "first-ten-fresh",
-      "runtimeExecutable": "node",
-      "runtimeArgs": [
-        "C:/Users/andro/gen-trees/first-ten/sidecar/index.js"
-      ],
-      "port": 8812,
-      "autoPort": false,
-      "env": {
-        "SKYNET_PORT": "8812",
-        "SKYNET_WORKSPACES": "C:/Users/andro/gen-trees/first-ten/.dev-workspaces-r3"
-      }
-    },
-    {
       "name": "uiux-seed",
       "runtimeExecutable": "node",
       "runtimeArgs": [
@@ -506,21 +193,7 @@
       "autoPort": false,
       "env": {
         "SKYNET_PORT": "8816",
-        "SKYNET_DEFAULT_MODEL": "anthropic/claude-3.5-sonnet"
-      }
-    },
-    {
-      "name": "prop-upgrade-seed",
-      "runtimeExecutable": "node",
-      "runtimeArgs": [
-        "C:/Users/andro/gen-trees/prop-upgrade/dev/seed.js",
-        "--keep"
-      ],
-      "port": 8813,
-      "autoPort": false,
-      "env": {
-        "SKYNET_PORT": "8813",
-        "SKYNET_DEFAULT_MODEL": "anthropic/claude-3.5-sonnet"
+        "SKYNET_DEFAULT_MODEL": "anthropic/claude-haiku-4.5"
       }
     },
     {
@@ -534,92 +207,7 @@
       "autoPort": false,
       "env": {
         "SKYNET_PORT": "8848",
-        "SKYNET_DEFAULT_MODEL": "anthropic/claude-3.5-sonnet"
-      }
-    },
-    {
-      "name": "env-depth-fx-seed",
-      "runtimeExecutable": "node",
-      "runtimeArgs": [
-        "C:/Users/andro/gen-trees/env-depth-fx/dev/seed.js",
-        "--keep"
-      ],
-      "port": 8127,
-      "autoPort": false,
-      "env": {
-        "SKYNET_PORT": "8127",
-        "SKYNET_DEFAULT_MODEL": "anthropic/claude-3.5-sonnet"
-      }
-    },
-    {
-      "name": "floor-palette-seed",
-      "runtimeExecutable": "node",
-      "runtimeArgs": [
-        "C:/Users/andro/gen-trees/floor-palette/dev/seed.js",
-        "--keep"
-      ],
-      "port": 8846,
-      "autoPort": false,
-      "env": {
-        "SKYNET_PORT": "8846",
-        "SKYNET_DEFAULT_MODEL": "anthropic/claude-3.5-sonnet"
-      }
-    },
-    {
-      "name": "ux-error-doors-8842",
-      "runtimeExecutable": "node",
-      "runtimeArgs": [
-        "C:/Users/andro/gen-trees/ux-error-doors/dev/seed.js",
-        "--keep"
-      ],
-      "port": 8842,
-      "autoPort": false,
-      "env": {
-        "SKYNET_PORT": "8842",
-        "SKYNET_DEFAULT_MODEL": "anthropic/claude-3.5-sonnet"
-      }
-    },
-    {
-      "name": "ux-settings-8844",
-      "runtimeExecutable": "node",
-      "runtimeArgs": [
-        "C:/Users/andro/gen-trees/ux-settings-truth/dev/seed.js",
-        "--keep"
-      ],
-      "port": 8844,
-      "autoPort": false,
-      "env": {
-        "SKYNET_PORT": "8844",
-        "SKYNET_DEFAULT_MODEL": "anthropic/claude-3.5-sonnet",
-        "BUDGET_PER_DAY": "25"
-      }
-    },
-    {
-      "name": "widget-feed-seed",
-      "runtimeExecutable": "node",
-      "runtimeArgs": [
-        "C:/Users/andro/gen-trees/widget-feed/dev/seed.js",
-        "--keep"
-      ],
-      "port": 8821,
-      "autoPort": false,
-      "env": {
-        "SKYNET_PORT": "8821",
-        "SKYNET_DEFAULT_MODEL": "anthropic/claude-3.5-sonnet"
-      }
-    },
-    {
-      "name": "comms-reply-name-seed",
-      "runtimeExecutable": "node",
-      "runtimeArgs": [
-        "C:/Users/andro/gen-trees/comms-reply-name/dev/seed.js",
-        "--keep"
-      ],
-      "port": 8835,
-      "autoPort": false,
-      "env": {
-        "SKYNET_PORT": "8835",
-        "SKYNET_DEFAULT_MODEL": "anthropic/claude-3.5-sonnet"
+        "SKYNET_DEFAULT_MODEL": "anthropic/claude-haiku-4.5"
       }
     },
     {
@@ -633,35 +221,7 @@
       "autoPort": false,
       "env": {
         "SKYNET_PORT": "8830",
-        "SKYNET_DEFAULT_MODEL": "anthropic/claude-3.5-sonnet"
-      }
-    },
-    {
-      "name": "hover-nameplate-seed",
-      "runtimeExecutable": "node",
-      "runtimeArgs": [
-        "C:/Users/andro/gen-trees/hover-nameplate/dev/seed.js",
-        "--keep"
-      ],
-      "port": 8821,
-      "autoPort": false,
-      "env": {
-        "SKYNET_PORT": "8821",
-        "SKYNET_DEFAULT_MODEL": "anthropic/claude-3.5-sonnet"
-      }
-    },
-    {
-      "name": "logo-crisp-seed",
-      "runtimeExecutable": "node",
-      "runtimeArgs": [
-        "C:/Users/andro/gen-trees/logo-crisp/dev/seed.js",
-        "--keep"
-      ],
-      "port": 8817,
-      "autoPort": false,
-      "env": {
-        "SKYNET_PORT": "8817",
-        "SKYNET_DEFAULT_MODEL": "anthropic/claude-3.5-sonnet"
+        "SKYNET_DEFAULT_MODEL": "anthropic/claude-haiku-4.5"
       }
     },
     {
@@ -675,7 +235,7 @@
       "autoPort": false,
       "env": {
         "SKYNET_PORT": "8795",
-        "SKYNET_DEFAULT_MODEL": "anthropic/claude-3.5-sonnet"
+        "SKYNET_DEFAULT_MODEL": "anthropic/claude-haiku-4.5"
       }
     },
     {
@@ -684,52 +244,12 @@
       "runtimeArgs": [
         "sidecar/index.js"
       ],
-      "port": 8787,
+      "port": 8831,
       "autoPort": false,
       "env": {
-        "SKYNET_CRON_ENABLED": "1"
+        "SKYNET_CRON_ENABLED": "1",
+        "SKYNET_PORT": "8831"
       }
-    },
-    {
-      "name": "recruit-premium-seed",
-      "runtimeExecutable": "node",
-      "runtimeArgs": [
-        "C:/Users/andro/gen-trees/recruit-premium/dev/seed.js",
-        "--keep"
-      ],
-      "port": 8819,
-      "autoPort": false,
-      "env": {
-        "SKYNET_PORT": "8819",
-        "SKYNET_DEFAULT_MODEL": "anthropic/claude-3.5-sonnet"
-      }
-    },
-    {
-      "name": "recruit-presets-seed",
-      "runtimeExecutable": "node",
-      "runtimeArgs": [
-        "C:/Users/andro/gen-trees/recruit-presets/dev/seed.js",
-        "--keep"
-      ],
-      "port": 8131,
-      "autoPort": false,
-      "env": {
-        "SKYNET_PORT": "8131",
-        "SKYNET_DEFAULT_MODEL": "anthropic/claude-3.5-sonnet"
-      }
-    },
-    {
-      "name": "recruit-presets-frontend",
-      "runtimeExecutable": "npx",
-      "runtimeArgs": [
-        "-y",
-        "http-server",
-        "C:/Users/andro/gen-trees/recruit-presets/frontend",
-        "-c-1",
-        "-p",
-        "8132"
-      ],
-      "port": 8132
     },
     {
       "name": "tier-d-soak",
@@ -742,7 +262,7 @@
       "autoPort": false,
       "env": {
         "SKYNET_PORT": "8821",
-        "SKYNET_DEFAULT_MODEL": "anthropic/claude-3.5-sonnet"
+        "SKYNET_DEFAULT_MODEL": "anthropic/claude-haiku-4.5"
       }
     },
     {
@@ -769,35 +289,7 @@
       "autoPort": false,
       "env": {
         "SKYNET_PORT": "8825",
-        "SKYNET_DEFAULT_MODEL": "anthropic/claude-3.5-sonnet"
-      }
-    },
-    {
-      "name": "comms-picker-seed",
-      "runtimeExecutable": "node",
-      "runtimeArgs": [
-        "C:/Users/andro/gen-trees/comms-picker/dev/seed.js",
-        "--keep"
-      ],
-      "port": 8128,
-      "autoPort": false,
-      "env": {
-        "SKYNET_PORT": "8128",
-        "SKYNET_DEFAULT_MODEL": "anthropic/claude-3.5-sonnet"
-      }
-    },
-    {
-      "name": "identity-roster-seed",
-      "runtimeExecutable": "node",
-      "runtimeArgs": [
-        "C:/Users/andro/gen-trees/identity-roster/dev/seed.js",
-        "--keep"
-      ],
-      "port": 8139,
-      "autoPort": false,
-      "env": {
-        "SKYNET_PORT": "8139",
-        "SKYNET_DEFAULT_MODEL": "anthropic/claude-3.5-sonnet"
+        "SKYNET_DEFAULT_MODEL": "anthropic/claude-haiku-4.5"
       }
     },
     {
@@ -811,101 +303,7 @@
       "autoPort": false,
       "env": {
         "SKYNET_PORT": "8838",
-        "SKYNET_DEFAULT_MODEL": "anthropic/claude-3.5-sonnet"
-      }
-    },
-    {
-      "name": "sound-polish-seed",
-      "runtimeExecutable": "node",
-      "runtimeArgs": [
-        "C:/Users/andro/gen-trees/sound-polish/dev/seed.js",
-        "--keep"
-      ],
-      "port": 8141,
-      "autoPort": false,
-      "env": {
-        "SKYNET_PORT": "8141",
-        "SKYNET_DEFAULT_MODEL": "anthropic/claude-3.5-sonnet"
-      }
-    },
-    {
-      "name": "couch-backside-seed",
-      "runtimeExecutable": "node",
-      "runtimeArgs": [
-        "C:/Users/andro/gen-trees/couch-backside/dev/seed.js",
-        "--keep"
-      ],
-      "port": 8137,
-      "autoPort": false,
-      "env": {
-        "SKYNET_PORT": "8137",
-        "SKYNET_DEFAULT_MODEL": "anthropic/claude-3.5-sonnet"
-      }
-    },
-    {
-      "name": "belt-truth-seed",
-      "runtimeExecutable": "node",
-      "runtimeArgs": [
-        "C:/Users/andro/gen-trees/belt-truth/dev/seed.js"
-      ],
-      "port": 8154,
-      "autoPort": false,
-      "env": {
-        "SKYNET_PORT": "8154",
-        "SKYNET_DEFAULT_MODEL": "openai/gpt-4o-mini"
-      }
-    },
-    {
-      "name": "ship-display-seed",
-      "runtimeExecutable": "node",
-      "runtimeArgs": [
-        "C:/Users/andro/gen-trees/ship-display/dev/seed.js"
-      ],
-      "port": 8153,
-      "autoPort": false,
-      "env": {
-        "SKYNET_PORT": "8153",
-        "SKYNET_DEFAULT_MODEL": "anthropic/claude-3.5-sonnet"
-      }
-    },
-    {
-      "name": "belt-sense-seed",
-      "runtimeExecutable": "node",
-      "runtimeArgs": [
-        "C:/Users/andro/gen-trees/belt-sense/dev/seed.js"
-      ],
-      "port": 8152,
-      "autoPort": false,
-      "env": {
-        "SKYNET_PORT": "8152",
-        "SKYNET_DEFAULT_MODEL": "anthropic/claude-3.5-sonnet"
-      }
-    },
-    {
-      "name": "hero-desk-seed",
-      "runtimeExecutable": "node",
-      "runtimeArgs": [
-        "C:/Users/andro/gen-trees/hero-desk-real/dev/seed.js"
-      ],
-      "port": 8151,
-      "autoPort": false,
-      "env": {
-        "SKYNET_PORT": "8151",
-        "SKYNET_DEFAULT_MODEL": "anthropic/claude-3.5-sonnet"
-      }
-    },
-    {
-      "name": "belt-legible2-seed",
-      "runtimeExecutable": "node",
-      "runtimeArgs": [
-        "C:/Users/andro/gen-trees/belt-legible2/dev/seed.js",
-        "--keep"
-      ],
-      "port": 8149,
-      "autoPort": false,
-      "env": {
-        "SKYNET_PORT": "8149",
-        "SKYNET_DEFAULT_MODEL": "anthropic/claude-3.5-sonnet"
+        "SKYNET_DEFAULT_MODEL": "anthropic/claude-haiku-4.5"
       }
     },
     {
@@ -919,47 +317,7 @@
       "autoPort": false,
       "env": {
         "SKYNET_PORT": "8160",
-        "SKYNET_DEFAULT_MODEL": "anthropic/claude-3.5-sonnet"
-      }
-    },
-    {
-      "name": "connector-catalog-seed",
-      "runtimeExecutable": "node",
-      "runtimeArgs": [
-        "C:/Users/andro/gen-trees/connector-catalog/dev/seed.js"
-      ],
-      "port": 8157,
-      "autoPort": false,
-      "env": {
-        "SKYNET_PORT": "8157"
-      }
-    },
-    {
-      "name": "dossier-agent-mgmt-seed",
-      "runtimeExecutable": "node",
-      "runtimeArgs": [
-        "C:/Users/andro/gen-trees/dossier-agent-mgmt/dev/seed.js",
-        "--keep"
-      ],
-      "port": 8158,
-      "autoPort": false,
-      "env": {
-        "SKYNET_PORT": "8158",
-        "SKYNET_DEFAULT_MODEL": "anthropic/claude-3.5-sonnet"
-      }
-    },
-    {
-      "name": "roster-honesty-seed",
-      "runtimeExecutable": "node",
-      "runtimeArgs": [
-        "C:/Users/andro/gen-trees/roster-honesty/dev/seed.js",
-        "--keep"
-      ],
-      "port": 8159,
-      "autoPort": false,
-      "env": {
-        "SKYNET_PORT": "8159",
-        "SKYNET_DEFAULT_MODEL": "anthropic/claude-3.5-sonnet"
+        "SKYNET_DEFAULT_MODEL": "anthropic/claude-haiku-4.5"
       }
     }
   ]
