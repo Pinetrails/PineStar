@@ -189,11 +189,21 @@
   // ---- the one transform: fold a real event into a stats object (pure: returns a NEW object) ----
   // ev = { name, payload }.  returns { stats, awards } where
   //   awards = { xp, levelFrom, levelTo, levelUp, milestones[] }
+  // a fresh per-run buffer for credit that must wait for the run's outcome (see applyEvent COUNTERS). Keyed by
+  // runId so a new run starts a clean tally even if a prior run's end was never seen. usedMemory is a FLAG (one
+  // reuse EVENT per run — never one per recalled chunk), matching the "reuse a memory" trophy copy.
+  function freshRun(id) { return { id: id == null ? null : id, usedMemory: false }; }
+  // Did the run produce anything? 'error' (the model call failed / 404) and 'empty' (a degraded provider streamed a
+  // zero-tool, zero-text turn) both mean "no work happened", so buffered credit is DISCARDED. Every other terminal
+  // reason (done, and the ceiling/abort reasons max_iters/budget/cancelled/refusal, where the model DID engage) keeps
+  // its earned credit — withholding it from genuine partial work would be its own dishonesty.
+  function runDidWork(reason) { return reason !== 'error' && reason !== 'empty'; }
+
   function applyEvent(stats, ev) {
     const s = sanitize(clone(stats));
     if (!s.counters) s.counters = {};
     if (!s.milestones) s.milestones = [];
-    if (!s.run || typeof s.run !== 'object') s.run = { id: null, toolXp: 0 };
+    if (!s.run || typeof s.run !== 'object') s.run = freshRun(null);
     const name = (ev && ev.name) || '', p = (ev && ev.payload) || {};
     const sc = scoreEvent(name, p);
     const awards = { xp: 0, levelFrom: s.level, levelTo: s.level, levelUp: false, milestones: [] };
@@ -217,17 +227,46 @@
       s.confidence = Math.max(0, Math.min(100, s.confidence + ALPHA * (sc.quality * 100 - s.confidence)));
     }
 
-    // COUNTERS — drive milestones + the dossier
-    if (name === 'agent.run.end') { bump(s.counters, 'runs'); if (p.reason === 'done') bump(s.counters, 'tasksDone'); }
+    // COUNTERS — drive milestones + the dossier.
+    //
+    // THE HONESTY LINE for operational counters is WHICH EVENT PROVES WHICH FACT:
+    //   • agent.tool_result{ok} → toolsOk, memory.write → memWrites, workitem.delivered → delivered
+    //     each fires ONLY when that action REALLY happened (a tool truly ran, a note was truly written, a work-item
+    //     truly reached the outbox). The event IS the proof, so they commit IMMEDIATELY. A run that errors AFTER
+    //     making real tool calls must not un-count them — discarding provably-completed work would be its own lie
+    //     (under-claiming the dossier), and a run that dies BEFORE acting never emits these anyway.
+    //   • memory.feedback → positiveFeedback / negativeFeedback are EXPLICIT user verdicts, not run outcomes —
+    //     immediate, unchanged.
+    //   • runs counts attempts (an errored run IS a run) — immediate.
+    //   • memReused is the exception: it is fed by memory.used, which the sidecar emits at CONTEXT-ASSEMBLY — before
+    //     the model is even called. A 404'd run recalls memory, then dies having produced nothing, yet would still
+    //     mint memory-reuse credit AND the permanent PACK RAT trophy. Recall is NOT proof of work. So we BUFFER the
+    //     reuse in s.run and only credit it at run.end, and only when the run produced something (runDidWork). It is
+    //     also credited at most ONCE per run (a flag, not a per-chunk tally), matching the "reuse a memory" copy —
+    //     memory.used fires once PER recalled chunk (7× for a 7-record recall), which would otherwise over-count.
+    if (name === 'agent.run.end') {
+      bump(s.counters, 'runs');
+      if (p.reason === 'done') bump(s.counters, 'tasksDone');
+      // COMMIT-OR-DISCARD this run's buffered memory reuse, then reset for the next run. A run that produced nothing
+      // (error/empty) forfeits it — no PACK RAT for a recall that never fed a real turn.
+      const sameRun = s.run && s.run.id === p.runId;
+      if (sameRun && s.run.usedMemory && runDidWork(p.reason)) bump(s.counters, 'memReused');
+      s.run = freshRun(null);   // whatever the outcome, the tally is spent — the next run starts clean
+    }
+    else if (name === 'memory.used') {
+      // stamp the buffer to THIS run (a new runId starts a clean tally, so a dropped prior run.end can't leak
+      // credit forward) and record that memory surfaced. Credit is deferred to run.end.
+      if (s.run.id !== p.runId) s.run = freshRun(p.runId);
+      s.run.usedMemory = true;
+    }
     else if (name === 'agent.tool_result' && p.ok && !p.isError) bump(s.counters, 'toolsOk');
     else if (name === 'memory.write') bump(s.counters, 'memWrites');
-    else if (name === 'memory.used') bump(s.counters, 'memReused');
+    else if (name === 'workitem.delivered') bump(s.counters, 'delivered');
     else if (name === 'memory.feedback') {
       const quality = turnInFeedbackQuality(feedbackReason(p));
       if (quality === 1) bump(s.counters, 'positiveFeedback');
       else if (quality === 0) bump(s.counters, 'negativeFeedback');
     }
-    else if (name === 'workitem.delivered') bump(s.counters, 'delivered');
 
     // MILESTONES — fire once
     for (const m of MILESTONES) {

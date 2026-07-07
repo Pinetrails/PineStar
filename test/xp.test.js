@@ -13,9 +13,12 @@ function run(events, start) {
   for (const e of events) { const r = Xp.applyEvent(s, e); s = r.stats; awards.push(r.awards); }
   return { stats: s, awards };
 }
-const done = usd => ({ name: 'agent.run.end', payload: { reason: 'done', turns: 1, usd: usd == null ? 1 : usd } });
-const errd = () => ({ name: 'agent.run.end', payload: { reason: 'error', turns: 1, usd: 0 } });
-const memUsed = () => ({ name: 'memory.used', payload: { agentId: 'a', runId: 'r', id: 'm1' } });
+// run.end carries a runId in production (schema-required) — the helpers default to 'r' so a [memUsed(), done()]
+// sequence shares one run and the buffered memory-reuse credit commits (or, for errd(), is discarded) correctly.
+const done = (usd, runId) => ({ name: 'agent.run.end', payload: { agentId: 'a', runId: runId || 'r', reason: 'done', turns: 1, usd: usd == null ? 1 : usd } });
+const errd = runId => ({ name: 'agent.run.end', payload: { agentId: 'a', runId: runId || 'r', reason: 'error', turns: 1, usd: 0 } });
+const ended = (reason, runId) => ({ name: 'agent.run.end', payload: { agentId: 'a', runId: runId || 'r', reason, turns: 1, usd: 0 } });
+const memUsed = (id, runId) => ({ name: 'memory.used', payload: { agentId: 'a', runId: runId || 'r', id: id || 'm1' } });
 const feedback = (delta, reason) => ({ name: 'memory.feedback', payload: { agentId: 'a', id: 'm1', delta, reason: reason || 'kept' } });
 const keep = () => feedback(2, 'kept');
 const edit = () => feedback(1, 'edited');
@@ -150,7 +153,43 @@ const firstTask = run([done()]);
 A.ok(firstTask.awards[0].milestones.indexOf('first_light') !== -1, 'first_light on first shipped task');
 A.eq(run([done()], firstTask.stats).awards[0].milestones.indexOf('first_light'), -1, 'first_light does not re-fire');
 A.ok(run([keep()]).awards[0].milestones.indexOf('approved') !== -1, 'approved on first positive feedback');
-A.ok(run([memUsed()]).awards[0].milestones.indexOf('pack_rat') !== -1, 'pack_rat on first memory reuse');
+// pack_rat now fires only when the run that recalled memory actually COMPLETES — the operational credit is buffered
+// per-run and committed at run.end. So the trophy lands on the run.end award (last event), never on the bare recall.
+const packRun = run([memUsed(), done()]);
+A.eq(packRun.awards[0].milestones.indexOf('pack_rat'), -1, 'bare memory.used does NOT award pack_rat yet (credit is buffered)');
+A.ok(packRun.awards[1].milestones.indexOf('pack_rat') !== -1, 'pack_rat lands when the recalling run completes');
+A.eq(packRun.stats.counters.memReused, 1, 'a completed run that recalled memory credits memReused once');
+
+// ---- TRUTHFUL-TELEMETRY REGRESSION (the reproduced bug): a run that recalls memory then produces NOTHING must
+//      not mint memory-reuse credit or the PACK RAT trophy. Recall happens at context-assembly, BEFORE the model
+//      call — so a 404'd run emitted memory.used ×7 then run.end{error}, and used to award the permanent trophy. ----
+// (a) the exact repro: 7 memory.used chunks (one recall of 7 records) then an errored run end.
+const deadRun = run([memUsed('m1'), memUsed('m2'), memUsed('m3'), memUsed('m4'), memUsed('m5'), memUsed('m6'), memUsed('m7'), errd()]);
+A.eq(deadRun.stats.counters.memReused || 0, 0, 'a run that 404s after recall credits NO memory reuse (was 7 — the bug)');
+A.ok(deadRun.awards.every(a => a.milestones.indexOf('pack_rat') === -1), 'no PACK RAT trophy for a recall that never fed a real turn');
+A.eq(Xp.milestones(deadRun.stats).find(m => m.id === 'pack_rat').earned, false, 'PACK RAT reads locked after an errored recall run');
+// (b) an EMPTY run (degraded provider streamed a zero-tool, zero-text turn) is likewise no work → no credit.
+const emptyRun = run([memUsed(), ended('empty')]);
+A.eq(emptyRun.stats.counters.memReused || 0, 0, 'an empty run (produced nothing) credits no memory reuse');
+A.eq(Xp.milestones(emptyRun.stats).find(m => m.id === 'pack_rat').earned, false, 'PACK RAT stays locked after an empty recall run');
+// (c) N-per-recall inflation is gone: a DONE run with a 7-chunk recall credits memReused exactly ONCE (a reuse
+//     EVENT, not a chunk tally) — matching the "reuse a memory" trophy copy.
+const bigRecall = run([memUsed('m1'), memUsed('m2'), memUsed('m3'), memUsed('m4'), memUsed('m5'), memUsed('m6'), memUsed('m7'), done()]);
+A.eq(bigRecall.stats.counters.memReused, 1, 'a completed run crediting memory reuse counts the EVENT once, never 7 chunks');
+A.ok(bigRecall.awards[bigRecall.awards.length - 1].milestones.indexOf('pack_rat') !== -1, 'pack_rat awarded once for the completed recall run');
+// (d) DEDUP holds across runs: a SECOND completed recall run does not re-award the (already-earned) trophy, and
+//     memReused advances by one reuse-event per qualifying run (not per chunk).
+const secondRecall = run([memUsed('m1'), memUsed('m2'), done()], bigRecall.stats);
+A.eq(secondRecall.awards[secondRecall.awards.length - 1].milestones.indexOf('pack_rat'), -1, 'pack_rat does not re-fire on a later recall run');
+A.eq(secondRecall.stats.counters.memReused, 2, 'memReused advances by one PER qualifying run (2 runs → 2), never per chunk');
+// (e) partial work still counts: a run that hit its ceiling (max_iters) after recalling DID engage the model, so
+//     its reuse credit is kept — withholding provably-real work would be its own dishonesty.
+const cappedRecall = run([memUsed(), ended('max_iters')]);
+A.eq(cappedRecall.stats.counters.memReused, 1, 'a max_iters run that recalled memory keeps its reuse credit (real work, just capped)');
+// (f) buffer isolation across distinct runs: an errored recall run A, then a fresh COMPLETED recall run B, credits
+//     exactly the one honest reuse — run A's discarded credit never leaks into run B, and B is not double-counted.
+const isolate = run([memUsed('a1', 'runA'), errd('runA'), memUsed('b1', 'runB'), done(1, 'runB')]);
+A.eq(isolate.stats.counters.memReused, 1, 'errored run A discarded + completed run B credited = exactly 1 reuse (no leak, no double-count)');
 
 // ---- compute(): render-state for the gauges ----
 const g = Xp.compute({ xp: 100, level: 2, lifetimeXp: 100, confidence: 70, samples: 5, counters: { positiveFeedback: 7, negativeFeedback: 2, tasksDone: 3 }, milestones: [] });
@@ -180,16 +219,18 @@ for (let i = 0; i < 15; i++) ts = Xp.applyEvent(ts, toolOk('r1')).stats;
 A.eq(ts.xp, 0, '15 tool successes still award 0 xp');
 A.eq(ts.samples, 0, 'tool results carry no satisfaction sample');
 A.eq(ts.confidence, 50, 'tool results never move confidence');
-A.eq(ts.counters.toolsOk, 15, 'tool successes still update operational counters');
+A.eq(ts.counters.toolsOk, 15, 'tool successes still update operational counters (a real tool_result IS proof — committed immediately, never buffered)');
 
 // ---- expanded milestone table ----
+// memWrites / delivered stay IMMEDIATE (the write/delivery event is itself proof of the real action) — only
+// memory-REUSE is buffered to run end, because recall happens speculatively at context-assembly (see pack_rat above).
 let ms = Xp.fresh();
 for (let i = 0; i < 10; i++) ms = Xp.applyEvent(ms, { name: 'memory.write', payload: { agentId: 'a', runId: 'r', id: 'm' + i, kind: 'fact' } }).stats;
 A.eq(ms.xp, 0, 'memory writes do not mint xp');
-A.ok(ms.milestones.indexOf('archivist') !== -1, 'archivist at 10 memory writes');
+A.ok(ms.milestones.indexOf('archivist') !== -1, 'archivist at 10 memory writes (a real write IS proof — committed immediately)');
 const nightShift = Xp.applyEvent(Xp.fresh(), delivered());
 A.eq(nightShift.stats.xp, 0, 'delivery milestone does not mint xp');
-A.ok(nightShift.awards.milestones.indexOf('night_shift') !== -1, 'night_shift on first external delivery');
+A.ok(nightShift.awards.milestones.indexOf('night_shift') !== -1, 'night_shift on first external delivery (a real delivery IS proof — immediate)');
 const near = { xp: 2249, level: 9, lifetimeXp: 2249, confidence: 50, samples: 0, counters: {}, milestones: [], run: { id: null, toolXp: 0 } };
 const vr = Xp.applyEvent(near, keep());
 A.eq(vr.stats.level, 10, 'positive feedback crossing 2250 xp -> level 10');
