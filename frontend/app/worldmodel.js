@@ -450,6 +450,18 @@ const WorldModel = (() => {
       emit([{ x1: x | 0, y1: y | 0, x2: x | 0, y2: y | 0 }]);
       return { ok: true };
     }
+    // batch-remove a set of belt tiles in ONE undo slot (a RECLAIM drag clearing a whole run —
+    // mirrors placeBeltRun's single-snapshot shape so one UNDO restores the lot). Tiles with no belt
+    // are silently skipped; an all-empty request is a no-op fail so the caller can flag "no belts".
+    function removeBelts(tiles) {
+      const hit = (tiles || []).map(t => [t[0] | 0, t[1] | 0]).filter(([x, y]) => doc.belts[beltKey(x, y)]);
+      if (!hit.length) return fail('NOT_FOUND', 'no belts here');
+      snapshot();
+      const dirty = [];
+      for (const [x, y] of hit) { delete doc.belts[beltKey(x, y)]; dirty.push({ x1: x, y1: y, x2: x, y2: y }); }
+      emit(dirty);
+      return { ok: true, count: hit.length };
+    }
     // lay a straight run a→b; direction = the dominant drag axis (drag east → E belts, etc.)
     function placeBeltRun(a, b) {
       const ax = a.tx | 0, ay = a.ty | 0, bx = b.tx | 0, by = b.ty | 0;
@@ -916,7 +928,7 @@ const WorldModel = (() => {
       // mutations
       addRoom, placeHallway, removeRoom, moveRoom, setFloor, paintTiles, renameRoom,
       addProp, removeProp, moveProp, assignPropAgent, ensureWorkstation, configureJunction, bindConnector, setDoorState,
-      setBelt, removeBelt, placeBeltRun, connectBelt,
+      setBelt, removeBelt, removeBelts, placeBeltRun, connectBelt,
       // agent-bay binding queries
       propsByType, propsByAgent, pipelineEdges, setPipelineEdges, addPipelineEdge, removePipelineEdge, agentRoomId, bayObjects,
       capForProp: t => CAP_PROP_MAP[t] || null,   // a prop type's capability objectType (single source for the UI)

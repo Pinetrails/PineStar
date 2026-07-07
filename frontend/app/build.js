@@ -16,7 +16,7 @@ const Build = (() => {
     { id: 'hall', key: '2', label: '═ HALLWAY', hint: 'drag along an axis to run a corridor — any length', cursor: 'crosshair' },
     { id: 'paint', key: '3', label: '▧ PAINT', hint: 'drag to paint deck tiles · click a room to fill it', cursor: 'cell' },
     { id: 'move', key: '4', label: '✥ MOVE', hint: 'drag a room to relocate it', cursor: 'move' },
-    { id: 'reclaim', key: '5', label: '⌫ RECLAIM', hint: 'click a room or prop to tear it down (UNDO restores it)', cursor: 'not-allowed' },
+    { id: 'reclaim', key: '5', label: '⌫ RECLAIM', hint: 'click a room, prop, or belt to tear it down · drag across a belt to clear the whole run (UNDO restores it)', cursor: 'not-allowed' },
     { id: 'prop', key: '6', label: '⚇ PROP', hint: 'click to place furniture · agents walk around it', cursor: 'crosshair' },
     { id: 'belt', key: '7', label: '⇶ BELT', hint: 'CLICK one machine, then another — the belt lays itself · (or drag to lay tiles by hand)', cursor: 'crosshair' },
   ];
@@ -45,7 +45,7 @@ const Build = (() => {
 
   // interaction state
   let tool = 'room', kind = 'hab', style = 'cobalt', hallWidth = 2, propType = 'desk', propCat = 'workstation', propTier = 'functional';
-  let drag = null, hoverRoomId = null, hoverPropId = null, lastClient = { x: 0, y: 0 }, spaceHeld = false;
+  let drag = null, hoverRoomId = null, hoverPropId = null, hoverTile = null, lastClient = { x: 0, y: 0 }, spaceHeld = false;
   let stars = [];
   let convey = null, lastFrameTs = 0;   // editor conveyor sim (boxes flow live as you build)
   let propThumbs = [], lastThumbTs = 0; // visual prop palette: live animated preview tiles + redraw throttle
@@ -178,7 +178,7 @@ const Build = (() => {
     cv.addEventListener('pointermove', onMove);
     cv.addEventListener('pointerup', onUp);
     cv.addEventListener('pointercancel', onCancel);
-    cv.addEventListener('pointerleave', () => { hoverRoomId = null; hoverPropId = null; if (!drag) hideTip(); hidePropCard(); });
+    cv.addEventListener('pointerleave', () => { hoverRoomId = null; hoverPropId = null; hoverTile = null; if (!drag) hideTip(); hidePropCard(); });
     cv.addEventListener('wheel', onWheel, { passive: false });
     cv.addEventListener('contextmenu', e => e.preventDefault());
     window.addEventListener('resize', resize);
@@ -918,7 +918,7 @@ const Build = (() => {
       if (!id) { flashTip(ev, 'nothing to paint here'); return; }
       drag = { mode: 'paint', roomId: id, start: w, cur: w, cells: new Set([w.tx + ',' + w.ty]), moved: false };
     } else if (tool === 'reclaim') {
-      drag = { mode: 'click', start: w, cur: w, moved: false };
+      drag = { mode: 'reclaim', start: w, cur: w, cells: new Set([w.tx + ',' + w.ty]), moved: false };
     } else { // room | hall
       drag = { mode: 'draw', start: w, cur: w, moved: false };
     }
@@ -934,11 +934,12 @@ const Build = (() => {
     const w = toWorldTile(ev);
     if (drag) {
       if (w.tx !== drag.cur.tx || w.ty !== drag.cur.ty) drag.moved = true;
-      if (drag.mode === 'paint') rasterTo(drag, w);   // accumulate every tile the brush crosses
+      if (drag.mode === 'paint' || drag.mode === 'reclaim') rasterTo(drag, w);   // accumulate every tile the brush crosses
       drag.cur = w;
     } else {
       hoverPropId = station.propAt(w.tx, w.ty);
       hoverRoomId = station.roomAt(w.tx, w.ty);
+      hoverTile = { tx: w.tx, ty: w.ty };
       // hovering a placed FUNCTIONAL prop shows its Fallout-style card (what it does + its live assignment)
       const hp = hoverPropId && station.propById(hoverPropId);
       const sp = hp && (typeof PropSprites !== 'undefined') && PropSprites.spec(hp.t);
@@ -959,7 +960,7 @@ const Build = (() => {
     if (d.mode === 'propstamp') return commitPropStamp(d, ev);
     if (d.mode === 'beltrun') return commitBeltRun(d, ev);
     if (d.mode === 'paint') return commitPaint(d, ev);
-    if (d.mode === 'click') return commitClick(d, ev);
+    if (d.mode === 'reclaim') return commitReclaim(d, ev);
   }
   function onCancel() { if (drag) { drag = null; hideTip(); setCursor(); } }
   function onBlur() { spaceHeld = false; if (drag && drag.mode === 'pan') drag = null; setCursor(); }
@@ -1057,7 +1058,17 @@ const Build = (() => {
       feedback(station.setFloor(d.roomId, style), ev, 'deck repainted');   // a plain click fills the room
     }
   }
-  function commitClick(d, ev) {   // RECLAIM
+  function commitReclaim(d, ev) {   // RECLAIM
+    // DRAG across tiles → clear every BELT crossed in ONE undo slot. A drag never removes rooms or
+    // props (only single clicks do), so you can wipe a lane without fear of nuking the room under it.
+    if (d.moved && d.cells) {
+      const tiles = [...d.cells].map(k => { const p = k.split(','); return [+p[0], +p[1]]; }).filter(([x, y]) => station.beltAt(x, y));
+      if (!tiles.length) { flashTip(ev, 'drag along a belt to clear it'); sfx('bad'); return; }
+      const res = station.removeBelts(tiles);
+      if (res && res.ok) { pushFlash(tiles.map(([x, y]) => ({ x1: x, y1: y, x2: x, y2: y })), true); flashUndo(); flashTip(ev, res.count + (res.count === 1 ? ' belt' : ' belts') + ' removed — UNDO to restore', true); sfx('click'); }
+      else { flashTip(ev, (res && res.msg) || 'blocked'); sfx('bad'); }
+      return;
+    }
     const pid = station.propAt(d.cur.tx, d.cur.ty);   // props sit on top — reclaim them first
     if (pid) {
       const p = station.propById(pid);
@@ -1435,6 +1446,14 @@ const Build = (() => {
         return;
       }
     }
+    // a belt is reclaimable even though it sits ON a deck: highlight the BELT tile (not the room
+    // under it) so the red outline matches what a click actually tears down (belt-before-room).
+    if (tool === 'reclaim' && hoverTile && station.beltAt(hoverTile.tx, hoverTile.ty)) {
+      ctx.lineWidth = 1.5 / zoom;
+      ctx.strokeStyle = 'rgba(255,92,77,0.95)';
+      ctx.strokeRect(hoverTile.tx * t + 1, hoverTile.ty * t + 1, t - 2, t - 2);
+      return;
+    }
     if (tool !== 'move' && tool !== 'reclaim' && tool !== 'paint') return;
     if (!hoverRoomId) return;
     const rm = station.roomById(hoverRoomId); if (!rm) return;
@@ -1456,6 +1475,15 @@ const Build = (() => {
       for (const k of drag.cells) { const p = k.split(','); if (station.roomAt(+p[0], +p[1]) === drag.roomId) ctx.fillRect(+p[0] * t, +p[1] * t, t, t); }
       ctx.globalAlpha = 1;
       showTip(drag.cells.size + ' tiles', true);
+      return;
+    }
+    // reclaim drag: tint the belt tiles the drag will clear (destructive red), like the paint brush
+    if (drag && drag.mode === 'reclaim' && drag.moved) {
+      let n = 0;
+      ctx.globalAlpha = 0.5; ctx.fillStyle = 'rgba(255,92,77,0.9)';
+      for (const k of drag.cells) { const p = k.split(','); if (station.beltAt(+p[0], +p[1])) { ctx.fillRect(+p[0] * t, +p[1] * t, t, t); n++; } }
+      ctx.globalAlpha = 1;
+      showTip(n ? (n + (n === 1 ? ' belt' : ' belts')) : 'drag along a belt', n > 0);
       return;
     }
     const g = ghostInfo();
@@ -1582,6 +1610,33 @@ const Build = (() => {
       propType = t; tool = 'prop';
       const res = station.addProp({ t, x: tile.tx, y: tile.ty, w: s.w, h: s.h, block: s.blocks !== false });
       return { ok: !!(res && res.ok), tile, type: t };
+    },
+    // client-pixel for a tile CENTER, inverting the live camera (screen = world*zoom + pan) so a
+    // synthetic pointer lands exactly on [tx,ty] — same math toWorldTile uses, run backwards.
+    _tileEvent: ([tx, ty], button) => {
+      const t = T(), r = cv.getBoundingClientRect();
+      return { button: button == null ? 0 : button, pointerId: 1,
+        clientX: r.left + ((tx + 0.5) * t * zoom + panX) * (r.width / cv.width),
+        clientY: r.top + ((ty + 0.5) * t * zoom + panY) * (r.height / cv.height) };
+    },
+    // drive a REAL reclaim gesture (onDown→onMove→onUp) across a tile list — proves the belt
+    // drag-to-clear path end to end (accumulate cells → filter to belts → removeBelts → one undo).
+    reclaimDrag: (tiles) => {
+      if (!running || !station || !cv || !tiles || !tiles.length) return { ok: false, reason: 'not-in-build' };
+      selectTool('reclaim');
+      const before = station.belts().length;
+      onDown(__test__._tileEvent(tiles[0]));
+      for (let i = 1; i < tiles.length; i++) onMove(__test__._tileEvent(tiles[i]));
+      onUp(__test__._tileEvent(tiles[tiles.length - 1]));
+      return { ok: true, before, after: station.belts().length };
+    },
+    // run the REAL hover path over a tile and report what the reclaim highlight would target
+    // (a belt tile lights the belt, not the room under it).
+    hoverAt: (tile) => {
+      if (!running || !cv) return null;
+      selectTool('reclaim');
+      onMove(__test__._tileEvent(tile, 0));
+      return { hoverTile, onBelt: !!(hoverTile && station.beltAt(hoverTile.tx, hoverTile.ty)) };
     },
   };
 
