@@ -2,20 +2,87 @@
   "version": "0.0.1",
   "configurations": [
     {
+      "name": "truth-props-glow-seed",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["C:/Users/andro/gen-trees/truth-props-glow/dev/seed.js", "--keep"],
+      "port": 8161,
+      "autoPort": false,
+      "env": { "SKYNET_PORT": "8161", "SKYNET_DEFAULT_MODEL": "anthropic/claude-3.5-sonnet" }
+    },
+    {
+      "name": "comms-fresh-session-seed",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["C:/Users/andro/gen-trees/comms-fresh-session/dev/seed.js", "--keep"],
+      "port": 8836,
+      "autoPort": false,
+      "env": { "SKYNET_PORT": "8836", "SKYNET_DEFAULT_MODEL": "anthropic/claude-3.5-sonnet" }
+    },
+    {
+      "name": "belt-connect-seed",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "C:/Users/andro/gen-trees/belt-connect/dev/seed.js"
+      ],
+      "port": 8157,
+      "autoPort": false,
+      "env": {
+        "SKYNET_PORT": "8157",
+        "SKYNET_DEFAULT_MODEL": "openai/gpt-4o-mini"
+      }
+    },
+    {
+      "name": "belt-teach-seed",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "C:/Users/andro/gen-trees/belt-teach/dev/seed.js"
+      ],
+      "port": 8156,
+      "autoPort": false,
+      "env": {
+        "SKYNET_PORT": "8156",
+        "SKYNET_DEFAULT_MODEL": "openai/gpt-4o-mini"
+      }
+    },
+    {
+      "name": "crate-honesty-seed",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "C:/Users/andro/gen-trees/crate-honesty/dev/seed.js"
+      ],
+      "port": 8155,
+      "autoPort": false,
+      "env": {
+        "SKYNET_PORT": "8155",
+        "SKYNET_DEFAULT_MODEL": "openai/gpt-4o-mini"
+      }
+    },
+    {
       "name": "honest-states-seed",
       "runtimeExecutable": "node",
-      "runtimeArgs": ["C:/Users/andro/gen-trees/honest-states/dev/seed.js", "--keep"],
+      "runtimeArgs": [
+        "C:/Users/andro/gen-trees/honest-states/dev/seed.js",
+        "--keep"
+      ],
       "port": 8960,
       "autoPort": false,
-      "env": { "SKYNET_PORT": "8960", "SKYNET_DEFAULT_MODEL": "anthropic/claude-3.5-sonnet" }
+      "env": {
+        "SKYNET_PORT": "8960",
+        "SKYNET_DEFAULT_MODEL": "anthropic/claude-3.5-sonnet"
+      }
     },
     {
       "name": "harden-frontend-seed",
       "runtimeExecutable": "node",
-      "runtimeArgs": ["C:/Users/andro/gen-trees/harden-frontend/dev/seed.js", "--keep"],
+      "runtimeArgs": [
+        "C:/Users/andro/gen-trees/harden-frontend/dev/seed.js",
+        "--keep"
+      ],
       "port": 8848,
       "autoPort": false,
-      "env": { "SKYNET_PORT": "8848", "SKYNET_DEFAULT_MODEL": "anthropic/claude-3.5-sonnet" }
+      "env": {
+        "SKYNET_PORT": "8848",
+        "SKYNET_DEFAULT_MODEL": "anthropic/claude-3.5-sonnet"
+      }
     },
     {
       "name": "ux-error-doors-seed",
@@ -764,6 +831,58 @@
       }
     },
     {
+      "name": "belt-truth-seed",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "C:/Users/andro/gen-trees/belt-truth/dev/seed.js"
+      ],
+      "port": 8154,
+      "autoPort": false,
+      "env": {
+        "SKYNET_PORT": "8154",
+        "SKYNET_DEFAULT_MODEL": "openai/gpt-4o-mini"
+      }
+    },
+    {
+      "name": "ship-display-seed",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "C:/Users/andro/gen-trees/ship-display/dev/seed.js"
+      ],
+      "port": 8153,
+      "autoPort": false,
+      "env": {
+        "SKYNET_PORT": "8153",
+        "SKYNET_DEFAULT_MODEL": "anthropic/claude-3.5-sonnet"
+      }
+    },
+    {
+      "name": "belt-sense-seed",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "C:/Users/andro/gen-trees/belt-sense/dev/seed.js"
+      ],
+      "port": 8152,
+      "autoPort": false,
+      "env": {
+        "SKYNET_PORT": "8152",
+        "SKYNET_DEFAULT_MODEL": "anthropic/claude-3.5-sonnet"
+      }
+    },
+    {
+      "name": "hero-desk-seed",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "C:/Users/andro/gen-trees/hero-desk-real/dev/seed.js"
+      ],
+      "port": 8151,
+      "autoPort": false,
+      "env": {
+        "SKYNET_PORT": "8151",
+        "SKYNET_DEFAULT_MODEL": "anthropic/claude-3.5-sonnet"
+      }
+    },
+    {
       "name": "belt-legible2-seed",
       "runtimeExecutable": "node",
       "runtimeArgs": [
@@ -774,6 +893,46 @@
       "autoPort": false,
       "env": {
         "SKYNET_PORT": "8149",
+        "SKYNET_DEFAULT_MODEL": "anthropic/claude-3.5-sonnet"
+      }
+    },
+    {
+      "name": "blank-default-trunk",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "C:/Users/andro/Desktop/gen/dev/seed.js",
+        "--keep"
+      ],
+      "port": 8160,
+      "autoPort": false,
+      "env": {
+        "SKYNET_PORT": "8160",
+        "SKYNET_DEFAULT_MODEL": "anthropic/claude-3.5-sonnet"
+      }
+    },
+    {
+      "name": "connector-catalog-seed",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "C:/Users/andro/gen-trees/connector-catalog/dev/seed.js"
+      ],
+      "port": 8157,
+      "autoPort": false,
+      "env": {
+        "SKYNET_PORT": "8157"
+      }
+    },
+    {
+      "name": "dossier-agent-mgmt-seed",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "C:/Users/andro/gen-trees/dossier-agent-mgmt/dev/seed.js",
+        "--keep"
+      ],
+      "port": 8158,
+      "autoPort": false,
+      "env": {
+        "SKYNET_PORT": "8158",
         "SKYNET_DEFAULT_MODEL": "anthropic/claude-3.5-sonnet"
       }
     }
