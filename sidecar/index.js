@@ -665,6 +665,15 @@ const runsMeta = new Map();
 // is still in `runs`); once the run ends the entry is dropped, so a stale steer can never reach a later run.
 const steerBuffers = new Map();
 function drainSteer(runId) { const b = steerBuffers.get(runId); if (!b || !b.length) return []; steerBuffers.set(runId, []); return b; }
+// Teardown drop with diagnostics (GROUND_UP_AUDIT 2026-07-06 P2): at run end we drop any un-drained steering notes
+// so a stale correction can't leak to a later run. That drop was SILENT — a Commander whose steer arrived after the
+// run's last loop iteration saw nothing happen and no reason why. Log one honest line with the dropped count (the
+// note text is NOT logged — it can contain user content). ctx names the run path so the log is triageable.
+function dropSteer(runId, ctx) {
+  const b = steerBuffers.get(runId);
+  if (b && b.length) console.log('[steer] dropped ' + b.length + ' un-applied steering note(s) at ' + (ctx || 'run') + ' teardown for run ' + runId + ' (arrived after the run finished)');
+  steerBuffers.delete(runId);
+}
 const STEER_MAX_PENDING = 8;      // bound the buffer so a spammed steer can't grow unbounded between iterations
 let lastSearchAt = 0;            // module-level web_search throttle (≥1.1s between DDG hits, any run)
 // Stage 2: the crew roster the browser pushes (POST /api/roster) so team.dispatch can run a WORKER as its
@@ -3772,7 +3781,7 @@ async function handleCronRun(req, res) {
   } finally {
     runs.delete(runId);
     runsMeta.delete(runId);
-    steerBuffers.delete(runId);      // drop any un-drained steering notes so they can't leak to a later run (mirror handleRun)
+    dropSteer(runId, 'manual-run');      // drop any un-drained steering notes so they can't leak to a later run (mirror handleRun); logs a count if non-empty
     const ok = !state.errMsg;
     try {
       // G4.3: record the manual run's outcome as a re-read-modify-write under the lock (don't clobber a
@@ -3895,7 +3904,7 @@ async function runWorkshopShift(agentId, opts) {
     });
   } catch (e) { threw = e; }
   finally {
-    if (ac) runs.delete(runId); runsMeta.delete(runId); steerBuffers.delete(runId);   // drop un-drained steering notes (mirror handleRun)
+    if (ac) runs.delete(runId); runsMeta.delete(runId); dropSteer(runId, 'workshop-shift');   // drop un-drained steering notes (mirror handleRun); logs a count if non-empty
     // queue-slot backstop: if this shift's run.end never flowed through cronEmitNotify (caller-supplied emit),
     // drain its work-item here. Idempotent with the cronEmitNotify settle — first one wins.
     try { settleCronWorkitem(runId, threw ? null : 'done'); } catch (_) {}
@@ -4564,7 +4573,7 @@ async function handleRun(req, res) {
   } finally {
     runs.delete(runId);
     runsMeta.delete(runId);
-    steerBuffers.delete(runId);      // drop any un-drained steering notes so they can't leak to a later run
+    dropSteer(runId, 'handleRun');      // drop any un-drained steering notes so they can't leak to a later run; logs a count if non-empty
     grantsSession.delete(runId);     // drop this run's session-scoped grants
     const p = pendingByRun.get(runId);   // deny any prompt still open (belt-and-suspenders; the loop normally awaits)
     if (p) { for (const f of p.values()) { try { f('deny'); } catch (_) {} } pendingByRun.delete(runId); }
