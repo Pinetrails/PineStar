@@ -5,7 +5,9 @@
 const App = (() => {
   const el = id => document.getElementById(id);
   // HTML-escape for the rare spot we build a connect message with a link (provider label + signup URL).
-  const esc = s => { const d = document.createElement('div'); d.textContent = String(s == null ? '' : s); return d.innerHTML; };
+  // Delegates to the one complete implementation (U.esc escapes & < > " ' — quotes included, so attribute
+  // contexts are safe); keep the null-guard the old local copy had so U.esc(null) never renders "null".
+  const esc = s => U.esc(s == null ? '' : s);
   // CRT-muted crew suit tints — distinct per crew member but passed through the amber-phosphor grade (no pure neons). Last entry stays gold to match ORCH_COLOR.
   const SUITS = ['#6fb3bf', '#7bc88a', '#d99a5a', '#a888c0', '#cf7d96', '#ffd34a'];
 
@@ -1047,11 +1049,11 @@ const App = (() => {
     for (const m of list) { const o = document.createElement('option'); o.value = m.id; dl.appendChild(o); }
     if (list.length) {
       countEl.textContent = '(' + list.length + ' available)';
-      if (!inp.value) {
-        const pref = list.find(m => /claude.*sonnet|gpt-4o|gpt-5/i.test(m.id)) || list[0];
-        inp.value = pref.id;   // DEFAULT-FILL so a first ⏼ WAKE never bounces on an empty model (matches the Codex path, which already defaults)
-        inp.placeholder = 'e.g. ' + pref.id;
-      }
+      const pref = list.find(m => /claude.*sonnet|gpt-4o|gpt-5/i.test(m.id)) || list[0];
+      if (!inp.value) inp.value = pref.id;   // DEFAULT-FILL so a first ⏼ WAKE never bounces on an empty model (matches the Codex path, which already defaults)
+      // Always retire the "loading models…" placeholder once the catalog resolves — otherwise a field that was
+      // already default-filled (prior provider, restored save) keeps asserting "loading" as its accessible name.
+      inp.placeholder = 'e.g. ' + pref.id;
     } else {
       // catalog unreachable (no network to openrouter.ai, or fetch blocked): DON'T leave the field
       // looking like it's still loading. Seed a few common slugs and make the placeholder actionable
@@ -1059,7 +1061,8 @@ const App = (() => {
       const FALLBACK = FALLBACK_MODELS[p] || FALLBACK_MODELS.openrouter;
       for (const id of FALLBACK) { const o = document.createElement('option'); o.value = id; dl.appendChild(o); }
       countEl.textContent = '(catalog offline — type or pick a slug)';
-      if (!inp.value) { inp.value = FALLBACK[0]; inp.placeholder = 'type a model slug — e.g. gpt-5.5'; }   // default-fill even offline so WAKE works; the Commander can overtype
+      if (!inp.value) inp.value = FALLBACK[0];   // default-fill even offline so WAKE works; the Commander can overtype
+      inp.placeholder = 'type a model slug — e.g. gpt-5.5';   // never leave "loading models…" up once we've resolved (even to the offline fallback)
     }
     updateHint();
   }
@@ -1277,6 +1280,7 @@ const App = (() => {
     for (const m of models) { const o = document.createElement('option'); o.value = m.id; if (m.displayName && m.displayName !== m.id) o.label = m.displayName; dl.appendChild(o); }
     el('model-count').textContent = '(ChatGPT subscription)';
     const mi = el('in-model'); if (!ids.includes(mi.value)) mi.value = def;
+    if (def) mi.placeholder = 'e.g. ' + def;   // retire "loading models…" here too, so the field's accessible name matches the loaded catalog
     updateHint();
   }
 
@@ -1325,7 +1329,7 @@ const App = (() => {
     codeEl.textContent = d.user_code; codeEl.classList.remove('hidden');
     openBtn.classList.remove('hidden');
     openBtn.onclick = () => openExternalUrl(d.verification_uri);
-    statusEl.innerHTML = 'enter this code at <b>' + d.verification_uri + '</b> (opening it now)…';
+    statusEl.innerHTML = 'enter this code at <b>' + esc(d.verification_uri) + '</b> (opening it now)…';
     openExternalUrl(d.verification_uri);
     pollCodex(d.interval || 5);
   }

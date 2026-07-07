@@ -3,6 +3,9 @@
 
 const ModelDock = (() => {
   const el = id => document.getElementById(id);
+  // Delegates to the one complete implementation (U.esc escapes & < > " ' — quotes included, so the id="…"
+  // / title="…" attribute contexts this dock builds are injection-safe); keep the null-guard the local had.
+  const esc = s => U.esc(s == null ? '' : s);
   const CODEX_MODELS = ['gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini', 'gpt-5.3-codex-spark'];
   // Fallback seed only (used when the live /api/models fetch fails) — real, current model ids only.
   // A missing fallback id is honest; an invented one is a lie. claude-3-5-haiku retired 2026-02-19,
@@ -540,7 +543,6 @@ const ModelDock = (() => {
       '<div class="mdt-row mdt-mean">' + esc(effortMeaning(effort)) + '</div>' +
       '<div class="mdt-hint">click to change model &amp; effort</div>';
   }
-  function esc(s) { const d = document.createElement('div'); d.textContent = String(s == null ? '' : s); return d.innerHTML; }
 
   // Inline no-key warning: if the ACTIVE provider needs a key and none is stored, flag the resting chip and
   // drop a one-tap "add a key in Settings" row inside the dock — surfaced BEFORE the user hits RUN (which would
