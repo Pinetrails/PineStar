@@ -5049,6 +5049,11 @@ const World = (() => {
       if (floor) floor.onEvent('agent.cost', p, Date.now());
       // remember the most recent RECONCILED cache ratio — the smelter temperature a slag diagnosis reads
       if (p && (p.tokensIn | 0) > 0) lastCacheFrac = Math.max(0, Math.min(1, (p.cachedTokens || 0) / p.tokensIn));
+      // E2 + Stage 2: a cost event reinforces the run TTL. A DELEGATED worker's stream is lifecycle+cost
+      // ONLY (orchestration forwards no token/tool events), so without this the worker's sprite decayed to
+      // idle at RUN_TTL while its run was still genuinely working (2026-07-07 escape: "the researcher just
+      // stopped"). Cost fires every completed worker turn — the honest per-turn heartbeat we do have.
+      if (p && p.agentId && runStartByAgent.has(p.agentId)) stampRun(p.agentId);
     });
     // H3.1: a mid-run model/credential FAILOVER was invisible (provider.fallback had no consumer). Fold it into
     // the floor stats AND surface a LOGBOOK line so the operator sees the harness rerouting around a bad provider.

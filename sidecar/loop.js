@@ -446,13 +446,13 @@
       // (8) LOOP GUARD — break out of a run that keeps making the SAME failing tool call. Warn once, then stop.
       if (LG_WARN || LG_STOP) {
         const sigOf = {};
-        for (const c of calls) sigOf[c.id] = (c.name || '') + ' ' + (c.argsRaw || '');
+        for (const c of calls) sigOf[c.id] = (c.name || '') + '\u0000' + (c.argsRaw || '');
         for (const r of results) {
           const sig = sigOf[r.callId];
           if (sig == null) continue;
           if (!r.isError) { lgFails.delete(sig); lgWarned.delete(sig); continue; }   // a success clears the streak
           const n = (lgFails.get(sig) || 0) + 1; lgFails.set(sig, n);
-          const nm = sig.split(' ')[0] || 'a tool';
+          const nm = sig.split('\u0000')[0] || 'a tool';
           if (LG_STOP && n >= LG_STOP) {
             emit('agent.run.error', { agentId, runId, message: 'loop guard: ' + nm + ' failed ' + n + ' times with identical arguments — stopping a stuck loop', transient: false });
             return end('error');

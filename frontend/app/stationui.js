@@ -4259,11 +4259,15 @@ const StationUI = (() => {
           const resp = await post('/api/cron/run', { id });
           if (!resp.ok || !resp.body) { const e = await resp.json().catch(() => ({})); outEl.innerHTML = '<span style="color:var(--bad)">✕ ' + esc((e && e.error) || ('http ' + resp.status)) + '</span>'; sfx('bad'); }
           else {
-            const reader = resp.body.getReader(), dec = new TextDecoder(); let sbuf = '', reply = '', err = '';
+            // latch the run's OWN runId from the first run.start and key everything to it (mirrors
+            // harness.js chat): a forwarded CHILD run's error/tokens riding the same stream must never
+            // hijack this run's reply or fail its verdict.
+            const reader = resp.body.getReader(), dec = new TextDecoder(); let sbuf = '', reply = '', err = '', ownRunId = null;
+            const mine = (p) => !p || !p.runId || !ownRunId || p.runId === ownRunId;
             for (;;) {
               const r = await reader.read(); if (r.done) break;
               sbuf += dec.decode(r.value, { stream: true });
-              let nl; while ((nl = sbuf.indexOf('\n')) >= 0) { const line = sbuf.slice(0, nl); sbuf = sbuf.slice(nl + 1); if (!line.trim()) continue; try { const e = JSON.parse(line); if (e.name === 'agent.token') reply += ((e.payload && e.payload.delta) || ''); else if (e.name === 'agent.run.error') err = (e.payload && e.payload.message) || 'run error'; } catch (_) {} }
+              let nl; while ((nl = sbuf.indexOf('\n')) >= 0) { const line = sbuf.slice(0, nl); sbuf = sbuf.slice(nl + 1); if (!line.trim()) continue; try { const e = JSON.parse(line); const p = e.payload || {}; if (e.name === 'agent.run.start' && !ownRunId && p.runId) ownRunId = p.runId; else if (e.name === 'agent.token' && mine(p)) reply += (p.delta || ''); else if (e.name === 'agent.run.error' && mine(p)) err = p.message || 'run error'; } catch (_) {} }
             }
             outEl.innerHTML = err ? ('<span style="color:var(--bad)">✕ ' + esc(err) + '</span>') : esc(reply || '(no output)');
             notify(err ? 'routine run failed' : 'routine ran', err ? 'warn' : 'good');
