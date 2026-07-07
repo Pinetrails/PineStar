@@ -2220,8 +2220,20 @@ function startDiscord(token, key, model, agentCfg) {
         onState: (s) => {
           const state = (s && s.state) || 'down';
           const connected = state === 'up';
-          discordStatus = { connected, state, detail: (s && s.detail) || '' };
-          try { chanEmit('channel.connect', { channel: 'discord', ok: connected, state, detail: (s && s.detail) || '' }); } catch (_) {}
+          const detail = (s && s.detail) || '';
+          // discordStatus keeps the RAW transport state ('connecting'/'reconnecting'/'up'/'down'/'error') — the
+          // /api/channels/discord/status endpoint the Messaging panel polls reads it and renders the true phase.
+          discordStatus = { connected, state, detail };
+          // The channel.connect BUS event's enum is FROZEN to ['up','down','error'] (shared/events.js, owned).
+          // The gateway's transient 'connecting'/'reconnecting' are NOT in it, so emitting them raw is rejected by
+          // the validating chanEmit and SILENTLY DROPPED — the panel's refresh-on-connect trigger then never fires
+          // and the status line goes stale through the whole reconnect. Map both transients to the legal 'down'
+          // with a truthful detail ('connecting…' / 'reconnecting…'); the event now passes validation, the panel
+          // re-polls, and the HTTP status above supplies the precise phase text. (No shared/ change needed.)
+          const isTransient = state === 'connecting' || state === 'reconnecting';
+          const emitState = isTransient ? 'down' : state;
+          const emitDetail = isTransient ? ((state === 'reconnecting' ? 'reconnecting…' : 'connecting…') + (detail ? ' — ' + detail : '')) : detail;
+          try { chanEmit('channel.connect', { channel: 'discord', ok: connected, state: emitState, detail: emitDetail }); } catch (_) {}
         }
       }),
       ownerUserId: (channelSecrets.discord && channelSecrets.discord.ownerId) || '',
