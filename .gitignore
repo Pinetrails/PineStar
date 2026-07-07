@@ -49,6 +49,7 @@ src-tauri/binaries/
 .uiresidue/
 .uisummon/
 .uiaudit/
+.uijourneys/
 .uigolden/
 .dogfood/
 .bugloops/

@@ -74,6 +74,7 @@
     "qa:beginner": "node scripts/qa/beginner-run.mjs",
     "qa:beginner:live": "node scripts/qa/beginner-run.mjs --live",
     "qa:janitor": "node scripts/qa/janitor.mjs",
+    "qa:journeys": "node scripts/qa/journeys.mjs",
     "qa:guardian": "node scripts/qa/guardian.mjs",
     "qa:guardian:watch": "node scripts/qa/guardian.mjs --watch",
     "serve": "node scripts/serve-ui-only.js",
