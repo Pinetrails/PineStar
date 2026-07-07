@@ -4163,7 +4163,13 @@ function handleCheckpointList(req, res) {
     const agent = u.searchParams.get('agent') || 'agent';
     if (!/^[A-Za-z0-9_-]{1,40}$/.test(agent)) return json(400, { error: 'bad agentId' });
     json(200, { enabled: CHECKPOINTS_ENABLED, snapshots: checkpointStore.list(agent).snapshots });
-  } catch (e) { json(200, { enabled: CHECKPOINTS_ENABLED, snapshots: [] }); }
+  } catch (e) {
+    // HONESTY (GROUND_UP_AUDIT P2): a thrown store read is a real failure — report 500 so a crash isn't
+    // masked as "no restore points". A genuinely-empty list still returns 200 {snapshots:[]} above (shape
+    // untouched). stationui.js's refresh() guards with try/catch + ((j&&j.snapshots)||[]) so a 500 body
+    // degrades to the honest empty-state, never a crash.
+    json(500, { error: 'could not read checkpoints: ' + ((e && e.message) || e) });
+  }
 }
 
 // POST /api/roster { agents:[{ agentId, system, name, model, provider }] } — the browser pushes the live crew identities
@@ -6311,7 +6317,14 @@ function serveRuns(req, res) {
     let rows = runStore.list(agent === '*' ? null : agent, { limit });
     if (since > 0) rows = rows.filter(r => (r.ts || 0) > since);
     json(200, { runs: rows });
-  } catch (e) { json(200, { runs: [] }); }   // tolerate any error — empty history, never a 500
+  } catch (e) {
+    // HONESTY (GROUND_UP_AUDIT P2): a store read that THROWS is a real failure, not "no history" — a
+    // 200-empty here makes an auth/crash indistinguishable from a genuinely-empty log, so support can't
+    // triage it. A no-rows read still returns 200 {runs:[]} above (the happy-path shape is untouched);
+    // only a thrown error reaches here and now reports truthfully. Every /api/runs consumer already guards
+    // on r.ok (chat.js, autosessions.js, returnstore.js, world.js) or a safe [] default (stationui.js).
+    json(500, { error: 'could not read run history: ' + ((e && e.message) || e) });
+  }
 }
 
 // GET /api/insights?agent=<id> — H3.3: aggregate usage folded from the run history (overview, per-model spend,
