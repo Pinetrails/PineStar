@@ -89,6 +89,7 @@ test/skills.library.test.js
 test/slash.test.js
 test/slash.palette.test.js
 test/slash.config.test.js
+test/voice.button.test.js
 test/save.test.js
 test/rename-migrate.test.js
 test/roster-clause.test.js

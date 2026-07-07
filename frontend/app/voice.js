@@ -747,24 +747,42 @@ const Voice = (() => {
     name: 'web-speech',
     start(cbs) {
       if (!SR) { cbs.onError && cbs.onError('unsupported'); return; }
-      rec = new SR();
-      rec.lang = 'en-US';
-      rec.interimResults = true;
-      rec.continuous = false;     // one utterance per push-to-talk press; auto-stops on a pause
-      rec.maxAlternatives = 1;
+      const r = new SR();
+      rec = r;
+      // STALE-INSTANCE GUARD: a recognition that errored may fire its `onend` LATE — after the user has
+      // started a fresh listen (rec now points at a NEW instance). Two hazards this closes:
+      //   1. `rec = null` in a late onend would null the *new* instance → stop()/abort() silently no-op →
+      //      a mic stuck listening forever.
+      //   2. late onend/onerror would fire this listen's callbacks (onFinal/onEnd) into the module state of
+      //      an unrelated live listen → swallowed transcript or a spuriously-cleared button.
+      // `superseded()` is true once `rec` no longer points at THIS instance; a superseded instance goes quiet
+      // and never touches module state. `settle()` nulls `rec` only if it still points here.
+      const superseded = () => rec !== r;
+      let ended = false;
+      const settle = () => { if (rec === r) rec = null; };
+      r.lang = 'en-US';
+      r.interimResults = true;
+      r.continuous = false;     // one utterance per push-to-talk press; auto-stops on a pause
+      r.maxAlternatives = 1;
       let finalText = '';
-      rec.onresult = e => {
+      r.onresult = e => {
+        if (superseded()) return;
         let interim = '';
         for (let i = e.resultIndex; i < e.results.length; i++) {
-          const r = e.results[i];
-          if (r.isFinal) finalText += r[0].transcript;
-          else interim += r[0].transcript;
+          const rr = e.results[i];
+          if (rr.isFinal) finalText += rr[0].transcript;
+          else interim += rr[0].transcript;
         }
         cbs.onInterim && cbs.onInterim((finalText + interim).trim());
       };
-      rec.onerror = e => { cbs.onError && cbs.onError(e.error || 'error'); };
-      rec.onend = () => { cbs.onFinal && cbs.onFinal(finalText.trim()); cbs.onEnd && cbs.onEnd(); rec = null; };
-      try { rec.start(); } catch (_) { cbs.onError && cbs.onError('start-failed'); rec = null; }
+      r.onerror = e => { if (superseded()) return; cbs.onError && cbs.onError((e && e.error) || 'error'); };
+      r.onend = () => {
+        if (ended) return; ended = true;   // some engines fire onend twice — deliver exactly once
+        if (superseded()) return;           // a fresh listen already owns the mic; stay silent
+        settle();
+        cbs.onFinal && cbs.onFinal(finalText.trim()); cbs.onEnd && cbs.onEnd();
+      };
+      try { r.start(); } catch (_) { settle(); cbs.onError && cbs.onError('start-failed'); }
     },
     stop() { if (rec) { try { rec.stop(); } catch (_) {} } },          // flush + deliver the final result (push-to-talk send)
     abort() { if (rec) { try { rec.abort(); } catch (_) {} } }          // hard stop, suppress the final result (teardown)
@@ -789,6 +807,10 @@ const Voice = (() => {
     // silently discard real words.
     NOSPEECH_MS: 6500
   };
+  // ceiling on how long we wait for the mic-permission prompt / getUserMedia to settle. A DISMISSED prompt
+  // (user clicks away without choosing) leaves the promise pending forever on WebView2 + some browsers; this
+  // turns that into a recoverable 'mic-failed' instead of a mic button wedged in the 'rec' state until reload.
+  const GUM_TIMEOUT_MS = 12000;
   const recorderProvider = (() => {
     let stream = null, mr = null, chunks = [], ac = null, analyser = null, rafId = null;
     let cb = null, mime = '', startedAt = 0, floor = null, lastVoiceAt = 0, calibrateUntil = 0, silenceTimer = null;
@@ -869,7 +891,14 @@ const Voice = (() => {
     async function start(cbs) {
       cb = cbs; chunks = []; aborted = false; delivered = false; floor = null; lastVoiceAt = 0;
       try {
-        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        // DEAD-BUTTON GUARD: getUserMedia can hang forever if the mic-permission prompt is DISMISSED (not
+        // answered) — WebView2 and some browsers never settle the promise. Without a ceiling, `listening`
+        // stays true and the mic button is wedged 'rec' until a page reload. Race the request against a
+        // timeout so a stuck prompt degrades to a recoverable error instead of a permanently dead button.
+        stream = await Promise.race([
+          navigator.mediaDevices.getUserMedia({ audio: true }),
+          new Promise((_, rej) => setTimeout(() => { const e = new Error('mic prompt timed out'); e.name = 'TimeoutError'; rej(e); }, GUM_TIMEOUT_MS))
+        ]);
       } catch (e) {
         // NotAllowedError / SecurityError → the user (or policy) denied the mic. Map to the SR error string
         // so startListening()'s existing not-allowed branch (drop hands-free + clear copy) fires unchanged.
@@ -877,6 +906,11 @@ const Voice = (() => {
         cb && cb.onError && cb.onError(denied ? 'not-allowed' : 'mic-failed');
         return;
       }
+      // RE-ENTRY GUARD: stop()/abort() may have run WHILE getUserMedia was in flight (user clicked the mic
+      // again, or a teardown/barge-in landed). If so, don't spin up a hot recorder no one is listening to —
+      // release the just-granted stream and bail. `aborted` is set by abort(); `delivered` by a stop() that
+      // ran before the stream arrived (mr was still null → it went straight to finish()).
+      if (aborted || delivered) { try { stream.getTracks().forEach(t => t.stop()); } catch (_) {} stream = null; return; }
       try {
         mime = pickMime();
         mr = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
@@ -944,7 +978,10 @@ const Voice = (() => {
           return;
         }
         endListening();
-        if (msg !== 'no-speech' && msg !== 'aborted') setStatus('mic: ' + msg);
+        // a failed mic OPEN (timeout on a dismissed prompt, getUserMedia error, recorder start failure) is
+        // recoverable — say so plainly and invite a retry, rather than a cryptic 'mic: mic-failed' dead end.
+        if (msg === 'mic-failed' || msg === 'rec-failed' || msg === 'rec-error') setStatus('mic didn\'t open — click 🎤 to try again');
+        else if (msg !== 'no-speech' && msg !== 'aborted') setStatus('mic: ' + msg);
       },
       onEnd: () => { endListening(); }
     });
