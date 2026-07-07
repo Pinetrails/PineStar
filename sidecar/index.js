@@ -1570,10 +1570,32 @@ function loadChannelSecrets() {
 function saveChannelSecrets(obj) {   // protected sibling of the fs jail; the agent's own fs.* tools can't read/write it
   try {
     fs.mkdirSync(CHANNELS_DIR, { recursive: true });
-    // Desktop: never let a bot token touch the plaintext file — it lives in the keychain. Strip before writing.
+    // Desktop: never let a bot token OR the provider API key touch the plaintext file — both live in the keychain.
+    // Strip before writing. (stripTokens now removes `token` AND `key`; see sidecar/channels/secrets.js.)
     const toPersist = DESKTOP_SHELL ? channelSecretsMod.stripTokens(obj) : obj;
     saveResilient(CHANNEL_SECRETS_FILE, toPersist);   // fsync-durable + .bak last-known-good (config survives power loss)
   } catch (e) { console.warn('[channels] secrets persist failed:', (e && e.message) || e); }
+}
+// Scrub the .bak last-known-good of any plaintext channel secret (P1 key hygiene). saveResilient snapshots the
+// CURRENT main into <file>.bak BEFORE overwriting it, so a legacy main that still carried a `key`/`token` leaves a
+// plaintext copy in the .bak even after the main is rewritten clean. Rewrite the .bak stripped (durably) rather
+// than delete it, so config recovery still works but no secret survives anywhere on disk. Desktop-only + no-op
+// unless the .bak actually parses and still holds a strippable secret (never clobbers a good/absent .bak blindly).
+function scrubChannelSecretsBak() {
+  if (!DESKTOP_SHELL) return;
+  const bak = CHANNEL_SECRETS_FILE + '.bak';
+  let raw;
+  try { raw = fs.readFileSync(bak, 'utf8'); } catch (_) { return; }   // no .bak -> nothing to scrub
+  if (!raw || !String(raw).length) return;
+  let parsed;
+  try { parsed = JSON.parse(raw); } catch (_) { return; }             // corrupt .bak -> leave it (recovery may need bytes)
+  if (!parsed || typeof parsed !== 'object') return;
+  const stripped = channelSecretsMod.stripTokens(parsed);
+  if (JSON.stringify(stripped) === JSON.stringify(parsed)) return;    // already clean -> no needless rewrite
+  try {
+    writeFileDurable({ fs: fs, path: path }, bak, JSON.stringify(stripped));
+    console.warn('[channels] scrubbed a plaintext secret out of secrets.json.bak (last-known-good rewritten clean).');
+  } catch (e) { console.warn('[channels] .bak scrub failed:', (e && e.message) || e); }
 }
 let channelSecrets = loadChannelSecrets();
 // First desktop boot after upgrading from a plaintext secrets.json: adopt any file token into the runtime layer
@@ -1582,18 +1604,23 @@ let channelSecrets = loadChannelSecrets();
 // so the token also survives the NEXT restart only once the shell has stored it; until then the runtime value +
 // the imports report below keep this session honest. hasChannelToken() is true when the keychain already injected
 // this channel's token via env (SKYNET_<ID>_TOKEN), so we never double-report an already-migrated token.
-(function migrateChannelTokensToKeychain() {
+(function migrateChannelSecretsToKeychain() {
   try {
     const res = channelSecretsMod.migratePlaintext(channelSecrets, {
       keychainMode: DESKTOP_SHELL,
       hasChannelToken: (id) => !!String(ENV(CHANNEL_TOKEN_ENV[id]) || '').trim()
     });
-    if (!res.changed) return;
-    for (const imp of res.imports) { if (!channelTokenRuntime[imp.id]) channelTokenRuntime[imp.id] = imp.token; }   // keep this session live
-    channelSecrets = res.config;
-    saveChannelSecrets(channelSecrets);   // rewrite the file stripped of tokens (stripTokens no-ops what's already gone)
-    if (res.imports.length) console.warn('[channels] migrated ' + res.imports.map(i => i.id).join('+') + ' bot token(s) out of plaintext secrets.json — reconnect once to store them in the OS keychain.');
-  } catch (e) { console.warn('[channels] token migration skipped:', (e && e.message) || e); }
+    if (res.changed) {
+      for (const imp of res.imports) { if (!channelTokenRuntime[imp.id]) channelTokenRuntime[imp.id] = imp.token; }   // keep this session live
+      channelSecrets = res.config;
+      saveChannelSecrets(channelSecrets);   // rewrite the file stripped of token AND key (no-ops what's already gone)
+      if (res.imports.length) console.warn('[channels] migrated ' + res.imports.map(i => i.id).join('+') + ' bot token(s) out of plaintext secrets.json — reconnect once to store them in the OS keychain.');
+    }
+    // Always sweep the .bak too — the main rewrite above snapshots the pre-scrub (leaky) main into .bak, and a
+    // legacy .bak can independently still hold a secret even when the current main is already clean. Cheap no-op
+    // when the .bak is absent/clean.
+    scrubChannelSecretsBak();
+  } catch (e) { console.warn('[channels] secret migration skipped:', (e && e.message) || e); }
 })();
 const channelStore = makeChannelStore({ fs, pathMod: path, root: CHANNELS_DIR, clock: { now: () => Date.now() }, writeDurable: writeFileDurable, onRecover: (file) => console.warn('[channels] recovered ' + file + ' from .bak last-known-good after a torn/corrupt main.') });
 
