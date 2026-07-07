@@ -245,6 +245,35 @@ promise?" (sibling of "where's its UI?").
     start/browser mode (packaged desktop sets STARNET_APP_VERSION + tauri origin). If he was
     IN the installed exe, that's an origin-detection bug worth a look on a repro.
 
+## Ready Gate · RC Soak · Dogfood — process-fix wave 2 (added 2026-07-07, Fable session)
+
+**Why (session audit 2026-07-07):** the EL loop fixed *detection* but not the *repeat*: (a) the
+aggregate "ready / go public" claim was never gated on anything — sessions reported lane-green as
+project-green while the Guardian sat RED; (b) nothing ever uses the product the way Andrew does
+(installed exe · real providers · long multi-step work), so he is structurally the first tester;
+(c) no freeze — merging 10+ lanes/day means readiness is audited against a moving target.
+
+**The law (READY-GATE, mirror into starnet-verify + DECISIONS.md when EL-7 lands):** no session,
+report, or doc may claim StarNet is "ready", "perfect standing", or "go-public-able" without a
+fresh `npm run qa:ready` receipt printed alongside the claim. Lane-level done stays lane-level:
+"lane X verified; station-wide status is whatever qa:ready says."
+
+**Queue:**
+- **EL-7 · qa:ready gate** — `scripts/qa/ready.mjs` + `npm run qa:ready`: one machine verdict
+  READY / NOT READY with receipts (ledger open P0/P1 == 0 · Guardian last cycle green AND fresh ·
+  qa:journeys pass · Beginner Run not stuck · installed-exe smoke stamp fresh). No-fake-green: a
+  check that cannot run = NOT READY, loudly. **IN PROGRESS — Fable session · lane agent/ready-gate.**
+- **EL-8 · RC freeze + installed-exe soak (absorbs EL-4)** — `docs/RELEASE_READINESS.md` (cut an
+  RC, freeze it — only P0/P1 fixes merge in — then ≥48h soak on the INSTALLED exe with REAL
+  providers before publish) + the EL-4 CDP-attach installed-smoke runner writing the stamp
+  `qa:ready` reads + RELEASE_RUNBOOK step 0 = qa:ready must print READY before release:bump.
+  **IN PROGRESS — Fable session · lane agent/rc-soak.**
+- **EL-9 · Dogfood loop (Andrew stops being QA)** — `loops/dogfood.md`: standing session loop
+  where an agent USES StarNet like a user (recruit → assign real multi-step work → interrupt →
+  restart → open deliverables → channels), real providers, dev seed AND installed exe; every
+  anomaly filed through the ledger with evidence per EL-3. Port range + crew row in qa/STATUS.md.
+  **IN PROGRESS — Fable session · lane agent/dogfood.**
+
 ## Atlas — Perfectionist area claims (one session, one area)
 
 The Station Atlas (`qa/atlas/`) is a registry of every surface element; Perfectionist sessions
