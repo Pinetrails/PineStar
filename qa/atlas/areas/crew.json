@@ -1,25 +1,41 @@
 {
   "area": "crew",
-  "updatedAt": "2026-07-07T21:12:48Z",
+  "updatedAt": "2026-07-07T22:21:27.981Z",
   "entries": [
     {
       "id": "state/crew-agents",
       "kind": "state",
       "area": "crew",
       "name": "shoot state: crew-agents",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Shoot state: the CREW / mission-control panel open — the per-agent roster with each agent's controls (workshop toggle, model, reflection config, dossier edit).",
+      "promise": "When this window is up, the sweep sees the agent list, the search box, per-agent EDIT/model controls, the away-workshop toggle, and the station-wide reflection on/cooldown — all reading real roster + /api/memory/config state.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/app.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/settings-p1-backend.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/settings-p1-ui.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "296c8ee866614531a87cbb918070805c60928503",
+        "date": "2026-07-07T22:21:27.981Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false
+      "missing": false,
+      "notes": "live-proven wave-6: reflection controls round-trip /api/memory/config (probe-memcfg.json: 180000->300000 persisted). State enumerated by the cartographer shoot walk."
     },
     {
       "id": "state/crew-commander",
@@ -60,19 +76,39 @@
       "kind": "state",
       "area": "crew",
       "name": "shoot state: crew-recruit",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Shoot state: the RECRUITMENT BAY open — the class catalog (engraved-coin seals), per-class dossiers, the summon/deploy verbs, the skin+model summon pickers, and the BUILD A CUSTOM CLASS builder.",
+      "promise": "When the bay is up, the sweep sees one seal per built-in class (RES..HLD), the RECOMMENDED-FOR-YOU shelf, the lane filter chips, the BUILD A CUSTOM CLASS tile, and (in summon mode) the skin wells — all reading the shared Specialties catalog.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/marketplace.js",
+          "shared/specialties.js",
+          "frontend/app/specialties.js",
+          "frontend/app/classicons.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/class-loadouts.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/specialties.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "296c8ee866614531a87cbb918070805c60928503",
+        "date": "2026-07-07T22:21:27.981Z"
+      },
+      "findings": [
+        "405a539f"
+      ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false
+      "missing": false,
+      "notes": "live-proven wave-6: .uiatlas/crew3-evidence/probe-02.json (18 builtins === 18 rendered .mkt-card seals; every class dossier shows its real kit power-words; custom create→delete round-trip)."
     },
     {
       "id": "ui/crew/ag-del-btn",
@@ -353,21 +389,25 @@
       "kind": "ui",
       "area": "crew",
       "name": "Build things while I am away",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Per-agent AWAY-WORKSHOP toggle — lets this agent build real deliverables in the jailed workshop while the Commander is away.",
+      "promise": "Toggling flips the agent's workshop-enabled flag on its roster record; the away loop only dispatches workshop runs for agents with it on.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/app.js"
+        ],
         "events": []
       },
       "coverage": [],
-      "status": "unmapped",
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#ag-workshop-on",
-      "state": "crew-agents"
+      "state": "crew-agents",
+      "notes": "seam traced (stationui.js #ag-workshop-on wired at ~1287); not re-proven live this wave (away-workshop dispatch is a background loop, out of the seal-cluster batch scope). Held at mapped."
     },
     {
       "id": "ui/crew/aria-alien",
@@ -751,21 +791,25 @@
       "kind": "ui",
       "area": "crew",
       "name": "Crewmate",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Per-agent roster row action labeled with the agent name (e.g. \"Crewmate\") — selects/opens that agent in the crew panel.",
+      "promise": "Clicking the row focuses that agent's controls (its model, workshop toggle, dossier edit) reading its real roster record.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/app.js"
+        ],
         "events": []
       },
       "coverage": [],
-      "status": "unmapped",
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button[aria-label=\"Crewmate\"]",
-      "state": "crew-agents"
+      "state": "crew-agents",
+      "notes": "seam traced to the crew roster list in stationui.js; the aria-label is the live agent name. Not individually re-proven live this wave (roster-row focus, adjacent to the seal batch). Held at mapped."
     },
     {
       "id": "ui/crew/aria-heisenberg",
@@ -941,21 +985,24 @@
       "kind": "ui",
       "area": "crew",
       "name": "Search agents",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Search box that filters the crew roster by agent name.",
+      "promise": "Typing filters the visible agent rows to name matches; empties to the full roster; reads the real roster, invents no rows.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js"
+        ],
         "events": []
       },
       "coverage": [],
-      "status": "unmapped",
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "input[aria-label=\"Search agents\"]",
-      "state": "crew-agents"
+      "state": "crew-agents",
+      "notes": "seam traced to the crew panel search input. Not re-proven live this wave (client-side list filter, adjacent to batch). Held at mapped."
     },
     {
       "id": "ui/crew/aria-skeleton",
@@ -1290,63 +1337,108 @@
       "kind": "ui",
       "area": "crew",
       "name": "minimum gap between turn-in beats per agent",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Minimum gap (minutes) between reflection turn-in beats per agent — throttles how often memories are proposed.",
+      "promise": "Entering 0-60 + SAVE POSTs reflectCooldownMs (mins*60000) to /api/memory/config; persists and applies at the reflect gate; out-of-range is rejected client-side.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/settings-p1-backend.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/settings-p1-ui.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "296c8ee866614531a87cbb918070805c60928503",
+        "date": "2026-07-07T22:21:27.981Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#mc-cooldown",
-      "state": "crew-agents"
+      "state": "crew-agents",
+      "notes": "live-proven wave-6: probe-memcfg.json — reflectCooldownMs 180000->300000 persisted across GET."
     },
     {
       "id": "ui/crew/mc-reflect-on",
       "kind": "ui",
       "area": "crew",
       "name": "input",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Master on/off for station reflection — whether the station proposes memories after a completed task (consent-gated).",
+      "promise": "Toggling + SAVE POSTs reflectEnabled to /api/memory/config; the value persists and is honored live at the sidecar reflect gate. Hydrates from GET on open.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/settings-p1-backend.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/settings-p1-ui.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "296c8ee866614531a87cbb918070805c60928503",
+        "date": "2026-07-07T22:21:27.981Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#mc-reflect-on",
-      "state": "crew-agents"
+      "state": "crew-agents",
+      "notes": "live-proven wave-6: probe-memcfg.json — GET returns reflectEnabled, POST+GET round-trips reflectCooldownMs 180000->300000 persisted, scopeNote truthful."
     },
     {
       "id": "ui/crew/mc-reflect-save",
       "kind": "ui",
       "area": "crew",
       "name": "SAVE",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Persists the reflection on/off + cooldown to the station memory config.",
+      "promise": "Click validates cooldown (0-60) then POSTs both fields to /api/memory/config; a saved response flips the inline msg to \"✓ saved\"; a failure shows an honest error, never a false success.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/settings-p1-backend.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/settings-p1-ui.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "296c8ee866614531a87cbb918070805c60928503",
+        "date": "2026-07-07T22:21:27.981Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "#mc-reflect-save",
-      "state": "crew-agents"
+      "state": "crew-agents",
+      "notes": "live-proven wave-6: probe-memcfg.json POST returns postOk with no error; persisted on re-GET."
     },
     {
       "id": "ui/crew/mkt-model-effort",
@@ -1463,336 +1555,536 @@
       "kind": "ui",
       "area": "crew",
       "name": "Teddy Bear",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Summon-appearance picker well — selects the \"Teddy Bear\" sprite skin for a newly-summoned agent (its look, independent of class).",
+      "promise": "In SUMMON mode the skin bar renders one well per DATA.SKINS entry; picking one sets the new agent's skin and drives the live SkinStage preview. Well count === Object.keys(DATA.SKINS).length.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/data-shim.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/specialties.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "296c8ee866614531a87cbb918070805c60928503",
+        "date": "2026-07-07T22:21:27.981Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
-      "state": "crew-recruit"
+      "state": "crew-recruit",
+      "notes": "live-proven wave-6: .uiatlas/crew3-evidence/probe-summon.json — 15 skin wells render in summon mode === 15 DATA.SKINS entries; names match. No gate DOM assertion binds well-count to DATA.SKINS, so held at audited (coverage gap shares finding 405a539f)."
     },
     {
       "id": "ui/crew/txt-button-410",
       "kind": "ui",
       "area": "crew",
       "name": "Pepe",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Summon-appearance picker well — selects the \"Pepe\" sprite skin for a newly-summoned agent (its look, independent of class).",
+      "promise": "In SUMMON mode the skin bar renders one well per DATA.SKINS entry; picking one sets the new agent's skin and drives the live SkinStage preview. Well count === Object.keys(DATA.SKINS).length.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/data-shim.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/specialties.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "296c8ee866614531a87cbb918070805c60928503",
+        "date": "2026-07-07T22:21:27.981Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
-      "state": "crew-recruit"
+      "state": "crew-recruit",
+      "notes": "live-proven wave-6: .uiatlas/crew3-evidence/probe-summon.json — 15 skin wells render in summon mode === 15 DATA.SKINS entries; names match. No gate DOM assertion binds well-count to DATA.SKINS, so held at audited (coverage gap shares finding 405a539f)."
     },
     {
       "id": "ui/crew/txt-button-411",
       "kind": "ui",
       "area": "crew",
       "name": "Steve",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Summon-appearance picker well — selects the \"Steve\" sprite skin for a newly-summoned agent (its look, independent of class).",
+      "promise": "In SUMMON mode the skin bar renders one well per DATA.SKINS entry; picking one sets the new agent's skin and drives the live SkinStage preview. Well count === Object.keys(DATA.SKINS).length.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/data-shim.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/specialties.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "296c8ee866614531a87cbb918070805c60928503",
+        "date": "2026-07-07T22:21:27.981Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
-      "state": "crew-recruit"
+      "state": "crew-recruit",
+      "notes": "live-proven wave-6: .uiatlas/crew3-evidence/probe-summon.json — 15 skin wells render in summon mode === 15 DATA.SKINS entries; names match. No gate DOM assertion binds well-count to DATA.SKINS, so held at audited (coverage gap shares finding 405a539f)."
     },
     {
       "id": "ui/crew/txt-button-412",
       "kind": "ui",
       "area": "crew",
       "name": "Alien",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Summon-appearance picker well — selects the \"Alien\" sprite skin for a newly-summoned agent (its look, independent of class).",
+      "promise": "In SUMMON mode the skin bar renders one well per DATA.SKINS entry; picking one sets the new agent's skin and drives the live SkinStage preview. Well count === Object.keys(DATA.SKINS).length.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/data-shim.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/specialties.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "296c8ee866614531a87cbb918070805c60928503",
+        "date": "2026-07-07T22:21:27.981Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
-      "state": "crew-recruit"
+      "state": "crew-recruit",
+      "notes": "live-proven wave-6: .uiatlas/crew3-evidence/probe-summon.json — 15 skin wells render in summon mode === 15 DATA.SKINS entries; names match. No gate DOM assertion binds well-count to DATA.SKINS, so held at audited (coverage gap shares finding 405a539f)."
     },
     {
       "id": "ui/crew/txt-button-413",
       "kind": "ui",
       "area": "crew",
       "name": "Skeleton",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Summon-appearance picker well — selects the \"Skeleton\" sprite skin for a newly-summoned agent (its look, independent of class).",
+      "promise": "In SUMMON mode the skin bar renders one well per DATA.SKINS entry; picking one sets the new agent's skin and drives the live SkinStage preview. Well count === Object.keys(DATA.SKINS).length.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/data-shim.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/specialties.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "296c8ee866614531a87cbb918070805c60928503",
+        "date": "2026-07-07T22:21:27.981Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
-      "state": "crew-recruit"
+      "state": "crew-recruit",
+      "notes": "live-proven wave-6: .uiatlas/crew3-evidence/probe-summon.json — 15 skin wells render in summon mode === 15 DATA.SKINS entries; names match. No gate DOM assertion binds well-count to DATA.SKINS, so held at audited (coverage gap shares finding 405a539f)."
     },
     {
       "id": "ui/crew/txt-button-414",
       "kind": "ui",
       "area": "crew",
       "name": "Crewmate",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Summon-appearance picker well — selects the \"Crewmate\" sprite skin for a newly-summoned agent (its look, independent of class).",
+      "promise": "In SUMMON mode the skin bar renders one well per DATA.SKINS entry; picking one sets the new agent's skin and drives the live SkinStage preview. Well count === Object.keys(DATA.SKINS).length.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/data-shim.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/specialties.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "296c8ee866614531a87cbb918070805c60928503",
+        "date": "2026-07-07T22:21:27.981Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
-      "state": "crew-recruit"
+      "state": "crew-recruit",
+      "notes": "live-proven wave-6: .uiatlas/crew3-evidence/probe-summon.json — 15 skin wells render in summon mode === 15 DATA.SKINS entries; names match. No gate DOM assertion binds well-count to DATA.SKINS, so held at audited (coverage gap shares finding 405a539f)."
     },
     {
       "id": "ui/crew/txt-button-415",
       "kind": "ui",
       "area": "crew",
       "name": "Capybara",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Summon-appearance picker well — selects the \"Capybara\" sprite skin for a newly-summoned agent (its look, independent of class).",
+      "promise": "In SUMMON mode the skin bar renders one well per DATA.SKINS entry; picking one sets the new agent's skin and drives the live SkinStage preview. Well count === Object.keys(DATA.SKINS).length.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/data-shim.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/specialties.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "296c8ee866614531a87cbb918070805c60928503",
+        "date": "2026-07-07T22:21:27.981Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
-      "state": "crew-recruit"
+      "state": "crew-recruit",
+      "notes": "live-proven wave-6: .uiatlas/crew3-evidence/probe-summon.json — 15 skin wells render in summon mode === 15 DATA.SKINS entries; names match. No gate DOM assertion binds well-count to DATA.SKINS, so held at audited (coverage gap shares finding 405a539f)."
     },
     {
       "id": "ui/crew/txt-button-416",
       "kind": "ui",
       "area": "crew",
       "name": "Robot",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Summon-appearance picker well — selects the \"Robot\" sprite skin for a newly-summoned agent (its look, independent of class).",
+      "promise": "In SUMMON mode the skin bar renders one well per DATA.SKINS entry; picking one sets the new agent's skin and drives the live SkinStage preview. Well count === Object.keys(DATA.SKINS).length.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/data-shim.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/specialties.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "296c8ee866614531a87cbb918070805c60928503",
+        "date": "2026-07-07T22:21:27.981Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
-      "state": "crew-recruit"
+      "state": "crew-recruit",
+      "notes": "live-proven wave-6: .uiatlas/crew3-evidence/probe-summon.json — 15 skin wells render in summon mode === 15 DATA.SKINS entries; names match. No gate DOM assertion binds well-count to DATA.SKINS, so held at audited (coverage gap shares finding 405a539f)."
     },
     {
       "id": "ui/crew/txt-button-417",
       "kind": "ui",
       "area": "crew",
       "name": "Vault Boy",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Summon-appearance picker well — selects the \"Vault Boy\" sprite skin for a newly-summoned agent (its look, independent of class).",
+      "promise": "In SUMMON mode the skin bar renders one well per DATA.SKINS entry; picking one sets the new agent's skin and drives the live SkinStage preview. Well count === Object.keys(DATA.SKINS).length.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/data-shim.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/specialties.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "296c8ee866614531a87cbb918070805c60928503",
+        "date": "2026-07-07T22:21:27.981Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
-      "state": "crew-recruit"
+      "state": "crew-recruit",
+      "notes": "live-proven wave-6: .uiatlas/crew3-evidence/probe-summon.json — 15 skin wells render in summon mode === 15 DATA.SKINS entries; names match. No gate DOM assertion binds well-count to DATA.SKINS, so held at audited (coverage gap shares finding 405a539f)."
     },
     {
       "id": "ui/crew/txt-button-418",
       "kind": "ui",
       "area": "crew",
       "name": "Blank",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Summon-appearance picker well — selects the \"Blank\" sprite skin for a newly-summoned agent (its look, independent of class).",
+      "promise": "In SUMMON mode the skin bar renders one well per DATA.SKINS entry; picking one sets the new agent's skin and drives the live SkinStage preview. Well count === Object.keys(DATA.SKINS).length.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/data-shim.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/specialties.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "296c8ee866614531a87cbb918070805c60928503",
+        "date": "2026-07-07T22:21:27.981Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
-      "state": "crew-recruit"
+      "state": "crew-recruit",
+      "notes": "live-proven wave-6: .uiatlas/crew3-evidence/probe-summon.json — 15 skin wells render in summon mode === 15 DATA.SKINS entries; names match. No gate DOM assertion binds well-count to DATA.SKINS, so held at audited (coverage gap shares finding 405a539f)."
     },
     {
       "id": "ui/crew/txt-button-419",
       "kind": "ui",
       "area": "crew",
       "name": "Blank Blue",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Summon-appearance picker well — selects the \"Blank Blue\" sprite skin for a newly-summoned agent (its look, independent of class).",
+      "promise": "In SUMMON mode the skin bar renders one well per DATA.SKINS entry; picking one sets the new agent's skin and drives the live SkinStage preview. Well count === Object.keys(DATA.SKINS).length.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/data-shim.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/specialties.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "296c8ee866614531a87cbb918070805c60928503",
+        "date": "2026-07-07T22:21:27.981Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
-      "state": "crew-recruit"
+      "state": "crew-recruit",
+      "notes": "live-proven wave-6: .uiatlas/crew3-evidence/probe-summon.json — 15 skin wells render in summon mode === 15 DATA.SKINS entries; names match. No gate DOM assertion binds well-count to DATA.SKINS, so held at audited (coverage gap shares finding 405a539f)."
     },
     {
       "id": "ui/crew/txt-button-420",
       "kind": "ui",
       "area": "crew",
       "name": "Blank Green",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Summon-appearance picker well — selects the \"Blank Green\" sprite skin for a newly-summoned agent (its look, independent of class).",
+      "promise": "In SUMMON mode the skin bar renders one well per DATA.SKINS entry; picking one sets the new agent's skin and drives the live SkinStage preview. Well count === Object.keys(DATA.SKINS).length.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/data-shim.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/specialties.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "296c8ee866614531a87cbb918070805c60928503",
+        "date": "2026-07-07T22:21:27.981Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
-      "state": "crew-recruit"
+      "state": "crew-recruit",
+      "notes": "live-proven wave-6: .uiatlas/crew3-evidence/probe-summon.json — 15 skin wells render in summon mode === 15 DATA.SKINS entries; names match. No gate DOM assertion binds well-count to DATA.SKINS, so held at audited (coverage gap shares finding 405a539f)."
     },
     {
       "id": "ui/crew/txt-button-421",
       "kind": "ui",
       "area": "crew",
       "name": "Blank Red",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Summon-appearance picker well — selects the \"Blank Red\" sprite skin for a newly-summoned agent (its look, independent of class).",
+      "promise": "In SUMMON mode the skin bar renders one well per DATA.SKINS entry; picking one sets the new agent's skin and drives the live SkinStage preview. Well count === Object.keys(DATA.SKINS).length.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/data-shim.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/specialties.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "296c8ee866614531a87cbb918070805c60928503",
+        "date": "2026-07-07T22:21:27.981Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
-      "state": "crew-recruit"
+      "state": "crew-recruit",
+      "notes": "live-proven wave-6: .uiatlas/crew3-evidence/probe-summon.json — 15 skin wells render in summon mode === 15 DATA.SKINS entries; names match. No gate DOM assertion binds well-count to DATA.SKINS, so held at audited (coverage gap shares finding 405a539f)."
     },
     {
       "id": "ui/crew/txt-button-422",
       "kind": "ui",
       "area": "crew",
       "name": "Blank Amber",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Summon-appearance picker well — selects the \"Blank Amber\" sprite skin for a newly-summoned agent (its look, independent of class).",
+      "promise": "In SUMMON mode the skin bar renders one well per DATA.SKINS entry; picking one sets the new agent's skin and drives the live SkinStage preview. Well count === Object.keys(DATA.SKINS).length.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/data-shim.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/specialties.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "296c8ee866614531a87cbb918070805c60928503",
+        "date": "2026-07-07T22:21:27.981Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
-      "state": "crew-recruit"
+      "state": "crew-recruit",
+      "notes": "live-proven wave-6: .uiatlas/crew3-evidence/probe-summon.json — 15 skin wells render in summon mode === 15 DATA.SKINS entries; names match. No gate DOM assertion binds well-count to DATA.SKINS, so held at audited (coverage gap shares finding 405a539f)."
     },
     {
       "id": "ui/crew/txt-button-423",
       "kind": "ui",
       "area": "crew",
       "name": "Heisenberg",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Summon-appearance picker well — selects the \"Heisenberg\" sprite skin for a newly-summoned agent (its look, independent of class).",
+      "promise": "In SUMMON mode the skin bar renders one well per DATA.SKINS entry; picking one sets the new agent's skin and drives the live SkinStage preview. Well count === Object.keys(DATA.SKINS).length.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/data-shim.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/specialties.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "296c8ee866614531a87cbb918070805c60928503",
+        "date": "2026-07-07T22:21:27.981Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
-      "state": "crew-recruit"
+      "state": "crew-recruit",
+      "notes": "live-proven wave-6: .uiatlas/crew3-evidence/probe-summon.json — 15 skin wells render in summon mode === 15 DATA.SKINS entries; names match. No gate DOM assertion binds well-count to DATA.SKINS, so held at audited (coverage gap shares finding 405a539f)."
     },
     {
       "id": "ui/crew/txt-button-a-xlttranslatortranslate-localize-docs-443",
       "kind": "ui",
       "area": "crew",
       "name": "A文XLTTranslatorTranslate & localize docsOPS◆◆◇ BALANCED",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Recruit-bay class-roster tile for the Translator class — an engraved-coin seal that opens that class's dossier to summon/deploy it.",
+      "promise": "The tile renders a seal stamped with the class's 3-letter code and lane; clicking it focuses that class's dossier (purpose, standing orders, real kit gear, SUMMON/DEPLOY verb). One tile per built-in class — Specialties.builtins().length seals render.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/classicons.js",
+          "shared/specialties.js",
+          "frontend/app/specialties.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/class-loadouts.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/specialties.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "296c8ee866614531a87cbb918070805c60928503",
+        "date": "2026-07-07T22:21:27.981Z"
+      },
+      "findings": [
+        "405a539f"
+      ],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
-      "state": "crew-recruit"
+      "state": "crew-recruit",
+      "notes": "live-proven wave-6: .uiatlas/crew3-evidence/probe-02.json (18 builtins === 18 rendered .mkt-card seals; every class dossier shows its real kit power-words; custom create→delete round-trip)."
     },
     {
       "id": "ui/crew/txt-button-add-409",
@@ -1835,294 +2127,516 @@
       "kind": "ui",
       "area": "crew",
       "name": "+ add",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Commander-dossier belief control — adds a belief to a dossier dimension.",
+      "promise": "Clicking + add opens an input; a saved belief is appended to that dimension of the real Commander dossier store and re-rendered.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/dossier.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/dossier.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "296c8ee866614531a87cbb918070805c60928503",
+        "date": "2026-07-07T22:21:27.981Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
-      "state": "crew-commander"
+      "state": "crew-commander",
+      "notes": "seam traced to the Commander dossier (crew-commander state, already-mapped); dossier belief store guarded by test/dossier.test.js. Individual button DOM-click not re-proven live this wave (mission-control belief mgmt, adjacent to the recruit-bay seal batch). Held at audited."
     },
     {
       "id": "ui/crew/txt-button-add-414",
       "kind": "ui",
       "area": "crew",
       "name": "+ add",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Commander-dossier belief control — adds a belief to a dossier dimension.",
+      "promise": "Clicking + add opens an input; a saved belief is appended to that dimension of the real Commander dossier store and re-rendered.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/dossier.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/dossier.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "296c8ee866614531a87cbb918070805c60928503",
+        "date": "2026-07-07T22:21:27.981Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
-      "state": "crew-commander"
+      "state": "crew-commander",
+      "notes": "seam traced to the Commander dossier (crew-commander state, already-mapped); dossier belief store guarded by test/dossier.test.js. Individual button DOM-click not re-proven live this wave (mission-control belief mgmt, adjacent to the recruit-bay seal batch). Held at audited."
     },
     {
       "id": "ui/crew/txt-button-add-415",
       "kind": "ui",
       "area": "crew",
       "name": "+ add",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Commander-dossier belief control — adds a belief to a dossier dimension.",
+      "promise": "Clicking + add opens an input; a saved belief is appended to that dimension of the real Commander dossier store and re-rendered.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/dossier.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/dossier.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "296c8ee866614531a87cbb918070805c60928503",
+        "date": "2026-07-07T22:21:27.981Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
-      "state": "crew-commander"
+      "state": "crew-commander",
+      "notes": "seam traced to the Commander dossier (crew-commander state, already-mapped); dossier belief store guarded by test/dossier.test.js. Individual button DOM-click not re-proven live this wave (mission-control belief mgmt, adjacent to the recruit-bay seal batch). Held at audited."
     },
     {
       "id": "ui/crew/txt-button-add-419",
       "kind": "ui",
       "area": "crew",
       "name": "+ add",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Commander-dossier belief control — adds a belief to a dossier dimension.",
+      "promise": "Clicking + add opens an input; a saved belief is appended to that dimension of the real Commander dossier store and re-rendered.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/dossier.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/dossier.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "296c8ee866614531a87cbb918070805c60928503",
+        "date": "2026-07-07T22:21:27.981Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
-      "state": "crew-commander"
+      "state": "crew-commander",
+      "notes": "seam traced to the Commander dossier (crew-commander state, already-mapped); dossier belief store guarded by test/dossier.test.js. Individual button DOM-click not re-proven live this wave (mission-control belief mgmt, adjacent to the recruit-bay seal batch). Held at audited."
     },
     {
       "id": "ui/crew/txt-button-add-420",
       "kind": "ui",
       "area": "crew",
       "name": "+ add",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Commander-dossier belief control — adds a belief to a dossier dimension.",
+      "promise": "Clicking + add opens an input; a saved belief is appended to that dimension of the real Commander dossier store and re-rendered.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/dossier.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/dossier.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "296c8ee866614531a87cbb918070805c60928503",
+        "date": "2026-07-07T22:21:27.981Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
-      "state": "crew-commander"
+      "state": "crew-commander",
+      "notes": "seam traced to the Commander dossier (crew-commander state, already-mapped); dossier belief store guarded by test/dossier.test.js. Individual button DOM-click not re-proven live this wave (mission-control belief mgmt, adjacent to the recruit-bay seal batch). Held at audited."
     },
     {
       "id": "ui/crew/txt-button-add-421",
       "kind": "ui",
       "area": "crew",
       "name": "+ add",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Commander-dossier belief control — adds a belief to a dossier dimension.",
+      "promise": "Clicking + add opens an input; a saved belief is appended to that dimension of the real Commander dossier store and re-rendered.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/dossier.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/dossier.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "296c8ee866614531a87cbb918070805c60928503",
+        "date": "2026-07-07T22:21:27.981Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
-      "state": "crew-commander"
+      "state": "crew-commander",
+      "notes": "seam traced to the Commander dossier (crew-commander state, already-mapped); dossier belief store guarded by test/dossier.test.js. Individual button DOM-click not re-proven live this wave (mission-control belief mgmt, adjacent to the recruit-bay seal batch). Held at audited."
     },
     {
       "id": "ui/crew/txt-button-all18-405",
       "kind": "ui",
       "area": "crew",
       "name": "ALL18",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Class-roster filter chip — \"ALL18\" filters the roster to all classes; the number is the live count of matching classes.",
+      "promise": "Clicking the chip filters the visible seals to its lane; the count in the label equals the real number of classes in that lane (a truthful count, never cosmetic). ALL18 = every built-in.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/classicons.js",
+          "shared/specialties.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/class-loadouts.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "296c8ee866614531a87cbb918070805c60928503",
+        "date": "2026-07-07T22:21:27.981Z"
+      },
+      "findings": [
+        "405a539f"
+      ],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
-      "state": "crew-recruit"
+      "state": "crew-recruit",
+      "notes": "live-proven wave-6: .uiatlas/crew3-evidence/probe-02.json (18 builtins === 18 rendered .mkt-card seals; every class dossier shows its real kit power-words; custom create→delete round-trip). Chip count reflects Specialties.builtins() filtered by lane (ClassIcons.lane)."
     },
     {
       "id": "ui/crew/txt-button-anlanalystdata-numbers-spreadsheetsre-431",
       "kind": "ui",
       "area": "crew",
       "name": "ANLAnalystData, numbers & spreadsheetsRESEARCH◆◆◆ DEEP REASO",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Recruit-bay class-roster tile for the Analyst class — an engraved-coin seal that opens that class's dossier to summon/deploy it.",
+      "promise": "The tile renders a seal stamped with the class's 3-letter code and lane; clicking it focuses that class's dossier (purpose, standing orders, real kit gear, SUMMON/DEPLOY verb). One tile per built-in class — Specialties.builtins().length seals render.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/classicons.js",
+          "shared/specialties.js",
+          "frontend/app/specialties.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/class-loadouts.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/specialties.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "296c8ee866614531a87cbb918070805c60928503",
+        "date": "2026-07-07T22:21:27.981Z"
+      },
+      "findings": [
+        "405a539f"
+      ],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
-      "state": "crew-recruit"
+      "state": "crew-recruit",
+      "notes": "live-proven wave-6: .uiatlas/crew3-evidence/probe-02.json (18 builtins === 18 rendered .mkt-card seals; every class dossier shows its real kit power-words; custom create→delete round-trip)."
     },
     {
       "id": "ui/crew/txt-button-arvarchivistmemory-knowledgeops-bal-434",
       "kind": "ui",
       "area": "crew",
       "name": "ARVArchivistMemory & knowledgeOPS◆◆◇ BALANCED",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Recruit-bay class-roster tile for the Archivist class — an engraved-coin seal that opens that class's dossier to summon/deploy it.",
+      "promise": "The tile renders a seal stamped with the class's 3-letter code and lane; clicking it focuses that class's dossier (purpose, standing orders, real kit gear, SUMMON/DEPLOY verb). One tile per built-in class — Specialties.builtins().length seals render.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/classicons.js",
+          "shared/specialties.js",
+          "frontend/app/specialties.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/class-loadouts.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/specialties.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "296c8ee866614531a87cbb918070805c60928503",
+        "date": "2026-07-07T22:21:27.981Z"
+      },
+      "findings": [
+        "405a539f"
+      ],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
-      "state": "crew-recruit"
+      "state": "crew-recruit",
+      "notes": "live-proven wave-6: .uiatlas/crew3-evidence/probe-02.json (18 builtins === 18 rendered .mkt-card seals; every class dossier shows its real kit power-words; custom create→delete round-trip)."
     },
     {
       "id": "ui/crew/txt-button-audauditorsecurity-consistency-sweepsc-441",
       "kind": "ui",
       "area": "crew",
       "name": "AUDAuditorSecurity & consistency sweepsCODE◆◆◆ DEEP REASONIN",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Recruit-bay class-roster tile for the Auditor class — an engraved-coin seal that opens that class's dossier to summon/deploy it.",
+      "promise": "The tile renders a seal stamped with the class's 3-letter code and lane; clicking it focuses that class's dossier (purpose, standing orders, real kit gear, SUMMON/DEPLOY verb). One tile per built-in class — Specialties.builtins().length seals render.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/classicons.js",
+          "shared/specialties.js",
+          "frontend/app/specialties.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/class-loadouts.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/specialties.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "296c8ee866614531a87cbb918070805c60928503",
+        "date": "2026-07-07T22:21:27.981Z"
+      },
+      "findings": [
+        "405a539f"
+      ],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
-      "state": "crew-recruit"
+      "state": "crew-recruit",
+      "notes": "live-proven wave-6: .uiatlas/crew3-evidence/probe-02.json (18 builtins === 18 rendered .mkt-card seals; every class dossier shows its real kit power-words; custom create→delete round-trip)."
     },
     {
       "id": "ui/crew/txt-button-brkbrokercompare-deals-call-the-buyres-438",
       "kind": "ui",
       "area": "crew",
       "name": "BRKBrokerCompare deals & call the buyRESEARCH◆◆◇ BALANCED",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Recruit-bay class-roster tile for the Broker class — an engraved-coin seal that opens that class's dossier to summon/deploy it.",
+      "promise": "The tile renders a seal stamped with the class's 3-letter code and lane; clicking it focuses that class's dossier (purpose, standing orders, real kit gear, SUMMON/DEPLOY verb). One tile per built-in class — Specialties.builtins().length seals render.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/classicons.js",
+          "shared/specialties.js",
+          "frontend/app/specialties.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/class-loadouts.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/specialties.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "296c8ee866614531a87cbb918070805c60928503",
+        "date": "2026-07-07T22:21:27.981Z"
+      },
+      "findings": [
+        "405a539f"
+      ],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
-      "state": "crew-recruit"
+      "state": "crew-recruit",
+      "notes": "live-proven wave-6: .uiatlas/crew3-evidence/probe-02.json (18 builtins === 18 rendered .mkt-card seals; every class dossier shows its real kit power-words; custom create→delete round-trip)."
     },
     {
       "id": "ui/crew/txt-button-brokercompare-deals-call-the-buywhy-ma-424",
       "kind": "ui",
       "area": "crew",
       "name": "BrokerCompare deals & call the buyWHY matches your stated go",
-      "purpose": "",
-      "promise": "",
+      "purpose": "RECOMMENDED-FOR-YOU shelf tile for the Broker class — a personalized suggestion ranked from the Commander's recent capability usage, with a plain \"WHY it matches\" line.",
+      "promise": "When recent worksignal exists the shelf surfaces top-ranked classes; each tile shows the class seal + a truthful WHY sentence, and opens the same dossier as the roster tile.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/recruiter.js",
+          "frontend/app/classicons.js",
+          "shared/specialties.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/recruiter.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/class-loadouts.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "296c8ee866614531a87cbb918070805c60928503",
+        "date": "2026-07-07T22:21:27.981Z"
+      },
+      "findings": [
+        "405a539f"
+      ],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
-      "state": "crew-recruit"
+      "state": "crew-recruit",
+      "notes": "live-proven wave-6: .uiatlas/crew3-evidence/probe-02.json (18 builtins === 18 rendered .mkt-card seals; every class dossier shows its real kit power-words; custom create→delete round-trip)."
     },
     {
       "id": "ui/crew/txt-button-chfchief-of-staffyour-generalist-right-h-436",
       "kind": "ui",
       "area": "crew",
       "name": "CHFChief of StaffYour generalist right handOPS◆◆◇ BALANCED",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Recruit-bay class-roster tile for the Chief of Staff class — an engraved-coin seal that opens that class's dossier to summon/deploy it.",
+      "promise": "The tile renders a seal stamped with the class's 3-letter code and lane; clicking it focuses that class's dossier (purpose, standing orders, real kit gear, SUMMON/DEPLOY verb). One tile per built-in class — Specialties.builtins().length seals render.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/classicons.js",
+          "shared/specialties.js",
+          "frontend/app/specialties.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/class-loadouts.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/specialties.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "296c8ee866614531a87cbb918070805c60928503",
+        "date": "2026-07-07T22:21:27.981Z"
+      },
+      "findings": [
+        "405a539f"
+      ],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
-      "state": "crew-recruit"
+      "state": "crew-recruit",
+      "notes": "live-proven wave-6: .uiatlas/crew3-evidence/probe-02.json (18 builtins === 18 rendered .mkt-card seals; every class dossier shows its real kit power-words; custom create→delete round-trip)."
     },
     {
       "id": "ui/crew/txt-button-code3-406",
       "kind": "ui",
       "area": "crew",
       "name": "CODE3",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Class-roster filter chip — \"CODE3\" filters the roster to the code lane; the number is the live count of matching classes.",
+      "promise": "Clicking the chip filters the visible seals to its lane; the count in the label equals the real number of classes in that lane (a truthful count, never cosmetic). ALL18 = every built-in.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/classicons.js",
+          "shared/specialties.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/class-loadouts.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "296c8ee866614531a87cbb918070805c60928503",
+        "date": "2026-07-07T22:21:27.981Z"
+      },
+      "findings": [
+        "405a539f"
+      ],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
-      "state": "crew-recruit"
+      "state": "crew-recruit",
+      "notes": "live-proven wave-6: .uiatlas/crew3-evidence/probe-02.json (18 builtins === 18 rendered .mkt-card seals; every class dossier shows its real kit power-words; custom create→delete round-trip). Chip count reflects Specialties.builtins() filtered by lane (ClassIcons.lane)."
     },
     {
       "id": "ui/crew/txt-button-deploy-to-nova-446",
@@ -2166,147 +2680,207 @@
       "kind": "ui",
       "area": "crew",
       "name": "DSNDesignerVisuals & assetsOPS◆◆◇ BALANCED",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Recruit-bay class-roster tile for the Designer class — an engraved-coin seal that opens that class's dossier to summon/deploy it.",
+      "promise": "The tile renders a seal stamped with the class's 3-letter code and lane; clicking it focuses that class's dossier (purpose, standing orders, real kit gear, SUMMON/DEPLOY verb). One tile per built-in class — Specialties.builtins().length seals render.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/classicons.js",
+          "shared/specialties.js",
+          "frontend/app/specialties.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/class-loadouts.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/specialties.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "296c8ee866614531a87cbb918070805c60928503",
+        "date": "2026-07-07T22:21:27.981Z"
+      },
+      "findings": [
+        "405a539f"
+      ],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
-      "state": "crew-recruit"
+      "state": "crew-recruit",
+      "notes": "live-proven wave-6: .uiatlas/crew3-evidence/probe-02.json (18 builtins === 18 rendered .mkt-card seals; every class dossier shows its real kit power-words; custom create→delete round-trip)."
     },
     {
       "id": "ui/crew/txt-button-edit-405",
       "kind": "ui",
       "area": "crew",
       "name": "✎ EDIT",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Per-agent EDIT control in the crew panel — opens that agent's dossier (purpose / standing orders / voice / model) for hand-editing.",
+      "promise": "Clicking EDIT opens the agent's editable dossier; saving writes the changes back to that agent's roster record (the same authoring path a deployed specialty uses).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/app.js"
+        ],
         "events": []
       },
       "coverage": [],
-      "status": "unmapped",
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
-      "state": "crew-agents"
+      "state": "crew-agents",
+      "notes": "seam traced to the crew-panel per-agent EDIT (stationui.js); shares the dossier authoring path. Not re-proven live this wave (agent dossier editor, adjacent to the recruit-bay batch). Held at mapped."
     },
     {
       "id": "ui/crew/txt-button-edit-406",
       "kind": "ui",
       "area": "crew",
       "name": "✎ EDIT",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Per-agent EDIT control in the crew panel — opens that agent's dossier (purpose / standing orders / voice / model) for hand-editing.",
+      "promise": "Clicking EDIT opens the agent's editable dossier; saving writes the changes back to that agent's roster record (the same authoring path a deployed specialty uses).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/app.js"
+        ],
         "events": []
       },
       "coverage": [],
-      "status": "unmapped",
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
-      "state": "crew-agents"
+      "state": "crew-agents",
+      "notes": "seam traced to the crew-panel per-agent EDIT (stationui.js); shares the dossier authoring path. Not re-proven live this wave (agent dossier editor, adjacent to the recruit-bay batch). Held at mapped."
     },
     {
       "id": "ui/crew/txt-button-edit-407",
       "kind": "ui",
       "area": "crew",
       "name": "Edit",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Per-agent EDIT control in the crew panel — opens that agent's dossier (purpose / standing orders / voice / model) for hand-editing.",
+      "promise": "Clicking EDIT opens the agent's editable dossier; saving writes the changes back to that agent's roster record (the same authoring path a deployed specialty uses).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/app.js"
+        ],
         "events": []
       },
       "coverage": [],
-      "status": "unmapped",
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
-      "state": "crew-agents"
+      "state": "crew-agents",
+      "notes": "seam traced to the crew-panel per-agent EDIT (stationui.js); shares the dossier authoring path. Not re-proven live this wave (agent dossier editor, adjacent to the recruit-bay batch). Held at mapped."
     },
     {
       "id": "ui/crew/txt-button-edit-408",
       "kind": "ui",
       "area": "crew",
       "name": "✎ EDIT",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Per-agent EDIT control in the crew panel — opens that agent's dossier (purpose / standing orders / voice / model) for hand-editing.",
+      "promise": "Clicking EDIT opens the agent's editable dossier; saving writes the changes back to that agent's roster record (the same authoring path a deployed specialty uses).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/app.js"
+        ],
         "events": []
       },
       "coverage": [],
-      "status": "unmapped",
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
-      "state": "crew-agents"
+      "state": "crew-agents",
+      "notes": "seam traced to the crew-panel per-agent EDIT (stationui.js); shares the dossier authoring path. Not re-proven live this wave (agent dossier editor, adjacent to the recruit-bay batch). Held at mapped."
     },
     {
       "id": "ui/crew/txt-button-edit-412",
       "kind": "ui",
       "area": "crew",
       "name": "Edit",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Commander-dossier belief control — edits an existing belief card in the Commander dossier.",
+      "promise": "Clicking Edit makes the belief editable in place; saving updates that belief in the dossier store.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/dossier.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/dossier.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "296c8ee866614531a87cbb918070805c60928503",
+        "date": "2026-07-07T22:21:27.981Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
-      "state": "crew-commander"
+      "state": "crew-commander",
+      "notes": "seam traced to the Commander dossier (crew-commander state, already-mapped); dossier belief store guarded by test/dossier.test.js. Individual button DOM-click not re-proven live this wave (mission-control belief mgmt, adjacent to the recruit-bay seal batch). Held at audited."
     },
     {
       "id": "ui/crew/txt-button-edit-417",
       "kind": "ui",
       "area": "crew",
       "name": "Edit",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Commander-dossier belief control — edits an existing belief card in the Commander dossier.",
+      "promise": "Clicking Edit makes the belief editable in place; saving updates that belief in the dossier store.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/dossier.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/dossier.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "296c8ee866614531a87cbb918070805c60928503",
+        "date": "2026-07-07T22:21:27.981Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
-      "state": "crew-commander"
+      "state": "crew-commander",
+      "notes": "seam traced to the Commander dossier (crew-commander state, already-mapped); dossier belief store guarded by test/dossier.test.js. Individual button DOM-click not re-proven live this wave (mission-control belief mgmt, adjacent to the recruit-bay seal batch). Held at audited."
     },
     {
       "id": "ui/crew/txt-button-engengineerwrite-debug-ship-codecode-428",
@@ -2385,84 +2959,148 @@
       "kind": "ui",
       "area": "crew",
       "name": "Forget",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Commander-dossier belief control — removes (forgets) a belief from a dossier dimension.",
+      "promise": "Clicking Forget removes the first-matching belief from that dimension (mirrors memcore.applyForget) and re-renders.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/dossier.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/dossier.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "296c8ee866614531a87cbb918070805c60928503",
+        "date": "2026-07-07T22:21:27.981Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
-      "state": "crew-commander"
+      "state": "crew-commander",
+      "notes": "seam traced to the Commander dossier (crew-commander state, already-mapped); dossier belief store guarded by test/dossier.test.js. Individual button DOM-click not re-proven live this wave (mission-control belief mgmt, adjacent to the recruit-bay seal batch). Held at audited."
     },
     {
       "id": "ui/crew/txt-button-forget-418",
       "kind": "ui",
       "area": "crew",
       "name": "Forget",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Commander-dossier belief control — removes (forgets) a belief from a dossier dimension.",
+      "promise": "Clicking Forget removes the first-matching belief from that dimension (mirrors memcore.applyForget) and re-renders.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/dossier.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/dossier.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "296c8ee866614531a87cbb918070805c60928503",
+        "date": "2026-07-07T22:21:27.981Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
-      "state": "crew-commander"
+      "state": "crew-commander",
+      "notes": "seam traced to the Commander dossier (crew-commander state, already-mapped); dossier belief store guarded by test/dossier.test.js. Individual button DOM-click not re-proven live this wave (mission-control belief mgmt, adjacent to the recruit-bay seal batch). Held at audited."
     },
     {
       "id": "ui/crew/txt-button-hldheraldscheduled-digests-broadcastsr-444",
       "kind": "ui",
       "area": "crew",
       "name": "HLDHeraldScheduled digests & broadcastsRESEARCH◆◆◇ BALANCED",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Recruit-bay class-roster tile for the Herald class — an engraved-coin seal that opens that class's dossier to summon/deploy it.",
+      "promise": "The tile renders a seal stamped with the class's 3-letter code and lane; clicking it focuses that class's dossier (purpose, standing orders, real kit gear, SUMMON/DEPLOY verb). One tile per built-in class — Specialties.builtins().length seals render.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/classicons.js",
+          "shared/specialties.js",
+          "frontend/app/specialties.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/class-loadouts.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/specialties.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "296c8ee866614531a87cbb918070805c60928503",
+        "date": "2026-07-07T22:21:27.981Z"
+      },
+      "findings": [
+        "405a539f"
+      ],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
-      "state": "crew-recruit"
+      "state": "crew-recruit",
+      "notes": "live-proven wave-6: .uiatlas/crew3-evidence/probe-02.json (18 builtins === 18 rendered .mkt-card seals; every class dossier shows its real kit power-words; custom create→delete round-trip)."
     },
     {
       "id": "ui/crew/txt-button-ldgbookkeeperbudgets-ledgers-expenses-442",
       "kind": "ui",
       "area": "crew",
       "name": "LDGBookkeeperBudgets, ledgers & expensesOPS◆◆◇ BALANCED",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Recruit-bay class-roster tile for the Bookkeeper class — an engraved-coin seal that opens that class's dossier to summon/deploy it.",
+      "promise": "The tile renders a seal stamped with the class's 3-letter code and lane; clicking it focuses that class's dossier (purpose, standing orders, real kit gear, SUMMON/DEPLOY verb). One tile per built-in class — Specialties.builtins().length seals render.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/classicons.js",
+          "shared/specialties.js",
+          "frontend/app/specialties.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/class-loadouts.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/specialties.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "296c8ee866614531a87cbb918070805c60928503",
+        "date": "2026-07-07T22:21:27.981Z"
+      },
+      "findings": [
+        "405a539f"
+      ],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
-      "state": "crew-recruit"
+      "state": "crew-recruit",
+      "notes": "live-proven wave-6: .uiatlas/crew3-evidence/probe-02.json (18 builtins === 18 rendered .mkt-card seals; every class dossier shows its real kit power-words; custom create→delete round-trip)."
     },
     {
       "id": "ui/crew/txt-button-let-the-station-get-to-know-you-405",
@@ -2506,84 +3144,159 @@
       "kind": "ui",
       "area": "crew",
       "name": "LIALiaisonTriage & draft your messagesOPS◆◆◇ BALANCED",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Recruit-bay class-roster tile for the Liaison class — an engraved-coin seal that opens that class's dossier to summon/deploy it.",
+      "promise": "The tile renders a seal stamped with the class's 3-letter code and lane; clicking it focuses that class's dossier (purpose, standing orders, real kit gear, SUMMON/DEPLOY verb). One tile per built-in class — Specialties.builtins().length seals render.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/classicons.js",
+          "shared/specialties.js",
+          "frontend/app/specialties.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/class-loadouts.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/specialties.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "296c8ee866614531a87cbb918070805c60928503",
+        "date": "2026-07-07T22:21:27.981Z"
+      },
+      "findings": [
+        "405a539f"
+      ],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
-      "state": "crew-recruit"
+      "state": "crew-recruit",
+      "notes": "live-proven wave-6: .uiatlas/crew3-evidence/probe-02.json (18 builtins === 18 rendered .mkt-card seals; every class dossier shows its real kit power-words; custom create→delete round-trip)."
     },
     {
       "id": "ui/crew/txt-button-operatorops-automation-scheduleswhy-m-425",
       "kind": "ui",
       "area": "crew",
       "name": "OperatorOps, automation & schedulesWHY matches your stated g",
-      "purpose": "",
-      "promise": "",
+      "purpose": "RECOMMENDED-FOR-YOU shelf tile for the Operator class — a personalized suggestion ranked from the Commander's recent capability usage, with a plain \"WHY it matches\" line.",
+      "promise": "When recent worksignal exists the shelf surfaces top-ranked classes; each tile shows the class seal + a truthful WHY sentence, and opens the same dossier as the roster tile.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/recruiter.js",
+          "frontend/app/classicons.js",
+          "shared/specialties.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/recruiter.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/class-loadouts.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "296c8ee866614531a87cbb918070805c60928503",
+        "date": "2026-07-07T22:21:27.981Z"
+      },
+      "findings": [
+        "405a539f"
+      ],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
-      "state": "crew-recruit"
+      "state": "crew-recruit",
+      "notes": "live-proven wave-6: .uiatlas/crew3-evidence/probe-02.json (18 builtins === 18 rendered .mkt-card seals; every class dossier shows its real kit power-words; custom create→delete round-trip)."
     },
     {
       "id": "ui/crew/txt-button-oproperatorops-automation-schedulesop-429",
       "kind": "ui",
       "area": "crew",
       "name": "OPROperatorOps, automation & schedulesOPS◆◆◇ BALANCED",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Recruit-bay class-roster tile for the Operator class — an engraved-coin seal that opens that class's dossier to summon/deploy it.",
+      "promise": "The tile renders a seal stamped with the class's 3-letter code and lane; clicking it focuses that class's dossier (purpose, standing orders, real kit gear, SUMMON/DEPLOY verb). One tile per built-in class — Specialties.builtins().length seals render.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/classicons.js",
+          "shared/specialties.js",
+          "frontend/app/specialties.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/class-loadouts.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/specialties.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "296c8ee866614531a87cbb918070805c60928503",
+        "date": "2026-07-07T22:21:27.981Z"
+      },
+      "findings": [
+        "405a539f"
+      ],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
-      "state": "crew-recruit"
+      "state": "crew-recruit",
+      "notes": "live-proven wave-6: .uiatlas/crew3-evidence/probe-02.json (18 builtins === 18 rendered .mkt-card seals; every class dossier shows its real kit power-words; custom create→delete round-trip)."
     },
     {
       "id": "ui/crew/txt-button-ops9-408",
       "kind": "ui",
       "area": "crew",
       "name": "OPS9",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Class-roster filter chip — \"OPS9\" filters the roster to the general lane; the number is the live count of matching classes.",
+      "promise": "Clicking the chip filters the visible seals to its lane; the count in the label equals the real number of classes in that lane (a truthful count, never cosmetic). ALL18 = every built-in.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/classicons.js",
+          "shared/specialties.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/class-loadouts.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "296c8ee866614531a87cbb918070805c60928503",
+        "date": "2026-07-07T22:21:27.981Z"
+      },
+      "findings": [
+        "405a539f"
+      ],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
-      "state": "crew-recruit"
+      "state": "crew-recruit",
+      "notes": "live-proven wave-6: .uiatlas/crew3-evidence/probe-02.json (18 builtins === 18 rendered .mkt-card seals; every class dossier shows its real kit power-words; custom create→delete round-trip). Chip count reflects Specialties.builtins() filtered by lane (ClassIcons.lane)."
     },
     {
       "id": "ui/crew/txt-button-pin-406",
@@ -2626,189 +3339,348 @@
       "kind": "ui",
       "area": "crew",
       "name": "Pin",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Commander-dossier belief control — pins a belief so it is always surfaced to agents.",
+      "promise": "Clicking Pin marks the belief pinned in the dossier store so it is always included in the shared context.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/dossier.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/dossier.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "296c8ee866614531a87cbb918070805c60928503",
+        "date": "2026-07-07T22:21:27.981Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
-      "state": "crew-commander"
+      "state": "crew-commander",
+      "notes": "seam traced to the Commander dossier (crew-commander state, already-mapped); dossier belief store guarded by test/dossier.test.js. Individual button DOM-click not re-proven live this wave (mission-control belief mgmt, adjacent to the recruit-bay seal batch). Held at audited."
     },
     {
       "id": "ui/crew/txt-button-pin-416",
       "kind": "ui",
       "area": "crew",
       "name": "Pin",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Commander-dossier belief control — pins a belief so it is always surfaced to agents.",
+      "promise": "Clicking Pin marks the belief pinned in the dossier store so it is always included in the shared context.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/dossier.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/dossier.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "296c8ee866614531a87cbb918070805c60928503",
+        "date": "2026-07-07T22:21:27.981Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
-      "state": "crew-commander"
+      "state": "crew-commander",
+      "notes": "seam traced to the Commander dossier (crew-commander state, already-mapped); dossier belief store guarded by test/dossier.test.js. Individual button DOM-click not re-proven live this wave (mission-control belief mgmt, adjacent to the recruit-bay seal batch). Held at audited."
     },
     {
       "id": "ui/crew/txt-button-pubpublicistannouncements-social-copyo-439",
       "kind": "ui",
       "area": "crew",
       "name": "PUBPublicistAnnouncements & social copyOPS◆◆◇ BALANCED",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Recruit-bay class-roster tile for the Publicist class — an engraved-coin seal that opens that class's dossier to summon/deploy it.",
+      "promise": "The tile renders a seal stamped with the class's 3-letter code and lane; clicking it focuses that class's dossier (purpose, standing orders, real kit gear, SUMMON/DEPLOY verb). One tile per built-in class — Specialties.builtins().length seals render.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/classicons.js",
+          "shared/specialties.js",
+          "frontend/app/specialties.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/class-loadouts.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/specialties.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "296c8ee866614531a87cbb918070805c60928503",
+        "date": "2026-07-07T22:21:27.981Z"
+      },
+      "findings": [
+        "405a539f"
+      ],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
-      "state": "crew-recruit"
+      "state": "crew-recruit",
+      "notes": "live-proven wave-6: .uiatlas/crew3-evidence/probe-02.json (18 builtins === 18 rendered .mkt-card seals; every class dossier shows its real kit power-words; custom create→delete round-trip)."
     },
     {
       "id": "ui/crew/txt-button-research6-407",
       "kind": "ui",
       "area": "crew",
       "name": "RESEARCH6",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Class-roster filter chip — \"RESEARCH6\" filters the roster to the research lane; the number is the live count of matching classes.",
+      "promise": "Clicking the chip filters the visible seals to its lane; the count in the label equals the real number of classes in that lane (a truthful count, never cosmetic). ALL18 = every built-in.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/classicons.js",
+          "shared/specialties.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/class-loadouts.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "296c8ee866614531a87cbb918070805c60928503",
+        "date": "2026-07-07T22:21:27.981Z"
+      },
+      "findings": [
+        "405a539f"
+      ],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
-      "state": "crew-recruit"
+      "state": "crew-recruit",
+      "notes": "live-proven wave-6: .uiatlas/crew3-evidence/probe-02.json (18 builtins === 18 rendered .mkt-card seals; every class dossier shows its real kit power-words; custom create→delete round-trip). Chip count reflects Specialties.builtins() filtered by lane (ClassIcons.lane)."
     },
     {
       "id": "ui/crew/txt-button-resresearcherweb-research-sourced-brie-427",
       "kind": "ui",
       "area": "crew",
       "name": "RESResearcherWeb research & sourced briefsRESEARCH◆◆◇ BALANC",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Recruit-bay class-roster tile for the Researcher class — an engraved-coin seal that opens that class's dossier to summon/deploy it.",
+      "promise": "The tile renders a seal stamped with the class's 3-letter code and lane; clicking it focuses that class's dossier (purpose, standing orders, real kit gear, SUMMON/DEPLOY verb). One tile per built-in class — Specialties.builtins().length seals render.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/classicons.js",
+          "shared/specialties.js",
+          "frontend/app/specialties.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/class-loadouts.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/specialties.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "296c8ee866614531a87cbb918070805c60928503",
+        "date": "2026-07-07T22:21:27.981Z"
+      },
+      "findings": [
+        "405a539f"
+      ],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
-      "state": "crew-recruit"
+      "state": "crew-recruit",
+      "notes": "live-proven wave-6: .uiatlas/crew3-evidence/probe-02.json (18 builtins === 18 rendered .mkt-card seals; every class dossier shows its real kit power-words; custom create→delete round-trip)."
     },
     {
       "id": "ui/crew/txt-button-revrevieweradversarial-review-qacode-432",
       "kind": "ui",
       "area": "crew",
       "name": "REVReviewerAdversarial review & QACODE◆◆◆ DEEP REASONING",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Recruit-bay class-roster tile for the Reviewer class — an engraved-coin seal that opens that class's dossier to summon/deploy it.",
+      "promise": "The tile renders a seal stamped with the class's 3-letter code and lane; clicking it focuses that class's dossier (purpose, standing orders, real kit gear, SUMMON/DEPLOY verb). One tile per built-in class — Specialties.builtins().length seals render.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/classicons.js",
+          "shared/specialties.js",
+          "frontend/app/specialties.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/class-loadouts.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/specialties.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "296c8ee866614531a87cbb918070805c60928503",
+        "date": "2026-07-07T22:21:27.981Z"
+      },
+      "findings": [
+        "405a539f"
+      ],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
-      "state": "crew-recruit"
+      "state": "crew-recruit",
+      "notes": "live-proven wave-6: .uiatlas/crew3-evidence/probe-02.json (18 builtins === 18 rendered .mkt-card seals; every class dossier shows its real kit power-words; custom create→delete round-trip)."
     },
     {
       "id": "ui/crew/txt-button-scribewriting-editingwhy-matches-your-426",
       "kind": "ui",
       "area": "crew",
       "name": "ScribeWriting & editingWHY matches your stated goals",
-      "purpose": "",
-      "promise": "",
+      "purpose": "RECOMMENDED-FOR-YOU shelf tile for the Scribe class — a personalized suggestion ranked from the Commander's recent capability usage, with a plain \"WHY it matches\" line.",
+      "promise": "When recent worksignal exists the shelf surfaces top-ranked classes; each tile shows the class seal + a truthful WHY sentence, and opens the same dossier as the roster tile.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/recruiter.js",
+          "frontend/app/classicons.js",
+          "shared/specialties.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/recruiter.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/class-loadouts.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "296c8ee866614531a87cbb918070805c60928503",
+        "date": "2026-07-07T22:21:27.981Z"
+      },
+      "findings": [
+        "405a539f"
+      ],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
-      "state": "crew-recruit"
+      "state": "crew-recruit",
+      "notes": "live-proven wave-6: .uiatlas/crew3-evidence/probe-02.json (18 builtins === 18 rendered .mkt-card seals; every class dossier shows its real kit power-words; custom create→delete round-trip)."
     },
     {
       "id": "ui/crew/txt-button-scrscribewriting-editingops-balance-430",
       "kind": "ui",
       "area": "crew",
       "name": "SCRScribeWriting & editingOPS◆◆◇ BALANCED",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Recruit-bay class-roster tile for the Scribe class — an engraved-coin seal that opens that class's dossier to summon/deploy it.",
+      "promise": "The tile renders a seal stamped with the class's 3-letter code and lane; clicking it focuses that class's dossier (purpose, standing orders, real kit gear, SUMMON/DEPLOY verb). One tile per built-in class — Specialties.builtins().length seals render.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/classicons.js",
+          "shared/specialties.js",
+          "frontend/app/specialties.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/class-loadouts.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/specialties.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "296c8ee866614531a87cbb918070805c60928503",
+        "date": "2026-07-07T22:21:27.981Z"
+      },
+      "findings": [
+        "405a539f"
+      ],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
-      "state": "crew-recruit"
+      "state": "crew-recruit",
+      "notes": "live-proven wave-6: .uiatlas/crew3-evidence/probe-02.json (18 builtins === 18 rendered .mkt-card seals; every class dossier shows its real kit power-words; custom create→delete round-trip)."
     },
     {
       "id": "ui/crew/txt-button-sctscoutwatch-feeds-alert-on-changeres-433",
       "kind": "ui",
       "area": "crew",
       "name": "SCTScoutWatch feeds & alert on changeRESEARCH◆◇◇ FAST & CHEA",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Recruit-bay class-roster tile for the Scout class — an engraved-coin seal that opens that class's dossier to summon/deploy it.",
+      "promise": "The tile renders a seal stamped with the class's 3-letter code and lane; clicking it focuses that class's dossier (purpose, standing orders, real kit gear, SUMMON/DEPLOY verb). One tile per built-in class — Specialties.builtins().length seals render.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/classicons.js",
+          "shared/specialties.js",
+          "frontend/app/specialties.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/class-loadouts.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/specialties.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "296c8ee866614531a87cbb918070805c60928503",
+        "date": "2026-07-07T22:21:27.981Z"
+      },
+      "findings": [
+        "405a539f"
+      ],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
-      "state": "crew-recruit"
+      "state": "crew-recruit",
+      "notes": "live-proven wave-6: .uiatlas/crew3-evidence/probe-02.json (18 builtins === 18 rendered .mkt-card seals; every class dossier shows its real kit power-words; custom create→delete round-trip)."
     },
     {
       "id": "ui/crew/txt-button-summon-researcher-445",
@@ -2858,21 +3730,41 @@
       "kind": "ui",
       "area": "crew",
       "name": "TUTTutorExplains topics & builds study plansRESEARCH◆◆◇ BALA",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Recruit-bay class-roster tile for the Tutor class — an engraved-coin seal that opens that class's dossier to summon/deploy it.",
+      "promise": "The tile renders a seal stamped with the class's 3-letter code and lane; clicking it focuses that class's dossier (purpose, standing orders, real kit gear, SUMMON/DEPLOY verb). One tile per built-in class — Specialties.builtins().length seals render.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/classicons.js",
+          "shared/specialties.js",
+          "frontend/app/specialties.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/class-loadouts.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/specialties.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "296c8ee866614531a87cbb918070805c60928503",
+        "date": "2026-07-07T22:21:27.981Z"
+      },
+      "findings": [
+        "405a539f"
+      ],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "button",
-      "state": "crew-recruit"
+      "state": "crew-recruit",
+      "notes": "live-proven wave-6: .uiatlas/crew3-evidence/probe-02.json (18 builtins === 18 rendered .mkt-card seals; every class dossier shows its real kit power-words; custom create→delete round-trip)."
     },
     {
       "id": "ui/crew/txt-span-anthropic-claude-sonnet-4-6-1",
@@ -2912,21 +3804,32 @@
       "kind": "ui",
       "area": "crew",
       "name": "advanced — type a model id",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Disclosure (\"advanced — type a model id\") that reveals a free-text model-id input for an agent, for models not in the picker.",
+      "promise": "Expanding shows a text input; a typed id becomes the agent's pinned model on its roster record (advisory tier stays cosmetic). Blank inherits the orchestrator model.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/modelpicker.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "296c8ee866614531a87cbb918070805c60928503",
+        "date": "2026-07-07T22:21:27.981Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
       "selector": "summary",
-      "state": "crew-agents"
+      "state": "crew-agents",
+      "notes": "seam traced (stationui.js advanced <details> at ~1221); model-pin path guarded by modelpicker.test.js. Disclosure open-state not DOM-proven live this wave; held at audited."
     }
   ]
 }
