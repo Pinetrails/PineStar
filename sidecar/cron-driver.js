@@ -82,6 +82,19 @@
     // Optional + injected so this module stays determinism-clean; absent -> pre-fix behavior.
     const resolveStation = typeof d.resolveStation === 'function' ? d.resolveStation : null;
     const maxRunMs = d.maxRunMs || (8 * 60 * 1000);
+    // NS-0 LEASE HEARTBEAT knobs (all injected, determinism-clean; host threads env). The lease sweep no
+    // longer reclaims on a fixed wall-clock age — it reclaims only when a run's HEARTBEAT is stale (the run
+    // stopped proving liveness, i.e. it crashed / the emit stream died). A genuinely-live long run keeps
+    // renewing its heartbeat on every progress event, so it fires EXACTLY ONCE regardless of duration.
+    //   heartbeatStaleMs — how long WITHOUT a heartbeat before a lease is a zombie (default maxRunMs*mult).
+    //   stalenessMult    — the multiplier applied to maxRunMs when heartbeatStaleMs is not given (default 1, so a
+    //                      run that emits NOTHING reclaims at the SAME maxRunMs ceiling as before this change —
+    //                      backward-compatible; a run that DOES heartbeat renews continuously and never reclaims).
+    //   durableHeartbeatMs — min interval between DURABLE (persisted) one-shot heartbeat writes (throttle so
+    //                        the hot token path doesn't fsync on every delta); default heartbeatStaleMs/4.
+    const stalenessMult = (function () { const n = parseFloat(d.stalenessMult); return (Number.isFinite(n) && n > 0) ? n : 1; })();
+    const heartbeatStaleMs = (function () { const n = parseInt(d.heartbeatStaleMs, 10); return (Number.isFinite(n) && n > 0) ? n : Math.round(maxRunMs * stalenessMult); })();
+    const durableHeartbeatMs = (function () { const n = parseInt(d.durableHeartbeatMs, 10); return (Number.isFinite(n) && n > 0) ? n : Math.max(1, Math.round(heartbeatStaleMs / 4)); })();
     // G4.4 global concurrency cap: at most `maxParallel` cron runs may be IN-FLIGHT at once. When a tick's due
     // set would push the live-lease count over this, the EXTRA due jobs are DEFERRED to the next tick WITHOUT
     // advancing their nextRunAt (they stay due), so a burst of simultaneously-due routines never floods the run
@@ -98,13 +111,35 @@
     if (typeof runOnce !== 'function') throw new Error('cron-driver: runOnce is required');
     if (typeof newId !== 'function' || typeof newAbort !== 'function' || typeof now !== 'function') throw new Error('cron-driver: newId/newAbort/now are required');
 
-    const leases = new Map();   // jobId -> { runId, startedAt, ac } — the one-run-per-job in-flight lock
+    const leases = new Map();   // jobId -> { runId, startedAt, heartbeatAt, ac, isOnce, durableAt } — one-run-per-job in-flight lock
     // G4.3 in-process reentrancy guard: a tick re-entered at the SAME instant (e.g. the boot resume
     // reconcile racing the first timer tick, or a fire's run host synchronously re-entering applyTick)
     // must be a NO-OP — the outer pass has not yet persisted its advance, so a re-entrant pass would
     // see the same jobs still due and double-fire. The cross-process file lock (cron-lock.js) handles
     // the two-sidecars case; this flag closes the single-process re-entrancy hole the lock cannot see.
     let tickInFlight = false;
+    // NS-0 SKIP-TELEMETRY DEDUPE: a DISABLED-but-due job (paused with a past nextRunAt) would otherwise emit
+    // cron.skipped{disabled} EVERY tick — spam that violates the no-op invariant. Emit it AT MOST ONCE per
+    // (jobId, nextRunAt) window: once the job's due instant changes (re-enabled+re-armed, edited) or the job
+    // goes away, the key changes / is pruned and a fresh disabled window can report again. Keyed jobId->dueKey.
+    const disabledNotified = new Map();
+
+    /* renewLease — NS-0: a run proved it is alive (a progress event arrived), so bump its lease heartbeat to
+       `now`. For a ONE-SHOT run, ALSO refresh the DURABLE per-job heartbeat (so a fresh liveness signal
+       survives a restart and suppresses the persisted fireClaim re-fire) — but THROTTLED to at most one write
+       per durableHeartbeatMs so the hot token stream never fsyncs on every delta. Guarded (only the CURRENT
+       lease for this run renews; a stale/replaced lease is ignored) and never throws into the run's emit path. */
+    function renewLease(jobId, runId) {
+      const lease = leases.get(jobId);
+      if (!lease || lease.runId !== runId) return;             // a sweep may have reclaimed+replaced this lease
+      const at = now();
+      lease.heartbeatAt = at;
+      if (!lease.isOnce) return;                               // recurring jobs need no durable heartbeat (advance-before-run covers restart)
+      // throttle the durable write: only persist once the last durable stamp is older than durableHeartbeatMs.
+      if (lease.durableAt != null && (at - lease.durableAt) < durableHeartbeatMs) return;
+      lease.durableAt = at;
+      try { setJobs(cronStore.renewOnceHeartbeat(getJobs(), jobId, { now: at })); } catch (_) { /* a heartbeat persist must never crash a live run */ }
+    }
 
     /* finishFire — record a fired run's outcome once it settles: markRun (the reducer owns the transient-backoff
        / one-shot-finalize math) → persist → cron.result → release the lease (only if it is still ours). */
@@ -141,7 +176,12 @@
 
       const runId = newId();
       const ac = newAbort();
-      leases.set(job.id, { runId: runId, startedAt: nowMs, ac: ac });
+      // NS-0: heartbeatAt starts at the fire instant and is RENEWED on every run-progress event (see sink).
+      // The lease sweep reclaims on a STALE heartbeat, not a fixed wall-clock age, so a genuinely-live long
+      // run is never declared a zombie. isOnce marks whether to also persist a DURABLE heartbeat on the job
+      // record (so a fresh heartbeat survives a restart and suppresses the one-shot fireClaim re-fire).
+      const isOnce = !!(job.schedule && job.schedule.kind === 'once');
+      leases.set(job.id, { runId: runId, startedAt: nowMs, heartbeatAt: nowMs, ac: ac, isOnce: isOnce });
       try { emit('cron.fire', { jobId: job.id, runId: runId, scheduledFor: scheduledFor }); } catch (_) {}
       // ride the routine's instruction onto the CONVEYOR as a box bound for this agent — only NOW (past the
       // capability gate, lease taken), so a crate appears on the floor iff a run is genuinely firing.
@@ -156,6 +196,11 @@
       const state = { buf: '', errMsg: null, reason: null, transient: false };
       const sink = function (name, payload) {
         const p = payload || {};
+        // NS-0 HEARTBEAT: every run-progress event proves this run is still alive → renew the in-RAM lease
+        // heartbeat, and (throttled) persist a durable heartbeat on a one-shot job so a fresh liveness signal
+        // survives a restart and suppresses the fireClaim zombie re-fire. Throttle keeps the hot token path
+        // from persisting on every delta: only persist once the durable heartbeat is older than heartbeatMs.
+        renewLease(job.id, runId);
         if (name === 'agent.token') { state.buf += (p.delta || ''); return; }   // token stream never leaves the driver
         if (name === 'agent.run.error') { state.errMsg = p.message || 'run error'; state.transient = !!p.transient; }
         else if (name === 'capdenied') state.errMsg = state.errMsg || ('no ' + (p.need || 'capability') + ' — ' + (p.reason || ''));
@@ -211,10 +256,16 @@
     function applyTickInner(nowMs) {
       let skips = 0, fires = 0;
 
-      // 1. SELF-HEALING LEASE: reclaim any run older than the ceiling — abort it and free the job to re-fire.
+      // 1. SELF-HEALING LEASE (NS-0 heartbeat-based): reclaim a run ONLY when its HEARTBEAT is stale — i.e. it
+      //    stopped proving liveness (crashed / the emit stream died), not merely because it is taking a long
+      //    time. A genuinely-live long run keeps renewing lease.heartbeatAt on every progress event, so it is
+      //    NEVER reclaimed and fires exactly once regardless of duration (the duplicate-fire fix). A run that
+      //    emits NOTHING still holds startedAt as its initial heartbeat, so a hung run with no output is
+      //    reclaimed after heartbeatStaleMs (>= the old maxRunMs by default) rather than the old fixed ceiling.
       for (const entry of leases) {
         const jobId = entry[0], lease = entry[1];
-        if (nowMs - lease.startedAt > maxRunMs) {
+        const beatAge = nowMs - (lease.heartbeatAt != null ? lease.heartbeatAt : lease.startedAt);
+        if (beatAge > heartbeatStaleMs) {
           try { lease.ac.abort(); } catch (_) {}
           leases.delete(jobId);
           try { emit('cron.skipped', { jobId: jobId, reason: 'stale-lock-reclaimed' }); } catch (_) {}
@@ -222,20 +273,48 @@
         }
       }
 
+      // 1b. NS-0 DISABLED-DUE TELEMETRY: planTick silently ignores disabled jobs (no fire, no skip entry), so a
+      //     PAUSED routine whose scheduled time has arrived left NO trace — the autonomy decision "did not act
+      //     because paused" was invisible. Emit cron.skipped{disabled} for a disabled job whose nextRunAt is in
+      //     the PAST (it WOULD have been due), AT MOST ONCE per due window (deduped by jobId+nextRunAt) so a
+      //     permanently-paused job doesn't spam every tick. The window key changes if the job is re-armed/edited.
+      {
+        const seen = new Set();
+        for (const job of (getJobs() || [])) {
+          if (!job || !job.id) continue;
+          seen.add(job.id);
+          if (job.enabled === false && job.nextRunAt) {
+            const dueMs = Date.parse(job.nextRunAt);
+            if (!isNaN(dueMs) && dueMs <= nowMs) {
+              const key = String(dueMs);
+              if (disabledNotified.get(job.id) !== key) {
+                disabledNotified.set(job.id, key);
+                try { emit('cron.skipped', { jobId: job.id, reason: 'disabled' }); } catch (_) {}
+                skips++;
+              }
+              continue;
+            }
+          }
+          disabledNotified.delete(job.id);                 // no longer disabled-and-due -> reset its window
+        }
+        // prune dedupe entries for jobs that vanished (removed) so the map can't grow unbounded over a long run.
+        for (const id of Array.from(disabledNotified.keys())) if (!seen.has(id)) disabledNotified.delete(id);
+      }
+
       // 2. the PURE plan: which jobs fire / are fast-forward-skipped, and the advanced next-fires to persist.
       //    defaultTz makes a tz-less schedule plan on the host's local wall-clock (G4.1). maxRunMs is the
       //    one-shot fire-claim ceiling (G4.5): planTick suppresses a one-shot with a FRESH claim (in flight)
       //    and reclaims a ZOMBIE claim past this age — the SAME ceiling the lease sweep above uses.
-      const plan = cron.planTick(getJobs(), nowMs, { defaultTz: defaultTz, maxRunMs: maxRunMs });
+      const plan = cron.planTick(getJobs(), nowMs, { defaultTz: defaultTz, maxRunMs: maxRunMs, heartbeatStaleMs: heartbeatStaleMs });
 
       // 2b. GLOBAL CONCURRENCY CAP (G4.4): partition plan.fire into the jobs we'll ATTEMPT this tick and the
       //     ones DEFERRED past the cap. A job already holding a lease is neither attempted nor deferred — it
       //     advances + reports already-running below exactly as before (drop the occurrence, never re-queue).
       //     Slots = maxParallel - currently-in-flight; reserve one per attempt in plan order. A deferred job is
       //     NOT advanced (step 3 skips it), so its nextRunAt stays put and it remains DUE next tick — it drains
-      //     when a slot frees. NOTE: the at-capacity deferral is reported via the RETURN VALUE only this
-      //     iteration — the additive `cron.skipped` reason `at-capacity` / `cron.tick.deferred` field are
-      //     pending the memory-cortex events batch (the reason enum is governed; emitting it would fail lint).
+      //     when a slot frees. NS-0: the at-capacity deferral is now EMITTED as cron.skipped{at-capacity} (the
+      //     reason value was added to the governed enum in shared/events.js) AND surfaced on the return value +
+      //     the cron.tick.deferred count, so a night of quietly-deferred routines is finally observable.
       let slotsLeft = maxParallel - leases.size;
       const deferred = [];
       const deferredSet = new Set();
@@ -244,7 +323,11 @@
         if (!job) continue;
         if (leases.has(job.id)) continue;                  // already-running: not attempted, not deferred (advances)
         if (slotsLeft > 0) { slotsLeft--; }                // reserve a concurrency slot for this attempt
-        else { deferred.push(job.id); deferredSet.add(job.id); }   // over the cap -> defer (stays due, not advanced)
+        else {                                             // over the cap -> defer (stays due, not advanced)
+          deferred.push(job.id); deferredSet.add(job.id);
+          try { emit('cron.skipped', { jobId: job.id, reason: 'at-capacity' }); } catch (_) {}
+          skips++;
+        }
       }
 
       // 3. ADVANCE-BEFORE-RUN: persist the advanced nextRunAt for every planned RECURRING job EXCEPT a
@@ -288,16 +371,16 @@
         const job = cronStore.getJob(getJobs(), f.jobId);
         if (!job) continue;
         if (leases.has(job.id)) { try { emit('cron.skipped', { jobId: job.id, reason: 'already-running' }); } catch (_) {} skips++; continue; }
-        if (deferredSet.has(job.id)) continue;             // over the cap: held back (counted in `deferred`), no advance, no event this iteration
+        if (deferredSet.has(job.id)) continue;             // over the cap: held back (counted in `deferred`), skip already emitted in step 2b
         if (fireJob(job, f.scheduledFor, nowMs)) fires++; else skips++;   // false = no-capability (already emitted)
       }
 
       // 6. the war-room pulse — emitted ONLY when something happened, so an idle/empty-store tick stays silent
       //    (the no-op invariant: an empty schedule incurs no event, no console line, no cost). A tick that only
-      //    DEFERRED still pulses (deferred ⊆ plan.fire, so plan.fire.length covers it — something WAS due). The
-      //    `deferred` count is NOT on the emit yet (the additive cron.tick.deferred field is pending the batch).
+      //    DEFERRED or only reported a DISABLED-due job still pulses (skips covers those). NS-0: the additive
+      //    `deferred` count now rides the pulse (added to the cron.tick schema) so the deferral is observable.
       if (fires || skips || plan.fire.length) {
-        try { emit('cron.tick', { fired: fires, skipped: skips, planned: plan.fire.length }); } catch (_) {}
+        try { emit('cron.tick', { fired: fires, skipped: skips, planned: plan.fire.length, deferred: deferred.length }); } catch (_) {}
       }
       return { fired: fires, skipped: skips, planned: plan.fire.length, deferred: deferred };
     }

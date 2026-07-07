@@ -46,8 +46,14 @@
    AT-MOST-ONCE-WITHIN-WINDOW policy on a one-shot:
      · FRESH claim (claim age = now - fireClaim, 0 <= age < maxRunMs): the run is in flight → NOT due,
        suppress re-fire. A crash-restart INSIDE the run window therefore does NOT re-fire the one-shot.
-     · ZOMBIE claim (age >= maxRunMs): the holder crashed and never settled within the lease ceiling →
-       the claim is reclaimed and the one-shot re-fires (it never stays wedged forever).
+     · NS-0 LEASE HEARTBEAT (2026-07-07): the wall-clock maxRunMs claim ceiling is a FALLBACK; the primary
+       liveness signal is `heartbeatAt`, renewed by the driver on every run-progress event. A one-shot whose
+       heartbeat is fresher than heartbeatStaleMs (default maxRunMs*2) is provably still running and is NOT
+       re-fired NO MATTER how old the claim is — so a legitimately-long research run that outlives maxRunMs
+       fires EXACTLY ONCE. A STALE heartbeat (the holder crashed — beats stopped) falls through to the claim
+       reclaim, so a genuinely-dead run is still recovered. markRun clears heartbeatAt alongside fireClaim.
+     · ZOMBIE claim (age >= maxRunMs AND heartbeat stale/absent): the holder crashed and never settled within
+       the lease ceiling → the claim is reclaimed and the one-shot re-fires (it never stays wedged forever).
      · SETTLED (lastRunAt set): permanently ineligible (the pre-existing guard), independent of claim.
    markRun CLEARS fireClaim on EVERY settlement (success / terminal failure / transient failure), so
    the not-due guard suppresses re-fire ONLY while the run is genuinely in flight. A TRANSIENT failure
@@ -474,6 +480,15 @@
     // in-flight (NOT due → no re-fire); a claim AT/PAST this age is a zombie (a crashed holder) → reclaimed.
     // Injected by the host (the same lease ceiling cron-driver uses). Defaults to 8min if not supplied.
     const maxRunMs = opts && opts.maxRunMs != null ? opts.maxRunMs : (8 * 60 * 1000);
+    // NS-0 LEASE HEARTBEAT: the staleness ceiling for the in-flight liveness heartbeat. A one-shot whose
+    // heartbeat is FRESHER than this is provably still running (its driver keeps renewing it on run progress),
+    // so it is NOT re-fired NO MATTER how old the wall-clock fireClaim is — this is the fix for the duplicate
+    // fire where a >maxRunMs research run was wrongly declared a zombie and re-fired. A STALE heartbeat (the
+    // holder process crashed — heartbeats stopped) falls through to the fireClaim zombie reclaim below so a
+    // truly-dead run is still recovered. Injected by the host (cron-driver threads its computed value). Default
+    // = maxRunMs, so absent a heartbeat this reduces to the exact pre-NS-0 zombie-reclaim timing (a heartbeat
+    // only ever EXTENDS liveness past the fixed ceiling; it never shortens it). Matches the cron-driver default.
+    const heartbeatStaleMs = opts && opts.heartbeatStaleMs != null ? opts.heartbeatStaleMs : maxRunMs;
     const fire = [], skipped = [], next = [];
     for (const job of (jobs || [])) {
       if (!job || job.enabled === false) continue;
@@ -487,6 +502,14 @@
       // one-shot (claim cleared, lastRunAt still null) re-arms via its backoff nextRunAt rather than being
       // suppressed here.
       if (sched.kind === 'once' && job.fireClaim != null) {
+        // NS-0: a FRESH heartbeat proves the run is still alive → suppress re-fire regardless of claim age.
+        // This is what makes a legitimately-long research run fire EXACTLY ONCE: as long as its driver keeps
+        // renewing heartbeatAt (on run-progress events), age-of-claim never triggers a zombie reclaim.
+        if (job.heartbeatAt != null) {
+          const beatAge = now - job.heartbeatAt;
+          if (beatAge >= 0 && beatAge < heartbeatStaleMs) continue;   // heartbeat fresh → in-flight → not due
+          // else: heartbeat stale (holder crashed — beats stopped) → fall through to the claim reclaim below
+        }
         const claimAge = now - job.fireClaim;
         if (claimAge >= 0 && claimAge < maxRunMs) continue;     // fresh claim → in-flight → not due
         // else: zombie claim → fall through and re-fire (reclaim)

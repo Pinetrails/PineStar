@@ -17,6 +17,7 @@
      pauseJob(jobs, id)                          -> jobs'           // disable (state:'paused')
      resumeJob(jobs, id, { now })                -> jobs'           // enable + re-anchor nextRunAt at now
      claimOnceFire(jobs, id, { now })            -> jobs'           // G4.5: stamp a one-shot fire-claim (advance-before-run analog)
+     renewOnceHeartbeat(jobs, id, { now })       -> jobs'           // NS-0: bump a one-shot's liveness heartbeat while in flight
      markRun(jobs, id, result, { now, ... })     -> jobs'           // record an outcome (+ transient backoff; clears the fire-claim)
      removeJob(jobs, id)                         -> jobs'           // delete
      getJob(jobs, id)                            -> CronJob | null
@@ -28,7 +29,7 @@
      { id, name, prompt, schedule, scheduleDisplay, agentId, model, provider, deliver, enabled,
        state:'scheduled'|'paused'|'completed'|'error', repeat:{times,completed},
        createdAt, nextRunAt, lastRunAt, lastRunId, lastStatus, lastError, lastReason, retryCount,
-       fireClaim, lastFireAttemptAt,                                   // G4.5: one-shot at-most-once-within-window claim
+       fireClaim, lastFireAttemptAt, heartbeatAt,                      // G4.5 claim + NS-0 in-flight liveness heartbeat
        skills, script, workdir, contextFrom,                          // record-the-field, defer-the-consumer
        meta }                                                         // ADDITIVE provenance bag (e.g. {recipeId}); null when absent
 
@@ -112,6 +113,13 @@
       // G4.5 one-shot fire-claim: stamped at fire time (claimOnceFire), cleared on settlement (markRun).
       // null on a fresh job; only ever non-null while a one-shot run is in flight (or a zombie past maxRunMs).
       fireClaim: null, lastFireAttemptAt: null,
+      // NS-0 LEASE HEARTBEAT (2026-07-07): a LIVENESS timestamp renewed while a one-shot run is genuinely in
+      // flight (the driver bumps it on every run-progress event via renewOnceHeartbeat, persisted). planTick
+      // suppresses re-fire of a one-shot whose heartbeat is FRESH (age < staleMs) REGARDLESS of wall-clock claim
+      // age — so a real research run that outlives maxRunMs is NOT declared a zombie and re-fired. A STALE
+      // heartbeat (a crashed/dead-process holder — heartbeats stop) falls through to the fireClaim zombie reclaim.
+      // null on a fresh job; cleared alongside fireClaim on EVERY settlement. Additive — old jobs load as null.
+      heartbeatAt: null,
       // ---- record-the-field, defer-the-consumer (no v1 runtime consumer; stored so a later commit wires it) ----
       skills: Array.isArray(spec.skills) ? spec.skills.slice() : [],
       script: spec.script != null ? String(spec.script) : null,
@@ -182,7 +190,20 @@
      claim is cleared by markRun on settlement, so it only ever marks an in-flight run. */
   function claimOnceFire(jobs, id, ctx) {
     const now = (ctx && ctx.now) || 0;
+    // NS-0: do NOT stamp heartbeatAt here — the heartbeat is proof a run is ACTUALLY EMITTING progress, which a
+    // just-claimed (or no-capability, never-launched) one-shot has not yet done. Leaving heartbeatAt null means
+    // planTick falls through to the pure maxRunMs fireClaim reclaim (unchanged backoff for a non-firing one-shot);
+    // once the run emits its first progress event, renewOnceHeartbeat sets a fresh heartbeat that extends liveness.
     return mapJob(jobs, id, (job) => Object.assign({}, job, { fireClaim: now, lastFireAttemptAt: iso(now) }));
+  }
+
+  /* renewOnceHeartbeat — NS-0: bump a one-shot's durable liveness timestamp to `now` (the driver calls this on
+     each run-progress event so an in-flight run keeps proving it is alive). No-op-safe on a non-once/absent job.
+     Only meaningful while a fireClaim is live; markRun clears BOTH on settlement so a stale heartbeat never
+     wedges the job. Pure: `now` is injected. Kept minimal (heartbeat only) so a hot renewal path is cheap. */
+  function renewOnceHeartbeat(jobs, id, ctx) {
+    const now = (ctx && ctx.now) || 0;
+    return mapJob(jobs, id, (job) => (job.fireClaim == null ? job : Object.assign({}, job, { heartbeatAt: now })));
   }
 
   /* markRun — record the outcome of a fired run. `result = { runId, status:'ok'|'error', reason, error, transient }`.
@@ -214,6 +235,9 @@
       // actually running — a transient settlement clears the claim so the backoff path below can re-arm
       // the one-shot without being suppressed by a stale claim. (lastFireAttemptAt is left as the audit trail.)
       next.fireClaim = null;
+      // NS-0: clear the liveness heartbeat on the SAME settlement — the run is no longer in flight, so a
+      // stale heartbeat must never suppress a legitimately-re-arming (transient-backoff) one-shot.
+      next.heartbeatAt = null;
 
       // transient failure with retries left: back off, stay eligible, do NOT finalize the occurrence.
       if (!ok && result.transient && (job.retryCount || 0) < maxRetries) {
@@ -266,6 +290,7 @@
     pauseJob: pauseJob,
     resumeJob: resumeJob,
     claimOnceFire: claimOnceFire,
+    renewOnceHeartbeat: renewOnceHeartbeat,
     markRun: markRun,
     removeJob: removeJob,
     getJob: getJob,
