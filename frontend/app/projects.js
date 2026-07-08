@@ -1,0 +1,77 @@
+/* STARNET — projects.js : pure display helpers for the PROJECTS rail view (NS-5c).
+
+   The Projects rail is the SESSIONS↔PROJECTS toggle's second face. It renders GET /api/projects — every folder
+   the Commander has blessed as a trusted project root (the NS-5 known-projects store, joined against the live
+   path:<root> grant). This module owns ONLY the pure shaping so it is unit-testable headless like workstreams.js /
+   classify.js: turning the API rows into rail rows, and the toggle's show/hide truth table. The DOM wiring
+   (fetch, render, click→jump, remove→revoke, add→bless) lives in app.js.
+
+   TRUTHFUL TELEMETRY: a row with blessed:false is NEVER hidden — it renders as REVOKED. The list mirrors exactly
+   what the grant layer believes; a remembered-but-un-blessed root is shown as such, not silently dropped.
+
+   Pure + dependency-free (Projects global in the browser; module.exports under node). */
+'use strict';
+(function (root, factory) {
+  const api = factory();
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  else { root.Projects = api; }
+})(typeof globalThis !== 'undefined' ? globalThis : this, function () {
+  'use strict';
+
+  // last path segment of a win32 OR posix absolute path (C:\a\b -> b, /a/b/ -> b). Trailing separators ignored.
+  function basename(p) {
+    const s = String(p == null ? '' : p).replace(/[\\/]+$/, '');
+    if (!s) return '';
+    const parts = s.split(/[\\/]/);
+    return parts[parts.length - 1] || s;
+  }
+
+  // compact right-edge stamp — the SAME vocabulary the sessions rail uses (now · 2m · 1h · 3d). Injected clock so
+  // the test is deterministic; a null/0 timestamp reads '' (an un-touched project has no honest "last worked").
+  function relTime(ms, nowMs) {
+    if (!ms) return '';
+    const now = (typeof nowMs === 'number') ? nowMs : Date.now();
+    const d = now - ms;
+    if (d < 60000) return 'now';
+    const m = Math.floor(d / 60000);
+    if (m < 60) return m + 'm';
+    const h = Math.floor(m / 60);
+    if (h < 24) return h + 'h';
+    return Math.floor(h / 24) + 'd';
+  }
+
+  // map the GET /api/projects rows -> rail display rows. Server order is preserved (already newest-touched first).
+  // blessed defaults TRUE only when the field is literally absent (older payloads); an explicit false stays false.
+  function toRows(projects, nowMs) {
+    return (Array.isArray(projects) ? projects : []).map(function (p) {
+      p = p || {};
+      const displayPath = (p.displayPath != null ? p.displayPath : (p.path != null ? p.path : p.root)) || '';
+      const blessed = p.blessed !== false;
+      return {
+        root: p.root || displayPath,
+        name: basename(displayPath) || String(p.root || ''),
+        path: displayPath,
+        blessed: blessed,
+        state: blessed ? 'blessed' : 'revoked',
+        isGitRepo: !!p.isGitRepo,
+        lastTouchedAt: (typeof p.lastTouchedAt === 'number' && p.lastTouchedAt > 0) ? p.lastTouchedAt : null,
+        rel: relTime((typeof p.lastTouchedAt === 'number' && p.lastTouchedAt > 0) ? p.lastTouchedAt : null, nowMs)
+      };
+    });
+  }
+
+  // the toggle's show/hide truth table (pure — app.js applies these to the real `hidden` flags). PROJECTS view
+  // swaps the sessions list + its NEW/ARCHIVED actions for the projects list + its ADD action, and vice-versa.
+  function panels(view) {
+    const projects = view === 'projects';
+    return {
+      sessionsList: !projects,   // #workstreams
+      projectsList: projects,    // #projects
+      newBtn: !projects,         // #ws-new
+      archivedBtn: !projects,    // #ws-archived (still subject to its own "≥1 archived" gate in the sessions view)
+      addBtn: projects           // #ws-addproject
+    };
+  }
+
+  return { basename, relTime, toRows, panels };
+});

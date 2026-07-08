@@ -80,6 +80,13 @@ function boot(port, env, attemptsLeft) {
   fs.writeFileSync(path.join(proj, '.env'), 'SECRET=hunter2\n');
   const fileA = path.join(proj, 'src', 'main.js');
   const fileB = path.join(proj, 'README.md');
+  // NS-5c: a SECOND real git repo to bless via the ADD-a-project route (POST /api/projects/bless), plus a plain file.
+  const repo2 = fs.mkdtempSync(path.join(os.tmpdir(), 'ptrust-repo2-'));
+  fs.mkdirSync(path.join(repo2, '.git'), { recursive: true });
+  fs.mkdirSync(path.join(repo2, 'src'), { recursive: true });
+  fs.writeFileSync(path.join(repo2, 'index.js'), 'const MARKER_TWO = 2;\n');
+  const subDir = path.join(repo2, 'src');       // a folder INSIDE the repo — bless it, the repo ROOT gets trusted
+  const looseFile = path.join(repo2, 'index.js');
 
   const env = { SKYNET_WORKSPACES: ws, SKYNET_OPENROUTER_BASE: mock.base };   // NO FULL_ACCESS → the consent broker is live
   let running = await boot(8760 + (process.pid % 40), env, 25);
@@ -120,6 +127,34 @@ function boot(port, env, attemptsLeft) {
     // ---- projects store starts empty ----
     const p0 = await (await fetch(B + '/api/projects', { headers: { 'X-StarNet-Token': token, Origin: B } })).json();
     A.eq((p0.projects || []).length, 0, 'GET /api/projects is empty before any bless');
+
+    // ---- NS-5c: POST /api/projects/bless is the ADD-a-project doorway (same grant machinery, honest errors) ----
+    const bless = (p) => fetch(B + '/api/projects/bless', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-StarNet-Token': token, Origin: B }, body: JSON.stringify({ path: p }) });
+    // a) honest rejects: relative path + a nonexistent folder both 400 with a reason, no grant recorded.
+    const bRel = await bless('some/rel/path'); const jRel = await bRel.json();
+    A.eq(bRel.status, 400, 'bless of a relative path is 400'); A.eq(jRel.ok, false, 'relative path ok:false'); A.eq(jRel.code, 'relative', 'relative code');
+    const bMiss = await bless(path.join(repo2, 'does-not-exist')); const jMiss = await bMiss.json();
+    A.eq(bMiss.status, 400, 'bless of a missing folder is 400'); A.eq(jMiss.code, 'missing', 'missing code');
+    // b) HAPPY: blessing a SUBDIR inside a git repo blesses the repo ROOT and records the standing grant.
+    const bOk = await bless(subDir); const jOk = await bOk.json();
+    A.eq(bOk.status, 200, 'bless of a real folder/file is 200'); A.eq(jOk.ok, true, 'bless ok:true');
+    A.ok(path.resolve(jOk.root).toLowerCase() === path.resolve(repo2).toLowerCase(), 'the blessed root is the git repo root (not the file dir): ' + jOk.root);
+    A.eq(jOk.isGitRepo, true, 'blessed root reported as a git repo');
+    // c) the added project shows in BOTH surfaces — /api/projects AND the SAME path grant in /api/permissions.
+    const projAdd = await (await fetch(B + '/api/projects', { headers: { 'X-StarNet-Token': token, Origin: B } })).json();
+    const addedRow = (projAdd.projects || []).find(p => path.resolve(p.root).toLowerCase() === path.resolve(repo2).toLowerCase());
+    A.ok(addedRow && addedRow.blessed === true && addedRow.isGitRepo === true, 'GET /api/projects lists the ADDED project (blessed, git)');
+    const permsAdd = await (await fetch(B + '/api/permissions', { headers: { 'X-StarNet-Token': token, Origin: B } })).json();
+    A.ok((permsAdd.grants || []).some(g => g.indexOf('path:') === 0 && path.resolve(g.slice(5)).toLowerCase() === path.resolve(repo2).toLowerCase()), 'the SAME path:<root> grant appears in /api/permissions (one grant store, two doorways)');
+    // d) an interactive run reads under the ADDED root with NO prompt (the route-blessed grant is real trust).
+    const rAdd = await driveRead('ptagent-added', looseFile, 'deny');
+    A.eq(rAdd.prompts.filter(p => p.tool === 'path.trust').length, 0, 'a read under the ADDED (route-blessed) root does NOT prompt');
+    // e) remove = revoke through the existing surface → /api/projects reflects blessed:false (list mirrors the grant store).
+    const revAdd = (permsAdd.grants || []).find(g => g.indexOf('path:') === 0 && path.resolve(g.slice(5)).toLowerCase() === path.resolve(repo2).toLowerCase());
+    await fetch(B + '/api/permissions/revoke', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-StarNet-Token': token, Origin: B }, body: JSON.stringify({ key: revAdd }) });
+    const projAfter = await (await fetch(B + '/api/projects', { headers: { 'X-StarNet-Token': token, Origin: B } })).json();
+    const afterRow = (projAfter.projects || []).find(p => path.resolve(p.root).toLowerCase() === path.resolve(repo2).toLowerCase());
+    A.ok(afterRow && afterRow.blessed === false, 'after revoke, the ADDED project reports blessed:false (truthful telemetry)');
 
     // ---- 1. first outside read → exactly ONE path.trust prompt; "always" lets the read flow ----
     const r1 = await driveRead('ptagent', fileA, 'always');
@@ -178,6 +213,7 @@ function boot(port, env, attemptsLeft) {
     try { mock.server.close(); } catch (_) {}
     try { fs.rmSync(ws, { recursive: true, force: true }); } catch (_) {}
     try { fs.rmSync(proj, { recursive: true, force: true }); } catch (_) {}
+    try { fs.rmSync(repo2, { recursive: true, force: true }); } catch (_) {}
   }
   A.report('e2e.pathtrust.test');
 })().catch(e => { console.error(e); process.exit(1); });

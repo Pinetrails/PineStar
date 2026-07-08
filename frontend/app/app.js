@@ -2237,6 +2237,10 @@ const App = (() => {
     renderRail();
     el('ws-new').onclick = newWorkstream;
     { const wsArch = el('ws-archived'); if (wsArch) wsArch.onclick = toggleArchived; }
+    // NS-5c SESSIONS ↔ PROJECTS toggle + ADD-a-project wiring
+    { const ts = el('ws-tab-sessions'); if (ts) ts.onclick = () => setRailView('sessions'); }
+    { const tp = el('ws-tab-projects'); if (tp) tp.onclick = () => setRailView('projects'); }
+    { const ap = el('ws-addproject'); if (ap) ap.onclick = beginAddProject; }
     if (opts.awaitingPurpose && typeof Onboarding !== 'undefined') {
       // THE AWAKENING — a guided first meeting that authors identity/purpose/context/operating-manual.md
       // while the room rises from dark to first light. Replaces the old single "what is my purpose?" beat.
@@ -2553,6 +2557,7 @@ const App = (() => {
   // hiding and revealing them (revealed rows are dimmed and offer Unarchive in their menu).
   function updateArchivedToggle() {
     const btn = el('ws-archived'); if (!btn) return;
+    if (railView === 'projects') { btn.hidden = true; return; }   // PROJECTS view shows + ADD, never the sessions ARCHIVED toggle
     let n = 0; for (const w of Workstreams.list({ includeArchived: true })) if (w.archived) n++;
     if (!n) { btn.hidden = true; btn.classList.remove('on'); railShowArchived = false; return; }
     btn.hidden = false;
@@ -2561,6 +2566,191 @@ const App = (() => {
     btn.title = railShowArchived ? 'hide archived sessions' : 'show ' + n + ' archived session' + (n === 1 ? '' : 's');
   }
   function toggleArchived() { railShowArchived = !railShowArchived; SFX.click(); renderRail(); }
+
+  /* ---------- PROJECTS rail view (NS-5c): SESSIONS ↔ PROJECTS toggle ----------
+     The same rail, a second face. PROJECTS lists GET /api/projects — every folder blessed as a trusted project
+     root (NS-5 known-projects store, joined against the live path:<root> grant). Rows reuse the .ws-row vocabulary
+     verbatim (dot = git badge, title = basename, meta = last-touched). A blessed:false row renders as REVOKED, never
+     hidden (truthful telemetry: the list mirrors exactly what the grant layer believes). ADD blesses a typed/-picked
+     folder through the SAME machinery as conversational trust (POST /api/projects/bless); a row click jumps into a
+     session anchored to that root; Remove revokes the path grant via the existing /api/permissions/revoke surface. */
+  let railView = 'sessions';   // 'sessions' | 'projects'
+  function setRailView(view) {
+    view = (view === 'projects') ? 'projects' : 'sessions';
+    if (view === railView) return;
+    railView = view;
+    SFX.click();
+    const pan = (typeof Projects !== 'undefined') ? Projects.panels(view) : { sessionsList: view === 'sessions', projectsList: view === 'projects', newBtn: view === 'sessions', archivedBtn: view === 'sessions', addBtn: view === 'projects' };
+    const set = (id, show) => { const e = el(id); if (e) e.hidden = !show; };
+    set('workstreams', pan.sessionsList);
+    set('projects', pan.projectsList);
+    set('ws-new', pan.newBtn);
+    set('ws-addproject', pan.addBtn);
+    { const ts = el('ws-tab-sessions'), tp = el('ws-tab-projects');
+      if (ts) { ts.classList.toggle('on', view === 'sessions'); ts.setAttribute('aria-selected', view === 'sessions'); }
+      if (tp) { tp.classList.toggle('on', view === 'projects'); tp.setAttribute('aria-selected', view === 'projects'); } }
+    closeProjectMenu();
+    if (view === 'projects') renderProjects();
+    else { updateArchivedToggle(); }   // sessions view: ARCHIVED button re-asserts its own "≥1 archived" gate
+  }
+  // the live dot class + git badge for one project row (pure read of the shaped row)
+  function projDot(r) { return 'ws-dot ' + (!r.blessed ? 'proj-plain' : (r.isGitRepo ? 'proj-git' : 'proj-plain')); }
+  function renderProjects() {
+    const ul = el('projects'); if (!ul) return;
+    ul.innerHTML = '<li class="proj-empty">loading projects…</li>';
+    fetch('/api/projects', { cache: 'no-store' })
+      .then(r => r.ok ? r.json() : { projects: [] })
+      .then(j => {
+        if (railView !== 'projects') return;   // toggled away while the fetch was in flight
+        const rows = (typeof Projects !== 'undefined') ? Projects.toRows(j && j.projects, Date.now()) : [];
+        if (!rows.length) {
+          ul.innerHTML = '<li class="proj-empty">No trusted projects yet. Tell an agent to “work in C:\\path\\to\\project”, or use <b>+ ADD</b> to bless a folder now.</li>';
+          return;
+        }
+        ul.innerHTML = rows.map(r => {
+          const tip = r.path + (r.blessed ? (r.isGitRepo ? ' · git repo' : '') : ' · REVOKED (trust withdrawn)') + ' — click to work here · right-click for actions';
+          return '<li class="ws-row proj-row' + (r.blessed ? '' : ' proj-revoked') + '" data-root="' + U.esc(r.root) + '" title="' + U.esc(tip) + '">' +
+            '<span class="' + projDot(r) + '"></span>' +
+            '<span class="ws-title">' + U.esc(r.name) + '</span>' +
+            (r.blessed && r.isGitRepo ? '<span class="proj-git-badge" aria-hidden="true">git</span>' : '') +
+            (r.blessed ? '<span class="ws-meta">' + U.esc(r.rel) + '</span>' : '<span class="proj-tag">REVOKED</span>') +
+            '<button class="ws-kebab" tabindex="-1" aria-label="project actions" title="project actions">⋯</button>' +
+            '</li>';
+        }).join('');
+        ul.querySelectorAll('.proj-row').forEach(li => {
+          const root = li.dataset.root;
+          const row = rows.find(x => x.root === root);
+          li.onclick = () => jumpIntoProject(row);
+          li.oncontextmenu = (e) => { e.preventDefault(); openProjectMenu(row, e.clientX, e.clientY); };
+          const keb = li.querySelector('.ws-kebab');
+          if (keb) keb.onclick = (e) => { e.preventDefault(); e.stopPropagation(); const b = keb.getBoundingClientRect(); openProjectMenu(row, b.left, b.bottom + 2); };
+        });
+      })
+      .catch(() => { if (railView === 'projects') ul.innerHTML = '<li class="proj-empty">Could not load projects.</li>'; });
+  }
+  // JUMP IN: open/create a session anchored to the project root and prime the composer with "work in <path>".
+  // Smallest honest mechanism (the path is already blessed → the agent's fs tools reach it with no re-prompt);
+  // no new context channel — it reuses Chat.prefill exactly like a slash-recipe seeds the composer.
+  function jumpIntoProject(r) {
+    if (!r) return;
+    setRailView('sessions');
+    let ws = null;
+    try { ws = (Workstreams.list() || []).filter(w => (w.title || '') === r.name && !w.archived)[0] || null; } catch (_) {}
+    if (!ws) ws = Workstreams.create(r.name, { activate: false });
+    if (!ws) return;
+    if (ws.id !== Workstreams.activeId()) switchWorkstream(ws.id);
+    else { focusAgent(ws.agentId || 'agent'); Chat.load(ws); refreshUsage(); }
+    if (typeof Chat !== 'undefined' && Chat.prefill) Chat.prefill('work in ' + r.path + ' — ');
+    SFX.open();
+  }
+  // the project row actions menu (reuses the .ws-menu phosphor chrome): Jump in · Remove (revoke trust, arm/confirm).
+  let projMenuEl = null;
+  function closeProjectMenu() {
+    if (!projMenuEl) return;
+    projMenuEl.remove(); projMenuEl = null;
+    document.removeEventListener('pointerdown', onProjMenuOutside, true);
+    document.removeEventListener('keydown', onProjMenuKey, true);
+    window.removeEventListener('blur', closeProjectMenu);
+    window.removeEventListener('resize', closeProjectMenu);
+  }
+  function onProjMenuOutside(e) { if (projMenuEl && !projMenuEl.contains(e.target)) closeProjectMenu(); }
+  function onProjMenuKey(e) { if (e.key === 'Escape') { e.preventDefault(); closeProjectMenu(); } }
+  function openProjectMenu(r, x, y) {
+    closeProjectMenu();
+    if (!r) return;
+    const menu = document.createElement('div');
+    menu.className = 'ws-menu'; menu.setAttribute('role', 'menu');
+    const item = (act, label, glyph, cls) =>
+      '<button class="ws-menu-item' + (cls ? ' ' + cls : '') + '" role="menuitem" data-act="' + act + '">' +
+      '<span class="ws-menu-glyph" aria-hidden="true">' + glyph + '</span>' + U.esc(label) + '</button>';
+    let html = '';
+    if (r.blessed) html += item('open', 'Work here', '▸');
+    html += (r.blessed ? '<div class="ws-menu-sep"></div>' : '') + item('remove', r.blessed ? 'Remove (revoke trust)' : 'Forget (already revoked)', '✕', 'danger');
+    menu.innerHTML = html;
+    document.body.appendChild(menu);
+    const rect = menu.getBoundingClientRect();
+    const vw = window.innerWidth || document.documentElement.clientWidth;
+    const vh = window.innerHeight || document.documentElement.clientHeight;
+    menu.style.left = Math.max(6, Math.min(x, vw - rect.width - 6)) + 'px';
+    menu.style.top = Math.max(6, Math.min(y, vh - rect.height - 6)) + 'px';
+    projMenuEl = menu;
+    menu.querySelectorAll('.ws-menu-item').forEach(btn => {
+      const act = btn.dataset.act;
+      if (act === 'remove') {   // destructive → arm on first click, act on a second within 4s
+        btn.addEventListener('click', () => {
+          if (btn.dataset.armed) { closeProjectMenu(); removeProject(r); return; }
+          btn.dataset.armed = '1'; btn.classList.add('armed');
+          btn.innerHTML = '<span class="ws-menu-glyph" aria-hidden="true">✕</span>Confirm remove';
+          SFX.bad();
+          setTimeout(() => { if (btn.isConnected) { delete btn.dataset.armed; btn.classList.remove('armed'); btn.innerHTML = '<span class="ws-menu-glyph" aria-hidden="true">✕</span>' + (r.blessed ? 'Remove (revoke trust)' : 'Forget (already revoked)'); } }, 4000);
+        });
+      } else {
+        btn.addEventListener('click', () => { closeProjectMenu(); jumpIntoProject(r); });
+      }
+    });
+    document.addEventListener('pointerdown', onProjMenuOutside, true);
+    document.addEventListener('keydown', onProjMenuKey, true);
+    window.addEventListener('blur', closeProjectMenu);
+    window.addEventListener('resize', closeProjectMenu);
+    SFX.click();
+  }
+  // REMOVE = revoke the standing path:<root> grant through the EXISTING permissions surface (truthful: the list
+  // then mirrors the grant store — after a revoke the row reports blessed:false on the next render, so a second
+  // "Forget" removes nothing new; the metadata row stays until the store's own forget path lands). No parallel store.
+  function removeProject(r) {
+    if (!r) return;
+    fetch('/api/permissions/revoke', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: 'path:' + r.root }) })
+      .then(res => res.ok ? res.json() : { ok: false })
+      .then(j => {
+        SFX.bad();
+        if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify((j && j.ok ? 'removed “' : 'could not remove “') + r.name + '”', j && j.ok ? 'warn' : 'bad');
+        renderProjects();
+      })
+      .catch(() => { renderProjects(); });
+  }
+  // ADD A PROJECT: an inline editor row at the top of the projects list — a typed absolute-path field (the honest
+  // fallback everywhere) plus a native folder picker on the desktop shell IF it exposes one (Tauri starnet_pick_folder;
+  // the shipped shell has none yet, so it gracefully falls back to the typed path — exactly like the KEEP flow).
+  // Submitting POSTs /api/projects/bless, which blesses through the SAME path-grant machinery as conversational trust.
+  function tauriCore() { return (typeof window !== 'undefined' && window.__TAURI__ && window.__TAURI__.core) ? window.__TAURI__.core : null; }
+  function beginAddProject() {
+    if (railView !== 'projects') setRailView('projects');
+    const ul = el('projects'); if (!ul) return;
+    if (ul.querySelector('.proj-add')) { const inp = ul.querySelector('.proj-add input'); if (inp) inp.focus(); return; }
+    const li = document.createElement('li'); li.className = 'proj-add';
+    const core = tauriCore();
+    li.innerHTML =
+      '<div class="proj-add-row">' +
+        '<input type="text" spellcheck="false" placeholder="absolute folder path (e.g. C:\\Users\\you\\project)" aria-label="project folder path">' +
+        (core && core.invoke ? '<button class="proj-add-pick" title="pick a folder">📁</button>' : '') +
+        '<button class="proj-add-go">Add</button>' +
+        '<button class="proj-add-cancel">✕</button>' +
+      '</div>' +
+      '<div class="proj-add-hint" hidden></div>';
+    ul.insertBefore(li, ul.firstChild);
+    const input = li.querySelector('input');
+    const hint = li.querySelector('.proj-add-hint');
+    const showHint = (msg, isErr) => { hint.hidden = !msg; hint.textContent = msg || ''; hint.classList.toggle('err', !!isErr); };
+    const cancel = () => { li.remove(); };
+    const submit = () => {
+      const p = String(input.value || '').trim();
+      if (!p) { showHint('enter a folder path', true); input.focus(); return; }
+      showHint('blessing…', false);
+      fetch('/api/projects/bless', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: p }) })
+        .then(res => res.json().then(j => ({ ok: res.ok, j })).catch(() => ({ ok: false, j: null })))
+        .then(({ ok, j }) => {
+          if (ok && j && j.ok) { SFX.open(); if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('added “' + (j.root || p) + '”', ''); renderProjects(); }
+          else { showHint((j && j.reason) || 'could not add that folder', true); SFX.bad(); }
+        })
+        .catch(() => { showHint('could not reach the station', true); SFX.bad(); });
+    };
+    input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); submit(); } else if (e.key === 'Escape') { e.preventDefault(); cancel(); } });
+    { const g = li.querySelector('.proj-add-go'); if (g) g.onclick = submit; }
+    { const c = li.querySelector('.proj-add-cancel'); if (c) c.onclick = cancel; }
+    { const pk = li.querySelector('.proj-add-pick'); if (pk && core && core.invoke) pk.onclick = () => { Promise.resolve(core.invoke('starnet_pick_folder', {})).then(dir => { if (dir) { input.value = String(dir); input.focus(); } }).catch(() => { input.focus(); }); }; }
+    input.focus();
+    SFX.click();
+  }
 
   // disconnect() — the teardown path: tears down the live game but NEVER wipes data and NEVER lands on a dead
   // title screen — it persists, then re-enters via reentry(): straight back into the station if creds are still
