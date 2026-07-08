@@ -634,8 +634,22 @@ it." Structurally impossible today because:
   context). Remove-from-list = revoke the path grant (truthful: the list shows exactly what
   is blessed, nothing else). Depends on NS-5 landing first (store + grant class + routes).
   Frontend law applies (windows/rail conventions); claim in-file before building.
-- **NS-5b · Focus resolver — single-priority nights (Andrew direction 2026-07-08: "hone in
-  on moving the needle," don't scatter).** Beats must NOT spread across every blessed root /
+- **NS-5b · Focus resolver — ✅ BUILT (branch agent/ns5b-focus, NOT merged; fast gate green +
+  full test:http green incl. a new live e2e). Landed: pure resolver sidecar/nightfocus.js
+  (evidence-ranked single priority, steer-outranks-derived w/ ~7d stale, day-keyed persist) ·
+  directive LEADS "TONIGHT'S FOCUS: <ref> — because <evidence>" (autopilot.js, reason + V2) +
+  same-night compounding block · bounded harness PROJECT SNAPSHOT scan sidecar/projectscan.js
+  (consults blessedRoots() directly, NEVER blesses; its lines join the grounding-veto pool) ·
+  project deliverable = a .patch in the jail; decide KEEP git-applies to a NEW branch
+  ns/<date>-<slug> (never main/master, never push, clean-tree only, apply-failure reported
+  honestly — sidecar/nightpatch.js + applyNightPatch) · durable steer POST/DELETE
+  /api/nightshift/focus (no consent widening) · morning report + status carry the focus.
+  LIVE-PROVEN vs a real sidecar + real git repo (test/nightshift-focus.e2e.test.js): beat
+  declares focus citing evidence → patch in /pending → keep applies to an ns/ branch verified
+  with git (original branch untouched) → discard wipes → steer sets/clears → focus persists.
+  OPEN: driver-timer idle path unit-only (e2e force-fires via the sanctioned /api/nightshift/beat
+  proxy); no frontend steer UI (route only); real-provider overnight unrun. Andrew direction
+  2026-07-08: "hone in on moving the needle," don't scatter.** Beats must NOT spread across every blessed root /
   open thread. Shift start = a PRIORITY RESOLUTION step: rank the evidence (per-root
   work-recency/frequency from run history · chat-topic recency · the active goal arc ·
   open threads · approve/deny history) → declare ONE focus for the night ("current priority:
