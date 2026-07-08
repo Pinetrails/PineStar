@@ -647,7 +647,7 @@ it." Structurally impossible today because:
   visible and correctable ("actually, focus on Y" = a durable steer that outranks derived
   evidence until it goes stale). Truthful-telemetry law applies: the declared priority must
   cite the evidence lines that produced it — never an unexplained vibe.
-- **NS-6 · Thread ledger (durable idea backlog).** Server-side store of "threads": ideas
+- **NS-6 · Thread ledger — ✅ MERGED 2026-07-08 (agent/ns6-threads → fd4a6adf, gates fast 277 + http full green; e2e proves mine→stash→keep→propose→picked→discard→declined vs the real sidecar). OPEN: frontend turn-in card (reuse study card family + beat arbiter, fetch on agent.run.end) · real-provider mining run.** Server-side store of "threads": ideas
   mined from chats/study/pitches with state open/picked/delivered/declined + decline reason.
   Mint via a post-run aux pass (same pattern as reflect/study, stash → turn-in) and/or a
   nightly digest pass. Night-shift PROPOSE draws from open threads FIRST, improv second;
