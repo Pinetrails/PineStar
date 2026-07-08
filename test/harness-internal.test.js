@@ -83,6 +83,17 @@ A.ok(/shell_exec background:true/.test(sidecar) && /shell_bg_status/.test(sideca
 A.ok(/browser_navigate plus browser_console\/browser_snapshot\/browser_vision[\s\S]*local\/private dev servers/.test(sidecar), 'work discipline asks browser-capable runs to verify reachable UI/browser behavior without looping on blocked localhost');
 A.ok(/Final reports must name changed files, verification commands\/results/.test(sidecar), 'work discipline requires concrete final evidence');
 
+// Task doctrine (2026-07-08 Hermes-parity): the general operating loop — proven outcomes, the quietest-path
+// tool ladder (dedicated tool > headless shell/browser > visible screen), read-back verification, honest
+// escalation. This is the block that stops "open the app on the user's screen and type into it".
+A.ok(/const\s+taskDoctrineNote\s*=/.test(sidecar), 'sidecar builds a dedicated task-doctrine prompt block');
+A.ok(/QUIETEST path that achieves the goal/.test(sidecar), 'task doctrine ranks tools quietest-first');
+A.ok(/ONLY when the Commander explicitly asked to see it on their screen or every quieter path failed/.test(sidecar), 'task doctrine demotes the visible screen to last resort');
+A.ok(/tell the Commander how to connect it \(Settings\) and ask before using a louder path/.test(sidecar), 'task doctrine surfaces connect-asks instead of silent escalation');
+A.ok(/VERIFY it took effect with a read-back tool/.test(sidecar), 'task doctrine requires outcome verification for world-changing actions');
+A.ok(/never a description, a plan, or a promise of future action/.test(sidecar), 'task doctrine defines the deliverable as a proven outcome');
+A.ok(/\+ taskDoctrineNote/.test(sidecar), 'the task doctrine is actually wired into the composed [HARNESS] prompt');
+
 /* ---------- EGRESS/TOKEN SAFETY (audit 0.6): X-StarNet-Token is SAME-ORIGIN ONLY ----------
    The fetch monkey-patch attaches the PRIVATE local X-StarNet-Token to every request isApiUrl() accepts.
    A naive substring match on '/api/' would attach it to third-party URLs that merely contain '/api/' — most

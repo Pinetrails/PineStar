@@ -93,6 +93,18 @@ debugging or claiming anything done. Companions: [BRAIN.md](BRAIN.md) · [DECISI
   resettable idle watchdog's job, never a fixed wall-clock. Retry loops can MASK this for
   short turns and make it look like flakiness — if a timeout correlates with turn LENGTH,
   suspect a fixed timer on the stream.
+- **Screen-first task execution (the 2026-07-08 Spotify incident).** Asked to "play a daft
+  punk song", the agent skipped the LIVE `spotify_play` tool and drove `desktop.open` +
+  `computer.use` — opened Spotify on the user's screen and, after focus moved, typed the
+  song title into StarNet's own chat box. Root causes, all fixed: (a) no tool-selection
+  doctrine anywhere in the composed prompt (`taskDoctrineNote` in index.js now injects the
+  quietest-path ladder: dedicated tool > headless shell/browser > visible screen last, plus
+  act→verify-read-back→iterate); (b) `desktop.open`'s description recruited itself for
+  "pull up X" phrasing (descriptions must SELF-DEMOTE — say when NOT to use the tool);
+  (c) keyboard input trusted focus blindly (`computer.use` now has a focus-truth guard:
+  win32 `foreground()` probe, `expectApp` match, and typing into a StarNet-titled window is
+  hard-refused). LAW: a visible-screen tool is a last resort the agent must justify, and
+  new loud tools ship with "when NOT to use me" text + the doctrine updated.
 
 - **Never destroy the last copy of a secret without read-back proof of its new home.**
   The 2026-07-07 Telegram-token escape: desktop "keychain migration" stripped the plaintext

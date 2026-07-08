@@ -6504,6 +6504,24 @@ async function runOnce(o) {
   const hasBgStatus = wireNames.indexOf('shell_bg_status') >= 0;
   const hasBrowserTools = wireNames.some(n => /^browser_/.test(n));
   const hasNotebookWrite = wireNames.indexOf('notebook_write') >= 0;
+  const hasScreenTools = wireNames.indexOf('desktop_open') >= 0 || wireNames.indexOf('computer_use') >= 0;
+  const hasJukebox = wireNames.indexOf('spotify_play') >= 0;
+  // TASK DOCTRINE (2026-07-08, Hermes-parity): the general operating loop every goliath harness prompt ships and
+  // ours didn't — deliverable = proven outcome, quietest-path tool ladder, act→verify→iterate, honest escalation.
+  // This block is what stops "open the app on the user's screen and type into it" when a quiet path exists.
+  const taskDoctrineNote = ''
+    + 'HOW TO WORK: the deliverable is a real outcome proven by real tool output — never a description, a plan, or a promise of future action. '
+    + 'Act with tools NOW and keep going until the task is done or genuinely blocked; if blocked, say so honestly and try a different path — NEVER invent output you did not produce. '
+    + 'Always take the QUIETEST path that achieves the goal: (1) a DEDICATED tool for the target service'
+    + (hasJukebox ? ' (e.g. spotify_play for Spotify)' : '') + ' — try it FIRST even if you are unsure it is connected; '
+    + '(2) HEADLESS work' + (hasShellExec ? ' — shell_exec can drive installed apps invisibly (app URI schemes, app CLIs, PowerShell)' : '')
+    + (hasBrowserTools ? (hasShellExec ? ', and browser_* handles the web unseen' : ' — browser_* handles the web unseen') : '') + '; '
+    + (hasScreenTools
+      ? '(3) the VISIBLE screen (desktop_open, computer_use) ONLY when the Commander explicitly asked to see it on their screen or every quieter path failed — and tell them why you escalated. '
+      : '')
+    + 'If a dedicated tool answers "not connected", tell the Commander how to connect it (Settings) and ask before using a louder path. '
+    + 'After any action that changes the world, VERIFY it took effect with a read-back tool (e.g. now-playing after play, a listing after a write, a probe after a start) before reporting done. '
+    + 'A tool error is information: read it and change strategy — never repeat the identical failing call, and never silently switch to a louder tool. ';
   const workDisciplineNote = ''
     + (hasShellExec ? 'When the Commander names a local project folder, first anchor shell_exec.cwd to that exact folder, then keep later shell paths relative to it. After a path or cwd failure, run one small working-directory diagnostic plus a listing, and change strategy instead of retrying the same bad path. ' : '')
     + (hasReadTools ? 'Inspect before editing with fs_search/fs_list/fs_read, or one small shell diagnostic when the file tools cannot see the project; do not guess file contents or shotgun failed paths. ' : '')
@@ -6518,6 +6536,7 @@ async function runOnce(o) {
     ? '\n\n[HARNESS] You are running in a REAL agent harness on the Commander\'s machine, at a workstation with '
       + 'these LIVE tools: ' + wireNames.join(', ') + '. '
       + 'Actually use the listed tools when relevant; never claim a listed tool is unavailable. '
+      + taskDoctrineNote
       + (wireNames.indexOf('routine_create') >= 0
         ? 'When the Commander asks for a cron, routine, scheduled/recurring task, reminder, or standing job, use routine_create/routine_list in StarNet ROUTINES; do not use shell_exec, crontab, Windows Task Scheduler, Python scripts, or OS schedulers. '
         : '')
