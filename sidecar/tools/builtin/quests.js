@@ -38,7 +38,8 @@
     deps = deps || {};
     const store = deps.store;
     if (!store) throw new Error('quests.js requires { store }');
-    const now = () => (deps.clock && typeof deps.clock.now === 'function') ? deps.clock.now() : Date.now();
+    if (!deps.clock || typeof deps.clock.now !== 'function') throw new Error('quests.js requires { clock }');   // injected wall-clock only — determinism law, no ambient Date.now
+    const now = () => deps.clock.now();
 
     const questUpdateTool = {
       name: 'quest.update', capability: 'memory', scope: 'write', requiresConsent: false, timeoutMs: 8000,
