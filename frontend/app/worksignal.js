@@ -9,7 +9,7 @@
 
    Structure mirrors profile.js EXACTLY so the two engines share one mental model + one calibration convention:
      • per-lane EWMA-decayed weight + a sample count (14d half-life, like profile), so recency sharpens the read;
-     • CALIBRATING_N (5) samples before a lane read is "known" — below the floor the recommender stays silent;
+     • CALIBRATING_N samples before a lane read is "known" — below the floor the recommender stays silent;
      • the clock is ALWAYS injected (`now`) — no Date.now / Math.random here — so decay is deterministic and node
        tests can fast-forward time. The browser wiring (worksignalstore.js) supplies Date.now() at the edge.
 
@@ -26,7 +26,7 @@
 
   // ---- tunables (kept in lock-step with profile.js so the two engines calibrate identically) ----
   const HALF_LIFE_MS = 14 * 24 * 60 * 60 * 1000;  // a lane's weight halves every ~2 weeks of silence (recency)
-  const CALIBRATING_N = 5;                         // total tool observations before the histogram is "known" (else: calibrating)
+  const CALIBRATING_N = 3;                         // total tool observations before the histogram is "known" (else: calibrating). Lowered 5→3 with the scout lane (2026-07-08): the old floor + hero-only counting kept the adaptive shelves cold for whole sessions.
   const TAGS = ['code', 'research', 'general'];    // the interest vocabulary (mirrors profile.js / classify.js)
 
   // the capability lanes tracked — the CAP_REGISTRY objectTypes that class KITS draw on (shared/specialties.js).

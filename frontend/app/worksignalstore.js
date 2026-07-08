@@ -44,10 +44,13 @@ const WorkSignalStore = (() => {
     return null;   // model.chat + unknowns: not a work lane
   }
 
-  // fold one real HERO tool fire into its capability lane (+ the run's interest tag into that lane's tally).
+  // fold one real tool fire into its capability lane (+ the run's interest tag into that lane's tally).
+  // ALL agents count (scout moderate-loosening, 2026-07-08): delegated/specialist tool work is still the
+  // Commander's workflow — the old hero-only gate starved the histogram whenever work was routed, which was
+  // a big reason the adaptive shelves never warmed up. The work the STATION does is the signal, whoever did it.
   function onToolCall(p) {
     if (!ready() || !learningOn()) return;
-    if (!p || (p.agentId || 'agent') !== 'agent') return;   // only the HERO's tool use shapes the Commander's workflow read
+    if (!p) return;
     const lane = laneForTool(p.name);
     if (!lane) return;
     let tag = null;

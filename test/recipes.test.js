@@ -411,4 +411,12 @@ A.ok(new Set(coldCats).size >= 3, 'the cold-start fallback spreads across distin
 const cold2 = R.rankRecipes(items, { score: () => 0, goalText: '', limit: 5 });
 A.eq(cold.map(r => r.id).join(','), cold2.map(r => r.id).join(','), 'the cold-start fallback is deterministic (stable order)');
 
+// ENGAGEMENT (scout lane 5): the user's OWN launch counts rank a recipe up — and count as signal on their own.
+const lRank = R.rankRecipes(items, { launches: { 'summarize': { n: 4 } }, limit: 3 });
+A.eq(lRank[0].id, 'summarize', 'a heavily-launched recipe ranks first on launches alone');
+// the nudge is CAPPED at 5: two heavy hitters tie and fall back to catalog order (fix-bug precedes summarize),
+// and the bare-number launches shape ({id: n}) is accepted alongside {id: {n}}.
+const lCap = R.rankRecipes(items, { launches: { 'summarize': { n: 500 }, 'fix-bug': 400 }, goalText: '', limit: 3 });
+A.eq(lCap.map(r => r.id).slice(0, 2).join(','), 'fix-bug,summarize', 'capped launch counts tie-break by catalog order; both launch shapes accepted');
+
 A.report('recipes');

@@ -21,6 +21,10 @@ const Marketplace = (() => {
   let opener = null;
   let editingId = null, editingRecipeId = null, launchId = null;
   let pendingMintKey = null, pendingMintTemplate = null;
+  // SCOUT handoff: the station-drafted recipe being reviewed in the editor. pendingScoutRecipeId is consumed on a
+  // successful save (accept — retires the staged draft server-side, never denylists); scoutSeedDraft prefills the
+  // whole form (name/emoji/tagline/task — richer than a mint's bare template). Reset wherever the mint keys reset.
+  let pendingScoutRecipeId = null, scoutSeedDraft = null;
   // R2 editor working state (the unified fork/create form): the picked gear set, cadence id, category, and the
   // fork provenance carried from a TWEAK. Reset on every open of the editor.
   let editGear = [], editCadence = null, editCategory = 'general', editForkedFrom = null, editParams = [];
@@ -167,9 +171,11 @@ const Marketplace = (() => {
     close();
     opener = trigger;
     ctx = context || {};
-    view = 'grid'; editingId = null; editingRecipeId = null; launchId = null; pendingMintKey = null; pendingMintTemplate = null;
+    view = 'grid'; editingId = null; editingRecipeId = null; launchId = null; pendingMintKey = null; pendingMintTemplate = null; pendingScoutRecipeId = null; scoutSeedDraft = null;
     editForkedFrom = null; editSourceRunId = null;
     laneFilter = 'all'; catFilter = 'all'; query = '';
+    // SCOUT: re-read server truth on open (fresh drafts/interests land) and push the browser-only dedup context.
+    try { if (typeof ProspectStore !== 'undefined' && ProspectStore.refresh) { ProspectStore.pushContext(); ProspectStore.refresh(); } } catch (_) {}
     tab = (ctx.mode !== 'pick' && ctx.tab === 'recipes' && hasRecipes()) ? 'recipes' : 'agents';
     glassOpen = !acked();
     pickedSummonSkin = null;
@@ -219,7 +225,7 @@ const Marketplace = (() => {
     if (!hasRecipes() || tab !== 'recipes') return;
     // a bottled proposal must at least carry a task template to be editable; anything less is a malformed seed.
     if (!seed.task || !String(seed.task).trim()) return;
-    pendingMintKey = null; pendingMintTemplate = null;
+    pendingMintKey = null; pendingMintTemplate = null; pendingScoutRecipeId = null; scoutSeedDraft = null;
     // 'create' entry (a brand-new custom, not a fork of an existing recipe) — the proposal is the pre-fill.
     // enterRecipeEditor lifts seed.sourceRunId into editSourceRunId so it survives save.
     enterRecipeEditor(seed, 'create');
@@ -228,7 +234,7 @@ const Marketplace = (() => {
     if (!root) return;
     document.removeEventListener('keydown', onKey, true);
     root.remove(); root = null; ctx = null; view = 'grid';
-    editingId = null; editingRecipeId = null; launchId = null; pendingMintKey = null; pendingMintTemplate = null;
+    editingId = null; editingRecipeId = null; launchId = null; pendingMintKey = null; pendingMintTemplate = null; pendingScoutRecipeId = null; scoutSeedDraft = null;
     const o = opener; opener = null;
     try { if (o && o.focus) o.focus(); } catch (_) {}
   }
@@ -903,7 +909,9 @@ const Marketplace = (() => {
     // the affinity scorer only feeds the rank when learning is ON and the profile has signal; else rankRecipes
     // leans on goal text, then the honest category-spread fallback.
     const scoreFn = (ps && ps.score && !learningOff) ? (tags => ps.score(tags)) : null;
-    const items = Recipes.rankRecipes(Recipes.list(), { score: scoreFn, goalText: goalText(), limit: 4 });
+    // launches = the Commander's OWN real per-recipe launch counts (scout usage read) — engagement feeds the rank.
+    let launches = null; try { launches = (typeof ProspectStore !== 'undefined' && ProspectStore.launches) ? ProspectStore.launches() : null; } catch (_) {}
+    const items = Recipes.rankRecipes(Recipes.list(), { score: scoreFn, goalText: goalText(), launches: launches, limit: 4 });
     if (!items || !items.length) return '';
     return '<div class="mkt-sect-h mkt-foryou-sect">◈ FOR YOU</div><div class="mkt-rec-rail">' +
       items.map(forYouCardHTML).join('') + '</div>';
@@ -932,8 +940,30 @@ const Marketplace = (() => {
     return mp.candidates() || [];
   }
   function suggestedShelfHTML() {
-    const cands = suggestedMissions(); if (!cands.length) return '';
-    return '<div class="mkt-sect-h mkt-suggest-sect">✨ SUGGESTED — from what you keep asking</div><div class="mkt-rec-rail">' + cands.map(suggestCardHTML).join('') + '</div>';
+    // two honest sources share this shelf: auto-mint candidates (exact task shapes the Commander keeps typing)
+    // and SCOUT recipe drafts (server-authored from the learned interests, each carrying its evidence-grounded WHY).
+    const cands = suggestedMissions();
+    const drafts = scoutRecipeDrafts();
+    if (!cands.length && !drafts.length) return '';
+    return '<div class="mkt-sect-h mkt-suggest-sect">✨ SUGGESTED — from what you keep asking</div><div class="mkt-rec-rail">' +
+      cands.map(suggestCardHTML).join('') + drafts.map(scoutRecipeCardHTML).join('') + '</div>';
+  }
+  function scoutRecipeDrafts() {
+    try { return (typeof ProspectStore !== 'undefined' && ProspectStore.recipeDrafts) ? (ProspectStore.recipeDrafts() || []) : []; } catch (_) { return []; }
+  }
+  // a station-drafted recipe card — same card family as the prospect shelf (glyph + WHY + provenance + arm-confirmed
+  // dismiss), because it makes the same promise: drafted from YOUR observed work, never saved without your review.
+  function scoutRecipeCardHTML(p) {
+    const d = (p && p.draft) || {};
+    return '<div class="mkt-rec mkt-prospect mkt-scout-recipe" data-scout="' + esc(p.id) + '">' +
+      '<div class="mkt-rec-top"><span class="mkt-prospect-glyph" aria-hidden="true">' + esc(d.emoji || '✦') + '</span>' +
+        '<div class="mkt-rec-id"><div class="mkt-rec-name">' + esc(d.name || 'New recipe') + '</div>' +
+          '<div class="mkt-rec-tag">' + esc(d.tagline || '') + '</div></div></div>' +
+      (p.why ? '<div class="mkt-rec-why"><span class="mkt-rec-why-k">WHY</span> ' + esc(p.why) + '</div>' : '') +
+      '<div class="mkt-prospect-prov">◇ drafted by the station from your work — review &amp; save to add it</div>' +
+      '<div class="mkt-prospect-acts"><button class="bb sm mkt-scout-recipe-open" data-scout="' + esc(p.id) + '">▸ REVIEW &amp; SAVE</button>' +
+        '<button class="bb sm mkt-scout-recipe-dismiss" data-scout="' + esc(p.id) + '" aria-label="dismiss this drafted recipe forever" title="dismiss forever — the station won\'t draft this recipe again">✕</button></div>' +
+    '</div>';
   }
   function suggestCardHTML(c) {
     return '<div class="mkt-rec mkt-suggest" data-key="' + esc(c.key) + '">' +
@@ -963,7 +993,7 @@ const Marketplace = (() => {
     // editingId cleared: ＋ is always a FRESH class, never a stale upsert (the edit view can be abandoned by closing the window)
     if (build) build.addEventListener('click', () => { sfx('click'); editingId = null; buildDraft = null; acceptingProspectId = null; buildAccent = '#ffaa33'; buildModel = 'balanced'; buildKit = []; buildSkills = []; buildEffort = null; view = 'build'; renderStage(); });
     const recipeSaveas = stage.querySelector('.mkt-recipe-saveas');
-    if (recipeSaveas) recipeSaveas.addEventListener('click', () => { sfx('click'); pendingMintKey = null; pendingMintTemplate = null; enterRecipeEditor(null, 'create'); });
+    if (recipeSaveas) recipeSaveas.addEventListener('click', () => { sfx('click'); pendingMintKey = null; pendingMintTemplate = null; pendingScoutRecipeId = null; scoutSeedDraft = null; enterRecipeEditor(null, 'create'); });
 
     const skinWrap = stage.querySelector('#mkt-skin-picker');
     if (skinWrap) {
@@ -1098,7 +1128,7 @@ const Marketplace = (() => {
     });
     const rEdit = sc.querySelector('.mkt-recipe-edit');
     if (rEdit) rEdit.addEventListener('click', () => {
-      pendingMintKey = null; pendingMintTemplate = null; sfx('click');
+      pendingMintKey = null; pendingMintTemplate = null; pendingScoutRecipeId = null; scoutSeedDraft = null; sfx('click');
       // EDIT an existing custom in place — seed the editor from the saved record so every picker prefills.
       const r = hasRecipes() ? Recipes.get(rEdit.dataset.id) : null;
       enterRecipeEditor(r || {}, 'edit', rEdit.dataset.id);
@@ -1107,7 +1137,7 @@ const Marketplace = (() => {
     const rTweak = sc.querySelector('.mkt-recipe-tweak');
     if (rTweak) rTweak.addEventListener('click', () => {
       if (!hasRecipes()) return;
-      pendingMintKey = null; pendingMintTemplate = null; sfx('click');
+      pendingMintKey = null; pendingMintTemplate = null; pendingScoutRecipeId = null; scoutSeedDraft = null; sfx('click');
       const forkDraft = Recipes.forkFrom(rTweak.dataset.id);
       if (!forkDraft) { note('could not tweak that recipe', 'bad'); return; }
       enterRecipeEditor(forkDraft, 'fork');
@@ -1191,6 +1221,29 @@ const Marketplace = (() => {
       if (mintApi()) MintStore.markDismissed(b.dataset.key);
       sfx('close'); renderStage();
     }));
+    // SCOUT recipe drafts: REVIEW & SAVE opens the R2 editor fully pre-filled from the draft; the save is the
+    // accept (consumed in wireRecipeSaveForm). Dismiss denylists server-side (never re-drafted) → arm/confirm.
+    sc.querySelectorAll('.mkt-scout-recipe-open').forEach(b => b.addEventListener('click', () => {
+      const p = (typeof ProspectStore !== 'undefined' && ProspectStore.get) ? ProspectStore.get(b.dataset.scout) : null;
+      if (!p || !p.draft) { renderStage(); return; }
+      sfx('click');
+      pendingMintKey = null; pendingMintTemplate = null;
+      pendingScoutRecipeId = p.id;
+      scoutSeedDraft = p.draft;
+      enterRecipeEditor({ task: p.draft.task, gear: p.draft.gear, category: p.draft.category, params: p.draft.params }, 'create');
+    }));
+    sc.querySelectorAll('.mkt-scout-recipe-dismiss').forEach(b => {
+      const confirmDismiss = () => {
+        sfx('close');
+        if (typeof ProspectStore !== 'undefined' && ProspectStore.dismiss) ProspectStore.dismiss(b.dataset.scout);
+        renderStage();
+      };
+      if (typeof ArmConfirm !== 'undefined' && ArmConfirm.wire) {
+        ArmConfirm.wire(b, { armedLabel: 'DISMISS FOREVER?', restLabel: '✕', timeoutMs: 4000, onConfirm: confirmDismiss });
+      } else {
+        b.addEventListener('click', () => armDelete(b, '✕', confirmDismiss, 'DISMISS FOREVER?'));
+      }
+    });
   }
 
   /* ---------- R6: export / import a recipe as a portable JSON file ----------
@@ -1480,14 +1533,17 @@ const Marketplace = (() => {
   function recipeSaveFormHTML() {
     const editing = editingRecipeId && hasRecipes() ? Recipes.get(editingRecipeId) : null;
     const minting = !editing && !!pendingMintTemplate;
+    const scouting = !editing && !minting && !!scoutSeedDraft;   // a SCOUT draft: the whole form pre-fills from it
     const forking = !editing && !!editForkedFrom;
     const parent = forking && hasRecipes() ? Recipes.get(editForkedFrom) : null;
-    const d = editing || { emoji: '✦', name: '', tagline: '', task: '' };
-    const title = editing ? 'EDIT RECIPE' : forking ? 'TWEAK RECIPE' : minting ? 'SAVE THIS AS A RECIPE' : 'SAVE A RECIPE';
+    const d = editing || (scouting ? scoutSeedDraft : null) || { emoji: '✦', name: '', tagline: '', task: '' };
+    const title = editing ? 'EDIT RECIPE' : forking ? 'TWEAK RECIPE' : minting ? 'SAVE THIS AS A RECIPE' : scouting ? 'REVIEW THE STATION’S DRAFT' : 'SAVE A RECIPE';
     const intro = forking
       ? 'a copy of <b>' + esc((parent && parent.name) || 'the recipe') + '</b> — yours to change. adjust the wording, the fill-ins, the gear or cadence, then save it as your own. the original stays put.'
       : minting
       ? 'you’ve done this a few times — saving it makes it a one-tap recipe you own. Tweak the wording, wrap any blanks in <b>{braces}</b>, then save.'
+      : scouting
+      ? 'the station drafted this from your observed work — review it, change anything, and save to make it yours. Nothing is added without this save.'
       : 'write the directive your agent should run. Wrap each blank in <b>{braces}</b> — “Brief me on <b>{topic}</b>” — and it becomes a fill-in at launch.';
     // when the form is (re)rendered we read the CURRENT working state (editGear/editCadence/... survive across
     // re-renders); name/emoji/tagline/task come from the DOM on save, but seed from `d` here on first paint.
@@ -1522,7 +1578,7 @@ const Marketplace = (() => {
   }
   function wireRecipeSaveForm(stage) {
     const back = stage.querySelector('.mkt-cancel');
-    if (back) back.addEventListener('click', () => { sfx('click'); view = 'grid'; editingRecipeId = null; editForkedFrom = null; editSourceRunId = null; pendingMintKey = null; pendingMintTemplate = null; renderStage(); });
+    if (back) back.addEventListener('click', () => { sfx('click'); view = 'grid'; editingRecipeId = null; editForkedFrom = null; editSourceRunId = null; pendingMintKey = null; pendingMintTemplate = null; pendingScoutRecipeId = null; scoutSeedDraft = null; renderStage(); });
     const taskIn = stage.querySelector('#mkt-r-task'), tokens = stage.querySelector('#mkt-r-tokens'), preview = stage.querySelector('#mkt-r-preview');
     // read the fill-in grid back into editParams (keys/labels/placeholder/required) from the live inputs.
     const syncParamsFromDOM = () => {
@@ -1614,7 +1670,9 @@ const Marketplace = (() => {
       try {
         const saved = Recipes.saveCustom(rec);
         if (pendingMintKey && mintApi()) MintStore.markMinted(pendingMintKey);
-        pendingMintKey = null; pendingMintTemplate = null; editForkedFrom = null; editSourceRunId = null;
+        // a SCOUT draft: the save IS the accept — retire the staged draft server-side (never a denylist).
+        if (pendingScoutRecipeId && typeof ProspectStore !== 'undefined' && ProspectStore.accept) ProspectStore.accept(pendingScoutRecipeId);
+        pendingMintKey = null; pendingMintTemplate = null; pendingScoutRecipeId = null; scoutSeedDraft = null; editForkedFrom = null; editSourceRunId = null;
         focusRecipe = saved.id;
         sfx('click'); note((editing ? 'updated' : 'saved') + ' recipe: ' + saved.name, 'good');
         editingRecipeId = null; view = 'grid'; renderStage();

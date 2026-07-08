@@ -91,52 +91,74 @@ A.ok(P.parse(GOOD, opts).draft, 'a distinct role sharing kit with an existing cl
 /* ---------- fingerprint stability (denylist keying) ---------- */
 A.eq(P.fingerprint('Market Analyst'), P.fingerprint('analyst market'), 'the fingerprint is order-insensitive (reordered names match)');
 
-/* ---------- store: cold-start mints nothing + the gate ---------- */
-global.Prospect = P;   // prospectstore.js reads the pure engine as a browser global
+/* ---------- store: the SCOUT CLIENT (server truth cached; legacy hydrated; decide flows) ----------
+   The mint itself moved server-side (sidecar scout — covered by test/scout.test.js + test/scout.http.test.js);
+   this store is now the thin client. Prove: init pushes context + reads /api/scout; server prospects render
+   through the SAME card shape; recipe drafts + interests (with evidence) are exposed; a legacy localStorage
+   draft still renders and decides LOCALLY (dismiss denylists); a server draft decides via POST + optimistic
+   cache drop. */
+global.Prospect = P;   // kept a browser global for any residual consumers
 const { ProspectStore } = require('../frontend/app/prospectstore.js');
-// no U/localStorage in node → init tolerates their absence; drive the gate through _shouldMint with injected deps.
 global.localStorage = { _s: {}, getItem(k){ return this._s[k] == null ? null : this._s[k]; }, setItem(k,v){ this._s[k]=v; }, removeItem(k){ delete this._s[k]; } };
 
-// COLD: warmth 0 → never mints
-ProspectStore.init({ now: () => 1000, getWarmth: () => 0, getFamiliarity: () => 0 });
-A.eq(ProspectStore._shouldMint(), false, 'a cold station (warmth 0) never attempts a mint');
-
-// WARM but cooldown not cleared (fresh install starts at COOLDOWN so it's allowed; force it low)
-ProspectStore.init({ now: () => 1000, getWarmth: () => 0.5, getFamiliarity: () => 0.3 });
-A.eq(ProspectStore._shouldMint(), true, 'a warm station past cooldown with growth is due for a mint attempt');
-
-/* ---------- denylist blocks re-mint (end-to-end through maybeMint) ---------- */
 (async () => {
-  ProspectStore.reset();
-  const chat = async () => ({ text: GOOD });
-  const deps = {
-    now: () => 2000, chat,
-    getWarmth: () => 0.6, getFamiliarity: () => 0.4,
-    getCapabilityKeys: () => CAPS, getSkillSlugs: () => SLUGS, getCatalogSummary: () => EXISTING,
-    getWorksignalSummary: () => 'dish-heavy'
+  const calls = [];
+  const PAYLOAD = {
+    warm: true,
+    gate: { fire: false, binding: 'cooldown', runsSinceMint: 1, mintEveryRuns: 3 },
+    interests: [{ topic: 'stock-research', label: 'stock research', weight: 2.1, count: 3, evidence: ['NVDA earnings and the market reaction'] }],
+    staged: [
+      { id: 'sp1', kind: 'prospect', draft: { name: 'Market Analyst', kit: ['dish'] }, why: 'dish-heavy research, no pricing role', fingerprint: 'fp-sp1', at: 5 },
+      { id: 'sr1', kind: 'recipe', draft: { name: 'Stock Radar', task: 'Check {t}.', params: [{ key: 't' }] }, why: 'you keep asking about stocks', fingerprint: 'fp-sr1', at: 6 }
+    ],
+    ledger: []
   };
-  ProspectStore.init(deps);
-  const rec = await ProspectStore.maybeMint();
-  A.ok(rec && rec.draft && rec.draft.name === 'Market Analyst', 'a warm+due station mints a valid prospect from the model reply');
-  A.eq(ProspectStore.list().length, 1, 'the minted prospect is staged');
+  const fakeFetch = async (u, init) => {
+    calls.push({ u: u, init: init || {} });
+    if (u === '/api/scout') return { ok: true, json: async () => JSON.parse(JSON.stringify(PAYLOAD)) };
+    return { ok: true, json: async () => ({ ok: true }) };
+  };
 
-  // dismiss it → denylisted
-  const ok = ProspectStore.dismiss(rec.id);
-  A.eq(ok, true, 'dismiss removes the prospect');
-  A.eq(ProspectStore.list().length, 0, 'the dismissed prospect leaves the staging list');
-  A.eq(ProspectStore.isDenied(rec.fingerprint), true, 'the dismissed fingerprint is denylisted');
+  // a legacy draft staged by a pre-scout build survives the upgrade
+  localStorage.setItem('starnet.prospects.v1', JSON.stringify({ v: 1, prospects: [{ id: 'legacy1', draft: { name: 'Old Draft' }, why: 'w', fingerprint: 'fp-legacy' }], denylist: [] }));
 
-  // a fresh session tries to mint the SAME draft → blocked by the denylist
-  ProspectStore.init(deps);   // new session (sessionAttempted resets) but denylist persists via localStorage
-  const rec2 = await ProspectStore.maybeMint();
-  A.eq(rec2, null, 'the denylist blocks re-minting an equivalent prospect (dismissed != regenerate)');
-  A.eq(ProspectStore.list().length, 0, 'no prospect is re-staged after a dismissal');
+  ProspectStore.init({
+    fetch: fakeFetch,
+    getCustomRecipes: () => [{ name: 'My Recipe', tagline: 't' }],
+    getWorksignalSummary: () => 'dish-heavy',
+    getTopRecommendation: () => 'researcher'
+  });
+  await new Promise(r => setTimeout(r, 10));   // let init's pushContext + refresh settle
 
-  // NONE reply → no mint, silent
-  ProspectStore.reset();
-  ProspectStore.init(Object.assign({}, deps, { chat: async () => ({ text: 'NONE' }) }));
-  const none = await ProspectStore.maybeMint();
-  A.eq(none, null, 'a NONE model reply mints nothing (silent no-mint)');
+  const ctxCall = calls.find(c => c.u === '/api/scout/context');
+  A.ok(!!ctxCall, 'init pushes the browser-only context to the server');
+  A.ok(JSON.parse(ctxCall.init.body).customRecipes[0].name === 'My Recipe', 'the context push carries the custom recipes');
+  A.ok(calls.some(c => c.u === '/api/scout'), 'init reads server truth from /api/scout');
+
+  const items = ProspectStore.list();
+  A.eq(items.length, 2, 'the shelf merges the legacy draft with the server-staged prospect');
+  A.ok(items.some(p => p.id === 'sp1' && p.draft.name === 'Market Analyst'), 'a server prospect renders through the same card shape');
+  A.eq(ProspectStore.recipeDrafts().length, 1, 'server recipe drafts are exposed for the SUGGESTED shelf');
+  A.eq(ProspectStore.recipeDrafts()[0].draft.name, 'Stock Radar', 'the recipe draft round-trips intact');
+  A.eq(ProspectStore.warm(), true, 'warmth mirrors the server read');
+  A.ok(ProspectStore.interests()[0].evidence.length > 0, 'interests carry their evidence quotes');
+  A.eq(ProspectStore.gate().binding, 'cooldown', 'the live gate binding is exposed (honest shelf copy)');
+
+  // LEGACY decide: local, dismiss denylists (never re-mint an equivalent client-side draft)
+  A.eq(ProspectStore.dismiss('legacy1'), true, 'a legacy draft dismisses locally');
+  A.eq(ProspectStore.isDenied('fp-legacy'), true, 'the legacy dismissal denylists its fingerprint');
+
+  // SERVER decide: optimistic drop + POSTed verdict
+  const before = calls.length;
+  A.eq(ProspectStore.dismiss('sp1'), true, 'a server draft dismisses');
+  A.eq(ProspectStore.list().length, 0, 'the dismissed server draft drops from the shelf instantly');
+  await new Promise(r => setTimeout(r, 10));
+  const decide = calls.slice(before).find(c => c.u === '/api/scout/decide');
+  A.ok(!!decide, 'the dismiss verdict POSTs to /api/scout/decide');
+  A.eq(JSON.parse(decide.init.body).decision, 'dismiss', 'the verdict carries the decision');
+  A.eq(ProspectStore.accept('sr1'), true, 'a server recipe draft accepts');
+  A.eq(ProspectStore.recipeDrafts().length, 0, 'the accepted draft leaves the staging list');
+  A.eq(ProspectStore.dismiss('nope'), false, 'deciding an unknown id is a no-op');
 
   A.report('prospect');
 })();
