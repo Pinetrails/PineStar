@@ -178,6 +178,36 @@ const Voice = (() => {
   // users hate most, so keep this SHORT: one transient blip shouldn't rob several replies of the real voice —
   // we retry neural on essentially the next reply. (Was 8s.)
   const NEURAL_COLD_MS = 4000;
+  // Billing failures (OpenRouter 402 / "insufficient credits") are NOT transient — retrying on every reply
+  // just burns a round-trip per sentence. Back off much longer between attempts, and above all TELL the
+  // user: the browser fallback is a DIFFERENT voice, and swapping it in silently reads as "the app
+  // regressed to the removed robotic voice" (2026-07-07 escape: OpenRouter credits ran dry and the whole
+  // station went robotic with zero explanation — the degrade itself was fine, the silence about it wasn't).
+  const BILLING_COLD_MS = 60000;
+  let fbStreak = 0;        // consecutive neural→browser fallbacks (reset by the next neural success)
+  let fbNotified = '';     // reason class already surfaced this outage — notify once, not once per sentence
+  function classifyFallback(reason) {
+    if (/no key/i.test(reason)) return 'nokey';
+    if (/\b402\b|insufficient credit|payment|billing|quota/i.test(reason)) return 'credits';
+    return 'error';
+  }
+  // TRUTHFUL TELEMETRY: the voice swap must never be silent. Surface the honest reason in the status
+  // line once per outage (transient blips only after they prove persistent, so a one-off hiccup doesn't
+  // nag), and pin it on the speaker toggle's tooltip so it stays inspectable after the status churns.
+  let fbMsg = '';          // the surfaced message — re-asserted when the reply ends ('speaking…' overwrites it mid-reply)
+  function noteFallback(reason) {
+    fbStreak++;
+    const cls = classifyFallback(reason);
+    if (cls === 'credits') neuralColdUntil = Date.now() + BILLING_COLD_MS;
+    if (fbNotified === cls || (cls === 'error' && fbStreak < 3)) return;
+    fbNotified = cls;
+    fbMsg = cls === 'credits' ? '🔇 real voice offline — voice provider out of credits · backup voice active'
+      : cls === 'nokey' ? '🔇 real voice needs a provider key · backup voice active'
+      : '🔇 real voice unreachable · backup voice active';
+    setStatus(fbMsg);
+    if (toggleBtn) toggleBtn.title = fbMsg;
+  }
+  function noteNeuralOk() { fbStreak = 0; if (fbNotified) { fbNotified = ''; fbMsg = ''; reflectToggle(); } }
   function apiKey() { return (typeof Harness !== 'undefined' && Harness.getKey) ? (Harness.getKey() || '') : ''; }
   function ttsConfig() {
     const p = (typeof Personas !== 'undefined' && Personas.get) ? Personas.get(activePersonaId) : null;
@@ -511,16 +541,18 @@ const Voice = (() => {
       body: JSON.stringify({ key, text: job.text, model: cfg.model, voice: cfg.voice, style: cfg.style })
     }).then(async r => {
       const ct = r.headers.get('Content-Type') || '';
-      if (r.ok && ct.indexOf('audio') === 0) { const blob = await r.blob(); if (blob && blob.size) return { kind: 'neural', blob }; }
+      if (r.ok && ct.indexOf('audio') === 0) { const blob = await r.blob(); if (blob && blob.size) { noteNeuralOk(); return { kind: 'neural', blob }; } }
       let reason = 'http ' + r.status;
       try { const j = await r.json(); if (j && j.reason) reason = j.reason; } catch (_) {}
       if (/no key/i.test(reason)) ttsDisabled = true; else neuralColdUntil = Date.now() + NEURAL_COLD_MS;
       console.warn('[voice] neural TTS → browser fallback:', reason);
+      noteFallback(reason);
       return { kind: 'browser' };
     }).catch(e => {
       if (e && e.name === 'AbortError') return { kind: 'skip' };   // intentionally cancelled — stay silent
       console.warn('[voice] neural TTS error:', (e && e.message) || e);
       neuralColdUntil = Date.now() + NEURAL_COLD_MS;
+      noteFallback('network: ' + ((e && e.message) || e));
       return { kind: 'browser' };
     });
   }
@@ -557,6 +589,9 @@ const Voice = (() => {
     resetQueue();
     duckSfx(false);
     if (wasDraining) { const cb = onReplyDone; onReplyDone = null; if (cb) cb(); }
+    // the degrade notice set mid-reply is clobbered by 'speaking…' — re-assert it once the reply is over
+    // so the user actually SEES why the agent just spoke in the backup voice.
+    if (fbMsg) setStatus(fbMsg);
   }
 
   // FIRST-WORD fast path: the time-to-first-audio is dominated by how long the FIRST TTS call takes, which
