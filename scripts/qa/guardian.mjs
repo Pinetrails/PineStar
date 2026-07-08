@@ -68,6 +68,12 @@ const CREW = 'Green Guardian';
 // finding derived from a parsed sub-result may override it (visual/audit sub-fails are P1).
 export const GUARDIAN_STEPS = [
   { id: 'test-fast', title: 'Full fast unit/contract gate', npm: 'test:fast', visual: false, severity: 'P0' },
+  // HTTP/E2E INTEGRATION gate (gap-audit 2026-07-08): every new subsystem's wired-behavior proof lives in
+  // test:http (scout cycle, thread ledger, night-shift act/focus/halt, path trust, workshop, cron) — before this
+  // step the Guardian (and therefore qa:ready, which trusts the Guardian stamp) never exercised ANY of it, so
+  // READY could not vouch for the newest features. Non-visual (boots its own sidecars on self-retrying ports;
+  // no Chrome). P0: an integration break is a product break, same class as test-fast.
+  { id: 'http-e2e',  title: 'HTTP/E2E integration gate',    npm: 'test:http', visual: false, severity: 'P0' },
   { id: 'shoot',     title: 'In-game UI screenshot sweep',   npm: 'shoot',     visual: true,  severity: 'P1' },
   { id: 'golden',    title: 'Visual golden-frame diff',       npm: 'golden',    visual: true,  severity: 'P1' },
   { id: 'audit',     title: 'Behavioral truthfulness audit',  npm: 'audit',     visual: true,  severity: 'P1' },

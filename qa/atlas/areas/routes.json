@@ -1,6 +1,6 @@
 {
   "area": "routes",
-  "updatedAt": "2026-07-07T22:40:51.000Z",
+  "updatedAt": "2026-07-08T21:11:49.341Z",
   "entries": [
     {
       "id": "route/get-api-agent-skills",
@@ -28,7 +28,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false
     },
     {
@@ -50,7 +50,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false
     },
     {
@@ -72,7 +72,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false
     },
     {
@@ -95,7 +95,45 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
+      "missing": false
+    },
+    {
+      "id": "route/get-api-autonomy-ledger",
+      "kind": "route",
+      "area": "routes",
+      "name": "GET /api/autonomy/ledger",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-08T21:11:49.342Z",
+      "lastSeen": "2026-07-08T21:11:49.342Z",
+      "missing": false
+    },
+    {
+      "id": "route/get-api-autonomy-posture",
+      "kind": "route",
+      "area": "routes",
+      "name": "GET /api/autonomy/posture",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-08T21:11:49.342Z",
+      "lastSeen": "2026-07-08T21:11:49.342Z",
       "missing": false
     },
     {
@@ -133,7 +171,7 @@
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false,
       "notes": "LIVE 8968: 200 with spentToday:0, day.cap:40/global.cap:100 (env defaults). After POST caps perDay=25 the status truthfully showed day.cap:25. [wave-7 final-a re-stale: re-proven over HTTP on :8966. Evidence http-result.json.]"
     },
@@ -162,7 +200,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false
     },
     {
@@ -191,7 +229,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false
     },
     {
@@ -213,7 +251,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false
     },
     {
@@ -247,7 +285,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false
     },
     {
@@ -275,7 +313,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false
     },
     {
@@ -303,7 +341,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false
     },
     {
@@ -332,7 +370,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false
     },
     {
@@ -361,7 +399,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false
     },
     {
@@ -391,7 +429,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false
     },
     {
@@ -429,7 +467,7 @@
         "6887ef72"
       ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false,
       "notes": "LIVE 8968 with fake key sk-fake-probe-key seeded: report showed keyPresent:true but the literal key appears NOWHERE in the payload (grep count 0). Secret-free law PROVEN. [wave-7 final-a re-stale: re-proven over HTTP on :8966. Evidence http-result.json.]"
     },
@@ -452,7 +490,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false
     },
     {
@@ -474,7 +512,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false
     },
     {
@@ -507,7 +545,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false
     },
     {
@@ -528,7 +566,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false
     },
     {
@@ -555,7 +593,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false
     },
     {
@@ -583,7 +621,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false
     },
     {
@@ -610,7 +648,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false
     },
     {
@@ -639,7 +677,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false
     },
     {
@@ -667,7 +705,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false
     },
     {
@@ -696,7 +734,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false
     },
     {
@@ -725,7 +763,64 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
+      "missing": false
+    },
+    {
+      "id": "route/get-api-nightshift-drafts",
+      "kind": "route",
+      "area": "routes",
+      "name": "GET /api/nightshift/drafts",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-08T21:11:49.342Z",
+      "lastSeen": "2026-07-08T21:11:49.342Z",
+      "missing": false
+    },
+    {
+      "id": "route/get-api-nightshift-focus",
+      "kind": "route",
+      "area": "routes",
+      "name": "GET /api/nightshift/focus",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-08T21:11:49.342Z",
+      "lastSeen": "2026-07-08T21:11:49.342Z",
+      "missing": false
+    },
+    {
+      "id": "route/get-api-nightshift-status",
+      "kind": "route",
+      "area": "routes",
+      "name": "GET /api/nightshift/status",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-08T21:11:49.342Z",
+      "lastSeen": "2026-07-08T21:11:49.342Z",
       "missing": false
     },
     {
@@ -753,7 +848,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false
     },
     {
@@ -790,9 +885,28 @@
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false,
       "notes": "LIVE 8968: 200 {grants:[],grantable:[\"cabinet:write\"],meta:{}}; after grant reflected cabinet:write + grantedAt ts; after revoke back to empty (store round-trip truthful). [wave-7 final-a re-stale: re-proven over HTTP on :8966. Evidence http-result.json.]"
+    },
+    {
+      "id": "route/get-api-projects",
+      "kind": "route",
+      "area": "routes",
+      "name": "GET /api/projects",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-08T21:11:49.342Z",
+      "lastSeen": "2026-07-08T21:11:49.342Z",
+      "missing": false
     },
     {
       "id": "route/get-api-providers",
@@ -820,7 +934,26 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
+      "missing": false
+    },
+    {
+      "id": "route/get-api-quests",
+      "kind": "route",
+      "area": "routes",
+      "name": "GET /api/quests",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-08T21:11:49.342Z",
+      "lastSeen": "2026-07-08T21:11:49.342Z",
       "missing": false
     },
     {
@@ -853,7 +986,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false
     },
     {
@@ -881,7 +1014,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false
     },
     {
@@ -910,7 +1043,26 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
+      "missing": false
+    },
+    {
+      "id": "route/get-api-scout",
+      "kind": "route",
+      "area": "routes",
+      "name": "GET /api/scout",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-08T21:11:49.342Z",
+      "lastSeen": "2026-07-08T21:11:49.342Z",
       "missing": false
     },
     {
@@ -947,7 +1099,7 @@
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false,
       "notes": "LIVE 8968: 200, 82KB catalog payload. [wave-7 final-a re-stale: re-proven over HTTP on :8966. Evidence http-result.json.]"
     },
@@ -984,7 +1136,7 @@
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false,
       "notes": "LIVE 8968: 200, 20KB catalog. [wave-7 final-a re-stale: re-proven over HTTP on :8966. Evidence http-result.json.]"
     },
@@ -1008,7 +1160,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false
     },
     {
@@ -1030,7 +1182,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false
     },
     {
@@ -1063,7 +1215,7 @@
         "6887ef72"
       ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false,
       "notes": "LIVE 8969: empty {runs:[]} before AND after a completed run — settled run correctly absent from live snapshot and instead present in /api/runs history. Snapshot == store state proven. [wave-7 final-a re-stale: re-proven over HTTP on :8966. Evidence http-result.json.]"
     },
@@ -1086,7 +1238,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false
     },
     {
@@ -1114,7 +1266,45 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
+      "missing": false
+    },
+    {
+      "id": "route/get-api-threads",
+      "kind": "route",
+      "area": "routes",
+      "name": "GET /api/threads",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-08T21:11:49.342Z",
+      "lastSeen": "2026-07-08T21:11:49.342Z",
+      "missing": false
+    },
+    {
+      "id": "route/get-api-threads-proposals",
+      "kind": "route",
+      "area": "routes",
+      "name": "GET /api/threads/proposals",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-08T21:11:49.342Z",
+      "lastSeen": "2026-07-08T21:11:49.342Z",
       "missing": false
     },
     {
@@ -1136,7 +1326,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false
     },
     {
@@ -1164,7 +1354,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false
     },
     {
@@ -1195,7 +1385,7 @@
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false,
       "notes": "LIVE 8968: 200 {\"harness\":\"0.0.0\",\"app\":\"0.2.2\",\"node\":\"v22.23.0\",\"appSource\":\"conf\"}. [wave-7 final-a re-stale: re-proven over HTTP on :8966. Evidence http-result.json.]"
     },
@@ -1218,7 +1408,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false
     },
     {
@@ -1246,7 +1436,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false
     },
     {
@@ -1274,7 +1464,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false
     },
     {
@@ -1295,7 +1485,26 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
+      "missing": false
+    },
+    {
+      "id": "route/post-api-activity",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/activity",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-08T21:11:49.342Z",
+      "lastSeen": "2026-07-08T21:11:49.342Z",
       "missing": false
     },
     {
@@ -1317,7 +1526,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false
     },
     {
@@ -1340,7 +1549,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false
     },
     {
@@ -1362,7 +1571,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false
     },
     {
@@ -1384,7 +1593,26 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
+      "missing": false
+    },
+    {
+      "id": "route/post-api-autonomy-posture",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/autonomy/posture",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-08T21:11:49.342Z",
+      "lastSeen": "2026-07-08T21:11:49.342Z",
       "missing": false
     },
     {
@@ -1407,7 +1635,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false
     },
     {
@@ -1439,7 +1667,7 @@
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false,
       "notes": "LIVE 8968: POST {perDay:25} → 200, saved:{perDay:25}, status day.cap flipped to 25. TRUTHFUL persistence. [wave-7 final-a re-stale: re-proven over HTTP on :8966. Evidence http-result.json.]"
     },
@@ -1468,7 +1696,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false
     },
     {
@@ -1498,7 +1726,7 @@
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false,
       "notes": "LIVE 8968: POST unknown runId → 200 \"ok\" (idempotent). [wave-7 final-a re-stale: re-proven over HTTP on :8966. Evidence http-result.json.]"
     },
@@ -1521,7 +1749,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false
     },
     {
@@ -1543,7 +1771,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false
     },
     {
@@ -1565,7 +1793,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false
     },
     {
@@ -1588,7 +1816,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false
     },
     {
@@ -1616,7 +1844,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false
     },
     {
@@ -1638,7 +1866,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false
     },
     {
@@ -1666,7 +1894,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false
     },
     {
@@ -1695,7 +1923,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false
     },
     {
@@ -1724,7 +1952,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false
     },
     {
@@ -1752,7 +1980,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false
     },
     {
@@ -1780,7 +2008,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false
     },
     {
@@ -1808,7 +2036,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false
     },
     {
@@ -1836,7 +2064,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false
     },
     {
@@ -1858,7 +2086,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false
     },
     {
@@ -1886,7 +2114,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false
     },
     {
@@ -1908,7 +2136,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false
     },
     {
@@ -1936,7 +2164,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false
     },
     {
@@ -1966,7 +2194,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false
     },
     {
@@ -1996,7 +2224,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false
     },
     {
@@ -2024,7 +2252,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false
     },
     {
@@ -2053,7 +2281,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false
     },
     {
@@ -2083,7 +2311,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false
     },
     {
@@ -2112,7 +2340,26 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
+      "missing": false
+    },
+    {
+      "id": "route/post-api-dev-inbound",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/dev/inbound",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-08T21:11:49.342Z",
+      "lastSeen": "2026-07-08T21:11:49.342Z",
       "missing": false
     },
     {
@@ -2134,7 +2381,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false
     },
     {
@@ -2156,7 +2403,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false
     },
     {
@@ -2178,7 +2425,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false
     },
     {
@@ -2210,7 +2457,7 @@
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false,
       "notes": "LIVE 8968: POST with no runs → 200 {halted:0,cronAborted:0} (truthful zero counts). Journey corps exercises the interrupt path. [wave-7 final-a re-stale: re-proven over HTTP on :8966. Evidence http-result.json.]"
     },
@@ -2245,7 +2492,7 @@
         "6887ef72"
       ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false,
       "notes": "LIVE 8970 (fresh instance with STARNET_IPC_TOKEN): wrong IPC → 403; correct IPC → 200 {ok:true,configured:true}; /api/providers then showed openrouter configured:true. TOKEN_EXEMPT from the API token by design (own IPC gate). [wave-7 final-a re-stale: re-proven over HTTP on :8966. Evidence http-result.json.]"
     },
@@ -2275,7 +2522,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false
     },
     {
@@ -2303,7 +2550,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false
     },
     {
@@ -2325,7 +2572,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false
     },
     {
@@ -2347,7 +2594,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false
     },
     {
@@ -2369,7 +2616,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false
     },
     {
@@ -2398,7 +2645,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false
     },
     {
@@ -2427,7 +2674,26 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
+      "missing": false
+    },
+    {
+      "id": "route/post-api-nightshift-beat",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/nightshift/beat",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-08T21:11:49.342Z",
+      "lastSeen": "2026-07-08T21:11:49.342Z",
       "missing": false
     },
     {
@@ -2450,7 +2716,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false
     },
     {
@@ -2481,7 +2747,7 @@
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false,
       "notes": "LIVE 8968: grant cabinet:write → 200 {ok:true,grants:[\"cabinet:write\"]}; list reflected it. TRUTHFUL round-trip. [wave-7 final-a re-stale: re-proven over HTTP on :8966. Evidence http-result.json.]"
     },
@@ -2513,9 +2779,104 @@
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false,
       "notes": "LIVE 8968: revoke → 200 {ok:true,grants:[]}; list confirmed empty. TRUTHFUL. [wave-7 final-a re-stale: re-proven over HTTP on :8966. Evidence http-result.json.]"
+    },
+    {
+      "id": "route/post-api-projects-bless",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/projects/bless",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-08T21:11:49.342Z",
+      "lastSeen": "2026-07-08T21:11:49.342Z",
+      "missing": false
+    },
+    {
+      "id": "route/post-api-quests-confirm",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/quests/confirm",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-08T21:11:49.342Z",
+      "lastSeen": "2026-07-08T21:11:49.342Z",
+      "missing": false
+    },
+    {
+      "id": "route/post-api-quests-dismiss",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/quests/dismiss",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-08T21:11:49.342Z",
+      "lastSeen": "2026-07-08T21:11:49.342Z",
+      "missing": false
+    },
+    {
+      "id": "route/post-api-quests-mint",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/quests/mint",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-08T21:11:49.342Z",
+      "lastSeen": "2026-07-08T21:11:49.342Z",
+      "missing": false
+    },
+    {
+      "id": "route/post-api-quests-update",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/quests/update",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-08T21:11:49.342Z",
+      "lastSeen": "2026-07-08T21:11:49.342Z",
+      "missing": false
     },
     {
       "id": "route/post-api-roster",
@@ -2542,7 +2903,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false
     },
     {
@@ -2564,7 +2925,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false
     },
     {
@@ -2608,7 +2969,7 @@
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false,
       "notes": "LIVE 8969 (mock provider): 200, streamed 5 NDJSON lines incl \"Hello from mock\", run recorded in /api/runs history (reason:done turns:1 tokens:8). 400 on missing model verified. [wave-7 final-a re-stale: re-proven over HTTP on :8966. Evidence http-result.json.]"
     },
@@ -2640,7 +3001,7 @@
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false,
       "notes": "LIVE 8968: POST unknown runId → 404 with honest error shape. Live-note injection on an active run is covered by the e2e run suite. [wave-7 final-a re-stale: re-proven over HTTP on :8966. Evidence http-result.json.]"
     },
@@ -2669,7 +3030,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false
     },
     {
@@ -2698,7 +3059,64 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
+      "missing": false
+    },
+    {
+      "id": "route/post-api-scout-context",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/scout/context",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-08T21:11:49.342Z",
+      "lastSeen": "2026-07-08T21:11:49.342Z",
+      "missing": false
+    },
+    {
+      "id": "route/post-api-scout-decide",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/scout/decide",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-08T21:11:49.342Z",
+      "lastSeen": "2026-07-08T21:11:49.342Z",
+      "missing": false
+    },
+    {
+      "id": "route/post-api-scout-telemetry",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/scout/telemetry",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-08T21:11:49.342Z",
+      "lastSeen": "2026-07-08T21:11:49.342Z",
       "missing": false
     },
     {
@@ -2732,7 +3150,7 @@
         "6887ef72"
       ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false,
       "notes": "LIVE 8968: POST returned 200 {ok:true}; no-token/bad-token 403. Handler is a pure no-op stub (index.js:2924) with no store effect and no current frontend caller — its only contract is the token gate. See finding routes-session-noop. [wave-7 final-a re-stale: re-proven over HTTP on :8966. Evidence http-result.json.]"
     },
@@ -2761,7 +3179,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false
     },
     {
@@ -2797,7 +3215,7 @@
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false,
       "notes": "LIVE 8968: /help → 200 with resolved builtin help directive (dispatch:client). [wave-7 final-a re-stale: re-proven over HTTP on :8966. Evidence http-result.json.]"
     },
@@ -2820,7 +3238,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false
     },
     {
@@ -2842,7 +3260,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false
     },
     {
@@ -2874,7 +3292,7 @@
         "6887ef72"
       ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false,
       "notes": "LIVE 8968: with a fake key the upstream 401'd, yet the route returned 200 application/json {text:\"\",reason:\"...openrouter 401...\"}. 200-always law HOLDS. [wave-7 final-a re-stale: re-proven over HTTP on :8966. Evidence http-result.json.]"
     },
@@ -2897,7 +3315,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false
     },
     {
@@ -2925,7 +3343,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false
     },
     {
@@ -2953,7 +3371,26 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
+      "missing": false
+    },
+    {
+      "id": "route/post-api-threads-turnin",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/threads/turnin",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-08T21:11:49.342Z",
+      "lastSeen": "2026-07-08T21:11:49.342Z",
       "missing": false
     },
     {
@@ -2975,7 +3412,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false
     },
     {
@@ -3007,7 +3444,7 @@
         "6887ef72"
       ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false,
       "notes": "LIVE 8968: with a fake key the upstream 401'd, yet the route returned 200 application/json {fallback:true,reason:\"openrouter 401 ...\"}. Locked voice law HOLDS. [wave-7 final-a re-stale: re-proven over HTTP on :8966. Evidence http-result.json.]"
     },
@@ -3041,7 +3478,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false
     },
     {
@@ -3073,7 +3510,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false
     },
     {
@@ -3102,7 +3539,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false
     },
     {
@@ -3134,7 +3571,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false
     },
     {
@@ -3167,7 +3604,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false
     }
   ]

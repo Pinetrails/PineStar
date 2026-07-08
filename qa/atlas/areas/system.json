@@ -25,7 +25,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false,
       "notes": "Live CDP :8967 — LOGBOOK opens, all 3 tabs activate. Held at mapped: no committed machine assertion enumerated for the logbook tab contents yet (seam mapped, promise proven live but uncovered)."
     },
@@ -66,7 +66,7 @@
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false,
       "notes": "Live CDP :8967 — both cards render, token inputs type=password, status pills read \"○ not connected\" matching /api/channels/*/status connected:false. Evidence channel-status.json. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
@@ -101,7 +101,7 @@
         "316baa58"
       ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false,
       "notes": "Live CDP :8967 — window lists 2 items, chip 1->2 on TEST NOTIFICATION, 2->\"\" on MARK ALL READ. TRUTH holds. Held at audited: no committed machine assertion for the chip flow (finding 316baa58). Evidence notif-flow.json. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
@@ -139,7 +139,7 @@
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false,
       "notes": "Live CDP :8967 — list shows honest \"NO RESTORE POINTS YET\" matching /api/checkpoint {enabled:false,snapshots:[]} and empty .checkpoints/ on disk. Confirm door = stationui.js:4288-4300 (5s armed two-step); no restore fired. Evidence channel-status.json#restore_points_window. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
@@ -173,7 +173,7 @@
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": false,
       "notes": "Live CDP :8967 — SETTINGS opens, PROVIDERS tab active by default, tabs switch (system=adv knobs value 40, notifs=ntp toggles, appearance=theme). Evidence .uiatlas/system2-evidence/settings-dom.json. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
