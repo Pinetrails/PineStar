@@ -584,6 +584,98 @@ Done means (per lane, live-app): leave the station idle with dial at 'free' + de
 beat interval → observe ≥2 real jailed tool-run deliverables + a truthful ledger of every
 decision, gate green. NS-0a done means the >8min-run duplicate repro fires once.
 
+## NIGHT SHIFT wave 2 — relevance, not just autonomy (added 2026-07-08, Fable session)
+
+**The gap (code-verified 2026-07-08):** NS-0..NS-4 made the shift *reliable and safe*
+(server-owned beats, enforced leash, jailed real tool runs, grounding veto, ledger, morning
+report — all release-grade). What it did NOT make is *relevant*. Andrew's bar: "I come back
+and the agent found bugs in MY project" / "it picked an idea we talked about and prototyped
+it." Structurally impossible today because:
+
+1. **The agent never sees the user's actual work.** Context pack = run TITLES + chat
+   FIRST-LINES (contextpack.js, labels-not-documents by design) + 6 dossier dims. No file,
+   repo, diff, or document is ever read. Jail builds are greenfield-only.
+2. **No durable idea memory.** Candidates are regenerated from scratch every beat; "things
+   the user mentioned but never did" is stored NOWHERE server-side. Rejected-idea history
+   (suggeststore/curiositystore) is frontend localStorage, invisible to autonomy.
+3. **Behavioral signals stranded in the browser.** worksignal capability histogram,
+   ProfileStore interests, UnderstandingStore — zero sidecar sync (no fetch in
+   worksignalstore.js). Autonomy is blind to the richest "what does this user actually do"
+   data in the product.
+4. **Cron is the thinnest lane** — no context pack, no history; dossier block + goal note only.
+
+**Lane queue (claim in-file before building; shared/events.js additive-only via owner):**
+
+- **NS-5 · Project Lens (the flagship). DIRECTION LOCKED by Andrew 2026-07-08: NO prop, NO
+  folder picker — match Hermes fluidity.** The user just *tells* the agent a path in chat
+  ("go to C:\...\myproject and fix X") and it works there. Mechanics (verified 2026-07-08:
+  fs.js:73 rejects ALL absolute paths; permgrants GRANTABLE = ['cabinet:write'] only — this
+  is a new capability, not a UX swap):
+  (a) **Conversational path trust** — first time a run touches a path outside the jail, ONE
+  consent prompt ("work in C:\...\myproject? always/once/no"); "always" records a standing
+  PATH grant (provenance-stamped, listed + revocable in the Permissions Panel, same
+  fail-closed persist as permgrants). resolveInside generalizes to resolve-inside-any-
+  blessed-root; .env/.git-internals/symlink-escape hardlines stay.
+  (b) **Known-project memory** — every blessed root is durably remembered server-side with
+  last-touched metadata; this set IS the autonomy surface.
+  (c) **Night shift may only revisit previously-blessed roots** — reads at reach ≥ sandbox
+  (git log/status/diff since last visit, TODO/FIXME, run tests via existing jailed exec
+  rules); it can NEVER bless a new root unattended. Deliverable = patch through the existing
+  /pending → /decide gate: "found N bugs while you were away — approve and I'll commit."
+  Approve applies to a branch in the user's repo (never main, never push); deny feeds learn.
+  OPEN (Andrew, small): approve = auto-commit-to-branch (recommended) vs drop-the-.patch.
+- **NS-5c · Projects rail (Andrew idea 2026-07-08).** The workstreams section gets a
+  button-toggle: **SESSIONS ↔ PROJECTS**. Projects view lists the known-projects store
+  (GET /api/projects from NS-5): name, path, last-touched, git badge. Actions: **ADD** a
+  folder right in the station (Hermes-fluid; in desktop builds use the Tauri native folder
+  dialog, browser mode = typed path field) — adding = blessing the root through the SAME
+  standing path-grant machinery as conversational trust (one consent flow, two doorways;
+  never a parallel grant store) — and **jump straight into a project**: clicking a project
+  opens/creates a session anchored to that root (agent starts with the project path in
+  context). Remove-from-list = revoke the path grant (truthful: the list shows exactly what
+  is blessed, nothing else). Depends on NS-5 landing first (store + grant class + routes).
+  Frontend law applies (windows/rail conventions); claim in-file before building.
+- **NS-5b · Focus resolver — single-priority nights (Andrew direction 2026-07-08: "hone in
+  on moving the needle," don't scatter).** Beats must NOT spread across every blessed root /
+  open thread. Shift start = a PRIORITY RESOLUTION step: rank the evidence (per-root
+  work-recency/frequency from run history · chat-topic recency · the active goal arc ·
+  open threads · approve/deny history) → declare ONE focus for the night ("current priority:
+  <project/goal>, because <evidence>"). Every beat that night chains toward ONE coherent
+  needle-moving deliverable on that focus (later beats extend/refine the same work — the
+  compounding shape, not 3 unrelated drafts). Re-resolve each night (or when evidence
+  shifts); the morning report LEADS with the declared priority + why, so a wrong guess is
+  visible and correctable ("actually, focus on Y" = a durable steer that outranks derived
+  evidence until it goes stale). Truthful-telemetry law applies: the declared priority must
+  cite the evidence lines that produced it — never an unexplained vibe.
+- **NS-6 · Thread ledger (durable idea backlog).** Server-side store of "threads": ideas
+  mined from chats/study/pitches with state open/picked/delivered/declined + decline reason.
+  Mint via a post-run aux pass (same pattern as reflect/study, stash → turn-in) and/or a
+  nightly digest pass. Night-shift PROPOSE draws from open threads FIRST, improv second;
+  deny/discard writes back permanently (kills the re-propose-rejected-idea failure mode).
+  This is what makes "you mentioned X two weeks ago, here's a prototype" possible.
+- **NS-7 · Signal sync.** Mirror worksignal histogram + profile interests + declined-idea
+  fingerprints to the sidecar (same pattern as POST /api/autonomy/posture and /api/dossier);
+  fold into the context pack + grounding-veto vocabulary.
+- **NS-8 · One commander-context composer.** Unify dossier + goals + context pack + recall +
+  threads into a single server-side composer used by ALL autonomous lanes (night-shift AND
+  cron). Deepen chat mining beyond first-lines to a redacted topic digest.
+- **NS-9 · Learning depth ("gets better over time" is real, not decorative).** Today the ONLY
+  learn signal is per-archetype up/down weights capped ±0.5 (autopilot.js learnFold) — a deny
+  teaches "less of that CATEGORY," never "not that idea / not that project / here's why."
+  Build: (a) approve/deny captures an optional one-tap reason (wrong-thing / wrong-time /
+  bad-quality / did-it-myself); (b) verdicts + reasons fold into the thread ledger (NS-6) at
+  idea level and the context pack at project level; (c) the PROPOSE prompt cites past verdict
+  patterns ("you kept the last 3 test-fix patches, discarded both blog drafts"). North-star
+  product test (the Andrew framing, 2026-07-08): *the ceiling on autonomous relevance must be
+  the user's granted context, never the architecture — and relevance must measurably compound
+  with weeks of use.* Done means: same seeded station, 10 simulated beat/verdict cycles →
+  proposal mix provably shifts toward kept-kind work (assertable from ledger + learn state).
+
+Done means (per lane, live-app): NS-5 = grant a real repo, seed a planted bug, leave idle at
+dial 'free' → morning report offers a correct patch through /pending, approve applies it to a
+branch, deny is remembered. NS-6 = mention an idea in chat, never act on it, leave idle →
+a beat proposes THAT idea, citing the thread; decline it → it is never re-proposed.
+
 ## Parked product decisions (need Andrew, don't guess)
 
 - `fullOffice()` autonomous prop placement vs. hand-placed only.
