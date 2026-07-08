@@ -3158,7 +3158,12 @@ async function runNightshiftActShift(opts) {
 
   const cRes = await nightshiftChat({ agentId, system, signal, messages: [{ role: 'user', content: Autopilot.buildCandidateDirectiveV2({ beliefs, activity, threads, eligible, focusHeader, priorTonight, projectSnapshot }) }] });
   if (cRes.error) return { delivered: false, reason: cRes.error };
-  const candidates = Autopilot.parseCandidates(cRes.text, { eligible, beliefs, activity, threads });
+  // NS-5b: the PROJECT SNAPSHOT lines (real git status / TODO markers the harness READ) join the grounding-veto
+  // evidence pool, so a candidate that grounds itself in the actual repo state (e.g. a planted TODO) survives the
+  // veto — while still-invented grounding dies. The snapshot is harness-read truth, never model improv, so it is
+  // honest evidence to ground in. Bounded already (projectscan caps it).
+  const vetoActivity = projectSnapshot ? activity.concat(projectSnapshot.split(/\r?\n/).map(s => s.trim()).filter(Boolean)) : activity;
+  const candidates = Autopilot.parseCandidates(cRes.text, { eligible, beliefs, activity: vetoActivity, threads });
   const sel = Autopilot.scoreAndSelect(candidates, { weights: nightshiftLearnWeights() });
   if (!sel.selected) return { delivered: false, reason: sel.reason };
   // NS-6 writeback: a build grounded on an open thread marks it PICKED now; a later keep/discard verdict (return
@@ -5020,7 +5025,11 @@ async function validateWorkshopManifest(agentId, runId) {
   return {
     v: 1, runId: String(runId), agentId: String(agentId), backlogId: String(man.backlogId || ''),
     title: String(man.title || 'Untitled deliverable').slice(0, 200),
-    kind: ['tool', 'fix', 'draft', 'doc', 'other'].indexOf(man.kind) >= 0 ? man.kind : 'other',
+    // NS-5b: 'patch' is a valid kind (a project change applied to a new branch on Keep). targetRoot rides along so
+    // the keep path can validate it against blessedRoots() — carried here but NEVER trusted as authority (nightpatch
+    // refuses any targetRoot that isn't currently blessed). Bounded like every other field.
+    kind: ['tool', 'fix', 'draft', 'doc', 'patch', 'other'].indexOf(man.kind) >= 0 ? man.kind : 'other',
+    targetRoot: man.targetRoot ? String(man.targetRoot).slice(0, 1024) : undefined,
     summary: String(man.summary || '').slice(0, 4000),
     files: provenFiles,
     howToUse: String(man.howToUse || '').slice(0, 4000),
