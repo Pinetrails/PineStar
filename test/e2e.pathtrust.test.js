@@ -82,8 +82,8 @@ function boot(port, env, attemptsLeft) {
   const fileB = path.join(proj, 'README.md');
 
   const env = { SKYNET_WORKSPACES: ws, SKYNET_OPENROUTER_BASE: mock.base };   // NO FULL_ACCESS → the consent broker is live
-  const { child, port } = await boot(8760 + (process.pid % 40), env, 25);
-  const B = 'http://' + HOST + ':' + port;
+  let running = await boot(8760 + (process.pid % 40), env, 25);
+  let B = 'http://' + HOST + ':' + running.port;
   let token;
 
   // drive an interactive run reading `target`; answer any path.trust prompt with `decision`.
@@ -145,6 +145,19 @@ function boot(port, env, attemptsLeft) {
     A.eq(row.blessed, true, 'the project reports blessed:true (joined against the live grant)');
     A.ok(typeof row.lastTouchedAt === 'number' && row.lastTouchedAt > 0, 'lastTouchedAt was stamped on the fs I/O');
 
+    // ---- 3b. RESTART-SAFE: the standing grant + project metadata survive a sidecar reboot on the same
+    //          workspace (the top recurring bug class is "worked until restart"). ----
+    try { running.child.kill(); } catch (_) {}
+    running = await boot(8830 + (process.pid % 40), env, 25);
+    B = 'http://' + HOST + ':' + running.port;
+    token = await bootToken(B, B);
+    const permsR = await (await fetch(B + '/api/permissions', { headers: { 'X-StarNet-Token': token, Origin: B } })).json();
+    A.ok((permsR.grants || []).some(g => g.indexOf('path:') === 0 && path.resolve(g.slice(5)).toLowerCase() === path.resolve(proj).toLowerCase()), 'RESTART-SAFE: the path grant survived the reboot');
+    const projR = await (await fetch(B + '/api/projects', { headers: { 'X-StarNet-Token': token, Origin: B } })).json();
+    A.ok((projR.projects || []).some(p => path.resolve(p.root).toLowerCase() === path.resolve(proj).toLowerCase() && p.blessed === true && p.isGitRepo === true), 'RESTART-SAFE: the known-project row (blessed, isGitRepo) survived the reboot');
+    const rReboot = await driveRead('ptagent-reboot', fileA, 'deny');
+    A.eq(rReboot.prompts.filter(p => p.tool === 'path.trust').length, 0, 'RESTART-SAFE: a read under the blessed root does NOT re-prompt after the reboot');
+
     // ---- 4. a SECOND file under the now-blessed root reads with NO prompt ----
     const before = mock.requests.length;
     const r2 = await driveRead('ptagent2', fileB, 'deny');   // 'deny' would refuse IF asked — it must NOT be asked
@@ -161,7 +174,7 @@ function boot(port, env, attemptsLeft) {
     const row2 = (proj2.projects || []).find(p => path.resolve(p.root).toLowerCase() === path.resolve(proj).toLowerCase());
     A.ok(row2 && row2.blessed === false, 'post-revoke: /api/projects reports the remembered root as blessed:false');
   } finally {
-    try { child.kill(); } catch (_) {}
+    try { running.child.kill(); } catch (_) {}
     try { mock.server.close(); } catch (_) {}
     try { fs.rmSync(ws, { recursive: true, force: true }); } catch (_) {}
     try { fs.rmSync(proj, { recursive: true, force: true }); } catch (_) {}
