@@ -32,6 +32,9 @@ const ToolProps = (() => {
     todo: 'notebook',
     recall_conversation: 'notebook',
     'widget.set': 'notebook'   // WIDGET RAILS Phase 2: agent-fed rail readout — a notebook-object (memory) grant
+    // QUEST V2 §B: quest.update is DELIBERATELY absent here → null. It moved from the notebook object to the `computer`
+    // object (the 'quest' freebie capId), and the compute gate has no cap-prop pulse (model.chat is null for the same
+    // reason). So updating a quest lights no placed-cap prop — correct: it rides compute, not a placeable object.
   };
   // family prefix -> prop type (checked after EXACT; first match wins)
   const PREFIX = [

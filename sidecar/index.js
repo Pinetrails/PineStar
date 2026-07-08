@@ -113,6 +113,9 @@ const { makeKeyedMutex, readJsonResilient, writeJsonResilient, makeDurableJsonSt
 const { makeWidgetTools } = require('./tools/builtin/widgets.js'); // WIDGET RAILS Phase 2: widget.set — agent-fed readouts for the chrome rails (polled via GET /api/widgets)
 const { makeMemoryStore, resetAgentMemory, restoreDeclined } = require('./memory-store.js'); // durable notebook:/todo:/declined: sibling stores
 const { makeWorkshopStore } = require('./workshop-store.js'); // durable per-agent away-workshop grant + backlog + discard denylist
+const { makeQuestStore } = require('./quest-store.js'); // QUEST V2 §A: station-wide harness-owned quest ledger (contract-enforced)
+const { makeQuestTools } = require('./tools/builtin/quests.js'); // QUEST V2 §B: quest.update — the agent's read/write reach into the ledger
+const { questBlock, withQuests } = require('./questinject.js'); // QUEST V2 §B: fold an agent's OPEN quests into its system prompt (pure, dossierinject idiom)
 const { tailLines, loadBounded, rotateIfLarge } = require('./logbound.js'); // P3: bounded boot-load + size rotation for the append-only JSONL logs
 const { makeCronLock } = require('./cron-lock.js');         // G4.3: cross-process exactly-once advisory lock (O_EXCL+pid:nonce+stale-break)
 const { withDossier } = require('./dossierinject.js');     // Phase C: fold the Commander dossier into server-composed (cron) personas
@@ -1019,6 +1022,18 @@ const workshopStore = makeWorkshopStore({
   warn: (...args) => console.warn.apply(console, args)
 });
 function workshopOf(agentId) { try { return workshopStore.hasGrant(String(agentId || '')); } catch (_) { return false; } }
+
+// QUEST V2 §A — the station-wide, harness-owned quest ledger (`_station.quests.json` under WORKSPACES). One
+// durable single-file store for the whole station (unlike the per-agent workshop store): quests are minted with
+// an ENFORCED completion contract (prop/run/fact/artifact/attest), completed only when the harness proves the
+// contract (mechanical) or the Commander confirms an attest — never on a bare claim. Same durable+recovery
+// discipline as the notebook/workshop siblings.
+const questStore = makeQuestStore({
+  fs: fs, path: path, workspaces: WORKSPACES, writeDurable: writeFileDurable,
+  onRecover: (key, file) => console.warn('[quests] recovered ' + file + ' from .bak last-known-good after a torn/corrupt main.'),
+  onCorrupt: (key, file) => quarantineCorrupt(file, 'quests'),
+  warn: (...args) => console.warn.apply(console, args)
+});
 // W7 — a shell opener that hands a REAL absolute PATH to the OS default app (Start-Process / open / xdg-open).
 // REUSES desktop.js's makeShellOpener (the same launcher desktop.open uses) rather than rolling a new spawn: for a
 // file we deliberately DON'T classify/assert-url — the path is already jail-proven by resolveInside before we call
@@ -3442,6 +3457,12 @@ function dispatchRoute(req, res) {
   if (req.method === 'GET' && req.url.split('?')[0] === '/api/workshop/pending') return handleWorkshopPending(req, res);
   if (req.method === 'POST' && req.url === '/api/workshop/decide') return handleWorkshopDecide(req, res);
   if (req.method === 'POST' && req.url === '/api/workshop/shift') return handleWorkshopShiftNow(req, res);
+  // ---- QUEST V2 §A: the harness-owned quest ledger (frontend polls /api/quests on the existing 1s tick) ----
+  if (req.method === 'GET' && req.url.split('?')[0] === '/api/quests') return handleQuestsList(req, res);
+  if (req.method === 'POST' && req.url === '/api/quests/mint') return handleQuestsMint(req, res);
+  if (req.method === 'POST' && req.url === '/api/quests/update') return handleQuestsUpdate(req, res);
+  if (req.method === 'POST' && req.url === '/api/quests/confirm') return handleQuestsConfirm(req, res);
+  if (req.method === 'POST' && req.url === '/api/quests/dismiss') return handleQuestsDismiss(req, res);
   // W7 — OPEN the deliverable, don't display its code. Two routes let the Commander RUN/OPEN what an agent built:
   //   POST /api/workshop/open  — shell-open a REAL jailed file with the OS default app (interactive user-click only).
   if (req.method === 'POST' && req.url === '/api/workshop/open') return handleWorkshopOpen(req, res);
@@ -4828,6 +4849,64 @@ async function disarmWorkshopShift(agentId) {
   return true;
 }
 
+// ---- QUEST V2 §A routes — the harness-owned quest ledger (apiauth/CORS handled by the central /api gate). ----
+// GET /api/quests → { ok, quests:[...] } — the full ledger the frontend polls and folds into the QUEST LOG.
+async function handleQuestsList(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let quests; try { quests = questStore.list(); } catch (e) { return json(500, { ok: false, error: 'could not read the quest ledger' }); }
+  json(200, { ok: true, quests: quests });
+}
+// POST /api/quests/mint { title, desc?, reward?, contract:{type,key}, steps?, agentId?, kind?, groundedIn? }.
+// THE CONTRACT RULE is enforced in the store: no valid contract → 400 {ok:false,error}. 200 {ok:true,id} on mint.
+async function handleQuestsMint(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 1 << 16)) || {}; } catch (e) { return json(400, { ok: false, error: 'bad request' }); }
+  let r; try { r = await questStore.mint(body, Date.now()); } catch (e) { return json(500, { ok: false, error: 'could not mint that quest' }); }
+  if (!r || !r.ok) return json(400, { ok: false, error: (r && r.error) || 'could not mint that quest', id: r && r.id });
+  json(200, { ok: true, id: r.id });
+}
+// POST /api/quests/update { id, op:'tick'|'attest', stepKey?, note?, evidence?, agentId?, runId? }.
+//   tick   → flip a named open step (progress display; never completes the quest).
+//   attest → the agent proposes completion with evidence (attest contracts only; never completes).
+async function handleQuestsUpdate(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 1 << 16)) || {}; } catch (e) { return json(400, { ok: false, error: 'bad request' }); }
+  const id = String(body.id || '');
+  const op = String(body.op || '');
+  if (!id) return json(400, { ok: false, error: 'which quest?' });
+  try {
+    if (op === 'tick') {
+      const ok = await questStore.tickStep(id, body.stepKey, body.note, Date.now());
+      return json(200, { ok: !!ok });
+    }
+    if (op === 'attest') {
+      const r = await questStore.attest(id, { agentId: body.agentId, runId: body.runId, evidence: body.evidence }, Date.now());
+      if (!r || !r.ok) return json(200, { ok: false, error: (r && r.error) || 'could not attest completion' });
+      return json(200, { ok: true });
+    }
+    return json(400, { ok: false, error: 'unknown op' });
+  } catch (e) { return json(500, { ok: false, error: 'could not update that quest' }); }
+}
+// POST /api/quests/confirm { id, ok:bool, note? } — the Commander's attest verdict. yes → done; no → declineNote.
+async function handleQuestsConfirm(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 4096)) || {}; } catch (e) { return json(400, { ok: false, error: 'bad request' }); }
+  const id = String(body.id || '');
+  if (!id) return json(400, { ok: false, error: 'which quest?' });
+  const ok = body.ok === true || body.ok === 'true';
+  let did; try { did = await questStore.confirmAttest(id, ok, body.note, Date.now()); } catch (e) { return json(500, { ok: false, error: 'could not record that verdict' }); }
+  json(200, { ok: !!did });
+}
+// POST /api/quests/dismiss { id } — wave a quest off forever (denylists its title; anti-nag law).
+async function handleQuestsDismiss(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 4096)) || {}; } catch (e) { return json(400, { ok: false, error: 'bad request' }); }
+  const id = String(body.id || '');
+  if (!id) return json(400, { ok: false, error: 'which quest?' });
+  let did; try { did = await questStore.dismiss(id, Date.now()); } catch (e) { return json(500, { ok: false, error: 'could not dismiss that quest' }); }
+  json(200, { ok: !!did });
+}
+
 // POST /api/workshop/grant { agentId, on } — record/clear the Commander's "Build things while I'm away" consent
 // for an agent, and arm/disarm its workshop shift routine accordingly. Plain-language surface; not a jargon knob.
 async function handleWorkshopGrant(req, res) {
@@ -5637,6 +5716,7 @@ async function runOnce(o) {
     }
   }).register(registry);   // H4: skill.write/list/view/manage — the agent's reusable procedure library (memory capability)
   Todo.makeTodoTool({ store: notebookStore }).register(registry);   // in-session task plan — shares the notebook's per-agent kv store ('todo:'+agentId)
+  makeQuestTools({ store: questStore, clock: { now: () => Date.now() } }).register(registry);   // QUEST V2 §B: quest.update (progress/attest/mint) — the 'quest' freebie capability, granted by the computer object (CAP_REGISTRY) so it rides EVERY task surface
   // STUDIO (media skills): image_generate / image_analyze use an OpenRouter key when one is available.
   // Gated by a 'studio' object (in the default office below) exactly like web/files; outputs save to the workspace.
   imageTools.register(registry);
@@ -6070,7 +6150,23 @@ async function runOnce(o) {
       preloadedSkillBlock = runtimeSkills.composeLoaded(loaded);
     }
   } catch (_) { /* explicit skill preload must never break a run */ }
-  const sys = (system || '') + runtimeBlock + toolNote + teamNote + manualBlock + summarizeCapabilities(resolved, { surface }) + skillBlock + runtimeSkillBlock + preloadedSkillBlock;   // ground-truth caps: name the object to place instead of promising work it has no tool for
+  // QUEST V2 §B (agent awareness) + §E (generative minting): fold THIS agent's OPEN quests (its own + station-wide)
+  // into the prompt so a TASK run can SEE and ACT on them (via the quest.update tool). This rides the ONE place the
+  // final system prompt is assembled, so it covers EVERY surface identically — browser-composed (`system` arrives
+  // verbatim in the run request) AND server-composed cron/worker runs (`system` arrived pre-withDossier'd). Empty
+  // ledger → questBlock now returns the MINIMAL minting-doctrine block (NOT '') — a no-quest agent is exactly who
+  // should consider grounded minting (plan §E). The strict byte-identical no-op is preserved by the isTask GATE:
+  // a non-task run never composes a block, so withQuests('' , ...) stays a no-op for that path. Fail-open: ANY
+  // quest-store read error yields no block, never a broken run. Only task runs (tools available) carry it.
+  // TRUTHFUL-TELEMETRY GATE (never advertise an absent tool): the block COMMANDS "use the quest.update tool", so we
+  // compose it ONLY when quest.update is actually in THIS run's RESOLVED tool set (resolved.tools, computed above from
+  // the placed office). After the Fix-1 grant-move this passes on every normal task run (quest.update rides the
+  // always-present computer/compute freebie), but a custom office/zone that excludes the computer — or a future policy
+  // change — would otherwise ship a prompt demanding a tool the model can't see (the exact break a real-provider run
+  // caught). isTask is kept because a non-task run has no tools at all. Fail-open: ANY error yields no block.
+  let questsBlock = '';
+  try { if (isTask && resolved && Array.isArray(resolved.tools) && resolved.tools.indexOf('quest.update') >= 0) questsBlock = questBlock(questStore.openForAgent(agentId)); } catch (_) { questsBlock = ''; }
+  const sys = withQuests((system || '') + runtimeBlock + toolNote + teamNote + manualBlock + summarizeCapabilities(resolved, { surface }) + skillBlock + runtimeSkillBlock + preloadedSkillBlock, questsBlock);   // ground-truth caps: name the object to place instead of promising work it has no tool for
   // H1.2: bulletproof resume — if this run arrives with NO prior history (a fresh restart whose browser save was
   // wiped, or any caller that only sent the new directive) AND it names an explicit workstream, seed the
   // conversation from the durable server transcript so the agent remembers the dialogue. Never overrides real
@@ -6180,6 +6276,17 @@ async function runOnce(o) {
       // turn the loop produced (assistant incl. tool_calls + tool results), so a resume can rebuild exact state.
       if (title) transcriptStore.append({ streamId: o.streamId, agentId, role: 'user', content: title });
       if (result && Array.isArray(result.messages)) transcriptStore.appendTurns(o.streamId, agentId, result.messages, _txStart);
+    } catch (_) {}
+    // QUEST V2 §A — the ONLY mechanical sweep wired here (the run lifecycle already lives at this settle point):
+    // a run ending 'done' completes every OPEN quest whose run-contract is bound to this runId; a non-'done' end
+    // (error/budget/max_iters/refusal) STALLS them instead (stamp reason, release the binding) mirroring
+    // workquests stall semantics. Fire-and-forget + fail-open: a durable-store hiccup never breaks run teardown.
+    // prop/fact/artifact sweeps are exposed on questStore.completeByContract for Lane 3/4 callers to wire at
+    // their own truth points (capability-live / dossier-learned / manifest-exists) — NOT hooked here.
+    try {
+      const _qReason = (result && result.reason) || 'done';
+      if (_qReason === 'done') questStore.completeByContract('run', runId, Date.now()).catch(() => {});
+      else questStore.stallRun(runId, _qReason, Date.now()).catch(() => {});
     } catch (_) {}
     budget.clearLive(runId);
   }

@@ -543,6 +543,7 @@ document.write('<script src="' + ((window.__STARNET_API__ || '') + '/shared/spec
 <script src="app/stationqueststore.js"></script><!-- station-quest generator wiring (G1b): agent.tool_call → capability-gap detection → fix-it quest; self-persists (own key), never emits -->
 <script src="app/workqueststore.js"></script><!-- work-quest generator wiring (G1c): accepted idea (pitch/suggest) → multi-step build tracked to run-completion; self-persists (own key), never emits -->
 <script src="app/maintqueststore.js"></script><!-- maintenance-quest generator wiring (G1c): SlagLog ring tally + cron.skipped jam → fix-it quest; self-persists (own key), never emits -->
+<script src="app/questledgerstore.js"></script><!-- QUEST V2 §C: the sidecar quest LEDGER's frontend citizen — throttled GET /api/quests poll → projection merge + attest confirm/dismiss writes; last-good cache, never emits -->
 <script src="app/dockglow.js"></script><!-- deferred BUILD-dock glow (G1c): soft hint on the BUILD dock while a station quest is open; reuses the kit-out traps; tutorial wins -->
 <script src="app/mintstore.js"></script>
 <script src="app/seedstore.js"></script>

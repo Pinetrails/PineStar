@@ -650,9 +650,14 @@ const Chat = (() => {
      happened (so it slots UNDER a live presence card, never over it). The eerie register: a terse broadcast,
      never a party. `tint` (an agent suit colour) is the ONE established colour exception, applied to a
      highlighted span only. RESTRAINT enforced here: fires only in-game (never on the create/onboarding
-     screens), and coalesces — two broadcasts inside ~3s never stack; the later one is dropped. */
+     screens), and rate-limits — two broadcasts inside ~3s never stack. But a broadcast caught inside the
+     window is QUEUED (small bounded FIFO), not dropped, and drained in order once the window elapses: a
+     quest COMMS line sharing this path with a level-up/trophy must never be silently lost. */
   const BROADCAST_COALESCE_MS = 3000;
+  const BROADCAST_QUEUE_CAP = 8;   // bounded FIFO: a celebration flood drops the OLDEST queued line, never grows unbounded
   let lastBroadcastAt = 0;
+  const broadcastQueue = [];       // {text, opts} coalesced inside the window — drained in order, one per window slot
+  let broadcastDrainTimer = null;
   function broadcastBlocked() {
     // never during the create/onboarding/interview flows — a celebration must land only on the live station
     const game = el('screen-game');
@@ -661,15 +666,39 @@ const Chat = (() => {
     if (typeof Intake !== 'undefined' && Intake.isRunning && Intake.isRunning()) return true;
     return false;
   }
+  // drain ONE queued broadcast (oldest first) then reschedule until the queue empties — each drained line still
+  // respects the one-per-window rate limit, so a burst plays out as an ordered trickle instead of stacking. A
+  // queued line that turned invalid mid-wait (Commander left the station) is dropped, but the rest keep draining.
+  function drainBroadcasts() {
+    broadcastDrainTimer = null;
+    if (!broadcastQueue.length) return;
+    const item = broadcastQueue.shift();
+    if (!broadcastBlocked()) renderBroadcast(item.text, item.opts);
+    if (broadcastQueue.length) broadcastDrainTimer = setTimeout(drainBroadcasts, BROADCAST_COALESCE_MS);
+  }
   // text: the terse line WITHOUT the leading ▸ (added here). opts.highlight: the substring to tint (the agent
   // name); opts.tint: the suit colour for that span; opts.tone: 'gold' brightens the whole line (trophies).
   function broadcast(text, opts) {
     if (!log) return false;
     opts = opts || {};
-    if (broadcastBlocked()) return false;
+    if (broadcastBlocked()) return false;   // blocked (onboarding/interview/offscreen) → dropped, never queued
     const now = Date.now();
-    if (now - lastBroadcastAt < BROADCAST_COALESCE_MS) return false;   // coalesce: no back-to-back broadcasts
-    lastBroadcastAt = now;
+    // inside the rate-limit window, OR a drain is already in flight: QUEUE (preserving order) rather than drop.
+    // Bounded — at the cap the oldest queued line is discarded so the queue can never grow without limit.
+    if (broadcastDrainTimer || now - lastBroadcastAt < BROADCAST_COALESCE_MS) {
+      broadcastQueue.push({ text, opts });
+      while (broadcastQueue.length > BROADCAST_QUEUE_CAP) broadcastQueue.shift();
+      if (!broadcastDrainTimer) broadcastDrainTimer = setTimeout(drainBroadcasts, Math.max(0, BROADCAST_COALESCE_MS - (now - lastBroadcastAt)));
+      return true;
+    }
+    return renderBroadcast(text, opts);
+  }
+  // the actual render: append the terse system line + stamp the rate-limit clock. Shared by the live path and
+  // the queue drainer (ONE renderer). Returns false only when there's no log node to append to.
+  function renderBroadcast(text, opts) {
+    if (!log) return false;
+    opts = opts || {};
+    lastBroadcastAt = Date.now();
     clearEmptyState();
     const d = document.createElement('div');
     d.className = 'cmsg broadcast' + (opts.tone === 'gold' ? ' broadcast-gold' : '');

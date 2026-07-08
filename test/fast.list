@@ -85,6 +85,9 @@ test/manual.test.js
 test/permissions.test.js
 test/workshop-permissions.test.js
 test/workshop-store.test.js
+test/quest-store.test.js
+test/questinject.test.js
+test/quests-tool.test.js
 test/apiauth.test.js
 test/notebook.test.js
 test/skills.test.js
@@ -167,6 +170,7 @@ test/workquests.test.js
 test/workqueststore.test.js
 test/maintquests.test.js
 test/maintqueststore.test.js
+test/questledgerstore.test.js
 test/kitout.test.js
 test/class-loadouts.test.js
 test/seeds.test.js

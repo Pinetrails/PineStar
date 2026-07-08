@@ -29,6 +29,8 @@ const { makeRecallTool } = require('../sidecar/tools/builtin/recall.js');
 const { makeTranscriptStore } = require('../sidecar/transcriptstore.js');
 const { makeSkillTools } = require('../sidecar/tools/builtin/skills.js');
 const { makeSkillStore } = require('../sidecar/skillstore.js');
+const { makeQuestTools } = require('../sidecar/tools/builtin/quests.js');
+const { makeQuestStore } = require('../sidecar/quest-store.js');
 const { resolveTools } = require('../sidecar/capability/resolve.js');
 const { makeCapCtx } = require('../sidecar/capability/capGate.js');
 const { makeConsentBroker } = require('../sidecar/permissions.js');
@@ -86,6 +88,15 @@ const fixture = {
   makeTodoTool({ store: new Map() }).register(registry);
   makeRecallTool({ transcriptStore: makeTranscriptStore({ io: { readAll() { return []; }, append() {} }, clock: { now: () => 0 } }) }).register(registry);
   makeSkillTools({ store: makeSkillStore({ io: { readAll() { return []; }, append() {} }, clock: { now: () => 0 } }) }).register(registry);
+  // QUEST V2 §B: quest.update rides the COMPUTER (the 'quest' freebie), present in this office. In-memory questStore
+  // so registration + resolve mirror sidecar/index.js exactly (the drift guard below expects quest.update resolved).
+  const _qFiles = new Map();
+  const _qFs = {
+    readFileSync(f) { if (!_qFiles.has(String(f))) { const e = new Error('ENOENT'); e.code = 'ENOENT'; throw e; } return _qFiles.get(String(f)); },
+    writeFileSync(f, d) { _qFiles.set(String(f), String(d)); }, renameSync(a, b) { _qFiles.set(String(b), _qFiles.get(String(a))); _qFiles.delete(String(a)); },
+    existsSync(f) { return _qFiles.has(String(f)); }, mkdirSync() {}, unlinkSync(f) { _qFiles.delete(String(f)); }, openSync() { return 1; }, fsyncSync() {}, closeSync() {}
+  };
+  makeQuestTools({ store: makeQuestStore({ fs: _qFs, path, workspaces: '/ws', writeDurable: ({ fs }, file, data) => fs.writeFileSync(file, data) }), clock: { now: () => 0 } }).register(registry);
 
   const station = { agents: { agent: { id: 'agent', room: 'office' } }, rooms: { office: { id: 'office', objects: [
     { instanceId: 'pc1', objectType: 'computer' }, { instanceId: 'd1', objectType: 'dish' },
@@ -100,7 +111,7 @@ const fixture = {
   const capCtx = makeCapCtx(resolved, { emit, consent, timeoutMs: 5000 });
 
   // ---- DRIFT GUARDS (these alone would have caught both default-path showstoppers) ----
-  const EXPECTED = ['web_search', 'web_fetch', 'browser.navigate', 'browser.snapshot', 'browser.click', 'browser.type', 'browser.scroll', 'browser.back', 'browser.press', 'browser.console', 'browser.dialog', 'browser.get_text', 'browser.vision', 'desktop.open', 'fs.read', 'fs.write', 'fs.list', 'fs.search', 'fs.append', 'fs.edit', 'fs.patch', 'notebook.read', 'notebook.write', 'notebook.feedback', 'recall_conversation', 'skill.write', 'skill.manage', 'skill.list', 'skill.view', 'todo', 'widget.set'];
+  const EXPECTED = ['web_search', 'web_fetch', 'browser.navigate', 'browser.snapshot', 'browser.click', 'browser.type', 'browser.scroll', 'browser.back', 'browser.press', 'browser.console', 'browser.dialog', 'browser.get_text', 'browser.vision', 'desktop.open', 'fs.read', 'fs.write', 'fs.list', 'fs.search', 'fs.append', 'fs.edit', 'fs.patch', 'notebook.read', 'notebook.write', 'notebook.feedback', 'recall_conversation', 'skill.write', 'skill.manage', 'skill.list', 'skill.view', 'todo', 'widget.set', 'quest.update'];
   A.eq(resolved.tools.slice().sort(), EXPECTED.slice().sort(), 'office objects resolve to the full toolset (object=capability is real)');
   for (const name of EXPECTED) A.ok(registry.get(name), 'tool registered: ' + name);
 

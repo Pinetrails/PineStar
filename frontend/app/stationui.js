@@ -3303,6 +3303,7 @@ const StationUI = (() => {
   // placements can coalesce/miss the per-quest celebration; QuestState.fold celebrates each edge individually,
   // so running it the instant a prop lands makes each close flourish on its own. The 1s tick stays the fallback.
   function pokeQuests() {
+    if (typeof QuestLedgerStore !== 'undefined' && QuestLedgerStore.sync) { try { QuestLedgerStore.sync(); } catch (_) {} }   // §C: throttled ledger poll (no-ops network unless the window elapsed)
     if (typeof StationQuestStore !== 'undefined' && StationQuestStore.sync) { try { StationQuestStore.sync(); } catch (_) {} }
     if (typeof WorkQuestStore !== 'undefined' && WorkQuestStore.sync) { try { WorkQuestStore.sync(); } catch (_) {} }
     if (typeof MaintQuestStore !== 'undefined' && MaintQuestStore.sync) { try { MaintQuestStore.sync(); } catch (_) {} }
@@ -3314,7 +3315,14 @@ const StationUI = (() => {
     // G1b: resolve station-gap quests against the live floor + re-evaluate the standing OUTBOX candidate
     // FIRST, so a gap that just closed (a prop placed) is already flipped done in the projection when the
     // durable quest memory folds it below — the open→done edge then rides G1a's celebration for free.
+    // D1: ALL FOUR generator stores must resync before the fold, else a work/maint completion sits undetected
+    // until the log opens and then backfills silently. Order mirrors pokeQuests(): generators, then the fold.
+    // §C: the harness LEDGER polls here too (throttled inside QuestLedgerStore) so an away-completed / just-
+    // confirmed ledger quest folds into the celebration on the 1s tick even with the QUEST LOG closed.
+    if (typeof QuestLedgerStore !== 'undefined' && QuestLedgerStore.sync) { try { QuestLedgerStore.sync(); } catch (_) {} }
     if (typeof StationQuestStore !== 'undefined' && StationQuestStore.sync) { try { StationQuestStore.sync(); } catch (_) {} }
+    if (typeof WorkQuestStore !== 'undefined' && WorkQuestStore.sync) { try { WorkQuestStore.sync(); } catch (_) {} }
+    if (typeof MaintQuestStore !== 'undefined' && MaintQuestStore.sync) { try { MaintQuestStore.sync(); } catch (_) {} }
     // G1a: fold the live quest projection into the durable quest memory once a second — completion
     // detection must not depend on the QUEST LOG being open (the celebration toast/sting fire regardless).
     if (typeof QuestStateStore !== 'undefined' && QuestStateStore.sync) { try { QuestStateStore.sync(); } catch (_) {} }
@@ -4713,11 +4721,53 @@ const StationUI = (() => {
   }
   function workshopGrantOn() { const h = heroAgent(); return !!(h && h.workshop); }
 
+  // §C — the honest "what makes this quest complete", in plain words, per kind. Ledger quests derive it from
+  // their real completion contract; the v1 kinds get accurate copy matching each generator's true semantics
+  // (never a guess). Used to render the "✓ completes when:" sub-line on EVERY open row.
+  function questCompletesWhen(q) {
+    if (!q) return '';
+    if (q.kind === 'ledger') {
+      const t = (q.contract && q.contract.type) || 'attest';
+      const key = (q.contract && q.contract.key) || '';
+      if (t === 'prop') return 'the ' + (key || 'named') + ' capability goes live on your floor';
+      if (t === 'run') return 'the bound build runs to completion';
+      if (t === 'fact') return 'the station learns this about you';
+      if (t === 'artifact') return 'the deliverable lands in the workshop';
+      if (t === 'attest') return 'your agent reports it done with evidence and you confirm';
+      return 'its completion contract is met';
+    }
+    switch (q.kind) {
+      case 'station-gap': return 'you place the prop that grants this capability';
+      case 'work': return 'the build finishes its run';
+      case 'maintenance': return 'the recurring failure stops happening';
+      case 'dossier': return 'you tell the station this';
+      case 'milestone': return String(q.desc || '').replace(/^how:\s*/i, '').trim() || 'you ship the real work behind it';
+      case 'station':
+        return q.id === 'st:crew' ? 'a second specialist joins your crew'
+          : q.id === 'st:belt' ? 'a live work route reaches an agent'
+          : q.id === 'st:connector' ? 'a tool portal is bound to real powers'
+          : 'the floor reaches this milestone';
+      default: return '';
+    }
+  }
+  // §C — the GO destination token for a quest that has a real, already-existing openable surface (never a new
+  // window). null → no GO button. dossier → the Commander dossier; work/build → the TASK BOARD; a floor gap → REFIT.
+  const GO_LABEL = { commander: 'GO ▸ dossier', tasks: 'GO ▸ task board', refit: 'GO ▸ REFIT' };
+  function questGoDest(q) {
+    if (!q || q.status === 'done') return null;
+    if (q.kind === 'dossier') return 'commander';
+    if (q.kind === 'work' || (q.kind === 'ledger' && (q.ledgerKind === 'work' || (q.contract && (q.contract.type === 'run' || q.contract.type === 'artifact'))))) return 'tasks';
+    if (q.kind === 'station-gap' || q.kind === 'station') return (typeof Build !== 'undefined' && Build.open) ? 'refit' : null;
+    return null;
+  }
+
   function buildQuests(body) {
     const QSS = (typeof QuestStateStore !== 'undefined') ? QuestStateStore : null;
     const SQS = (typeof StationQuestStore !== 'undefined') ? StationQuestStore : null;
     const WQS = (typeof WorkQuestStore !== 'undefined') ? WorkQuestStore : null;
     const MQS = (typeof MaintQuestStore !== 'undefined') ? MaintQuestStore : null;
+    const QLS = (typeof QuestLedgerStore !== 'undefined') ? QuestLedgerStore : null;   // QUEST V2 §C: the sidecar ledger's frontend citizen
+    if (QLS && QLS.sync) { try { QLS.sync(); } catch (_) {} }   // §C: throttled poll of /api/quests — the last-good cache feeds the projection below
     if (SQS && SQS.sync) { try { SQS.sync(); } catch (_) {} }   // G1b: resolve station gaps before folding, so a just-closed gap renders done + celebrates
     if (WQS && WQS.sync) { try { WQS.sync(); } catch (_) {} }   // G1c: advance/complete work quests before the fold
     if (MQS && MQS.sync) { try { MQS.sync(); } catch (_) {} }   // G1c: mint/clear maintenance quests before the fold
@@ -4734,8 +4784,13 @@ const StationUI = (() => {
     // arc-goal / arc-step (Tier 2) are a persisted GOAL PATH, never a dismissible fix-it: the goal retires only on
     // real drift (the Study engine forgetting its source belief), never by a wave-off — so they fall through the
     // dismissible check entirely.
-    const dismissibleQ = q => q && q.status !== 'done' && q.kind !== 'arc-goal' && q.kind !== 'arc-step' && (
-      (q.kind === 'station-gap') || (q.kind === 'work') || (q.kind === 'maintenance')
+    // GB-24 — DISMISS EVERYWHERE: every open quest can be waved off. Each kind routes to the store that owns its
+    // permanent denylist: station-gap/work/maintenance → their own store; ledger → QuestLedgerStore (backend
+    // denylist); everything else QuestState owns (its widened dismissible now returns true for milestone/station/
+    // dossier too). arc-goal/arc-step + the idea stay non-dismissible (QSS.dismissible says so — a coupled goal
+    // path / the SuggestStore-owned idea are not standalone nags).
+    const dismissibleQ = q => q && q.status !== 'done' && (
+      (q.kind === 'station-gap') || (q.kind === 'work') || (q.kind === 'maintenance') || (q.kind === 'ledger')
       || (QSS && QSS.dismissible && QSS.dismissible(q)));
     const tro = (q, i) => {
       const glow = QSS && QSS.isCelebrating && QSS.isCelebrating(q.id);
@@ -4770,12 +4825,36 @@ const StationUI = (() => {
       const queueBtn = canQueue
         ? '<button class="q-queue" data-qid="' + esc(q.id) + '" title="Build this while I’m away — queue it for the sandbox">◈</button>'
         : '';
+      // §C — a GO affordance where a real, openable destination exists (never invents a window): dossier asks →
+      // the Commander dossier; work/build → the TASK BOARD; a floor gap → REFIT. Absent target → no button.
+      const goDest = questGoDest(q);
+      const goBtn = goDest ? '<button class="q-go" data-dest="' + esc(goDest) + '" title="Open where you do this next">' + esc(GO_LABEL[goDest] || 'GO') + '</button>' : '';
+      // §C — EVERY open row answers "what do I do next": the honest completion condition in words.
+      const cw = q.status !== 'done' ? questCompletesWhen(q) : '';
+      const cwHtml = cw ? '<div class="sub q-cw" style="opacity:.82;margin-top:3px;">✓ completes when: ' + esc(cw) + '</div>' : '';
+      // §C — a pending attest (an agent proposed completion with evidence): the awaiting-confirmation badge + the
+      // inline Commander verdict. Confirm is single-click (→ done + the QuestState celebration); Not yet declines
+      // (→ the quest stays open, a declineNote the agent sees next run). Truthful: only a real pending attest shows.
+      const pend = (q.kind === 'ledger' && q.status !== 'done' && q.attest) ? q.attest : null;
+      const attestHtml = pend
+        ? '<div class="sub q-attest-line" style="margin-top:4px;color:var(--gold);">⏳ awaiting your confirmation'
+            + (pend.evidence ? ' — &ldquo;' + esc(String(pend.evidence).slice(0, 140)) + '&rdquo;' : '') + '</div>'
+          + '<div class="consent-btns" style="margin-top:5px;">'
+          + '<button class="consent-btn q-attest-yes" data-qid="' + esc(q.id) + '">Confirm &#10003;</button>'
+          + '<button class="consent-btn deny q-attest-no" data-qid="' + esc(q.id) + '">Not yet</button>'
+          + '</div>'
+        : '';
+      // §C — a prior declined attest on a still-open ledger quest: show the note so the ask reads honestly.
+      const declineHtml = (q.kind === 'ledger' && q.status !== 'done' && !pend && q.declineNote && q.declineNote.note)
+        ? '<div class="sub" style="opacity:.7;margin-top:3px;">&#8617; you said not yet: &ldquo;' + esc(String(q.declineNote.note).slice(0, 120)) + '&rdquo;</div>' : '';
       return '<div class="gx-tro ' + (q.status === 'done' ? 'on' : 'off') + (glow ? ' q-celebrate' : '') + '" style="--ci:' + (i || 0) + '">'
         + '<div style="display:flex;align-items:center;gap:6px;"><span class="gl">' + (q.status === 'done' ? '&#9733;' : '&#9675;') + '</span><span class="nm">' + esc(q.title) + '</span>'
+        + goBtn
         + queueBtn
         + (dis ? '<button class="q-dismiss" data-qid="' + esc(q.id) + '" title="Dismiss — the station will never raise this again">&#10005;</button>' : '')
         + '</div>'
-        + '<div class="sub">' + esc(q.status === 'done' ? ('▸ ' + q.reward) : q.desc) + '</div></div>';
+        + '<div class="sub">' + esc(q.status === 'done' ? ('▸ ' + q.reward) : q.desc) + '</div>'
+        + cwHtml + attestHtml + declineHtml + '</div>';
     };
     const meterHtml = m
       ? '<div class="gx-sec"><span class="gx-title">STATION</span> <span class="gx-tag">Lv ' + m.level + ' &middot; ' + m.pct + '% to next &middot; ' + esc(String(m.confLabel) + ' ' + String(m.band)) + '</span></div>'
@@ -4832,7 +4911,13 @@ const StationUI = (() => {
         if (ev && ev.stopPropagation) ev.stopPropagation();
         const q = qs.find(x => x && x.id === b.dataset.qid);
         if (!q) return;
-        // each fix-it/build kind routes to its OWN permanent denylist; the dossier kind goes through QuestState.
+        // §C — a LEDGER quest dismisses on the sidecar (backend denylist). It's async: fire the POST, then
+        // re-render once the store's forced refetch drops the row from its cache (optimistic click feedback now).
+        if (q.kind === 'ledger') {
+          if (QLS && QLS.dismiss) { sfx('click'); QLS.dismiss(q.id).then(() => rerender('quests')); }
+          return;
+        }
+        // each fix-it/build kind routes to its OWN permanent denylist; dossier/milestone/station go through QuestState.
         const took = (q.kind === 'station-gap') ? (SQS && SQS.dismiss && SQS.dismiss(q.id))
           : (q.kind === 'work') ? (WQS && WQS.dismiss && WQS.dismiss(q.id))
           : (q.kind === 'maintenance') ? (MQS && MQS.dismiss && MQS.dismiss(q.id))
@@ -4869,6 +4954,34 @@ const StationUI = (() => {
       if (typeof GoalStore === 'undefined' || !GoalStore.acceptMilestone) return;
       const m = GoalStore.acceptMilestone(b.dataset.gid, b.dataset.mid);
       if (m) { sfx('click'); rerender('quests'); }
+    }));
+    // §C — GO: open the existing surface where this quest's next move happens (never a new window). openTerm is
+    // idempotent (restores a minimized panel, no-ops if already open); a floor gap opens REFIT via Build.open.
+    body.querySelectorAll('.q-go').forEach(b => b.addEventListener('click', ev => {
+      ev.stopPropagation();
+      const d = b.dataset.dest;
+      if (d === 'refit') { if (typeof Build !== 'undefined' && Build.open) { try { Build.open(); } catch (_) {} } }
+      else if (d) openTerm(d);
+      sfx('click');
+    }));
+    // §C — ATTEST VERDICT: the Commander's single-click confirm / decline on a ledger quest the agent reported
+    // done. Both route through QuestLedgerStore.confirm (yes → done + the QuestState celebration on the next
+    // fold; no → the quest stays open with a declineNote). The store refetches immediately; then we re-render.
+    body.querySelectorAll('.q-attest-yes').forEach(b => b.addEventListener('click', async ev => {
+      ev.stopPropagation();
+      if (!QLS || !QLS.confirm) return;
+      b.disabled = true;
+      const r = await QLS.confirm(b.dataset.qid, true);
+      if (r && r.ok) sfx('click'); else { b.disabled = false; notify('could not record that verdict', 'bad'); }
+      rerender('quests');   // the QuestState fold in buildQuests fires the completion celebration for the now-done quest
+    }));
+    body.querySelectorAll('.q-attest-no').forEach(b => b.addEventListener('click', async ev => {
+      ev.stopPropagation();
+      if (!QLS || !QLS.confirm) return;
+      b.disabled = true;
+      const r = await QLS.confirm(b.dataset.qid, false);   // decline: not destructive — the quest stays open, the agent sees the note next run
+      if (r && r.ok) sfx('click'); else b.disabled = false;
+      rerender('quests');
     }));
   }
 

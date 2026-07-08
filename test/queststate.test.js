@@ -45,6 +45,30 @@ A.eq(r.completions, [], 'first sight never celebrates — even a quest first see
 A.eq(QS.stateOf(s, 'dim:goals'), { firstSeenAt: 1000, completedAt: null, lastStatus: 'open', dismissedAt: null }, 'an open quest records firstSeenAt only');
 A.eq(QS.stateOf(s, 'ms:first_light').completedAt, 1000, 'done-at-first-sight backfills completedAt for the future trophy case');
 
+/* ---------- D3: first-seen-DONE — silent on a FRESH state, celebrated on an EXISTING one ----------
+   The discriminator is state freshness (seen empty before the fold). A first-ever sync backfills old history
+   SILENTLY (no 15-celebration storm on first boot / on resuming a save). But once the state exists, a quest
+   that appears already done is an AWAY completion the fold never saw open→done live — it IS a completion the
+   Commander earned, so it celebrates exactly once (the persistent notify record is its receipt). */
+(() => {
+  // FRESH state: every already-done quest is silent baseline (this is the first sync — it's all old history).
+  const fresh = QS.fresh();
+  const rf = QS.fold(fresh, [q('ms:a', 'done'), q('ms:b', 'done'), q('dim:x', 'open')], 1000);
+  A.eq(rf.completions, [], 'a fresh state backfills first-seen-done quests SILENTLY (no first-boot celebration storm)');
+  A.eq(QS.stateOf(fresh, 'ms:a').completedAt, 1000, '…but still records completedAt for the trophy case');
+})();
+(() => {
+  // EXISTING state: one quest already tracked, then a NEW quest shows up already done → an away completion.
+  const existing = QS.fresh();
+  QS.fold(existing, [q('dim:x', 'open')], 1000);                       // state is now non-fresh (has a seen entry)
+  const re = QS.fold(existing, [q('dim:x', 'open'), q('ms:away', 'done')], 2000);
+  A.eq(re.completions.length, 1, 'on an EXISTING state a first-seen-done quest celebrates (an away completion)');
+  A.eq(re.completions[0].id, 'ms:away', '…and it is the away-completed quest that is returned');
+  A.eq(QS.stateOf(existing, 'ms:away').completedAt, 2000, '…with completedAt stamped at the fold that observed it');
+  const re2 = QS.fold(existing, [q('ms:away', 'done')], 3000);
+  A.eq(re2.completions, [], '…and it never celebrates again (one completion per away edge)');
+})();
+
 /* ---------- open→done celebrates exactly once, with completedAt ---------- */
 r = QS.fold(s, [q('dim:goals', 'done'), q('ms:first_light', 'done')], 2000);
 A.eq(r.completions.length, 1, 'exactly one completion on the open→done edge');
@@ -80,15 +104,26 @@ A.eq(r.completions, [], 'an empty projection is silent');
 r = QS.fold(s, [q('dim:goals', 'done')], 5600);
 A.eq(r.completions, [], 'reappearing still-done is not a new completion');
 
-/* ---------- dismissibility: dossier yes, milestone/idea no ---------- */
+/* ---------- dismissibility (GB-24 — dismiss everywhere): QuestState owns the kinds with no external denylist ----
+   dossier/milestone/station now all take here; the kinds with their OWN store denylist (station-gap/work/
+   maintenance/ledger) and the coupled/owned kinds (idea, arc-goal, arc-step) are excluded on purpose. */
 A.eq(QS.dismissible({ kind: 'dossier' }), true, 'get-to-know-you quests are dismissible');
-A.eq(QS.dismissible({ kind: 'milestone' }), false, 'milestones are achievements — never dismissible');
+A.eq(QS.dismissible({ kind: 'milestone' }), true, 'GB-24: milestones are now dismissible (QuestState is their denylist)');
+A.eq(QS.dismissible({ kind: 'station' }), true, 'GB-24: station-arc quests are now dismissible');
 A.eq(QS.dismissible({ kind: 'idea' }), false, 'the idea quest is owned by the COMMS suggestion cadence — not dismissible here');
+A.eq(QS.dismissible({ kind: 'arc-goal' }), false, 'the goal-arc header is a coupled path, not a standalone nag — not dismissible');
+A.eq(QS.dismissible({ kind: 'arc-step' }), false, 'a goal-arc step retires on drift, never a wave-off — not dismissible');
+A.eq(QS.dismissible({ kind: 'station-gap' }), false, 'station-gap owns its own store denylist — not routed through QuestState');
+A.eq(QS.dismissible({ kind: 'work' }), false, 'work owns its own store denylist — not routed through QuestState');
+A.eq(QS.dismissible({ kind: 'maintenance' }), false, 'maintenance owns its own store denylist — not routed through QuestState');
+A.eq(QS.dismissible({ kind: 'ledger' }), false, 'a ledger quest dismisses on the sidecar backend — not routed through QuestState');
 A.eq(QS.dismissible(null), false, 'dismissible(null) never throws');
 
 /* ---------- dismiss: only dismissible kinds take; idempotent ---------- */
-A.eq(QS.dismiss(s, q('ms:first_light', 'done'), 6000), false, 'dismissing a milestone is refused');
-A.eq(QS.isDismissed(s, 'ms:first_light'), false, '…and leaves no mark');
+A.eq(QS.dismiss(s, q('idea', 'open', 'idea'), 6000), false, 'dismissing the SuggestStore-owned idea quest is refused (not QuestState-owned)');
+A.eq(QS.isDismissed(s, 'idea'), false, '…and leaves no mark');
+A.eq(QS.dismiss(s, q('ms:pack_rat', 'open', 'milestone'), 5900), true, 'GB-24: dismissing an open milestone now takes (QuestState is its denylist)');
+A.eq(QS.isDismissed(s, 'ms:pack_rat'), true, '…and is recorded');
 A.eq(QS.dismiss(s, q('dim:stack', 'open'), 6000), true, 'dismissing an open dossier quest takes');
 A.eq(QS.isDismissed(s, 'dim:stack'), true, '…and is recorded');
 A.eq(QS.stateOf(s, 'dim:stack').dismissedAt, 6000, 'dismissedAt is stamped');
