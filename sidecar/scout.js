@@ -177,8 +177,10 @@
   }
 
   /* parseRecipe — parse + VALIDATE HARD. opts = { existingRecipes:[{name,tagline}], denylist:[fp],
-     gearKeys:[..] }. Returns null (invalid), { none:true }, or { draft, why, fingerprint }.
-     A draft whose params don't round-trip the task template is BROKEN AT LAUNCH — rejected, never staged. */
+     gearKeys:[..], grounding? }. Returns null (invalid), { none:true }, or { draft, why, fingerprint }.
+     A draft whose params don't round-trip the task template is BROKEN AT LAUNCH — rejected, never staged.
+     `grounding` (optional): the real evidence corpus the WHY must cite (interests block + activity lines) —
+     same token-overlap guard as interests.parse, so an invented "why" dies here, never on a shelf. */
   function parseRecipe(text, opts) {
     opts = opts || {};
     const raw = str(text);
@@ -192,6 +194,15 @@
     const task = grab('TASK').slice(0, TASK_MAX);
     const why = grab('WHY').slice(0, WHY_MAX);
     if (!name || !tagline || !task || !why) return null;   // the load-bearing fields — a partial draft is malformed
+
+    // WHY GROUNDING (mirrors interests.parse's evidence guard): when a grounding corpus is provided, at least
+    // one significant WHY token must appear in it — a WHY that cites nothing the station actually observed is
+    // an invented pitch, rejected (and ledger-visible via the caller), never staged.
+    const grounding = str(opts.grounding).toLowerCase();
+    if (grounding) {
+      const toks = why.toLowerCase().split(/[^a-z0-9]+/).filter(t => t.length >= 4);
+      if (toks.length && !toks.some(t => grounding.indexOf(t) !== -1)) return null;
+    }
 
     // params: every PARAM line, validated + capped. key | Label | placeholder.
     const params = [];

@@ -90,6 +90,15 @@ A.eq(denied, null, 'a denylisted fingerprint never re-mints');
 const noTags = S.parseRecipe(GOOD.replace('TAGS: research=0.8, general=0.2', 'TAGS: vibes=high'), { existingRecipes: [], gearKeys: GEAR });
 A.eq(noTags.draft.tags, { general: 1 }, 'invalid tags degrade to general, never invented lanes');
 
+/* ---------- parseRecipe: WHY GROUNDING (mirrors interests.parse's evidence guard) ---------- */
+const CORPUS = '• stock research (seen 4×) — e.g. "NVDA earnings"\n• you asked about semiconductor stocks';
+const grounded = S.parseRecipe(GOOD, { existingRecipes: [], gearKeys: GEAR, grounding: CORPUS });
+A.ok(grounded && grounded.draft, 'a WHY citing real evidence passes the grounding guard');
+const invented = S.parseRecipe(GOOD, { existingRecipes: [], gearKeys: GEAR, grounding: 'kubernetes cluster upgrades and yaml drift' });
+A.eq(invented, null, 'a WHY citing NOTHING in the grounding corpus is rejected (invented pitch dies here)');
+const ungated = S.parseRecipe(GOOD, { existingRecipes: [], gearKeys: GEAR });
+A.ok(ungated && ungated.draft, 'no grounding corpus provided -> the guard stays off (back-compat)');
+
 /* ---------- reducers ---------- */
 let r = S.fresh(T0);
 for (let i = 0; i < S.MINT_EVERY_RUNS; i++) r = S.noteRun(r, T0);
