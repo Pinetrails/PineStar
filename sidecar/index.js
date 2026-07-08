@@ -87,6 +87,7 @@ const { makeTelegramAdapter } = require('./channels/telegram.js');
 const { makeChannelStore } = require('./channels/store.js');
 const { makeChannelHub } = require('./channels/hub.js');
 const { makeChannelRegistry, wireChannel } = require('./channels/registry.js');   // H6.2: channel descriptors + generic wire-up
+const { parseSlackTokens } = require('./channels/slack.js');                       // slack stores its two tokens as ONE secret string
 const channelSecretsMod = require('./channels/secrets.js');                        // T1.4: token-vs-config split + keychain migration
 const { makeConnectGateway } = require('./channels/discord.gateway.js');           // P2-E: the real Discord gateway WS client (inbound)
 const { makeSseHub, runTeeView } = require('./channels/sse.js');
@@ -1952,7 +1953,7 @@ const CHANNEL_SECRETS_FILE = path.join(CHANNELS_DIR, 'secrets.json');
 // truth is the OS keychain, injected at spawn as SKYNET_<ID>_TOKEN and live-pushed via POST /api/channels/token.
 // In that mode the plaintext secrets.json holds ONLY non-secret config (enabled/model/ownerId/agentId/…). The
 // bare sidecar has no keychain, so the token stays in the file exactly as before.
-const CHANNEL_TOKEN_ENV = { telegram: 'TELEGRAM_TOKEN', discord: 'DISCORD_TOKEN' };
+const CHANNEL_TOKEN_ENV = { telegram: 'TELEGRAM_TOKEN', discord: 'DISCORD_TOKEN', slack: 'SLACK_TOKEN', matrix: 'MATRIX_TOKEN' };   // signal has no secret token (endpoint+account are config)
 const channelTokenRuntime = Object.create(null);
 // DURABILITY LEDGER (the invariant Andrew locked): channelTokenDurable[id] === true ONLY when this channel's token
 // is proven to live in a durable home OTHER than the plaintext file — i.e. it arrived from the spawn env
@@ -1963,6 +1964,7 @@ const channelTokenRuntime = Object.create(null);
 // channels' tokens; a non-durable token stays plaintext, exactly like the bare sidecar's honest fallback.
 const channelTokenDurable = Object.create(null);
 for (const id of channelSecretsMod.CHANNEL_IDS) {
+  if (!CHANNEL_TOKEN_ENV[id]) continue;   // a tokenless channel (signal) has no env var to read
   const v = String(ENV(CHANNEL_TOKEN_ENV[id]) || '').trim();
   if (v) { channelTokenRuntime[id] = v; channelTokenDurable[id] = true; }   // spawn env == keychain-backed == durable
 }
@@ -2470,7 +2472,11 @@ const cronEmit = (name, payload) => { try { return cronEmitValidated(name, redac
 // the notifier engine stays opt-in-agnostic. send/chatsFor read telegram/discord/channelSecrets LIVE (closures), so
 // they resolve correctly even though the channel adapters connect after this point in boot.
 const autoNotifier = makeAutoNotifier({
-  send: (chatId, text, channel) => { const ch = (channel === 'discord') ? discord : telegram; return (ch && ch.adapter) ? ch.adapter.send(chatId, redact(text)) : Promise.resolve({ ok: false }); },
+  send: (chatId, text, channel) => {
+    // fan out by channel name: the two bespoke slots else the generic map (slack/matrix/signal).
+    const ch = (channel === 'discord') ? discord : (!channel || channel === 'telegram') ? telegram : genericChannels[channel];
+    return (ch && ch.adapter) ? ch.adapter.send(chatId, redact(text)) : Promise.resolve({ ok: false });
+  },
   chatsFor: (agentId) => {
     if (!(channelSecrets && channelSecrets.notifyAutonomous)) return [];   // global opt-in gate (default off — anti-spam)
     try { const map = channelStore.loadChatMap(); return Object.keys(map.chats || {}).filter(cid => map.chats[cid] && map.chats[cid].agentId === agentId).map(cid => ({ chatId: cid, channel: (map.chats[cid] && map.chats[cid].channel) || 'telegram' })); } catch (_) { return []; }
@@ -3711,6 +3717,106 @@ async function handleDevInbound(req, res) {
   return json(200, { ok: true, chatId, agentId: agentId || null, isTask, workitemId: workitemId || null, replies: (devReplies.get(chatId) || []).map(r => r.text) });
 }
 
+/* ---- generic channels (slack / matrix / signal) — ONE start/stop path per registry row. Each is the exact
+   Discord wiring (registry descriptor -> wireChannel -> shared hub -> the same runOnce) with a per-platform
+   adapter-dependency bag: slack gets the WebSocket + combined xoxb/xapp token, matrix gets homeserver+token+txn
+   ids, signal gets the signal-cli REST endpoint+account. Adding channel N+1 stays a registry row, not a fork. ---- */
+const GENERIC_CHANNEL_IDS = ['slack', 'matrix', 'signal'];
+function channelPersona(label) {
+  return 'You are the Commander\'s AI agent aboard the STARNET station, reachable over ' + label + '. '
+    + 'Address the user as "Commander", keep a spark of personality, and keep replies concise and chat-friendly. '
+    + 'When the Commander gives you a task you have REAL tools (web search/read, files, memory) — use them and '
+    + 'report what you actually found; never claim you cannot act.';
+}
+const genericChannels = Object.create(null);   // id -> { adapter, hub } when connected
+const genericStatus = Object.create(null);     // id -> { connected, state, detail } (HTTP status truth)
+for (const id of GENERIC_CHANNEL_IDS) genericStatus[id] = { connected: false, state: 'down', detail: '' };
+
+function startGenericChannel(id, token, key, model, agentCfg) {
+  stopGenericChannel(id);
+  const desc = channelRegistry.get(id);
+  if (!desc || typeof desc.makeAdapter !== 'function') throw new Error('unknown channel: ' + id);
+  const cfg = agentCfg || {};
+  const provider = normalizeProvider(cfg.provider);
+  const reasoningEffort = resolveReasoningEffort(provider, cfg.reasoningEffort);
+  if (token) channelTokenRuntime[id] = String(token);   // keep the live token off the plaintext file (desktop) — see startTelegram
+  const prev = (channelSecrets && channelSecrets[id]) || {};
+  const record = {
+    token: token || undefined, key: key, model: model, provider: provider,
+    baseUrl: cfg.baseUrl || cfg.base_url || '', reasoningEffort: reasoningEffort, enabled: true,
+    endpoint: cfg.endpoint || prev.endpoint || undefined,   // matrix homeserver / signal-cli REST URL (non-secret)
+    account: cfg.account || prev.account || undefined,      // signal registered number (non-secret)
+    agentId: cfg.agentId || undefined, system: cfg.system || undefined, name: cfg.name || undefined,
+    ownerId: cfg.ownerId || prev.ownerId || undefined
+  };
+  const patch = {}; patch[id] = record;
+  channelSecrets = Object.assign({}, channelSecrets, patch);
+  saveChannelSecrets(channelSecrets);
+  const adapterOpts = {
+    fetch: globalThis.fetch, clock: { now: () => Date.now() },
+    ownerUserId: record.ownerId || '',
+    onOwnerClaim: (uid) => {
+      try {
+        const cur = (channelSecrets && channelSecrets[id]) || {};
+        const p2 = {}; p2[id] = Object.assign({}, cur, { ownerId: String(uid) });
+        channelSecrets = Object.assign({}, channelSecrets, p2);
+        saveChannelSecrets(channelSecrets);
+        console.log('  · ' + id + ' owner claimed (userId ' + String(uid) + ') — other DMs are now refused');
+      } catch (_) {}
+    },
+    onStatus: (s) => {
+      const state = (s && s.state) || 'down';
+      // a fatal (bad-token/endpoint) error stops the poll loop -> mark disconnected so /status is honest.
+      genericStatus[id] = { connected: state === 'error' ? false : !!genericChannels[id], state: state, detail: (s && s.detail) || '' };
+      const w = genericChannels[id]; if (w && w.hub) w.hub.onStatus(s);
+    }
+  };
+  if (id === 'slack') {
+    adapterOpts.token = token;   // combined "xoxb-… xapp-…" — slack.js splits by prefix
+    adapterOpts.WebSocketImpl = (typeof WebSocket !== 'undefined' ? WebSocket : undefined);
+  } else if (id === 'matrix') {
+    adapterOpts.token = token;
+    adapterOpts.homeserver = record.endpoint;
+    adapterOpts.newId = () => crypto.randomUUID();   // idempotent send txn ids
+  } else if (id === 'signal') {
+    adapterOpts.endpoint = record.endpoint;
+    adapterOpts.account = record.account;
+  }
+  const wired = wireChannel(desc, {
+    hub: {
+      runOnce: runOnce, store: channelStore,
+      secrets: () => {
+        const r = (channelSecrets && channelSecrets[id]) || {};
+        const p = normalizeProvider(r.provider);
+        const k = providerRuntimeKey(p, r.key || '');
+        const b = providerRuntimeBaseUrl(p, r.baseUrl || r.base_url || '');
+        return { key: k, model: r.model, provider: p, baseUrl: b, configured: providerHasCredential(p, k, b), reasoningEffort: resolveReasoningEffort(p, r.reasoningEffort), agentId: r.agentId, system: r.system };
+      },
+      persona: channelPersona(desc.label), classify: Classify.isTaskDirective, redact: redact, emit: chanEmit,
+      newId: () => crypto.randomUUID(), now: () => Date.now(), maxMessageLength: desc.maxMessageLength,
+      resolveAgent: (ctx) => router.resolveTarget(ctx),
+      getTag: (text) => (Classify.getTag ? Classify.getTag(text) : undefined),
+      resolveStation: (agentId) => router.stationFor(agentId),
+      // In-messenger control surface — identical across channels because it lives in the shared hub.
+      roster: () => [...agentRoster].map(([agentId, a]) => ({ agentId, name: a.name, model: a.model, provider: a.provider })),
+      setModel: (agentId, model) => setAgentModelFromChannel(agentId, model),
+      modelCatalog: () => { maybeRewarmModelCatalog(); return orModelCatalogIds; }
+    },
+    adapter: adapterOpts
+  });
+  genericChannels[id] = { adapter: wired.adapter, hub: wired.hub };
+  // optimistic like Telegram: up until the transport reports down/error (a fatal auth flips it within seconds).
+  genericStatus[id] = { connected: true, state: 'up', detail: '' };
+  wired.adapter.connect();
+  console.log('  · ' + id + ' channel connected');
+}
+function stopGenericChannel(id) {
+  const w = genericChannels[id];
+  if (w && w.adapter) { try { w.adapter.disconnect(); } catch (_) {} }
+  delete genericChannels[id];
+  genericStatus[id] = { connected: false, state: 'down', detail: '' };
+}
+
 const server = http.createServer((req, res) => {
   const isApi = String(req.url || '').indexOf('/api/') === 0 || req.url === '/api';
   if (isApi) {
@@ -3802,6 +3908,16 @@ function dispatchRoute(req, res) {
   // routing / classifier / crate telemetry testable without a live bot token. Own try/catch → always JSON.
   if (req.method === 'POST' && req.url === '/api/dev/inbound') return handleDevInbound(req, res).catch((e) => { try { if (!res.headersSent) { res.writeHead(500, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: redact('dev inbound failure: ' + ((e && e.message) || e)) })); } else res.end(); } catch (_) {} });
   if (req.method === 'GET' && req.url === '/api/channels/telegram/status') return handleChannelStatus(req, res);
+  if (req.method === 'GET' && req.url === '/api/channels/status') return handleChannelsStatusAll(req, res);   // one bulk poll paints the whole CHANNELS panel
+  { // generic channels (slack/matrix/signal): one route family, same verbs as telegram/discord
+    const gm = req.url.match(/^\/api\/channels\/(slack|matrix|signal)\/(connect|sync|disconnect|status)$/);
+    if (gm) {
+      if (req.method === 'POST' && gm[2] === 'connect') return handleGenericChannelConnect(req, res, gm[1]);
+      if (req.method === 'POST' && gm[2] === 'sync') return handleGenericChannelSync(req, res, gm[1]);
+      if (req.method === 'POST' && gm[2] === 'disconnect') return handleGenericChannelDisconnect(req, res, gm[1]);
+      if (req.method === 'GET' && gm[2] === 'status') return handleGenericChannelStatus(req, res, gm[1]);
+    }
+  }
   if (req.method === 'GET' && req.url.split('?')[0] === '/api/channels/events') return handleChannelEvents(req, res);   // path match: the SSE url carries a ?token= query now
   if (req.method === 'POST' && req.url === '/api/routing') return handleRouting(req, res);
   if (req.method === 'GET' && req.url === '/api/budget/status') return handleBudgetStatus(req, res);
@@ -3962,6 +4078,24 @@ server.listen(PORT, '127.0.0.1', () => {
     if (d.enabled && dcTok && d.model && providerHasCredential(d.provider, providerRuntimeKey(d.provider, d.key || ''), providerRuntimeBaseUrl(d.provider, d.baseUrl || d.base_url || ''))) { startDiscord(dcTok, d.key || '', d.model, { agentId: d.agentId, system: d.system, name: d.name, provider: d.provider, baseUrl: d.baseUrl || d.base_url || '', reasoningEffort: d.reasoningEffort }); console.log('  · discord auto-started from saved config'); }
     else if (channelTokenRuntime.discord && envKey && envModel) { startDiscord(channelTokenRuntime.discord, envKey, envModel, {}); console.log('  · discord auto-started from env'); }
   } catch (e) { console.warn('[channels] discord auto-start failed:', (e && e.message) || e); }
+  // same auto-start for the generic channels (slack/matrix/signal): a previously-connected saved config, else an
+  // env-provided token (headless deploys; signal is config-only so env auto-start doesn't apply to it).
+  for (const gid of GENERIC_CHANNEL_IDS) {
+    try {
+      const r = (channelSecrets && channelSecrets[gid]) || {};
+      const tok = channelToken(gid, '', r);
+      const authOk = gid === 'signal' ? !!(r.endpoint && r.account) : gid === 'matrix' ? !!(tok && r.endpoint) : !!tok;
+      const envKey = String(ENV('OPENROUTER_KEY') || '').trim();
+      const envModel = String(ENV('DEFAULT_MODEL') || '').trim();
+      if (r.enabled && authOk && r.model && providerHasCredential(r.provider, providerRuntimeKey(r.provider, r.key || ''), providerRuntimeBaseUrl(r.provider, r.baseUrl || r.base_url || ''))) {
+        startGenericChannel(gid, tok, r.key || '', r.model, { agentId: r.agentId, system: r.system, name: r.name, provider: r.provider, baseUrl: r.baseUrl || r.base_url || '', reasoningEffort: r.reasoningEffort, endpoint: r.endpoint, account: r.account });
+        console.log('  · ' + gid + ' auto-started from saved config');
+      } else if (gid !== 'signal' && channelTokenRuntime[gid] && envKey && envModel && (gid !== 'matrix' || r.endpoint)) {
+        startGenericChannel(gid, channelTokenRuntime[gid], envKey, envModel, { endpoint: r.endpoint, account: r.account });
+        console.log('  · ' + gid + ' auto-started from env');
+      }
+    } catch (e) { console.warn('[channels] ' + gid + ' auto-start failed:', (e && e.message) || e); }
+  }
   // warm every configured+enabled connector so its tools are ready on the first run (fire-and-forget; a
   // connector that is down/errors simply projects no tools — it never blocks the host or a run).
   try {
@@ -7454,6 +7588,110 @@ async function handleChannelNotify(req, res) {
   try { saveChannelSecrets(channelSecrets); } catch (e) { res.writeHead(500, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ ok: false, error: 'persist failed' })); }
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
   res.end(JSON.stringify({ ok: true, notifyAutonomous: on }));
+}
+
+/* ---- generic channel routes (slack/matrix/signal): the exact telegram/discord verbs through one handler
+   family. Secrets are NEVER echoed back; non-secret connection config (matrix homeserver / signal endpoint +
+   account) persists on the record so reconnect is one click. ---- */
+
+// the one status truth per channel, shared by the per-channel GET and the bulk GET /api/channels/status.
+function channelStatusPayload(id) {
+  const rec = (channelSecrets && channelSecrets[id]) || {};
+  const st = id === 'telegram' ? telegramStatus
+    : id === 'discord' ? discordStatus
+    : (genericStatus[id] || { connected: false, state: 'down', detail: '' });
+  // configured = everything a reconnect needs is saved server-side. signal has no secret token (endpoint+account);
+  // matrix needs BOTH the homeserver and a token; the token channels need their (keychain/runtime/plaintext) token.
+  const configured = id === 'signal' ? !!(rec.endpoint && rec.account)
+    : id === 'matrix' ? !!(rec.endpoint && channelToken(id, '', rec))
+    : !!channelToken(id, '', rec);
+  const durable = configured && (id === 'signal' ? true : (isChannelTokenDurable(id) || !!rec.token));
+  return {
+    id: id, connected: !!st.connected, configured: configured, durable: durable,
+    state: st.state || 'down', detail: st.detail || '',
+    notifyAutonomous: !!(channelSecrets && channelSecrets.notifyAutonomous), ownerLocked: !!rec.ownerId
+  };
+}
+
+// GET /api/channels/status — every registry channel's status in ONE poll (the CHANNELS panel paints from this).
+function handleChannelsStatusAll(req, res) {
+  const out = {};
+  for (const d of channelRegistry.list()) out[d.id] = channelStatusPayload(d.id);
+  res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify(out));
+}
+
+// GET /api/channels/<id>/status — booleans + poll state ONLY; never the token/key. Mirrors handleChannelStatus.
+function handleGenericChannelStatus(req, res, id) {
+  res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify(channelStatusPayload(id)));
+}
+
+// POST /api/channels/<id>/connect { token?, endpoint?, account?, key?, model, provider? } — mirrors the
+// telegram/discord connect: reuse saved values so reconnect is one click, validate the per-platform auth shape,
+// persist, start through the generic registry/wireChannel path.
+async function handleGenericChannelConnect(req, res, id) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 1 << 16)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+  const saved = (channelSecrets && channelSecrets[id]) || {};
+  const provider = normalizeProvider(body.provider || saved.provider);
+  const token = channelToken(id, body.token, saved);   // keychain/runtime (desktop) or plaintext record (bare); fresh paste wins
+  const key = providerRuntimeKey(provider, String(body.key || '').trim() || String(saved.key || ''));
+  const baseUrl = providerRuntimeBaseUrl(provider, body.baseUrl || body.base_url || saved.baseUrl || saved.base_url || '');
+  const model = String(body.model || '').trim() || String(saved.model || '');
+  const reasoningEffort = resolveReasoningEffort(provider, body.reasoningEffort || body.reasoning_effort || saved.reasoningEffort);
+  const agentId = String(body.agentId || '').trim() || String(saved.agentId || '');
+  const system = (typeof body.system === 'string' && body.system) ? body.system : String(saved.system || '');
+  const name = String(body.agentName || '').trim() || String(saved.name || '');
+  const endpoint = String(body.endpoint || '').trim() || String(saved.endpoint || '');
+  const account = String(body.account || '').trim() || String(saved.account || '');
+  if (id === 'slack') {
+    const t = parseSlackTokens(token);
+    if (!t.botToken || !t.appToken) return json(400, { error: 'Slack needs BOTH tokens — the bot token (xoxb-…) and an app-level token (xapp-…) with connections:write. Paste them together.' });
+  } else if (id === 'matrix') {
+    if (!endpoint) return json(400, { error: 'enter your homeserver URL first (e.g. https://matrix.org)' });
+    if (!token) return json(400, { error: 'paste an access token for the agent\'s Matrix account' });
+  } else if (id === 'signal') {
+    if (!endpoint) return json(400, { error: 'enter your signal-cli REST API URL first (e.g. http://127.0.0.1:8080)' });
+    if (!account) return json(400, { error: 'enter the registered Signal number (e.g. +15551234567)' });
+  }
+  if (!model) return json(400, { error: 'connect your agent first (choose a model on the title screen)' });
+  if (!providerHasCredential(provider, key, baseUrl)) return json(400, { error: providerCredentialError(provider) });
+  try { startGenericChannel(id, token, providerUsesCodex(provider) ? '' : key, model, { agentId, system, name, provider, reasoningEffort, baseUrl, endpoint, account }); }
+  catch (e) { return json(500, { error: (e && e.message) || 'failed to start' }); }
+  json(200, { connected: true, state: (genericStatus[id] && genericStatus[id].state) || 'up' });
+}
+
+// POST /api/channels/<id>/sync — refresh the agent identity the channel runs as (mirrors handleChannelSync).
+async function handleGenericChannelSync(req, res, id) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 1 << 16)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+  const rec = (channelSecrets && channelSecrets[id]) || null;
+  const hasAuth = rec && (id === 'signal' ? (rec.endpoint && rec.account) : (rec.token || channelTokenRuntime[id]));
+  if (!hasAuth) return json(200, { synced: false });   // nothing connected/configured — ignore quietly
+  const patch = {};
+  if (typeof body.agentId === 'string' && body.agentId.trim()) patch.agentId = body.agentId.trim();
+  if (typeof body.system === 'string') patch.system = body.system;
+  if (typeof body.model === 'string' && body.model.trim()) patch.model = body.model.trim();
+  if (typeof body.provider === 'string' && body.provider.trim()) patch.provider = normalizeProvider(body.provider.trim());
+  if (body.reasoningEffort || body.reasoning_effort) patch.reasoningEffort = normalizeReasoningEffort(body.reasoningEffort || body.reasoning_effort);
+  if (typeof body.key === 'string' && body.key.trim()) patch.key = body.key.trim();
+  if (typeof body.agentName === 'string') patch.name = body.agentName;
+  const p = {}; p[id] = Object.assign({}, rec, patch);
+  channelSecrets = Object.assign({}, channelSecrets, p);
+  saveChannelSecrets(channelSecrets);
+  json(200, { synced: true });
+}
+
+// POST /api/channels/<id>/disconnect — stop the adapter and mark it disabled (config kept for one-click reconnect).
+async function handleGenericChannelDisconnect(req, res, id) {
+  stopGenericChannel(id);
+  if (channelSecrets && channelSecrets[id]) {
+    const p = {}; p[id] = Object.assign({}, channelSecrets[id], { enabled: false });
+    channelSecrets = Object.assign({}, channelSecrets, p);
+    saveChannelSecrets(channelSecrets);
+  }
+  res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ connected: false }));
 }
 
 /* ----------------------- Codex (ChatGPT subscription) OAuth ----------------------- */
