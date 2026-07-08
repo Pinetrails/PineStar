@@ -26,6 +26,9 @@
   //   dossierDims — [{ key, label, known }] (the store joins Dossier.DIMS with DossierStore.summary())
   //   pendingIdea — true when an ONGOING suggestion is due (SuggestStore.willSuggest()). The First Pitch is excluded
   //                 on purpose: it fires immediately on graduation, so it's never a "waiting" log entry.
+  //   ledgerQuests — (QUEST V2 §C) the sidecar-owned quest ledger (/api/quests), pre-shaped by QuestLedgerStore
+  //                 as [{ id:'q:N', kind:'ledger', ledgerKind, title, desc, reward, status, contract, steps,
+  //                 attest, declineNote, ... }]. Spliced right after the waiting idea. Absent input → unchanged.
   //   stationGaps — (G1b) fix-it quests projected from StationQuests: [{ id, kind:'station-gap', title, desc,
   //                 reward, status }] — an agent reached for a tool its room can't grant. Already fully shaped
   //                 by the pure StationQuests.project engine (the store owns the live reads); build() just splices
@@ -46,6 +49,19 @@
     // 1) a waiting idea — the single most actionable thing (only ever open).
     if (input.pendingIdea) {
       open.push({ id: 'idea', kind: 'idea', title: 'An idea is waiting', desc: 'your agent has a tailored build in mind — finish a task and it’ll offer it in COMMS.', reward: 'a real, working build', status: 'open' });
+    }
+
+    // 1-ledger) HARNESS LEDGER quests (QUEST V2 §C) — the sidecar-owned, agent-aware quest ledger
+    //           (/api/quests). Pre-shaped by QuestLedgerStore (kind:'ledger', with contract/attest/steps/
+    //           declineNote carried through); build() only sorts them into open/done so the honest ordering +
+    //           the QuestState open→done celebration both hold for them free. They lead right after the waiting
+    //           idea because a personalized, agent-minted quest is the most actionable direction the station has.
+    //           Absent input → unchanged (older callers untouched — the established additive pattern).
+    if (Array.isArray(input.ledgerQuests)) {
+      for (const q of input.ledgerQuests) {
+        if (!q || !q.id) continue;
+        (q.status === 'done' ? done : open).push(q);
+      }
     }
 
     // 1-arc) THE GOAL ARC (Tier 2) — the ACTIVE GOAL, decomposed into a path. Pre-shaped by Goals.project as a

@@ -71,6 +71,21 @@ A.eq(withIdea[1].kind, 'station', 'the arc sits right after the idea');
 const arcStatuses = Q.build({ station: { crew: 2, belts: 0, connectors: 1 }, dossierDims: dims }).map(q => q.status);
 A.eq(arcStatuses.indexOf('done') > arcStatuses.lastIndexOf('open'), true, 'open-before-done ordering holds with the arc mixed in');
 
+/* ---------- QUEST V2 §C: the HARNESS LEDGER splice (kind:'ledger') ---------- */
+const ledger = [
+  { id: 'q:1', kind: 'ledger', ledgerKind: 'generated', title: 'Automate the weekly digest', desc: 'a build the agent proposed', reward: 'a standing digest', status: 'open', contract: { type: 'attest', key: '' } },
+  { id: 'q:2', kind: 'ledger', ledgerKind: 'work', title: 'Wire the CRM sync', desc: 'in flight', reward: 'a live sync', status: 'done', contract: { type: 'run', key: 'run-9' } }
+];
+const withLedger = Q.build({ ledgerQuests: ledger, pendingIdea: true, station: { crew: 1, belts: 0, connectors: 0 } });
+A.eq(withLedger[0].kind, 'idea', 'the waiting idea still leads the whole list');
+A.eq(withLedger[1].id, 'q:1', 'an open ledger quest splices right after the idea (most personal/actionable)');
+A.eq(withLedger[1].kind, 'ledger', '…and keeps its ledger kind so handlers/dismiss route unambiguously');
+A.ok(withLedger.some(x => x.id === 'q:2' && x.status === 'done'), 'a done ledger quest lands in the done set (so the QuestState fold sees its open→done edge)');
+const lstat = withLedger.map(x => x.status);
+A.eq(lstat.indexOf('done') > lstat.lastIndexOf('open'), true, 'open-before-done ordering holds with ledger quests mixed in');
+A.eq(Q.build({ ledgerQuests: [null, { id: '' }, { status: 'open' }] }).length, 0, 'malformed ledger entries (no id) are skipped, never a crash');
+A.eq(Q.build({ milestones: ms, dossierDims: dims }).some(x => x.kind === 'ledger'), false, 'absent ledger input → no ledger quests (older callers unchanged)');
+
 /* ---------- summary counts ---------- */
 const sum = Q.summary(list);
 A.eq(sum.total, list.length, 'summary total matches the list');

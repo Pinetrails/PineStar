@@ -31,7 +31,8 @@ const ToolProps = (() => {
     'desktop.open': 'dish',   // opens on the user's real screen; a web-family (dish) grant
     todo: 'notebook',
     recall_conversation: 'notebook',
-    'widget.set': 'notebook'   // WIDGET RAILS Phase 2: agent-fed rail readout — a notebook-object (memory) grant
+    'widget.set': 'notebook',  // WIDGET RAILS Phase 2: agent-fed rail readout — a notebook-object (memory) grant
+    'quest.update': 'notebook' // QUEST V2 §B: the agent's read/write reach into the STATION QUEST ledger — a memory-capability grant, so it lights the notebook prop (mirrors CAP_REGISTRY's notebook row)
   };
   // family prefix -> prop type (checked after EXACT; first match wins)
   const PREFIX = [

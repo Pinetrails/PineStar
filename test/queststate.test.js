@@ -104,15 +104,26 @@ A.eq(r.completions, [], 'an empty projection is silent');
 r = QS.fold(s, [q('dim:goals', 'done')], 5600);
 A.eq(r.completions, [], 'reappearing still-done is not a new completion');
 
-/* ---------- dismissibility: dossier yes, milestone/idea no ---------- */
+/* ---------- dismissibility (GB-24 — dismiss everywhere): QuestState owns the kinds with no external denylist ----
+   dossier/milestone/station now all take here; the kinds with their OWN store denylist (station-gap/work/
+   maintenance/ledger) and the coupled/owned kinds (idea, arc-goal, arc-step) are excluded on purpose. */
 A.eq(QS.dismissible({ kind: 'dossier' }), true, 'get-to-know-you quests are dismissible');
-A.eq(QS.dismissible({ kind: 'milestone' }), false, 'milestones are achievements — never dismissible');
+A.eq(QS.dismissible({ kind: 'milestone' }), true, 'GB-24: milestones are now dismissible (QuestState is their denylist)');
+A.eq(QS.dismissible({ kind: 'station' }), true, 'GB-24: station-arc quests are now dismissible');
 A.eq(QS.dismissible({ kind: 'idea' }), false, 'the idea quest is owned by the COMMS suggestion cadence — not dismissible here');
+A.eq(QS.dismissible({ kind: 'arc-goal' }), false, 'the goal-arc header is a coupled path, not a standalone nag — not dismissible');
+A.eq(QS.dismissible({ kind: 'arc-step' }), false, 'a goal-arc step retires on drift, never a wave-off — not dismissible');
+A.eq(QS.dismissible({ kind: 'station-gap' }), false, 'station-gap owns its own store denylist — not routed through QuestState');
+A.eq(QS.dismissible({ kind: 'work' }), false, 'work owns its own store denylist — not routed through QuestState');
+A.eq(QS.dismissible({ kind: 'maintenance' }), false, 'maintenance owns its own store denylist — not routed through QuestState');
+A.eq(QS.dismissible({ kind: 'ledger' }), false, 'a ledger quest dismisses on the sidecar backend — not routed through QuestState');
 A.eq(QS.dismissible(null), false, 'dismissible(null) never throws');
 
 /* ---------- dismiss: only dismissible kinds take; idempotent ---------- */
-A.eq(QS.dismiss(s, q('ms:first_light', 'done'), 6000), false, 'dismissing a milestone is refused');
-A.eq(QS.isDismissed(s, 'ms:first_light'), false, '…and leaves no mark');
+A.eq(QS.dismiss(s, q('idea', 'open', 'idea'), 6000), false, 'dismissing the SuggestStore-owned idea quest is refused (not QuestState-owned)');
+A.eq(QS.isDismissed(s, 'idea'), false, '…and leaves no mark');
+A.eq(QS.dismiss(s, q('ms:pack_rat', 'open', 'milestone'), 5900), true, 'GB-24: dismissing an open milestone now takes (QuestState is its denylist)');
+A.eq(QS.isDismissed(s, 'ms:pack_rat'), true, '…and is recorded');
 A.eq(QS.dismiss(s, q('dim:stack', 'open'), 6000), true, 'dismissing an open dossier quest takes');
 A.eq(QS.isDismissed(s, 'dim:stack'), true, '…and is recorded');
 A.eq(QS.stateOf(s, 'dim:stack').dismissedAt, 6000, 'dismissedAt is stamped');

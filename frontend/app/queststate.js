@@ -62,10 +62,22 @@
     return s;
   }
 
-  // which quests MAY be waved off: only the suggestion-class "get to know you" asks. Milestones are
-  // achievements (they never nag, so hide-not-dismiss doesn't apply); the idea quest's cadence is owned
-  // by SuggestStore in COMMS — dismissing it here would silently fight that store's own budget.
-  function dismissible(q) { return !!(q && q.kind === 'dossier'); }
+  // which quests QuestState MAY wave off (GB-24 — dismiss everywhere). QuestState is the denylist for every
+  // kind that has NO external per-store denylist of its own: the dossier "get to know you" asks, milestone
+  // achievements, and the station-arc rows all fall to it. The kinds EXCLUDED here are excluded on purpose:
+  //   • station-gap / work / maintenance / ledger own their OWN durable denylist (their store's dismiss) — the
+  //     panel routes those there, never here, so a double-denylist can't disagree.
+  //   • idea — its cadence is owned by SuggestStore in COMMS; dismissing it here would fight that store's budget.
+  //   • arc-goal / arc-step — a coupled, persisted GOAL PATH (retires only on real drift), not a standalone nag,
+  //     and it carries no dismiss affordance; waving off one step would fracture the chain.
+  function dismissible(q) {
+    if (!q || !q.kind) return false;
+    switch (q.kind) {
+      case 'station-gap': case 'work': case 'maintenance': case 'ledger': return false;
+      case 'idea': case 'arc-goal': case 'arc-step': return false;
+      default: return true;   // dossier, milestone, station — QuestState is their permanent denylist
+    }
+  }
 
   // fold ONE projection into the state (in place, like Dossier.upsert). Returns the quests that made an
   // open→done transition THIS fold — the celebratable completions. A quest already done when first seen

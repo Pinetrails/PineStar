@@ -71,8 +71,12 @@ A.eq(toasts.length, 1, '…no second toast');
 /* ---------- dismissal: dossier only, hides, stops the curiosity nudge ---------- */
 quests = [dq('goals', 'done'), mq('first_light', 'done'), dq('stack', 'open')];
 QuestStateStore.sync();
-A.eq(QuestStateStore.dismissible(mq('first_light', 'done')), false, 'milestones are not dismissible');
-A.eq(QuestStateStore.dismiss(mq('first_light', 'done')), false, 'dismissing a milestone is refused');
+// GB-24 — dismiss everywhere: milestones/station are now QuestState-owned dismissible; the SuggestStore-owned
+// idea (and the coupled goal-arc rows) stay non-dismissible. We assert the refusal on the idea kind so
+// ms:first_light is left untouched for the visibility check below.
+A.eq(QuestStateStore.dismissible({ id: 'idea', kind: 'idea', status: 'open', title: 'X', reward: 'r' }), false, 'the SuggestStore-owned idea quest is not dismissible here');
+A.eq(QuestStateStore.dismiss({ id: 'idea', kind: 'idea', status: 'open', title: 'X', reward: 'r' }), false, 'dismissing the idea quest is refused');
+A.eq(QuestStateStore.dismissible(mq('pack_rat', 'open')), true, 'GB-24: milestones are now dismissible (QuestState is their denylist)');
 A.eq(QuestStateStore.dismiss(quests[2]), true, 'dismissing an open dossier quest takes');
 A.eq(waved, ['stack'], 'the curiosity nudge for that dimension is stopped too (one anti-nag law)');
 A.eq(QuestStateStore.visible(quests).map(x => x.id), ['dim:goals', 'ms:first_light'], 'a dismissed quest never re-renders');
