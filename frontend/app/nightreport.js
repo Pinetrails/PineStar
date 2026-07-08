@@ -102,6 +102,15 @@
     // NOTHING to report: no act, no decline in this window. Caller shows no beat.
     if (actCount === 0 && declineCount === 0) return { hasReport: false, actCount: 0, declineCount: 0 };
 
+    // NS-5b: the report LEADS with the declared night FOCUS + its cited evidence, so a wrong guess is visible and
+    // correctable ("actually, focus on Y"). Every claim maps to status.focus (truthful telemetry — never invented).
+    const focus = (status && status.focus) || input.focus || null;
+    let priorityLine = '';
+    if (focus && (focus.label || focus.ref)) {
+      const why = Array.isArray(focus.why) ? focus.why.filter(Boolean).join('; ') : '';
+      priorityLine = 'priority: ' + String(focus.label || focus.ref) + (focus.source === 'steer' ? ' (you steered this)' : '') + (why ? ' — because ' + why : '');
+    }
+
     // headline — "N beats fired, M drafts on your desk" (reuse the beats/drafts vocabulary the digest already uses).
     const headline = actCount > 0
       ? (plural(actCount, 'beat') + ' fired' + (draftList.length ? ', ' + plural(draftList.length, 'draft') + ' on your desk' : ''))
@@ -143,6 +152,7 @@
       hasReport: true,
       actCount: actCount,
       declineCount: declineCount,
+      priorityLine: priorityLine,
       headline: headline,
       actLines: actLines,
       declineLines: declineLines,

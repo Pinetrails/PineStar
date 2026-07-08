@@ -91,6 +91,7 @@ test/quests-tool.test.js
 test/threads-store.test.js
 test/threadmine.test.js
 test/autopilot-threads.test.js
+test/autopilot-focus.test.js
 test/apiauth.test.js
 test/notebook.test.js
 test/skills.test.js
@@ -196,6 +197,9 @@ test/permgrants.test.js
 test/projects-store.test.js
 test/projectbless.test.js
 test/pathtrust.test.js
+test/nightfocus.test.js
+test/nightpatch.test.js
+test/projectscan.test.js
 test/permpanel.test.js
 test/permissionsstore.test.js
 test/permissions-ui.test.js

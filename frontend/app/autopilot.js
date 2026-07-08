@@ -256,6 +256,36 @@
     return null;
   }
 
+  // NS-5b: the FOCUS block — a single-priority night leads with ONE declared focus (nightfocus.js) + its cited
+  // evidence, and every candidate must ADVANCE it (the compounding shape, not three unrelated drafts). focusHeader
+  // is the already-composed "TONIGHT'S FOCUS: <label> — because <evidence>" line (server passes nightfocus.focusLine).
+  // Returns whether a focus was rendered (so the Hard-rules add the "stay on focus" clause only when there IS one).
+  function pushFocusBlock(lines, focusHeader) {
+    const h = String(focusHeader == null ? '' : focusHeader).trim();
+    if (!h) return false;
+    lines.push(h);
+    lines.push('This is the ONE thing to move tonight. Everything you propose must ADVANCE this focus — extend, unblock, or refine it — never start something unrelated. If truly nothing here can advance it, say so and propose the closest grounded step.');
+    return true;
+  }
+  // NS-5b: the PROJECT SNAPSHOT block — a bounded, harness-read view of the focused project (git status/log/diff +
+  // TODO/FIXME), so the beat proposes against the REAL current state of the repo, not a guess. snapshot is the
+  // already-bounded text from projectscan.js (the server reads the blessed root; the model never improvises the read).
+  function pushSnapshotBlock(lines, snapshot) {
+    const s = String(snapshot == null ? '' : snapshot).trim();
+    if (!s) return false;
+    lines.push(s);
+    return true;
+  }
+  // NS-5b: same-night COMPOUNDING — the titles/summaries earlier beats produced THIS night, so beat 2+ EXTENDS the
+  // same work instead of restarting. priorTonight is a small array of one-line summaries (server: tonight's drafts).
+  function pushPriorTonight(lines, prior) {
+    const list = Array.isArray(prior) ? prior.filter(Boolean) : [];
+    if (!list.length) return false;
+    lines.push('WHAT YOU ALREADY PRODUCED TONIGHT ON THIS FOCUS (build ON these — extend/deepen, do NOT repeat):');
+    for (const p of list.slice(0, 6)) lines.push('- ' + String(p).replace(/\s+/g, ' ').trim().slice(0, 160));
+    return true;
+  }
+
   // THE CANDIDATE DIRECTIVE — the reason-only task that asks the model for a few grounded, achievable-now job ideas
   // (it carries the dossier in its live system prompt; this hands the beliefs + the recent activity + the eligible
   // archetypes explicitly so a weak model can't miss them, and hard-constrains output to the reason/draft envelope
@@ -268,14 +298,18 @@
     const max = Number.isFinite(ctx.max) ? ctx.max : CANDIDATE_MAX;
     const lines = [];
     lines.push('INTERNAL — SELF-DIRECTED WORK. The Commander is away. Do not run any tools. Reason only, then reply in the exact format below.');
+    const hasFocus = pushFocusBlock(lines, ctx.focusHeader);
     lines.push('Propose up to ' + max + ' small jobs you could do RIGHT NOW, unattended, to help them — then you will be asked to do the single best one and leave a draft on their desk.');
     const hasThreads = pushThreadsBlock(lines, ctx.threads);
     const hasActivity = pushActivityBlock(lines, ctx.activity);
+    pushSnapshotBlock(lines, ctx.projectSnapshot);
+    pushPriorTonight(lines, ctx.priorTonight);
     const dimLine = (key, label) => { const arr = Array.isArray(beliefs[key]) ? beliefs[key].filter(Boolean) : []; if (arr.length) lines.push('- ' + label + ': ' + arr.join(' | ')); };
     lines.push('What you know about them:');
     dimLine('goals', 'Goals'); dimLine('pain', 'Pain points'); dimLine('ambition', 'Ambitions'); dimLine('stack', 'Stack & tools'); dimLine('standing_orders', 'Standing orders'); dimLine('style', 'Working style');
     lines.push('Each job must be ONE of these kinds: ' + eligible.map(a => a.id + ' (' + a.blurb + ')').join(', ') + '.');
     lines.push('Hard rules:');
+    if (hasFocus) lines.push('- STAY ON FOCUS: the single best job MUST advance TONIGHT\'S FOCUS above. A job that wanders off it is worse than a smaller job that moves it.');
     if (hasThreads) lines.push('- PREFER AN OPEN THREAD: if any thread above fits, propose it and cite its tag in GROUNDS (e.g. GROUNDS: [t1] ...). A grounded open thread beats a fresh idea. If none fit, improvise a grounded idea as below.');
     if (hasActivity) lines.push('- CONTINUE THEIR WORK: prefer a job that directly advances, unblocks, or extends something in "What they worked on recently" above — that beats a generic idea. But stay HONEST: only cite work that is actually listed; never invent activity.');
     lines.push('- GROUNDED: every job must aim at a SPECIFIC thing above (an open thread / a real recent job / goal / pain / etc). Quote the exact thing in GROUNDS. If you cannot ground it in something you actually know or they actually did, do not propose it.');
@@ -365,6 +399,7 @@
     selected = selected || {}; ctx = ctx || {};
     const lines = [];
     lines.push('INTERNAL — SELF-DIRECTED WORK. The Commander is away. Do not run any tools. Reason only, then reply in the exact format below.');
+    pushFocusBlock(lines, ctx.focusHeader);
     lines.push('Do this ONE job now and leave a finished draft on their desk:');
     lines.push('- JOB: ' + String(selected.title || '').trim());
     if (selected.grounds) lines.push('- WHY IT MATTERS TO THEM: ' + String(selected.grounds).trim());
@@ -410,14 +445,19 @@
     const max = Number.isFinite(ctx.max) ? ctx.max : CANDIDATE_MAX;
     const lines = [];
     lines.push('INTERNAL — SELF-DIRECTED WORK. The Commander is away and has cleared you to BUILD in your private sandbox. Reason first, then reply in the exact format below.');
+    const hasFocus = pushFocusBlock(lines, ctx.focusHeader);
     lines.push('Propose up to ' + max + ' small jobs you could do RIGHT NOW, unattended, that each end in a REAL, reviewable artifact left in your workshop — then you will be asked to build the single best one.');
     const hasThreads = pushThreadsBlock(lines, ctx.threads);
     const hasActivity = pushActivityBlock(lines, ctx.activity);
+    const hasSnapshot = pushSnapshotBlock(lines, ctx.projectSnapshot);
+    pushPriorTonight(lines, ctx.priorTonight);
     const dimLine = (key, label) => { const arr = Array.isArray(beliefs[key]) ? beliefs[key].filter(Boolean) : []; if (arr.length) lines.push('- ' + label + ': ' + arr.join(' | ')); };
     lines.push('What you know about them:');
     dimLine('goals', 'Goals'); dimLine('pain', 'Pain points'); dimLine('ambition', 'Ambitions'); dimLine('stack', 'Stack & tools'); dimLine('standing_orders', 'Standing orders'); dimLine('style', 'Working style');
     lines.push('Each job must be ONE of these kinds: ' + eligible.map(a => a.id + ' (' + a.blurb + ')').join(', ') + '.');
     lines.push('Hard rules:');
+    if (hasFocus) lines.push('- STAY ON FOCUS: the single best job MUST advance TONIGHT\'S FOCUS above.');
+    if (hasSnapshot) lines.push('- PATCH THE REAL PROJECT: base your change on the PROJECT SNAPSHOT above. Your artifact for a code change is a UNIFIED-DIFF .patch file (git-apply-able from the repo root) plus a one-line "howToUse" — the Commander applies it to a new branch on Keep. Set the manifest "kind":"patch" and include "targetRoot":"<the project root path shown in the snapshot header>".');
     if (hasThreads) lines.push('- PREFER AN OPEN THREAD: if any thread above fits, build it and cite its tag in GROUNDS (e.g. GROUNDS: [t1] ...). A grounded open thread beats a fresh idea. If none fit, improvise a grounded idea as below.');
     if (hasActivity) lines.push('- CONTINUE THEIR WORK: prefer a job that directly advances, unblocks, or extends something in "What they worked on recently" above — that beats a generic idea. But stay HONEST: only cite work that is actually listed; never invent activity.');
     lines.push('- GROUNDED: every job must aim at a SPECIFIC thing above (an open thread / a real recent job / goal / pain / etc). Quote the exact thing in GROUNDS. If you cannot ground it in something you actually know or they actually did, do not propose it.');
@@ -442,10 +482,15 @@
     const backlogId = String(ctx.backlogId || '');
     const lines = [];
     lines.push('INTERNAL — SELF-DIRECTED WORK. The Commander is away and cleared you to build in your private sandbox. Build this ONE job now and leave a real, reviewable artifact.');
+    pushFocusBlock(lines, ctx.focusHeader);
     lines.push('- JOB: ' + String(selected.title || '').trim());
     if (selected.grounds) lines.push('- WHY IT MATTERS TO THEM: ' + String(selected.grounds).trim());
     if (selected.spec) lines.push('- DONE WHEN: ' + String(selected.spec).trim());
+    const hasSnap = pushSnapshotBlock(lines, ctx.projectSnapshot);
     lines.push('RULES:');
+    if (hasSnap && String(ctx.targetRoot || '').trim()) {
+      lines.push('- THIS IS A PROJECT PATCH: write a UNIFIED-DIFF file (e.g. "' + dir + '/change.patch") that applies cleanly with `git apply` from the repo root ' + String(ctx.targetRoot).trim() + '. Base every hunk on the PROJECT SNAPSHOT above; do not invent files or lines that aren\'t there. In the manifest set "kind":"patch" and "targetRoot":"' + String(ctx.targetRoot).trim() + '", and list the .patch file in "files". The Commander applies it to a NEW branch on Keep — you never touch their repo yourself.');
+    }
     lines.push('- Prefer a SELF-CONTAINED, double-click-runnable deliverable: when it fits, a SINGLE-FILE HTML tool (all CSS/JS inline, no external files or build step) named index.html the Commander can just Open — otherwise a script/doc plus a one-line run note in "howToUse". Zero setup on their end.');
     lines.push('- Do the real work with your tools (web read/search, files). Ground factual claims in what the tools return. Write every file for this deliverable UNDER "' + dir + '/" (use paths like "' + dir + '/<file>").');
     lines.push('- LOCAL ONLY: never send, publish, spend, or message. You cannot run commands or tests, so do not claim anything was tested — list what a human still needs to verify.');
@@ -576,7 +621,7 @@
   return {
     idleFor, readiness, decide, newestStamp,
     eligibleArchetypes, grounded, sigTokens, flattenBeliefs, pushActivityBlock,
-    pushThreadsBlock, citedThreadId, threadRef,
+    pushThreadsBlock, citedThreadId, threadRef, pushFocusBlock, pushSnapshotBlock, pushPriorTonight,
     buildCandidateDirective, parseCandidates, scoreAndSelect, buildDoDirective, parseDeliverable,
     buildCandidateDirectiveV2, buildDoDirectiveV2, learnFold, learnWeightsFrom,
     buildCritiqueDirective, parseCritique, digestLines, digestSummary, digestHeadline,

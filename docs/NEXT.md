@@ -633,19 +633,22 @@ it." Structurally impossible today because:
   /pending → /decide gate: "found N bugs while you were away — approve and I'll commit."
   Approve applies to a branch in the user's repo (never main, never push); deny feeds learn.
   OPEN (Andrew, small): approve = auto-commit-to-branch (recommended) vs drop-the-.patch.
-- **NS-5c · Projects rail — ✅ MERGED 2026-07-08 b635cbab (trunk gates fast 281 + http full green; gates fast 282 + http full green).** SESSIONS↔PROJECTS toggle in the rail head; PROJECTS view lists GET /api/projects in the .ws-row vocabulary (git badge + last-touched); blessed:false rows render REVOKED (never hidden). + ADD → POST /api/projects/bless (new interactive-only route, pure projectbless.js core; native Tauri picker if the shell exposes one — it does not yet, so typed-path fallback like the KEEP flow, no allowlist widened). Row click jumps into a session anchored to the root (Chat.prefill 'work in <path> —'). Remove revokes the path grant via the existing /api/permissions/revoke; list mirrors the grant store. Live-proven in the dev app (:8879 DOM round-trips): toggle→ADD subdir→resolves git root→row blessed w/ git+now→same grant in /api/permissions→jump-in seeds session+composer→remove→grant gone server-side→row flips REVOKED. Tests: projectbless (16) + projects-view (32) + e2e.pathtrust bless route (live). OPEN: desktop native folder dialog (starnet_pick_folder not implemented in the shipped Tauri shell — falls back to typed path).
-- **NS-5b · Focus resolver — single-priority nights (Andrew direction 2026-07-08: "hone in
-  on moving the needle," don't scatter).** Beats must NOT spread across every blessed root /
-  open thread. Shift start = a PRIORITY RESOLUTION step: rank the evidence (per-root
-  work-recency/frequency from run history · chat-topic recency · the active goal arc ·
-  open threads · approve/deny history) → declare ONE focus for the night ("current priority:
-  <project/goal>, because <evidence>"). Every beat that night chains toward ONE coherent
-  needle-moving deliverable on that focus (later beats extend/refine the same work — the
-  compounding shape, not 3 unrelated drafts). Re-resolve each night (or when evidence
-  shifts); the morning report LEADS with the declared priority + why, so a wrong guess is
-  visible and correctable ("actually, focus on Y" = a durable steer that outranks derived
-  evidence until it goes stale). Truthful-telemetry law applies: the declared priority must
-  cite the evidence lines that produced it — never an unexplained vibe.
+- **NS-5c · Projects rail — ✅ MERGED 2026-07-08 b635cbab (trunk gates fast 281 + http full green).** SESSIONS↔PROJECTS toggle in the rail head; PROJECTS view lists GET /api/projects in the .ws-row vocabulary (git badge + last-touched); blessed:false rows render REVOKED (never hidden). + ADD → POST /api/projects/bless (new interactive-only route, pure projectbless.js core; native Tauri picker if the shell exposes one — it does not yet, so typed-path fallback like the KEEP flow, no allowlist widened). Row click jumps into a session anchored to the root (Chat.prefill 'work in <path> —'). Remove revokes the path grant via the existing /api/permissions/revoke; list mirrors the grant store. Live-proven in the dev app (:8879 DOM round-trips): toggle→ADD subdir→resolves git root→row blessed w/ git+now→same grant in /api/permissions→jump-in seeds session+composer→remove→grant gone server-side→row flips REVOKED. Tests: projectbless (16) + projects-view (32) + e2e.pathtrust bless route (live). OPEN: desktop native folder dialog (starnet_pick_folder not implemented in the shipped Tauri shell — falls back to typed path).
+- **NS-5b · Focus resolver — ✅ BUILT (branch agent/ns5b-focus, NOT merged; fast gate green +
+  full test:http green incl. a new live e2e). Landed: pure resolver sidecar/nightfocus.js
+  (evidence-ranked single priority, steer-outranks-derived w/ ~7d stale, day-keyed persist) ·
+  directive LEADS "TONIGHT'S FOCUS: <ref> — because <evidence>" (autopilot.js, reason + V2) +
+  same-night compounding block · bounded harness PROJECT SNAPSHOT scan sidecar/projectscan.js
+  (consults blessedRoots() directly, NEVER blesses; its lines join the grounding-veto pool) ·
+  project deliverable = a .patch in the jail; decide KEEP git-applies to a NEW branch
+  ns/<date>-<slug> (never main/master, never push, clean-tree only, apply-failure reported
+  honestly — sidecar/nightpatch.js + applyNightPatch) · durable steer POST/DELETE
+  /api/nightshift/focus (no consent widening) · morning report + status carry the focus.
+  LIVE-PROVEN vs a real sidecar + real git repo (test/nightshift-focus.e2e.test.js): beat
+  declares focus citing evidence → patch in /pending → keep applies to an ns/ branch verified
+  with git (original branch untouched) → discard wipes → steer sets/clears → focus persists.
+  OPEN: driver-timer idle path unit-only (e2e force-fires via the sanctioned /api/nightshift/beat
+  proxy); no frontend steer UI (route only); real-provider overnight unrun.**
 - **NS-6 · Thread ledger — ✅ MERGED 2026-07-08 (agent/ns6-threads → fd4a6adf, gates fast 277 + http full green; e2e proves mine→stash→keep→propose→picked→discard→declined vs the real sidecar). OPEN: frontend turn-in card (reuse study card family + beat arbiter, fetch on agent.run.end) · real-provider mining run.** Server-side store of "threads": ideas
   mined from chats/study/pitches with state open/picked/delivered/declined + decline reason.
   Mint via a post-run aux pass (same pattern as reflect/study, stash → turn-in) and/or a

@@ -76,6 +76,25 @@ A.ok(/2 beats skipped/.test(mixed.declineLines[0]), 'the decline line names the 
 A.ok(/leash/i.test(mixed.declineLines[0]), 'the decline line names the binding gate');
 A.ok(/by 1:10 AM/.test(mixed.declineLines[0]), 'the decline line names the LOCAL time of the last occurrence');
 
+/* ---------- NS-5b: the report LEADS with the declared night FOCUS + its cited evidence ---------- */
+const focused = NR.compose({
+  status: { active: true, binding: null, focus: { kind: 'project', ref: 'C:/repo/alpha', label: 'alpha', source: 'evidence', why: ['you worked in alpha — last touched today (a git repo I can read + patch)'] } },
+  awaySince: 1000, nowMs: 999999, tzOffsetMin: 0,
+  ledger: [{ source: 'nightshift', kind: 'act', ts: 2000 }],
+  drafts: [{ title: 'patch: guard empty invoice list', at: 2000, body: 'diff' }]
+});
+A.ok(/^priority: alpha — because/.test(focused.priorityLine), 'the report leads with "priority: <focus> — because <evidence>"');
+A.ok(focused.priorityLine.indexOf('worked in alpha') >= 0, 'the priority cites the evidence that produced it (truthful telemetry)');
+const steered = NR.compose({
+  status: { focus: { kind: 'project', ref: 'C:/repo/beta', label: 'beta', source: 'steer', why: ['you asked me to focus on beta'] } },
+  awaySince: 1000, nowMs: 999999, tzOffsetMin: 0,
+  ledger: [{ source: 'nightshift', kind: 'decline', binding: 'leash', ts: 2000 }],
+  drafts: []
+});
+A.ok(/you steered this/.test(steered.priorityLine), 'a steered focus says so in the lead');
+const noFocus = NR.compose({ status: { active: true, binding: 'leash' }, awaySince: 1000, nowMs: 999999, ledger: [{ source: 'nightshift', kind: 'decline', binding: 'leash', ts: 2000 }], drafts: [] });
+A.eq(noFocus.priorityLine, '', 'no declared focus ⇒ no fabricated priority line');
+
 /* ---------- compose(): "did NOTHING and why" — one plain sentence from the dominant binding ---------- */
 const idle = NR.compose({
   status: { active: true, binding: 'posture' },
