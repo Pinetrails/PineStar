@@ -611,6 +611,18 @@ it." Structurally impossible today because:
   /pending → /decide gate: "found N bugs while you were away — approve and I'll commit."
   Approve applies to a branch in the user's repo (never main, never push); deny feeds learn.
   OPEN (Andrew, small): approve = auto-commit-to-branch (recommended) vs drop-the-.patch.
+- **NS-5b · Focus resolver — single-priority nights (Andrew direction 2026-07-08: "hone in
+  on moving the needle," don't scatter).** Beats must NOT spread across every blessed root /
+  open thread. Shift start = a PRIORITY RESOLUTION step: rank the evidence (per-root
+  work-recency/frequency from run history · chat-topic recency · the active goal arc ·
+  open threads · approve/deny history) → declare ONE focus for the night ("current priority:
+  <project/goal>, because <evidence>"). Every beat that night chains toward ONE coherent
+  needle-moving deliverable on that focus (later beats extend/refine the same work — the
+  compounding shape, not 3 unrelated drafts). Re-resolve each night (or when evidence
+  shifts); the morning report LEADS with the declared priority + why, so a wrong guess is
+  visible and correctable ("actually, focus on Y" = a durable steer that outranks derived
+  evidence until it goes stale). Truthful-telemetry law applies: the declared priority must
+  cite the evidence lines that produced it — never an unexplained vibe.
 - **NS-6 · Thread ledger (durable idea backlog).** Server-side store of "threads": ideas
   mined from chats/study/pitches with state open/picked/delivered/declined + decline reason.
   Mint via a post-run aux pass (same pattern as reflect/study, stash → turn-in) and/or a
