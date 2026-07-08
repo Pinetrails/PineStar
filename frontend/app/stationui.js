@@ -30,7 +30,7 @@ const StationUI = (() => {
   let started = false;
 
   /* ---------- persistence (user-owned UI state) ---------- */
-  function defaults() { return { theme: 'amber', scanlines: true, flicker: true, sound: true, keepComputerAwake: false, notifyPrefs: notifyDefaults() }; }
+  function defaults() { return { theme: 'amber', flicker: true, sound: true, keepComputerAwake: false, notifyPrefs: notifyDefaults() }; }
   // P1-8 notification preferences: per-category on/off + a notification sound toggle. Every category defaults ON
   // (no silent regression); each is HONORED at emit time in notify() below (a decorative toggle would be a bug).
   function notifyDefaults() { return { runComplete: true, needsApproval: true, cronDigest: true, sound: true }; }
@@ -57,7 +57,9 @@ const StationUI = (() => {
     const s = store.settings;
     document.body.classList.remove('theme-amber', 'theme-green', 'theme-blue', 'theme-purple', 'theme-red', 'theme-white');
     document.body.classList.add('theme-' + s.theme);
-    document.body.classList.toggle('no-scan', !s.scanlines);
+    // CRT scanlines are part of the fixed shipped look — no user toggle. `no-scan` stays an
+    // internal flag (set by scripts/verify-stars2.mjs to flatten the feed for star-pixel
+    // checks) and is intentionally never driven by settings here.
     document.body.classList.toggle('no-flicker', !s.flicker);
     if (typeof SFX === 'object') SFX.on = !!s.sound;
     syncKeepAwake(!!s.keepComputerAwake);
@@ -2781,7 +2783,7 @@ const StationUI = (() => {
     // gather the browser-owned slices the sidecar can't see (localStorage).
     const browserSections = () => {
       const out = { settings: {
-        theme: store.settings.theme, scanlines: store.settings.scanlines, flicker: store.settings.flicker,
+        theme: store.settings.theme, flicker: store.settings.flicker,
         sound: store.settings.sound, keepComputerAwake: store.settings.keepComputerAwake
       }, notifyPrefs: Object.assign({}, store.settings.notifyPrefs || notifyDefaults()) };
       try { if (typeof AutonomyStore !== 'undefined' && AutonomyStore.exportState) out.autonomy = AutonomyStore.exportState(); } catch (_) {}
@@ -2963,7 +2965,6 @@ const StationUI = (() => {
       THEMES.map(([t, c]) => '<button class="set-theme ' + (s.theme === t ? 'sel' : '') + '" data-t="' + t + '" style="--sw:' + c + '">' + t.toUpperCase() + '</button>').join('') +
       '</div>' +
       '<h4 class="ms-h">DISPLAY</h4>' +
-      '<label class="set-row"><input type="checkbox" id="set-scan" ' + (s.scanlines ? 'checked' : '') + '> CRT SCANLINES</label>' +
       '<label class="set-row"><input type="checkbox" id="set-flicker" ' + (s.flicker ? 'checked' : '') + '> SCREEN FLICKER</label>' +
       '<label class="set-row"><input type="checkbox" id="set-sound" ' + (s.sound ? 'checked' : '') + '> TERMINAL AUDIO <span class="dim">— UI &amp; notification sounds</span></label>';
     const secNotifs =
@@ -3048,7 +3049,7 @@ const StationUI = (() => {
       host.querySelectorAll('[data-t]').forEach(x => x.classList.toggle('sel', x === b));
     }));
     const bind = (id, key) => host.querySelector(id).addEventListener('change', ev => { s[key] = ev.target.checked; applySettings(); save(); });
-    bind('#set-scan', 'scanlines'); bind('#set-flicker', 'flicker'); bind('#set-sound', 'sound');
+    bind('#set-flicker', 'flicker'); bind('#set-sound', 'sound');
     const awakeToggle = host.querySelector('#set-awake');
     if (awakeToggle) awakeToggle.addEventListener('change', ev => {
       const desired = !!ev.target.checked;
