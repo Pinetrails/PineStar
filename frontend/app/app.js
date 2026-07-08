@@ -736,6 +736,10 @@ const App = (() => {
     // "talk to this specialist directly" action; summon itself only expands the crew/roster.
     const activate = opts.activate === true;
     const ws = (typeof Workstreams !== 'undefined') ? Workstreams.create(a.name, { agentId: id, activate }) : null;
+    // the COMMS "who you're talking to" selector reads App.agents() but only rebuilds inside renderIdBar —
+    // without this, a summon leaves the selector stale (missing the new agent) until some other stream
+    // switch happens, while the toast says "switch to its stream". Refresh it the moment the roster grows.
+    if (typeof Chat !== 'undefined' && Chat.refreshIdBar) Chat.refreshIdBar();
     if (activate) {
       focusAgent(id);
       if (ws && typeof Chat !== 'undefined' && Chat.load) Chat.load(ws);
