@@ -12,7 +12,14 @@
    THE GROUNDING VETO (the anti-slop heart, ported from autopilot.parseCandidates): a thread is only as real as its
    evidence. The model must return a VERBATIM quote of where the Commander raised the idea; a candidate whose quote
    does NOT appear (normalized) in the actual conversation is DROPPED. An idea the model invented — "the user
-   wanted a CRM" when they never said it — has no real quote, so it dies. This is what keeps "you mentioned X" honest. */
+   wanted a CRM" when they never said it — has no real quote, so it dies. This is what keeps "you mentioned X" honest.
+
+   THE SUBSTANCE VETO (added after the 2026-07-08 escape: real-provider mining offered a banter line — "I'm gonna be
+   throwing some real chaos at you" — back as a "thread", which is exactly the ridiculous ask that erodes trust in
+   the whole turn-in surface): grounded is NOT enough. A thread must also be actionable work: the model must supply
+   a DO: line naming a concrete first deliverable AND stake CONFIDENCE: high that the Commander genuinely wants it
+   picked up; anything less is dropped. The prompt states the bar explicitly ("would being asked about this seem
+   ridiculous?") with banter/hype/jokes as named non-examples, caps the list at 2, and defaults to NONE. */
 'use strict';
 (function (root, factory) {
   const api = factory();
@@ -24,15 +31,18 @@
   const MAX_TITLE = 120;          // a thread title is a one-line idea, not a paragraph
   const MAX_SPEC = 400;           // the evidence quote, clamped
   const MIN_TITLE = 6;            // below this it isn't an idea — a value floor against noise
-  const DEFAULT_MAX = 4;          // never dump a wall of proposals at the turn-in beat
+  const DEFAULT_MAX = 2;          // asking is expensive (a turn-in beat interrupts) — few, high-bar proposals only
   const PROMPT_CAP = 6000;        // chars of recent exchange fed to the aux model (ideas hide in longer context)
   const MIN_QUOTE = 8;            // a verbatim quote below this can't be reliably located → treat as ungrounded
+  const MIN_DO = 12;              // the DO line must name a real deliverable; shorter means the model had nothing
 
   // strip a recall fence the model may have echoed (parity with reflect.js) so a forged block can't be mined.
   const RECALL_FENCE = /<recalled-memory>[\s\S]*?<\/recalled-memory>|<\/?recalled-memory>/gi;
-  // the tagged block format the prompt demands. THREAD: <title> then QUOTE: <verbatim>. Tolerant of bullet prefixes.
+  // the tagged block format the prompt demands: THREAD / QUOTE / DO / CONFIDENCE. Tolerant of bullet prefixes.
   const THREAD_LINE = /^\s*[-*•]?\s*THREAD\s*[:\-—]\s*(.+?)\s*$/i;
   const QUOTE_LINE = /^\s*[-*•]?\s*QUOTE\s*[:\-—]\s*(.+?)\s*$/i;
+  const DO_LINE = /^\s*[-*•]?\s*DO\s*[:\-—]\s*(.+?)\s*$/i;
+  const CONF_LINE = /^\s*[-*•]?\s*CONFIDENCE\s*[:\-—]\s*(\w+)/i;
 
   // a stable FINGERPRINT of a title — IDENTICAL to threads-store.fingerprint / suggeststore.fingerprint so the
   // three agree on what "the same idea" is (kept inline so this module stays standalone / dependency-light).
@@ -59,27 +69,40 @@
     let body = turns.join('\n');
     if (body.length > cap) body = body.slice(body.length - cap);   // keep the most recent exchange
     const prompt =
-      'Read this conversation. List ONLY ideas the Commander raised, wished for, or floated but that were NEVER ' +
-      'acted on or finished here — "threads" worth picking up later (a tool they mused about, a project they ' +
-      'mentioned wanting, a follow-up left hanging). Do NOT list things already done in this conversation, ' +
-      'generic advice, or your own suggestions. For EACH thread, give a short title and a VERBATIM quote of the ' +
-      'exact words the Commander used — copy it word-for-word from the text; never paraphrase or invent. ' +
-      'Reply with one block per thread, EXACTLY:\nTHREAD: <short title>\nQUOTE: <verbatim words the Commander used>\n' +
-      'If there are no un-acted-on ideas, reply NONE.\n\n' + body;
+      'Read this conversation. Find CONCRETE WORK the Commander explicitly wanted but that was never acted on ' +
+      'here — a "thread" a colleague could genuinely pick up later (a tool they asked for, a project they ' +
+      'described wanting built, a follow-up left hanging).\n' +
+      'THE BAR: a thread is a real, actionable piece of work with a clear deliverable. Before listing anything, ' +
+      'apply this test: if the Commander were later asked "you floated this idea — keep the thread?", would the ' +
+      'question seem ridiculous to them? If yes, it is NOT a thread.\n' +
+      'NEVER list: jokes, banter, hype, or trash-talk (e.g. "I\'m gonna throw some real chaos at you" is banter, ' +
+      'not an idea); emotional or rhetorical remarks; vague intentions with no concrete subject; compliments or ' +
+      'complaints; meta-comments about you or this conversation; hypotheticals raised only to make a point; ' +
+      'anything already done here; or your own suggestions — only work the COMMANDER asked for or described wanting.\n' +
+      'For EACH thread reply EXACTLY:\nTHREAD: <short title of the work>\n' +
+      'QUOTE: <verbatim words the Commander used — copy word-for-word from the text; never paraphrase or invent>\n' +
+      'DO: <the concrete first deliverable someone could produce for it>\n' +
+      'CONFIDENCE: <high | medium | low — that the Commander would genuinely want this picked up>\n' +
+      'List at most 2, best first. Most conversations contain NO real threads — when in doubt, reply NONE.\n\n' + body;
     return { prompt: prompt, conversation: body };
   }
 
-  // parse the model reply into { title, quote } candidates. A THREAD line opens a block; the following QUOTE line
-  // (if any) supplies its evidence. Untagged / quote-less lines are ignored (conservative — no quote, no thread).
+  // parse the model reply into { title, quote, starter, confidence } candidates. A THREAD line opens a block; the
+  // QUOTE / DO / CONFIDENCE lines that follow fill it. Untagged lines are ignored (conservative — no tag, no data).
   function parse(raw) {
     const out = [];
     const lines = String(raw == null ? '' : raw).split('\n');
     let cur = null;
     for (const ln of lines) {
       const tm = THREAD_LINE.exec(ln);
-      if (tm) { if (cur && cur.title) out.push(cur); cur = { title: tm[1].trim(), quote: '' }; continue; }
+      if (tm) { if (cur && cur.title) out.push(cur); cur = { title: tm[1].trim(), quote: '', starter: '', confidence: '' }; continue; }
+      if (!cur) continue;
       const qm = QUOTE_LINE.exec(ln);
-      if (qm && cur) { if (!cur.quote) cur.quote = qm[1].trim(); continue; }
+      if (qm) { if (!cur.quote) cur.quote = qm[1].trim(); continue; }
+      const dm = DO_LINE.exec(ln);
+      if (dm) { if (!cur.starter) cur.starter = dm[1].trim(); continue; }
+      const cm = CONF_LINE.exec(ln);
+      if (cm) { if (!cur.confidence) cur.confidence = cm[1].toLowerCase(); continue; }
     }
     if (cur && cur.title) out.push(cur);
     return out;
@@ -123,6 +146,13 @@
       // fine, such a "thread" shouldn't be minted anyway.)
       const nq = normText(quote);
       if (nq.length < MIN_QUOTE || convo.indexOf(nq) < 0) continue;
+      // THE SUBSTANCE VETO (post-escape 2026-07-08: banter minted as a thread): grounded is not enough — the model
+      // must also name a concrete deliverable (DO:) and stake HIGH confidence the Commander wants it picked up.
+      // A joke/hype line can pass the quote check (it was really said); it cannot honestly carry a deliverable +
+      // high confidence, and anything below that bar is not worth interrupting the Commander to ask about.
+      const starter = redact(String(cand.starter || '')).trim();
+      if (starter.length < MIN_DO) continue;
+      if (String(cand.confidence || '').toLowerCase() !== 'high') continue;
       const fp = fingerprint(title);
       if (!fp) continue;
       if (seen[fp]) continue;                                         // intra-batch dupe
@@ -130,7 +160,7 @@
       seen[fp] = 1;
       proposals.push({
         id: 'thread_' + (proposals.length + 1),
-        title: title, spec: quote, fingerprint: fp,
+        title: title, spec: quote, starter: starter, fingerprint: fp,
         sourceRef: { streamId: run.streamId || null, runId: run.runId || null, date: now },
         sourceRunId: run.runId || null, createdAt: now
       });
