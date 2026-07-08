@@ -1986,7 +1986,7 @@ const StationUI = (() => {
   const H = () => (typeof Harness === 'object' && Harness) ? Harness : null;
   function provName(id) { const p = PROVIDERS.find(x => x.id === id); return p ? p.name : String(id || '').toUpperCase(); }
   function activeProv() { const h = H(); return (h && h.getProv && h.getProv()) || 'openrouter'; }
-  let codexConnectionKnown = null;
+  let codexStatusKnown = null;        // last /api/auth/codex/status truth: { connected, expired, reason }
   let codexConnectionChecking = false;
   // mask a secret to a provider-recognisable prefix + last 4 — the middle is NEVER emitted.
   function maskKey(k) {
@@ -2005,17 +2005,24 @@ const StationUI = (() => {
     fetch('/api/auth/codex/status', { cache: 'no-store' })
       .then(r => r.ok ? r.json() : { connected: false })
       .then(j => {
-        const next = !!(j && j.connected);
-        if (codexConnectionKnown !== next) { codexConnectionKnown = next; rerender('settings'); }
+        // carry the WHOLE truth shape: `connected` alone can't distinguish "never signed in" from the
+        // consumed-refresh-token death (`expired` + `reason`) — the row must render those differently.
+        const next = { connected: !!(j && j.connected), expired: !!(j && j.expired), reason: (j && j.reason) || '' };
+        const prev = codexStatusKnown;
+        codexStatusKnown = next;
+        if (!prev || prev.connected !== next.connected || prev.expired !== next.expired) rerender('settings');
       })
       .catch(() => {})
       .finally(() => { codexConnectionChecking = false; });
   }
   function codexConnected() {
-    if (codexConnectionKnown !== null) return !!codexConnectionKnown;
+    if (codexStatusKnown !== null) return !!codexStatusKnown.connected;
     const h = H();
     return !!(h && h.getProv && h.getProv() === 'codex');
   }
+  // the KNOWN-dead sign-in (sidecar recorded a relogin-class refresh failure): tokens exist but can't run.
+  function codexExpired() { return !!(codexStatusKnown && codexStatusKnown.expired); }
+  function codexExpiredReason() { return (codexStatusKnown && codexStatusKnown.reason) || ''; }
   // Where do saved API keys actually live? TRUTH SOURCE = the sidecar's keychainMode (DESKTOP_SHELL): the packaged
   // desktop build holds BYOK keys in the OS keychain; the browser holds them in its own local store. We learn this
   // lazily from /api/providers (mirrors the codex-status probe) and cache it so the key-save confirmation can name
@@ -2043,7 +2050,9 @@ const StationUI = (() => {
     const out = [];
     const active = activeProv();
     // Codex first when it's the live provider — an OAuth connection that carries a model but no API key.
-    if (codexConnected()) out.push({ provider: 'codex', key: '', model: (h.getModel && h.getModel()) || '', oauth: true });
+    // A KNOWN-dead sign-in still gets its row (marked expired): the credentials exist on disk and the row is
+    // where RE-SIGN-IN / DISCONNECT live — hiding it was the escape where the user had no recovery path.
+    if (codexConnected() || codexExpired()) out.push({ provider: 'codex', key: '', model: (h.getModel && h.getModel()) || '', oauth: true, expired: codexExpired() });
     // OpenRouter BYOK: desktop keeps the key in the OS keychain (getKey returns ''); configured() reports it's set.
     function addProvider(provider) {
       if (!provider || provider === 'codex' || out.some(k => k.provider === provider)) return;
@@ -2080,16 +2089,19 @@ const StationUI = (() => {
     const active = activeProv();
     return PROVIDERS.map((p, pi) => {
       const ks = keysFor(p.id);
-      const connected = p.live && ks.length > 0;
+      // the codex sign-in can be KNOWN-dead (sidecar recorded a consumed/invalid refresh token) — that must
+      // never render as SIGNED IN. The row still exists (ks has the expired entry) so RE-SIGN-IN is reachable.
+      const codexDead = p.id === 'codex' && codexExpired();
+      const connected = p.live && ks.length > 0 && !codexDead;
       // ACTIVE means this transport can actually run right now: selected provider AND a model is set.
       const runnable = connected && p.id === active && !!ks[0].model;
-      const cls = connected ? 'conn' : (p.live ? 'avail' : 'soon');
+      const cls = codexDead ? 'avail expired' : (connected ? 'conn' : (p.live ? 'avail' : 'soon'));
       // E5: `connected` is KEY PRESENCE, not a verified live connection — a saved key can be revoked,
       // rate-limited, or wrong, and we haven't round-tripped it. Label it "KEY SAVED" (or SIGNED IN for
       // the codex OAuth path, which IS real auth) rather than the over-claiming "CONNECTED". The
       // ACTIVE/runnable badge logic below is unchanged — that already gates on selected provider + model.
       const connLabel = p.id === 'codex' ? '● SIGNED IN' : '● KEY SAVED';
-      const stat = !p.live ? '○ COMING SOON' : connected ? connLabel : (p.id === 'codex' ? '○ NOT SIGNED IN' : (p.id === 'ollama' ? '○ LOCAL' : '○ NO KEY'));
+      const stat = !p.live ? '○ COMING SOON' : codexDead ? '⚠ SIGN-IN EXPIRED — RECONNECT' : connected ? connLabel : (p.id === 'codex' ? '○ NOT SIGNED IN' : (p.id === 'ollama' ? '○ LOCAL' : '○ NO KEY'));
       const n = ks.length;
       // NO-KEY cards that accept a key get an inline, collapsible paste-and-save row so the user never has to hunt
       // for where keys live. It reuses the SAME save path (Harness.setKey) as the key list below — no duplicate logic.
@@ -2133,16 +2145,35 @@ const StationUI = (() => {
       // ACTIVE only when the key can actually run: selected provider AND a model is set (never overstate runnability).
       const runnable = k.provider === active && !!k.model;
       // Codex (OAuth) has no API key to mask/edit/remove — render it honestly as a sign-in connection.
+      // The row always carries its OWN actions (⏼ RE-SIGN-IN / ✕ DISCONNECT): the 2026-07-08 escape was a
+      // dead sign-in still labelled SIGNED IN with zero recovery actions on this exact row.
       if (k.oauth) {
-        return '<div class="key-row">' +
+        const dead = !!k.expired;
+        const meta = dead
+          ? '<span class="key-stat bad">⚠ SIGN-IN EXPIRED — ' + esc(codexExpiredReason() || 'the stored sign-in no longer works; reconnect to run again') + '</span>'
+          : 'model <b>' + esc(k.model || '—') + '</b> · ' +
+            (runnable ? '<span class="key-stat on">ACTIVE</span>' : '<span class="key-stat">idle</span>') +
+            ' · <span class="key-stat">no API key needed</span>';
+        return '<div class="key-row' + (dead ? ' expired' : '') + '">' +
           '<span class="conn-dot"></span>' +
           '<div class="key-main">' +
           '<div class="key-top"><span class="key-prov">' + esc(provName(k.provider)) + '</span>' +
-          '<code class="key-mask" title="authenticated by ChatGPT sign-in (OAuth) — no API key is stored">ChatGPT OAuth</code></div>' +
-          '<div class="key-meta">model <b>' + esc(k.model || '—') + '</b> · ' +
-          (runnable ? '<span class="key-stat on">ACTIVE</span>' : '<span class="key-stat">idle</span>') +
-          ' · <span class="key-stat">no API key needed</span></div>' +
-          '</div></div>';
+          (dead
+            ? '<code class="key-mask key-mask-dead" title="the sidecar recorded a dead refresh token — a re-sign-in is the only cure">⚠ EXPIRED</code>'
+            : '<code class="key-mask" title="authenticated by ChatGPT sign-in (OAuth) — no API key is stored">ChatGPT OAuth</code>') + '</div>' +
+          '<div class="key-meta">' + meta + '</div>' +
+          '</div>' +
+          '<div class="key-acts">' +
+          '<button class="bb sm" data-act="codex-resign">⏼ RE-SIGN-IN</button>' +
+          '<button class="bb sm danger" data-act="codex-logout">✕ DISCONNECT</button>' +
+          '</div></div>' +
+          // the inline device-code surface the RE-SIGN-IN action fills (same engine as the brain screen:
+          // CodexSignIn.start → code + verification URL here, poll until the sidecar reports connected).
+          '<div class="key-edit codex-inline" id="codex-inline-signin" hidden>' +
+          '<span class="dim" id="codex-inline-status"></span>' +
+          '<code class="key-mask" id="codex-inline-code" hidden></code>' +
+          '<button class="bb sm" id="codex-inline-open" hidden>↗ OPEN PAGE</button>' +
+          '</div>';
       }
       if (k.local) {
         return '<div class="key-row">' +
@@ -2182,6 +2213,50 @@ const StationUI = (() => {
       b.addEventListener('click', () => {
         const h = H(); const act = b.dataset.act;
         if (act !== 'rm') sfx('click');   // destructive REMOVE owns its own 'bad' cue (matches the CLEAR control)
+        // ---- ChatGPT (Codex) OAuth row actions — no Harness store involved; they drive the sidecar's
+        //      device-flow endpoints through the SAME shared engine as the brain screen (codexsignin.js). ----
+        if (act === 'codex-resign') {
+          if (typeof CodexSignIn === 'undefined') return;
+          const box = body.querySelector('#codex-inline-signin');
+          const st = body.querySelector('#codex-inline-status');
+          const code = body.querySelector('#codex-inline-code');
+          const open = body.querySelector('#codex-inline-open');
+          if (box) box.hidden = false;
+          CodexSignIn.start({
+            onRequesting: () => { if (st) st.textContent = 'requesting a sign-in code…'; },
+            onError: msg => { if (st) st.textContent = msg; sfx('bad'); },
+            onTimeout: () => { if (st) st.textContent = 'sign-in timed out — hit RE-SIGN-IN to start again'; },
+            onCode: c => {
+              if (code) { code.textContent = c.user_code; code.hidden = false; }
+              if (st) st.innerHTML = 'enter this code at <b>' + esc(c.verification_uri) + '</b> (opening it now)…';
+              if (open) { open.hidden = false; open.onclick = () => { sfx('click'); openExternal(c.verification_uri); }; }
+              openExternal(c.verification_uri);
+            },
+            onConnected: () => {
+              // the sidecar just exchanged + persisted fresh tokens — that POLL answer is backend truth.
+              codexStatusKnown = { connected: true, expired: false, reason: '' };
+              notify('✓ reconnected ChatGPT — your agents can run on your subscription again', 'good');
+              if (typeof ModelDock !== 'undefined' && ModelDock.reflect) ModelDock.reflect();
+              if (typeof KeyCTA !== 'undefined' && KeyCTA.refresh) KeyCTA.refresh();
+              refreshCodexConnectionStatus();   // re-read the durable status (persistError etc.) behind the repaint
+              rerender('settings');
+            }
+          });
+          return;
+        }
+        if (act === 'codex-logout') {
+          if (typeof CodexSignIn !== 'undefined') CodexSignIn.cancel();
+          const drop = (typeof CodexSignIn !== 'undefined') ? CodexSignIn.logout() : fetch('/api/auth/codex/logout', { method: 'POST' }).catch(() => {});
+          Promise.resolve(drop).then(() => {
+            codexStatusKnown = { connected: false, expired: false, reason: '' };   // the sidecar just confirmed the drop
+            notify('disconnected ChatGPT — sign in again anytime from PROVIDERS', 'warn');
+            sfx('bad');
+            if (typeof ModelDock !== 'undefined' && ModelDock.reflect) ModelDock.reflect();
+            if (typeof KeyCTA !== 'undefined' && KeyCTA.refresh) KeyCTA.refresh();
+            rerender('settings');
+          });
+          return;
+        }
         if (!h) return;
         if (act === 'add') {              // empty-state: connect a first key without leaving the game
           const inp = body.querySelector('#key-in-new');

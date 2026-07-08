@@ -1486,6 +1486,16 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 .key-empty { font-size: 13px; color: var(--ph); padding: 4px 2px; display: flex; flex-direction: column; gap: 6px; }
 .key-empty p { margin: 0; font-size: 12px; color: var(--text); opacity: 0.75; }
 
+/* settings-truth: a KNOWN-dead ChatGPT sign-in (the sidecar recorded a consumed/invalid refresh token).
+   --bad is the sole semantic red; the card/row must read as a fault demanding RECONNECT, never as SIGNED IN. */
+.prov-card.expired { opacity: 1; border-color: var(--bad); }
+.prov-card.expired .prov-stat { color: var(--bad); }
+.prov-card.expired .conn-dot, .key-row.expired .conn-dot { background: var(--bad); box-shadow: 0 0 8px rgba(200, 90, 80, 0.7); }
+.key-stat.bad { color: var(--bad); }
+.key-mask.key-mask-dead { color: var(--bad); border-color: var(--bad); }
+.key-edit.codex-inline { flex-wrap: wrap; align-items: center; font-size: 12px; }
+.key-edit.codex-inline code { font-size: 15px; letter-spacing: 2px; }
+
 /* settings-truth: armed REMOVE — unmistakable destructive state. The armed CONFIRM button inverts to a
    filled --bad chip (ink text on red), the row gains a red hairline + slight dim, and an inline hint
    spells out the second click. --bad stays the sole semantic red so it reads correctly in every theme. */
