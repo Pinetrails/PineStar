@@ -52,11 +52,23 @@ function str(v) { return v == null ? '' : String(v); }
 // only hook absent from the packaged build) — it is the smoke-scoped cousin of parityCheck, asserting
 // only invariants a real production page exposes (the launch token, /api/version, /api/diagnostics,
 // the world/canvas, and the Workstreams/Channels no-forever-running truth when the board is open).
+//
+// AUTH HEADER (ledger finding 4d9992d9) — the probe MUST send X-StarNet-Token, never an "Authorization: Bearer"
+// header. The sidecar authenticates on X-StarNet-Token (a Bearer token is rejected as "forbidden token"), and its
+// CORS Access-Control-Allow-Headers lists only Content-Type,X-StarNet-Token,X-Skynet-Token. On the packaged desktop
+// exe the page origin is http://tauri.localhost while the sidecar is http://127.0.0.1:<port>, so every /api/* call is
+// CROSS-ORIGIN: a stray Authorization header makes the OPTIONS preflight request a header the sidecar won't allow, the
+// preflight is rejected, and fetch() dies with "Failed to fetch" BEFORE any response — appVersion reads blank and the
+// smoke goes BLOCKED even though /api/version is serving the honest version. Same-origin dev/headless never preflights,
+// which is why this only ever surfaced on the installed build. (Kept OUTSIDE the probe string so the auth-scheme name
+// isn't part of SMOKE_PROBE — test/qa-installed-smoke.test.js A0 statically forbids those words appearing in it.)
 export const SMOKE_PROBE = `(async () => {
   const out = { appVersion: '', appSource: '', harness: '', mode: '', bootSane: false, checks: [], notes: '' };
   const add = (name, ok, detail) => out.checks.push({ name: String(name), ok: !!ok, detail: String(detail == null ? '' : detail) });
   const tok = (typeof window !== 'undefined' && window.__STARNET_API_TOKEN__) ? String(window.__STARNET_API_TOKEN__) : '';
-  const authHeaders = tok ? { Authorization: 'Bearer ' + tok } : {};
+  // X-StarNet-Token is the sidecar's auth header AND the only auth header its CORS allow-list accepts on the
+  // cross-origin packaged build. See the long note above SMOKE_PROBE (finding 4d9992d9) before changing this.
+  const authHeaders = tok ? { 'X-StarNet-Token': tok } : {};
   add('boot/api-token-present', !!tok, tok ? 'per-launch token injected into the page' : 'no window.__STARNET_API_TOKEN__ — is this the app page?');
 
   // ---- app version (token-gated GET /api/version): the whole point of the smoke — WHICH build is this? ----
