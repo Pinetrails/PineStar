@@ -535,6 +535,7 @@ document.write('<script src="' + ((window.__STARNET_API__ || '') + '/shared/spec
 <script src="app/prospectstore.js"></script><!-- prospect generator wiring: growth-gated async mint (reason-only), denylist, staging → the bay's DRAFTED FOR YOU row; never emits -->
 <script src="app/dossierstore.js"></script>
 <script src="app/studystore.js"></script><!-- GROWTH Tier 1: STUDY wiring (dossier Phase B) — fetch belief-update proposals, session cap + denylist, ratings→taste; self-persists (own key), never emits -->
+<script src="app/threadstore.js"></script><!-- NS-6: THREAD turn-in wiring — fetch mined idea candidates, session cap + resolved/ignore gate, Keep/Edit/Discard → /api/threads/turnin (the click IS the consent); self-persists (own key), never emits -->
 <script src="app/curiositystore.js"></script>
 <script src="app/pitchstore.js"></script>
 <script src="app/suggeststore.js"></script>

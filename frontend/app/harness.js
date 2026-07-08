@@ -487,6 +487,28 @@ const Harness = (() => {
       return Array.isArray(j.proposals) ? j.proposals : [];
     } catch (e) { return []; }
   }
+  // NS-6: after a salient task run the sidecar MINES threads (ideas the Commander floated but never acted on) into
+  // a stash. Fetch the pending candidates for the thread turn-in card. Returns { runId, proposals } — the BATCH
+  // runId matters: the turn-in verdict must reference the stash batch (which may be the agent's latest pending
+  // batch when the exact run had none). { runId:null, proposals:[] } on any failure (fail-open).
+  async function threadProposals(runId, agentId) {
+    try {
+      const q = '?agent=' + encodeURIComponent(agentId || 'agent') + (runId ? '&run=' + encodeURIComponent(runId) : '');
+      const r = await fetch('/api/threads/proposals' + q, { cache: 'no-store' });
+      if (!r.ok) return { runId: null, proposals: [] };
+      const j = await r.json();
+      return { runId: j.runId || null, proposals: Array.isArray(j.proposals) ? j.proposals : [] };
+    } catch (e) { return { runId: null, proposals: [] }; }
+  }
+  // NS-6: submit ONE thread turn-in verdict { agentId, runId, id, verdict:'keep'|'edit'|'discard', title?, spec? }.
+  // keep/edit COMMIT an open thread on the ledger (the click IS the consent — stash, never auto-commit); discard
+  // permanently denylists the idea's fingerprint. Returns the server's { ok, reason } ({ ok:false } on failure).
+  async function threadTurnin(o) {
+    try {
+      const r = await fetch('/api/threads/turnin', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(o || {}) });
+      return r.ok ? (await r.json().catch(() => ({ ok: false }))) : { ok: false };
+    } catch (e) { return { ok: false }; }
+  }
   // submit one turn-in verdict. Keep/Edit commit a real memory (→ memory.write); every verdict → memory.feedback.
   // The sidecar re-broadcasts those over the SSE bus, so XP + the dossier update live without a local emit here.
   async function memoryTurnin(o) {
@@ -566,6 +588,7 @@ const Harness = (() => {
     listModels, priceOf, contextLimitOf, contextState, chat, cancel, haltAll, consent, summonAck, notebook,
     memoryProposals, memoryTurnin, memoryVeto, memoryReset, memoryRecords, memoryDeclined, memoryRestore, memoryPin, memoryEdit, memoryForget,
     studyProposals,
+    threadProposals, threadTurnin,
     agentSkills, agentSkillManage,
     apiToken: ensureApiToken,
     apiFetch: (u, init) => ensureApiToken().then(t => fetch(u, withApiToken(init, t))),

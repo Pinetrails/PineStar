@@ -1739,6 +1739,7 @@ const App = (() => {
     if (typeof SeedStore !== 'undefined') SeedStore.reset();   // …and a fresh seed-offer budget
     if (typeof CuriosityStore !== 'undefined') CuriosityStore.reset();   // …no inherited waved-off dimensions (own key)
     if (typeof StudyStore !== 'undefined') StudyStore.reset();   // …and a fresh STUDY state — a new Commander never inherits the prior hero's studyDeclined denylist / ignore tallies / rating streaks (own key)
+    if (typeof ThreadStore !== 'undefined') ThreadStore.reset();   // …and a fresh THREAD turn-in gate — a new Commander never inherits the prior hero's resolved/ignored mined ideas (the ledger itself is server-side, station-wide)
     if (typeof QuestStateStore !== 'undefined') QuestStateStore.reset();   // …and a fresh quest memory — a new Commander never inherits dismissed/completed quest history (own key)
     if (typeof QuestLedgerStore !== 'undefined') QuestLedgerStore.reset();  // …and a clean ledger cache — the sidecar ledger is station-wide, but the session cache/notify set starts empty
     if (typeof StationQuestStore !== 'undefined') StationQuestStore.reset();   // …and no inherited station-gap fix-it quests — a new Commander never sees the prior hero's capdenied backlog / dismissals (own key)
@@ -1922,6 +1923,10 @@ const App = (() => {
     // denylist + per-belief ignore tallies + per-archetype rating streaks). Init AFTER DossierStore (its accept()
     // folds into it); the per-session shown-cap resets here.
     if (typeof StudyStore !== 'undefined') StudyStore.init({ now: () => Date.now() });
+    // NS-6 — THREAD turn-in: after a mined task run, the station offers ideas the Commander floated but never
+    // acted on for Keep/Edit/Discard at the turn-in beat (chat.js). Self-persists its own key (resolved
+    // fingerprints + per-idea ignore tallies); the per-session shown-cap resets here.
+    if (typeof ThreadStore !== 'undefined') ThreadStore.init({ now: () => Date.now() });
     // CURIOSITY: the gentle one-per-session "tell me about X" nudge (curiosity.js). Self-persists its
     // dismissals to its own key (rides the backup prefix); init just hydrates + resets the session budget.
     if (typeof CuriosityStore !== 'undefined') CuriosityStore.init();
