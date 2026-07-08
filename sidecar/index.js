@@ -7606,11 +7606,16 @@ function channelStatusPayload(id) {
     : id === 'matrix' ? !!(rec.endpoint && channelToken(id, '', rec))
     : !!channelToken(id, '', rec);
   const durable = configured && (id === 'signal' ? true : (isChannelTokenDurable(id) || !!rec.token));
-  return {
+  const out = {
     id: id, connected: !!st.connected, configured: configured, durable: durable,
     state: st.state || 'down', detail: st.detail || '',
     notifyAutonomous: !!(channelSecrets && channelSecrets.notifyAutonomous), ownerLocked: !!rec.ownerId
   };
+  // endpoint/account are NON-secret connection config (a homeserver URL / a signal-cli URL + number) — surfacing
+  // them lets the panel prefill its fields for a one-click reconnect. Tokens/keys stay server-side, always.
+  if (id === 'matrix' || id === 'signal') { out.endpoint = String(rec.endpoint || ''); }
+  if (id === 'signal') { out.account = String(rec.account || ''); }
+  return out;
 }
 
 // GET /api/channels/status — every registry channel's status in ONE poll (the CHANNELS panel paints from this).

@@ -949,10 +949,14 @@ const App = (() => {
       if (key) body.key = key;
       const baseUrl = (typeof Harness !== 'undefined' && Harness.getBaseUrl) ? Harness.getBaseUrl(provider) : '';
       if (baseUrl) body.baseUrl = baseUrl;
-      fetch('/api/channels/telegram/sync', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
-      }).catch(() => {});
+      // every connectable channel gets the same identity push; the sidecar's sync handler no-ops quietly for
+      // any channel that isn't configured, so this stays a cheap fan-out (telegram/discord/slack/matrix/signal).
+      for (const ch of ['telegram', 'discord', 'slack', 'matrix', 'signal']) {
+        fetch('/api/channels/' + ch + '/sync', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        }).catch(() => {});
+      }
     } catch (_) {}
   }
 

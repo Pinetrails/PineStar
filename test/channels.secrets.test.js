@@ -291,12 +291,13 @@ const root = path.resolve(__dirname, '..');
   A.ok(/harness_store_channel_token/.test(harness), 'harness.js invokes the Tauri channel-token command');
   A.ok(/if\s*\(!DESKTOP[\s\S]{0,40}\)\s*return Promise\.resolve\(false\)/.test(harness), 'browser build no-ops storeChannelToken (keeps the POST-body path)');
   const ui = fs.readFileSync(path.join(root, 'frontend', 'app', 'stationui.js'), 'utf8');
-  A.ok(/Harness\.storeChannelToken\('telegram'/.test(ui) && /Harness\.storeChannelToken\('discord'/.test(ui), 'both connect handlers park the token in the keychain first');
-  A.ok((ui.match(/if \(stored\) bodyToken = ''/g) || []).length >= 2, 'a keychain-stored token is omitted from the connect POST body');
+  // one catalog-generated connect handler serves EVERY channel: the keychain park happens once, by channel id.
+  A.ok(/Harness\.storeChannelToken\(c\.id, vals\.token\)/.test(ui), 'the generic connect handler parks each channel\'s token in the keychain first');
+  A.ok((ui.match(/if \(stored\) bodyToken = ''/g) || []).length >= 1, 'a keychain-stored token is omitted from the connect POST body');
   // DURABILITY UX: when the desktop keychain store fails, the token still rides the body (now persisted safely as a
   // plaintext fallback) and the UI says so honestly — no scary modal, one short line.
   A.ok(/isDesktop/.test(harness), 'harness.js exposes isDesktop() so the UI can tell a desktop store failure from a browser no-op');
-  A.ok((ui.match(/localFallback = true/g) || []).length >= 2, 'both connect handlers flag a desktop keychain-store failure');
+  A.ok((ui.match(/localFallback = true/g) || []).length >= 1, 'the generic connect handler flags a desktop keychain-store failure');
   A.ok(/token saved locally, not the OS keychain/.test(ui), 'the connect handler notes a local (non-keychain) save honestly');
 }
 
