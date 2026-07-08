@@ -78,6 +78,12 @@ struct AppState {
 }
 
 impl AppState {
+    /// Kill the child sidecar on intentional shutdown. HONESTY NOTE: this only covers the
+    /// graceful paths — the ExitRequested run-event and `Drop for AppState`. A hard kill of
+    /// the shell (`taskkill /F`, crash, task-manager End Task, power loss) runs NEITHER, and
+    /// there is no in-process hook that can — which is exactly how orphan sidecars happen.
+    /// The reliable other half is `reap_orphan_sidecars`, which runs at the NEXT boot before
+    /// spawning and terminates any process still running from our own bundled node runtime.
     fn kill_sidecar(&self) {
         if let Ok(mut guard) = self.sidecar.lock() {
             if let Some(mut child) = guard.take() {
@@ -867,6 +873,147 @@ fn node_binary(root: &Path) -> PathBuf {
     PathBuf::from("node")
 }
 
+// ---- boot-time orphan-sidecar reap -------------------------------------------------------
+//
+// ESCAPE (2026-07-08): killing the shell hard (`taskkill /F`, crash, task-manager End Task)
+// never runs `Drop for AppState` / the ExitRequested handler, so the spawned node.exe sidecar
+// survives as an orphan. Multiple live sidecars sharing one WORKSPACES dir break the hard
+// one-sidecar-per-WORKSPACES invariant (durable-store safety is in-process only), and Codex
+// OAuth refresh-token rotation means two sidecars sharing one token file consume each other's
+// tokens ("refresh token already consumed by another client"). Three stale sidecars were found
+// alive on a real machine. There is no reliable in-process hook on a hard kill — so the
+// RELIABLE half of the fix is here: every boot, BEFORE spawning our own sidecar, terminate any
+// process still running from the shell's OWN bundled node runtime.
+
+/// Pure predicate: is `node` a path we may reap by? Only the shell's own bundled runtime
+/// qualifies — an absolute path (packaged builds resolve `<install dir>\node.exe`). The dev
+/// fallback `node_binary()` returns (`PathBuf::from("node")`, resolved via PATH) is relative,
+/// and reaping by it would pattern-match EVERY node.exe on the system (dev servers, other
+/// apps). Kept side-effect-free so it is unit-testable.
+fn is_reapable_node_path(node: &Path) -> bool {
+    node.is_absolute() && node.file_name().is_some()
+}
+
+/// Terminate every running process whose executable image is EXACTLY `node` — the same path
+/// this shell spawns its sidecar from (never a generic "node.exe" name match). Returns how
+/// many were reaped. Fail-open by design: any enumeration/open/query/terminate error skips
+/// that process and never blocks startup.
+#[cfg(windows)]
+fn reap_orphan_sidecars(node: &Path, startup_log: &Option<PathBuf>) -> usize {
+    use windows_sys::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE, MAX_PATH};
+    use windows_sys::Win32::System::Diagnostics::ToolHelp::{
+        CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W,
+        TH32CS_SNAPPROCESS,
+    };
+    use windows_sys::Win32::System::Threading::{
+        OpenProcess, QueryFullProcessImageNameW, TerminateProcess,
+        PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_TERMINATE,
+    };
+
+    if !is_reapable_node_path(node) {
+        log_startup(
+            startup_log,
+            format!(
+                "sidecar-reap: skipped — node path {:?} is not an absolute bundled runtime (dev PATH fallback)",
+                node
+            ),
+        );
+        return 0;
+    }
+    // File-name prefilter (cheap, from the snapshot) before the full-image-path check.
+    let node_file_name = node
+        .file_name()
+        .map(|n| n.to_string_lossy().to_lowercase())
+        .unwrap_or_default();
+
+    let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) };
+    if snapshot == INVALID_HANDLE_VALUE {
+        log_startup(startup_log, "sidecar-reap: snapshot failed — skipped (fail-open)");
+        return 0;
+    }
+
+    let mut reaped = 0usize;
+    let mut entry: PROCESSENTRY32W = unsafe { std::mem::zeroed() };
+    entry.dwSize = std::mem::size_of::<PROCESSENTRY32W>() as u32;
+    let mut ok = unsafe { Process32FirstW(snapshot, &mut entry) } != 0;
+    while ok {
+        let exe_name = {
+            let len = entry
+                .szExeFile
+                .iter()
+                .position(|&c| c == 0)
+                .unwrap_or(entry.szExeFile.len());
+            String::from_utf16_lossy(&entry.szExeFile[..len]).to_lowercase()
+        };
+        if exe_name == node_file_name && entry.th32ProcessID != std::process::id() {
+            let pid = entry.th32ProcessID;
+            let handle = unsafe {
+                OpenProcess(
+                    PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_TERMINATE,
+                    0,
+                    pid,
+                )
+            };
+            if !handle.is_null() {
+                // Full image path — the ONLY thing that authorizes a kill. A node.exe running
+                // from anywhere else (system PATH, another app's bundle) is never touched.
+                let mut buf = [0u16; MAX_PATH as usize + 1];
+                let mut size = buf.len() as u32;
+                let got =
+                    unsafe { QueryFullProcessImageNameW(handle, 0, buf.as_mut_ptr(), &mut size) };
+                if got != 0 {
+                    let full = PathBuf::from(String::from_utf16_lossy(&buf[..size as usize]));
+                    if same_path(&full, node) {
+                        if unsafe { TerminateProcess(handle, 1) } != 0 {
+                            reaped += 1;
+                            log_startup(
+                                startup_log,
+                                format!(
+                                    "sidecar-reap: terminated orphan sidecar pid={pid} ({})",
+                                    full.display()
+                                ),
+                            );
+                        } else {
+                            log_startup(
+                                startup_log,
+                                format!("sidecar-reap: TerminateProcess failed for pid={pid} — skipped (fail-open)"),
+                            );
+                        }
+                    }
+                }
+                unsafe {
+                    CloseHandle(handle);
+                }
+            }
+        }
+        ok = unsafe { Process32NextW(snapshot, &mut entry) } != 0;
+    }
+    unsafe {
+        CloseHandle(snapshot);
+    }
+    log_startup(
+        startup_log,
+        format!(
+            "sidecar-reap: done — {reaped} orphan sidecar(s) reaped for {}",
+            node.display()
+        ),
+    );
+    reaped
+}
+
+/// Non-Windows: no reap wired yet (the observed orphan escape is Windows taskkill /F; mac/linux
+/// hard kills of the shell can strand a sidecar the same way — hook a pgrep-by-exact-path pass
+/// in here when a case is observed). Honest no-op, logged.
+#[cfg(not(windows))]
+fn reap_orphan_sidecars(node: &Path, startup_log: &Option<PathBuf>) -> usize {
+    let _ = node;
+    log_startup(
+        startup_log,
+        "sidecar-reap: non-Windows platform — no reap wired yet",
+    );
+    0
+}
+
 fn sidecar_command(state: &AppState, entry: &Path, node: &Path) -> Command {
     let mut cmd = Command::new(node);
     cmd.arg(entry)
@@ -1560,6 +1707,12 @@ fn main() {
                 keep_awake: Mutex::new(KeepAwakeState::new()),
                 shutting_down: AtomicBool::new(false),
             };
+            // Before spawning OUR sidecar: terminate any orphan sidecars left behind by a
+            // hard-killed previous shell (Drop/ExitRequested never ran there). Multiple live
+            // sidecars on one WORKSPACES dir violate the one-sidecar invariant and burn each
+            // other's rotating Codex OAuth refresh tokens. Scoped strictly to processes whose
+            // image path IS our bundled node runtime; fail-open, never blocks startup.
+            reap_orphan_sidecars(&node_binary(&state.root), &state.startup_log);
             // Try to bring the sidecar up; on failure show a native Retry dialog naming startup.log
             // (audit 0.2). Even if this ultimately returns false, the guardian below keeps trying so
             // the app can still recover in the background rather than sitting permanently dead.
@@ -1619,6 +1772,102 @@ fn main() {
                 }
             }
         });
+}
+
+#[cfg(test)]
+mod sidecar_reap_tests {
+    use super::*;
+
+    #[test]
+    fn dev_path_fallback_is_never_reapable() {
+        // node_binary()'s dev fallback is a bare relative "node" resolved via PATH. Reaping by
+        // it would match EVERY node.exe on the machine — must be refused.
+        assert!(!is_reapable_node_path(Path::new("node")));
+        assert!(!is_reapable_node_path(Path::new("node.exe")));
+        assert!(!is_reapable_node_path(Path::new("bin/node.exe")));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn bundled_absolute_path_is_reapable() {
+        assert!(is_reapable_node_path(Path::new(
+            r"C:\Program Files\StarNet\node.exe"
+        )));
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn bundled_absolute_path_is_reapable() {
+        assert!(is_reapable_node_path(Path::new("/opt/starnet/node")));
+    }
+
+    /// Ambient end-to-end proof (spawns and terminates REAL processes) — excluded from the
+    /// default test run; execute explicitly with `cargo test -- --ignored`. Copies node.exe to
+    /// a unique temp "bundled" path, starts one process from it (the orphan) and one from the
+    /// system node (the bystander), then asserts the reap kills exactly the former.
+    #[cfg(windows)]
+    #[test]
+    #[ignore]
+    fn reap_terminates_only_processes_from_the_exact_path() {
+        let node_on_path = std::env::var_os("PATH").and_then(|paths| {
+            std::env::split_paths(&paths)
+                .map(|d| d.join("node.exe"))
+                .find(|p| p.exists())
+        });
+        let Some(src) = node_on_path else {
+            eprintln!("node.exe not on PATH — nothing to prove here, skipping");
+            return;
+        };
+        let dir = std::env::temp_dir().join(format!(
+            "starnet-reap-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let bundled = dir.join("node.exe");
+        std::fs::copy(&src, &bundled).unwrap();
+
+        let idle = ["-e", "setInterval(function(){}, 1000)"];
+        let mut orphan = Command::new(&bundled).args(idle).spawn().unwrap();
+        let mut bystander = Command::new(&src).args(idle).spawn().unwrap();
+        std::thread::sleep(Duration::from_millis(400));
+
+        let reaped = reap_orphan_sidecars(&bundled, &None);
+        assert!(reaped >= 1, "expected at least the planted orphan to be reaped");
+
+        std::thread::sleep(Duration::from_millis(400));
+        assert!(
+            matches!(orphan.try_wait(), Ok(Some(_))),
+            "process running from the bundled path must be terminated"
+        );
+        assert!(
+            matches!(bystander.try_wait(), Ok(None)),
+            "node from a DIFFERENT path must never be touched"
+        );
+
+        let _ = orphan.wait();
+        let _ = bystander.kill();
+        let _ = bystander.wait();
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn image_path_match_is_case_insensitive_but_exact() {
+        // QueryFullProcessImageNameW may report different casing than our resolved path;
+        // same_path must still match — while a DIFFERENT node install must not.
+        assert!(same_path(
+            Path::new(r"C:\PROGRAM FILES\StarNet\NODE.EXE"),
+            Path::new(r"C:\Program Files\StarNet\node.exe"),
+        ));
+        assert!(!same_path(
+            Path::new(r"C:\Program Files\nodejs\node.exe"),
+            Path::new(r"C:\Program Files\StarNet\node.exe"),
+        ));
+    }
 }
 
 #[cfg(test)]
