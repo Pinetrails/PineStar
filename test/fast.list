@@ -86,6 +86,8 @@ test/permissions.test.js
 test/workshop-permissions.test.js
 test/workshop-store.test.js
 test/quest-store.test.js
+test/questinject.test.js
+test/quests-tool.test.js
 test/apiauth.test.js
 test/notebook.test.js
 test/skills.test.js

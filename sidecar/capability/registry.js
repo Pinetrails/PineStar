@@ -28,7 +28,8 @@
       { capId: 'memory', tool: 'skill.manage', scope: 'write', requiresConsent: false, network: false },       // H4: create/patch/archive saved skills
       { capId: 'memory', tool: 'skill.list', scope: 'read', requiresConsent: false, network: false },          // H4: list saved skills (metadata only)
       { capId: 'memory', tool: 'skill.view', scope: 'read', requiresConsent: false, network: false },          // H4: load a saved skill's full body
-      { capId: 'memory', tool: 'widget.set', scope: 'write', requiresConsent: false, network: false }          // WIDGET RAILS Phase 2: publish/update an agent-fed rail readout — sandboxed local write to the station's own chrome, same trust class as notebook.write (see tools/builtin/widgets.js)
+      { capId: 'memory', tool: 'widget.set', scope: 'write', requiresConsent: false, network: false },         // WIDGET RAILS Phase 2: publish/update an agent-fed rail readout — sandboxed local write to the station's own chrome, same trust class as notebook.write (see tools/builtin/widgets.js)
+      { capId: 'memory', tool: 'quest.update', scope: 'write', requiresConsent: false, network: false }         // QUEST V2 §B: progress/attest/mint a STATION QUEST — the agent's own standing objective, same trust class as notebook/todo (no outward mutation until the Commander confirms an attest; see tools/builtin/quests.js)
     ],
     // M5: object = capability made real — placing these grants the agent real-world reach.
     cabinet: [

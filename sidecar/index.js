@@ -109,6 +109,8 @@ const { makeWidgetTools } = require('./tools/builtin/widgets.js'); // WIDGET RAI
 const { makeMemoryStore, resetAgentMemory, restoreDeclined } = require('./memory-store.js'); // durable notebook:/todo:/declined: sibling stores
 const { makeWorkshopStore } = require('./workshop-store.js'); // durable per-agent away-workshop grant + backlog + discard denylist
 const { makeQuestStore } = require('./quest-store.js'); // QUEST V2 §A: station-wide harness-owned quest ledger (contract-enforced)
+const { makeQuestTools } = require('./tools/builtin/quests.js'); // QUEST V2 §B: quest.update — the agent's read/write reach into the ledger
+const { questBlock, withQuests } = require('./questinject.js'); // QUEST V2 §B: fold an agent's OPEN quests into its system prompt (pure, dossierinject idiom)
 const { tailLines, loadBounded, rotateIfLarge } = require('./logbound.js'); // P3: bounded boot-load + size rotation for the append-only JSONL logs
 const { makeCronLock } = require('./cron-lock.js');         // G4.3: cross-process exactly-once advisory lock (O_EXCL+pid:nonce+stale-break)
 const { withDossier } = require('./dossierinject.js');     // Phase C: fold the Commander dossier into server-composed (cron) personas
@@ -5513,6 +5515,7 @@ async function runOnce(o) {
     }
   }).register(registry);   // H4: skill.write/list/view/manage — the agent's reusable procedure library (memory capability)
   Todo.makeTodoTool({ store: notebookStore }).register(registry);   // in-session task plan — shares the notebook's per-agent kv store ('todo:'+agentId)
+  makeQuestTools({ store: questStore, clock: { now: () => Date.now() } }).register(registry);   // QUEST V2 §B: quest.update (progress/attest/mint) — memory capability, granted by the notebook object (CAP_REGISTRY)
   // STUDIO (media skills): image_generate / image_analyze use an OpenRouter key when one is available.
   // Gated by a 'studio' object (in the default office below) exactly like web/files; outputs save to the workspace.
   imageTools.register(registry);
@@ -5946,7 +5949,15 @@ async function runOnce(o) {
       preloadedSkillBlock = runtimeSkills.composeLoaded(loaded);
     }
   } catch (_) { /* explicit skill preload must never break a run */ }
-  const sys = (system || '') + runtimeBlock + toolNote + teamNote + manualBlock + summarizeCapabilities(resolved, { surface }) + skillBlock + runtimeSkillBlock + preloadedSkillBlock;   // ground-truth caps: name the object to place instead of promising work it has no tool for
+  // QUEST V2 §B (agent awareness): fold THIS agent's OPEN quests (its own + station-wide) into the prompt so a
+  // TASK run can SEE and ACT on them (via the quest.update tool). This rides the ONE place the final system prompt
+  // is assembled, so it covers EVERY surface identically — browser-composed (`system` arrives verbatim in the run
+  // request) AND server-composed cron/worker runs (`system` arrived pre-withDossier'd). Empty ledger → questBlock
+  // returns '' → withQuests is a strict byte-identical no-op (protects the cron no-op tests). Fail-open: ANY
+  // quest-store read error yields no block, never a broken run. Only task runs (tools available) carry it.
+  let questsBlock = '';
+  try { if (isTask) questsBlock = questBlock(questStore.openForAgent(agentId)); } catch (_) { questsBlock = ''; }
+  const sys = withQuests((system || '') + runtimeBlock + toolNote + teamNote + manualBlock + summarizeCapabilities(resolved, { surface }) + skillBlock + runtimeSkillBlock + preloadedSkillBlock, questsBlock);   // ground-truth caps: name the object to place instead of promising work it has no tool for
   // H1.2: bulletproof resume — if this run arrives with NO prior history (a fresh restart whose browser save was
   // wiped, or any caller that only sent the new directive) AND it names an explicit workstream, seed the
   // conversation from the durable server transcript so the agent remembers the dialogue. Never overrides real

@@ -28,7 +28,7 @@ function station(objsByRoom, assignedRoom) {
 {
   const full = resolveTools('ag', station({ quarters: ['computer', 'notebook'] }, 'quarters'));
   A.ok(full.hasCompute, 'computer grants compute');
-  A.eq(full.tools.slice().sort(), ['notebook.feedback', 'notebook.read', 'notebook.write', 'recall_conversation', 'skill.list', 'skill.manage', 'skill.view', 'skill.write', 'todo', 'widget.set'], 'notebook grants its tools; compute excluded from tools[]');
+  A.eq(full.tools.slice().sort(), ['notebook.feedback', 'notebook.read', 'notebook.write', 'quest.update', 'recall_conversation', 'skill.list', 'skill.manage', 'skill.view', 'skill.write', 'todo', 'widget.set'], 'notebook grants its tools; compute excluded from tools[]');
   A.eq(full.approvalRules['notebook.write'].requiresConsent, false, 'notebook write needs no consent (sandboxed private memory)');
   A.eq(full.approvalRules['notebook.read'].requiresConsent, false, 'read auto-allowed');
 
@@ -38,12 +38,12 @@ function station(objsByRoom, assignedRoom) {
 
   // capability follows the ASSIGNED room, not objects elsewhere
   const split = resolveTools('ag', station({ quarters: ['notebook'], lab: ['computer'] }, 'quarters'));
-  A.eq(split.tools.slice().sort(), ['notebook.feedback', 'notebook.read', 'notebook.write', 'recall_conversation', 'skill.list', 'skill.manage', 'skill.view', 'skill.write', 'todo', 'widget.set'], 'only assigned-room objects grant tools');
+  A.eq(split.tools.slice().sort(), ['notebook.feedback', 'notebook.read', 'notebook.write', 'quest.update', 'recall_conversation', 'skill.list', 'skill.manage', 'skill.view', 'skill.write', 'todo', 'widget.set'], 'only assigned-room objects grant tools');
   A.ok(!split.hasCompute, 'a computer in a DIFFERENT room does not grant compute');
 
   // de-dupe duplicate objects
   const dup = resolveTools('ag', station({ quarters: ['notebook', 'notebook'] }, 'quarters'));
-  A.eq(dup.tools.slice().sort(), ['notebook.feedback', 'notebook.read', 'notebook.write', 'recall_conversation', 'skill.list', 'skill.manage', 'skill.view', 'skill.write', 'todo', 'widget.set'], 'duplicate objects de-duped');
+  A.eq(dup.tools.slice().sort(), ['notebook.feedback', 'notebook.read', 'notebook.write', 'quest.update', 'recall_conversation', 'skill.list', 'skill.manage', 'skill.view', 'skill.write', 'todo', 'widget.set'], 'duplicate objects de-duped');
 
   // unknown agent -> nothing
   A.eq(resolveTools('ghost', station({ quarters: ['computer'] }, 'quarters')).tools.length, 0, 'unknown agent -> no tools');
