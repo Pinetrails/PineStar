@@ -728,6 +728,103 @@ async function journeyBayIdleLife(cdp, A) {
   await evalJS(cdp, `(() => { try { const st=Build.__test__.station(); const p=(st.propsByAgent?st.propsByAgent(${J(PROBE)}):[]).find(pp=>pp.t==='bay'); if (p) st.removeProp(p.id); if (st.setBelt) st.setBelt(6,5,''); return 'cleaned'; } catch(e){ return 'ERR:'+e.message; } })()`).catch(() => {});
 }
 
+/* ═══════════════════════════ J7 — slash INPUT-path truth (the 2026-07-05 ARGS-bug seam) ═══════════════════════════
+ * Andrew's 2026-07-05 escape: an arg-taking slash command typed into the REAL composer ("/model <id>") was
+ * silently SENT TO THE AGENT AS CHAT instead of dispatched as a command — because the command palette
+ * prefix-matched on the WHOLE line, so the space in "/model id" stopped matching any command name, the palette
+ * CLOSED, and Enter fell through to send(). It was fixed (openSlash matches the first token; commandFromLine is
+ * the belt-and-suspenders fallback), but the ONLY coverage was SOURCE-GREP tests (test/slash.palette.test.js +
+ * test/slash.config.test.js do fs.readFileSync + indexOf on chat.js) — they assert strings EXIST, they never
+ * EXECUTE the keydown→openSlash→matchCommands→runSlash→applySlashDirective path. Finding 070e8aca (Perfectionist,
+ * P1). This journey drives the ACTUAL composer DOM (set #chat-input value + fire the real 'input' event + a real
+ * Enter keydown → the real input.onkeydown handler decides) and asserts the RUNTIME behavior a grep can't:
+ *   (a) an arg-taking "/model <id>" DISPATCHES as a command — a local .cmsg.agent line appears with the arg
+ *       intact, the agent config actually took the model value, and the "/model …" line is NOT echoed as a
+ *       .cmsg.user chat row (the exact bug symptom);
+ *   (b) a BARE "/whoami" (no args) dispatches as a command (local .cmsg.agent line, no slash user row);
+ *   (c) the CONVERSE — plain prose with no leading "/" is SENT to the agent as a .cmsg.user chat row (the fix
+ *       must not over-capture ordinary chat into the command path).
+ * Mock boundary is fine: the seam under test is input→dispatch, not model output. */
+async function journeySlashTruth(cdp, A, mock) {
+  try { mock.control.setMode('quick'); mock.control.release(); } catch (_) {}
+  await evalJS(cdp, closeOnly).catch(() => {});
+  await clickSel(cdp, '[data-term="commander"]').catch(() => {});    // open COMMS so #chat-input exists
+  const haveInput = await waitSel(cdp, '#chat-input', 30);
+  A.ok('J7/composer-present', haveInput, haveInput ? '#chat-input mounted' : 'no composer to drive (BLOCKED seam)');
+  if (!haveInput) return;
+
+  // Drive the REAL input seam: value + the real 'input' event (opens/filters the palette on '/') + a real Enter
+  // keydown through input.onkeydown — never call runSlash/send directly (that would bypass the seam under test).
+  const driveLine = (text) => evalJS(cdp, `(() => {
+    const i = document.getElementById('chat-input'); if (!i) return 'NO_INPUT';
+    i.focus(); i.value = ${J(text)};
+    i.dispatchEvent(new Event('input', { bubbles: true }));
+    i.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }));
+    return 'typed';
+  })()`).catch((e) => 'ERR:' + e.message);
+  // Snapshot the transcript: user/agent .cmsg rows + their body text + any user row that STARTS WITH '/'
+  // (the bug's fingerprint) + the input's current value + the live agent-config model.
+  const readRows = () => evalJS(cdp, `(() => {
+    const rows = Array.from(document.querySelectorAll('#chat-log .cmsg'));
+    const textOf = r => { const b = r.querySelector('.body'); return b ? String(b.textContent || '') : ''; };
+    const userTexts  = rows.filter(r => r.classList.contains('user')).map(textOf);
+    const agentTexts = rows.filter(r => r.classList.contains('agent')).map(textOf);
+    let model = '';
+    try { model = (typeof App !== 'undefined' && App.currentAgent && App.currentAgent()) ? (App.currentAgent().model || '') : ''; } catch (_) {}
+    return {
+      userTexts, agentTexts,
+      slashUserRows: userTexts.filter(t => t.trim()[0] === '/'),
+      inputVal: (document.getElementById('chat-input') || {}).value || '',
+      model
+    };
+  })()`).catch(() => ({ userTexts: [], agentTexts: [], slashUserRows: [], inputVal: '', model: '' }));
+  // poll until predicate(rows) OR timeout — dispatch is async when the command is server-backed (awaits /api/slash/dispatch).
+  const until = async (pred, tries = 25) => { let last = await readRows(); for (let i = 0; i < tries; i++) { if (pred(last)) return last; await sleep(160); last = await readRows(); } return last; };
+
+  const stamp = Date.now();
+
+  /* ── (a) ARG-TAKING "/model <id>" — the exact seam that broke. Unique id proves the ARG survived the seam. ── */
+  const MODEL_ARG = 'journey/slash-truth-' + stamp;
+  const before = await readRows();
+  const d1 = await driveLine('/model ' + MODEL_ARG);
+  A.ok('J7/model-line-typed', d1 === 'typed', 'drove "/model ' + MODEL_ARG + '" through #chat-input: ' + d1);
+  const afterModel = await until(r => r.agentTexts.some(t => t.indexOf(MODEL_ARG) >= 0) || r.model === MODEL_ARG);
+  // DISPATCHED AS COMMAND: a local .cmsg.agent line carries the arg intact (modelCommand(args) ran).
+  const cmdEchoed = afterModel.agentTexts.some(t => /model set to/i.test(t) && t.indexOf(MODEL_ARG) >= 0);
+  A.ok('J7/arg-command-dispatched', cmdEchoed, cmdEchoed ? 'local agent line: "Model set to ' + MODEL_ARG + '"' : 'no dispatch confirmation carrying the arg — agentTexts=' + JSON.stringify(afterModel.agentTexts.slice(-3)));
+  // THE ARGUMENT SURVIVED input→dispatch — the precise value the 2026-07-05 bug dropped when it sent the line as chat.
+  A.ok('J7/arg-reached-config', afterModel.model === MODEL_ARG, 'App.currentAgent().model=' + JSON.stringify(afterModel.model) + ' (expected the typed arg)');
+  // NOT SENT AS CHAT: the "/model …" line must NOT appear as a user chat row (the bug's exact symptom).
+  const leakedModel = afterModel.userTexts.filter(t => t.indexOf('/model') >= 0);
+  A.ok('J7/arg-line-not-chat', leakedModel.length === 0, leakedModel.length ? 'REGRESSION: "/model …" echoed as a user chat row: ' + JSON.stringify(leakedModel) : 'no "/model …" user chat row (dispatched, not sent)');
+  // and the composer was consumed (runSlash/handler clears it) — never left the slash line sitting in the box.
+  A.ok('J7/composer-cleared', afterModel.inputVal === '', 'input.value after dispatch = ' + JSON.stringify(afterModel.inputVal));
+
+  /* ── (b) BARE "/whoami" (no args) — dispatches as a command too. ── */
+  const whoBefore = await readRows();
+  const preWho = new Set(whoBefore.agentTexts);
+  const d2 = await driveLine('/whoami');
+  A.ok('J7/whoami-line-typed', d2 === 'typed', 'drove "/whoami": ' + d2);
+  const afterWho = await until(r => r.agentTexts.some(t => !preWho.has(t) && /^you are /i.test(t.trim())));
+  const whoLine = afterWho.agentTexts.some(t => !preWho.has(t) && /^you are /i.test(t.trim()));
+  A.ok('J7/bare-command-dispatched', whoLine, whoLine ? 'new local agent line from /whoami ("You are …")' : 'no /whoami identity line appeared — new agentTexts=' + JSON.stringify(afterWho.agentTexts.filter(t => !preWho.has(t)).slice(-2)));
+  A.ok('J7/no-slash-user-rows', afterWho.slashUserRows.length === 0, afterWho.slashUserRows.length ? 'a slash line leaked as a user chat row: ' + JSON.stringify(afterWho.slashUserRows) : 'no user chat row starts with "/" — every slash line dispatched');
+
+  /* ── (c) CONVERSE — plain prose (no leading "/") is SENT to the agent as a user chat row. ── */
+  const PLAIN = 'journey plain chat ' + stamp + ' no slash here';
+  const d3 = await driveLine(PLAIN);
+  A.ok('J7/plain-line-typed', d3 === 'typed', 'drove plain prose: ' + d3);
+  const afterPlain = await until(r => r.userTexts.some(t => t === PLAIN));
+  const sentAsChat = afterPlain.userTexts.some(t => t === PLAIN);
+  A.ok('J7/plain-text-goes-to-chat', sentAsChat, sentAsChat ? 'plain prose became a .cmsg.user chat row (send path, not command)' : 'plain prose did NOT reach chat — userTexts=' + JSON.stringify(afterPlain.userTexts.slice(-3)));
+  // it still must not have been misread as a command (no NEW slash user row from any of the three drives).
+  A.ok('J7/plain-not-a-command', afterPlain.slashUserRows.length === 0, 'slashUserRows=' + JSON.stringify(afterPlain.slashUserRows));
+
+  // settle: let the plain-chat run complete so the floor is idle for the orchestrator's between-journey reset.
+  try { mock.control.setMode('quick'); mock.control.release(); } catch (_) {}
+  await waitIdle(cdp, 40);
+}
+
 /* ═══════════════════════════ orchestration ═══════════════════════════ */
 async function main() {
   mkdirSync(OUT_DIR, { recursive: true });
@@ -828,6 +925,7 @@ async function main() {
       { id: 'J3', name: 'double-send / rapid-toggle', needs: 'cdp', fn: (A) => journeyDoubleSend(cdp, A, mock, diag) },
       { id: 'J4', name: 'summon→assign→deliverable→OPEN', needs: 'http', fn: (A) => journeyDeliverableOpen(cdp, A, APP_URL.replace(/\/$/, ''), token, mock) },
       { id: 'J6', name: 'bay-bound crew idle life (desk-stuck)', needs: 'cdp', fn: (A) => journeyBayIdleLife(cdp, A) },
+      { id: 'J7', name: 'slash INPUT-path truth (2026-07-05 ARGS-bug seam)', needs: 'cdp', fn: (A) => journeySlashTruth(cdp, A, mock) },
     ];
 
     const suppressed = dismissedFingerprints();   // dismissed/known journey fingerprints (read once)
