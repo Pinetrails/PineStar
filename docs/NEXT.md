@@ -1,5 +1,18 @@
 # NEXT.md — current priorities & task queue
 
+## LANDED 2026-07-08 — SCOUT: recruitment-bay recommendations actually evolve now
+Branch `claude/recruitment-bay-recommendations-52df53` (merge pending): the bay's dynamic
+shelves were wired but starved (client-session one-shot mint, silent rejections, hero-only
+5-sample warm floor, zero topic signal — presets forever). Now: sidecar-owned **interest
+engine** (`sidecar/interests.js` — reason-only topic extraction over real activity, EWMA
+histogram + evidence quotes) + **scout cycle** (`sidecar/scout.js` + index.js post-run hook —
+persisted cadence, drafts agent prospects AND recipes, every attempt in a visible ledger) +
+`/api/scout*` routes + frontend rewire (prospectstore = scout client; SUGGESTED shelf gains
+station-drafted recipe cards; launch telemetry feeds FOR-YOU rank). Signal loosened: all-agent
+tool counting, CALIBRATING_N 5→3. Live-verified on dev seed (restart hydration, both shelves,
+accept/dismiss round-trips, telemetry). OPEN: first real-provider scout cycle unobserved;
+optional nightshift catch-up pass; scout-ledger surfacing in a UI panel.
+
 **The one moving file.** Update it when you land or invalidate an item; don't write a new
 plan doc. Reconciled against trunk `feat/harness-backend` + git log on **2026-07-06 (late night, trunk 7cb221ed)**.
 Verification key: ✅ = grep/log-verified today · ❓ = doc claim, re-verify before building.
