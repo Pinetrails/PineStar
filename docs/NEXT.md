@@ -1,5 +1,48 @@
 # NEXT.md — current priorities & task queue
 
+## LANDED 2026-07-08 (evening) — GAP-AUDIT SPRINT: last-hop fixes on everything shipped today (Fable session) ✅
+
+Six-agent code-verified audit of the day's merges found ONE pattern: every flagship shipped its
+ENGINE but was missing the last hop that delivers user value — and the standing gates were blind
+to all of it (Guardian/qa:ready never ran test:http, where every new system's integration proof
+lives; atlas had zero tiles for the new routes). All fixes MERGED to trunk same evening, full
+ritual per merge (fast + http gates green on trunk after each):
+
+1. **E-STOP durable night-shift halt** (be03e5d0) — escape: `isHalted: () => false` meant beats
+   RESUMED ~45min after E-STOP; now durable `haltedAt` (survives restart), truthful
+   `binding:'halt'`, dial re-write lifts. Escape tests: planner + driver + real-sidecar e2e
+   (nightshift-halt.e2e, in test:http).
+2. **Guardian http-e2e P0 step + atlas sweep** (be03e5d0) — qa:ready now vouches for
+   scout/threads/nightshift/pathtrust integration proofs; 23 new atlas tiles (all 18 new-system
+   routes). OPEN: one behavioral JOURNEY per new system (queued, not claimed).
+3. **Quest V2 completion sweeps** (0b017a70) — audit found only `attest` could ever complete
+   (bindRun 0 callers; prop/fact/artifact unhooked; attest unscoped → spoofable). Now all 4
+   mechanical types complete at real truth points (sidecar/questsweeps.js) + attest enforces
+   openForAgent. OPEN: live-DOM celebration round-trip of a mechanical completion.
+4. **NS-6 thread TURN-IN CARD** (5106e671) — the ledger was a GHOST (no frontend hit
+   /api/threads*; openThreads() forever empty). Now threadstore.js + gold-inset card via the
+   beat arbiter (5th participant, memory>study>arc>trust>thread); LIVE DOM round-trip proven
+   (mined idea → card → KEEP → open thread server-side). "You mentioned X — here's the thread"
+   is now reachable end-to-end.
+5. **Scout honest cold state + WHY grounding + true e2e** (d5c8dcfe) — shelf no longer silently
+   '' when cold (CALIBRATING/n-of-N states from /api/scout truth, CDP-proven); ungroundable WHY
+   rejected; scout.e2e proves the full post-run chain incl. the anti-silent-no-op path. OPEN:
+   draft TTL/interest-decay eviction; scout attempt-ledger panel.
+6. **computer.use focus-truth guard merged off the vine** (04ae3797) — the Spotify
+   screen-puppeteering fix was stranded on a dead branch; landed clean, 100 assertions.
+
+**Audit findings REFUTED (do not re-fix):** morning report IS rendered; autonomous beats can
+never bless a root; event contract clean; guardian lock on trunk; Quest V2 was real-provider
+proven; night-shift timer cross-process lock is BY-DESIGN absent (one-sidecar invariant).
+**NEW QUEUE from the audit (not yet built):** per-new-system journeys (J8+) · NS-9 learning cap
+±0.5 < one confidence step = tie-breaks only, no decline REASON captured, no compounding test ·
+user-understanding SILOS (6 aux-model passes per run-end re-extract the same signal into 5-6
+stores; scout interests duplicated vs browser profile; "declined" in 3 unsynced places — the
+NS-8 unified composer is the fix) · messaging-connectors merge (1555 lines, tested, rotting —
+70-commit divergence) · EL-2 saboteur mutators · .bugloops TTL (GB-27) · workspaceDegraded
+`200 {ok:false}` reads as success to status-only clients (GB-9) · /api/version harness field
+"0.0.0" placeholder · night beats still burn a leash unit on budget-exhausted no-op runs.
+
 ## LANDED 2026-07-08 — GATE BURN-DOWN: qa:ready code side driven to zero (Fable session) ✅
 
 All 4 qa:ready blockers cleared in one afternoon; every "P0" was the QA apparatus, not the
