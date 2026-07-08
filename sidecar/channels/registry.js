@@ -5,8 +5,10 @@
    not in the running app. This module is the missing seam: a small DESCRIPTOR list ({ id, makeAdapter, transport,
    maxMessageLength, env }) plus `wireChannel(descriptor, deps)` that builds the SAME makeChannelHub + the
    descriptor's adapter and returns them connected-ready. One generic path drives every channel through the one
-   real `runOnce`, so adding a channel is a registry row, not a fork. Enterprise surfaces (slack/signal/matrix)
-   are deliberately OUT (off-moat).
+   real `runOnce`, so adding a channel is a registry row, not a fork. 2026-07-08: slack/matrix/signal joined the
+   registry (Andrew's call — every messaging surface a LOCAL-FIRST sidecar can honestly drive, no public webhook).
+   Webhook-only platforms (WhatsApp Cloud API, Messenger, LINE) stay OUT: a 127.0.0.1-bound sidecar cannot
+   receive their pushes, and shipping a connector that can't hear replies would violate truthful telemetry.
 
    The live gateways still need a real token to connect for real — but the registry + wire path is fully testable
    with an injected adapter factory + fake hub, exactly as the per-channel adapter tests already inject transports.
@@ -18,24 +20,40 @@
   const api = factory(
     (typeof require === 'function') ? require('./hub.js') : (root.SK && root.SK.channels && { makeChannelHub: root.SK.channels.hub && root.SK.channels.hub.makeChannelHub }),
     (typeof require === 'function') ? require('./telegram.js') : (root.SK && root.SK.channels && root.SK.channels.telegram),
-    (typeof require === 'function') ? require('./discord.js') : (root.SK && root.SK.channels && root.SK.channels.discord)
+    (typeof require === 'function') ? require('./discord.js') : (root.SK && root.SK.channels && root.SK.channels.discord),
+    (typeof require === 'function') ? require('./slack.js') : (root.SK && root.SK.channels && root.SK.channels.slack),
+    (typeof require === 'function') ? require('./matrix.js') : (root.SK && root.SK.channels && root.SK.channels.matrix),
+    (typeof require === 'function') ? require('./signal.js') : (root.SK && root.SK.channels && root.SK.channels.signal)
   );
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else { root.SK = root.SK || {}; root.SK.channels = root.SK.channels || {}; root.SK.channels.registry = api; }
-})(typeof globalThis !== 'undefined' ? globalThis : this, function (hubMod, tgMod, dcMod) {
+})(typeof globalThis !== 'undefined' ? globalThis : this, function (hubMod, tgMod, dcMod, slMod, mxMod, sgMod) {
   'use strict';
   const makeChannelHubDefault = hubMod && hubMod.makeChannelHub;
 
-  // the two SUPPORTED channels. env names mirror index.js's existing auto-start (token + shared key/model).
+  // the SUPPORTED channels. env names mirror index.js's existing auto-start (token + shared key/model).
+  // `auth` declares what a connect needs beyond provider config, so the host/UI stay data-driven:
+  //   'token' = one secret token; 'token2' = two tokens combined in one secret string (slack xoxb+xapp);
+  //   'endpoint+token' = a non-secret base URL + a secret token (matrix); 'endpoint+account' = a non-secret
+  //   base URL + account id, no secret token at all (signal-cli REST).
   function defaultDescriptors(adapters) {
     const a = adapters || {};
     return [
-      { id: 'telegram', label: 'Telegram', maxMessageLength: 4096,
+      { id: 'telegram', label: 'Telegram', maxMessageLength: 4096, auth: 'token',
         makeAdapter: a.telegram || (tgMod && tgMod.makeTelegramAdapter),
         env: { tokenVar: 'SKYNET_TELEGRAM_TOKEN', keyVar: 'SKYNET_OPENROUTER_KEY', modelVar: 'SKYNET_DEFAULT_MODEL' } },
-      { id: 'discord', label: 'Discord', maxMessageLength: (dcMod && dcMod.MAX_MESSAGE_LENGTH) || 2000,
+      { id: 'discord', label: 'Discord', maxMessageLength: (dcMod && dcMod.MAX_MESSAGE_LENGTH) || 2000, auth: 'token',
         makeAdapter: a.discord || (dcMod && dcMod.makeDiscordAdapter),
-        env: { tokenVar: 'SKYNET_DISCORD_TOKEN', keyVar: 'SKYNET_OPENROUTER_KEY', modelVar: 'SKYNET_DEFAULT_MODEL' } }
+        env: { tokenVar: 'SKYNET_DISCORD_TOKEN', keyVar: 'SKYNET_OPENROUTER_KEY', modelVar: 'SKYNET_DEFAULT_MODEL' } },
+      { id: 'slack', label: 'Slack', maxMessageLength: (slMod && slMod.MAX_MESSAGE_LENGTH) || 4000, auth: 'token2',
+        makeAdapter: a.slack || (slMod && slMod.makeSlackAdapter),
+        env: { tokenVar: 'SKYNET_SLACK_TOKEN', keyVar: 'SKYNET_OPENROUTER_KEY', modelVar: 'SKYNET_DEFAULT_MODEL' } },
+      { id: 'matrix', label: 'Matrix', maxMessageLength: (mxMod && mxMod.MAX_MESSAGE_LENGTH) || 4096, auth: 'endpoint+token',
+        makeAdapter: a.matrix || (mxMod && mxMod.makeMatrixAdapter),
+        env: { tokenVar: 'SKYNET_MATRIX_TOKEN', keyVar: 'SKYNET_OPENROUTER_KEY', modelVar: 'SKYNET_DEFAULT_MODEL' } },
+      { id: 'signal', label: 'Signal', maxMessageLength: (sgMod && sgMod.MAX_MESSAGE_LENGTH) || 4096, auth: 'endpoint+account',
+        makeAdapter: a.signal || (sgMod && sgMod.makeSignalAdapter),
+        env: { keyVar: 'SKYNET_OPENROUTER_KEY', modelVar: 'SKYNET_DEFAULT_MODEL' } }
     ];
   }
 

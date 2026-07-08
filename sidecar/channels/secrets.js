@@ -48,7 +48,9 @@
   'use strict';
 
   // the channels whose records carry secrets; other top-level keys (notifyAutonomous) are never secret.
-  const CHANNEL_IDS = ['telegram', 'discord'];
+  // slack's `token` is the combined "xoxb-… xapp-…" pair (one opaque secret); matrix's is the access token;
+  // signal has no token (endpoint+account are non-secret config) but keeps a row so a provider `key` is stripped.
+  const CHANNEL_IDS = ['telegram', 'discord', 'slack', 'matrix', 'signal'];
   // keychain-IMPORT candidates: a plaintext value here is reported so the shell can adopt it into the keychain.
   const TOKEN_FIELDS = ['token'];
   // EVERY secret field removed from a channel record under keychain mode. `key` is strip-only (the provider API
