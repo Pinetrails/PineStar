@@ -1,5 +1,33 @@
 # NEXT.md — current priorities & task queue
 
+## LANDED 2026-07-08 — GATE BURN-DOWN: qa:ready code side driven to zero (Fable session) ✅
+
+All 4 qa:ready blockers cleared in one afternoon; every "P0" was the QA apparatus, not the
+product (pattern for docs/MISTAKES.md: before fixing "the app", prove the instrument):
+1. **Installed-exe smoke FIRST RUN → GREEN 6/6** (app 0.3.1). Initial BLOCKED was the probe
+   sending `Authorization: Bearer` — sidecar CORS only allows `X-StarNet-Token`, so the
+   packaged cross-origin (tauri.localhost→127.0.0.1) preflight died pre-response. Probe fixed
+   + EL-3 guard (Bearer forbidden in SMOKE_PROBE). Version chain PROVEN correct live
+   (appSource:env). Merged 648d7212.
+2. **Beginner STUCK@first-directive = instrument budget**: awakening is intentionally
+   cinematic (~93s measured to first chip under load) vs unmeasured 60s step budget from
+   runner birth. 60s→180s + stale `.msg`→`.cmsg` probe + lock (budget ≥120s). Post-merge
+   RUN PASS 87.5s/6 steps.
+3. **Guardian wedge = NO cross-process lock** (hourly × watch × manual raced the shared pin
+   worktree + 8940-43 ports → all 4 BLOCKED P0s, all 3 "visual regressions" (within threshold
+   clean — NO re-bless), work-tasks "failure" = overlapping teardown). Fixed: heartbeat
+   lockfile (%TEMP%/starnet-qa-guardian.lock, stale reclaim) + review-clean verdict (all-
+   dismissed red gate ≠ red; BLOCKED never excused) mirrored into journeys.mjs; QA_STATION §2
+   corrected. Guardian findings 10→0.
+4. **J7 slash INPUT-path truth journey** (12 assertions, non-vacuous: reintroduced 7/05 bug →
+   FAIL exit 3) pays Perfectionist 070e8aca — the last open P1. Atlas coverage refs added.
+Ledger: 12 open P0/P1 → **0**. Remaining qa:ready reasons at session end = none code-side
+(fresh guardian stamp on final head pending its cycle). OPEN (non-blocking): packaged
+/api/version `harness:""` blank; desktop exe orphans sidecar node processes on kill (chipped);
+installed exe on 0.3.1 vs v0.3.3 shipped (run the updater = also proves update path).
+**Andrew-only P0s unchanged and now THE critical path:** publish starnet-releases repo,
+updater-key backup, dev-key rotation, 15-min attended playtest. Then RC freeze + 48h soak.
+
 ## LANDED 2026-07-08 — SCOUT: recruitment-bay recommendations actually evolve now
 Branch `claude/recruitment-bay-recommendations-52df53` (merge pending): the bay's dynamic
 shelves were wired but starved (client-session one-shot mint, silent rejections, hero-only
