@@ -79,6 +79,8 @@ const { makeDiagnostics } = require('./diagnostics.js');   // T3.9: pure paste-r
 const memcore = require('./memcore.js');
 const { makeConsentBroker } = require('./permissions.js');
 const { makeGrantManager } = require('./permgrants.js');
+const { makeProjectsStore } = require('./projects-store.js');   // NS-5: known-projects (blessed roots) durable store
+const { makePathTrust } = require('./pathtrust.js');            // NS-5: conversational path-trust guard
 const { makeTelegramAdapter } = require('./channels/telegram.js');
 const { makeChannelStore } = require('./channels/store.js');
 const { makeChannelHub } = require('./channels/hub.js');
@@ -1687,6 +1689,60 @@ function persistAllowlist(nextAllow, nextMeta) {   // throws on failure -> the b
 // is the same fail-closed durable sink the broker's 'always' path uses. `meta` shares grantMeta so the panel's
 // grantedAt provenance survives a round-trip and the broker path stays untouched.
 const grantManager = makeGrantManager({ grantsPermanent, persist: persistAllowlist, meta: grantMeta, now: () => Date.now() });
+
+/* ---- NS-5 CONVERSATIONAL PATH TRUST — blessed project roots the agent may read OUTSIDE its jail ----
+   The AUTHORITY over whether a root is trusted is a standing `path:<normalized-real-root>` grant in the
+   SAME permissions.allow.json the broker uses (so it lists + revokes through /api/permissions with no new
+   surface); the known-projects store below is the durable METADATA/autonomy surface (lastTouchedAt +
+   isGitRepo), keyed by that same normalized root string. Blessing happens ONLY through a watched interactive
+   consent prompt (pathtrust.js enforces the unattended rule); an autonomous run can never bless a new root. */
+const PROJECTS_FILE = path.join(WORKSPACES, 'projects.json');
+function loadProjects() {
+  try {
+    const raw = loadResilient(PROJECTS_FILE, 'projects');
+    const arr = raw && Array.isArray(raw.projects) ? raw.projects : [];
+    return arr.filter(p => p && typeof p.root === 'string' && p.root).map(p => ({
+      root: p.root,
+      displayPath: typeof p.displayPath === 'string' ? p.displayPath : p.root,
+      grantedAt: (typeof p.grantedAt === 'number' && isFinite(p.grantedAt)) ? p.grantedAt : null,
+      lastTouchedAt: (typeof p.lastTouchedAt === 'number' && isFinite(p.lastTouchedAt)) ? p.lastTouchedAt : null,
+      isGitRepo: !!p.isGitRepo
+    }));
+  } catch (e) { return []; }
+}
+const projectRecords = loadProjects();   // process-wide, restored from disk (shared reference the store mutates)
+function persistProjects(recs) { saveResilient(PROJECTS_FILE, { version: 1, projects: recs }); }   // throws on failure
+const projectsStore = makeProjectsStore({ records: projectRecords, persist: persistProjects, now: () => Date.now() });
+// the LIVE blessed-root set = every `path:*` grant, stripped of the prefix. Derived fresh each read so a
+// grant OR a revoke (through /api/permissions) takes effect on the very next fs call with no restart.
+function blessedRoots() { const out = []; for (const k of grantsPermanent) if (k.indexOf('path:') === 0) out.push(k.slice(5)); return out; }
+// record a standing PATH grant + upsert the known-projects metadata. Persist-before-commit (fail-closed), the
+// SAME discipline as the broker's 'always' path: the grant lands in permissions.allow.json (durable authority)
+// BEFORE it enters the in-memory Set; a torn write returns false so pathtrust denies the access.
+function blessProjectRoot(rootReal, meta) {
+  meta = meta || {};
+  const key = 'path:' + rootReal;
+  const at = (typeof meta.now === 'number' && isFinite(meta.now)) ? meta.now : Date.now();
+  if (grantsPermanent.has(key)) { projectsStore.touch(rootReal, at); return true; }
+  const next = Array.from(grantsPermanent); next.push(key);
+  const nextMeta = Object.assign({}, grantMeta, { [key]: { grantedAt: at } });
+  try { persistAllowlist(next, nextMeta); }
+  catch (e) { return false; }              // durable write failed → grant NOT committed, access denied
+  grantsPermanent.add(key);                // commit to the in-memory Set only AFTER the durable write
+  try { projectsStore.upsert(rootReal, { displayPath: rootReal, grantedAt: at, isGitRepo: !!meta.isGitRepo }); }
+  catch (_) { /* metadata upsert is best-effort — the grant (authority) already persisted */ }
+  return true;
+}
+async function projectIsGitRepo(rootReal) { try { await fsp.stat(path.join(rootReal, '.git')); return true; } catch (_) { return false; } }
+// the pure guard core, built ONCE; runOnce binds the per-run surface + prompt when it wires makeFsTools.
+const pathTrustCore = makePathTrust({
+  fsp, pathMod: path,
+  roots: blessedRoots,
+  bless: async (rootReal, m) => blessProjectRoot(rootReal, m),
+  touch: (rootReal, abs) => { try { projectsStore.touch(rootReal, Date.now()); } catch (_) {} },
+  isGitRepoOf: projectIsGitRepo,
+  now: () => Date.now()
+});
 const grantsSession = new Map();           // runId -> Set(dangerKey); cleared when the run ends
 // full-access ("YOLO") blanket grants the user clicks mid-run: per-AGENT (not per-run), in-memory only, so a
 // single click stops the prompts for the rest of this session but RESETS on sidecar restart — never persisted
@@ -3158,6 +3214,7 @@ function dispatchRoute(req, res) {
   if (req.method === 'GET' && req.url === '/api/permissions') return handlePermissionsList(req, res);
   if (req.method === 'POST' && req.url === '/api/permissions/grant') return handlePermissionsGrant(req, res);
   if (req.method === 'POST' && req.url === '/api/permissions/revoke') return handlePermissionsRevoke(req, res);
+  if (req.method === 'GET' && req.url === '/api/projects') return handleProjectsList(req, res);   // NS-5: the known blessed-project roots (autonomy surface)
   if (req.method === 'POST' && req.url === '/api/autonomy/write') return handleAutonomyWrite(req, res);
   // NS-1: the SERVER copy of the dial + a read-only beliefs snapshot (the driver reads ONLY this); the throttled
   // activity beacon (away detection); and the truthful night-shift status telemetry.
@@ -5191,7 +5248,7 @@ async function handleRun(req, res) {
   // dispatch await-pauses on. The browser answers via POST /api/consent (handleConsent), which calls the stored
   // finisher. Fail-closed safety: a disconnect (ac abort) or a CONSENT_TIMEOUT_MS stall auto-DENIES so a forgotten
   // prompt can never hold a billable run open. Settles exactly once.
-  function promptConsent(call, tool) {
+  function askHuman(fields) {
     return new Promise((resolve) => {
       const promptId = crypto.randomUUID();
       let settled = false, timer = null;
@@ -5207,8 +5264,18 @@ async function handleRun(req, res) {
       if (ac.signal.aborted) return finish('deny');
       ac.signal.addEventListener('abort', onAbort, { once: true });
       timer = setTimeout(() => finish('deny'), CONSENT_TIMEOUT_MS);
-      emit('permission.prompt', { promptId, agentId, tool: call.name, scope: (tool && tool.scope) || 'write', argsSummary: consentSummary(call) });
+      emit('permission.prompt', { promptId, agentId, tool: (fields && fields.tool) || 'tool', scope: (fields && fields.scope) || 'write', argsSummary: (fields && fields.argsSummary) || '' });
     });
+  }
+  function promptConsent(call, tool) {
+    return askHuman({ tool: call.name, scope: (tool && tool.scope) || 'write', argsSummary: consentSummary(call) });
+  }
+  // NS-5: the "work in <root>? always/once/no" channel — the SAME permission.prompt mechanism, so the browser's
+  // existing consent card answers it (Always = record a standing path grant; Approve once = this access only;
+  // Deny = refuse). tool:'path.trust' lets the card phrase it as a folder-trust ask; the resolved decision string
+  // routes back to pathtrust.js, NOT the capability broker (a directory bless is never a capability:scope grant).
+  function promptPathTrust(proposedRoot, info) {
+    return askHuman({ tool: 'path.trust', scope: (info && info.scope) || 'read', argsSummary: String(proposedRoot || '') });
   }
 
   // THE LIVE SUMMON CHANNEL (mirrors promptConsent): the orchestrator's team.summon tool calls ctx.summon(spec);
@@ -5248,7 +5315,8 @@ async function handleRun(req, res) {
     await runOnce({
       key, model, system, messages, agentId, isTask, provider: runProvider, baseUrl, reasoningEffort, fallbackModels, fallbackProviders,
       emit, signal: ac.signal, runId, trigger: 'directive',
-      surface: 'interactive', prompt: promptConsent, summon: summonRequest,   // team.summon → live summonAgent() round-trip
+      surface: 'interactive', prompt: promptConsent, pathPrompt: promptPathTrust, summon: summonRequest,   // team.summon → live summonAgent() round-trip; pathPrompt → NS-5 "work in <root>?" bless
+
       streamId,        // M-mem.2b: scope this run's working memory + recall boost to the active workstream
       preloadSkills,
       extraObjects,    // a placed WORKBENCH -> shell.exec + verify.run, additive on the default office
@@ -5306,6 +5374,7 @@ async function runOnce(o) {
   const streamId = o.streamId || null;   // M-mem.2b (browser run only; the headless hub omits it → global memory)
   const surface = o.surface || 'interactive';
   const prompt = o.prompt;
+  const pathPrompt = o.pathPrompt;   // NS-5: the live "work in <root>? always/once/no" channel (browser runs only); undefined for headless/autonomous → path-trust hard-denies a new root
   const summon = o.summon;   // the live team.summon round-trip closure (browser runs only); undefined for headless/workers → tool degrades gracefully
   const trigger = o.trigger || 'directive';
   // P1 (WIRING_AUDIT slice 2): a server-initiated run (telegram/routed/manual-cron) has NO browser-local copy of its
@@ -5420,7 +5489,11 @@ async function runOnce(o) {
   // reports "unavailable" honestly (never a success-shaped stub). Pass the dep only when usable.
   makeBrowserTools({ vision: imageTools.hasVision ? imageTools.browserVision : null }).register(registry);   // browser.* automation: exposed only through the web/dish capability
   makeDesktopTools({}).register(registry);   // desktop.open: open URL/app on the user's REAL screen (visible), web/dish capability
-  makeFsTools({ fsp, pathMod: path, root: WORKSPACES, environment: executionEnvironment, limits: { writeBytes: 1 << 20, readReturn: 24000 }, redact }).register(registry);   // redact: scrub secrets out of surfaced fs.search lines (§5.6)
+  // NS-5: bind the per-run path-trust guard — the ONE way an fs call may reach outside the jail, mediated
+  // against the station's blessed project roots. surface + pathPrompt are per-run: an autonomous run passes
+  // no prompt, so pathTrustCore hard-denies any un-blessed outside path (the unattended rule).
+  const runPathTrust = (abs, o2) => pathTrustCore.guard(abs, { scope: (o2 && o2.scope) || 'read', surface: surface, prompt: pathPrompt || null, agentId: (o2 && o2.agentId) || agentId });
+  makeFsTools({ fsp, pathMod: path, root: WORKSPACES, environment: executionEnvironment, limits: { writeBytes: 1 << 20, readReturn: 24000 }, redact, pathTrust: runPathTrust }).register(registry);   // redact: scrub secrets out of surfaced fs.search lines (§5.6)
   makeNotebookTools({ store: notebookStore, clock: { now: () => Date.now() }, redact, rank, nextTrust: memcore.nextTrust }).register(registry);   // §5.6: scrub secrets at the write boundary; rank: explicit read shares auto-recall's relevance order; nextTrust: notebook.feedback rating fold
   widgetTools.register(registry);   // WIDGET RAILS Phase 2: widget.set — agent-fed rail readouts (memory capability: sandboxed local write, no consent, no network)
   makeRecallTool({ transcriptStore }).register(registry);   // H1.3: recall_conversation — agent searches its own past dialogue (transcriptstore); joins the NOTEBOOK (memory) capability
@@ -6074,6 +6147,18 @@ async function handlePermissionsRevoke(req, res) {
   const r = grantManager.revoke(body && body.key);
   res.writeHead(r.ok ? 200 : 400, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
   res.end(JSON.stringify(r));
+}
+
+// GET /api/projects — NS-5: the known-projects store (every folder blessed as a trusted project root), the
+// future autonomy surface (night shift only ever revisits blessed roots; that consumption is NS-5c). Each row
+// carries the metadata (displayPath, grantedAt, lastTouchedAt, isGitRepo) PLUS a live-joined `blessed` flag:
+// the standing `path:<root>` grant is the authority, so a revoked-but-remembered root truthfully reports
+// blessed:false rather than the store silently implying trust it no longer has. Token-gated like every /api route.
+function handleProjectsList(req, res) {
+  const snap = projectsStore.snapshot();
+  const projects = snap.projects.map(p => Object.assign({}, p, { blessed: grantsPermanent.has('path:' + p.root) }));
+  res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify({ projects: projects }));
 }
 
 // POST /api/autonomy/write { agentId?, path, content } — autonomy Stage B / B2. Deterministically write a PRE-VETTED
