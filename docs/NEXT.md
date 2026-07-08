@@ -339,6 +339,28 @@ promise?" (sibling of "where's its UI?").
     start/browser mode (packaged desktop sets STARNET_APP_VERSION + tauri origin). If he was
     IN the installed exe, that's an origin-detection bug worth a look on a repro.
 
+## EL-10 · ESCAPE 2026-07-08 (Andrew, post-0.4.0 install): ChatGPT OAuth died + settings LIED "SIGNED IN" + zero recovery UI — fixes IN FLIGHT
+
+First message after the 0.4.0 update: "ChatGPT sign-in expired… refresh token already consumed
+by another client." Three compounding defects, none caught by any gate:
+1. **Root cause = orphan sidecars** (the chip previously classed cosmetic — now P0): 3 stale
+   node.exe sidecars were alive pre-install, all sharing the codex token file; OAuth refresh
+   ROTATION means they consume each other's tokens. Violates one-sidecar-per-WORKSPACES.
+2. **Settings→Providers asserted "● SIGNED IN · 1 key" while the token was dead** (sidecar knew
+   — it had just errored the run) and the CHATGPT row renders NO actions (no re-sign-in, no
+   disconnect; key providers get UPDATE/REMOVE). Truthful-telemetry violation in the flagship
+   settings panel.
+3. **Recovery engine existed, unreachable**: /api/auth/codex/start|poll|logout + a full sign-in
+   UI exist — mounted ONLY in the new-agent brain screen. Error card offers only ADD A KEY.
+RECOVERED live same session by driving the device flow via CDP through the installed app
+(connected:true, persistError:""). FIXES in flight (2 lanes): (a) honest expired status +
+RE-SIGN-IN/DISCONNECT row actions + error-card RECONNECT deep link, EL-3 tests; (b) main.rs
+boot-time reap of orphaned bundled-node processes (fail-open, install-path-scoped).
+COVERAGE GAP TO CLOSE (the meta-lesson): NO gate drives a provider AUTH LIFECYCLE
+(sign-in → token death → in-UI recovery). Queue a journey/e2e for it (rides the same lane as
+the queued per-system journeys). NOTE: the main.rs fix reaches Andrew's install only at the
+NEXT desktop build.
+
 ## Ready Gate · RC Soak · Dogfood — process-fix wave 2 (added 2026-07-07, Fable session)
 
 **Why (session audit 2026-07-07):** the EL loop fixed *detection* but not the *repeat*: (a) the
