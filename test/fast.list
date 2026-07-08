@@ -194,6 +194,7 @@ test/autonomy-write.test.js
 test/autonotify.test.js
 test/permgrants.test.js
 test/projects-store.test.js
+test/projectbless.test.js
 test/pathtrust.test.js
 test/permpanel.test.js
 test/permissionsstore.test.js
@@ -233,6 +234,7 @@ test/cron.oneshot.test.js
 test/cron.run-now.test.js
 test/routine-tools.test.js
 test/workstreams.test.js
+test/projects-view.test.js
 test/prepare-node.test.js
 test/summon.id.test.js
 test/subagents.test.js

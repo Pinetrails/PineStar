@@ -266,8 +266,9 @@
     <ul id="crew"></ul>
     <div id="crew-sum"></div>
     <div id="ws-wrap">
-      <div class="ws-head">▮ WORKSTREAMS<span class="ws-head-acts"><button id="ws-archived" title="show archived sessions" hidden>ARCHIVED</button><button id="ws-new" title="start a new workstream">+ NEW</button></span></div>
+      <div class="ws-head"><span class="ws-view" role="tablist" aria-label="rail view"><button id="ws-tab-sessions" class="ws-tab on" role="tab" aria-selected="true" title="your conversations">SESSIONS</button><button id="ws-tab-projects" class="ws-tab" role="tab" aria-selected="false" title="trusted project folders">PROJECTS</button></span><span class="ws-head-acts"><button id="ws-archived" title="show archived sessions" hidden>ARCHIVED</button><button id="ws-new" title="start a new workstream">+ NEW</button><button id="ws-addproject" title="bless a folder as a trusted project" hidden>+ ADD</button></span></div>
       <ul id="workstreams"></ul>
+      <ul id="projects" hidden></ul>
     </div>
   </aside>
 
@@ -484,6 +485,7 @@
 <script src="app/armconfirm.js"></script><!-- UX Wave-0: reusable 2-step arm/confirm helper (opt-in; existing call sites unchanged) -->
 <script src="app/agentid.js"></script>
 <script src="app/workstreams.js"></script>
+<script src="app/projects.js"></script>
 <script src="app/channels.js"></script>
 <script src="app/personas.js"></script>
 <script>
