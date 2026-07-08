@@ -1093,25 +1093,55 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
    walk cycle big enough to actually tell a bear from a capybara before committing. */
 .connect-panel { max-height: 96vh; overflow-y: auto; }   /* desktop console: a touch taller cap so the two-column body lands without a scrollbar */
 
-/* ===== CREATE YOUR OVERSEER (v3) — hero pod left, config right ===== */
-.ov-panel { max-width: 980px; }
+/* ===== CREATE YOUR OVERSEER (v4) — a FULL-SCREEN console: hero pod | identity | brain =====
+   The genesis moment owns the whole display. Three numbered columns read left→right as the three
+   decisions: 01 APPEARANCE · 02 IDENTITY · 03 THE BRAIN (the only required one, beside WAKE).
+   The forward-version gate (#screen-future) keeps the old centered 980px card — scoped below. */
+#screen-connect.active { padding: 14px; }
+#screen-connect .ov-panel {
+  max-width: 1780px; width: 100%; height: 100%; max-height: none;
+  display: flex; flex-direction: column; margin: 0 auto;
+}
+#screen-connect .ov-grid { flex: 1; min-height: 0; overflow-y: auto; }
+#screen-future .ov-panel { max-width: 980px; align-self: center; margin: auto; }
 .ov-head { padding: 12px 22px 0; }
 .ov-title-row { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; margin-top: 8px; }
 .ov-title-row h2 { margin: 0; }
 .ov-sub { color: var(--ph-dim); font-size: 14px; letter-spacing: .4px; }
 .ov-sub b { color: var(--ph-bright); }
 
-.ov-grid { display: grid; grid-template-columns: 414px 1fr; }
+.ov-grid {
+  display: grid; grid-template-columns: minmax(340px, 430px) 1fr 1fr;
+  grid-template-areas: "hero id brain";
+}
 .ov-hero {
-  position: relative; padding: 18px 22px 16px; border-right: 1px solid var(--ph-faint);
+  grid-area: hero; display: flex; flex-direction: column;
+  position: relative; padding: 14px 22px 16px; border-right: 1px solid var(--ph-faint);
   background: radial-gradient(ellipse 90% 60% at 50% 22%, var(--ph-glow2), transparent 62%);
 }
+.ov-col-id { grid-area: id; border-right: 1px solid var(--ph-faint); }
+.ov-col-brain { grid-area: brain; display: flex; flex-direction: column; }
+.ov-col-brain .ov-field-brain { flex: 1; }
+
+/* numbered step heads — the eye's rail across the three columns */
+.ov-step {
+  display: flex; align-items: center; gap: 9px; margin: 0 0 10px;
+  color: var(--ph); letter-spacing: 2px; font-size: 16px; text-transform: uppercase;
+  text-shadow: 0 0 8px var(--ph-glow2); flex-wrap: wrap;
+}
+.ov-step b {
+  color: var(--ink); background: var(--ph); padding: 0 7px; letter-spacing: 1px;
+  text-shadow: none; font-weight: normal;
+}
+.ov-step .dim { font-size: 13px; letter-spacing: .4px; text-transform: none; }
+.ov-step::after { content: ''; flex: 1; min-width: 12px; height: 0; border-top: 1px dashed var(--ph-faint); }
+.ov-step .ov-req { order: 9; }   /* the REQUIRED tag rides at the rule's far end */
 .ov-leadtag {
   display: inline-flex; align-items: center; gap: 7px; color: var(--gold); font-size: 12px; letter-spacing: 2px;
   border: 1px solid var(--ph-dim); border-radius: 20px; padding: 2px 11px; margin-bottom: 12px; background: rgba(var(--ph-rgb),.05);
 }
 .ov-pod {
-  position: relative; height: 208px; border: 1px solid var(--ph-dim); border-radius: 8px; overflow: hidden;
+  position: relative; flex: 1 1 auto; min-height: 208px; border: 1px solid var(--ph-dim); border-radius: 8px; overflow: hidden;
   background: radial-gradient(ellipse 75% 60% at 50% 52%, var(--ph-glow2), transparent 60%), #060403;
   box-shadow: inset 0 0 60px rgba(0,0,0,.9), 0 0 0 1px rgba(0,0,0,.8), 0 0 24px var(--ph-glow2);
   display: flex; flex-direction: column; align-items: center; justify-content: flex-end;
@@ -1119,7 +1149,7 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 .ov-pod::before { content: ""; position: absolute; inset: 0; background: repeating-linear-gradient(0deg, transparent 0 22px, rgba(var(--ph-rgb),.04) 22px 23px); pointer-events: none; }
 .ov-stage { margin: 0 0 20px; display: flex; align-items: flex-end; justify-content: center; z-index: 1; }
 .ov-stage-frame { display: flex; align-items: flex-end; justify-content: center; filter: drop-shadow(0 0 14px var(--ph-glow)); }
-.ov-stage-frame img { height: 136px; width: auto; image-rendering: pixelated; image-rendering: crisp-edges; }
+.ov-stage-frame img { height: clamp(136px, 26vh, 260px); width: auto; image-rendering: pixelated; image-rendering: crisp-edges; }
 .ov-platform { position: absolute; bottom: 16px; width: 150px; height: 14px; border-radius: 50%; background: radial-gradient(ellipse, var(--ph-glow), transparent 70%); opacity: .55; }
 
 .ov-nameplate { margin-top: 12px; text-align: center; }
@@ -1196,9 +1226,51 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 input.field-locked { opacity: .55; filter: none; cursor: not-allowed; background: #0a0805; }
 #screen-connect.recovery .ov-leadtag { opacity: .5; }
 
+/* footer-resident validation: sits BESIDE the WAKE button it explains */
+.ov-actions .msg { margin: 0; text-align: right; max-width: 520px; }
+.ov-actions .msg:empty { min-height: 0; }
+
+/* the MORE reveal on the provider row — dashed, quieter than a real provider chip */
+.prov-more {
+  font-family: inherit; font-size: 14px; color: var(--ph-dim); background: none;
+  border: 2px dashed var(--ph-faint); padding: 6px 12px; cursor: pointer;
+  letter-spacing: 1px; text-transform: uppercase; line-height: 1;
+}
+.prov-more:hover { color: var(--ph); border-color: var(--ph-dim); }
+.provider-row.collapsed .prov.tail { display: none; }
+
+/* short displays (720p-class windows): tighten the vertical rhythm so all three columns land
+   without the grid scrolling — the genesis screen should never need a scrollbar to see WAKE */
+@media (max-height: 800px) {
+  .ov-cfg { padding: 10px 18px 12px; }
+  .ov-hero { padding: 10px 18px 12px; }
+  .ov-field { margin-bottom: 9px; }
+  .ov-step { margin-bottom: 7px; }
+  .ov-pod { min-height: 148px; }
+  .ov-np-name { font-size: 24px; }
+  .ov-leadtag { margin-bottom: 8px; }
+  .vp-quote { font-size: 15px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .ov-crewnote { display: none; }   /* the approval cards' own descriptions carry the meaning on short displays */
+  .byok-note { line-height: 1.2; }
+  .ov-brain { padding: 8px 10px; }
+  .ov-crewnote, .ov-brain-lead { line-height: 1.2; }
+  .ov-approve .ov-card { padding: 8px 11px 7px; }
+  .ov-foot { padding: 8px 22px; }
+  #screen-connect input[type=text], #screen-connect input[type=password], #screen-connect input:not([type]) { padding: 5px 10px; font-size: 18px; }
+  .ov-vpreview, .ov-vtune { margin-top: 5px; }
+  .ov-cfg label { margin: 6px 0 3px; }
+}
+
+@media (max-width: 1240px) {
+  .ov-grid { grid-template-columns: minmax(320px, 400px) 1fr; grid-template-areas: "hero id" "brain brain"; }
+  .ov-hero { border-bottom: 1px solid var(--ph-faint); }
+  .ov-col-id { border-right: none; }
+  .ov-col-brain { border-top: 1px solid var(--ph-faint); }
+}
 @media (max-width: 900px) {
-  .ov-grid { grid-template-columns: 1fr; }
+  .ov-grid { grid-template-columns: 1fr; grid-template-areas: "hero" "id" "brain"; }
   .ov-hero { border-right: none; border-bottom: 1px solid var(--ph-faint); }
+  .ov-col-brain { border-top: none; }
   .ov-cards { grid-template-columns: 1fr 1fr; }
 }
 .skin-section { display: flex; gap: 12px; align-items: stretch; }

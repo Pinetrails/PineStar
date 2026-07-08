@@ -1250,9 +1250,25 @@ const App = (() => {
   // 400-rejected by the backend, so we never hardcode the menu when we can discover it.
   const CODEX_MODELS = ['gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini', 'gpt-5.3-codex-spark'];
 
+  // fold/unfold the provider row's long tail. Expanding never hides the active pick; collapsing while a
+  // tail provider is selected is refused (the selected chip must stay visible — no phantom selection).
+  function setProviderRowExpanded(expand) {
+    const row = document.querySelector('.provider-row'), more = el('prov-more');
+    if (!row || !more) return;
+    if (!expand) {
+      const selBtn = row.querySelector('.prov.sel');
+      if (selBtn && selBtn.classList.contains('tail')) expand = true;
+    }
+    row.classList.toggle('collapsed', !expand);
+    more.setAttribute('aria-expanded', String(expand));
+    more.textContent = expand ? '－ FEWER' : '＋ ' + row.querySelectorAll('.prov.tail').length + ' MORE';
+  }
+
   function selectProviderUI(p) {
     pickedProvider = normalizeProviderId(p);
     document.querySelectorAll('.provider-row .prov').forEach(b => b.classList.toggle('sel', b.dataset.prov === pickedProvider));
+    // a saved/selected tail provider must never be invisibly selected behind the fold
+    { const sb = document.querySelector('.provider-row .prov.sel'); if (sb && sb.classList.contains('tail')) setProviderRowExpanded(true); }
     const isCodex = pickedProvider === 'codex';
     const keyBlock = el('key-block'), keyInput = el('in-key');
     const baseBlock = el('base-url-block'), baseInput = el('in-base-url');
@@ -1563,6 +1579,14 @@ const App = (() => {
     wireAdvancedToggle();
     // provider toggle + ChatGPT sign-in wiring; selectProviderUI() also loads the right model catalog.
     document.querySelectorAll('.provider-row .prov').forEach(b => { b.onclick = () => { SFX.click(); selectProviderUI(b.dataset.prov); }; });
+    // the long-tail providers start folded behind ＋ MORE so a first-run user faces 6 chips, not 15.
+    // selectProviderUI() unfolds the row itself whenever the active provider lives in the tail.
+    const provRow = document.querySelector('.provider-row'), provMore = el('prov-more');
+    if (provRow && provMore) {
+      provRow.classList.add('collapsed');
+      provMore.setAttribute('aria-expanded', 'false');
+      provMore.onclick = () => { SFX.click(); setProviderRowExpanded(provRow.classList.contains('collapsed')); };
+    }
     el('btn-codex-signin').onclick = startCodexSignIn;
     el('btn-codex-logout').onclick = codexLogout;
     // RESUME/recovery honours the agent's saved provider; a FRESH create screen leads with the beginner-first
@@ -1580,6 +1604,9 @@ const App = (() => {
     // EXPORT is only meaningful when there's a saved agent to back up — surface it in RESUME mode (the title
     // screen that used to host it is gone), hide it on a fresh first run where there's nothing yet.
     const exp = el('btn-export'); if (exp) exp.classList.toggle('hidden', !recovery);
+    // BACK only exists in RESUME (it re-runs auto-resume). On a fresh first run the create screen is the
+    // root — a dead BACK button that does nothing only teaches "buttons here may not work". Hide it.
+    const back = el('btn-back'); if (back) back.classList.toggle('hidden', !recovery);
     const banner = el('cc-recovery');
     const title = el('cc-title'), sub = el('cc-sub'), mode = el('cc-mode');
     const wake = el('btn-wake');

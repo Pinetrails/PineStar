@@ -72,8 +72,9 @@
 
     <div class="ov-grid">
 
-      <!-- LEFT — THE HERO: the agent in its genesis pod -->
+      <!-- COLUMN 1 — THE HERO: the agent in its genesis pod (appearance) -->
       <div class="ov-hero">
+        <div class="ov-step"><b>01</b> APPEARANCE <span class="dim">— pick a face</span></div>
         <span class="ov-leadtag">◆ AGENT 01 · YOUR ORCHESTRATING LEAD</span>
         <div class="ov-pod">
           <figure class="ov-stage" aria-live="polite">
@@ -91,12 +92,13 @@
         <div class="ov-pickrow"><span class="ov-pick-lab">SKIN</span><div id="skin-picker" class="skin-picker ov-skins"></div></div>
       </div>
 
-      <!-- RIGHT — THE CONFIG: name · personality · approval · brain — HOOK-FIRST order: the fun, zero-friction
-           identity choices come first so the user invests before they hit the key/model block (the highest-friction
-           step), which sits LAST, directly above the WAKE button it feeds. -->
-      <div class="ov-cfg">
+      <!-- COLUMN 2 — IDENTITY & CONDUCT: name · personality · approval — HOOK-FIRST order: the fun,
+           zero-friction identity choices come first so the user invests before they hit the key/model
+           column (the highest-friction step), which sits LAST, next to the WAKE button it feeds. -->
+      <div class="ov-cfg ov-col-id">
+        <div class="ov-step"><b>02</b> IDENTITY <span class="dim">— name it, give it a manner</span></div>
         <div class="ov-field">
-          <label>OVERSEER NAME</label>
+          <label>OVERSEER NAME <span class="dim">— optional; leave blank and it mints its own codename</span></label>
           <input id="in-name" class="ov-nm-in" maxlength="18" placeholder="name your overseer" autocomplete="off" spellcheck="false">
         </div>
 
@@ -123,9 +125,13 @@
           <div id="approval-picker" class="ov-cards ov-approve" role="group" aria-label="Approval mode"></div>
           <div class="ov-crewnote">the consent gate is real — <b>FULL ACCESS</b> skips the prompts, but a hard safety floor still blocks the most dangerous actions.</div>
         </div>
+      </div>
 
+      <!-- COLUMN 3 — THE BRAIN: the only REQUIRED step; sits last, beside the WAKE it feeds. -->
+      <div class="ov-cfg ov-col-brain">
+        <div class="ov-step"><b>03</b> THE BRAIN <span class="ov-req">REQUIRED</span></div>
         <div class="ov-field ov-field-brain">
-          <label>THE BRAIN <span class="dim">— the model that powers its mind</span></label>
+          <label>CONNECT A MIND <span class="dim">— the model that powers it; everything above is re-editable, this one it needs to wake</span></label>
           <!-- BEGINNER FUNNEL: lead with the no-API-key path. A ChatGPT Plus/Pro login (Codex OAuth) needs
                no key at all, so it's the recommended default and sits first; BYOK (OpenRouter etc.) stays a
                fully visible one-click alternative for anyone who already has a key. -->
@@ -137,16 +143,19 @@
               <button class="prov" data-prov="openai">OPENAI</button>
               <button class="prov" data-prov="anthropic">ANTHROPIC</button>
               <button class="prov" data-prov="gemini">GEMINI</button>
-              <button class="prov" data-prov="xai">XAI</button>
-              <button class="prov" data-prov="groq">GROQ</button>
-              <button class="prov" data-prov="mistral">MISTRAL</button>
-              <button class="prov" data-prov="deepseek">DEEPSEEK</button>
-              <button class="prov" data-prov="together">TOGETHER</button>
-              <button class="prov" data-prov="fireworks">FIREWORKS</button>
-              <button class="prov" data-prov="perplexity">PERPLEXITY</button>
-              <button class="prov" data-prov="cerebras">CEREBRAS</button>
               <button class="prov" data-prov="ollama">OLLAMA</button>
-              <button class="prov" data-prov="custom">CUSTOM</button>
+              <!-- the long tail hides behind MORE so a first-run user faces 6 choices, not 15. All buttons
+                   stay in the DOM (wiring untouched); app.js expands the row when a tail provider is saved. -->
+              <button class="prov tail" data-prov="xai">XAI</button>
+              <button class="prov tail" data-prov="groq">GROQ</button>
+              <button class="prov tail" data-prov="mistral">MISTRAL</button>
+              <button class="prov tail" data-prov="deepseek">DEEPSEEK</button>
+              <button class="prov tail" data-prov="together">TOGETHER</button>
+              <button class="prov tail" data-prov="fireworks">FIREWORKS</button>
+              <button class="prov tail" data-prov="perplexity">PERPLEXITY</button>
+              <button class="prov tail" data-prov="cerebras">CEREBRAS</button>
+              <button class="prov tail" data-prov="custom">CUSTOM</button>
+              <button type="button" id="prov-more" class="prov-more" aria-expanded="false">＋ 9 MORE</button>
             </div>
 
             <div id="key-block">
@@ -182,7 +191,6 @@
       </div>
     </div>
 
-    <div id="connect-msg" class="msg"></div>
     <div class="ov-foot">
       <div class="ov-foot-data">
         <span class="ov-foot-cap">＋ everything here is re-editable later in the Commander Dossier</span>
@@ -195,6 +203,9 @@
         <span id="data-status" class="title-status"></span>
       </div>
       <div class="connect-actions ov-actions">
+        <!-- validation/status lives BESIDE the button that raises it, so "sign in first" never
+             renders half a screen away from WAKE on the full-screen layout -->
+        <div id="connect-msg" class="msg"></div>
         <button id="btn-back" class="btn">‹ BACK</button>
         <button id="btn-wake" class="btn-xl">⏼ WAKE OVERSEER ▸</button>
       </div>
