@@ -108,6 +108,8 @@ const { makeKeyedMutex, readJsonResilient, writeJsonResilient, makeDurableJsonSt
 const { makeWidgetTools } = require('./tools/builtin/widgets.js'); // WIDGET RAILS Phase 2: widget.set — agent-fed readouts for the chrome rails (polled via GET /api/widgets)
 const { makeMemoryStore, resetAgentMemory, restoreDeclined } = require('./memory-store.js'); // durable notebook:/todo:/declined: sibling stores
 const { makeWorkshopStore } = require('./workshop-store.js'); // durable per-agent away-workshop grant + backlog + discard denylist
+const { makeThreadsStore } = require('./threads-store.js');   // NS-6: durable THREAD LEDGER (ideas raised but never acted on)
+const threadmine = require('./threadmine.js');                // NS-6: pure post-run thread-mining producer (reflect/study mold)
 const { tailLines, loadBounded, rotateIfLarge } = require('./logbound.js'); // P3: bounded boot-load + size rotation for the append-only JSONL logs
 const { makeCronLock } = require('./cron-lock.js');         // G4.3: cross-process exactly-once advisory lock (O_EXCL+pid:nonce+stale-break)
 const { withDossier } = require('./dossierinject.js');     // Phase C: fold the Commander dossier into server-composed (cron) personas
@@ -1014,6 +1016,14 @@ const workshopStore = makeWorkshopStore({
   warn: (...args) => console.warn.apply(console, args)
 });
 function workshopOf(agentId) { try { return workshopStore.hasGrant(String(agentId || '')); } catch (_) { return false; } }
+// NS-6: the durable THREAD LEDGER (station-global, like the dossier/goal arc — the Commander's un-acted-on ideas,
+// consumed by the single night-shift persona). Same durable+recovery discipline as workshopStore/notebookStore.
+const threadsStore = makeThreadsStore({
+  fs: fs, path: path, workspaces: WORKSPACES, writeDurable: writeFileDurable,
+  onRecover: (key, file) => console.warn('[threads] recovered ' + file + ' from .bak last-known-good after a torn/corrupt main.'),
+  onCorrupt: (key, file) => quarantineCorrupt(file, 'threads'),
+  warn: (...args) => console.warn.apply(console, args)
+});
 // W7 — a shell opener that hands a REAL absolute PATH to the OS default app (Start-Process / open / xdg-open).
 // REUSES desktop.js's makeShellOpener (the same launcher desktop.open uses) rather than rolling a new spawn: for a
 // file we deliberately DON'T classify/assert-url — the path is already jail-proven by resolveInside before we call
@@ -1506,6 +1516,67 @@ async function runStudy(o) {
       // (a frozen event it already listens to), so the shared/events.js contract stays untouched.
     }
   } catch (e) { console.warn('[study] pass failed:', (e && e.message) || e); }
+  finally {
+    clearTimeout(timer);
+    if (usd) { try { ledger.record({ runId, agentId, turns: 0, usd, tokens, model: model || '', unmetered }); } catch (_) {} }
+  }
+}
+
+/* ---- NS-6: post-run THREAD MINING -> Keep/Edit/Discard turn-in (reflect/study mold) ----
+   A finished TASK run may have floated ideas the Commander never acted on. This aux pass (same isTask/done/salience
+   gate as reflection + study, its OWN cooldown) mines those "threads" via the aux model, applies the grounding veto
+   (a verbatim evidence quote that must actually appear in the conversation) + fingerprint dedup vs the LIVE ledger
+   AND the permanent declined denylist, and STASHES the survivors for turn-in. Nothing becomes an open thread until
+   the Commander KEEPS it (POST /api/threads/turnin) — stash, not auto-commit (the memory/study law). Fail-open:
+   a failed mine never touches the run. */
+const THREAD_MINE_TIMEOUT_MS = num(process.env.SKYNET_THREAD_MINE_TIMEOUT_MS, 45000);
+const THREAD_MINE_COOLDOWN_MS = num(process.env.SKYNET_THREAD_MINE_COOLDOWN_MS, 20 * 60 * 1000); // rarer than reflection: at most one mine per agent per ~20min
+const THREAD_STASH_CAP = 200;
+const threadsByRun = new Map();        // runId -> { agentId, runId, createdAt, proposals:[{id,title,spec,fingerprint,sourceRef}] }
+const latestThreadRun = new Map();     // agentId -> newest pending thread-mine runId (fetch fallback when runId unknown)
+const lastThreadMineAt = new Map();    // agentId -> ts of the last mine we fired (the cooldown gate)
+const threadMiningNow = new Set();     // agentIds with a mine in flight — closes the gap before lastThreadMineAt is armed
+function stashThreads(agentId, runId, proposals) {
+  threadsByRun.set(runId, { agentId, runId, createdAt: Date.now(), proposals });
+  latestThreadRun.set(agentId, runId);
+  while (threadsByRun.size > THREAD_STASH_CAP) { const k = threadsByRun.keys().next().value; threadsByRun.delete(k); }
+}
+// fire-and-forget; never throws. Own abort signal + timeout, exactly like runStudy.
+async function runThreadMine(o) {
+  const { agentId, runId, messages, streamId, provider, model, cost } = o;
+  const unmetered = !!(o && o.unmetered);
+  const ac = new AbortController();
+  const timer = setTimeout(() => { try { ac.abort(); } catch (_) {} }, THREAD_MINE_TIMEOUT_MS);
+  let usd = 0, tokens = 0;
+  const propose = async (prompt) => {
+    const req = { model, stream: true, signal: ac.signal, messages: [
+      { role: 'system', content: 'You surface ideas the Commander raised but never acted on, each with a VERBATIM quote copied word-for-word from the conversation. Never paraphrase or invent. If none, reply NONE.' },
+      { role: 'user', content: prompt }
+    ] };
+    let out = '', usage = null;
+    for await (const ev of provider.stream(req)) {
+      if (ev && ev.type === 'text') out += ev.delta;
+      else if (ev && ev.type === 'usage') usage = ev.usage;
+    }
+    const c = cost.reconcile(usage, model);
+    usd += c.usd || 0; tokens += (c.tokensIn || 0) + (c.tokensOut || 0);
+    return out;
+  };
+  try {
+    // known fingerprints = every live (non-declined) thread + the permanent declined denylist — so a duplicate or a
+    // previously-declined idea is deduped AT THE SOURCE and never even stashed again (parity with study's declined).
+    let known = {}; try { known = threadsStore.knownFingerprints(); } catch (_) { known = {}; }
+    const out = await threadmine.mine({ agentId, runId, streamId, messages }, {
+      propose, redact, clock: { now: () => Date.now() }, known, max: threadmine.DEFAULT_MAX
+    });
+    const proposals = (out && out.proposals) || [];
+    if (proposals.length) {
+      lastThreadMineAt.set(agentId, Date.now());   // arm the cooldown ONLY when proposals survive (a floored/all-dedup run never blocks the next mine)
+      stashThreads(agentId, runId, proposals);
+      // NB: NO chanEmit — like study, the browser fetches /api/threads/proposals on agent.run.end (a frozen event
+      // it already listens to), so the shared/events.js contract stays untouched.
+    }
+  } catch (e) { console.warn('[threads] mine failed:', (e && e.message) || e); }
   finally {
     clearTimeout(timer);
     if (usd) { try { ledger.record({ runId, agentId, turns: 0, usd, tokens, model: model || '', unmetered }); } catch (_) {} }
@@ -2487,11 +2558,11 @@ function recordNightshiftVerdict(archetype, useful) {
 const NIGHTSHIFT_ACTS_FILE = path.join(WORKSPACES, 'nightshift.acts.json');
 function loadNightshiftActs() { try { const o = loadResilient(NIGHTSHIFT_ACTS_FILE, 'nightshift-acts'); return (o && o.acts && typeof o.acts === 'object') ? o.acts : {}; } catch (_) { return {}; } }
 let nightshiftActs = loadNightshiftActs();
-function recordNightshiftAct(runId, archetype) {
+function recordNightshiftAct(runId, archetype, threadId) {
   const rid = String(runId || ''); const arch = String(archetype || '').trim();
   if (!rid || !arch) return;
   try {
-    nightshiftActs[rid] = { archetype: arch, at: Date.now() };
+    nightshiftActs[rid] = { archetype: arch, at: Date.now(), threadId: (threadId ? String(threadId) : null) };   // NS-6: carry the cited thread so the return-card verdict can deliver/decline it
     const keys = Object.keys(nightshiftActs);
     if (keys.length > 200) { keys.sort((a, b) => (nightshiftActs[a].at || 0) - (nightshiftActs[b].at || 0)); for (const k of keys.slice(0, keys.length - 200)) delete nightshiftActs[k]; }
     saveResilient(NIGHTSHIFT_ACTS_FILE, { v: 1, acts: nightshiftActs });
@@ -2504,7 +2575,15 @@ function archetypeForRun(runId) { const r = nightshiftActs[String(runId || '')];
    from the Commander's verdicts (the compounding moat). Also records the verdict in the autonomy ledger as an
    honest decision trail. A plain workshop-shift build (no archetype mapping) is a clean no-op. Best-effort. */
 function nightshiftDecideLearn(agentId, runId, useful) {
+  const rec = nightshiftActs[String(runId || '')];
   const arch = archetypeForRun(runId);
+  // NS-6 thread writeback: a KEPT deliverable on a cited thread → delivered; a DISCARDED one → declined PERMANENTLY
+  // (never re-proposed). Done before the record is reaped below. Best-effort; a non-thread act is a clean skip.
+  const threadId = rec && rec.threadId;
+  if (threadId) {
+    if (useful) { try { threadsStore.deliver(threadId, Date.now()); } catch (_) {} }
+    else { try { threadsStore.decline(threadId, 'discarded at return card', Date.now()); } catch (_) {} }
+  }
   if (!arch) return;   // not a night-shift act (or already reaped) → nothing to learn
   recordNightshiftVerdict(arch, useful);
   try { recordAutonomy({ ts: Date.now(), source: 'nightshift', kind: 'note', agentId: String(agentId || ''), runId: String(runId || ''), reason: useful ? 'approved' : 'denied', detail: { phase: 'verdict', archetype: arch, useful: !!useful } }); } catch (_) {}
@@ -2562,6 +2641,9 @@ function nightshiftContextPack() {
   const pack = contextpack.assemble({ runs, chats, goal, landed, beliefs, learn, redact }, { now });
   // the count of recent USER-INITIATED runs the pack recognized — the ACTIVITY-as-grounding evidence for readiness.
   pack.userRunCount = (pack.counts && pack.counts.runs) || 0;
+  // NS-6: the top OPEN threads (durable ideas the Commander raised but never acted on), recency-ranked. The propose
+  // step draws from these FIRST (improv is the fallback); citing a thread's tag in GROUNDS is the preferred grounding.
+  try { pack.threads = threadsStore.openThreads(6); } catch (_) { pack.threads = []; }
   return pack;
 }
 
@@ -2605,6 +2687,7 @@ async function runNightshiftBeat(opts) {
   // the propose step aim at what the Commander is ACTUALLY doing, not six static dossier strings.
   const pack = nightshiftContextPack();
   const activity = pack.activityLines || [];
+  const threads = pack.threads || [];   // NS-6: open threads draw FIRST (improv is the fallback)
   // readiness folds BOTH grounding paths: the dossier AND substantial recent activity (a heavily-active brand-new
   // user is now hot on activity alone). eligibility opens to all archetypes when activity is the grounding source.
   const snap = commanderPosture.beliefs() || {};
@@ -2618,13 +2701,16 @@ async function runNightshiftBeat(opts) {
   const system = (ident.system && String(ident.system)) || cronSystemFor(agentId);
   const name = (ident.name && String(ident.name)) || agentId;
 
-  // 1) PROPOSE — the directive carries the recent-activity block; the grounding veto's evidence pool = beliefs + activity.
-  const cRes = await nightshiftChat({ agentId, system, signal, messages: [{ role: 'user', content: Autopilot.buildCandidateDirective({ beliefs, activity, eligible }) }] });
+  // 1) PROPOSE — the directive carries the OPEN-THREADS block + the recent-activity block; the grounding veto's
+  //    evidence pool = beliefs + activity + thread texts (a thread-tag citation is the preferred grounding).
+  const cRes = await nightshiftChat({ agentId, system, signal, messages: [{ role: 'user', content: Autopilot.buildCandidateDirective({ beliefs, activity, threads, eligible }) }] });
   if (cRes.error) return { delivered: false, reason: cRes.error };
-  const candidates = Autopilot.parseCandidates(cRes.text, { eligible, beliefs, activity });
+  const candidates = Autopilot.parseCandidates(cRes.text, { eligible, beliefs, activity, threads });
   // 2) SELECT (confidence gate + the learned per-archetype bias — NS-3 wires the server LEARN store in here)
   const sel = Autopilot.scoreAndSelect(candidates, { weights: nightshiftLearnWeights() });
   if (!sel.selected) return { delivered: false, reason: sel.reason };
+  // NS-6 writeback: the selected candidate cited an open thread → mark it PICKED (it's being worked this beat).
+  if (sel.selected.threadId) { try { await threadsStore.pick(sel.selected.threadId, Date.now()); } catch (_) {} }
   // 3) DO
   const dRes = await nightshiftChat({ agentId, system, signal, messages: [{ role: 'user', content: Autopilot.buildDoDirective(sel.selected, { name }) }] });
   if (dRes.error) return { delivered: false, reason: dRes.error };
@@ -2671,6 +2757,7 @@ async function runNightshiftActShift(opts) {
   //    the ideas are BUILD-shaped, still grounding-vetoed + confidence-gated + learn-biased. Same anti-slop heart.
   const pack = nightshiftContextPack();   // NS-2: same recent-activity grounding on the BUILD path
   const activity = pack.activityLines || [];
+  const threads = pack.threads || [];     // NS-6: open threads draw FIRST on the build path too
   const snap = commanderPosture.beliefs() || {};
   const summary = { known: Array.isArray(snap.known) ? snap.known : Object.keys((snap.beliefs) || {}) };
   const beliefsByDim = (dim) => (snap.beliefs && snap.beliefs[dim]) || [];
@@ -2680,11 +2767,14 @@ async function runNightshiftActShift(opts) {
   const beliefs = nightshiftBeliefMap();
   const ident = cronIdentityFor(agentId) || {};
   const system = (ident.system && String(ident.system)) || cronSystemFor(agentId);
-  const cRes = await nightshiftChat({ agentId, system, signal, messages: [{ role: 'user', content: Autopilot.buildCandidateDirectiveV2({ beliefs, activity, eligible }) }] });
+  const cRes = await nightshiftChat({ agentId, system, signal, messages: [{ role: 'user', content: Autopilot.buildCandidateDirectiveV2({ beliefs, activity, threads, eligible }) }] });
   if (cRes.error) return { delivered: false, reason: cRes.error };
-  const candidates = Autopilot.parseCandidates(cRes.text, { eligible, beliefs, activity });
+  const candidates = Autopilot.parseCandidates(cRes.text, { eligible, beliefs, activity, threads });
   const sel = Autopilot.scoreAndSelect(candidates, { weights: nightshiftLearnWeights() });
   if (!sel.selected) return { delivered: false, reason: sel.reason };
+  // NS-6 writeback: a build grounded on an open thread marks it PICKED now; a later keep/discard verdict (return
+  // card → nightshiftDecideLearn) moves it to delivered/declined.
+  if (sel.selected.threadId) { try { await threadsStore.pick(sel.selected.threadId, Date.now()); } catch (_) {} }
 
   // 3) BUILD — a REAL runOnce task run in the jail. Register the self-selected job as a synthetic backlog item so
   //    the deliverable lands in /pending + /decide exactly like a workshop build (the return card + ship gate are
@@ -2727,7 +2817,7 @@ async function runNightshiftActShift(opts) {
     return { delivered: false, reason: threw ? 'run-failed' : 'no-manifest', runId };
   }
   try { await workshopStore.markBuilt(agentId, backlogId, runId); } catch (_) {}
-  recordNightshiftAct(runId, sel.selected.archetype);   // so a keep/discard verdict feeds the RIGHT archetype into LEARN
+  recordNightshiftAct(runId, sel.selected.archetype, sel.selected.threadId);   // so a keep/discard verdict feeds the RIGHT archetype into LEARN (+ NS-6: delivers/declines the cited thread)
   try { chanEmit('workshop.built', { agentId, runId, manifest }); } catch (_) {}
   const paths = (manifest.files || []).map(f => dir + '/' + f.path).slice(0, 8).join(', ');
   // LEDGER TRUTH (NS-3): a real tool-run that BUILT an artifact records kind 'act' here — the authoritative place
@@ -3280,6 +3370,9 @@ function dispatchRoute(req, res) {
   if (req.method === 'POST' && req.url === '/api/memory/turnin') return handleMemoryTurnin(req, res);
   if (req.method === 'GET' && req.url.indexOf('/api/study/proposals') === 0) return serveStudyProposals(req, res);   // GROWTH Tier 1: dossier belief-update proposals for a run
   if (req.method === 'POST' && req.url === '/api/study/resolve') return handleStudyResolve(req, res);   // GROWTH Tier 1: consume one decided study proposal + mirror the denylist
+  if (req.method === 'GET' && req.url.indexOf('/api/threads/proposals') === 0) return serveThreadProposals(req, res);   // NS-6: pending mined thread candidates for a run (turn-in)
+  if (req.method === 'POST' && req.url === '/api/threads/turnin') return handleThreadTurnin(req, res);   // NS-6: keep/edit → commit an open thread; discard → permanently deny the fingerprint
+  if (req.method === 'GET' && req.url.indexOf('/api/threads') === 0) return serveThreads(req, res);   // NS-6: the durable thread ledger (read surface)
   if (req.method === 'POST' && req.url === '/api/memory/reset') return handleMemoryReset(req, res);
   if (req.method === 'POST' && req.url === '/api/memory/declined/restore') return handleDeclinedRestore(req, res);
   if (req.method === 'GET' && req.url.indexOf('/api/memory/declined') === 0) return serveDeclined(req, res);
@@ -6017,6 +6110,14 @@ async function runOnce(o) {
     for (let i = result.messages.length - 1; i >= 0; i--) { const m = result.messages[i]; if (m && m.role === 'user' && typeof m.content === 'string') { studyDirective = m.content; break; } }
     runStudy({ agentId, runId, messages: result.messages.slice(), directive: studyDirective, provider, model: reflectModel || resolveEffectiveModel({ result, requestedModel: o.model, usingCodex, codexDefaultModel: CODEX_DEFAULT_MODEL, defaultModel: CRON_DEFAULT_MODEL }), cost, unmetered: providerUnmetered }).catch(() => {}).finally(() => { studyingNow.delete(agentId); });
   }
+  // NS-6: the THREAD-MINING pass rides the SAME isTask/done/salience gate (its OWN, longer cooldown) — it surfaces
+  // ideas the Commander floated but never acted on and STASHES them for turn-in (never auto-committed). Same
+  // fire-and-forget / in-flight-guard discipline. Opt-out via SKYNET_THREAD_MINE=0.
+  if (process.env.SKYNET_THREAD_MINE !== '0' && o.reflect && isTask && result && result.reason === 'done' && _qualifies && !signal.aborted && threadmine.mineSalient(result.messages)
+      && !threadMiningNow.has(agentId) && (Date.now() - (lastThreadMineAt.get(agentId) || 0) >= THREAD_MINE_COOLDOWN_MS)) {
+    threadMiningNow.add(agentId);
+    runThreadMine({ agentId, runId, streamId: o.streamId || '', messages: result.messages.slice(), provider, model: reflectModel || resolveEffectiveModel({ result, requestedModel: o.model, usingCodex, codexDefaultModel: CODEX_DEFAULT_MODEL, defaultModel: CRON_DEFAULT_MODEL }), cost, unmetered: providerUnmetered }).catch(() => {}).finally(() => { threadMiningNow.delete(agentId); });
+  }
   if (process.env.SKYNET_SKILL_REVIEW !== '0' && result && result.reason === 'done' && _qualifies && !signal.aborted && skillReview.shouldReviewRun(result)) {
     runBackgroundSkillReview({ agentId, runId, messages: result.messages.slice(), provider, model, cost, loadedSkills, managedSkills, unmetered: providerUnmetered }).catch(() => {});
   }
@@ -7306,6 +7407,74 @@ async function handleStudyResolve(req, res) {
     if (!batch.proposals.length) { studyByRun.delete(runId); if (latestStudyRun.get(agentId) === runId) latestStudyRun.delete(agentId); }
   }
   json(200, { ok: true });
+}
+
+// GET /api/threads?state=open|all|picked|delivered|declined — NS-6: the durable THREAD LEDGER (read surface).
+// Default 'open' (the primary surface: ideas awaiting a night-shift pickup). Real store state only (truthful
+// telemetry): a kept thread reads open here; nothing synthesized. Empty (never a 500) if the ledger is empty.
+function serveThreads(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  try {
+    const u = new URL(req.url, 'http://127.0.0.1');
+    const state = u.searchParams.get('state') || 'open';
+    const threads = threadsStore.list({ state: state });
+    // small honest telemetry: how many in each state (for a status readout).
+    const all = threadsStore.list({ state: 'all' });
+    const counts = { open: 0, picked: 0, delivered: 0, declined: 0 };
+    for (const t of all) if (counts[t.state] != null) counts[t.state]++;
+    json(200, { threads, counts, state });
+  } catch (e) { json(200, { threads: [], counts: { open: 0, picked: 0, delivered: 0, declined: 0 } }); }
+}
+
+// GET /api/threads/proposals?agent=<id>&run=<id> — NS-6: the pending MINED thread candidates for a run (with the
+// verbatim evidence quote). Read-only; falls back to the agent's newest pending batch when the runId is unknown.
+// Mirrors serveStudyProposals. The browser turn-in beat CONSUMES a decided candidate via POST /api/threads/turnin.
+function serveThreadProposals(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  try {
+    const u = new URL(req.url, 'http://127.0.0.1');
+    const agent = u.searchParams.get('agent') || 'agent';
+    if (!/^[A-Za-z0-9_-]{1,40}$/.test(agent)) return json(403, { error: 'forbidden' });
+    const runId = u.searchParams.get('run') || '';
+    let batch = runId && threadsByRun.get(runId);
+    if (!batch) { const lr = latestThreadRun.get(agent); batch = lr && threadsByRun.get(lr); }
+    if (!batch || batch.agentId !== agent) return json(200, { runId: runId || null, agentId: agent, proposals: [] });
+    json(200, { runId: batch.runId, agentId: agent, proposals: batch.proposals });
+  } catch (e) { json(200, { proposals: [] }); }
+}
+
+// POST /api/threads/turnin { agentId?, runId, id, verdict:'keep'|'edit'|'discard', title?, spec? } — NS-6: resolve
+// ONE mined thread candidate (mirrors handleStudyResolve + handleMemoryTurnin). keep/edit COMMIT an OPEN thread
+// (the click IS the consent — stash → threadsStore.add); discard PERMANENTLY denylists the candidate's fingerprint
+// so the same idea is never re-mined (the "discard = never again" law). Either verdict drops the proposal from the
+// stash so the latest-run fallback can't re-serve it. A stale/unknown id is a harmless ok:true no-op.
+async function handleThreadTurnin(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 1 << 16)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+  const agentId = String(body.agentId || 'agent');
+  if (!/^[A-Za-z0-9_-]{1,40}$/.test(agentId)) return json(403, { error: 'forbidden' });
+  const runId = String(body.runId || '');
+  const id = String(body.id || '');
+  const verdict = String(body.verdict || '');
+  const batch = runId && threadsByRun.get(runId);
+  const prop = (batch && batch.agentId === agentId && id) ? batch.proposals.find(p => p && p.id === id) : null;
+  if (!prop) return json(200, { ok: true, reason: 'unknown' });   // stale/unknown → harmless no-op
+  let reason = 'noop';
+  try {
+    if (verdict === 'keep' || verdict === 'edit') {
+      const title = (verdict === 'edit' && typeof body.title === 'string' && body.title.trim()) ? body.title.trim() : prop.title;
+      const spec = (verdict === 'edit' && typeof body.spec === 'string' && body.spec.trim()) ? body.spec.trim() : prop.spec;
+      const r = await threadsStore.add({ id: 'th_' + crypto.randomUUID(), title, spec, sourceRef: prop.sourceRef || null }, Date.now());
+      reason = (r && r.reason) || 'added';
+    } else if (verdict === 'discard') {
+      await threadsStore.declineFingerprint(prop.fingerprint || prop.title);
+      reason = 'declined';
+    }
+  } catch (e) { return json(200, { ok: false, error: (e && e.message) || 'turnin failed' }); }
+  // drop the resolved proposal from the stash (never re-served by the latest-run fallback).
+  batch.proposals = batch.proposals.filter(p => p && p.id !== id);
+  if (!batch.proposals.length) { threadsByRun.delete(runId); if (latestThreadRun.get(agentId) === runId) latestThreadRun.delete(agentId); }
+  json(200, { ok: true, reason });
 }
 
 // POST /api/memory/turnin { agentId, runId, id, verdict:'keep'|'edit'|'discard', content? } — resolve ONE proposal.

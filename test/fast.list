@@ -85,6 +85,9 @@ test/manual.test.js
 test/permissions.test.js
 test/workshop-permissions.test.js
 test/workshop-store.test.js
+test/threads-store.test.js
+test/threadmine.test.js
+test/autopilot-threads.test.js
 test/apiauth.test.js
 test/notebook.test.js
 test/skills.test.js
