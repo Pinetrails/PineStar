@@ -43,7 +43,7 @@
   const dayOf = (t) => Math.floor((Number(t) || 0) / DAY_MS);   // a UTC day bucket — deterministic, no Date needed
 
   // fresh() — the safe floor: no beats spent, no beat ever fired. day is set the first time state is rolled.
-  function fresh(now) { return { v: STATE_VERSION, day: dayOf(now || 0), beatsUsedToday: 0, lastBeatAt: 0 }; }
+  function fresh(now) { return { v: STATE_VERSION, day: dayOf(now || 0), beatsUsedToday: 0, lastBeatAt: 0, haltedAt: 0 }; }
 
   // tolerant hydrate: clamp every field to a sane value. A corrupt/old/partial save degrades to the floor per
   // field — never throws, never yields a state the gates could misread (e.g. a NaN counter that reads as < cap).
@@ -53,6 +53,7 @@
       if (Number.isFinite(raw.day)) s.day = Math.floor(raw.day);
       if (Number.isFinite(raw.beatsUsedToday) && raw.beatsUsedToday >= 0) s.beatsUsedToday = Math.floor(raw.beatsUsedToday);
       if (Number.isFinite(raw.lastBeatAt) && raw.lastBeatAt >= 0) s.lastBeatAt = Math.floor(raw.lastBeatAt);
+      if (Number.isFinite(raw.haltedAt) && raw.haltedAt >= 0) s.haltedAt = Math.floor(raw.haltedAt);   // NS E-STOP durable halt
     }
     return s;
   }
@@ -64,7 +65,7 @@
     const s = normalize(state, now);
     const d = dayOf(now);
     if (s.day === d) return s;
-    return { v: STATE_VERSION, day: d, beatsUsedToday: 0, lastBeatAt: s.lastBeatAt };   // keep lastBeatAt (cadence spans midnight)
+    return { v: STATE_VERSION, day: d, beatsUsedToday: 0, lastBeatAt: s.lastBeatAt, haltedAt: s.haltedAt };   // keep lastBeatAt (cadence spans midnight) + halt (E-STOP is not a daily thing)
   }
 
   // remaining leash beats today, AFTER a day-roll. cap comes from the posture's leashPerDay (server copy). A
@@ -125,8 +126,16 @@
   // (day-rolled first, so a beat that fires across midnight counts against the NEW day). Pure; input not mutated.
   function recordBeat(state, now) {
     const s = rollDay(state, now);
-    return { v: STATE_VERSION, day: s.day, beatsUsedToday: (s.beatsUsedToday || 0) + 1, lastBeatAt: Number.isFinite(now) ? Math.floor(now) : (s.lastBeatAt || 0) };
+    return { v: STATE_VERSION, day: s.day, beatsUsedToday: (s.beatsUsedToday || 0) + 1, lastBeatAt: Number.isFinite(now) ? Math.floor(now) : (s.lastBeatAt || 0), haltedAt: s.haltedAt };
   }
+
+  // ---- NS E-STOP durable halt. engageHalt stamps the halt instant on the state; clearHalt lifts it. Both are
+  // PURE (now injected), preserve the leash counters, and round-trip through toEnvelope — so an E-STOP SURVIVES a
+  // restart (a reboot must never silently re-enable overnight spend). isHalted(state) is the gate predicate the
+  // driver injects; decide() then returns binding:'halt' every tick until the Commander re-writes the dial.
+  function engageHalt(state, now) { const s = normalize(state, now); s.haltedAt = Number.isFinite(now) ? Math.floor(now) : (s.haltedAt || 0); return s; }
+  function clearHalt(state, now) { const s = normalize(state, now); s.haltedAt = 0; return s; }
+  function isHalted(state) { const s = normalize(state, 0); return (s.haltedAt || 0) > 0; }
 
   /* loadEnvelope / toEnvelope — the persistence normalizers (mirrors cron-store.loadEnvelope). Tolerates a JSON
      string, a parsed object, null, or garbage; fail-closed to the floor. `now` anchors a fresh day bucket when
@@ -137,10 +146,10 @@
     if (!obj || typeof obj !== 'object') return normalize(null, now);
     return normalize(obj, now);
   }
-  function toEnvelope(state, now) { const s = normalize(state, now); return { v: STATE_VERSION, day: s.day, beatsUsedToday: s.beatsUsedToday, lastBeatAt: s.lastBeatAt }; }
+  function toEnvelope(state, now) { const s = normalize(state, now); return { v: STATE_VERSION, day: s.day, beatsUsedToday: s.beatsUsedToday, lastBeatAt: s.lastBeatAt, haltedAt: s.haltedAt }; }
 
   return {
-    fresh, normalize, rollDay, beatsLeft, isAway, decide, recordBeat, loadEnvelope, toEnvelope, dayOf,
+    fresh, normalize, rollDay, beatsLeft, isAway, decide, recordBeat, engageHalt, clearHalt, isHalted, loadEnvelope, toEnvelope, dayOf,
     STATE_VERSION, DEFAULT_AWAY_MS, DEFAULT_BEAT_MS, DAY_MS
   };
 });

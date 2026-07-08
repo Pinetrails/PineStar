@@ -136,4 +136,31 @@ function inp(now, over) {
   A.eq(dec.binding, 'leash', 'a missing cap binds leash (fail closed, never fires)');
 })();
 
+// ---- NS E-STOP durable halt: engage → every decision binds 'halt' (even after cooldown clears), survives the
+// envelope round-trip (a restart must NOT silently re-enable overnight spend), clears only deliberately. This is
+// the escape test for the resume-after-cooldown bug (isHalted was hardcoded false in the composition root).
+(function durableHalt() {
+  let s = ns.recordBeat(ns.fresh(T0), T0);            // a beat just fired (leash 1/3 spent, cooldown hot)
+  s = ns.engageHalt(s, T0 + 60000);                   // Commander hits E-STOP a minute later
+  A.ok(ns.isHalted(s), 'engageHalt stamps the flag');
+  A.eq(s.beatsUsedToday, 1, 'engageHalt preserves the leash accounting');
+  // the OLD failure mode: 45 min later the cooldown clears — without the durable flag this decision fired.
+  const afterCooldown = T0 + 46 * 60000;
+  const d = ns.decide(s, inp(afterCooldown, { halted: ns.isHalted(s) }));
+  A.eq(d.fire, false, 'halt holds AFTER the cooldown clears (the resume-after-cooldown escape)');
+  A.eq(d.binding, 'halt', 'names halt, truthfully');
+  // restart round-trip: envelope out → JSON → envelope in. The halt must survive.
+  const revived = ns.loadEnvelope(JSON.stringify(ns.toEnvelope(s, afterCooldown)), afterCooldown);
+  A.ok(ns.isHalted(revived), 'halt survives the persist/restart round-trip');
+  // day rollover must NOT lift it (an E-STOP is not a daily counter).
+  A.ok(ns.isHalted(ns.rollDay(revived, afterCooldown + DAY)), 'halt survives day rollover');
+  // deliberate clear (the dial re-write path) lifts it; decisions fire again.
+  const cleared = ns.clearHalt(revived, afterCooldown + DAY);
+  A.ok(!ns.isHalted(cleared), 'clearHalt lifts the flag');
+  const d2 = ns.decide(cleared, inp(afterCooldown + DAY, { lastUserActivityAt: afterCooldown + DAY - 20 * 60000 }));
+  A.eq(d2.fire, true, 'a cleared halt lets the shift act again');
+  // legacy envelope (no haltedAt field) hydrates un-halted — additive, backward-compatible.
+  A.ok(!ns.isHalted(ns.loadEnvelope(JSON.stringify({ v: 1, day: ns.dayOf(T0), beatsUsedToday: 0, lastBeatAt: 0 }), T0)), 'legacy state (no haltedAt) reads un-halted');
+})();
+
 A.report('nightshift.test');

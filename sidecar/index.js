@@ -3243,10 +3243,11 @@ const nightshiftDriver = makeNightshiftDriver({
   setState: (s) => { nightshiftState = s; saveNightshiftState(); },
   getPosture: () => commanderPosture.summary(),
   lastActivity: () => lastUserActivityAt,
-  // E-STOP awareness: a global halt has no persistent flag, but while any run is being aborted / just after a
-  // halt there should be no fresh autonomous spend. We treat "a run is in flight for this agent" as busy (below)
-  // and honor the abort hook; there is no separate persisted halt gate in this lane (the E-STOP aborts the beat).
-  isHalted: () => false,
+  // E-STOP awareness: a global halt STAMPS a durable flag on the night-shift state (nightshift.engageHalt, fired
+  // from handleHalt), so after an E-STOP EVERY subsequent tick stands down with binding:'halt' — not just the one
+  // in-flight beat that abortBeat() cancels. It survives a restart (a reboot must never silently re-enable overnight
+  // spend); the Commander lifts it by deliberately re-writing the autonomy dial (POST /api/autonomy/posture).
+  isHalted: () => { try { return nightshift.isHalted(nightshiftState); } catch (_) { return false; } },
   concurrencyFree: (agentId) => { try { return concurrencyGate.inFlight(agentId) === 0; } catch (_) { return true; } },
   // NS-2 cold-leash fix: the PURELY-LOCAL pre-spend gate. A cold-on-both-paths beat (thin dossier AND thin recent
   // activity) stands down here, BEFORE the leash is spent, because no model call could have salvaged it. Anything
@@ -7000,6 +7001,9 @@ async function handleAutonomyPosture(req, res) {
   const posture = (body.posture && typeof body.posture === 'object') ? body.posture
     : ((body.initiative || body.reach || body.leashPerDay != null) ? body : null);   // tolerate a flat posture too
   commanderPosture.set(posture, body.beliefs);
+  // deliberately re-writing the dial is the Commander's "autonomy back on" signal, so it LIFTS any durable E-STOP
+  // halt on the night shift (engaged in handleHalt). Without this an E-STOP would wedge the shift stood-down forever.
+  try { if (nightshift.isHalted(nightshiftState)) { nightshiftState = nightshift.clearHalt(nightshiftState, Date.now()); saveNightshiftState(); } } catch (_) {}
   // if the (new) posture permits acting and the timer isn't running yet, arm it NOW (no restart); if it dropped
   // below acting, we LEAVE the timer armed — its own gate returns binding:'posture' and no beat fires, which is
   // cheaper + simpler than tearing the timer down and matches how the driver already no-ops when not permitted.
@@ -7038,6 +7042,7 @@ function handleNightshiftStatus(req, res) {
   const awaySince = lastUserActivityAt + NIGHTSHIFT_AWAY_MS;   // the instant "away" becomes true
   const out = {
     active: !!nightshiftTimer,
+    halted: (rolled.haltedAt || 0) > 0,   // NS E-STOP durable halt — true until the Commander re-writes the dial
     away: decision ? !!decision.away : false,
     awaySince: awaySince,
     beatsUsedToday: rolled.beatsUsedToday || 0,
@@ -7263,6 +7268,11 @@ function handleHalt(req, res) {
   let cronAborted = 0;
   try { cronAborted = cronDriver.abortAllLeases(); } catch (_) {}   // Phase 0: E-STOP also aborts in-flight cron runs (unattended spend)
   try { nightshiftDriver.abortBeat(); } catch (_) {}   // NS-1: E-STOP also aborts an in-flight night-shift beat (unattended spend)
+  // …and STAMP a durable halt so the shift stays stood-down AFTER this beat. Without it the leash unit + lastBeatAt
+  // were already spent at accept-time, so the ~45-min cooldown was the ONLY thing pausing autonomy — beats resumed
+  // on their own even though the Commander hit E-STOP. The flag persists (survives restart); it lifts only when the
+  // dial is re-written (handleAutonomyPosture → nightshift.clearHalt). Truthful telemetry: status now reports halted.
+  try { nightshiftState = nightshift.engageHalt(nightshiftState, Date.now()); saveNightshiftState(); } catch (_) {}
   try { executionEnvironment.killAllBackground(); } catch (_) {}   // H2.2/Phase 0: E-STOP also reaps backend-owned background processes
   try { subagents.interruptAll(); } catch (_) {}   // Phase 1: E-STOP aborts watchable background workers too
   try { cronLock.release(); } catch (_) {}  // G4.3: drop any cron lock this process holds so an E-STOP mid-tick never wedges the next tick (standalone halt-block addition; G2 will add connectors.close here)
