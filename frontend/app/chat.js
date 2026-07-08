@@ -1957,10 +1957,15 @@ const Chat = (() => {
   function renderReceipts(batch) {
     if (!batch || !batch.proposals || !batch.proposals.length) return;
     const head = row('agent'); head.d.classList.add('tool'); head.d.classList.add('turnin'); head.d.classList.add('receipts');
+    // ONE header owns the "remembered" claim; each line below is just the memory itself (repeating
+    // "◈ remembered:" per line + a bordered box per line is what made the post-run feed read as stacked popups).
+    const cap = document.createElement('div'); cap.className = 'receipt-head';
+    cap.textContent = '◈ remembered · ' + batch.proposals.length;
+    head.body.appendChild(cap);
     for (const prop of batch.proposals) {
       const item = document.createElement('div'); item.className = 'receipt-item';
       const kind = document.createElement('span'); kind.className = 'turnin-kind'; kind.textContent = KIND_TAG[prop.kind] || 'NOTE';
-      const text = document.createElement('span'); text.className = 'receipt-text'; text.textContent = '◈ remembered: ' + prop.content;
+      const text = document.createElement('span'); text.className = 'receipt-text'; text.textContent = prop.content;
       const veto = document.createElement('button'); veto.className = 'receipt-veto'; veto.type = 'button';
       veto.textContent = '✕'; veto.title = 'forget this — undo the save';
       veto.setAttribute('aria-label', 'forget this memory');
@@ -1971,7 +1976,7 @@ const Chat = (() => {
         if (r && r.ok) {
           veto.remove();
           item.classList.add('vetoed');
-          text.textContent = '✕ forgotten: ' + prop.content;   // muted state; stays denylisted (Memory Core Restore is the undo)
+          text.textContent = 'forgotten: ' + prop.content;   // muted state; stays denylisted (Memory Core Restore is the undo)
         } else {
           busy = false; veto.disabled = false;
           if (typeof StationUI !== 'undefined') StationUI.notify('could not forget that ' + (prop.kind === 'skill' ? 'skill' : 'memory') + ' - try again', 'warn');
@@ -2133,7 +2138,7 @@ const Chat = (() => {
     const why = [];
     if (prop.kind === 'retire') why.push(prop.text);
     if (prop.evidence) why.push('from “' + prop.evidence + '”');
-    if (why.length) { const ev = document.createElement('div'); ev.className = 'turnin-queue'; ev.hidden = false; ev.textContent = '↳ ' + why.join(' · '); item.appendChild(ev); }
+    if (why.length) { const ev = document.createElement('div'); ev.className = 'turnin-evidence'; ev.textContent = '↳ ' + why.join(' · '); item.insertBefore(ev, btns); }
     slotEl.appendChild(item);
     const card = { node: r.d, prop: prop, decided: false };
     activeStudy = card;
@@ -2360,7 +2365,7 @@ const Chat = (() => {
     const why = [];
     if (pv.streak) why.push(pv.streak + ' approvals in a row');
     why.push(offer.kind === 'grant' ? 'writes stay jailed + reversible' : 'raises the dial to ' + String(offer.to).toUpperCase());
-    { const ev = document.createElement('div'); ev.className = 'turnin-queue'; ev.hidden = false; ev.textContent = '↳ ' + why.join(' · '); item.appendChild(ev); }
+    { const ev = document.createElement('div'); ev.className = 'turnin-evidence'; ev.textContent = '↳ ' + why.join(' · '); item.insertBefore(ev, btns); }
     slotEl.appendChild(item);
     const card = { node: r.d, offer: offer, decided: false };
     activeTrust = card;
@@ -2481,7 +2486,7 @@ const Chat = (() => {
     const btns = document.createElement('span'); btns.className = 'consent-btns';
     item.appendChild(kind); item.appendChild(text); item.appendChild(btns);
     // provenance line: the VERBATIM quote the mine grounded this idea in (the evidence, never a paraphrase).
-    if (prop.spec) { const ev = document.createElement('div'); ev.className = 'turnin-queue'; ev.hidden = false; ev.textContent = '↳ you said “' + prop.spec + '” · kept threads feed the night shift'; item.appendChild(ev); }
+    if (prop.spec) { const ev = document.createElement('div'); ev.className = 'turnin-evidence'; ev.textContent = '↳ you said “' + prop.spec + '” · kept threads feed the night shift'; item.insertBefore(ev, btns); }
     slotEl.appendChild(item);
     const card = { node: r.d, prop: prop, decided: false };
     activeThreadCard = card;
