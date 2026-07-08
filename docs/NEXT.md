@@ -571,6 +571,54 @@ Done means (per lane, live-app): leave the station idle with dial at 'free' + de
 beat interval → observe ≥2 real jailed tool-run deliverables + a truthful ledger of every
 decision, gate green. NS-0a done means the >8min-run duplicate repro fires once.
 
+## NIGHT SHIFT wave 2 — relevance, not just autonomy (added 2026-07-08, Fable session)
+
+**The gap (code-verified 2026-07-08):** NS-0..NS-4 made the shift *reliable and safe*
+(server-owned beats, enforced leash, jailed real tool runs, grounding veto, ledger, morning
+report — all release-grade). What it did NOT make is *relevant*. Andrew's bar: "I come back
+and the agent found bugs in MY project" / "it picked an idea we talked about and prototyped
+it." Structurally impossible today because:
+
+1. **The agent never sees the user's actual work.** Context pack = run TITLES + chat
+   FIRST-LINES (contextpack.js, labels-not-documents by design) + 6 dossier dims. No file,
+   repo, diff, or document is ever read. Jail builds are greenfield-only.
+2. **No durable idea memory.** Candidates are regenerated from scratch every beat; "things
+   the user mentioned but never did" is stored NOWHERE server-side. Rejected-idea history
+   (suggeststore/curiositystore) is frontend localStorage, invisible to autonomy.
+3. **Behavioral signals stranded in the browser.** worksignal capability histogram,
+   ProfileStore interests, UnderstandingStore — zero sidecar sync (no fetch in
+   worksignalstore.js). Autonomy is blind to the richest "what does this user actually do"
+   data in the product.
+4. **Cron is the thinnest lane** — no context pack, no history; dossier block + goal note only.
+
+**Lane queue (claim in-file before building; shared/events.js additive-only via owner):**
+
+- **NS-5 · Project Lens (the flagship).** Commander grants read access to specific project
+  folder(s) (explicit per-folder grant, consent default-deny; candidate UX = the existing
+  grant/prop pattern). Night-shift beats at reach ≥ sandbox may then run a read-only scan
+  inside a jail-side snapshot/clone: git log/status/diff since last visit, TODO/FIXME, test
+  run. Deliverable = a *patch* through the existing /pending → /decide gate: "found N bugs
+  while you were away — approve and I'll commit." Approve = apply patch to a branch in the
+  user's repo (never push, never main); deny feeds learn. PRODUCT FORK for Andrew: grant UX
+  + whether approve auto-commits or just drops the .patch.
+- **NS-6 · Thread ledger (durable idea backlog).** Server-side store of "threads": ideas
+  mined from chats/study/pitches with state open/picked/delivered/declined + decline reason.
+  Mint via a post-run aux pass (same pattern as reflect/study, stash → turn-in) and/or a
+  nightly digest pass. Night-shift PROPOSE draws from open threads FIRST, improv second;
+  deny/discard writes back permanently (kills the re-propose-rejected-idea failure mode).
+  This is what makes "you mentioned X two weeks ago, here's a prototype" possible.
+- **NS-7 · Signal sync.** Mirror worksignal histogram + profile interests + declined-idea
+  fingerprints to the sidecar (same pattern as POST /api/autonomy/posture and /api/dossier);
+  fold into the context pack + grounding-veto vocabulary.
+- **NS-8 · One commander-context composer.** Unify dossier + goals + context pack + recall +
+  threads into a single server-side composer used by ALL autonomous lanes (night-shift AND
+  cron). Deepen chat mining beyond first-lines to a redacted topic digest.
+
+Done means (per lane, live-app): NS-5 = grant a real repo, seed a planted bug, leave idle at
+dial 'free' → morning report offers a correct patch through /pending, approve applies it to a
+branch, deny is remembered. NS-6 = mention an idea in chat, never act on it, leave idle →
+a beat proposes THAT idea, citing the thread; decline it → it is never re-proposed.
+
 ## Parked product decisions (need Andrew, don't guess)
 
 - `fullOffice()` autonomous prop placement vs. hand-placed only.
