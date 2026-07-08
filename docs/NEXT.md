@@ -593,14 +593,24 @@ it." Structurally impossible today because:
 
 **Lane queue (claim in-file before building; shared/events.js additive-only via owner):**
 
-- **NS-5 · Project Lens (the flagship).** Commander grants read access to specific project
-  folder(s) (explicit per-folder grant, consent default-deny; candidate UX = the existing
-  grant/prop pattern). Night-shift beats at reach ≥ sandbox may then run a read-only scan
-  inside a jail-side snapshot/clone: git log/status/diff since last visit, TODO/FIXME, test
-  run. Deliverable = a *patch* through the existing /pending → /decide gate: "found N bugs
-  while you were away — approve and I'll commit." Approve = apply patch to a branch in the
-  user's repo (never push, never main); deny feeds learn. PRODUCT FORK for Andrew: grant UX
-  + whether approve auto-commits or just drops the .patch.
+- **NS-5 · Project Lens (the flagship). DIRECTION LOCKED by Andrew 2026-07-08: NO prop, NO
+  folder picker — match Hermes fluidity.** The user just *tells* the agent a path in chat
+  ("go to C:\...\myproject and fix X") and it works there. Mechanics (verified 2026-07-08:
+  fs.js:73 rejects ALL absolute paths; permgrants GRANTABLE = ['cabinet:write'] only — this
+  is a new capability, not a UX swap):
+  (a) **Conversational path trust** — first time a run touches a path outside the jail, ONE
+  consent prompt ("work in C:\...\myproject? always/once/no"); "always" records a standing
+  PATH grant (provenance-stamped, listed + revocable in the Permissions Panel, same
+  fail-closed persist as permgrants). resolveInside generalizes to resolve-inside-any-
+  blessed-root; .env/.git-internals/symlink-escape hardlines stay.
+  (b) **Known-project memory** — every blessed root is durably remembered server-side with
+  last-touched metadata; this set IS the autonomy surface.
+  (c) **Night shift may only revisit previously-blessed roots** — reads at reach ≥ sandbox
+  (git log/status/diff since last visit, TODO/FIXME, run tests via existing jailed exec
+  rules); it can NEVER bless a new root unattended. Deliverable = patch through the existing
+  /pending → /decide gate: "found N bugs while you were away — approve and I'll commit."
+  Approve applies to a branch in the user's repo (never main, never push); deny feeds learn.
+  OPEN (Andrew, small): approve = auto-commit-to-branch (recommended) vs drop-the-.patch.
 - **NS-6 · Thread ledger (durable idea backlog).** Server-side store of "threads": ideas
   mined from chats/study/pitches with state open/picked/delivered/declined + decline reason.
   Mint via a post-run aux pass (same pattern as reflect/study, stash → turn-in) and/or a
