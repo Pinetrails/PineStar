@@ -944,9 +944,44 @@ const Marketplace = (() => {
     // and SCOUT recipe drafts (server-authored from the learned interests, each carrying its evidence-grounded WHY).
     const cands = suggestedMissions();
     const drafts = scoutRecipeDrafts();
-    if (!cands.length && !drafts.length) return '';
+    if (!cands.length && !drafts.length) return scoutColdStateHTML();
     return '<div class="mkt-sect-h mkt-suggest-sect">✨ SUGGESTED — from what you keep asking</div><div class="mkt-rec-rail">' +
       cands.map(suggestCardHTML).join('') + drafts.map(scoutRecipeCardHTML).join('') + '</div>';
+  }
+  /* ---------- the SUGGESTED shelf's honest COLD STATE ----------
+     An empty shelf used to render as NOTHING — indistinguishable from a broken scout. Truthful telemetry:
+     when the server truth (GET /api/scout, cached in ProspectStore) is in hand, say WHERE the scout actually
+     is. Every figure below comes from that payload (gate/warm/interests) — nothing invented. When the cache
+     has never loaded (no server read yet) we still render '' — the frontend may not assert scout state it
+     can't prove. Shown only in the clean top-level view (same discipline as the FOR-YOU shelf). */
+  function scoutColdStateHTML() {
+    if (catFilter !== 'all' || query) return '';
+    if (typeof ProspectStore === 'undefined' || !ProspectStore.gate) return '';
+    let gate = null, warm = false, nInterests = 0;
+    try {
+      gate = ProspectStore.gate();
+      warm = !!(ProspectStore.warm && ProspectStore.warm());
+      nInterests = (ProspectStore.interests && ProspectStore.interests() || []).length;
+    } catch (_) { return ''; }
+    if (!gate) return '';   // no /api/scout read yet — assert nothing rather than guess
+    let line = '';
+    if (gate.fire) {
+      line = 'signal locked — the station attempts a new draft after your next run.';
+    } else if (gate.binding === 'cold') {
+      line = !warm && nInterests > 0
+        ? 'CALIBRATING — ' + nInterests + ' early signal' + (nInterests === 1 ? '' : 's') + ' held, none strong enough to draft from yet. Keep working; the station is watching what you work on.'
+        : 'CALIBRATING — watching what you work on. Run real tasks and the station learns what to suggest.';
+    } else if (gate.binding === 'cooldown') {
+      const n = Number(gate.runsSinceMint), N = Number(gate.mintEveryRuns);
+      line = 'no draft staged yet — the next attempt earns itself with more runs' +
+        (Number.isFinite(n) && Number.isFinite(N) && N > 0 ? ' (' + Math.min(n, N) + '/' + N + ')' : '') + '.';
+    } else if (gate.binding === 'gap') {
+      line = 'the station attempted a draft recently — cooling down before the next try.';
+    } else {
+      return '';   // 'full' (or an unknown binding) can't co-occur with an empty shelf — stay silent, stay honest
+    }
+    return '<div class="mkt-sect-h mkt-suggest-sect">✨ SUGGESTED — from what you keep asking</div>' +
+      '<div class="mkt-empty mkt-scout-cold">' + esc(line) + '</div>';
   }
   function scoutRecipeDrafts() {
     try { return (typeof ProspectStore !== 'undefined' && ProspectStore.recipeDrafts) ? (ProspectStore.recipeDrafts() || []) : []; } catch (_) { return []; }

@@ -2847,15 +2847,18 @@ async function runScoutCycle(o) {
 
     if (d.kind === 'recipe') {
       const existing = scoutExistingRecipes();
+      const interestsBlock = Interests.topicsBlock(interestsState, { now: Date.now(), limit: 8 });
+      const activityBlock = activity.slice(0, 8).map(a => '• ' + a).join('\n');
       const directive = Scout.buildRecipeDirective({
-        interestsBlock: Interests.topicsBlock(interestsState, { now: Date.now(), limit: 8 }),
+        interestsBlock: interestsBlock,
         dossierBlock: commanderDossier.get(),
-        activityBlock: activity.slice(0, 8).map(a => '• ' + a).join('\n'),
+        activityBlock: activityBlock,
         existingRecipes: existing, gearKeys: SCOUT_CAP_KEYS,
         launchedOften: Scout.topLaunched(scoutState, 5)
       });
       const reply = await propose('You are the station\'s recipe author. Follow the format exactly; ground every claim in the provided evidence.', directive);
-      const parsed = Scout.parseRecipe(reply, { existingRecipes: existing, denylist: scoutState.denylist, gearKeys: SCOUT_CAP_KEYS });
+      // grounding = the same evidence the directive showed the model — the WHY must cite it (parseRecipe guard).
+      const parsed = Scout.parseRecipe(reply, { existingRecipes: existing, denylist: scoutState.denylist, gearKeys: SCOUT_CAP_KEYS, grounding: interestsBlock + '\n' + activityBlock });
       scoutState = Scout.stampAttempt(scoutState, 'recipe', { now: Date.now() });
       if (parsed && parsed.none) scoutNote({ kind: 'recipe', outcome: 'none', reason: 'model judged the library already serves the observed interests' });
       else if (!parsed) scoutNote({ kind: 'recipe', outcome: 'rejected', reason: 'draft failed hard validation (malformed / broken template / near-duplicate / denylisted)' });
