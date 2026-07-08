@@ -45,6 +45,30 @@ A.eq(r.completions, [], 'first sight never celebrates — even a quest first see
 A.eq(QS.stateOf(s, 'dim:goals'), { firstSeenAt: 1000, completedAt: null, lastStatus: 'open', dismissedAt: null }, 'an open quest records firstSeenAt only');
 A.eq(QS.stateOf(s, 'ms:first_light').completedAt, 1000, 'done-at-first-sight backfills completedAt for the future trophy case');
 
+/* ---------- D3: first-seen-DONE — silent on a FRESH state, celebrated on an EXISTING one ----------
+   The discriminator is state freshness (seen empty before the fold). A first-ever sync backfills old history
+   SILENTLY (no 15-celebration storm on first boot / on resuming a save). But once the state exists, a quest
+   that appears already done is an AWAY completion the fold never saw open→done live — it IS a completion the
+   Commander earned, so it celebrates exactly once (the persistent notify record is its receipt). */
+(() => {
+  // FRESH state: every already-done quest is silent baseline (this is the first sync — it's all old history).
+  const fresh = QS.fresh();
+  const rf = QS.fold(fresh, [q('ms:a', 'done'), q('ms:b', 'done'), q('dim:x', 'open')], 1000);
+  A.eq(rf.completions, [], 'a fresh state backfills first-seen-done quests SILENTLY (no first-boot celebration storm)');
+  A.eq(QS.stateOf(fresh, 'ms:a').completedAt, 1000, '…but still records completedAt for the trophy case');
+})();
+(() => {
+  // EXISTING state: one quest already tracked, then a NEW quest shows up already done → an away completion.
+  const existing = QS.fresh();
+  QS.fold(existing, [q('dim:x', 'open')], 1000);                       // state is now non-fresh (has a seen entry)
+  const re = QS.fold(existing, [q('dim:x', 'open'), q('ms:away', 'done')], 2000);
+  A.eq(re.completions.length, 1, 'on an EXISTING state a first-seen-done quest celebrates (an away completion)');
+  A.eq(re.completions[0].id, 'ms:away', '…and it is the away-completed quest that is returned');
+  A.eq(QS.stateOf(existing, 'ms:away').completedAt, 2000, '…with completedAt stamped at the fold that observed it');
+  const re2 = QS.fold(existing, [q('ms:away', 'done')], 3000);
+  A.eq(re2.completions, [], '…and it never celebrates again (one completion per away edge)');
+})();
+
 /* ---------- open→done celebrates exactly once, with completedAt ---------- */
 r = QS.fold(s, [q('dim:goals', 'done'), q('ms:first_light', 'done')], 2000);
 A.eq(r.completions.length, 1, 'exactly one completion on the open→done edge');

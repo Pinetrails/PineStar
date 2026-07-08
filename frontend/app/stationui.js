@@ -3314,7 +3314,11 @@ const StationUI = (() => {
     // G1b: resolve station-gap quests against the live floor + re-evaluate the standing OUTBOX candidate
     // FIRST, so a gap that just closed (a prop placed) is already flipped done in the projection when the
     // durable quest memory folds it below — the open→done edge then rides G1a's celebration for free.
+    // D1: ALL FOUR generator stores must resync before the fold, else a work/maint completion sits undetected
+    // until the log opens and then backfills silently. Order mirrors pokeQuests(): generators, then the fold.
     if (typeof StationQuestStore !== 'undefined' && StationQuestStore.sync) { try { StationQuestStore.sync(); } catch (_) {} }
+    if (typeof WorkQuestStore !== 'undefined' && WorkQuestStore.sync) { try { WorkQuestStore.sync(); } catch (_) {} }
+    if (typeof MaintQuestStore !== 'undefined' && MaintQuestStore.sync) { try { MaintQuestStore.sync(); } catch (_) {} }
     // G1a: fold the live quest projection into the durable quest memory once a second — completion
     // detection must not depend on the QUEST LOG being open (the celebration toast/sting fire regardless).
     if (typeof QuestStateStore !== 'undefined' && QuestStateStore.sync) { try { QuestStateStore.sync(); } catch (_) {} }

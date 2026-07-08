@@ -10,8 +10,13 @@
        are achievements — an achievement can't nag, so it can't be dismissed.
      • completion detection = a STATUS DIFF between projections: a quest last seen open that is now done
        has genuinely completed (the real thing happened), and that edge is worth exactly one celebration.
-       A quest FIRST seen already done is backfilled (completedAt recorded) but never celebrated — resuming
-       a pre-G1a save must not fire a celebration storm for old history.
+       A quest FIRST seen already done is backfilled (completedAt recorded); whether it ALSO celebrates
+       turns on ONE discriminator — was the whole state fresh (seen empty) before this fold?
+         · FRESH state (first ever sync): backfill SILENTLY. Resuming a save / a first boot must not fire a
+           celebration storm for old history (and a brand-new quest kind that ships already-earned lands here).
+         · EXISTING state: a quest that appears already-done is a completion the Commander earned WHILE AWAY
+           (an open→done edge we never got to observe live) — celebrate it exactly once. The persistent notify
+           record is its receipt; an away completion must never vanish unseen.
 
    THE LAW (inherited from xp.js): quests never mint XP. A completion pays out sound + toast + flourish
    (the store's job) — leveling stays locked to user feedback on real built work.
@@ -63,11 +68,16 @@
   function dismissible(q) { return !!(q && q.kind === 'dossier'); }
 
   // fold ONE projection into the state (in place, like Dossier.upsert). Returns the quests that made an
-  // open→done transition THIS fold — the celebratable completions. First sight is baseline only:
-  // a quest already done when first seen backfills completedAt and stays silent.
+  // open→done transition THIS fold — the celebratable completions. A quest already done when first seen
+  // backfills completedAt; it ALSO celebrates iff the state pre-existed (an away completion we never saw),
+  // and stays silent iff the state was fresh (first-boot history must not storm — see the header note).
   function fold(state, quests, now) {
     const completions = [];
     if (!state || !state.seen) return { state, completions };
+    // the D3 discriminator, sampled ONCE before the loop: a truly-fresh state (no prior seen entries) is a
+    // first sync — its already-done quests are old history and backfill silently. A pre-existing state that
+    // now shows a first-seen-done quest is an AWAY completion (open→done we never got to observe) → celebrate.
+    const wasFresh = Object.keys(state.seen).length === 0;
     const arr = Array.isArray(quests) ? quests : [];
     for (const q of arr) {
       if (!q || !q.id) continue;
@@ -76,6 +86,9 @@
       const rec = state.seen[q.id];
       if (!rec) {
         state.seen[q.id] = { firstSeenAt: now, completedAt: status === 'done' ? now : null, lastStatus: status };
+        // first-seen-already-done on an EXISTING state = a completion the Commander earned while away — the
+        // fold never saw the open→done edge, but it IS a completion (the notify record is the receipt).
+        if (status === 'done' && !wasFresh) completions.push(q);
         continue;
       }
       if (rec.lastStatus !== 'done' && status === 'done') { rec.completedAt = now; completions.push(q); }
