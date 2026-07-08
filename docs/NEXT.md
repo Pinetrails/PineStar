@@ -611,6 +611,17 @@ it." Structurally impossible today because:
   /pending → /decide gate: "found N bugs while you were away — approve and I'll commit."
   Approve applies to a branch in the user's repo (never main, never push); deny feeds learn.
   OPEN (Andrew, small): approve = auto-commit-to-branch (recommended) vs drop-the-.patch.
+- **NS-5c · Projects rail (Andrew idea 2026-07-08).** The workstreams section gets a
+  button-toggle: **SESSIONS ↔ PROJECTS**. Projects view lists the known-projects store
+  (GET /api/projects from NS-5): name, path, last-touched, git badge. Actions: **ADD** a
+  folder right in the station (Hermes-fluid; in desktop builds use the Tauri native folder
+  dialog, browser mode = typed path field) — adding = blessing the root through the SAME
+  standing path-grant machinery as conversational trust (one consent flow, two doorways;
+  never a parallel grant store) — and **jump straight into a project**: clicking a project
+  opens/creates a session anchored to that root (agent starts with the project path in
+  context). Remove-from-list = revoke the path grant (truthful: the list shows exactly what
+  is blessed, nothing else). Depends on NS-5 landing first (store + grant class + routes).
+  Frontend law applies (windows/rail conventions); claim in-file before building.
 - **NS-5b · Focus resolver — single-priority nights (Andrew direction 2026-07-08: "hone in
   on moving the needle," don't scatter).** Beats must NOT spread across every blessed root /
   open thread. Shift start = a PRIORITY RESOLUTION step: rank the evidence (per-root
