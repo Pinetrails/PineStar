@@ -30,7 +30,10 @@
   // events forwarded from a child run onto the LEAD's bus — ENOUGH to animate the handoff + keep cost honest,
   // but NOT the child's tokens/tool-calls (those would clutter the lead's COMMS). The lead reads the worker's
   // actual output from the tool RESULT, not the stream.
-  const FORWARD = { 'agent.run.start': 1, 'agent.run.end': 1, 'agent.run.error': 1, 'agent.cost': 1 };
+  // 'deliverable' forwards too (2026-07-07 escape): a worker's saved image/file was INVISIBLE — no COMMS card,
+  // no crate, no notify — because the event died here. The payload already carries the OWNING agentId and its
+  // jail-relative path, and the frontend card opens /api/file?agent=<owner>, so forwarding is the whole fix.
+  const FORWARD = { 'agent.run.start': 1, 'agent.run.end': 1, 'agent.run.error': 1, 'agent.cost': 1, 'deliverable': 1 };
   // a delegated worker's added kit, on top of the autonomous full office (compute/web/files/memory/studio/jukebox):
   // the WORKBENCH (terminal). Paired with the SHARED lead consent broker, shell/writes follow the lead's APPROVAL
   // posture — so a worker has the same reach as the orchestrator, gated by the same approvals.
@@ -96,7 +99,7 @@
       // per-worker/day/global budget caps + the concurrency ceiling + workers running autonomous (default-deny
       // their own mutations). Prompting on every delegation would be pure consent-fatigue.
       name: 'team.dispatch', capability: 'orchestrator', scope: 'execute', requiresConsent: false,
-      description: 'Delegate subtasks to your specialist crew. Each worker runs its OWN real agent loop (live web search/read, files, memory) and returns its result for you to synthesize into the final answer. Address workers by the agentId listed under YOUR TEAM. Runs sequentially by default; pass parallel:true to run them at once. Pass background:true to start watchable workers and keep working.',
+      description: 'Delegate subtasks to your specialist crew. Each worker runs its OWN real agent loop (live web search/read, files, memory) and returns its result for you to synthesize into the final answer. Address workers by the agentId listed under YOUR TEAM. Runs sequentially by default; pass parallel:true to run them at once. Pass background:true to start watchable workers and keep working. FILES: each worker saves into its OWN private workspace — you cannot fs.read another agent\'s files, so never "verify" a worker\'s file with your own file tools (absence in YOUR workspace proves nothing). The result\'s artifacts list is the proof of what each worker saved, and the Commander is shown those files as cards automatically — reference them as "<workerId>\'s workspace: <path>".',
       schema: {
         type: 'object', required: ['workers'], properties: {
           workers: {
@@ -166,6 +169,13 @@
             usd: result.usd || 0
           };
           if (wire.note) row.note = wire.note;   // honest credential-fallback disclosure (never silent)
+          // WORK VISIBILITY (ghost-file fix): what the worker PROVABLY produced (its runOnce artifact ledger),
+          // stamped with the OWNING agentId. Files live in the WORKER's private workspace — the lead cannot
+          // fs.read them and must reference them as the worker's (they are already shown to the Commander as
+          // cards via the forwarded deliverable events). Never invent paths beyond this list.
+          if (Array.isArray(result.artifacts) && result.artifacts.length) {
+            row.artifacts = result.artifacts.map(a => Object.assign({}, a, { agentId: job.agentId, workspace: job.agentId }));
+          }
           return row;
         };
 
@@ -259,8 +269,10 @@
               settle(r); return { status: 'error', reason: 'refused', result: r.result, usd: 0 };
             }
             const r = { label, agentId: ephemeralId, reason: result.reason || 'done', result: lastAssistant(result.messages) || '(the subagent returned no text)', usd: result.usd || 0 };
+            // ghost-file fix (same as runWorker): the clone's proven outputs, stamped with the owning workspace.
+            if (Array.isArray(result.artifacts) && result.artifacts.length) r.artifacts = result.artifacts.map(a => Object.assign({}, a, { agentId: ephemeralId, workspace: ephemeralId }));
             settle(r);
-            return { status: r.reason === 'done' ? 'done' : 'error', reason: r.reason, result: r.result, usd: r.usd };
+            return { status: r.reason === 'done' ? 'done' : 'error', reason: r.reason, result: r.result, usd: r.usd, artifacts: r.artifacts };
           };
           const view = subagents.start({ leadId, agentId: ephemeralId, prompt: prompt, runId: newId() }, runner);
           return { label, view, done };
