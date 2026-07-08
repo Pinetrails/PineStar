@@ -1,6 +1,6 @@
 {
   "area": "commands",
-  "updatedAt": "2026-07-07T22:40:51.000Z",
+  "updatedAt": "2026-07-08T00:00:00.000Z",
   "entries": [
     {
       "id": "command/agents",
@@ -559,6 +559,10 @@
         {
           "kind": "test",
           "ref": "test/slash.config.test.js (App.applyConfig applies model; chat uses App config seam)"
+        },
+        {
+          "kind": "journey",
+          "ref": "scripts/qa/journeys.mjs (J7 slash-truth: drives the REAL #chat-input — \"/model <id>\" with args dispatches as a command, arg reaches App.currentAgent().model, \"/model …\" NOT echoed as a .cmsg.user chat row; the 2026-07-05 args-bug seam)"
         }
       ],
       "status": "perfected",
@@ -1291,6 +1295,10 @@
         {
           "kind": "test",
           "ref": "test/slash.config.test.js (App.currentAgent exposed for whoami)"
+        },
+        {
+          "kind": "journey",
+          "ref": "scripts/qa/journeys.mjs (J7 slash-truth: bare \"/whoami\" typed into the real #chat-input dispatches to a local .cmsg.agent line, no slash user row)"
         }
       ],
       "status": "perfected",
