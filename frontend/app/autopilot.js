@@ -225,6 +225,37 @@
     return true;
   }
 
+  // the OPEN-THREADS block (NS-6) — durable ideas the Commander raised before but never acted on (from the thread
+  // ledger, injected via the context pack). Each gets a citable tag [tN] so a candidate can name EXACTLY which
+  // thread it advances (the preferred grounding — beats a fresh improv idea, and lets the beat verdict write the
+  // thread's state back to picked/delivered/declined). Returns whether any thread was rendered (so the directive
+  // only adds the "prefer a thread" rule when there ARE threads — never inviting a fabricated citation). Pure.
+  //   threads: [{ id, title, spec }]  (already recency-ranked + capped by the caller)
+  function threadRef(i) { return 't' + (i + 1); }
+  function pushThreadsBlock(lines, threads) {
+    const list = Array.isArray(threads) ? threads.filter(Boolean) : [];
+    if (!list.length) return false;
+    lines.push('OPEN THREADS — ideas the Commander raised before but never acted on. PREFER these: if one fits, propose it and cite its tag (e.g. [t1]) in GROUNDS:');
+    list.forEach((t, i) => {
+      const title = String((t && t.title) || '').replace(/\s+/g, ' ').trim().slice(0, 140);
+      const spec = String((t && t.spec) || '').replace(/\s+/g, ' ').trim().slice(0, 140);
+      if (title) lines.push('- [' + threadRef(i) + '] ' + title + (spec ? ' — "' + spec + '"' : ''));
+    });
+    return true;
+  }
+  // resolve a GROUNDS string to a cited thread id (for the picked/delivered writeback): an explicit [tN] tag wins;
+  // else a thread whose TITLE appears (either direction, normalized) in the grounds. null when nothing is cited.
+  function citedThreadId(grounds, threads) {
+    const list = Array.isArray(threads) ? threads.filter(Boolean) : [];
+    if (!list.length) return null;
+    const g = String(grounds == null ? '' : grounds);
+    const tag = /\[\s*t(\d+)\s*\]/i.exec(g);
+    if (tag) { const idx = parseInt(tag[1], 10) - 1; if (idx >= 0 && idx < list.length && list[idx] && list[idx].id) return String(list[idx].id); }
+    const gl = g.toLowerCase();
+    for (const t of list) { const title = String((t && t.title) || '').toLowerCase().trim(); if (title && (gl.indexOf(title) >= 0 || title.indexOf(gl) >= 0) && t.id) return String(t.id); }
+    return null;
+  }
+
   // THE CANDIDATE DIRECTIVE — the reason-only task that asks the model for a few grounded, achievable-now job ideas
   // (it carries the dossier in its live system prompt; this hands the beliefs + the recent activity + the eligible
   // archetypes explicitly so a weak model can't miss them, and hard-constrains output to the reason/draft envelope
@@ -238,14 +269,16 @@
     const lines = [];
     lines.push('INTERNAL — SELF-DIRECTED WORK. The Commander is away. Do not run any tools. Reason only, then reply in the exact format below.');
     lines.push('Propose up to ' + max + ' small jobs you could do RIGHT NOW, unattended, to help them — then you will be asked to do the single best one and leave a draft on their desk.');
+    const hasThreads = pushThreadsBlock(lines, ctx.threads);
     const hasActivity = pushActivityBlock(lines, ctx.activity);
     const dimLine = (key, label) => { const arr = Array.isArray(beliefs[key]) ? beliefs[key].filter(Boolean) : []; if (arr.length) lines.push('- ' + label + ': ' + arr.join(' | ')); };
     lines.push('What you know about them:');
     dimLine('goals', 'Goals'); dimLine('pain', 'Pain points'); dimLine('ambition', 'Ambitions'); dimLine('stack', 'Stack & tools'); dimLine('standing_orders', 'Standing orders'); dimLine('style', 'Working style');
     lines.push('Each job must be ONE of these kinds: ' + eligible.map(a => a.id + ' (' + a.blurb + ')').join(', ') + '.');
     lines.push('Hard rules:');
+    if (hasThreads) lines.push('- PREFER AN OPEN THREAD: if any thread above fits, propose it and cite its tag in GROUNDS (e.g. GROUNDS: [t1] ...). A grounded open thread beats a fresh idea. If none fit, improvise a grounded idea as below.');
     if (hasActivity) lines.push('- CONTINUE THEIR WORK: prefer a job that directly advances, unblocks, or extends something in "What they worked on recently" above — that beats a generic idea. But stay HONEST: only cite work that is actually listed; never invent activity.');
-    lines.push('- GROUNDED: every job must aim at a SPECIFIC thing above (a real recent job / goal / pain / etc). Quote the exact thing in GROUNDS. If you cannot ground it in something you actually know or they actually did, do not propose it.');
+    lines.push('- GROUNDED: every job must aim at a SPECIFIC thing above (an open thread / a real recent job / goal / pain / etc). Quote the exact thing in GROUNDS. If you cannot ground it in something you actually know or they actually did, do not propose it.');
     lines.push('- ACHIEVABLE NOW, UNATTENDED: NO tools, NO web, NO file writes, NO sending. It must be REASONING / DRAFTING / PLANNING you can finish from what you know and leave as a draft. Never propose searching, fetching, posting, or messaging.');
     lines.push('- HONEST CONFIDENCE: rate how sure you are it is genuinely useful AND that you can do it well now (high/medium/low). Low is fine — it is better to admit it than to pad.');
     lines.push('Reply with one block PER job, EXACTLY this format, nothing else:');
@@ -268,7 +301,14 @@
     const eligibleIds = {};
     for (const a of (Array.isArray(opts.eligible) && opts.eligible.length ? opts.eligible : ARCHETYPES)) eligibleIds[a.id] = 1;
     const activityTexts = Array.isArray(opts.activity) ? opts.activity.filter(Boolean).map(String) : [];
-    const beliefTexts = flattenBeliefs(opts.beliefs).concat(activityTexts);   // the veto evidence pool = beliefs + activity lines
+    // NS-6: open threads are veto evidence too — a candidate may ground itself in a thread's title/spec (or its
+    // [tN] tag). Adding the thread texts to the pool means a thread-cited candidate passes the token-overlap veto,
+    // and citedThreadId() below resolves WHICH thread (for the picked/delivered writeback). Invented grounding
+    // (zero overlap with beliefs, activity, OR threads, and no valid tag) still dies.
+    const threads = Array.isArray(opts.threads) ? opts.threads.filter(Boolean) : [];
+    const threadTexts = [];
+    for (const t of threads) { if (t && t.title) threadTexts.push(String(t.title)); if (t && t.spec) threadTexts.push(String(t.spec)); }
+    const beliefTexts = flattenBeliefs(opts.beliefs).concat(activityTexts).concat(threadTexts);   // the veto evidence pool
     const requireGrounding = opts.requireGrounding !== false;
     const raw = String(text == null ? '' : text);
     const grab = (block, label) => { const m = new RegExp('^\\s*' + label + '\\s*:\\s*(.+?)\\s*$', 'im').exec(block); return m ? m[1].trim() : ''; };
@@ -281,10 +321,15 @@
       const spec = grab(block, 'SPEC');
       if (!title || !grounds || !spec) continue;                 // structure: all three are mandatory
       if (!eligibleIds[kind]) continue;                          // an ineligible / hallucinated kind is dropped
-      if (requireGrounding && !grounded(grounds, beliefTexts)) continue;   // the grounding veto: invented grounding never survives
+      // NS-6: an explicit [tN] tag that resolves to a real open thread is grounding on its own (the preferred
+      // grounding); otherwise the token-overlap veto (now including thread texts) decides.
+      const threadId = citedThreadId(grounds, threads);
+      if (requireGrounding && !threadId && !grounded(grounds, beliefTexts)) continue;   // the grounding veto: invented grounding never survives
       let conf = grab(block, 'CONFIDENCE').toLowerCase();
       if (conf !== 'high' && conf !== 'medium' && conf !== 'low') conf = 'medium';
-      out.push({ title: title.slice(0, 80), archetype: kind, grounds, confidence: conf, spec });
+      const cand = { title: title.slice(0, 80), archetype: kind, grounds, confidence: conf, spec };
+      if (threadId) cand.threadId = threadId;
+      out.push(cand);
     }
     return out;
   }
@@ -366,14 +411,16 @@
     const lines = [];
     lines.push('INTERNAL — SELF-DIRECTED WORK. The Commander is away and has cleared you to BUILD in your private sandbox. Reason first, then reply in the exact format below.');
     lines.push('Propose up to ' + max + ' small jobs you could do RIGHT NOW, unattended, that each end in a REAL, reviewable artifact left in your workshop — then you will be asked to build the single best one.');
+    const hasThreads = pushThreadsBlock(lines, ctx.threads);
     const hasActivity = pushActivityBlock(lines, ctx.activity);
     const dimLine = (key, label) => { const arr = Array.isArray(beliefs[key]) ? beliefs[key].filter(Boolean) : []; if (arr.length) lines.push('- ' + label + ': ' + arr.join(' | ')); };
     lines.push('What you know about them:');
     dimLine('goals', 'Goals'); dimLine('pain', 'Pain points'); dimLine('ambition', 'Ambitions'); dimLine('stack', 'Stack & tools'); dimLine('standing_orders', 'Standing orders'); dimLine('style', 'Working style');
     lines.push('Each job must be ONE of these kinds: ' + eligible.map(a => a.id + ' (' + a.blurb + ')').join(', ') + '.');
     lines.push('Hard rules:');
+    if (hasThreads) lines.push('- PREFER AN OPEN THREAD: if any thread above fits, build it and cite its tag in GROUNDS (e.g. GROUNDS: [t1] ...). A grounded open thread beats a fresh idea. If none fit, improvise a grounded idea as below.');
     if (hasActivity) lines.push('- CONTINUE THEIR WORK: prefer a job that directly advances, unblocks, or extends something in "What they worked on recently" above — that beats a generic idea. But stay HONEST: only cite work that is actually listed; never invent activity.');
-    lines.push('- GROUNDED: every job must aim at a SPECIFIC thing above (a real recent job / goal / pain / etc). Quote the exact thing in GROUNDS. If you cannot ground it in something you actually know or they actually did, do not propose it.');
+    lines.push('- GROUNDED: every job must aim at a SPECIFIC thing above (an open thread / a real recent job / goal / pain / etc). Quote the exact thing in GROUNDS. If you cannot ground it in something you actually know or they actually did, do not propose it.');
     lines.push('- BUILDABLE NOW, UNATTENDED, LOCAL: it must finish as a FILE or small self-contained tool you write into your workshop folder. You MAY read/research with your tools first. You may NOT send, publish, spend, message, or touch anything outside your sandbox — the artifact stays local for the Commander to review.');
     lines.push('- HONEST CONFIDENCE: rate how sure you are it is genuinely useful AND that you can build it well now (high/medium/low). Low is fine — better than padding.');
     lines.push('Reply with one block PER job, EXACTLY this format, nothing else:');
@@ -529,6 +576,7 @@
   return {
     idleFor, readiness, decide, newestStamp,
     eligibleArchetypes, grounded, sigTokens, flattenBeliefs, pushActivityBlock,
+    pushThreadsBlock, citedThreadId, threadRef,
     buildCandidateDirective, parseCandidates, scoreAndSelect, buildDoDirective, parseDeliverable,
     buildCandidateDirectiveV2, buildDoDirectiveV2, learnFold, learnWeightsFrom,
     buildCritiqueDirective, parseCritique, digestLines, digestSummary, digestHeadline,
