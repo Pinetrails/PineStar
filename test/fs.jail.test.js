@@ -203,6 +203,30 @@ async function rejects(promise, msg) { try { await promise; A.ok(false, msg + ' 
     A.ok(rr.content.indexOf('[REDACTED]') >= 0 && rr.content.indexOf('sk-secret-123') < 0, 'fs.search redacts secrets out of surfaced lines (§5.6)');
   }
 
+  // ---- NS-5: an absolute path is ILLEGAL when no pathTrust is wired, and ROUTED to it when it is ----
+  {
+    // unwired (this file's default tools): every absolute form stays illegal (the historic jail invariant)
+    for (const abs of ['/etc/passwd', 'C:\\Windows\\x', '\\\\server\\share\\y']) {
+      await rejects(_internals.resolveInside('ag', abs), 'unwired: absolute path stays illegal: ' + abs);
+    }
+    // wired: an absolute path is handed to the injected guard verbatim, with the tool's scope threaded
+    const seen = [];
+    const guard = async (abs, o) => { seen.push({ abs, scope: o.scope, agentId: o.agentId }); return { base: '/blessed', abs: abs }; };
+    const WT = makeFsTools({ fsp, pathMod: path, root: ROOT, pathTrust: guard });
+    const rr = await WT._internals.resolveInside('agz', '/outside/project/file.txt', { scope: 'read', ctx: { agentId: 'agz' } });
+    A.ok(rr.abs === '/outside/project/file.txt' && rr.base === '/blessed', 'wired: absolute path is resolved via the injected guard');
+    A.ok(seen.length === 1 && seen[0].scope === 'read' && seen[0].agentId === 'agz', 'guard receives the absolute path with scope + agentId');
+    // a write tool threads scope:'write' to the guard (so writes can stay consent-gated by the caller)
+    await WT.writeTool.run({ path: '/outside/project/w.txt', content: 'x' }, { agentId: 'agz' }).catch(() => {});
+    A.ok(seen.some(s => s.scope === 'write'), 'a write tool threads scope:"write" to the guard');
+    // NUL is illegal even with a guard wired (never reaches the guard)
+    await rejects(WT._internals.resolveInside('agz', '/a/\0/b', { scope: 'read' }), 'NUL stays illegal even when pathTrust is wired');
+    // a relative path is UNAFFECTED by the guard — still jailed, guard never consulted for it
+    const before = seen.length;
+    await WT._internals.resolveInside('agz', 'inside/rel.txt', { scope: 'read' });
+    A.ok(seen.length === before, 'a relative path never reaches the guard (jail path unchanged)');
+  }
+
   try { fs.rmSync(ROOT, { recursive: true, force: true }); } catch (e) {}
   A.report('fs.jail.test');
 })();
