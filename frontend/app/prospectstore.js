@@ -149,10 +149,28 @@ const ProspectStore = (() => {
 
   const isDenied = fp => !!fp && !!legacy && legacy.denylist.indexOf(fp) >= 0;
 
+  /* ---- engagement telemetry (lane 5) ---- */
+  // count a REAL recipe launch server-side (counters only, no content) + mirror it into the local cache so the
+  // FOR-YOU rank reflects it immediately. Fire-and-forget; a miss just means a weaker rank this session.
+  function noteLaunch(recipe) {
+    if (!recipe || !recipe.id) return;
+    try {
+      if (cache) {
+        cache.usage = cache.usage || { launches: {} };
+        const cur = cache.usage.launches[recipe.id];
+        cache.usage.launches[recipe.id] = { name: recipe.name || (cur && cur.name) || '', n: (cur && cur.n || 0) + 1, lastAt: now() };
+      }
+      api('/api/scout/telemetry', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kind: 'recipe.launch', id: recipe.id, name: recipe.name || '' }) }).catch(() => {});
+    } catch (_) {}
+  }
+  // the per-recipe launch counters ({id: {name, n, lastAt}}) — rankRecipes' engagement signal.
+  function launches() { return (cache && cache.usage && cache.usage.launches) || {}; }
+
   // a brand-new hero drops the browser-side state; the server store is the station's own memory (kept).
   function reset() { legacy = hydrateLegacy(null); cache = null; try { localStorage.removeItem(KEY); } catch (_) {} }
 
   return { init, refresh, pushContext, list, recipeDrafts, get, interests, gate, warm, dismiss, accept, reset,
+    noteLaunch, launches,
     isDenied: fp => isDenied(fp), _hydrateLegacy: hydrateLegacy, _setCacheForTest: c => { cache = c; } };
 })();
 

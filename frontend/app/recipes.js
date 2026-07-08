@@ -578,12 +578,15 @@
   // RANK the "FOR YOU" row deterministically. `opts`:
   //   score(itemTags) -> number  — the profile affinity scorer (ProfileStore.score), or null when learning is off/thin.
   //   goalText        -> string  — the user's goals belief text (keyword-matched into the ranking as a small nudge).
+  //   launches        -> {id: {n}} or {id: n} — REAL per-recipe launch counts (the scout usage read). The strongest
+  //                      engagement signal there is: what the Commander actually launches ranks up (capped nudge).
   //   exclude         -> id      — a recipe to omit (e.g. the one already in the dossier).
   //   limit           -> N       — how many to return (default 4).
-  // Signal blend: (profile affinity × 4) + (goal-keyword hits × 2), tie-broken by original catalog order so the
-  // result is STABLE for a fixed input (test-friendly). If BOTH signals are silent (no profile + no goal match), we
-  // fall back to an HONEST category spread — one recipe per distinct category in catalog order — so a cold-start
-  // user still sees a varied, non-arbitrary row (never a fake "popular" ordering; truthful-telemetry law).
+  // Signal blend: (profile affinity × 4) + (goal-keyword hits × 2) + min(launches, 5), tie-broken by original
+  // catalog order so the result is STABLE for a fixed input (test-friendly). If EVERY signal is silent (no profile
+  // + no goal match + never launched), we fall back to an HONEST category spread — one recipe per distinct category
+  // in catalog order — so a cold-start user still sees a varied, non-arbitrary row (never a fake "popular"
+  // ordering; truthful-telemetry law — the launch counts are the user's OWN real launches, never anyone else's).
   function rankRecipes(items, opts) {
     opts = opts || {};
     const list0 = Array.isArray(items) ? items : builtins();
@@ -591,13 +594,21 @@
     const limit = opts.limit != null ? opts.limit : 4;
     const scoreFn = typeof opts.score === 'function' ? opts.score : null;
     const goalText = opts.goalText || '';
+    const launches = (opts.launches && typeof opts.launches === 'object') ? opts.launches : null;
+    const launchCount = (id) => {
+      if (!launches || !id) return 0;
+      const u = launches[id];
+      const n = (u && typeof u === 'object') ? u.n : u;
+      return (Number.isFinite(n) && n > 0) ? Math.min(5, Math.floor(n)) : 0;
+    };
     const pool = list0.filter(r => r && r.id !== exclude);
     let anySignal = false;
     const scored = pool.map((r, idx) => {
       const aff = scoreFn ? (Number(scoreFn(r.tags || {})) || 0) : 0;
       const goal = goalKeywordScore(r, goalText);
-      if (aff > 0 || goal > 0) anySignal = true;
-      return { r, idx, s: aff * 4 + goal * 2 };
+      const use = launchCount(r.id);
+      if (aff > 0 || goal > 0 || use > 0) anySignal = true;
+      return { r, idx, s: aff * 4 + goal * 2 + use };
     });
     if (anySignal) {
       return scored

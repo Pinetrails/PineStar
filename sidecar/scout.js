@@ -64,8 +64,10 @@
     return hit / new Set(a.concat(Array.from(b))).size;
   }
 
+  const USAGE_CAP = 100;   // per-recipe launch counters kept (weakest/oldest evicted past the ceiling)
+
   function fresh(now) {
-    return { v: STATE_VERSION, staged: [], denylist: [], ledger: [], runsSinceMint: 0, lastMintAt: 0, lastKind: '', context: null };
+    return { v: STATE_VERSION, staged: [], denylist: [], ledger: [], runsSinceMint: 0, lastMintAt: 0, lastKind: '', context: null, usage: { launches: {} } };
   }
 
   // tolerant hydrate: clamp everything; a corrupt/partial save degrades per-field, never throws.
@@ -87,6 +89,17 @@
       if (Number.isFinite(raw.lastMintAt) && raw.lastMintAt >= 0) s.lastMintAt = Math.floor(raw.lastMintAt);
       if (KINDS.indexOf(raw.lastKind) !== -1) s.lastKind = raw.lastKind;
       if (raw.context && typeof raw.context === 'object') s.context = raw.context;
+      if (raw.usage && raw.usage.launches && typeof raw.usage.launches === 'object') {
+        for (const id of Object.keys(raw.usage.launches).slice(0, USAGE_CAP)) {
+          const u = raw.usage.launches[id];
+          if (!u || typeof u !== 'object' || !str(id)) continue;
+          s.usage.launches[str(id).slice(0, 60)] = {
+            name: str(u.name).slice(0, 40),
+            n: (Number.isFinite(u.n) && u.n > 0) ? Math.floor(u.n) : 0,
+            lastAt: Number.isFinite(u.lastAt) ? Math.floor(u.lastAt) : 0
+          };
+        }
+      }
     }
     return s;
   }
@@ -299,10 +312,41 @@
     });
   }
 
+  /* ---- engagement telemetry (lane 5): per-recipe launch counters ----
+     What the Commander actually LAUNCHES is the strongest engagement signal there is: it feeds the FOR-YOU
+     rank (frontend) and the "launches most" hint in the recipe directive. Counters only — no content. */
+  function noteLaunch(state, rec, opts) {
+    const now = Number(opts && opts.now) || 0;
+    const s = normalize(state, now);
+    const id = str(rec && rec.id).slice(0, 60);
+    if (!id) return s;
+    const launches = {};
+    for (const k of Object.keys(s.usage.launches)) launches[k] = Object.assign({}, s.usage.launches[k]);
+    const cur = launches[id];
+    launches[id] = { name: str((rec && rec.name) || (cur && cur.name)).slice(0, 40), n: (cur ? cur.n : 0) + 1, lastAt: now };
+    // evict past the ceiling: fewest launches first (ties: oldest lastAt) — a long-lived station keeps its heavy hitters.
+    const keys = Object.keys(launches);
+    if (keys.length > USAGE_CAP) {
+      keys.sort((a, b) => (launches[b].n - launches[a].n) || (launches[b].lastAt - launches[a].lastAt));
+      for (const k of keys.slice(USAGE_CAP)) delete launches[k];
+    }
+    return Object.assign({}, s, { usage: { launches: launches } });
+  }
+  // the "launches most" names for the recipe directive (top by count, ties newest-first).
+  function topLaunched(state, limit) {
+    const s = normalize(state, 0);
+    return Object.keys(s.usage.launches)
+      .map(id => s.usage.launches[id])
+      .filter(u => u.n > 0 && u.name)
+      .sort((a, b) => (b.n - a.n) || (b.lastAt - a.lastAt))
+      .slice(0, Math.max(1, Number(limit) || 5))
+      .map(u => u.name);
+  }
+
   return {
     fresh, normalize, noteRun, decide, buildRecipeDirective, parseRecipe,
-    note, stage, stampAttempt, dismiss, accept, setContext,
+    note, stage, stampAttempt, dismiss, accept, setContext, noteLaunch, topLaunched,
     fingerprint, overlap,
-    KINDS, MINT_EVERY_RUNS, MINT_MIN_GAP_MS, MAX_LIVE, LEDGER_CAP, TAG_LANES, CATEGORIES
+    KINDS, MINT_EVERY_RUNS, MINT_MIN_GAP_MS, MAX_LIVE, LEDGER_CAP, TAG_LANES, CATEGORIES, USAGE_CAP
   };
 });

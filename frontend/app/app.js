@@ -856,6 +856,8 @@ const App = (() => {
     const ws = (typeof Workstreams !== 'undefined') ? Workstreams.create(recipe.name || 'Mission', { kind: 'task' }) : null;   // a recipe mission is a board task
     if (ws && typeof Chat !== 'undefined' && Chat.load) Chat.load(ws);   // make the new stream the compose target before sending
     refreshUsage(); renderRail();
+    // engagement loop (scout lane 5): count the REAL launch — feeds the FOR-YOU rank + the drafting hint.
+    try { if (typeof ProspectStore !== 'undefined' && ProspectStore.noteLaunch) ProspectStore.noteLaunch(recipe); } catch (_) {}
     // fromRecipe marks this run as recipe-launched so R5 "Bottle a run" never offers to re-bottle a recipe (it
     // already IS one). chat.js records it into RUN_META at onRunId; BottleStore reads it via runBottleInfo below.
     if (typeof Chat !== 'undefined' && Chat.send && !Chat.isBusy()) Chat.send(text, { fromRecipe: true });   // kicks off the run on the fresh stream

@@ -2598,7 +2598,8 @@ async function runScoutCycle(o) {
         interestsBlock: Interests.topicsBlock(interestsState, { now: Date.now(), limit: 8 }),
         dossierBlock: commanderDossier.get(),
         activityBlock: activity.slice(0, 8).map(a => '• ' + a).join('\n'),
-        existingRecipes: existing, gearKeys: SCOUT_CAP_KEYS
+        existingRecipes: existing, gearKeys: SCOUT_CAP_KEYS,
+        launchedOften: Scout.topLaunched(scoutState, 5)
       });
       const reply = await propose('You are the station\'s recipe author. Follow the format exactly; ground every claim in the provided evidence.', directive);
       const parsed = Scout.parseRecipe(reply, { existingRecipes: existing, denylist: scoutState.denylist, gearKeys: SCOUT_CAP_KEYS });
@@ -2654,8 +2655,19 @@ function handleScoutGet(req, res) {
     gate: { fire: gate.fire, binding: gate.binding, kind: gate.kind, runsSinceMint: scoutState.runsSinceMint, mintEveryRuns: Scout.MINT_EVERY_RUNS },
     interests: Interests.summary(interestsState, { now: now, limit: 10 }),
     staged: scoutState.staged,
-    ledger: scoutState.ledger.slice(-20)
+    ledger: scoutState.ledger.slice(-20),
+    usage: scoutState.usage
   }));
+}
+// POST /api/scout/telemetry { kind:'recipe.launch', id, name } — the engagement loop's one write: count a real
+// recipe launch (counters only, no content). Feeds the FOR-YOU rank + the drafting directive's launch hint.
+async function handleScoutTelemetry(req, res) {
+  let body; try { body = JSON.parse(await readBody(req, 1 << 14)) || {}; } catch (e) { res.writeHead(400); return res.end('bad json'); }
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  if (body.kind !== 'recipe.launch' || !String(body.id || '')) return json(400, { ok: false, error: 'kind must be recipe.launch with an id' });
+  scoutState = Scout.noteLaunch(scoutState, { id: body.id, name: body.name }, { now: Date.now() });
+  persistScout();
+  json(200, { ok: true });
 }
 // POST /api/scout/context — the browser pushes the facts only IT knows (custom classes/recipes, worksignal
 // summary, the recruiter's top pick) so server-side drafting dedupes against them. Bounded by the reducer.
@@ -3355,6 +3367,7 @@ function dispatchRoute(req, res) {
   if (req.method === 'GET' && req.url === '/api/scout') return handleScoutGet(req, res);
   if (req.method === 'POST' && req.url === '/api/scout/context') return handleScoutContext(req, res);
   if (req.method === 'POST' && req.url === '/api/scout/decide') return handleScoutDecide(req, res);
+  if (req.method === 'POST' && req.url === '/api/scout/telemetry') return handleScoutTelemetry(req, res);
   if (req.method === 'POST' && req.url === '/api/summon/ack') return handleSummonAck(req, res);
   if (req.method === 'POST' && req.url === '/api/key') return handleSetKey(req, res);
   if (req.method === 'POST' && req.url === '/api/channels/token') return handleSetChannelToken(req, res);

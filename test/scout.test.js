@@ -127,6 +127,24 @@ A.eq(cx.context.customRecipes.length, 80, 'context lists are capped');
 A.ok(cx.context.worksignalSummary.length <= 200, 'context strings are clipped');
 A.eq(cx.context.topRecommendation, 'researcher', 'the recruiter top pick rides the context');
 
+/* ---------- engagement telemetry: launch counters, capped + ranked ---------- */
+let u = S.fresh(T0);
+u = S.noteLaunch(u, { id: 'morning-brief', name: 'Morning Brief' }, { now: T0 });
+u = S.noteLaunch(u, { id: 'morning-brief', name: 'Morning Brief' }, { now: T0 + 1 });
+u = S.noteLaunch(u, { id: 'fix-bug', name: 'Fix a Bug' }, { now: T0 + 2 });
+A.eq(u.usage.launches['morning-brief'].n, 2, 'repeat launches count up');
+A.eq(S.topLaunched(u, 5), ['Morning Brief', 'Fix a Bug'], 'topLaunched ranks by count, ties newest-first');
+A.eq(S.noteLaunch(u, { id: '' }, { now: T0 }).usage.launches['morning-brief'].n, 2, 'a bad launch record is a no-op');
+let uc = S.fresh(T0);
+for (let i = 0; i < S.USAGE_CAP + 8; i++) uc = S.noteLaunch(uc, { id: 'r' + i, name: 'R' + i }, { now: T0 + i });
+uc = S.noteLaunch(uc, { id: 'heavy', name: 'Heavy' }, { now: T0 + 1000 });
+uc = S.noteLaunch(uc, { id: 'heavy', name: 'Heavy' }, { now: T0 + 1001 });
+A.ok(Object.keys(uc.usage.launches).length <= S.USAGE_CAP, 'launch counters cap at USAGE_CAP');
+A.ok(!!uc.usage.launches['heavy'] && uc.usage.launches['heavy'].n === 2, 'the recent heavy hitter survives eviction and keeps its count');
+// usage survives a hydrate round-trip
+const ur = S.normalize(JSON.parse(JSON.stringify(u)), T0);
+A.eq(ur.usage.launches['fix-bug'].n, 1, 'usage round-trips normalize');
+
 /* ---------- normalize: corrupt saves degrade, never throw ---------- */
 const n = S.normalize({ staged: [{ id: 'ok', kind: 'recipe', draft: { name: 'x' } }, { id: '', kind: 'recipe', draft: {} }, { id: 'bad-kind', kind: 'zork', draft: {} }], denylist: [1, 'fp', ''], ledger: 'nope', runsSinceMint: 'NaN', lastMintAt: -5 }, T0);
 A.eq(n.staged.length, 1, 'malformed staged items are dropped on hydrate');

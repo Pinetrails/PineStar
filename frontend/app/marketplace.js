@@ -909,7 +909,9 @@ const Marketplace = (() => {
     // the affinity scorer only feeds the rank when learning is ON and the profile has signal; else rankRecipes
     // leans on goal text, then the honest category-spread fallback.
     const scoreFn = (ps && ps.score && !learningOff) ? (tags => ps.score(tags)) : null;
-    const items = Recipes.rankRecipes(Recipes.list(), { score: scoreFn, goalText: goalText(), limit: 4 });
+    // launches = the Commander's OWN real per-recipe launch counts (scout usage read) — engagement feeds the rank.
+    let launches = null; try { launches = (typeof ProspectStore !== 'undefined' && ProspectStore.launches) ? ProspectStore.launches() : null; } catch (_) {}
+    const items = Recipes.rankRecipes(Recipes.list(), { score: scoreFn, goalText: goalText(), launches: launches, limit: 4 });
     if (!items || !items.length) return '';
     return '<div class="mkt-sect-h mkt-foryou-sect">◈ FOR YOU</div><div class="mkt-rec-rail">' +
       items.map(forYouCardHTML).join('') + '</div>';
