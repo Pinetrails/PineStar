@@ -95,6 +95,59 @@ const ctxOf = (agentId, runId) => ({ agentId, runId });
     A.eq(store.get(runQ.id).attest, null, 'no attest was set on the mechanical quest');
   }
 
+  // ---- op:attest_complete — AGENT SCOPING (mirrors progress): quest ids are sequential/guessable, so an
+  //      unscoped attest would let any agent put a false completion proposal in front of the Commander ----
+  {
+    const store = fresh();
+    const tool = toolFor(store);
+    const heroQ = await store.mint({ title: 'Hero-only attest', contract: { type: 'attest', key: '' }, agentId: 'hero' }, 1);
+    const stationQ = await store.mint({ title: 'Station-wide attest', contract: { type: 'attest', key: '' } }, 2);   // agentId null
+
+    // an agent the quest is NOT open for is refused BEFORE the store — no pending attest is filed
+    const denied = await tool.run({ op: 'attest_complete', id: heroQ.id, evidence: 'I definitely did hero\'s work, promise' }, ctxOf('intruder', 'runX'));
+    A.ok(/not one of your open quests/.test(denied.content), 'attest by a NON-owning agent is refused (openForAgent scoping)');
+    A.eq(store.get(heroQ.id).attest, null, 'no pending attest was set by the refused agent');
+    A.eq(store.get(heroQ.id).status, 'open', 'the quest is untouched by the refused attest');
+
+    // the OWNER may attest its own quest
+    const owned = await tool.run({ op: 'attest_complete', id: heroQ.id, evidence: 'shipped the draft and linked it in COMMS today' }, ctxOf('hero', 'run1'));
+    A.ok(/proposed/i.test(owned.content), 'the owning agent can still attest its own quest');
+    A.eq(store.get(heroQ.id).attest.agentId, 'hero', 'the pending attest carries the owner');
+
+    // a STATION-WIDE quest stays attestable by ANY agent (openForAgent includes agentId:null by the store's design)
+    const sharedOk = await tool.run({ op: 'attest_complete', id: stationQ.id, evidence: 'completed the shared objective end to end' }, ctxOf('other', 'run2'));
+    A.ok(/proposed/i.test(sharedOk.content), 'a station-wide quest is attestable by any agent (shared by design)');
+    A.eq(store.get(stationQ.id).attest.agentId, 'other', 'the station-wide attest records the proposing agent');
+  }
+
+  // ---- op:progress — a successful tick on a RUN-contract quest BINDS the live run (the tool-seam binding),
+  //      so the run-end settle sweep (completeByContract('run', runId) on 'done') can actually complete it ----
+  {
+    const store = fresh();
+    const tool = toolFor(store);
+    const runQ = await store.mint({ title: 'Wire the export', contract: { type: 'run', key: 'wq:5' },
+      steps: [{ key: 's1', label: 'wire it' }], agentId: 'hero', kind: 'work' }, 1);
+    const stationRunQ = await store.mint({ title: 'Shared build', contract: { type: 'run', key: 'wq:6' },
+      steps: [{ key: 's1', label: 'build it' }] }, 2);   // station-wide: bindable ONLY via a real progress tick
+    const attQ = await store.mint({ title: 'No binding here', contract: { type: 'attest', key: '' },
+      steps: [{ key: 's1', label: 'do it' }], agentId: 'hero' }, 3);
+
+    await tool.run({ op: 'progress', id: runQ.id, stepKey: 's1', note: 'wired' }, ctxOf('hero', 'run-77'));
+    A.eq(store.get(runQ.id).runId, 'run-77', 'a progress tick on a run-contract quest binds the live run');
+    await tool.run({ op: 'progress', id: stationRunQ.id, stepKey: 's1', note: 'built' }, ctxOf('hero', 'run-77'));
+    A.eq(store.get(stationRunQ.id).runId, 'run-77', 'a station-wide run quest binds when an agent PROVABLY works it (progress tick)');
+    await tool.run({ op: 'progress', id: attQ.id, stepKey: 's1', note: 'done-ish' }, ctxOf('hero', 'run-77'));
+    A.eq(store.get(attQ.id).runId, null, 'a non-run contract never gains a run binding from progress');
+
+    // the run ends 'done' → the EXISTING settle sweep completes both bound quests; a different runId completes nothing
+    await store.completeByContract('run', 'run-unrelated', 9);
+    A.eq(store.get(runQ.id).status, 'open', 'an unrelated run ending done does not complete the bound quest');
+    await store.completeByContract('run', 'run-77', 10);
+    A.eq(store.get(runQ.id).status, 'done', 'the bound run ending done completes the quest (the full seam, end to end)');
+    A.eq(store.get(stationRunQ.id).status, 'done', 'the station-wide quest bound by real work completes too');
+    A.eq(store.get(attQ.id).status, 'open', 'the attest quest is untouched by the run sweep');
+  }
+
   // ---- op:mint — contract enforced, generated/agent-scoped, error passthrough VERBATIM ----
   {
     const store = fresh();

@@ -122,6 +122,7 @@ const { makeWorkshopStore } = require('./workshop-store.js'); // durable per-age
 const { makeQuestStore } = require('./quest-store.js'); // QUEST V2 §A: station-wide harness-owned quest ledger (contract-enforced)
 const { makeQuestTools } = require('./tools/builtin/quests.js'); // QUEST V2 §B: quest.update — the agent's read/write reach into the ledger
 const { questBlock, withQuests } = require('./questinject.js'); // QUEST V2 §B: fold an agent's OPEN quests into its system prompt (pure, dossierinject idiom)
+const QuestSweeps = require('./questsweeps.js'); // QUEST V2 §A: pure seam-matchers for the mechanical contract sweeps (run-bind / prop-live / fact-learned / artifact-exists)
 const { makeThreadsStore } = require('./threads-store.js');   // NS-6: durable THREAD LEDGER (ideas raised but never acted on)
 const threadmine = require('./threadmine.js');                // NS-6: pure post-run thread-mining producer (reflect/study mold)
 const { tailLines, loadBounded, rotateIfLarge } = require('./logbound.js'); // P3: bounded boot-load + size rotation for the append-only JSONL logs
@@ -6289,6 +6290,16 @@ async function runOnce(o) {
       resolved.approvalRules[def.name] = { requiresConsent: !!def.requiresConsent, scope: def.scope, network: true };
     }
   } catch (e) { console.warn('[mcp] connector tool projection failed:', (e && e.message) || e); }
+  // QUEST V2 §A — the PROP-contract sweep, wired at the one seam where the sidecar PROVES a capability is live:
+  // resolveTools just projected the placed office (+ live connector tools) into this run's real grants. A prop
+  // quest keyed to a live objectType / capId family / tool name completes here — there is no other server-side
+  // placement signal (the world/build lives in the browser), and a run carrying the grant IS the proof.
+  // Fire-and-forget + fail-open: a quest-store hiccup never touches run admission.
+  try {
+    for (const _pk of QuestSweeps.livePropKeys(questStore.openForAgent(agentId), agentId, station, resolved)) {
+      questStore.completeByContract('prop', _pk, Date.now()).catch(() => {});
+    }
+  } catch (_) {}
   // P1.5: the real informed-consent broker. surface:'interactive' + prompt ⇒ ungranted mutations ask live;
   // surface:'autonomous' (no one watching, e.g. a Telegram chat) ⇒ default-deny on any ungranted mutation
   // (silence is not consent). Read-only/non-network auto-allows; the hardline floor sits below Full Access.
@@ -6651,6 +6662,15 @@ async function runOnce(o) {
   // caught). isTask is kept because a non-task run has no tools at all. Fail-open: ANY error yields no block.
   let questsBlock = '';
   try { if (isTask && resolved && Array.isArray(resolved.tools) && resolved.tools.indexOf('quest.update') >= 0) questsBlock = questBlock(questStore.openForAgent(agentId)); } catch (_) { questsBlock = ''; }
+  // QUEST V2 §A — the RUN-contract binding, wired at the same injection seam (agentId + live runId + open quests
+  // all known here). A run-contract quest's key is fixed at MINT, before any runId exists, so without a binding
+  // the run-end settle hook's completeByContract('run', runId) could never match — the exact "uncompletable"
+  // class v2 exists to kill. Bind this TASK run to the agent's OWN open run quests (never station-wide — see
+  // questsweeps.js) so the existing settle hook completes them on 'done' and stalls them on any other reason.
+  // A fresh bind also clears a prior stall (the build is live again — bindRun's own contract). Fail-open.
+  try {
+    if (isTask) for (const _qid of QuestSweeps.runBindIds(questStore.openForAgent(agentId), agentId)) questStore.bindRun(_qid, runId).catch(() => {});
+  } catch (_) {}
   const sys = withQuests((system || '') + runtimeBlock + toolNote + teamNote + manualBlock + summarizeCapabilities(resolved, { surface }) + skillBlock + runtimeSkillBlock + preloadedSkillBlock, questsBlock);   // ground-truth caps: name the object to place instead of promising work it has no tool for
   // H1.2: bulletproof resume — if this run arrives with NO prior history (a fresh restart whose browser save was
   // wiped, or any caller that only sent the new directive) AND it names an explicit workstream, seed the
@@ -6762,17 +6782,30 @@ async function runOnce(o) {
       if (title) transcriptStore.append({ streamId: o.streamId, agentId, role: 'user', content: title });
       if (result && Array.isArray(result.messages)) transcriptStore.appendTurns(o.streamId, agentId, result.messages, _txStart);
     } catch (_) {}
-    // QUEST V2 §A — the ONLY mechanical sweep wired here (the run lifecycle already lives at this settle point):
-    // a run ending 'done' completes every OPEN quest whose run-contract is bound to this runId; a non-'done' end
-    // (error/budget/max_iters/refusal) STALLS them instead (stamp reason, release the binding) mirroring
-    // workquests stall semantics. Fire-and-forget + fail-open: a durable-store hiccup never breaks run teardown.
-    // prop/fact/artifact sweeps are exposed on questStore.completeByContract for Lane 3/4 callers to wire at
-    // their own truth points (capability-live / dossier-learned / manifest-exists) — NOT hooked here.
+    // QUEST V2 §A — the run-lifecycle sweeps at the settle point: a run ending 'done' completes every OPEN quest
+    // whose run-contract is bound to this runId (bound at the injection seam / the quest.update progress tick);
+    // a non-'done' end (error/budget/max_iters/refusal) STALLS them instead (stamp reason, release the binding)
+    // mirroring workquests stall semantics. Fire-and-forget + fail-open: a durable-store hiccup never breaks
+    // run teardown. The prop sweep fires at run ADMISSION (resolveTools — capability provably live) and the
+    // fact sweep at writeMemoryRecord (memory provably committed); see questsweeps.js.
     try {
       const _qReason = (result && result.reason) || 'done';
       if (_qReason === 'done') questStore.completeByContract('run', runId, Date.now()).catch(() => {});
       else questStore.stallRun(runId, _qReason, Date.now()).catch(() => {});
     } catch (_) {}
+    // QUEST V2 §A — the ARTIFACT-contract sweep: a quest keyed to a deliverable completes ONLY when that file
+    // provably exists inside the CALLING agent's fs jail (fsJail.resolveInside — the same proof /api/file uses;
+    // '..'/absolute/symlink escapes throw and prove nothing). Checked at every run end regardless of reason —
+    // the file existing is the truth, not the run outcome — and workshop/night-shift builds ride this same
+    // runOnce host, so a validated manifest's files land under this sweep too. Fire-and-forget + fail-open.
+    (async () => {
+      for (const _aq of QuestSweeps.artifactQuestKeys(questStore.openForAgent(agentId), agentId)) {
+        try {
+          const { abs: _aAbs } = await fsJail.resolveInside(agentId, _aq.key);
+          if (fs.existsSync(_aAbs)) await questStore.completeByContract('artifact', _aq.key, Date.now());
+        } catch (_) { /* a non-path or escaping key simply never completes — truthful telemetry */ }
+      }
+    })().catch(() => {});
     budget.clearLive(runId);
   }
 
@@ -8303,6 +8336,17 @@ async function writeMemoryRecord(agentId, prop, opts) {
     return list;
   });
   chanEmit('memory.write', { agentId, runId: runId || rec.sourceRunId || writtenId, id: writtenId, kind: rec.kind, scope: rec.scope });
+  // QUEST V2 §A — the FACT-contract sweep, wired at the ONE server-side path that commits a memory record
+  // (silent auto-save + Keep/Edit turn-in both land here): the durable record IS the proof the harness learned
+  // it. A fact key matches when it is the record's id, equals the committed content, or appears verbatim inside
+  // it (questsweeps.learnedFactKeys — normalized, bounded). The dossier itself lives in the BROWSER (no honest
+  // server-side dossier-write seam — /api/study/resolve carries no accepted dimension), so dossier-dim keys stay
+  // open until a committed memory covers them. Fire-and-forget + fail-open: never fails the memory write.
+  try {
+    for (const _fk of QuestSweeps.learnedFactKeys(questStore.openForAgent(agentId), agentId, { id: writtenId, content: content })) {
+      questStore.completeByContract('fact', _fk, Date.now()).catch(() => {});
+    }
+  } catch (_) {}
   return { ok: true, id: writtenId, kind: rec.kind };
 }
 
