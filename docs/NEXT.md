@@ -623,7 +623,7 @@ it." Structurally impossible today because:
   /pending → /decide gate: "found N bugs while you were away — approve and I'll commit."
   Approve applies to a branch in the user's repo (never main, never push); deny feeds learn.
   OPEN (Andrew, small): approve = auto-commit-to-branch (recommended) vs drop-the-.patch.
-- **NS-5c · Projects rail (Andrew idea 2026-07-08).** The workstreams section gets a
+- **NS-5c · Projects rail — CLAIMED 2026-07-08 (agent/ns5c-projects-rail, in progress).** The workstreams section gets a
   button-toggle: **SESSIONS ↔ PROJECTS**. Projects view lists the known-projects store
   (GET /api/projects from NS-5): name, path, last-touched, git badge. Actions: **ADD** a
   folder right in the station (Hermes-fluid; in desktop builds use the Tauri native folder

@@ -81,6 +81,7 @@ const { makeConsentBroker } = require('./permissions.js');
 const { makeGrantManager } = require('./permgrants.js');
 const { makeProjectsStore } = require('./projects-store.js');   // NS-5: known-projects (blessed roots) durable store
 const { makePathTrust } = require('./pathtrust.js');            // NS-5: conversational path-trust guard
+const { makeProjectBless } = require('./projectbless.js');      // NS-5c: ADD-a-project bless core (second doorway, same grant machinery)
 const { makeTelegramAdapter } = require('./channels/telegram.js');
 const { makeChannelStore } = require('./channels/store.js');
 const { makeChannelHub } = require('./channels/hub.js');
@@ -1834,6 +1835,18 @@ const pathTrustCore = makePathTrust({
   isGitRepoOf: projectIsGitRepo,
   now: () => Date.now()
 });
+// NS-5c: the ADD-a-project route's bless core — the SAME blessProjectRoot() the conversational prompt calls,
+// wrapped in the identical hardlines + git-root proposal. Reuses pathTrustCore's detectRoot/normalizeRoot/
+// hardlineReason so the grant key a typed folder produces is byte-identical to the one a chat mention would.
+const projectBless = makeProjectBless({
+  fsp, pathMod: path,
+  detectRoot: pathTrustCore.detectRoot,
+  normalizeRoot: pathTrustCore.normalizeRoot,
+  hardlineReason: pathTrustCore._internals.hardlineReason,
+  bless: (rootReal, m) => blessProjectRoot(rootReal, m),
+  isGitRepoOf: projectIsGitRepo,
+  now: () => Date.now()
+});
 const grantsSession = new Map();           // runId -> Set(dangerKey); cleared when the run ends
 // full-access ("YOLO") blanket grants the user clicks mid-run: per-AGENT (not per-run), in-memory only, so a
 // single click stops the prompts for the rest of this session but RESETS on sidecar restart — never persisted
@@ -3516,6 +3529,7 @@ function dispatchRoute(req, res) {
   if (req.method === 'POST' && req.url === '/api/permissions/grant') return handlePermissionsGrant(req, res);
   if (req.method === 'POST' && req.url === '/api/permissions/revoke') return handlePermissionsRevoke(req, res);
   if (req.method === 'GET' && req.url === '/api/projects') return handleProjectsList(req, res);   // NS-5: the known blessed-project roots (autonomy surface)
+  if (req.method === 'POST' && req.url === '/api/projects/bless') return handleProjectBless(req, res);   // NS-5c: ADD a project (interactive-only, blesses through the same path-grant machinery)
   if (req.method === 'POST' && req.url === '/api/autonomy/write') return handleAutonomyWrite(req, res);
   // NS-1: the SERVER copy of the dial + a read-only beliefs snapshot (the driver reads ONLY this); the throttled
   // activity beacon (away detection); and the truthful night-shift status telemetry.
@@ -6583,6 +6597,21 @@ function handleProjectsList(req, res) {
   const projects = snap.projects.map(p => Object.assign({}, p, { blessed: grantsPermanent.has('path:' + p.root) }));
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
   res.end(JSON.stringify({ projects: projects }));
+}
+
+// POST /api/projects/bless { path } — NS-5c: the ADD-A-PROJECT doorway. Blesses a user-typed/-picked folder as a
+// trusted project root through the SAME standing path-grant machinery as the conversational prompt (blessProjectRoot
+// → path:<root> + projects-store row). The CLICK is the consent: interactive-only (surface hardcoded — this route is
+// the user's own action; an autonomous run reaches fs through pathTrustCore.guard, which hard-denies un-blessed
+// paths, never through this route). Validation (absolute path · exists · is a dir · hardline .env/.git/UNC floor ·
+// git-root proposal) lives in the pure projectbless core; honest errors come back as 400 { ok:false, reason }. Token-
+// gated like every /api route; fail-closed (a torn durable write returns ok:false so the grant never phantom-takes).
+async function handleProjectBless(req, res) {
+  const sendJson = (code, obj) => { if (res.headersSent) return; res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 4096)) || {}; } catch (e) { if (res.headersSent) return; res.writeHead(400); return res.end('bad json'); }
+  let r; try { r = await projectBless.blessPath({ path: body && body.path, surface: 'interactive' }); }
+  catch (e) { return sendJson(400, { ok: false, reason: 'bless failed: ' + (e && e.message || e) }); }
+  sendJson(r && r.ok ? 200 : 400, r || { ok: false, reason: 'bless failed' });
 }
 
 // POST /api/autonomy/write { agentId?, path, content } — autonomy Stage B / B2. Deterministically write a PRE-VETTED
