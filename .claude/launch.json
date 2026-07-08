@@ -434,6 +434,20 @@
         "SKYNET_OPENROUTER_KEY": "sk-or-v1-ns6-live-fake",
         "SKYNET_DEFAULT_MODEL": "test/model"
       }
+    },
+    {
+      "name": "codexdead-seed",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "C:/Users/andro/Desktop/gen/.claude/worktrees/agent-a99cea1afc8cb2112/dev/seed.js",
+        "--keep"
+      ],
+      "port": 8913,
+      "autoPort": false,
+      "env": {
+        "SKYNET_PORT": "8913",
+        "SKYNET_DEFAULT_MODEL": "anthropic/claude-haiku-4.5"
+      }
     }
   ]
 }

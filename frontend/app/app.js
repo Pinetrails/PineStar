@@ -29,8 +29,6 @@ const App = (() => {
                                        //   pre-filled key asks once before it silently replaces the stored one.
   let keyOverwriteConfirmed = false;   // set true once the Commander confirms replacing the pre-filled key (one-time per screen)
   let codexConnected = false;          // last-known /api/auth/codex/status — gates waking on the Codex provider
-  let codexFlow = null;                // the in-flight device-code login { device_auth_id, user_code, verification_uri, deadline }
-  let codexPoll = null;                // the setTimeout handle for the device-code poll loop
   let station = null;         // the canonical WorldModel station (the builder's source of truth)
   let pendingStationDoc = null; // a saved station doc awaiting enterGame()
   let pendingStationStats = null; // a saved station-growth rollup (XP/level/confidence) awaiting enterGame()
@@ -1271,7 +1269,7 @@ const App = (() => {
       loadCodexModels();      // live per-account discovery (falls back to CODEX_MODELS when not connected)
       refreshCodexStatus();
     } else {
-      stopCodexPoll(); codexFlow = null;
+      stopCodexPoll();
       loadModels(pickedProvider);
     }
     buildModelPicks();        // recommended chips (OpenRouter only; clears itself on the codex path)
@@ -1316,6 +1314,13 @@ const App = (() => {
       }
       signinBtn.textContent = '↻ RE-SIGN IN';
       logoutBtn.classList.remove('hidden');
+    } else if (j.expired) {
+      // the stored refresh token is KNOWN-dead (e.g. consumed by another Codex client) — say so honestly
+      // instead of a generic "not connected"; DISCONNECT stays offered to drop the dead credentials.
+      statusEl.textContent = '⚠ your ChatGPT sign-in expired — ' + (j.reason || 'sign in again to reconnect');
+      statusEl.className = 'codex-status bad';
+      signinBtn.textContent = '⏼ RE-SIGN IN WITH CHATGPT ▸';
+      logoutBtn.classList.remove('hidden');
     } else {
       statusEl.textContent = 'not connected — sign in to use your ChatGPT subscription';
       statusEl.className = 'codex-status';
@@ -1338,45 +1343,31 @@ const App = (() => {
   }
 
   // Kick off the device-code flow: request a code, show it + open the verification page, then poll until done.
-  async function startCodexSignIn() {
+  // The flow itself (start → poll → connected) lives in the shared CodexSignIn module (codexsignin.js) so the
+  // Settings→PROVIDERS RE-SIGN-IN action drives the exact same engine; this function only paints THIS screen.
+  function startCodexSignIn() {
     SFX.click();
     const statusEl = el('codex-status'), codeEl = el('codex-code'), openBtn = el('btn-codex-open');
-    stopCodexPoll();
-    statusEl.textContent = 'requesting a sign-in code…'; statusEl.className = 'codex-status';
-    let d;
-    try { const r = await fetch('/api/auth/codex/start', { method: 'POST' }); d = await r.json(); if (!r.ok) throw new Error(d.error || ('start failed (' + r.status + ')')); }
-    catch (e) { statusEl.textContent = 'could not start sign-in: ' + ((e && e.message) || e); statusEl.className = 'codex-status bad'; return; }
-    codexFlow = { device_auth_id: d.device_auth_id, user_code: d.user_code, verification_uri: d.verification_uri, deadline: Date.now() + ((d.expires_in || 900) * 1000) };
-    codeEl.textContent = d.user_code; codeEl.classList.remove('hidden');
-    openBtn.classList.remove('hidden');
-    openBtn.onclick = () => openExternalUrl(d.verification_uri);
-    statusEl.innerHTML = 'enter this code at <b>' + esc(d.verification_uri) + '</b> (opening it now)…';
-    openExternalUrl(d.verification_uri);
-    pollCodex(d.interval || 5);
+    CodexSignIn.start({
+      onRequesting: () => { statusEl.textContent = 'requesting a sign-in code…'; statusEl.className = 'codex-status'; },
+      onError: msg => { statusEl.textContent = msg; statusEl.className = 'codex-status bad'; },
+      onCode: c => {
+        codeEl.textContent = c.user_code; codeEl.classList.remove('hidden');
+        openBtn.classList.remove('hidden');
+        openBtn.onclick = () => openExternalUrl(c.verification_uri);
+        statusEl.innerHTML = 'enter this code at <b>' + esc(c.verification_uri) + '</b> (opening it now)…';
+        openExternalUrl(c.verification_uri);
+      },
+      onTimeout: () => { statusEl.textContent = 'sign-in timed out — start again'; statusEl.className = 'codex-status bad'; },
+      onConnected: () => { codeEl.classList.add('hidden'); openBtn.classList.add('hidden'); SFX.open(); refreshCodexStatus(); loadCodexModels(); }
+    });
   }
-
-  // One poll tick on a timer; the sidecar reports pending until the user finishes, then connects + persists.
-  function pollCodex(intervalS) {
-    codexPoll = setTimeout(async () => {
-      if (!codexFlow) return;
-      if (Date.now() > codexFlow.deadline) { el('codex-status').textContent = 'sign-in timed out — start again'; el('codex-status').className = 'codex-status bad'; codexFlow = null; return; }
-      let j;
-      try {
-        const r = await fetch('/api/auth/codex/poll', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ device_auth_id: codexFlow.device_auth_id, user_code: codexFlow.user_code }) });
-        j = await r.json();
-      } catch (e) { j = { status: 'pending' }; }   // transient network blip — keep polling
-      if (!codexFlow) return;                        // bailed out (back/disconnect) while awaiting
-      if (j.status === 'connected') { codexFlow = null; el('codex-code').classList.add('hidden'); el('btn-codex-open').classList.add('hidden'); SFX.open(); refreshCodexStatus(); loadCodexModels(); return; }
-      if (j.status === 'error') { el('codex-status').textContent = 'sign-in failed: ' + (j.error || 'try again'); el('codex-status').className = 'codex-status bad'; codexFlow = null; return; }
-      pollCodex(intervalS);                          // pending — schedule the next tick
-    }, Math.max(2, intervalS) * 1000);
-  }
-  function stopCodexPoll() { if (codexPoll) { clearTimeout(codexPoll); codexPoll = null; } }
+  function stopCodexPoll() { CodexSignIn.cancel(); }
 
   async function codexLogout() {
-    SFX.click(); stopCodexPoll(); codexFlow = null;
+    SFX.click();
     el('codex-code').classList.add('hidden'); el('btn-codex-open').classList.add('hidden');
-    try { await fetch('/api/auth/codex/logout', { method: 'POST' }); } catch (_) {}
+    await CodexSignIn.logout();   // also cancels any in-flight device-code poll
     refreshCodexStatus();
   }
 
@@ -1613,7 +1604,7 @@ const App = (() => {
   // context move: in RESUME it re-runs auto-resume (a fresh credential check may now pass straight in); on a
   // fresh first run it's a no-op beyond dropping any in-flight codex poll (the create screen is the root).
   function onConnectBack() {
-    SFX.click(); stopCodexPoll(); codexFlow = null;
+    SFX.click(); stopCodexPoll();
     const saved = Save.has() ? Save.load() : null;
     if (saved && saved.agent) { reentry(); return; }
     // fresh first run — nothing behind the create screen; just stay put.

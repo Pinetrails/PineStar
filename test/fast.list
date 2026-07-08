@@ -35,6 +35,7 @@ test/provider.gemini.test.js
 test/provider.timeouts.test.js
 test/provider.registry.test.js
 test/provider.codex-auth.test.js
+test/codex-auth-state.test.js
 test/provider.codex.test.js
 test/credpool.test.js
 test/credrotate.test.js
@@ -43,6 +44,7 @@ test/errorclass.test.js
 test/billing.test.js
 test/credits.test.js
 test/friendlyerror.test.js
+test/codexsignin.test.js
 test/loop.replay.test.js
 test/loop.steer.test.js
 test/loop.provider-recovery.test.js
@@ -206,6 +208,7 @@ test/permpanel.test.js
 test/permissionsstore.test.js
 test/permissions-ui.test.js
 test/settings-p1-ui.test.js
+test/settings-codex-row.test.js
 test/modelpicker.test.js
 test/agent-model-select.test.js
 test/provider-connections-ui.test.js

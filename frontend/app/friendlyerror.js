@@ -201,7 +201,9 @@
     } else
     // Harness pre-flight misconfig ("no API key set" / "no model selected") is UI-level — catch before delegating
     // (the sidecar classifier never sees these) so both paths point at Settings, not a blind retry.
-    if (/chatgpt.*sign-?in|sign-?in.*chatgpt|not signed in to chatgpt|codex_not_connected|codex auth|codex_auth|chatgpt subscription.*connect/.test(raw.toLowerCase())) {
+    // `sign[- ]?in` (space allowed): the sidecar's dead-refresh-token errors say "Sign in with ChatGPT again"
+    // — the old `sign-?in` missed the space and the consumed-token escape fell through to a generic door.
+    if (/chatgpt.*sign[- ]?in|sign[- ]?in.*chatgpt|not signed in to chatgpt|codex_not_connected|codex auth|codex_auth|codex (token )?refresh|refresh_token_reused|chatgpt subscription.*connect/.test(raw.toLowerCase())) {
       kind = 'oauth';
     } else if (/no api key set|no model selected/.test(raw.toLowerCase())) {
       kind = 'auth';
@@ -275,11 +277,16 @@
       case 'refit':
         return { label: '🔧 Open REFIT', run: () => { try { if (typeof Build !== 'undefined' && Build.open) Build.open(); else if (typeof Build !== 'undefined' && Build.toggle && !(Build.isOpen && Build.isOpen())) Build.toggle(); } catch (_) {} } };
       case 'settings':
-        // auth/no-key: if ChatGPT is already the connected brain, the honest door is "reconnect ChatGPT"; otherwise
-        // the provider key field. Both land on the same PROVIDERS section (Codex sign-in lives there too).
-        if ((verdict.kind === 'auth' || verdict.kind === 'oauth') && codexConnected())
-          return { label: '⚙ Reconnect ChatGPT', run: () => openSettings('providers') };
-        if (verdict.kind === 'auth' || verdict.kind === 'oauth')
+        // A codex sign-in-class failure (dead/consumed refresh token, not-signed-in) ALWAYS gets the reconnect
+        // door — the 2026-07-08 escape was exactly this error landing with only a generic "add a key" path.
+        // Settings→PROVIDERS is where the row's ⏼ RE-SIGN-IN action now lives.
+        if (verdict.kind === 'oauth')
+          return { label: '⏼ RECONNECT CHATGPT', run: () => openSettings('providers') };
+        // other auth/no-key: if ChatGPT is already the connected brain, the honest door is still "reconnect";
+        // otherwise the provider key field. Both land on the same PROVIDERS section.
+        if (verdict.kind === 'auth' && codexConnected())
+          return { label: '⏼ RECONNECT CHATGPT', run: () => openSettings('providers') };
+        if (verdict.kind === 'auth')
           return { label: '🔑 Add a key', run: () => openSettings('providers') };
         return { label: '⚙ Open Settings', run: () => openSettings(verdict.kind === 'model_not_found' ? 'models' : 'providers') };
       case 'store':
