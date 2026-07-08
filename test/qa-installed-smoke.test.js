@@ -8,7 +8,7 @@
 'use strict';
 const A = require('./_assert.js');
 const {
-  RESULTS, SMOKE_CREW, classifyResult, normalizeStamp, validateStamp, buildFinding, makeSmoke
+  RESULTS, SMOKE_CREW, SMOKE_PROBE, classifyResult, normalizeStamp, validateStamp, buildFinding, makeSmoke
 } = require('../scripts/qa/installed-smoke.mjs');
 
 const ISO = '2026-07-07T12:00:00.000Z';
@@ -43,6 +43,21 @@ const GREEN_PROBE = {
   ],
   notes: 'checks=6 mode=desktop'
 };
+
+/* ---- A0. SMOKE_PROBE auth-header contract (regression for ledger finding 4d9992d9) ----
+   The in-page probe MUST authenticate with X-StarNet-Token — the ONLY scheme the sidecar accepts (Authorization is
+   rejected as "forbidden token") AND the only auth header in its CORS Access-Control-Allow-Headers. On the packaged
+   desktop build the page origin (http://tauri.localhost) differs from the sidecar (http://127.0.0.1:<port>), so every
+   /api/* call is cross-origin: a stray Authorization header makes the OPTIONS preflight request a header the sidecar
+   won't allow, the preflight is rejected, and fetch() dies with "Failed to fetch" BEFORE any response — so appVersion
+   reads blank and the smoke goes BLOCKED even though /api/version is serving the honest version. Same-origin
+   dev/headless never preflights, which is why this only ever surfaced on the installed exe. The probe is a string
+   eval'd in a real browser, so this guards its source directly (it can't be exercised headlessly). */
+{
+  A.ok(/X-StarNet-Token/.test(SMOKE_PROBE), 'SMOKE_PROBE authenticates with the X-StarNet-Token header (sidecar auth + CORS allow-list)');
+  A.ok(!/Authorization/i.test(SMOKE_PROBE), 'SMOKE_PROBE sends NO Authorization header (it trips the packaged build cross-origin preflight)');
+  A.ok(!/Bearer/.test(SMOKE_PROBE), 'SMOKE_PROBE uses NO Bearer scheme (the sidecar rejects Bearer as forbidden token)');
+}
 
 /* ---- A. classifyResult encodes the no-fake-green order ---- */
 {
