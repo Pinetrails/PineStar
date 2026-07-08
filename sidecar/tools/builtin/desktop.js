@@ -4,8 +4,9 @@
    actual screen: it hands a URL (or an app name) to the OS default handler
    (Windows Start-Process, macOS `open`, Linux `xdg-open`) so the human SEES it.
    This is deliberately distinct from browser.* — that family drives a HEADLESS
-   Chromium the user cannot see. When a beginner says "open youtube for me / on
-   my screen / pull up X", THIS is the tool to use.
+   Chromium the user cannot see. It is for when the user wants to SEE a window
+   ("show me", "open it on my screen") — never a step in completing a task the
+   agent has quieter tools for (dedicated service tools, browser.*, shell.exec).
 
    SECURITY:
    - URLs reuse browser.js assertSafeUrl (http(s) only; private/loopback/intranet
@@ -123,7 +124,7 @@
       scope: 'execute',
       requiresConsent: true,
       timeoutMs: 20000,
-      description: 'Open a URL or a desktop app on the USER\'S REAL SCREEN — hands it to the OS default handler so a VISIBLE window (their normal browser / the app) actually appears in front of the user. Use THIS whenever the user says "for me", "on my screen", "open/pull up X", or otherwise wants to see something themselves. This is the opposite of browser.* (which drives a headless browser the user cannot see). Only public http(s) URLs (private/loopback/intranet refused) or a bare app name (e.g. "notepad"); no paths, arguments, or shell commands.',
+      description: 'Open a URL or a desktop app in a VISIBLE window on the USER\'S REAL SCREEN (OS default handler). Use ONLY when the user explicitly wants to SEE it themselves ("show me", "open it on my screen") — NEVER as a step in completing a task: to read or automate the web use the headless browser tools, and to control an installed app prefer its dedicated tools or a quiet shell path (app URI schemes, CLI) first. Only public http(s) URLs (private/loopback/intranet refused) or a bare app name (e.g. "notepad"); no paths, arguments, or shell commands.',
       schema: {
         type: 'object',
         required: ['target'],

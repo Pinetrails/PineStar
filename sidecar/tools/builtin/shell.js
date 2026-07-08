@@ -173,7 +173,9 @@
       name: 'shell.exec', capability: 'workbench', scope: 'execute', requiresConsent: true,
       timeoutMs: MAX_MS + 10000,   // registry backstop ABOVE our own kill logic, so withTimeout never preempts the child-kill
       description: 'Run a shell command in your workspace directory and get back its combined stdout/stderr + exit code. '
-        + 'Use it to run tests, builds, git, scripts — anything you would type in a terminal. Commands run INSIDE your own '
+        + 'Use it to run tests, builds, git, scripts — anything you would type in a terminal. Installed desktop apps can '
+        + 'usually be driven HEADLESSLY from here (app URI schemes like `start spotify:track:<id>`, app CLIs, PowerShell) — '
+        + 'prefer that over visible screen control. Commands run INSIDE your own '
         + 'workspace folder, and your working directory PERSISTS across calls (a `cd` carries over). Absolute and parent (..) '
         + 'paths are refused in cmd; pass cwd to run from a specific existing folder instead. On Windows local shells, cwd accepts C:\\Users\\...; /c/Users/... is normalized for compatibility, but prefer the exact path the Commander gave you. Commands use cmd.exe syntax. Optional timeoutMs (default 30s, max 120s). Set background:true for a long-running process '
         + '(e.g. a dev server) — it returns immediately with a handle; check it with shell.bg.status, stop it with shell.bg.kill.',

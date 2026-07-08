@@ -18,6 +18,11 @@
   const CP = require('node:child_process');
 
   const ACTIONS = ['screenshot', 'move', 'click', 'double_click', 'drag', 'scroll', 'type', 'key', 'hotkey', 'wait'];
+  // Keyboard input lands in whatever window has FOCUS — these are the actions the focus-truth guard covers.
+  const KEYBOARD_ACTIONS = ['type', 'key', 'hotkey'];
+  // The harness's own window (desktop shell exe or a browser tab titled STARNET). Typing into it is never the
+  // intent — it means the target app lost focus (the 2026-07-08 "typed the song into its own chat box" incident).
+  const SELF_WINDOW_RE = /starnet/i;
   const DESTRUCTIVE_HOTKEYS = [
     'ctrl+alt+delete',
     'ctrl+shift+esc',
@@ -48,6 +53,7 @@
     if (a.key != null) a.key = String(a.key);
     if (a.keys != null && !Array.isArray(a.keys)) throw new Error('computer hotkey keys must be an array');
     if (Array.isArray(a.keys)) a.keys = a.keys.map(k => String(k));
+    if (a.expectApp != null) a.expectApp = String(a.expectApp);
     return a;
   }
   function hardBlock(action) {
@@ -73,6 +79,28 @@
     if (a.action === 'drag') return 'drag ' + a.x + ',' + a.y + ' by ' + (a.dx || 0) + ',' + (a.dy || 0);
     if (a.action === 'scroll') return 'scroll ' + (a.dx || 0) + ',' + (a.dy || 0);
     return a.action;
+  }
+  // FOCUS-TRUTH GUARD: keyboard input is only delivered when we can prove (or the driver cannot know) which
+  // window will receive it. Returns a human-readable foreground note for the tool result; throws when input
+  // must NOT be sent: foreground is StarNet's own window, or it doesn't match the model's declared expectApp.
+  async function checkFocus(driver, action) {
+    if (KEYBOARD_ACTIONS.indexOf(action.action) < 0) return '';
+    if (typeof driver.foreground !== 'function') {
+      if (action.expectApp) throw new Error('focus check unavailable: this desktop driver cannot report the foreground window — input NOT sent');
+      return '';
+    }
+    const fg = (await driver.foreground()) || {};
+    const title = String(fg.title || ''), proc = String(fg.process || '');
+    if (SELF_WINDOW_RE.test(title) || SELF_WINDOW_RE.test(proc)) {
+      throw new Error('refused: the foreground window is StarNet itself ("' + (title || proc) + '") — the target app lost focus, so input was NOT sent; re-focus the target app (click it) before typing');
+    }
+    if (action.expectApp) {
+      const want = action.expectApp.toLowerCase();
+      if (title.toLowerCase().indexOf(want) < 0 && proc.toLowerCase().indexOf(want) < 0) {
+        throw new Error('focus check failed: the foreground window is "' + title + '" (' + proc + '), expected "' + action.expectApp + '" — input was NOT sent; re-focus the target app and retry');
+      }
+    }
+    return 'foreground="' + title + '" (' + proc + ')';
   }
   function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
   // ASYNC (was CP.spawnSync): a computer.use action drives PowerShell for up to 15s; spawnSync BLOCKED the whole
@@ -230,6 +258,27 @@ ${body}
         if (a.action === 'drag') throw new Error('local win32 desktop driver does not yet support drag');
         throw new Error('unsupported win32 desktop action: ' + a.action);
       },
+      // Which window will keyboard input actually land in? Title + owning process of the OS foreground window.
+      foreground: async () => runPowerShellJson(`
+Add-Type @"
+using System;
+using System.Text;
+using System.Runtime.InteropServices;
+public class StarNetFg {
+  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetWindowText(IntPtr hWnd, StringBuilder text, int count);
+  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint pid);
+}
+"@
+$h = [StarNetFg]::GetForegroundWindow()
+$sb = New-Object System.Text.StringBuilder 512
+[StarNetFg]::GetWindowText($h, $sb, 512) | Out-Null
+$fgPid = [uint32]0
+[StarNetFg]::GetWindowThreadProcessId($h, [ref]$fgPid) | Out-Null
+$pname = ''
+try { $pname = (Get-Process -Id $fgPid -ErrorAction Stop).ProcessName } catch {}
+[Console]::Out.Write((@{ title = $sb.ToString(); process = $pname } | ConvertTo-Json -Compress))
+`),
       capture: async () => runPowerShellJson(`
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
@@ -271,7 +320,7 @@ try {
       scope: 'execute',
       requiresConsent: true,
       timeoutMs: 15000,
-      description: 'Control the local desktop through an attended, consent-gated computer-use driver. Supports screenshot, move, click, double_click, drag, scroll, type, key, hotkey, and wait. Destructive shortcuts and command-like typing are blocked.',
+      description: 'LAST-RESORT control of the user\'s VISIBLE desktop (mouse/keyboard/screenshot), attended and consent-gated. Do NOT reach for this while a quieter path exists: a dedicated tool for the target service, the headless browser tools for the web, or shell.exec (installed apps can usually be driven invisibly via app URI schemes, CLIs, or PowerShell). Keyboard input lands in whatever window has FOCUS — pass expectApp (an app/window name substring, e.g. "spotify") with every type/key/hotkey so input is refused if focus moved; typing into StarNet\'s own window is always refused. Verify state-changing actions with capture_after:true. Supports screenshot, move, click, double_click, drag, scroll, type, key, hotkey, and wait. Destructive shortcuts and command-like typing are blocked.',
       schema: {
         type: 'object',
         required: ['action'],
@@ -286,11 +335,13 @@ try {
           key: { type: 'string' },
           keys: { type: 'array', items: { type: 'string' } },
           durationMs: { type: 'number' },
-          capture_after: { type: 'boolean' }
+          capture_after: { type: 'boolean' },
+          expectApp: { type: 'string', description: 'For type/key/hotkey: app or window-title substring that must be in the foreground, or the input is refused. Always pass it.' }
         }
       },
       run: async (args, ctx) => {
         const action = hardBlock(args || {});
+        const fgNote = await checkFocus(driver, action);   // throws BEFORE any input is sent when focus is wrong
         const result = await driver.perform(action);
         let proof = '';
         if (action.capture_after || action.action === 'screenshot') {
@@ -299,12 +350,12 @@ try {
           if (typeof cap === 'string') proof = 'capture_after=' + cap;
           else proof = 'capture_after=' + JSON.stringify(cap);
         }
-        const content = 'computer.' + action.action + ' ok' + (proof ? '\n' + proof : '') + (result ? '\n' + String(result) : '');
+        const content = 'computer.' + action.action + ' ok' + (fgNote ? '\n' + fgNote : '') + (proof ? '\n' + proof : '') + (result ? '\n' + String(result) : '');
         return { content, summary: summarize(action) };
       }
     };
-    return { useTool, register(reg) { reg.register(useTool); return reg; }, _internals: { ACTIONS, hardBlock, validateAction, summarize, COMMAND_TEXT_RE, win32DriverRequested, win32DriverActive, win32DriverDisabled, underDesktopShell, makeWin32DesktopDriver, keyToSendKeys, hotkeyToSendKeys, sendKeysEscapeLiteral } };
+    return { useTool, register(reg) { reg.register(useTool); return reg; }, _internals: { ACTIONS, KEYBOARD_ACTIONS, SELF_WINDOW_RE, checkFocus, hardBlock, validateAction, summarize, COMMAND_TEXT_RE, win32DriverRequested, win32DriverActive, win32DriverDisabled, underDesktopShell, makeWin32DesktopDriver, keyToSendKeys, hotkeyToSendKeys, sendKeysEscapeLiteral } };
   }
 
-  return { makeComputerTools, _internals: { ACTIONS, hardBlock, validateAction, summarize, COMMAND_TEXT_RE, win32DriverRequested, win32DriverActive, win32DriverDisabled, underDesktopShell, makeWin32DesktopDriver, keyToSendKeys, hotkeyToSendKeys, sendKeysEscapeLiteral } };
+  return { makeComputerTools, _internals: { ACTIONS, KEYBOARD_ACTIONS, SELF_WINDOW_RE, checkFocus, hardBlock, validateAction, summarize, COMMAND_TEXT_RE, win32DriverRequested, win32DriverActive, win32DriverDisabled, underDesktopShell, makeWin32DesktopDriver, keyToSendKeys, hotkeyToSendKeys, sendKeysEscapeLiteral } };
 });

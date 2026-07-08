@@ -70,6 +70,41 @@ function fakeDriver() {
   A.eq(T.hotkeyToSendKeys(['Ctrl', 'Shift', 't']), '^+(t)', 'ctrl+shift+t stacks modifiers');
   await rejects((async () => T.hotkeyToSendKeys(['Win', 'r']))(), /win\/meta/i, 'win/meta hotkeys are refused, not silently dropped');
 
+  // FOCUS-TRUTH GUARD: keyboard input is only delivered to a proven foreground window
+  {
+    const fgDriver = fakeDriver();
+    fgDriver.foreground = async () => ({ title: 'Spotify Premium', process: 'Spotify' });
+    const FT = makeComputerTools({ driver: fgDriver }).useTool;
+    const ok = await FT.run({ action: 'type', text: 'daft punk', expectApp: 'spotify' }, {});
+    A.ok(/foreground="Spotify Premium" \(Spotify\)/.test(ok.content), 'matching expectApp types and reports the real foreground window');
+    A.eq(fgDriver.log[0].action, 'type', 'matching expectApp reaches the driver');
+
+    await rejects(FT.run({ action: 'type', text: 'hi', expectApp: 'notepad' }, {}), /focus check failed/, 'mismatched expectApp refuses input');
+    A.eq(fgDriver.log.length, 1, 'refused input never reaches the desktop driver');
+
+    // typing into StarNet's own window is always refused, even without expectApp
+    const selfDriver = fakeDriver();
+    selfDriver.foreground = async () => ({ title: 'STARNET — station', process: 'msedge' });
+    const ST = makeComputerTools({ driver: selfDriver }).useTool;
+    await rejects(ST.run({ action: 'type', text: 'hi' }, {}), /StarNet itself/, 'typing into the harness\'s own window is hard-refused');
+    await rejects(ST.run({ action: 'hotkey', keys: ['Ctrl', 'l'] }, {}), /StarNet itself/, 'hotkeys into the harness\'s own window are hard-refused');
+    A.eq(selfDriver.log.length, 0, 'self-window input never reaches the driver');
+
+    // mouse/screenshot are NOT focus-gated (clicking is how you restore focus)
+    const clicked = await ST.run({ action: 'click', x: 5, y: 5 }, {});
+    A.ok(/computer.click ok/.test(clicked.content), 'click is not focus-gated');
+
+    // a driver with no foreground probe: expectApp fails honestly, plain typing stays back-compatible
+    const blindDriver = fakeDriver();
+    const BT = makeComputerTools({ driver: blindDriver }).useTool;
+    await rejects(BT.run({ action: 'type', text: 'hi', expectApp: 'spotify' }, {}), /focus check unavailable/, 'expectApp without a foreground probe refuses honestly');
+    const plain = await BT.run({ action: 'type', text: 'hi' }, {});
+    A.ok(/computer.type ok/.test(plain.content), 'foreground-less driver still types without expectApp (back-compat)');
+  }
+  A.ok(/expectApp/.test(tool.description) && /LAST-RESORT/.test(tool.description), 'description sells the guard and demotes the tool to last resort');
+  A.ok(typeof tool.schema.properties.expectApp === 'object', 'expectApp is in the schema');
+  A.ok(typeof C._internals.makeWin32DesktopDriver().foreground === 'function', 'win32 driver ships a foreground probe');
+
   // registry + capability gate
   {
     const reg = makeRegistry();
