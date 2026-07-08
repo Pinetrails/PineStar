@@ -106,6 +106,18 @@ debugging or claiming anything done. Companions: [BRAIN.md](BRAIN.md) · [DECISI
   refresh tokens, connector secrets. Related shape: a load failure treated as "not
   configured" followed by a save that persists the empty state over the good file.
 
+- **A runtime-only flag that decides what EXISTS on the floor is a relaunch bug waiting.**
+  The every-update "missing agents" escape (fixed 2026-07-07, d47180fc): crew inner life +
+  survive-bay-deletion both keyed off the runtime-only `summoned` flag; a relaunch rebuilt
+  bay-bound bodies WITHOUT it (spawnAgent early-returned on "already present"), so idle
+  agents froze inside their bay's footprint (y-sorted behind the taller bay sprite =
+  invisible) and were dropped outright when the bay was deleted — while the crew
+  manifest/dossier still listed them. Andrew's station only relaunches on app updates, so it
+  pattern-matched to "every update breaks my agents." The law now in code: **a roster agent
+  ALWAYS has a live floor body; a bay decides WHERE it homes, never WHETHER it exists.**
+  When adding any presence/behavior flag, ask: is it derivable from persisted truth on
+  boot? If not, the boot path must rehydrate it explicitly.
+
 ## Judgment traps
 
 - **"Audit says missing" ≠ missing** — the FULL_RELEASE_POLISH sprint found audit claims
