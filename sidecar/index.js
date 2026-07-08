@@ -65,6 +65,7 @@ const {
 const { DEFAULT_MODEL: CODEX_DEFAULT_MODEL } = require('./providers/codex.js');
 const codexAuth = require('./providers/codex-auth.js');
 const codexTokenStore = require('./providers/codex-token-store.js');
+const codexAuthState = require('./providers/codex-auth-state.js');
 const { effectiveModel: resolveEffectiveModel, effectiveUsd } = require('./spend.js');
 const { makeEmitter } = require('../shared/emitter.js');
 const { redact, renderRecall, injectRecall, rank, makeContext, compactionMemoryBlock, compactionSummaryPrompt } = require('./context.js');
@@ -2096,8 +2097,14 @@ function saveCodexTokens(obj) {
   return false;
 }
 // clear must also drop the .bak so a signed-out session can't be "recovered" from the last-known-good on reload.
-function clearCodexTokens() { try { fs.unlinkSync(CODEX_TOKENS_FILE); } catch (e) {} try { fs.unlinkSync(CODEX_TOKENS_FILE + '.bak'); } catch (e) {} codexPersistError = ''; }
+function clearCodexTokens() { try { fs.unlinkSync(CODEX_TOKENS_FILE); } catch (e) {} try { fs.unlinkSync(CODEX_TOKENS_FILE + '.bak'); } catch (e) {} codexPersistError = ''; codexAuthDead = null; }
 let codexTokens = loadCodexTokens();
+// Honest DEAD-TOKEN state (the 2026-07-08 escape: a refresh token consumed by another client errored the run,
+// yet Settings kept saying "SIGNED IN"). When a refresh fails with a relogin-class error we record it here AND
+// inside the persisted tokens envelope (authDead), so a sidecar restart stays honest. Cleared on any successful
+// refresh, a completed device sign-in, or logout. The status endpoint derives connected/expired from this —
+// `connected` means tokens present AND not known-dead.
+let codexAuthDead = codexAuthState.deadFromTokens(codexTokens);
 
 // Hand a Codex run a FRESH access_token: refresh when the JWT exp is within the skew window, persisting the
 // rotated tokens. Throws an auth error otherwise — `reloginRequired` tells the caller whether to prompt a new
@@ -2108,8 +2115,25 @@ async function ensureCodexAccessToken() {
     e.code = 'codex_not_connected'; e.reloginRequired = true; throw e;
   }
   if (!codexAuth.accessTokenIsExpiring(codexTokens.access_token, codexAuth.REFRESH_SKEW_SECONDS, Date.now())) return codexTokens.access_token;
-  const next = await codexAuth.refreshTokens({ fetch: globalThis.fetch, refresh_token: codexTokens.refresh_token, now: Date.now() });
-  codexTokens = Object.assign({}, codexTokens, next);
+  let next;
+  try {
+    next = await codexAuth.refreshTokens({ fetch: globalThis.fetch, refresh_token: codexTokens.refresh_token, now: Date.now() });
+  } catch (e) {
+    // Relogin-class failure (invalid_grant / refresh_token_reused / 401) => the stored refresh token is DEAD.
+    // Record it durably (module state + persisted envelope) so the status endpoint — and Settings — stop
+    // claiming "signed in", and a restart stays honest. Transient failures (quota/network) never mark dead.
+    const marker = codexAuthState.deadMarkerFromError(e, new Date().toISOString());
+    if (marker) {
+      codexAuthDead = marker;
+      codexTokens = codexAuthState.withDeadMarker(codexTokens, marker);
+      saveCodexTokens(codexTokens);
+      console.warn('[codex] refresh token is dead (' + marker.code + ') — Settings will show SIGN-IN EXPIRED until the user reconnects.');
+    }
+    throw e;
+  }
+  // a successful refresh proves the sign-in is alive again — clear any standing dead marker with the same write.
+  codexTokens = codexAuthState.withoutDeadMarker(Object.assign({}, codexTokens, next));
+  codexAuthDead = null;
   saveCodexTokens(codexTokens);
   return codexTokens.access_token;
 }
@@ -7462,6 +7486,7 @@ async function handleCodexPoll(req, res) {
     if (poll.pending) return json(200, { status: 'pending' });
     const creds = await codexAuth.exchangeCode({ fetch: globalThis.fetch, authorization_code: poll.authorization_code, code_verifier: poll.code_verifier, now: Date.now() });
     codexTokens = { access_token: creds.access_token, refresh_token: creds.refresh_token, last_refresh: creds.last_refresh, auth_mode: creds.auth_mode };
+    codexAuthDead = null;   // a completed device sign-in supersedes any recorded dead-token state (fresh envelope carries no marker)
     saveCodexTokens(codexTokens);
     console.log('  · ChatGPT subscription connected (Codex OAuth) — agents can now run on it');
     json(200, { status: 'connected' });
@@ -7470,12 +7495,14 @@ async function handleCodexPoll(req, res) {
   }
 }
 
-// GET /api/auth/codex/status — booleans only; never the tokens.
+// GET /api/auth/codex/status — booleans/strings only; never the tokens.
 function handleCodexStatus(req, res) {
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  // Truth shape (codex-auth-state.js): `connected` is true ONLY when tokens are present AND not known-dead;
+  // `expired:true` + `reason` when a relogin-class refresh failure was recorded (the consumed-token escape).
   // persistError: honest telemetry — the session is signed in (tokens live in memory) but a token WRITE could not
   // be proven to reach disk, so a restart may require re-signing in. Empty string when persistence is healthy.
-  res.end(JSON.stringify({ connected: !!(codexTokens && codexTokens.access_token), last_refresh: (codexTokens && codexTokens.last_refresh) || '', persistError: codexPersistError || '' }));
+  res.end(JSON.stringify(codexAuthState.statusPayload({ tokens: codexTokens, dead: codexAuthDead, persistError: codexPersistError })));
 }
 
 // GET /api/auth/codex/models — the ACCOUNT's real Codex model list (live-discovered with a fresh token), so

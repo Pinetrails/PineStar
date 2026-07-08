@@ -35,6 +35,7 @@ test/provider.gemini.test.js
 test/provider.timeouts.test.js
 test/provider.registry.test.js
 test/provider.codex-auth.test.js
+test/codex-auth-state.test.js
 test/provider.codex.test.js
 test/credpool.test.js
 test/credrotate.test.js
