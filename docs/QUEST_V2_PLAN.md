@@ -1,6 +1,8 @@
 # QUEST SYSTEM V2 — the harness-owned, agent-aware quest ledger
 
-**Status:** APPROVED direction (Andrew, 2026-07-08). This doc is the build contract for the lanes below.
+**Status:** SHIPPED — merged to trunk 2026-07-08 (41cd1d01), test:fast 274 + test:http green, real-provider
+proven (haiku-4.5: grounded mint + capped second mint + attest held open until Commander confirm).
+Open follow-up: additive `quest.new`/`quest.progress`/`quest.complete` events from the shared-contract owner.
 **Why:** quests are the retention spine — the game's progression must be in sync with the Commander's
 real-world progression (goals, aspirations, work to automate). The v1 system fails this in two ways:
 completions celebrate unreliably (or silently), and every quest that isn't mechanically observable
