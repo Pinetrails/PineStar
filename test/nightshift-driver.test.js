@@ -118,6 +118,16 @@ function setup(over) {
   A.eq(r.fired, true, 'the new day re-enabled firing');
 })();
 
+// ---- a halted tick declines with binding:'halt' and spends NOTHING (the durable E-STOP gate) ----
+(function haltedTick() {
+  const h = setup({ halted: true });
+  const r = h.driver.applyTick(T0);
+  A.eq(r.fired, false, 'a halted tick does not fire');
+  A.eq(r.binding, 'halt', 'names halt');
+  A.eq(h.state.beatsUsedToday, 0, 'a halted tick spends no leash');
+  A.ok(h.ledger.some(e => e.kind === 'decline' && e.binding === 'halt'), 'ledger records the halt decline');
+})();
+
 // ---- abortBeat is the E-STOP hook ----
 (async function estop() {
   const h = setup({ autoResolve: false });
