@@ -613,6 +613,17 @@ it." Structurally impossible today because:
 - **NS-8 · One commander-context composer.** Unify dossier + goals + context pack + recall +
   threads into a single server-side composer used by ALL autonomous lanes (night-shift AND
   cron). Deepen chat mining beyond first-lines to a redacted topic digest.
+- **NS-9 · Learning depth ("gets better over time" is real, not decorative).** Today the ONLY
+  learn signal is per-archetype up/down weights capped ±0.5 (autopilot.js learnFold) — a deny
+  teaches "less of that CATEGORY," never "not that idea / not that project / here's why."
+  Build: (a) approve/deny captures an optional one-tap reason (wrong-thing / wrong-time /
+  bad-quality / did-it-myself); (b) verdicts + reasons fold into the thread ledger (NS-6) at
+  idea level and the context pack at project level; (c) the PROPOSE prompt cites past verdict
+  patterns ("you kept the last 3 test-fix patches, discarded both blog drafts"). North-star
+  product test (the Andrew framing, 2026-07-08): *the ceiling on autonomous relevance must be
+  the user's granted context, never the architecture — and relevance must measurably compound
+  with weeks of use.* Done means: same seeded station, 10 simulated beat/verdict cycles →
+  proposal mix provably shifts toward kept-kind work (assertable from ledger + learn state).
 
 Done means (per lane, live-app): NS-5 = grant a real repo, seed a planted bug, leave idle at
 dial 'free' → morning report offers a correct patch through /pending, approve applies it to a
