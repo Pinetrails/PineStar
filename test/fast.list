@@ -90,6 +90,7 @@ test/questinject.test.js
 test/quests-tool.test.js
 test/threads-store.test.js
 test/threadmine.test.js
+test/threadstore.test.js
 test/autopilot-threads.test.js
 test/autopilot-focus.test.js
 test/apiauth.test.js

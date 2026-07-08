@@ -63,6 +63,9 @@ const Chat = (() => {
   let trustWired = false;       // GROWTH Tier 3: the agent.run.end earned-autonomy offer-beat listener (registers once)
   let trustRunsSeen = new Set();// GROWTH Tier 3: runIds already trust-offered (agent.run.end can re-fire; offer once per run)
   let activeTrust = null;       // GROWTH Tier 3: the single visible trust offer card { node, offer, decided }
+  let threadWired = false;      // NS-6: the agent.run.end THREAD turn-in beat listener is registered exactly once
+  let threadRunsSeen = new Set();  // NS-6: runIds already thread-fetched (agent.run.end can re-fire; fetch once per run)
+  let activeThreadCard = null;  // NS-6: the single visible thread turn-in card { node, prop, decided }
   let activeNudge = null;       // the live curiosity nudge { row, choiceRow, dim } — retired if a turn-in claims the post-run beat
   let recruitShown = false;     // adaptive recruitment: the ONE recruit beat is offered at most once per session (in-memory, resets each app run)
   let activeTurnin = null;      // the single visible memory-review deck; later batches queue behind it
@@ -362,6 +365,7 @@ const Chat = (() => {
     studyPending.length = 0; tastePending.length = 0; activeStudy = null;
     arcRunsSeen.clear();   // GROWTH Tier 2: the arc side starts clean per session (a prior hero's arc offers never carry over)
     trustRunsSeen.clear(); activeTrust = null;   // GROWTH Tier 3: the trust side starts clean per session (a prior hero's earned-autonomy offers never carry over)
+    threadRunsSeen.clear(); threadPending.length = 0; activeThreadCard = null;   // NS-6: the thread turn-in side starts clean per session (same law)
     beatSlot = (typeof Study !== 'undefined' && Study.makeBeatSlot) ? Study.makeBeatSlot() : null;
     log = el('chat-log'); input = el('chat-input'); statusEl = el('chat-status');
     if (log) log.addEventListener('scroll', () => { stick = nearBottom(); if (stick) hideNewPill(); });   // track whether the user is following the bottom; back at the bottom retires the "new messages" pill
@@ -392,6 +396,7 @@ const Chat = (() => {
     wireStudy();       // GROWTH Tier 1: after a salient run, offer ≤1 dossier belief-update at turn-in priority (registers once)
     wireArc();         // GROWTH Tier 2: after a clean run, offer ONE goal-decomposition confirm at the LOWEST beat priority (registers once)
     wireTrust();       // GROWTH Tier 3: after a clean run, offer ONE earned-autonomy raise at the LOWEST beat priority — below the arc (registers once)
+    wireThreads();     // NS-6: after a mined task run, offer ONE thread turn-in (Keep/Edit/Discard) at the lowest beat priority — study wins the moment first (registers once)
     wireCrewCapture(); // P3.2: record each dispatched worker's forwarded run-end spend so a 👍 on a crew run splits XP honestly (registers once)
     wireCuriosity();   // Commander Dossier: one gentle "tell me about X" nudge after a clean run (registers once)
     wireBgExit();      // E6: surface shell.bg.exit (a background dev-server/watcher ended) as a terse COMMS system line — was a zero-listener event (registers once)
@@ -514,6 +519,7 @@ const Chat = (() => {
     activeTurnin = null; turninQueue.length = 0; clearChoices();   // visible review/choice layers belong to the current COMMS DOM
     activeStudy = null;   // the study card is the same kind of visible review layer — it belongs to the outgoing DOM
     activeTrust = null;   // GROWTH Tier 3: the trust offer card is likewise a visible review layer bound to the outgoing DOM
+    activeThreadCard = null;   // NS-6: the thread turn-in card is likewise a visible review layer bound to the outgoing DOM
     if (beatSlot && beatSlot.visibleBeat()) beatSlot = (typeof Study !== 'undefined' && Study.makeBeatSlot) ? Study.makeBeatSlot() : null;   // the visible beat left with its DOM; a fresh arbiter matches the new stream
     endToolRail(); presenceCurTool = null;   // COMMS-PREMIUM: the tool rail + live-tool state belong to the OUTGOING stream's DOM
     // typing targets the displayed stream (war-room D2: the compose target is decoupled from any camera jump)
@@ -2062,6 +2068,11 @@ const Chat = (() => {
   function slotCanTrust() { return (beatSlot && beatSlot.canTrust) ? beatSlot.canTrust() : 'busy'; }
   function slotTrustShown() { if (beatSlot && beatSlot.trustShown) beatSlot.trustShown(); }
   function slotTrustDone(more) { if (beatSlot && beatSlot.trustDone) beatSlot.trustDone(more); }
+  // NS-6 — the THREAD turn-in beat: the LOWEST-priority participant (memory > study > arc > trust > thread —
+  // study always wins the moment first). null arbiter OR an older bundle without canThread -> thread stands down.
+  function slotCanThread() { return (beatSlot && beatSlot.canThread) ? beatSlot.canThread() : 'busy'; }
+  function slotThreadShown() { if (beatSlot && beatSlot.threadShown) beatSlot.threadShown(); }
+  function slotThreadDone(more) { if (beatSlot && beatSlot.threadDone) beatSlot.threadDone(more); }
   // the same stand-down guards the curiosity slot honors (First Pitch lesson): a study card must never render
   // mid-awakening/interview/tutorial-panel or while the next run is already streaming. Blocked = queue, not drop.
   function studyBlocked() {
@@ -2421,6 +2432,165 @@ const Chat = (() => {
       }, TRUST_ARM_MS);
     });
   }
+  /* NS-6 — THE THREAD TURN-IN BEAT (mined ideas → the durable thread ledger). After a salient task run the
+     sidecar MINES "threads" — ideas the Commander floated but never acted on, each grounded by a VERBATIM quote —
+     and STASHES the candidates (/api/threads/proposals; never auto-commits). Here we fetch them on agent.run.end
+     and offer ONE for Keep / Edit / Discard: the click IS the consent — keep/edit commits an OPEN thread on the
+     ledger (POST /api/threads/turnin; the night shift's propose step draws open threads FIRST), discard
+     PERMANENTLY denylists the idea's fingerprint. It is the LOWEST post-run priority: it arms after the trust
+     offer (THREAD_ARM_MS > TRUST_ARM_MS — memory, study, arc and trust all win the moment first, so study & thread
+     proposals take turns, study first) and only takes a WHOLLY FREE beat slot through the SAME arbiter
+     (slotCanThread), obeying the SAME stand-down guards (studyBlocked). Blocked moments QUEUE (FIFO, deduped) —
+     deferred, never starved, never stacked. Leaving a card undecided tallies an ignore (2× = stop offering). */
+  const THREAD_ARM_MS = 18000;   // later than TRUST_ARM_MS (16000): the thread turn-in yields the moment to every other beat
+  const threadPending = [];      // {runId, agentId} thread offers deferred behind a busy moment — FIFO, retried next run end
+  function threadBusy() { return !!(activeThreadCard && activeThreadCard.node && activeThreadCard.node.isConnected); }
+  // defer a thread offer for a later moment — SINGLE queue path, FIFO, deduped by runId (mirrors queueStudy).
+  function queueThread(runId, agentId) {
+    if (!runId) return;
+    for (const q of threadPending) if (q.runId === runId) return;
+    threadPending.push({ runId: runId, agentId: agentId });
+  }
+  // an undecided thread card from a PRIOR task end EXPIRES when a new task ends — the "ignored" verdict
+  // (2× = stop offering that idea) — and releases the slot so queued beats can't starve (mirrors expireActiveStudy).
+  function expireActiveThread() {
+    if (!activeThreadCard) return;
+    const a = activeThreadCard;
+    if (!a.node || !a.node.isConnected) { activeThreadCard = null; slotThreadDone(turninQueue.length > 0); return; }   // COMMS re-rendered under it
+    if (a.decided) return;   // mid-settle — its own timer is about to close it
+    activeThreadCard = null;
+    try { if (a.prop && typeof ThreadStore !== 'undefined' && ThreadStore.ignore) ThreadStore.ignore(a.prop); } catch (_) {}
+    slotThreadDone(turninQueue.length > 0);
+    vanish(a.node, () => { if (turninQueue.length && !activeTurnin) showNextTurnin(); });
+  }
+  // render ONE mined thread candidate as a gold-inset turn-in card (Keep / Edit / Discard). Mirrors studyCard's
+  // family + lifecycle discipline exactly; consent routes to ThreadStore → POST /api/threads/turnin (awaited —
+  // the card only claims what the ledger verified: truthful telemetry). Returns true iff the card rendered.
+  function threadCard(prop, agentId, batchRunId) {
+    if (!log || !prop || typeof ThreadStore === 'undefined') return false;
+    clearNudge();                      // claim the one post-run beat slot, retiring any gentle nudge
+    if (typeof ThreadStore.markShown === 'function') ThreadStore.markShown();   // spend the one session-cap slot
+    const r = row('agent'); r.d.classList.add('tool'); r.d.classList.add('turnin'); r.d.classList.add('thread');
+    const title = document.createElement('span'); title.className = 'turnin-title';
+    title.textContent = '◈ ' + name + ' caught an idea you floated but never picked up — keep the thread?';
+    const slotEl = document.createElement('span'); slotEl.className = 'turnin-slot';
+    r.body.appendChild(title); r.body.appendChild(slotEl);
+    const item = document.createElement('div'); item.className = 'turnin-item';
+    const kind = document.createElement('span'); kind.className = 'turnin-kind'; kind.textContent = 'THREAD';
+    const text = document.createElement('span'); text.className = 'turnin-text'; text.textContent = prop.title;
+    const btns = document.createElement('span'); btns.className = 'consent-btns';
+    item.appendChild(kind); item.appendChild(text); item.appendChild(btns);
+    // provenance line: the VERBATIM quote the mine grounded this idea in (the evidence, never a paraphrase).
+    if (prop.spec) { const ev = document.createElement('div'); ev.className = 'turnin-queue'; ev.hidden = false; ev.textContent = '↳ you said “' + prop.spec + '” · kept threads feed the night shift'; item.appendChild(ev); }
+    slotEl.appendChild(item);
+    const card = { node: r.d, prop: prop, decided: false };
+    activeThreadCard = card;
+    slotThreadShown();
+    function done() {
+      if (activeThreadCard === card) activeThreadCard = null;
+      slotThreadDone(turninQueue.length > 0);
+      // hand the moment to a memory deck that queued behind this card (mirrors studyCard's done()).
+      vanish(r.d, () => { if (turninQueue.length && !activeTurnin) showNextTurnin(); });
+    }
+    function settle(label, isDeny) {
+      card.decided = true; btns.remove();
+      const tag = document.createElement('span'); tag.className = 'consent-result' + (isDeny ? ' err' : ''); tag.textContent = label;
+      item.appendChild(tag);
+      setTimeout(done, 600);
+    }
+    // ASYNC-SAFE VERDICTS (the trustCard accept pattern): every verdict resolves against the server — disable the
+    // buttons while pending + mark the card decided NOW (the user answered; an expiry sweep must not tally an
+    // "ignore" under an in-flight verdict). Settle only on the VERIFIED result — never flash "kept" on a refusal.
+    function commit(verdict, edits) {
+      if (card.decided) return;
+      card.decided = true;
+      btns.querySelectorAll('button').forEach(b => { b.disabled = true; });
+      if (verdict === 'keep') {
+        Promise.resolve(ThreadStore.keep(prop, batchRunId, agentId, edits || null)).then(res => {
+          if (!res || res.ok !== true) { settle('✕ couldn’t reach the ledger', true); return; }
+          if (res.reason === 'added') settle(edits ? '✓ kept (edited) — on the ledger' : '✓ kept — on the ledger', false);
+          else if (res.reason === 'duplicate') settle('✓ already on the ledger', false);
+          else if (res.reason === 'declined') settle('✕ you discarded this idea before', true);   // the permanent denylist refused it — honest
+          else settle('✕ the ledger refused it', true);   // 'unknown'/stale — nothing was committed
+        }).catch(() => { settle('✕ couldn’t reach the ledger', true); });
+        return;
+      }
+      Promise.resolve(ThreadStore.discard(prop, batchRunId, agentId)).then(res => {
+        settle((res && res.ok === true) ? '✕ discarded — never again' : '✕ couldn’t reach the ledger', true);
+      }).catch(() => { settle('✕ couldn’t reach the ledger', true); });
+    }
+    function renderChoices() {
+      btns.innerHTML = '';
+      const mk = (lbl, cls, fn) => { const b = document.createElement('button'); b.className = 'consent-btn' + (cls ? ' ' + cls : ''); b.textContent = lbl; b.onclick = fn; btns.appendChild(b); };
+      mk('Keep', '', () => commit('keep'));
+      mk('Edit', '', enterEdit);
+      mk('Discard', 'deny', () => commit('discard'));
+    }
+    function enterEdit() {
+      if (card.decided) return;
+      // inline title + spec tweak, then keep (verdict 'edit' carries both to the ledger).
+      const wrap = document.createElement('span'); wrap.style.display = 'grid'; wrap.style.gap = '4px'; wrap.style.minWidth = '0';
+      const inpTitle = document.createElement('input'); inpTitle.type = 'text'; inpTitle.className = 'turnin-edit'; inpTitle.value = prop.title;
+      const inpSpec = document.createElement('input'); inpSpec.type = 'text'; inpSpec.className = 'turnin-edit'; inpSpec.value = prop.spec || '';
+      wrap.appendChild(inpTitle); wrap.appendChild(inpSpec);
+      item.replaceChild(wrap, text); inpTitle.focus(); try { inpTitle.setSelectionRange(inpTitle.value.length, inpTitle.value.length); } catch (_) {}
+      const commitEdit = () => {
+        const t = inpTitle.value.trim(); if (!t) { inpTitle.focus(); return; }
+        text.textContent = t; item.replaceChild(text, wrap);
+        commit('keep', { title: t, spec: inpSpec.value.trim() });
+      };
+      const cancel = () => { item.replaceChild(text, wrap); renderChoices(); };
+      btns.innerHTML = '';
+      const mk = (lbl, fn) => { const b = document.createElement('button'); b.className = 'consent-btn'; b.textContent = lbl; b.onclick = fn; btns.appendChild(b); };
+      mk('Save', commitEdit); mk('Cancel', cancel);
+      const keydown = e => { if (e.key === 'Enter') commitEdit(); else if (e.key === 'Escape') cancel(); };
+      inpTitle.onkeydown = keydown; inpSpec.onkeydown = keydown;
+    }
+    renderChoices();
+    autoscroll();
+    return true;
+  }
+  // try to place the OLDEST deferred thread offer (FIFO) now that a new task end may have freed the moment.
+  // Never chains: one card per flush (mirrors flushStudyPending).
+  function flushThreadPending() {
+    if (typeof ThreadStore === 'undefined' || threadBusy() || slotCanThread() !== 'free' || studyBlocked()) return;
+    if (!ThreadStore.canShow || !ThreadStore.canShow()) return;
+    if (threadPending.length) { const next = threadPending.shift(); if (next) offerThread(next.runId, next.agentId); }
+  }
+  // fetch + offer ONE live mined thread candidate for a run, obeying the one-beat arbiter + stand-down guards +
+  // session cap. Any blocked moment QUEUES (single path, FIFO, deduped) — deferred, never starved, never stacked.
+  async function offerThread(runId, agentId) {
+    if (typeof ThreadStore === 'undefined') return;
+    if (threadBusy() || slotCanThread() !== 'free' || studyBlocked()) { queueThread(runId, agentId); return; }
+    if (!ThreadStore.canShow || !ThreadStore.canShow()) return;                    // session cap spent (per-session, not deferrable)
+    const batch = await ThreadStore.fetchProposals(runId, agentId);
+    const prop = ThreadStore.nextLive(batch.proposals);   // drops resolved/ignored candidates
+    if (!prop) return;
+    // re-check the moment after the async fetch — a higher-priority beat may have claimed it meanwhile.
+    if (threadBusy() || slotCanThread() !== 'free' || studyBlocked()) { queueThread(runId, agentId); return; }
+    threadCard(prop, agentId, batch.runId || runId);
+  }
+  function wireThreads() {
+    if (threadWired || typeof U === 'undefined' || !U.bus) return;
+    threadWired = true;
+    U.bus.on('agent.run.end', p => {
+      if (!p || p.reason !== 'done') return;                       // only after a clean run
+      if ((p.agentId || 'agent') !== 'agent') return;             // hero runs only (a summoned worker never turns in threads)
+      const runId = p.runId || p.id;
+      // a new task ended: the PREVIOUS task's undecided thread card expires as an "ignore", then one deferred
+      // offer may take the freed moment (anti-starve). Short delay = after the reply renders.
+      setTimeout(() => { expireActiveThread(); flushThreadPending(); }, 900);
+      // THIS run's own offer arms LAST (THREAD_ARM_MS): memory turn-in, study, arc and trust all claim the moment
+      // first — the mine itself is an aux LLM round-trip away, so by now the stash is populated if it fired.
+      setTimeout(() => {
+        if (!runId || threadRunsSeen.has(runId)) return;           // fetch a run's thread proposals at most once
+        threadRunsSeen.add(runId);
+        if (threadRunsSeen.size > 200) threadRunsSeen.delete(threadRunsSeen.values().next().value);
+        offerThread(runId, p.agentId || 'agent');
+      }, THREAD_ARM_MS);
+    });
+  }
+
   // GROWTH Tier 1 §4 — RATINGS → TASTE: after a work verdict folds, a 3-streak on one archetype may mint a
   // style-dim taste proposal. Surfaced through the SAME study card (one beat), obeying the same gates. Called
   // from rateWork with the run's directive (for the archetype) + the verdict.
@@ -3151,7 +3321,7 @@ const Chat = (() => {
      the human must decide the tool call before we pile on the next turn. */
   function goalBlocked(ws) {
     if (interview) return true;
-    if (activeTurnin || activeNudge || studyBusy()) return true;   // a visible review/beat is up
+    if (activeTurnin || activeNudge || studyBusy() || threadBusy()) return true;   // a visible review/beat is up
     if (typeof Dialogue !== 'undefined' && Dialogue.isOpen && Dialogue.isOpen()) return true;
     if (ws && typeof Channels !== 'undefined' && Channels.pendingOf && Channels.pendingOf(ws.id)) return true;   // a tool approval is pending
     return false;

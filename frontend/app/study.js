@@ -360,6 +360,18 @@
       // more=true hands the slot to a memory deck that QUEUED behind the visible trust card (mirrors arcDone/studyDone):
       // the deck renders with no gap where another beat could steal the moment, and pendingMemory can't strand the lanes.
       trustDone(more) { visible = more ? 'memory' : null; },
+      // NS-6 (ADDITIVE) — the THREAD turn-in beat: a FIFTH participant, the LOWEST priority (memory > study >
+      // arc > trust > thread — study always wins the moment first, per the turn-in conventions). Like canArc /
+      // canTrust it may only take a WHOLLY FREE slot; 'thread' is just another visible value the other lanes
+      // read as 'busy', so every prior assertion holds unchanged.
+      canThread() {
+        if (visible !== null) return 'busy';
+        if (pendingMemory.size) return 'memory';
+        return 'free';
+      },
+      threadShown() { visible = 'thread'; },
+      // more=true hands the slot to a memory deck that QUEUED behind the visible thread card (mirrors trustDone).
+      threadDone(more) { visible = more ? 'memory' : null; },
       visibleBeat() { return visible; },
       _pending() { return pendingMemory.size; }
     };
