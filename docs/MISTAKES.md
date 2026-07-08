@@ -127,3 +127,11 @@ debugging or claiming anything done. Companions: [BRAIN.md](BRAIN.md) · [DECISI
   running app first.
 - **Don't gold-plate cosmetic asks** and don't ask Andrew questions research can answer.
   Ask only at genuine product forks.
+- **"The removed voice is back" = check provider billing FIRST (2026-07-07):** a wrong-voice
+  report on an installed build pattern-matches to a code regression, but twice now the cause
+  was the neural-TTS path silently dying (2026-07-06 haveKey false-negative; 2026-07-07
+  OpenRouter credits exhausted → 402) and the app degrading to the browser speechSynthesis
+  fallback with no explanation. Diagnosis order: voice-cache mtimes (fresh clips = neural
+  worked until T) → probe OpenRouter directly with the key (+ GET /api/v1/credits) → only
+  then read code. Any silent degrade that swaps a user-audible identity must surface its
+  reason (voice.js noteFallback since 1d62aaad).
