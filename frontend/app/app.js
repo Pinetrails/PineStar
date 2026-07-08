@@ -2242,7 +2242,6 @@ const App = (() => {
     pushRoster();     // Stage 2: seed the sidecar with the live crew so the lead can delegate (no-op for a solo station)
     renderRail();
     el('ws-new').onclick = newWorkstream;
-    { const wsArch = el('ws-archived'); if (wsArch) wsArch.onclick = toggleArchived; }
     // NS-5c SESSIONS ↔ PROJECTS toggle + ADD-a-project wiring
     { const ts = el('ws-tab-sessions'); if (ts) ts.onclick = () => setRailView('sessions'); }
     { const tp = el('ws-tab-projects'); if (tp) tp.onclick = () => setRailView('projects'); }
@@ -2559,17 +2558,21 @@ const App = (() => {
     });
     input.addEventListener('blur', () => finish(true));
   }
-  // the rail-head ARCHIVED toggle: shown only when ≥1 stream is archived; flips the rail between
-  // hiding and revealing them (revealed rows are dimmed and offer Unarchive in their menu).
+  // the archived reveal: a QUIET footer line at the END of the sessions list (the rail head stays
+  // SESSIONS/PROJECTS + NEW, nothing else). Shown only when ≥1 stream is archived; flips the rail
+  // between hiding and revealing them (revealed rows are dimmed and offer Unarchive in their menu).
+  // It lives inside #workstreams, so the PROJECTS view hides it for free.
   function updateArchivedToggle() {
-    const btn = el('ws-archived'); if (!btn) return;
-    if (railView === 'projects') { btn.hidden = true; return; }   // PROJECTS view shows + ADD, never the sessions ARCHIVED toggle
+    const ul = el('workstreams'); if (!ul) return;
+    const old = ul.querySelector('.ws-arch-row'); if (old) old.remove();
     let n = 0; for (const w of Workstreams.list({ includeArchived: true })) if (w.archived) n++;
-    if (!n) { btn.hidden = true; btn.classList.remove('on'); railShowArchived = false; return; }
-    btn.hidden = false;
-    btn.classList.toggle('on', railShowArchived);
-    btn.textContent = (railShowArchived ? '▾ ' : '▸ ') + 'ARCHIVED ' + n;
-    btn.title = railShowArchived ? 'hide archived sessions' : 'show ' + n + ' archived session' + (n === 1 ? '' : 's');
+    if (!n) { railShowArchived = false; return; }
+    const li = document.createElement('li');
+    li.className = 'ws-arch-row' + (railShowArchived ? ' on' : '');
+    li.textContent = railShowArchived ? '▾ hide archived' : '▸ ' + n + ' archived';
+    li.title = railShowArchived ? 'hide archived sessions' : 'show ' + n + ' archived session' + (n === 1 ? '' : 's');
+    li.onclick = toggleArchived;
+    ul.appendChild(li);
   }
   function toggleArchived() { railShowArchived = !railShowArchived; SFX.click(); renderRail(); }
 
@@ -2586,7 +2589,7 @@ const App = (() => {
     if (view === railView) return;
     railView = view;
     SFX.click();
-    const pan = (typeof Projects !== 'undefined') ? Projects.panels(view) : { sessionsList: view === 'sessions', projectsList: view === 'projects', newBtn: view === 'sessions', archivedBtn: view === 'sessions', addBtn: view === 'projects' };
+    const pan = (typeof Projects !== 'undefined') ? Projects.panels(view) : { sessionsList: view === 'sessions', projectsList: view === 'projects', newBtn: view === 'sessions', addBtn: view === 'projects' };
     const set = (id, show) => { const e = el(id); if (e) e.hidden = !show; };
     set('workstreams', pan.sessionsList);
     set('projects', pan.projectsList);

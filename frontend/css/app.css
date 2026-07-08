@@ -1563,6 +1563,9 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
   list-style: none; margin: 0; padding: 6px 0 0; overflow-y: auto; max-height: 40vh;
   display: flex; flex-direction: column; gap: 4px;
 }
+/* display:flex above beats the UA [hidden] rule — without this, the PROJECTS tab couldn't actually
+   hide the sessions list (both lists rendered stacked, so PROJECTS "showed the same sessions"). */
+#workstreams[hidden] { display: none; }
 .ws-row {
   display: flex; align-items: center; gap: 8px; padding: 5px 8px; cursor: pointer;
   border-left: 2px solid var(--ph-dim); background: rgba(0,0,0,.28);
@@ -1651,13 +1654,14 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 
 /* ---- session row actions: pin marker · hover ⋯ · archived state · in-place rename ---- */
 .ws-head-acts { display: inline-flex; align-items: center; gap: 6px; }
-#ws-archived {
-  font-family: inherit; font-size: 11px; letter-spacing: 1px; color: var(--ink);
-  background: transparent; border: 1px solid rgba(0,0,0,.45); cursor: pointer; padding: 0 6px;
+/* archived reveal — a QUIET footer line at the end of the sessions list, never a header button
+   (the rail head stays SESSIONS/PROJECTS + NEW, nothing else). Shown only when ≥1 archived exists. */
+.ws-arch-row {
+  padding: 3px 8px 4px; cursor: pointer; font-size: 11px; letter-spacing: 1px;
+  color: var(--ph-dim); background: transparent; border-left: 2px solid transparent;
 }
-#ws-archived:hover { background: rgba(0,0,0,.2); }
-#ws-archived.on { background: rgba(0,0,0,.34); }
-#ws-archived[hidden] { display: none; }
+.ws-arch-row:hover { color: var(--ph); background: var(--ph-faint); }
+.ws-arch-row.on { color: var(--ph); }
 /* pinned rows sort to the top AND carry a small gold star so the "kept" state is legible at a glance */
 .ws-pin { flex: 0 0 auto; font-size: 10px; line-height: 1; color: var(--gold); text-shadow: 0 0 6px rgba(var(--gold-rgb),.5); }
 /* the ⋯ button is the discoverable twin of right-click: hidden until the row is hovered, where it takes the meta slot */

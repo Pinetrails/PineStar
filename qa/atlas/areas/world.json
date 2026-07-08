@@ -15733,14 +15733,13 @@
       "id": "ui/world/ws-archived",
       "kind": "ui",
       "area": "world",
-      "name": "show archived sessions",
-      "purpose": "The \"show archived sessions\" toggle in the workstream strip — reveals/hides archived workstreams.",
-      "promise": "Clicking calls toggleArchived() and shows/hides archived session rows; label \"show archived sessions\".",
+      "name": "archived sessions footer reveal",
+      "purpose": "The archived-sessions reveal — a quiet footer row at the end of the sessions list (the rail head carries only SESSIONS/PROJECTS + NEW), shown only when ≥1 session is archived.",
+      "promise": "Clicking calls toggleArchived() and shows/hides archived session rows; label \"▸ N archived\" / \"▾ hide archived\".",
       "wiring": {
         "files": [
           "frontend/app/app.js",
-          "frontend/css/app.css",
-          "frontend/index.html"
+          "frontend/css/app.css"
         ],
         "events": []
       },
@@ -15750,18 +15749,14 @@
           "ref": "ingame"
         }
       ],
-      "status": "audited",
-      "auditedAt": {
-        "sha": "296c8ee866614531a87cbb918070805c60928503",
-        "date": "2026-07-07T22:16:20.560Z"
-      },
+      "status": "mapped",
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.402Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": false,
-      "selector": "#ws-archived",
+      "selector": "#workstreams .ws-arch-row",
       "state": "ingame",
-      "notes": "Present + wired (onclick=toggleArchived app.js:2246; state refreshed :2562). Live-seen 2026-07-07T22:16:20.560Z. Audited (archived-list toggle not re-driven)."
+      "notes": "REDESIGNED 2026-07-08: the #ws-archived head button was removed (Commander directive — rail head is SESSIONS/PROJECTS + NEW only); the reveal moved to a footer row inside #workstreams (updateArchivedToggle). Prior audit no longer applies — demoted to mapped, needs re-audit."
     },
     {
       "id": "ui/world/ws-new",
