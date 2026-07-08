@@ -2767,6 +2767,67 @@ const App = (() => {
   // DISCONNECT topbar button was removed; recovery / resume / error paths still reuse this teardown.)
   function disconnect() { if (typeof Onboarding !== 'undefined' && Onboarding.stop && Onboarding.isRunning && Onboarding.isRunning()) Onboarding.stop(); if (typeof Tutorial !== 'undefined' && Tutorial.teardown) Tutorial.teardown(); if (typeof DockGlow !== 'undefined' && DockGlow.stop) DockGlow.stop(); if (typeof Intake !== 'undefined' && Intake.stop) Intake.stop(); SFX.close(); Chat.abort(); stopRailTicker(); World.stop(); if (World.pauseBridge) World.pauseBridge(); persist(); if (typeof StationUI !== 'undefined') StationUI.leave(); reentry(); }
 
+  /* ---------- first-boot splash ---------- */
+  // The key-art boot card: shown ONLY from init()'s first-run branch (no save anywhere), never on
+  // resume/recovery/re-entry — a returning Commander must land in their station, not a title card.
+  // Any key / click / tap advances into CREATE YOUR OVERSEER. The starfield is a tiny self-owned
+  // canvas loop that stops the moment the screen is left (no orphan rAF behind the game).
+  let splashRaf = 0;
+  function startSplashStars() {
+    const cv = el('sp-stars'); if (!cv || !cv.getContext) return;
+    const ctx = cv.getContext('2d');
+    let W = 0, H = 0, stars = [];
+    const seed = () => {
+      W = cv.width = cv.clientWidth || window.innerWidth;
+      H = cv.height = cv.clientHeight || window.innerHeight;
+      const n = Math.max(90, Math.round((W * H) / 16000));
+      stars = Array.from({ length: n }, () => ({
+        x: Math.random() * W, y: Math.random() * H,
+        r: Math.random() < .88 ? 1 : 2,                        // mostly single-pixel points, a few brights
+        p: Math.random() * Math.PI * 2,                        // twinkle phase
+        s: .5 + Math.random() * 1.4                            // twinkle speed
+      }));
+    };
+    seed();
+    const onResize = () => seed();
+    window.addEventListener('resize', onResize);
+    cv._spCleanup = () => window.removeEventListener('resize', onResize);
+    const phos = () => (getComputedStyle(document.body).getPropertyValue('--ph-rgb').trim() || '255,140,40');
+    let rgb = phos();
+    const tick = t => {
+      ctx.clearRect(0, 0, W, H);
+      for (const st of stars) {
+        const a = .22 + .58 * Math.abs(Math.sin(st.p + t * .001 * st.s));
+        ctx.fillStyle = 'rgba(' + rgb + ',' + a.toFixed(3) + ')';
+        ctx.fillRect(st.x, st.y, st.r, st.r);
+      }
+      splashRaf = requestAnimationFrame(tick);
+    };
+    tick(0);   // paint frame 0 synchronously (no blank flash while waiting on the first rAF)
+  }
+  function stopSplashStars() {
+    if (splashRaf) { cancelAnimationFrame(splashRaf); splashRaf = 0; }
+    const cv = el('sp-stars'); if (cv && cv._spCleanup) { cv._spCleanup(); cv._spCleanup = null; }
+  }
+  function showSplash() {
+    const screen = el('screen-splash');
+    if (!screen) { startCreation(); return; }
+    show('screen-splash');
+    startSplashStars();
+    let advanced = false;
+    const advance = e => {
+      // ignore pure modifier presses so ctrl/alt/cmd chords (devtools, screenshots) don't consume the splash
+      if (e && e.type === 'keydown' && ['Shift', 'Control', 'Alt', 'Meta'].includes(e.key)) return;
+      if (advanced) return; advanced = true;
+      window.removeEventListener('keydown', advance, true);
+      screen.removeEventListener('pointerdown', advance);
+      stopSplashStars();
+      startCreation();
+    };
+    window.addEventListener('keydown', advance, true);
+    screen.addEventListener('pointerdown', advance);
+  }
+
   /* ---------- creation ---------- */
   // Guarded: a genuine FRESH start (no save) wipes any stale resume pointer and opens CREATE YOUR OVERSEER.
   // But if a resume is mid-flight (resumingSaved set, e.g. recovery), do NOT clear it from here — the connect
@@ -2929,8 +2990,8 @@ const App = (() => {
       show('screen-connect'); initConnect(saved.agent.name, true, saved.agent);
       return;
     }
-    // FIRST RUN (no save) — straight to CREATE YOUR OVERSEER.
-    startCreation();
+    // FIRST RUN (no save) — the key-art boot splash, then PRESS ANY KEY → CREATE YOUR OVERSEER.
+    showSplash();
   }
   init();
 

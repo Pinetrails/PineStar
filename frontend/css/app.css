@@ -50,6 +50,68 @@ input::placeholder, textarea.key-input::placeholder { color: var(--ph-dim); opac
    directly. The data-status line that used to live there now sits in the connect-screen footer.) */
 .title-status { color: var(--ph-dim); font-size: 14px; letter-spacing: 1px; }
 
+/* ---------- FIRST-BOOT SPLASH — the key-art boot card (first run only) ----------
+   Layers, back to front: star canvas · nebula haze · perspective grid floor · HUD brackets ·
+   the wordmark + PRESS ANY KEY. Everything rides the theme phosphor vars so a re-tint later
+   still matches; default amber IS the key art. */
+#screen-splash { background: #050302; overflow: hidden; cursor: pointer; }
+#screen-splash.active { display: block; }
+#sp-stars { position: absolute; inset: 0; width: 100%; height: 100%; }
+.sp-nebula {
+  position: absolute; inset: 0; pointer-events: none;
+  background:
+    radial-gradient(ellipse 42% 30% at 72% 22%, rgba(var(--ph-rgb),.10), transparent 70%),
+    radial-gradient(ellipse 34% 26% at 14% 78%, rgba(var(--ph-rgb),.07), transparent 70%),
+    radial-gradient(ellipse 60% 42% at 50% 52%, rgba(var(--ph-rgb),.06), transparent 72%);
+}
+/* the grid floor: a plane of phosphor graph lines pitched away from the camera, faded into the horizon */
+.sp-floor {
+  position: absolute; left: -18%; right: -18%; bottom: 0; height: 46vh;
+  perspective: 340px; perspective-origin: 50% 0%; pointer-events: none;
+  -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 34%, #000 100%);
+  mask-image: linear-gradient(180deg, transparent 0, #000 34%, #000 100%);
+}
+.sp-grid {
+  position: absolute; inset: 0; transform: rotateX(62deg); transform-origin: 50% 0%;
+  background:
+    repeating-linear-gradient(90deg, rgba(var(--ph-rgb),.30) 0 1px, transparent 1px 64px),
+    repeating-linear-gradient(0deg, rgba(var(--ph-rgb),.30) 0 1px, transparent 1px 56px);
+  box-shadow: inset 0 0 120px rgba(0,0,0,.75);
+  animation: sp-scroll 9s linear infinite;
+}
+@keyframes sp-scroll { from { background-position: 0 0, 0 0; } to { background-position: 0 0, 0 56px; } }
+@media (prefers-reduced-motion: reduce) { .sp-grid { animation: none; } }
+.sp-tl { top: 10px; left: 14px; } .sp-tr { top: 10px; right: 16px; }
+.sp-bl { bottom: 10px; left: 14px; } .sp-br { bottom: 10px; right: 16px; }
+.sp-center {
+  position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center;
+  justify-content: center; gap: 10px; padding-bottom: 8vh; pointer-events: none;
+}
+.sp-logo {
+  width: min(58vw, 640px); height: auto; image-rendering: auto; user-select: none;
+  filter: drop-shadow(0 0 18px var(--ph-glow)) drop-shadow(0 0 60px var(--ph-glow2));
+  animation: sp-breathe 4.2s ease-in-out infinite;
+}
+@keyframes sp-breathe {
+  0%, 100% { filter: drop-shadow(0 0 18px var(--ph-glow)) drop-shadow(0 0 60px var(--ph-glow2)); }
+  50%      { filter: drop-shadow(0 0 26px var(--ph-glow)) drop-shadow(0 0 84px var(--ph-glow2)); }
+}
+.sp-tag { color: var(--ph-dim); letter-spacing: 7px; font-size: 15px; text-transform: uppercase; text-shadow: 0 0 8px var(--ph-glow2); }
+.sp-press {
+  margin-top: 9vh; pointer-events: auto; cursor: pointer;
+  font-family: inherit; font-size: 24px; letter-spacing: 4px; text-transform: uppercase;
+  color: var(--ph-bright); background: none; border: none; padding: 8px 18px;
+  text-shadow: 0 0 12px var(--ph-glow), 0 0 3px var(--ph-glow);
+  animation: sp-blink 1.5s steps(1) infinite;
+}
+.sp-press:focus-visible { outline: 2px solid var(--ph); outline-offset: 4px; }
+@keyframes sp-blink { 0%, 62% { opacity: 1; } 62.01%, 100% { opacity: .18; } }
+.sp-stamp {
+  position: absolute; left: 0; right: 0; bottom: 14px; display: flex; justify-content: center;
+  gap: 18px; font-size: 13px; letter-spacing: 2px; color: var(--ph-dim); pointer-events: none;
+}
+.sp-rec { color: var(--bad); animation: cc-blink 1.4s steps(1) infinite; }
+
 /* ---------- generic panel (reuses v7 bezel look) ---------- */
 .panel {
   position: relative; background:

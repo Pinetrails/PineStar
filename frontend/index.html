@@ -26,6 +26,25 @@
 </head>
 <body class="theme-amber">
 
+<!-- ============ FIRST-BOOT SPLASH ============ -->
+<!-- Shown ONLY on a genuine first run (no save anywhere): the key-art boot screen — starfield, a
+     perspective grid floor, the big phosphor wordmark, and a blinking PRESS ANY KEY. Any key / click /
+     tap advances into CREATE YOUR OVERSEER (app.js showSplash()). Resume/recovery paths never route
+     here — a returning Commander lands in the station or the RESUME console, not a title card. -->
+<section id="screen-splash" class="screen" aria-label="StarNet boot screen">
+  <canvas id="sp-stars" aria-hidden="true"></canvas>
+  <div class="sp-nebula" aria-hidden="true"></div>
+  <div class="sp-floor" aria-hidden="true"><div class="sp-grid"></div></div>
+  <span class="cc-bracket sp-tl">┌</span><span class="cc-bracket sp-tr">┐</span>
+  <span class="cc-bracket sp-bl">└</span><span class="cc-bracket sp-br">┘</span>
+  <div class="sp-center">
+    <img class="sp-logo" src="assets/brand/starnet-logo.png" alt="STARNET" draggable="false">
+    <div class="sp-tag">AI-AGENT HARNESS</div>
+    <button id="sp-press" class="sp-press" type="button">▮ PRESS ANY KEY TO START</button>
+  </div>
+  <div class="sp-stamp"><span class="sp-rec">● REC</span><span class="sp-sig">SIGNAL LOCKED · LOCAL STATION 127.0.0.1</span></div>
+</section>
+
 <!-- ============ CONNECT / CREATE ============ -->
 <!-- Desktop COMMISSION CONSOLE — a wide two-column terminal: BRAIN+IDENTITY on the left, VOICE on the
      right, framed in ASCII chrome. Every id/handler below is preserved verbatim from the old single

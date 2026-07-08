@@ -116,6 +116,19 @@
       }
     },
     {
+      "name": "overseer-ux",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "sidecar/index.js"
+      ],
+      "port": 8873,
+      "autoPort": false,
+      "env": {
+        "SKYNET_PORT": "8873",
+        "SKYNET_WORKSPACES": "C:/Users/andro/Desktop/gen/.claude/worktrees/starnet-launch-overseer-ux-28d3f2/.dev-workspaces"
+      }
+    },
+    {
       "name": "starnet",
       "runtimeExecutable": "node",
       "runtimeArgs": [
