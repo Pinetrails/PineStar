@@ -3949,32 +3949,83 @@ const World = (() => {
     }
   }
 
+  /* ---------- the SPEECH BUBBLE: what a body is saying right now (a routed "received: …" beat, a muttered
+     aside, an error line, a LEVEL tick). Rendered in the SAME material as the nameplate — screen-space + no
+     smoothing so the VT323 stays crisp instead of being scaled-then-barrel-warped into mush, dark CRT glass
+     with scanlines, an amber structural frame with a suit accent, a warm phosphor bloom, and a small tail
+     pointing down at the head. A glance, never a window (hover law). */
+  const BUBBLE_MAXW = 152;   // CSS px — a spoken line wraps within this before ellipsizing
   function drawBubble(now, who) {
     who = who || agent;
+    if (!cache || !who) return;
     const s = who.say;
     // keep the HERO's caption up while it's still SPEAKING (a streamed neural reply can outlast the bubble's
     // fixed timer) — so the on-screen line and the voice stay in phase. Crew bodies just follow the timer.
     const speakingNow = (who === agent) && typeof Voice !== 'undefined' && Voice.isSpeaking && Voice.isSpeaking();
     if (!s.text || (s.until < now && !speakingNow)) return;
-    ctx.font = '8px monospace';
-    const maxW = 96, padb = 3, lh = 9;
-    const words = s.text.split(' '), lines = []; let line = '';
+
+    // draw in SCREEN space (mirrors drawNameplate): pixel-snapped, unsmoothed VT323 that reads cleanly at any
+    // zoom, then it rides the same barrel-curve/scanline pass the rest of the feed does. All geometry is CSS px.
+    const dpr = window.devicePixelRatio || 1;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.imageSmoothingEnabled = false;
+    const Wc = cv.width / dpr, Hc = cv.height / dpr;
+    const suit = who.color || '#ffaa33';
+
+    // wrap to <=3 lines within BUBBLE_MAXW; ellipsize a truncated tail so an overrun reads as "…", not a hard cut
+    const fontSz = 15, lh = 16, padX = 6, padY = 5, tailW = 5, tailH = 6;
+    ctx.font = fontSz + 'px ' + PLATE_FONT; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+    const words = String(s.text).split(' '), lines = []; let line = '', truncated = false;
     for (const w of words) {
       const test = line ? line + ' ' + w : w;
-      if (ctx.measureText(test).width > maxW && line) { lines.push(line); line = w; if (lines.length >= 3) break; } else line = test;
+      if (ctx.measureText(test).width > BUBBLE_MAXW && line) {
+        lines.push(line); line = w;
+        if (lines.length >= 3) { truncated = true; break; }
+      } else line = test;
     }
     if (line && lines.length < 3) lines.push(line);
-    if (lines.length === 3) lines[2] = lines[2].replace(/.{0,2}$/, '…');
-    const bw = Math.min(maxW, Math.max(...lines.map(l => ctx.measureText(l).width))) + padb * 2;
-    const bh = lines.length * lh + padb * 2;
-    const rx = who.seated ? who.seatPx : who.px, ry = who.seated ? who.seatPy : who.py;
-    let bx = Math.round(rx - bw / 2); const by = Math.round(ry - 22 - bh);
-    bx = Math.max(2, Math.min((cache ? cache.W : 9999) - bw - 2, bx));
-    ctx.fillStyle = 'rgba(3,2,1,0.92)'; ctx.fillRect(bx, by, bw, bh);
-    ctx.strokeStyle = '#ffaa33'; ctx.lineWidth = 1; ctx.strokeRect(bx + .5, by + .5, bw - 1, bh - 1);
-    ctx.fillStyle = '#ffaa33'; ctx.fillRect(Math.round(rx) - 1, by + bh, 3, 2);
-    ctx.fillStyle = '#ffd9a3'; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';   // own our baseline — never inherit a stray one (the line-y math assumes alphabetic)
-    lines.forEach((l, i) => ctx.fillText(l, bx + padb, by + padb + lh * (i + 1) - 2));
+    else if (line) truncated = true;
+    if (truncated && lines.length) {
+      let last = lines[lines.length - 1];
+      while (last && ctx.measureText(last + '…').width > BUBBLE_MAXW) last = last.slice(0, -1);
+      lines[lines.length - 1] = last.replace(/\s+$/, '') + '…';
+    }
+    const textW = lines.length ? Math.max.apply(null, lines.map(l => ctx.measureText(l).width)) : 1;
+    const bw = Math.round(Math.max(26, Math.min(BUBBLE_MAXW, textW) + padX * 2));
+    const bh = lines.length * lh + padY * 2;
+
+    // anchor centered above the head, crisp + clamped to the canvas (same body->screen math as the nameplate)
+    const ax = (bodyPosX(who) * scale + panX) / dpr, ay = (bodyPosY(who) * scale + panY) / dpr;
+    const spriteH = 15 * scale / dpr;
+    const cx = Math.round(Math.max(bw / 2 + 4, Math.min(Wc - bw / 2 - 4, ax)));
+    const bx = Math.round(cx - bw / 2);
+    const by = Math.round(Math.max(4, Math.min(Hc - bh - tailH - 4, ay - spriteH - 6 - tailH - bh)));
+    const tx = Math.round(Math.max(bx + tailW + 1, Math.min(bx + bw - tailW - 1, ax)));   // tail apex tracks the head, kept inside the box
+
+    // CRT glass card + faint scanlines (nameplate material)
+    ctx.fillStyle = 'rgba(6,5,4,0.94)'; ctx.fillRect(bx, by, bw, bh);
+    // the pointing tail (glass, so box + tail read as one poured surface)
+    ctx.beginPath(); ctx.moveTo(tx - tailW, by + bh); ctx.lineTo(tx + tailW, by + bh); ctx.lineTo(tx, by + bh + tailH); ctx.closePath(); ctx.fill();
+    ctx.globalAlpha = 0.13; ctx.fillStyle = '#000';
+    for (let sy = by + 2; sy < by + bh - 1; sy += 3) ctx.fillRect(bx + 1, sy, bw - 2, 1);
+    ctx.globalAlpha = 1;
+
+    // amber structural frame: the box outline + the two slanted tail edges, then re-glass the seam so the tail
+    // opens into the box instead of being fenced off by the box's bottom stroke
+    ctx.strokeStyle = '#b9791c'; ctx.lineWidth = 1;
+    ctx.strokeRect(bx + 0.5, by + 0.5, bw - 1, bh - 1);
+    ctx.beginPath(); ctx.moveTo(tx - tailW, by + bh - 0.5); ctx.lineTo(tx, by + bh + tailH); ctx.lineTo(tx + tailW, by + bh - 0.5); ctx.stroke();
+    ctx.fillStyle = 'rgba(6,5,4,0.94)'; ctx.fillRect(tx - tailW + 1, by + bh - 1, tailW * 2 - 1, 2);
+    // suit accent along the top edge (the body's own colour, like the nameplate's crown)
+    ctx.globalAlpha = 0.6; ctx.fillStyle = suit; ctx.fillRect(bx + 1, by, bw - 2, 1); ctx.globalAlpha = 1;
+
+    // the line(s): VT323 in warm phosphor, with any leading "label:" (received:, working…) dimmed to a tag
+    ctx.font = fontSz + 'px ' + PLATE_FONT; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+    ctx.shadowBlur = 4; ctx.shadowColor = suit;
+    ctx.fillStyle = '#ffe0b0';
+    lines.forEach((l, i) => ctx.fillText(l, bx + padX, by + padY + lh * (i + 1) - 4));
+    const label = lines.length ? (lines[0].match(/^\S+:/) || [])[0] : null;
+    if (label) { ctx.shadowBlur = 3; ctx.fillStyle = 'rgba(255,171,64,0.72)'; ctx.fillText(label, bx + padX, by + padY + lh - 4); }
+    ctx.shadowBlur = 0; ctx.shadowColor = 'transparent';
   }
 
   function setOnClick(fn) { onClick = fn; }
