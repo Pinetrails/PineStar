@@ -28,7 +28,7 @@ function station(objsByRoom, assignedRoom) {
 {
   const full = resolveTools('ag', station({ quarters: ['computer', 'notebook'] }, 'quarters'));
   A.ok(full.hasCompute, 'computer grants compute');
-  A.eq(full.tools.slice().sort(), ['notebook.feedback', 'notebook.read', 'notebook.write', 'quest.update', 'recall_conversation', 'skill.list', 'skill.manage', 'skill.view', 'skill.write', 'todo', 'widget.set'], 'notebook grants its tools; compute excluded from tools[]');
+  A.eq(full.tools.slice().sort(), ['notebook.feedback', 'notebook.read', 'notebook.write', 'quest.update', 'recall_conversation', 'skill.list', 'skill.manage', 'skill.view', 'skill.write', 'todo', 'widget.set'], 'notebook grants its tools; compute excluded from tools[]; quest.update rides the COMPUTER placed in this same room');
   A.eq(full.approvalRules['notebook.write'].requiresConsent, false, 'notebook write needs no consent (sandboxed private memory)');
   A.eq(full.approvalRules['notebook.read'].requiresConsent, false, 'read auto-allowed');
 
@@ -38,12 +38,19 @@ function station(objsByRoom, assignedRoom) {
 
   // capability follows the ASSIGNED room, not objects elsewhere
   const split = resolveTools('ag', station({ quarters: ['notebook'], lab: ['computer'] }, 'quarters'));
-  A.eq(split.tools.slice().sort(), ['notebook.feedback', 'notebook.read', 'notebook.write', 'quest.update', 'recall_conversation', 'skill.list', 'skill.manage', 'skill.view', 'skill.write', 'todo', 'widget.set'], 'only assigned-room objects grant tools');
+  A.eq(split.tools.slice().sort(), ['notebook.feedback', 'notebook.read', 'notebook.write', 'recall_conversation', 'skill.list', 'skill.manage', 'skill.view', 'skill.write', 'todo', 'widget.set'], 'only assigned-room objects grant tools');
   A.ok(!split.hasCompute, 'a computer in a DIFFERENT room does not grant compute');
 
   // de-dupe duplicate objects
   const dup = resolveTools('ag', station({ quarters: ['notebook', 'notebook'] }, 'quarters'));
-  A.eq(dup.tools.slice().sort(), ['notebook.feedback', 'notebook.read', 'notebook.write', 'quest.update', 'recall_conversation', 'skill.list', 'skill.manage', 'skill.view', 'skill.write', 'todo', 'widget.set'], 'duplicate objects de-duped');
+  A.eq(dup.tools.slice().sort(), ['notebook.feedback', 'notebook.read', 'notebook.write', 'recall_conversation', 'skill.list', 'skill.manage', 'skill.view', 'skill.write', 'todo', 'widget.set'], 'duplicate objects de-duped');
+
+  // QUEST V2 §B fix: quest.update rides the COMPUTER (the compute freebie), not the notebook. A computer-only room
+  // therefore grants quest.update while granting NO notebook tool — the exact reach a bare interactive agent gets.
+  const compOnly = resolveTools('ag', station({ quarters: ['computer'] }, 'quarters'));
+  A.ok(compOnly.hasCompute, 'a computer grants compute');
+  A.eq(compOnly.tools.slice().sort(), ['quest.update'], 'computer-only room grants exactly quest.update (the quest freebie), no notebook tools');
+  A.eq(compOnly.approvalRules['quest.update'].requiresConsent, false, 'quest.update is consent-free (freebie trust class)');
 
   // unknown agent -> nothing
   A.eq(resolveTools('ghost', station({ quarters: ['computer'] }, 'quarters')).tools.length, 0, 'unknown agent -> no tools');
@@ -82,6 +89,10 @@ function station(objsByRoom, assignedRoom) {
   A.eq(fresh.tools.indexOf('web_search'), -1, 'F1: no DISH placed -> no web');
   A.eq(fresh.tools.indexOf('fs.read'), -1, 'F1: no CABINET placed -> no files');
   A.eq(fresh.tools.indexOf('shell.exec'), -1, 'F1: no WORKBENCH placed -> no terminal');
+  // QUEST V2 §B fix (truthful telemetry): quest.update MUST be present on the bare interactive office — the STATION
+  // QUESTS prompt (gated on isTask) commands it, and a real-provider run reported it MISSING when it rode the notebook.
+  // Now it rides compute (the freebie), so an agent with an EMPTY station can actually act on / mint quests.
+  A.ok(fresh.tools.indexOf('quest.update') >= 0, 'F1: bare interactive office (nothing placed) STILL grants quest.update — the prompt never advertises an absent tool');
 
   // F2. placing a DISH genuinely unlocks web (and ONLY web) — the core "object = capability" promise.
   const withDish = officeReach({ surface: 'interactive', extraObjects: [{ objectType: 'dish' }] });

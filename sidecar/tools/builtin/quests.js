@@ -1,4 +1,4 @@
-/* sidecar/tools/builtin/quests.js — the QUEST (memory) capability write half: a single `quest.update` tool
+/* sidecar/tools/builtin/quests.js — the QUEST capability write half: a single `quest.update` tool
    (QUEST V2, plan §B — agent awareness). The read half is questinject.js (the STATION QUESTS prompt block);
    this lets the agent ACT on those quests. It is the ONLY way an agent touches the ledger.
 
@@ -16,10 +16,13 @@
                          strings are surfaced VERBATIM so the model can self-correct. A MECHANICAL per-run cap (this
                          file) caps it at ONE successful mint per run — a run can't dump a backlog in a single pass.
 
-   capability: 'memory' — the universally-granted builtin family (notebook/todo/skill/recall/widget all live here;
-   granted by the `notebook` object, which every default office carries). A quest is the agent's own standing
-   objective — reading/updating it is the same trust class as its notebook/todo working memory: no filesystem reach,
-   no network, no outward mutation until the Commander confirms an attest. So, like todo, NO consent gate.
+   capability: 'quest' — a FREEBIE family carried by the `computer` object, the one object present in BOTH the
+   interactive baseline office (compute-only) and the full default office, so quest.update rides EVERY task surface.
+   (It rode capId 'memory'/the `notebook` object originally, but the interactive floor has no placed notebook, so the
+   tool was ABSENT while the STATION QUESTS prompt commanded it — a truthful-telemetry break; see CAP_REGISTRY.computer.)
+   A quest is the agent's own standing objective — reading/updating it is part of being able to think at all, the same
+   freebie class as compute: no filesystem reach, no network, no outward mutation until the Commander confirms an
+   attest. So, like todo, NO consent gate.
 
    makeQuestTools({ store, clock }) -> { questUpdateTool, register(reg) }
      store : the questStore instance (openForAgent, tickStep, attest, mint)
@@ -51,7 +54,7 @@
     const mintsByRun = new Map();
 
     const questUpdateTool = {
-      name: 'quest.update', capability: 'memory', scope: 'write', requiresConsent: false, timeoutMs: 8000,
+      name: 'quest.update', capability: 'quest', scope: 'write', requiresConsent: false, timeoutMs: 8000,
       description: 'Act on your STATION QUESTS (listed in your prompt). op:"progress" ticks a named step of a quest '
         + '(pass id, stepKey, and a short note on what you did) — progress is display only and never completes a '
         + 'quest. op:"attest_complete" PROPOSES a quest is done (pass id and concrete evidence of what was '

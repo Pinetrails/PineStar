@@ -5,6 +5,8 @@
    it never double-appends; and the block is clipped to the cap, dropping the OLDEST quests first with a "N more"
    note. Pure + deterministic (no clock/rng/fs). */
 'use strict';
+const fs = require('fs');
+const path = require('path');
 const A = require('./_assert.js');
 const { questBlock, withQuests, _internals } = require('../sidecar/questinject.js');
 
@@ -91,6 +93,19 @@ A.eq(_internals.nextStep({}), null, 'missing steps → null');
   A.ok(/…and \d+ more open quests in the QUEST LOG\./.test(b), 'a "…and N more" line replaces the dropped oldest quests');
   A.ok(b.indexOf('[q:60]') >= 0, 'the NEWEST quest (q:60) is kept');
   A.ok(b.indexOf('[q:1] ') < 0, 'the OLDEST quest (q:1) is dropped under the cap');
+}
+
+/* ---------- Fix 2 (truthful telemetry): the injection seam in index.js composes the STATION QUESTS block ONLY when
+   quest.update is actually in the run's RESOLVED tool set — the block never advertises a tool the model can't see.
+   Source-guarded (the mirror of settings-p1-backend.test.js's gate check) because the composition lives inline in the
+   runOnce path where a full-loop harness isn't cheap to stand up. ---------- */
+{
+  const idx = fs.readFileSync(path.join(__dirname, '..', 'sidecar', 'index.js'), 'utf8');
+  // the exact gate: isTask AND quest.update present in resolved.tools before questBlock is composed.
+  A.ok(/questsBlock\s*=\s*questBlock\(/.test(idx), 'index.js composes questsBlock via questBlock(...)');
+  A.ok(/isTask\s*&&[\s\S]{0,120}?resolved\.tools\.indexOf\(\s*['"]quest\.update['"]\s*\)\s*>=\s*0[\s\S]{0,20}?\)\s*questsBlock\s*=\s*questBlock\(/.test(idx),
+    'the questsBlock injection is GATED on quest.update being present in resolved.tools (never advertise an absent tool)');
+  A.ok(/catch\s*\(_\)\s*\{\s*questsBlock\s*=\s*''\s*;\s*\}/.test(idx), 'the gate is fail-open: any error yields no block');
 }
 
 A.report('questinject.test');

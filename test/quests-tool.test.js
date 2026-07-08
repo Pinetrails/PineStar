@@ -3,7 +3,8 @@
    injected via the tool's clock). Proves: op routing (progress / attest_complete / mint / unknown); agent
    SCOPING (progress rejects a quest that isn't open for the calling agent); attest EVIDENCE requirement + the
    honest "proposed, not complete" copy + mechanical-contract rejection passthrough; mint contract-rule + cap
-   error passthrough VERBATIM; and that it is wired into CAP_REGISTRY under the universally-granted memory family. */
+   error passthrough VERBATIM; and that it is wired into CAP_REGISTRY under the universally-present computer object
+   (the 'quest' freebie capId), NOT the notebook — so a bare interactive office still grants it. */
 'use strict';
 const A = require('./_assert.js');
 const path = require('path');
@@ -30,12 +31,16 @@ const ctxOf = (agentId, runId) => ({ agentId, runId });
 
 (async () => {
 
-  // ---- CAP_REGISTRY: quest.update is granted under the universally-present `notebook` (memory) object ----
+  // ---- CAP_REGISTRY: quest.update is granted under the universally-present `computer` object (the compute freebie) ----
+  // It MOVED off the notebook: the interactive baseline office is compute-only with no placed notebook, so a
+  // notebook-scoped quest.update was ABSENT while the STATION QUESTS prompt commanded it (truthful-telemetry break).
   {
-    const rows = (CAP_REGISTRY.notebook || []).filter(g => g.tool === 'quest.update');
-    A.eq(rows.length, 1, 'quest.update is registered exactly once under the notebook object');
-    A.eq(rows[0].capId, 'memory', 'quest.update belongs to the universally-granted memory capability');
-    A.eq(rows[0].requiresConsent, false, 'quest.update is consent-free (same trust class as notebook/todo)');
+    const rows = (CAP_REGISTRY.computer || []).filter(g => g.tool === 'quest.update');
+    A.eq(rows.length, 1, 'quest.update is registered exactly once under the computer object');
+    A.eq(rows[0].capId, 'quest', 'quest.update belongs to the freebie quest capability (not compute — that would be swallowed by the compute gate)');
+    A.eq(rows[0].requiresConsent, false, 'quest.update is consent-free (freebie trust class, like todo)');
+    const onNotebook = (CAP_REGISTRY.notebook || []).filter(g => g.tool === 'quest.update');
+    A.eq(onNotebook.length, 0, 'quest.update is NO LONGER granted by the notebook object');
   }
 
   // ---- op:progress — agent scoping + step ticking ----

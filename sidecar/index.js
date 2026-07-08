@@ -5515,7 +5515,7 @@ async function runOnce(o) {
     }
   }).register(registry);   // H4: skill.write/list/view/manage — the agent's reusable procedure library (memory capability)
   Todo.makeTodoTool({ store: notebookStore }).register(registry);   // in-session task plan — shares the notebook's per-agent kv store ('todo:'+agentId)
-  makeQuestTools({ store: questStore, clock: { now: () => Date.now() } }).register(registry);   // QUEST V2 §B: quest.update (progress/attest/mint) — memory capability, granted by the notebook object (CAP_REGISTRY)
+  makeQuestTools({ store: questStore, clock: { now: () => Date.now() } }).register(registry);   // QUEST V2 §B: quest.update (progress/attest/mint) — the 'quest' freebie capability, granted by the computer object (CAP_REGISTRY) so it rides EVERY task surface
   // STUDIO (media skills): image_generate / image_analyze use an OpenRouter key when one is available.
   // Gated by a 'studio' object (in the default office below) exactly like web/files; outputs save to the workspace.
   imageTools.register(registry);
@@ -5957,8 +5957,14 @@ async function runOnce(o) {
   // should consider grounded minting (plan §E). The strict byte-identical no-op is preserved by the isTask GATE:
   // a non-task run never composes a block, so withQuests('' , ...) stays a no-op for that path. Fail-open: ANY
   // quest-store read error yields no block, never a broken run. Only task runs (tools available) carry it.
+  // TRUTHFUL-TELEMETRY GATE (never advertise an absent tool): the block COMMANDS "use the quest.update tool", so we
+  // compose it ONLY when quest.update is actually in THIS run's RESOLVED tool set (resolved.tools, computed above from
+  // the placed office). After the Fix-1 grant-move this passes on every normal task run (quest.update rides the
+  // always-present computer/compute freebie), but a custom office/zone that excludes the computer — or a future policy
+  // change — would otherwise ship a prompt demanding a tool the model can't see (the exact break a real-provider run
+  // caught). isTask is kept because a non-task run has no tools at all. Fail-open: ANY error yields no block.
   let questsBlock = '';
-  try { if (isTask) questsBlock = questBlock(questStore.openForAgent(agentId)); } catch (_) { questsBlock = ''; }
+  try { if (isTask && resolved && Array.isArray(resolved.tools) && resolved.tools.indexOf('quest.update') >= 0) questsBlock = questBlock(questStore.openForAgent(agentId)); } catch (_) { questsBlock = ''; }
   const sys = withQuests((system || '') + runtimeBlock + toolNote + teamNote + manualBlock + summarizeCapabilities(resolved, { surface }) + skillBlock + runtimeSkillBlock + preloadedSkillBlock, questsBlock);   // ground-truth caps: name the object to place instead of promising work it has no tool for
   // H1.2: bulletproof resume — if this run arrives with NO prior history (a fresh restart whose browser save was
   // wiped, or any caller that only sent the new directive) AND it names an explicit workstream, seed the

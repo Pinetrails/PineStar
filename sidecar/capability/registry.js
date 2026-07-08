@@ -16,7 +16,19 @@
 
   const CAP_REGISTRY = {
     computer: [
-      { capId: 'compute', tool: 'model.chat', scope: 'execute', requiresConsent: false, network: true }
+      { capId: 'compute', tool: 'model.chat', scope: 'execute', requiresConsent: false, network: true },
+      // QUEST V2 §B: quest.update rides the `computer` object — the ONE object in BOTH the interactive baseline
+      // (compute-only) office AND fullOffice, so EVERY task surface gets it (the interactive surface has no placed
+      // notebook, which is why granting this under `notebook` left the tool ABSENT while the STATION QUESTS prompt
+      // commanded its use — a truthful-telemetry break). A quest is the agent's OWN standing objective: knowing and
+      // updating it is part of being able to think at all — the same freebie class as compute — with no outward
+      // mutation until the Commander confirms an attest. capId is 'quest', NOT 'compute': resolve.js treats a
+      // 'compute' grant as the COMPUTE GATE (sets hasCompute and `continue`s — never a callable tool), so 'compute'
+      // would make quest.update permanently absent. A distinct 'quest' capId surfaces as a real tool and stays honest
+      // in every consumer — it has no TOOLSETS_META row (toolsets.js) so it is never a toggleable family (correct: a
+      // freebie, like compute), it is not in capsummary's CAPS list so it is never advertised/nagged, and capdrift
+      // keys on objectTypes (unchanged) so the prop⇄cap seam is intact. (see tools/builtin/quests.js)
+      { capId: 'quest', tool: 'quest.update', scope: 'write', requiresConsent: false, network: false }
     ],
     notebook: [
       { capId: 'memory', tool: 'notebook.write', scope: 'write', requiresConsent: false, network: false },   // private sandboxed memory — no consent gate (see notebook.js)
@@ -28,8 +40,10 @@
       { capId: 'memory', tool: 'skill.manage', scope: 'write', requiresConsent: false, network: false },       // H4: create/patch/archive saved skills
       { capId: 'memory', tool: 'skill.list', scope: 'read', requiresConsent: false, network: false },          // H4: list saved skills (metadata only)
       { capId: 'memory', tool: 'skill.view', scope: 'read', requiresConsent: false, network: false },          // H4: load a saved skill's full body
-      { capId: 'memory', tool: 'widget.set', scope: 'write', requiresConsent: false, network: false },         // WIDGET RAILS Phase 2: publish/update an agent-fed rail readout — sandboxed local write to the station's own chrome, same trust class as notebook.write (see tools/builtin/widgets.js)
-      { capId: 'memory', tool: 'quest.update', scope: 'write', requiresConsent: false, network: false }         // QUEST V2 §B: progress/attest/mint a STATION QUEST — the agent's own standing objective, same trust class as notebook/todo (no outward mutation until the Commander confirms an attest; see tools/builtin/quests.js)
+      { capId: 'memory', tool: 'widget.set', scope: 'write', requiresConsent: false, network: false }          // WIDGET RAILS Phase 2: publish/update an agent-fed rail readout — sandboxed local write to the station's own chrome, same trust class as notebook.write (see tools/builtin/widgets.js)
+      // QUEST V2 §B: quest.update was MOVED to the `computer` object (above) — see the note there. It rode `notebook`
+      // (memory) originally, but the interactive office has no placed notebook, so the tool was absent while the prompt
+      // demanded it. It belongs with compute (the always-present freebie), not with placeable memory.
     ],
     // M5: object = capability made real — placing these grants the agent real-world reach.
     cabinet: [

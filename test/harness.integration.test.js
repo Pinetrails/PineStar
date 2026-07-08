@@ -88,8 +88,8 @@ const fixture = {
   makeTodoTool({ store: new Map() }).register(registry);
   makeRecallTool({ transcriptStore: makeTranscriptStore({ io: { readAll() { return []; }, append() {} }, clock: { now: () => 0 } }) }).register(registry);
   makeSkillTools({ store: makeSkillStore({ io: { readAll() { return []; }, append() {} }, clock: { now: () => 0 } }) }).register(registry);
-  // QUEST V2 §B: quest.update rides the notebook (memory) grant. In-memory questStore so registration + resolve
-  // mirror sidecar/index.js exactly (the drift guard below now expects quest.update in the resolved toolset).
+  // QUEST V2 §B: quest.update rides the COMPUTER (the 'quest' freebie), present in this office. In-memory questStore
+  // so registration + resolve mirror sidecar/index.js exactly (the drift guard below expects quest.update resolved).
   const _qFiles = new Map();
   const _qFs = {
     readFileSync(f) { if (!_qFiles.has(String(f))) { const e = new Error('ENOENT'); e.code = 'ENOENT'; throw e; } return _qFiles.get(String(f)); },
