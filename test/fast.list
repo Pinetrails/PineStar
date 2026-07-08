@@ -195,6 +195,9 @@ test/autonotify.test.js
 test/permgrants.test.js
 test/projects-store.test.js
 test/pathtrust.test.js
+test/nightfocus.test.js
+test/nightpatch.test.js
+test/projectscan.test.js
 test/permpanel.test.js
 test/permissionsstore.test.js
 test/permissions-ui.test.js
