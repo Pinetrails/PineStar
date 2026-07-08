@@ -88,6 +88,7 @@ test/workshop-store.test.js
 test/quest-store.test.js
 test/questinject.test.js
 test/quests-tool.test.js
+test/questsweeps.test.js
 test/threads-store.test.js
 test/threadmine.test.js
 test/autopilot-threads.test.js

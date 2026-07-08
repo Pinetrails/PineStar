@@ -6,7 +6,10 @@
      • progress        — tick a NAMED open step with a short note (questStore.tickStep). Agent-scoped: the quest
                          must be OPEN FOR THIS agent (openForAgent) — an agent can't tick a step on a quest that
                          isn't its own / station-wide. Progress is display only; it NEVER completes a quest.
-     • attest_complete — PROPOSE a quest done with concrete evidence (questStore.attest). Evidence REQUIRED. This
+     • attest_complete — PROPOSE a quest done with concrete evidence (questStore.attest). Agent-scoped like
+                         progress (openForAgent — its own + station-wide quests only; sequential quest ids are
+                         guessable, so an unscoped attest would let any agent file a completion proposal on
+                         another agent's quest). Evidence REQUIRED. This
                          NEVER completes the quest — it sets a pending attest the Commander confirms (rate-the-work
                          beat). The store rejects mechanical (prop/run/fact/artifact) contracts: their completion
                          stays machine-owned. Result copy says "proposed — awaiting confirmation", never "completed".
@@ -100,10 +103,16 @@
           if (!id) return { content: 'Pass the quest id to progress (from your STATION QUESTS list).', summary: 'noop' };
           if (!stepKey) return { content: 'Pass the stepKey of the step to tick.', summary: 'noop' };
           // AGENT SCOPING: only a quest OPEN FOR THIS agent (its own or station-wide) can be progressed here.
-          const mine = store.openForAgent(agentId).some(q => q.id === id);
+          const mine = store.openForAgent(agentId).find(q => q.id === id);
           if (!mine) return { content: 'Quest ' + id + ' is not one of your open quests. Only work quests listed for you can be updated.', summary: 'not yours' };
           const ok = await store.tickStep(id, stepKey, args.note, now());
           if (!ok) return { content: 'No open step "' + stepKey + '" on ' + id + ' (it may not exist or already be done).', summary: 'no-op' };
+          // QUEST V2 §A — RUN-contract binding at the tool seam: a successful progress tick during run R is the
+          // agent PROVABLY working this quest in this run, so bind R (store.bindRun) — the run-end settle hook's
+          // completeByContract('run', runId) then completes it on 'done' (non-done stalls it). This is the ONLY
+          // binding path for a STATION-WIDE run quest (the prompt-injection seam binds only agent-OWNED ones —
+          // an unrelated agent's next run must never claim a shared quest it did no work on). Fail-open.
+          if (mine.contract && mine.contract.type === 'run' && runId) { try { await store.bindRun(id, runId); } catch (_) {} }
           return { content: 'Ticked step "' + stepKey + '" on ' + id + '.', summary: 'progress ' + id };
         }
 
@@ -113,6 +122,13 @@
           const evidence = str(args.evidence);
           if (!id) return { content: 'Pass the quest id to attest complete (from your STATION QUESTS list).', summary: 'noop' };
           if (!evidence) return { content: 'attest_complete needs concrete evidence of what was accomplished — attesting without proof is not allowed.', summary: 'noop' };
+          // AGENT SCOPING (mirrors op:"progress"): only a quest OPEN FOR THIS agent (its own or station-wide —
+          // openForAgent, the store's own visibility rule) may be attested. Quest ids are sequential and guessable;
+          // without this gate any agent could file a completion proposal on ANOTHER agent's quest and put a
+          // false "reports this quest complete" beat in front of the Commander. A station-wide (agentId:null)
+          // quest stays attestable by any agent — shared by the store's design, exactly like progress.
+          const attestable = store.openForAgent(agentId).some(q => q.id === id);
+          if (!attestable) return { content: 'Quest ' + id + ' is not one of your open quests. Only quests listed for you can be attested.', summary: 'not yours' };
           const r = await store.attest(id, { agentId: agentId, runId: runId, evidence: evidence }, now());
           if (!r || r.ok === false) return { content: (r && r.error) ? r.error : 'could not attest ' + id, summary: 'rejected' };
           return { content: 'Completion proposed for ' + id + ' — awaiting the Commander\'s confirmation. It is NOT complete yet.', summary: 'attest proposed' };
