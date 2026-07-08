@@ -162,10 +162,20 @@ Rule stands: land it or delete it — an unmerged branch is a claim nobody verif
 - **Live-proven same session:** trunk re-sweep after the parallel skills-legibility merge
   caught the drift unassisted — created 94 / missing 51 → the mapper detects surface
   change with zero human eyes (39b9c569).
-- **Guardian collision diagnosed + routed:** 07:21Z RED (finding 69eff742) = hourly task ×
-  watch session overlapping on shared pin/ports; clean re-run all-5-gates GREEN; finding
-  routed; guardian-lockfile fix lane spawned (chip). QA_STATION §2 "overlap harmlessly"
-  claim is FALSE physically — lock lane updates it.
+- **Guardian collision FIXED 2026-07-08 (branch `worktree-agent-a587eb4a789044522`, unmerged):**
+  root cause = the hourly task, the `--watch` process, and manual runs all target the SAME pinned
+  worktree + the SAME 8940-8943 ports, so overlapping runs raced on the shared
+  `.git/worktrees/**/index.lock` (finding 90fe0bcc) and timed the visual gates out into BLOCKED
+  P0s (9b077d5e/6fc6c002/328bc698/69eff742). Fix = a **machine-global cross-process lock** in
+  `guardian.mjs` (heartbeat lockfile at `%TEMP%/starnet-qa-guardian.lock`, PID-liveness +
+  stale-reclaim; one-shot SKIPs when held, `--watch` skips-and-retries, `--wait` queues) — the
+  three launch styles now serialize. Also: a red gate whose every finding is dismissed/known is
+  now **review-clean** at the cycle verdict (mirrors golden), so the dismissed J2b panel-close
+  busy-poll flake (`6feab179`, reproduced 3/3 PASS isolated) no longer pins the release gate RED;
+  `journeys.mjs` mirrors it for its own exit code. QA_STATION §2 "overlap harmlessly" claim
+  corrected to the truth. GREEN all-5-gates cycle proven on trunk 42803552 (guardian-20260708-195105);
+  all 10 stale Guardian findings closed → Green Guardian 0 open. OPEN = merge to trunk (the live
+  hourly task runs trunk code, so the lock only protects production after merge).
 
 ## QA Escape Loop — standing directive (added 2026-07-07, Fable session)
 

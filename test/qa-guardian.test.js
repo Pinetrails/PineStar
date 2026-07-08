@@ -10,7 +10,7 @@ const A = require('./_assert.js');
 const {
   makeGuardianCore, guardianFingerprint,
   parseGoldenReport, parseAuditReport, parseShootManifest, parseJourneysReport,
-  GUARDIAN_STEPS,
+  GUARDIAN_STEPS, isLockStale,
 } = require('../scripts/qa/guardian.mjs');
 const { fingerprintOf } = require('../scripts/qa/ledger.mjs');
 
@@ -255,6 +255,31 @@ const step = (id) => GUARDIAN_STEPS.find(s => s.id === id);
   A.eq(parseJourneysReport({ journeys: 'nope' }).length, 0, 'non-array journeys -> []');
   A.eq(parseJourneysReport({ journeys: [{ name: 'J1', assertions: [{ name: 'a', pass: false, soft: true }] }] }).length, 0, 'soft-only journeys -> []');
   A.eq(parseJourneysReport({ journeys: [{ name: 'J1', assertions: [{ name: 'a', pass: true }] }] }).length, 0, 'all-pass journeys -> []');
+}
+
+// ---- K. isLockStale(): a dead holder's heartbeat goes stale; a fresh one is live ----
+{
+  const NOW = 1000000, STALE = 120000;
+  A.eq(isLockStale({ heartbeatAt: NOW - 10000 }, NOW, STALE), false, 'a 10s-old heartbeat is NOT stale (live holder)');
+  A.eq(isLockStale({ heartbeatAt: NOW - 130000 }, NOW, STALE), true, 'a heartbeat older than the stale window is reclaimable');
+  A.eq(isLockStale(null, NOW, STALE), true, 'a missing record is treated as stale (reclaimable)');
+  A.eq(isLockStale({}, NOW, STALE), true, 'a record with no heartbeat is stale');
+  A.eq(isLockStale({ heartbeatAt: 'nope' }, NOW, STALE), true, 'a garbled heartbeat is stale');
+  A.eq(isLockStale({ heartbeatAt: NOW }, NOW, STALE), false, 'a just-refreshed heartbeat is live');
+}
+
+// ---- L. summarize(): a red gate marked reviewClean (all findings dismissed/known) is NOT red ----
+{
+  const core = makeGuardianCore({ io: io(), clock });
+  // journeys exit 3 whose only hard-fail is a dismissed flake -> the shell marks reviewClean -> green.
+  A.eq(core.summarize([
+    { id: 'test-fast', exitCode: 0 }, { id: 'shoot', exitCode: 0 }, { id: 'golden', exitCode: 0 },
+    { id: 'audit', exitCode: 0 }, { id: 'journeys', exitCode: 3, reviewClean: true },
+  ]).verdict, 'green', 'a red gate whose findings are all dismissed/known (reviewClean) is not counted red');
+  // WITHOUT reviewClean the same journeys exit 3 is red (the flag is what excuses it).
+  A.eq(core.summarize([{ id: 'journeys', exitCode: 3 }]).verdict, 'red', 'journeys exit 3 with no reviewClean flag -> red');
+  // reviewClean must NOT excuse a genuinely BLOCKED detector (a step that could not run stays red).
+  A.eq(core.summarize([{ id: 'golden', blocked: true, reviewClean: true }]).verdict, 'red', 'reviewClean cannot excuse a BLOCKED step (no-fake-green holds)');
 }
 
 A.report('qa-guardian.test');
