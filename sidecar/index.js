@@ -6012,6 +6012,10 @@ async function runOnce(o) {
   if (process.env.SKYNET_SKILL_CURATOR !== '0' && result && result.reason === 'done' && _qualifies && !signal.aborted) {
     runSkillCurator({ agentId, runId, provider, model, cost, unmetered: providerUnmetered }).catch(() => {});
   }
+  // WORK VISIBILITY: hand the caller this run's PROVEN outputs (the same ledger runStore just recorded).
+  // team.dispatch/team.spawn stamp these with the worker's agentId so the LEAD knows what its workers
+  // actually saved and in WHOSE workspace (the ghost-file fix). Additive — existing callers ignore it.
+  if (result && !result.artifacts) { try { result.artifacts = artifactLedger.list(); } catch (_) {} }
   return result;
 
   } finally {

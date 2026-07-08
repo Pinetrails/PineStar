@@ -131,6 +131,30 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
   A.ok(emitted.indexOf('agent.token') < 0, "child tokens are NOT forwarded (no pollution of the lead's COMMS)");
 }
 
+// ---- deliverable visibility (2026-07-07 ghost-file escape): a worker's saved image/file must reach the
+//      Commander — the deliverable event forwards to the lead bus (COMMS card / crate / notify all hang off
+//      it), and the dispatch result carries the worker's PROVEN artifacts stamped with the owning workspace ----
+{
+  const ro = fakeRunOnce(async (o) => {
+    o.emit('agent.run.start', { agentId: o.agentId, runId: o.runId, trigger: 'directive', model: 'm' });
+    o.emit('deliverable', { id: 'img_x', agentId: o.agentId, kind: 'image', title: 'images/x.png' });
+    o.emit('agent.run.end', { agentId: o.agentId, runId: o.runId, reason: 'done', turns: 1, usd: 0 });
+    return { reason: 'done', messages: [{ role: 'assistant', content: 'made it' }], usd: 0, artifacts: [{ kind: 'image', path: 'images/x.png' }] };
+  });
+  const roster = new Map([['designer', { system: 'D' }]]);
+  const { dispatchTool } = makeOrchestrationTools({ runOnce: ro, roster: () => roster, key: 'k', model: 'm', newId: counter() });
+  const emitted = [];
+  const out = await dispatchTool.run({ workers: [{ agentId: 'designer', prompt: 'draw x' }] }, { agentId: 'lead', emit: (n, p) => emitted.push({ n, p }) });
+  const fwd = emitted.find(e => e.n === 'deliverable');
+  A.ok(fwd, "the worker's deliverable event is FORWARDED to the lead bus (drives the COMMS card + crate + notify)");
+  A.eq(fwd && fwd.p.agentId, 'designer', 'the forwarded payload keeps the OWNING agentId (the card opens /api/file?agent=designer)');
+  const row = JSON.parse(out.content)[0];
+  A.ok(Array.isArray(row.artifacts) && row.artifacts.length === 1, 'the dispatch result carries the worker artifact ledger');
+  A.eq(row.artifacts[0].workspace, 'designer', "each artifact is stamped with the owning WORKSPACE (the lead can answer 'where is it' truthfully)");
+  A.eq(row.artifacts[0].path, 'images/x.png', 'the artifact keeps its jail-relative path');
+  A.ok(/private workspace/.test(dispatchTool.description) && /cannot fs\.read/.test(dispatchTool.description), "the tool contract teaches the lead that worker files are NOT in its own jail (the ghost-file reply)");
+}
+
 // ---- self / unknown targets are rejected WITHOUT a run ----
 {
   const ro = fakeRunOnce();
