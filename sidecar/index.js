@@ -101,6 +101,9 @@ const { makeCronDriver } = require('./cron-driver.js');    // the autonomous tic
 const nightshift = require('./nightshift.js');            // NS-1: pure planner for the server-owned night-shift driver
 const { makeNightshiftDriver } = require('./nightshift-driver.js'); // NS-1: the restart-safe idle-autonomy tick driver
 const contextpack = require('./contextpack.js');          // NS-2: pure recency-weighted context pack for the propose step
+const nightfocus = require('./nightfocus.js');            // NS-5b: pure single-priority FOCUS resolver (evidence-ranked, steer-aware)
+const { makeProjectScan } = require('./projectscan.js');  // NS-5b: bounded harness-side PROJECT SNAPSHOT scan (consumes NS-5 blessed roots)
+const nightpatch = require('./nightpatch.js');            // NS-5b: pure patch-apply target resolver (never touches an un-blessed root / main)
 const Autopilot = require('../frontend/app/autopilot.js'); // NS-1: the pure, node-exportable anti-slop ACT pipeline (reused, not rewritten)
 const Autonomy = require('../frontend/app/autonomy.js');   // NS-1: the pure posture engine (summary/normalize) — the SERVER reads the same shape the dial writes
 const Interests = require('./interests.js');               // SCOUT lane 1: pure topic-interest engine (EWMA histogram + evidence-grounded extraction)
@@ -1834,6 +1837,30 @@ const pathTrustCore = makePathTrust({
   isGitRepoOf: projectIsGitRepo,
   now: () => Date.now()
 });
+
+// NS-5b: the bounded PROJECT SNAPSHOT scanner — reads a blessed project root (git status/log/diff + TODO grep) so a
+// project-focus night-shift beat proposes against the REAL repo state, not a guess. `isBlessed` consults the SAME
+// live blessedRoots() the pathtrust guard uses: it runs NOTHING for an un-blessed root and NEVER blesses a new one.
+// exec is a thin promisified execFile (bounded timeout + buffer), injected so projectscan.js stays determinism-clean.
+const isBlessedRoot = (rootReal) => {
+  const k = 'path:' + String(rootReal == null ? '' : rootReal);
+  if (grantsPermanent.has(k)) return true;
+  // case-insensitive match on win32 (blessedRoots keys are realpath-cased; a scan target may differ only in case).
+  const want = (path.sep === '\\') ? String(rootReal || '').toLowerCase() : String(rootReal || '');
+  for (const R of blessedRoots()) { const r = (path.sep === '\\') ? String(R).toLowerCase() : String(R); if (r === want) return true; }
+  return false;
+};
+const projectScan = makeProjectScan({
+  exec: (cmd, args, o) => new Promise((resolve) => {
+    o = o || {};
+    try {
+      execFile(cmd, args, { cwd: o.cwd, timeout: o.timeoutMs || 6000, maxBuffer: o.maxBuffer || (1 << 20), windowsHide: true },
+        (err, stdout) => resolve({ stdout: String(stdout == null ? '' : stdout), code: err ? (err.code || 1) : 0 }));
+    } catch (_) { resolve({ stdout: '', code: 1 }); }
+  }),
+  fsp, pathMod: path, isBlessed: isBlessedRoot
+});
+
 const grantsSession = new Map();           // runId -> Set(dangerKey); cleared when the run ends
 // full-access ("YOLO") blanket grants the user clicks mid-run: per-AGENT (not per-run), in-memory only, so a
 // single click stops the prompts for the rest of this session but RESETS on sidecar restart — never persisted
@@ -2533,6 +2560,77 @@ function loadNightshiftState() {
 let nightshiftState = loadNightshiftState();
 function saveNightshiftState() { try { saveResilient(NIGHTSHIFT_STATE_FILE, nightshift.toEnvelope(nightshiftState, Date.now())); } catch (e) { console.warn('[nightshift] persist failed:', (e && e.message) || e); } }
 
+/* ---- NS-5b: the FOCUS state — a sibling JSON so a restart resumes the SAME night's declared priority (not a
+   re-scatter). Holds { v, day, focus, steer }. The pure resolver (nightfocus.js) owns every decision; this is glue:
+   gather the evidence from the durable stores, ensure a day-keyed focus, persist. */
+const NIGHTFOCUS_STATE_FILE = path.join(WORKSPACES, 'nightfocus.state.json');
+function loadNightFocusState() {
+  try { return nightfocus.loadEnvelope(loadResilient(NIGHTFOCUS_STATE_FILE, 'nightfocus'), Date.now()); }
+  catch (e) { console.warn('[nightfocus] load failed:', (e && e.message) || e); return nightfocus.fresh(Date.now()); }
+}
+let nightFocusState = loadNightFocusState();
+function saveNightFocusState() { try { saveResilient(NIGHTFOCUS_STATE_FILE, nightfocus.toEnvelope(nightFocusState, Date.now())); } catch (e) { console.warn('[nightfocus] persist failed:', (e && e.message) || e); } }
+
+// gather the evidence the pure resolver ranks: blessed project roots (+ light run-mention frequency), open threads,
+// the active goal arc. Bounded + fail-open (a store hiccup degrades that one field to empty). Reused by the beat +
+// the status/focus routes so the declared focus and what a beat would resolve are the SAME truth (truthful telemetry).
+function nightFocusInputs() {
+  const now = Date.now();
+  // projects: every CURRENTLY-blessed root, joined with the known-projects metadata (lastTouchedAt / isGitRepo).
+  let projects = [];
+  try {
+    const meta = {}; for (const p of (projectsStore.snapshot().projects || [])) meta[p.root] = p;
+    // recent user run titles → a cheap per-root "mention" frequency (which project the Commander names lately).
+    let runTitles = [];
+    try { runTitles = (runStore.list(null, { limit: 60 }) || []).filter(r => r && !contextpack.isInternalStream(r.streamId)).map(r => String(r.title || '').toLowerCase()); } catch (_) { runTitles = []; }
+    projects = blessedRoots().map(root => {
+      const m = meta[root] || {};
+      const base = nightfocus.baseName(m.displayPath || root).toLowerCase();
+      const mentionCount = base ? runTitles.reduce((n, t) => n + (t.indexOf(base) >= 0 ? 1 : 0), 0) : 0;
+      return { root, displayPath: m.displayPath || root, lastTouchedAt: m.lastTouchedAt || 0, isGitRepo: !!m.isGitRepo, mentionCount };
+    });
+  } catch (_) { projects = []; }
+  let threads = [];
+  try { threads = threadsStore.list({ state: 'open', limit: 8 }).map(t => ({ id: t.id, title: t.title, spec: t.spec, updatedAt: t.updatedAt })); } catch (_) { threads = []; }
+  let goal = null;
+  try { goal = commanderGoals.get() || null; } catch (_) { goal = null; }
+  return { projects, threads, goal, now };
+}
+
+// ensure a day-keyed focus for the current night; persist iff it changed; return the focus (or null → improv). When
+// `resolved` is true (first beat of the night / a new day / a fresh steer) the caller ledgers the fresh declaration.
+function resolveNightFocus() {
+  const inp = nightFocusInputs();
+  const r = nightfocus.ensureFocus(nightFocusState, inp, { now: inp.now });
+  if (r.resolved || JSON.stringify(r.state) !== JSON.stringify(nightFocusState)) { nightFocusState = r.state; saveNightFocusState(); }
+  return { focus: r.focus, resolved: r.resolved };
+}
+
+// same-night prior beat outputs (titles) so beat 2+ EXTENDS the same work (the compounding shape). Drafts carry `at`;
+// scope to today's UTC day-bucket to match the focus's day key. Bounded to the last handful.
+function nightFocusPriorTonight() {
+  try {
+    const day = nightfocus.dayOf(Date.now());
+    return (nightshiftDrafts || [])
+      .filter(d => d && d.title && nightfocus.dayOf(d.at) === day)
+      .slice(-6)
+      .map(d => String(d.title) + (d.note ? ' — ' + String(d.note).slice(0, 80) : ''));
+  } catch (_) { return []; }
+}
+
+// record the FOCUS declaration in the autonomy ledger (truthful trail) — but only when it was freshly RESOLVED
+// (first beat of the night / new day / a fresh steer), so the ledger shows ONE "priority: X because …" line per
+// night, not one per beat. Every beat's own outcome record already carries the relation (it advanced this focus).
+function ledgerNightFocus(agentId, foc) {
+  if (!foc || !foc.resolved || !foc.focus) return;
+  try {
+    recordAutonomy({
+      ts: Date.now(), source: 'nightshift', kind: 'note', agentId: String(agentId || ''), runId: '',
+      reason: 'focus', detail: { phase: 'focus', kind: foc.focus.kind, ref: foc.focus.ref, label: foc.focus.label, source: foc.focus.source, why: (foc.focus.why || []).join('; ').slice(0, 400) }
+    });
+  } catch (_) {}
+}
+
 /* ---- NS-5: the DECISION LEDGER append — wired to NS-0's REAL ledger (sidecar/autonomy-ledger.js, served at
    GET /api/autonomy/ledger via recordAutonomy above). This thin adapter maps the night-shift driver's entries
    ({ kind:'beat'|'decline'|'outcome', binding, beatsLeft, away, delivered, title, archetype, reason }) onto the
@@ -2968,9 +3066,16 @@ async function runNightshiftBeat(opts) {
   const system = (ident.system && String(ident.system)) || cronSystemFor(agentId);
   const name = (ident.name && String(ident.name)) || agentId;
 
-  // 1) PROPOSE — the directive carries the OPEN-THREADS block + the recent-activity block; the grounding veto's
-  //    evidence pool = beliefs + activity + thread texts (a thread-tag citation is the preferred grounding).
-  const cRes = await nightshiftChat({ agentId, system, signal, messages: [{ role: 'user', content: Autopilot.buildCandidateDirective({ beliefs, activity, threads, eligible }) }] });
+  // NS-5b: declare/keep the NIGHT'S FOCUS (single priority) and lead the directive with it, so beats compound on ONE
+  // needle-moving thread instead of scattering. A cited focus is truthful telemetry; a null focus → honest improv.
+  const foc = resolveNightFocus();
+  const focusHeader = foc.focus ? nightfocus.focusLine(foc.focus) : '';
+  ledgerNightFocus(agentId, foc);
+  const priorTonight = nightFocusPriorTonight();
+
+  // 1) PROPOSE — the directive LEADS with the focus, then the OPEN-THREADS + recent-activity blocks; the grounding
+  //    veto's evidence pool = beliefs + activity + thread texts (a thread-tag citation is the preferred grounding).
+  const cRes = await nightshiftChat({ agentId, system, signal, messages: [{ role: 'user', content: Autopilot.buildCandidateDirective({ beliefs, activity, threads, eligible, focusHeader, priorTonight }) }] });
   if (cRes.error) return { delivered: false, reason: cRes.error };
   const candidates = Autopilot.parseCandidates(cRes.text, { eligible, beliefs, activity, threads });
   // 2) SELECT (confidence gate + the learned per-archetype bias — NS-3 wires the server LEARN store in here)
@@ -2978,8 +3083,8 @@ async function runNightshiftBeat(opts) {
   if (!sel.selected) return { delivered: false, reason: sel.reason };
   // NS-6 writeback: the selected candidate cited an open thread → mark it PICKED (it's being worked this beat).
   if (sel.selected.threadId) { try { await threadsStore.pick(sel.selected.threadId, Date.now()); } catch (_) {} }
-  // 3) DO
-  const dRes = await nightshiftChat({ agentId, system, signal, messages: [{ role: 'user', content: Autopilot.buildDoDirective(sel.selected, { name }) }] });
+  // 3) DO — the do directive stays on the declared focus too.
+  const dRes = await nightshiftChat({ agentId, system, signal, messages: [{ role: 'user', content: Autopilot.buildDoDirective(sel.selected, { name, focusHeader }) }] });
   if (dRes.error) return { delivered: false, reason: dRes.error };
   let deliverable = Autopilot.parseDeliverable(dRes.text, { fallbackTitle: sel.selected.title });
   if (!deliverable) return { delivered: false, reason: 'no-deliverable' };
@@ -3034,7 +3139,24 @@ async function runNightshiftActShift(opts) {
   const beliefs = nightshiftBeliefMap();
   const ident = cronIdentityFor(agentId) || {};
   const system = (ident.system && String(ident.system)) || cronSystemFor(agentId);
-  const cRes = await nightshiftChat({ agentId, system, signal, messages: [{ role: 'user', content: Autopilot.buildCandidateDirectiveV2({ beliefs, activity, threads, eligible }) }] });
+
+  // NS-5b: declare/keep the night's FOCUS and lead the build directive with it. When the focus is a blessed PROJECT
+  // root (and we are already reach ≥ sandbox by construction of this path), READ the project first with the bounded
+  // harness scan — the beat then patches the REAL repo state instead of guessing. The scan consults blessedRoots()
+  // directly and NEVER blesses a new root; a non-blessed / non-project focus simply yields no snapshot.
+  const foc = resolveNightFocus();
+  const focusHeader = foc.focus ? nightfocus.focusLine(foc.focus) : '';
+  ledgerNightFocus(agentId, foc);
+  const priorTonight = nightFocusPriorTonight();
+  let projectSnapshot = '', targetRoot = '';
+  if (foc.focus && foc.focus.kind === 'project') {
+    try {
+      const scan = await projectScan.scan(foc.focus.ref, { sinceMs: (foc.focus.resolvedAt || 0) - 30 * 86400000 });
+      if (scan && scan.ok && scan.text) { projectSnapshot = scan.text; targetRoot = foc.focus.ref; }
+    } catch (_) { projectSnapshot = ''; targetRoot = ''; }
+  }
+
+  const cRes = await nightshiftChat({ agentId, system, signal, messages: [{ role: 'user', content: Autopilot.buildCandidateDirectiveV2({ beliefs, activity, threads, eligible, focusHeader, priorTonight, projectSnapshot }) }] });
   if (cRes.error) return { delivered: false, reason: cRes.error };
   const candidates = Autopilot.parseCandidates(cRes.text, { eligible, beliefs, activity, threads });
   const sel = Autopilot.scoreAndSelect(candidates, { weights: nightshiftLearnWeights() });
@@ -3054,7 +3176,7 @@ async function runNightshiftActShift(opts) {
   await workshopStore.claimNext(agentId, runId, isRunLive).catch(() => null);   // stamp buildingRunId (zombie-reap aware)
 
   const dir = 'workshop/' + runId;
-  const prompt = NIGHTSHIFT_ACT_MARK + '\n' + Autopilot.buildDoDirectiveV2(sel.selected, { runId, dir, backlogId });
+  const prompt = NIGHTSHIFT_ACT_MARK + '\n' + Autopilot.buildDoDirectiveV2(sel.selected, { runId, dir, backlogId, focusHeader, projectSnapshot, targetRoot });
   const ac = signal ? null : new AbortController();
   const sig = signal || (ac && ac.signal);
   if (ac) runs.set(runId, ac);
@@ -3524,6 +3646,7 @@ function dispatchRoute(req, res) {
   if (req.method === 'POST' && req.url === '/api/activity') return handleActivityBeacon(req, res);
   if (req.method === 'GET' && req.url === '/api/nightshift/status') return handleNightshiftStatus(req, res);
   if (req.method === 'POST' && req.url === '/api/nightshift/beat') return handleNightshiftBeatNow(req, res);
+  if ((req.method === 'GET' || req.method === 'POST' || req.method === 'DELETE') && req.url.split('?')[0] === '/api/nightshift/focus') return handleNightshiftFocus(req, res);   // NS-5b: the durable focus steer
   if (req.method === 'GET' && req.url.indexOf('/api/nightshift/drafts') === 0) return handleNightshiftDrafts(req, res);   // NS-4: night-shift drafts for the morning report
   // SCOUT: learned interests + server-drafted bay options (prospects/recipes) + the honest attempt ledger
   if (req.method === 'GET' && req.url === '/api/scout') return handleScoutGet(req, res);
@@ -5115,6 +5238,56 @@ async function handleWorkshopPending(req, res) {
   json(200, { ok: true, agentId: agentId, pending: out });
 }
 
+// NS-5b: a bounded git runner for the patch-apply-on-keep flow (captures stderr for honest failure reporting).
+function runGit(root, args, timeoutMs) {
+  return new Promise((resolve) => {
+    try {
+      execFile('git', ['-C', root].concat(args), { cwd: root, timeout: timeoutMs || 20000, maxBuffer: 1 << 20, windowsHide: true },
+        (err, stdout, stderr) => resolve({ ok: !err, code: err ? (err.code || 1) : 0, stdout: String(stdout == null ? '' : stdout), stderr: String(stderr == null ? '' : stderr) }));
+    } catch (e) { resolve({ ok: false, code: 1, stdout: '', stderr: String((e && e.message) || e) }); }
+  });
+}
+
+/* applyNightPatch — apply a night-shift PROJECT PATCH deliverable to a NEW BRANCH in the blessed repo, human-gated by
+   Keep. THE LAWS (nightpatch.js already proved the target is blessed): never touch main/master beyond creating the
+   branch, never push, never operate on a dirty tree (keep-clobber safety — the commit must capture ONLY the patch),
+   and NEVER claim applied when it didn't (honest failure). apply --check runs BEFORE branch creation so a bad patch
+   mutates nothing; a post-branch failure rolls the branch back to leave the repo exactly as found. */
+async function applyNightPatch(agentId, runId, relDir, target, title) {
+  const root = target.root;
+  let patchAbs;
+  try { ({ abs: patchAbs } = await fsJail.resolveInside(agentId, relDir + '/' + target.patchRel)); }   // re-jail the patch file
+  catch (_) { return { ok: false, error: 'the patch file named by the manifest is not in the workshop' }; }
+  try { const st = await fsp.stat(patchAbs); if (!st.isFile()) return { ok: false, error: 'the patch path is not a file' }; }
+  catch (_) { return { ok: false, error: 'the patch file is no longer there' }; }
+
+  const isRepo = await runGit(root, ['rev-parse', '--is-inside-work-tree']);
+  if (!/true/.test(isRepo.stdout)) return { ok: false, error: 'the target project is not a git repo — cannot apply a patch there' };
+  const status = await runGit(root, ['status', '--porcelain']);
+  if (status.stdout.trim()) return { ok: false, error: 'the project has uncommitted changes — commit or stash them first, then Keep again (I never overwrite your work)' };
+  const cur = await runGit(root, ['rev-parse', '--abbrev-ref', 'HEAD']);
+  const curBranch = cur.stdout.trim() || 'HEAD';
+
+  const check = await runGit(root, ['apply', '--check', patchAbs]);
+  if (!check.ok) return { ok: false, error: 'the patch does not apply cleanly to the current code:\n' + String(check.stderr || check.stdout).slice(0, 600) };
+
+  const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  const branch = nightpatch.branchName(date, title);
+  if (nightpatch.isProtectedRef(branch)) return { ok: false, error: 'refusing to write a protected ref' };
+  const co = await runGit(root, ['checkout', '-b', branch]);
+  if (!co.ok) return { ok: false, error: 'could not create branch ' + branch + ':\n' + String(co.stderr).slice(0, 300), branch };
+  const ap = await runGit(root, ['apply', patchAbs]);
+  if (!ap.ok) {
+    await runGit(root, ['checkout', curBranch]); await runGit(root, ['branch', '-D', branch]);   // roll back to leave the repo as found
+    return { ok: false, error: 'the patch failed to apply after branching (rolled back, no change kept):\n' + String(ap.stderr).slice(0, 400), branch };
+  }
+  await runGit(root, ['add', '-A']);
+  const commit = await runGit(root, ['-c', 'user.name=StarNet Night Shift', '-c', 'user.email=nightshift@starnet.local', 'commit', '-m', 'night-shift: ' + String(title || 'patch').slice(0, 80)]);
+  if (!commit.ok) return { ok: false, error: 'applied the patch but could not commit it:\n' + String(commit.stderr).slice(0, 300), branch };
+  const head = await runGit(root, ['rev-parse', '--short', 'HEAD']);
+  return { ok: true, branch, commit: head.stdout.trim(), root, prevBranch: curBranch };
+}
+
 // POST /api/workshop/decide { agentId, runId, decision: 'keep'|'discard'|'later', destPath? } — the return-card's
 // verdict. keep = copy the run dir's files to destPath under normal interactive consent; discard = delete the run
 // dir + denylist the backlogId; later = dismiss only (leave everything in the workshop). Emits workshop.decided.
@@ -5146,13 +5319,32 @@ async function handleWorkshopDecide(req, res) {
     return json(200, { ok: true, decision: 'discard' });
   }
 
-  // keep: copy the deliverable's real files out to destPath. destPath is an ABSOLUTE, user-chosen folder — this is
-  // an interactive, user-initiated action (they clicked Keep and picked a folder), so it writes OUTSIDE the jail
-  // by design. We validate the manifest first (only copy proven files) and never touch anything but destPath.
-  const destPath = String(body.destPath || '');
-  if (!destPath) return json(400, { error: 'choose where to keep it' });
+  // keep: validate the manifest first (only ever act on a disk-proven deliverable).
   const man = await validateWorkshopManifest(agentId, runId);
   if (!man) return json(404, { error: 'that deliverable is no longer available' });
+
+  // NS-5b: a PROJECT PATCH deliverable (manifest.kind === 'patch') applies to a NEW BRANCH in the blessed repo
+  // instead of copying files to a folder. The pure resolver refuses any target that isn't CURRENTLY blessed (never
+  // an arbitrary model-picked path) and never main/master. On failure we report the honest reason — NEVER "applied".
+  const patchTarget = nightpatch.patchTargetFrom(man, blessedRoots(), { winish: path.sep === '\\' });
+  if (patchTarget.ok) {
+    let applied; try { applied = await applyNightPatch(agentId, runId, relDir, patchTarget, man.title); }
+    catch (e) { applied = { ok: false, error: 'apply crashed: ' + ((e && e.message) || e) }; }
+    if (applied.ok) {
+      if (item) { try { await workshopStore.complete(agentId, item.id); } catch (_) {} }   // decided; keep the archive
+      nightshiftDecideLearn(agentId, runId, true);   // approve → learn + thread writeback (it genuinely landed)
+      try { chanEmit('workshop.decided', { agentId, runId, decision: 'keep', branch: applied.branch, root: applied.root }); } catch (_) {}
+      return json(200, { ok: true, decision: 'keep', applied: true, branch: applied.branch, commit: applied.commit, root: applied.root });
+    }
+    // honest failure: the deliverable stays pending (retry after fixing, or discard). We do NOT mark it kept.
+    return json(200, { ok: false, decision: 'keep', applied: false, error: applied.error || 'could not apply the patch', branch: applied.branch || null });
+  }
+
+  // ordinary file deliverable: copy the real files out to destPath. destPath is an ABSOLUTE, user-chosen folder —
+  // an interactive, user-initiated action (they clicked Keep and picked a folder), so it writes OUTSIDE the jail by
+  // design. We only copy proven files and never touch anything but destPath.
+  const destPath = String(body.destPath || '');
+  if (!destPath) return json(400, { error: 'choose where to keep it' });
   // SAFE-BY-DEFAULT: copy with COPYFILE_EXCL so Keep never silently clobbers a file the user already has at
   // destPath. An explicit body.overwrite:true opts into the old replace behavior. The common happy path (a
   // fresh folder, or filenames that don't collide) is unaffected — EXCL only fires on a real pre-existing file,
@@ -6678,10 +6870,21 @@ function handleNightshiftStatus(req, res) {
     lastBeatAt: rolled.lastBeatAt || 0,
     nextEligibleAt: decision ? decision.nextEligibleAt : ((rolled.lastBeatAt || 0) + NIGHTSHIFT_BEAT_MS),
     binding: decision ? decision.binding : 'unknown',
-    inFlight: (() => { try { return nightshiftDriver.runInFlight(); } catch (_) { return false; } })()
+    inFlight: (() => { try { return nightshiftDriver.runInFlight(); } catch (_) { return false; } })(),
+    // NS-5b: the declared night FOCUS (single priority) + its cited evidence, so the morning report can LEAD with
+    // "priority: <focus> — because <evidence>". Null when no focus has been declared (nothing to cite → improv).
+    focus: nightFocusView()
   };
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
   res.end(JSON.stringify(out));
+}
+
+// the declared focus as a truthful-telemetry view: the persisted focus (what the night is actually chasing), plus
+// the durable steer if one is set. Never re-resolves (status reflects state, it doesn't mutate it).
+function nightFocusView() {
+  const f = nightFocusState && nightFocusState.focus;
+  if (!f || !f.ref) return null;
+  return { kind: f.kind, ref: f.ref, label: f.label, why: Array.isArray(f.why) ? f.why : [], source: f.source, steered: !!(nightFocusState.steer && nightFocusState.steer.ref) };
 }
 
 // POST /api/nightshift/beat { agentId? } — force-fire ONE night-shift beat NOW (attended test of the unattended
@@ -6701,6 +6904,34 @@ async function handleNightshiftBeatNow(req, res) {
   catch (e) { result = { delivered: false, reason: 'error: ' + ((e && e.message) || e) }; }
   try { res.write(JSON.stringify({ name: 'nightshift.beat.result', payload: result }) + '\n'); } catch (_) {}
   try { res.end(); } catch (_) {}
+}
+
+/* GET/POST/DELETE /api/nightshift/focus — the durable STEER (NS-5b). "focus on Y" is a user directive that OUTRANKS
+   derived evidence until it is cleared or goes stale (~7d). No consent widening: a steer only re-ranks the night's
+   ONE priority — it grants nothing, reaches nothing new (a project ref must already be blessed to be scanned/patched).
+     GET    → the current declared focus + steer (read-only preview; re-resolves so an empty state still shows intent).
+     POST   { ref, kind? } → set the steer (stamped now) + re-resolve the focus toward it immediately.
+     DELETE → clear the steer (derived evidence takes over again). */
+async function handleNightshiftFocus(req, res) {
+  const json = (code, obj) => { if (res.headersSent) return; res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  if (req.method === 'POST') {
+    let body; try { body = JSON.parse(await readBody(req, 1 << 14, res)) || {}; } catch (e) { return json(400, { ok: false, error: 'bad json' }); }
+    const ref = String(body.ref || '').trim();
+    if (!ref) return json(400, { ok: false, error: 'a focus ref is required (a project path, a thread id, or "goal")' });
+    const kind = (body.kind === 'thread' || body.kind === 'goal') ? body.kind : 'project';
+    nightFocusState = nightfocus.applySteer(nightFocusState, { ref, kind }, Date.now());
+    saveNightFocusState();
+    const foc = resolveNightFocus();   // re-resolve toward the steer NOW so status reflects it immediately
+    return json(200, { ok: true, focus: nightFocusView(), steered: true, resolved: !!(foc && foc.resolved) });
+  }
+  if (req.method === 'DELETE') {
+    nightFocusState = nightfocus.clearSteer(nightFocusState);
+    saveNightFocusState();
+    return json(200, { ok: true, cleared: true, focus: nightFocusView() });
+  }
+  // GET — a read-only preview: resolve (persist iff changed) so a first-ever read still shows what the night WOULD chase.
+  const foc = resolveNightFocus();
+  return json(200, { ok: true, focus: nightFocusView() || (foc && foc.focus) || null, steer: (nightFocusState.steer || null) });
 }
 
 // GET /api/nightshift/drafts?since=<ms>&limit=<n> — NS-4: the night-shift DRAFTS the beats left on the desk, so the

@@ -73,6 +73,7 @@ const NightReportStore = (() => {
     // the BEAT body: headline + the act lines + the honest declined half (+ the "did nothing and why" sentence when
     // it stood down entirely). Composed ENTIRELY from the report view-model — no invented text.
     const lines = [];
+    if (report.priorityLine) lines.push(report.priorityLine);   // NS-5b: lead with the night's declared focus + why
     for (const l of (report.actLines || [])) lines.push(l);
     for (const l of (report.declineLines || [])) lines.push(l);
     if (report.idleReason) lines.push(report.idleReason);
