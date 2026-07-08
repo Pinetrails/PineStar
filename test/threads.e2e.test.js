@@ -35,6 +35,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 // from this directive (the grounding veto checks it against the real conversation).
 const IDEA_QUOTE = 'I should build a GPU price watcher someday';
 const IDEA_TITLE = 'GPU price watcher';
+const BANTER_QUOTE = 'I\'m gonna be throwing some real crazy chaos at you, my G';   // grounded banter — must NOT mint
 const RUN_TITLE = 'Wire up the belt-router retry loop';
 
 let lastProposePrompt = '';     // the latest night-shift PROPOSE directive the mock received
@@ -64,8 +65,11 @@ function startMockOpenRouter() {
           const text = t => { res.write('data: ' + JSON.stringify({ choices: [{ delta: { content: t } }] }) + '\n\n'); res.write('data: ' + JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop' }], usage: { prompt_tokens: 8, completion_tokens: 4, total_tokens: 12 } }) + '\n\n'); };
 
           if (/never acted on/i.test(system)) {
-            // the THREAD-MINING aux pass → one grounded thread (verbatim quote) + one INVENTED one (must be vetoed).
-            text('THREAD: ' + IDEA_TITLE + '\nQUOTE: ' + IDEA_QUOTE + '\nTHREAD: Invented spaceship\nQUOTE: please build me a spaceship');
+            // the THREAD-MINING aux pass → one grounded+substantive thread, one INVENTED (grounding veto), and one
+            // grounded-but-BANTER candidate at medium confidence (substance veto — the 2026-07-08 escape class).
+            text('THREAD: ' + IDEA_TITLE + '\nQUOTE: ' + IDEA_QUOTE + '\nDO: a price-poller script that alerts at MSRP\nCONFIDENCE: high\n' +
+                 'THREAD: Invented spaceship\nQUOTE: please build me a spaceship\nDO: a spaceship design doc\nCONFIDENCE: high\n' +
+                 'THREAD: Future chaos\nQUOTE: ' + BANTER_QUOTE + '\nDO: prepare for chaotic requests\nCONFIDENCE: medium');
           } else if (/durable profile|belief changes/i.test(system)) {
             text('NONE');   // the study pass — stand down
           } else if (/worth remembering/i.test(prompt)) {
@@ -158,7 +162,8 @@ function seedLogs(ws, now) {
 
     // ===== 1. MINE + STASH (never auto-commit) — a real task run floats the idea, never acts on it. =====
     const directive = 'Please wire up the belt-router retry loop for me. Unrelated thought while I remember it: ' +
-      IDEA_QUOTE + ' so I can snag one at MSRP — but not now, just do the retry loop today.';
+      IDEA_QUOTE + ' so I can snag one at MSRP — but not now, just do the retry loop today. ' +
+      'Oh and ' + BANTER_QUOTE + '. It\'s gonna be crazy.';
     const runRes = await fetch(B + '/api/run', { method: 'POST', headers, body: JSON.stringify({ key: 'sk-or-v1-threads-fake', model: 'test/model', agentId: 'agent', isTask: true, messages: [{ role: 'user', content: directive }] }) });
     const runEvents = await readNdjson(runRes);     // drain the run stream to completion
     const runEnd = runEvents.find(e => e.name === 'agent.run.end');
@@ -171,6 +176,7 @@ function seedLogs(ws, now) {
     A.ok(prop && prop.title.indexOf(IDEA_TITLE) >= 0, 'the stashed candidate is the floated idea');
     A.ok(prop.spec && prop.spec.indexOf('GPU price watcher someday') >= 0, 'the candidate carries the VERBATIM evidence quote');
     A.ok(!stash.proposals.some(p => /spaceship/i.test(p.title)), 'the INVENTED idea (quote not in the conversation) was vetoed, never stashed');
+    A.ok(!stash.proposals.some(p => /chaos/i.test(p.title)), 'ESCAPE REGRESSION 2026-07-08: grounded BANTER below the substance bar was vetoed, never stashed');
     const ledger0 = await (await fetch(B + '/api/threads?state=all', { headers })).json();
     A.eq(ledger0.threads.length, 0, 'STASH-NOT-AUTOCOMMIT: the ledger is still EMPTY before turn-in');
 
