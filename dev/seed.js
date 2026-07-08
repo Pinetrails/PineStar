@@ -57,7 +57,14 @@ function loadEnvDev() {
 function materializeWorkspace(model) {
   if (!KEEP && fs.existsSync(SCRATCH)) fs.rmSync(SCRATCH, { recursive: true, force: true });
   fs.mkdirSync(SCRATCH, { recursive: true });
-  fs.cpSync(FIXTURE, SCRATCH, { recursive: true });
+  // --keep must actually KEEP the previous session's state. The old unconditional cpSync overwrote
+  // agent.save.json/agent.roster.json from the fixture on EVERY relaunch — and the boot reconcile is
+  // "freshest updatedAt wins", so the re-stamped fixture (crew none, default station) silently clobbered
+  // the real save: summoned crew + built floor vanished on every --keep restart. With --keep we only
+  // fill in MISSING files (a fixture file added since the scratch was made) and never touch existing ones.
+  const kept = KEEP && fs.existsSync(path.join(SCRATCH, 'agent.save.json'));
+  fs.cpSync(FIXTURE, SCRATCH, { recursive: true, force: !kept, errorOnExist: false });
+  if (kept) return;   // the kept save/roster already carry the session's real model + updatedAt
 
   const now = Date.now();
   const savePath = path.join(SCRATCH, 'agent.save.json');
