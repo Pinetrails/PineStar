@@ -1,169 +1,159 @@
-/* STARNET — prospectstore.js : the live wiring around the pure Prospect generator (Slice 4).
+/* STARNET — prospectstore.js : the SCOUT CLIENT (was: the client-side prospect minter).
 
-   Mints bespoke NEW agent specs over time and stages them as DRAFTS in the Recruitment Bay. It owns the cadence,
-   the persistence, the denylist, and the async reason-only model call; the pure engine (prospect.js) owns the
-   directive + the hard-validating parse.
+   HISTORY — this store used to OWN the prospect mint: localStorage state, one silent attempt per browser
+   session, right after a qualifying run. In practice that funnel almost never fired and every rejection was
+   invisible, so the bay looked like a static preset shelf. The mint moved SERVER-SIDE (sidecar scout:
+   interests.js + scout.js + the post-run cycle in index.js) where it persists across sessions, retries on a
+   real cadence, and writes every attempt to a visible ledger. This file is now the thin client of that:
 
-   DISCIPLINE (mirrors suggeststore.js / stationqueststore.js):
-     • READ-ONLY on U.bus — subscribes to agent.run.end to advance the cooldown; NEVER emits (frozen contract).
-     • SELF-PERSISTS to its own versioned key ('starnet.prospects.v1') — no save.js change. Holds { prospects[],
-       denylist[], lastMintFamiliarity, lastMintWarmth, tasksSinceMint }.
-     • CADENCE = the SAME growth-trigger discipline as ongoing suggestions: a mint is ATTEMPTED only when the
-       worksignal is WARM (recruiter's threshold) AND something GREW since the last mint (dossier familiarity or
-       worksignal sample count), AND cooldown >=3 task-runs, AND at most ONE attempt per session. A cold station
-       mints nothing. The attempt is ASYNC + SILENT: failures (model hiccup / invalid parse / NONE / duplicate /
-       denylisted) drop quietly — never a beat about a failed mint.
-     • CAP: at most MAX_LIVE (3) live prospects; a new mint evicts the oldest when full.
-     • DENYLIST (locked product law): dismissing a prospect records its fingerprint; an equivalent is never re-minted.
+     • GET  /api/scout          — warm/gate + interests (with evidence) + staged drafts (prospects AND
+                                  recipe drafts) + the attempt ledger. Cached here; the bay reads the cache.
+     • POST /api/scout/context  — pushes the facts only the browser knows (custom classes/recipes,
+                                  worksignal summary, the recruiter's top pick) so server drafting dedupes
+                                  against them. Sent at init, on bay open, and after each post-run refresh.
+     • POST /api/scout/decide   — accept/dismiss verdicts (dismiss denylists server-side: never re-minted).
 
-   Coherence with recruiter.js: prospects cover what NO catalog class serves. The directive is told the recruiter's
-   top existing-class pick and instructed to reply NONE if a class already covers the gap. */
+   The PUBLIC SURFACE the bay consumes (list/get/dismiss/accept + item shape {id, draft, why, fingerprint})
+   is UNCHANGED, so marketplace.js's prospect shelf renders server drafts exactly as it rendered local ones.
+   New reads: recipeDrafts() (the SUGGESTED shelf's scout cards), interests(), gate() (honest shelf copy).
+
+   LEGACY: the old 'starnet.prospects.v1' localStorage key is still hydrated READ-ONLY so a draft staged by a
+   pre-scout build keeps rendering and can be decided (decided locally; new mints are server-only).
+
+   READ-ONLY on U.bus (frozen contract): subscribes to agent.run.end only to schedule a delayed re-read —
+   the server cycle runs post-run, so the shelf refreshes itself right after a mint could have landed. */
 'use strict';
 const ProspectStore = (() => {
-  const KEY = 'starnet.prospects.v1';
-  const MAX_LIVE = 3;
-  const COOLDOWN_TASKS = 3;   // >=3 task-runs between mint attempts (the work-earned floor, shared spirit)
-  let state = null;
-  let deps = {};              // accessors/actions injected by app.js
+  const KEY = 'starnet.prospects.v1';   // legacy client-mint store (read-only hydrate; no new writes beyond decides)
+  const REFRESH_DELAY_MS = 6000;        // post-run: give the server cycle time to extract/mint before re-reading
+  let legacy = null;
+  let cache = null;                     // the last GET /api/scout payload (server truth, re-read not mutated blind)
+  let deps = {};
   let bound = false;
-  let sessionAttempted = false;   // one mint attempt per session (in-memory; resets each app run)
-  let minting = false;            // re-entrancy guard while a mint is mid-flight
+  let refreshTimer = null;
 
   const now = () => (deps.now ? deps.now() : (typeof Date !== 'undefined' ? Date.now() : 0));
+  // the token-carrying fetch (Harness.apiFetch); injectable for tests.
+  const api = (u, init) => (deps.fetch ? deps.fetch(u, init)
+    : (typeof Harness !== 'undefined' && Harness.apiFetch) ? Harness.apiFetch(u, init)
+    : Promise.reject(new Error('no api fetch')));
 
-  function load() { try { return JSON.parse(localStorage.getItem(KEY) || 'null'); } catch (_) { return null; } }
-  function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (_) {} }
-
-  function hydrate(raw) {
-    const s = { v: 1, prospects: [], denylist: [], lastMintFamiliarity: null, lastMintWarmth: null, tasksSinceMint: COOLDOWN_TASKS };
+  function loadLegacy() { try { return JSON.parse(localStorage.getItem(KEY) || 'null'); } catch (_) { return null; } }
+  function saveLegacy() { try { localStorage.setItem(KEY, JSON.stringify(legacy)); } catch (_) {} }
+  function hydrateLegacy(raw) {
+    const s = { v: 1, prospects: [], denylist: [] };
     if (raw && typeof raw === 'object') {
-      if (Array.isArray(raw.prospects)) s.prospects = raw.prospects.filter(p => p && p.draft && p.id).slice(-MAX_LIVE);
+      if (Array.isArray(raw.prospects)) s.prospects = raw.prospects.filter(p => p && p.draft && p.id).slice(-3);
       if (Array.isArray(raw.denylist)) s.denylist = raw.denylist.filter(x => typeof x === 'string').slice(-200);
-      if (Number.isFinite(raw.lastMintFamiliarity)) s.lastMintFamiliarity = raw.lastMintFamiliarity;
-      if (Number.isFinite(raw.lastMintWarmth)) s.lastMintWarmth = raw.lastMintWarmth;
-      if (Number.isFinite(raw.tasksSinceMint) && raw.tasksSinceMint >= 0) s.tasksSinceMint = raw.tasksSinceMint;
     }
     return s;
   }
 
-  // opts: the accessors/actions injected by app.js (all optional — a missing dep degrades to a no-op mint).
+  // deps: { fetch?, now?, getCustomClasses?, getCustomRecipes?, getWorksignalSummary?, getTopRecommendation? }
   function init(opts) {
     deps = opts || {};
-    state = hydrate(load());
-    sessionAttempted = false; minting = false;
+    legacy = hydrateLegacy(loadLegacy());
+    cache = null;
     if (!bound && typeof U !== 'undefined' && U.bus && U.bus.on) {
       U.bus.on('agent.run.end', onRunEnd);
       bound = true;
     }
+    pushContext();
+    refresh();
   }
 
-  // THE COUNTER (read-only): every clean hero task-run advances the cooldown, independent of whether a mint fires.
+  // a clean run end means the server cycle may have just minted — re-read shortly after (one timer, coalesced).
   function onRunEnd(p) {
-    if (!state) return;
-    p = p || {};
-    if (p.reason !== 'done') return;
-    if ((p.agentId || 'agent') !== 'agent') return;
-    state.tasksSinceMint = (state.tasksSinceMint || 0) + 1;
-    save();
-    // a due mint attempt rides the same post-run moment (async, silent) — never blocks the beat slot.
-    try { maybeMint(); } catch (_) {}
-  }
-
-  const warmth = () => { const w = deps.getWarmth ? deps.getWarmth() : null; return Number.isFinite(w) ? w : null; };
-  const familiarity = () => { const f = deps.getFamiliarity ? deps.getFamiliarity() : null; return Number.isFinite(f) ? f : null; };
-
-  // the gate: is a mint attempt DUE? warm signal + growth since last mint + cooldown + one-per-session.
-  function shouldMint() {
-    if (!state || sessionAttempted || minting) return false;
-    if (state.prospects.length >= MAX_LIVE) return false;                    // shelf full — don't over-mint
-    const w = warmth();
-    if (w == null || w <= 0) return false;                                   // NOT WARM → cold station mints nothing
-    if ((state.tasksSinceMint || 0) < COOLDOWN_TASKS) return false;          // cooldown not cleared
-    // GROWTH gate: only when familiarity OR warmth grew since the last mint (nothing new → nothing to draft).
-    const fam = familiarity();
-    const grewWarmth = state.lastMintWarmth == null || (w > state.lastMintWarmth + 1e-9);
-    const grewFam = fam != null && (state.lastMintFamiliarity == null || fam > state.lastMintFamiliarity + 1e-9);
-    return grewWarmth || grewFam;
-  }
-
-  // ASYNC mint attempt: build the directive, run the reason-only model call, hard-parse, and stage the draft.
-  // Silent on every failure path. Returns the minted prospect (for the test) or null.
-  async function maybeMint() {
-    if (!shouldMint()) return null;
-    if (typeof Prospect === 'undefined' || !deps.chat) return null;
-    sessionAttempted = true;   // spend the session's single attempt up front (even on failure — no retry-hammer)
-    minting = true;
+    if (!p || p.reason !== 'done') return;
+    try { if (refreshTimer) clearTimeout(refreshTimer); } catch (_) {}
     try {
-      const directive = Prospect.buildDirective({
-        dossierBlock: deps.getDossierBlock ? deps.getDossierBlock() : '',
-        worksignalSummary: deps.getWorksignalSummary ? deps.getWorksignalSummary() : '',
-        rosterClasses: deps.getRosterClasses ? deps.getRosterClasses() : [],
-        catalogSummary: deps.getCatalogSummary ? deps.getCatalogSummary() : [],
-        capabilityKeys: deps.getCapabilityKeys ? deps.getCapabilityKeys() : [],
-        skillSlugs: deps.getSkillSlugs ? deps.getSkillSlugs() : [],
-        topRecommendation: deps.getTopRecommendation ? deps.getTopRecommendation() : ''
-      });
-      const system = deps.getSystem ? deps.getSystem() : '';
-      const res = await deps.chat({ system, messages: [{ role: 'user', content: directive }], agentId: 'agent', isTask: false, placed: [], internal: true });
-      const text = (res && !res.error) ? res.text : '';
-      const parsed = Prospect.parse(text, {
-        allowedKit: deps.getCapabilityKeys ? deps.getCapabilityKeys() : [],
-        allowedSkills: deps.getSkillSlugs ? deps.getSkillSlugs() : [],
-        existingClasses: deps.getCatalogSummary ? deps.getCatalogSummary() : []
-      });
-      if (!parsed || parsed.none || !parsed.draft) return null;              // NONE / unparseable / invalid → silent no-mint
-      if (isDenied(parsed.fingerprint)) return null;                         // dismissed-equivalent → never re-mint
-      if (state.prospects.some(p => p.fingerprint === parsed.fingerprint)) return null;   // already staged this one
-      const rec = { id: 'prospect-' + now() + '-' + (state.prospects.length + 1), draft: parsed.draft, why: parsed.why, fingerprint: parsed.fingerprint, mintedAt: now(), sourceSignal: deps.getWorksignalSummary ? deps.getWorksignalSummary() : '' };
-      state.prospects.push(rec);
-      while (state.prospects.length > MAX_LIVE) state.prospects.shift();     // evict oldest when over cap
-      state.lastMintWarmth = warmth();
-      state.lastMintFamiliarity = familiarity();
-      state.tasksSinceMint = 0;
-      save();
-      poke();
-      return rec;
-    } catch (_) { return null; }
-    finally { minting = false; }
+      refreshTimer = setTimeout(() => { refreshTimer = null; pushContext(); refresh(); }, REFRESH_DELAY_MS);
+    } catch (_) {}
   }
 
-  // if the bay is open, refresh it so a freshly-minted prospect lands (no-op when closed).
+  // re-read server truth; on success, live-refresh the open bay (no-op when closed). Best-effort, silent.
+  async function refresh() {
+    try {
+      const r = await api('/api/scout', { cache: 'no-store' });
+      if (!r || !r.ok) return false;
+      cache = await r.json();
+      poke();
+      return true;
+    } catch (_) { return false; }
+  }
+
+  // push the browser-only dedup facts. Bounded server-side; best-effort (a miss just means weaker dedup this pass).
+  async function pushContext() {
+    try {
+      const body = {
+        customClasses: deps.getCustomClasses ? (deps.getCustomClasses() || []) : [],
+        customRecipes: deps.getCustomRecipes ? (deps.getCustomRecipes() || []) : [],
+        worksignalSummary: deps.getWorksignalSummary ? (deps.getWorksignalSummary() || '') : '',
+        topRecommendation: deps.getTopRecommendation ? (deps.getTopRecommendation() || '') : ''
+      };
+      await api('/api/scout/context', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      return true;
+    } catch (_) { return false; }
+  }
+
   function poke() { try { if (typeof Marketplace !== 'undefined' && Marketplace.refreshIfOpen) Marketplace.refreshIfOpen(); } catch (_) {} }
 
-  const isDenied = fp => !!fp && !!state && Array.isArray(state.denylist) && state.denylist.indexOf(fp) >= 0;
+  const stagedOf = kind => (cache && Array.isArray(cache.staged)) ? cache.staged.filter(it => it && it.kind === kind) : [];
+  const toCard = it => ({ id: it.id, draft: it.draft, why: it.why, fingerprint: it.fingerprint, mintedAt: it.at });
 
-  // ---- read/act surface (the bay consumes these) ----
-  function list() { return state ? state.prospects.slice() : []; }
-  function get(id) { return state ? (state.prospects.find(p => p.id === id) || null) : null; }
+  /* ---- read surface (the bay consumes these) ---- */
+  function list() {   // prospect drafts: any surviving legacy ones + the server-staged ones
+    const loc = legacy ? legacy.prospects.slice() : [];
+    return loc.concat(stagedOf('prospect').map(toCard));
+  }
+  function recipeDrafts() { return stagedOf('recipe').map(toCard); }
+  function get(id) { return list().concat(recipeDrafts()).find(p => p.id === id) || null; }
+  function interests() { return (cache && Array.isArray(cache.interests)) ? cache.interests : []; }
+  function gate() { return (cache && cache.gate) || null; }
+  function warm() { return !!(cache && cache.warm); }
 
-  // DISMISS: denylist the fingerprint (never re-mint an equivalent) + drop the card. Returns true iff it took.
+  /* ---- decide surface ----
+     A legacy (local) draft is decided locally, same semantics as before (dismiss denylists the fingerprint).
+     A server draft is decided optimistically here (drop from the cache so the shelf re-render is instant) and
+     the verdict POSTs fire-and-forget — the next refresh() re-reads server truth either way. */
+  function decideServer(id, decision) {
+    if (!cache || !Array.isArray(cache.staged)) return false;
+    const idx = cache.staged.findIndex(it => it && it.id === id);
+    if (idx < 0) return false;
+    cache.staged.splice(idx, 1);
+    try { api('/api/scout/decide', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: id, decision: decision }) }).catch(() => {}); } catch (_) {}
+    return true;
+  }
   function dismiss(id) {
-    if (!state || !id) return false;
-    const idx = state.prospects.findIndex(p => p.id === id);
-    if (idx < 0) return false;
-    const fp = state.prospects[idx].fingerprint;
-    state.prospects.splice(idx, 1);
-    if (fp && state.denylist.indexOf(fp) < 0) { state.denylist.push(fp); while (state.denylist.length > 200) state.denylist.shift(); }
-    save();
-    return true;
+    if (!id) return false;
+    if (legacy) {
+      const idx = legacy.prospects.findIndex(p => p.id === id);
+      if (idx >= 0) {
+        const fp = legacy.prospects[idx].fingerprint;
+        legacy.prospects.splice(idx, 1);
+        if (fp && legacy.denylist.indexOf(fp) < 0) { legacy.denylist.push(fp); while (legacy.denylist.length > 200) legacy.denylist.shift(); }
+        saveLegacy();
+        return true;
+      }
+    }
+    return decideServer(id, 'dismiss');
   }
-
-  // ACCEPT: the Commander confirmed a prospect (it became a saved custom). Remove it from the staging list — it's
-  // now a real class, not a draft — WITHOUT denylisting (the opposite of dismiss). Best-effort.
   function accept(id) {
-    if (!state || !id) return false;
-    const idx = state.prospects.findIndex(p => p.id === id);
-    if (idx < 0) return false;
-    state.prospects.splice(idx, 1);
-    save();
-    return true;
+    if (!id) return false;
+    if (legacy) {
+      const idx = legacy.prospects.findIndex(p => p.id === id);
+      if (idx >= 0) { legacy.prospects.splice(idx, 1); saveLegacy(); return true; }
+    }
+    return decideServer(id, 'accept');
   }
 
-  // a brand-new hero starts with no prospect history (own key, mirrors curiositystore.reset).
-  function reset() { state = hydrate(null); sessionAttempted = false; minting = false; try { localStorage.removeItem(KEY); } catch (_) {} }
+  const isDenied = fp => !!fp && !!legacy && legacy.denylist.indexOf(fp) >= 0;
 
-  return { init, maybeMint, list, get, dismiss, accept, reset, isDenied: fp => isDenied(fp),
-    _shouldMint: shouldMint, _hydrate: hydrate, MAX_LIVE, COOLDOWN_TASKS };
+  // a brand-new hero drops the browser-side state; the server store is the station's own memory (kept).
+  function reset() { legacy = hydrateLegacy(null); cache = null; try { localStorage.removeItem(KEY); } catch (_) {} }
+
+  return { init, refresh, pushContext, list, recipeDrafts, get, interests, gate, warm, dismiss, accept, reset,
+    isDenied: fp => isDenied(fp), _hydrateLegacy: hydrateLegacy, _setCacheForTest: c => { cache = c; } };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = { ProspectStore };
