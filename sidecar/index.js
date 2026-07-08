@@ -3103,6 +3103,88 @@ function stopDiscord() {
   discordStatus = { connected: false, state: 'down', detail: '' };
 }
 
+/* ---- DEV inbound injector (SKYNET_DEV only) ------------------------------------------------------------
+   POST /api/dev/inbound { text, chatId?, userId? } — drives ONE real makeChannelHub instance (channel 'dev')
+   through the SAME seams a Telegram message takes: router.resolveTarget (floor FILTER/plan routing), the
+   task classifier, bay-scoped tools (resolveStation), the workitem crate intercept, and a real runOnce.
+   Exists because floor-plan CHANNEL routing was untestable without a live bot token (2026-07-08 QA gap).
+   HARD-GATED on DEV_MODE (the SKYNET_DEV flag a packaged build never sets) — a shipped app 404s this route.
+   Replies are captured in-memory and returned in the response body; nothing is delivered anywhere. */
+const DEV_PERSONA = 'You are the Commander\'s AI agent on a DEV test channel. Keep replies short. When given a '
+  + 'task you have REAL tools — use them and report what you actually did.';
+let devHub = null;            // lazy singleton — one hub, many injected messages
+let devResolved = null;       // one-shot resolution slot (same pattern as tgResolved)
+const devReplies = new Map(); // chatId -> [{ text, ts }] captured outbound replies (ring, last 20)
+function devHubSecrets() {
+  const provider = 'openrouter';
+  const key = providerRuntimeKey(provider, '');
+  const baseUrl = providerRuntimeBaseUrl(provider, '');
+  const model = String(process.env.SKYNET_DEFAULT_MODEL || process.env.STARNET_DEFAULT_MODEL || '').trim();
+  return { key, model, provider, baseUrl, configured: providerHasCredential(provider, key, baseUrl), reasoningEffort: resolveReasoningEffort(provider, ''), agentId: undefined, system: undefined };
+}
+function getDevHub() {
+  if (devHub) return devHub;
+  devHub = makeChannelHub({
+    channel: 'dev', maxMessageLength: 4000, agentPrefix: 'dev_',
+    runOnce: runOnce, store: channelStore,
+    send: (chatId, text) => { const k = String(chatId); const arr = devReplies.get(k) || []; arr.push({ text: String(text == null ? '' : text), ts: Date.now() }); if (arr.length > 20) arr.shift(); devReplies.set(k, arr); return Promise.resolve({ ok: true }); },
+    secrets: devHubSecrets,
+    persona: DEV_PERSONA, classify: Classify.isTaskDirective, redact: redact, emit: chanEmit,
+    newId: () => crypto.randomUUID(), now: () => Date.now(),
+    resolveAgent: (ctx) => router.resolveTarget(ctx),
+    getTag: (text) => (Classify.getTag ? Classify.getTag(text) : undefined),
+    resolveStation: (agentId) => router.stationFor(agentId),
+    roster: () => [...agentRoster].map(([agentId, a]) => ({ agentId, name: a.name, model: a.model, provider: a.provider })),
+    setModel: (agentId, model) => setAgentModelFromChannel(agentId, model),
+    modelCatalog: () => { maybeRewarmModelCatalog(); return orModelCatalogIds; },
+    onResolved: (info) => { devResolved = info; }
+  });
+  return devHub;
+}
+async function handleDevInbound(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  if (!DEV_MODE) return json(404, { error: 'not found' });
+  let body; try { body = JSON.parse(await readBody(req, 1 << 16)) || {}; } catch (_) { return json(400, { error: 'bad json' }); }
+  const text = String(body.text == null ? '' : body.text).trim();
+  if (!text) return json(400, { error: 'text required' });
+  const chatId = String(body.chatId || 'devchat').replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 32) || 'devchat';
+  const hub = getDevHub();
+  devReplies.delete(chatId);
+  // same intercept shape as the Telegram wiring: resolution lands synchronously in onInbound's first slice;
+  // only a real TASK directive places a crate (belt is work-only); the settle owns the queue decrement.
+  devResolved = null;
+  const settled = Promise.resolve(hub.onInbound({ chatId, userId: String(body.userId || 'dev'), text, chatType: 'dm' }))
+    .catch(e => { console.warn('[dev-inbound] error:', (e && e.message) || e); return { error: (e && e.message) || String(e) }; });
+  let agentId = '', workitemId = '', isTask = false;
+  try {
+    if (devResolved && String(devResolved.chatId) === chatId && devResolved.agentId) {
+      agentId = String(devResolved.agentId);
+      isTask = !!devResolved.isTask;
+      if (isTask) {
+        workitemId = crypto.randomUUID();
+        const prior = activeItem.get(chatId);
+        if (prior) chanEmit('workitem.superseded', { workitemId: prior.workitemId, agentId: prior.agentId, ts: Date.now() });
+        activeItem.set(chatId, { agentId, workitemId });
+        const depth = bumpQueue(agentId, +1);
+        chanEmit('workitem.placed', { workitemId, queueId: agentId, agentId, kind: 'dev', preview: text.replace(/\s+/g, ' ').slice(0, 40), queueDepth: depth, ts: Date.now() });
+        chanEmit('queue.status', { queueId: agentId, depth, maxCapacity: QUEUE_CAP, nextAdvanceAt: 0 });
+      }
+    }
+  } catch (e) { console.warn('[dev-inbound] intercept error:', (e && e.message) || e); }
+  devResolved = null;
+  await settled;
+  if (workitemId) {
+    const d = bumpQueue(agentId, -1);
+    const cur = activeItem.get(chatId);
+    if (cur && cur.workitemId === workitemId) {
+      activeItem.delete(chatId);
+      chanEmit('workitem.delivered', { workitemId, finalQueueId: 'outbox', agentId, box: '', ms: 0, ts: Date.now() });
+    }
+    chanEmit('queue.status', { queueId: agentId, depth: d, maxCapacity: QUEUE_CAP, nextAdvanceAt: 0 });
+  }
+  return json(200, { ok: true, chatId, agentId: agentId || null, isTask, workitemId: workitemId || null, replies: (devReplies.get(chatId) || []).map(r => r.text) });
+}
+
 const server = http.createServer((req, res) => {
   const isApi = String(req.url || '').indexOf('/api/') === 0 || req.url === '/api';
   if (isApi) {
@@ -3182,6 +3264,9 @@ function dispatchRoute(req, res) {
   if (req.method === 'POST' && req.url === '/api/channels/discord/disconnect') return handleDiscordDisconnect(req, res);
   if (req.method === 'GET' && req.url === '/api/channels/discord/status') return handleDiscordStatus(req, res);
   if (req.method === 'POST' && req.url === '/api/channels/notify') return handleChannelNotify(req, res);
+  // DEV-ONLY (404s unless SKYNET_DEV): inject an inbound message through the real channel hub — floor
+  // routing / classifier / crate telemetry testable without a live bot token. Own try/catch → always JSON.
+  if (req.method === 'POST' && req.url === '/api/dev/inbound') return handleDevInbound(req, res).catch((e) => { try { if (!res.headersSent) { res.writeHead(500, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: redact('dev inbound failure: ' + ((e && e.message) || e)) })); } else res.end(); } catch (_) {} });
   if (req.method === 'GET' && req.url === '/api/channels/telegram/status') return handleChannelStatus(req, res);
   if (req.method === 'GET' && req.url.split('?')[0] === '/api/channels/events') return handleChannelEvents(req, res);   // path match: the SSE url carries a ?token= query now
   if (req.method === 'POST' && req.url === '/api/routing') return handleRouting(req, res);
