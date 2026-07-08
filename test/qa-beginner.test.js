@@ -34,6 +34,25 @@ const clock = { now: () => clk };
   A.ok(STEP_DEFS[0].budgetMs > 0, 'stepsForMode returns copies — mutating a result never corrupts STEP_DEFS');
 }
 
+// ---- A2. the boundary (first-directive) budget must cover the WHOLE awakening cinematic ----
+// REGRESSION LOCK for the P0 stall STUCK@first-directive (ledger fc065df3, 2026-07-08): the fresh-user
+// path was declared stalled not because anything hung — the ceremony ran clean with zero console
+// errors — but because first-directive's budget (an un-measured 60000) was shorter than the deliberate
+// minutes-long "witnessed birth" that must play before the first option chip renders. Measured live:
+// the focused dialogue panel opens ~83s after WAKE and the first chip ~93s after WAKE, and that whole
+// cinematic is counted against THIS step. Lock a floor so a future trim can't quietly re-introduce the
+// too-tight budget: the boundary step must allow at least 120s (well above the ~93s-to-chip measurement,
+// below the 180s we ship), and it must still leave real room under the 10-minute total gate.
+{
+  const boundary = STEP_DEFS.find(s => s.boundary);
+  A.eq(boundary.id, 'first-directive', 'the boundary step is first-directive');
+  A.ok(boundary.budgetMs >= 120000,
+    'first-directive budget covers the awakening cinematic (>=120s; the birth takes ~93s to the first chip)');
+  const uiBudget = stepsForMode('ui-only').reduce((n, s) => n + s.budgetMs, 0);
+  A.ok(uiBudget <= TOTAL_BUDGET_MS,
+    'the sum of ui-only per-step budgets still fits inside the 10-minute total gate');
+}
+
 // ---- B. step-budget accounting: per-step ms come from the clock; under budget = ok ----
 {
   clk = 100000;   // arbitrary non-zero start
