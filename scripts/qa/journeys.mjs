@@ -51,13 +51,56 @@
  *
  * Exit code: 0 all journeys green · 3 a hard assertion failed · 2 BLOCKED (could not run).
  */
-import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdirSync, writeFileSync, rmSync, readFileSync, readdirSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { sleep, launchChrome, connectCDP, evalJS, capture, collectDiagnostics } from '../lib/cdp.mjs';
 import { materializeSeedWorkspace, bootSeededSidecar, isUp, waitUp, waitDevReady, DEFAULT_MODEL } from '../lib/seed.mjs';
 import { closeOnly, openSel } from '../lib/states.mjs';
+import { makeLedger, fingerprintOf } from './ledger.mjs';
+
+/* ── Dismissed/known journey gate (mirror of golden.mjs's per-frame review-clean) ──────────────
+ * A journey assertion can be TRIAGED-and-DISMISSED in the QA ledger (e.g. J2b/panel-close's busy-
+ * poll flake, finding 6feab179 — reproduced PASS in isolation, only flakes under CPU starvation).
+ * Once dismissed, the anti-nag law says it must never re-nag. But a bare hard-fail still forced
+ * exit 3, pinning the release gate (`ready.mjs` reads journeys-last-run.json == pass) RED forever.
+ * So — exactly like golden — we ask the ONE dedup/known authority (ledger.mjs) which fingerprints
+ * are suppressed and treat a journey whose EVERY hard-fail maps to a dismissed/known finding as
+ * REVIEW-CLEAN (excused, not a hard fail). The fingerprint computed here is IDENTICAL to the one
+ * the Green Guardian derives for a journey assertion (crew 'Green Guardian' + checkId 'journeys' +
+ * subject 'journey/<journeyName>/<assertionName>'), so a guardian-filed-and-dismissed assertion
+ * matches exactly. Narrow by design: a NEW/undismissed hard-fail (different subject → different
+ * fingerprint) still fails and still exits 3. Fail-open: no ledger access → suppress nothing. */
+const GUARDIAN_CREW = 'Green Guardian';       // must match scripts/qa/guardian.mjs CREW
+const JOURNEYS_CHECK_ID = 'journeys';         // must match GUARDIAN_STEPS[journeys].id
+function journeyAssertionFingerprint(journeyName, assertionName) {
+  return fingerprintOf({ crew: GUARDIAN_CREW, checkId: JOURNEYS_CHECK_ID, subject: 'journey/' + journeyName + '/' + assertionName });
+}
+function dismissedFingerprints() {
+  try {
+    const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..');   // scripts/qa/ -> repo root
+    const findingsDir = join(root, 'qa', 'findings');
+    const knownFile = join(root, 'qa', 'KNOWN_ISSUES.md');
+    const io = {
+      listFindings() {
+        let names; try { names = readdirSync(findingsDir); } catch (_) { return []; }
+        const out = [];
+        for (const n of names) { if (!n.endsWith('.json')) continue; try { out.push(JSON.parse(readFileSync(join(findingsDir, n), 'utf8'))); } catch (_) {} }
+        return out;
+      },
+      knownFingerprints() {
+        try {
+          const txt = readFileSync(knownFile, 'utf8'); const set = new Set();
+          const re = /fingerprint[:=]\s*`?([0-9a-fA-F]{6,})`?/g; let m;
+          while ((m = re.exec(txt))) set.add(m[1].toLowerCase());
+          return set;
+        } catch (_) { return new Set(); }
+      }
+    };
+    return makeLedger({ io })._internals.suppressedFingerprints();
+  } catch (_) { return new Set(); }
+}
 
 const PORT = process.env.SKYNET_JOURNEY_PORT || '8962';
 const CDP_PORT = Number(process.env.SKYNET_JOURNEY_CDP || 9362);
@@ -787,12 +830,14 @@ async function main() {
       { id: 'J6', name: 'bay-bound crew idle life (desk-stuck)', needs: 'cdp', fn: (A) => journeyBayIdleLife(cdp, A) },
     ];
 
+    const suppressed = dismissedFingerprints();   // dismissed/known journey fingerprints (read once)
     for (const jr of JOURNEYS) {
       if (!wantJ(jr.id)) continue;
+      const journeyReportName = jr.id + ' ' + jr.name;   // matches the guardian's per-journey fingerprint subject
       if (jr.needs === 'http' && !token) {
         const A = makeAsserter();
         A.ok(jr.id + '/token', false, 'BLOCKED: no API token scraped from the page — cannot drive workshop routes');
-        report.journeys.push({ name: jr.id + ' ' + jr.name, passed: false, blocked: true, assertions: A.results });
+        report.journeys.push({ name: journeyReportName, passed: false, blocked: true, assertions: A.results });
         exitCode = exitCode || 2;
         continue;
       }
@@ -800,9 +845,14 @@ async function main() {
       const A = makeAsserter();
       try { await jr.fn(A); }
       catch (e) { A.ok(`${jr.id}/ran`, false, 'threw: ' + (e && e.message || e)); }
-      const hardFail = A.results.some(r => !r.pass && !r.soft);
+      const hardResults = A.results.filter(r => !r.pass && !r.soft);
+      // REVIEW-CLEAN: a journey whose EVERY hard-fail maps to a dismissed/known finding is excused
+      // (anti-nag) — not a hard fail, does not force exit 3. A new/undismissed hard-fail still fails.
+      const excused = hardResults.length > 0 && hardResults.every(r => suppressed.has(journeyAssertionFingerprint(journeyReportName, r.name)));
+      if (excused) console.log(`  review-clean ${jr.id} — ${hardResults.length} hard-fail(s) all match a dismissed/known finding; excused (not counted as a hard fail)`);
+      const hardFail = hardResults.length > 0 && !excused;
       try { await capture(cdp, OUT_DIR, hardFail ? `_FAIL-${jr.id}` : jr.id); } catch (_) {}
-      report.journeys.push({ name: jr.id + ' ' + jr.name, passed: !hardFail, assertions: A.results });
+      report.journeys.push({ name: journeyReportName, passed: !hardFail, excused: excused || undefined, assertions: A.results });
       if (hardFail) exitCode = 3;
       // reset the floor to a clean state between journeys (close panels; release any parked stream).
       try { mock.control.release(); } catch (_) {}

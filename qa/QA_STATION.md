@@ -84,9 +84,37 @@ npm run qa:guardian:watch -- --interval 120   # poll every N seconds (default 60
 - **Hourly (belt-and-suspenders): a scheduled one-shot.** A Task Scheduler entry running
   `npm run qa:guardian` hourly re-verifies trunk even when nothing merged (catches
   environment drift, flaky-then-real failures, and covers any window where the watch process
-  died). The two overlap harmlessly — dedup means a standing red files once, not twice.
+  died).
 - Use `--skip-visual` for a Chrome-free fast lane on machines/CI without a display; the full
   visual gates (`shoot`/`golden`/`audit`) need headless Chrome.
+
+> **Overlap is NOT harmless — a lock serializes it (fixed 2026-07-08).** The hourly one-shot,
+> the standing `--watch` process, and any manual run all target the **same** pinned worktree
+> and the **same** 8940–8943 port range. Before the lock they collided physically: two
+> `git reset --hard` / `git worktree` operations raced on the shared
+> `.git/worktrees/**/index.lock` (finding **90fe0bcc**: *"Unable to create …/index.lock: File
+> exists. Another git process seems to be running"*), and two sidecars fought for the same
+> ports, timing the visual gates out into **BLOCKED P0s** (findings 9b077d5e / 6fc6c002). Dedup
+> only stops a *standing red* from filing twice — it does **nothing** about two processes
+> corrupting each other's checkout mid-run. The earlier claim that "the two overlap harmlessly"
+> was **false**. The Guardian now takes a **machine-global cross-process lock** (a heartbeat
+> lockfile at `%TEMP%/starnet-qa-guardian.lock`, override `SKYNET_GUARDIAN_LOCK`, with
+> PID-liveness + stale-heartbeat reclaim). A one-shot that fires while a cycle is running finds
+> the lock held and **exits 0 as redundant** (the running cycle already covers this or a newer
+> trunk); pass `--wait` to queue instead. `--watch` takes the lock per-cycle and **skips** a
+> poll whose head it can't lock, retrying once the lock frees. So the three launch styles now
+> **serialize** instead of clobbering — the `_qa-guardian-pin` divergence + BLOCKED-P0 wedge is
+> structurally gone.
+>
+> **Dismissed findings no longer pin the cycle RED.** A gate can exit nonzero on a defect that
+> was already **triaged + dismissed** in the ledger (e.g. the J2b panel-close busy-poll flake,
+> finding `6feab179` — reproduced PASS in isolation, only flakes under CPU starvation). By the
+> anti-nag law a dismissed defect must never re-nag, yet a bare nonzero exit still forced the
+> STATUS row RED and blocked `qa:ready` forever. The Guardian now treats a red (non-BLOCKED)
+> gate whose **every** derived finding is on the dismissed/known baseline as **review-clean** —
+> exactly as the golden gate already does per-frame — so the dismissal takes effect at the cycle
+> verdict. `journeys.mjs` mirrors this for its own exit code (so `journeys-last-run.json` records
+> `pass`), and a genuinely BLOCKED detector is **never** excused this way (no-fake-green holds).
 
 ### What RED means
 Exit code **1** = a real regression OR a BLOCKED step. Concretely:

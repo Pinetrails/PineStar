@@ -52,10 +52,11 @@
 
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { runBoundedCommand, coerceTimeoutMs } from '../lib/run-command.mjs';
-import { fingerprintOf } from './ledger.mjs';
+import { fingerprintOf, makeLedger } from './ledger.mjs';
 
 /* ─────────────────────────────── PURE CORE ─────────────────────────────── */
 
@@ -80,6 +81,24 @@ export const GUARDIAN_STEPS = [
 function str(v) { return v == null ? '' : String(v); }
 function num(v) { return (typeof v === 'number' && isFinite(v)) ? v : 0; }
 function shortSha(sha) { return str(sha).trim().slice(0, 8) || '(unknown)'; }
+
+// CROSS-PROCESS LOCK (pure decision half — the ambient fs/pid side lives in the IO shell).
+// The Guardian runs from THREE launch styles that all target the SAME pinned worktree + the SAME
+// port range: the hourly Task-Scheduler one-shot, the standing --watch process, and any manual
+// run. Before the lock they overlapped and collided — two `git reset --hard`/`worktree` ops raced
+// on the shared `.git/worktrees/**/index.lock` (proven: finding 90fe0bcc), and two sidecars fought
+// for ports 8940-8943, timing the visual gates out into BLOCKED P0s (findings 9b077d5e/6fc6c002).
+// A single machine-global lock serializes them. `isLockStale` decides whether an EXISTING lock
+// record may be reclaimed: a record whose heartbeat is older than staleMs belongs to a dead holder
+// (a live Guardian refreshes its heartbeat every LOCK_HEARTBEAT_MS). A missing/garbled record is
+// treated as stale (reclaimable) — the caller adds an mtime grace so a mid-write record is not
+// stolen. Pure + injectable-now so it is unit-tested without touching disk or real time.
+export function isLockStale(record, now, staleMs) {
+  if (!record || typeof record !== 'object') return true;
+  const hb = Number(record.heartbeatAt);
+  if (!Number.isFinite(hb)) return true;
+  return (num(now) - hb) > num(staleMs);
+}
 
 // A stable per-defect fingerprint. Same crew everywhere; the SUBJECT is what makes one
 // defect distinct from another (a failing suite name, a changed frame name, a failing
@@ -299,8 +318,20 @@ export function makeGuardianCore(opts) {
   // Roll up the per-step outcomes into a cycle verdict.
   function summarize(steps) {
     const list = Array.isArray(steps) ? steps : [];
-    const red = list.filter(s => s && (s.blocked || s.spawnError || s.timedOut ||
-      (s.id === 'golden' ? (s.exitCode !== 0 && (s.flaggedCount || 0) > 0) : (s.exitCode !== 0 && s.exitCode != null))));
+    // `reviewClean` = a red gate whose EVERY derived finding is on the dismissed/known baseline
+    // (anti-nag law) — the same review-clean concept the golden gate already applies per-frame,
+    // lifted to the whole cycle so a single dismissed flake (e.g. the J2b panel-close busy-poll
+    // flake, finding 6feab179) can no longer pin the release gate RED forever. Only exit-code reds
+    // are excusable this way; a genuinely BLOCKED step (spawn/timeout/explicit) is never marked
+    // reviewClean, so a detector that CANNOT run still reddens (no-fake-green law holds).
+    const red = list.filter(s => {
+      if (!s) return false;
+      // A detector that could not RUN is always red — reviewClean can never excuse a BLOCKED step.
+      if (s.blocked || s.spawnError || s.timedOut) return true;
+      // Otherwise a red exit-code whose every finding is dismissed/known is review-clean (not red).
+      if (s.reviewClean) return false;
+      return s.id === 'golden' ? (s.exitCode !== 0 && (s.flaggedCount || 0) > 0) : (s.exitCode !== 0 && s.exitCode != null);
+    });
     const blocked = list.filter(s => s && (s.blocked || s.spawnError || s.timedOut));
     return {
       verdict: red.length ? 'red' : 'green',
@@ -388,6 +419,118 @@ if (INVOKED_DIRECTLY) {
 
   const log = (...a) => console.log('[guardian]', ...a);
   const errlog = (...a) => console.error('[guardian]', ...a);
+
+  /* ───────────────────────────── CROSS-PROCESS LOCK ─────────────────────────────
+   * ONE machine-global lock so the hourly scheduled task, the standing --watch process, and any
+   * manual run SERIALIZE instead of colliding on the shared pin worktree + the 8940-8943 ports.
+   * The lock is a single file (default under the OS temp dir so it is the SAME path regardless of
+   * which repo/worktree launched the guardian — a gen-tree launch and an integration-tree launch
+   * must contend for the SAME lock). It carries the holder's pid + hostname + a heartbeat the live
+   * holder refreshes on a timer; a crashed holder's lock goes stale and is reclaimed. Default
+   * behavior on a live lock is SKIP (a redundant trigger exits 0 without touching STATUS/findings —
+   * the running cycle already covers this or a newer trunk); pass --wait to queue instead. */
+  const LOCK_FILE = process.env.SKYNET_GUARDIAN_LOCK || path.join(os.tmpdir(), 'starnet-qa-guardian.lock');
+  const LOCK_HEARTBEAT_MS = coerceTimeoutMs(process.env.SKYNET_GUARDIAN_LOCK_HEARTBEAT_MS || 30000, 30000);
+  // Stale window: comfortably larger than the heartbeat cadence so a live-but-busy holder (a gate
+  // can run up to STEP_TIMEOUT_MS) is never mistaken for dead — its heartbeat timer keeps firing.
+  const LOCK_STALE_MS = coerceTimeoutMs(process.env.SKYNET_GUARDIAN_LOCK_STALE_MS || 120000, 120000);
+
+  let __lockRec = null;          // the record THIS process wrote (null until acquired)
+  let __heartbeatTimer = null;
+
+  function readLockRecord() { try { return JSON.parse(fs.readFileSync(LOCK_FILE, 'utf8')); } catch (_) { return null; } }
+  function lockFileMtimeMs() { try { return fs.statSync(LOCK_FILE).mtimeMs; } catch (_) { return 0; } }
+  // Is a same-host holder pid still alive? signal 0 = existence check; EPERM means it exists but is
+  // owned by another user (alive). Cross-host we cannot probe a pid — rely on heartbeat staleness only.
+  function holderAlive(rec) {
+    if (!rec || rec.host !== os.hostname()) return false;
+    const pid = Number(rec.pid);
+    if (!Number.isInteger(pid) || pid <= 0) return false;
+    try { process.kill(pid, 0); return true; } catch (e) { return !!(e && e.code === 'EPERM'); }
+  }
+  function stopHeartbeat() { if (__heartbeatTimer) { clearInterval(__heartbeatTimer); __heartbeatTimer = null; } }
+  function startHeartbeat() {
+    stopHeartbeat();
+    __heartbeatTimer = setInterval(() => {
+      if (!__lockRec) return;
+      try {
+        const cur = readLockRecord();
+        // only refresh if WE still own it (guard against a reclaim having handed it off).
+        if (cur && cur.pid === process.pid && cur.host === os.hostname()) {
+          __lockRec.heartbeatAt = Date.now();
+          fs.writeFileSync(LOCK_FILE, JSON.stringify(__lockRec), 'utf8');
+        }
+      } catch (_) { /* best-effort; a missed heartbeat just shortens our margin */ }
+    }, LOCK_HEARTBEAT_MS);
+    if (__heartbeatTimer.unref) __heartbeatTimer.unref();
+  }
+  function releaseLock() {
+    stopHeartbeat();
+    if (!__lockRec) return;
+    try { const cur = readLockRecord(); if (cur && cur.pid === process.pid && cur.host === os.hostname()) fs.unlinkSync(LOCK_FILE); } catch (_) {}
+    __lockRec = null;
+  }
+  // Try to claim the lock. Returns { ok:true } on success, or { ok:false, held:true, holder } when a
+  // live holder owns it (and !wait), or { ok:false, error } on an unexpected fs error. With wait:true
+  // it blocks (polling) until the lock frees or goes stale. Reclaims a stale/dead holder's lock.
+  async function acquireLock({ wait }) {
+    fs.mkdirSync(path.dirname(LOCK_FILE), { recursive: true });
+    for (let attempt = 0; ; attempt++) {
+      try {
+        const rec = { pid: process.pid, host: os.hostname(), startedAt: Date.now(), heartbeatAt: Date.now(), cmd: process.argv.slice(2).join(' ') || '(once)' };
+        const fd = fs.openSync(LOCK_FILE, 'wx');      // atomic exclusive create — fails EEXIST if held
+        try { fs.writeSync(fd, JSON.stringify(rec)); } finally { fs.closeSync(fd); }
+        __lockRec = rec;
+        startHeartbeat();
+        return { ok: true };
+      } catch (e) {
+        if (e.code !== 'EEXIST') return { ok: false, error: str(e && e.message || e) };
+        const rec = readLockRecord();
+        const now = Date.now();
+        const reclaimable = rec
+          ? (isLockStale(rec, now, LOCK_STALE_MS) || (rec.host === os.hostname() && !holderAlive(rec)))
+          // a null/garbled record: only reclaim once its mtime is itself stale (grace for a mid-write
+          // record so two racers on a fresh lock don't steal each other's just-created file).
+          : ((now - lockFileMtimeMs()) > LOCK_STALE_MS);
+        if (reclaimable) {
+          log('reclaiming stale guardian lock (holder pid=' + (rec && rec.pid) + ' host=' + (rec && rec.host) +
+            ' heartbeatAge=' + (rec && rec.heartbeatAt ? (now - rec.heartbeatAt) + 'ms' : 'unknown') + ')');
+          try { fs.unlinkSync(LOCK_FILE); } catch (_) {}
+          continue;   // retry the exclusive create
+        }
+        if (!wait) return { ok: false, held: true, holder: rec };
+        if (attempt === 0) log('another guardian cycle is running (pid ' + (rec && rec.pid) + ', started ' + (rec && rec.startedAt ? new Date(rec.startedAt).toISOString() : '?') + '); --wait: queuing…');
+        await sleep(2000);
+      }
+    }
+  }
+
+  // The dismissed/known fingerprints from the guardian's OWN ledger (qa/findings + KNOWN_ISSUES.md).
+  // A red gate whose EVERY derived finding is on this set is review-clean (see summarize's reviewClean).
+  // Fail-open to an empty Set so a ledger read problem can never HIDE a real regression.
+  function loadSuppressedFingerprints() {
+    try {
+      const findingsDir = path.join(QA_DIR, 'findings');
+      const knownFile = path.join(QA_DIR, 'KNOWN_ISSUES.md');
+      const io = {
+        listFindings() {
+          let names; try { names = fs.readdirSync(findingsDir); } catch (_) { return []; }
+          const out = [];
+          for (const n of names) { if (!n.endsWith('.json')) continue; try { out.push(JSON.parse(fs.readFileSync(path.join(findingsDir, n), 'utf8'))); } catch (_) {} }
+          return out;
+        },
+        knownFingerprints() {
+          try {
+            const txt = fs.readFileSync(knownFile, 'utf8'); const set = new Set();
+            const re = /fingerprint[:=]\s*`?([0-9a-fA-F]{6,})`?/g; let m;
+            while ((m = re.exec(txt))) set.add(m[1].toLowerCase());
+            return set;
+          } catch (_) { return new Set(); }
+        }
+      };
+      return makeLedger({ io })._internals.suppressedFingerprints();
+    } catch (_) { return new Set(); }
+  }
 
   function git(args, cwd) {
     const r = spawnSync('git', args, { cwd: cwd || GUARDIAN_REPO, encoding: 'utf8', windowsHide: true });
@@ -544,6 +687,10 @@ if (INVOKED_DIRECTLY) {
       return { code: 1, sha };
     }
 
+    // The dismissed/known baseline, read ONCE per cycle. A red gate whose every finding is on this
+    // set is review-clean (anti-nag) — see the reviewClean handling below + summarize().
+    const suppressed = loadSuppressedFingerprints();
+
     // Run the gates in order. Each red step files its findings; we KEEP GOING so one cycle
     // surfaces every regression (not just the first), then verdict is computed over all.
     const steps = GUARDIAN_STEPS.filter(s => !(skipVisual && s.visual));
@@ -558,8 +705,19 @@ if (INVOKED_DIRECTLY) {
       }
       stepResults.push(result);
       const findings = core.findingsFor(step, result);
+      // REVIEW-CLEAN: a red (non-BLOCKED) gate whose EVERY finding is already dismissed/known is not
+      // counted red — the dismissal takes effect at the cycle verdict, exactly as golden already does
+      // per-frame. A BLOCKED step (a detector that could not run) is never excused this way.
+      if (!result.blocked && !result.spawnError && !result.timedOut && findings.length > 0 &&
+          findings.every(f => suppressed.has(str(f.fingerprint)))) {
+        result.reviewClean = true;
+      }
       for (const f of findings) fileFinding(f);
-      const tag = (result.blocked ? 'BLOCKED' : result.exitCode === 0 ? 'ok' : (step.id === 'golden' && result.flaggedCount === 0 ? 'ok (review-clean)' : 'RED'));
+      const tag = (result.blocked ? 'BLOCKED'
+        : result.exitCode === 0 ? 'ok'
+        : (step.id === 'golden' && result.flaggedCount === 0) ? 'ok (review-clean)'
+        : result.reviewClean ? 'ok (review-clean: all findings dismissed/known)'
+        : 'RED');
       log('  ' + tag + '  ' + step.id + ' exit=' + result.exitCode + (findings.length ? ' (' + findings.length + ' finding' + (findings.length > 1 ? 's' : '') + ')' : ''));
     }
 
@@ -622,18 +780,26 @@ if (INVOKED_DIRECTLY) {
   }
 
   function parseCliArgs(argv) {
-    const a = { once: false, watch: false, skipVisual: false, interval: 60 };
+    const a = { once: false, watch: false, skipVisual: false, interval: 60, wait: false };
     for (let i = 0; i < argv.length; i++) {
       const t = argv[i];
       if (t === '--once') a.once = true;
       else if (t === '--watch') a.watch = true;
       else if (t === '--skip-visual') a.skipVisual = true;
+      else if (t === '--wait') a.wait = true;
       else if (t === '--interval') a.interval = Math.max(5, Number(argv[++i]) || 60);
     }
     return a;
   }
 
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+  // Never leave a stale lock behind: release on normal exit AND on the signals a scheduler/Ctrl-C
+  // uses to stop the watch process. (The heartbeat timer is unref'd, so 'exit' fires on a clean end.)
+  process.on('exit', () => { try { releaseLock(); } catch (_) {} });
+  for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
+    process.on(sig, () => { try { releaseLock(); } catch (_) {} process.exit(130); });
+  }
 
   (async () => {
     const args = parseCliArgs(process.argv.slice(2));
@@ -645,15 +811,40 @@ if (INVOKED_DIRECTLY) {
       for (;;) {
         const head = trunkHead();
         if (head && head !== last) {
-          last = head;
-          const { code } = await oneCycle({ skipVisual: args.skipVisual });
-          log('watch: cycle done (exit ' + code + '); waiting for the next trunk move...');
+          // Take the lock only for the duration of a cycle; if another guardian holds it (an hourly
+          // one-shot fired mid-watch), SKIP this cycle and retry on the next poll — do NOT advance
+          // `last`, so the moved head is still picked up once the lock frees.
+          const lock = await acquireLock({ wait: false });
+          if (!lock.ok) {
+            if (lock.held) log('watch: another guardian cycle is running (pid ' + (lock.holder && lock.holder.pid) + '); skipping this poll, will retry.');
+            else errlog('watch: could not acquire lock: ' + lock.error);
+          } else {
+            last = head;
+            try { const { code } = await oneCycle({ skipVisual: args.skipVisual }); log('watch: cycle done (exit ' + code + '); waiting for the next trunk move...'); }
+            finally { releaseLock(); }
+          }
         }
         await sleep(args.interval * 1000);
       }
     } else {
-      const { code } = await oneCycle({ skipVisual: args.skipVisual });
+      // One-shot (the hourly scheduled task / a manual run). If a live guardian already holds the
+      // lock, this trigger is REDUNDANT — exit 0 without touching STATUS/findings (the running cycle
+      // covers this or a newer trunk). --wait queues behind it instead of skipping.
+      const lock = await acquireLock({ wait: args.wait });
+      if (!lock.ok) {
+        if (lock.held) {
+          log('another guardian cycle is running (pid ' + (lock.holder && lock.holder.pid) + ', started ' +
+            (lock.holder && lock.holder.startedAt ? new Date(lock.holder.startedAt).toISOString() : '?') +
+            '); this trigger is redundant — skipping. Pass --wait to queue.');
+          process.exit(0);
+        }
+        errlog('FATAL: could not acquire guardian lock: ' + lock.error);
+        process.exit(1);
+      }
+      let code = 1;
+      try { ({ code } = await oneCycle({ skipVisual: args.skipVisual })); }
+      finally { releaseLock(); }
       process.exit(code);
     }
-  })().catch(e => { errlog('FATAL: ' + (e && e.stack || e)); process.exit(1); });
+  })().catch(e => { errlog('FATAL: ' + (e && e.stack || e)); try { releaseLock(); } catch (_) {} process.exit(1); });
 }
