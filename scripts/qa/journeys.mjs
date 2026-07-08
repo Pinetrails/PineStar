@@ -614,6 +614,77 @@ async function journeyDeliverableOpen(cdp, A, base, token, mock) {
   A.ok('J4/token-required', noTok && noTok.status === 403, 'no-token GET → ' + (noTok && noTok.status) + ' (must be 403)');
 }
 
+/* ═══════════════════════════ J6 — bay-bound crew idle life (desk-stuck escape) ═══════════════════════════
+ * Andrew's 2026-07-07 escape: a PLAN-DERIVED (bay-bound) crew body walked to its workstation on a task and
+ * then STOOD THERE ETERNALLY — it never returned to idle life after the run ended — and idle bay bodies sat
+ * frozen behind their bays. Root cause: stepCrew gated the per-body sentience engine on `b.summoned`, so
+ * bay-bound bodies (which are never summoned) got NO idle life. This journey injects a real bay-bound body
+ * (belt + bay bound to a probe agent, exactly as syncCrewFromPlan builds one), then asserts the TRUTH the
+ * fix restores: an idle bay body has inner life (moves / picks idle goals, caged to its zone), and after a
+ * task ENDS it returns to that idle life within a few seconds instead of freezing at its post.
+ * We drive the crew work-state via World.setActivityFor — the exact seam agent.run.start/end use for crew. */
+async function journeyBayIdleLife(cdp, A) {
+  const PROBE = 'deskstuck_probe';
+  await evalJS(cdp, closeOnly).catch(() => {});
+  const bodyOf = `(() => { try { const b=(window.__SKYNET_TEST__.bodies()||[]).find(x=>x.id===${J(PROBE)}); return b||null; } catch(e){ return null; } })()`;
+
+  // 1) inject a belt + a bay bound to the probe agent → rederive → syncCrewFromPlan spawns a NON-summoned body.
+  const inj = await evalJS(cdp, `(() => { try {
+    if (typeof Build==='undefined' || !Build.__test__ || !Build.__test__.station) return 'NO_BUILD_TEST';
+    const st = Build.__test__.station();
+    const okBelt = st.setBelt(6,5,'E'); const okBay = st.addProp({ t:'bay', x:7, y:5, w:1, h:1, agentId:${J(PROBE)} });
+    return JSON.stringify({ belt: !!(okBelt&&okBelt.ok), bay: !!(okBay&&okBay.ok!==false) });
+  } catch(e){ return 'ERR:'+e.message; } })()`).catch(e => 'ERR:' + e.message);
+  A.ok('J6/bay-injected', typeof inj === 'string' && inj.indexOf('ERR') < 0 && inj.indexOf('NO_BUILD') < 0, 'inject → ' + inj);
+
+  // 2) the plan body appears (proves it's a real bay-bound, non-summoned body — the exact class that froze).
+  let born = false;
+  for (let i = 0; i < 30; i++) { const b = await evalJS(cdp, bodyOf).catch(() => null); if (b && b.id === PROBE) { born = true; break; } await sleep(400); }
+  A.ok('J6/bay-body-born', born, born ? 'plan-derived crew body present' : 'bay body never appeared (bay missing from routingPlan.bays)');
+  if (!born) return;
+
+  // ALIVE signal: the idle engine legitimately picks "stand still" most of the time, so movement alone is a
+  // noisy signal. A body whose engine RUNS also glances / re-faces / occasionally strolls; a FROZEN body
+  // (the bug) never does ANY of these — goal stays null, tile fixed, glance null, facing pinned. So "alive" =
+  // it moved OR took a non-null goal OR glanced OR changed facing, across a generous window (this is a TRUTH
+  // gate — does it EVER come alive — not a latency gate). Cumulative, breaks as soon as it proves life.
+  const aliveWithin = async (base, tries) => {
+    for (let i = 0; i < tries; i++) {
+      await sleep(400);
+      const b = await evalJS(cdp, bodyOf).catch(() => null);
+      if (!b) continue;
+      const moved = base.tile && (b.tile.x !== base.tile.x || b.tile.y !== base.tile.y);
+      if (moved || b.goal != null || b.glance != null || (base.dir && b.dir !== base.dir)) return b;
+    }
+    return null;
+  };
+  // 3) IDLE-FROM-START must have inner life (not frozen at its bay = the "hidden behind bays" symptom).
+  const start = await evalJS(cdp, bodyOf).catch(() => null);
+  const aliveA = await aliveWithin({ tile: start && start.tile, dir: start && start.dir }, 60);   // up to ~24s
+  A.ok('J6/idle-bay-body-has-life', !!aliveA, aliveA ? ('idle bay body came alive (goal=' + aliveA.goal + ' tile=' + aliveA.tile.x + ',' + aliveA.tile.y + ' — not frozen at its bay)') : 'idle bay body FROZEN at its bay — no inner life');
+
+  // 4) TASK → END: drive the crew work seize the way a run does, then assert it returns to idle life.
+  await evalJS(cdp, `World.setActivityFor(${J(PROBE)},'task')`).catch(() => {});
+  let worked = false;
+  for (let i = 0; i < 12; i++) { const b = await evalJS(cdp, bodyOf).catch(() => null); if (b && (b.working || b.sitting)) { worked = true; break; } await sleep(300); }
+  A.ok('J6/task-seizes-body', worked, worked ? 'body went to work on the task' : 'body never entered the work pose');
+  await evalJS(cdp, `World.setActivityFor(${J(PROBE)},'idle')`).catch(() => {});
+  // THE ESCAPE ASSERTION: after the run ends the body must return to idle LIFE (the engine runs again) —
+  // it comes alive rather than freezing standing at the workstation forever. Baseline = its state the instant
+  // the run ended (facing 'south', at its post); alive = it moves / picks a goal / glances / re-faces.
+  const ended = await evalJS(cdp, bodyOf).catch(() => null);
+  const aliveB = await aliveWithin({ tile: ended && ended.tile, dir: ended && ended.dir }, 75);   // up to ~30s
+  const returned = !!(aliveB && !aliveB.working && !aliveB.sitting);
+  A.ok('J6/returns-to-idle-after-task', returned, returned ? ('body resumed idle life after run end (goal=' + aliveB.goal + ' tile=' + aliveB.tile.x + ',' + aliveB.tile.y + ')') : 'body STUCK at its workstation after the run ended (desk-stuck escape)');
+
+  // 5) it stays caged to its own zone (the fix must not let a bay body roam the whole floor).
+  const caged = await evalJS(cdp, bodyOf).catch(() => null);
+  A.ok('J6/stays-in-own-zone', !caged || caged.inOwnZone !== false, caged ? ('inOwnZone=' + caged.inOwnZone + ' tile=' + caged.tile.x + ',' + caged.tile.y) : 'no body');
+
+  // cleanup: remove the injected bay + belt so a shared-app follow-on sees the original floor.
+  await evalJS(cdp, `(() => { try { const st=Build.__test__.station(); const p=(st.propsByAgent?st.propsByAgent(${J(PROBE)}):[]).find(pp=>pp.t==='bay'); if (p) st.removeProp(p.id); if (st.setBelt) st.setBelt(6,5,''); return 'cleaned'; } catch(e){ return 'ERR:'+e.message; } })()`).catch(() => {});
+}
+
 /* ═══════════════════════════ orchestration ═══════════════════════════ */
 async function main() {
   mkdirSync(OUT_DIR, { recursive: true });
@@ -713,6 +784,7 @@ async function main() {
       { id: 'J2c', name: 'interrupt: reload mid-run', needs: 'cdp', fn: (A) => journeyInterruptReload(cdp, A, mock) },
       { id: 'J3', name: 'double-send / rapid-toggle', needs: 'cdp', fn: (A) => journeyDoubleSend(cdp, A, mock, diag) },
       { id: 'J4', name: 'summon→assign→deliverable→OPEN', needs: 'http', fn: (A) => journeyDeliverableOpen(cdp, A, APP_URL.replace(/\/$/, ''), token, mock) },
+      { id: 'J6', name: 'bay-bound crew idle life (desk-stuck)', needs: 'cdp', fn: (A) => journeyBayIdleLife(cdp, A) },
     ];
 
     for (const jr of JOURNEYS) {

@@ -1311,8 +1311,16 @@ const World = (() => {
         else { b.pathPts = null; b.target = null; b.state = 'idle'; b.sitting = false; }
         continue;                                      // J4: the working seize sits ABOVE the engine — a task always wins
       }
-      if (!b.summoned) { b.sitting = false; continue; }   // bay-bound bodies stay where work is delivered (never seated when not working); only summoned workers get the inner life
-      // PLACED + NON-WORKING + summoned → run the full sentience engine on THIS body, caged to its own zone.
+      // PLACED + NON-WORKING → run the full sentience engine on THIS body, caged to its own zone.
+      // DESK-STUCK FIX (Andrew escape 2026-07-07): this was gated on `b.summoned`, which starved every
+      // PLAN-DERIVED (bay-bound) crew body of the idle engine — so a bay body froze wherever work was last
+      // delivered: at its bay when idle ("hidden behind the bays"), and at its workstation seat after a run
+      // ended ("walks to its desk and stands there eternally"). crewEngineStep already un-sticks the just-
+      // finished desk-sit (its `sitting && goal!==use/lounge → stand + re-decide` line) and every target
+      // picker is caged to zoneFor(b) — which anchorFor() resolves to the body's OWN bay tile — so a bay body
+      // wanders a bounded area around its bay and is re-seized to it the instant work arrives (b.working above,
+      // K3/J4). The `summoned` flag still governs floor-reload retention (it's an app-level, not floor-bound,
+      // body), NOT whether a body is alive. Every crew body now has the inner life; none freezes at its post.
       // self=b for the duration, then UNCONDITIONALLY restore self=agent so the next body / the hero tick is clean (J1/J2).
       self = b;
       tickNeeds(dt);          // this body's own meters drain/refill by what IT is doing
@@ -1614,12 +1622,13 @@ const World = (() => {
   }
 
   // bodyIsIdle — READ-ONLY: is `b` free to notice (not tasked, not walking, no active goal)? The hero's busy
-  // flag is the module-scope `activity` (HERO-ONLY); crew busyness is per-body (b.working/b.workUntil), and only
-  // SUMMONED crew have the inner life (stepCrew gates the engine on b.summoned). Reads only — mutates nothing.
+  // flag is the module-scope `activity` (HERO-ONLY); crew busyness is per-body (b.working/b.workUntil). Every
+  // PLACED crew body now runs the inner life (stepCrew no longer gates the engine on b.summoned — desk-stuck
+  // fix), so a free bay-bound body is a first-class idle body here too. Reads only — mutates nothing.
   function bodyIsIdle(b, now) {
     if (!b || b.unplaced || b.state === 'walk' || b.working || b.goal != null) return false;
     if (agent && b === agent) return activity === 'idle';                 // hero: the single module-scope busy flag
-    return !!b.summoned && b.workUntil <= now;                            // crew: only summoned bodies are alive; not mid-run
+    return b.workUntil <= now;                                            // crew (summoned OR bay-bound): alive unless mid-run
   }
 
   /* ================= Tier C — C-Beat1: SUMMON GLANCE =================
