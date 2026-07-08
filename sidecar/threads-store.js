@@ -197,11 +197,10 @@ function makeThreadsStore(deps) {
 
   // DENYLIST a fingerprint directly (a mining proposal the Commander DISCARDED at turn-in that never became a
   // thread). Permanent — the same idea is never re-mined. title may be the idea title OR a precomputed fingerprint;
-  // we fingerprint it either way (a fingerprint fingerprints to itself since it's already token-set normalized).
+  // we fingerprint it either way (fingerprint is IDEMPOTENT over its own output: the tokens are already
+  // lowercase/unique/sorted, so re-fingerprinting a fingerprint returns it unchanged).
   function declineFingerprint(titleOrFp) {
-    const raw = String(titleOrFp || '');
-    const fp = raw.indexOf(' ') >= 0 || /[^a-z0-9 ]/.test(raw) ? fingerprint(raw) : (raw || fingerprint(raw));
-    const use = fp || fingerprint(raw);
+    const use = fingerprint(titleOrFp);
     if (!use) return Promise.resolve();
     return durable.update(STORE_KEY, (cur) => {
       const rec = normalize(cur);
