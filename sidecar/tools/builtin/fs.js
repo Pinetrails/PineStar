@@ -39,6 +39,11 @@
     const WRITE_BYTES = (deps.limits && deps.limits.writeBytes) || (1 << 20);
     const READ_RETURN = (deps.limits && deps.limits.readReturn) || 200000;
     const redact = deps.redact || ((s) => s);   // §5.6: scrub secrets out of any surfaced search line (optional, default identity)
+    // NS-5 CONVERSATIONAL PATH TRUST (optional): the ONE sanctioned way an fs call may reference a path
+    // OUTSIDE the agent jail. Injected async guard(absPath, { scope, agentId, ctx }) -> { base, abs } | throws.
+    // Wired only for the run registry (index.js). UNWIRED (the /api/file jail helper, tests) means the
+    // historic behavior — every absolute path is illegal — so those surfaces stay locked to the jail.
+    const pathTrust = typeof deps.pathTrust === 'function' ? deps.pathTrust : null;
 
     async function workspaceRoot(agentId) {
       if (environment && typeof environment.ensureWorkspace === 'function') return environment.ensureWorkspace(safeAgentId(agentId || 'agent'));
@@ -65,13 +70,22 @@
         }
       }
     }
-    // Resolve a relative path and PROVE it stays inside the agent's workspace.
-    async function resolveInside(agentId, rel) {
+    // Resolve a path and PROVE it is reachable: a RELATIVE path must stay inside the agent's workspace
+    // jail (the historic invariant); an ABSOLUTE path is illegal UNLESS a pathTrust guard is wired, in
+    // which case it is mediated against the station's blessed project roots (NS-5). opts.scope ('read' |
+    // 'write') is threaded to the guard so writes can stay consent-gated; opts.ctx is passed through.
+    async function resolveInside(agentId, rel, opts) {
+      opts = opts || {};
       rel = String(rel == null ? '' : rel);
-      // Absolute on EITHER platform is illegal: posix "/abs", win32 "C:\..." AND UNC
-      // "\\server\share" — host P.isAbsolute alone misses UNC when running on Linux.
-      if (P.win32.isAbsolute(rel) || P.posix.isAbsolute(rel) || /(^|[\\/])\.\.([\\/]|$)/.test(rel) || /^[A-Za-z]:/.test(rel) || rel.indexOf('\0') >= 0)
-        throw new Error('illegal path: ' + rel);
+      if (rel.indexOf('\0') >= 0) throw new Error('illegal path: ' + rel);
+      // Absolute on EITHER platform: posix "/abs", win32 "C:\..." AND UNC "\\server\share" (host
+      // P.isAbsolute alone misses UNC when running on Linux). Routed to path-trust when wired, else illegal.
+      const isAbs = P.win32.isAbsolute(rel) || P.posix.isAbsolute(rel) || /^[A-Za-z]:/.test(rel);
+      if (isAbs) {
+        if (!pathTrust) throw new Error('illegal path: ' + rel);
+        return await pathTrust(rel, { scope: opts.scope === 'write' ? 'write' : 'read', agentId: agentId, ctx: opts.ctx });
+      }
+      if (/(^|[\\/])\.\.([\\/]|$)/.test(rel)) throw new Error('illegal path: ' + rel);
       const base = await workspaceRoot(agentId);
       const abs = P.resolve(base, rel || '.');
       if (!pathInside(abs, base)) throw new Error('path escapes workspace');
@@ -88,7 +102,7 @@
       schema: { type: 'object', required: ['path', 'content'], properties: { path: { type: 'string' }, content: { type: 'string' } } },
       run: async (args, ctx) => {
         const aid = (ctx && ctx.agentId) || 'agent';
-        const { abs } = await resolveInside(aid, args.path);
+        const { abs } = await resolveInside(aid, args.path, { scope: 'write', ctx });
         const data = Buffer.from(String(args.content), 'utf8');
         if (data.length > WRITE_BYTES) throw new Error('file too large (' + data.length + ' > ' + WRITE_BYTES + ' bytes)');
         await fsp.mkdir(P.dirname(abs), { recursive: true });
@@ -103,7 +117,7 @@
       description: 'Read a UTF-8 text file from your workspace.',
       schema: { type: 'object', required: ['path'], properties: { path: { type: 'string' } } },
       run: async (args, ctx) => {
-        const { abs } = await resolveInside((ctx && ctx.agentId) || 'agent', args.path);
+        const { abs } = await resolveInside((ctx && ctx.agentId) || 'agent', args.path, { scope: 'read', ctx });
         let txt;
         try { txt = await fsp.readFile(abs, 'utf8'); }
         catch (e) { if (e && e.code === 'ENOENT') throw new Error('no such file: ' + args.path); throw e; }
@@ -131,7 +145,7 @@
       description: 'List files in your workspace. Pass { "recursive": true } to see the whole tree (directories end with "/"); optional "path" lists one subdirectory.',
       schema: { type: 'object', properties: { path: { type: 'string' }, recursive: { type: 'boolean' } } },
       run: async (args, ctx) => {
-        const { abs } = await resolveInside((ctx && ctx.agentId) || 'agent', (args && args.path) || '.');
+        const { abs } = await resolveInside((ctx && ctx.agentId) || 'agent', (args && args.path) || '.', { scope: 'read', ctx });
         if (args && args.recursive) {
           const out = []; await walk(abs, '', out, 500);
           return { content: out.length ? out.join('\n') : '(empty)', summary: out.length + ' entr' + (out.length === 1 ? 'y' : 'ies') };
@@ -149,7 +163,7 @@
       schema: { type: 'object', required: ['path', 'content'], properties: { path: { type: 'string' }, content: { type: 'string' } } },
       run: async (args, ctx) => {
         const aid = (ctx && ctx.agentId) || 'agent';
-        const { abs } = await resolveInside(aid, args.path);
+        const { abs } = await resolveInside(aid, args.path, { scope: 'write', ctx });
         let existing = '';
         try { existing = await fsp.readFile(abs, 'utf8'); } catch (e) { if (!(e && e.code === 'ENOENT')) throw e; }
         const combined = existing + String(args.content);
@@ -169,7 +183,7 @@
       schema: { type: 'object', required: ['path', 'find', 'replace'], properties: { path: { type: 'string' }, find: { type: 'string' }, replace: { type: 'string' } } },
       run: async (args, ctx) => {
         const aid = (ctx && ctx.agentId) || 'agent';
-        const { abs } = await resolveInside(aid, args.path);
+        const { abs } = await resolveInside(aid, args.path, { scope: 'write', ctx });
         let txt;
         try { txt = await fsp.readFile(abs, 'utf8'); }
         catch (e) { if (e && e.code === 'ENOENT') throw new Error('no such file: ' + args.path); throw e; }
@@ -197,7 +211,7 @@
 
         const plans = new Map(); // abs -> { rel, abs, exists, content, touched }
         async function planFor(rel) {
-          const resolved = await resolveInside(aid, rel);
+          const resolved = await resolveInside(aid, rel, { scope: 'write', ctx });
           const key = resolved.abs;
           if (plans.has(key)) return plans.get(key);
           let content = null, exists = false;
@@ -357,7 +371,7 @@
         args = args || {};
         const q = String(args.query != null ? args.query : '');
         if (!q) throw new Error('"query" must be a non-empty string');
-        const { base, abs } = await resolveInside((ctx && ctx.agentId) || 'agent', args.path || '.');
+        const { base, abs } = await resolveInside((ctx && ctx.agentId) || 'agent', args.path || '.', { scope: 'read', ctx });
         const startPrefix = P.relative(base, abs).split(P.sep).join('/');     // '' when searching from the root
         const ic = !!args.ignoreCase;
         const limit = Math.max(1, Math.min(1000, Number(args.limit) || 50));

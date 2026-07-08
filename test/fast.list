@@ -193,6 +193,8 @@ test/nightreport.test.js
 test/autonomy-write.test.js
 test/autonotify.test.js
 test/permgrants.test.js
+test/projects-store.test.js
+test/pathtrust.test.js
 test/permpanel.test.js
 test/permissionsstore.test.js
 test/permissions-ui.test.js

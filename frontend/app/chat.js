@@ -1144,6 +1144,9 @@ const Chat = (() => {
     const t = ev.tool || 'act';
     if (/notebook/.test(t)) return 'save a note to its memory';
     if (/summon/.test(t)) return 'summon a new agent onto the crew' + (ev.argsSummary ? ' (' + ev.argsSummary + ')' : '');
+    // NS-5 conversational path trust: a file was referenced OUTSIDE the agent's workspace — "Always" blesses
+    // the whole project folder for future reads (revocable in Permissions); argsSummary is the proposed root.
+    if (t === 'path.trust') return 'work with files in ' + (ev.argsSummary || 'a project folder') + ' (reads; "Always" trusts it for later)';
     if (/write|append|edit/.test(t)) return 'write ' + (ev.argsSummary || 'a file');
     return t.replace(/_/g, '.') + (ev.argsSummary ? ' ' + ev.argsSummary : '');
   }
