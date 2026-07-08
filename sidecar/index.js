@@ -101,6 +101,11 @@ const { makeNightshiftDriver } = require('./nightshift-driver.js'); // NS-1: the
 const contextpack = require('./contextpack.js');          // NS-2: pure recency-weighted context pack for the propose step
 const Autopilot = require('../frontend/app/autopilot.js'); // NS-1: the pure, node-exportable anti-slop ACT pipeline (reused, not rewritten)
 const Autonomy = require('../frontend/app/autonomy.js');   // NS-1: the pure posture engine (summary/normalize) — the SERVER reads the same shape the dial writes
+const Interests = require('./interests.js');               // SCOUT lane 1: pure topic-interest engine (EWMA histogram + evidence-grounded extraction)
+const Scout = require('./scout.js');                        // SCOUT lane 2: pure drafting gates + recipe parse + the honest mint ledger
+const ProspectGen = require('../frontend/app/prospect.js'); // SCOUT: the pure prospect generator — REUSED server-side (same directive + hard validation)
+const SharedSpecialties = require('../shared/specialties.js');           // SCOUT: builtin class catalog (prospect dedup + context)
+const RecipeCatalogAll = require('../frontend/app/recipe-catalog/index.js'); // SCOUT: builtin recipe catalog (draft dedup + context)
 const { makeAutoNotifier } = require('./autonotify.js');   // B4: ping a connected channel when a cron run produces work
 const configExport = require('./configexport.js');   // P1-7: station backup — export/import/reset (pure shape+redaction; index wires the live stores)
 const { writeFileDurable } = require('./durable-write.js'); // G4.2: crash-safe atomic+durable single-file replace (fsync-before-rename)
@@ -2499,6 +2504,185 @@ function recordNightshiftAct(runId, archetype) {
 }
 function archetypeForRun(runId) { const r = nightshiftActs[String(runId || '')]; return (r && r.archetype) || null; }
 
+/* ============================ SCOUT: learned interests -> NEW options in the bay ============================
+   The persisted, restart-safe half of the recruitment-bay recommendation loop (replaces the browser's
+   one-attempt-per-session prospect mint). Two durable stores (siblings of the nightshift files):
+     · scout.interests.json — the topic histogram interests.js owns (what the Commander keeps asking about)
+     · scout.state.json     — staged drafts + denylist + the honest attempt ledger scout.js owns
+   The cycle rides the SAME post-run seam as reflection/study (fire-and-forget, in-flight guarded, its own
+   abort+timeout, spend booked to the ledger): count the run -> maybe run an interest-extraction pass ->
+   maybe attempt ONE mint (prospect via the reused ProspectGen, or recipe via Scout.parseRecipe). Every
+   attempt outcome lands in the scout ledger — a rejection is VISIBLE, never a silent no-mint. Drafts are
+   propose-and-confirm only: the bay renders them with their WHY; accept/dismiss come back through
+   /api/scout/decide (dismiss denylists the fingerprint so an equivalent never re-mints). */
+const INTERESTS_FILE = path.join(WORKSPACES, 'scout.interests.json');
+const SCOUT_FILE = path.join(WORKSPACES, 'scout.state.json');
+let interestsState = (() => { try { const o = loadResilient(INTERESTS_FILE, 'scout-interests'); return Interests.normalize(o && o.state, Date.now()); } catch (_) { return Interests.fresh(Date.now()); } })();
+let scoutState = (() => { try { const o = loadResilient(SCOUT_FILE, 'scout'); return Scout.normalize(o && o.state, Date.now()); } catch (_) { return Scout.fresh(Date.now()); } })();
+function persistInterests() { try { saveResilient(INTERESTS_FILE, { v: 1, state: interestsState }); } catch (e) { console.warn('[scout] interests persist failed:', (e && e.message) || e); } }
+function persistScout() { try { saveResilient(SCOUT_FILE, { v: 1, state: scoutState }); } catch (e) { console.warn('[scout] state persist failed:', (e && e.message) || e); } }
+function scoutNote(entry) { scoutState = Scout.note(scoutState, entry, { now: Date.now() }); persistScout(); }
+
+// the kit vocabulary a drafted spec may claim — the same 6 real CAP_REGISTRY keys the browser passes the
+// prospect pipeline (app.js getCapabilityKeys). 'computer' is deliberately absent (desktop reach is opt-in).
+const SCOUT_CAP_KEYS = ['dish', 'cabinet', 'notebook', 'workbench', 'studio', 'connector'];
+const SCOUT_TIMEOUT_MS = 45000;
+let scoutingNow = false;   // one cycle in flight, ever — two same-window run-ends make the second cede
+
+// the builtin+known recipe/class summaries a draft must not duplicate. Context pushed from the browser
+// (custom classes/recipes it alone knows about) folds in when present; staged drafts count as existing too.
+function scoutExistingRecipes() {
+  const out = [];
+  for (const r of (Array.isArray(RecipeCatalogAll) ? RecipeCatalogAll : [])) out.push({ name: String(r.name || r.id || ''), tagline: String(r.tagline || '') });
+  const cx = scoutState.context;
+  if (cx && Array.isArray(cx.customRecipes)) for (const r of cx.customRecipes) out.push({ name: String(r.name || ''), tagline: String(r.tagline || '') });
+  for (const it of scoutState.staged) if (it.kind === 'recipe' && it.draft) out.push({ name: String(it.draft.name || ''), tagline: String(it.draft.tagline || '') });
+  return out.filter(r => r.name);
+}
+function scoutExistingClasses() {
+  const out = [];
+  for (const c of (SharedSpecialties.BUILTINS || [])) out.push({ name: c.name, tagline: c.tagline, tags: c.tags || {} });
+  const cx = scoutState.context;
+  if (cx && Array.isArray(cx.customClasses)) for (const c of cx.customClasses) out.push({ name: String(c.name || ''), tagline: String(c.tagline || ''), tags: {} });
+  for (const [, a] of agentRoster) if (a && a.name) out.push({ name: String(a.name), tagline: String(a.role || ''), tags: {} });
+  for (const it of scoutState.staged) if (it.kind === 'prospect' && it.draft) out.push({ name: String(it.draft.name || ''), tagline: String(it.draft.tagline || ''), tags: {} });
+  return out.filter(c => c.name);
+}
+
+/* runScoutCycle — ONE post-run cycle (fire-and-forget; never throws to the caller). Mirrors runReflection's
+   aux plumbing: its OWN abort+timeout, ONE streamed completion per pass, spend reconciled + booked. */
+async function runScoutCycle(o) {
+  const { runId, agentId, provider, model, cost } = o;
+  const unmetered = !!(o && o.unmetered);
+  const ac = new AbortController();
+  const timer = setTimeout(() => { try { ac.abort(); } catch (_) {} }, SCOUT_TIMEOUT_MS);
+  let usd = 0, tokens = 0;
+  const propose = async (system, prompt) => {
+    const req = { model, stream: true, signal: ac.signal, messages: [{ role: 'system', content: system }, { role: 'user', content: prompt }] };
+    let out = '', usage = null;
+    for await (const ev of provider.stream(req)) {
+      if (ev && ev.type === 'text') out += ev.delta;
+      else if (ev && ev.type === 'usage') usage = ev.usage;
+    }
+    const c = cost.reconcile(usage, model);
+    usd += c.usd || 0; tokens += (c.tokensIn || 0) + (c.tokensOut || 0);
+    return out;
+  };
+  try {
+    const pack = nightshiftContextPack();
+    const activity = pack.activityLines || [];
+
+    // 1) INTEREST EXTRACTION — earns itself on its own cadence (interests.shouldExtract), reads only REAL activity.
+    const ex = Interests.shouldExtract(interestsState, { now: Date.now(), activityCount: activity.length });
+    if (ex.fire) {
+      const known = Interests.summary(interestsState, { now: Date.now(), limit: 12 }).map(r => r.label);
+      const reply = await propose(
+        'You extract the recurring, specific work topics a user\'s real activity shows. Reply ONLY in the requested tagged format.',
+        Interests.buildDirective({ activityLines: activity, knownTopics: known })
+      );
+      const cands = Interests.parse(reply, { activityLines: activity });
+      interestsState = Interests.fold(interestsState, cands, { now: Date.now() });
+      persistInterests();
+      scoutNote({ kind: 'interests', outcome: cands.length ? 'folded' : 'none', reason: cands.length ? cands.map(c => c.label).join(', ') : 'no specific recurring topics' });
+    }
+
+    // 2) MINT ATTEMPT — at most one per cycle; the pure gates decide if and which kind. A non-firing gate is
+    //    NOT ledger-noise (it binds most runs by design); GET /api/scout reports the live binding instead.
+    const warm = Interests.warm(interestsState, Date.now());
+    const d = Scout.decide(scoutState, { now: Date.now(), warm: warm });
+    if (!d.fire) return;
+
+    if (d.kind === 'recipe') {
+      const existing = scoutExistingRecipes();
+      const directive = Scout.buildRecipeDirective({
+        interestsBlock: Interests.topicsBlock(interestsState, { now: Date.now(), limit: 8 }),
+        dossierBlock: commanderDossier.get(),
+        activityBlock: activity.slice(0, 8).map(a => '• ' + a).join('\n'),
+        existingRecipes: existing, gearKeys: SCOUT_CAP_KEYS
+      });
+      const reply = await propose('You are the station\'s recipe author. Follow the format exactly; ground every claim in the provided evidence.', directive);
+      const parsed = Scout.parseRecipe(reply, { existingRecipes: existing, denylist: scoutState.denylist, gearKeys: SCOUT_CAP_KEYS });
+      scoutState = Scout.stampAttempt(scoutState, 'recipe', { now: Date.now() });
+      if (parsed && parsed.none) scoutNote({ kind: 'recipe', outcome: 'none', reason: 'model judged the library already serves the observed interests' });
+      else if (!parsed) scoutNote({ kind: 'recipe', outcome: 'rejected', reason: 'draft failed hard validation (malformed / broken template / near-duplicate / denylisted)' });
+      else {
+        scoutState = Scout.stage(scoutState, { id: crypto.randomUUID(), kind: 'recipe', draft: parsed.draft, why: parsed.why, fingerprint: parsed.fingerprint }, { now: Date.now() });
+        scoutNote({ kind: 'recipe', outcome: 'staged', reason: parsed.why, title: parsed.draft.name });
+      }
+    } else if (d.kind === 'prospect') {
+      const existing = scoutExistingClasses();
+      let skillSlugs = [];
+      try { skillSlugs = skillsCatalog.catalog(SKILL_LIBRARY, { overrides: skillPrefs.overrides(), placedTypes: SCOUT_CAP_KEYS }).map(s => s.slug).filter(Boolean); } catch (_) { skillSlugs = []; }
+      const cx = scoutState.context || {};
+      const directive = ProspectGen.buildDirective({
+        dossierBlock: commanderDossier.get(),
+        worksignalSummary: [cx.worksignalSummary, Interests.topicsBlock(interestsState, { now: Date.now(), limit: 6 })].filter(Boolean).join('\n'),
+        rosterClasses: [...agentRoster].map(([, a]) => ({ name: (a && a.name) || '' })).filter(c => c.name),
+        catalogSummary: existing.map(c => ({ id: c.name, tagline: c.tagline })),
+        capabilityKeys: SCOUT_CAP_KEYS, skillSlugs: skillSlugs,
+        topRecommendation: cx.topRecommendation || ''
+      });
+      const reply = await propose('You are the station\'s recruiter. Follow the format exactly; ground every claim in the provided evidence.', directive);
+      const parsed = ProspectGen.parse(reply, { allowedKit: SCOUT_CAP_KEYS, allowedSkills: skillSlugs, existingClasses: existing });
+      scoutState = Scout.stampAttempt(scoutState, 'prospect', { now: Date.now() });
+      // ProspectGen.parse has no denylist arm — enforce the dismissed-shape memory here (same 0.6 overlap rule).
+      const denied = parsed && parsed.draft && scoutState.denylist.some(fp => Scout.overlap(parsed.fingerprint, fp) >= 0.6);
+      if (parsed && parsed.none) scoutNote({ kind: 'prospect', outcome: 'none', reason: 'model judged an existing class already serves the gap' });
+      else if (!parsed || denied) scoutNote({ kind: 'prospect', outcome: 'rejected', reason: denied ? 'dismissed-shape denylist' : 'draft failed hard validation (bad kit/skills, near-duplicate, or malformed)' });
+      else {
+        scoutState = Scout.stage(scoutState, { id: crypto.randomUUID(), kind: 'prospect', draft: parsed.draft, why: parsed.why, fingerprint: parsed.fingerprint }, { now: Date.now() });
+        scoutNote({ kind: 'prospect', outcome: 'staged', reason: parsed.why, title: parsed.draft.name });
+      }
+    }
+  } catch (e) {
+    try { scoutNote({ kind: 'cycle', outcome: 'error', reason: (e && e.message) || 'scout cycle failed' }); } catch (_) {}
+  } finally {
+    clearTimeout(timer);
+    // book the cycle's own spend into the append-only ledger (same discipline as reflection/study).
+    if (usd) { try { ledger.record({ runId, agentId, turns: 0, usd, tokens, model: model || '', unmetered }); } catch (_) {} }
+  }
+}
+
+// GET /api/scout — the bay's one read: warmth + the live gate binding + interests (with evidence) + staged
+// drafts + the attempt ledger tail. Every field derives from real persisted state (truthful telemetry).
+function handleScoutGet(req, res) {
+  const now = Date.now();
+  const gate = Scout.decide(scoutState, { now: now, warm: Interests.warm(interestsState, now) });
+  res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify({
+    warm: Interests.warm(interestsState, now),
+    gate: { fire: gate.fire, binding: gate.binding, kind: gate.kind, runsSinceMint: scoutState.runsSinceMint, mintEveryRuns: Scout.MINT_EVERY_RUNS },
+    interests: Interests.summary(interestsState, { now: now, limit: 10 }),
+    staged: scoutState.staged,
+    ledger: scoutState.ledger.slice(-20)
+  }));
+}
+// POST /api/scout/context — the browser pushes the facts only IT knows (custom classes/recipes, worksignal
+// summary, the recruiter's top pick) so server-side drafting dedupes against them. Bounded by the reducer.
+async function handleScoutContext(req, res) {
+  let body; try { body = JSON.parse(await readBody(req, 1 << 18)) || {}; } catch (e) { res.writeHead(400); return res.end('bad json'); }
+  scoutState = Scout.setContext(scoutState, body, { now: Date.now() });
+  persistScout();
+  res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify({ ok: true }));
+}
+// POST /api/scout/decide { id, decision:'accept'|'dismiss' } — the Commander's verdict on a staged draft.
+// dismiss denylists the fingerprint (an equivalent never re-mints); accept just retires it here (the browser
+// owns saving the real custom class/recipe). Unknown id -> ok:false (stale shelf), never a throw.
+async function handleScoutDecide(req, res) {
+  let body; try { body = JSON.parse(await readBody(req, 1 << 16)) || {}; } catch (e) { res.writeHead(400); return res.end('bad json'); }
+  const id = String(body.id || '');
+  const decision = body.decision === 'accept' ? 'accept' : (body.decision === 'dismiss' ? 'dismiss' : '');
+  const item = scoutState.staged.find(it => it.id === id) || null;
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  if (!decision) return json(400, { ok: false, error: 'decision must be accept|dismiss' });
+  if (!item) return json(200, { ok: false, error: 'unknown id' });
+  scoutState = decision === 'accept' ? Scout.accept(scoutState, id, { now: Date.now() }) : Scout.dismiss(scoutState, id, { now: Date.now() });
+  scoutState = Scout.note(scoutState, { kind: item.kind, outcome: decision === 'accept' ? 'accepted' : 'dismissed', reason: 'commander verdict', title: (item.draft && item.draft.name) || '' }, { now: Date.now() });
+  persistScout();
+  json(200, { ok: true, item: item });
+}
+
 /* the return-card verdict → LEARN + LEDGER bridge (NS-3). A night-shift act's runId maps to an archetype; a keep
    (approve) UP-weights it, a discard (deny) DOWN-weights it, so scoreAndSelect's per-archetype bias actually learns
    from the Commander's verdicts (the compounding moat). Also records the verdict in the autonomy ledger as an
@@ -3167,6 +3351,10 @@ function dispatchRoute(req, res) {
   if (req.method === 'GET' && req.url === '/api/nightshift/status') return handleNightshiftStatus(req, res);
   if (req.method === 'POST' && req.url === '/api/nightshift/beat') return handleNightshiftBeatNow(req, res);
   if (req.method === 'GET' && req.url.indexOf('/api/nightshift/drafts') === 0) return handleNightshiftDrafts(req, res);   // NS-4: night-shift drafts for the morning report
+  // SCOUT: learned interests + server-drafted bay options (prospects/recipes) + the honest attempt ledger
+  if (req.method === 'GET' && req.url === '/api/scout') return handleScoutGet(req, res);
+  if (req.method === 'POST' && req.url === '/api/scout/context') return handleScoutContext(req, res);
+  if (req.method === 'POST' && req.url === '/api/scout/decide') return handleScoutDecide(req, res);
   if (req.method === 'POST' && req.url === '/api/summon/ack') return handleSummonAck(req, res);
   if (req.method === 'POST' && req.url === '/api/key') return handleSetKey(req, res);
   if (req.method === 'POST' && req.url === '/api/channels/token') return handleSetChannelToken(req, res);
@@ -6022,6 +6210,21 @@ async function runOnce(o) {
   }
   if (process.env.SKYNET_SKILL_CURATOR !== '0' && result && result.reason === 'done' && _qualifies && !signal.aborted) {
     runSkillCurator({ agentId, runId, provider, model, cost, unmetered: providerUnmetered }).catch(() => {});
+  }
+  // SCOUT: the interests + drafted-options cycle rides the same post-run seam. EVERY qualifying task run
+  // feeds the cadence counters synchronously (a concurrent cycle must not eat the count); the cycle itself
+  // is fire-and-forget + in-flight-guarded and gates its own spend (extraction cadence, mint gates).
+  if (process.env.SKYNET_SCOUT !== '0' && isTask && result && result.reason === 'done' && _qualifies && !signal.aborted) {
+    try {
+      const _snow = Date.now();
+      interestsState = Interests.noteRun(interestsState, _snow);
+      scoutState = Scout.noteRun(scoutState, _snow);
+      persistInterests(); persistScout();
+    } catch (_) {}
+    if (!scoutingNow) {
+      scoutingNow = true;
+      runScoutCycle({ runId, agentId, provider, model: reflectModel || resolveEffectiveModel({ result, requestedModel: o.model, usingCodex, codexDefaultModel: CODEX_DEFAULT_MODEL, defaultModel: CRON_DEFAULT_MODEL }), cost, unmetered: providerUnmetered }).catch(() => {}).finally(() => { scoutingNow = false; });
+    }
   }
   // WORK VISIBILITY: hand the caller this run's PROVEN outputs (the same ledger runStore just recorded).
   // team.dispatch/team.spawn stamp these with the worker's agentId so the LEAD knows what its workers

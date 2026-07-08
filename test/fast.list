@@ -132,6 +132,7 @@ test/worksignal.test.js
 test/recruiter.test.js
 test/prospect.test.js
 test/interests.test.js
+test/scout.test.js
 test/dossier.test.js
 test/understanding.test.js
 test/fork.test.js
