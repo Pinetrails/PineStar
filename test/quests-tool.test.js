@@ -108,11 +108,43 @@ const ctxOf = (agentId, runId) => ({ agentId, runId });
     A.eq(minted.agentId, 'hero', 'minted quest is scoped to the calling agent');
     A.eq(minted.groundedIn, 'dossier: works with CSVs daily', 'groundedIn is carried through');
 
-    // the ≤3-open-generated cap: 2 more ok, the 4th rejected with the store's verbatim message
-    await tool.run({ op: 'mint', title: 'Gen two', contract: { type: 'attest', key: '' } }, ctxOf('hero', 'run1'));
-    await tool.run({ op: 'mint', title: 'Gen three', contract: { type: 'attest', key: '' } }, ctxOf('hero', 'run1'));
-    const capped = await tool.run({ op: 'mint', title: 'Gen four', contract: { type: 'attest', key: '' } }, ctxOf('hero', 'run1'));
+    // the ≤3-open-generated cap: 2 more ok, the 4th rejected with the store's verbatim message. NOTE: each mint is
+    // on a DISTINCT runId so the per-run mint cap (below) doesn't mask the store's open-generated cap.
+    await tool.run({ op: 'mint', title: 'Gen two', contract: { type: 'attest', key: '' } }, ctxOf('hero', 'runB'));
+    await tool.run({ op: 'mint', title: 'Gen three', contract: { type: 'attest', key: '' } }, ctxOf('hero', 'runC'));
+    const capped = await tool.run({ op: 'mint', title: 'Gen four', contract: { type: 'attest', key: '' } }, ctxOf('hero', 'runD'));
     A.ok(/max open generated quests/.test(capped.content), 'the 4th open generated mint is rejected with the store cap message');
+  }
+
+  // ---- op:mint — the MECHANICAL per-run cap: at most ONE successful mint per run ----
+  {
+    const store = fresh();
+    const tool = toolFor(store);
+
+    // first mint on run7 succeeds
+    const first = await tool.run({ op: 'mint', title: 'First quest', contract: { type: 'attest', key: '' } }, ctxOf('hero', 'run7'));
+    A.ok(/Minted quest q:\d+/.test(first.content), 'the first mint of a run succeeds');
+
+    // a SECOND mint in the SAME run is rejected mechanically (not a store cap — a per-run cap in the tool)
+    const second = await tool.run({ op: 'mint', title: 'Second quest', contract: { type: 'attest', key: '' } }, ctxOf('hero', 'run7'));
+    A.ok(/one quest per run/.test(second.content), 'a second mint in the same run is rejected with the per-run cap message');
+    A.eq(store.list().filter(q => q.title === 'Second quest').length, 0, 'the second quest was NOT persisted (the store was never reached)');
+
+    // a DIFFERENT run may mint again (the cap is per-run, not per-agent)
+    const nextRun = await tool.run({ op: 'mint', title: 'Third quest', contract: { type: 'attest', key: '' } }, ctxOf('hero', 'run8'));
+    A.ok(/Minted quest q:\d+/.test(nextRun.content), 'a new run gets a fresh mint budget');
+
+    // a REJECTED mint does not burn the run's budget: on a fresh run, a bad-contract mint fails, then a good one still lands
+    const badFirst = await tool.run({ op: 'mint', title: 'No contract quest' }, ctxOf('hero', 'run9'));
+    A.ok(/needs a valid completion contract/.test(badFirst.content), 'a bad mint is rejected (no contract)');
+    const goodAfterBad = await tool.run({ op: 'mint', title: 'Good after bad', contract: { type: 'attest', key: '' } }, ctxOf('hero', 'run9'));
+    A.ok(/Minted quest q:\d+/.test(goodAfterBad.content), 'a rejected mint did not consume the per-run budget — a valid mint still lands');
+
+    // a run with NO runId can't be tracked → the mechanical cap simply does not apply (store cap still bounds).
+    // Uses a fresh agent so hero's now-full ≤3-open-generated store cap doesn't mask what we're testing here.
+    const noRunA = await tool.run({ op: 'mint', title: 'Runless one', contract: { type: 'attest', key: '' } }, ctxOf('scout', null));
+    const noRunB = await tool.run({ op: 'mint', title: 'Runless two', contract: { type: 'attest', key: '' } }, ctxOf('scout', null));
+    A.ok(/Minted quest q:\d+/.test(noRunA.content) && /Minted quest q:\d+/.test(noRunB.content), 'without a runId the per-run cap does not fire (mints bounded only by the store cap)');
   }
 
   // ---- unknown op ----

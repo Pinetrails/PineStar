@@ -30,6 +30,8 @@ const QuestLedgerStore = (() => {
   let lastFetch = 0;           // ms of the last SUCCESSFUL fetch (0 = force next sync to fetch)
   let inflight = false;        // one fetch at a time — a slow response never stacks
   const notified = new Set();  // attest keys we've already surfaced a beat for this page session (anti-nag)
+  const seenOpen = new Set();  // open quest ids observed this session — a NEW one (mint) fires a toast + COMMS line
+  let seededOnce = false;      // the FIRST successful fetch seeds seenOpen SILENTLY (the boot backlog must not toast-storm)
 
   // shape ONE backend record into the shared quest shape the projection/rows/fold consume. Guarded so a junk
   // record degrades to a safe row rather than throwing (fail-soft, like the sibling stores' normalizers).
@@ -63,6 +65,29 @@ const QuestLedgerStore = (() => {
   function apply(records) {
     const arr = Array.isArray(records) ? records : [];
     cache = arr.filter(r => r && r.id && r.status !== 'dismissed').map(shape);
+    detectNewQuests();
+  }
+
+  // §E surfacing: a newly-APPEARED open quest (a mint the agent just committed) must be SEEN without opening the
+  // QUEST LOG. The very first successful fetch of a session seeds the seen-set SILENTLY (the boot backlog is not
+  // "new"); every later fetch announces only ids not seen before. Session-local — no persistence (the notify
+  // record is the receipt, and the ledger itself is durable server-side).
+  function detectNewQuests() {
+    const openNow = cache.filter(q => q.status === 'open');
+    if (!seededOnce) { for (const q of openNow) seenOpen.add(q.id); seededOnce = true; return; }
+    for (const q of openNow) {
+      if (seenOpen.has(q.id)) continue;
+      seenOpen.add(q.id);
+      announceNewQuest(q);
+    }
+  }
+  // ONE glance per new quest: a persistent NOTIFICATIONS record + gold toast (StationUI.notify) and a terse ambient
+  // COMMS line (Chat.broadcast — Lane 1's queue means it is never dropped by the celebration coalesce). All guarded:
+  // in a headless/test context (no StationUI/Chat) this is a silent no-op, never a throw.
+  function announceNewQuest(q) {
+    const title = String((q && q.title) || (q && q.id) || 'a quest').replace(/\s+/g, ' ').trim() || 'a quest';
+    if (typeof StationUI !== 'undefined' && typeof StationUI.notify === 'function') { try { StationUI.notify('⚑ new quest — ' + title, 'gold'); } catch (_) {} }
+    if (typeof Chat !== 'undefined' && typeof Chat.broadcast === 'function') { try { Chat.broadcast('NEW QUEST · ' + title.toUpperCase(), { highlight: title.toUpperCase(), tone: 'gold' }); } catch (_) {} }
   }
 
   async function refetch() {
@@ -142,11 +167,12 @@ const QuestLedgerStore = (() => {
   }
 
   // init on enter-game: a clean fetch so the first quest-log render already has the ledger (the tick keeps it fresh).
-  function init() { cache = []; lastFetch = 0; notified.clear(); refetch(); }
+  // seededOnce resets so the incoming ledger seeds the new-quest baseline silently (no toast-storm on enter).
+  function init() { cache = []; lastFetch = 0; notified.clear(); seenOpen.clear(); seededOnce = false; refetch(); }
   // a fresh Commander inherits no ledger cache (mirrors the sibling stores' reset).
-  function reset() { cache = []; lastFetch = 0; notified.clear(); }
+  function reset() { cache = []; lastFetch = 0; notified.clear(); seenOpen.clear(); seededOnce = false; }
 
-  return { init, sync, quests, pendingAttests, confirm, dismiss, reset, _shape: shape, _apply: apply };
+  return { init, sync, quests, pendingAttests, confirm, dismiss, reset, _shape: shape, _apply: apply, _seededOnce: () => seededOnce };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = { QuestLedgerStore };

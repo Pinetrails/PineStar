@@ -4,9 +4,15 @@
    quest could never work. This is the read half; the write half is the quest.update tool (tools/builtin/quests.js).
 
    Two functions, mirroring dossierinject.js exactly:
-     questBlock(quests) — format an array of open quest records into the STATION QUESTS block, or '' when empty.
+     questBlock(quests) — format an array of open quest records into the STATION QUESTS block. A NON-empty list →
+       the full block (how-to header + minting doctrine + per-quest stanzas). An EMPTY/absent list → the MINIMAL
+       minting-doctrine block (NOT '') — a no-quest agent is exactly who should consider grounded minting (plan §E).
      withQuests(system, block) — append the block to a system prompt; an empty/whitespace block is a STRICT no-op
-       (byte-identical to a quest-less run — the invariant the cron no-op tests depend on). Idempotent.
+       (byte-identical to a quest-less run — the invariant the non-task path depends on). Idempotent.
+
+   NO-OP INVARIANT (moved to the caller): the strict byte-identical no-op now lives at the injection call site
+   (sidecar/index.js), which composes questBlock ONLY for a task run (isTask). A non-task run never calls it, so
+   withQuests('' , ...) stays the no-op for that path. questBlock itself never returns '' anymore.
 
    PURE (a `withQuests`/`questBlock` on the SK namespace in the browser UMD shape, module.exports under node) +
    node-testable: no Date.now / Math.random / fs / network — exactly what lint-determinism.js requires of a helper
@@ -22,13 +28,31 @@
   // keep the whole block bounded so a large open ledger can't crowd out the rest of the prompt. Past the cap the
   // OLDEST quests are dropped first (a "…and N more in the QUEST LOG" line replaces them) — the newest direction
   // is what the agent should act on now, and nothing is silently lost (the full ledger is one tool/route call away).
-  const BLOCK_CAP = 2000;
+  // ~2200 covers the fixed header + minting doctrine + a handful of stanzas (plan §E cap guidance).
+  const BLOCK_CAP = 2200;
 
   const HEADER = 'STATION QUESTS — your standing objectives for the Commander. These progress the game in sync '
     + 'with the Commander\'s real work. To interact, use the quest.update tool: op:"progress" ticks a named step '
     + '(pass a short note on what you did); op:"attest_complete" PROPOSES a quest done with concrete evidence — it '
     + 'is NEVER complete until the Commander confirms. Never claim a quest done in prose alone; a mechanical quest '
     + 'completes on its own when the harness proves it.';
+
+  // MINTING DOCTRINE (plan §E — generative minting). Rides EVERY task run's block (with quests or not), because a
+  // no-quest agent is exactly who should consider minting. Tight + grounded + bounded: mint ONLY off a concrete
+  // dossier/memory fact that reveals a recurring need or stated goal with no matching open quest, cite that fact in
+  // groundedIn, aim at a real outcome the Commander wants (never "busywork" — a literal past failure), one per run.
+  const MINT_DOCTRINE = 'MINTING — you MAY create ONE new quest this run with quest.update op:"mint", but ONLY when a '
+    + 'concrete fact in your dossier or memory reveals a recurring need or a stated goal that has NO matching open '
+    + 'quest above. Ground it: pass groundedIn naming that exact fact. A minted quest must be a real outcome the '
+    + 'Commander wants — a goal, an aspiration, or work to automate — with a valid completion contract; never '
+    + 'busywork, never a generic chore. If nothing concrete motivates one, mint nothing. At most ONE mint per run.';
+
+  // the fixed prefix carried by a NON-EMPTY block: the how-to header + the minting doctrine (both always ride).
+  const FIXED = HEADER + '\n\n' + MINT_DOCTRINE;
+
+  // the MINIMAL block emitted when the agent has NO open quests: a short frame + the minting doctrine only. This is
+  // NOT '' — an empty ledger for a task run should still invite grounded minting (plan §E). withQuests appends it.
+  const MINT_ONLY = 'STATION QUESTS — you have no open quests for the Commander right now.\n\n' + MINT_DOCTRINE;
 
   // contract type → the one-line "how this completes" phrasing the agent reads under each quest.
   function completesWhen(contract) {
@@ -71,16 +95,18 @@
     return lines.join('\n');
   }
 
-  // format an agent's OPEN quests into the STATION QUESTS block. Empty/absent list → '' (the exact empty string,
-  // so withQuests stays a strict no-op). Defensively clips to BLOCK_CAP, dropping the OLDEST quests first.
+  // format an agent's OPEN quests into the STATION QUESTS block. Empty/absent list → the MINIMAL minting-doctrine
+  // block (NOT '' — an empty ledger for a task run should still invite grounded minting, plan §E). The caller gates
+  // this on isTask, so a non-task run never composes it; withQuests('' ...) stays the no-op for the non-task path.
+  // Defensively clips to BLOCK_CAP, dropping the OLDEST quests first.
   function questBlock(quests) {
     const list = Array.isArray(quests) ? quests.filter(Boolean) : [];
-    if (!list.length) return '';
+    if (!list.length) return MINT_ONLY;
 
     // build stanzas in ledger order (oldest→newest), then keep from the NEWEST end until the cap is reached, so
-    // the quests dropped under pressure are the oldest ones. The header always rides (it's the how-to contract).
+    // the quests dropped under pressure are the oldest ones. The fixed prefix (header + minting doctrine) always rides.
     const stanzas = list.map(stanza);
-    const headerLen = HEADER.length + 2;   // + the '\n\n' that joins the header to the first stanza
+    const headerLen = FIXED.length + 2;    // + the '\n\n' that joins the prefix to the first stanza
 
     let used = headerLen;
     let firstKept = stanzas.length;        // index of the oldest stanza we keep (exclusive-below = dropped)
@@ -92,7 +118,7 @@
     }
     const dropped = firstKept;             // stanzas[0..firstKept) were dropped
     const kept = stanzas.slice(firstKept);
-    const parts = [HEADER];
+    const parts = [FIXED];
     if (dropped > 0) parts.push('…and ' + dropped + ' more open quest' + (dropped === 1 ? '' : 's') + ' in the QUEST LOG.');
     for (const s of kept) parts.push(s);
     return parts.join('\n\n');
@@ -109,5 +135,5 @@
     return sys ? (sys + '\n\n' + b) : b;
   }
 
-  return { questBlock: questBlock, withQuests: withQuests, _internals: { completesWhen: completesWhen, nextStep: nextStep, stanza: stanza, BLOCK_CAP: BLOCK_CAP } };
+  return { questBlock: questBlock, withQuests: withQuests, _internals: { completesWhen: completesWhen, nextStep: nextStep, stanza: stanza, BLOCK_CAP: BLOCK_CAP, MINT_ONLY: MINT_ONLY, MINT_DOCTRINE: MINT_DOCTRINE } };
 });

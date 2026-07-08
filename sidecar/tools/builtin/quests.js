@@ -13,7 +13,8 @@
      • mint            — mint a NEW personalized quest (questStore.mint), kind:'generated', createdBy:'agent:<id>',
                          scoped to the calling agent (generative-minting, plan §E). The store enforces THE CONTRACT
                          RULE (no valid contract → rejected), title-dedup, and the ≤3-open-generated cap; its error
-                         strings are surfaced VERBATIM so the model can self-correct.
+                         strings are surfaced VERBATIM so the model can self-correct. A MECHANICAL per-run cap (this
+                         file) caps it at ONE successful mint per run — a run can't dump a backlog in a single pass.
 
    capability: 'memory' — the universally-granted builtin family (notebook/todo/skill/recall/widget all live here;
    granted by the `notebook` object, which every default office carries). A quest is the agent's own standing
@@ -34,12 +35,20 @@
   const OPS = ['progress', 'attest_complete', 'mint'];
   const str = v => String(v == null ? '' : v).trim();
 
+  const MINTS_PER_RUN = 1;      // at most ONE successful mint per run — enforced MECHANICALLY here, not just by prompt doctrine
+  const MINT_RUNS_CAP = 200;    // FIFO bound on the per-run mint counter so a long-lived process never grows it unbounded
+
   function makeQuestTools(deps) {
     deps = deps || {};
     const store = deps.store;
     if (!store) throw new Error('quests.js requires { store }');
     if (!deps.clock || typeof deps.clock.now !== 'function') throw new Error('quests.js requires { clock }');   // injected wall-clock only — determinism law, no ambient Date.now
     const now = () => deps.clock.now();
+
+    // per-run mint budget: runId → count of SUCCESSFUL mints this run. Insertion-ordered Map, FIFO-evicted at
+    // MINT_RUNS_CAP so it stays bounded across the process lifetime. A run with no runId can't be tracked, so the
+    // mechanical cap simply doesn't apply there (the store's ≤3-open-generated cap still bounds it).
+    const mintsByRun = new Map();
 
     const questUpdateTool = {
       name: 'quest.update', capability: 'memory', scope: 'write', requiresConsent: false, timeoutMs: 8000,
@@ -108,6 +117,12 @@
 
         // ---- mint: create a new personalized quest (contract-enforced by the store) ----
         if (op === 'mint') {
+          // MECHANICAL per-run cap: one successful mint per run. This guards against a run trying to dump a backlog
+          // of quests in a single pass, independent of the prompt doctrine. Only SUCCESSFUL mints consume the budget
+          // (a rejected contract/dup/cap doesn't burn it — the agent can fix and retry).
+          if (runId && (mintsByRun.get(runId) || 0) >= MINTS_PER_RUN) {
+            return { content: 'one quest per run — the Commander\'s log is not a backlog dump. You already minted a quest this run.', summary: 'mint cap' };
+          }
           const r = await store.mint({
             title: args.title,
             desc: args.desc,
@@ -120,6 +135,10 @@
             createdBy: 'agent:' + agentId
           }, now());
           if (!r || r.ok === false) return { content: (r && r.error) ? r.error : 'could not mint quest', summary: 'rejected' };
+          if (runId) {
+            mintsByRun.set(runId, (mintsByRun.get(runId) || 0) + 1);
+            if (mintsByRun.size > MINT_RUNS_CAP) { const oldest = mintsByRun.keys().next().value; mintsByRun.delete(oldest); }   // FIFO evict the oldest run
+          }
           return { content: 'Minted quest ' + r.id + '. It is now live in the Commander\'s QUEST LOG.', summary: 'minted ' + r.id };
         }
 

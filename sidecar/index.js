@@ -5949,11 +5949,13 @@ async function runOnce(o) {
       preloadedSkillBlock = runtimeSkills.composeLoaded(loaded);
     }
   } catch (_) { /* explicit skill preload must never break a run */ }
-  // QUEST V2 §B (agent awareness): fold THIS agent's OPEN quests (its own + station-wide) into the prompt so a
-  // TASK run can SEE and ACT on them (via the quest.update tool). This rides the ONE place the final system prompt
-  // is assembled, so it covers EVERY surface identically — browser-composed (`system` arrives verbatim in the run
-  // request) AND server-composed cron/worker runs (`system` arrived pre-withDossier'd). Empty ledger → questBlock
-  // returns '' → withQuests is a strict byte-identical no-op (protects the cron no-op tests). Fail-open: ANY
+  // QUEST V2 §B (agent awareness) + §E (generative minting): fold THIS agent's OPEN quests (its own + station-wide)
+  // into the prompt so a TASK run can SEE and ACT on them (via the quest.update tool). This rides the ONE place the
+  // final system prompt is assembled, so it covers EVERY surface identically — browser-composed (`system` arrives
+  // verbatim in the run request) AND server-composed cron/worker runs (`system` arrived pre-withDossier'd). Empty
+  // ledger → questBlock now returns the MINIMAL minting-doctrine block (NOT '') — a no-quest agent is exactly who
+  // should consider grounded minting (plan §E). The strict byte-identical no-op is preserved by the isTask GATE:
+  // a non-task run never composes a block, so withQuests('' , ...) stays a no-op for that path. Fail-open: ANY
   // quest-store read error yields no block, never a broken run. Only task runs (tools available) carry it.
   let questsBlock = '';
   try { if (isTask) questsBlock = questBlock(questStore.openForAgent(agentId)); } catch (_) { questsBlock = ''; }

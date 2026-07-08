@@ -10,16 +10,25 @@ const { questBlock, withQuests, _internals } = require('../sidecar/questinject.j
 
 const SYS = 'You are an autonomous STARNET station agent.';
 
-/* ---------- empty list → the EXACT empty string (so withQuests stays a no-op) ---------- */
-A.eq(questBlock([]), '', 'empty list → exact empty string');
-A.eq(questBlock(null), '', 'null → exact empty string');
-A.eq(questBlock(undefined), '', 'undefined → exact empty string');
+/* ---------- empty list → the MINIMAL minting-doctrine block (NOT '' — a no-quest agent should still mint, §E) ---------- */
+{
+  const mb = questBlock([]);
+  A.ok(mb.indexOf('STATION QUESTS') === 0, 'empty ledger → a minimal block still headed STATION QUESTS (never the empty string)');
+  A.ok(/no open quests/.test(mb), 'the minimal block says there are no open quests right now');
+  A.ok(mb.indexOf('op:"mint"') >= 0, 'the minimal block carries the minting doctrine (quest.update op:"mint")');
+  A.ok(mb.indexOf('groundedIn') >= 0, 'the minting doctrine demands grounding (groundedIn a concrete fact)');
+  A.ok(mb.indexOf('busywork') >= 0, 'the minting doctrine forbids busywork');
+  A.ok(mb.length < 900, 'the minimal block stays a few lines (minting doctrine only, no stanzas)');
+  A.eq(questBlock(null), mb, 'null → the same minimal minting block');
+  A.eq(questBlock(undefined), mb, 'undefined → the same minimal minting block');
+  A.eq(mb, _internals.MINT_ONLY, 'the empty-ledger block is exactly the exported MINT_ONLY constant');
+}
 
-/* ---------- the no-op invariant: an empty/whitespace block leaves the system byte-identical ---------- */
-A.eq(withQuests(SYS, ''), SYS, 'an empty block is a strict no-op (byte-identical)');
+/* ---------- withQuests still no-ops on an EMPTY block (the non-task path never composes a block) ---------- */
+A.eq(withQuests(SYS, ''), SYS, 'an empty block is a strict no-op (byte-identical) — the non-task path');
 A.eq(withQuests(SYS, '   \n  '), SYS, 'a whitespace-only block is a no-op');
 A.eq(withQuests(SYS, null), SYS, 'a null block is a no-op');
-A.eq(withQuests(SYS, questBlock([])), SYS, 'an empty ledger → questBlock() → withQuests is a strict no-op (the cron invariant)');
+A.eq(withQuests(SYS, questBlock([])), SYS + '\n\n' + questBlock([]), 'an empty ledger now APPENDS the minting-doctrine block (a task run should mint)');
 
 /* ---------- a run quest with steps: header, id+title, next step, completes-when ---------- */
 {
@@ -29,6 +38,7 @@ A.eq(withQuests(SYS, questBlock([])), SYS, 'an empty ledger → questBlock() →
   const b = questBlock([q]);
   A.ok(b.indexOf('STATION QUESTS') === 0, 'block starts with the STATION QUESTS header');
   A.ok(b.indexOf('quest.update') >= 0, 'header tells the agent to use the quest.update tool');
+  A.ok(b.indexOf('op:"mint"') >= 0 && b.indexOf('At most ONE mint per run') >= 0, 'the full block carries the minting doctrine too (rides every task run)');
   A.ok(b.indexOf('[q:1] Automate the CSV export') >= 0, 'stanza carries id + title');
   A.ok(b.indexOf('next step (b): write the script') >= 0, 'stanza names the FIRST not-done step (a is done → b)');
   A.ok(b.indexOf('the bound run finishes') >= 0, 'run contract phrased "the bound run finishes"');
