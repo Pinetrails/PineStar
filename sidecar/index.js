@@ -5338,8 +5338,17 @@ async function runOnce(o) {
   // (orchestration.js validates worker.agentId !== leadId; team.spawn mints 'sub-'+uuid), so a lead fanning out
   // to its crew is never self-blocked — only two runs literally sharing one agent's desk collide here.
   if (concurrencyGate.inFlight(agentId) > 0) {
+    // NAME THE HOLDER (2026-07-07 escape: 27 minutes of "already running" with NOTHING visibly running —
+    // the app asserted a state the user couldn't see). runsMeta knows every route-level run (interactive /
+    // cron run-now / nightshift / workshop); a scheduled-cron fire may not be in it, so fall back honestly.
+    let holder = '';
+    try {
+      const h = [...runsMeta.values()].filter(m => m && m.agentId === agentId).sort((a, b) => a.startedAt - b.startedAt)[0];
+      holder = h ? ('The run holding it started ' + Math.max(1, Math.round((Date.now() - h.startedAt) / 60000)) + ' min ago (source: ' + (h.source || 'unknown') + ').')
+                 : 'The run holding it is a background one (a scheduled routine or delegated worker).';
+    } catch (_) {}
     emit('agent.run.start', { agentId, runId, trigger: trigger, model });
-    emit('agent.run.error', { agentId, runId, transient: true, message: 'That agent is already running a task. Wait for it to finish before starting another — one run at a time per agent (they share a workspace).' });
+    emit('agent.run.error', { agentId, runId, transient: true, message: 'That agent is already running a task — one run at a time per agent (they share a workspace). ' + holder + ' Wait for it to finish, check ROUTINES for a recurring job on this agent, or press E-STOP to stop everything.' });
     emit('agent.run.end', { agentId, runId, reason: 'error', turns: 0, usd: 0 });
     return;   // no slot was taken (we checked BEFORE tryEnter), so nothing to leave; the outer finally is a no-op here
   }

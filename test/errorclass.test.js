@@ -201,6 +201,15 @@ const F = (err, status) => friendlyError(err, status);
   A.ok(/Something went wrong/i.test(v.userMessage), 'unknown has a friendly generic headline');
   A.ok(/something weird happened/.test(v.raw), 'unknown keeps the raw text');
 
+  // agent_busy (2026-07-07 escape): the per-agent mutex message must NEVER flatten to "Something went wrong" —
+  // the sidecar's sentence names the holder (age/source) + the doors (ROUTINES, E-STOP); show it VERBATIM.
+  const busyRaw = 'That agent is already running a task — one run at a time per agent (they share a workspace). The run holding it started 12 min ago (source: cron). Wait for it to finish, check ROUTINES for a recurring job on this agent, or press E-STOP to stop everything.';
+  v = F(new Error(busyRaw));
+  A.eq(v.kind, 'agent_busy', 'the run-mutex message classifies as agent_busy, not unknown');
+  A.eq(v.userMessage, busyRaw, 'the sidecar sentence passes through VERBATIM (holder + age + doors)');
+  A.eq(v.retryable, true, 'agent_busy is retryable (the slot frees when the holder finishes)');
+  A.ok(!/Something went wrong/.test(v.userMessage), 'the generic flattening is gone');
+
   // robustness: a bare string and a null both classify without throwing
   A.eq(F('sidecar HTTP 500').kind, 'server_error', 'a bare string error is accepted');
   A.notThrows(() => F(null), 'null error does not throw');

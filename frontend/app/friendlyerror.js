@@ -93,6 +93,10 @@
     // real second half of the unlock chain. The door is SETTINGS (connect Spotify), NOT REFIT (the gear is
     // already on station), so this is distinct from `capdenied` which fires when no JUKEBOX is placed at all.
     spotify_not_connected: { retryable: false, action: 'settings', msg: 'The JUKEBOX is on station, but Spotify isn’t connected yet — connect it in Settings, then try again.' },
+    // the one-run-at-a-time mutex: the SIDECAR message names the holder (age/source) + the doors (ROUTINES,
+    // E-STOP) — friendlyError passes it through verbatim instead of flattening to `unknown` (2026-07-07 escape:
+    // the user got "Something went wrong" in a loop while the real answer was one sentence away).
+    agent_busy:    { retryable: true,  action: null,       msg: 'That agent is still busy with a previous run — wait for it to finish, or press E-STOP to abort everything.' },
     unknown:       { retryable: true,  action: null,       msg: 'Something went wrong on that turn — try again.' }
   };
 
@@ -207,6 +211,9 @@
     } else if (/\bcapdenied\b/.test(raw.toLowerCase()) || /^no\s+\w+\s+—/.test(raw.toLowerCase()) || /needs a capability/.test(raw.toLowerCase())) {
       // a capability denial is UI-level (the sidecar classifier doesn't model it) — catch it before delegating.
       kind = 'capdenied';
+    } else if (/already running a task/.test(raw.toLowerCase())) {
+      // the per-agent run mutex — UI-level, and the sidecar message already names the holder + doors.
+      kind = 'agent_busy';
     } else if (classifyApiError) {
       // delegate to the single-sourced truth table; synthesize the err shape it expects (status + message).
       try {
@@ -227,6 +234,11 @@
     if (kind === 'capdenied') {
       const cap = capFromRaw(raw);
       return { userMessage: capdeniedMessage(cap), kind: kind, retryable: k.retryable, action: k.action, cap: cap, raw: raw };
+    }
+    // agent_busy: the sidecar composed the full truthful sentence (who holds the agent, since when, the doors)
+    // — show THAT, not a flattened generic. Falls back to the canned line if the raw is somehow bare.
+    if (kind === 'agent_busy' && /already running a task/.test(raw.toLowerCase())) {
+      return { userMessage: raw, kind: kind, retryable: k.retryable, action: k.action, raw: raw };
     }
     return { userMessage: k.msg, kind: kind, retryable: k.retryable, action: k.action, raw: raw };
   }
