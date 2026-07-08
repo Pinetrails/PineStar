@@ -4669,9 +4669,17 @@ const World = (() => {
       if (agent && bay.agentId === agent.id) continue;                 // the hero already represents its own bay
       const p = geo.props && geo.props.find(pp => pp.id === bay.propId);
       if (!p) continue;
-      const fx = (p.x + (p.w > 1 ? 1 : 0)) * T + T / 2;                // foot at the bay's bottom-centre — stepCrew walks it to its desk's chair when working
-      const fy = (p.y + (p.h || 1) - 1) * T + T - 1;
-      want.set(bay.agentId, { x: fx, y: fy });
+      // foot IN FRONT of the bay (south approach, PropAnchor side-fallback) — never inside the bay's own
+      // footprint: a body footed on the bay's bottom tile sits one pixel above the bay's y-sort line, so the
+      // taller bay sprite draws OVER it and the agent reads as missing (the every-relaunch "agents hiding
+      // behind their bay" bug, 2026-07-07). A walled-in bay / missing module falls back to the old
+      // bottom-centre foot so the body still exists somewhere rather than nowhere.
+      let f = null;
+      if (typeof PropAnchor !== 'undefined') {
+        const a = PropAnchor.deriveAnchor(p, geo, { approach: 'south', extra: blocked });
+        if (a) f = footOf(a.tx, a.ty);
+      }
+      want.set(bay.agentId, f || { x: (p.x + (p.w > 1 ? 1 : 0)) * T + T / 2, y: (p.y + (p.h || 1) - 1) * T + T - 1 });
     }
     crew = crew.filter(b => b.summoned || want.has(b.agentId));        // drop plan bodies whose bay is gone; KEEP summoned crew
     for (const [aid, pos] of want) {
@@ -4731,7 +4739,14 @@ const World = (() => {
   // floor-reset paths (loadStation / syncCrewFromPlan) preserve it, and lit by setActivityFor on a real run.
   function spawnAgent(a) {
     if (!a || !a.id || (agent && a.id === agent.id)) return;
-    if (crew.some(b => b.agentId === a.id)) return;                       // already present
+    // already on the floor as a plan-derived bay body (loadStation's rederive runs before this on boot):
+    // REHYDRATE its inner life instead of bailing. `summoned` is runtime-only, so across a relaunch a
+    // bay-bound roster agent otherwise freezes at its bay foot (stepCrew gates the sentience engine on the
+    // flag) and VANISHES outright if its bay is later deleted (syncCrewFromPlan keeps only summoned bodies
+    // when a bay disappears) — while the manifest/dossier still list it. The law this restores: a roster
+    // agent ALWAYS has a live floor body; its bay decides where it homes, never whether it exists (2026-07-07).
+    const ex = crew.find(b => b.agentId === a.id);
+    if (ex) { ex.summoned = true; return; }
     const f = geo ? workerFoot() : { x: 0, y: 0 };                        // pre-geo: parked at origin, re-footed on first syncCrewFromPlan
     const b = makeCrewBody(a.id, a.name || a.id, a.color || crewColor(a.id), f.x, f.y, a.skin);
     b.summoned = true; b.wakeAt = fnow;                                   // a small materialize ripple
@@ -5567,7 +5582,7 @@ const World = (() => {
           id: b.id, name: b.name, hero: !!hero,
           tile: t, px: Math.round(b.px), py: Math.round(b.py), dir: b.dir, state: b.state,
           goal: b.goal || null, moving: !!b.target, working: !!b.working, sitting: !!b.sitting,
-          seated: !!b.seated, unplaced: !!b.unplaced,
+          seated: !!b.seated, unplaced: !!b.unplaced, summoned: !!b.summoned,   // summoned = carries the idle inner life (roster bodies must, post-relaunch too)
           target: b.target ? { tile: tileOf(b.target.x, b.target.y), x: Math.round(b.target.x), y: Math.round(b.target.y) } : null,
           glance: b.glance ? { dir: b.glance.dir, ms: Math.max(0, Math.round((b.glance.until || 0) - fnow)) } : null,
           zone: z, inOwnZone: tileInZone(z, t.x, t.y)

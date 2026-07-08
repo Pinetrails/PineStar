@@ -375,6 +375,14 @@ const App = (() => {
     agents.delete(id);
     if (wasFocused) focusAgent('agent');
     if (typeof World !== 'undefined' && World.despawnAgent) World.despawnAgent(id);   // pull its floor body
+    // unbind every prop still assigned to the gone agent (its bay above all): a stale bay→agentId binding
+    // re-mints a floor body for a DELETED agent on the next floor rederive (ghost crew) and keeps claiming
+    // the dock in REFIT. assignPropAgent fires station.onChange, so the world rederives on its own.
+    try {
+      if (station && station.propsByAgent && station.assignPropAgent) {
+        for (const p of station.propsByAgent(id)) station.assignPropAgent(p.id, '');
+      }
+    } catch (_) {}
     // retire workstreams bound to the gone agent so the rail can't reopen a stream with no agent behind it.
     try {
       if (typeof Workstreams !== 'undefined' && Workstreams.removeByAgent) Workstreams.removeByAgent(id);
