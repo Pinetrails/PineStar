@@ -606,7 +606,7 @@ it." Structurally impossible today because:
 
 **Lane queue (claim in-file before building; shared/events.js additive-only via owner):**
 
-- **NS-5 · Project Lens core — ✅ MERGED 2026-07-08 (agent/ns5-path-trust → b6ef5092, gates fast 279 + http full green; live e2e vs real sidecar: one prompt → always → read → grant listed → restart survives → revoke re-prompts). Direction was LOCKED: no prop/picker, Hermes-fluid. OPEN: autonomous hard-deny proven at unit layer only (no live autonomous HTTP drive); consent card render not screenshotted; night-shift CONSUMPTION of blessed roots = NS-5d below.** The user just *tells* the agent a path in chat
+- **NS-5 · Project Lens core — ✅ MERGED 2026-07-08 (agent/ns5-path-trust → b6ef5092, gates fast 279 + http full green; live e2e vs real sidecar: one prompt → always → read → grant listed → restart survives → revoke re-prompts). Direction was LOCKED: no prop/picker, Hermes-fluid. OPEN: autonomous hard-deny proven at unit layer only (no live autonomous HTTP drive); consent card render not screenshotted; night-shift CONSUMPTION of blessed roots = part of the NS-5b lane (focus resolver picks the root, beats scan it).** The user just *tells* the agent a path in chat
   ("go to C:\...\myproject and fix X") and it works there. Mechanics (verified 2026-07-08:
   fs.js:73 rejects ALL absolute paths; permgrants GRANTABLE = ['cabinet:write'] only — this
   is a new capability, not a UX swap):
