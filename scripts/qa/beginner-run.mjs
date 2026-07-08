@@ -65,7 +65,17 @@ export const STEP_DEFS = [
   { id: 'connect',        label: 'name + key + model entered',          budgetMs: 30000 },
   { id: 'create-agent',   label: 'WAKE OVERSEER accepted',              budgetMs: 30000 },
   { id: 'awakening',      label: 'in-game floor + awakening began',     budgetMs: 90000 },
-  { id: 'first-directive',label: 'first directive interaction reached', budgetMs: 60000, boundary: true },
+  // first-directive's budget must cover the WHOLE remaining awakening cinematic, not just a control
+  // appearing. The awakening (onboarding.js) is a deliberate, minutes-long "witnessed birth" — its own
+  // comments call it "the first three minutes" — that types ignite → flood → first-contact → mandate →
+  // the stakes line → the pain PROMPT before the first selectable option chip (.fnv-opts button) ever
+  // renders. MEASURED live (2026-07-08, loaded multi-agent host): the focused dialogue panel opens
+  // ~83s after WAKE and the first chip lands ~93s after WAKE (~102s of wall clock into the run). The
+  // original 60000 was an un-measured estimate this cinematic always overran under load — the fresh-user
+  // path never actually stalls (the ceremony is fine; there are zero console errors/exceptions), the
+  // BUDGET was simply too tight. 180s gives honest headroom on a slow/loaded box while the real gate —
+  // the 10-minute TOTAL (overTotal, checked before every step) — still catches a genuinely hung birth.
+  { id: 'first-directive',label: 'first directive interaction reached', budgetMs: 180000, boundary: true },
   { id: 'first-deliverable', label: 'first visible deliverable',        budgetMs: 240000, liveOnly: true }
 ];
 
@@ -392,8 +402,10 @@ if (INVOKED_DIRECTLY) (async () => {
     const g = document.getElementById('screen-game'); if (!g || !g.classList.contains('active')) return false;
     const dlg = document.querySelector('#chat-panel .fnv-dialogue');
     if (dlg) return true;
-    // fallback: the awakening's early monologue speaks through World.say bubbles before the panel opens
-    return !!document.querySelector('.fnv-dialogue, .say-bubble, #chat-log .msg');
+    // fallback: before the focused panel opens, the awakening's monologue mirrors into COMMS as .cmsg
+    // rows (the live class — the old '#chat-log .msg' selector was stale and never matched, so this
+    // fallback silently no-op'd; verified live 2026-07-08 that #chat-log children are '.cmsg agent').
+    return !!document.querySelector('.fnv-dialogue, .say-bubble, #chat-log .cmsg');
   } catch (e) { return false; } })()`;
   // an interactive directive point: the dialogue exposes clickable option chips OR a custom input.
   const directiveInteractive = `(() => { try {
