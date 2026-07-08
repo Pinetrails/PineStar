@@ -27,7 +27,13 @@
   'use strict';
 
   const OR_URL = 'https://openrouter.ai/api/v1/chat/completions';
-  const DEFAULT_IMAGE_MODEL  = 'google/gemini-2.5-flash-image';   // text->image; override per call via args.model
+  // 2026-07-07 image-quality escape: the old default (gemini-2.5-flash-image, "Nano Banana 1") is the OLDEST
+  // image model in the live OpenRouter catalog — garbled text on UI mockups/marketing assets was its signature.
+  // Default = current-gen fast (Nano Banana 2); PREMIUM = Nano Banana Pro (built for legible text / hero art);
+  // LEGACY = the old slug, kept as the automatic fallback if the newer slug ever errors on this account.
+  const DEFAULT_IMAGE_MODEL  = 'google/gemini-3.1-flash-image';   // text->image; override per call via args.model
+  const PREMIUM_IMAGE_MODEL  = 'google/gemini-3-pro-image';       // readable text, hero/marketing quality
+  const LEGACY_IMAGE_MODEL   = 'google/gemini-2.5-flash-image';   // known-good everywhere; the fallback wire
   const DEFAULT_VISION_MODEL = 'google/gemini-2.5-flash';         // image->text (multimodal); override via args.model
   const GEN_TIMEOUT_MS    = 110000;   // image generation can take 10-40s; the tool-level timeout sits above this
   const ANALYZE_TIMEOUT_MS = 55000;
@@ -122,8 +128,10 @@
     const generateTool = {
       name: 'image_generate', capability: 'studio', scope: 'write', requiresConsent: true, timeoutMs: GEN_TIMEOUT_MS + 15000,
       description: 'Generate an image from a text prompt and SAVE it into your workspace (returns the saved path + a viewer URL). ' +
-        'Use for any "draw / create / generate an image of …" request. Optional "model" picks the image model ' +
-        '(default google/gemini-2.5-flash-image; also e.g. black-forest-labs/flux.2-pro). Optional "path" sets the output filename.',
+        'Use for any "draw / create / generate an image of …" request. Optional "model" picks the image model: ' +
+        'default ' + DEFAULT_IMAGE_MODEL + ' (fast, current-gen). For HERO/MARKETING assets or ANY image that must show ' +
+        'READABLE TEXT (UI mockups, landing pages, posters, infographics, product concepts), pass model:"' + PREMIUM_IMAGE_MODEL + '" ' +
+        '— it renders legible text; the fast tier garbles it. Optional "path" sets the output filename.',
       schema: { type: 'object', required: ['prompt'], properties: {
         prompt: { type: 'string' },
         model: { type: 'string' },
@@ -133,12 +141,28 @@
         const aid = (ctx && ctx.agentId) || 'agent';
         const prompt = String(args.prompt || '').trim();
         if (!prompt) throw new Error('prompt is required');
-        const model = String(args.model || IMAGE_MODEL);
-        const data = await orPost({
-          model,
-          messages: [{ role: 'user', content: prompt }],
-          modalities: ['image', 'text']
-        }, GEN_TIMEOUT_MS);
+        let model = String(args.model || IMAGE_MODEL);
+        let data;
+        try {
+          data = await orPost({
+            model,
+            messages: [{ role: 'user', content: prompt }],
+            modalities: ['image', 'text']
+          }, GEN_TIMEOUT_MS);
+        } catch (e) {
+          // slug-drift safety net: if the CHOSEN model is rejected as unknown/unavailable (400/404 "not a valid
+          // model" / "no endpoints"), retry ONCE on the known-good legacy slug instead of failing the whole task.
+          // Only for model-shaped rejections — a rate-limit/timeout/content error propagates untouched.
+          const msg = String((e && e.message) || e);
+          const modelish = /\b(400|404)\b/.test(msg) && /model|endpoint/i.test(msg);
+          if (!modelish || model === LEGACY_IMAGE_MODEL) throw e;
+          model = LEGACY_IMAGE_MODEL;
+          data = await orPost({
+            model,
+            messages: [{ role: 'user', content: prompt }],
+            modalities: ['image', 'text']
+          }, GEN_TIMEOUT_MS);
+        }
         const url = parseImageFromResponse(data);
         if (!url) {
           const txt = textFromResponse(data);

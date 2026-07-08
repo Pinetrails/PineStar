@@ -5404,7 +5404,9 @@ async function runOnce(o) {
   makeWebTools({ openrouter: openrouterToolKey ? { apiKey: openrouterToolKey, model } : null }).register(registry);   // web_search/web_fetch (DDG/Jina, OR fallback)
   // STUDIO media tools, built up-front so browser.vision can borrow its multimodal analyze path
   // (one provider seam, no duplication). Registered below; here we only need its vision callback.
-  const imageTools = makeImageTools({ openrouter: openrouterToolKey ? { apiKey: openrouterToolKey, model } : null, fsp, pathMod: path, root: WORKSPACES });
+  // STARNET_IMAGE_MODEL overrides the studio's default text->image model (image.js picks the current-gen
+  // fast default when unset; per-call args.model still wins over both).
+  const imageTools = makeImageTools({ openrouter: openrouterToolKey ? { apiKey: openrouterToolKey, model } : null, fsp, pathMod: path, root: WORKSPACES, imageModel: String(ENV('IMAGE_MODEL') || '').trim() || undefined });
   // browser.vision uses the SAME vision model as image_analyze when a key exists; with no key it
   // reports "unavailable" honestly (never a success-shaped stub). Pass the dep only when usable.
   makeBrowserTools({ vision: imageTools.hasVision ? imageTools.browserVision : null }).register(registry);   // browser.* automation: exposed only through the web/dish capability

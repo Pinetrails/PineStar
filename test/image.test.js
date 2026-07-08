@@ -54,7 +54,10 @@ function jsonResp(obj, status) { return { status: status || 200, json: async () 
   const g = await T1.generateTool.run({ prompt: 'a red cube' }, ctx);
   // request shape
   A.eq(genFetch.calls[0].body.modalities, ['image', 'text'], 'image_generate sends modalities:[image,text]');
-  A.eq(genFetch.calls[0].body.model, 'google/gemini-2.5-flash-image', 'image_generate defaults to the image model');
+  // 2026-07-07 image-quality escape: the default was the OLDEST slug in the live catalog (garbled text on
+  // mockups). Default is now current-gen Nano Banana 2; premium (gemini-3-pro-image) is taught in the description.
+  A.eq(genFetch.calls[0].body.model, 'google/gemini-3.1-flash-image', 'image_generate defaults to the CURRENT-GEN image model');
+  A.ok(/gemini-3-pro-image/.test(T1.generateTool.description) && /READABLE TEXT/.test(T1.generateTool.description), 'the tool teaches the premium model for text-heavy/hero assets');
   A.ok(genFetch.calls[0].init.headers.Authorization === 'Bearer sk-test', 'image_generate sends the BYOK key');
   // saved file
   const rel = (g.summary.match(/image → (\S+)/) || [])[1];
@@ -110,6 +113,34 @@ function jsonResp(obj, status) { return { status: status || 200, json: async () 
   A.ok(bvParts[1].image_url.url.indexOf('data:image/png;base64,') === 0, 'browserVision wraps the screenshot as a PNG data URL');
   let bvNoKey = false; try { await T4.browserVision({ imageBase64: 'x', question: 'q' }); } catch (e) { bvNoKey = /API key/i.test(e.message); }
   A.ok(bvNoKey, 'browserVision throws a clear no-key error (browser.vision converts this to unavailable)');
+
+  // ---- G. slug-drift fallback: an unknown-model rejection retries ONCE on the legacy slug; other errors don't ----
+  {
+    const fbFetch = stubFetch((url, body) => {
+      if (body && body.model === 'google/gemini-3.1-flash-image') return jsonResp({ error: { message: 'gemini-3.1-flash-image is not a valid model ID' } }, 400);
+      return jsonResp({ choices: [{ message: { images: [{ image_url: { url: DATA_URL } }] } }] });
+    });
+    const TF = makeImageTools({ openrouter: { apiKey: 'k' }, fsp, pathMod: path, root: ROOT, fetchImpl: fbFetch });
+    const r = await TF.generateTool.run({ prompt: 'cube' }, { agentId: 'hero', emit: () => {} });
+    A.eq(fbFetch.calls.length, 2, 'invalid-model 400 retries exactly once');
+    A.eq(fbFetch.calls[1].body.model, 'google/gemini-2.5-flash-image', 'the retry rides the known-good LEGACY slug');
+    A.ok(r.content.indexOf('gemini-2.5-flash-image') >= 0, 'the result names the model that ACTUALLY generated (honest fallback)');
+
+    const rlFetch = stubFetch(() => jsonResp({ error: { message: 'rate limited' } }, 429));
+    const TR = makeImageTools({ openrouter: { apiKey: 'k' }, fsp, pathMod: path, root: ROOT, fetchImpl: rlFetch });
+    let threw = false; try { await TR.generateTool.run({ prompt: 'x' }, { agentId: 'hero', emit: () => {} }); } catch (e) { threw = /429/.test(e.message); }
+    A.ok(threw && rlFetch.calls.length === 1, 'a non-model error (429) propagates untouched — no blind fallback');
+  }
+
+  // ---- H. deps.imageModel (the STARNET_IMAGE_MODEL knob) overrides the default; args.model still wins ----
+  {
+    const kFetch = stubFetch(() => jsonResp({ choices: [{ message: { images: [{ image_url: { url: DATA_URL } }] } }] }));
+    const TK = makeImageTools({ openrouter: { apiKey: 'k' }, fsp, pathMod: path, root: ROOT, fetchImpl: kFetch, imageModel: 'openai/gpt-5-image' });
+    await TK.generateTool.run({ prompt: 'a' }, { agentId: 'hero', emit: () => {} });
+    A.eq(kFetch.calls[0].body.model, 'openai/gpt-5-image', 'deps.imageModel (env knob) overrides the built-in default');
+    await TK.generateTool.run({ prompt: 'a', model: 'google/gemini-3-pro-image' }, { agentId: 'hero', emit: () => {} });
+    A.eq(kFetch.calls[1].body.model, 'google/gemini-3-pro-image', 'an explicit per-call model still wins over the knob');
+  }
 
   try { await fsp.rm(ROOT, { recursive: true, force: true }); } catch (_) {}
   A.report('image.test');
