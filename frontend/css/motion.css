@@ -411,7 +411,7 @@ textarea, select {
 .brief-block {
   border-left: 2px solid var(--ph); padding: 9px 13px; margin: 4px 0 12px;
   background: rgba(0, 0, 0, 0.25);
-  box-shadow: 0 0 12px var(--ph-glow2), inset 0 1px 0 rgba(255, 228, 180, 0.04);
+  box-shadow: 0 0 12px var(--ph-glow2), inset 0 1px 0 rgba(var(--ph-bright-rgb), 0.04);
 }
 .brief-block .brief-k {
   font-size: var(--fs-0); color: var(--ph-dim); letter-spacing: var(--ls-3); margin-bottom: 5px;

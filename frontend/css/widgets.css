@@ -61,8 +61,8 @@
    value and tint the source tag amber (mirrors the canvas linkStaleDim: value present but not fresh).
    The value still shows — it's the last KNOWN truth, honestly flagged as not current. */
 .wg[data-stale="1"] .wg-val { opacity: 0.42; text-shadow: none; }
-.wg[data-stale="1"] .wg-src { color: var(--warn, #e8a13a); }
-.wg[data-stale="1"] .wg-dot { background: var(--warn, #e8a13a); box-shadow: 0 0 4px var(--warn, #e8a13a); animation: none; }
+.wg[data-stale="1"] .wg-src { color: var(--warn); }
+.wg[data-stale="1"] .wg-dot { background: var(--warn); box-shadow: 0 0 4px var(--warn); animation: none; }
 .wg-sub { font-size: 9px; letter-spacing: 1px; color: var(--ph-dim); white-space: nowrap; }
 /* ticker form (agent-fed list): one cycling line at reading size instead of a big figure */
 .wg-sub.wg-ticktext { font-size: 12px; letter-spacing: 0.5px; color: var(--text, var(--ph-bright));

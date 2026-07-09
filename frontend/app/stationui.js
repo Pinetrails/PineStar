@@ -1685,7 +1685,7 @@ const StationUI = (() => {
       '<div id="sk-lib" class="sk-lib"><div class="sk-loading"><span class="loading pulse">loading the skill library…</span></div></div>';
     const secAgent =
       '<p class="sk-note sk-lib-intro">Reusable procedures this agent created or learned. These appear as a compact index in future runs; the agent loads the full body only when a task matches.</p>' +
-      '<div id="sk-agent" class="sk-lib"><div class="sk-loading">Loading agent skills...</div></div>';
+      '<div id="sk-agent" class="sk-lib"><div class="sk-loading">loading agent skills…</div></div>';
     const frag = html => (el => { el.innerHTML = html; });
     mountConsole(body, 'skills', [
       { id: 'caps', label: 'CAPABILITIES', glyph: '◈', desc: on + ' of ' + skills.length + ' live — what this agent can actually do, driven by the objects at its workstation.', build: frag(secCaps) },

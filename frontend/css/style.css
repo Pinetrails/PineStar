@@ -55,6 +55,10 @@
   --ok: #7bc88a;              /* the "online / success" status green — CRT-muted (not neon) so it reads as good without breaking the amber-phosphor grade; tokenized so every surface themes through it */
   --ok-rgb: 123, 200, 138;    /* rgb twin of --ok for translucent success fills (rgba(var(--ok-rgb), a)); constant like --ok — success green does not re-tint per theme */
   --bad-rgb: 255, 92, 77;     /* rgb twin of --bad for translucent danger glows; constant like --bad (the sole semantic red) */
+  --link-down: #ff6a4c;       /* the "uplink lost / OFFLINE" red-phosphor. Constant across themes (a semantic
+                                 alarm colour, like --bad). MUST stay visually matched to the canvas LINK DOWN
+                                 marker, which hardcodes this same red in world.js by design (canvas can't read
+                                 CSS vars) — change both together. */
   /* color grade applied to the station feed so the world sits inside the terminal.
      brightness kept at 1.0 — the darkness now comes from the in-world lightmap (localized,
      realistic pools) rather than a flat global dim, so lit areas stay bright ("not too dark"). */
@@ -143,12 +147,12 @@ body {
     0 0 22px var(--ph-glow2),
     0 12px 34px rgba(0, 0, 0, 0.85),
     inset 0 0 56px rgba(0, 0, 0, 0.85),
-    inset 0 1px 0 rgba(255, 228, 180, 0.07);
+    inset 0 1px 0 rgba(var(--ph-bright-rgb), 0.07);
   /* recessed control well — values glow up out of a dark inset floor */
   --well:
     inset 0 2px 7px rgba(0, 0, 0, 0.92),
     inset 0 0 0 1px var(--ph-dim),
-    inset 0 -1px 0 rgba(255, 228, 180, 0.05);
+    inset 0 -1px 0 rgba(var(--ph-bright-rgb), 0.05);
   /* curved-glass overlay — corner vignette + top-left specular + faint glare */
   --glass:
     radial-gradient(ellipse 52% 32% at 25% 9%, rgba(255, 242, 214, 0.07), transparent 60%),
@@ -156,7 +160,7 @@ body {
     linear-gradient(115deg, rgba(255, 238, 210, 0.05) 0%, transparent 16%);
   /* raised tile — a card lifted off the window surface by the one top light:
      thin top edge highlight + a soft contact shadow below. */
-  --raise: inset 0 1px 0 rgba(255, 228, 180, 0.07), 0 2px 5px rgba(0, 0, 0, 0.5);
+  --raise: inset 0 1px 0 rgba(var(--ph-bright-rgb), 0.07), 0 2px 5px rgba(0, 0, 0, 0.5);
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -474,7 +478,7 @@ body.no-scan .crt-scan { display: none; }
 /* E1: UPLINK bars are wired to the real SSE bridge health (World.linkState). Down → red bars collapse
    to the empty-signal glyph + label, matching the canvas LINK DOWN (#ff6a4c). Restores on reconnect. */
 #sig.down { color: rgba(255,80,60,0.75); }
-#sig.down b { color: #ff6a4c; text-shadow: 0 0 7px rgba(255,80,60,0.9); animation: sig-down-breathe 2.2s ease-in-out infinite; }
+#sig.down b { color: var(--link-down); text-shadow: 0 0 7px rgba(255,80,60,0.9); animation: sig-down-breathe 2.2s ease-in-out infinite; }
 @keyframes sig-down-breathe { 0%,100% { opacity: 0.6; } 50% { opacity: 1; } }
 /* STANDBY (pre-bridge / paused): dim, unglowing bars — not the live-green full-signal look. */
 #sig.standby b { color: var(--ph-dim); text-shadow: none; opacity: 0.6; }
@@ -697,7 +701,7 @@ body.no-scan .crt-scan { display: none; }
 .term-knobs .knob {
   width: 13px; height: 13px; border-radius: 50%; position: relative;
   background: radial-gradient(circle at 35% 30%, #1c1307, #080502 72%);
-  box-shadow: inset 0 0 0 1px rgba(255, 228, 180, 0.10), 0 1px 2px rgba(0, 0, 0, 0.7);
+  box-shadow: inset 0 0 0 1px rgba(var(--ph-bright-rgb), 0.10), 0 1px 2px rgba(0, 0, 0, 0.7);
 }
 .term-knobs .knob::after {
   content: ''; position: absolute; left: 50%; top: 2px; width: 2px; height: 4px;
@@ -954,8 +958,8 @@ body.no-scan .crt-scan { display: none; }
 .set-theme.sel { background: var(--ph-faint); box-shadow: inset 0 0 0 2px var(--ph); text-shadow: none; }
 /* GROWTH Tier 3 — an EARNED autonomy rung wears a gold ◈ mark (the trust was earned, not user-set). Cosmetic only. */
 .set-theme.earned { position: relative; }
-.set-theme.earned::after { content: '◈'; position: absolute; top: -6px; right: -4px; font-size: 10px; color: gold; text-shadow: 0 0 4px gold; }
-.auto-earned { color: gold; opacity: .92; font-size: 12px; letter-spacing: 1px; }
+.set-theme.earned::after { content: '◈'; position: absolute; top: -6px; right: -4px; font-size: 10px; color: var(--gold); text-shadow: 0 0 4px var(--gold); }
+.auto-earned { color: var(--gold); opacity: .92; font-size: 12px; letter-spacing: 1px; }
 .set-row { display: block; margin: 5px 0; font-size: 15px; cursor: pointer; }
 .set-row input { accent-color: var(--ph); }
 .set-save { display: flex; gap: 8px; }
