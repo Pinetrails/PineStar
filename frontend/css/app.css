@@ -1526,7 +1526,14 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 }
 .kb-acts button:hover { color: var(--ph-bright); border-color: var(--ph); background: var(--ph-faint); }
 .kb-acts .assign { color: var(--gold); border-color: var(--ph-dim); }
-.kb-empty-col { font-size: 12px; opacity: 0.4; padding: 6px 2px; }
+/* empty-state wrapper: NO dimming — the .empty-state component (glyph + copy + CTA) is already designed at the
+   right strength; the old opacity:0.4 ghosted even the + ADD ONE call-to-action. */
+.kb-empty-col { padding: 6px 2px; }
+/* bound-agent chip on a board card — a colored dot (the agent's roster color) + its name. Truthful telemetry:
+   sourced from the stream's real agentId resolved against the live roster. */
+.kb-agent { display: inline-flex; align-items: center; gap: 4px; color: var(--ph); }
+.kb-agent-dot { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; box-shadow: 0 0 5px currentColor; }
+.kb-deliv { color: var(--gold); }
 /* IN-PROGRESS run-state chip — truthful: RUNNING only while Channels.isBusy, else DONE — REVIEW & SHIP.
    Reuses the rail's live pulse (.ws-dot.running / @keyframes wsPulse) so the world speaks one visual language. */
 .kb-state { display: flex; align-items: center; gap: 5px; margin-top: 4px; font-size: 11px; letter-spacing: 1px; }
@@ -1538,9 +1545,17 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 .term.skills-term { max-height: calc(100vh - 96px); }
 .term.skills-term .term-body { flex: 1 1 auto; min-height: 0; }
 .sk-note { font-size: 12px; opacity: 0.62; margin-top: 12px; line-height: 1.45; }
-.perk-stat { font-size: 10px; color: var(--ph-dim); margin-top: 2px; letter-spacing: 1px; }
+/* the locked status line ("○ NO CABINET AT DESK") reads at --ph, not --ph-dim: at the perk's 0.65 opacity a dim
+   grey vanished — this is the honest "why it's off", it has to be readable. */
+.perk-stat { font-size: 10px; color: var(--ph); margin-top: 2px; letter-spacing: 1px; }
 .perk.on .perk-stat { color: var(--ok); }
 .perk.on .perk-stat.ask { color: var(--warn); }   /* granted, but pauses for one-click consent */
+/* a locked capability card is a live deep-link into REFIT to place its missing prop — show it, and surface the
+   affordance so the click is discoverable (it brightens on hover). */
+.perk-locked { cursor: pointer; transition: opacity var(--t-fast, .12s) ease, border-color var(--t-fast, .12s) ease; }
+.perk-locked:hover, .perk-locked:focus-visible { opacity: 0.9; outline: none; border-color: var(--ph-dim); }
+.perk-place { font-size: 9px; color: var(--gold); letter-spacing: 1px; margin-top: 3px; opacity: 0.72; transition: opacity var(--t-fast, .12s) ease; }
+.perk-locked:hover .perk-place, .perk-locked:focus-visible .perk-place { opacity: 1; }
 
 /* SKILL LIBRARY — pre-installed, capability-gated recipe packs (the browser in the SKILLS panel) */
 .sk-lib-intro { margin-top: 4px; }
@@ -2042,6 +2057,18 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 .q-queue + .q-dismiss { margin-left:2px; }
 .q-queue:hover { color:var(--gold); border-color:var(--gold); opacity:1; }
 .q-queue:disabled { opacity:.4; cursor:default; }
+/* shared quest-row vocabulary (F-lane hygiene): the inline styles the rows used to carry, hoisted to classes so the
+   markup reads structural and every row speaks one visual language. No behavior change — geometry is identical. */
+.q-hd { display:flex; align-items:center; gap:6px; }        /* the glyph + title header row */
+.q-gl-gold { color:var(--gold); }                           /* an amber quest glyph (goal / proposal) */
+.q-goalbar { border-left:2px solid var(--gold); }           /* the amber left rail on goal + proposal cards */
+.q-indent { margin-left:10px; }                             /* a milestone step nested under its goal header */
+.q-mt { margin-top:5px; }                                   /* consent-btn cluster / accept button spacing */
+.q-bar { height:5px; border-radius:3px; background:var(--well,rgba(0,0,0,.35)); margin-top:5px; overflow:hidden; }
+.q-bar-fill { height:100%; background:var(--gold); }        /* width set inline (the live pct) */
+.gx-tro .q-cw { opacity:.82; margin-top:3px; }              /* "✓ completes when:" line */
+.gx-tro .q-attest-line { margin-top:4px; color:var(--gold); }   /* "⏳ awaiting your confirmation" */
+.gx-tro .q-note { opacity:.7; margin-top:3px; }             /* a prior "not yet" decline note */
 .gx-tro.q-celebrate { border-color:var(--gold); animation:q-celebrate 2.4s ease-out 1; }
 @keyframes q-celebrate {
   0%   { box-shadow:0 0 18px rgba(var(--gold-rgb),.85), inset 0 0 14px rgba(var(--gold-rgb),.45); background:rgba(var(--gold-rgb),.22); }
@@ -2326,6 +2353,15 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 .mc-tools code { font-size: 11px; color: var(--ph); border: 1px solid var(--ph-dim); border-radius: 4px; padding: 1px 5px; background: rgba(0,0,0,.4); }
 .mc-acts { margin-top: 8px; display: flex; gap: 6px; flex-wrap: wrap; }
 .mc-form { display: flex; flex-direction: column; gap: 6px; }
+/* ROUTINES — RUN NOW result (P0 #11): renders inline in the ACTIVE pane, spliced under the row that fired it,
+   framed like a mini terminal so the paid run's output is unmissable (never streamed into the hidden CREATE pane). */
+.rt-out { margin: 2px 0 8px; border: 1px solid var(--ph-dim); border-left: 2px solid var(--ph);
+  border-radius: var(--r-sm); background: rgba(0,0,0,.4); box-shadow: var(--raise); padding: 7px 10px; }
+.rt-out-h { display: flex; align-items: center; gap: 6px; font-size: var(--fs-0);
+  color: var(--ph-dim); letter-spacing: var(--ls-2); margin-bottom: 5px; }
+.rt-out-h b { color: var(--ph-bright); font-weight: normal; }
+.rt-out-x { margin-left: auto; }
+.rt-out-b { white-space: pre-wrap; max-height: 220px; overflow: auto; font-size: var(--fs-1); color: var(--text); }
 /* per-connector ENABLE pill lives inline in the row header; align it to the title baseline row */
 .mc-top { align-items: center; }
 .mc-enable { flex: 0 0 auto; margin: 0; }
@@ -2424,6 +2460,11 @@ select.fbc-sel:focus { border-color: var(--ph); box-shadow: 0 0 12px var(--ph-gl
 }
 
 /* ===== CONNECTOR CATALOG: one-click, vetted MCP servers (browse-and-add cards) ===== */
+/* setup-type legend — color-coded to the per-card auth chips (green no-setup · gold key · dim OAUTH). Single-weight
+   font, so no faux-bold; the color carries the emphasis. */
+.cc-legend .cc-lg-none { color: var(--ok); font-weight: normal; }
+.cc-legend .cc-lg-key { color: var(--gold); font-weight: normal; }
+.cc-legend .cc-lg-oauth { color: var(--ph-dim); font-weight: normal; letter-spacing: .5px; }
 .cc-list { display: flex; flex-direction: column; gap: 14px; margin: 4px 0 10px; }
 .cc-group { display: flex; flex-direction: column; gap: 8px; }
 .cc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(224px, 1fr)); gap: 8px; }

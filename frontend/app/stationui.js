@@ -1545,15 +1545,24 @@ const StationUI = (() => {
     // its async loaders target #sk-lib / #sk-agent which live inside the panes below.
     // locked copy is OBJECT-TRUTHFUL: not a disabled toggle, but "no DISH at the desk" — it points at the furniture.
     const capLockedText = (s) => '○ NO ' + (SK_OBJ_NAME[s.cap] || String(s.cap || '').toUpperCase()) + ' AT DESK';
+    // a LOCKED-for-missing-gear card (a real cap whose prop isn't on the floor) becomes a one-click deep-link into
+    // REFIT to place that prop — the honest fix, never a fake auto-grant. COMPUTE (cap:null) is always on and never
+    // locked. data-perk-cap carries the capability objectType so the wiring below routes it to placeGearForSkill.
     const secCaps =
       '<div class="sk-chain">OBJECT AT DESK <span class="sk-chain-arr">→</span> CAPABILITY <span class="sk-chain-arr">→</span> SKILL</div>' +
       '<div class="perk-grid">' +
-      skills.map((s, i) => '<div class="perk ' + (s.on ? 'on' : '') + '" style="--ci:' + i + '">' +
-        '<div class="perk-icon">' + s.icon + '</div>' +
-        '<div class="perk-name">' + s.name + '</div>' +
-        '<div class="perk-desc">' + s.tools + '</div>' +
-        '<div class="perk-stat' + (s.consent ? ' ask' : '') + '">' +
-        (s.on ? (s.consent ? '● ASKS OK' : '● ENABLED') : capLockedText(s)) + '</div></div>').join('') +
+      skills.map((s, i) => {
+        const lockable = !s.on && s.cap;
+        return '<div class="perk ' + (s.on ? 'on' : '') + (lockable ? ' perk-locked' : '') + '"' +
+          (lockable ? ' data-perk-cap="' + esc(s.cap) + '" role="button" tabindex="0" title="Open REFIT to place a ' + esc(SK_OBJ_NAME[s.cap] || String(s.cap).toUpperCase()) + '"' : '') +
+          ' style="--ci:' + i + '">' +
+          '<div class="perk-icon">' + s.icon + '</div>' +
+          '<div class="perk-name">' + s.name + '</div>' +
+          '<div class="perk-desc">' + s.tools + '</div>' +
+          '<div class="perk-stat' + (s.consent ? ' ask' : '') + '">' +
+          (s.on ? (s.consent ? '● ASKS OK' : '● ENABLED') : capLockedText(s)) + '</div>' +
+          (lockable ? '<div class="perk-place">▸ PLACE IN REFIT</div>' : '') + '</div>';
+      }).join('') +
       '</div>' +
       '<p class="sk-note">Capabilities follow the <b>objects at the workstation</b> — the room layout IS the ' +
       'permission system. <b>File writes</b> and <b>commands</b> pause for one-click approval in COMMS; the private ' +
@@ -1568,13 +1577,21 @@ const StationUI = (() => {
       '<div id="sk-agent" class="sk-lib"><div class="sk-loading">Loading agent skills...</div></div>';
     const frag = html => (el => { el.innerHTML = html; });
     mountConsole(body, 'skills', [
-      { id: 'caps', label: 'CAPABILITIES', glyph: '◈', desc: on + ' live right now — what this agent can actually do, driven by the objects at its workstation.', build: frag(secCaps) },
+      { id: 'caps', label: 'CAPABILITIES', glyph: '◈', desc: on + ' of ' + skills.length + ' live — what this agent can actually do, driven by the objects at its workstation.', build: frag(secCaps) },
       { id: 'library', label: 'SKILL LIBRARY', glyph: '▤', desc: 'Pre-installed recipes your agents follow when a task matches, grouped by kind.', build: frag(secLibrary) },
       { id: 'agent', label: 'AGENT SKILLS', glyph: '✎', desc: 'Procedures this agent created or learned itself.', build: frag(secAgent) }
     ], { search: true, searchPlaceholder: 'search skills…' });
     loadSkillLibrary(agentId);
     loadAgentSkills(agentId);
     wireSkillsLive();   // A3: keep the AGENT SKILLS list live while the panel is open (registers once)
+    // LOCKED capability card → the real REFIT placement surface (same deep-link the SKILL LIBRARY's PLACE uses).
+    // A ts-disabled card (gear IS placed, toolset just off) is not locked-for-gear, so it never gets this wiring.
+    const agentName = (a && a.name) || agentId;
+    body.querySelectorAll('.perk-locked[data-perk-cap]').forEach(p => {
+      const go = () => { sfx('click'); placeGearForSkill(p.dataset.perkCap, agentName); };
+      p.addEventListener('click', go);
+      p.addEventListener('keydown', ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); go(); } });
+    });
     // TOOLSET honesty: a family switched OFF in the TOOLSETS console must read as OFF here too, so the two
     // surfaces can't tell different stories. Cheap best-effort: fetch the toolset state and dim matching perks
     // (mapped by the granting objectType == SKILLS[].cap). Never blocks the panel; a fetch miss leaves perks as-is.
@@ -1728,7 +1745,7 @@ const StationUI = (() => {
         '</div>';
     };
     const section = (label, list) => list.length
-      ? '<div class="sec sk-state-sec"><span class="sec-l">' + label + '</span><span class="sec-r">' + list.length + '</span><span class="sec-nd"></span></div>' + list.map(card).join('')
+      ? '<div class="sec sk-state-sec"><span class="sec-l">' + label + '</span><span class="sec-tag">' + list.length + '</span><span class="sec-r"></span><span class="sec-nd"></span></div>' + list.map(card).join('')
       : '';
     html += section('READY TO USE', groups.ready);
     html += section('NEEDS GEAR', groups.needsGear);
@@ -1856,7 +1873,7 @@ const StationUI = (() => {
   function addTask(title) {
     const w = WS(); if (!w) return;
     title = String(title || '').trim(); if (!title) return;
-    w.create(title.slice(0, 160), { activate: false, kind: 'task' });   // a new TO DO task card; don't hijack the active chat
+    w.create(title.slice(0, 80), { activate: false, kind: 'task' });   // a new TO DO task card; don't hijack the active chat (clamp matches Workstreams.make's 80)
     persistWS(); sync();
   }
   // open a card's conversation in COMMS (switch the active workstream) — safe mid-run now (per-stream channels)
@@ -1884,7 +1901,11 @@ const StationUI = (() => {
     else { w.switch(id); if (typeof Chat === 'object' && Chat.load) Chat.load(s); sync(); }
     const started = s.history.some(m => m.role === 'user');
     if (!started && s.title && typeof Chat === 'object' && Chat.send) Chat.send(s.title);
-    notify('assigned to ' + (present[0] ? present[0].name : 'agent') + ': ' + (s.title || 'workstream'), 'gold');
+    // name the stream's OWN bound agent (s.agentId), resolved against the roster — never present[0], which is
+    // whoever happens to be first, not who this workstream actually runs as.
+    const bound = (Array.isArray(present) ? present.find(a => a && a.id === s.agentId) : null);
+    const boundName = bound ? (bound.name || bound.id) : (s.agentId || 'agent');
+    notify('assigned to ' + boundName + ': ' + (s.title || 'workstream'), 'gold');
     sfx('notify');
   }
 
@@ -1913,24 +1934,35 @@ const StationUI = (() => {
     if (s.runIds && s.runIds.length) return '<div class="kb-state done">DONE — REVIEW &amp; SHIP</div>';
     return '';
   }
+  // the card's bound-agent chip: the workstream's OWN agent (s.agentId) resolved to a name + color from the live
+  // roster. Truthful — a stream always carries a real agentId (default 'agent'); an unresolvable id shows verbatim,
+  // never a made-up placeholder.
+  function agentChip(s) {
+    const a = (Array.isArray(present) ? present.find(x => x && x.id === s.agentId) : null);
+    const nm = a ? (a.name || a.id) : (s.agentId || 'agent');
+    const col = (a && a.color) || 'var(--ph-dim)';
+    return '<span class="kb-agent" title="runs as ' + esc(nm) + '"><span class="kb-agent-dot" style="background:' + esc(col) + '"></span>' + esc(nm) + '</span>';
+  }
   function card(s, i) {
     const n = s.runIds.length, runs = n ? n + (n === 1 ? ' run' : ' runs') : '';
+    const dv = (s.deliverables && s.deliverables.length) || 0;   // real produced artifacts (workstreams.recordDeliverable)
     const acts = s.lane === 'todo'
       ? '<button class="assign" data-act="assign">▶ ASSIGN</button><button data-act="open">↗ OPEN</button><button data-act="arch">⌫</button>'
       : s.lane === 'active'
         ? '<button data-act="ship">✓ SHIP</button><button data-act="open">↗ OPEN</button><button data-act="arch">⌫</button>'
         : '<button data-act="reopen">↺ REOPEN</button><button data-act="open">↗ OPEN</button><button data-act="arch">⌫</button>';
-    return '<div class="kb-card" data-id="' + s.id + '" style="--ci:' + (i || 0) + '">' +
+    return '<div class="kb-card" data-id="' + s.id + '" role="button" tabindex="0" aria-label="' + esc(s.title || 'untitled') + ' — open conversation" style="--ci:' + (i || 0) + '">' +
       '<div class="kb-title">' + esc(s.title || 'untitled') + '</div>' +
-      '<div class="kb-meta"><span>' + clock(s.lastActiveAt || s.createdAt) + '</span>' +
-      (runs ? '<span>' + runs + '</span>' : '') + '</div>' +
+      '<div class="kb-meta">' + agentChip(s) + '<span>' + clock(s.lastActiveAt || s.createdAt) + '</span>' +
+      (runs ? '<span>' + runs + '</span>' : '') +
+      (dv ? '<span class="kb-deliv">' + dv + ' deliverable' + (dv === 1 ? '' : 's') + '</span>' : '') + '</div>' +
       stateChip(s) +
       '<div class="kb-acts">' + acts + '</div></div>';
   }
   function buildTasks(body) {
     const streams = boardStreams();
     body.innerHTML =
-      '<div class="kb-add"><input id="kb-in" maxlength="160" placeholder="add a workstream for your agent…" autocomplete="off">' +
+      '<div class="kb-add"><input id="kb-in" maxlength="80" placeholder="add a workstream for your agent…" autocomplete="off">' +
       '<button class="bb sm" id="kb-add">+ ADD</button></div>' +
       '<div class="kb-cols">' +
       COLS.map(([lane, label]) => {
@@ -1959,6 +1991,12 @@ const StationUI = (() => {
         else if (act === 'arch') archiveCard(id);
       }));
       c.addEventListener('click', () => openStream(id));   // clicking the card body opens its conversation
+      // keyboard parity for the role=button card: Enter/Space opens it — but only when the CARD itself is focused,
+      // so the action buttons inside keep their own native Enter/Space (no double-fire).
+      c.addEventListener('keydown', ev => {
+        if (ev.target !== c) return;
+        if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); sfx('click'); openStream(id); }
+      });
     });
   }
 
@@ -3777,10 +3815,11 @@ const StationUI = (() => {
       '<div id="mc-msg" class="msg"></div>';
     // ---- CATALOG pane markup: one-click, vetted MCP servers. The cards + category groups render async from
     //      GET /api/connectors/catalog. Installing reuses the SAME POST /api/connectors upsert the manual form uses. ----
+    // The pane copy is JUST the setup-type legend now — the "browse vetted MCP servers and add them" sentence lived
+    // here AND verbatim in the section desc below (mountConsole), so it read twice. CRT glyphs, not emoji.
     const secCatalog =
-      '<p class="set-about">One-click <b>connectors</b>. Browse vetted MCP servers and add them to your station — ' +
-        'their tools appear to your agents automatically, through the same approval gate as the built-ins. ' +
-        '<span class="dim">⚡ no-setup ones connect instantly · 🔑 paste an API key · 🔒 sign in with a secure browser login (OAuth).</span></p>' +
+      '<p class="set-about"><span class="cc-legend"><b class="cc-lg-none">▸ no setup</b> connects instantly · ' +
+        '<b class="cc-lg-key">API key</b> you paste a key · <b class="cc-lg-oauth">OAUTH</b> a secure browser sign-in.</span></p>' +
       '<div id="cc-list" class="cc-list"><span class="loading pulse">loading catalog…</span></div>' +
       '<div id="cc-msg" class="msg"></div>' +
       '<p class="set-about dim">Need something not listed? Add any MCP server by URL or local command in <b>MCP CONNECTORS</b>.</p>';
@@ -4029,7 +4068,10 @@ const StationUI = (() => {
     let ccCache = [];   // flat catalog entries, so a click reads the authoritative id/url/name (never re-typed)
     const ccPending = new Set();   // connector ids with an in-flight OAuth sign-in (guards duplicate popups/pollers)
     // auth tier chip: glyph, label, colour. Drives the honest "what will adding this cost me" cue.
-    const CC_CHIP = { none: ['⚡', 'no setup', 'var(--ok)'], apikey: ['🔑', 'API key', 'var(--gold)'], oauth: ['🔒', 'sign-in', 'var(--ph-dim)'] };
+    // CRT glyphs, not emoji (⚡🔑🔒 punched holes in the phosphor look). ▸ = no setup; API key + OAUTH ride as plain
+    // colour-coded text chips (gold / dim) — VT323 has no key/lock glyph that renders (⚿ came out as tofu), and the
+    // task says plain text chips are fine. The render below omits the leading glyph when it's empty.
+    const CC_CHIP = { none: ['▸', 'no setup', 'var(--ok)'], apikey: ['', 'API key', 'var(--gold)'], oauth: ['', 'OAUTH', 'var(--ph-dim)'] };
     function ccCard(e, ci) {
       const chip = CC_CHIP[e.authType] || CC_CHIP.none;
       const origin = e.official ? '<span class="cc-badge cc-official" title="first-party server, run by the vendor">✓ official</span>'
@@ -4037,8 +4079,8 @@ const StationUI = (() => {
       let action;
       if (e.installed) action = '<button class="bb xs" data-cc-act="added" disabled>✓ ADDED</button>';
       else if (e.authType === 'oauth') action = e.url
-        ? '<button class="bb xs" data-cc-act="signin" data-id="' + esc(e.id) + '" title="opens a secure browser sign-in (OAuth)">🔒 SIGN IN</button>'
-        : '<button class="bb xs" data-cc-act="soon" disabled title="not directly wired yet — see the note">🔒 SOON</button>';   // an oauth entry with no endpoint (e.g. via an aggregator) is honestly not sign-in-able
+        ? '<button class="bb xs" data-cc-act="signin" data-id="' + esc(e.id) + '" title="opens a secure browser sign-in (OAuth)">▸ SIGN IN</button>'
+        : '<button class="bb xs" data-cc-act="soon" disabled title="not directly wired yet — see the note">SOON</button>';   // an oauth entry with no endpoint (e.g. via an aggregator) is honestly not sign-in-able
       else if (e.authType === 'apikey') action = '<button class="bb xs" data-cc-act="key" data-id="' + esc(e.id) + '">+ ADD</button>';
       else action = '<button class="bb sm" data-cc-act="add" data-id="' + esc(e.id) + '">+ ADD</button>';
       const keyField = e.authType === 'apikey'
@@ -4048,7 +4090,7 @@ const StationUI = (() => {
       const home = e.homepage ? ' <a class="cc-home dim" href="' + esc(e.homepage) + '" target="_blank" rel="noopener">site ↗</a>' : '';
       return '<div class="cc-card' + (e.installed ? ' cc-on' : '') + '" data-id="' + esc(e.id) + '" style="--ci:' + (ci || 0) + '">' +
           '<div class="cc-head"><b>' + esc(e.name) + '</b> ' + origin +
-            '<span class="cc-chip" style="color:' + chip[2] + '" title="' + esc(chip[1]) + '">' + chip[0] + ' ' + esc(chip[1]) + '</span></div>' +
+            '<span class="cc-chip" style="color:' + chip[2] + '" title="' + esc(chip[1]) + '">' + (chip[0] ? chip[0] + ' ' : '') + esc(chip[1]) + '</span></div>' +
           '<div class="cc-blurb dim">' + esc(e.blurb) + '</div>' + keyField +
           '<div class="cc-acts">' + action + home + '</div>' +
         '</div>';
@@ -4056,7 +4098,7 @@ const StationUI = (() => {
     function ccGroupHTML(g) {
       if (!g.connectors || !g.connectors.length) return '';
       return '<div class="cc-group"><div class="sec"><span class="sec-l">' + esc(g.category) + '</span>' +
-          '<span class="sec-r dim">' + g.connectors.length + '</span><span class="sec-nd"></span></div>' +
+          '<span class="sec-tag">' + g.connectors.length + '</span><span class="sec-r"></span><span class="sec-nd"></span></div>' +
         '<div class="cc-grid">' + g.connectors.map((e, i) => ccCard(e, i)).join('') + '</div></div>';
     }
     async function ccRefresh() {
@@ -4238,7 +4280,11 @@ const StationUI = (() => {
       '<div id="rt-gate" class="set-about"></div>' +
       // SELF-INITIATION (autonomy Slice 2): let the agent propose standing jobs grounded in what it knows about you.
       '<button class="bb sm" id="rt-propose" style="margin:2px 0 6px">✦ SUGGEST ROUTINES</button>' +
-      '<div id="rt-list" class="mc-list"><span class="loading pulse">loading…</span></div>';
+      '<div id="rt-list" class="mc-list"><span class="loading pulse">loading…</span></div>' +
+      // P0 #11: a RUN NOW result renders HERE, inline under the row the user clicked — never into the hidden CREATE
+      // pane. It lives in the ACTIVE pane (sibling of #rt-list) so a list re-render can't destroy it; positionOut()
+      // re-slots it under its row after each refresh.
+      '<div id="rt-out" class="msg rt-out" hidden></div>';
     const secCreate =
       '<div class="brief-block"><div class="brief-k">HOW IT WORKS</div>' +
         '<div class="brief-v">A routine wakes on a schedule and runs your agent <b>unattended</b>, using your connected key + model. ' +
@@ -4253,8 +4299,7 @@ const StationUI = (() => {
         '<input id="rt-agent" type="hidden" value="' + esc(routineAgentId) + '">' +
         '<button class="bb sm" id="rt-add">+ ADD ROUTINE</button>' +
       '</div>' +
-      '<div id="rt-msg" class="msg"></div>' +
-      '<div id="rt-out" class="msg" hidden style="white-space:pre-wrap;max-height:220px;overflow:auto"></div>';
+      '<div id="rt-msg" class="msg"></div>';
     const frag = h => (el => { el.innerHTML = h; });
     mountConsole(body, 'routines', [
       { id: 'active', label: 'ACTIVE ROUTINES', glyph: '◷', desc: 'Standing jobs that fire on a schedule — their next run, last result, and whether the scheduler is armed.', build: frag(secActive) },
@@ -4264,6 +4309,26 @@ const StationUI = (() => {
     const listEl = body.querySelector('#rt-list'), gateEl = body.querySelector('#rt-gate');
     const msgEl = body.querySelector('#rt-msg'), outEl = body.querySelector('#rt-out');
     const post = (path, payload) => fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    // P0 #11 — run-output placement. lastRunId = the routine whose RUN NOW result #rt-out currently shows.
+    // schedulerArmed mirrors GET /api/cron `.enabled` (set in refresh) so the create-confirm can tell the honest
+    // armed/disarmed story via AutoJobs.armStateLine. #rt-out lives in the ACTIVE pane (sibling of #rt-list); when a
+    // run fires we splice it in right AFTER its row, and after every list re-render positionOut() re-slots it there.
+    let lastRunId = null, schedulerArmed = false;
+    function showRunOut(rowEl, id) {
+      lastRunId = id;
+      const nmEl = rowEl && rowEl.querySelector('.mc-top b');
+      const nm = (nmEl && nmEl.textContent) || 'routine';
+      outEl.hidden = false;
+      outEl.innerHTML = '<div class="rt-out-h">▶ RAN <b>' + esc(nm) + '</b><button class="rt-out-x bb xs" type="button" title="dismiss">✕</button></div><div class="rt-out-b">running…</div>';
+      if (rowEl) rowEl.insertAdjacentElement('afterend', outEl);
+    }
+    function positionOut() {
+      if (outEl.hidden) return;
+      let placed = false;
+      if (lastRunId) listEl.querySelectorAll('.mc-row').forEach(r => { if (!placed && r.dataset.id === lastRunId) { r.insertAdjacentElement('afterend', outEl); placed = true; } });
+      if (!placed) listEl.insertAdjacentElement('afterend', outEl);   // its row is gone (deleted) → park below the list
+    }
+    outEl.addEventListener('click', ev => { if (ev.target.closest('.rt-out-x')) { outEl.hidden = true; outEl.innerHTML = ''; lastRunId = null; sfx('click'); } });
 
     function lastResult(j) {
       if (!j.lastRunAt) return '<span class="dim">never run</span>';
@@ -4297,16 +4362,24 @@ const StationUI = (() => {
       try {
         const j = await (await fetch('/api/cron')).json();
         const jobs = (j && j.jobs) || [];
+        schedulerArmed = !!(j && j.enabled);   // the live cronArmed — feeds the create-confirm's honest arm-state line
         // HONEST disabled-state + one-click ENABLE (G4.6): when the scheduler is OFF, say plainly that routines
         // will NOT fire and offer a one-click ENABLE that arms the live timer (no env edit / restart). When ON,
         // show the armed state + a DISABLE control. `enabled` comes straight from GET /api/cron (the live
         // cronArmed), so the badge reflects a runtime arm/disarm immediately.
+        // G4.6 — when OFF, this is not a whisper: promote it to a .brief-block banner (same vocabulary the quest
+        // APPROVE ask uses) with the ENABLE SCHEDULING action inline, so "saved but won't fire" reads loudly and
+        // the fix is one click away. When ON, the calm one-liner + DISABLE control is enough. `#rt-arm`/data-arm
+        // stay identical so the arm/disarm wiring below binds unchanged.
         gateEl.innerHTML = j && j.enabled
           ? '<span style="color:var(--gold)">● scheduler armed</span> <span class="dim">— routines fire automatically.</span> ' +
             '<button class="bb xs" id="rt-arm" data-arm="0">⏸ DISABLE SCHEDULING</button>'
-          : '<span style="color:var(--bad)">○ scheduling is OFF — routines will <b>NOT</b> fire.</span> ' +
-            '<span class="dim">Your routines are saved but dormant until you enable the scheduler.</span> ' +
-            '<button class="bb xs" id="rt-arm" data-arm="1">▶ ENABLE SCHEDULING</button>';
+          : '<div class="brief-block" style="border-left-color:var(--bad);margin-bottom:8px">' +
+              '<div class="brief-k" style="color:var(--bad)">○ SCHEDULING IS OFF</div>' +
+              '<div class="brief-v">Your routines are saved but <b>will not fire</b> — the scheduler is disarmed. ' +
+              'Enable scheduling to arm the live timer now (no restart needed).' +
+              '<div style="margin-top:8px"><button class="bb xs" id="rt-arm" data-arm="1">▶ ENABLE SCHEDULING</button></div>' +
+            '</div></div>';
         const armBtn = gateEl.querySelector('#rt-arm');
         if (armBtn) armBtn.addEventListener('click', async () => {
           const want = armBtn.dataset.arm === '1';
@@ -4334,6 +4407,7 @@ const StationUI = (() => {
             const nm = body.querySelector('#rt-name'); if (nm) nm.focus();
           });
         }
+        positionOut();   // re-slot a live RUN NOW result under its row after the list re-renders (P0 #11)
       } catch (_) { listEl.innerHTML = '<div class="mc-detail">sidecar offline — start it to manage routines.</div>'; }
     }
 
@@ -4405,10 +4479,11 @@ const StationUI = (() => {
       }
       if (act === 'run') {
         sfx('click'); btn.disabled = true; const old = btn.textContent; btn.textContent = '… running';
-        outEl.hidden = false; outEl.textContent = 'running…';
+        showRunOut(rowEl, id);   // P0 #11: the result panel opens inline right under THIS row (visible ACTIVE pane)
+        const ob = outEl.querySelector('.rt-out-b');
         try {
           const resp = await post('/api/cron/run', { id });
-          if (!resp.ok || !resp.body) { const e = await resp.json().catch(() => ({})); outEl.innerHTML = '<span style="color:var(--bad)">✕ ' + esc((e && e.error) || ('http ' + resp.status)) + '</span>'; sfx('bad'); }
+          if (!resp.ok || !resp.body) { const e = await resp.json().catch(() => ({})); ob.innerHTML = '<span style="color:var(--bad)">✕ ' + esc((e && e.error) || ('http ' + resp.status)) + '</span>'; sfx('bad'); }
           else {
             // latch the run's OWN runId from the first run.start and key everything to it (mirrors
             // harness.js chat): a forwarded CHILD run's error/tokens riding the same stream must never
@@ -4420,10 +4495,10 @@ const StationUI = (() => {
               sbuf += dec.decode(r.value, { stream: true });
               let nl; while ((nl = sbuf.indexOf('\n')) >= 0) { const line = sbuf.slice(0, nl); sbuf = sbuf.slice(nl + 1); if (!line.trim()) continue; try { const e = JSON.parse(line); const p = e.payload || {}; if (e.name === 'agent.run.start' && !ownRunId && p.runId) ownRunId = p.runId; else if (e.name === 'agent.token' && mine(p)) reply += (p.delta || ''); else if (e.name === 'agent.run.error' && mine(p)) err = p.message || 'run error'; } catch (_) {} }
             }
-            outEl.innerHTML = err ? ('<span style="color:var(--bad)">✕ ' + esc(err) + '</span>') : esc(reply || '(no output)');
+            ob.innerHTML = err ? ('<span style="color:var(--bad)">✕ ' + esc(err) + '</span>') : esc(reply || '(no output)');
             notify(err ? 'routine run failed' : 'routine ran', err ? 'warn' : 'good');
           }
-        } catch (e) { outEl.innerHTML = '<span style="color:var(--bad)">✕ ' + esc((e && e.message) || 'run failed') + '</span>'; sfx('bad'); }
+        } catch (e) { ob.innerHTML = '<span style="color:var(--bad)">✕ ' + esc((e && e.message) || 'run failed') + '</span>'; sfx('bad'); }
         btn.disabled = false; btn.textContent = old; refresh();
       }
     });
@@ -4443,7 +4518,14 @@ const StationUI = (() => {
         const r = await (await post('/api/cron', { name, prompt, schedule, agentId: agentId || undefined, provider, tz })).json();
         if (r && r.error) { msgEl.innerHTML = '<span style="color:var(--bad)">✕ ' + esc(r.error) + '</span>'; sfx('bad'); }
         else {
-          msgEl.textContent = ''; notify('routine "' + (name || 'unnamed') + '" scheduled for ' + agentLabel(agentId || 'agent'), 'good'); sfx('click');
+          msgEl.textContent = '';
+          // HONEST create-confirm: don't claim "scheduled" if the scheduler that fires it is off. armStateLine
+          // returns null when armed (→ the normal "scheduled for <agent>" line) and an honest {text} when disarmed
+          // ("saved, but the scheduler is off — this won't run until you enable scheduling"). Built for exactly this.
+          const arm = (typeof AutoJobs !== 'undefined' && AutoJobs.armStateLine) ? AutoJobs.armStateLine(schedulerArmed) : null;
+          if (arm) notify('routine "' + (name || 'unnamed') + '" ' + arm.text, 'warn');
+          else notify('routine "' + (name || 'unnamed') + '" scheduled for ' + agentLabel(agentId || 'agent'), 'good');
+          sfx('click');
           ['#rt-name', '#rt-prompt', '#rt-sched'].forEach(s => { body.querySelector(s).value = ''; });
           pvEl.textContent = '';
         }
@@ -4942,10 +5024,10 @@ const StationUI = (() => {
       // never dismissible. It frames the milestone steps rendered under it.
       if (q.kind === 'arc-goal') {
         const pct = Math.max(0, Math.min(100, q.pct || 0));
-        return '<div class="gx-tro arc-goal ' + (q.status === 'done' ? 'on' : 'off') + '" style="--ci:' + (i || 0) + ';border-left:2px solid var(--gold);">'
-          + '<div style="display:flex;align-items:center;gap:6px;"><span class="gl" style="color:var(--gold);">&#9671;</span><span class="nm">' + esc(q.title) + '</span></div>'
+        return '<div class="gx-tro arc-goal q-goalbar ' + (q.status === 'done' ? 'on' : 'off') + '" style="--ci:' + (i || 0) + '">'
+          + '<div class="q-hd"><span class="gl q-gl-gold">&#9671;</span><span class="nm">' + esc(q.title) + '</span></div>'
           + '<div class="sub">' + esc(q.desc) + '</div>'
-          + '<div class="arc-bar" style="height:5px;border-radius:3px;background:var(--well,rgba(0,0,0,.35));margin-top:5px;overflow:hidden;"><div style="height:100%;width:' + pct + '%;background:var(--gold);"></div></div>'
+          + '<div class="arc-bar q-bar"><div class="q-bar-fill" style="width:' + pct + '%"></div></div>'
           + '</div>';
       }
       // Tier 2 — A MILESTONE STEP: the next OPEN one carries an Accept button (routes through the work-quest path
@@ -4955,10 +5037,10 @@ const StationUI = (() => {
       // (the recovery path). Done steps show their evidence; later open steps are shown but not actionable.
       if (q.kind === 'arc-step') {
         const accept = (q.status !== 'done' && q.isNext && !q.inFlight)
-          ? '<button class="consent-btn q-arc-accept" data-gid="' + esc(q.arcGoalId) + '" data-mid="' + esc(q.milestoneId) + '" style="margin-top:5px;">Accept this step</button>'
+          ? '<button class="consent-btn q-arc-accept q-mt" data-gid="' + esc(q.arcGoalId) + '" data-mid="' + esc(q.milestoneId) + '">Accept this step</button>'
           : '';
-        return '<div class="gx-tro arc-step ' + (q.status === 'done' ? 'on' : 'off') + (glow ? ' q-celebrate' : '') + '" style="--ci:' + (i || 0) + ';margin-left:10px;">'
-          + '<div style="display:flex;align-items:center;gap:6px;"><span class="gl">' + (q.status === 'done' ? '&#9733;' : '&#9675;') + '</span><span class="nm">' + esc(q.title) + '</span></div>'
+        return '<div class="gx-tro arc-step q-indent ' + (q.status === 'done' ? 'on' : 'off') + (glow ? ' q-celebrate' : '') + '" style="--ci:' + (i || 0) + '">'
+          + '<div class="q-hd"><span class="gl">' + (q.status === 'done' ? '&#9733;' : '&#9675;') + '</span><span class="nm">' + esc(q.title) + '</span></div>'
           + '<div class="sub">' + esc(q.desc) + '</div>' + accept + '</div>';
       }
       // W3: a "build this while I'm away" affordance on an OPEN, buildable quest (an accepted-but-unbuilt
@@ -4974,24 +5056,24 @@ const StationUI = (() => {
       const goBtn = goDest ? '<button class="q-go" data-dest="' + esc(goDest) + '" title="Open where you do this next">' + esc(GO_LABEL[goDest] || 'GO') + '</button>' : '';
       // §C — EVERY open row answers "what do I do next": the honest completion condition in words.
       const cw = q.status !== 'done' ? questCompletesWhen(q) : '';
-      const cwHtml = cw ? '<div class="sub q-cw" style="opacity:.82;margin-top:3px;">✓ completes when: ' + esc(cw) + '</div>' : '';
+      const cwHtml = cw ? '<div class="sub q-cw">✓ completes when: ' + esc(cw) + '</div>' : '';
       // §C — a pending attest (an agent proposed completion with evidence): the awaiting-confirmation badge + the
       // inline Commander verdict. Confirm is single-click (→ done + the QuestState celebration); Not yet declines
       // (→ the quest stays open, a declineNote the agent sees next run). Truthful: only a real pending attest shows.
       const pend = (q.kind === 'ledger' && q.status !== 'done' && q.attest) ? q.attest : null;
       const attestHtml = pend
-        ? '<div class="sub q-attest-line" style="margin-top:4px;color:var(--gold);">⏳ awaiting your confirmation'
+        ? '<div class="sub q-attest-line">⏳ awaiting your confirmation'
             + (pend.evidence ? ' — &ldquo;' + esc(String(pend.evidence).slice(0, 140)) + '&rdquo;' : '') + '</div>'
-          + '<div class="consent-btns" style="margin-top:5px;">'
+          + '<div class="consent-btns q-mt">'
           + '<button class="consent-btn q-attest-yes" data-qid="' + esc(q.id) + '">Confirm &#10003;</button>'
           + '<button class="consent-btn deny q-attest-no" data-qid="' + esc(q.id) + '">Not yet</button>'
           + '</div>'
         : '';
       // §C — a prior declined attest on a still-open ledger quest: show the note so the ask reads honestly.
       const declineHtml = (q.kind === 'ledger' && q.status !== 'done' && !pend && q.declineNote && q.declineNote.note)
-        ? '<div class="sub" style="opacity:.7;margin-top:3px;">&#8617; you said not yet: &ldquo;' + esc(String(q.declineNote.note).slice(0, 120)) + '&rdquo;</div>' : '';
+        ? '<div class="sub q-note">&#8617; you said not yet: &ldquo;' + esc(String(q.declineNote.note).slice(0, 120)) + '&rdquo;</div>' : '';
       return '<div class="gx-tro ' + (q.status === 'done' ? 'on' : 'off') + (glow ? ' q-celebrate' : '') + '" style="--ci:' + (i || 0) + '">'
-        + '<div style="display:flex;align-items:center;gap:6px;"><span class="gl">' + (q.status === 'done' ? '&#9733;' : '&#9675;') + '</span><span class="nm">' + esc(q.title) + '</span>'
+        + '<div class="q-hd"><span class="gl">' + (q.status === 'done' ? '&#9733;' : '&#9675;') + '</span><span class="nm">' + esc(q.title) + '</span>'
         + goBtn
         + queueBtn
         + (dis ? '<button class="q-dismiss" data-qid="' + esc(q.id) + '" title="Dismiss — the station will never raise this again">&#10005;</button>' : '')
@@ -5007,10 +5089,10 @@ const StationUI = (() => {
     // the "the agent wants to run this for you" ask reads first. Only shown when the ledger has cards.
     const AJS = (typeof AutoJobStore !== 'undefined' && AutoJobStore.pendingList) ? AutoJobStore : null;
     const proposals = AJS ? AJS.pendingList() : [];
-    const propRow = p => '<div class="gx-tro off gx-proposal" style="border-left:2px solid var(--gold);">'
-      + '<div style="display:flex;align-items:center;gap:6px;"><span class="gl" style="color:var(--gold);">&#9873;</span><span class="nm">' + esc(p.title) + '</span></div>'
+    const propRow = p => '<div class="gx-tro off gx-proposal q-goalbar">'
+      + '<div class="q-hd"><span class="gl q-gl-gold">&#9873;</span><span class="nm">' + esc(p.title) + '</span></div>'
       + '<div class="sub">' + esc(p.why || 'a standing job the agent proposes running for you on a schedule.') + '</div>'
-      + '<div class="consent-btns" style="margin-top:5px;">'
+      + '<div class="consent-btns q-mt">'
       + '<button class="consent-btn q-prop-yes" data-pid="' + esc(p.id) + '">Approve</button>'
       + '<button class="consent-btn deny q-prop-no" data-pid="' + esc(p.id) + '">Decline</button>'
       + '</div></div>';

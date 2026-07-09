@@ -1,10 +1,10 @@
 /* STARNET — warroom.js : the LIVING WAR-ROOM visible layer.
 
    Implements the war-room concept ON the real app, on top of the per-agent Channels gate:
-     · an always-visible APPROVAL HOTSPOT pinned above COMMS — tool-consent can never scroll off
-       (read live from Channels' pending consent; the buttons resolve the REAL run via Harness.consent),
-     · CREW instrument-cluster dots that pulse with real per-agent activity,
+     · CREW instrument-cluster dots that pulse with real per-agent activity (and glow AWAIT on a pending consent),
      · a CINEMA toggle (C / on-feed button) that fills the frame with the living station.
+   (The old pinned-above-COMMS APPROVAL HOTSPOT is gone — tool-consent now renders INLINE at the bottom of COMMS,
+   classic-harness style, in the conversation flow where the agent paused, via chat.js permissionRow.)
 
    Self-contained: it builds its own DOM into the existing HUD and reads real state — it edits no other
    module, so it cannot break the harness. Everything is guarded; a missing dependency just no-ops. */
@@ -12,24 +12,12 @@
 (function () {
   if (typeof document === 'undefined') return;
   const $ = s => document.querySelector(s);
-  // Delegates to the one complete implementation. The old local copy missed ' (apostrophe) — U.esc escapes
-  // all of & < > " ', so a name/argsSummary carrying an apostrophe can't break a single-quoted attribute.
-  const esc = s => U.esc(s == null ? '' : s);
   const sfx = n => { try { if (typeof SFX === 'object' && SFX[n]) SFX[n](); } catch (_) {} };
 
-  /* ---------------- APPROVAL HOTSPOT (pinned above COMMS) ---------------- */
-  let lastKey = null;   // wsId:promptId of the rendered consent, so we only rebuild on a real change
-  function buildHotspot() {
-    const panel = $('#chat-panel'), log = $('#chat-log');
-    if (!panel || !log || $('#wr-approval')) return;
-    const h = document.createElement('section'); h.id = 'wr-approval'; h.className = 'calm';
-    h.innerHTML = calmHTML();
-    panel.insertBefore(h, log);
-  }
-  function calmHTML() {
-    return '<div class="wrah-hdr"><span>▮ APPROVALS</span><span></span></div>' +
-      '<div class="wrah-body">no pending approvals — the agent is cleared to act within policy.</div>';
-  }
+  /* ---------------- pending-consent probe (feeds the CREW AWAIT state) ---------------- */
+  // A pending consent blocks the WHOLE station, so tickCrew lights every dot AWAIT while one is open. Returns the
+  // first pending {wsId, p} or null. (The old top APPROVAL HOTSPOT that also consumed this is gone; approvals now
+  // render inline in COMMS via chat.js. This probe stays because the crew cluster still reads the global await.)
   function currentPending() {
     if (typeof Channels === 'undefined') return null;
     try {
@@ -38,44 +26,6 @@
       return p ? { wsId: wsId, p: p } : null;
     } catch (_) { return null; }
   }
-  function actionPhrase(p) {
-    const t = p.tool || 'act';
-    if (/notebook/.test(t)) return 'save a note to its memory';
-    if (/write|append|edit/.test(t)) return 'write <span class="wrah-args">' + esc(p.argsSummary || 'a file') + '</span>';
-    return esc(t.replace(/_/g, '.')) + (p.argsSummary ? ' <span class="wrah-args">' + esc(p.argsSummary) + '</span>' : '');
-  }
-  function tickHotspot() {
-    const h = $('#wr-approval'); if (!h) return;
-    const cur = currentPending();
-    const key = cur ? (cur.wsId + ':' + cur.p.promptId) : null;
-    if (key === lastKey) return;
-    lastKey = key;
-    if (!cur) { h.className = 'calm'; h.innerHTML = calmHTML(); return; }
-    const name = ($('#gt-agent') && $('#gt-agent').textContent.trim()) || 'the agent';
-    h.className = 'pending';
-    h.innerHTML =
-      '<div class="wrah-hdr"><span>▣ APPROVAL REQUIRED</span><span>1 PENDING</span></div>' +
-      '<div class="wrah-who"><b>' + esc(name) + '</b> wants to ' + actionPhrase(cur.p) + '</div>' +
-      '<div class="wrah-btns">' +
-      '<button class="wrah-btn" data-d="once">Approve once</button>' +
-      '<button class="wrah-btn" data-d="always">Always</button>' +
-      '<button class="wrah-btn danger" data-d="full">Full access</button>' +
-      '<button class="wrah-btn deny" data-d="deny">Deny</button>' +
-      '</div>';
-    const p = cur.p, wsId = cur.wsId;
-    h.querySelectorAll('.wrah-btn').forEach(b => b.addEventListener('click', () => {
-      const decision = b.dataset.d, isDeny = decision === 'deny';
-      try { if (typeof Harness !== 'undefined' && Harness.consent) Harness.consent(p.runId, p.promptId, decision); } catch (_) {}
-      try { if (typeof Channels !== 'undefined') Channels.clearPending(wsId); } catch (_) {}
-      sfx(isDeny ? 'close' : 'click');
-      h.className = 'calm';
-      h.innerHTML = '<div class="wrah-hdr"><span>▮ APPROVALS</span><span></span></div>' +
-        '<div class="wrah-done' + (isDeny ? ' deny' : '') + '">' + (isDeny ? '✕ denied' : '✓ ' + decision) + '</div>';
-      lastKey = '__resolved__';   // hold the result until the next genuine state change
-    }));
-    sfx('alarm');   // the distinct "needs you" cue
-  }
-
   /* ---------------- CREW instrument-cluster pulse (real activity) ---------------- */
   function tickCrew() {
     const rows = document.querySelectorAll('#crew .crew-row'); if (!rows.length) return;

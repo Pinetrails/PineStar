@@ -413,19 +413,17 @@ const Build = (() => {
     if (!root || root.querySelector('.refit-guide')) return;
     const g = document.createElement('div');
     g.className = 'refit-guide';
+    // Three beats, not a wall — place a room, place+assign a BAY, wire it with a BELT. The full reference (every prop
+    // & mechanic) lives in the FIELD MANUAL, so we point there instead of front-loading it all here.
     g.innerHTML = `
       <div class="refit-guide-card">
         <h3>▮ BUILD YOUR STATION</h3>
         <ul>
-          <li><b>Drag</b> on the grid to place a <b>ROOM</b>.</li>
-          <li><b>Drag</b> along an axis to run a <b>HALLWAY</b> — any length.</li>
-          <li>Rooms &amp; halls that <b>touch auto-connect</b> with a door.</li>
-          <li><span class="g-ok">green</span> = ok · <span class="g-bad">red</span> = blocked (a tip says why).</li>
-          <li><b>PAINT</b> decks, <b>MOVE</b> / <b>RECLAIM</b> rooms · <b>UNDO</b> anything.</li>
-          <li>Your agent walks the rooms + corridors you build.</li>
-          <li>Start simple: place a <b>BAY</b> (PROP ▸ WORKFLOW), click it, assign an agent — <b>done</b>. Work for that agent lands at its dock.</li>
-          <li>Then wire it: with <b>BELT (7)</b>, just <b>click one machine, then another</b> — the belt lays itself. <b>INBOX → BAY</b> brings outside work in; <b>BAY → OUTBOX</b> ships results out. Complete lines <b>glow</b>; broken pieces are <b>flagged in words</b>. Hit <b>▸ TEST</b> for the narrated loop.</li>
+          <li><b>Drag</b> on the grid to place a <b>ROOM</b> — your agent walks the rooms you build.</li>
+          <li>Place a <b>BAY</b> (PROP ▸ WORKFLOW), click it, <b>assign an agent</b> — work for that agent lands at its dock.</li>
+          <li>Wire it with <b>BELT (7)</b>: click one machine, then another. <span class="g-ok">green</span> = ok · <span class="g-bad">red</span> = blocked · <b>UNDO</b> anything.</li>
         </ul>
+        <p style="opacity:.7;font-size:12px;margin:8px 0 0">Every prop &amp; mechanic is spelled out in the <b>FIELD MANUAL</b> — SYSTEM ▸ FIELD MANUAL.</p>
         <button class="btn-sm refit-primary" id="refit-guide-go">▸ START BUILDING</button>
       </div>`;
     root.appendChild(g);

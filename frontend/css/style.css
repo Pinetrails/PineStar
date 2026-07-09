@@ -817,9 +817,13 @@ body.no-scan .crt-scan { display: none; }
 .kb-card {
   border: 1px solid var(--ph-faint); border-left: 3px solid var(--ph-dim); background: rgba(0,0,0,0.35);
   padding: 4px 6px; margin-bottom: 5px; font-size: 13px;
-  border-radius: var(--r-sm); box-shadow: var(--raise);
+  border-radius: var(--r-sm); box-shadow: var(--raise); cursor: pointer;
 }
+/* the whole card is a role=button that opens the conversation — show the pointer, and give keyboard focus a ring */
+.kb-card:hover { border-color: var(--ph-dim); }
+.kb-card:focus-visible { outline: none; border-color: var(--ph); box-shadow: var(--raise), 0 0 0 1px var(--ph), 0 0 10px var(--ph-glow2); }
 .kb-card.failed { opacity: 0.4; text-decoration: line-through; }
+.kb-card:focus { outline: none; }
 .kb-card.order { border-left-color: var(--gold); }
 .kb-title { color: var(--text); }
 .kb-meta { display: flex; gap: 8px; font-size: 11px; color: var(--ph-dim); margin-top: 2px; }
@@ -846,7 +850,9 @@ body.no-scan .crt-scan { display: none; }
   transform: rotate(45deg); background: var(--ph); box-shadow: 0 0 6px var(--ph-glow);
 }
 .perk-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
-.perk { border: 1px solid var(--ph-faint); padding: 5px 4px; text-align: center; opacity: 0.34; border-radius: var(--r-sm); box-shadow: var(--raise); }
+/* a LOCKED perk is legible, not a ghost — 0.65 keeps its status line readable (the fix + the "no CABINET at desk"
+   truth both need to be read). .perk.on stays fully lit + inner-glow so live capabilities still clearly out-read it. */
+.perk { border: 1px solid var(--ph-faint); padding: 5px 4px; text-align: center; opacity: 0.65; border-radius: var(--r-sm); box-shadow: var(--raise); }
 .perk.on { opacity: 1; border: 1px solid var(--ph-dim); box-shadow: var(--raise), inset 0 0 12px var(--ph-glow2); }
 .perk-icon { font-size: 22px; color: var(--gold); }
 .perk-name { font-size: 11px; color: var(--ph); letter-spacing: 0.5px; }
