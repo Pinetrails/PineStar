@@ -3871,6 +3871,7 @@ function dispatchRoute(req, res) {
   if (req.method === 'GET' && req.url.indexOf('/api/workspace/dir') === 0) return serveWorkspaceDir(req, res);
   if (req.method === 'POST' && req.url === '/api/notebook/restore') return handleNotebookRestore(req, res);
   if (req.method === 'GET' && req.url.indexOf('/api/notebook') === 0) return serveNotebook(req, res);
+  if (req.method === 'POST' && req.url === '/api/save/recovery-ack') return handleSaveRecoveryAck(req, res);
   if (req.method === 'GET' && req.url.indexOf('/api/save') === 0) return serveSaveLoad(req, res);
   if (req.method === 'POST' && req.url === '/api/save') return handleSaveWrite(req, res);
   if (req.method === 'GET' && req.url.indexOf('/api/insights') === 0) return serveInsights(req, res);
@@ -8079,9 +8080,23 @@ function serveSaveLoad(req, res) {
     const u = new URL(req.url, 'http://127.0.0.1');
     const agent = u.searchParams.get('agent') || 'agent';
     if (!/^[A-Za-z0-9_-]{1,40}$/.test(agent)) return json(403, { error: 'forbidden' });
-    const doc = saveStore.load(agent);
-    json(200, { save: doc || null });
-  } catch (e) { json(200, { save: null }); }
+    const doc = saveStore.load(agent);   // NOTE: this read is what quarantines a corrupt main / recovers .bak — run it BEFORE reading the marker
+    // EL-11 FIX 2/3: surface the persisted quarantine/recovery marker (savestore writeRecoveryMarker) so the boot
+    // path can disclose a damaged/restored save instead of silently presenting the pristine first-run ceremony.
+    // EL-11 FIX 1 (GB-9): also surface workspaceDegraded at boot-read time, not only on the first refused write.
+    const recovery = (typeof saveStore.recoveryNotice === 'function') ? (saveStore.recoveryNotice(agent) || null) : null;
+    json(200, { save: doc || null, recovery: recovery, degraded: workspaceDegraded ? true : undefined });
+  } catch (e) { json(200, { save: null, recovery: null }); }
+}
+// POST /api/save/recovery-ack { agent? } — the frontend has SHOWN the honest quarantine/recovery notice; clear
+// the marker so it appears exactly once. Never touches the save itself (the quarantined copy stays on disk).
+async function handleSaveRecoveryAck(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 4096)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+  const agent = String(body.agent || 'agent');
+  if (!/^[A-Za-z0-9_-]{1,40}$/.test(agent)) return json(400, { error: 'agentId must be 1-40 chars of [A-Za-z0-9_-]' });
+  try { json(200, { ok: true, cleared: !!saveStore.clearRecoveryNotice(agent) }); }
+  catch (e) { json(200, { ok: false, error: (e && e.message) || 'ack failed' }); }
 }
 // POST /api/save { agent?, ...envelope } — write through the localStorage save to durable disk. The body IS the
 // save envelope (with its schema/version/updatedAt); `agent` selects the record (defaults to 'agent'). The

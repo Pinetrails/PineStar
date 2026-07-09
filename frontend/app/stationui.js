@@ -3348,16 +3348,31 @@ const StationUI = (() => {
   // When CloudSave reports a stale mirror (no confirmed backup in > 60 min + a live failure streak),
   // flip the dot to a distinct amber/warn state + explain it in the title. NO new window, NO nag — just
   // an honest dot state. Never asserts durability the harness can't prove (truthful-telemetry law).
+  let degradedNotified = false;   // ONE persistent notice per session for the degraded workspace (the dot carries the ongoing state)
   function refreshSaveDurability(d) {
     d = d || $('#save-dot'); if (!d) return;
     let h = null;
     try { h = (typeof CloudSave !== 'undefined' && CloudSave.health) ? CloudSave.health() : null; } catch (_) { h = null; }
-    if (h && h.stale) {
+    d.classList.remove('stale', 'degraded');
+    if (h && h.degraded) {
+      // EL-11 FIX 1: the sidecar is REFUSING writes — this workspace was written by a NEWER StarNet. Persistent
+      // red dot + a one-time visible line; never lets a refused write read as a healthy backup.
+      d.classList.add('degraded');
+      d.title = 'this station’s data was written by a newer StarNet — update the app. Until then, changes are NOT being backed up.';
+      if (!degradedNotified) {
+        degradedNotified = true;
+        try { notify('This station’s data was written by a newer StarNet — update the app. Until you do, your changes are NOT being backed up.', 'bad'); } catch (_) {}
+      }
+    } else if (h && h.stale) {
       d.classList.add('stale');
       const since = h.lastPushOkAt ? new Date(h.lastPushOkAt).toLocaleString() : 'never';
       d.title = 'world is saved locally; the durable backup copy hasn’t synced since ' + since;
+    } else if (h && h.warn) {
+      // EL-11 FIX 4: a live streak of failed pushes (3+) warns IMMEDIATELY — no 60-minute blind window while
+      // POST /api/save errors (disk full / EPERM / refused). Same amber vocabulary as stale, advising title.
+      d.classList.add('stale');
+      d.title = 'saves are failing — check disk space / folder permissions (' + (h.consecutiveFailures || 0) + ' failed attempts in a row). Local play continues; the durable backup is not confirming writes.';
     } else {
-      d.classList.remove('stale');
       d.title = 'autosave';
     }
   }

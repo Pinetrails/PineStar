@@ -22,6 +22,9 @@ const CloudSaveCore = (() => {
   // staleness: the durable mirror is "stale" once it has gone this long without a confirmed push
   // WHILE at least one failure has happened since the last success (a healthy quiet period is NOT stale).
   const STALE_AFTER_MS = 60 * 60_000;   // 60 minutes
+  // early-warning threshold (EL-11 FIX 4): a live streak of this many consecutive failed pushes flips the
+  // save-dot to a warn state IMMEDIATELY — a broken disk (EPERM/full) must not get a 60-minute blind window.
+  const WARN_AFTER_FAILURES = 3;
 
   function num(v) { const n = Number(v); return Number.isFinite(n) && n > 0 ? n : 0; }
 
@@ -81,6 +84,15 @@ const CloudSaveCore = (() => {
     return (now - h.lastPushOkAt) >= STALE_AFTER_MS;
   }
 
+  // EARLY-WARNING verdict (EL-11 FIX 4): true once the live failure streak reaches WARN_AFTER_FAILURES,
+  // regardless of how recent the last success was. Truthful and cheap: the streak IS the proof (a repeatedly
+  // refused/erroring POST — disk full, EPERM, refused write), so the dot may advise within minutes, not after
+  // the 60-minute stale line. Cleared by the first success (recordSuccess zeroes the streak).
+  function isWarn(h) {
+    h = hydrate(h);
+    return h.consecutiveFailures >= WARN_AFTER_FAILURES;
+  }
+
   // a stable, JSON-friendly snapshot for CloudSave.health() consumers (UI + tests).
   function snapshot(h, now) {
     h = hydrate(h);
@@ -89,13 +101,14 @@ const CloudSaveCore = (() => {
       lastPushFailAt: h.lastPushFailAt,
       consecutiveFailures: h.consecutiveFailures,
       nextRetryAt: h.nextRetryAt,
+      warn: isWarn(h),
       stale: isStale(h, now)
     };
   }
 
   return {
-    RETRY_BASE_MS, RETRY_MAX_MS, STALE_AFTER_MS,
-    freshHealth, hydrate, backoffFor, recordSuccess, recordFailure, retryDue, isStale, snapshot
+    RETRY_BASE_MS, RETRY_MAX_MS, STALE_AFTER_MS, WARN_AFTER_FAILURES,
+    freshHealth, hydrate, backoffFor, recordSuccess, recordFailure, retryDue, isStale, isWarn, snapshot
   };
 })();
 if (typeof module !== 'undefined' && module.exports) module.exports = CloudSaveCore;

@@ -986,8 +986,18 @@ const App = (() => {
       // a legacy stamp-less push still writes as before (backward compatible). Date.now() is monotonic-enough for
       // this last-write anti-clobber (mirrors save.js's own updatedAt stamp).
       lastRosterPush = fetch('/api/roster', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ agents: list, updatedAt: Date.now() }) })
-        .then(r => {
+        .then(async r => {
           if (r && r.ok === false) throw new Error('roster HTTP ' + r.status);
+          // EL-11 FIX 1: the sidecar answers REFUSALS as HTTP 200 { ok:false, ... } (degraded workspace /
+          // stale stamp) — Response.ok alone never proves the roster landed. Parse the body; ok:false is a
+          // FAILED push (retried on the next persist with a fresh stamp), and degraded latches the shared
+          // save-health verdict so the save-dot tells the truth about refused writes.
+          let body = null;
+          try { body = await r.json(); } catch (_) { body = null; }
+          if (body && typeof body === 'object' && body.ok === false) {
+            if (body.degraded === true && typeof CloudSave !== 'undefined' && CloudSave.markDegraded) CloudSave.markDegraded();
+            throw new Error('roster refused: ' + (body.error || (body.stale ? 'stale push' : 'unknown')));
+          }
           if (rosterPushFailed) { rosterPushFailed = false; try { console.info('[roster] sidecar roster sync recovered.'); } catch (_) {} }
         })
         .catch(() => {
@@ -2808,6 +2818,27 @@ const App = (() => {
     show('screen-future');
   }
 
+  // EL-11 FIX 2 — DAMAGED-SAVE DISCLOSURE GATE: the sidecar quarantined an UNRECOVERABLE durable save (main +
+  // .bak both bad) and no usable save exists anywhere else. Without this, boot silently presents the pristine
+  // first-run ceremony — weeks of state gone with zero disclosure (the worst kind of app lie). Blocking, honest,
+  // and names the forensic copy's path; the single action acks the notice and continues into a fresh station.
+  function showSaveRecoveryGate(rec) {
+    gateActive = true;
+    try { if (World && World.stop) World.stop(); } catch (_) {}
+    const p = el('recovery-quarantine-path');
+    if (p) p.textContent = (rec && rec.quarantinedTo) ? String(rec.quarantinedTo) : 'the StarNet workspaces folder (look for *.save.json.corrupt-*)';
+    const btn = el('btn-recovery-continue');
+    if (btn) {
+      btn.onclick = async () => {
+        SFX.click && SFX.click();
+        try { if (typeof CloudSave !== 'undefined' && CloudSave.ackRecovery) await CloudSave.ackRecovery(); } catch (_) {}
+        gateActive = false;
+        startCreation();
+      };
+    }
+    show('screen-recovery');
+  }
+
   /* ---------- boot ---------- */
   async function init() {
     if (Harness.init) await Harness.init();   // desktop: load the keychain "configured?" flag first
@@ -2858,6 +2889,25 @@ const App = (() => {
     // nothing persists.
     if (typeof CloudSave !== 'undefined' && CloudSave.isFutureSentinel && CloudSave.isFutureSentinel(saved)) {
       showFutureSaveGate(saved.version); return;
+    }
+    // EL-11 FIX 2/3 — the sidecar's save store quarantined a damaged durable save, or restored one from .bak.
+    // The user must LEARN that (reconcile()'s pull captured the persisted marker). Two honesty tiers:
+    //   • no usable save anywhere + an unrecoverable quarantine → BLOCKING disclosure BEFORE any genesis ceremony;
+    //   • a usable save exists (local cache intact / .bak recovery) → one non-blocking notice after boot, then ack.
+    const recovery = (typeof CloudSave !== 'undefined' && CloudSave.recoveryNotice) ? CloudSave.recoveryNotice() : null;
+    if (recovery && recovery.kind === 'quarantined' && !(saved && saved.agent)) {
+      showSaveRecoveryGate(recovery); return;
+    }
+    if (recovery) {
+      const line = (recovery.kind === 'recovered')
+        ? 'Recovered your save from its backup copy — the main save file was damaged. Nothing to do; this is just the honest record.'
+        : 'The durable backup of your save was damaged and could not be recovered — a copy was kept at ' +
+          (recovery.quarantinedTo || 'the workspaces folder') + '. Your local save is intact and is re-seeding the backup now.';
+      // after the station is up (resume/connect below) so the notice lands in the real NOTIFICATIONS record.
+      setTimeout(() => {
+        try { if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify(line, recovery.kind === 'recovered' ? 'warn' : 'bad'); } catch (_) {}
+        try { if (typeof CloudSave !== 'undefined' && CloudSave.ackRecovery) CloudSave.ackRecovery(); } catch (_) {}
+      }, 1500);
     }
     // restore the provider BEFORE the credential check so a codex agent (tokens server-side) jumps straight
     // in after a wipe/origin-reset instead of being misrouted to an OpenRouter key prompt.

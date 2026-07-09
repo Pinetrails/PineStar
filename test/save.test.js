@@ -197,4 +197,63 @@ const envelope = (over) => Object.assign({ schema: 'starnet.save', version: 3, u
   A.ok([...fs.files.keys()].some(k => /\.corrupt-\d+$/.test(k)), 'the corrupt main was quarantined even though .bak recovered');
 }
 
+// ---- L. RECOVERY NOTICE (EL-11 FIX 2): a double-corrupt save (main + .bak both bad) persists a
+// 'quarantined' marker so boot can DISCLOSE the loss instead of silently presenting first-run ----
+{
+  const fs = memFs();
+  const s = mk(fs);
+  const file = pathMod.join(ROOT, 'agent.save.json');
+  fs.files.set(file, '{ total garbage');
+  fs.files.set(file + '.bak', 'also garbage');
+  A.eq(s.load('agent'), undefined, 'double-corrupt (main + .bak) loads as undefined');
+  const n = s.recoveryNotice('agent');
+  A.ok(n && n.kind === 'quarantined', 'an unrecoverable quarantine persists a "quarantined" recovery marker');
+  A.ok(/\.corrupt-\d+/.test(String((n && n.quarantinedTo) || '')), 'the marker names the quarantined forensic copy path');
+  A.ok(Number(n && n.at) > 0, 'the marker is timestamped');
+  s.load('agent');   // subsequent loads (boot re-reads) must not destroy or duplicate the marker
+  A.ok(s.recoveryNotice('agent') && s.recoveryNotice('agent').kind === 'quarantined', 'the marker persists across later loads');
+  // the ack (POST /api/save/recovery-ack) clears it so the notice shows exactly once
+  A.eq(s.clearRecoveryNotice('agent'), true, 'ack clears the recovery marker');
+  A.eq(s.recoveryNotice('agent'), undefined, 'a cleared marker reads as none');
+}
+
+// ---- M. RECOVERY NOTICE (EL-11 FIX 3): a silent .bak recovery persists a 'recovered' marker ----
+{
+  const fs = memFs();
+  const s = mk(fs);
+  const file = pathMod.join(ROOT, 'agent.save.json');
+  fs.files.set(file + '.bak', JSON.stringify({ version: 1, agentId: 'agent', updatedAt: 700, savedAt: 1, doc: envelope({ updatedAt: 700, agent: { id: 'agent', name: 'FROMBAK' } }) }));
+  fs.files.set(file, '{ corrupt main');
+  A.eq(s.load('agent').agent.name, 'FROMBAK', 'recovers from .bak');
+  const n = s.recoveryNotice('agent');
+  A.ok(n && n.kind === 'recovered', 'a .bak recovery persists a "recovered" marker (the user learns it happened)');
+  A.ok(/\.corrupt-\d+/.test(String((n && n.quarantinedTo) || '')), 'the recovered marker still names the quarantined main');
+}
+
+// ---- N. RECOVERY NOTICE: worse news is sticky — an unacked "quarantined" is never papered over ----
+{
+  const fs = memFs();
+  const s = mk(fs);
+  const file = pathMod.join(ROOT, 'agent.save.json');
+  // first: unrecoverable quarantine → 'quarantined' marker
+  fs.files.set(file, '{ garbage'); fs.files.set(file + '.bak', 'garbage too');
+  s.load('agent');
+  A.eq(s.recoveryNotice('agent').kind, 'quarantined', 'quarantined marker written');
+  // later: a fresh save + .bak snapshot, main corrupts again, .bak recovers → would write 'recovered'
+  A.eq(s.save('agent', envelope({ updatedAt: 800 })).ok, true, 'fresh save lands after quarantine');
+  A.eq(s.save('agent', envelope({ updatedAt: 900 })).ok, true, 'second save snapshots .bak');
+  fs.files.set(file, '{ corrupt again');
+  A.ok(s.load('agent'), 'recovers from .bak');
+  A.eq(s.recoveryNotice('agent').kind, 'quarantined', 'the unacked "quarantined" marker is NOT downgraded to "recovered"');
+}
+
+// ---- O. RECOVERY NOTICE: a clean store has no marker, and normal saves never mint one ----
+{
+  const fs = memFs();
+  const s = mk(fs);
+  A.eq(s.recoveryNotice('agent'), undefined, 'a clean/new store carries no recovery marker');
+  A.eq(s.save('agent', envelope({ updatedAt: 5 })).ok, true, 'normal save works');
+  A.eq(s.recoveryNotice('agent'), undefined, 'a normal save writes no marker');
+}
+
 A.report('save.test');

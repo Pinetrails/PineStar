@@ -219,6 +219,40 @@
   </div>
 </section>
 
+<!-- ============ DAMAGED-SAVE DISCLOSURE GATE (EL-11 FIX 2) ============ -->
+<!-- Blocking screen raised when the sidecar's save store quarantined an UNRECOVERABLE durable save (main +
+     .bak both bad) and no usable save exists anywhere else. Without this, boot silently presents the pristine
+     first-run ceremony over weeks of lost state. Reuses the forward-version gate's CRT chrome (no new window
+     vocabulary). Truthful telemetry: states only what the harness proved — the file didn't parse, a forensic
+     copy was kept at the shown path, and continuing starts fresh. app.js showSaveRecoveryGate() wires it. -->
+<section id="screen-recovery" class="screen">
+  <div class="panel connect-panel ov-panel">
+    <span class="cc-bracket cc-tl">┌</span><span class="cc-bracket cc-tr">┐</span>
+    <span class="cc-bracket cc-bl">└</span><span class="cc-bracket cc-br">┘</span>
+    <header class="cc-console-head ov-head">
+      <div class="cc-titlebar"><span class="cc-tb-tag">STARNET</span><span class="cc-tb-rule"></span><span class="cc-tb-mode">SAVE DAMAGED</span><span class="cc-tb-rec">● HOLD</span></div>
+      <div class="cc-title-row ov-title-row">
+        <h2>▮ YOUR SAVE WAS DAMAGED</h2>
+        <span class="ov-sub"></span>
+      </div>
+      <div class="ov-recovery" role="alert">
+        Your station's save file was <b>damaged and could not be recovered</b> — the main copy and its backup
+        both failed to read. The damaged file was <b>not deleted</b>: a copy is kept at
+        <code id="recovery-quarantine-path" style="word-break:break-all"></code> in case it can be salvaged.
+        Continuing will start a <b>fresh station</b>.
+      </div>
+    </header>
+    <div class="ov-foot">
+      <div class="ov-foot-data">
+        <span class="ov-foot-cap">＋ the damaged copy stays on disk — nothing more is lost by continuing</span>
+      </div>
+      <div class="connect-actions ov-actions">
+        <button id="btn-recovery-continue" class="btn-xl">▶ CONTINUE WITH A FRESH STATION</button>
+      </div>
+    </div>
+  </div>
+</section>
+
 <!-- ============ GAME ============ -->
 <!-- BRAND MARK — deliberately OUTSIDE the .screen sections: it must paint ABOVE the CRT glass
      overlays (body::before/::after at z 940/950) so the amber wordmark stays crisp instead of
