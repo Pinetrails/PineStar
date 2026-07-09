@@ -28,6 +28,8 @@ function voiceModeRules() {
 
 const Chat = (() => {
   let log, input, statusEl;
+  let attachInput = null, attachStrip = null;   // ATTACHMENTS: the hidden <input type=file> + the composer preview strip
+  let pendingAtts = [];   // ATTACHMENTS: files staged in the composer for the NEXT send — { name, kind, localUrl, status, ref }
   let system = '', name = 'AGENT', activeWs = null;
   // TIER D · D1 WARMTH (2026-07-02): COMMS is a persistent panel, so setChatFocus never clears — the focused
   // body would otherwise chat-stare (track your cursor) forever. world.js decays the stare after a random
@@ -356,8 +358,18 @@ const Chat = (() => {
     } catch (_) { return false; }
   }
 
+  // INPUT HISTORY — terminal-style recall of what the Commander already sent this session. ArrowUp in an
+  // EMPTY composer (or while already recalling) walks back; ArrowDown walks forward and lands back on the
+  // in-progress draft. Typing anything exits recall mode (the 'input' listener resets histIdx), so a
+  // multiline draft is never hijacked mid-edit. Session-scoped, never persisted.
+  const sentHistory = []; let histIdx = -1, histDraft = '';
+  const HIST_CAP = 100;
+  function recordSent(t) { if (!t) return; if (sentHistory[sentHistory.length - 1] !== t) { sentHistory.push(t); if (sentHistory.length > HIST_CAP) sentHistory.shift(); } histIdx = -1; histDraft = ''; }
+  function recallInto(v) { input.value = v; autoGrowInput(); try { input.setSelectionRange(v.length, v.length); } catch (_) {} }
+
   function init(opts) {
     system = opts.system || ''; name = opts.name || 'AGENT';
+    sentHistory.length = 0; histIdx = -1; histDraft = '';   // recall never crosses a session/agent switch
     onTurn = opts.onTurn || null; interview = null;
     proposalRunsSeen.clear(); receiptRunsSeen.clear(); studyRunsSeen.clear(); clearChoices(); turninQueue.length = 0; activeTurnin = null; wiQDepth.clear(); queued.clear(); interrupted.clear();   // C2: per-session run-tracking + the queue gauge + turn-control state start clean for each agent (listeners stay once-registered)
     // GROWTH Tier 1: the study side starts clean per session too — a prior hero's deferred study/taste beats must
@@ -368,15 +380,33 @@ const Chat = (() => {
     threadRunsSeen.clear(); threadPending.length = 0; activeThreadCard = null;   // NS-6: the thread turn-in side starts clean per session (same law)
     beatSlot = (typeof Study !== 'undefined' && Study.makeBeatSlot) ? Study.makeBeatSlot() : null;
     log = el('chat-log'); input = el('chat-input'); statusEl = el('chat-status');
+    attachInput = el('chat-attach-input'); attachStrip = el('chat-attach-strip');
+    clearAttachments();   // a fresh agent session starts with no staged attachments (matches the clean-slate init above)
     if (log) log.addEventListener('scroll', () => { stick = nearBottom(); if (stick) hideNewPill(); });   // track whether the user is following the bottom; back at the bottom retires the "new messages" pill
     // COPY: one delegated click handler for every (current + future) message row's ⧉ button — copies the
     // row's prose, then flashes a ✓ confirm. Wired once per log element so a re-init can't stack handlers.
     if (log && !log.__copyWired) {
       log.__copyWired = true;
       log.addEventListener('click', e => {
+        // SELECTION GUARD: the transcript is selectable text — a mouse-up that ENDS a drag-selection must
+        // never also fire a click action (chip toggle), or selecting inside a chip snaps it shut.
+        const selecting = !!(window.getSelection && String(window.getSelection()));
+        // LINKS (desktop): a linkified <a target=_blank> is silently dead under the Tauri window policy
+        // (same law as openSignIn / the workshop Open-it action) — hand real http(s) hrefs to the OS
+        // browser. In a plain browser the default target=_blank behavior stands.
+        const link = e.target.closest('a');
+        if (link && /^https?:\/\//i.test(link.getAttribute('href') || '')) {
+          if (selecting) { e.preventDefault(); return; }
+          const invoke = (typeof window !== 'undefined' && window.__TAURI__ && window.__TAURI__.core) ? window.__TAURI__.core.invoke : null;
+          if (invoke) {
+            e.preventDefault();
+            invoke('open_external_url', { url: link.href }).catch(() => { if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('could not open your browser for that link', 'warn'); });
+          }
+          return;
+        }
         // TOOL CHIP: clicking a chip's head toggles its expanded detail (checked before the copy button)
         const chipHead = e.target.closest('.tc-head');
-        if (chipHead) { toggleChip(chipHead); if (typeof SFX !== 'undefined' && SFX.click) SFX.click(); return; }
+        if (chipHead) { if (selecting) return; toggleChip(chipHead); if (typeof SFX !== 'undefined' && SFX.click) SFX.click(); return; }
         const btn = e.target.closest('.cmsg-copy'); if (!btn) return;
         const bodyEl = btn.closest('.cmsg') && btn.closest('.cmsg').querySelector('.body');
         const txt = bodyEl ? bodyEl.textContent : '';
@@ -412,23 +442,168 @@ const Chat = (() => {
         if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeSlash(); return; }
         // any other key falls through to normal typing → the 'input' listener re-filters the palette
       }
+      // INPUT HISTORY — recall starts only from an EMPTY box (a draft in progress is never hijacked);
+      // once recalling, ArrowUp/ArrowDown walk the sent list, ArrowDown past the newest restores the draft.
+      if (e.key === 'ArrowUp' && sentHistory.length && (histIdx >= 0 || input.value === '')) {
+        e.preventDefault();
+        if (histIdx < 0) { histDraft = input.value; histIdx = sentHistory.length; }
+        if (histIdx > 0) { histIdx--; recallInto(sentHistory[histIdx]); }
+        return;
+      }
+      if (e.key === 'ArrowDown' && histIdx >= 0) {
+        e.preventDefault();
+        histIdx++;
+        if (histIdx >= sentHistory.length) { histIdx = -1; recallInto(histDraft); histDraft = ''; }
+        else recallInto(sentHistory[histIdx]);
+        return;
+      }
       if (e.key === 'Enter' && !e.isComposing && !e.shiftKey) {   // Shift+Enter falls through → newline in the textarea
         e.preventDefault();
         const t = input.value.trim();
-        if (!t) return;
+        if (!t && !hasStagedAttachments()) return;   // ATTACHMENTS: a photo/file alone is a valid send (empty text ok)
+        if (t) recordSent(t);   // history records every sent line — commands included, like a shell (attachment-only send has no text to record)
         // A "/name args" line whose palette is closed must still DISPATCH as a command, not get sent to the
         // agent as chat. runSlash reads its args off input.value, so hand it the raw line before clearing.
-        if (t[0] === '/') { const cmd = commandFromLine(t); if (cmd) { closeSlash(); runSlash(cmd); return; } }
+        if (t && t[0] === '/') { const cmd = commandFromLine(t); if (cmd) { closeSlash(); runSlash(cmd); return; } }
+        // ATTACHMENTS: while a run is busy, type-ahead can queue TEXT, but staged files wait for a real send
+        // (one run per stream) — so we don't take/clear them here; they stay in the strip for the next idle send.
+        if (isBusy()) { if (t) { input.value = ''; closeSlash(); autoGrowInput(); enqueue(t); } return; }
+        const atts = takeAttachments();   // snapshot the ready refs + clear the composer strip
         input.value = ''; closeSlash(); autoGrowInput();   // COMPOSER: collapse back to one line after a send
-        if (isBusy()) enqueue(t); else send(t);   // TYPE-AHEAD: queue a follow-up rather than dropping it while the stream is busy
+        send(t, { attachments: atts });
       } else if (e.key === 'Escape' && isBusy()) {
         e.preventDefault(); e.stopPropagation();   // INTERRUPT: beat navdock's global Esc-closes-menus while a run is live
         stopActive();
       }
     };
     // SLASH PALETTE: a leading "/" opens the command menu and filters it live as you type past it.
-    input.addEventListener('input', () => { autoGrowInput(); warmChat(); const v = input.value; if (v[0] === '/') openSlash(v.slice(1)); else closeSlash(); });
+    input.addEventListener('input', () => { autoGrowInput(); warmChat(); histIdx = -1; const v = input.value; if (v[0] === '/') openSlash(v.slice(1)); else closeSlash(); });   // real typing exits history-recall mode
     const stopBtn = el('chat-stop'); if (stopBtn) stopBtn.onclick = stopActive;
+    wireComposerAttachments();   // ATTACHMENTS: paperclip · paste · drag-drop -> stage files in the composer
+  }
+
+  /* ── ATTACHMENTS ────────────────────────────────────────────────────────────────────────────────────
+     Photos/files the Commander attaches to a message (like Claude Code / Codex). Three ways in: the 📎
+     button (file picker), paste from the clipboard, and drag-drop onto the composer. Each file is uploaded
+     to the sidecar (POST /api/attachments -> saved in the agent's workspace, jailed) and staged as a chip;
+     on send, the READY refs ride the user turn as lightweight { id,name,path,mediaType,kind } records (never
+     base64 — localStorage stays tiny), and the sidecar re-expands them into image/text content at run time. */
+  const ATTACH_IMG_EXT = { png:1, jpg:1, jpeg:1, gif:1, webp:1 };   // types the model can actually SEE as images
+  const ATTACH_MAX_FILE_BYTES = 8 * 1024 * 1024;
+  function attachAgentId() { return (activeWs && activeWs.agentId) || 'agent'; }
+  function fileKind(file) {
+    const ext = String(file && file.name || '').split('.').pop().toLowerCase();
+    if (ATTACH_IMG_EXT[ext] || /^image\/(png|jpeg|gif|webp)$/.test(String(file && file.type || ''))) return 'image';
+    return 'file';
+  }
+  function wireComposerAttachments() {
+    const btn = el('chat-attach');
+    if (btn) btn.onclick = () => { if (attachInput) attachInput.click(); };
+    if (attachInput) attachInput.onchange = () => { handleFiles(attachInput.files); attachInput.value = ''; };
+    // PASTE: a screenshot or copied file pasted into the message box becomes an attachment (text still types normally)
+    input.addEventListener('paste', ev => {
+      const items = ev.clipboardData && ev.clipboardData.files;
+      if (items && items.length) { ev.preventDefault(); handleFiles(items); }
+    });
+    // DRAG-DROP onto the whole composer. preventDefault on dragover is what enables the drop.
+    const row = el('chat-inputrow');
+    if (row) {
+      const show = e => { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'; row.classList.add('attach-dragover'); };
+      row.addEventListener('dragenter', show);
+      row.addEventListener('dragover', show);
+      row.addEventListener('dragleave', e => { if (e.target === row) row.classList.remove('attach-dragover'); });
+      row.addEventListener('drop', e => { e.preventDefault(); row.classList.remove('attach-dragover'); if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) handleFiles(e.dataTransfer.files); });
+    }
+  }
+  function handleFiles(fileList) {
+    const files = Array.from(fileList || []);
+    for (const f of files) {
+      if (!f) continue;
+      if (f.size > ATTACH_MAX_FILE_BYTES) { if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('“' + f.name + '” is too large to attach (max 8MB)', 'warn'); continue; }
+      stageFile(f);
+    }
+    renderAttachStrip();
+  }
+  // stage one file: show a chip immediately (local thumbnail for images), then upload it in the background.
+  function stageFile(file) {
+    const kind = fileKind(file);
+    const entry = { name: file.name || 'file', kind, localUrl: (kind === 'image') ? URL.createObjectURL(file) : '', status: 'uploading', ref: null };
+    pendingAtts.push(entry);
+    uploadAttachment(file).then(ref => {
+      entry.status = 'ready'; entry.ref = ref;
+    }).catch(() => {
+      entry.status = 'error';
+      if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('could not attach “' + entry.name + '”', 'warn');
+    }).then(() => renderAttachStrip());
+  }
+  function readAsDataUrl(file) {
+    return new Promise((resolve, reject) => {
+      const fr = new FileReader();
+      fr.onload = () => resolve(String(fr.result || ''));
+      fr.onerror = () => reject(new Error('read failed'));
+      fr.readAsDataURL(file);
+    });
+  }
+  async function uploadAttachment(file) {
+    const dataUrl = await readAsDataUrl(file);
+    const tok = (typeof Harness !== 'undefined' && Harness.apiToken) ? String(Harness.apiToken() || '') : '';
+    const headers = { 'Content-Type': 'application/json' };
+    if (tok) headers['X-StarNet-Token'] = tok;
+    const res = await fetch('/api/attachments', { method: 'POST', headers, body: JSON.stringify({ agent: attachAgentId(), name: file.name || 'file', dataUrl }) });
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok || !j || !j.ok) throw new Error((j && j.error) || ('upload HTTP ' + res.status));
+    return { id: j.id, name: j.name, path: j.path, mediaType: j.mediaType, kind: j.kind };
+  }
+  // render the composer preview strip from pendingAtts (thumbnails for images, a glyph + name for files).
+  function renderAttachStrip() {
+    if (!attachStrip) return;
+    attachStrip.textContent = '';
+    if (!pendingAtts.length) { attachStrip.hidden = true; return; }
+    attachStrip.hidden = false;
+    pendingAtts.forEach((entry, i) => {
+      const chip = document.createElement('span');
+      chip.className = 'chat-attach-chip' + (entry.status === 'uploading' ? ' uploading' : '') + (entry.status === 'error' ? ' err' : '');
+      if (entry.kind === 'image' && entry.localUrl) {
+        const img = document.createElement('img'); img.className = 'thumb'; img.src = entry.localUrl; img.alt = entry.name;
+        chip.appendChild(img);
+      } else {
+        const g = document.createElement('span'); g.className = 'glyph'; g.textContent = entry.kind === 'image' ? '🖼' : '📄';
+        chip.appendChild(g);
+      }
+      const nm = document.createElement('span'); nm.className = 'nm'; nm.textContent = entry.name; nm.title = entry.name;
+      chip.appendChild(nm);
+      const rm = document.createElement('button'); rm.className = 'rm'; rm.type = 'button'; rm.textContent = '×';
+      rm.title = 'remove'; rm.setAttribute('aria-label', 'Remove ' + entry.name);
+      rm.onclick = () => removePending(i);
+      chip.appendChild(rm);
+      attachStrip.appendChild(chip);
+    });
+  }
+  function removePending(i) {
+    const entry = pendingAtts[i];
+    if (!entry) return;
+    if (entry.localUrl) { try { URL.revokeObjectURL(entry.localUrl); } catch (_) {} }
+    // best-effort: prune the uploaded bytes so an attach-then-remove doesn't orphan a file in the workspace
+    if (entry.ref && entry.ref.path) {
+      const tok = (typeof Harness !== 'undefined' && Harness.apiToken) ? String(Harness.apiToken() || '') : '';
+      const headers = { 'Content-Type': 'application/json' }; if (tok) headers['X-StarNet-Token'] = tok;
+      fetch('/api/attachments', { method: 'POST', headers, body: JSON.stringify({ op: 'delete', agent: attachAgentId(), path: entry.ref.path }) }).catch(() => {});
+    }
+    pendingAtts.splice(i, 1);
+    renderAttachStrip();
+  }
+  // snapshot the READY refs for a send, then clear the strip. Uploads still in flight are dropped (uploads to
+  // the local sidecar are near-instant; the rare in-flight one is simply not attached rather than blocking send).
+  function takeAttachments() {
+    const ready = pendingAtts.filter(e => e.status === 'ready' && e.ref).map(e => e.ref);
+    clearAttachments();
+    return ready;
+  }
+  function hasStagedAttachments() { return pendingAtts.some(e => e.status === 'ready' && e.ref); }
+  function clearAttachments() {
+    for (const e of pendingAtts) { if (e.localUrl) { try { URL.revokeObjectURL(e.localUrl); } catch (_) {} } }
+    pendingAtts = [];
+    renderAttachStrip();
   }
 
   // COMPOSER auto-grow: the message field is a <textarea>, so keep its rendered height matched to its
@@ -634,10 +809,10 @@ const Chat = (() => {
     } else {
       d.appendChild(who); d.appendChild(body);
     }
-    // COPY: a hover-revealed copy button on the agent's MESSAGE rows. CSS hides it on the work-log beats
+    // COPY: a hover-revealed copy button on MESSAGE rows (agent + Commander). CSS hides it on the work-log beats
     // (tool / consent / turn-in / nudge / deliverable) — those aren't prose to copy. One delegated handler
     // in init() reads the row's .body text, so a streamed reply gains the button the moment its row exists.
-    if (role === 'agent') {
+    if (role === 'agent' || role === 'user') {
       const cp = document.createElement('button'); cp.className = 'cmsg-copy'; cp.type = 'button';
       cp.title = 'copy message'; cp.setAttribute('aria-label', 'Copy message'); cp.textContent = '⧉';
       d.appendChild(cp);
@@ -646,7 +821,45 @@ const Chat = (() => {
     autoscroll();
     return { d, body };
   }
-  function addUser(t) { row('user', { stamp: true }).body.textContent = t; autoscroll(); }
+  function addUser(t, atts) {
+    const r = row('user', { stamp: true });
+    if (t) r.body.textContent = t;
+    if (atts && atts.length) renderUserAttachments(r.d, atts);   // ATTACHMENTS: thumbnails/file-chips under the message text
+    autoscroll();
+  }
+  // render a SENT user turn's attachments: images as clickable thumbnails, other files as openable chips — both
+  // served by the sidecar's jailed /api/file route (so they survive a reload, exactly like agent deliverables).
+  function renderUserAttachments(rowEl, atts) {
+    const aid = attachAgentId();
+    const view = document.createElement('div'); view.className = 'chat-attach-view';
+    for (const att of atts) {
+      const a = att || {};
+      const name = String(a.name || 'file');
+      const rel = String(a.path || '');
+      if (!rel) continue;
+      if (a.kind === 'image') {
+        const link = document.createElement('a'); link.className = 'thumb'; link.title = name;
+        wireBlobOpen(link, rel, aid);   // click opens the full image in a new tab (reuses the deliverable opener)
+        const img = document.createElement('img'); img.loading = 'lazy'; img.alt = name;
+        link.appendChild(img); view.appendChild(link);
+        // fetch->blob->objectURL (NOT a direct <img src=/api/file>): a native image GET sends no Origin header,
+        // which the API-auth gate rejects — the fetch path carries same-origin auth. Mirrors imageDeliverableLine,
+        // including revoking the object URL once the bitmap has decoded so a 24/7 station never leaks one per image.
+        fileBlobUrl(rel, aid).then(u => {
+          img.src = u;
+          const free = () => { try { URL.revokeObjectURL(u); } catch (_) {} };
+          img.addEventListener('load', free, { once: true });
+          img.addEventListener('error', free, { once: true });
+        }).catch(() => {});
+      } else {
+        const chip = document.createElement('a'); chip.className = 'filechip'; chip.title = name;
+        wireBlobOpen(chip, rel, aid);
+        chip.appendChild(document.createTextNode('📄 ' + (name.split(/[\\/]/).pop() || name)));
+        view.appendChild(chip);
+      }
+    }
+    if (view.childNodes.length) rowEl.appendChild(view);
+  }
   function localLine(t) { row('agent', { stamp: true }).body.textContent = t; autoscroll(); }
 
   /* ---------- CELEBRATION broadcast: a terse station system line (level-up / quest / trophy) ----------
@@ -1506,8 +1719,19 @@ const Chat = (() => {
       : '';
     const openRunTab = (relPath) => {
       const url = opts.runUrl ? opts.runUrl(relPath) : '';
-      if (!url) { if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('could not open that — the station may be unreachable', 'warn'); return; }
-      try { window.open(url, '_blank', 'noopener'); } catch (_) {}
+      const warn = (msg) => { if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify(msg, 'warn'); };
+      if (!url) { warn('could not open that — the station may be unreachable'); return; }
+      // Desktop (Tauri): a raw window.open silently fails under the window policy — hand the absolute
+      // sidecar URL to the OS default browser and report a real failure if it doesn't open (same law as
+      // stationui.js openSignIn: never pretend a tab exists). Browser: window.open, where null = popup-blocked.
+      const invoke = (typeof window !== 'undefined' && window.__TAURI__ && window.__TAURI__.core) ? window.__TAURI__.core.invoke : null;
+      if (invoke) {
+        invoke('open_external_url', { url }).catch(() => warn('could not open your browser — open this in one yourself: ' + url));
+        return;
+      }
+      let win = null;
+      try { win = window.open(url, '_blank', 'noopener'); } catch (_) {}
+      if (!win) warn('your browser blocked the new tab — allow popups for the station, then try again');
     };
     const r = row('agent'); r.d.classList.add('tool'); r.d.classList.add('turnin'); r.d.classList.add('workshop-return');
 
@@ -1957,10 +2181,15 @@ const Chat = (() => {
   function renderReceipts(batch) {
     if (!batch || !batch.proposals || !batch.proposals.length) return;
     const head = row('agent'); head.d.classList.add('tool'); head.d.classList.add('turnin'); head.d.classList.add('receipts');
+    // ONE header owns the "remembered" claim; each line below is just the memory itself (repeating
+    // "◈ remembered:" per line + a bordered box per line is what made the post-run feed read as stacked popups).
+    const cap = document.createElement('div'); cap.className = 'receipt-head';
+    cap.textContent = '◈ remembered · ' + batch.proposals.length;
+    head.body.appendChild(cap);
     for (const prop of batch.proposals) {
       const item = document.createElement('div'); item.className = 'receipt-item';
       const kind = document.createElement('span'); kind.className = 'turnin-kind'; kind.textContent = KIND_TAG[prop.kind] || 'NOTE';
-      const text = document.createElement('span'); text.className = 'receipt-text'; text.textContent = '◈ remembered: ' + prop.content;
+      const text = document.createElement('span'); text.className = 'receipt-text'; text.textContent = prop.content;
       const veto = document.createElement('button'); veto.className = 'receipt-veto'; veto.type = 'button';
       veto.textContent = '✕'; veto.title = 'forget this — undo the save';
       veto.setAttribute('aria-label', 'forget this memory');
@@ -1971,7 +2200,7 @@ const Chat = (() => {
         if (r && r.ok) {
           veto.remove();
           item.classList.add('vetoed');
-          text.textContent = '✕ forgotten: ' + prop.content;   // muted state; stays denylisted (Memory Core Restore is the undo)
+          text.textContent = 'forgotten: ' + prop.content;   // muted state; stays denylisted (Memory Core Restore is the undo)
         } else {
           busy = false; veto.disabled = false;
           if (typeof StationUI !== 'undefined') StationUI.notify('could not forget that ' + (prop.kind === 'skill' ? 'skill' : 'memory') + ' - try again', 'warn');
@@ -2133,7 +2362,7 @@ const Chat = (() => {
     const why = [];
     if (prop.kind === 'retire') why.push(prop.text);
     if (prop.evidence) why.push('from “' + prop.evidence + '”');
-    if (why.length) { const ev = document.createElement('div'); ev.className = 'turnin-queue'; ev.hidden = false; ev.textContent = '↳ ' + why.join(' · '); item.appendChild(ev); }
+    if (why.length) { const ev = document.createElement('div'); ev.className = 'turnin-evidence'; ev.textContent = '↳ ' + why.join(' · '); item.insertBefore(ev, btns); }
     slotEl.appendChild(item);
     const card = { node: r.d, prop: prop, decided: false };
     activeStudy = card;
@@ -2360,7 +2589,7 @@ const Chat = (() => {
     const why = [];
     if (pv.streak) why.push(pv.streak + ' approvals in a row');
     why.push(offer.kind === 'grant' ? 'writes stay jailed + reversible' : 'raises the dial to ' + String(offer.to).toUpperCase());
-    { const ev = document.createElement('div'); ev.className = 'turnin-queue'; ev.hidden = false; ev.textContent = '↳ ' + why.join(' · '); item.appendChild(ev); }
+    { const ev = document.createElement('div'); ev.className = 'turnin-evidence'; ev.textContent = '↳ ' + why.join(' · '); item.insertBefore(ev, btns); }
     slotEl.appendChild(item);
     const card = { node: r.d, offer: offer, decided: false };
     activeTrust = card;
@@ -2481,7 +2710,7 @@ const Chat = (() => {
     const btns = document.createElement('span'); btns.className = 'consent-btns';
     item.appendChild(kind); item.appendChild(text); item.appendChild(btns);
     // provenance line: the VERBATIM quote the mine grounded this idea in (the evidence, never a paraphrase).
-    if (prop.spec) { const ev = document.createElement('div'); ev.className = 'turnin-queue'; ev.hidden = false; ev.textContent = '↳ you said “' + prop.spec + '” · kept threads feed the night shift'; item.appendChild(ev); }
+    if (prop.spec) { const ev = document.createElement('div'); ev.className = 'turnin-evidence'; ev.textContent = '↳ you said “' + prop.spec + '” · kept threads feed the night shift'; item.insertBefore(ev, btns); }
     slotEl.appendChild(item);
     const card = { node: r.d, prop: prop, decided: false };
     activeThreadCard = card;
@@ -2899,7 +3128,7 @@ const Chat = (() => {
     const h = activeWs ? activeWs.history : [];
     for (const m of h) {
       if (m && m.truncated) continue;   // E3: the local history-cap marker is a data record, not a dialogue turn
-      if (m.role === 'user') { addUser(m.content); continue; }
+      if (m.role === 'user') { addUser(m.content, m.attachments); continue; }
       // a SYSTEM STATUS marker (sys — e.g. an autosessions run-outcome framing line) renders as a system-styled
       // line, NOT as agent speech; it never seeds the model (historyWindow drops it) and it stays visible in-thread.
       if (m && m.sys) { if ((m.content || '').trim()) toolLine(m.content, !!m.error); continue; }
@@ -4046,6 +4275,10 @@ const Chat = (() => {
 
   async function send(text, opts) {
     const retry = !!(opts && opts.retry);   // RETRY re-runs the last user message (already in the thread) — don't echo it again
+    // ATTACHMENTS: photos/files staged in the composer, snapshotted by the Enter handler into opts.attachments as
+    // lightweight refs { id,name,path,mediaType,kind }. They ride the user turn (history + /api/run) and the
+    // sidecar expands them into image/text content blocks at run time. Empty on a plain text turn / a RETRY.
+    const attsIn = (opts && Array.isArray(opts.attachments)) ? opts.attachments : [];
     // R5 "Bottle a run": did THIS directive come from a recipe launch? launchRecipe() passes fromRecipe:true. A
     // recipe-launched run must NEVER be offered for bottling (it already IS a recipe) — recorded in RUN_META below.
     const fromRecipe = !!(opts && opts.fromRecipe);
@@ -4073,7 +4306,7 @@ const Chat = (() => {
     const wiPlacedTs = Date.now();
     let wiPlaced = false;   // set below iff a crate actually rode — every wi* beat downstream gates on it
     stick = true;   // sending a message means you want to watch the exchange — re-follow the bottom
-    if (!retry) { addUser(text); ws.history.push({ role: 'user', content: text }); capHistory(ws); }   // on RETRY the user turn is already in the thread + on screen
+    if (!retry) { addUser(text, attsIn); ws.history.push(attsIn.length ? { role: 'user', content: text, attachments: attsIn } : { role: 'user', content: text }); capHistory(ws); }   // on RETRY the user turn is already in the thread + on screen
     // name an untitled stream from its first real message (no-op on General / already-titled)
     if (typeof Workstreams !== 'undefined' && Workstreams.autoTitle(ws.id, text)) {
       if (typeof App !== 'undefined' && App.refreshRail) App.refreshRail();

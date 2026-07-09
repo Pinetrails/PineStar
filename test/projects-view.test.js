@@ -57,7 +57,7 @@ const pr = P.panels('projects');
 A.eq(pr.sessionsList, false, 'projects view hides the sessions list');
 A.eq(pr.projectsList, true, 'projects view shows the projects list');
 A.eq(pr.newBtn, false, 'projects view hides + NEW');
-A.eq(pr.archivedBtn, false, 'projects view hides the sessions ARCHIVED toggle');
+A.eq('archivedBtn' in pr, false, 'no ARCHIVED head action exists — the archived reveal is a footer row inside #workstreams');
 A.eq(pr.addBtn, true, 'projects view shows + ADD');
 
 A.report('projects-view.test');

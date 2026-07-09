@@ -119,6 +119,25 @@ async function collect(provider, req) { const out = []; for await (const e of pr
     A.eq(captured.body.max_tokens, 16000, 'opts.maxTokens override applied when no explicit/catalog ceiling');
   }
 
+  // F. USER ATTACHMENTS: a user message with image_url parts maps to native Anthropic image blocks (base64 +
+  //    url source), text parts are preserved, and a plain-string user turn is unchanged.
+  {
+    const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42m"';   // shape only; content is opaque
+    const conv = _internals.messagesToAnthropic([
+      { role: 'user', content: [
+        { type: 'text', text: 'what is this?' },
+        { type: 'image_url', image_url: { url: 'data:image/png;base64,' + png } },
+        { type: 'image_url', image_url: { url: 'https://example.com/a.jpg' } }
+      ] }
+    ]);
+    A.eq(conv.messages[0].content[0], { type: 'text', text: 'what is this?' }, 'text part preserved');
+    A.eq(conv.messages[0].content[1], { type: 'image', source: { type: 'base64', media_type: 'image/png', data: png } }, 'data: URL image_url -> base64 image block');
+    A.eq(conv.messages[0].content[2], { type: 'image', source: { type: 'url', url: 'https://example.com/a.jpg' } }, 'http(s) image_url -> url image block');
+
+    const plain = _internals.messagesToAnthropic([{ role: 'user', content: 'just text' }]);
+    A.eq(plain.messages[0].content[0], { type: 'text', text: 'just text' }, 'plain string user turn unchanged');
+  }
+
   A.eq(_internals.normalizeUsage({ input_tokens: 1, cache_read_input_tokens: 2, output_tokens: 3 }).prompt_tokens, 3, 'cache read tokens are included in prompt total');
   A.report('provider.anthropic.test');
 })().catch(e => { console.log('FAIL: provider.anthropic.test threw -- ' + (e && e.stack || e)); process.exit(1); });

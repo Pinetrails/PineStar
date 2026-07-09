@@ -949,10 +949,14 @@ const App = (() => {
       if (key) body.key = key;
       const baseUrl = (typeof Harness !== 'undefined' && Harness.getBaseUrl) ? Harness.getBaseUrl(provider) : '';
       if (baseUrl) body.baseUrl = baseUrl;
-      fetch('/api/channels/telegram/sync', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
-      }).catch(() => {});
+      // every connectable channel gets the same identity push; the sidecar's sync handler no-ops quietly for
+      // any channel that isn't configured, so this stays a cheap fan-out (telegram/discord/slack/matrix/signal).
+      for (const ch of ['telegram', 'discord', 'slack', 'matrix', 'signal']) {
+        fetch('/api/channels/' + ch + '/sync', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        }).catch(() => {});
+      }
     } catch (_) {}
   }
 
@@ -1250,9 +1254,25 @@ const App = (() => {
   // 400-rejected by the backend, so we never hardcode the menu when we can discover it.
   const CODEX_MODELS = ['gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini', 'gpt-5.3-codex-spark'];
 
+  // fold/unfold the provider row's long tail. Expanding never hides the active pick; collapsing while a
+  // tail provider is selected is refused (the selected chip must stay visible — no phantom selection).
+  function setProviderRowExpanded(expand) {
+    const row = document.querySelector('.provider-row'), more = el('prov-more');
+    if (!row || !more) return;
+    if (!expand) {
+      const selBtn = row.querySelector('.prov.sel');
+      if (selBtn && selBtn.classList.contains('tail')) expand = true;
+    }
+    row.classList.toggle('collapsed', !expand);
+    more.setAttribute('aria-expanded', String(expand));
+    more.textContent = expand ? '－ FEWER' : '＋ ' + row.querySelectorAll('.prov.tail').length + ' MORE';
+  }
+
   function selectProviderUI(p) {
     pickedProvider = normalizeProviderId(p);
     document.querySelectorAll('.provider-row .prov').forEach(b => b.classList.toggle('sel', b.dataset.prov === pickedProvider));
+    // a saved/selected tail provider must never be invisibly selected behind the fold
+    { const sb = document.querySelector('.provider-row .prov.sel'); if (sb && sb.classList.contains('tail')) setProviderRowExpanded(true); }
     const isCodex = pickedProvider === 'codex';
     const keyBlock = el('key-block'), keyInput = el('in-key');
     const baseBlock = el('base-url-block'), baseInput = el('in-base-url');
@@ -1563,6 +1583,14 @@ const App = (() => {
     wireAdvancedToggle();
     // provider toggle + ChatGPT sign-in wiring; selectProviderUI() also loads the right model catalog.
     document.querySelectorAll('.provider-row .prov').forEach(b => { b.onclick = () => { SFX.click(); selectProviderUI(b.dataset.prov); }; });
+    // the long-tail providers start folded behind ＋ MORE so a first-run user faces 6 chips, not 15.
+    // selectProviderUI() unfolds the row itself whenever the active provider lives in the tail.
+    const provRow = document.querySelector('.provider-row'), provMore = el('prov-more');
+    if (provRow && provMore) {
+      provRow.classList.add('collapsed');
+      provMore.setAttribute('aria-expanded', 'false');
+      provMore.onclick = () => { SFX.click(); setProviderRowExpanded(provRow.classList.contains('collapsed')); };
+    }
     el('btn-codex-signin').onclick = startCodexSignIn;
     el('btn-codex-logout').onclick = codexLogout;
     // RESUME/recovery honours the agent's saved provider; a FRESH create screen leads with the beginner-first
@@ -1580,6 +1608,9 @@ const App = (() => {
     // EXPORT is only meaningful when there's a saved agent to back up — surface it in RESUME mode (the title
     // screen that used to host it is gone), hide it on a fresh first run where there's nothing yet.
     const exp = el('btn-export'); if (exp) exp.classList.toggle('hidden', !recovery);
+    // BACK only exists in RESUME (it re-runs auto-resume). On a fresh first run the create screen is the
+    // root — a dead BACK button that does nothing only teaches "buttons here may not work". Hide it.
+    const back = el('btn-back'); if (back) back.classList.toggle('hidden', !recovery);
     const banner = el('cc-recovery');
     const title = el('cc-title'), sub = el('cc-sub'), mode = el('cc-mode');
     const wake = el('btn-wake');
@@ -2242,7 +2273,6 @@ const App = (() => {
     pushRoster();     // Stage 2: seed the sidecar with the live crew so the lead can delegate (no-op for a solo station)
     renderRail();
     el('ws-new').onclick = newWorkstream;
-    { const wsArch = el('ws-archived'); if (wsArch) wsArch.onclick = toggleArchived; }
     // NS-5c SESSIONS ↔ PROJECTS toggle + ADD-a-project wiring
     { const ts = el('ws-tab-sessions'); if (ts) ts.onclick = () => setRailView('sessions'); }
     { const tp = el('ws-tab-projects'); if (tp) tp.onclick = () => setRailView('projects'); }
@@ -2559,17 +2589,21 @@ const App = (() => {
     });
     input.addEventListener('blur', () => finish(true));
   }
-  // the rail-head ARCHIVED toggle: shown only when ≥1 stream is archived; flips the rail between
-  // hiding and revealing them (revealed rows are dimmed and offer Unarchive in their menu).
+  // the archived reveal: a QUIET footer line at the END of the sessions list (the rail head stays
+  // SESSIONS/PROJECTS + NEW, nothing else). Shown only when ≥1 stream is archived; flips the rail
+  // between hiding and revealing them (revealed rows are dimmed and offer Unarchive in their menu).
+  // It lives inside #workstreams, so the PROJECTS view hides it for free.
   function updateArchivedToggle() {
-    const btn = el('ws-archived'); if (!btn) return;
-    if (railView === 'projects') { btn.hidden = true; return; }   // PROJECTS view shows + ADD, never the sessions ARCHIVED toggle
+    const ul = el('workstreams'); if (!ul) return;
+    const old = ul.querySelector('.ws-arch-row'); if (old) old.remove();
     let n = 0; for (const w of Workstreams.list({ includeArchived: true })) if (w.archived) n++;
-    if (!n) { btn.hidden = true; btn.classList.remove('on'); railShowArchived = false; return; }
-    btn.hidden = false;
-    btn.classList.toggle('on', railShowArchived);
-    btn.textContent = (railShowArchived ? '▾ ' : '▸ ') + 'ARCHIVED ' + n;
-    btn.title = railShowArchived ? 'hide archived sessions' : 'show ' + n + ' archived session' + (n === 1 ? '' : 's');
+    if (!n) { railShowArchived = false; return; }
+    const li = document.createElement('li');
+    li.className = 'ws-arch-row' + (railShowArchived ? ' on' : '');
+    li.textContent = railShowArchived ? '▾ hide archived' : '▸ ' + n + ' archived';
+    li.title = railShowArchived ? 'hide archived sessions' : 'show ' + n + ' archived session' + (n === 1 ? '' : 's');
+    li.onclick = toggleArchived;
+    ul.appendChild(li);
   }
   function toggleArchived() { railShowArchived = !railShowArchived; SFX.click(); renderRail(); }
 
@@ -2586,7 +2620,7 @@ const App = (() => {
     if (view === railView) return;
     railView = view;
     SFX.click();
-    const pan = (typeof Projects !== 'undefined') ? Projects.panels(view) : { sessionsList: view === 'sessions', projectsList: view === 'projects', newBtn: view === 'sessions', archivedBtn: view === 'sessions', addBtn: view === 'projects' };
+    const pan = (typeof Projects !== 'undefined') ? Projects.panels(view) : { sessionsList: view === 'sessions', projectsList: view === 'projects', newBtn: view === 'sessions', addBtn: view === 'projects' };
     const set = (id, show) => { const e = el(id); if (e) e.hidden = !show; };
     set('workstreams', pan.sessionsList);
     set('projects', pan.projectsList);
@@ -2764,6 +2798,76 @@ const App = (() => {
   // DISCONNECT topbar button was removed; recovery / resume / error paths still reuse this teardown.)
   function disconnect() { if (typeof Onboarding !== 'undefined' && Onboarding.stop && Onboarding.isRunning && Onboarding.isRunning()) Onboarding.stop(); if (typeof Tutorial !== 'undefined' && Tutorial.teardown) Tutorial.teardown(); if (typeof DockGlow !== 'undefined' && DockGlow.stop) DockGlow.stop(); if (typeof Intake !== 'undefined' && Intake.stop) Intake.stop(); SFX.close(); Chat.abort(); stopRailTicker(); World.stop(); if (World.pauseBridge) World.pauseBridge(); persist(); if (typeof StationUI !== 'undefined') StationUI.leave(); reentry(); }
 
+  /* ---------- first-boot splash ---------- */
+  // The key-art boot card: shown ONLY from init()'s first-run branch (no save anywhere), never on
+  // resume/recovery/re-entry — a returning Commander must land in their station, not a title card.
+  // Any key / click / tap advances into CREATE YOUR OVERSEER. The starfield is a tiny self-owned
+  // canvas loop that stops the moment the screen is left (no orphan rAF behind the game).
+  let splashRaf = 0;
+  function startSplashStars() {
+    const cv = el('sp-stars'); if (!cv || !cv.getContext) return;
+    const ctx = cv.getContext('2d');
+    let W = 0, H = 0, stars = [];
+    const rgb = () => (getComputedStyle(document.body).getPropertyValue('--ph-rgb').trim() || '255,140,40');
+    // draw() is the paint step, deliberately SEPARATE from the rAF loop: it's called directly on seed and on
+    // resize so a static starfield is always on screen even when requestAnimationFrame is paused (a
+    // backgrounded tab, or a resize that lands before the first frame). rAF only layers the twinkle on top.
+    const draw = t => {
+      if (!W || !H) return;
+      const c = rgb();
+      ctx.clearRect(0, 0, W, H);
+      for (const st of stars) {
+        const a = .22 + .58 * Math.abs(Math.sin(st.p + t * .001 * st.s));
+        ctx.fillStyle = 'rgba(' + c + ',' + a.toFixed(3) + ')';
+        ctx.fillRect(st.x, st.y, st.r, st.r);
+      }
+    };
+    const seed = () => {
+      W = cv.width = cv.clientWidth || window.innerWidth || 1280;
+      H = cv.height = cv.clientHeight || window.innerHeight || 720;
+      const n = Math.max(90, Math.round((W * H) / 16000));
+      stars = Array.from({ length: n }, () => ({
+        x: Math.random() * W, y: Math.random() * H,
+        r: Math.random() < .88 ? 1 : 2,                        // mostly single-pixel points, a few brights
+        p: Math.random() * Math.PI * 2,                        // twinkle phase
+        s: .5 + Math.random() * 1.4                            // twinkle speed
+      }));
+      draw(0);   // setting canvas.width cleared the bitmap — repaint immediately so the field never blanks
+    };
+    seed();
+    // re-seed on resize AND when the tab returns to the foreground (rAF was paused while hidden, and a
+    // resize that happened meanwhile left the canvas cleared — repaint on the way back so it isn't blank).
+    const onResize = () => seed();
+    const onVis = () => { if (!document.hidden) seed(); };
+    window.addEventListener('resize', onResize);
+    document.addEventListener('visibilitychange', onVis);
+    cv._spCleanup = () => { window.removeEventListener('resize', onResize); document.removeEventListener('visibilitychange', onVis); };
+    const tick = t => { draw(t); splashRaf = requestAnimationFrame(tick); };
+    tick(0);   // kicks the twinkle loop; draw(0) already left a static field up for the paused-rAF case
+  }
+  function stopSplashStars() {
+    if (splashRaf) { cancelAnimationFrame(splashRaf); splashRaf = 0; }
+    const cv = el('sp-stars'); if (cv && cv._spCleanup) { cv._spCleanup(); cv._spCleanup = null; }
+  }
+  function showSplash() {
+    const screen = el('screen-splash');
+    if (!screen) { startCreation(); return; }
+    show('screen-splash');
+    startSplashStars();
+    let advanced = false;
+    const advance = e => {
+      // ignore pure modifier presses so ctrl/alt/cmd chords (devtools, screenshots) don't consume the splash
+      if (e && e.type === 'keydown' && ['Shift', 'Control', 'Alt', 'Meta'].includes(e.key)) return;
+      if (advanced) return; advanced = true;
+      window.removeEventListener('keydown', advance, true);
+      screen.removeEventListener('pointerdown', advance);
+      stopSplashStars();
+      startCreation();
+    };
+    window.addEventListener('keydown', advance, true);
+    screen.addEventListener('pointerdown', advance);
+  }
+
   /* ---------- creation ---------- */
   // Guarded: a genuine FRESH start (no save) wipes any stale resume pointer and opens CREATE YOUR OVERSEER.
   // But if a resume is mid-flight (resumingSaved set, e.g. recovery), do NOT clear it from here — the connect
@@ -2926,8 +3030,8 @@ const App = (() => {
       show('screen-connect'); initConnect(saved.agent.name, true, saved.agent);
       return;
     }
-    // FIRST RUN (no save) — straight to CREATE YOUR OVERSEER.
-    startCreation();
+    // FIRST RUN (no save) — the key-art boot splash, then PRESS ANY KEY → CREATE YOUR OVERSEER.
+    showSplash();
   }
   init();
 

@@ -69,6 +69,32 @@
     const text = textFromContent(content);
     return text ? [{ text }] : [];
   }
+  // USER ATTACHMENTS (COMMS): a user turn may carry image parts alongside its text — the run path expands a
+  // Commander's attached photo into an {type:'image_url', image_url:{url}} block before this adapter sees it.
+  // Gemini's inline-image shape is {inlineData:{mimeType, data(base64, no data: prefix)}}, so map image_url → that.
+  // Only USER messages get this; an unrecognized part degrades to its text or is dropped — never throws.
+  function geminiInlineData(url) {
+    const m = /^data:([^;,]*?)(;base64)?,([\s\S]*)$/.exec(String(url == null ? '' : url));
+    if (!m) return null;
+    const mimeType = (m[1] || 'image/png').toLowerCase();
+    const data = m[2] ? (m[3] || '') : Buffer.from(decodeURIComponent(m[3] || ''), 'utf8').toString('base64');
+    return { inlineData: { mimeType, data } };
+  }
+  function userContentToParts(content) {
+    if (content == null) return [];
+    if (typeof content === 'string') return content ? [{ text: content }] : [];
+    if (!Array.isArray(content)) return contentToParts(content);
+    const out = [];
+    for (const p of content) {
+      if (typeof p === 'string') { if (p) out.push({ text: p }); continue; }
+      if (!p || typeof p !== 'object') continue;
+      if (p.type === 'text' && typeof p.text === 'string') { if (p.text) out.push({ text: p.text }); continue; }
+      if (p.type === 'image_url') { const d = geminiInlineData(p.image_url && (p.image_url.url != null ? p.image_url.url : p.image_url)); if (d) out.push(d); continue; }
+      if (p.inlineData) { out.push(p); continue; }   // already a native Gemini inline-data part
+      if (typeof p.text === 'string' && p.text) out.push({ text: p.text });
+    }
+    return out;
+  }
   function appendContent(out, role, parts) {
     if (!parts || !parts.length) return;
     const last = out[out.length - 1];
@@ -116,7 +142,7 @@
         appendContent(contents, 'model', parts);
         continue;
       }
-      appendContent(contents, 'user', contentToParts(msg.content));
+      appendContent(contents, 'user', userContentToParts(msg.content));
     }
     return { systemInstruction: picked.systemInstruction, contents };
   }

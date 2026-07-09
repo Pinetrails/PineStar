@@ -107,6 +107,23 @@ async function collect(provider, req) { const out = []; for await (const e of pr
     A.eq(_internals.modelPath('gemini-x'), 'models/gemini-x', 'modelPath restores models/ prefix');
   }
 
+  // E. USER ATTACHMENTS: a user message with an image_url part maps to a Gemini inlineData part (base64 data,
+  //    no data: prefix); text is preserved; a plain-string user turn is unchanged.
+  {
+    const png = 'AAAABBBBCCCC';
+    const conv = _internals.messagesToGemini([
+      { role: 'user', content: [
+        { type: 'text', text: 'describe' },
+        { type: 'image_url', image_url: { url: 'data:image/webp;base64,' + png } }
+      ] }
+    ]);
+    A.eq(conv.contents[0].parts[0], { text: 'describe' }, 'text part preserved');
+    A.eq(conv.contents[0].parts[1], { inlineData: { mimeType: 'image/webp', data: png } }, 'data: URL image_url -> inlineData part');
+
+    const plain = _internals.messagesToGemini([{ role: 'user', content: 'hello' }]);
+    A.eq(plain.contents[0].parts[0], { text: 'hello' }, 'plain string user turn unchanged');
+  }
+
   A.eq(_internals.finishFor('MAX_TOKENS', false), 'length', 'MAX_TOKENS -> length');
   A.report('provider.gemini.test');
 })().catch(e => { console.log('FAIL: provider.gemini.test threw -- ' + (e && e.stack || e)); process.exit(1); });

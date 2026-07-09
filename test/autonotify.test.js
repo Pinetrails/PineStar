@@ -92,6 +92,6 @@ ok(/redact\(text\)/.test(idx), 'the outbound notification text is redacted befor
 const hub = fs.readFileSync(path.join(__dirname, '..', 'sidecar', 'channels', 'hub.js'), 'utf8');
 ok(/saveChatRecord\(/.test(hub), 'the inbound hub persists the chat→agent binding (so the notifier can find chats)');
 const ui = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'app', 'stationui.js'), 'utf8');
-ok(/id="tg-notify"/.test(ui) && /\/api\/channels\/notify/.test(ui), 'the Messaging panel has the opt-in toggle + posts it');
+ok(/id="ch-notify"/.test(ui) && /\/api\/channels\/notify/.test(ui), 'the Messaging panel has the (now ONE shared) opt-in toggle + posts it');
 
 console.log('autonotify.test.js OK —', n, 'assertions');

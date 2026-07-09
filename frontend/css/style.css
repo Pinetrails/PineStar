@@ -913,6 +913,29 @@ body.no-scan .crt-scan { display: none; }
    telemetry (EL-11 FIX 1). Same error palette as .up-error; the why line gets the bordered card. */
 #ns-state.ns-halt { color: #ffb0a8; opacity: 1; }
 #ns-why.ns-halt { color: #ffb0a8; opacity: 1; border: 1px solid rgba(255, 120, 100, 0.45); background: rgba(80, 10, 5, 0.18); padding: 7px; }
+/* CHANNELS panel — one card per messaging platform, generated from the channel catalog (stationui buildMessaging).
+   Reuses the shipped card vocabulary (.up-card family): phosphor border, panel2 fill, raise shadow. */
+.ch-card {
+  border: 1px solid var(--ph-dim); background: var(--panel2); box-shadow: var(--raise);
+  border-radius: var(--r-sm); padding: 9px 10px; margin: 8px 0;
+}
+.ch-card.on { border-color: var(--ok); box-shadow: var(--raise), inset 0 0 12px rgba(80, 255, 140, 0.08); }
+.ch-head { display: flex; align-items: baseline; gap: 8px; }
+.ch-glyph { color: var(--ph-bright); font-size: 15px; }
+.ch-title { margin: 0; letter-spacing: 2px; }
+.ch-state { margin-left: auto; font-size: 12px; letter-spacing: 0.5px; text-align: right; }
+.ch-tagline { margin-top: 4px; }
+.ch-setup { margin: 4px 0 6px; }
+.ch-setup > summary {
+  cursor: pointer; font-size: 11px; letter-spacing: 2px; color: var(--ph-dim);
+  list-style: none; user-select: none;
+}
+.ch-setup > summary::before { content: '▸ '; }
+.ch-setup[open] > summary::before { content: '▾ '; }
+.ch-setup > summary:hover { color: var(--ph-bright); }
+.ch-setup .set-about { margin-top: 4px; }
+.ch-card .set-save { margin-top: 6px; }
+.ch-card .msg { min-height: 0; }
 .up-mini {
   display: flex; align-items: center; justify-content: space-between; gap: 10px;
   border: 1px solid var(--ph-faint); background: var(--panel2); padding: 7px 8px; margin: 6px 0;

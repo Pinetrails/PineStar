@@ -2670,42 +2670,6 @@
       "notes": "Live CDP :8967 — #set-flicker renders type=checkbox (APPEARANCE tab). Held at audited: settings-p1-ui asserts the notif/adv cards but not the CRT toggle apply-path; visual apply not machine-guarded. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
-      "id": "ui/system/set-scan",
-      "kind": "ui",
-      "area": "system",
-      "name": "input",
-      "purpose": "Toggle CRT SCANLINES — persisted to store.settings.scanlines and applied to the live CRT look.",
-      "promise": "Toggling it flips store.settings.scanlines, saves, and applySettings() repaints the scanlines effect on the rendered station immediately.",
-      "wiring": {
-        "files": [
-          "frontend/app/stationui.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/settings-p1-ui.test.js"
-        },
-        {
-          "kind": "shoot",
-          "ref": "sys-settings"
-        }
-      ],
-      "status": "audited",
-      "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
-      },
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.411Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "#set-scan",
-      "state": "sys-settings",
-      "notes": "Live CDP :8967 — #set-scan renders type=checkbox (APPEARANCE tab). Held at audited: settings-p1-ui asserts the notif/adv cards but not the CRT toggle apply-path; visual apply not machine-guarded. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
-    },
-    {
       "id": "ui/system/set-sound",
       "kind": "ui",
       "area": "system",

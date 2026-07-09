@@ -61,14 +61,14 @@
   }
 
   // the toggle's show/hide truth table (pure — app.js applies these to the real `hidden` flags). PROJECTS view
-  // swaps the sessions list + its NEW/ARCHIVED actions for the projects list + its ADD action, and vice-versa.
+  // swaps the sessions list + its NEW action for the projects list + its ADD action, and vice-versa. The archived
+  // reveal is NOT a head action — it's a footer row INSIDE #workstreams, so it follows sessionsList for free.
   function panels(view) {
     const projects = view === 'projects';
     return {
       sessionsList: !projects,   // #workstreams
       projectsList: projects,    // #projects
       newBtn: !projects,         // #ws-new
-      archivedBtn: !projects,    // #ws-archived (still subject to its own "≥1 archived" gate in the sessions view)
       addBtn: projects           // #ws-addproject
     };
   }
