@@ -129,7 +129,7 @@
 /* the popover's AGENT-FED section: a milled divider + an honest empty-state hint */
 .wg-pop-head { margin: 6px 6px 2px; padding-top: 6px; border-top: 1px solid var(--ph-faint);
   font-size: 9px; letter-spacing: 2px; color: var(--gold); opacity: 0.85; }
-.wg-pop-none { padding: 4px 9px 6px; font-size: 11px; line-height: 1.35; color: var(--ph-dim); max-width: 230px; }
+.wg-pop-none { padding: 4px 9px 6px; max-width: 230px; }   /* dim grade + size via the grouped empty rule (motion.css) */
 
 /* ---- responsive: the rails are the FIRST thing to shrink; never crowd the real instruments ---- */
 @media (max-width: 1280px) { .wg-sub { display: none; } .wg-spark { display: none; } }

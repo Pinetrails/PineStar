@@ -244,6 +244,16 @@ textarea, select {
 }
 .empty-state b { display: block; color: var(--ph); font-size: 15px; letter-spacing: 1px; margin-bottom: 4px; }
 .empty-state span { display: block; font-size: 12px; opacity: 0.85; }
+/* compact variant — the console-inline empties (no glyph/CTA, just a dim line) */
+.empty-state.sm { padding: 10px 4px; font-size: 12px; line-height: 1.4; }
+/* the one-off dim console empties share the empty-state grade through here (declared after the
+   panels' own sheets) so they re-tint/re-size in ONE place; each keeps only its padding / italic /
+   alignment / border delta in its own file. Distinct-color empties (.fb-empty bright, .mkt-empty
+   --text, .key-empty CTA), the structured COMMS .cmsg-empty (starter chips) and .kb-empty-col
+   (a wrapper around a real .empty-state) are intentionally not folded in. */
+.mkt-dos-empty, .model-dock-empty, .mc-empty, .cd-empty, .proj-empty, .up-empty, .wg-pop-none {
+  color: var(--ph-dim); font-size: 12px; line-height: 1.4;
+}
 
 /* ============================================================
    10 · PROGRESS / GAUGE EASING — fills glide instead of snapping.

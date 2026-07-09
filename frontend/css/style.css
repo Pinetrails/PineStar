@@ -1056,7 +1056,7 @@ body.no-scan .crt-scan { display: none; }
 .up-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
 .up-progress { height: 10px; border: 1px solid var(--ph-dim); background: #060401; box-shadow: inset 0 0 8px rgba(0,0,0,.8); }
 .up-progress div { height: 100%; background: var(--ph); box-shadow: 0 0 10px var(--ph-glow); transition: width .15s linear; }
-.up-empty { border: 1px dashed var(--ph-faint); color: var(--ph-dim); padding: 9px; line-height: 1.3; }
+.up-empty { border: 1px dashed var(--ph-faint); padding: 9px; }   /* dim grade + size via the grouped empty rule (motion.css) */
 .up-error { color: #ffb0a8; border: 1px solid rgba(255, 120, 100, 0.45); background: rgba(80, 10, 5, 0.18); padding: 7px; }
 
 /* ================= BOOT ================= */

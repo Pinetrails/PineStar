@@ -254,7 +254,7 @@ body.no-scan .mkt-scrim::after { display: none; }
   margin-bottom: 12px; align-self: flex-start; }
 .mkt-dos-back:hover { color: var(--ph-bright); border-color: var(--ph); background: var(--ph-faint); }
 .mkt-dos-back:focus-visible { outline: 2px solid var(--ph); outline-offset: 2px; }
-.mkt-dos-empty { color: var(--ph-dim); font-style: italic; font-size: 12.5px; padding: 30px 12px; text-align: center; }
+.mkt-dos-empty { font-style: italic; padding: 30px 12px; text-align: center; }   /* dim grade + size via the grouped empty rule (motion.css) */
 
 /* ---- the adopt-voice + save-as toolbar (deploy mode) lives atop the roster ---- */
 .mkt-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; }
