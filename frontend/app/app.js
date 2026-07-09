@@ -1270,7 +1270,7 @@ const App = (() => {
 
   function selectProviderUI(p) {
     pickedProvider = normalizeProviderId(p);
-    document.querySelectorAll('.provider-row .prov').forEach(b => b.classList.toggle('sel', b.dataset.prov === pickedProvider));
+    document.querySelectorAll('.provider-row .prov').forEach(b => { const on = b.dataset.prov === pickedProvider; b.classList.toggle('sel', on); b.setAttribute('aria-pressed', String(on)); });
     // a saved/selected tail provider must never be invisibly selected behind the fold
     { const sb = document.querySelector('.provider-row .prov.sel'); if (sb && sb.classList.contains('tail')) setProviderRowExpanded(true); }
     const isCodex = pickedProvider === 'codex';
@@ -1542,8 +1542,7 @@ const App = (() => {
     // selectProviderUI() unfolds the row itself whenever the active provider lives in the tail.
     const provRow = document.querySelector('.provider-row'), provMore = el('prov-more');
     if (provRow && provMore) {
-      provRow.classList.add('collapsed');
-      provMore.setAttribute('aria-expanded', 'false');
+      setProviderRowExpanded(false);   // collapse the tail + COMPUTE the "＋ N MORE" label from the live tail count (never hardcoded)
       provMore.onclick = () => { SFX.click(); setProviderRowExpanded(provRow.classList.contains('collapsed')); };
     }
     el('btn-codex-signin').onclick = startCodexSignIn;
