@@ -99,6 +99,25 @@
   color: var(--ph-dim); opacity: .8; white-space: nowrap;
 }
 
+/* TERMINAL MARKDOWN — a small, restrained subset in the agent's prose (chat.js renderMarkdown). Phosphor tokens
+   only; a header is BRIGHT text, never oversized web type. XSS is handled upstream (escape-then-wrap). */
+.cmsg .body .md-b { color: var(--ph-bright); font-weight: bold; }
+.cmsg .body .md-h { display: inline-block; color: var(--ph-bright); font-weight: bold; letter-spacing: .5px; }
+.cmsg .body .md-li { display: inline-block; }
+.cmsg .body .md-li .md-bul { color: var(--ph); }
+.cmsg .body .md-code {
+  font-family: inherit; color: var(--ph-bright); background: rgba(var(--ph-rgb),.10);
+  border: 1px solid var(--ph-faint); border-radius: 3px; padding: 0 4px;
+}
+.cmsg .body .md-pre {
+  display: block; margin: 4px 0; padding: 6px 9px; white-space: pre; overflow-x: auto;
+  font-family: inherit; font-size: 13.5px; color: var(--ph-bright);
+  background: rgba(var(--ph-rgb),.07); border: 1px solid var(--ph-faint);
+  border-left: 2px solid var(--ph-dim); border-radius: 4px;
+}
+.cmsg .body .md-pre::-webkit-scrollbar { height: 7px; }
+.cmsg .body .md-pre::-webkit-scrollbar-thumb { background: var(--ph-faint); border-radius: 4px; }
+
 /* ENTRANCE — a one-time subtle fade/slide for a newly-added message card (motion tokens). Applied to
    prose cards only; work-log beats (tool/consent/turn-in/nudge/deliverable) keep their own beat motion. */
 @keyframes comms-msg-in {
@@ -162,11 +181,20 @@
   overflow-wrap: anywhere; word-break: break-word;
 }
 .tool-chip.open .tc-detail { display: block; }
-.tool-chip.open .tc-glyph::after { }
+/* EXPAND AFFORDANCE — a dim ▸ chevron on the chip head signals it opens; it rotates to ▾ when expanded, so the
+   chip visibly reads as a disclosure control (aria-expanded lives on the .tc-head button for AT). */
+.tool-chip .tc-exp { flex: 0 0 auto; color: var(--ph-dim); font-size: 9px; opacity: .8; transition: transform var(--t-fast) var(--ease-soft); }
+.tool-chip.open .tc-exp { transform: rotate(90deg); color: var(--ph); }
 .tool-chip .tc-d-args { color: var(--ph-dim); padding-top: 5px; }
 .tool-chip .tc-d-res  { color: var(--text); padding-top: 4px; }
 .tool-chip .tc-d-res.err { color: var(--bad); }
 @keyframes comms-blink { 50% { opacity: .25; } }
+
+/* STARTER-CHIP EMPTY STATE — the first-run hint gains a couple of tappable openers (chat.js maybeEmptyState).
+   The line keeps its dim centered treatment; the chips sit under it, reusing the .choice vocabulary. */
+.cmsg-empty-line { margin-bottom: 10px; }
+.cmsg-empty-chips { display: flex; flex-wrap: wrap; gap: 7px; justify-content: center; }
+.cmsg-empty .cmsg-starter { font-size: 13px; }
 
 /* the legacy plain tool line (replay / stop-reason) keeps app.css's dim treatment, just tightened here */
 .cmsg.tool { margin-left: 0; }

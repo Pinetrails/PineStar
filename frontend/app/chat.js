@@ -333,12 +333,47 @@ const Chat = (() => {
     out += escapeHtml(s.slice(last));
     return out;
   }
-  // render agent prose into a body span: fast textContent path when no URL is possible, else escaped+linkified
-  // innerHTML. The fast path keeps the common (URL-free) streamed token cheap — no per-token HTML reparse.
+  /* MINIMAL TERMINAL-MARKDOWN (XSS-SAFE) — model prose often carries light markdown (**bold**, `code`, fenced
+     blocks, - lists, # headers). We render a SMALL subset as phosphor spans, NEVER as heavy web type. The XSS
+     invariant is inviolate: every model substring is HTML-ESCAPED first (escapeHtml / linkify both escape), and
+     we only ever wrap ALREADY-ESCAPED text in our OWN tags — model output never reaches innerHTML raw. `code`
+     spans are pulled to placeholders before the bold pass so a ** inside code stays literal. */
+  const MD_MARKERS = /\*\*|`|^#{1,6}\s|^[ \t]*[-*]\s/m;   // cheap gate: does this text carry any markdown we render?
+  function mdInline(safe) {
+    // `safe` is escaped-and-linkified HTML. Pull `inline code` to placeholders, bold the rest, restore code.
+    const codes = [];
+    let s = safe.replace(/`([^`]+)`/g, (m, c) => { codes.push(c); return '' + (codes.length - 1) + ''; });
+    s = s.replace(/\*\*([^*\n]+)\*\*/g, '<span class="md-b">$1</span>');
+    s = s.replace(/(\d+)/g, (m, i) => '<code class="md-code">' + codes[+i] + '</code>');
+    return s;
+  }
+  function renderMarkdown(raw) {
+    const lines = String(raw).split('\n');
+    const parts = [];
+    let fence = null;   // collecting a ``` fenced block
+    for (const ln of lines) {
+      if (/^[ \t]*```/.test(ln)) {
+        if (fence) { parts.push('<span class="md-pre">' + escapeHtml(fence.join('\n')) + '</span>'); fence = null; }
+        else fence = [];
+        continue;
+      }
+      if (fence) { fence.push(ln); continue; }
+      const h = /^(#{1,6})\s+(.*)$/.exec(ln);
+      if (h) { parts.push('<span class="md-h">' + mdInline(linkify(h[2])) + '</span>'); continue; }
+      const li = /^([ \t]*)[-*]\s+(.*)$/.exec(ln);
+      if (li) { parts.push('<span class="md-li"><span class="md-bul">▪ </span>' + mdInline(linkify(li[2])) + '</span>'); continue; }
+      parts.push(mdInline(linkify(ln)));
+    }
+    if (fence) parts.push('<span class="md-pre">' + escapeHtml(fence.join('\n')) + '</span>');   // unterminated (mid-stream) — render what we have
+    return parts.join('\n');
+  }
+  // render agent prose into a body span. Fast textContent path when there's no URL AND no markdown marker (the
+  // common streamed token) — no per-token HTML reparse; otherwise the escaped+linkified+markdown pipeline.
   function renderProse(bodyEl, raw) {
     if (!bodyEl) return;
-    if (String(raw).indexOf('http') === -1) bodyEl.textContent = raw;
-    else bodyEl.innerHTML = linkify(raw);
+    raw = String(raw == null ? '' : raw);
+    if (raw.indexOf('http') === -1 && !MD_MARKERS.test(raw)) { bodyEl.textContent = raw; return; }
+    bodyEl.innerHTML = renderMarkdown(raw);
   }
 
   // COPY-TO-CLIPBOARD: the async Clipboard API (works on localhost, a secure context), with a hidden-textarea
@@ -824,9 +859,31 @@ const Chat = (() => {
     if (activeWs && activeWs.history && activeWs.history.length) return;
     if (isBusy() || log.querySelector('.cmsg')) return;
     const s = (typeof Channels !== 'undefined' && activeWs) ? Channels.snapshot(activeWs.id) : null;
-    if (s && (s.tools.length || s.acc || s.pending)) return;
+    if (s && ((s.toolEvents && s.toolEvents.length) || s.tools.length || s.acc || s.pending)) return;
     const d = document.createElement('div'); d.className = 'cmsg-empty';
-    d.textContent = 'COMMS online. Type a task or a question to ' + name + '.';
+    const line = document.createElement('div'); line.className = 'cmsg-empty-line';
+    line.textContent = 'COMMS online. Type a task or a question to ' + name + '.';
+    d.appendChild(line);
+    // STARTER CHIPS — a couple of tappable openers so the first prompt isn't a blank void. Sandbox tone,
+    // eerie-not-cute, no exclamation marks. A chip fills the composer and sends; a recipe fills its directive
+    // (blanks left for the Commander to complete) instead of firing blind. Children of .cmsg-empty, so any real
+    // row (clearEmptyState) retires them with the hint.
+    const starters = [{ label: 'what can you do here', send: 'What can you do here? Give me a short tour of what you can actually do for me.' }];
+    const recipe = (typeof Recipes !== 'undefined' && Recipes.list) ? (Recipes.list()[0] || null) : null;
+    if (recipe) starters.push({ label: String(recipe.name || recipe.id), recipe: recipe });
+    starters.push({ label: 'brief me on this station', send: 'Brief me on this station — what is around me and what I can do from here.' });
+    const chips = document.createElement('div'); chips.className = 'cmsg-empty-chips';
+    for (const st of starters.slice(0, 3)) {
+      const b = document.createElement('button'); b.type = 'button'; b.className = 'choice cmsg-starter'; b.textContent = st.label;
+      b.addEventListener('click', () => {
+        if (typeof SFX !== 'undefined' && SFX.click) SFX.click();
+        if (st.recipe) { insertRecipe(st.recipe); return; }   // fill the directive to edit, don't auto-fire
+        if (input) { input.value = st.send; autoGrowInput(); }
+        submitComposer();
+      });
+      chips.appendChild(b);
+    }
+    d.appendChild(chips);
     log.appendChild(d);
   }
 
@@ -1064,22 +1121,25 @@ const Chat = (() => {
     const chip = head && head.closest && head.closest('.tool-chip'); if (!chip) return;
     const body = chip.querySelector('.tc-detail'); if (!body) return;
     const open = chip.classList.toggle('open');
-    chip.setAttribute('aria-expanded', open ? 'true' : 'false');
+    // aria-expanded lives on the .tc-head BUTTON (the operable control), not the wrapper div — AT reads the
+    // disclosure state from the thing it can activate.
+    const btn = chip.querySelector('.tc-head'); if (btn) btn.setAttribute('aria-expanded', open ? 'true' : 'false');
   }
   // render a tool CALL as a chip; returns the chip element. ev: { callId, name, argsSummary }
   function toolChip(ev) {
     const rail = ensureToolRail();
     const flav = skillFlavor(ev);   // A1: skill.* tools re-labelled in the agent's voice
     const chip = document.createElement('div'); chip.className = 'tool-chip pending' + (flav ? ' skill' : '');
-    chip.setAttribute('aria-expanded', 'false');
     const head = document.createElement('button'); head.type = 'button'; head.className = 'tc-head';
+    head.setAttribute('aria-expanded', 'false');   // the head IS the disclosure control (detail = its region)
     const glyph = document.createElement('span'); glyph.className = 'tc-glyph'; glyph.textContent = flav ? flav.glyph : '▸';
     const nm = document.createElement('span'); nm.className = 'tc-name'; nm.textContent = flav ? flav.label : shortName(ev.name);
     // for a flavored skill chip the human phrase already carries the skill name, so the raw args stay in the
     // expand detail only (kept below) — the chip head is clean.
     const args = document.createElement('span'); args.className = 'tc-args'; args.textContent = (!flav && ev.argsSummary) ? brief(ev.argsSummary) : '';
     const stat = document.createElement('span'); stat.className = 'tc-stat'; stat.textContent = '';   // filled by resolveChip
-    head.appendChild(glyph); head.appendChild(nm); if (args.textContent) head.appendChild(args); head.appendChild(stat);
+    const exp = document.createElement('span'); exp.className = 'tc-exp'; exp.setAttribute('aria-hidden', 'true'); exp.textContent = '▸';   // disclosure chevron (rotates when open)
+    head.appendChild(glyph); head.appendChild(nm); if (args.textContent) head.appendChild(args); head.appendChild(stat); head.appendChild(exp);
     const detail = document.createElement('div'); detail.className = 'tc-detail';
     const dArgs = document.createElement('div'); dArgs.className = 'tc-d-args';
     dArgs.textContent = ev.argsSummary ? cap(ev.argsSummary) : '(no arguments)';
@@ -3225,7 +3285,18 @@ const Chat = (() => {
     if (!activeWs || typeof Channels === 'undefined') return;
     const s = Channels.snapshot(activeWs.id);
     if (!s) return;
-    for (const t of s.tools) toolLine(t.text, t.isErr);
+    // TOOL-RENDER UNIFICATION: re-draw the run's tool activity as the SAME premium chips a live run shows
+    // (call → pending chip; result → folds into it by callId), instead of the old dim toolLine downgrade.
+    // Fall back to the legacy string lines only if this snapshot predates structured events (older bundle).
+    if (s.toolEvents && s.toolEvents.length) {
+      for (const e of s.toolEvents) {
+        if (e.t === 'result') resolveChip({ callId: e.callId, summary: e.summary, isError: e.isError, ms: e.ms }, e.name);
+        else toolChip({ callId: e.callId, name: e.name, argsSummary: e.argsSummary });
+      }
+      endToolRail();   // close the rail so the partial reply below opens a fresh paragraph, not glued into the chips
+    } else {
+      for (const t of s.tools) toolLine(t.text, t.isErr);
+    }
     if (s.busy || s.acc) {
       const o = streamingAgent(); if (s.acc) o.append(s.acc);
       if (s.busy) activeLiveRow = o; else o.done();   // a still-running stream keeps its live row so new tokens flow into it
@@ -4514,11 +4585,11 @@ const Chat = (() => {
         // copy here double-counted worksignalstore's EWMA (recruiter signal) + printed duplicate ticker lines, and
         // its name-only `{ name }` variant was schema-invalid. The world/worksignal/quest listeners consume the
         // harness emit; this handler owns the transcript chips + desk walk + presence only.
-        onToolCall: ev => { callNames[ev.callId] = ev.name; const t = '▶ ' + ev.name + ' ' + brief(ev.argsSummary); Channels.addTool(ws.id, t, false); walkToDesk(); presenceToolCall(ws, ev.name); if (skillFlavor(ev)) recentInRunSkill = Date.now(); if (isActiveWs(ws)) { if (activeLiveRow && activeLiveRow.breakSeg) activeLiveRow.breakSeg(); toolChip(ev); } },
+        onToolCall: ev => { callNames[ev.callId] = ev.name; Channels.addToolCall(ws.id, { callId: ev.callId, name: ev.name, argsSummary: ev.argsSummary }); walkToDesk(); presenceToolCall(ws, ev.name); if (skillFlavor(ev)) recentInRunSkill = Date.now(); if (isActiveWs(ws)) { if (activeLiveRow && activeLiveRow.breakSeg) activeLiveRow.breakSeg(); toolChip(ev); } },
         // Re-emit the hero's tool RESULT onto U.bus so the world's per-prop capability surge fires on the REAL
         // outcome (the station SSE tee drops tool_result; the hero's interactive stream is the only place it's
         // seen). callId joins it to its tool_call; isError drives the success-vs-failure (green-vs-red) surge.
-        onToolResult: ev => { if (!ev.isError) runToolsOk++; const nm = callNames[ev.callId] || 'tool'; const t = (ev.isError ? '✕ ' : '◀ ') + nm + ' · ' + brief(ev.summary || (ev.isError ? 'error' : 'ok')) + (ev.isError ? ' — failed' : '') + (ev.ms ? ' (' + fmtMs(ev.ms) + ')' : ''); Channels.addTool(ws.id, t, ev.isError); presenceToolResult(ws); if (isActiveWs(ws)) resolveChip(ev, nm); if (typeof U !== 'undefined' && U.bus && ev.callId) U.bus.emit('agent.tool_result', { name: nm, agentId: ws.agentId, callId: ev.callId, ok: !ev.isError, isError: !!ev.isError }); },
+        onToolResult: ev => { if (!ev.isError) runToolsOk++; const nm = callNames[ev.callId] || 'tool'; Channels.addToolResult(ws.id, { callId: ev.callId, name: nm, summary: ev.summary, isError: ev.isError, ms: ev.ms }); presenceToolResult(ws); if (isActiveWs(ws)) resolveChip(ev, nm); if (typeof U !== 'undefined' && U.bus && ev.callId) U.bus.emit('agent.tool_result', { name: nm, agentId: ws.agentId, callId: ev.callId, ok: !ev.isError, isError: !!ev.isError }); },
         onDeliverable: ev => {
           // Any produced file is an openable product (image_generate emits kind:'image', fs.write emits
           // kind:'file'). How we RENDER it is decided client-side from the EXTENSION (the reference harness's model), not
