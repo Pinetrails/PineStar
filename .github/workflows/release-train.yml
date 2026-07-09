@@ -76,7 +76,14 @@ jobs:
             rust-target: x86_64-apple-darwin
     runs-on: ${{ matrix.os }}
     steps:
+      # fetch-depth: 0 = full history + ALL tags. REQUIRED here: the provenance gate below (and build.rs's
+      # STARNET_BUILD_DESCRIBE stamp) run `git describe --tags`, which needs the tag ref present locally. The
+      # default shallow checkout (fetch-depth 1, no tags) makes describe fall back to the bare short SHA, so the
+      # gate's `describe == tag` check fails and the train produces ZERO artifacts (what stalled v0.4.0). Do NOT
+      # shrink this back to a shallow checkout — it feeds the gate real git data, it does not weaken the gate.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
