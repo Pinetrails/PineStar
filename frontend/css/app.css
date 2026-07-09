@@ -1360,7 +1360,7 @@ body.col-resizing #stage { pointer-events: none; }
    have) — re-point it at the live station so the SETTINGS toggle works */
 body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 
-/* top bar: reuse v7 #logo/.logo-*/.tb-stat; subtitle fit */
+/* top bar: reuse the v7 logo (#logo, .logo-*) and .tb-stat; subtitle fit */
 #topbar .logo-sub { white-space: nowrap; }
 
 /* crew manifest empty state */

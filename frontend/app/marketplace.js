@@ -670,13 +670,15 @@ const Marketplace = (() => {
     if (!kit.length) return '';
     const have = stationGearSet();
     let missing = 0;
+    // A ●/○ status dot carries present/missing (green ● = on station, dim ○ = not yet); the repeated per-row
+    // "NOT ON STATION — ADD IN REFIT…" sentence is gone — the single footnote below states it once (audit item 8).
     const rows = kit.map(t => {
       const present = have.has(t);
       if (!present) missing++;
       return '<div class="mkt-kit-row' + (present ? '' : ' mkt-kit-missing') + '">' +
+        '<span class="mkt-kit-dot" aria-hidden="true">' + (present ? '●' : '○') + '</span>' +
         '<span class="mkt-kit-obj" data-hint="' + esc(t) + '">' + esc(kitPropLabel(t)) + '</span>' +
-        '<span class="mkt-kit-grant">' + esc(capGrant(t)) + '</span>' +
-        '<span class="mkt-kit-state">' + (present ? 'on station' : 'not on station — add in REFIT (optional — you can still summon)') + '</span></div>';
+        '<span class="mkt-kit-grant">' + esc(capGrant(t)) + '</span></div>';
     }).join('');
     const note = missing
       ? 'shared station gear this class draws on under the overseer — ' + missing + ' not on the station yet (add ' + (missing === 1 ? 'it' : 'them') + ' in REFIT for its full toolkit).'
@@ -747,6 +749,9 @@ const Marketplace = (() => {
     const t = s.tags || {};
     const bar = (k, label) => { const v = Math.round((t[k] || 0) * 100);
       return '<div class="mkt-barrow"><span class="bk">' + label + '</span><span class="trk"><span class="fill" style="width:' + v + '%"></span></span><span class="bv">' + v + '%</span></div>'; };
+    // FOCUS LANES bars only earn their space when 2+ lanes are actually lit. A one-hot class (a single lane at 100%)
+    // is already stated by the FOCUS chip above, so the three bars would just repeat it (audit item 8 declutter).
+    const laneSpread = ['code', 'research', 'general'].filter(k => (t[k] || 0) > 0).length >= 2;
     const badges = (here ? ' <span class="mkt-badge mkt-here">DEPLOYED</span>' : '') + (s.custom ? ' <span class="mkt-badge">CUSTOM</span>' : '');
     const ctaLabel = deploy ? ('⏼ DEPLOY TO ' + esc(((ctx && ctx.agentName) || 'AGENT')).toUpperCase()) : ('⏼ SUMMON ' + esc(s.name).toUpperCase());
     const ctaSub = deploy
@@ -781,11 +786,11 @@ const Marketplace = (() => {
         '<span class="k" data-hint="voice">VOICE</span><span class="v">◈ ' + esc(voiceName(s.persona)) + '</span>' +
         '<span class="k" data-hint="focus">FOCUS</span><span class="v"><span class="mkt-chip lane">' + esc(laneLabelOf(s)) + '</span></span>' +
       '</div>' +
-      '<div class="mkt-block"><div class="bh">FOCUS LANES</div><div class="mkt-bars">' + bar('code', 'CODE') + bar('research', 'RESEARCH') + bar('general', 'OPS') + '</div></div>' +
+      (laneSpread ? '<div class="mkt-block"><div class="bh">FOCUS LANES</div><div class="mkt-bars">' + bar('code', 'CODE') + bar('research', 'RESEARCH') + bar('general', 'OPS') + '</div></div>' : '') +
       kitBlockHTML(s) +
       skillPackageHTML(s) +
       '<div class="mkt-block"><div class="bh">PURPOSE</div><p class="bp">' + esc(s.purpose) + '</p></div>' +
-      (s.manual ? '<div class="mkt-block"><div class="bh">STANDING ORDERS</div><pre>' + esc(s.manual) + '</pre></div>' : '') +
+      (s.manual ? '<div class="mkt-block"><details class="mkt-orders"><summary class="bh">STANDING ORDERS</summary><pre>' + esc(s.manual) + '</pre></details></div>' : '') +
       (s.starters && s.starters.length ? '<div class="mkt-block"><div class="bh">TRY ASKING — things you can say to it</div><ul class="mkt-starters">' + s.starters.map(x => '<li>' + esc(x) + '</li>').join('') + '</ul></div>' : '') +
       '<div class="mkt-dos-cta">' + custActs +
         commitSummaryHTML(s) +
@@ -826,9 +831,9 @@ const Marketplace = (() => {
     const rows = gear.map(t => {
       const present = have.has(t);
       return '<div class="mkt-kit-row' + (present ? '' : ' mkt-kit-missing') + '">' +
+        '<span class="mkt-kit-dot" aria-hidden="true">' + (present ? '●' : '○') + '</span>' +
         '<span class="mkt-kit-obj">' + esc(kitPropLabel(t)) + '</span>' +
-        '<span class="mkt-kit-grant">' + esc(capGrant(t)) + '</span>' +
-        '<span class="mkt-kit-state">' + (present ? 'on station' : 'WANT — add in REFIT') + '</span></div>';
+        '<span class="mkt-kit-grant">' + esc(capGrant(t)) + '</span></div>';
     }).join('');
     return '<div class="mkt-block"><div class="bh">DRAWS ON GEAR</div><div class="mkt-kit">' + rows + '</div>' +
       '<div class="mkt-kit-note">advisory — this use case leans on the above; it still launches without it.</div></div>';

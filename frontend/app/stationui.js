@@ -102,7 +102,6 @@ const StationUI = (() => {
 
   /* ---------- activity labels (real World.setActivity state) ---------- */
   function activity() { try { return (access.activity && access.activity()) || 'idle'; } catch (_) { return 'idle'; } }
-  function totals() { try { return (access.totals && access.totals()) || { tokens: 0, cost: 0, calls: 0 }; } catch (_) { return { tokens: 0, cost: 0, calls: 0 }; } }
   function crewStatus(act) {
     return act === 'task' ? 'working at the terminal'
       : act === 'talk' ? 'in conversation'

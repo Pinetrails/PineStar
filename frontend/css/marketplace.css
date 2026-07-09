@@ -208,6 +208,13 @@ body.no-scan .mkt-scrim::after { display: none; }
 .mkt-block .bh { color: var(--ph); font-size: 10.5px; letter-spacing: 2.5px; margin-bottom: 5px; }
 .mkt-block .bp { color: var(--text); font-size: 12.5px; line-height: 1.5; opacity: .9; margin: 0; }
 .mkt-block pre { color: var(--text); font-size: 12px; line-height: 1.5; white-space: pre-wrap; font-family: inherit; opacity: .82; margin: 0; }
+/* STANDING ORDERS as a disclosure — collapsed by default so the dossier isn't dominated by prompt text (audit item 8) */
+.mkt-orders > summary { cursor: pointer; list-style: none; }
+.mkt-orders > summary::-webkit-details-marker { display: none; }
+.mkt-orders > summary::before { content: '▸ '; color: var(--ph-dim); }
+.mkt-orders[open] > summary::before { content: '▾ '; }
+.mkt-orders > summary:hover { color: var(--ph-bright); }
+.mkt-orders[open] > pre { margin-top: 5px; }
 .mkt-block ul.mkt-starters { list-style: none; display: flex; flex-direction: column; gap: 5px; margin: 0; padding: 0; }
 .mkt-starters li { color: var(--ph-bright); font-size: 12.5px; padding: 6px 10px; border-radius: 5px;
   background: var(--panel2); border: 1px solid var(--ph-faint); box-shadow: var(--raise); }
@@ -221,12 +228,12 @@ body.no-scan .mkt-scrim::after { display: none; }
 .mkt-kit-obj, .mkt-skill-name { flex: 0 0 auto; color: var(--ph-bright); font-size: 11px; letter-spacing: 1px;
   min-width: 92px; text-transform: uppercase; }
 .mkt-kit-grant, .mkt-skill-desc { flex: 1 1 auto; color: var(--text); font-size: 12px; line-height: 1.4; opacity: .85; }
-/* present/missing state (shared-gear model): a row's gear is on the station or not (add it in REFIT).
-   The row wraps so the state drops to its own full-width right-aligned line in a narrow pane (no mid-word crush). */
+/* present/missing state (shared-gear model): a ●/○ dot carries it (green ● = on station, dim ○ = not yet).
+   The single .mkt-kit-note footnote states the "add in REFIT" guidance ONCE, not per row (audit item 8). */
 .mkt-kit-row { flex-wrap: wrap; }
-.mkt-kit-state { flex: 1 1 100%; font-size: 10px; letter-spacing: .5px; text-transform: uppercase; color: var(--ph); opacity: .8; text-align: right; }
+.mkt-kit-dot { flex: 0 0 auto; align-self: center; color: var(--ok); font-size: 10px; line-height: 1; }
 .mkt-kit-row.mkt-kit-missing { opacity: .55; border-style: dashed; }
-.mkt-kit-row.mkt-kit-missing .mkt-kit-state { color: var(--ph-dim); }
+.mkt-kit-row.mkt-kit-missing .mkt-kit-dot { color: var(--ph-dim); }
 .mkt-kit-note { color: var(--ph-dim); font-size: 10.5px; letter-spacing: .4px; margin-top: 5px; opacity: .8; }
 .mkt-dos-cta { display: flex; flex-direction: column; gap: 8px; position: sticky; bottom: -20px;
   padding-top: 16px; margin-top: 4px;
