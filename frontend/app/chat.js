@@ -1414,6 +1414,21 @@ const Chat = (() => {
     try { approveBtn.focus(); } catch (_) {}
   }
 
+  // EL-11 FIX 1a: a consent prompt on a NON-displayed session used to be invisible — permissionRow (and its
+  // notify) render for the active stream only, so a background prompt's run silently auto-denied on the sidecar's
+  // consent timeout. A deny nobody saw is a consent violation. This is the GLOBAL surface: the moment a background
+  // session gains a pending consent, fire a clickable toast naming the AGENT + the action; clicking it opens THAT
+  // session via the same restore path as a rail-row click (Chat.load re-renders the consent card from the Channels
+  // snapshot). Also refresh the rail immediately so the row's NEEDS-YOU marker lands without waiting for the ticker.
+  function backgroundPermissionNotify(ev, ws) {
+    const who = (typeof App !== 'undefined' && App.agentName && App.agentName(ws.agentId || 'agent')) || ws.agentId || 'an agent';
+    if (typeof StationUI !== 'undefined' && StationUI.notify) {
+      StationUI.notify(who + ' needs approval to ' + actionPhrase(ev) + ' — click here to answer', 'warn', 'needsApproval',
+        { onClick: () => { try { if (typeof App !== 'undefined' && App.openWorkstream) App.openWorkstream(ws.id); } catch (_) {} } });
+    }
+    try { if (typeof App !== 'undefined' && App.refreshRail) App.refreshRail(); } catch (_) {}
+  }
+
   // ── "RATE THE WORK" — the PRIMARY leveling beat. After a run that actually DID work, the Commander gives a
   //    one-tap verdict on the OUTPUT (👍 nailed it / 👌 close / 👎 missed). 👍 mints size-weighted XP; 👌/👎 only
   //    nudge the satisfaction meter (never a penalty, never XP). It rides memory.feedback with a SYNTHETIC id,
@@ -4461,7 +4476,11 @@ const Chat = (() => {
             if (typeof StationUI !== 'undefined') StationUI.notify((mk === 'file' ? 'saved ' : 'made ') + ev.title, 'gold', 'runComplete');   // P1-8 category: run produced a deliverable
           }
         },
-        onPermission: ev => { Channels.setPending(ws.id, { promptId: ev.promptId, tool: ev.tool, argsSummary: ev.argsSummary, runId: Channels.runIdOf(ws.id) }); walkToDesk(); if (isActiveWs(ws)) { breakLive(); permissionRow(ev, ws); renderPresence(); } },
+        // EL-11: EVERY prompt now reaches a human surface — the active stream renders the inline consent card;
+        // a background stream fires the global clickable toast + rail marker (backgroundPermissionNotify). Both
+        // paths then ACK the sidecar (consentAck) that the prompt is human-visible, earning the paused run its
+        // one bounded extension of the fail-closed auto-deny timer.
+        onPermission: ev => { Channels.setPending(ws.id, { promptId: ev.promptId, tool: ev.tool, argsSummary: ev.argsSummary, runId: Channels.runIdOf(ws.id) }); walkToDesk(); if (isActiveWs(ws)) { breakLive(); permissionRow(ev, ws); renderPresence(); } else { backgroundPermissionNotify(ev, ws); } try { Harness.consentAck(Channels.runIdOf(ws.id), ev.promptId); } catch (_) {} },
         // the lead's team.summon tool asked the station to create a worker: run the REAL summon (App.summonForRequest
         // → the Recruitment Bay's own summonAgent), then ack with the new id so the lead can delegate to it. The id
         // resolves only after the roster POST lands (App awaits it), so the lead's next team.dispatch finds the worker.

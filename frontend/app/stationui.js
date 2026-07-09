@@ -3287,19 +3287,21 @@ const StationUI = (() => {
     if (!category || category === 'general') return { show: true, sound: p.sound !== false };
     return { show: p[category] !== false, sound: p.sound !== false };
   }
-  function notify(text, cls, category) {
+  // opts (additive, optional): { onClick } — a click-through action for the transient toast (EL-11: a
+  // background consent toast opens ITS session). The persistent NOTIFICATIONS record is unchanged.
+  function notify(text, cls, category, opts) {
     const pref = notifyPrefOf(category);
     if (!pref.show) return;   // this category is muted — honored here, at the real emit point (not decorative)
     store.notifs.push({ id: uid('n'), t: Date.now(), txt: String(text || ''), cls: cls || '', read: false });
     if (store.notifs.length > 60) store.notifs = store.notifs.slice(-60);
     save(); badges();
     if (open.notifs) rerender('notifs');
-    toast(String(text || ''), cls || '', pref.sound);
+    toast(String(text || ''), cls || '', pref.sound, opts);
   }
   // transient on-screen toast — slides in, auto-dismisses with a fade-out, stacks cleanly.
   // The persistent record still lives in the NOTIFICATIONS panel (buildNotifs); this is the
   // ephemeral heads-up so a result isn't silent when that panel is closed.
-  function toast(text, cls, playSound) {
+  function toast(text, cls, playSound, opts) {
     if (typeof document === 'undefined' || !text) return;
     // P1-8: a notification chime, gated by the notification-sound toggle (default on). Rides the existing SFX bank
     // (which itself respects the master TERMINAL AUDIO switch), so muting either silences it. undefined = on.
@@ -3322,9 +3324,17 @@ const StationUI = (() => {
       t.addEventListener('animationend', gone, { once: true });
       setTimeout(gone, 360);
     };
-    // errors linger a touch longer so a failure isn't gone before it's read
-    setTimeout(kill, sev === 'bad' ? 6500 : 4200);
-    t.addEventListener('click', kill);   // click to dismiss early
+    // errors linger a touch longer so a failure isn't gone before it's read; an ACTIONABLE toast
+    // (opts.onClick — e.g. a background consent that must be answered) lingers longer still.
+    const hasAction = !!(opts && typeof opts.onClick === 'function');
+    setTimeout(kill, hasAction ? 10000 : sev === 'bad' ? 6500 : 4200);
+    if (hasAction) {
+      t.classList.add('actionable');
+      t.style.cursor = 'pointer';
+      t.addEventListener('click', () => { try { opts.onClick(); } catch (_) {} kill(); });   // click-through, then dismiss
+    } else {
+      t.addEventListener('click', kill);   // click to dismiss early
+    }
   }
   function buildUpdates(body) {
     if (typeof Updates !== 'undefined' && Updates.render) Updates.render(body);

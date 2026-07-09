@@ -21,6 +21,7 @@ const { makeCredits } = require('./credits.js');   // managed-credit backend ada
 const budgetCaps = require('./budgetcaps.js');   // pure resolve(env,overrides) + validate patch — SETTINGS→Budget (P0-2)
 const fallbackChain = require('./fallbackchain.js');   // pure resolve(env,saved) + validate patch — SETTINGS→Models fallback chain (P0-3)
 const { makeConcurrencyGate } = require('./concurrency.js');
+const { makeConsentWait } = require('./consentwait.js');   // EL-11: fail-closed consent timer + human-visible ack extension
 const { killAll } = require('./halt.js');
 const { makeRegistry } = require('./tools/registry.js');
 const { makeWebTools } = require('./tools/builtin/web.js');
@@ -311,6 +312,11 @@ const CREDITS_PURCHASE_URL = String(ENV('CREDITS_PURCHASE_URL') || '').trim();
 // a live permission.prompt left unanswered this long auto-denies (never hangs a run). P1-9: env
 // STARNET_CONSENT_TIMEOUT_MS > a UI-saved override > the 120s default; the frozen resolve keeps it constant per boot.
 const CONSENT_TIMEOUT_MS = resolveKnob('CONSENT_TIMEOUT_MS', 'consentTimeoutMs', 120000);
+// EL-11 FIX 1c: when the browser ATTESTS a consent prompt is rendered to a human (POST /api/consent/ack —
+// fired for the active card AND the new background toast/rail marker), the deny deadline extends ONCE to this
+// bound. Unattended surfaces never ack, so their fail-closed floor above is untouched; an AFK human still
+// fail-closes at this bound (never indefinite). 5× the floor, hard-capped at 15 minutes.
+const CONSENT_ACK_EXTEND_MS = Math.min(CONSENT_TIMEOUT_MS * 5, 900000);
 // ---- cron / scheduled routines (autonomous, OPT-IN). The whole subsystem is INERT unless SKYNET_CRON_ENABLED
 // is set: no timer is armed, no run is fired, and the browser path is byte-identical. A fire uses the same
 // provider seam as /api/run: OpenRouter needs the live BYOK key (runtimeKey), while Codex uses the protected
@@ -3873,6 +3879,7 @@ function dispatchRoute(req, res) {
   if (req.method === 'GET' && req.url === '/api/diagnostics') return handleDiagnostics(req, res);   // T3.9 paste-ready bug report
   if (req.method === 'POST' && req.url === '/api/halt') return handleHalt(req, res);
   if (req.method === 'POST' && req.url === '/api/consent') return handleConsent(req, res);
+  if (req.method === 'POST' && req.url === '/api/consent/ack') return handleConsentAck(req, res);   // EL-11: the browser attests the prompt is human-visible
   if (req.method === 'GET' && req.url === '/api/permissions') return handlePermissionsList(req, res);
   if (req.method === 'POST' && req.url === '/api/permissions/grant') return handlePermissionsGrant(req, res);
   if (req.method === 'POST' && req.url === '/api/permissions/revoke') return handlePermissionsRevoke(req, res);
@@ -6092,25 +6099,15 @@ async function handleRun(req, res) {
   // THE LIVE CONSENT CHANNEL: emit a permission.prompt down the NDJSON stream and return a Promise that the loop's
   // dispatch await-pauses on. The browser answers via POST /api/consent (handleConsent), which calls the stored
   // finisher. Fail-closed safety: a disconnect (ac abort) or a CONSENT_TIMEOUT_MS stall auto-DENIES so a forgotten
-  // prompt can never hold a billable run open. Settles exactly once.
+  // prompt can never hold a billable run open. Settles exactly once. EL-11 FIX 1c: the timing now lives in the
+  // unit-tested waiter (consentwait.js) — same fail-closed contract, plus the one-shot CONSENT_ACK_EXTEND_MS
+  // extension the browser earns via POST /api/consent/ack once the prompt is provably rendered to a human.
   function askHuman(fields) {
-    return new Promise((resolve) => {
-      const promptId = crypto.randomUUID();
-      let settled = false, timer = null;
-      function onAbort() { finish('deny'); }
-      function finish(decision) {
-        if (settled) return; settled = true;
-        pending.delete(promptId);
-        if (timer) clearTimeout(timer);
-        try { ac.signal.removeEventListener('abort', onAbort); } catch (_) {}
-        resolve(decision);
-      }
-      pending.set(promptId, finish);
-      if (ac.signal.aborted) return finish('deny');
-      ac.signal.addEventListener('abort', onAbort, { once: true });
-      timer = setTimeout(() => finish('deny'), CONSENT_TIMEOUT_MS);
-      emit('permission.prompt', { promptId, agentId, tool: (fields && fields.tool) || 'tool', scope: (fields && fields.scope) || 'write', argsSummary: (fields && fields.argsSummary) || '' });
-    });
+    return makeConsentWait({
+      pending, signal: ac.signal, timeoutMs: CONSENT_TIMEOUT_MS, extendMs: CONSENT_ACK_EXTEND_MS,
+      uuid: () => crypto.randomUUID(),
+      emitPrompt: (promptId) => emit('permission.prompt', { promptId, agentId, tool: (fields && fields.tool) || 'tool', scope: (fields && fields.scope) || 'write', argsSummary: (fields && fields.argsSummary) || '' })
+    }).ask();
   }
   function promptConsent(call, tool) {
     return askHuman({ tool: call.name, scope: (tool && tool.scope) || 'write', argsSummary: consentSummary(call) });
@@ -6266,7 +6263,7 @@ async function runOnce(o) {
                  : 'The run holding it is a background one (a scheduled routine or delegated worker).';
     } catch (_) {}
     emit('agent.run.start', { agentId, runId, trigger: trigger, model });
-    emit('agent.run.error', { agentId, runId, transient: true, message: 'That agent is already running a task — one run at a time per agent (they share a workspace). ' + holder + ' Wait for it to finish, check ROUTINES for a recurring job on this agent, or press E-STOP to stop everything.' });
+    emit('agent.run.error', { agentId, runId, transient: true, message: 'That agent is already running a task — one run at a time per agent (they share a workspace). ' + holder + ' Wait for it to finish, check ROUTINES for a recurring job on this agent, or press E-STOP (the red control in the top bar, or Alt+H) to stop everything.' });
     emit('agent.run.end', { agentId, runId, reason: 'error', turns: 0, usd: 0 });
     return;   // no slot was taken (we checked BEFORE tryEnter), so nothing to leave; the outer finally is a no-op here
   }
@@ -7073,6 +7070,22 @@ async function handleConsent(req, res) {
   const finish = pend && pend.get(body.promptId);
   if (finish) finish(decision);
   res.writeHead(200); res.end('ok');
+}
+
+// POST /api/consent/ack { runId, promptId } — EL-11 FIX 1c: the browser's attestation that this consent prompt
+// is now RENDERED to a human (the active consent card, or the global background toast + rail marker). A deny
+// that fires on a prompt nobody ever saw is a consent violation — so a human-visible prompt earns exactly ONE
+// bounded extension of the fail-closed deny timer (CONSENT_ACK_EXTEND_MS; see consentwait.js). Unattended
+// surfaces never POST this, so their CONSENT_TIMEOUT_MS floor is byte-identical; disconnect still denies
+// instantly. Stale/unknown ids are a harmless no-op (the run already ended, answered, or auto-denied).
+async function handleConsentAck(req, res) {
+  let body;
+  try { body = JSON.parse(await readBody(req, 4096)) || {}; } catch (e) { res.writeHead(400); return res.end('bad json'); }
+  const pend = pendingByRun.get(body.runId);
+  const finish = pend && pend.get(body.promptId);
+  const extended = !!(finish && typeof finish.extend === 'function' && finish.extend());
+  res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify({ ok: true, extended }));
 }
 
 // GET /api/permissions — the Permissions Panel's read: every standing grant the agent can use without asking

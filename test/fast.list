@@ -268,6 +268,8 @@ test/propanchor.test.js
 test/waitanchor.test.js
 test/harness.integration.test.js
 test/consent.interactive.test.js
+test/consentwait.test.js
+test/consent-visibility.test.js
 test/channels.adapter.test.js
 test/channels.telegram.test.js
 test/channels.discord.test.js
