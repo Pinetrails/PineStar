@@ -3126,6 +3126,10 @@ const StationUI = (() => {
       const setDim = (el, txt) => { if (el) el.textContent = txt; };
       const paintPanel = (status) => {
         const m = NightReport.panelModel({ status: status, tzOffsetMin: tz() });
+        // EL-11 FIX 1: the durable E-STOP halt must be VISIBLE, not a dim status line — reuse the .up-error card
+        // language so the panel reads as an engaged stop, and the why names the lift (re-set the dial above).
+        if (nsWhy) nsWhy.classList.toggle('ns-halt', !!m.halted);
+        if (nsState) nsState.classList.toggle('ns-halt', !!m.halted);
         if (!m.reachable) {
           setDim(nsState, m.stateText);        // "station telemetry unreachable" — never a fake 0/3
           setDim(nsWhy, ''); setDim(nsLeash, '—'); setDim(nsLast, '—'); setDim(nsNext, '—');
@@ -3153,6 +3157,11 @@ const StationUI = (() => {
           .then(j => { if (j && Array.isArray(j.entries)) paintTrail(j.entries); else if (nsTrail) nsTrail.innerHTML = '<p class="set-about">the decision trail is unreachable right now.</p>'; });
       };
       refreshPanel();
+      // Re-setting the dial / a LEVEL click is the (silent) act that LIFTS a durable E-STOP halt
+      // (handleAutonomyPosture → clearHalt) — re-read the status shortly after so the ⛔ HALTED card clears
+      // (or appears) from the ROUTE's truth, never from an optimistic guess.
+      host.querySelectorAll('#auto-init [data-init], #auto-reach [data-reach], #auto-pace [data-pace], #perm-level [data-level]')
+        .forEach(b => b.addEventListener('click', () => { setTimeout(refreshPanel, 600); }));
     }
     // PERMISSIONS panel — the never→fully-autonomous LEVEL chooser + the OS-style standing-grant list
     // (permissionsstore). Grants live server-side, so paint from cache now, refresh from the sidecar, repaint. A

@@ -156,7 +156,10 @@ const F = (err, status) => friendlyError(err, status);
   A.eq(v.retryable, false, 'auth not retryable');
   A.eq(v.action, 'settings', 'auth points at Settings');
   A.ok(/ChatGPT/i.test(v.userMessage) && /key/i.test(v.userMessage), 'auth friendly headline offers a fix path (add a key or sign in with ChatGPT)');
-  A.eq(F(new Error('sidecar HTTP 403')).kind, 'auth', '403 -> auth');
+  // EL-11 FIX 2: a "sidecar HTTP 403" is OUR OWN token gate (stale X-StarNet-Token after a crash+respawn), not
+  // a provider key problem — it takes the reload door, never "🔑 Add a key". Provider 403s still read as auth.
+  A.eq(F(new Error('sidecar HTTP 403')).kind, 'stale_session', 'sidecar 403 -> stale_session (the station restarted)');
+  A.eq(F(new Error('sidecar HTTP 403')).action, 'reload', 'stale_session offers the reload door');
   A.eq(F(new Error('invalid api key')).kind, 'auth', '"invalid api key" -> auth');
 
   v = F(new Error('ChatGPT sign-in needed: Not signed in to ChatGPT'));
@@ -218,7 +221,7 @@ const F = (err, status) => friendlyError(err, status);
   for (const k of Object.keys(KINDS)) {
     const def = KINDS[k];
     A.ok(typeof def.retryable === 'boolean' && typeof def.msg === 'string' && def.msg.length > 0, 'kind "' + k + '" has a boolean retryable + a non-empty message');
-    A.ok(def.action === null || def.action === 'settings' || def.action === 'skills' || def.action === 'store' || def.action === 'refit', 'kind "' + k + '" action is null|settings|skills|store|refit');
+    A.ok(def.action === null || def.action === 'settings' || def.action === 'skills' || def.action === 'store' || def.action === 'refit' || def.action === 'reload', 'kind "' + k + '" action is null|settings|skills|store|refit|reload');
   }
 }
 
@@ -251,6 +254,8 @@ const F = (err, status) => friendlyError(err, status);
   A.eq(B(new Error('Failed to fetch')).kind, 'network', 'browser: Failed to fetch -> network');
   A.eq(B(new Error('sidecar HTTP 429')).kind, 'rate_limit', 'browser: 429 -> rate_limit');
   A.eq(B(new Error('sidecar HTTP 401')).kind, 'auth', 'browser: 401 -> auth');
+  A.eq(B(new Error('sidecar HTTP 403')).kind, 'stale_session', 'browser: sidecar 403 -> stale_session (reload, not the key door)');
+  A.eq(B(new Error('forbidden token'), 403).kind, 'stale_session', 'browser: 403 + "forbidden token" body -> stale_session');
   A.eq(B(new Error('invalid api key')).kind, 'auth', 'browser: invalid api key -> auth');
   A.eq(B(new Error('ChatGPT sign-in needed: codex_not_connected')).kind, 'oauth', 'browser: ChatGPT sign-in -> oauth');
   A.eq(B(new Error('sidecar HTTP 402')).kind, 'billing', 'browser: 402 -> billing');

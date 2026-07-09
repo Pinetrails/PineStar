@@ -27,8 +27,11 @@
   const BINDING_PHRASE = {
     posture: "the dial was below 'build' — I'm not allowed to act unattended",
     present: 'you were here — the night shift only runs while you’re away',
-    halt: 'the emergency stop was engaged',
+    halt: 'the emergency stop was engaged — re-set the autonomy dial to lift it',
     leash: 'the daily leash was already spent',
+    // NS-2 pre-spend readiness: the station lacks grounded knowledge (a fresh/stale dossier AND too little recent
+    // activity) so a beat could not have reached a model call. Honest about what feeds it: real work + answers.
+    readiness: 'the station doesn’t know you well enough yet to act unattended — run a few real tasks (or answer its questions) so it learns',
     cooldown: 'it wasn’t time for the next beat yet',
     concurrency: 'the desk was busy with another run',
     'in-flight': 'a beat was still running',
@@ -178,6 +181,27 @@
     // leashPerDay is null when never configured (the status route sends null, not 0). Number(null)===0 is finite, so
     // guard on the RAW value being a real number before trusting it — a null leash must never render as "used/0".
     const leash = (typeof s.leashPerDay === 'number' && Number.isFinite(s.leashPerDay)) ? s.leashPerDay : null;
+    const halted = !!s.halted;
+    const leashText = leash == null ? (used + ' beats today') : (used + '/' + leash + ' beats today');
+    // THE DURABLE E-STOP HALT WINS OVER EVERYTHING (EL-11 FIX 1). status.halted means the shift is stood down
+    // until the Commander re-writes the dial (handleAutonomyPosture → clearHalt) — rendering "ACTIVE · standing
+    // by / NEXT ELIGIBLE <time>" here affirmatively claimed a run the E-STOP guarantees won't happen. The halted
+    // model never shows a next-eligible clock and names WHICH control lifts the halt.
+    if (halted) {
+      return {
+        reachable: true,
+        active: active,
+        away: away,
+        halted: true,
+        stateText: '⛔ HALTED — E-STOP engaged',
+        why: 'the night shift is stopped and will not run until you re-set the autonomy dial — press any LEVEL or dial button above to lift the halt',
+        presence: away ? 'you’re away' : 'you’re present',
+        leashText: leashText,
+        leashSpent: leash != null && used >= leash,
+        lastBeatText: fmtLocalTime(s.lastBeatAt, tz) || 'no beat yet',
+        nextEligibleText: 'not scheduled — the E-STOP is engaged'
+      };
+    }
     // STATE: ACTIVE (armed) vs OFF, and the honest WHY when OFF (the live binding names the blocking gate).
     const off = !active;
     const stateText = off ? 'OFF' : (away ? 'ACTIVE · on watch' : 'ACTIVE · standing by');
@@ -186,10 +210,11 @@
       reachable: true,
       active: active,
       away: away,
+      halted: false,
       stateText: stateText,
       why: whyOff,
       presence: away ? 'you’re away' : 'you’re present',
-      leashText: leash == null ? (used + ' beats today') : (used + '/' + leash + ' beats today'),
+      leashText: leashText,
       leashSpent: leash != null && used >= leash,
       lastBeatText: fmtLocalTime(s.lastBeatAt, tz) || 'no beat yet',
       nextEligibleText: fmtLocalTime(s.nextEligibleAt, tz) || 'when the next window opens'

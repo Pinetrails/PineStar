@@ -127,4 +127,31 @@ A.ok(/\+ taskDoctrineNote/.test(sidecar), 'the task doctrine is actually wired i
   A.ok(isApiUrlTauri('https://openrouter.ai/api/v1/models') === false, 'tauri app origin: OpenRouter is still NOT an API URL');
 }
 
+/* ---------- EL-11 FIX 3: a pre-stream /api/run failure must CARRY ITS BODY into the thrown error ----------
+   The old `throw new Error('sidecar HTTP ' + res.status)` discarded the response body, so pre-stream errors
+   (e.g. runRouteFailure's {"error":"sidecar failure: Not signed in to ChatGPT …"}) never reached the
+   friendly-error oauth regexes and the RECONNECT CHATGPT door was lost on this whole path. */
+{
+  A.ok(!/throw new Error\('sidecar HTTP ' \+ res\.status\);/.test(src), 'the body-discarding bare throw is gone');
+  A.ok(/sidecarErrorDetail\(await res\.text\(\)\)/.test(src), 'chat() reads the error body (bounded) and folds it via sidecarErrorDetail');
+  A.ok(/throw new Error\('sidecar HTTP ' \+ res\.status \+ \(detail \? ' — ' \+ detail : ''\)\)/.test(src), 'the thrown message carries the body detail');
+  const mDet = /function sidecarErrorDetail\(text\) \{[\s\S]*?\n  \}/.exec(src);
+  A.ok(mDet, 'harness.js defines the pure sidecarErrorDetail helper');
+  const detail = new Function(mDet[0] + '\nreturn sidecarErrorDetail;')();
+  A.eq(detail('forbidden token'), 'forbidden token', 'a plain-text body (the token gate) passes through');
+  A.eq(detail(''), '', 'an empty body folds to empty (a bare "sidecar HTTP <status>")');
+  A.eq(detail(null), '', 'a null body never throws');
+  A.ok(detail('x'.repeat(5000)).length <= 600, 'the folded detail is bounded');
+  const codex = detail(JSON.stringify({ error: 'sidecar failure: Not signed in to ChatGPT — connect a ChatGPT subscription first.' }));
+  A.ok(/Not signed in to ChatGPT/.test(codex), 'a runRouteFailure JSON envelope unwraps to its message');
+  const coded = detail(JSON.stringify({ error: 'connect a ChatGPT subscription first.', code: 'codex_not_connected' }));
+  A.ok(/codex_not_connected/.test(coded), 'an error code rides along when the text does not already carry it');
+  // END-TO-END through the ladder (the EL-10 family): the message chat() now throws must open RECONNECT CHATGPT.
+  const { friendlyError, actionButton } = require('../frontend/app/friendlyerror.js');
+  const v = friendlyError(new Error('sidecar HTTP 500 — ' + codex));
+  A.eq(v.kind, 'oauth', 'a pre-stream codex-not-connected failure classifies as oauth once the body survives');
+  const btn = actionButton(v);
+  A.ok(btn && /RECONNECT CHATGPT/.test(btn.label), 'the RECONNECT CHATGPT chip is offered on the pre-stream path');
+}
+
 A.report('harness-internal.test');

@@ -84,6 +84,39 @@ const { friendlyError, actionButton, KINDS, CAP_INFO } = require('../frontend/ap
   A.ok(!/undefined/.test(v.userMessage), 'the fallback copy never leaks "undefined"');
 }
 
+// ---- EL-11 FIX 2: sidecar 403 (stale X-StarNet-Token after crash+respawn) => the RELOAD door, never the key door ----
+{
+  // the exact shape Harness.chat throws after the body-preserving fix (body: "forbidden token")
+  const v = friendlyError(new Error('sidecar HTTP 403 — forbidden token'));
+  A.eq(v.kind, 'stale_session', 'a sidecar 403 classifies as stale_session, not auth');
+  A.eq(v.action, 'reload', 'the door is a reload, never the provider-key field');
+  A.eq(v.retryable, false, 'a stale token is not fixed by a blind retry');
+  A.ok(/restart/i.test(v.userMessage) && /reload/i.test(v.userMessage), 'the copy says the station restarted and to reload');
+  const btn = actionButton(v);
+  A.ok(btn && /reload/i.test(btn.label) && typeof btn.run === 'function', 'actionButton yields a RELOAD door');
+  A.ok(!/key/i.test(btn.label), 'the label never offers "Add a key" for a stale session');
+  let threw = false; try { btn.run(); } catch (_) { threw = true; }
+  A.ok(!threw, 'the reload run() degrades quietly with no location global (node)');
+}
+{
+  // the pre-fix bare shape (no body) must ALSO take the reload door — old streams/paths still throw it
+  A.eq(friendlyError(new Error('sidecar HTTP 403')).kind, 'stale_session', 'a bare "sidecar HTTP 403" is a stale session');
+  // and a caller passing the status separately with the sidecar's raw body text
+  A.eq(friendlyError(new Error('forbidden token'), 403).kind, 'stale_session', 'status 403 + "forbidden token" body is a stale session');
+  // a PROVIDER 403 (no sidecar-gate marker) keeps the auth path — only the sidecar's own gate means "reload"
+  A.eq(friendlyError(new Error('invalid api key'), 403).kind, 'auth', 'a provider 403 (key rejected) still classifies as auth');
+}
+
+// ---- EL-11 FIX 3 (ladder half): a pre-stream sidecar failure that CARRIES its body reaches the oauth door ----
+{
+  // handleRun throws pre-stream via runRouteFailure: 500 {"error":"sidecar failure: Not signed in to ChatGPT …"}.
+  // With the body preserved by Harness.chat, the ladder must land on oauth → RECONNECT CHATGPT (EL-10 family).
+  const v = friendlyError(new Error('sidecar HTTP 500 — sidecar failure: Not signed in to ChatGPT — connect a ChatGPT subscription first. (codex_not_connected)'));
+  A.eq(v.kind, 'oauth', 'a pre-stream codex_not_connected body classifies as oauth once the body survives');
+  const btn = actionButton(v);
+  A.ok(btn && /RECONNECT CHATGPT/i.test(btn.label), 'the door is RECONNECT CHATGPT, not a generic retry');
+}
+
 // ---- no "max_iters"-style raw token leaks in any KINDS message (jargon hygiene) ----
 {
   const bad = /max_iters|max_tokens|sidecar HTTP|429|4\d\d|\bnull\b|undefined|capdenied|_[a-z]+_/;
