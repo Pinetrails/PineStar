@@ -3470,27 +3470,35 @@ const StationUI = (() => {
      LOCAL-FIRST sidecar can honestly drive are listed (webhook-only surfaces like WhatsApp stay out). */
   function buildMessaging(body) {
     // ---- the channel catalog (copy + fields per platform; ids are literal so source-guards can pin them) ----
+    // `accent` gives each card its per-platform accent strip + coin (marketplace card grammar); `steps` render as
+    // an <ol> inside the setup <details>; `note` is the trailing dim caveat. Secret-input id + type order is
+    // load-bearing (the wire source-guard pins e.g. id="sl-bot-token" type="password") — never reorder those.
     const CHANNEL_CATALOG = [
-      { id: 'telegram', title: 'TELEGRAM', pre: 'tg', glyph: '✈',
+      { id: 'telegram', title: 'TELEGRAM', pre: 'tg', glyph: '✈', accent: '#37aee2',
         tagline: 'DM your agent from Telegram.',
         verb: 'polling',
-        setup: '<b>1.</b> In Telegram open <b>@BotFather</b> → send <code>/newbot</code> → copy the token it gives you. ' +
-          '<b>2.</b> Paste it below and connect. Your agent answers DMs using this app\'s current provider + model. ' +
-          '<span class="dim">(The token is stored locally by the sidecar and never displayed.)</span>',
-        fieldsHtml: '<label class="ms-h" for="tg-token">BOT TOKEN <span class="dim">— from @BotFather</span></label>' +
+        steps: [
+          'In Telegram open <b>@BotFather</b> → send <code>/newbot</code> → copy the token it gives you.',
+          'Paste it below and connect. Your agent answers DMs using this app\'s current provider + model.'
+        ],
+        note: 'The token is stored locally by the sidecar and never displayed.',
+        fieldsHtml: '<label class="ch-lbl" for="tg-token">BOT TOKEN <span class="dim">— from @BotFather</span></label>' +
           '<input id="tg-token" type="password" class="key-input" placeholder="123456789:ABCdef..." autocomplete="off" spellcheck="false">',
         read: (b) => ({ token: (b.querySelector('#tg-token').value || '').trim() }),
         clear: (b) => { b.querySelector('#tg-token').value = ''; },
         emptyMsg: 'paste your @BotFather token first',
         okMsg: '✓ connected — open Telegram and DM your bot' },
 
-      { id: 'discord', title: 'DISCORD', pre: 'dc', glyph: '◈',
+      { id: 'discord', title: 'DISCORD', pre: 'dc', glyph: '◈', accent: '#7c83f5',
         tagline: 'Two-way chat on Discord — DM your bot (or @-mention it in a server) and it replies.',
         verb: 'receiving',
-        setup: '<b>1.</b> Open the <b>Discord Developer Portal</b> → <b>New Application</b> → <b>Bot</b> → <b>Reset Token</b> → copy the token. ' +
-          '<b>2.</b> Enable <b>MESSAGE CONTENT INTENT</b> on the Bot page (required to read your messages), then invite the bot to a server (OAuth2 → URL Generator → <code>bot</code> scope). ' +
-          '<b>3.</b> Paste the token below and connect. <span class="dim">(The token is stored locally by the sidecar and never displayed.)</span>',
-        fieldsHtml: '<label class="ms-h" for="dc-token">BOT TOKEN <span class="dim">— from the Discord Developer Portal</span></label>' +
+        steps: [
+          'Open the <b>Discord Developer Portal</b> → <b>New Application</b> → <b>Bot</b> → <b>Reset Token</b> → copy the token.',
+          'Enable <b>MESSAGE CONTENT INTENT</b> on the Bot page (required to read your messages), then invite the bot to a server (OAuth2 → URL Generator → <code>bot</code> scope).',
+          'Paste the token below and connect.'
+        ],
+        note: 'The token is stored locally by the sidecar and never displayed.',
+        fieldsHtml: '<label class="ch-lbl" for="dc-token">BOT TOKEN <span class="dim">— from the Discord Developer Portal</span></label>' +
           '<input id="dc-token" type="password" class="key-input" placeholder="MTE...Bot token" autocomplete="off" spellcheck="false">',
         read: (b) => ({ token: (b.querySelector('#dc-token').value || '').trim() }),
         clear: (b) => { b.querySelector('#dc-token').value = ''; },
@@ -3498,17 +3506,19 @@ const StationUI = (() => {
         okMsg: '✓ connected — DM your bot on Discord',
         errHint: ' — check the bot token / MESSAGE CONTENT intent' },
 
-      { id: 'slack', title: 'SLACK', pre: 'sl', glyph: '⌗',
+      { id: 'slack', title: 'SLACK', pre: 'sl', glyph: '⌗', accent: '#b98ec8',
         tagline: 'Your agent inside your Slack workspace — DM it or add it to a channel.',
         verb: 'receiving',
-        setup: '<b>1.</b> Open <b>api.slack.com/apps</b> → <b>Create New App</b> → From scratch. ' +
-          '<b>2.</b> Enable <b>Socket Mode</b> (Settings → Socket Mode) and create an <b>app-level token</b> with <code>connections:write</code> (starts <code>xapp-</code>). ' +
-          '<b>3.</b> Under <b>OAuth &amp; Permissions</b> add bot scopes <code>chat:write</code>, <code>im:history</code>, <code>channels:history</code> → <b>Install to Workspace</b> → copy the <b>bot token</b> (starts <code>xoxb-</code>). ' +
-          '<b>4.</b> Under <b>Event Subscriptions</b> subscribe the bot to <code>message.im</code> (and <code>message.channels</code> for channels). ' +
-          '<span class="dim">(Both tokens are stored locally by the sidecar and never displayed.)</span>',
-        fieldsHtml: '<label class="ms-h" for="sl-bot-token">BOT TOKEN <span class="dim">— xoxb-…, from OAuth &amp; Permissions</span></label>' +
+        steps: [
+          'Open <b>api.slack.com/apps</b> → <b>Create New App</b> → From scratch.',
+          'Enable <b>Socket Mode</b> (Settings → Socket Mode) and create an <b>app-level token</b> with <code>connections:write</code> (starts <code>xapp-</code>).',
+          'Under <b>OAuth &amp; Permissions</b> add bot scopes <code>chat:write</code>, <code>im:history</code>, <code>channels:history</code> → <b>Install to Workspace</b> → copy the <b>bot token</b> (starts <code>xoxb-</code>).',
+          'Under <b>Event Subscriptions</b> subscribe the bot to <code>message.im</code> (and <code>message.channels</code> for channels).'
+        ],
+        note: 'Both tokens are stored locally by the sidecar and never displayed.',
+        fieldsHtml: '<label class="ch-lbl" for="sl-bot-token">BOT TOKEN <span class="dim">— xoxb-…, from OAuth &amp; Permissions</span></label>' +
           '<input id="sl-bot-token" type="password" class="key-input" placeholder="xoxb-..." autocomplete="off" spellcheck="false">' +
-          '<label class="ms-h" for="sl-app-token">APP-LEVEL TOKEN <span class="dim">— xapp-…, from Socket Mode</span></label>' +
+          '<label class="ch-lbl" for="sl-app-token">APP-LEVEL TOKEN <span class="dim">— xapp-…, from Socket Mode</span></label>' +
           '<input id="sl-app-token" type="password" class="key-input" placeholder="xapp-..." autocomplete="off" spellcheck="false">',
         read: (b) => {
           const bot = (b.querySelector('#sl-bot-token').value || '').trim();
@@ -3519,33 +3529,38 @@ const StationUI = (() => {
         emptyMsg: 'paste BOTH Slack tokens first (xoxb-… and xapp-…)',
         okMsg: '✓ connected — DM your Slack app' },
 
-      { id: 'matrix', title: 'MATRIX', pre: 'mx', glyph: '▣',
+      { id: 'matrix', title: 'MATRIX', pre: 'mx', glyph: '▣', accent: '#5bd18d',
         tagline: 'Reach your agent from any Matrix client (Element, …) on any homeserver.',
         verb: 'syncing',
-        setup: '<b>1.</b> Create a Matrix account for the agent (e.g. on <b>matrix.org</b> or your homeserver). ' +
-          '<b>2.</b> Get an <b>access token</b> for that account (Element: Settings → Help &amp; About → Advanced → Access Token). ' +
-          '<b>3.</b> Enter the homeserver URL + token below and connect, then invite the agent\'s account to a room from YOUR account and accept the invite once from any client. ' +
-          '<span class="dim">(Every room is owner-locked: the first person to message the agent claims it.)</span>',
-        fieldsHtml: '<label class="ms-h" for="mx-endpoint">HOMESERVER URL <span class="dim">— e.g. https://matrix.org</span></label>' +
+        steps: [
+          'Create a Matrix account for the agent (e.g. on <b>matrix.org</b> or your homeserver).',
+          'Get an <b>access token</b> for that account (Element: Settings → Help &amp; About → Advanced → Access Token).',
+          'Enter the homeserver URL + token below and connect, then invite the agent\'s account to a room from YOUR account and accept the invite once from any client.'
+        ],
+        note: 'Every room is owner-locked: the first person to message the agent claims it.',
+        fieldsHtml: '<label class="ch-lbl" for="mx-endpoint">HOMESERVER URL <span class="dim">— e.g. https://matrix.org</span></label>' +
           '<input id="mx-endpoint" type="text" class="key-input" placeholder="https://matrix.org" autocomplete="off" spellcheck="false">' +
-          '<label class="ms-h" for="mx-token">ACCESS TOKEN <span class="dim">— for the agent\'s Matrix account</span></label>' +
+          '<label class="ch-lbl" for="mx-token">ACCESS TOKEN <span class="dim">— for the agent\'s Matrix account</span></label>' +
           '<input id="mx-token" type="password" class="key-input" placeholder="syt_..." autocomplete="off" spellcheck="false">',
         read: (b) => ({ token: (b.querySelector('#mx-token').value || '').trim(), endpoint: (b.querySelector('#mx-endpoint').value || '').trim() }),
         clear: (b) => { b.querySelector('#mx-token').value = ''; },
         prefill: (b, st) => { const e = b.querySelector('#mx-endpoint'); if (e && !e.value && st && st.endpoint) e.value = st.endpoint; },
+        urlField: 'mx-endpoint', urlScheme: 'https',
         emptyMsg: 'enter the homeserver URL and paste an access token first',
         okMsg: '✓ connected — message the agent\'s Matrix account' },
 
-      { id: 'signal', title: 'SIGNAL', pre: 'sg', glyph: '◉',
+      { id: 'signal', title: 'SIGNAL', pre: 'sg', glyph: '◉', accent: '#6aa0ff', advanced: true,
         tagline: 'Message your agent on Signal through a self-hosted signal-cli bridge.',
         verb: 'receiving',
-        setup: '<b>1.</b> Run the <b>signal-cli REST API</b> next to StarNet (docker: <code>bbernhard/signal-cli-rest-api</code>). ' +
-          '<b>2.</b> Register or link a number for the agent (the bridge\'s <code>/v1/register</code> or QR link flow). ' +
-          '<b>3.</b> Enter the bridge URL + that number below and connect, then message it from your own Signal. ' +
-          '<span class="dim">(No token needed — the bridge runs on your machine; keep it bound to localhost.)</span>',
-        fieldsHtml: '<label class="ms-h" for="sg-endpoint">SIGNAL-CLI REST URL <span class="dim">— e.g. http://127.0.0.1:8080</span></label>' +
+        steps: [
+          'Run the <b>signal-cli REST API</b> next to StarNet (docker: <code>bbernhard/signal-cli-rest-api</code>).',
+          'Register or link a number for the agent (the bridge\'s <code>/v1/register</code> or QR link flow).',
+          'Enter the bridge URL + that number below and connect, then message it from your own Signal.'
+        ],
+        note: 'No token needed — the bridge runs on your machine; keep it bound to localhost.',
+        fieldsHtml: '<label class="ch-lbl" for="sg-endpoint">SIGNAL-CLI REST URL <span class="dim">— e.g. http://127.0.0.1:8080</span></label>' +
           '<input id="sg-endpoint" type="text" class="key-input" placeholder="http://127.0.0.1:8080" autocomplete="off" spellcheck="false">' +
-          '<label class="ms-h" for="sg-account">REGISTERED NUMBER <span class="dim">— the agent\'s Signal number</span></label>' +
+          '<label class="ch-lbl" for="sg-account">REGISTERED NUMBER <span class="dim">— the agent\'s Signal number</span></label>' +
           '<input id="sg-account" type="text" class="key-input" placeholder="+15551234567" autocomplete="off" spellcheck="false">',
         read: (b) => ({ endpoint: (b.querySelector('#sg-endpoint').value || '').trim(), account: (b.querySelector('#sg-account').value || '').trim() }),
         clear: () => {},
@@ -3553,66 +3568,148 @@ const StationUI = (() => {
           const e = b.querySelector('#sg-endpoint'); if (e && !e.value && st && st.endpoint) e.value = st.endpoint;
           const a = b.querySelector('#sg-account'); if (a && !a.value && st && st.account) a.value = st.account;
         },
+        urlField: 'sg-endpoint', urlScheme: 'http',
         emptyMsg: 'enter the signal-cli REST URL and the registered number first',
         okMsg: '✓ connected — message the agent on Signal' }
     ];
 
     // ---- panel shell: intro + ONE shared autonomous-ping opt-in, then a card per catalog entry ----
+    // The "keeps working headless" promise is FULL-CONTRAST (a real capability, not fine print), lifted out of the
+    // opacity-.55 intro. The opt-in label reads as a plain sentence with its description on its own line.
     let html =
       '<p class="set-about">Reach your agent from real messaging apps. Every connected channel talks to the <b>same agent</b> ' +
-        '(same memory, tools, and workspace) using this app\'s current provider + model — and keeps working headless, even with this window closed.</p>' +
-      '<label class="set-row" style="margin:2px 0 10px"><input type="checkbox" id="ch-notify"> PING ME WHEN I WORK ON MY OWN ' +
-        '<span class="dim">— message me on my connected channels when a routine runs autonomously and produces something</span></label>';
+        '(same memory, tools, and workspace) using this app\'s current provider + model.</p>' +
+      '<p class="ch-headless">It keeps working <b>headless</b> — a DM runs your agent even with this window (and the app) closed.</p>' +
+      '<label class="set-row ch-optin"><input type="checkbox" id="ch-notify"> <span class="ch-optin-t">Message me on my connected channels when my agent finishes autonomous work</span>' +
+        '<span class="ch-optin-d dim">A routine that runs on its own and produces something pings you on every channel you\'ve connected.</span></label>' +
+      '<div id="ch-notify-msg" class="msg"></div>';
     for (const c of CHANNEL_CATALOG) {
       html +=
-        '<div class="ch-card" id="ch-card-' + c.id + '">' +
+        '<div class="ch-card" id="ch-card-' + c.id + '" style="--accent:' + c.accent + '">' +
           '<div class="ch-head">' +
-            '<span class="ch-glyph">' + c.glyph + '</span>' +
-            '<h4 class="ms-h ch-title">' + c.title + '</h4>' +
+            '<span class="ch-coin"><span class="ch-glyph">' + c.glyph + '</span></span>' +
+            '<div class="ch-id">' +
+              '<h4 class="ch-title">' + c.title + (c.advanced ? ' <span class="ch-adv">ADVANCED · SELF-HOSTED</span>' : '') + '</h4>' +
+              '<span class="ch-answers" id="' + c.pre + '-answers"></span>' +
+            '</div>' +
             '<span class="ch-state" id="' + c.pre + '-status">checking…</span>' +
           '</div>' +
           '<p class="set-about ch-tagline">' + c.tagline + '</p>' +
-          '<details class="ch-setup"><summary>SETUP GUIDE</summary><p class="set-about">' + c.setup + '</p></details>' +
+          '<details class="ch-setup"><summary>SETUP GUIDE</summary>' +
+            '<ol class="ch-steps"><li>' + c.steps.join('</li><li>') + '</li></ol>' +
+            (c.note ? '<p class="ch-note">' + c.note + '</p>' : '') +
+          '</details>' +
           c.fieldsHtml +
           '<div class="set-save">' +
             '<button class="bb sm" id="' + c.pre + '-connect">⏼ CONNECT</button> ' +
-            '<button class="bb sm danger" id="' + c.pre + '-disconnect">⏏ DISCONNECT</button>' +
+            '<button class="bb sm danger" id="' + c.pre + '-disconnect" style="display:none">⏏ DISCONNECT</button> ' +
+            '<button class="bb xs danger" id="' + c.pre + '-forget" style="display:none">⌫ FORGET</button>' +
           '</div>' +
           '<div id="' + c.pre + '-msg" class="msg"></div>' +
         '</div>';
     }
     body.innerHTML = html;
 
-    // ---- status truth: one bulk poll paints every card; channel.connect bus events re-poll live ----
+    // per-card mutable UI state kept out of the DOM: are we mid-connect (finalize the msg from the PROVEN status,
+    // not the POST), and the saved placeholders (restored when a card goes back to un-configured).
     const configuredById = {};
+    const pendingConnect = {};
+    const savedPlaceholder = {};
+
+    // status-line colour by state as a CLASS (never inline el.style.color — truthful-telemetry palette lives in css).
+    function stateClass(conn, inFlight, state, configured) {
+      if (conn) return 'st-up';
+      if (state === 'error') return 'st-err';
+      if (inFlight) return 'st-wait';
+      return configured ? 'st-wait' : 'st-off';
+    }
+    function setMsg(el, text, kind) {   // kind: 'ok' (success/gold) | 'info' (neutral) | '' (error/red default)
+      if (!el) return;
+      el.className = 'msg' + (kind === 'ok' ? ' ok' : kind === 'info' ? ' info' : '');
+      el.textContent = text || '';
+    }
+
     function paintCard(c, st) {
       const el = body.querySelector('#' + c.pre + '-status');
       if (!el) return;
-      const conn = st && st.connected;
+      const conn = !!(st && st.connected);
       const state = st && st.state;
       const inFlight = !conn && (state === 'connecting' || state === 'reconnecting');
-      configuredById[c.id] = !!(st && st.configured);
-      el.style.color = conn ? 'var(--ok)' : (inFlight || configuredById[c.id] ? 'var(--gold)' : 'var(--ph-dim)');
+      const configured = !!(st && st.configured);
+      configuredById[c.id] = configured;
+      el.className = 'ch-state ' + stateClass(conn, inFlight, state, configured);
       el.textContent = conn ? ('● CONNECTED — ' + c.verb + (state && state !== 'up' ? ' (' + state + ')' : ''))
         : inFlight ? ('◐ ' + (state === 'reconnecting' ? 'reconnecting' : 'connecting') + '…' + (st.detail ? ' — ' + st.detail : ''))
         : state === 'error' ? ('✕ error' + (st.detail ? ' — ' + st.detail : '') + (c.errHint || ''))
-        : configuredById[c.id] ? ('○ saved but offline — CONNECT to resume' + (st.detail ? ' — ' + st.detail : ''))
+        : configured ? ('○ saved but offline — RESUME to reconnect' + (st.detail ? ' — ' + st.detail : ''))
         : '○ not connected';
       if (c.prefill) { try { c.prefill(body, st); } catch (_) {} }
       const card = body.querySelector('#ch-card-' + c.id);
-      if (card) card.classList.toggle('on', !!conn);
+      if (card) card.classList.toggle('on', conn);
+
+      // ANSWERS AS / owner-locked truth line (only once a config exists — never claim an identity for a cold card).
+      const ans = body.querySelector('#' + c.pre + '-answers');
+      if (ans) {
+        const nm = (st && st.agentName || '').trim();
+        const bits = [];
+        if ((conn || configured) && nm) bits.push('ANSWERS AS: ' + nm);
+        if (st && st.ownerLocked) bits.push('owner-locked ✓');
+        ans.textContent = bits.join('  ·  ');
+        ans.style.display = bits.length ? '' : 'none';
+      }
+
+      // buttons follow state: DISCONNECT/FORGET only when there is something to act on; CONNECT relabels to RESUME
+      // when saved-but-offline, and disables to a neutral "connecting…" while a round-trip is in flight.
+      const cBtn = body.querySelector('#' + c.pre + '-connect');
+      const dBtn = body.querySelector('#' + c.pre + '-disconnect');
+      const fBtn = body.querySelector('#' + c.pre + '-forget');
+      if (cBtn) {
+        cBtn.disabled = inFlight;
+        cBtn.textContent = inFlight ? '◐ CONNECTING…' : (configured && !conn ? '⏵ RESUME' : '⏼ CONNECT');
+      }
+      if (dBtn) { dBtn.style.display = (conn || configured) ? '' : 'none'; if (!(conn || configured)) disarm(c.pre + '-disconnect', dBtn, '⏏ DISCONNECT'); }
+      if (fBtn) { fBtn.style.display = configured ? '' : 'none'; if (!configured) disarm(c.pre + '-forget', fBtn, '⌫ FORGET'); }
+
+      // saved-but-offline: swap the password placeholder to a non-echoing hint (never render the secret).
+      body.querySelectorAll('#ch-card-' + c.id + ' input[type=password]').forEach(inp => {
+        if (savedPlaceholder[inp.id] == null) savedPlaceholder[inp.id] = inp.getAttribute('placeholder') || '';
+        inp.placeholder = (configured && !inp.value) ? '•••• saved — paste to replace' : savedPlaceholder[inp.id];
+      });
+
+      // finalize a pending connect's MESSAGE from the proven status (not the optimistic POST body).
+      if (pendingConnect[c.id]) {
+        const msgEl = body.querySelector('#' + c.pre + '-msg');
+        if (conn) { setMsg(msgEl, c.okMsg, 'ok'); delete pendingConnect[c.id]; }
+        else if (state === 'error') { setMsg(msgEl, '✕ ' + ((st && st.detail) || 'connection failed') + (c.errHint || ''), ''); delete pendingConnect[c.id]; }
+        // else still 'connecting' — leave the neutral connecting… line until the transport proves one way or the other.
+      }
     }
+
+    // ---- armed-confirm helper: a danger action needs a second click within 2s (no accidental token loss) ----
+    const armTimers = {};
+    function disarm(id, btn, label) { if (armTimers[id]) { clearTimeout(armTimers[id]); delete armTimers[id]; } if (btn) { btn.classList.remove('armed'); btn.textContent = label; } }
+    function armed(id, btn, label, confirmLabel, run) {
+      if (btn.dataset.armed === '1') { disarm(id, btn, label); btn.dataset.armed = ''; run(); return; }
+      btn.dataset.armed = '1'; btn.classList.add('armed'); btn.textContent = confirmLabel;
+      armTimers[id] = setTimeout(() => { btn.dataset.armed = ''; disarm(id, btn, label); }, 2000);
+    }
+
+    let zeroChannelHintShown = false;
     async function refreshAll() {
       try {
         const r = await fetch('/api/channels/status');
         const all = await r.json();
-        let notify = false;
-        for (const c of CHANNEL_CATALOG) { const st = all[c.id]; if (st) { paintCard(c, st); notify = notify || !!st.notifyAutonomous; } }
-        const nb = body.querySelector('#ch-notify'); if (nb) nb.checked = notify;
+        let notifyOn = false, anyConnected = false;
+        for (const c of CHANNEL_CATALOG) { const st = all[c.id]; if (st) { paintCard(c, st); notifyOn = notifyOn || !!st.notifyAutonomous; anyConnected = anyConnected || !!st.connected; } }
+        const nb = body.querySelector('#ch-notify'); if (nb) nb.checked = notifyOn;
+        // notify is on but nothing is connected → it can never fire; say so honestly (don't imply pings will arrive).
+        const nMsg = body.querySelector('#ch-notify-msg');
+        if (notifyOn && !anyConnected) { setMsg(nMsg, 'no channel connected yet — connect one below so these pings have somewhere to go', 'info'); zeroChannelHintShown = true; }
+        else if (zeroChannelHintShown) { setMsg(nMsg, '', 'info'); zeroChannelHintShown = false; }
       } catch (_) {
         for (const c of CHANNEL_CATALOG) {
           const el = body.querySelector('#' + c.pre + '-status');
-          if (el) { el.style.color = 'var(--ph-dim)'; el.textContent = '○ sidecar offline'; }
+          if (el) { el.className = 'ch-state st-off'; el.textContent = '○ sidecar offline'; }
           configuredById[c.id] = false;
         }
       }
@@ -3626,30 +3723,68 @@ const StationUI = (() => {
         if (p && p.channel && buildMessaging._refresh && document.querySelector('.ch-card')) buildMessaging._refresh();
       });
     }
+    // 30s heartbeat re-poll while the panel is open — a background reconnect/drop repaints without a manual reopen.
+    // Self-terminating: the moment this panel's body leaves the DOM (window closed / rerendered) the timer clears.
+    if (buildMessaging._poll) { clearInterval(buildMessaging._poll); }
+    buildMessaging._poll = setInterval(() => {
+      if (!document.body.contains(body)) { clearInterval(buildMessaging._poll); buildMessaging._poll = null; return; }
+      refreshAll();
+    }, 30000);
 
-    // ---- connect / disconnect wiring, generated per card from the catalog ----
+    // ---- connect / disconnect / forget wiring, generated per card from the catalog ----
+    // the SAME selected agent supplies the id, prompt AND name (previously the id came from the active workstream
+    // but the prompt/name came from present[0] — a mismatch whenever the active stream wasn't the first agent).
     function agentIdentity() {
-      const ag = present[0] || {};
       const ws = (typeof Workstreams !== 'undefined' && Workstreams.active) ? Workstreams.active() : null;
-      return { agentId: (ws && ws.agentId) || 'agent', system: (ag && ag.systemPrompt) || '', agentName: (ag && ag.name) || '' };
+      const wsAgentId = ws && ws.agentId;
+      let ag = null;
+      if (wsAgentId) ag = present.find(a => a && a.id === wsAgentId) || null;
+      if (!ag) ag = present[0] || null;
+      return { agentId: (ag && ag.id) || wsAgentId || 'agent', system: (ag && ag.systemPrompt) || '', agentName: (ag && ag.name) || '' };
+    }
+    // normalize a URL-shape config field client-side: prepend the scheme when the user typed a bare host, and write
+    // the normalized value back so what they see is what we send. Returns '' when there's nothing usable.
+    function normalizeUrl(raw, scheme) {
+      let v = String(raw || '').trim();
+      if (!v) return '';
+      if (!/^https?:\/\//i.test(v)) v = scheme + '://' + v.replace(/^\/+/, '');
+      try { const u = new URL(v); if (!u.hostname) return ''; return u.origin + (u.pathname !== '/' ? u.pathname.replace(/\/+$/, '') : ''); }
+      catch (_) { return ''; }
     }
     for (const c of CHANNEL_CATALOG) {
       const msgEl = body.querySelector('#' + c.pre + '-msg');
       body.querySelector('#' + c.pre + '-connect').addEventListener('click', async () => {
+        // URL-shape validation + auto-scheme for the endpoint channels, written back into the field before we read.
+        if (c.urlField) {
+          const inp = body.querySelector('#' + c.urlField);
+          if (inp && inp.value.trim()) {
+            const norm = normalizeUrl(inp.value, c.urlScheme);
+            if (!norm) { sfx('bad'); setMsg(msgEl, '✕ that doesn\'t look like a URL — e.g. ' + inp.getAttribute('placeholder'), ''); return; }
+            inp.value = norm;
+          }
+        }
         const vals = c.read(body);
         const hasFreshAuth = !!(vals.token || vals.endpoint || vals.account);
         // a saved config can be reused (one-click reconnect) — fresh credentials only required on first setup.
-        if (!hasFreshAuth && !configuredById[c.id]) { sfx('bad'); msgEl.textContent = c.emptyMsg; return; }
-        if (c.id === 'slack' && vals.token && !(/xoxb-/.test(vals.token) && /xapp-/.test(vals.token))) { sfx('bad'); msgEl.textContent = c.emptyMsg; return; }
+        if (!hasFreshAuth && !configuredById[c.id]) { sfx('bad'); setMsg(msgEl, c.emptyMsg, ''); return; }
+        if (c.id === 'slack' && vals.token && !(/xoxb-/.test(vals.token) && /xapp-/.test(vals.token))) { sfx('bad'); setMsg(msgEl, c.emptyMsg, ''); return; }
         const provider = (typeof Harness !== 'undefined' && Harness.getProv) ? Harness.getProv() : 'openrouter';
         const usingCodex = provider === 'codex' || provider === 'openai-codex';
         const key = (typeof Harness !== 'undefined' && Harness.getKey) ? (Harness.getKey(provider) || '') : '';
         const baseUrl = (typeof Harness !== 'undefined' && Harness.getBaseUrl) ? (Harness.getBaseUrl(provider) || '') : '';
         const hasStoredKey = !!(typeof Harness !== 'undefined' && Harness.configured && Harness.configured(provider));
         const model = (typeof Harness !== 'undefined' && Harness.getModel()) || '';
-        if (!model || (!usingCodex && !key && !hasStoredKey)) { sfx('bad'); msgEl.textContent = 'connect your agent (provider + model) on the title screen first'; return; }
+        if (!model || (!usingCodex && !key && !hasStoredKey)) {
+          sfx('bad'); setMsg(msgEl, '✕ connect your agent\'s provider + model in SETTINGS first', '');
+          // deep-link door: land Settings on PROVIDERS so a beginner can fix it in one hop (pattern: openTerm section).
+          const link = document.createElement('button'); link.className = 'ch-door'; link.textContent = 'open SETTINGS → PROVIDERS';
+          link.addEventListener('click', () => { try { openTerm('settings', 'providers'); } catch (_) {} });
+          msgEl.appendChild(document.createTextNode(' ')); msgEl.appendChild(link);
+          return;
+        }
         const ident = agentIdentity();
-        msgEl.textContent = 'connecting…';
+        pendingConnect[c.id] = true;
+        setMsg(msgEl, 'connecting… — watch the status above for the verified result', 'info');
         try {
           // Desktop: park the secret in the OS keychain (via Tauri), then connect WITHOUT sending it over HTTP —
           // the sidecar reads it from the keychain-injected runtime layer. Browser: storeChannelToken is a no-op
@@ -3666,19 +3801,44 @@ const StationUI = (() => {
           if (vals.account != null) payload.account = vals.account;
           const r = await fetch('/api/channels/' + c.id + '/connect', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
           const j = await r.json().catch(() => ({}));
-          if (!r.ok || j.error) { msgEl.textContent = '✕ ' + (j.error || ('HTTP ' + r.status)); sfx('bad'); }
+          if (!r.ok || j.error) { delete pendingConnect[c.id]; setMsg(msgEl, '✕ ' + (j.error || ('HTTP ' + r.status)), ''); sfx('bad'); }
           else {
-            msgEl.textContent = c.okMsg + (localFallback ? ' (token saved locally, not the OS keychain)' : '');
-            sfx('click'); notify(c.title.charAt(0) + c.title.slice(1).toLowerCase() + ' channel connected', 'good');
+            // DERIVE the outcome line from the status refresh (paintCard finalizes pendingConnect), NOT from this
+            // POST — the sidecar only reports 'connecting' until the transport actually proves the round-trip.
+            if (localFallback) setMsg(msgEl, 'connecting… (token saved locally, not the OS keychain)', 'info');
+            sfx('click');
             try { c.clear(body); } catch (_) {}
           }
-        } catch (e) { msgEl.textContent = '✕ ' + ((e && e.message) || 'failed to reach the sidecar'); sfx('bad'); }
+        } catch (e) { delete pendingConnect[c.id]; setMsg(msgEl, '✕ ' + ((e && e.message) || 'failed to reach the sidecar'), ''); sfx('bad'); }
         refreshAll();
       });
-      body.querySelector('#' + c.pre + '-disconnect').addEventListener('click', async () => {
-        try { await fetch('/api/channels/' + c.id + '/disconnect', { method: 'POST' }); msgEl.textContent = 'disconnected'; sfx('click'); }
-        catch (_) { msgEl.textContent = 'could not reach the sidecar'; }
-        refreshAll();
+      // DISCONNECT — armed (2s) so a stray click can't drop a live channel; never fires on a never-connected card
+      // (the button is hidden then anyway). Marks the config disabled server-side but KEEPS the saved token so
+      // RESUME is one click; use FORGET to actually purge the secret.
+      const dBtn = body.querySelector('#' + c.pre + '-disconnect');
+      dBtn.addEventListener('click', () => {
+        if (!(configuredById[c.id])) { return; }   // nothing to disconnect — no lie, no request
+        armed(c.pre + '-disconnect', dBtn, '⏏ DISCONNECT', '⏏ CONFIRM DISCONNECT', async () => {
+          try { await fetch('/api/channels/' + c.id + '/disconnect', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) }); setMsg(msgEl, 'disconnected — token kept; RESUME to reconnect', 'info'); sfx('click'); }
+          catch (_) { setMsg(msgEl, '✕ could not reach the sidecar', ''); }
+          refreshAll();
+        });
+      });
+      // FORGET — armed purge of the stored secret (record + OS keychain). Explicit user destruction, so exempt from
+      // the never-remove-a-secret-silently law; the record/runtime token is cleared server-side (purge:true) and the
+      // desktop keychain entry is overwritten empty.
+      const fBtn = body.querySelector('#' + c.pre + '-forget');
+      fBtn.addEventListener('click', () => {
+        if (!(configuredById[c.id])) { return; }
+        armed(c.pre + '-forget', fBtn, '⌫ FORGET', '⌫ CONFIRM FORGET', async () => {
+          try {
+            if (typeof Harness !== 'undefined' && Harness.storeChannelToken) { try { await Harness.storeChannelToken(c.id, ''); } catch (_) {} }
+            await fetch('/api/channels/' + c.id + '/disconnect', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ purge: true }) });
+            setMsg(msgEl, 'forgotten — the stored token was purged', 'info'); sfx('click');
+            try { c.clear(body); } catch (_) {}
+          } catch (_) { setMsg(msgEl, '✕ could not reach the sidecar', ''); }
+          refreshAll();
+        });
       });
       // Enter in any of the card's inputs = CONNECT
       body.querySelectorAll('#ch-card-' + c.id + ' input.key-input').forEach(inp => {
@@ -3688,9 +3848,13 @@ const StationUI = (() => {
 
     // ---- the ONE global "ping me when I work on my own" opt-in (persisted server-side; cron reads it) ----
     const notifyBox = body.querySelector('#ch-notify');
+    const notifyMsg = body.querySelector('#ch-notify-msg');
     if (notifyBox) notifyBox.addEventListener('change', async () => {
-      try { await fetch('/api/channels/notify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ on: notifyBox.checked }) }); sfx('click'); }
-      catch (_) { notifyBox.checked = !notifyBox.checked; }
+      try {
+        const r = await fetch('/api/channels/notify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ on: notifyBox.checked }) });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        sfx('click'); refreshAll();   // refresh so the zero-channel hint appears/clears from PROVEN status
+      } catch (_) { notifyBox.checked = !notifyBox.checked; setMsg(notifyMsg, '✕ couldn\'t save that — the sidecar didn\'t answer', ''); }
     });
 
     refreshAll();

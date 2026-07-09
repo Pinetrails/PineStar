@@ -7483,7 +7483,7 @@ async function handleChannelConnect(req, res) {
   const system = (typeof body.system === 'string' && body.system) ? body.system : String(saved.system || '');
   const name = String(body.agentName || '').trim() || String(saved.name || '');
   if (!token) return json(400, { error: 'missing bot token — create one with @BotFather and paste it here' });
-  if (!model) return json(400, { error: 'connect your agent first (choose a model on the title screen)' });
+  if (!model) return json(400, { error: 'connect your agent first — choose a model in Settings → Providers' });
   if (!providerHasCredential(provider, key, baseUrl)) return json(400, { error: providerCredentialError(provider) });
   try { startTelegram(token, providerUsesCodex(provider) ? '' : key, model, { agentId, system, name, provider, reasoningEffort, baseUrl }); } catch (e) { return json(500, { error: (e && e.message) || 'failed to start' }); }
   // report the REAL post-start status (now 'connecting', not an assumed 'up') — the panel repaints from /status once
@@ -7512,15 +7512,22 @@ async function handleChannelSync(req, res) {
   json(200, { synced: true });
 }
 
-// POST /api/channels/telegram/disconnect — stop the bot and mark it disabled (kept in config so the token can be
-// re-enabled without re-entry; clear the token by connecting a new one).
+// POST /api/channels/telegram/disconnect { purge? } — stop the bot and mark it disabled (kept in config so the
+// token can be re-enabled without re-entry). With { purge:true } (the FORGET action) also destroy the stored token:
+// record + runtime + durable marker cleared and the .bak scrubbed. Explicit user destruction, so exempt from the
+// never-remove-a-secret-silently rule. Additive: a body-less POST keeps the old disable-only behaviour.
 async function handleChannelDisconnect(req, res) {
+  let purge = false;
+  try { const b = JSON.parse((await readBody(req, 4096)) || '{}'); purge = !!(b && b.purge); } catch (_) {}
   stopTelegram();
   if (channelSecrets && channelSecrets.telegram) {
-    channelSecrets = Object.assign({}, channelSecrets, { telegram: Object.assign({}, channelSecrets.telegram, { enabled: false }) });
+    const next = Object.assign({}, channelSecrets.telegram, { enabled: false });
+    if (purge) { next.token = undefined; delete channelTokenRuntime.telegram; delete channelTokenDurable.telegram; }
+    channelSecrets = Object.assign({}, channelSecrets, { telegram: next });
     saveChannelSecrets(channelSecrets);
+    if (purge) { try { scrubChannelSecretsBak(); } catch (_) {} }
   }
-  res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ connected: false }));
+  res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ connected: false, purged: purge }));
 }
 
 // GET /api/channels/telegram/status — booleans + poll state ONLY; never the token/key (those stay server-side).
@@ -7554,7 +7561,7 @@ async function handleDiscordConnect(req, res) {
   const system = (typeof body.system === 'string' && body.system) ? body.system : String(saved.system || '');
   const name = String(body.agentName || '').trim() || String(saved.name || '');
   if (!token) return json(400, { error: 'missing bot token — create a bot in the Discord Developer Portal and paste its token here' });
-  if (!model) return json(400, { error: 'connect your agent first (choose a model on the title screen)' });
+  if (!model) return json(400, { error: 'connect your agent first — choose a model in Settings → Providers' });
   if (!providerHasCredential(provider, key, baseUrl)) return json(400, { error: providerCredentialError(provider) });
   try { startDiscord(token, providerUsesCodex(provider) ? '' : key, model, { agentId, system, name, provider, reasoningEffort, baseUrl }); } catch (e) { return json(500, { error: (e && e.message) || 'failed to start' }); }
   // report the REAL post-start status ('connecting' until the gateway reaches READY) — the panel repaints from /status.
@@ -7686,7 +7693,7 @@ async function handleGenericChannelConnect(req, res, id) {
     if (!endpoint) return json(400, { error: 'enter your signal-cli REST API URL first (e.g. http://127.0.0.1:8080)' });
     if (!account) return json(400, { error: 'enter the registered Signal number (e.g. +15551234567)' });
   }
-  if (!model) return json(400, { error: 'connect your agent first (choose a model on the title screen)' });
+  if (!model) return json(400, { error: 'connect your agent first — choose a model in Settings → Providers' });
   if (!providerHasCredential(provider, key, baseUrl)) return json(400, { error: providerCredentialError(provider) });
   try { startGenericChannel(id, token, providerUsesCodex(provider) ? '' : key, model, { agentId, system, name, provider, reasoningEffort, baseUrl, endpoint, account }); }
   catch (e) { return json(500, { error: (e && e.message) || 'failed to start' }); }
@@ -7715,15 +7722,22 @@ async function handleGenericChannelSync(req, res, id) {
   json(200, { synced: true });
 }
 
-// POST /api/channels/<id>/disconnect — stop the adapter and mark it disabled (config kept for one-click reconnect).
+// POST /api/channels/<id>/disconnect { purge? } — stop the adapter and mark it disabled (config kept for one-click
+// reconnect). With { purge:true } (the FORGET action) also destroy the stored token (record + runtime + durable
+// marker) and scrub the .bak — mirrors handleChannelDisconnect. Additive: a body-less POST disables only.
 async function handleGenericChannelDisconnect(req, res, id) {
+  let purge = false;
+  try { const b = JSON.parse((await readBody(req, 4096)) || '{}'); purge = !!(b && b.purge); } catch (_) {}
   stopGenericChannel(id);
   if (channelSecrets && channelSecrets[id]) {
-    const p = {}; p[id] = Object.assign({}, channelSecrets[id], { enabled: false });
+    const next = Object.assign({}, channelSecrets[id], { enabled: false });
+    if (purge) { next.token = undefined; delete channelTokenRuntime[id]; delete channelTokenDurable[id]; }
+    const p = {}; p[id] = next;
     channelSecrets = Object.assign({}, channelSecrets, p);
     saveChannelSecrets(channelSecrets);
+    if (purge) { try { scrubChannelSecretsBak(); } catch (_) {} }
   }
-  res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ connected: false }));
+  res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ connected: false, purged: purge }));
 }
 
 /* ----------------------- Codex (ChatGPT subscription) OAuth ----------------------- */
