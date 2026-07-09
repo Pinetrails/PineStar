@@ -1,5 +1,36 @@
 # NEXT.md — current priorities & task queue
 
+## LANDED 2026-07-09 — LOST-WORK RESTORE: 7 built-but-unmerged features recovered to trunk (5b9cde3f) ✅
+
+Andrew noticed the new start menu + upgraded CREATE YOUR OVERSEER were missing from his build —
+root cause: the branch (claude/starnet-launch-overseer-ux-28d3f2) was **never merged**. A 6-agent
+audit of EVERY unmerged branch + stale worktree then found six more finished features in the same
+state. All 7 restored, gates green on trunk, live-proven (see qa/STATUS.md 2026-07-09 digest):
+splash+overseer menus · CRT speech bubbles · scanlines toggle removed (Andrew: always-on) ·
+selectable transcript+input history+Open-it fix · PROJECTS-tab fix+beat flatten ·
+Slack/Matrix/Signal + CHANNELS panel · photo/file attachments.
+
+**QUEUE — audited unmerged gems, NOT yet restored (claim here before building):**
+- [ ] **connector-spine rescue** — UNCOMMITTED in `C:/Users/andro/gen-trees/connector-spine`
+      (8.7d stale, base 1171 commits behind): email/sms/webhook/whatsapp adapters + tests
+      (new-file clean) + managed-credits billing seam. Its slack = superseded by trunk's; its
+      org/derive = orphaned (orgvalidator.js deleted). FIRST: commit the tree to a branch so it
+      stops being one `git clean` away from gone. Port = manual re-wire of index.js/stationui.js.
+- [ ] **Settings V2 control-plane** — UNCOMMITTED in `gen-trees/hermes-settings-audit` (14.5d):
+      schema-driven settings panel + /api/settings threaded into runOnce (max_turns, budgets,
+      timeouts, approvals). Biggest genuinely-missing feature; heavy reconcile. Same: commit first.
+- [ ] **growth-t4 anti-nag budget** — global one-interactive-ask-per-task-end + starvation
+      fairness. Do NOT merge the branch (chat.js +1386 drift, new thread/autopilot lanes it's
+      blind to) — fresh re-port of the design.
+- [ ] **meeseeks frontend sprites** — 38-line world.js layer completing the merged team.spawn
+      backend; VERIFY trunk forwards sub-* agent.run.* events before building, else sprites never light.
+- [ ] Restored-feature follow-ups: real-token pass on slack/matrix/signal; live file-upload
+      round-trip (e2e-proven only); bubble-restyle visual check at zoom.
+
+**SUPERSEDED — safe to delete, do not re-audit:** agent/parity-finish (fs.patch/MCP-stdio landed
+via bb398960), agent/ui-number-format (trunk U.usd/U.tokens better), spend-model-honesty +
+mac-linux-support worktree drafts (trunk superset).
+
 ## LANDED 2026-07-08 (evening) — GAP-AUDIT SPRINT: last-hop fixes on everything shipped today (Fable session) ✅
 
 Six-agent code-verified audit of the day's merges found ONE pattern: every flagship shipped its
