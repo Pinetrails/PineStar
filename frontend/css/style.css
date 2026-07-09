@@ -906,6 +906,10 @@ body.no-scan .crt-scan { display: none; }
 .set-row input { accent-color: var(--ph); }
 .set-save { display: flex; gap: 8px; }
 .set-about { font-size: 12px; opacity: 0.55; margin-top: 12px; }
+/* NIGHT SHIFT durable-halt (E-STOP) callout — the panel must read as STOPPED, never as dim standing-by
+   telemetry (EL-11 FIX 1). Same error palette as .up-error; the why line gets the bordered card. */
+#ns-state.ns-halt { color: #ffb0a8; opacity: 1; }
+#ns-why.ns-halt { color: #ffb0a8; opacity: 1; border: 1px solid rgba(255, 120, 100, 0.45); background: rgba(80, 10, 5, 0.18); padding: 7px; }
 .up-mini {
   display: flex; align-items: center; justify-content: space-between; gap: 10px;
   border: 1px solid var(--ph-faint); background: var(--panel2); padding: 7px 8px; margin: 6px 0;

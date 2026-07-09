@@ -26,6 +26,13 @@ A.ok(/away/i.test(NR.bindingPhrase('present')), 'present phrase names your prese
 A.ok(/leash/i.test(NR.bindingPhrase('leash')), 'leash phrase names the leash');
 A.ok(/gate/i.test(NR.bindingPhrase('some-future-gate')), 'an unknown binding renders honestly (names the gate), never a fabricated reason');
 A.ok(/no gate/i.test(NR.bindingPhrase(null)), 'null binding → "no gate is blocking" (a beat could fire now)');
+// EL-11: the halt phrase must name its LIFT (re-set the dial), not just the stop.
+A.ok(/dial/i.test(NR.bindingPhrase('halt')), 'halt phrase names the lift — re-set the autonomy dial');
+// EL-11: 'readiness' is a real gate the status route reports; it must have plain copy (what the gate checks —
+// grounded knowledge: dossier/activity), never the raw "held back by the readiness gate" jargon.
+A.ok(NR.BINDING_PHRASE.readiness, 'BINDING_PHRASE carries a readiness entry');
+A.ok(!/readiness gate/i.test(NR.bindingPhrase('readiness')), 'readiness renders plain copy, not raw gate jargon');
+A.ok(/know|learn|task/i.test(NR.bindingPhrase('readiness')), 'readiness copy says what feeds the gate (the station learning you through real work)');
 
 /* ---------- compose(): the no-report rule (no absence / no decision → no beat) ---------- */
 const empty = NR.compose({ status: null, ledger: [], drafts: [], awaySince: 1000, nowMs: 9999, tzOffsetMin: 0 });
@@ -138,6 +145,24 @@ A.eq(panelActive.lastBeatText, '1:10 AM', 'last beat renders in LOCAL time');
 A.eq(NR.panelModel({ status: { active: true, away: true, beatsUsedToday: 3, leashPerDay: 3 }, tzOffsetMin: 0 }).leashSpent, true, '3/3 → leashSpent:true');
 // a null leashPerDay (never configured) must NOT render "used/null" — honest fallback.
 A.eq(NR.panelModel({ status: { active: true, away: true, beatsUsedToday: 1, leashPerDay: null }, tzOffsetMin: 0 }).leashText, '1 beats today', 'null leash → "N beats today", never "1/null"');
+
+/* ---------- panelModel(): the durable E-STOP halt is VISIBLE and names its lift (EL-11 FIX 1) ----------
+   Regression: status.halted landed but the panel ignored it — a durably-halted shift rendered
+   "ACTIVE · standing by / NEXT ELIGIBLE <time>", affirmatively claiming a run the E-STOP guarantees won't happen. */
+const panelHalted = NR.panelModel({ status: { active: true, away: false, halted: true, beatsUsedToday: 1, leashPerDay: 3, binding: 'halt', lastBeatAt: T0610Z, nextEligibleAt: T0610Z + 2700000 }, tzOffsetMin: -300 });
+A.eq(panelHalted.reachable, true, 'a halted status is still reachable telemetry');
+A.eq(panelHalted.halted, true, 'panelModel exposes the durable halt');
+A.ok(/E-STOP/i.test(panelHalted.stateText) && /halted/i.test(panelHalted.stateText), 'the state names the halt (E-STOP), prominently');
+A.ok(!/standing by|on watch/i.test(panelHalted.stateText), 'a halted shift NEVER claims "standing by"/"on watch"');
+A.ok(/dial|level/i.test(panelHalted.why), 'the halted why names WHICH control lifts it (the autonomy dial / LEVEL buttons)');
+A.ok(/stopped|will not|won.t/i.test(panelHalted.why), 'the halted why says plainly the shift is stopped');
+A.ok(!/\d{1,2}:\d{2}\s*(AM|PM)/.test(panelHalted.nextEligibleText), 'no NEXT ELIGIBLE clock while halted — the shift will NOT run at that time');
+A.ok(/E-STOP|halt/i.test(panelHalted.nextEligibleText), 'the next-eligible slot says WHY there is no next time');
+// the halt wins even when the timer is armed-and-away (the exact "ACTIVE · on watch" lie).
+A.ok(!/standing by|on watch/i.test(NR.panelModel({ status: { active: true, away: true, halted: true, beatsUsedToday: 0, leashPerDay: 3 }, tzOffsetMin: 0 }).stateText), 'halted + away still renders the halt, never "on watch"');
+// non-halted statuses stay exactly as before, and expose halted:false.
+A.eq(panelActive.halted, false, 'a live status carries halted:false');
+A.eq(panelOff.halted, false, 'an OFF status carries halted:false');
 
 /* ---------- trailLine(): one honest ledger row for the panel ---------- */
 A.eq(NR.trailLine({ ts: T0610Z, kind: 'decline', binding: 'leash' }, -300), '1:10 AM · declined · the daily leash was already spent', 'a decline row: local time · declined · gate reason');
