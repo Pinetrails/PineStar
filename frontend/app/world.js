@@ -1245,7 +1245,7 @@ const World = (() => {
     // self-heal a stuck walker (mirrors the hero tick): walk pose with nowhere to go → drop to idle so this tick re-decides
     if (self.state === 'walk' && !self.target && (!self.pathPts || self.pathIdx >= self.pathPts.length)) { self.state = 'idle'; self.idleUntil = 0; }
     // TIER D · D1 ATTENTIVE AUDIENCE: if the Commander has COMMS focus on THIS crew body and it's idle, hold its
-    // attention on you (faces south / tracks the cursor) every tick — crew have no maybeGlance, so the hold drives
+    // attention on you (faces south; rare throttled cursor-follow beat) every tick — crew have no maybeGlance, so the hold drives
     // facing directly. Self-gates OFF while working/walking/mid-goal (b.working is set ABOVE in stepCrew, so a live
     // run never reaches here), so the work-seize always wins (G2). A held body skips the rest of the idle engine.
     if (chatStareHold(now)) return;
@@ -2313,6 +2313,27 @@ const World = (() => {
      tracking the cursor between idle decisions (crew have no maybeGlance, so the hold drives facing directly).
      Returns true when it took/holds the body. G2: reachable ONLY while free (never while activity==='task' /
      working / walking / mid-goal) — it sits BELOW the summon-seize, which the callers gate for us. */
+  /* CHAT-STARE-TRACK-PURE-BEGIN — the chat-stare follow-beat throttle, extracted PURE (params + injected rnd
+     only; no module state / RNG / DOM) so its cadence is unit-testable headlessly. WHY headless: the game tick is
+     rAF-driven and a backgrounded CDP/preview tab freezes rAF to 0fps, so "mostly faces the Commander, only rarely
+     follows the cursor" cannot be observed live — test/chat-stare-throttle.test.js extracts THIS marked block from
+     source and executes it (same spirit as the D3-PURE-GEOMETRY block). Decides the chat-stare facing SOURCE —
+     'commander' (face south, at the Commander) vs 'cursor' (turn to the live cursor) — and advances the per-body
+     follow schedule on `b`: b.chatTrackCd = earliest time the next follow beat may open; b.chatTrackUntil = end of
+     the currently-open beat. `fresh` = cursor seen within the freshness window; `reduce` = reduceMotion. rnd(lo,hi)
+     is injected (U.irnd in prod) so the block carries no RNG token and stays deterministic-lint clean. */
+  function chatStareTrack(b, now, fresh, reduce, rnd) {
+    if (reduce) return 'commander';                                              // motion-sensitive: hold the gaze on the Commander, never chase the cursor
+    if (b.chatTrackCd == null) { b.chatTrackCd = now + rnd(8000, 20000); return 'commander'; }   // first beat is delayed too — don't pounce on the cursor the instant COMMS warms
+    if (fresh && now < (b.chatTrackUntil || 0)) return 'cursor';                 // mid-beat: keep following the live cursor for this short window
+    if (fresh && now >= b.chatTrackCd) {                                         // cooldown elapsed + a fresh cursor → open a brief follow beat...
+      b.chatTrackUntil = now + rnd(1200, 2500);
+      b.chatTrackCd = b.chatTrackUntil + rnd(16000, 34000);                      // ...then a long cooldown before it may follow the cursor again
+      return 'cursor';
+    }
+    return 'commander';                                                          // the steady state: attention on the Commander, not the mouse
+  }
+  /* CHAT-STARE-TRACK-PURE-END */
   function chatStareHold(now) {
     if (!self || !chatHot(now) || self !== chatFocusBody()) return false; // not the HOT-focused body → normal life. chatHot = focus set + warm (the ONE shared predicate — same definition the socialEligible/cursorBeatEligible exclusions, encounterBroken, and sweepChase key on). Cold → stop holding; the body falls to normal idle (decideIdle clears stilling on entry) and its quirks/social/mimic/chase/wander ALL resume (the exclusions key on hot too)
     if (self === agent && activity !== 'idle') return false;            // G2: working-at-desk (task) wins; and a live VOICE conversation ('talk') keeps its own listening-glances (maybeGlance) — the stare is an IDLE beat only
@@ -2323,11 +2344,20 @@ const World = (() => {
     // branch and the cargo body-track stay suppressed for the hero; crew facing is driven directly below).
     self.goal = 'stare-chat'; self.stilling = true; self.usingProp = null; self.state = 'idle'; self.sitting = false;
     self.trackUntil = 0;                                                 // drop any in-flight box-track — attention is on YOU, not cargo
+    // ATTENTION, NOT TRACKING (2026-07-08): the warm hold is a STEADY gaze at the Commander (south = facing YOU),
+    // punctuated by the RARE cursor-follow beat — never continuous mouse-tracking. Before, any fresh cursor pointed
+    // the body at it on EVERY 400ms re-affirm (and the hero re-affirms EVERY tick), so an actively-moving mouse made
+    // the focused body follow the cursor for the whole 30–90s warm window, re-warmed on every message — the "it
+    // follows the mouse every single time I talk to it" complaint. chatStareTrack now throttles that to a brief
+    // beat (~1.2–2.5s) behind a per-body cooldown (~16–34s): under constant mousing it's an occasional flick, per
+    // the gaze-drift design call ("not constantly following the mouse, only so often"). Time-based (no per-tick
+    // dice), so the hero's every-tick cadence and the crew's ~400ms cadence land in the same rhythm.
     const fresh = (now - lastCursor.t) < 8000;
-    self.dir = fresh ? dirToward(self.px, self.py, lastCursor.wx, lastCursor.wy) : 'south';
+    const face = chatStareTrack(self, now, fresh, reduceMotion(), U.irnd);   // 'commander' (south, at YOU) vs a rare 'cursor' follow beat; advances self.chatTrackCd / self.chatTrackUntil
+    self.dir = face === 'cursor' ? dirToward(self.px, self.py, lastCursor.wx, lastCursor.wy) : 'south';
     if (self.dir === 'north') self.dir = 'south';                       // never turn its back on the Commander — the face is the point (mirrors THE LOOK-UP)
     self.glance = null;                                                 // the whole body faces you; no lingering head-turn bleeding through
-    self.idleUntil = now + 400;                                         // re-affirm the hold soon so cursor tracking stays live (cheap; no motion)
+    self.idleUntil = now + 400;                                         // re-affirm the hold soon so the cursor beat stays live (cheap; no motion)
     return true;
   }
   // OFF-BEAT HOLD: rarely (and on its own long cooldown) stretch a single dwell to ~2.2x-3.0x — a learned rhythm that
@@ -2943,7 +2973,7 @@ const World = (() => {
       if (planInspect(now)) agent.noticeCd = now + 1500;
     }
     maybeGlance(now);   // head-turns over the top of whatever else the agent is doing
-    chatStareHold(now); // TIER D · D1: if the Commander has COMMS focus on the hero + it's idle, hold its attention on you (faces south / tracks the cursor) — runs AFTER maybeGlance so the stare owns the final facing. Self-gates OFF while activity==='task'/mid-goal/walking, so the summon-seize above always wins (G2)
+    chatStareHold(now); // TIER D · D1: if the Commander has COMMS focus on the hero + it's idle, hold its attention on you (faces south; rare throttled cursor-follow beat) — runs AFTER maybeGlance so the stare owns the final facing. Self-gates OFF while activity==='task'/mid-goal/walking, so the summon-seize above always wins (G2)
     // TIER D · D3: a live social encounter drives the body (walk-to-rendezvous → hold → break). The guard enforces
     // the whole-encounter hard timeout + the partner-broken check EVERY tick (G4/K3), then stepSocial (re)paths or
     // holds. It sits BELOW the summon-seize block above (which flips goal off 'social' via encounterBroken → the
