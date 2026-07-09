@@ -189,8 +189,12 @@ const WorkshopStore = (() => {
   function runUrl(agentId, runId, relPath) {
     const tok = (typeof window !== 'undefined' && window.__STARNET_API_TOKEN__) ? String(window.__STARNET_API_TOKEN__) : '';
     if (!tok) return '';
+    // Desktop: the page's origin is the Tauri webview (bundled frontend), NOT the sidecar, and the injected
+    // fetch shim only rewrites '/api/'-prefixed strings — so this URL must carry the sidecar base explicitly
+    // (window.__STARNET_API__ = http://127.0.0.1:<port>). Browser build: __STARNET_API__ is unset → relative.
+    const base = (typeof window !== 'undefined' && window.__STARNET_API__) ? String(window.__STARNET_API__) : '';
     const parts = String(relPath || '').split('/').map(encodeURIComponent).join('/');
-    return '/workshop-run/' + encodeURIComponent(agentId || 'agent') + '/' + encodeURIComponent(runId) + '/' + parts
+    return base + '/workshop-run/' + encodeURIComponent(agentId || 'agent') + '/' + encodeURIComponent(runId) + '/' + parts
       + '?token=' + encodeURIComponent(tok);
   }
 

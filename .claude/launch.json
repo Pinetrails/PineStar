@@ -464,6 +464,20 @@
       }
     },
     {
+      "name": "open-now-seed",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "C:/Users/andro/Desktop/gen/.claude/worktrees/starnet-open-now-link-23ab84/dev/seed.js",
+        "--keep"
+      ],
+      "port": 8917,
+      "autoPort": false,
+      "env": {
+        "SKYNET_PORT": "8917",
+        "SKYNET_DEFAULT_MODEL": "anthropic/claude-haiku-4.5"
+      }
+    },
+    {
       "name": "codexdead-seed",
       "runtimeExecutable": "node",
       "runtimeArgs": [

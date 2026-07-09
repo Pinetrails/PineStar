@@ -1506,8 +1506,19 @@ const Chat = (() => {
       : '';
     const openRunTab = (relPath) => {
       const url = opts.runUrl ? opts.runUrl(relPath) : '';
-      if (!url) { if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('could not open that — the station may be unreachable', 'warn'); return; }
-      try { window.open(url, '_blank', 'noopener'); } catch (_) {}
+      const warn = (msg) => { if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify(msg, 'warn'); };
+      if (!url) { warn('could not open that — the station may be unreachable'); return; }
+      // Desktop (Tauri): a raw window.open silently fails under the window policy — hand the absolute
+      // sidecar URL to the OS default browser and report a real failure if it doesn't open (same law as
+      // stationui.js openSignIn: never pretend a tab exists). Browser: window.open, where null = popup-blocked.
+      const invoke = (typeof window !== 'undefined' && window.__TAURI__ && window.__TAURI__.core) ? window.__TAURI__.core.invoke : null;
+      if (invoke) {
+        invoke('open_external_url', { url }).catch(() => warn('could not open your browser — open this in one yourself: ' + url));
+        return;
+      }
+      let win = null;
+      try { win = window.open(url, '_blank', 'noopener'); } catch (_) {}
+      if (!win) warn('your browser blocked the new tab — allow popups for the station, then try again');
     };
     const r = row('agent'); r.d.classList.add('tool'); r.d.classList.add('turnin'); r.d.classList.add('workshop-return');
 
