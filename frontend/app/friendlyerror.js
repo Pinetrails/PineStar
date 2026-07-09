@@ -96,7 +96,7 @@
     // the one-run-at-a-time mutex: the SIDECAR message names the holder (age/source) + the doors (ROUTINES,
     // E-STOP) — friendlyError passes it through verbatim instead of flattening to `unknown` (2026-07-07 escape:
     // the user got "Something went wrong" in a loop while the real answer was one sentence away).
-    agent_busy:    { retryable: true,  action: null,       msg: 'That agent is still busy with a previous run — wait for it to finish, or press E-STOP to abort everything.' },
+    agent_busy:    { retryable: true,  action: null,       msg: 'That agent is still busy with a previous run — wait for it to finish, or press E-STOP (the red control in the top bar, or Alt+H) to abort everything.' },
     unknown:       { retryable: true,  action: null,       msg: 'Something went wrong on that turn — try again.' }
   };
 

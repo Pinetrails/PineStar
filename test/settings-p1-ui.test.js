@@ -40,7 +40,7 @@ ok(/runComplete[\s\S]{0,80}needsApproval[\s\S]{0,80}cronDigest/.test(ui) || /nee
 ok(/id="ntp-runComplete"/.test(ui) && /id="ntp-needsApproval"/.test(ui) && /id="ntp-cronDigest"/.test(ui) && /id="ntp-sound"/.test(ui), 'P1-8: a toggle per category + sound is rendered');
 ok(/function wireNotifyPrefs\(/.test(ui), 'P1-8: the toggles are wired to persist');
 // GATED AT EMIT TIME (not decorative): notify() consults the pref before pushing/toasting.
-ok(/function notify\(text, cls, category\)/.test(ui), 'P1-8: notify() takes a category');
+ok(/function notify\(text, cls, category(, opts)?\)/.test(ui), 'P1-8: notify() takes a category (EL-11 added the additive opts arg)');
 ok(/if \(!pref\.show\) return/.test(ui), 'P1-8: a muted category is DROPPED at the emit point (honored, not decorative)');
 ok(/notifyPrefOf\(/.test(ui), 'P1-8: notify() reads the persisted prefs');
 // the three key call sites are actually TAGGED with categories

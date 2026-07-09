@@ -456,6 +456,15 @@ const Harness = (() => {
     try { await fetch('/api/consent', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ runId, promptId, decision }) }); } catch (_) {}
   }
 
+  // EL-11 FIX 1c: attest to the sidecar that a live permission.prompt is now RENDERED to a human (the active
+  // consent card, or the global background toast + rail marker). Earns the run's paused consent ONE bounded
+  // extension of the fail-closed auto-deny timer — a deny on a prompt nobody saw is a consent violation.
+  // Fire-and-forget; a stale id is a harmless no-op on the sidecar.
+  async function consentAck(runId, promptId) {
+    if (!runId || !promptId) return;
+    try { await fetch('/api/consent/ack', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ runId, promptId }) }); } catch (_) {}
+  }
+
   // answer a live crew.summon.request: report the new agentId we summoned (or null if we couldn't), which resolves
   // the run's awaiting team.summon tool. Separate request from the open /api/run stream — no deadlock. The summon
   // tool has its own browser-ack timeout, so a dropped ack settles cleanly to "not completed" rather than hanging.
@@ -585,7 +594,7 @@ const Harness = (() => {
   return {
     isDesktop: () => DESKTOP,   // lets the UI tell a desktop keychain-store failure (token saved locally) from a browser no-op
     getKey, setKey, storeChannelToken, getModel, setModel, getProv, setProv, getBaseUrl, setBaseUrl, getReasoningEffort, setReasoningEffort, normalizeReasoningEffort, init, configured, hasStoredCredential,
-    listModels, priceOf, contextLimitOf, contextState, chat, cancel, haltAll, consent, summonAck, notebook,
+    listModels, priceOf, contextLimitOf, contextState, chat, cancel, haltAll, consent, consentAck, summonAck, notebook,
     memoryProposals, memoryTurnin, memoryVeto, memoryReset, memoryRecords, memoryDeclined, memoryRestore, memoryPin, memoryEdit, memoryForget,
     studyProposals,
     threadProposals, threadTurnin,
