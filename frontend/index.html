@@ -26,6 +26,19 @@
 </head>
 <body class="theme-amber">
 
+<!-- ============ BOOT VEIL ============ -->
+<!-- The ONLY screen that ships class="active": a neutral phosphor holding-card shown during init()'s async
+     gap (Harness.init + CloudSave.reconcile) BEFORE the boot router picks a real screen. Every boot branch
+     ends in show(<screen>) (splash / game / connect / future / recovery), which clears this veil — so a
+     returning Commander never flashes the CREATE console on the way to their station (the old bug: #screen-connect
+     carried the static .active). Truthful telemetry: it asserts nothing about state — just "connecting". -->
+<section id="screen-boot" class="screen active" aria-label="StarNet booting" aria-hidden="true">
+  <div class="boot-veil">
+    <div class="boot-mark">◆ STARNET</div>
+    <div class="boot-line">establishing local uplink<span class="boot-dots"></span></div>
+  </div>
+</section>
+
 <!-- ============ FIRST-BOOT SPLASH ============ -->
 <!-- Shown ONLY on a genuine first run (no save anywhere): the key-art boot screen — starfield, a
      perspective grid floor, the big phosphor wordmark, and a blinking PRESS ANY KEY. Any key / click /
@@ -42,7 +55,7 @@
     <div class="sp-tag">AI-AGENT HARNESS</div>
     <button id="sp-press" class="sp-press" type="button">▮ PRESS ANY KEY TO START</button>
   </div>
-  <div class="sp-stamp"><span class="sp-rec">● REC</span><span class="sp-sig">SIGNAL LOCKED · LOCAL STATION 127.0.0.1</span></div>
+  <div class="sp-stamp"><span class="sp-rec">● LIVE</span><span class="sp-sig">SIGNAL LOCKED · LOCAL STATION 127.0.0.1</span></div>
 </section>
 
 <!-- ============ CONNECT / CREATE ============ -->
@@ -54,13 +67,13 @@
      orchestrating lead; specialists are recruited LATER in the Recruitment Bay. Every functional id below is
      preserved verbatim from the old screen so app.js wiring (loadModels, buildSkins, buildVoice, codex
      sign-in, onWake) keeps working; NEW ids (approval-picker, np-name, np-mode) are wired in app.js. -->
-<section id="screen-connect" class="screen active">
+<section id="screen-connect" class="screen">
   <div class="panel connect-panel ov-panel">
     <span class="cc-bracket cc-tl">┌</span><span class="cc-bracket cc-tr">┐</span>
     <span class="cc-bracket cc-bl">└</span><span class="cc-bracket cc-br">┘</span>
 
     <header class="cc-console-head ov-head">
-      <div class="cc-titlebar"><span class="cc-tb-tag">STARNET</span><span class="cc-tb-rule"></span><span id="cc-mode" class="cc-tb-mode">GENESIS</span><span class="cc-tb-phosphor"><span class="cc-tb-plabel">PHOSPHOR</span><span id="phosphor-swatches" class="phosphor-swatches" role="group" aria-label="Console phosphor tint"></span></span><span class="cc-tb-rec">● REC</span></div>
+      <div class="cc-titlebar"><span class="cc-tb-tag">STARNET</span><span class="cc-tb-rule"></span><span id="cc-mode" class="cc-tb-mode">GENESIS</span><span class="cc-tb-phosphor"><span class="cc-tb-plabel">PHOSPHOR</span><span id="phosphor-swatches" class="phosphor-swatches" role="group" aria-label="Console phosphor tint"></span></span><span class="cc-tb-rec">● LIVE</span></div>
       <div class="cc-title-row ov-title-row">
         <h2 id="cc-title">▮ CREATE YOUR OVERSEER</h2>
         <span id="cc-sub" class="ov-sub">the first mind you wake is your <b>OVERSEER</b> — it runs the station and recruits every agent after it.</span>
