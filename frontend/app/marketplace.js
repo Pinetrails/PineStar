@@ -681,7 +681,7 @@ const Marketplace = (() => {
         '<span class="mkt-kit-grant">' + esc(capGrant(t)) + '</span></div>';
     }).join('');
     const note = missing
-      ? 'shared station gear this class draws on under the overseer — ' + missing + ' not on the station yet (add ' + (missing === 1 ? 'it' : 'them') + ' in REFIT for its full toolkit).'
+      ? 'shared station gear this class draws on under the overseer — ' + missing + ' not on station yet (add ' + (missing === 1 ? 'it' : 'them') + ' in REFIT for its full toolkit).'
       : 'shared station gear this class draws on under the overseer — all present on the station.';
     return '<div class="mkt-block"><div class="bh">DRAWS ON STATION GEAR</div>' +
       '<div class="mkt-kit">' + rows + '</div>' +
