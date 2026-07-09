@@ -7178,8 +7178,13 @@ async function handleRunSteer(req, res) {
   json(200, { ok: true, pending: buf.length });
 }
 
-// GET /api/version — the honest build/version surface for /version. Reads the repo package.json (harness version)
-// and the Tauri desktop app version; both are best-effort so a missing file never 500s.
+// GET /api/version — the honest build/version surface for /version. Resolves the harness build id and the Tauri
+// desktop app version; every lookup is best-effort so a missing file/git never 500s.
+//   harness fallback chain: env STARNET_BUILD_DESCRIBE → one-shot `git describe --always --dirty --tags` (cwd = repo
+//   root) → package.json version. The repo package.json is the intentional '0.0.0' PLACEHOLDER — real build ids come
+//   from the release pipeline — so reporting it raw is a truthful-telemetry violation on a diagnostic surface. The
+//   `git describe` runs ONCE (the whole surface is cached below). `harnessSource` is additive: it names WHERE harness
+//   came from ('env' | 'git' | 'pkg' | 'unknown').
 //   app-version fallback chain (GROUND_UP_AUDIT 2026-07-06 P2): env STARNET_APP_VERSION → src-tauri/tauri.conf.json
 //   → blank. In the PACKAGED desktop app src-tauri/ is NOT a bundled resource, so the conf lookup returns '' and a
 //   support ticket can't tell which build the user is on. The desktop shell should export STARNET_APP_VERSION when
@@ -7189,8 +7194,21 @@ async function handleRunSteer(req, res) {
 let _versionCache = null;
 function computeVersionSurface() {
   if (_versionCache) return _versionCache;
-  const out = { harness: '', app: '', node: process.version, appSource: 'unknown' };
-  try { out.harness = String(require('../package.json').version || ''); } catch (_) {}
+  const out = { harness: '', app: '', node: process.version, appSource: 'unknown', harnessSource: 'unknown' };
+  const envHarness = String(ENV('BUILD_DESCRIBE') || '').trim();   // STARNET_BUILD_DESCRIBE — stamped by the build/release pipeline
+  if (envHarness) { out.harness = envHarness; out.harnessSource = 'env'; }
+  else {
+    try {
+      const { execSync } = require('node:child_process');
+      const desc = String(execSync('git describe --always --dirty --tags', {
+        cwd: path.resolve(__dirname, '..'), stdio: ['ignore', 'pipe', 'ignore'], timeout: 2000
+      }) || '').trim();
+      if (desc) { out.harness = desc; out.harnessSource = 'git'; }
+    } catch (_) {}
+    if (!out.harness) {   // no env stamp, no git (packaged app has neither) — fall back to the package.json version
+      try { out.harness = String(require('../package.json').version || ''); out.harnessSource = 'pkg'; } catch (_) {}
+    }
+  }
   const envApp = String(ENV('APP_VERSION') || '').trim();   // STARNET_APP_VERSION (or SKYNET_APP_VERSION) — the packaged-app source of truth
   if (envApp) { out.app = envApp; out.appSource = 'env'; }
   else {
