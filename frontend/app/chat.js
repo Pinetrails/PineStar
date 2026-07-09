@@ -110,26 +110,37 @@ const Chat = (() => {
   let stick = true;   // STICKY-BOTTOM: auto-scroll only fires when the Commander is already at/near the bottom,
                       // so scrolling UP to re-read history mid-stream isn't yanked back down by every token.
   function nearBottom() { return !log || (log.scrollHeight - log.scrollTop - log.clientHeight < 40); }
-  function autoscroll() { if (stick && log) log.scrollTop = log.scrollHeight; else if (log) showNewPill(); }
+  function autoscroll() { if (stick && log) log.scrollTop = log.scrollHeight; else if (log) showNewPill(true); }   // content landed while unstuck → "new messages"
 
-  /* COMMS-PREMIUM · "new messages ↓" pill — when the Commander has scrolled UP to re-read (stick=false) and
-     fresh content lands (autoscroll can't follow the bottom), a pill fades in over the transcript foot. Click
-     jumps to the bottom and re-arms stickiness; it also self-hides the moment the scroll listener re-detects
-     near-bottom. Reuses the existing stick machinery — no new scroll state. */
+  /* COMMS-PREMIUM · the jump-to-bottom pill. Two states over ONE control (stick machinery, no new scroll state):
+     • scrolled UP to re-read (stick=false) → a dim, PERSISTENT "↓ latest" affordance (so a keyboard/AT user
+       always has a way back to the newest line, not only when new content happens to land);
+     • fresh content lands while unstuck → it brightens to "new messages ↓".
+     Anchored to #chat-log's bottom EDGE (just above the composer) by measuring the composer height each show,
+     so it rides a one- or multi-line composer instead of a magic offset. Click jumps down + re-arms stickiness. */
   function jumpToBottom() { if (log) { log.scrollTop = log.scrollHeight; stick = true; hideNewPill(); } }
-  function showNewPill() {
+  function positionNewPill(pill) {
+    // sit the pill just above the composer: distance from the panel's bottom = the composer stack's height.
+    const composer = el('chat-inputrow'), queuedEl = el('chat-queued');
+    const h = (composer ? composer.offsetHeight : 0) + (queuedEl ? queuedEl.offsetHeight : 0) + 8;
+    pill.style.bottom = h + 'px';
+  }
+  function showNewPill(hasNew) {
     const panel = el('chat-panel'); if (!panel || stick) return;
     let pill = el('comms-newpill');
     if (!pill) {
       pill = document.createElement('button'); pill.id = 'comms-newpill'; pill.type = 'button'; pill.className = 'comms-newpill';
-      pill.setAttribute('aria-label', 'Jump to newest messages');
-      pill.textContent = 'new messages ↓';
       pill.onclick = () => { if (typeof SFX !== 'undefined' && SFX.click) SFX.click(); jumpToBottom(); };
       panel.appendChild(pill);
     }
+    if (hasNew) pill.classList.add('hasnew');
+    const isNew = pill.classList.contains('hasnew');
+    pill.textContent = isNew ? 'new messages ↓' : '↓ latest';
+    pill.setAttribute('aria-label', isNew ? 'Jump to newest messages' : 'Scroll to latest');
+    positionNewPill(pill);
     pill.classList.add('show');
   }
-  function hideNewPill() { const p = el('comms-newpill'); if (p) p.classList.remove('show'); }
+  function hideNewPill() { const p = el('comms-newpill'); if (p) { p.classList.remove('show'); p.classList.remove('hasnew'); } }
 
   /* COMMS PROCESSING TIMER — a live wall-clock readout in the header (▸ thinking · 3s) that counts how long
      the DISPLAYED stream's turn has been running. The start instant lives on the channel (Channels.startedAt),
@@ -436,7 +447,7 @@ const Chat = (() => {
     log = el('chat-log'); input = el('chat-input'); statusEl = el('chat-status');
     attachInput = el('chat-attach-input'); attachStrip = el('chat-attach-strip');
     clearAttachments();   // a fresh agent session starts with no staged attachments (matches the clean-slate init above)
-    if (log) log.addEventListener('scroll', () => { stick = nearBottom(); if (stick) hideNewPill(); });   // track whether the user is following the bottom; back at the bottom retires the "new messages" pill
+    if (log) log.addEventListener('scroll', () => { stick = nearBottom(); if (stick) hideNewPill(); else showNewPill(false); });   // at the bottom → retire the pill; scrolled up → a persistent "↓ latest" affordance
     // COPY: one delegated click handler for every (current + future) message row's ⧉ button — copies the
     // row's prose, then flashes a ✓ confirm. Wired once per log element so a re-init can't stack handlers.
     if (log && !log.__copyWired) {
@@ -997,6 +1008,32 @@ const Chat = (() => {
     const d = document.createElement('div'); d.className = 'cmsg trim-marker'; d.setAttribute('role', 'separator');
     const line = document.createElement('span'); line.className = 'tm-line'; line.textContent = String(t || '').replace(/^…?\(?/, '').replace(/\)$/, '');
     d.appendChild(line); log.appendChild(d); autoscroll();
+  }
+  // a COLLAPSED SYSTEM CARD for verbose command output (/history, /help) — one dim header row that expands its
+  // body of lines on click, so a 30-row dump doesn't flood the transcript. Header is a real <button> (keyboard-
+  // operable, aria-expanded). `lines` are plain strings (textContent — never innerHTML, so no injection).
+  function systemCard(title, lines, opts) {
+    if (!log) return;
+    clearEmptyState();
+    opts = opts || {};
+    const d = document.createElement('div'); d.className = 'cmsg system syscard';
+    const head = document.createElement('button'); head.type = 'button'; head.className = 'syscard-head';
+    const open0 = !!opts.open;
+    head.setAttribute('aria-expanded', open0 ? 'true' : 'false');
+    const chev = document.createElement('span'); chev.className = 'syscard-chev'; chev.setAttribute('aria-hidden', 'true'); chev.textContent = '▸';
+    const ttl = document.createElement('span'); ttl.className = 'syscard-title'; ttl.textContent = title;
+    head.appendChild(chev); head.appendChild(ttl);
+    const bodyWrap = document.createElement('div'); bodyWrap.className = 'syscard-body'; bodyWrap.hidden = !open0;
+    for (const ln of (lines || [])) { const r = document.createElement('div'); r.className = 'syscard-row'; r.textContent = String(ln); bodyWrap.appendChild(r); }
+    head.addEventListener('click', () => {
+      const open = bodyWrap.hidden; bodyWrap.hidden = !open;
+      head.setAttribute('aria-expanded', open ? 'true' : 'false');
+      d.classList.toggle('open', open);
+      if (typeof SFX !== 'undefined' && SFX.click) SFX.click();
+    });
+    if (open0) d.classList.add('open');
+    d.appendChild(head); d.appendChild(bodyWrap);
+    log.appendChild(d); autoscroll();
   }
 
   /* ---------- CELEBRATION broadcast: a terse station system line (level-up / quest / trophy) ----------
@@ -3942,11 +3979,9 @@ const Chat = (() => {
     if (!Number.isInteger(n) || n <= 0) n = 10;
     n = Math.min(n, 30);
     const slice = h.slice(-n);
-    localLine('History (last ' + slice.length + ' of ' + h.length + ' turn' + (h.length === 1 ? '' : 's') + '):');
-    for (const m of slice) {
-      const who = m.role === 'user' ? 'You' : 'Agent';
-      localLine(who + ': ' + String(m.content).replace(/\s+/g, ' ').slice(0, 160));
-    }
+    // ONE collapsed card instead of up to 31 flooding rows — click to expand the turns.
+    const lines = slice.map(m => (m.role === 'user' ? 'You' : 'Agent') + ': ' + String(m.content).replace(/\s+/g, ' ').slice(0, 160));
+    systemCard('History — last ' + slice.length + ' of ' + h.length + ' turn' + (h.length === 1 ? '' : 's') + ' (click to expand)', lines);
   }
   // /whoami — the current agent identity: id/name, role/class, level + XP (Xp.compute), model + provider, and the
   // capabilities placed on the floor (slashPlacedTypes). Read-only.
@@ -4273,9 +4308,16 @@ const Chat = (() => {
     };
   }
   function showHelp() {
-    const builtins = buildCommands().filter(c => c.source !== 'recipe').map(c => '/' + c.name);
+    const cmds = buildCommands().filter(c => c.source !== 'recipe');
     const recipes = buildCommands().filter(c => c.source === 'recipe').length;
-    localLine('Commands - ' + builtins.slice(0, 8).join(', ') + (recipes ? ', plus ' + recipes + ' recipe commands.' : '.') + ' Type "/" to browse.');
+    // group by the existing `category` field so the command surface reads by area, not one flat blob
+    const groups = new Map();
+    for (const c of cmds) { const cat = c.category || 'General'; if (!groups.has(cat)) groups.set(cat, []); groups.get(cat).push('/' + c.name); }
+    const lines = [];
+    for (const [cat, names] of groups) lines.push(cat + ' — ' + names.join(', '));
+    if (recipes) lines.push('Recipes — ' + recipes + ' available (type "/" to browse)');
+    lines.push('Tip: press ↑ in an empty box to recall your last message.');   // ArrowUp recall hint
+    systemCard('Commands (' + cmds.length + ') — click to expand', lines);
   }
   function slashPlacedTypes() {
     try {
@@ -4390,8 +4432,12 @@ const Chat = (() => {
     const name = m[1].toLowerCase();
     return buildCommands().find(c => c.name.toLowerCase() === name || (c.aliases || []).some(a => String(a || '').toLowerCase() === name)) || null;
   }
-  function closeSlash() { const pop = el('chat-slash'); if (pop) pop.hidden = true; slashItems = []; slashSel = 0; }
+  function closeSlash() {
+    const pop = el('chat-slash'); if (pop) pop.hidden = true; slashItems = []; slashSel = 0;
+    if (input) { input.removeAttribute('aria-activedescendant'); input.setAttribute('aria-expanded', 'false'); }
+  }
   function moveSlash(d) { if (!slashItems.length) return; slashSel = (slashSel + d + slashItems.length) % slashItems.length; renderSlash(); }
+  const SLASH_OPT_ID = i => 'slash-opt-' + i;   // stable per-position option id for aria-activedescendant
   function renderSlash() {
     const pop = el('chat-slash'); if (!pop) return;
     pop.innerHTML = '';
@@ -4399,13 +4445,20 @@ const Chat = (() => {
     pop.appendChild(head);
     slashItems.forEach((c, i) => {
       const it = document.createElement('div'); it.className = 'slash-item' + (i === slashSel ? ' sel' : ''); it.setAttribute('role', 'option');
+      it.id = SLASH_OPT_ID(i); it.setAttribute('aria-selected', i === slashSel ? 'true' : 'false');
       const nm = document.createElement('span'); nm.className = 'slash-name'; nm.textContent = '/' + c.name;
       const ds = document.createElement('span'); ds.className = 'slash-desc'; ds.textContent = c.desc || '';
       it.appendChild(nm); it.appendChild(ds);
+      // reveal the command SURFACE: a dim category tag (the existing `category` field) so the palette groups
+      // legibly by area without reordering the relevance-ranked matches.
+      if (c.category && c.category !== 'General') { const tag = document.createElement('span'); tag.className = 'slash-cat'; tag.textContent = c.category; it.appendChild(tag); }
       it.onmouseenter = () => { slashSel = i; renderSlash(); };
       it.onmousedown = e => { e.preventDefault(); runSlash(c); };   // mousedown keeps input focus
       pop.appendChild(it);
     });
+    // AT: point the focused composer at the active option (the listbox is separate, so activedescendant lives on
+    // the input) + mark the palette open. Keyboard nav (moveSlash) re-renders → this follows the selection.
+    if (input) { input.setAttribute('aria-expanded', 'true'); if (slashItems[slashSel]) input.setAttribute('aria-activedescendant', SLASH_OPT_ID(slashSel)); }
   }
   function insertSlashText(text, select) {
     if (!input) return false;

@@ -83,6 +83,28 @@
 .cmsg.system .body { color: var(--ph-dim); letter-spacing: .3px; }
 .cmsg.system + .cmsg.system .who { display: none; }   /* a run of system lines reads as one block */
 
+/* COLLAPSIBLE SYSTEM CARD — /history, /help: a dim header button that expands a body of rows (chat.js
+   systemCard). Keeps verbose command output from flooding the transcript. */
+.cmsg.system.syscard { border-left: 1px dashed var(--ph-faint); padding-left: 0; }
+.syscard-head {
+  display: inline-flex; align-items: baseline; gap: 6px; width: 100%;
+  font: inherit; font-size: 13px; text-align: left; cursor: pointer;
+  color: var(--ph-dim); background: transparent; border: 0; padding: 4px 6px 4px 11px;
+}
+.syscard-head:hover { color: var(--ph); }
+.syscard-head .syscard-chev { flex: 0 0 auto; font-size: 9px; transition: transform var(--t-fast) var(--ease-soft); }
+.cmsg.system.syscard.open .syscard-chev { transform: rotate(90deg); color: var(--ph); }
+.syscard-head .syscard-title { flex: 1 1 auto; letter-spacing: .3px; }
+.syscard-body { padding: 2px 6px 6px 22px; }
+.syscard-body[hidden] { display: none; }
+.syscard-row { font-size: 12.5px; line-height: 1.5; color: var(--ph-dim); white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* SLASH PALETTE — a dim category tag on each row so the command surface reads by area (no reorder). */
+.slash-item .slash-cat {
+  margin-left: auto; flex: 0 0 auto; font-size: 9.5px; letter-spacing: 1px; text-transform: uppercase;
+  color: var(--ph-dim); opacity: .6; align-self: center;
+}
+
 /* TRIM MARKER — the "…N earlier turns trimmed" scrollback boundary as a dim, centered, hairline-flanked line
    (mirrors the broadcast register's chrome). A boundary the reader can see, not a silently dropped record. */
 .cmsg.trim-marker {
@@ -266,23 +288,31 @@
 #comms-presence.resolved.stopped { color: var(--gold); border-left-color: var(--gold); }
 
 /* ============================================================
-   4 · "NEW MESSAGES ↓" PILL — appears over the transcript foot
-   when the Commander has scrolled up and fresh content lands.
-   Click jumps to the bottom. Reuses the stick machinery (chat.js).
+   4 · JUMP-TO-LATEST PILL — while scrolled up: a dim, persistent
+   "↓ latest" affordance; brightens to "new messages ↓" when fresh
+   content lands. Anchored to #chat-log's bottom edge — chat.js sets
+   `bottom` inline from the live composer height (no magic offset).
    ============================================================ */
 .comms-newpill {
-  position: absolute; left: 50%; bottom: 74px; z-index: 6;
+  position: absolute; left: 50%; bottom: 74px; z-index: 6;   /* bottom is overwritten inline by chat.js */
   transform: translate(-50%, 6px);
   font: inherit; font-size: 12px; letter-spacing: .6px; cursor: pointer;
-  color: var(--ink); background: var(--ph);
-  border: 1px solid var(--ph-bright); border-radius: 12px;
+  color: var(--ph); background: var(--panel2);
+  border: 1px solid var(--ph-dim); border-radius: 12px;
   padding: 3px 13px; line-height: 1.4;
-  box-shadow: 0 0 14px var(--ph-glow2), 0 4px 12px rgba(0,0,0,.55);
+  box-shadow: 0 3px 10px rgba(0,0,0,.5);
   opacity: 0; pointer-events: none;
-  transition: opacity var(--t-med) var(--ease-out), transform var(--t-med) var(--ease-out);
+  transition: opacity var(--t-med) var(--ease-out), transform var(--t-med) var(--ease-out),
+    background-color var(--t-fast) var(--ease-soft), color var(--t-fast) var(--ease-soft), border-color var(--t-fast) var(--ease-soft);
 }
-.comms-newpill.show { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
-.comms-newpill:hover { background: var(--ph-bright); box-shadow: 0 0 18px var(--ph-glow), 0 4px 12px rgba(0,0,0,.55); }
+.comms-newpill.show { opacity: .82; transform: translate(-50%, 0); pointer-events: auto; }
+/* fresh content while unstuck → the lit, inverted-phosphor alert variant */
+.comms-newpill.hasnew {
+  color: var(--ink); background: var(--ph); border-color: var(--ph-bright);
+  box-shadow: 0 0 14px var(--ph-glow2), 0 4px 12px rgba(0,0,0,.55);
+}
+.comms-newpill.hasnew.show { opacity: 1; }
+.comms-newpill:hover { color: var(--ink); background: var(--ph-bright); border-color: var(--ph-bright); box-shadow: 0 0 18px var(--ph-glow), 0 4px 12px rgba(0,0,0,.55); opacity: 1; }
 
 /* ============================================================
    5 · REDUCED MOTION — collapse the added COMMS motion (extends
