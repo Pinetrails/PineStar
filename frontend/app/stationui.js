@@ -34,7 +34,7 @@ const StationUI = (() => {
   // P1-8 notification preferences: per-category on/off + a notification sound toggle. Every category defaults ON
   // (no silent regression); each is HONORED at emit time in notify() below (a decorative toggle would be a bug).
   function notifyDefaults() { return { runComplete: true, needsApproval: true, cronDigest: true, sound: true }; }
-  function blank() { return { v: 1, settings: defaults(), tasks: [], notifs: [] }; }
+  function blank() { return { v: 1, settings: defaults(), tasks: [], notifs: [], termPos: {}, consoleSection: {} }; }
   function load() {
     try {
       const r = JSON.parse(localStorage.getItem(KEY));
@@ -43,6 +43,8 @@ const StationUI = (() => {
         r.settings.notifyPrefs = Object.assign(notifyDefaults(), r.settings.notifyPrefs || {});   // merge new keys onto an old save
         if (!Array.isArray(r.tasks)) r.tasks = [];
         if (!Array.isArray(r.notifs)) r.notifs = [];
+        if (!r.termPos || typeof r.termPos !== 'object') r.termPos = {};             // remembered drag positions (persisted)
+        if (!r.consoleSection || typeof r.consoleSection !== 'object') r.consoleSection = {};  // last-active console section per window
         return r;
       }
     } catch (_) {}
@@ -51,6 +53,15 @@ const StationUI = (() => {
   let store = load();
   function save() { try { localStorage.setItem(KEY, JSON.stringify(store)); } catch (_) {} }
   const uid = p => p + Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36);
+
+  // brief "✓ saved" flash for an instant-save section (theme/appearance/notifications) so every section answers
+  // "did that stick?" — the same .msg.ok idiom the SAVE-button sections use, auto-cleared after a moment.
+  function flashSaved(elm, text) {
+    if (!elm) return;
+    elm.textContent = text || '✓ saved'; elm.className = 'msg ok';
+    clearTimeout(elm._flashTimer);
+    elm._flashTimer = setTimeout(() => { if (elm.isConnected) { elm.textContent = ''; elm.className = 'msg'; } }, 1600);
+  }
 
   /* ---------- settings → DOM ---------- */
   function applySettings() {
@@ -78,6 +89,14 @@ const StationUI = (() => {
     return p(d.getHours()) + ':' + p(d.getMinutes());
   }
   const ts = t => '<span class="ts">[' + clock(t) + ']</span>';
+  const NF_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  function sameDay(a, b) { const x = new Date(a), y = new Date(b); return x.getFullYear() === y.getFullYear() && x.getMonth() === y.getMonth() && x.getDate() === y.getDate(); }
+  // notification stamp: today shows just the clock; an older row prefixes the date so "[14:03]" isn't read as today.
+  function notifStamp(t) {
+    if (sameDay(t, Date.now())) return ts(t);
+    const d = new Date(t);
+    return '<span class="ts">[' + NF_MONTHS[d.getMonth()] + ' ' + d.getDate() + ' ' + clock(t) + ']</span>';
+  }
 
   /* ---------- activity labels (real World.setActivity state) ---------- */
   function activity() { try { return (access.activity && access.activity()) || 'idle'; } catch (_) { return 'idle'; } }
@@ -101,8 +120,20 @@ const StationUI = (() => {
     } catch (_) {}
     return false;
   }
+  // the mirror of linkDown: the bridge is genuinely PROVEN up (bridged, not paused, not stale). Until this is
+  // true the pill must not assert ONLINE — a never-opened / just-opened bridge reads STANDBY, not a false green.
+  function linkUp() {
+    try {
+      if (typeof World !== 'undefined' && World.linkState) {
+        const ls = World.linkState();
+        return !!(ls && ls.bridged && !ls.paused && !ls.down);
+      }
+    } catch (_) {}
+    return false;
+  }
   function pillFor(act) {
     if (linkDown()) return ['LINK DOWN', 'down'];   // link gone → the pill can't honestly assert ONLINE
+    if (!linkUp()) return ['STANDBY', 'standby'];   // bridge not yet proven up → STANDBY, never a premature ONLINE
     return act === 'task' ? ['WORKING', 'working']
       : act === 'talk' ? ['THINKING', 'thinking']
       : ['ONLINE', ''];
@@ -119,6 +150,10 @@ const StationUI = (() => {
   }
   const termPos = {};   // key -> {left,top} remembered drag position — kills the dead-center pile-up
   const consoleSection = {};   // console key -> last-active section id, so reopening lands where the user was
+  // P2: hydrate the persisted window layout so a panel re-opens where the Commander left it, and consoles land
+  // on the last section they were on — across a full reload, not just this session. Saved back on drag-end / retab.
+  try { Object.assign(termPos, store.termPos || {}); Object.assign(consoleSection, store.consoleSection || {}); } catch (_) {}
+  function saveWindowState() { try { store.termPos = termPos; store.consoleSection = consoleSection; save(); } catch (_) {} }
   window.addEventListener('mousemove', ev => {
     if (termDrag) {
       termDrag.moved = true;   // real drag movement — a dblclick-to-minimize must not fire after a drag
@@ -136,10 +171,18 @@ const StationUI = (() => {
     // remember where the Commander parked this panel so it re-opens there, not back at dead-center
     if (termDrag) {
       const w = termDrag.w, k = Object.keys(open).find(key => open[key] === w);
-      if (k && termDrag.moved) termPos[k] = { left: w.offsetLeft, top: w.offsetTop };
+      if (k && termDrag.moved) { termPos[k] = { left: w.offsetLeft, top: w.offsetTop }; saveWindowState(); }
       w._lastDragMoved = !!termDrag.moved;   // let dblclick-to-minimize know if this grab was actually a drag
     }
     termDrag = null;
+  });
+  // P2: re-clamp every open (non-minimized) window back inside the viewport on a browser resize, so a panel
+  // dragged to a corner can't be stranded off-screen when the window shrinks. CSS-centered consoles are skipped
+  // by fitTermInViewport (they stay centered); only explicitly-moved windows are pulled back into view.
+  let resizeClampTimer = 0;
+  window.addEventListener('resize', () => {
+    clearTimeout(resizeClampTimer);
+    resizeClampTimer = setTimeout(() => { Object.keys(open).forEach(k => { if (!minimized[k]) fitTermInViewport(open[k]); }); }, 120);
   });
 
   // Land a freshly-opened window in a tidy left-anchored column, CASCADING each so stacked panels
@@ -148,7 +191,7 @@ const StationUI = (() => {
   function placeTerm(w, key) {
     const p = termPos[key];
     if (p) { w.style.left = p.left + 'px'; w.style.top = p.top + 'px'; w.style.transform = 'none'; return; }
-    const prior = Math.max(0, Object.keys(open).length - 1);   // how many were already open
+    const prior = Math.max(0, Object.keys(open).filter(k => k !== key && !minimized[k]).length);   // how many OTHER visible windows are already open (minimized ones don't crowd the cascade)
     if (prior === 0) {
       // SINGLE window = the focal point: let CSS center it (left/top:50% + translate(-50%,-50%) with a
       // capped max-height), which is ALWAYS on-screen even for tall panels like Settings. We must NOT
@@ -231,6 +274,9 @@ const StationUI = (() => {
     chip.innerHTML = '<span class="term-chip-led" aria-hidden="true"></span>' +
       '<span class="term-chip-t">' + esc(title) + '</span>';
     chip.addEventListener('click', () => { sfx('click'); restoreTerm(key); });
+    // middle-click a chip to CLOSE the minimized window outright (no need to restore-then-✕).
+    chip.addEventListener('auxclick', ev => { if (ev.button === 1) { ev.preventDefault(); sfx('close'); closeTerm(key); } });
+    chip.addEventListener('mousedown', ev => { if (ev.button === 1) ev.preventDefault(); });   // suppress the middle-click autoscroll cursor
     strip.appendChild(chip);
     // entrance: force a reflow then flip .in so the transform/opacity transition runs
     void chip.offsetWidth; chip.classList.add('in');
@@ -274,8 +320,12 @@ const StationUI = (() => {
     w.addEventListener('animationend', onEnd, { once: true });
     setTimeout(onEnd, 240);   // fallback
     if (w.contains(active)) {
-      const trig = document.querySelector('.bb[data-term="' + CSS.escape(key) + '"]');
-      try { (trig && trig.focus) ? trig.focus() : (active.blur && active.blur()); } catch (_) {}
+      // hand focus to the dock GROUP trigger (always visible), NOT the in-menu item (it lives in a
+      // display:none popover when the dock is closed — focusing a hidden node silently drops to <body>).
+      const item = document.querySelector('.bb[data-term="' + CSS.escape(key) + '"]');
+      const grpBtn = item && item.closest('.bb-group') ? item.closest('.bb-group').querySelector('.bb-grp') : null;
+      const target = (grpBtn && grpBtn.offsetParent !== null) ? grpBtn : null;
+      try { target ? target.focus() : (active.blur && active.blur()); } catch (_) {}
     }
     addChip(key);
     syncScrim();   // all-minimized → scrim fades; dock .active stays (open slot kept)
@@ -299,9 +349,8 @@ const StationUI = (() => {
     const clearRestore = () => w.classList.remove('term-restoring');
     w.addEventListener('animationend', clearRestore, { once: true });
     setTimeout(clearRestore, 460);
-    // focus back into the window (first control, or the window itself)
-    const f0 = termFocusables(w);
-    try { (f0[0] || w).focus(); } catch (_) {}
+    // focus back onto the restored dialog itself (not its first control — the minimize button)
+    try { w.focus(); } catch (_) {}
     syncScrim();
     syncBB();
   }
@@ -310,6 +359,7 @@ const StationUI = (() => {
       const w = open[key];
       if (w._closing) return;   // guard the Esc + ✕ + toggle double-close race
       w._closing = true;
+      if (w._closeArmTimer) { clearTimeout(w._closeArmTimer); w._closeArmTimer = 0; }   // teardown any pending unsaved-close arm
       // a window closed while minimized (or minimized-then-restored, then torn down) must leave no orphan chip.
       const wasMin = !!minimized[key];
       if (wasMin) { delete minimized[key]; removeChip(key); }
@@ -345,9 +395,42 @@ const StationUI = (() => {
     }
     syncBB(); syncScrim();
   }
+  // P0 draft-loss guard: a window that holds a MODIFIED, unsaved editor (a CONFIG file / memory / commander
+  // belief textarea the Commander typed into) must not vanish on a stray ✕/Esc. The first close attempt arms a
+  // 3s "close anyway" state with a visible banner; a second close within the window discards. Clean windows just
+  // close. A field marks itself dirty via the delegated input listener in toggleTerm (sets data-dirty on typing);
+  // saving/cancelling rerenders the pane, destroying the dirty textarea, so the flag can never go stale.
+  function windowDirty(w) { return !!(w && w.querySelector && w.querySelector('textarea[data-dirty="1"]')); }
+  function requestCloseTerm(key) {
+    const w = open[key]; if (!w || w._closing) return;
+    if (w._closeArmed || !windowDirty(w)) { closeTerm(key); return; }
+    // ARM: keep the window, warn, and require a second close within 3s.
+    w._closeArmed = true; sfx('bad');
+    let bar = w.querySelector('.term-unsaved-bar');
+    if (!bar) { bar = el('div', 'term-unsaved-bar', '⚠ UNSAVED — close again to discard, or SAVE first'); bar.setAttribute('role', 'alert'); w.appendChild(bar); }
+    bar.hidden = false;
+    clearTimeout(w._closeArmTimer);
+    w._closeArmTimer = setTimeout(() => { if (!w) return; w._closeArmed = false; w._closeArmTimer = 0; const b = w.querySelector('.term-unsaved-bar'); if (b) b.remove(); }, 3000);
+  }
   function toggleTerm(key, title, builder, opts) {
-    // a minimized window's dock button RESTORES it (never rebuilds, never closes); a visible one toggles closed.
-    if (open[key]) { if (minimized[key]) restoreTerm(key); else closeTerm(key); return; }
+    // a minimized window's dock button RESTORES it; a BURIED visible window is RAISED (not closed); only the
+    // topmost visible window toggles closed (through the unsaved-draft guard). This kills the "clicked the dock to
+    // reach my panel and it vanished" trap when several windows are stacked.
+    if (open[key]) {
+      if (minimized[key]) { restoreTerm(key); return; }
+      const w = open[key];
+      const z = e => (parseInt(e.style.zIndex, 10) || 0);
+      const vis = Object.keys(open).filter(k => !minimized[k]).map(k => open[k]);
+      const maxZ = vis.reduce((m, e) => Math.max(m, z(e)), 0);
+      if (vis.length > 1 && z(w) < maxZ) {   // buried → raise + focus rather than close
+        w.style.zIndex = U.zTop();
+        sfx('open');
+        try { (termFocusables(w)[0] || w).focus(); } catch (_) {}
+        return;
+      }
+      requestCloseTerm(key);
+      return;
+    }
     // Mode-exclusivity: a dock panel and full-screen REFIT must never be mounted at once.
     // Opening a panel exits refit first so two features can't stack (see COHERENCE_MATRIX dim T).
     if (typeof Build !== 'undefined' && Build.isOpen && Build.isOpen()) { try { Build.close(); } catch (_) {} }
@@ -366,7 +449,8 @@ const StationUI = (() => {
     // a11y: a floating window is a real modal dialog — label it by its title, make it focusable.
     const titleId = 'term-title-' + (++termTitleSeq);
     w.setAttribute('role', 'dialog');
-    w.setAttribute('aria-modal', 'true');
+    // NOT aria-modal: several windows can be open at once and the scrim is pointer-events:none, so the page
+    // behind stays reachable — claiming modal would mislead a screen reader. Focus is still Tab-trapped below.
     w.setAttribute('aria-labelledby', titleId);
     w.tabIndex = -1;
     // Phase-2 chrome: a subtle status LED at the head's left + the inverted title chip. The LED reads as
@@ -382,7 +466,7 @@ const StationUI = (() => {
     head.appendChild(mn);
     const x = el('button', 'term-x', '✕');
     x.setAttribute('aria-label', 'Close ' + title);
-    x.addEventListener('click', () => closeTerm(key));
+    x.addEventListener('click', () => requestCloseTerm(key));   // unsaved-draft guard sits on this path
     head.appendChild(x);
     const body = el('div', 'term-body');
     if (opts && opts.feature) {
@@ -408,14 +492,27 @@ const StationUI = (() => {
       w.appendChild(chrome);
       w.appendChild(el('div', 'term-foot',
         '<span class="term-foot-d" aria-hidden="true"></span>' +
-        '<span class="term-foot-k">' + esc(String(key).toUpperCase()) + '</span>' +
+        // the plate names the WINDOW (its title), not the internal registry key — so CHANNELS reads CHANNELS,
+        // never the stale internal "MESSAGING". Titles are plain strings; strip any markup + uppercase for the plate.
+        '<span class="term-foot-k">' + esc(String(title).replace(/<[^>]*>/g, '').toUpperCase()) + '</span>' +
         '<span class="term-foot-sp"></span>' +
         '<span class="term-foot-grip" aria-hidden="true">···</span>'));
     }
     $('#terms').appendChild(w);
     open[key] = w;
     placeTerm(w, key);   // land in a cascaded slot (or its remembered spot) — never dead-center pile-up
-    w.addEventListener('mousedown', () => { w.style.zIndex = U.zTop(); });
+    w.addEventListener('mousedown', ev => {
+      w.style.zIndex = U.zTop();
+      // pull focus into the dialog on a background click so the window-level Esc/Tab handlers keep working —
+      // but never steal focus from a control the user is actually clicking (mousedown fires before its focus lands).
+      const t = ev.target;
+      const onControl = t && t.closest && t.closest('button, input, textarea, select, a[href], [tabindex]');
+      if (!onControl && !w.contains(document.activeElement)) { try { w.focus(); } catch (_) {} }
+    });
+    // dirty-tracking for the unsaved-draft close guard: any keystroke into a textarea (CONFIG file / memory /
+    // commander belief editor) flags THAT textarea modified. Delegated once per window; the flag rides the
+    // textarea element, which a save/cancel rerender destroys — so it can never go stale.
+    w.addEventListener('input', ev => { const t = ev.target; if (t && t.tagName === 'TEXTAREA') t.dataset.dirty = '1'; });
     head.addEventListener('mousedown', ev => {
       if (ev.target === x || ev.target === mn) return;   // header controls handle their own clicks
       // Bake the window's CURRENT VISUAL position into explicit left/top before dragging. A freshly
@@ -445,7 +542,16 @@ const StationUI = (() => {
     });
     // a11y: Esc closes; Tab is trapped within the window (focus can't leak to the page behind).
     w.addEventListener('keydown', ev => {
-      if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); closeTerm(key); return; }
+      if (ev.key === 'Escape') {
+        ev.preventDefault(); ev.stopPropagation();
+        // Esc inside a text field NEVER closes the window (draft-loss trap): the first Esc just leaves the field.
+        // A field with its own Esc handler (search-clear, rename-cancel) already stopped propagation before us.
+        const ae = document.activeElement;
+        const inField = ae && w.contains(ae) && ae.matches && ae.matches('input, textarea, [contenteditable=""], [contenteditable="true"]');
+        if (inField) { try { ae.blur(); } catch (_) {} return; }
+        requestCloseTerm(key);   // unsaved-draft guard
+        return;
+      }
       if (ev.key !== 'Tab') return;
       const f = termFocusables(w);
       if (!f.length) { ev.preventDefault(); w.focus(); return; }
@@ -466,9 +572,10 @@ const StationUI = (() => {
       if (opts && opts.fitViewport) requestAnimationFrame(() => fitTermInViewport(w));
     };
     w._render();
-    // a11y: move focus into the freshly-opened dialog — the first control, or the window itself.
-    const f0 = termFocusables(w);
-    try { (f0[0] || w).focus(); } catch (_) {}
+    // a11y: land focus on the dialog itself (role=dialog, tabIndex -1) — NOT the first control, which was the
+    // minimize (–) button and read as a jarring first stop. Esc/Tab work from here; Tab advances into the body.
+    // A builder that opened an inline editor (rename / CONFIG file) focuses its own field after this and wins.
+    try { w.focus(); } catch (_) {}
     syncBB(); syncScrim();
   }
   function rerender(key) { if (open[key]) open[key]._render(true); }
@@ -571,6 +678,7 @@ const StationUI = (() => {
     function selectSection(id, viaClick) {
       if (!panes[id]) return;
       consoleSection[key] = id;
+      if (viaClick) saveWindowState();   // remember the section the Commander navigated to, across reloads
       activeId = id;
       Object.keys(panes).forEach(k => {
         const on = k === id;
@@ -673,7 +781,7 @@ const StationUI = (() => {
       '<span class="dot on"></span>' +
       '<div class="crew-main">' +
       '<div class="crew-name" style="color:' + esc(a.color) + '">' + esc(a.name) +
-      '<span class="crew-room">HAB-01' + (a.stats && a.stats.level ? ' · Lv ' + a.stats.level : '') + '</span></div>' +
+      '<span class="crew-room">' + (a.stats && a.stats.level ? 'Lv ' + a.stats.level : '') + '</span></div>' +
       '<div class="crew-status" id="cs-' + esc(a.id) + '">…</div>' +
       // in-flight work bar: hidden until the row is .working (crewTick toggles it from the real run state).
       // The shimmer (.bar-active) reads as live activity; it's an indeterminate sweep, not a % readout.
@@ -796,7 +904,7 @@ const StationUI = (() => {
         : '<div class="ag-name" style="color:' + a.color + '">' + esc(a.name) +
             '<button class="ag-rename" id="ag-rename-btn" title="rename this agent" aria-label="Rename agent">✎</button>' +
             (lv ? '<span class="ag-lv">Lv ' + lv + '</span>' : '') + '</div>') +
-      '<div class="ag-role-line"><span class="ag-sdot ' + dotCls + '"></span>' + statusText + ' · HAB-01</div>' +
+      '<div class="ag-role-line"><span class="ag-sdot ' + dotCls + '"></span>' + statusText + '</div>' +
       '<div class="ag-tags">' +
       // the agent's deployed SPECIALTY (set by the Recruitment Bay) — its primary "what it's FOR" identity, shown first.
       ((typeof Specialties !== 'undefined' && a.specialtyId) ? (function () { var s = Specialties.get(a.specialtyId); return s ? '<span class="tag">' + esc(s.emoji + ' ' + s.name) + '</span>' : ''; })() : '') +
@@ -806,16 +914,16 @@ const StationUI = (() => {
   }
 
   function agBrief(a) {
-    const t = totals();
     const since = a.createdAt ? new Date(a.createdAt).toLocaleDateString() : '—';
-    // BRIEF stat wells — compact 3-up readout from data already on the agent (no new API calls):
-    // RUNS (station totals), LEVEL (pure Xp engine), and positive feedback / XP-to-next when known.
-    // The full Level/XP/Satisfaction/milestone readout still lives in the GROWTH tab.
+    // BRIEF stat wells — compact 3-up readout, all THREE per-agent (no station totals wearing an agent label):
+    // RUNS (this agent's own attempt counter from the Xp ledger), LEVEL (pure Xp engine), KUDOS (positive
+    // feedback). The full Level/XP/Satisfaction/milestone readout still lives in the GROWTH tab.
     const g = (typeof Xp !== 'undefined' && a.stats) ? Xp.compute(a.stats) : null;
     const lvl = g ? g.level : '—';
     const kudos = g ? g.positiveFeedback : 0;
+    const runs = (a.stats && a.stats.counters && a.stats.counters.runs) || 0;   // per-agent run count (agent.run.end folds here)
     return '<div class="stat-grid">' +
-      '<div class="stat-cell"><div class="stat-val">' + (t.calls || 0) + '</div><div class="stat-lbl">RUNS</div></div>' +
+      '<div class="stat-cell"><div class="stat-val">' + runs + '</div><div class="stat-lbl">RUNS</div></div>' +
       '<div class="stat-cell"><div class="stat-val">' + lvl + '</div><div class="stat-lbl">LEVEL</div></div>' +
       '<div class="stat-cell"><div class="stat-val pos">' + kudos + '</div><div class="stat-lbl">KUDOS</div></div>' +
       '</div>' +
@@ -824,7 +932,6 @@ const StationUI = (() => {
         ? '<div class="ag-mission-text">' + esc(a.purpose) + '</div>'
         : '<div class="ag-mission-cta">No purpose set — tell your agent what you need in COMMS, or write it in CONFIG › purpose.md.</div>') +
       '</div>' +
-      agCommand(a) +
       '<div class="ag-foot-row">on station since <b>' + since + '</b></div>';
   }
 
@@ -845,14 +952,16 @@ const StationUI = (() => {
     const crewCount = (access.config && typeof access.config.crewCount === 'function') ? access.config.crewCount() : present.length;
     const lastOne = crewCount <= 1;
     const disabledReason = isHero ? 'the overseer can’t be deleted' : (lastOne ? 'the last agent can’t be deleted' : '');
+    // one statement of the disabled reason (the visible .ag-del-why) — no duplicate tooltip echoing the same words.
     const delBtn = disabledReason
-      ? '<button class="bb sm ag-del" id="ag-del-btn" disabled title="' + esc(disabledReason) + '">✕ DELETE AGENT</button>' +
+      ? '<button class="bb sm ag-del" id="ag-del-btn" disabled>✕ DELETE AGENT</button>' +
         '<span class="ag-del-why">' + esc(disabledReason) + '</span>'
       : '<button class="bb sm ag-del" id="ag-del-btn" title="archive this agent and remove it from the station">✕ DELETE AGENT</button>' +
         '<span class="ag-del-why">work is archived, not erased</span>';
     return '<div class="ag-command">' +
       '<div class="ag-cmd-sec"><div class="ag-cmd-lbl">SKIN</div>' +
-        '<div class="ag-skin-row skin-picker" role="listbox" aria-label="Agent skin">' + thumbs + '</div></div>' +
+        // role=group, not listbox: the thumbs are <button>s (a picker), not selectable listbox options.
+        '<div class="ag-skin-row skin-picker" role="group" aria-label="Agent skin">' + thumbs + '</div></div>' +
       '<div class="ag-cmd-sec ag-cmd-danger"><div class="ag-cmd-lbl">DANGER</div>' +
         '<div class="ag-del-row">' + delBtn + '</div></div>' +
       '</div>';
@@ -1177,7 +1286,8 @@ const StationUI = (() => {
     return '<div class="cf-root">▣ station://agents/' + esc(agSlug(a)) + '/</div>' +
       CONFIG_FILES.map(f => fileCard(a, f)).join('') +
       modelCard(a) +
-      workshopCard(a);
+      workshopCard(a) +
+      agCommand(a);   // SKIN swap + DANGER delete — lives at the END of CONFIG, off the BRIEF landing tab
   }
 
   // W3 per-agent AWAY-WORKSHOP grant. One plainly-worded consent toggle — no jargon, no wizard. When on,
@@ -1332,7 +1442,8 @@ const StationUI = (() => {
       rin.focus(); try { rin.setSelectionRange(rin.value.length, rin.value.length); } catch (_) {}
       rin.addEventListener('keydown', ev => {
         if (ev.key === 'Enter') { ev.preventDefault(); commit(); }
-        else if (ev.key === 'Escape') { ev.preventDefault(); delete agEdit['__name']; rerender('agents'); }
+        // stopPropagation so Esc-to-cancel-rename doesn't ALSO bubble to the window handler and close the dossier.
+        else if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); delete agEdit['__name']; rerender('agents'); }
       });
     }
     const rsave = body.querySelector('#ag-rename-save');
@@ -1487,14 +1598,14 @@ const StationUI = (() => {
     const dn = linkDown();   // E2: keep the live-painted status honest — link gone → OFFLINE, not ONLINE
     const dotCls = dn ? 'down' : act === 'task' ? 'working' : act === 'talk' ? 'thinking' : 'on';
     const statusText = dn ? 'OFFLINE' : act === 'task' ? 'WORKING' : act === 'talk' ? 'THINKING' : 'ONLINE';
-    // hero: the status dot (class) + the role line's status word (keeps ' · HAB-01' suffix)
+    // hero: the status dot (class) + the role line's status word
     const dot = w.querySelector('.ag-role-line .ag-sdot');
     if (dot) dot.className = 'ag-sdot ' + dotCls;
     const line = w.querySelector('.ag-role-line');
     if (line) {
       // rebuild the line's TEXT after the dot span without touching the dot node itself
       let node = dot ? dot.nextSibling : null;
-      const txt = statusText + ' · HAB-01';
+      const txt = statusText;
       if (node && node.nodeType === 3) node.textContent = txt;
       else if (line && dot) dot.insertAdjacentText('afterend', txt);
     }
@@ -2101,7 +2212,7 @@ const StationUI = (() => {
         '<div class="prov-ep">' + esc(p.endpoint) + ' · ' + esc(p.blurb) + '</div>' +
         '</div>' +
         '<div class="prov-stat">' + stat + (connected ? '<i>' + n + (n === 1 ? ' key' : ' keys') + '</i>' : '') +
-          (wantsInline ? '<button class="bb xs prov-addkey" data-act="prov-add-toggle" data-provider="' + esc(p.id) + '" title="paste a ' + esc(p.name) + ' key without leaving this card">+ ADD KEY</button>' : '') +
+          (wantsInline ? '<button class="bb sm prov-addkey" data-act="prov-add-toggle" data-provider="' + esc(p.id) + '" aria-label="Add a ' + esc(p.name) + ' key" title="paste a ' + esc(p.name) + ' key without leaving this card">＋ ADD KEY</button>' : '') +
         '</div>' +
         (wantsInline
           ? '<div class="key-edit prov-key-edit" id="prov-key-edit-' + esc(p.id) + '" hidden>' +
@@ -2150,9 +2261,9 @@ const StationUI = (() => {
           '<div class="key-main">' +
           '<div class="key-top"><span class="key-prov">' + esc(provName(k.provider)) + '</span>' +
           '<code class="key-mask" title="local OpenAI-compatible endpoint">Local endpoint</code></div>' +
-          '<div class="key-meta">model <b>' + esc(k.model || 'â€”') + '</b> Â· ' +
+          '<div class="key-meta">model <b>' + esc(k.model || '—') + '</b> · ' +
           (runnable ? '<span class="key-stat on">ACTIVE</span>' : '<span class="key-stat">idle</span>') +
-          ' Â· <span class="key-stat">no API key needed</span></div>' +
+          ' · <span class="key-stat">no API key needed</span></div>' +
           '</div></div>';
       }
       return '<div class="key-row">' +
@@ -2592,7 +2703,7 @@ const StationUI = (() => {
   function wireNotifyPrefs(body) {
     const s = store.settings;
     if (!s.notifyPrefs) s.notifyPrefs = notifyDefaults();
-    const bind = (id, key) => { const el = body.querySelector(id); if (el) el.addEventListener('change', ev => { s.notifyPrefs[key] = !!ev.target.checked; save(); sfx('click'); }); };
+    const bind = (id, key) => { const el = body.querySelector(id); if (el) el.addEventListener('change', ev => { s.notifyPrefs[key] = !!ev.target.checked; save(); sfx('click'); flashSaved(body.querySelector('#notifs-msg')); }); };
     bind('#ntp-runComplete', 'runComplete');
     bind('#ntp-needsApproval', 'needsApproval');
     bind('#ntp-cronDigest', 'cronDigest');
@@ -2774,7 +2885,8 @@ const StationUI = (() => {
     // settings test source-locks them). mountConsole builds these panes once and returns a content host
     // that spans them all, so the wireX calls below reach every control with no per-section rewire.
     const secProviders =
-      '<h4 class="ms-h">PROVIDERS</h4>' +
+      // NB: no inner "PROVIDERS" heading — the console section head already prints PROVIDERS above the pane
+      // (a second identical h4 read as a duplicated title in sys-settings.png).
       '<div class="prov-list">' + providersHtml() + '</div>' +
       '<h4 class="ms-h">API KEYS</h4>' +
       '<div class="key-list">' + keysHtml() + '</div>' +
@@ -2807,7 +2919,8 @@ const StationUI = (() => {
         '<button class="set-theme" data-pace="3" title="a few small jobs a day — the default">STANDARD</button>' +
         '<button class="set-theme" data-pace="6" title="a busier station — up to 6 jobs a day">BUSY</button>' +
         '<button class="set-theme" data-pace="12" title="as much as it&#39;s allowed — up to 12 jobs a day">MAX</button>' +
-      '</div>' +
+      '</div>';
+    const secNightShift =
       // NIGHT SHIFT — the honest live status of the server-owned night shift (NS-4). Every line maps to a field of
       // GET /api/nightshift/status + /api/autonomy/ledger; painted live from the routes (never invented). The
       // decision trail is the scrollable recent act/decline log. Loading/error states are honest, never fake-zero.
@@ -2818,7 +2931,8 @@ const StationUI = (() => {
       '<div class="set-row"><span class="dim">LAST BEAT</span> <span id="ns-last" class="dim">…</span></div>' +
       '<div class="set-row"><span class="dim">NEXT ELIGIBLE</span> <span id="ns-next" class="dim">…</span></div>' +
       '<div class="set-row"><span class="dim">RECENT DECISIONS</span></div>' +
-      '<div class="key-list" id="ns-trail"><p class="set-about">reading the decision trail…</p></div>' +
+      '<div class="key-list" id="ns-trail"><p class="set-about">reading the decision trail…</p></div>';
+    const secPermissions =
       // PERMISSIONS — the OS-style standing-grant panel (permissions.js / permissionsstore.js). The LEVEL row is
       // the simple "never → fully autonomous" chooser (sets the posture preset AND the write grant together); the
       // grant list shows + revokes every standing capability. #perm-desc spells out the COMBINED truth, live.
@@ -2890,7 +3004,10 @@ const StationUI = (() => {
       '<h4 class="ms-h">DISPLAY</h4>' +
       '<label class="set-row"><input type="checkbox" id="set-scan" ' + (s.scanlines ? 'checked' : '') + '> CRT SCANLINES</label>' +
       '<label class="set-row"><input type="checkbox" id="set-flicker" ' + (s.flicker ? 'checked' : '') + '> SCREEN FLICKER</label>' +
-      '<label class="set-row"><input type="checkbox" id="set-sound" ' + (s.sound ? 'checked' : '') + '> TERMINAL AUDIO <span class="dim">— UI &amp; notification sounds</span></label>';
+      // TERMINAL AUDIO is a sound control, not a display one — its own header (it also gates notification chimes).
+      '<h4 class="ms-h">SOUND</h4>' +
+      '<label class="set-row"><input type="checkbox" id="set-sound" ' + (s.sound ? 'checked' : '') + '> TERMINAL AUDIO <span class="dim">— UI &amp; notification sounds</span></label>' +
+      '<span class="msg" id="appearance-msg" aria-live="polite"></span>';
     const secNotifs =
       // NOTIFICATIONS — per-category on/off + a notification sound toggle (P1-8). Each is HONORED at emit time in
       // notify(): a muted category is dropped before it ever reaches the panel/toast (not decorative).
@@ -2900,10 +3017,15 @@ const StationUI = (() => {
       '<label class="set-row"><input type="checkbox" id="ntp-needsApproval"' + (npf('needsApproval') ? ' checked' : '') + '> NEEDS APPROVAL <span class="dim">— an agent is waiting on your yes/no</span></label>' +
       '<label class="set-row"><input type="checkbox" id="ntp-cronDigest"' + (npf('cronDigest') ? ' checked' : '') + '> AUTONOMOUS DIGEST <span class="dim">— what it did while you were away</span></label>' +
       '<label class="set-row"><input type="checkbox" id="ntp-sound"' + (npf('sound') ? ' checked' : '') + '> NOTIFICATION SOUND <span class="dim">— a chime on each ping (also needs TERMINAL AUDIO on)</span></label>' +
-      '<div class="set-save"><button class="bb xs" id="ntp-test">TEST NOTIFICATION</button></div>';
+      // CLEAR NOTIFICATIONS lives WITH the notification controls (it was buried in SYSTEM ›  STATION DATA). Armed
+      // 2-click confirm + a "cleared ✓" line so the wipe answers "did that stick?".
+      '<div class="set-save"><button class="bb xs" id="ntp-test">TEST NOTIFICATION</button>' +
+        '<button class="bb sm danger" id="set-clear">CLEAR NOTIFICATIONS</button></div>' +
+      '<span class="msg" id="notifs-msg" aria-live="polite"></span>';
     const secSystem =
-      '<h4 class="ms-h">SCHEDULED TASKS</h4>' +
-      '<label class="set-row"><input type="checkbox" id="set-awake" ' + (awakeChecked ? 'checked' : '') + (awakeDesktop ? '' : ' disabled') + '> KEEP COMPUTER AWAKE <span class="dim">- ' + (awakeDesktop ? 'prevent idle sleep while StarNet is open' : 'desktop app only') + '</span></label>' +
+      // "POWER" — this header held only KEEP COMPUTER AWAKE, so "SCHEDULED TASKS" mislabelled it.
+      '<h4 class="ms-h">POWER</h4>' +
+      '<label class="set-row"><input type="checkbox" id="set-awake" ' + (awakeChecked ? 'checked' : '') + (awakeDesktop ? '' : ' disabled') + '> KEEP COMPUTER AWAKE <span class="dim">— ' + (awakeDesktop ? 'prevent idle sleep while StarNet is open' : 'desktop app only') + '</span></label>' +
       // ADVANCED — env-only runtime knobs, now editable + persisted server-side (P1-9). PRECEDENCE is spelled out
       // in the card: an explicit environment variable ALWAYS wins over a value saved here (a deploy stays in control).
       '<h4 class="ms-h">ADVANCED <span class="dim">— runtime limits (usually leave these alone)</span></h4>' +
@@ -2936,19 +3058,21 @@ const StationUI = (() => {
           'It carries your app version, platform, provider &amp; model, and the tail of recent errors — ' +
           '<b>never your keys, tokens, messages, or prompts</b>. Assembled and scrubbed by the local sidecar.</p>';
       })()) +
-      '<div class="set-save"><button class="bb sm" id="diag-copy">📋 COPY DIAGNOSTICS</button></div>' +
+      '<div class="set-save"><button class="bb sm" id="diag-copy">⧉ COPY DIAGNOSTICS</button></div>' +
       '<div id="diag-msg" class="msg"></div>' +
       // P1.5 build provenance — the git commit this desktop binary was compiled from. Hidden until resolved (and
       // stays hidden in a plain browser, where there is no binary to prove). Populated in wireDiagnostics().
       '<div id="diag-build" class="dim" style="margin-top:6px;font-size:11px" hidden></div>' +
-      '<h4 class="ms-h">STATION DATA</h4>' +
-      '<div class="set-save"><button class="bb sm danger" id="set-clear">CLEAR NOTIFICATIONS</button></div>' +
+      // CLEAR NOTIFICATIONS moved to the NOTIFICATIONS section (where it belongs); this is now just the about note.
+      '<h4 class="ms-h">ABOUT</h4>' +
       '<p class="set-about">STARNET — gamified AI-agent harness.<br>Theme, display & audio preferences are saved locally on this machine. Manage workstreams from the TASK BOARD or the COMMS rail.</p>';
 
     const frag = html => (el => { el.innerHTML = html; });  // curried: fill a pane element with a fragment
     const sections = [
       { id: 'providers', label: 'PROVIDERS', glyph: '⌁', desc: 'Which AI services can run, and the API keys they use — stored on this machine only.', build: frag(secProviders) },
-      { id: 'autonomy', label: 'AUTONOMY', glyph: '◈', desc: 'How much your agents may do on their own, and exactly what they’re allowed to touch.', build: frag(secAutonomy) },
+      { id: 'autonomy', label: 'AUTONOMY', glyph: '◈', desc: 'How far your agents may act on their own between your messages — the initiative, reach, and pace dials.', build: frag(secAutonomy) },
+      { id: 'nightshift', label: 'NIGHT SHIFT', glyph: '☾', desc: 'What the station is doing unattended right now, and its recent decision trail.', build: frag(secNightShift) },
+      { id: 'permissions', label: 'PERMISSIONS', glyph: '⊘', desc: 'The standing approvals that let an agent act unattended — grant or revoke each one.', build: frag(secPermissions) },
       { id: 'budget', label: 'BUDGET', glyph: '$', desc: 'Hard USD spend caps the sidecar enforces against the real ledger.', build: frag(secBudget) },
       { id: 'models', label: 'MODELS', glyph: '⇄', desc: 'The fallback chain — what the loop retries on if your primary model fails mid-run.', build: frag(secModels) },
       { id: 'appearance', label: 'APPEARANCE', glyph: '☀', desc: 'Phosphor colour, CRT effects, and terminal sound.', build: frag(secAppearance) },
@@ -2967,12 +3091,14 @@ const StationUI = (() => {
     wireAdvanced(host);
     wireBackup(host);
     wireDiagnostics(host);
+    const appMsg = () => host.querySelector('#appearance-msg');
     // switch theme in place — applySettings repaints via the body class; do NOT rerender (it would wipe an open key editor).
     host.querySelectorAll('[data-t]').forEach(b => b.addEventListener('click', () => {
       s.theme = b.dataset.t; applySettings(); save(); sfx('click');
       host.querySelectorAll('[data-t]').forEach(x => x.classList.toggle('sel', x === b));
+      flashSaved(appMsg());
     }));
-    const bind = (id, key) => host.querySelector(id).addEventListener('change', ev => { s[key] = ev.target.checked; applySettings(); save(); });
+    const bind = (id, key) => host.querySelector(id).addEventListener('change', ev => { s[key] = ev.target.checked; applySettings(); save(); flashSaved(appMsg()); });
     bind('#set-scan', 'scanlines'); bind('#set-flicker', 'flicker'); bind('#set-sound', 'sound');
     const awakeToggle = host.querySelector('#set-awake');
     if (awakeToggle) awakeToggle.addEventListener('change', ev => {
@@ -3173,8 +3299,14 @@ const StationUI = (() => {
     if (typeof Updates !== 'undefined' && Updates.wireSettings) Updates.wireSettings(host);
     // two-step arm/confirm — no native dialogs inside the phosphor terminal
     const clr = host.querySelector('#set-clear');
-    clr.addEventListener('click', () => {
-      if (clr.dataset.armed) { store.notifs = []; save(); badges(); rerender('notifs'); sfx('bad'); return; }
+    if (clr) clr.addEventListener('click', () => {
+      if (clr.dataset.armed) {
+        const n = store.notifs.length;
+        store.notifs = []; save(); badges(); rerender('notifs'); sfx('bad');
+        delete clr.dataset.armed; clr.textContent = 'CLEAR NOTIFICATIONS';
+        flashSaved(host.querySelector('#notifs-msg'), '✓ cleared ' + n + ' notification' + (n === 1 ? '' : 's'));
+        return;
+      }
       clr.dataset.armed = '1'; clr.textContent = '✕ CONFIRM CLEAR'; sfx('bad');
       setTimeout(() => { if (clr.isConnected) { delete clr.dataset.armed; clr.textContent = 'CLEAR NOTIFICATIONS'; } }, 5000);
     });
@@ -3250,17 +3382,30 @@ const StationUI = (() => {
       body.innerHTML = '<div class="empty-state"><span class="es-glyph">▮</span><b>NO NOTIFICATIONS YET</b><span>Run results, saved deliverables and assigned tasks show up here.</span></div>';
       return;
     }
+    // backfill ids on any legacy row so per-row dismiss can target it (new rows always carry one via notify()).
+    let backfilled = false;
+    store.notifs.forEach(n => { if (!n.id) { n.id = uid('n'); backfilled = true; } });
+    if (backfilled) save();
     body.innerHTML =
       '<button class="bb sm" id="nf-clear">MARK ALL READ</button>' +
       '<div class="nf-list">' + store.notifs.slice().reverse().map((n, i) => {
         const sev = severityOf(n.cls);
         return '<div class="nf ' + (n.cls || '') + ' sev-' + sev + (n.read ? ' read' : '') + '" style="--ci:' + i + '">' +
           '<span class="nf-sev" aria-hidden="true">' + esc(SEV_GLYPH[sev]) + '</span>' +
-          '<span class="nf-ts">' + ts(n.t) + '</span> ' + esc(n.txt) + '</div>';
+          '<span class="nf-ts">' + notifStamp(n.t) + '</span> <span class="nf-txt">' + esc(n.txt) + '</span>' +
+          '<button class="nf-x" data-nid="' + esc(n.id) + '" title="dismiss this notification" aria-label="Dismiss notification">✕</button>' +
+          '</div>';
       }).join('') + '</div>';
     body.querySelector('#nf-clear').addEventListener('click', () => {
       store.notifs.forEach(n => n.read = true); save(); rerender('notifs'); badges(); sfx('click');
     });
+    // per-row dismiss ✕ — drop just that notification (the record carries no target surface, so no click-through).
+    body.querySelectorAll('.nf-x').forEach(b => b.addEventListener('click', ev => {
+      ev.stopPropagation();
+      const id = b.dataset.nid;
+      store.notifs = store.notifs.filter(x => x.id !== id);
+      save(); badges(); rerender('notifs'); sfx('click');
+    }));
   }
   function badges() {
     const n = store.notifs.filter(x => !x.read).length;
@@ -4315,20 +4460,40 @@ const StationUI = (() => {
      Every command an agent runs auto-saves a workspace snapshot FIRST; this lists them per agent and
      restores one with a two-step confirm. Server-owned (GET/POST /api/checkpoint); honest — only real
      snapshots show, and it says plainly when there are none yet. */
+  // a compact agent switcher for the per-agent windows (REWIND / LOGBOOK) — mirrors the dossier roster idiom.
+  // Empty on a single-agent station (nothing to switch). Wire with wireRosterSwitch(root, key).
+  function rosterSwitchHtml(curId) {
+    if (present.length <= 1) return '';
+    return '<div class="rw-switch" role="group" aria-label="Choose agent">' +
+      present.map((x, i) => '<button type="button" class="rw-agent' + (x.id === curId ? ' sel' : '') + '" data-i="' + i + '" style="--ci:' + i + '"' + (x.id === curId ? ' aria-current="true"' : '') + '>' +
+        '<span class="rw-agent-dot" style="color:' + esc(x.color) + '">●</span>' + esc(x.name) + '</button>').join('') +
+      '</div>';
+  }
+  function wireRosterSwitch(root, key) {
+    root.querySelectorAll('.rw-switch .rw-agent').forEach(b => b.addEventListener('click', () => {
+      const i = +b.dataset.i; if (i === sel) return; sel = i; sfx('click'); rerender(key);
+    }));
+  }
+
   function buildRewind(body) {
-    const agentId = (present[sel] && present[sel].id) || 'agent';
+    const a = present[sel] || {};
+    const agentId = a.id || 'agent';
+    const nm = a.name || agentId;   // display NAME, never the raw id
     body.innerHTML =
-      '<h4 class="ms-h">RESTORE POINTS — ' + esc(agentId) + '</h4>' +
-      '<p class="set-about">A snapshot of this agent\'s workspace is auto-saved <b>before every command it runs</b> ' +
+      '<h4 class="ms-h">RESTORE POINTS — ' + esc(nm) + '</h4>' +
+      rosterSwitchHtml(agentId) +
+      '<p class="set-about">A snapshot of <b>' + esc(nm) + '</b>\'s workspace is auto-saved <b>before every command it runs</b> ' +
       '(and before file edits when checkpoints are on). Restoring rolls the workspace back and removes anything ' +
       'created since. <span class="dim">Use it to undo a bad change.</span></p>' +
+      '<div class="mc-acts" style="margin:0 0 8px"><button class="bb xs" id="rw-refresh" title="re-read this agent\'s restore points">↻ REFRESH</button></div>' +
       '<div id="rw-list" class="mc-list"><span class="loading pulse">loading…</span></div>' +
       '<div id="rw-msg" class="msg"></div>';
+    wireRosterSwitch(body, 'rewind');
     const listEl = body.querySelector('#rw-list'), msgEl = body.querySelector('#rw-msg');
     const post = (path, payload) => fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
     function row(s) {
       const when = s.ts ? esc(fmtRel(new Date(s.ts).toISOString())) : '';
-      return '<div class="mc-row" data-id="' + esc(s.id) + '">' +
+      return '<div class="mc-row" data-id="' + esc(s.id) + '" data-when="' + when + '">' +
         '<div class="mc-top"><b>' + esc(s.label || 'snapshot') + '</b> <span class="dim">' + when + '</span></div>' +
         '<div class="mc-url dim">' + esc(String(s.id).slice(0, 12)) + ' · turn ' + (s.turn || 0) + (s.files ? (' · ' + s.files + ' file' + (s.files === 1 ? '' : 's')) : '') + '</div>' +
         '<div class="mc-acts"><button class="bb xs danger" data-act="restore">↶ RESTORE</button></div>' +
@@ -4346,18 +4511,30 @@ const StationUI = (() => {
         listEl.innerHTML = snaps.length ? snaps.map(row).join('') : '<div class="fb-empty">' + empty + '</div>';
       } catch (_) { listEl.innerHTML = '<div class="mc-detail">sidecar offline — start it to manage restore points.</div>'; }
     }
+    let armTimer = 0;
     listEl.addEventListener('click', async ev => {
       const btn = ev.target.closest('button[data-act="restore"]'); if (!btn) return;
       const rowEl = ev.target.closest('.mc-row'); const id = rowEl && rowEl.dataset.id; if (!id) return;
-      if (!btn.dataset.armed) { btn.dataset.armed = '1'; btn.textContent = '↶ CONFIRM'; sfx('bad'); setTimeout(() => { if (btn.isConnected) { delete btn.dataset.armed; btn.textContent = '↶ RESTORE'; } }, 5000); return; }
-      sfx('bad'); btn.disabled = true;
+      if (!btn.dataset.armed) {
+        // arm + STATE THE STAKES: name what a restore removes (everything created since this point's time).
+        btn.dataset.armed = '1'; btn.textContent = '↶ CONFIRM'; sfx('bad');
+        const when = rowEl.dataset.when || 'this point';
+        msgEl.className = 'msg'; msgEl.innerHTML = '<span class="dim">removes anything <b>' + esc(nm) + '</b> created since <b>' + esc(when) + '</b> — CONFIRM to roll back</span>';
+        clearTimeout(armTimer);
+        armTimer = setTimeout(() => { if (btn.isConnected && btn.dataset.armed) { delete btn.dataset.armed; btn.textContent = '↶ RESTORE'; msgEl.innerHTML = ''; } }, 5000);
+        return;
+      }
+      clearTimeout(armTimer); delete btn.dataset.armed;
+      sfx('bad'); btn.disabled = true; msgEl.className = 'msg'; msgEl.textContent = 'restoring…';
       try {
         const r = await (await post('/api/checkpoint/restore', { agentId: agentId, snapshotId: id })).json();
-        if (r && r.ok) { notify('rewound ' + agentId + ' to an earlier restore point', 'warn'); msgEl.textContent = '✓ restored.'; }
+        if (r && r.ok) { notify('rewound ' + nm + ' to an earlier restore point', 'warn'); msgEl.className = 'msg ok'; msgEl.textContent = '✓ restored.'; }
         else { msgEl.innerHTML = '<span style="color:var(--bad)">✕ ' + esc((r && r.error) || 'restore failed') + '</span>'; sfx('bad'); }
       } catch (e) { msgEl.innerHTML = '<span style="color:var(--bad)">✕ ' + esc((e && e.message) || 'restore failed') + '</span>'; sfx('bad'); }
       btn.disabled = false; refresh();
     });
+    const refreshBtn = body.querySelector('#rw-refresh');
+    if (refreshBtn) refreshBtn.addEventListener('click', () => { sfx('click'); listEl.innerHTML = '<span class="loading pulse">loading…</span>'; refresh(); });
     refresh();
   }
 
@@ -4367,20 +4544,29 @@ const StationUI = (() => {
      unproductive-run post-mortems (cause + fix) that used to live only as a fading toast. (WIRING_AUDIT P7.) */
   const LB_REASON = { done: '✓ done', max_iters: '⟳ looped out', budget: 'over budget', cancelled: '⏹ cancelled', error: '✕ error', refusal: '⊘ refused' };
   function buildLogbook(body) {
-    const agentId = (present[sel] && present[sel].id) || 'agent';
+    const a = present[sel] || {};
+    const agentId = a.id || 'agent';
+    const nm = a.name || agentId;   // the LOGBOOK is agent-scoped — name it, don't imply a station-wide record
     // CONSOLE MODE: RUNS · SLAG · INSIGHTS as three sections instead of an inline tab strip. Each section owns its
     // OWN list host (#lb-list / #lb-slag / #lb-insights) so a mid-fetch close of one can't overwrite another. The
     // per-section desc carries the honest copy #lb-about used to hold. mountConsole appends its host to `body`, so
     // the section-scoped body.querySelector loads below resolve against the mounted panes.
     const frag = h => (el => { el.innerHTML = h; });
     mountConsole(body, 'logbook', [
-      { id: 'runs', label: 'RUNS', glyph: '▦', desc: 'Every finished run, newest first — what it produced and why it ended.',
+      { id: 'runs', label: 'RUNS', glyph: '▦', desc: 'Every finished run by ' + nm + ', newest first — what it produced and why it ended.',
         build: frag('<div id="lb-list" class="mc-list"><span class="loading pulse">loading…</span></div>') },
-      { id: 'slag', label: 'SLAG', glyph: '⚠', desc: 'Post-mortems for runs that ended without a deliverable, diagnosed into a real, fixable cause.',
+      { id: 'slag', label: 'SLAG', glyph: '⚠', desc: 'Post-mortems for ' + nm + ' runs that ended without a deliverable, diagnosed into a real, fixable cause.',
         build: frag('<div id="lb-slag" class="mc-list"><span class="loading pulse">loading…</span></div>') },
-      { id: 'insights', label: 'INSIGHTS', glyph: '◨', desc: 'Run totals, success rate, and model distribution.',
+      { id: 'insights', label: 'INSIGHTS', glyph: '◨', desc: 'Run totals, success rate, and model distribution for ' + nm + '.',
         build: frag('<div id="lb-insights" class="mc-list"><span class="loading pulse">loading…</span></div>') }
-    ], {});
+    ], {
+      // name the agent + a compact switcher at the top of the rail (mirrors the dossier roster) so it's never
+      // mistaken for "the station's event record" — it's THIS agent's run history.
+      railTop: (top) => {
+        top.innerHTML = '<div class="lb-agent-h">LOGBOOK · <b>' + esc(nm) + '</b></div>' + rosterSwitchHtml(agentId);
+        wireRosterSwitch(top, 'logbook');
+      }
+    });
     const listEl = body.querySelector('#lb-list');
     function runRow(r) {
       const when = r.ts ? esc(fmtRel(new Date(r.ts).toISOString())) : '';
@@ -4390,8 +4576,11 @@ const StationUI = (() => {
       // H3.2: a run with a streamId can OPEN its transcript inline (the join the audit found was missing).
       const sid = r.streamId ? esc(String(r.streamId)) : '';
       const cls = sid ? 'mc-row lb-run-open' : 'mc-row';
-      const attr = sid ? ' data-stream="' + sid + '" title="click to open this run\'s transcript"' : '';
-      return '<div class="' + cls + '"' + attr + '><div class="mc-top"><b>' + title + '</b> <span class="dim">' + when + (sid ? ' · ▸ transcript' : '') + '</span></div>' +
+      const attr = sid ? ' data-stream="' + sid + '"' : '';
+      // explicit ▸ toggle button for the transcript (keyboard-reachable), plus the whole row stays clickable —
+      // but the row handler ignores clicks made while selecting text (so you can copy a title without collapsing).
+      const txBtn = sid ? ' <button type="button" class="lb-tx-btn" aria-expanded="false" title="show / hide this run\'s transcript">▸ transcript</button>' : '';
+      return '<div class="' + cls + '"' + attr + '><div class="mc-top"><b>' + title + '</b> <span class="dim">' + when + '</span>' + txBtn + '</div>' +
         '<div class="mc-url dim">' + rl + ' · ' + model + ' · ' + (r.turns || 0) + ' turn' + (r.turns === 1 ? '' : 's') + '</div>' +
         (sid ? '<div class="lb-tx" hidden></div>' : '') + '</div>';
     }
@@ -4402,7 +4591,8 @@ const StationUI = (() => {
         '<div class="mc-url dim">' + (j.successPct == null ? '—' : j.successPct + '% success') + '</div></div>';
       const models = (j.byModel || []).slice(0, 8).map(m =>
         '<div class="mc-row"><div class="mc-top"><b>' + esc(m.model) + '</b> <span class="dim">' + m.runs + ' run' + (m.runs === 1 ? '' : 's') + '</span></div></div>').join('');
-      const reasons = Object.keys(j.byReason || {}).map(k => esc(k) + ' ' + j.byReason[k]).join(' · ');
+      // pretty-label the outcome enum with the same map RUNS uses (LB_REASON) instead of leaking raw keys.
+      const reasons = Object.keys(j.byReason || {}).map(k => (LB_REASON[k] || esc(k)) + ' ' + j.byReason[k]).join(' · ');
       return ov + '<div class="mc-detail" style="margin:6px 0 2px;opacity:.7">BY MODEL</div>' + (models || '<div class="mc-detail dim">—</div>') +
         '<div class="mc-detail" style="margin:6px 0 2px;opacity:.7">OUTCOMES</div><div class="mc-detail dim">' + (reasons || '—') + '</div>';
     }
@@ -4428,11 +4618,12 @@ const StationUI = (() => {
         const h = body.querySelector('#lb-list'); if (!h) return;
         const runs = (j && j.runs) || [];
         h.innerHTML = runs.length ? runs.map(runRow).join('') : '<div class="fb-empty">NO RUNS YET.<br><span>Finished runs appear here once this agent does real work.</span></div>';
-        // H3.2: clicking a run opens its durable transcript (GET /api/transcript?stream=) inline — toggle + lazy-load.
-        h.querySelectorAll('.lb-run-open').forEach(row => row.addEventListener('click', async () => {
+        // H3.2: a run opens its durable transcript (GET /api/transcript?stream=) inline — toggle + lazy-load.
+        const toggleTx = async (row) => {
           const tx = row.querySelector('.lb-tx'); if (!tx) return;
-          if (!tx.hidden) { tx.hidden = true; return; }
-          tx.hidden = false;
+          const btn = row.querySelector('.lb-tx-btn');
+          if (!tx.hidden) { tx.hidden = true; row.classList.remove('tx-open'); if (btn) { btn.setAttribute('aria-expanded', 'false'); btn.textContent = '▸ transcript'; } return; }
+          tx.hidden = false; row.classList.add('tx-open'); if (btn) { btn.setAttribute('aria-expanded', 'true'); btn.textContent = '▾ transcript'; }
           if (tx.dataset.loaded) return;
           tx.innerHTML = '<div class="mc-detail"><span class="loading">loading transcript…</span></div>';
           try {
@@ -4441,7 +4632,18 @@ const StationUI = (() => {
             tx.innerHTML = turns.length ? turns.map(m => '<div class="mc-detail"><b>' + esc(m.role) + ':</b> ' + esc(String(m.content || '').slice(0, 400)) + '</div>').join('') : '<div class="mc-detail">no transcript recorded for this workstream.</div>';
             tx.dataset.loaded = '1';
           } catch (_) { tx.innerHTML = '<div class="mc-detail">could not load transcript.</div>'; }
-        }));
+        };
+        h.querySelectorAll('.lb-run-open').forEach(row => {
+          row.addEventListener('click', ev => {
+            if (ev.target.closest('.lb-tx-btn')) return;                 // the button owns its own click (below)
+            if (ev.target.closest('.lb-tx')) return;                     // clicks inside an open transcript don't collapse it
+            const selTxt = (window.getSelection && window.getSelection().toString()) || '';
+            if (selTxt.trim()) return;                                   // dragging to SELECT text must not toggle
+            toggleTx(row);
+          });
+          const btn = row.querySelector('.lb-tx-btn');
+          if (btn) btn.addEventListener('click', ev => { ev.stopPropagation(); toggleTx(row); });
+        });
       } catch (_) { const h = body.querySelector('#lb-list'); if (h) h.innerHTML = '<div class="mc-detail">sidecar offline — start it to see run history.</div>'; }
     }
     // SLAG: the unproductive-run post-mortems (World.slagLog), synchronous — no fetch, just the live ring.
