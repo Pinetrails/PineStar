@@ -128,6 +128,9 @@
 .cmsg.user {
   animation: comms-msg-in var(--t-med) var(--ease-out) backwards;
 }
+/* BULK REPLAY — a full history render marks every row .no-anim so up to 120 cards don't all fire the entrance
+   at once (a jarring cascade on open/switch). Live rows created afterward are unmarked and animate normally. */
+.cmsg.no-anim { animation: none !important; }
 
 /* ============================================================
    2 · TOOL CHIPS — the agent's real actions as compact chips in
@@ -198,6 +201,12 @@
 
 /* the legacy plain tool line (replay / stop-reason) keeps app.css's dim treatment, just tightened here */
 .cmsg.tool { margin-left: 0; }
+
+/* COMMS GLYPHS — inline currentColor SVGs (folder / file / image) that replaced the color emoji. They inherit
+   the surrounding phosphor colour and ride the text baseline. */
+.comms-glyph { display: inline-flex; width: 1em; height: 1em; vertical-align: -0.13em; flex: 0 0 auto; }
+.comms-glyph svg { width: 100%; height: 100%; display: block; }
+.deliverable-folder .fb-label { margin-left: 4px; }
 
 /* ============================================================
    3 · LIVE WORKING-PRESENCE CARD — one card pinned at the

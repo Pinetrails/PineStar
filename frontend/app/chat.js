@@ -256,6 +256,15 @@ const Chat = (() => {
     card.setAttribute('role', 'note');
     autoscroll();
   }
+  // POST-RUN DEDUPE: when a recap card is about to render (it owns cost · duration · model + the artifact list),
+  // strip the metrics from the already-resolved presence line above it so the two don't print the same numbers.
+  // Keeps just the terse status label (the part before the first ' · '). No-op if there's no resolved card.
+  function foldPresenceIntoRecap() {
+    const card = log && log.querySelector('#comms-presence.resolved');
+    if (!card) return;
+    const label = String(card.textContent || '').split(' · ')[0];
+    if (label && card.textContent !== label) card.textContent = label;
+  }
 
   // CRASH HONESTY (Theme 2) — after a run stream died on a network drop, poll /api/health until the sidecar is
   // PROVABLY back, then tell the Commander their interrupted run can't resume. Truthful telemetry: the
@@ -300,6 +309,16 @@ const Chat = (() => {
   }
 
   const KIND_TAG = { profile: 'PREFERENCE', fact: 'FACT', skill: 'SKILL', note: 'NOTE' };
+
+  // COMMS GLYPHS — small currentColor SVGs that replace color emoji (📁/📄/🖼/📋) so they inherit the phosphor
+  // theme instead of puncturing the CRT look with an OS-coloured emoji. Static developer markup (no model/user
+  // text) → assigning via innerHTML on a fresh element is XSS-safe. Sized in em so they ride the text they sit in.
+  const SVG_FOLDER = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.6 3.6h4l1.2 1.5h7.6v7.8H1.6z" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>';
+  const SVG_FILE = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 1.6h5l3 3v9.8H4z" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M9 1.6v3h3" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>';
+  const SVG_IMAGE = '<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="3" width="12" height="10" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.2"/><circle cx="5.7" cy="6.3" r="1" fill="currentColor"/><path d="M2.8 12l3.6-3.6 2.3 2.3L11 8.6l2.2 2.2" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>';
+  const SVG_CLIP = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.6 8.2 8.5 4.3a2.2 2.2 0 0 1 3.1 3.1l-4.8 4.8a3.4 3.4 0 0 1-4.8-4.8l4.5-4.5" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  // build a span carrying one of the static SVGs above (a leading COMMS glyph before a text label)
+  function glyphSpan(svg, cls) { const s = document.createElement('span'); s.className = 'comms-glyph' + (cls ? ' ' + cls : ''); s.setAttribute('aria-hidden', 'true'); s.innerHTML = svg; return s; }
 
   // COMMS-PREMIUM — a subtle HH:MM stamp for a transmission-card header. The stored history carries no
   // per-message time, so replayed history gets NO stamp (never fabricate one); only rows created live at
@@ -631,7 +650,8 @@ const Chat = (() => {
         const img = document.createElement('img'); img.className = 'thumb'; img.src = entry.localUrl; img.alt = entry.name;
         chip.appendChild(img);
       } else {
-        const g = document.createElement('span'); g.className = 'glyph'; g.textContent = entry.kind === 'image' ? '🖼' : '📄';
+        const g = document.createElement('span'); g.className = 'glyph'; g.setAttribute('aria-hidden', 'true');
+        g.innerHTML = entry.kind === 'image' ? SVG_IMAGE : SVG_FILE;   // themed glyph, not a color emoji
         chip.appendChild(g);
       }
       const nm = document.createElement('span'); nm.className = 'nm'; nm.textContent = entry.name; nm.title = entry.name;
@@ -743,7 +763,8 @@ const Chat = (() => {
       if (activeId != null) sel.value = activeId;
     }
     const cur = list.find(a => a.id === activeId) || null;
-    if (modelEl) modelEl.textContent = cur ? agentModelText(cur) : '';
+    // "pin:" prefix so this per-agent PINNED model readout can't be misread as the dock's active-model chip
+    if (modelEl) modelEl.textContent = cur ? ('pin: ' + agentModelText(cur)) : '';
     if (bar) bar.hidden = !list.length;   // no roster yet (pre-wake) → hide the row rather than show an empty selector
   }
   // wire the agent <select> once: a change hands off to App.selectAgent (switch/mint a stream bound to that
@@ -890,9 +911,10 @@ const Chat = (() => {
   // opts.live === true marks the streaming reply row, which always pins to the BOTTOM. Every other row (tool
   // ▶/◀ lines, deliverables, consent, turn-in) inserts ABOVE the pinned reply while one is live — so the work
   // log stacks above and the message the agent is actually saying stays at the bottom, never scrolled away.
+  let renderingHistory = false;   // true only during renderHistory: mark rows .no-anim so a full replay doesn't fire up to 120 entrance animations at once
   function row(role, opts) {
     clearEmptyState();   // any real row supersedes the first-run hint
-    const d = document.createElement('div'); d.className = 'cmsg ' + role;
+    const d = document.createElement('div'); d.className = 'cmsg ' + role + (renderingHistory ? ' no-anim' : '');
     // COMMS-PREMIUM: the speaker chip + a dim HH:MM stamp share one header row (a flex .cmsg-head).
     const who = document.createElement('span'); who.className = 'who';
     who.textContent = role === 'user' ? 'COMMANDER' : role === 'system' ? 'SYSTEM' : name;
@@ -957,7 +979,8 @@ const Chat = (() => {
       } else {
         const chip = document.createElement('a'); chip.className = 'filechip'; chip.title = name;
         wireBlobOpen(chip, rel, aid);
-        chip.appendChild(document.createTextNode('📄 ' + (name.split(/[\\/]/).pop() || name)));
+        chip.appendChild(glyphSpan(SVG_FILE));   // themed file glyph, not 📄
+        chip.appendChild(document.createTextNode(' ' + (name.split(/[\\/]/).pop() || name)));
         view.appendChild(chip);
       }
     }
@@ -1214,24 +1237,25 @@ const Chat = (() => {
   function tauriCore() {
     return (typeof window !== 'undefined' && window.__TAURI__ && window.__TAURI__.core) ? window.__TAURI__.core : null;
   }
-  // Build a small "📁 folder" control. `relPath` (optional) is the deliverable's own path so a future
-  // native reveal can select the file; today it reveals/copies the containing workspace dir.
+  // Build a small folder control (a themed folder glyph + a label). `relPath` (optional) is the deliverable's
+  // own path so a future native reveal can select the file; today it reveals/copies the containing workspace dir.
   function folderButton(agentId, relPath) {
     const b = document.createElement('button');
     b.type = 'button'; b.className = 'deliverable-folder';
-    b.textContent = '📁 folder';
+    b.appendChild(glyphSpan(SVG_FOLDER));
+    const lbl = document.createElement('span'); lbl.className = 'fb-label'; lbl.textContent = 'folder'; b.appendChild(lbl);
     const desktop = !!tauriCore();
     b.title = desktop ? 'reveal this deliverable’s folder on disk' : 'copy the folder path on disk';
     let dirP = null;
     b.addEventListener('click', () => {
       if (!dirP) dirP = workspaceDir(agentId);
       dirP.then(dir => {
-        if (!dir) { b.textContent = '📁 no path'; setTimeout(() => { b.textContent = '📁 folder'; }, 1400); return; }
+        if (!dir) { lbl.textContent = 'no path'; setTimeout(() => { lbl.textContent = 'folder'; }, 1400); return; }
         const core = tauriCore();
         if (core && core.invoke) {
           // native reveal IF the shell exposes it; otherwise fall through to copy (never a silent no-op)
           Promise.resolve(core.invoke('starnet_reveal_path', { path: dir })).then(() => {
-            b.textContent = '📁 opened'; setTimeout(() => { b.textContent = '📁 folder'; }, 1400);
+            lbl.textContent = 'opened'; setTimeout(() => { lbl.textContent = 'folder'; }, 1400);
           }).catch(() => copyPathFeedback(b, dir));
         } else {
           copyPathFeedback(b, dir);
@@ -1241,9 +1265,10 @@ const Chat = (() => {
     return b;
   }
   function copyPathFeedback(btn, dir) {
+    const lbl = btn.querySelector('.fb-label');
     copyText(dir).then(ok => {
-      btn.textContent = ok ? '📁 path copied' : '📁 ' + dir;
-      setTimeout(() => { btn.textContent = '📁 folder'; }, 1600);
+      if (lbl) lbl.textContent = ok ? 'path copied' : dir;
+      setTimeout(() => { if (lbl) lbl.textContent = 'folder'; }, 1600);
     });
   }
   function deliverableLine(title, agentId) {
@@ -1469,6 +1494,10 @@ const Chat = (() => {
       const arts = Array.isArray(entry.artifacts) ? entry.artifacts : [];   // a legacy row fails open to []
       if (!arts.length && (entry.reason || 'done') === 'done') return;      // quiet clean finish — leave the flow untouched
       if (!isActiveWs(ws)) return;   // the work-log register renders on the on-screen stream only, same as tool lines
+      // POST-RUN DEDUPE: this recap card IS the run's ledger — its foot carries cost · duration · model and its
+      // rows carry the artifacts. So the resolved presence line above it should stop repeating those numbers:
+      // collapse it to just its terse status label (■ RUN COMPLETE), letting the recap own the metrics.
+      foldPresenceIntoRecap();
       recapCard(entry, arts, agentId, durMs, runId);
     } catch (_) { /* the recap is best-effort — it must never disturb the turn teardown */ }
   }
@@ -1627,7 +1656,7 @@ const Chat = (() => {
     try { coached = localStorage.getItem(WORKRATE_COACH_KEY) === '1'; } catch (_) {}
     if (!coached) {
       const hint = document.createElement('span'); hint.className = 'work-rate-hint';
-      hint.textContent = 'rating trains your agent — 👍 earns XP and builds trust';
+      hint.textContent = 'rating trains your agent — the top mark earns XP and builds trust';
       host.appendChild(hint);
       try { localStorage.setItem(WORKRATE_COACH_KEY, '1'); } catch (_) {}
     }
@@ -1648,9 +1677,10 @@ const Chat = (() => {
       const b = document.createElement('button'); b.className = 'consent-btn' + (cls ? ' ' + cls : ''); b.textContent = label;
       b.onclick = () => settle(verdict, flash, isDeny); btns.appendChild(b);
     }
-    mk('👍 nailed it', '', 'great', '★ +XP', false);
-    mk('👌 close', '', 'ok', 'noted', false);
-    mk('👎 missed', 'deny', 'miss', 'noted', true);
+    // CRT glyphs, not color emoji: ▲ nailed it · ◆ close · ▼ missed (semantics preserved, phosphor-themed)
+    mk('▲ nailed it', '', 'great', '★ +XP', false);
+    mk('◆ close', '', 'ok', 'noted', false);
+    mk('▼ missed', 'deny', 'miss', 'noted', true);
   }
   // STANDALONE rate-the-work beat (when a run produced NO memory proposal) — its own gold-inset row in the ONE
   // post-run slot. Hero-only, mirroring the curiosity/suggestion beats.
@@ -3251,6 +3281,8 @@ const Chat = (() => {
   function renderHistory() {
     const h = activeWs ? activeWs.history : [];
     let lastReal = null;   // the trailing dialogue turn (for the error-recovery re-offer below)
+    renderingHistory = true;   // suppress the per-row entrance animation across this bulk replay (restored below)
+    try {
     for (const m of h) {
       if (m && m.truncated) {   // E3: the local history-cap marker — render it as a dim centered SYSTEM line (not a dropped record)
         if ((m.content || '').trim()) trimMarkerLine(m.content);
@@ -3270,6 +3302,7 @@ const Chat = (() => {
       renderProse(r.body, m.content);   // same linkify path as live tokens, so replayed history matches
       lastReal = m;
     }
+    } finally { renderingHistory = false; }   // future LIVE rows animate again
     // STRANDED-USER LAW: a reload/switch onto a stream whose LAST turn failed (error:true) must not leave the
     // Commander with a dead thread and no way out — load() wiped the live recovery chips. Re-offer a plain retry
     // (offerRetry's context-aware verdict isn't stored per-turn, so the safe universal recovery is a re-run).
@@ -3452,7 +3485,7 @@ const Chat = (() => {
     if (!log || typeof Diag === 'undefined' || !Diag.copy) return;
     const rowEl = document.createElement('div'); rowEl.className = 'choice-row';
     const b = document.createElement('button'); b.className = 'choice quiet'; b.type = 'button';
-    b.textContent = '📋 copy diagnostics for a bug report';
+    b.textContent = '⧉ copy diagnostics for a bug report';   // ⧉ = the house copy glyph (not the 📋 emoji)
     b.addEventListener('click', () => {
       b.disabled = true;
       Diag.copy({ notify: false }).then(ok => {
@@ -3796,8 +3829,8 @@ const Chat = (() => {
   function usageCommand() {
     const t = (typeof Harness !== 'undefined' && Harness.totals) ? Harness.totals() : { tokens: 0, cost: 0, calls: 0 };
     const c = (activeWs && typeof Workstreams !== 'undefined' && Workstreams.costOf) ? Workstreams.costOf(activeWs.id) : { tokens: 0, usd: 0, calls: 0 };
-    localLine('Usage: lifetime ' + (t.tokens || 0) + ' tokens, $' + ((t.cost || 0).toFixed ? t.cost.toFixed(6) : '0.000000') + ', ' + (t.calls || 0)
-      + ' calls. This stream: ' + (c.tokens || 0) + ' tokens, $' + ((c.usd || 0).toFixed ? c.usd.toFixed(6) : '0.000000') + ', ' + (c.calls || 0) + ' calls.');
+    localLine('Usage: lifetime ' + (t.tokens || 0) + ' tokens, ' + U.usd(t.cost || 0) + ', ' + (t.calls || 0)
+      + ' calls. This stream: ' + (c.tokens || 0) + ' tokens, ' + U.usd(c.usd || 0) + ', ' + (c.calls || 0) + ' calls.');
   }
   function queueCommand(args) {
     if (!activeWs) return localLine('No active workstream.');
@@ -3941,18 +3974,18 @@ const Chat = (() => {
       const r = await fetch('/api/insights?agent=' + encodeURIComponent(agentId), { cache: 'no-store' });
       const j = r.ok ? await r.json() : null;
       if (j && (j.totalRuns != null)) {
-        const models = Array.isArray(j.byModel) ? j.byModel.slice(0, 3).map(m => (m.model || '?') + ' ($' + (m.usd || 0) + ')') : [];
+        const models = Array.isArray(j.byModel) ? j.byModel.slice(0, 3).map(m => (m.model || '?') + ' (' + U.usd(m.usd || 0) + ')') : [];
         const succ = (j.successPct == null) ? '' : ', ' + j.successPct + '% completed';
         return localLine('Insights (lifetime run history for ' + agentId + '): ' + (j.totalRuns || 0) + ' run' + (j.totalRuns === 1 ? '' : 's')
-          + ', $' + (j.totalUsd || 0) + ', ' + (j.totalTokens || 0) + ' tokens'
-          + (j.avgUsdPerRun ? ', $' + j.avgUsdPerRun + '/run' : '') + succ
+          + ', ' + U.usd(j.totalUsd || 0) + ', ' + (j.totalTokens || 0) + ' tokens'
+          + (j.avgUsdPerRun ? ', ' + U.usd(j.avgUsdPerRun) + '/run' : '') + succ
           + (models.length ? '. Top models: ' + models.join(', ') : '') + '.');
       }
     } catch (_) {}
     // sidecar offline / no fold — honest session-only fallback, never fabricated.
     const t = (typeof Harness !== 'undefined' && Harness.totals) ? Harness.totals() : { tokens: 0, cost: 0, calls: 0 };
-    localLine('Insights: the durable run history is unavailable (sidecar offline). This SESSION only: ' + (t.tokens || 0) + ' tokens, $'
-      + ((t.cost || 0).toFixed ? t.cost.toFixed(6) : '0.000000') + ', ' + (t.calls || 0) + ' calls.');
+    localLine('Insights: the durable run history is unavailable (sidecar offline). This SESSION only: ' + (t.tokens || 0) + ' tokens, '
+      + U.usd(t.cost || 0) + ', ' + (t.calls || 0) + ' calls.');
   }
   function activeAgent() {
     try { return (typeof App !== 'undefined' && App.currentAgent) ? App.currentAgent() : null; } catch (_) { return null; }
@@ -4607,7 +4640,11 @@ const Chat = (() => {
             // the frozen 'deliverable' event carries no runId/time — synthesize from the live run + clock.
             // record the rendered media kind so a future history/replay surface can re-render the same way.
             if (typeof Workstreams !== 'undefined') Workstreams.recordDeliverable(ws.id, { title: ev.title, kind: mk === 'file' ? ev.kind : mk, runId: Channels.runIdOf(ws.id), t: Date.now() });
-            if (typeof StationUI !== 'undefined') StationUI.notify((mk === 'file' ? 'saved ' : 'made ') + ev.title, 'gold', 'runComplete');   // P1-8 category: run produced a deliverable
+            // POST-RUN DEDUPE: the recap card is the single artifact ledger. When the deliverable is ALREADY
+            // visible in the on-screen transcript (inline row above + recap card below), the toast is a third
+            // copy that also parks over the composer — suppress it. A BACKGROUND-stream deliverable isn't shown
+            // anywhere on screen, so its toast is the only signal → keep it.
+            if (!isActiveWs(ws) && typeof StationUI !== 'undefined') StationUI.notify((mk === 'file' ? 'saved ' : 'made ') + ev.title, 'gold', 'runComplete');   // P1-8 category: run produced a deliverable
           }
         },
         onPermission: ev => { Channels.setPending(ws.id, { promptId: ev.promptId, tool: ev.tool, argsSummary: ev.argsSummary, runId: Channels.runIdOf(ws.id) }); walkToDesk(); if (isActiveWs(ws)) { breakLive(); permissionRow(ev, ws); renderPresence(); } },
