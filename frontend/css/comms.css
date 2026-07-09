@@ -71,8 +71,74 @@
 /* copy button sits inside the padded card — nudge it clear of the header chip */
 .cmsg-copy { top: 6px; right: 5px; }
 
-/* the LIVE reply headline keeps its lit treatment (app.css) but its header chip stays visible + lit */
-.cmsg.agent.reply .cmsg-head .who { background: var(--ph); color: var(--ink); box-shadow: 0 0 8px var(--ph-glow2), 0 1px 0 rgba(0,0,0,.4); }
+/* SYSTEM register — command/client output (/help, /whoami, unknown-command, …). Dim, no lit chip, never a
+   card: the station's own words, clearly NOT the agent's speech. A quiet "SYSTEM" tag on the first of a run;
+   consecutive system lines group under it. Theme tokens only. */
+.cmsg.system { font-size: 13.5px; padding-left: 11px; border-left: 1px dashed var(--ph-faint); }
+.cmsg.system .who {
+  display: inline-block; margin: 6px 0 2px;
+  font-size: 9.5px; letter-spacing: 1.5px; font-weight: bold; text-transform: uppercase;
+  color: var(--ph-dim); opacity: .7;
+}
+.cmsg.system .body { color: var(--ph-dim); letter-spacing: .3px; }
+.cmsg.system + .cmsg.system .who { display: none; }   /* a run of system lines reads as one block */
+
+/* COLLAPSIBLE SYSTEM CARD — /history, /help: a dim header button that expands a body of rows (chat.js
+   systemCard). Keeps verbose command output from flooding the transcript. */
+.cmsg.system.syscard { border-left: 1px dashed var(--ph-faint); padding-left: 0; }
+.syscard-head {
+  display: inline-flex; align-items: baseline; gap: 6px; width: 100%;
+  font: inherit; font-size: 13px; text-align: left; cursor: pointer;
+  color: var(--ph-dim); background: transparent; border: 0; padding: 4px 6px 4px 11px;
+}
+.syscard-head:hover { color: var(--ph); }
+.syscard-head .syscard-chev { flex: 0 0 auto; font-size: 9px; transition: transform var(--t-fast) var(--ease-soft); }
+.cmsg.system.syscard.open .syscard-chev { transform: rotate(90deg); color: var(--ph); }
+.syscard-head .syscard-title { flex: 1 1 auto; letter-spacing: .3px; }
+.syscard-body { padding: 2px 6px 6px 22px; }
+.syscard-body[hidden] { display: none; }
+.syscard-row { font-size: 12.5px; line-height: 1.5; color: var(--ph-dim); white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* SLASH PALETTE — a dim category tag on each row so the command surface reads by area (no reorder). */
+.slash-item .slash-cat {
+  margin-left: auto; flex: 0 0 auto; font-size: 9.5px; letter-spacing: 1px; text-transform: uppercase;
+  color: var(--ph-dim); opacity: .6; align-self: center;
+}
+
+/* TRIM MARKER — the "…N earlier turns trimmed" scrollback boundary as a dim, centered, hairline-flanked line
+   (mirrors the broadcast register's chrome). A boundary the reader can see, not a silently dropped record. */
+.cmsg.trim-marker {
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  margin: 8px 0 4px; padding: 2px 4px;
+  background: none !important; box-shadow: none !important; border: 0 !important;
+}
+.cmsg.trim-marker::before, .cmsg.trim-marker::after {
+  content: ""; flex: 1 1 auto; height: 1px; max-width: 70px;
+  background: linear-gradient(90deg, transparent, var(--ph-faint), transparent);
+}
+.cmsg.trim-marker .tm-line {
+  flex: 0 0 auto; font-size: 10.5px; letter-spacing: 1.5px; text-transform: uppercase;
+  color: var(--ph-dim); opacity: .8; white-space: nowrap;
+}
+
+/* TERMINAL MARKDOWN — a small, restrained subset in the agent's prose (chat.js renderMarkdown). Phosphor tokens
+   only; a header is BRIGHT text, never oversized web type. XSS is handled upstream (escape-then-wrap). */
+.cmsg .body .md-b { color: var(--ph-bright); font-weight: bold; }
+.cmsg .body .md-h { display: inline-block; color: var(--ph-bright); font-weight: bold; letter-spacing: .5px; }
+.cmsg .body .md-li { display: inline-block; }
+.cmsg .body .md-li .md-bul { color: var(--ph); }
+.cmsg .body .md-code {
+  font-family: inherit; color: var(--ph-bright); background: rgba(var(--ph-rgb),.10);
+  border: 1px solid var(--ph-faint); border-radius: 3px; padding: 0 4px;
+}
+.cmsg .body .md-pre {
+  display: block; margin: 4px 0; padding: 6px 9px; white-space: pre; overflow-x: auto;
+  font-family: inherit; font-size: 13.5px; color: var(--ph-bright);
+  background: rgba(var(--ph-rgb),.07); border: 1px solid var(--ph-faint);
+  border-left: 2px solid var(--ph-dim); border-radius: 4px;
+}
+.cmsg .body .md-pre::-webkit-scrollbar { height: 7px; }
+.cmsg .body .md-pre::-webkit-scrollbar-thumb { background: var(--ph-faint); border-radius: 4px; }
 
 /* ENTRANCE — a one-time subtle fade/slide for a newly-added message card (motion tokens). Applied to
    prose cards only; work-log beats (tool/consent/turn-in/nudge/deliverable) keep their own beat motion. */
@@ -84,6 +150,9 @@
 .cmsg.user {
   animation: comms-msg-in var(--t-med) var(--ease-out) backwards;
 }
+/* BULK REPLAY — a full history render marks every row .no-anim so up to 120 cards don't all fire the entrance
+   at once (a jarring cascade on open/switch). Live rows created afterward are unmarked and animate normally. */
+.cmsg.no-anim { animation: none !important; }
 
 /* ============================================================
    2 · TOOL CHIPS — the agent's real actions as compact chips in
@@ -137,14 +206,29 @@
   overflow-wrap: anywhere; word-break: break-word;
 }
 .tool-chip.open .tc-detail { display: block; }
-.tool-chip.open .tc-glyph::after { }
+/* EXPAND AFFORDANCE — a dim ▸ chevron on the chip head signals it opens; it rotates to ▾ when expanded, so the
+   chip visibly reads as a disclosure control (aria-expanded lives on the .tc-head button for AT). */
+.tool-chip .tc-exp { flex: 0 0 auto; color: var(--ph-dim); font-size: 9px; opacity: .8; transition: transform var(--t-fast) var(--ease-soft); }
+.tool-chip.open .tc-exp { transform: rotate(90deg); color: var(--ph); }
 .tool-chip .tc-d-args { color: var(--ph-dim); padding-top: 5px; }
 .tool-chip .tc-d-res  { color: var(--text); padding-top: 4px; }
 .tool-chip .tc-d-res.err { color: var(--bad); }
 @keyframes comms-blink { 50% { opacity: .25; } }
 
+/* STARTER-CHIP EMPTY STATE — the first-run hint gains a couple of tappable openers (chat.js maybeEmptyState).
+   The line keeps its dim centered treatment; the chips sit under it, reusing the .choice vocabulary. */
+.cmsg-empty-line { margin-bottom: 10px; }
+.cmsg-empty-chips { display: flex; flex-wrap: wrap; gap: 7px; justify-content: center; }
+.cmsg-empty .cmsg-starter { font-size: 13px; }
+
 /* the legacy plain tool line (replay / stop-reason) keeps app.css's dim treatment, just tightened here */
 .cmsg.tool { margin-left: 0; }
+
+/* COMMS GLYPHS — inline currentColor SVGs (folder / file / image) that replaced the color emoji. They inherit
+   the surrounding phosphor colour and ride the text baseline. */
+.comms-glyph { display: inline-flex; width: 1em; height: 1em; vertical-align: -0.13em; flex: 0 0 auto; }
+.comms-glyph svg { width: 100%; height: 100%; display: block; }
+.deliverable-folder .fb-label { margin-left: 4px; }
 
 /* ============================================================
    3 · LIVE WORKING-PRESENCE CARD — one card pinned at the
@@ -204,23 +288,31 @@
 #comms-presence.resolved.stopped { color: var(--gold); border-left-color: var(--gold); }
 
 /* ============================================================
-   4 · "NEW MESSAGES ↓" PILL — appears over the transcript foot
-   when the Commander has scrolled up and fresh content lands.
-   Click jumps to the bottom. Reuses the stick machinery (chat.js).
+   4 · JUMP-TO-LATEST PILL — while scrolled up: a dim, persistent
+   "↓ latest" affordance; brightens to "new messages ↓" when fresh
+   content lands. Anchored to #chat-log's bottom edge — chat.js sets
+   `bottom` inline from the live composer height (no magic offset).
    ============================================================ */
 .comms-newpill {
-  position: absolute; left: 50%; bottom: 74px; z-index: 6;
+  position: absolute; left: 50%; bottom: 74px; z-index: 6;   /* bottom is overwritten inline by chat.js */
   transform: translate(-50%, 6px);
   font: inherit; font-size: 12px; letter-spacing: .6px; cursor: pointer;
-  color: var(--ink); background: var(--ph);
-  border: 1px solid var(--ph-bright); border-radius: 12px;
+  color: var(--ph); background: var(--panel2);
+  border: 1px solid var(--ph-dim); border-radius: 12px;
   padding: 3px 13px; line-height: 1.4;
-  box-shadow: 0 0 14px var(--ph-glow2), 0 4px 12px rgba(0,0,0,.55);
+  box-shadow: 0 3px 10px rgba(0,0,0,.5);
   opacity: 0; pointer-events: none;
-  transition: opacity var(--t-med) var(--ease-out), transform var(--t-med) var(--ease-out);
+  transition: opacity var(--t-med) var(--ease-out), transform var(--t-med) var(--ease-out),
+    background-color var(--t-fast) var(--ease-soft), color var(--t-fast) var(--ease-soft), border-color var(--t-fast) var(--ease-soft);
 }
-.comms-newpill.show { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
-.comms-newpill:hover { background: var(--ph-bright); box-shadow: 0 0 18px var(--ph-glow), 0 4px 12px rgba(0,0,0,.55); }
+.comms-newpill.show { opacity: .82; transform: translate(-50%, 0); pointer-events: auto; }
+/* fresh content while unstuck → the lit, inverted-phosphor alert variant */
+.comms-newpill.hasnew {
+  color: var(--ink); background: var(--ph); border-color: var(--ph-bright);
+  box-shadow: 0 0 14px var(--ph-glow2), 0 4px 12px rgba(0,0,0,.55);
+}
+.comms-newpill.hasnew.show { opacity: 1; }
+.comms-newpill:hover { color: var(--ink); background: var(--ph-bright); border-color: var(--ph-bright); box-shadow: 0 0 18px var(--ph-glow), 0 4px 12px rgba(0,0,0,.55); opacity: 1; }
 
 /* ============================================================
    5 · REDUCED MOTION — collapse the added COMMS motion (extends
@@ -333,6 +425,34 @@
 #chat-input::-webkit-scrollbar { width: 8px; }
 #chat-input::-webkit-scrollbar-thumb { background: var(--ph-faint); border-radius: 4px; }
 #chat-input::-webkit-scrollbar-thumb:hover { background: var(--ph-dim); }
+
+/* SEND — an inverted-phosphor chip riding the bottom of the edit line beside Enter. A ⏎-arrow glyph +
+   a SEND label; it collapses to just the glyph on a narrow panel. Themed tokens only, matches the
+   window title-chip register (inked-on-phosphor) so it reads as the primary action, not chrome. */
+.chat-send {
+  flex: 0 0 auto; align-self: flex-end;
+  display: inline-flex; align-items: center; gap: 5px;
+  font-family: inherit; font-size: 12px; letter-spacing: 1px; text-transform: uppercase; font-weight: bold;
+  color: var(--ink); background: var(--ph); border: 1px solid var(--ph-bright); border-radius: 4px;
+  padding: 5px 9px 5px 8px; cursor: pointer; user-select: none; line-height: 1.1;
+  box-shadow: 0 1px 0 rgba(0,0,0,.4);
+  transition: background-color var(--t-fast) var(--ease-soft), box-shadow var(--t-fast) var(--ease-soft);
+}
+.chat-send svg { width: 13px; height: 13px; display: block; flex: 0 0 auto; }
+.chat-send:hover { background: var(--ph-bright); box-shadow: 0 0 10px var(--ph-glow2), 0 1px 0 rgba(0,0,0,.4); }
+.chat-send:active { transform: translateY(1px); }
+.chat-send:focus-visible { outline: 2px solid var(--ph-bright); outline-offset: 2px; }
+/* on a tight panel the label folds away, leaving the glyph — the arrow alone still reads as "send" */
+@media (max-width: 360px) { .chat-send .cs-label { display: none; } }
+
+/* CHAR COUNTER — dim, right-aligned, appears only as the message nears the 4000-char cap so it never
+   competes for attention on a normal message. --warn tint at the edge. [hidden] until chat.js shows it. */
+.chat-charcount {
+  font-size: 11px; letter-spacing: .5px; text-align: right; color: var(--ph-dim); opacity: .75;
+  font-variant-numeric: tabular-nums; margin-top: -2px; user-select: none;
+}
+.chat-charcount[hidden] { display: none; }
+.chat-charcount.warn { color: var(--warn); opacity: 1; }
 
 /* CONTROL CLUSTER — the model dock hugs the left; voice/voice-mode/mic are pushed to the right edge.
    The model-dock popover stays absolutely positioned against #chat-inputrow (still position:relative),

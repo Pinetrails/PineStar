@@ -36,7 +36,10 @@
       busy: false,
       runId: null,                // the in-flight run id (for Harness.cancel / consent routing)
       acc: '',                    // accumulated in-flight assistant text (survives a switch)
-      tools: [],                  // in-flight tool-activity lines: [{ text, isErr }]
+      tools: [],                  // LEGACY in-flight tool lines: [{ text, isErr }] (kept for callers/tests)
+      toolEvents: [],             // STRUCTURED in-flight tool events so a switch re-renders the SAME premium chips
+                                  // the live run drew (not a dim text downgrade): [{ t:'call', callId, name, argsSummary }
+                                  // | { t:'result', callId, name, summary, isError, ms }]
       pending: null,              // live consent awaiting a human: { promptId, tool, argsSummary, runId }
       startedAt: 0,               // wall-clock ms this run began (the COMMS elapsed timer reads it; survives a switch)
       status: 'online'            // 'online' | 'thinking…' | 'working…' | 'awaiting your approval…'
@@ -59,7 +62,7 @@
   // the COMMS elapsed timer reads a real "how long has this turn been running" off the channel.
   function begin(wsId, ts) {
     const c = get(wsId);
-    c.busy = true; c.runId = null; c.acc = ''; c.tools = []; c.pending = null;
+    c.busy = true; c.runId = null; c.acc = ''; c.tools = []; c.toolEvents = []; c.pending = null;
     c.startedAt = ts || 0;
     c.status = 'thinking…';
     return c;
@@ -67,7 +70,7 @@
   // the run finished (or errored/aborted) — drop transient state; the turn now lives in Workstreams.history.
   function end(wsId) {
     const c = peek(wsId); if (!c) return;
-    c.busy = false; c.runId = null; c.acc = ''; c.tools = []; c.pending = null;
+    c.busy = false; c.runId = null; c.acc = ''; c.tools = []; c.toolEvents = []; c.pending = null;
     c.startedAt = 0;
     c.status = 'online';
   }
@@ -80,6 +83,19 @@
     c.tools.push({ text: String(text == null ? '' : text), isErr: !!isErr });
     c.status = 'working…';
     return c.tools.length;
+  }
+  // STRUCTURED tool events — so a stream re-rendered after a switch draws the SAME chip UI a live run does
+  // (toolChip/resolveChip), instead of the dim toolLine downgrade. call+result fold by callId on replay.
+  function addToolCall(wsId, ev) {
+    const c = get(wsId); ev = ev || {};
+    c.toolEvents.push({ t: 'call', callId: (ev.callId == null ? null : ev.callId), name: String(ev.name || 'tool'), argsSummary: String(ev.argsSummary == null ? '' : ev.argsSummary) });
+    c.status = 'working…';
+    return c.toolEvents.length;
+  }
+  function addToolResult(wsId, ev) {
+    const c = get(wsId); ev = ev || {};
+    c.toolEvents.push({ t: 'result', callId: (ev.callId == null ? null : ev.callId), name: String(ev.name || 'tool'), summary: String(ev.summary == null ? '' : ev.summary), isError: !!ev.isError, ms: (typeof ev.ms === 'number' ? ev.ms : 0) });
+    return c.toolEvents.length;
   }
   function setPending(wsId, p) { const c = get(wsId); c.pending = p || null; if (p) c.status = 'awaiting your approval…'; return c.pending; }
   function clearPending(wsId) { const c = peek(wsId); if (c) { c.pending = null; c.status = c.busy ? 'working…' : 'online'; } }
@@ -101,6 +117,7 @@
     return {
       wsId: c.wsId, busy: c.busy, runId: c.runId, acc: c.acc,
       tools: c.tools.map(t => ({ text: t.text, isErr: t.isErr })),
+      toolEvents: (c.toolEvents || []).map(e => Object.assign({}, e)),
       pending: c.pending ? Object.assign({}, c.pending) : null,
       startedAt: c.startedAt,
       status: c.status
@@ -118,7 +135,7 @@
   return {
     get: get, peek: peek, has: has,
     begin: begin, end: end, setRunId: setRunId, setStatus: setStatus,
-    appendToken: appendToken, setAcc: setAcc, addTool: addTool, setPending: setPending, clearPending: clearPending,
+    appendToken: appendToken, setAcc: setAcc, addTool: addTool, addToolCall: addToolCall, addToolResult: addToolResult, setPending: setPending, clearPending: clearPending,
     isBusy: isBusy, runIdOf: runIdOf, startedAtOf: startedAtOf, statusOf: statusOf, pendingOf: pendingOf,
     anyBusy: anyBusy, busyCount: busyCount, busyIds: busyIds, pendingIds: pendingIds, snapshot: snapshot,
     setComposeTarget: setComposeTarget, composeTarget: composeTarget,
