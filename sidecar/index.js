@@ -3036,6 +3036,22 @@ function nightshiftContextPack() {
 // have avoided (cold on both paths → tier not hot, or nothing eligible) costs no budget. Best-effort; fail OPEN.
 function nightshiftPrecheck() {
   try {
+    // LANE L — COST GATE (pre-spend). The leash is spent at ACCEPT time; a beat's FIRST model call then dies with
+    // reason 'budget' (loop.js) if a cross-run pool is exhausted — so with the day/global/agent pool dry every
+    // attempt burned a leash unit on a run that made ZERO model calls. Read the governor side-effect-free (runId=null
+    // → no live note, emit=null → no threshold crossing) and stand down BEFORE the spend. Returns a blocked
+    // {scope,usd,cap} (truthy) or null. Checked FIRST so an exhausted pool names the ACTIONABLE reason ('budget',
+    // which the Commander clears by resume/raising the cap) rather than a downstream 'no-provider'/'readiness'.
+    let b = null;
+    try { b = budget.check(null, NIGHTSHIFT_AGENT, 0, Date.now(), null); } catch (_) { b = null; }
+    if (b) return { ok: false, reason: 'budget' };
+    // LANE L — CAPABILITY GATE (pre-spend, same wart): with no runnable provider/credential a beat stands down at
+    // 'no-capability' AFTER the leash was spent (runNightshiftBeat). Read it locally (no model call) and decline
+    // before the spend. Best-effort — a lookup hiccup falls through to the readiness gate (never wedge the tick).
+    try {
+      const provider = cronProviderFor({ agentId: NIGHTSHIFT_AGENT });
+      if (!cronModelFor({ agentId: NIGHTSHIFT_AGENT }) || !cronHasCredential(provider, cronKeyFor(provider))) return { ok: false, reason: 'no-provider' };
+    } catch (_) { /* fall through to readiness */ }
     const snap = commanderPosture.beliefs() || {};
     const summary = { known: Array.isArray(snap.known) ? snap.known : Object.keys((snap.beliefs) || {}) };
     const beliefsByDim = (dim) => (snap.beliefs && snap.beliefs[dim]) || [];
