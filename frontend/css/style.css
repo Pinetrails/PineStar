@@ -611,12 +611,44 @@ body.no-scan .crt-scan { display: none; }
   color: var(--ink); background: var(--ph); padding: 1px 10px;
   border-radius: var(--r-sm); box-shadow: 0 0 12px var(--ph-glow2); text-shadow: none;
 }
-.term-x {
-  background: rgba(0,0,0,0.35); border: 1px solid var(--ph-dim); color: var(--ph);
-  font-family: inherit; cursor: pointer; font-size: var(--fs-1); line-height: 1;
-  padding: 2px 7px; border-radius: var(--r-sm); text-shadow: none;
+/* ============================================================
+   CLOSE-BUTTON PRIMITIVE (.x-btn) — the one ✕ control.
+   Base = shared geometry + chip skin + motion + active. The legacy
+   close classes compose it through the grouped selectors below and
+   keep only their size / position / ghost / danger deltas, so their
+   JS class names never change. Declared here in the first-loaded
+   stylesheet so every later modifier file (app / marketplace /
+   tutorial / widgets) wins the cascade over the base.
+   (.nav-coach-x stays a labeled inverted acknowledge button — not
+    part of this glyph family.) */
+.x-btn,
+.term-x, .ag-name-x, .mkt-x, .wg-x, .tut-brief-x, .queued-x, .q-dismiss {
+  flex: 0 0 auto; font-family: inherit; line-height: 1; cursor: pointer;
+  color: var(--ph); background: var(--panel2); border: 1px solid var(--ph-dim);
+  border-radius: var(--r-sm); font-size: var(--fs-1); padding: 2px 7px; text-shadow: none;
+  transition: border-color var(--t-fast) var(--ease-soft), background-color var(--t-fast) var(--ease-soft),
+              box-shadow var(--t-fast) var(--ease-soft), color var(--t-fast) var(--ease-soft);
 }
-.term-x:hover { background: var(--ph-faint); color: var(--ph-bright); border-color: var(--ph); }
+/* default phosphor-bright hover */
+.x-btn:hover,
+.term-x:hover, .mkt-x:hover, .tut-brief-x:hover, .q-dismiss:hover {
+  color: var(--ph-bright); border-color: var(--ph); box-shadow: 0 0 12px var(--ph-glow2);
+}
+/* danger hover — removal/cancel controls flush red */
+.x-btn.danger:hover,
+.wg-x:hover, .queued-x:hover, .ag-name-x:hover {
+  color: var(--bad); border-color: var(--bad);
+}
+/* shared active sink (mirrors the motion.css button feel) */
+.x-btn:active,
+.term-x:active, .ag-name-x:active, .mkt-x:active, .wg-x:active,
+.tut-brief-x:active, .queued-x:active, .q-dismiss:active {
+  filter: brightness(0.86); transition-duration: 60ms;
+}
+
+/* .term-x — window-chrome instance: translucent casing over the glass */
+.term-x { background: rgba(0,0,0,0.35); }
+.term-x:hover { background: var(--ph-faint); }
 .term-body {
   padding: var(--s-3) var(--s-4); overflow-y: auto; position: relative; z-index: 5;
   flex: 1 1 auto; min-height: 0;
@@ -745,12 +777,13 @@ body.no-scan .crt-scan { display: none; }
   padding: 3px 8px; width: 11ch; max-width: 60vw; text-transform: uppercase;
 }
 .ag-name-input:focus { outline: none; box-shadow: 0 0 0 1px var(--ph), 0 0 12px var(--ph-glow2); }
-.ag-name-ok, .ag-name-x {
+.ag-name-ok {
   font-size: 15px; line-height: 1; cursor: pointer; border: 1px solid var(--ph-dim);
   border-radius: 3px; padding: 3px 9px; background: var(--panel2); color: var(--ph);
 }
 .ag-name-ok:hover { color: var(--gold); border-color: var(--gold); }
-.ag-name-x:hover { color: var(--bad); border-color: var(--bad); }
+/* .ag-name-x composes .x-btn (danger hover) — size delta only */
+.ag-name-x { font-size: 15px; padding: 3px 9px; }
 .ag-desc { font-size: 14px; margin: 8px 0; opacity: 0.85; user-select: text; }
 .stat-row { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; font-size: 13px; }
 .stat-row span { width: 86px; color: var(--ph-dim); letter-spacing: 1px; }

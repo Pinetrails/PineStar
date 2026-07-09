@@ -80,15 +80,13 @@
 @keyframes wg-breathe { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
 
 /* hover ✕ — hidden until the instrument is hovered so the chrome stays quiet */
+/* .wg-x composes .x-btn (danger hover) — tiny circular, hover-revealed */
 .wg-x {
   position: absolute; top: -6px; right: -6px; width: 15px; height: 15px;
   display: none; align-items: center; justify-content: center;
-  font-family: inherit; font-size: 9px; line-height: 1; padding: 0;
-  color: var(--ph); background: var(--panel2, rgba(0,0,0,0.9));
-  border: 1px solid var(--ph-dim); border-radius: 50%; cursor: pointer;
+  font-size: 9px; padding: 0; border-radius: 50%;
 }
 .wg:hover .wg-x { display: inline-flex; }
-.wg-x:hover { color: var(--bad); border-color: var(--bad); }
 
 /* the drag ghost: the same instrument, lifted */
 .wg.wg-drag { position: fixed; z-index: 990; pointer-events: none; opacity: 0.95;

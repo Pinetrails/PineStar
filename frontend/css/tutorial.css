@@ -148,8 +148,8 @@
 .tut-brief-title { flex: 1; color: var(--ph, #ffaa33); font-size: 14px; letter-spacing: .1em; }
 .tut-brief.complete .tut-brief-title { color: var(--ok); }
 .tut-brief-count { color: var(--ph-dim); font-size: 14px; }
-.tut-brief-x { background: none; border: 0; color: var(--ph-dim); cursor: pointer; font-size: 14px; padding: 0 2px; line-height: 1; }
-.tut-brief-x:hover { color: var(--ph-bright); }
+/* .tut-brief-x composes .x-btn (bright hover) — ghost delta only */
+.tut-brief-x { background: none; border: 0; color: var(--ph-dim); font-size: 14px; padding: 0 2px; }
 .tut-brief-list { list-style: none; margin: 0; padding: 6px 9px 4px; }
 .tut-brief-item { display: flex; gap: 7px; align-items: baseline; font-size: 16px; line-height: 1.3; padding: 2px 0; color: var(--text); border-radius: 4px; }
 .tut-brief-item.done { color: var(--ph-dim); text-decoration: line-through; text-decoration-color: var(--ph-dim); }
