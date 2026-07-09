@@ -111,7 +111,7 @@
       <div class="ov-cfg ov-col-id">
         <div class="ov-step"><b>02</b> IDENTITY <span class="dim">— name it, give it a manner</span></div>
         <div class="ov-field">
-          <label>OVERSEER NAME <span class="dim">— optional; leave blank and it mints its own codename</span></label>
+          <label for="in-name">OVERSEER NAME <span class="dim">— optional; leave blank and it mints its own codename</span></label>
           <input id="in-name" class="ov-nm-in" maxlength="18" placeholder="name your overseer" autocomplete="off" spellcheck="false">
         </div>
 
@@ -211,7 +211,14 @@
             <!-- one-tap recommended slugs. Each chip just prefills #in-model; the live catalog hint then prices it. -->
             <div id="model-picks" class="model-picks" aria-label="Recommended models"></div>
             <div id="model-hint" class="dim hint">—</div>
-            <p id="byok-note" class="muted byok-note">Bring your own key — stored locally, sent only to the STARNET sidecar on this machine (127.0.0.1), which calls your chosen model. On a <b>task</b> the agent can search the live web (DuckDuckGo · Jina Reader) and read/write files in its workspace. <span class="dim">(In the shipped desktop build the key moves behind the OS keychain.)</span></p>
+            <!-- Progressive disclosure: the key-safety note is collapsed behind a one-line toggle so the required
+                 step (provider · key · model) reads clean; expand it for the full "where does my key go?" answer.
+                 #byok-note keeps its id (personas/wiring); #byok-disclose is what selectProviderUI hides on the
+                 keyless Codex path (no key ⇒ the whole note is irrelevant there). -->
+            <div id="byok-disclose" class="byok-disclose">
+              <button type="button" id="byok-toggle" class="byok-toggle" aria-expanded="false" aria-controls="byok-note">▸ where does my key go?</button>
+              <p id="byok-note" class="muted byok-note hidden">Bring your own key — stored locally, sent only to the STARNET sidecar on this machine (127.0.0.1), which calls your chosen model. On a <b>task</b> the agent can search the live web (DuckDuckGo · Jina Reader) and read/write files in its workspace. <span class="dim">(In the shipped desktop build the key moves behind the OS keychain.)</span></p>
+            </div>
           </div>
         </div>
       </div>

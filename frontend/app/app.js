@@ -1367,9 +1367,22 @@ const App = (() => {
     const id = el('in-model').value.trim(), hint = el('model-hint');
     syncModelPicks();   // keep the recommended-chip highlight in lockstep with whatever's in the field
     if (pickedProvider === 'codex') { hint.textContent = 'included in your ChatGPT subscription'; return; }
+    if (!id) { hint.textContent = 'pick or type a model slug'; return; }
     const limit = Harness.contextLimitOf ? Harness.contextLimitOf(id) : 0;
-    const fmt = (typeof CtxGauge !== 'undefined' && CtxGauge.fmtTokens) ? CtxGauge.fmtTokens : (n => String(n || 0));
-    hint.textContent = id ? (limit ? ('context window: ' + fmt(limit) + ' tokens') : 'custom model slug') : 'pick or type a model slug';
+    const price = Harness.priceOf ? Harness.priceOf(id) : null;
+    if (limit || price) {
+      // the catalog knows this model — surface BOTH context window and $/M in/out (previously ctx only)
+      const fmt = (typeof CtxGauge !== 'undefined' && CtxGauge.fmtTokens) ? CtxGauge.fmtTokens : (n => String(n || 0));
+      const bits = [];
+      if (limit) bits.push('context window: ' + fmt(limit) + ' tokens');
+      if (price) bits.push(usdPerM(price.in) + ' in · ' + usdPerM(price.out) + ' out / M tokens');
+      hint.textContent = bits.join('  ·  ');
+      return;
+    }
+    // the catalog has NO data for this slug — split the honest reasons instead of one vague "custom model slug":
+    if (genesisOffline) { hint.textContent = 'catalog offline — this slug runs as-is (no price/context data here)'; return; }
+    if (genesisModels.some(m => m.id === id)) { hint.textContent = 'custom model — not priced in the catalog'; return; }
+    hint.textContent = 'not in the catalog — double-check the slug, or it runs as a custom model';
   }
 
   /* ---------- provider toggle + ChatGPT (Codex OAuth) sign-in ---------- */
@@ -1417,8 +1430,9 @@ const App = (() => {
     }
     el('codex-block').classList.toggle('hidden', !isCodex);
     // the BYOK note talks about your key on 127.0.0.1 / the OS keychain — irrelevant and contradictory on the
-    // ChatGPT-sub path (no key at all), so hide it there.
-    { const bn = el('byok-note'); if (bn) bn.classList.toggle('hidden', isCodex); }
+    // ChatGPT-sub path (no key at all), so hide the whole disclosure there. On BYOK it stays collapsed behind
+    // its toggle (progressive disclosure) — the note's own .hidden is owned by #byok-toggle, not this switch.
+    { const bd = el('byok-disclose'); if (bd) bd.classList.toggle('hidden', isCodex); }
     if (isCodex) {
       loadCodexModels();      // live per-account discovery (falls back to CODEX_MODELS when not connected)
       refreshCodexStatus();
@@ -1535,19 +1549,26 @@ const App = (() => {
     const wrap = el('skin-picker'); if (!wrap || typeof DATA === 'undefined' || !DATA.SKINS) return;
     wrap.innerHTML = '';
     if (!DATA.SKINS[pickedSkin]) pickedSkin = DATA.DEFAULT_SKIN;
-    Object.keys(DATA.SKINS).forEach(id => {
+    // DEFAULT-FIRST ordering: the default skin leads, followed by its near-identical recolor family (grouped so
+    // they read as variants of ONE skin), then the distinct characters — instead of the default sitting buried
+    // 10th behind nine characters. Data order (data-shim.js) is untouched; this is purely the render order.
+    const def = DATA.DEFAULT_SKIN;
+    const inFamily = id => id === def || id.indexOf(def + '_') === 0;
+    const ids = Object.keys(DATA.SKINS);
+    const ordered = [def, ...ids.filter(id => id !== def && inFamily(id)), ...ids.filter(id => !inFamily(id))].filter(id => DATA.SKINS[id]);
+    ordered.forEach(id => {
       const sk = DATA.SKINS[id];
       const b = document.createElement('button');
       b.type = 'button';
       b.className = 'skin-thumb' + (id === pickedSkin ? ' sel' : '');
-      b.title = sk.name || id;
+      b.title = sk.name || id; b.setAttribute('aria-pressed', String(id === pickedSkin));
       const img = document.createElement('img');
       img.src = 'assets/sprites/' + sk.set + '/rot_south.png';
       img.alt = sk.name || id; img.draggable = false;
       b.appendChild(img);
       b.onclick = () => {
         pickedSkin = id;
-        [...wrap.children].forEach(x => x.classList.remove('sel')); b.classList.add('sel');
+        [...wrap.children].forEach(x => { const on = x === b; x.classList.toggle('sel', on); x.setAttribute('aria-pressed', String(on)); });
         if (typeof SkinStage !== 'undefined') SkinStage.show(id);
         SFX.click();
       };
@@ -1653,6 +1674,9 @@ const App = (() => {
     if (el('in-name')) el('in-name').oninput = updateNameplate;
     updateNameplate();
     applyRecoveryMode(recovery, savedAgent);
+    // fresh screen: release any stale WAKE latch and drop the WAKING… label stash (applyRecoveryMode set the real
+    // label just above), so a re-entry after an errored attempt has a live, correctly-labelled WAKE button.
+    waking = false; { const wb = el('btn-wake'); if (wb) { wb.disabled = false; delete wb.dataset.idleLabel; } }
     el('btn-back').onclick = onConnectBack;
     el('btn-wake').onclick = onWake;
     // Enter commits from ANY of the core text fields (name / key / model), not just the name — so a Commander
@@ -1675,9 +1699,25 @@ const App = (() => {
     }
     el('btn-codex-signin').onclick = startCodexSignIn;
     el('btn-codex-logout').onclick = codexLogout;
+    // BYOK key-safety note: collapsed by default, expanded by its own disclosure toggle (progressive disclosure).
+    { const bt = el('byok-toggle'), bn = el('byok-note');
+      if (bt && bn) {
+        bn.classList.add('hidden'); bt.setAttribute('aria-expanded', 'false'); bt.textContent = '▸ where does my key go?';
+        bt.onclick = () => { const open = !bn.classList.toggle('hidden'); bt.setAttribute('aria-expanded', String(open)); bt.textContent = (open ? '▾' : '▸') + ' where does my key go?'; SFX.click(); };
+      } }
     // RESUME/recovery honours the agent's saved provider; a FRESH create screen leads with the beginner-first
     // default (pickedProvider = 'codex' — sign in with ChatGPT, no API key), the top of the zero-to-value funnel.
     selectProviderUI(recovery ? Harness.getProv() : pickedProvider);
+    // INITIAL FOCUS: fresh create → the name field (the natural first action); RESUME → the credential control the
+    // Commander must act on (the ChatGPT sign-in button on the keyless Codex path, else the key box). NEVER the
+    // model field (focusing it springs the popover open) and never the phosphor swatches (the old Tab-start bug).
+    setTimeout(() => {
+      try {
+        if (!recovery) { const n = el('in-name'); if (n) n.focus(); }
+        else if (pickedProvider === 'codex') { const c = el('btn-codex-signin'); if (c) c.focus(); }
+        else { const k = el('in-key'); if (k && el('key-block') && !el('key-block').classList.contains('hidden')) k.focus(); else { const c = el('btn-codex-signin'); if (c) c.focus(); } }
+      } catch (_) {}
+    }, 0);
   }
 
   // RESUME mode dressing for the connect screen. Recovery = an existing station re-entering (missing creds or a
@@ -1710,6 +1750,9 @@ const App = (() => {
       if (sub) sub.innerHTML = 'your station is intact — this only re-connects the <b>brain</b>. Identity stays as you left it.';
       if (mode) mode.textContent = 'RESUME';
       if (wake) wake.textContent = '⏼ RESUME STATION ▸';
+      // BACK here doesn't go "back" — onConnectBack() re-runs auto-resume (a fresh credential check may now pass
+      // straight into the station). Label it for what it does so it doesn't read as a dead retreat button.
+      if (back) back.textContent = '↻ RETRY AUTO-RESUME';
       locked.forEach(id => { const n = el(id); if (n) { n.classList.add('field-locked'); n.setAttribute('aria-disabled', 'true'); } });
       const nameIn = el('in-name'); if (nameIn) { nameIn.readOnly = true; nameIn.tabIndex = -1; }
     } else {
@@ -1757,7 +1800,29 @@ const App = (() => {
     startCreation();
   }
 
+  // WAKE is a ONE-SHOT: a double-click, or Enter-then-click, must never run enterGame twice (that would
+  // double-spawn the hero and double-reset every store). `waking` latches for the whole attempt; a validation
+  // bounce releases it so the Commander can fix the input and retry (NEVER blocking entry — sandbox law), while a
+  // real wake keeps it latched (the screen transitions away regardless).
+  let waking = false;
+  function wakeBtnBusy(busy) {
+    const b = el('btn-wake'); if (!b) return;
+    if (busy) { if (b.dataset.idleLabel == null) b.dataset.idleLabel = b.textContent; b.textContent = '⏼ WAKING…'; b.disabled = true; }
+    else { if (b.dataset.idleLabel != null) { b.textContent = b.dataset.idleLabel; delete b.dataset.idleLabel; } b.disabled = false; }
+  }
   async function onWake() {
+    if (waking) return;
+    waking = true;
+    try {
+      const entered = await onWakeAttempt();
+      if (!entered) { waking = false; wakeBtnBusy(false); }   // validation bounce (absent/edited key or model) — release so the user can retry
+    } catch (e) {
+      waking = false; wakeBtnBusy(false);
+      const msg = el('connect-msg'); if (msg) { msg.className = 'msg bad'; msg.textContent = 'could not start — ' + ((e && e.message) || 'try again'); }
+    }
+  }
+  // Returns TRUE once it commits to entering the station (WAKING latched), FALSE on any validation bounce.
+  async function onWakeAttempt() {
     SFX.boot(); SFX.open();
     stopCodexPoll();   // leaving the connect screen — drop any in-flight sign-in poll
     const model = el('in-model').value.trim();
@@ -1778,16 +1843,16 @@ const App = (() => {
       } else {
         msg.textContent = 'choose or type a model slug.';
       }
-      return;
+      return false;
     }
     if (pickedProvider === 'codex') {
-      if (!codexConnected) { msg.textContent = 'sign in with ChatGPT first, or switch to OpenRouter.'; return; }
+      if (!codexConnected) { msg.textContent = 'sign in with ChatGPT first, or switch to OpenRouter.'; return false; }
       Harness.setModel(model); Harness.setProv('codex');
     } else {
       const key = el('in-key').value.trim();
       const baseUrl = el('in-base-url') ? el('in-base-url').value.trim() : '';
       if (providerNeedsBaseUrl(pickedProvider)) {
-        if (!baseUrl) { msg.textContent = 'enter your Custom /v1 base URL.'; return; }
+        if (!baseUrl) { msg.textContent = 'enter your Custom /v1 base URL.'; return false; }
         if (Harness.setBaseUrl) await Harness.setBaseUrl(baseUrl, pickedProvider);
       }
       const configured = !!(Harness.configured && Harness.configured(pickedProvider));
@@ -1798,7 +1863,7 @@ const App = (() => {
         const host = String(url).replace(/^https?:\/\//, '').replace(/\/$/, '');
         msg.innerHTML = 'enter your ' + esc(providerLabel(pickedProvider)) + ' API key — get one at '
           + '<a href="' + esc(url) + '" target="_blank" rel="noopener noreferrer" class="connect-link">' + esc(host) + '</a>.';
-        return;
+        return false;
       }
       // OVERWRITE GUARD: the field was pre-filled from a stored key, and the Commander edited it to a DIFFERENT
       // value — saving would silently replace the stored key. Ask once (inline, no modal) before that happens.
@@ -1808,7 +1873,7 @@ const App = (() => {
       if (prefilledKey && key && key !== prefilledKey && !keyOverwriteConfirmed) {
         keyOverwriteConfirmed = true;   // arm: this same WAKE press now goes through; a second press confirms
         msg.textContent = 'this replaces the key already stored on this station. press WAKE again to confirm — or restore the old key to keep it.';
-        return;
+        return false;
       }
       // Only (re)store when a key was actually typed — desktop keeps the existing keychain key on blank.
       // setKey is async in desktop (writes the keychain + pushes it to the sidecar); await so the run has it.
@@ -1816,7 +1881,8 @@ const App = (() => {
       Harness.setModel(model); Harness.setProv(pickedProvider);
     }
 
-    if (resumingSaved) { const s = resumingSaved; resumingSaved = null; s.agent.model = model; resumeInto(s); return; }
+    wakeBtnBusy(true);   // COMMIT POINT: past every validation gate — show WAKING… and hold the latch through enterGame
+    if (resumingSaved) { const s = resumingSaved; resumingSaved = null; s.agent.model = model; resumeInto(s); return true; }
 
     // the FIRST agent is always the station's OVERSEER — the orchestrating lead the Commander commissions before
     // any specialist. Its voice is the archetype + fine-tune dials + free-text note; its APPROVAL mode (ask vs
@@ -1862,6 +1928,7 @@ const App = (() => {
     pendingStationStats = null; // fresh growth meters — XpStore.init seeds them on enterGame
     enterGame({ awaitingPurpose: true, wake: true });   // the Orchestrator authors its mission in the awakening (no pre-spec)
     persist();   // so a refresh mid-onboarding resumes to the purpose step
+    return true;
   }
 
   /* ---------- resume ---------- */

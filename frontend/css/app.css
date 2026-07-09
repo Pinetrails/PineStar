@@ -1122,6 +1122,12 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 .cc-head::after { content: ''; flex: 1; height: 0; border-top: 1px dashed var(--ph-faint); }
 .cc-head .dim { letter-spacing: .5px; font-size: 14px; flex: 0 0 auto; }
 .byok-note { font-size: 12px; margin-top: 6px; line-height: 1.28; opacity: .9; }
+/* progressive-disclosure toggle for the key-safety note — a quiet inline link, expands the note on demand */
+.byok-disclose { margin-top: 6px; }
+.byok-toggle { display: inline-block; font: inherit; font-size: 12px; letter-spacing: .4px; color: var(--ph-dim); background: none; border: none; padding: 2px 0; cursor: pointer; text-align: left; }
+.byok-toggle:hover { color: var(--ph); }
+.byok-toggle:focus-visible { outline: 2px solid var(--ph); outline-offset: 2px; }
+.byok-disclose .byok-note { margin-top: 5px; }
 
 /* SKIN picker — thumbnail grid on the LEFT, a LIVE preview stage on the RIGHT. At 40px a
    chunky pixel sprite is unreadable, so the stage plays the picked (or hovered) skin's real
