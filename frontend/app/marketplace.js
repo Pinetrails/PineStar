@@ -949,11 +949,17 @@ const Marketplace = (() => {
      When BOTH signals are silent (cold start) we fall back to an HONEST lane spread — the first class of each
      distinct interest lane in catalog order — under a header that says so (never a fake "recommended"). This
      shelf now renders in the summon/pick flow too: recruiting a NEW agent is exactly when guidance matters. */
+  // common words carry no topic signal — matching a goal on "the" or "with" is noise, and (now that the WHY chip
+  // NAMES the hit) reads as a nonsense reason. Skipping them makes both the rank and the reason more honest.
+  const GOAL_STOP = new Set(['the', 'and', 'for', 'you', 'your', 'with', 'that', 'this', 'from', 'are', 'was', 'has',
+    'have', 'will', 'can', 'all', 'any', 'out', 'get', 'got', 'its', 'our', 'but', 'not', 'who', 'how', 'why', 'what',
+    'when', 'into', 'over', 'more', 'most', 'some', 'than', 'then', 'them', 'they', 'use', 'using', 'need', 'want',
+    'like', 'just', 'also', 'one', 'two', 'per', 'via']);
   // the ACTUAL goal keywords a class matched (the persisted GOALS belief text ∩ the class's searchable text). The
   // WHY chip names hits[0] so it says WHY truthfully ("matches your goal: X") instead of ×3 boilerplate.
   function specGoalHits(s, gt) {
     if (!s || !gt) return [];
-    const words = String(gt).toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length >= 3);
+    const words = String(gt).toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length >= 3 && !GOAL_STOP.has(w));
     if (!words.length) return [];
     const seen = {}; const hits = [];
     const hay = ((s.name || '') + ' ' + (s.tagline || '') + ' ' + Object.keys(s.tags || {}).join(' ')).toLowerCase();
