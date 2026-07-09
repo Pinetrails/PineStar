@@ -297,5 +297,6 @@ test/channels.discord-wire.test.js
 test/widgets.test.js
 test/widgetfeed.test.js
 test/release-bump.test.js
+test/release-train-provenance.test.js
 test/lint-emits.js
 test/lint-determinism.js
