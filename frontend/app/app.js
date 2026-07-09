@@ -2804,9 +2804,23 @@ const App = (() => {
     const cv = el('sp-stars'); if (!cv || !cv.getContext) return;
     const ctx = cv.getContext('2d');
     let W = 0, H = 0, stars = [];
+    const rgb = () => (getComputedStyle(document.body).getPropertyValue('--ph-rgb').trim() || '255,140,40');
+    // draw() is the paint step, deliberately SEPARATE from the rAF loop: it's called directly on seed and on
+    // resize so a static starfield is always on screen even when requestAnimationFrame is paused (a
+    // backgrounded tab, or a resize that lands before the first frame). rAF only layers the twinkle on top.
+    const draw = t => {
+      if (!W || !H) return;
+      const c = rgb();
+      ctx.clearRect(0, 0, W, H);
+      for (const st of stars) {
+        const a = .22 + .58 * Math.abs(Math.sin(st.p + t * .001 * st.s));
+        ctx.fillStyle = 'rgba(' + c + ',' + a.toFixed(3) + ')';
+        ctx.fillRect(st.x, st.y, st.r, st.r);
+      }
+    };
     const seed = () => {
-      W = cv.width = cv.clientWidth || window.innerWidth;
-      H = cv.height = cv.clientHeight || window.innerHeight;
+      W = cv.width = cv.clientWidth || window.innerWidth || 1280;
+      H = cv.height = cv.clientHeight || window.innerHeight || 720;
       const n = Math.max(90, Math.round((W * H) / 16000));
       stars = Array.from({ length: n }, () => ({
         x: Math.random() * W, y: Math.random() * H,
@@ -2814,23 +2828,18 @@ const App = (() => {
         p: Math.random() * Math.PI * 2,                        // twinkle phase
         s: .5 + Math.random() * 1.4                            // twinkle speed
       }));
+      draw(0);   // setting canvas.width cleared the bitmap — repaint immediately so the field never blanks
     };
     seed();
+    // re-seed on resize AND when the tab returns to the foreground (rAF was paused while hidden, and a
+    // resize that happened meanwhile left the canvas cleared — repaint on the way back so it isn't blank).
     const onResize = () => seed();
+    const onVis = () => { if (!document.hidden) seed(); };
     window.addEventListener('resize', onResize);
-    cv._spCleanup = () => window.removeEventListener('resize', onResize);
-    const phos = () => (getComputedStyle(document.body).getPropertyValue('--ph-rgb').trim() || '255,140,40');
-    let rgb = phos();
-    const tick = t => {
-      ctx.clearRect(0, 0, W, H);
-      for (const st of stars) {
-        const a = .22 + .58 * Math.abs(Math.sin(st.p + t * .001 * st.s));
-        ctx.fillStyle = 'rgba(' + rgb + ',' + a.toFixed(3) + ')';
-        ctx.fillRect(st.x, st.y, st.r, st.r);
-      }
-      splashRaf = requestAnimationFrame(tick);
-    };
-    tick(0);   // paint frame 0 synchronously (no blank flash while waiting on the first rAF)
+    document.addEventListener('visibilitychange', onVis);
+    cv._spCleanup = () => { window.removeEventListener('resize', onResize); document.removeEventListener('visibilitychange', onVis); };
+    const tick = t => { draw(t); splashRaf = requestAnimationFrame(tick); };
+    tick(0);   // kicks the twinkle loop; draw(0) already left a static field up for the paused-rAF case
   }
   function stopSplashStars() {
     if (splashRaf) { cancelAnimationFrame(splashRaf); splashRaf = 0; }
