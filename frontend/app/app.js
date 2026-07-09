@@ -1071,30 +1071,41 @@ const App = (() => {
     ollama: ['llama3.1', 'qwen2.5-coder', 'mistral'],
     openrouter: ['gpt-5.5', 'anthropic/claude-sonnet-4.6', 'anthropic/claude-opus-4.8', 'openai/gpt-5', 'google/gemini-2.5-pro']
   });
+  // The genesis model catalog for the ACTIVE provider — {id, name, pricing, context_length, fallback?} items
+  // feeding the themed #model-pop popover (which replaced the native <datalist>). genesisOffline flags a
+  // seed-list fallback so the popover + hint say "catalog offline" instead of asserting a verified live list
+  // (mirrors ModelDock's E4 honesty). Harness.listModels() populates the price/context map priceOf reads.
+  let genesisModels = [];
+  let genesisOffline = false;
   async function loadModels(provider) {
     const p = normalizeProviderId(provider || pickedProvider);
-    const dl = el('model-list'), countEl = el('model-count'), inp = el('in-model');
+    const countEl = el('model-count'), inp = el('in-model');
     el('model-hint').textContent = 'loading model catalog…';
     const list = await Harness.listModels(p);
-    dl.innerHTML = '';
-    for (const m of list) { const o = document.createElement('option'); o.value = m.id; dl.appendChild(o); }
+    // DEFAULT = the curated MODEL_PICKS[provider][0] — NOT the alphabetical regex hit the old code used (which
+    // drifted onto stale slugs while the right answer sat one inch below in the picks). defaultModelFor() covers
+    // providers without a curated pick (custom / ollama).
+    const picks = MODEL_PICKS[p];
+    const defId = (picks && picks[0] && picks[0].id) || defaultModelFor(p);
     if (list.length) {
-      countEl.textContent = '(' + list.length + ' available)';
-      const pref = list.find(m => /claude.*sonnet|gpt-4o|gpt-5/i.test(m.id)) || list[0];
-      if (!inp.value) inp.value = pref.id;   // DEFAULT-FILL so a first ⏼ WAKE never bounces on an empty model (matches the Codex path, which already defaults)
-      // Always retire the "loading models…" placeholder once the catalog resolves — otherwise a field that was
-      // already default-filled (prior provider, restored save) keeps asserting "loading" as its accessible name.
-      inp.placeholder = 'e.g. ' + pref.id;
+      genesisModels = list; genesisOffline = false;
+      countEl.textContent = '(' + list.length + ' in catalog)';
+      if (!inp.value) inp.value = defId;   // DEFAULT-FILL so a first ⏼ WAKE never bounces on an empty model (matches the Codex path)
+      // Retire the "loading models…" placeholder once the catalog resolves — a default-filled field must not keep
+      // asserting "loading" as its accessible name.
+      inp.placeholder = 'search models — e.g. ' + defId;
     } else {
-      // catalog unreachable (no network to openrouter.ai, or fetch blocked): DON'T leave the field
-      // looking like it's still loading. Seed a few common slugs and make the placeholder actionable
-      // so the screen stays usable — you can always just type the slug you use.
+      // catalog unreachable (no network to openrouter.ai, or fetch blocked): seed the curated slugs MARKED
+      // offline so the popover never reads as a verified live catalog. The screen stays usable — you can always
+      // just type the slug you use.
       const FALLBACK = FALLBACK_MODELS[p] || FALLBACK_MODELS.openrouter;
-      for (const id of FALLBACK) { const o = document.createElement('option'); o.value = id; dl.appendChild(o); }
+      genesisModels = FALLBACK.map(id => ({ id, name: id, fallback: true }));
+      genesisOffline = true;
       countEl.textContent = '(catalog offline — type or pick a slug)';
-      if (!inp.value) inp.value = FALLBACK[0];   // default-fill even offline so WAKE works; the Commander can overtype
-      inp.placeholder = 'type a model slug — e.g. gpt-5.5';   // never leave "loading models…" up once we've resolved (even to the offline fallback)
+      if (!inp.value) inp.value = defId || FALLBACK[0];   // default-fill even offline so WAKE works; the Commander can overtype
+      inp.placeholder = 'type a model slug — e.g. ' + (defId || 'gpt-5.5');
     }
+    if (el('model-pop') && !el('model-pop').hidden) renderModelPop();   // live-refresh an open popover after a provider switch
     updateHint();
   }
 
@@ -1244,13 +1255,139 @@ const App = (() => {
     [...wrap.children].forEach(b => b.classList.toggle('sel', b.dataset.id === cur));
   }
 
+  /* ---------- themed grouped model popover (#model-pop) ----------
+     Replaces the native <datalist> (an unstyleable OS dropdown that rendered ~370 raw slugs flat). A CRT listbox
+     under #in-model, GROUPED BY VENDOR (OpenRouter's slug prefix, else the provider) with human display names +
+     context window + $/M pricing where the catalog knows them. Reuses ModelDock's label vocabulary (modelLabel /
+     openRouterGroupName) so the two model surfaces read identically. Keyboard: ↑/↓ move, Enter picks, Esc closes
+     the popover only. */
+  let modelPopRows = [];   // flat {id, el} for the current filtered view (keyboard nav)
+  let modelPopIdx = -1;    // highlighted row index, or -1 for none
+  let modelPopQ = '';      // the SEARCH query — '' on a fresh focus (browse the whole catalog), the typed text while filtering
+  const mdLabel = it => (typeof ModelDock !== 'undefined' && ModelDock.labels && ModelDock.labels.model) ? ModelDock.labels.model(it) : ((it && (it.name || it.id)) || '');
+  function modelGroupOf(it) {
+    if (pickedProvider === 'openrouter' && typeof ModelDock !== 'undefined' && ModelDock.labels && ModelDock.labels.orGroup) return ModelDock.labels.orGroup(it);
+    return providerLabel(pickedProvider);
+  }
+  // compact per-M price, e.g. $3 / $0.75 — from the catalog Harness.priceOf populated on listModels()
+  function usdPerM(n) { if (!isFinite(n)) return ''; if (n >= 1) return '$' + (Math.round(n * 10) / 10); if (n > 0) return '$' + (Math.round(n * 100) / 100); return '$0'; }
+  function modelMetaStr(id) {
+    const parts = [];
+    const lim = Harness.contextLimitOf ? Harness.contextLimitOf(id) : 0;
+    if (lim) { const fmt = (typeof CtxGauge !== 'undefined' && CtxGauge.fmtTokens) ? CtxGauge.fmtTokens : (n => String(n)); parts.push(fmt(lim)); }
+    const pr = Harness.priceOf ? Harness.priceOf(id) : null;
+    if (pr) parts.push(usdPerM(pr.in) + '/' + usdPerM(pr.out));
+    return parts.join('  ·  ');
+  }
+  let modelPopReposition = null;
+  // #model-pop is position:fixed (to escape the .ov-grid overflow clip), so app.js anchors it to #in-model —
+  // opening downward, or flipping above when the field sits low in the console.
+  function positionModelPop() {
+    const pop = el('model-pop'), inp = el('in-model'); if (!pop || pop.hidden || !inp) return;
+    const r = inp.getBoundingClientRect(), gap = 4, vh = window.innerHeight;
+    const below = vh - r.bottom - gap, above = r.top - gap;
+    const openUp = below < 220 && above > below;
+    pop.style.left = r.left + 'px';
+    pop.style.width = r.width + 'px';
+    pop.style.maxHeight = Math.max(140, Math.min(306, (openUp ? above : below) - 6)) + 'px';
+    if (openUp) { pop.style.top = 'auto'; pop.style.bottom = (vh - r.top + gap) + 'px'; }
+    else { pop.style.bottom = 'auto'; pop.style.top = (r.bottom + gap) + 'px'; }
+  }
+  function openModelPop() {
+    const pop = el('model-pop'); if (!pop) return;
+    if (pop.hidden) {
+      pop.hidden = false; el('in-model').setAttribute('aria-expanded', 'true');
+      modelPopReposition = () => positionModelPop();
+      window.addEventListener('scroll', modelPopReposition, true);   // capture so the .ov-grid scroll re-anchors it
+      window.addEventListener('resize', modelPopReposition);
+    }
+    renderModelPop();
+    positionModelPop();
+    if (modelPopIdx < 0) { const sel = pop.querySelector('.ov-mdl-row.sel'); if (sel) sel.scrollIntoView({ block: 'nearest' }); }   // browse-open lands on the current pick
+  }
+  function closeModelPop() {
+    const pop = el('model-pop'); if (!pop || pop.hidden) return;
+    pop.hidden = true; el('in-model').setAttribute('aria-expanded', 'false'); modelPopIdx = -1;
+    if (modelPopReposition) { window.removeEventListener('scroll', modelPopReposition, true); window.removeEventListener('resize', modelPopReposition); modelPopReposition = null; }
+  }
+  function setModelPopIdx(i) { modelPopIdx = i; modelPopRows.forEach((r, k) => r.el.classList.toggle('hi', k === i)); const cur = modelPopRows[i]; if (cur) cur.el.scrollIntoView({ block: 'nearest' }); }
+  function pickModelFromPop(id) { const inp = el('in-model'); inp.value = id; closeModelPop(); SFX.click(); updateHint(); inp.focus(); }
+  function renderModelPop() {
+    const pop = el('model-pop'); if (!pop) return;
+    const cur = el('in-model').value.trim();   // the committed selection (drives the highlighted ✓ row)
+    const q = modelPopQ.toLowerCase();          // '' = browse the whole catalog; the typed text while filtering
+    pop.innerHTML = ''; modelPopRows = [];
+    const list = genesisModels.filter(m => !q || (m.id + ' ' + mdLabel(m) + ' ' + modelGroupOf(m)).toLowerCase().indexOf(q) >= 0);
+    if (!list.length) {
+      const none = document.createElement('div'); none.className = 'ov-mdl-none';
+      none.textContent = genesisModels.length ? ('no match — “' + modelPopQ + '” will be used as a custom slug') : 'catalog unavailable — type a model slug';
+      pop.appendChild(none); modelPopIdx = -1; return;
+    }
+    let group = '';
+    const frag = document.createDocumentFragment();
+    for (const m of list) {
+      const g = modelGroupOf(m);
+      if (g !== group) {
+        group = g;
+        const h = document.createElement('div'); h.className = 'ov-mdl-group'; h.setAttribute('role', 'presentation'); h.textContent = g;
+        // honest label when these rows are a built-in seed list (the live catalog was unreachable), never a lie
+        if (m.fallback || genesisOffline) { const off = document.createElement('i'); off.className = 'ov-mdl-off'; off.textContent = ' · catalog offline'; h.appendChild(off); }
+        frag.appendChild(h);
+      }
+      const row = document.createElement('div');
+      row.className = 'ov-mdl-row' + (m.id === cur ? ' sel' : '');
+      row.setAttribute('role', 'option'); row.setAttribute('aria-selected', String(m.id === cur)); row.dataset.id = m.id; row.title = m.id;
+      const name = document.createElement('span'); name.className = 'ov-mdl-name'; name.textContent = mdLabel(m);
+      const meta = document.createElement('span'); meta.className = 'ov-mdl-meta'; meta.textContent = modelMetaStr(m.id);
+      row.appendChild(name); row.appendChild(meta);
+      const idx = modelPopRows.length;
+      row.addEventListener('mousedown', e => { e.preventDefault(); pickModelFromPop(m.id); });   // mousedown+preventDefault: the pick lands before the input blurs
+      row.addEventListener('mousemove', () => setModelPopIdx(idx));
+      frag.appendChild(row); modelPopRows.push({ id: m.id, el: row });
+    }
+    pop.appendChild(frag);
+    if (modelPopIdx >= modelPopRows.length) modelPopIdx = modelPopRows.length - 1;
+    modelPopRows.forEach((r, k) => r.el.classList.toggle('hi', k === modelPopIdx));
+  }
+  // Wire #in-model as a search-as-you-type combobox over #model-pop. Enter picks the highlighted (or first) row
+  // when the popover is open; with the popover closed, Enter still commits WAKE (the field's original behavior).
+  function wireModelField() {
+    const inp = el('in-model'); if (!inp) return;
+    inp.oninput = () => { modelPopQ = inp.value.trim(); openModelPop(); updateHint(); };
+    inp.onfocus = () => { if (!inp.readOnly) { modelPopQ = ''; openModelPop(); } };   // fresh focus browses the whole catalog
+    inp.onblur = () => setTimeout(() => { if (document.activeElement !== inp) closeModelPop(); }, 130);
+    inp.onkeydown = e => {
+      const open = !el('model-pop').hidden;
+      if (e.key === 'ArrowDown') { if (!open) { modelPopQ = ''; openModelPop(); } else setModelPopIdx(Math.min(modelPopIdx + 1, modelPopRows.length - 1)); e.preventDefault(); return; }
+      if (e.key === 'ArrowUp') { if (open) { setModelPopIdx(Math.max(modelPopIdx - 1, 0)); e.preventDefault(); } return; }
+      if (e.key === 'Escape') { if (open) { closeModelPop(); e.preventDefault(); e.stopPropagation(); } return; }   // Esc closes the popover ONLY (never the screen)
+      if (e.key === 'Enter' && !e.isComposing) {
+        if (open && modelPopRows.length) { const pick = modelPopRows[modelPopIdx >= 0 ? modelPopIdx : 0]; if (pick) { pickModelFromPop(pick.id); e.preventDefault(); return; } }
+        e.preventDefault(); onWake();
+      }
+    };
+  }
+
   function updateHint() {
     const id = el('in-model').value.trim(), hint = el('model-hint');
     syncModelPicks();   // keep the recommended-chip highlight in lockstep with whatever's in the field
     if (pickedProvider === 'codex') { hint.textContent = 'included in your ChatGPT subscription'; return; }
+    if (!id) { hint.textContent = 'pick or type a model slug'; return; }
     const limit = Harness.contextLimitOf ? Harness.contextLimitOf(id) : 0;
-    const fmt = (typeof CtxGauge !== 'undefined' && CtxGauge.fmtTokens) ? CtxGauge.fmtTokens : (n => String(n || 0));
-    hint.textContent = id ? (limit ? ('context window: ' + fmt(limit) + ' tokens') : 'custom model slug') : 'pick or type a model slug';
+    const price = Harness.priceOf ? Harness.priceOf(id) : null;
+    if (limit || price) {
+      // the catalog knows this model — surface BOTH context window and $/M in/out (previously ctx only)
+      const fmt = (typeof CtxGauge !== 'undefined' && CtxGauge.fmtTokens) ? CtxGauge.fmtTokens : (n => String(n || 0));
+      const bits = [];
+      if (limit) bits.push('context window: ' + fmt(limit) + ' tokens');
+      if (price) bits.push(usdPerM(price.in) + ' in · ' + usdPerM(price.out) + ' out / M tokens');
+      hint.textContent = bits.join('  ·  ');
+      return;
+    }
+    // the catalog has NO data for this slug — split the honest reasons instead of one vague "custom model slug":
+    if (genesisOffline) { hint.textContent = 'catalog offline — this slug runs as-is (no price/context data here)'; return; }
+    if (genesisModels.some(m => m.id === id)) { hint.textContent = 'custom model — not priced in the catalog'; return; }
+    hint.textContent = 'not in the catalog — double-check the slug, or it runs as a custom model';
   }
 
   /* ---------- provider toggle + ChatGPT (Codex OAuth) sign-in ---------- */
@@ -1275,7 +1412,7 @@ const App = (() => {
 
   function selectProviderUI(p) {
     pickedProvider = normalizeProviderId(p);
-    document.querySelectorAll('.provider-row .prov').forEach(b => b.classList.toggle('sel', b.dataset.prov === pickedProvider));
+    document.querySelectorAll('.provider-row .prov').forEach(b => { const on = b.dataset.prov === pickedProvider; b.classList.toggle('sel', on); b.setAttribute('aria-pressed', String(on)); });
     // a saved/selected tail provider must never be invisibly selected behind the fold
     { const sb = document.querySelector('.provider-row .prov.sel'); if (sb && sb.classList.contains('tail')) setProviderRowExpanded(true); }
     const isCodex = pickedProvider === 'codex';
@@ -1298,8 +1435,9 @@ const App = (() => {
     }
     el('codex-block').classList.toggle('hidden', !isCodex);
     // the BYOK note talks about your key on 127.0.0.1 / the OS keychain — irrelevant and contradictory on the
-    // ChatGPT-sub path (no key at all), so hide it there.
-    { const bn = el('byok-note'); if (bn) bn.classList.toggle('hidden', isCodex); }
+    // ChatGPT-sub path (no key at all), so hide the whole disclosure there. On BYOK it stays collapsed behind
+    // its toggle (progressive disclosure) — the note's own .hidden is owned by #byok-toggle, not this switch.
+    { const bd = el('byok-disclose'); if (bd) bd.classList.toggle('hidden', isCodex); }
     if (isCodex) {
       loadCodexModels();      // live per-account discovery (falls back to CODEX_MODELS when not connected)
       refreshCodexStatus();
@@ -1323,11 +1461,13 @@ const App = (() => {
       }
     } catch (_) {}
     const ids = models.map(m => m.id);
-    const dl = el('model-list'); dl.innerHTML = '';
-    for (const m of models) { const o = document.createElement('option'); o.value = m.id; if (m.displayName && m.displayName !== m.id) o.label = m.displayName; dl.appendChild(o); }
+    // feed the themed popover (not a datalist): carry displayName through as .name so modelLabel renders it.
+    genesisModels = models.map(m => ({ id: m.id, name: m.displayName || m.name || m.id }));
+    genesisOffline = false;
     el('model-count').textContent = '(ChatGPT subscription)';
     const mi = el('in-model'); if (!ids.includes(mi.value)) mi.value = def;
-    if (def) mi.placeholder = 'e.g. ' + def;   // retire "loading models…" here too, so the field's accessible name matches the loaded catalog
+    if (def) mi.placeholder = 'search models — e.g. ' + def;   // retire "loading models…" here too, so the field's accessible name matches the loaded catalog
+    if (el('model-pop') && !el('model-pop').hidden) renderModelPop();
     updateHint();
   }
 
@@ -1414,19 +1554,26 @@ const App = (() => {
     const wrap = el('skin-picker'); if (!wrap || typeof DATA === 'undefined' || !DATA.SKINS) return;
     wrap.innerHTML = '';
     if (!DATA.SKINS[pickedSkin]) pickedSkin = DATA.DEFAULT_SKIN;
-    Object.keys(DATA.SKINS).forEach(id => {
+    // DEFAULT-FIRST ordering: the default skin leads, followed by its near-identical recolor family (grouped so
+    // they read as variants of ONE skin), then the distinct characters — instead of the default sitting buried
+    // 10th behind nine characters. Data order (data-shim.js) is untouched; this is purely the render order.
+    const def = DATA.DEFAULT_SKIN;
+    const inFamily = id => id === def || id.indexOf(def + '_') === 0;
+    const ids = Object.keys(DATA.SKINS);
+    const ordered = [def, ...ids.filter(id => id !== def && inFamily(id)), ...ids.filter(id => !inFamily(id))].filter(id => DATA.SKINS[id]);
+    ordered.forEach(id => {
       const sk = DATA.SKINS[id];
       const b = document.createElement('button');
       b.type = 'button';
       b.className = 'skin-thumb' + (id === pickedSkin ? ' sel' : '');
-      b.title = sk.name || id;
+      b.title = sk.name || id; b.setAttribute('aria-pressed', String(id === pickedSkin));
       const img = document.createElement('img');
       img.src = 'assets/sprites/' + sk.set + '/rot_south.png';
       img.alt = sk.name || id; img.draggable = false;
       b.appendChild(img);
       b.onclick = () => {
         pickedSkin = id;
-        [...wrap.children].forEach(x => x.classList.remove('sel')); b.classList.add('sel');
+        [...wrap.children].forEach(x => { const on = x === b; x.classList.toggle('sel', on); x.setAttribute('aria-pressed', String(on)); });
         if (typeof SkinStage !== 'undefined') SkinStage.show(id);
         SFX.click();
       };
@@ -1509,7 +1656,6 @@ const App = (() => {
     }
     // RESUME pre-fills the saved agent's model; a fresh screen carries the last-used model.
     el('in-model').value = recovery ? (savedAgent.model || Harness.getModel()) : Harness.getModel();
-    el('in-model').oninput = updateHint;
     if (prefillName) el('in-name').value = prefillName;
     // a fresh create screen carries no stale voice picks — reset the module-level state so fine-tune
     // dials / a custom-voice note from an abandoned create session never ride onto the next agent.
@@ -1533,6 +1679,9 @@ const App = (() => {
     if (el('in-name')) el('in-name').oninput = updateNameplate;
     updateNameplate();
     applyRecoveryMode(recovery, savedAgent);
+    // fresh screen: release any stale WAKE latch and drop the WAKING… label stash (applyRecoveryMode set the real
+    // label just above), so a re-entry after an errored attempt has a live, correctly-labelled WAKE button.
+    waking = false; { const wb = el('btn-wake'); if (wb) { wb.disabled = false; delete wb.dataset.idleLabel; } }
     el('btn-back').onclick = onConnectBack;
     el('btn-wake').onclick = onWake;
     // Enter commits from ANY of the core text fields (name / key / model), not just the name — so a Commander
@@ -1540,22 +1689,40 @@ const App = (() => {
     const enterWakes = e => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); onWake(); } };
     el('in-name').onkeydown = enterWakes;
     el('in-key').onkeydown = enterWakes;
-    el('in-model').onkeydown = enterWakes;
+    wireModelField();   // #in-model is a search combobox over #model-pop; it owns its keydown (Enter picks a row, else WAKEs)
     // provider toggle + ChatGPT sign-in wiring; selectProviderUI() also loads the right model catalog.
-    document.querySelectorAll('.provider-row .prov').forEach(b => { b.onclick = () => { SFX.click(); selectProviderUI(b.dataset.prov); }; });
+    // Clear the model on a real USER switch so the new provider's curated default (MODEL_PICKS[p][0]) fills
+    // instead of carrying a cross-provider slug (e.g. codex 'gpt-5.5' bleeding onto OpenRouter, which needs
+    // 'openai/gpt-5.5'). The programmatic call below (resume) keeps the saved model — it never routes here.
+    document.querySelectorAll('.provider-row .prov').forEach(b => { b.onclick = () => { SFX.click(); if (b.dataset.prov !== pickedProvider) el('in-model').value = ''; selectProviderUI(b.dataset.prov); }; });
     // the long-tail providers start folded behind ＋ MORE so a first-run user faces 6 chips, not 15.
     // selectProviderUI() unfolds the row itself whenever the active provider lives in the tail.
     const provRow = document.querySelector('.provider-row'), provMore = el('prov-more');
     if (provRow && provMore) {
-      provRow.classList.add('collapsed');
-      provMore.setAttribute('aria-expanded', 'false');
+      setProviderRowExpanded(false);   // collapse the tail + COMPUTE the "＋ N MORE" label from the live tail count (never hardcoded)
       provMore.onclick = () => { SFX.click(); setProviderRowExpanded(provRow.classList.contains('collapsed')); };
     }
     el('btn-codex-signin').onclick = startCodexSignIn;
     el('btn-codex-logout').onclick = codexLogout;
+    // BYOK key-safety note: collapsed by default, expanded by its own disclosure toggle (progressive disclosure).
+    { const bt = el('byok-toggle'), bn = el('byok-note');
+      if (bt && bn) {
+        bn.classList.add('hidden'); bt.setAttribute('aria-expanded', 'false'); bt.textContent = '▸ where does my key go?';
+        bt.onclick = () => { const open = !bn.classList.toggle('hidden'); bt.setAttribute('aria-expanded', String(open)); bt.textContent = (open ? '▾' : '▸') + ' where does my key go?'; SFX.click(); };
+      } }
     // RESUME/recovery honours the agent's saved provider; a FRESH create screen leads with the beginner-first
     // default (pickedProvider = 'codex' — sign in with ChatGPT, no API key), the top of the zero-to-value funnel.
     selectProviderUI(recovery ? Harness.getProv() : pickedProvider);
+    // INITIAL FOCUS: fresh create → the name field (the natural first action); RESUME → the credential control the
+    // Commander must act on (the ChatGPT sign-in button on the keyless Codex path, else the key box). NEVER the
+    // model field (focusing it springs the popover open) and never the phosphor swatches (the old Tab-start bug).
+    setTimeout(() => {
+      try {
+        if (!recovery) { const n = el('in-name'); if (n) n.focus(); }
+        else if (pickedProvider === 'codex') { const c = el('btn-codex-signin'); if (c) c.focus(); }
+        else { const k = el('in-key'); if (k && el('key-block') && !el('key-block').classList.contains('hidden')) k.focus(); else { const c = el('btn-codex-signin'); if (c) c.focus(); } }
+      } catch (_) {}
+    }, 0);
   }
 
   // RESUME mode dressing for the connect screen. Recovery = an existing station re-entering (missing creds or a
@@ -1588,6 +1755,9 @@ const App = (() => {
       if (sub) sub.innerHTML = 'your station is intact — this only re-connects the <b>brain</b>. Identity stays as you left it.';
       if (mode) mode.textContent = 'RESUME';
       if (wake) wake.textContent = '⏼ RESUME STATION ▸';
+      // BACK here doesn't go "back" — onConnectBack() re-runs auto-resume (a fresh credential check may now pass
+      // straight into the station). Label it for what it does so it doesn't read as a dead retreat button.
+      if (back) back.textContent = '↻ RETRY AUTO-RESUME';
       locked.forEach(id => { const n = el(id); if (n) { n.classList.add('field-locked'); n.setAttribute('aria-disabled', 'true'); } });
       const nameIn = el('in-name'); if (nameIn) { nameIn.readOnly = true; nameIn.tabIndex = -1; }
     } else {
@@ -1635,7 +1805,29 @@ const App = (() => {
     startCreation();
   }
 
+  // WAKE is a ONE-SHOT: a double-click, or Enter-then-click, must never run enterGame twice (that would
+  // double-spawn the hero and double-reset every store). `waking` latches for the whole attempt; a validation
+  // bounce releases it so the Commander can fix the input and retry (NEVER blocking entry — sandbox law), while a
+  // real wake keeps it latched (the screen transitions away regardless).
+  let waking = false;
+  function wakeBtnBusy(busy) {
+    const b = el('btn-wake'); if (!b) return;
+    if (busy) { if (b.dataset.idleLabel == null) b.dataset.idleLabel = b.textContent; b.textContent = '⏼ WAKING…'; b.disabled = true; }
+    else { if (b.dataset.idleLabel != null) { b.textContent = b.dataset.idleLabel; delete b.dataset.idleLabel; } b.disabled = false; }
+  }
   async function onWake() {
+    if (waking) return;
+    waking = true;
+    try {
+      const entered = await onWakeAttempt();
+      if (!entered) { waking = false; wakeBtnBusy(false); }   // validation bounce (absent/edited key or model) — release so the user can retry
+    } catch (e) {
+      waking = false; wakeBtnBusy(false);
+      const msg = el('connect-msg'); if (msg) { msg.className = 'msg bad'; msg.textContent = 'could not start — ' + ((e && e.message) || 'try again'); }
+    }
+  }
+  // Returns TRUE once it commits to entering the station (WAKING latched), FALSE on any validation bounce.
+  async function onWakeAttempt() {
     SFX.boot(); SFX.open();
     stopCodexPoll();   // leaving the connect screen — drop any in-flight sign-in poll
     const model = el('in-model').value.trim();
@@ -1656,16 +1848,16 @@ const App = (() => {
       } else {
         msg.textContent = 'choose or type a model slug.';
       }
-      return;
+      return false;
     }
     if (pickedProvider === 'codex') {
-      if (!codexConnected) { msg.textContent = 'sign in with ChatGPT first, or switch to OpenRouter.'; return; }
+      if (!codexConnected) { msg.textContent = 'sign in with ChatGPT first, or switch to OpenRouter.'; return false; }
       Harness.setModel(model); Harness.setProv('codex');
     } else {
       const key = el('in-key').value.trim();
       const baseUrl = el('in-base-url') ? el('in-base-url').value.trim() : '';
       if (providerNeedsBaseUrl(pickedProvider)) {
-        if (!baseUrl) { msg.textContent = 'enter your Custom /v1 base URL.'; return; }
+        if (!baseUrl) { msg.textContent = 'enter your Custom /v1 base URL.'; return false; }
         if (Harness.setBaseUrl) await Harness.setBaseUrl(baseUrl, pickedProvider);
       }
       const configured = !!(Harness.configured && Harness.configured(pickedProvider));
@@ -1676,7 +1868,7 @@ const App = (() => {
         const host = String(url).replace(/^https?:\/\//, '').replace(/\/$/, '');
         msg.innerHTML = 'enter your ' + esc(providerLabel(pickedProvider)) + ' API key — get one at '
           + '<a href="' + esc(url) + '" target="_blank" rel="noopener noreferrer" class="connect-link">' + esc(host) + '</a>.';
-        return;
+        return false;
       }
       // OVERWRITE GUARD: the field was pre-filled from a stored key, and the Commander edited it to a DIFFERENT
       // value — saving would silently replace the stored key. Ask once (inline, no modal) before that happens.
@@ -1686,7 +1878,7 @@ const App = (() => {
       if (prefilledKey && key && key !== prefilledKey && !keyOverwriteConfirmed) {
         keyOverwriteConfirmed = true;   // arm: this same WAKE press now goes through; a second press confirms
         msg.textContent = 'this replaces the key already stored on this station. press WAKE again to confirm — or restore the old key to keep it.';
-        return;
+        return false;
       }
       // Only (re)store when a key was actually typed — desktop keeps the existing keychain key on blank.
       // setKey is async in desktop (writes the keychain + pushes it to the sidecar); await so the run has it.
@@ -1694,7 +1886,8 @@ const App = (() => {
       Harness.setModel(model); Harness.setProv(pickedProvider);
     }
 
-    if (resumingSaved) { const s = resumingSaved; resumingSaved = null; s.agent.model = model; resumeInto(s); return; }
+    wakeBtnBusy(true);   // COMMIT POINT: past every validation gate — show WAKING… and hold the latch through enterGame
+    if (resumingSaved) { const s = resumingSaved; resumingSaved = null; s.agent.model = model; resumeInto(s); return true; }
 
     // the FIRST agent is always the station's OVERSEER — the orchestrating lead the Commander commissions before
     // any specialist. Its voice is the archetype + fine-tune dials + free-text note; its APPROVAL mode (ask vs
@@ -1740,6 +1933,7 @@ const App = (() => {
     pendingStationStats = null; // fresh growth meters — XpStore.init seeds them on enterGame
     enterGame({ awaitingPurpose: true, wake: true });   // the Orchestrator authors its mission in the awakening (no pre-spec)
     persist();   // so a refresh mid-onboarding resumes to the purpose step
+    return true;
   }
 
   /* ---------- resume ---------- */

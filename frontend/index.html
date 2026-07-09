@@ -26,6 +26,19 @@
 </head>
 <body class="theme-amber">
 
+<!-- ============ BOOT VEIL ============ -->
+<!-- The ONLY screen that ships class="active": a neutral phosphor holding-card shown during init()'s async
+     gap (Harness.init + CloudSave.reconcile) BEFORE the boot router picks a real screen. Every boot branch
+     ends in show(<screen>) (splash / game / connect / future / recovery), which clears this veil — so a
+     returning Commander never flashes the CREATE console on the way to their station (the old bug: #screen-connect
+     carried the static .active). Truthful telemetry: it asserts nothing about state — just "connecting". -->
+<section id="screen-boot" class="screen active" aria-label="StarNet booting" aria-hidden="true">
+  <div class="boot-veil">
+    <div class="boot-mark">◆ STARNET</div>
+    <div class="boot-line">establishing local uplink<span class="boot-dots"></span></div>
+  </div>
+</section>
+
 <!-- ============ FIRST-BOOT SPLASH ============ -->
 <!-- Shown ONLY on a genuine first run (no save anywhere): the key-art boot screen — starfield, a
      perspective grid floor, the big phosphor wordmark, and a blinking PRESS ANY KEY. Any key / click /
@@ -42,7 +55,7 @@
     <div class="sp-tag">AI-AGENT HARNESS</div>
     <button id="sp-press" class="sp-press" type="button">▮ PRESS ANY KEY TO START</button>
   </div>
-  <div class="sp-stamp"><span class="sp-rec">● REC</span><span class="sp-sig">SIGNAL LOCKED · LOCAL STATION 127.0.0.1</span></div>
+  <div class="sp-stamp"><span class="sp-rec">● LIVE</span><span class="sp-sig">SIGNAL LOCKED · LOCAL STATION 127.0.0.1</span></div>
 </section>
 
 <!-- ============ CONNECT / CREATE ============ -->
@@ -54,13 +67,13 @@
      orchestrating lead; specialists are recruited LATER in the Recruitment Bay. Every functional id below is
      preserved verbatim from the old screen so app.js wiring (loadModels, buildSkins, buildVoice, codex
      sign-in, onWake) keeps working; NEW ids (approval-picker, np-name, np-mode) are wired in app.js. -->
-<section id="screen-connect" class="screen active">
+<section id="screen-connect" class="screen">
   <div class="panel connect-panel ov-panel">
     <span class="cc-bracket cc-tl">┌</span><span class="cc-bracket cc-tr">┐</span>
     <span class="cc-bracket cc-bl">└</span><span class="cc-bracket cc-br">┘</span>
 
     <header class="cc-console-head ov-head">
-      <div class="cc-titlebar"><span class="cc-tb-tag">STARNET</span><span class="cc-tb-rule"></span><span id="cc-mode" class="cc-tb-mode">GENESIS</span><span class="cc-tb-phosphor"><span class="cc-tb-plabel">PHOSPHOR</span><span id="phosphor-swatches" class="phosphor-swatches" role="group" aria-label="Console phosphor tint"></span></span><span class="cc-tb-rec">● REC</span></div>
+      <div class="cc-titlebar"><span class="cc-tb-tag">STARNET</span><span class="cc-tb-rule"></span><span id="cc-mode" class="cc-tb-mode">GENESIS</span><span class="cc-tb-phosphor"><span class="cc-tb-plabel">PHOSPHOR</span><span id="phosphor-swatches" class="phosphor-swatches" role="group" aria-label="Console phosphor tint"></span></span><span class="cc-tb-rec">● LIVE</span></div>
       <div class="cc-title-row ov-title-row">
         <h2 id="cc-title">▮ CREATE YOUR OVERSEER</h2>
         <span id="cc-sub" class="ov-sub">the first mind you wake is your <b>OVERSEER</b> — it runs the station and recruits every agent after it.</span>
@@ -98,7 +111,7 @@
       <div class="ov-cfg ov-col-id">
         <div class="ov-step"><b>02</b> IDENTITY <span class="dim">— name it, give it a manner</span></div>
         <div class="ov-field">
-          <label>OVERSEER NAME <span class="dim">— optional; leave blank and it mints its own codename</span></label>
+          <label for="in-name">OVERSEER NAME <span class="dim">— optional; leave blank and it mints its own codename</span></label>
           <input id="in-name" class="ov-nm-in" maxlength="18" placeholder="name your overseer" autocomplete="off" spellcheck="false">
         </div>
 
@@ -127,26 +140,42 @@
                no key at all, so it's the recommended default and sits first; BYOK (OpenRouter etc.) stays a
                fully visible one-click alternative for anyone who already has a key. -->
           <div class="ov-brain">
-            <div class="ov-brain-lead">Easiest start: sign in with the ChatGPT account you already have — no API key to find or paste. Already have a key? Pick any provider below instead.</div>
+            <!-- TWO-TIER PROVIDER PICK: the no-API-key ChatGPT path is the hero card (recommended, sits alone
+                 up top); every BYOK provider is a compact secondary chip below it, OPENROUTER first. Every
+                 .prov[data-prov] button + #prov-more stay in the DOM so app.js wiring (selectProviderUI,
+                 setProviderRowExpanded) is untouched — the queries match .prov descendants regardless of nesting. -->
             <div class="provider-row ov-prov">
-              <button class="prov sel" data-prov="codex">CHATGPT — NO KEY</button>
-              <button class="prov" data-prov="openrouter">OPENROUTER</button>
-              <button class="prov" data-prov="openai">OPENAI</button>
-              <button class="prov" data-prov="anthropic">ANTHROPIC</button>
-              <button class="prov" data-prov="gemini">GEMINI</button>
-              <button class="prov" data-prov="ollama">OLLAMA</button>
-              <!-- the long tail hides behind MORE so a first-run user faces 6 choices, not 15. All buttons
-                   stay in the DOM (wiring untouched); app.js expands the row when a tail provider is saved. -->
-              <button class="prov tail" data-prov="xai">XAI</button>
-              <button class="prov tail" data-prov="groq">GROQ</button>
-              <button class="prov tail" data-prov="mistral">MISTRAL</button>
-              <button class="prov tail" data-prov="deepseek">DEEPSEEK</button>
-              <button class="prov tail" data-prov="together">TOGETHER</button>
-              <button class="prov tail" data-prov="fireworks">FIREWORKS</button>
-              <button class="prov tail" data-prov="perplexity">PERPLEXITY</button>
-              <button class="prov tail" data-prov="cerebras">CEREBRAS</button>
-              <button class="prov tail" data-prov="custom">CUSTOM</button>
-              <button type="button" id="prov-more" class="prov-more" aria-expanded="false">＋ 9 MORE</button>
+              <button class="prov prov-hero sel" data-prov="codex" aria-pressed="true">
+                <span class="prov-hero-badge">◆ EASIEST START · NO KEY</span>
+                <span class="prov-hero-row">
+                  <span class="prov-hero-ic" aria-hidden="true">⏼</span>
+                  <span class="prov-hero-body">
+                    <span class="prov-hero-title">SIGN IN WITH CHATGPT</span>
+                    <span class="prov-hero-sub">use the ChatGPT Plus/Pro account you already have — no API key to find or paste</span>
+                  </span>
+                </span>
+              </button>
+              <div class="prov-byok-lab" aria-hidden="true">— or bring your own key —</div>
+              <div class="prov-grid">
+                <button class="prov" data-prov="openrouter" aria-pressed="false">OPENROUTER</button>
+                <button class="prov" data-prov="openai" aria-pressed="false">OPENAI</button>
+                <button class="prov" data-prov="anthropic" aria-pressed="false">ANTHROPIC</button>
+                <button class="prov" data-prov="gemini" aria-pressed="false">GEMINI</button>
+                <button class="prov" data-prov="ollama" aria-pressed="false">OLLAMA</button>
+                <!-- the long tail hides behind MORE so a first-run user faces a handful of choices, not 15. All
+                     buttons stay in the DOM (wiring untouched); app.js expands the grid when a tail provider is saved. -->
+                <button class="prov tail" data-prov="xai" aria-pressed="false">XAI</button>
+                <button class="prov tail" data-prov="groq" aria-pressed="false">GROQ</button>
+                <button class="prov tail" data-prov="mistral" aria-pressed="false">MISTRAL</button>
+                <button class="prov tail" data-prov="deepseek" aria-pressed="false">DEEPSEEK</button>
+                <button class="prov tail" data-prov="together" aria-pressed="false">TOGETHER</button>
+                <button class="prov tail" data-prov="fireworks" aria-pressed="false">FIREWORKS</button>
+                <button class="prov tail" data-prov="perplexity" aria-pressed="false">PERPLEXITY</button>
+                <button class="prov tail" data-prov="cerebras" aria-pressed="false">CEREBRAS</button>
+                <button class="prov tail" data-prov="custom" aria-pressed="false">CUSTOM</button>
+                <!-- label is COMPUTED by setProviderRowExpanded() from the live .prov.tail count — never hardcoded -->
+                <button type="button" id="prov-more" class="prov-more" aria-expanded="false">＋ MORE</button>
+              </div>
             </div>
 
             <div id="key-block">
@@ -170,13 +199,26 @@
               </div>
             </div>
 
-            <div class="ov-model-lab"><label>MODEL <span class="dim" id="model-count"></span></label></div>
-            <input id="in-model" list="model-list" placeholder="loading models…" autocomplete="off" spellcheck="false">
-            <datalist id="model-list"></datalist>
+            <div class="ov-model-lab"><label for="in-model">MODEL <span class="dim" id="model-count"></span></label></div>
+            <!-- Themed grouped model picker (replaces the native <datalist>, which rendered ~370 raw slugs in an
+                 unstyleable OS dropdown). #in-model stays the text input (search-as-you-type); #model-pop is a
+                 phosphor listbox app.js fills GROUPED BY VENDOR with display names + context + $/M pricing. -->
+            <div class="ov-mdl-wrap">
+              <input id="in-model" placeholder="loading models…" autocomplete="off" spellcheck="false"
+                     role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="model-pop">
+              <div id="model-pop" class="ov-mdl-pop" role="listbox" aria-label="Model catalog" hidden></div>
+            </div>
             <!-- one-tap recommended slugs. Each chip just prefills #in-model; the live catalog hint then prices it. -->
             <div id="model-picks" class="model-picks" aria-label="Recommended models"></div>
             <div id="model-hint" class="dim hint">—</div>
-            <p id="byok-note" class="muted byok-note">Bring your own key — stored locally, sent only to the STARNET sidecar on this machine (127.0.0.1), which calls your chosen model. On a <b>task</b> the agent can search the live web (DuckDuckGo · Jina Reader) and read/write files in its workspace. <span class="dim">(In the shipped desktop build the key moves behind the OS keychain.)</span></p>
+            <!-- Progressive disclosure: the key-safety note is collapsed behind a one-line toggle so the required
+                 step (provider · key · model) reads clean; expand it for the full "where does my key go?" answer.
+                 #byok-note keeps its id (personas/wiring); #byok-disclose is what selectProviderUI hides on the
+                 keyless Codex path (no key ⇒ the whole note is irrelevant there). -->
+            <div id="byok-disclose" class="byok-disclose">
+              <button type="button" id="byok-toggle" class="byok-toggle" aria-expanded="false" aria-controls="byok-note">▸ where does my key go?</button>
+              <p id="byok-note" class="muted byok-note hidden">Bring your own key — stored locally, sent only to the STARNET sidecar on this machine (127.0.0.1), which calls your chosen model. On a <b>task</b> the agent can search the live web (DuckDuckGo · Jina Reader) and read/write files in its workspace. <span class="dim">(In the shipped desktop build the key moves behind the OS keychain.)</span></p>
+            </div>
           </div>
         </div>
       </div>
