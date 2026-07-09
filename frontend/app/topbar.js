@@ -42,7 +42,10 @@ const Topbar = (() => {
      bars collapse to the dead glyph and the label flips to LINK DOWN in red (mirrors the canvas
      LINK DOWN marker). Before the bridge is ever opened (title screen / pre-entry) it shows a neutral
      STANDBY rather than a false green or a false alarm. Was static HTML no JS ever wrote. ---- */
-  const SIG_UP = '▂▄▆█', SIG_DOWN = '▁▁▁▁';
+  // UP = the rising full-signal glyph (only when the bridge is proven live); DOWN = the dead flat glyph;
+  // STANDBY = an EVEN, dim mid-level bar — deliberately NOT the full-signal glyph, so a pre-bridge state can
+  // never read as a live green uplink (the bug: STANDBY painted a full SIG_UP beside the ONLINE pill).
+  const SIG_UP = '▂▄▆█', SIG_DOWN = '▁▁▁▁', SIG_STANDBY = '▃▃▃▃';
   function linkNow() {
     try { if (typeof World !== 'undefined' && World.linkState) return World.linkState(); } catch (_) {}
     return null;
@@ -55,18 +58,20 @@ const Topbar = (() => {
     // never a false DOWN-red). Only a genuinely bridged-but-dead link paints the red fault state.
     if (!ls || !ls.bridged || ls.paused) {
       el.classList.remove('down');
+      el.classList.add('standby');
       el.childNodes[0].nodeValue = 'STANDBY ';
-      bars.textContent = ls && ls.paused ? SIG_DOWN : SIG_UP;
-      el.title = ls && ls.paused ? 'uplink paused (disconnected)' : 'local sidecar uplink';
+      bars.textContent = SIG_STANDBY;   // dim even bars — NOT full signal
+      el.title = ls && ls.paused ? 'uplink paused (disconnected)' : 'local sidecar uplink — standby (not yet bridged)';
       return;
     }
     if (ls.down) {
+      el.classList.remove('standby');
       el.classList.add('down');
       el.childNodes[0].nodeValue = 'LINK DOWN ';
       bars.textContent = SIG_DOWN;
       el.title = 'local sidecar uplink — DOWN (no live telemetry)';
     } else {
-      el.classList.remove('down');
+      el.classList.remove('down', 'standby');
       el.childNodes[0].nodeValue = 'UPLINK ';
       bars.textContent = SIG_UP;
       el.title = 'local sidecar uplink — live';

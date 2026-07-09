@@ -287,7 +287,7 @@
     if (!verdict) return null;
     switch (verdict.action) {
       case 'refit':
-        return { label: '🔧 Open REFIT', run: () => { try { if (typeof Build !== 'undefined' && Build.open) Build.open(); else if (typeof Build !== 'undefined' && Build.toggle && !(Build.isOpen && Build.isOpen())) Build.toggle(); } catch (_) {} } };
+        return { label: '⚒ Open REFIT', run: () => { try { if (typeof Build !== 'undefined' && Build.open) Build.open(); else if (typeof Build !== 'undefined' && Build.toggle && !(Build.isOpen && Build.isOpen())) Build.toggle(); } catch (_) {} } };
       case 'settings':
         // A codex sign-in-class failure (dead/consumed refresh token, not-signed-in) ALWAYS gets the reconnect
         // door — the 2026-07-08 escape was exactly this error landing with only a generic "add a key" path.
@@ -299,14 +299,15 @@
         if (verdict.kind === 'auth' && codexConnected())
           return { label: '⏼ RECONNECT CHATGPT', run: () => openSettings('providers') };
         if (verdict.kind === 'auth')
-          return { label: '🔑 Add a key', run: () => openSettings('providers') };
+          return { label: '＋ Add a key', run: () => openSettings('providers') };
         return { label: '⚙ Open Settings', run: () => openSettings(verdict.kind === 'model_not_found' ? 'models' : 'providers') };
       case 'reload':
         // stale_session: the page holds a dead boot token — a reload is the ONE honest reconnect (the token is
         // injected at serve time; there is no in-page re-fetch handshake). Degrades quietly outside a browser.
         return { label: '↻ RELOAD & RECONNECT', run: () => { try { if (typeof location !== 'undefined' && location.reload) location.reload(); } catch (_) {} } };
       case 'store':
-        return { label: '🛒 Open STORE', run: () => openSettings('providers') };
+        // this door opens the PROVIDERS section (there is no "store") — name it truthfully with a CRT glyph.
+        return { label: '▸ OPEN PROVIDERS', run: () => openSettings('providers') };
       case 'skills':
         return { label: '✦ Open SKILLS', run: () => { try { if (typeof StationUI !== 'undefined' && StationUI.openTerm) StationUI.openTerm('skills'); } catch (_) {} } };
       default:

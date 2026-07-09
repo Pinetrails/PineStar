@@ -474,6 +474,8 @@ body.no-scan .crt-scan { display: none; }
 #sig.down { color: rgba(255,80,60,0.75); }
 #sig.down b { color: #ff6a4c; text-shadow: 0 0 7px rgba(255,80,60,0.9); animation: sig-down-breathe 2.2s ease-in-out infinite; }
 @keyframes sig-down-breathe { 0%,100% { opacity: 0.6; } 50% { opacity: 1; } }
+/* STANDBY (pre-bridge / paused): dim, unglowing bars — not the live-green full-signal look. */
+#sig.standby b { color: var(--ph-dim); text-shadow: none; opacity: 0.6; }
 .bb {
   background: transparent; color: var(--ph); border: none;
   font-family: inherit; font-size: 16px; letter-spacing: 2px; padding: 6px 18px;

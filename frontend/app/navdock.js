@@ -83,12 +83,28 @@
     // a11y: full role=menu keyboard model — ArrowUp/Down cycle the items (wrapping),
     // Home/End jump, ArrowUp/Down on the closed trigger opens the menu, and Tab is
     // trapped inside an open popover so focus can't wander to the page behind it.
+    // the adjacent group in the visual row (wrapping), for horizontal dock navigation.
+    const sibling = (dir) => { const gi = groups.indexOf(g); return groups[(gi + (dir > 0 ? 1 : groups.length - 1)) % groups.length]; };
     g.addEventListener('keydown', ev => {
       const open = g.classList.contains('open');
       if (!open && (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') && document.activeElement === trigger) {
         ev.preventDefault(); toggle(g); return;   // toggle() focuses the first item
       }
+      // closed trigger: Left/Right walks to the adjacent dock trigger (menubar-style), no popover opened.
+      if (!open && (ev.key === 'ArrowLeft' || ev.key === 'ArrowRight') && document.activeElement === trigger) {
+        ev.preventDefault();
+        const nt = sibling(ev.key === 'ArrowRight' ? 1 : -1).querySelector('.bb-grp');
+        if (nt) { try { nt.focus(); } catch (_) {} }
+        return;
+      }
       if (!open) return;
+      // open popover: Left/Right moves to the neighbouring dock's popover (open it there, focus its first item).
+      if (ev.key === 'ArrowLeft' || ev.key === 'ArrowRight') {
+        ev.preventDefault();
+        const nb = sibling(ev.key === 'ArrowRight' ? 1 : -1);
+        if (nb && nb !== g) toggle(nb);   // toggle() closes this one + focuses the neighbour's first item
+        return;
+      }
       const items = itemsOf(g); if (!items.length) return;
       const first = items[0], last = items[items.length - 1], act = document.activeElement;
       const i = items.indexOf(act);
