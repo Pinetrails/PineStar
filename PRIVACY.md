@@ -1,6 +1,6 @@
 # StarNet Privacy
 
-_Last reviewed: 2026-07-06, against the shipping code._
+_Last reviewed: 2026-07-09, against the shipping code._
 
 StarNet is a **local-first desktop app**. It runs a small server (the "sidecar") on your own
 machine (`localhost`) and does the agent work there. There is **no StarNet cloud, no StarNet
@@ -49,11 +49,22 @@ Depending on what you set up, that provider is one of:
 **Your key, your data, your account.** StarNet never sees a StarNet-owned copy — the key is
 yours and the request goes straight to the provider you picked.
 
-### 2. Discord / Telegram — only if you connect them
+### 2. Chat channels — only if you connect them
 
-If you connect a Discord bot or a Telegram bot, StarNet talks to that platform's API
-(`discord.com`, `api.telegram.org`) to send and receive messages on the channel you set up. If
-you never connect a channel, StarNet never contacts these services.
+If you connect a chat channel, StarNet talks to that platform to send and receive messages on the
+channel you set up, authenticated with the token (or endpoint) **you** provide. Nothing is
+contacted unless you connect it:
+
+- **Discord / Telegram** — StarNet calls that platform's API (`discord.com`, `api.telegram.org`)
+  with your bot token.
+- **Slack** — StarNet calls the Slack API (`slack.com`) with your bot token.
+- **Matrix** — StarNet talks to **the homeserver you point it at** — whatever URL you configure,
+  whether `matrix.org` or a server you run yourself — using your access token. StarNet does not
+  pick a server; you do.
+- **Signal** — StarNet talks to **the signal-cli REST endpoint you run** (the URL you configure for
+  your own signal-cli bridge), using the account you registered there.
+
+If you never connect a channel, StarNet never contacts any of these services.
 
 ### 3. Spotify — only if you enable it
 
