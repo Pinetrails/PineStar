@@ -2816,6 +2816,13 @@ let scoutState = (() => { try { const o = loadResilient(SCOUT_FILE, 'scout'); re
 function persistInterests() { try { saveResilient(INTERESTS_FILE, { v: 1, state: interestsState }); } catch (e) { console.warn('[scout] interests persist failed:', (e && e.message) || e); } }
 function persistScout() { try { saveResilient(SCOUT_FILE, { v: 1, state: scoutState }); } catch (e) { console.warn('[scout] state persist failed:', (e && e.message) || e); } }
 function scoutNote(entry) { scoutState = Scout.note(scoutState, entry, { now: Date.now() }); persistScout(); }
+// sweep aged-out undecided drafts (DRAFT_TTL_MS) before any decide()/status read, so stale drafts never
+// wedge minting at binding:'full'. Pure reducer; persist ONLY when it actually evicted something.
+function scoutSweep() {
+  const before = scoutState.staged.length;
+  scoutState = Scout.sweep(scoutState, Date.now());
+  if (scoutState.staged.length !== before) persistScout();
+}
 
 // the kit vocabulary a drafted spec may claim — the same 6 real CAP_REGISTRY keys the browser passes the
 // prospect pipeline (app.js getCapabilityKeys). 'computer' is deliberately absent (desktop reach is opt-in).
@@ -2883,6 +2890,7 @@ async function runScoutCycle(o) {
     // 2) MINT ATTEMPT — at most one per cycle; the pure gates decide if and which kind. A non-firing gate is
     //    NOT ledger-noise (it binds most runs by design); GET /api/scout reports the live binding instead.
     const warm = Interests.warm(interestsState, Date.now());
+    scoutSweep();   // age out stale drafts first — an undecided-draft backlog must not wedge the gate at 'full'
     const d = Scout.decide(scoutState, { now: Date.now(), warm: warm });
     if (!d.fire) return;
 
@@ -2944,6 +2952,7 @@ async function runScoutCycle(o) {
 // GET /api/scout — the bay's one read: warmth + the live gate binding + interests (with evidence) + staged
 // drafts + the attempt ledger tail. Every field derives from real persisted state (truthful telemetry).
 function handleScoutGet(req, res) {
+  scoutSweep();   // purge aged-out drafts even on an idle station (no runs) so the status read is truthful
   const now = Date.now();
   const gate = Scout.decide(scoutState, { now: now, warm: Interests.warm(interestsState, now) });
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });

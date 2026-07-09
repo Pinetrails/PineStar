@@ -39,6 +39,9 @@
   const MINT_EVERY_RUNS = 3;                 // moderate loosening: a mint attempt every ~3 qualifying runs…
   const MINT_MIN_GAP_MS = 30 * 60 * 1000;    // …but never two attempts within half an hour…
   const MAX_LIVE = 3;                        // …and never more than 3 undecided drafts per kind on the shelf
+  const DRAFT_TTL_MS = 14 * 86400000;        // …and an undecided draft is not forever: it ages out on the same
+                                             //   14-day horizon interests decay over (interests.DECAY_HALF_LIFE_MS),
+                                             //   so stale drafts never wedge the shelf at binding:'full'
   const LEDGER_CAP = 50;                     // the visible "what the scout tried and why" trail
   const DENYLIST_CAP = 60;                   // dismissed-fingerprint memory (FIFO)
   const KINDS = ['prospect', 'recipe'];
@@ -271,6 +274,24 @@
     return Object.assign({}, s, { ledger: s.ledger.concat([e]).slice(-LEDGER_CAP) });
   }
 
+  // sweep — evict undecided staged drafts older than DRAFT_TTL_MS, appending one {outcome:'expired'} ledger
+  // note per drop (via note(), so the LEDGER_CAP is respected and the eviction stays INSPECTABLE). PURE:
+  // input never mutated; a NEW state is returned, and a sweep with nothing aged out returns the normalized
+  // state unchanged so the host can persist ONLY on a real change. Expiry is NOT a dismissal — the
+  // fingerprint is deliberately NOT denylisted, so an equivalent draft may legitimately re-mint once its
+  // interest recurs. Without this, 3 stale drafts per kind wedge minting at binding:'full' forever.
+  function sweep(state, now) {
+    const t = Number(now) || 0;
+    const s = normalize(state, t);
+    const expired = s.staged.filter(it => t - it.at > DRAFT_TTL_MS);
+    if (!expired.length) return s;
+    let next = Object.assign({}, s, { staged: s.staged.filter(it => t - it.at <= DRAFT_TTL_MS) });
+    for (const it of expired) {
+      next = note(next, { kind: it.kind, outcome: 'expired', reason: 'undecided draft aged out (14d TTL)', title: (it.draft && it.draft.name) || '' }, { now: t });
+    }
+    return next;
+  }
+
   // stage a validated draft: stamps the mint (counter reset + lastMintAt + lastKind) and appends the item.
   function stage(state, item, opts) {
     const now = Number(opts && opts.now) || 0;
@@ -356,8 +377,8 @@
 
   return {
     fresh, normalize, noteRun, decide, buildRecipeDirective, parseRecipe,
-    note, stage, stampAttempt, dismiss, accept, setContext, noteLaunch, topLaunched,
+    note, sweep, stage, stampAttempt, dismiss, accept, setContext, noteLaunch, topLaunched,
     fingerprint, overlap,
-    KINDS, MINT_EVERY_RUNS, MINT_MIN_GAP_MS, MAX_LIVE, LEDGER_CAP, TAG_LANES, CATEGORIES, USAGE_CAP
+    KINDS, MINT_EVERY_RUNS, MINT_MIN_GAP_MS, MAX_LIVE, DRAFT_TTL_MS, LEDGER_CAP, TAG_LANES, CATEGORIES, USAGE_CAP
   };
 });
