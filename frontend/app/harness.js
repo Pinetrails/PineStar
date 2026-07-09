@@ -445,7 +445,10 @@ const Harness = (() => {
     try {
       const r = await fetch('/api/halt', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
       const j = await r.json().catch(() => ({}));
-      return (j && typeof j.halted === 'number') ? j.halted : 0;
+      // honest total: run controllers (browser/hub/force-fired beats) + cron leases + the driver-path beat —
+      // everything the server ACTUALLY aborted, so the HALT toast never under-reports what the E-STOP stopped.
+      const n = k => (j && typeof j[k] === 'number') ? j[k] : 0;
+      return n('halted') + n('cronAborted') + n('beatAborted');
     } catch (_) { return 0; }
   }
 

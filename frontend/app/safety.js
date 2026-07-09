@@ -10,11 +10,15 @@
   if (typeof document === 'undefined') return;
 
   async function halt() {
-    // local first — abort the open browser fetches immediately — then the authoritative server-side kill-all
-    // (which also reaches background / Telegram runs the browser has no handle to).
-    try { if (typeof Chat !== 'undefined' && Chat.abort) Chat.abort(); } catch (_) {}
+    // SERVER first — the authoritative kill-all (it reaches background / cron / night-shift / Telegram runs the
+    // browser has no handle to) — THEN abort the local fetch streams. Order is load-bearing for the toast's
+    // honesty: aborting locally first closed the /api/run request, whose close-handler deleted the run from the
+    // server's `runs` map BEFORE /api/halt counted it — so the toast said "stopped 0 runs" while runs were in
+    // fact being stopped. Counting on the server before local teardown keeps the number real; the local abort
+    // still lands milliseconds later (and the server-side abort has already ended the loops' spend either way).
     let n = 0;
     try { if (typeof Harness !== 'undefined' && Harness.haltAll) n = await Harness.haltAll(); } catch (_) {}
+    try { if (typeof Chat !== 'undefined' && Chat.abort) Chat.abort(); } catch (_) {}
     try { if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('HALT — stopped ' + n + ' run' + (n === 1 ? '' : 's'), 'warn'); } catch (_) {}
     try { if (typeof SFX !== 'undefined' && SFX.alarm) SFX.alarm(); } catch (_) {}
   }
