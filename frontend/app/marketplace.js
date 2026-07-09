@@ -1468,16 +1468,11 @@ const Marketplace = (() => {
       renderStage();
     });
     const famForget = sc.querySelector('.mkt-fam-forget');
-    if (famForget) famForget.addEventListener('click', () => {
-      if (famForget.dataset.armed !== '1') {
-        famForget.dataset.armed = '1'; famForget.classList.add('armed'); famForget.textContent = 'SURE? WIPE'; sfx('bad');
-        setTimeout(() => { if (famForget.isConnected) { famForget.dataset.armed = '0'; famForget.classList.remove('armed'); famForget.textContent = '⌫ FORGET'; } }, 4000);
-        return;
-      }
+    if (famForget) famForget.addEventListener('click', () => armDelete(famForget, '⌫ FORGET', () => {
       const ps = profileApi(); if (ps && ps.forget) ps.forget();
       if (mintApi() && MintStore.forget) MintStore.forget();
       sfx('close'); note('profile wiped — the station forgot what it learned', 'good'); renderStage();
-    });
+    }, 'SURE? WIPE'));
   }
 
   /* ---------- wiring: suggested (mint) ---------- */

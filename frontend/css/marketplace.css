@@ -298,7 +298,7 @@ body.no-scan .mkt-scrim::after { display: none; }
 .mkt .bb.sm:hover { color: var(--ph-bright); border-color: var(--ph); }
 .mkt .bb.sm.danger:hover { color: var(--bad); border-color: var(--bad); }
 .mkt-do-save, .mkt-do-recipe-save, .mkt-do-launch { color: var(--ink) !important; background: var(--ph) !important; border-color: var(--ph) !important; text-shadow: none !important; }
-.mkt-del.armed, .mkt-recipe-del.armed, .mkt-fam-forget.armed { color: var(--ink) !important; background: var(--bad) !important; border-color: var(--bad) !important; text-shadow: none !important; }
+/* .mkt-del/.mkt-recipe-del/.mkt-fam-forget armed skin = the canonical danger-armed rule in app.css */
 
 /* ---- forms (save specialty / save mission / launch) reuse the .mkt-save shell ---- */
 .mkt-save { max-width: 600px; margin: 6px auto; display: flex; flex-direction: column; gap: 10px;

@@ -1642,13 +1642,23 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 .key-edit.codex-inline { flex-wrap: wrap; align-items: center; font-size: 12px; }
 .key-edit.codex-inline code { font-size: 15px; letter-spacing: 2px; }
 
-/* settings-truth: armed REMOVE — unmistakable destructive state. The armed CONFIRM button inverts to a
-   filled --bad chip (ink text on red), the row gains a red hairline + slight dim, and an inline hint
-   spells out the second click. --bad stays the sole semantic red so it reads correctly in every theme. */
-.bb.sm.danger.armed {
-  color: var(--ink); background: var(--bad); border-color: var(--bad); text-shadow: none;
+/* ============================================================
+   CANONICAL DANGER-ARMED SKIN — the ONE "click again to confirm" look.
+   Every destructive arm/confirm button inverts to a filled --bad chip
+   (ink on red). --bad stays the sole semantic red so it reads correctly
+   in every theme. !important so the armed state always wins over the
+   button's resting/hover skin regardless of source file. The gold
+   consent-armed (.mkt-cta*) and the .bb.danger.armed pulse animation
+   (motion.css) are intentionally separate; per-button extras (the
+   .ws-menu glyph tint, .ag-del glow, .q-dismiss padding) sit below.
+   ============================================================ */
+.mkt-del.armed, .mkt-recipe-del.armed, .mkt-fam-forget.armed,
+.bb.sm.danger.armed, .ws-menu-item.danger.armed, .ag-del.armed, .q-dismiss.armed,
+.mkt-del.armed:hover, .mkt-recipe-del.armed:hover, .mkt-fam-forget.armed:hover,
+.bb.sm.danger.armed:hover, .ws-menu-item.danger.armed:hover, .ag-del.armed:hover, .q-dismiss.armed:hover {
+  color: var(--ink) !important; background: var(--bad) !important;
+  border-color: var(--bad) !important; text-shadow: none !important;
 }
-.bb.sm.danger.armed:hover { color: var(--ink); background: var(--bad); border-color: var(--bad); }
 .key-row.rm-armed { border-color: var(--bad); box-shadow: var(--raise), inset 0 0 0 1px var(--bad); }
 .key-row.rm-armed .key-main { opacity: 0.72; }
 .rm-hint { font-size: 10px; letter-spacing: 1px; color: var(--bad); text-align: right; margin-top: 2px; }
@@ -1827,7 +1837,7 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 .ws-menu-item.danger { color: var(--bad); }
 .ws-menu-item.danger .ws-menu-glyph { color: var(--bad); }
 .ws-menu-item.danger:hover { background: rgba(255,92,77,.14); color: var(--bad); }
-.ws-menu-item.danger.armed, .ws-menu-item.danger.armed:hover { background: var(--bad); color: var(--ink); }
+/* danger-armed skin is the canonical rule above; only the glyph tint is a per-button extra */
 .ws-menu-item.danger.armed .ws-menu-glyph { color: var(--ink); }
 .ws-menu-sep { height: 1px; margin: 3px 6px; background: var(--ph-dim); opacity: .5; }
 
@@ -1940,7 +1950,8 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 .ag-del { border-color: var(--bad, #e2604a) !important; color: var(--bad, #e2604a) !important; }
 .ag-del:hover:not(:disabled) { background: rgba(226,96,74,.12) !important; }
 .ag-del:disabled { opacity: .4; cursor: not-allowed; border-color: var(--ph-dim) !important; color: var(--ph-dim) !important; }
-.ag-del.armed { background: var(--bad, #e2604a) !important; color: #120404 !important; box-shadow: 0 0 12px rgba(226,96,74,.5); }
+/* danger-armed skin is the canonical rule above; only the danger glow is a per-button extra */
+.ag-del.armed { box-shadow: 0 0 12px rgba(var(--bad-rgb), .5); }
 .ag-del-why { font-size: 11px; color: var(--ph-dim); font-style: italic; }
 
 /* ============ PREMIUM GROWTH DOSSIER — the GROWTH tab ============
@@ -2016,10 +2027,9 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
   color:var(--ph-dim); opacity:.55; font-size:11px; padding:1px 4px; }
 .q-dismiss:hover { border-color:var(--ph-glow2); opacity:1; }
 /* Slice 5: armed (2-step) state — the ✕ becomes an explicit, dangerous "dismiss forever — sure?" until the
-   confirming click (or ~4s auto-disarm). Widen for the label + read as a warning, not a passive glyph. */
-.q-dismiss.armed { opacity:1; color:var(--ink); background:var(--bad); border-color:var(--bad);
-  white-space:nowrap; padding:1px 6px; text-shadow:none; }
-.q-dismiss.armed:hover { color:var(--ink); background:var(--bad); border-color:var(--bad); }
+   confirming click (or ~4s auto-disarm). Danger skin is the canonical rule above; only the widen + opacity
+   (so the longer label fits and reads as a warning, not a passive glyph) is a per-button extra. */
+.q-dismiss.armed { opacity:1; white-space:nowrap; padding:1px 6px; }
 /* W3 — "build this while I'm away" affordance on an open, buildable quest. Sits before the dismiss ✕; the
    ◈ marks the away-workshop lane. Gold on hover (it opens the sandbox lane, an amber/consent action). */
 .q-queue { margin-left:auto; flex:0 0 auto; background:none; border:1px solid transparent; border-radius:2px;

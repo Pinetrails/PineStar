@@ -6,12 +6,16 @@
    extracts that idiom so the UX lanes adding NEW irreversible actions (quest dismiss, prospect dismiss)
    reuse one tested behaviour instead of forking a fourth copy.
 
-   IMPORTANT: this does NOT change the existing call sites — they keep their bespoke inline logic. This is
-   a shared primitive for callers that OPT IN:
+   The chrome-voice call sites now compose this instead of forking their own dataset.armed + label-swap +
+   setTimeout copies (settings key-remove / permission revoke / clear-notifications, marketplace re-spec +
+   forget). The two context-menu rows (workstream/project delete) keep bespoke logic because they carry an
+   aria-hidden glyph span this helper's textContent swap would flatten; the COMMS consent buttons keep their
+   sentence-case register beside their siblings. All share ONE disarm timeout (4000ms) and the .armed skin.
 
      ArmConfirm.wire(btn, {
-       armedLabel: 'Dismiss — sure?',   // shown after the first click
+       armedLabel: 'DISMISS — SURE?',   // shown after the first click
        timeoutMs: 4000,                 // auto-disarm back to the resting label (default 4000)
+       onArm: (b) => sfx('bad'),        // optional: danger cue / extra armed DOM (mirror in onDisarm)
        onConfirm: () => actuallyDismiss()   // fired on the second click; may return a Promise
      });
 
@@ -35,13 +39,20 @@
        armedLabel (string, required) — the "are you sure" label shown while armed.
        onConfirm  (function, required) — called on the confirming (second) click; may return a Promise.
        timeoutMs  (number) — auto-disarm delay; default 4000. <=0 means never auto-disarm.
-       restLabel  (string) — override the resting label (default: the button's current textContent). */
+       restLabel  (string) — override the resting label (default: the button's current textContent).
+       onArm      (function) — fired after the button arms (first click); use for the danger sfx or
+                               extra DOM the site wants armed alongside (e.g. a red row hairline + hint).
+       onDisarm   (function) — fired after a real disarm (auto-timeout or the confirming click); the
+                               mirror of onArm — tear down whatever onArm added. Not fired on dispose-
+                               when-already-resting. Both receive the button as their only argument. */
   function wire(btn, opts) {
     opts = opts || {};
     if (!btn || typeof btn.addEventListener !== 'function') return function () {};
     const armedLabel = String(opts.armedLabel != null ? opts.armedLabel : 'Confirm?');
     const timeoutMs = (typeof opts.timeoutMs === 'number') ? opts.timeoutMs : DEFAULT_TIMEOUT;
     const onConfirm = (typeof opts.onConfirm === 'function') ? opts.onConfirm : function () {};
+    const onArm = (typeof opts.onArm === 'function') ? opts.onArm : null;
+    const onDisarm = (typeof opts.onDisarm === 'function') ? opts.onDisarm : null;
     const restLabel = (opts.restLabel != null) ? String(opts.restLabel) : String(btn.textContent || '');
 
     let armed = false;
@@ -51,10 +62,12 @@
 
     function disarm() {
       clearTimer();
+      const wasArmed = armed;
       armed = false;
       try { btn.textContent = restLabel; } catch (_) {}
       if (btn.classList) btn.classList.remove('armed');
       if (btn.dataset) delete btn.dataset.armed;
+      if (wasArmed && onDisarm) { try { onDisarm(btn); } catch (_) {} }
     }
 
     function arm() {
@@ -62,6 +75,7 @@
       try { btn.textContent = armedLabel; } catch (_) {}
       if (btn.classList) btn.classList.add('armed');
       if (btn.dataset) btn.dataset.armed = '1';
+      if (onArm) { try { onArm(btn); } catch (_) {} }
       clearTimer();
       if (timeoutMs > 0 && typeof setTimeout === 'function') {
         timer = setTimeout(function () {

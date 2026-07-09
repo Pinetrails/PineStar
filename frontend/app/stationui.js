@@ -1232,7 +1232,7 @@ const StationUI = (() => {
     // forget is destructive → two-step inline confirm (auto-disarms after 3s)
     let armed = false;
     const fbtn = mk('Forget', 'deny', async () => {
-      if (!armed) { armed = true; fbtn.textContent = 'Confirm forget'; setTimeout(() => { if (armed) { armed = false; fbtn.textContent = 'Forget'; } }, 3000); return; }
+      if (!armed) { armed = true; fbtn.textContent = 'Confirm forget'; setTimeout(() => { if (armed) { armed = false; fbtn.textContent = 'Forget'; } }, 4000); return; }
       if (busy) return; busy = true;
       const r = await Harness.memoryForget({ agentId: a.id, id: rec.id });
       if (r && r.ok) { sfx('click'); reload(); } else busy = false;
@@ -2445,7 +2445,7 @@ const StationUI = (() => {
           let hint = b.parentElement && b.parentElement.querySelector('.rm-hint');
           if (!hint && b.parentElement) { hint = document.createElement('span'); hint.className = 'rm-hint'; hint.textContent = 'click again to confirm removal'; b.parentElement.appendChild(hint); }
           const disarm = () => { if (!b.isConnected) return; delete b.dataset.armed; b.textContent = '✕ REMOVE'; b.classList.remove('armed'); if (rowEl) rowEl.classList.remove('rm-armed'); const hn = b.parentElement && b.parentElement.querySelector('.rm-hint'); if (hn) hn.remove(); };
-          setTimeout(disarm, 5000);
+          setTimeout(disarm, 4000);   // one shared disarm window (ArmConfirm.DEFAULT_TIMEOUT); this site keeps bespoke logic for its row hairline + hint
         }
       });
     });
@@ -3403,9 +3403,10 @@ const StationUI = (() => {
         grantsWrap.querySelectorAll('[data-perm-grant]').forEach(b => b.addEventListener('click', () => { Promise.resolve(PermissionsStore.grant(b.getAttribute('data-perm-grant'))).then(repaintPerm); sfx('click'); }));
         // REVOKE is destructive → two-step arm/confirm (same idiom as cron delete / key remove): first click arms
         // the button, a second within 5s withdraws the grant, so the next occurrence prompts again.
-        grantsWrap.querySelectorAll('[data-perm-revoke]').forEach(b => b.addEventListener('click', () => {
-          if (!b.dataset.armed) { b.dataset.armed = '1'; b.textContent = '✕ CONFIRM'; sfx('bad'); setTimeout(() => { if (b.isConnected) { delete b.dataset.armed; b.textContent = '✕ REVOKE'; } }, 5000); return; }
-          sfx('bad'); Promise.resolve(PermissionsStore.revoke(b.getAttribute('data-perm-revoke'))).then(repaintPerm);
+        grantsWrap.querySelectorAll('[data-perm-revoke]').forEach(b => ArmConfirm.wire(b, {
+          armedLabel: '✕ CONFIRM', restLabel: '✕ REVOKE', timeoutMs: 4000,
+          onArm: () => sfx('bad'),
+          onConfirm: () => { sfx('bad'); Promise.resolve(PermissionsStore.revoke(b.getAttribute('data-perm-revoke'))).then(repaintPerm); }
         }));
       };
       const repaintPerm = () => {
@@ -3422,16 +3423,14 @@ const StationUI = (() => {
     if (typeof Updates !== 'undefined' && Updates.wireSettings) Updates.wireSettings(host);
     // two-step arm/confirm — no native dialogs inside the phosphor terminal
     const clr = host.querySelector('#set-clear');
-    if (clr) clr.addEventListener('click', () => {
-      if (clr.dataset.armed) {
+    if (clr) ArmConfirm.wire(clr, {
+      armedLabel: '✕ CONFIRM CLEAR', restLabel: 'CLEAR NOTIFICATIONS', timeoutMs: 4000,
+      onArm: () => sfx('bad'),
+      onConfirm: () => {
         const n = store.notifs.length;
         store.notifs = []; save(); badges(); rerender('notifs'); sfx('bad');
-        delete clr.dataset.armed; clr.textContent = 'CLEAR NOTIFICATIONS';
         flashSaved(host.querySelector('#notifs-msg'), '✓ cleared ' + n + ' notification' + (n === 1 ? '' : 's'));
-        return;
       }
-      clr.dataset.armed = '1'; clr.textContent = '✕ CONFIRM CLEAR'; sfx('bad');
-      setTimeout(() => { if (clr.isConnected) { delete clr.dataset.armed; clr.textContent = 'CLEAR NOTIFICATIONS'; } }, 5000);
     });
   }
 
