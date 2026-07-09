@@ -1,19 +1,12 @@
 /* STARNET — topbar.js : the TOPBAR INSTRUMENT-CLUSTER logic (read-only wiring).
 
-   The topbar holds one cockpit gauge group: STATION (level + an XP-progress sliver),
-   SPEND TODAY, and the moved-up session-status instruments (UPLINK / ONLINE / save).
+   The topbar holds one cockpit gauge group: STATION (level + an XP-progress sliver)
+   and the moved-up session-status instruments (UPLINK / ONLINE / save).
 
    This module OWNS none of the data. It is a pure read-only consumer:
      - STATION level      — written into #gt-station by xpstore.js (untouched); we only
                              ADD the XP sliver, painted from Xp.compute(XpStore.stationStats())
                              (a read-only exported getter) on the same U.bus growth events.
-     - SPEND TODAY        — the authoritative day-scoped figure is the sidecar's
-                             /api/budget/status { spentToday } (the same source the SETTINGS
-                             budget panel reads). We poll it at most once / 30s AND fold live
-                             agent.cost {usd} events on U.bus between polls, so the number ticks
-                             up the instant a run bills and reconciles to the ledger truth on the
-                             next poll. When the sidecar is absent (pure localStorage boot) the
-                             poll fails quietly and we fall back to the live event sum from $0.00.
      - UPLINK / ONLINE / save — their markup was moved up from #bottombar .bb-right with ids
                              intact, so main.js save() and stationui.js tick()/flashSave() keep
                              writing them with zero changes here.
@@ -23,47 +16,8 @@
 'use strict';
 const Topbar = (() => {
   let wired = false;
-  let pollTimer = 0;
-  let liveSpend = 0;          // running sum of agent.cost usd this session — the between-poll live tick
-  let ledgerToday = null;     // last authoritative /api/budget/status spentToday ($/day), null until first good poll
-  let ledgerLiveBase = 0;     // liveSpend value AT the moment of the last good poll, so we add only the delta since
-  let ledgerDay = null;       // E3: local date-string the last good ledger poll landed on — so a figure captured
-                              // yesterday isn't displayed as TODAY once the clock rolls past midnight
-  let ledgerStale = false;    // E3: the ledger poll failed (sidecar gone) — the displayed spend is last-known, not live
-  const dayKey = () => { const d = new Date(); return d.getFullYear() + '-' + d.getMonth() + '-' + d.getDate(); };
 
   const $ = sel => document.querySelector(sel);
-
-  /* ---- SPEND: the canonical U.usd() formatter (sub-dime 4dp, cents under $100,
-     whole dollars with separators above) — one source of truth for spend display. */
-  function fmtSpend(v) { return U.usd(v); }
-
-  // the number to display = the authoritative ledger day-total (if we have one AND it's still TODAY's)
-  // PLUS any live cost that has landed since that poll; else just the live session sum.
-  // E3 day-boundary: a ledgerToday captured yesterday is NOT today's spend — past midnight the ledger
-  // figure is dropped and we fall back to the live session sum (which the next poll reconciles to the
-  // new day's real total) rather than displaying a stale day-total as if it were today.
-  function ledgerIsToday() { return ledgerToday != null && ledgerDay === dayKey(); }
-  function displaySpend() {
-    if (ledgerIsToday()) return ledgerToday + Math.max(0, liveSpend - ledgerLiveBase);
-    return liveSpend;
-  }
-
-  function paintSpend(pulse) {
-    const inst = $('#tb-spend'); if (!inst) return;
-    const valEl = inst.querySelector('.tb-val'); if (!valEl) return;
-    const v = displaySpend();
-    valEl.textContent = fmtSpend(v);
-    inst.setAttribute('data-zero', v > 0 ? '0' : '1');
-    // E3: stale cue when the ledger poll has failed AND we're still leaning on a prior ledger figure.
-    // The displayed dollars are then last-known (live tick continues, but the day-total isn't fresh) —
-    // dim it + mark stale, mirroring the widget rail / canvas linkStaleDim. Pure live-sum boot (no
-    // ledger yet) is NOT stale — it's honestly just the session sum.
-    inst.setAttribute('data-stale', (ledgerStale && ledgerIsToday()) ? '1' : '0');
-    if (pulse) {
-      inst.classList.remove('tb-tick'); void inst.offsetWidth; inst.classList.add('tb-tick');
-    }
-  }
 
   // ---- STATION XP sliver: read-only compute over the live station rollup ----
   function paintXp() {
@@ -81,24 +35,6 @@ const Topbar = (() => {
           + (isFinite(g.toNext) ? ' (' + g.toNext + ' XP to go)' : '');
       }
     } catch (_) { /* honest no-op: leave the sliver where it is */ }
-  }
-
-  // ---- the authoritative day-scoped poll (≤1 / 30s). Reconciles the live tick to ledger truth. ----
-  function poll() {
-    fetch('/api/budget/status', { cache: 'no-store' })
-      .then(r => (r && r.ok) ? r.json() : null)
-      .then(st => {
-        if (!st) { ledgerStale = true; paintSpend(false); return; }   // bad response: last-good figure is now stale
-        const today = Number(st.spentToday);
-        if (isFinite(today)) { ledgerToday = today; ledgerLiveBase = liveSpend; ledgerDay = dayKey(); ledgerStale = false; paintSpend(false); }
-      })
-      .catch(() => { ledgerStale = true; paintSpend(false); });   // E3: sidecar gone → mark the shown spend stale, don't keep painting it as live
-  }
-
-  // ---- live cost event: fold usd, repaint with a brief glow-pulse ----
-  function onCost(p) {
-    const usd = p && Number(p.usd);
-    if (isFinite(usd) && usd > 0) { liveSpend += usd; paintSpend(true); }
   }
 
   /* ---- UPLINK (#sig): wired to the REAL SSE bridge health (World.linkState), the same predicate the
@@ -141,23 +77,16 @@ const Topbar = (() => {
     if (wired) return;
     wired = true;
 
-    // first paints (may run before any event / poll — honest zeros / current level)
+    // first paints (may run before any event — honest current level)
     paintXp();
-    paintSpend(false);
     paintSig();
 
     if (typeof U !== 'undefined' && U.bus) {
-      // SPEND ticks the instant a run bills; the growth events also advance the XP sliver.
-      U.bus.on('agent.cost', p => { try { onCost(p); } catch (_) {} });
       // the same real outcomes xpstore.js grows the station on — repaint the sliver after it folds.
       for (const n of ['agent.run.end', 'agent.tool_result', 'memory.feedback', 'workitem.delivered', 'channel.delivery']) {
         U.bus.on(n, () => { try { paintXp(); } catch (_) {} });
       }
     }
-
-    // authoritative day-total: poll now + every 30s (event-driven between polls; never aggressive).
-    poll();
-    pollTimer = setInterval(poll, 30000);
 
     // repaint the XP sliver on a slow cadence too, in case a level-up celebration reset the level
     // (cheap: one read-only compute; no network). Piggybacks the same 30s tick.
@@ -177,7 +106,7 @@ const Topbar = (() => {
   }
 
   // expose a tiny read-only surface for dev/verification (mirrors testapi.js style; inert otherwise)
-  return { init, _paintSpend: paintSpend, _paintXp: paintXp, _displaySpend: displaySpend, _paintSig: paintSig };
+  return { init, _paintXp: paintXp, _paintSig: paintSig };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = { Topbar };

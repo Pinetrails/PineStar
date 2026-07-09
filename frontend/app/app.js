@@ -1457,59 +1457,13 @@ const App = (() => {
       };
       wrap.appendChild(chip);
     });
-    buildVoiceTuning();
     renderVoicePreview();
   }
 
-  // the FINE-TUNE dials + toggles + the free-text box (behind the reveal). Rendered from Personas.TRAITS /
-  // TOGGLES so the UI and the prompt text it produces can never drift.
-  function buildVoiceTuning() {
-    const tw = el('voice-traits');
-    if (tw && Personas.TRAITS) {
-      tw.innerHTML = '';
-      Personas.TRAITS.forEach(t => {
-        const row = document.createElement('div'); row.className = 'dial-row';
-        const lab = document.createElement('span'); lab.className = 'dial-label'; lab.textContent = t.label;
-        const seg = document.createElement('div'); seg.className = 'dial-seg';
-        seg.setAttribute('role', 'group'); seg.setAttribute('aria-label', t.label + ' (' + t.ends[0] + ' to ' + t.ends[1] + ')');
-        const current = (pickedTraits[t.key] == null) ? t.neutral : pickedTraits[t.key];
-        for (let n = 0; n < t.prose.length; n++) {
-          const cell = document.createElement('button'); cell.type = 'button';
-          // mark the NEUTRAL step so the Commander can see (and screen-readers can hear) where "default / untuned" sits.
-          cell.className = 'dial-cell' + (current === n ? ' sel' : '') + (n === t.neutral ? ' neutral' : '');
-          cell.title = t.prose[n] || ('neutral — leave ' + t.label.toLowerCase() + ' as the preset');
-          const lvl = (n === t.neutral) ? 'neutral (default)' : (n < t.neutral ? t.ends[0] : t.ends[1]) + (Math.abs(n - t.neutral) > 1 ? ', strong' : '');
-          cell.setAttribute('aria-label', t.label.toLowerCase() + ' — ' + lvl);
-          cell.setAttribute('aria-pressed', String(current === n));
-          cell.onclick = () => {
-            pickedTraits[t.key] = n;
-            [...seg.children].forEach((x, xi) => { x.classList.remove('sel'); x.setAttribute('aria-pressed', String(xi === n)); }); cell.classList.add('sel');
-            SFX.click(); renderVoicePreview();
-          };
-          seg.appendChild(cell);
-        }
-        const ends = document.createElement('span'); ends.className = 'dial-ends'; ends.textContent = t.ends[0] + ' → ' + t.ends[1];
-        row.appendChild(lab); row.appendChild(seg); row.appendChild(ends);
-        tw.appendChild(row);
-      });
-    }
-    const gw = el('voice-toggles');
-    if (gw && Personas.TOGGLES) {
-      gw.innerHTML = '';
-      Personas.TOGGLES.forEach(g => {
-        const b = document.createElement('button'); b.type = 'button';
-        b.className = 'vtoggle' + (pickedTraits[g.key] ? ' sel' : '');
-        b.textContent = g.label;
-        b.onclick = () => {
-          pickedTraits[g.key] = !pickedTraits[g.key];
-          b.classList.toggle('sel', !!pickedTraits[g.key]); SFX.click(); renderVoicePreview();
-        };
-        gw.appendChild(b);
-      });
-    }
-    const cv = el('voice-custom');
-    if (cv) { cv.value = pickedCustomVoice; cv.oninput = () => { pickedCustomVoice = cv.value; }; }
-  }
+  // Voice fine-tune UI (trait dials / extras toggles / free-text note) REMOVED from the create screen
+  // (2026-07-09 decision): the archetype chip is the whole genesis voice choice. pickedTraits /
+  // pickedCustomVoice remain as state so RESUMED agents keep the voiceTraits/customVoice they already
+  // carry — Personas.compose still honors them; a fresh create simply never sets them.
 
   // a live preview: how the picked voice sounds, plus a readout of any tuning the Commander applied.
   function renderVoicePreview() {
@@ -1580,7 +1534,6 @@ const App = (() => {
     el('in-name').onkeydown = enterWakes;
     el('in-key').onkeydown = enterWakes;
     el('in-model').onkeydown = enterWakes;
-    wireAdvancedToggle();
     // provider toggle + ChatGPT sign-in wiring; selectProviderUI() also loads the right model catalog.
     document.querySelectorAll('.provider-row .prov').forEach(b => { b.onclick = () => { SFX.click(); selectProviderUI(b.dataset.prov); }; });
     // the long-tail providers start folded behind ＋ MORE so a first-run user faces 6 chips, not 15.
@@ -1616,7 +1569,7 @@ const App = (() => {
     const wake = el('btn-wake');
     // the identity fields resume must NOT let the Commander re-spec — visually muted, kept in the DOM so onWake
     // (if ever reached) still reads the seeded values rather than blanks.
-    const locked = ['in-name', 'skin-picker', 'voice-archetypes', 'voice-preview', 'adv-toggle', 'adv-body',
+    const locked = ['in-name', 'skin-picker', 'voice-archetypes', 'voice-preview',
                     'approval-picker', 'phosphor-swatches'];
     if (recovery) {
       const nm = (savedAgent && savedAgent.name) || 'your agent';
@@ -1673,23 +1626,6 @@ const App = (() => {
       return;
     }
     startCreation();
-  }
-
-  // The "FINE-TUNE VOICE" reveal on the create screen: collapses the trait dials + the free-text voice box
-  // so the form leads with just the archetype pick. Every input stays in the DOM, so onWake() reads them
-  // whether the section is open or shut — pure progressive disclosure, no behaviour change.
-  function setAdvanced(open) {
-    const body = el('adv-body'), tog = el('adv-toggle');
-    if (!body || !tog) return;
-    body.hidden = !open;
-    tog.setAttribute('aria-expanded', String(open));
-    tog.classList.toggle('open', open);
-    const caret = tog.querySelector('.adv-caret'); if (caret) caret.textContent = open ? '▾' : '▸';
-  }
-  function wireAdvancedToggle() {
-    const tog = el('adv-toggle'); if (!tog) return;
-    setAdvanced(false);   // a fresh connect screen starts collapsed
-    tog.onclick = () => { SFX.click(); setAdvanced(el('adv-body').hidden); };
   }
 
   async function onWake() {

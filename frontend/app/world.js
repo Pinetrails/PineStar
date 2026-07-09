@@ -3233,7 +3233,9 @@ const World = (() => {
     for (const b of crew) drawBubble(now, b);   // crew speech bubbles (e.g. "received: …" when work routes to them)
     if (hoverAgent && !hoverAgent.unplaced) drawNameplate(now, hoverAgent);
     drawQueueDepth();   // screen-space backpressure gauge (resets transform; drawn last)
-    drawFloorStats(now);   // screen-space factory-floor economy readout (spend / yield / slag / cache)
+    // FLOOR-STATS OVERLAY REMOVED (2026-07-09 decision): the YIELD/RUNS/CACHE/SLAG/THRU/DWELL box no
+    // longer floats over the world sim. The FloorStats engine stays live (event-fed) so any panel or
+    // widget consumer keeps honest numbers — only the floating canvas readout is gone.
     if (linkStaleDim) drawLinkDown(now);   // E1: honest "the live telemetry is not live" marker in the chrome
     // (station growth headline now lives in the top bar's STATION chip — see xpstore.pushTopbar)
     drawCurve(now); // barrel-warp the whole feed IN-CANVAS — the original (dot-matrix-era) curve, no dots
@@ -5145,9 +5147,10 @@ const World = (() => {
     U.bus.on('workitem.superseded', p => { if (p && p.workitemId && convey) convey.dropWorkitem(p.workitemId); });
     // queue.status drives BOTH the numeric backpressure gauge (chanQueues) and the FloorStats backlog fold.
     U.bus.on('queue.status', p => { if (p && p.queueId != null) chanQueues.set(p.queueId, Math.max(0, p.depth | 0)); if (floor) floor.onEvent('queue.status', p); });
-    // THE FLOOR ECONOMY — fold the harness's real cost/outcome events into the at-a-glance floor HUD
-    // (drawFloorStats). harness.js re-emits every sidecar event onto U.bus, and routed/crew runs arrive
-    // the same way over the SSE bridge, so these tally the WHOLE station's spend->yield, not just the hero.
+    // THE FLOOR ECONOMY — fold the harness's real cost/outcome events into FloorStats (the floating
+    // canvas readout was removed 2026-07-09; the fold stays for panel/widget consumers). harness.js
+    // re-emits every sidecar event onto U.bus, and routed/crew runs arrive the same way over the SSE
+    // bridge, so these tally the WHOLE station's spend->yield, not just the hero.
     if (!floor && typeof FloorStats !== 'undefined') floor = FloorStats.create();
     if (!slaglog && typeof SlagLog !== 'undefined') slaglog = SlagLog.create();
     U.bus.on('agent.cost', p => {
@@ -5576,36 +5579,6 @@ const World = (() => {
     if (pop > 0.4) { const a = ctx.globalAlpha; ctx.globalAlpha = a * (pop - 0.4); ctx.fillStyle = '#c9ffe0'; ctx.fillRect(x, y, 9, 7); ctx.globalAlpha = a; }   // arrival glint
   }
 
-  /* THE FLOOR ECONOMY READOUT — the running station made legible at a glance (the Factorio dashboard).
-     Four real, folded numbers (FloorStats): YIELD (productive-run rate), RUNS (decisive runs),
-     CACHE (the prompt-cache "smelter" signal), SLAG (runs that produced no deliverable — it
-     pulses red the instant a fresh waste run lands). Honest by construction: yield/cache show "—" until
-     they have a real sample. Stacks just above the INTAKE queue gauge; stays hidden on a quiet floor. */
-  function drawFloorStats(now) {
-    if (!floor) return;
-    const fs = floor.snapshot(Date.now());   // live wall-clock anchor so throughput decays honestly when deliveries stop
-    if (fs.runs === 0 && fs.delivered === 0) return;   // nothing has happened yet - stay dark
-    const dpr = window.devicePixelRatio || 1;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.imageSmoothingEnabled = false;
-    const W = cv.width / dpr, H = cv.height / dpr, pad = 8, bw = 160, bh = 46;
-    let qDepth = 0; for (const d of chanQueues.values()) qDepth += d;
-    const x = W - bw - pad, y = H - bh - pad - (qDepth > 0 ? 20 : 0);        // sit above the queue gauge when it's showing
-    ctx.fillStyle = 'rgba(8,10,9,0.85)'; ctx.fillRect(x, y, bw, bh);
-    ctx.strokeStyle = '#2e3a34'; ctx.lineWidth = 1; ctx.strokeRect(x + 0.5, y + 0.5, bw - 1, bh - 1);
-    ctx.font = '9px monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-    const cell = (cxp, cyp, label, val, col) => {
-      ctx.fillStyle = '#6a7a72'; ctx.fillText(label, cxp, cyp);
-      ctx.fillStyle = col; ctx.fillText(val, cxp + 36, cyp);
-    };
-    const cA = x + 7, cB = x + bw / 2 + 3, r1 = y + 10, r2 = y + 23, r3 = y + 36;
-    cell(cA, r1, 'YIELD', fs.yieldKnown ? fs.yieldPct + '%' : '—', fs.yieldKnown ? (fs.yieldFrac >= 0.6 ? '#62c487' : '#e8c860') : '#5a6a62');
-    cell(cB, r1, 'RUNS', String(fs.runs), '#aeb9c4');
-    cell(cA, r2, 'CACHE', fs.cacheKnown ? fs.cachePct + '%' : '—', fs.cacheKnown ? (fs.cacheFrac >= 0.4 ? '#5ad0ff' : '#7a8a82') : '#5a6a62');
-    const flash = (now - lastSlagAt) < 900 && (Math.floor((now - lastSlagAt) / 150) % 2 === 0);   // fresh-slag pulse
-    cell(cB, r2, 'SLAG', String(fs.slag), fs.slag > 0 ? (flash ? '#ff9a7a' : '#ef6a4a') : '#3f8a5a');
-    cell(cA, r3, 'THRU', fs.thruOutPerMin + '/m', fs.thruOutPerMin > 0 ? '#aeb9c4' : '#5a6a62');
-    cell(cB, r3, 'DWELL', fs.dwellKnown ? fs.avgDwellSec.toFixed(1) + 's' : '—', fs.dwellKnown ? '#aeb9c4' : '#5a6a62');
-  }
 
   // E2 verification hooks (dev/test only): seed a run clock, force-age it past the TTL, or drive a reconcile with a
   // synthetic snapshot — so the paired-state TTL + reconnect reconciliation can be proven without a 5-minute wait or
