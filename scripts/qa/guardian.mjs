@@ -57,6 +57,7 @@ import * as path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { runBoundedCommand, coerceTimeoutMs } from '../lib/run-command.mjs';
 import { fingerprintOf, makeLedger } from './ledger.mjs';
+import { runSweep as runEvidenceSweep } from './evidence-sweep.mjs';
 
 /* ─────────────────────────────── PURE CORE ─────────────────────────────── */
 
@@ -675,6 +676,22 @@ if (INVOKED_DIRECTLY) {
     const cycleDir = path.join(BUGLOOPS, 'guardian-' + stamp);
     ensureDir(cycleDir);
     log('cycle ' + stamp + ' — trunk @ ' + shortSha(sha) + (skipVisual ? ' (visual gates skipped)' : ''));
+
+    // Bound the evidence dir BEFORE this cycle drops its bundle. `.bugloops` has no other cleanup and
+    // grows every cycle (>1 GB by 2026-07-09). This sweep deletes only bundles older than 7 days that
+    // are outside the newest-5-per-family floor, not a `*-latest` pointer, and not cited by a
+    // non-resolved finding's evidence — and it FAILS OPEN (deletes nothing) if findings can't be parsed.
+    // Best-effort: a sweep failure never changes the cycle verdict. Manifest lands in THIS cycle's dir.
+    try {
+      const swept = runEvidenceSweep({
+        bugloopsDir: BUGLOOPS,
+        findingsDir: path.join(QA_DIR, 'findings'),
+        manifestDir: cycleDir,
+        manifestName: 'sweep-manifest.json',
+        log: (m) => log(m), warn: (m) => errlog(m)
+      });
+      if (swept && swept.counts) log('  evidence-sweep: deleted ' + swept.counts.deleted + ', kept ' + swept.counts.kept + (swept.findingsError ? ' (FAIL-OPEN — findings unreadable)' : ''));
+    } catch (e) { errlog('WARNING: evidence-sweep failed (non-fatal): ' + str(e && e.message || e)); }
 
     const core = makeGuardianCore({ io: cycleIo(cycleDir), clock: { now: () => Date.now() } });
 

@@ -120,6 +120,7 @@ test/qa-cartographer.test.js
 test/golden.test.js
 test/qa-beginner.test.js
 test/qa-janitor.test.js
+test/qa-evidence-sweep.test.js
 test/qa-installed-smoke.test.js
 test/transcript.test.js
 test/recall.test.js
