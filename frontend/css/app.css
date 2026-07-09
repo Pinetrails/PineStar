@@ -2631,3 +2631,38 @@ select.fbc-sel:focus { border-color: var(--ph); box-shadow: 0 0 12px var(--ph-gl
   .con-rail-list { flex-direction: row; flex-wrap: wrap; overflow-x: auto; }
   .con-rail-item.active { box-shadow: 0 0 12px var(--ph-glow2), inset 0 3px 0 var(--ph-bright); }
 }
+
+/* ============================================================
+   F1 · FORM-CONTROL FOUNDATION (finale polish sprint 2026-07-09)
+   One skin for every native <select>; no OS spinners on number
+   fields; one global disabled treatment. The chevron is drawn
+   with currentColor gradients (never an SVG data-uri) so it
+   re-tints with every theme. The OPEN option list stays OS-native
+   (unstyleable) — set what browsers honour on option/optgroup.
+   `html select` boosts specificity above the legacy per-surface
+   skins whose `background:` shorthands would wipe the chevron.
+   .comms-agent-select keeps its own themed ▾ (excluded here).
+   ============================================================ */
+html select:not(.comms-agent-select) {
+  -webkit-appearance: none; appearance: none;
+  font-family: inherit; cursor: pointer;
+  background-image:
+    linear-gradient(45deg, transparent 50%, currentColor 50%),
+    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position: right 13px top 55%, right 8px top 55%;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+  padding-right: 24px;
+}
+html select option, html select optgroup {
+  color: var(--text); background: var(--panel2, #0a0a08); font-style: normal;
+}
+/* kill the OS number spinners app-wide — every numeric field here is a small
+   typed integer (budget caps, timeouts, cooldowns); the spinner is pure chrome */
+input[type=number]::-webkit-inner-spin-button,
+input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+input[type=number] { -moz-appearance: textfield; }
+/* one global disabled voice — surfaces may deepen it, never brighten it */
+button:disabled, select:disabled, input:disabled, textarea:disabled {
+  opacity: 0.45; cursor: not-allowed;
+}

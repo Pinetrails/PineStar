@@ -135,11 +135,15 @@ textarea, select {
    StationUI.notify() mirrors the stored notification to a toast
    in #toast-stack; each slides+fades in, then fades out.
    ============================================================ */
+/* Bottom-LEFT over the stage (clear of the COMMS composer's mic/model cluster on the right),
+   and above every overlay tier — toasts fired while RECRUITMENT (.mkt, z 9000) is open used
+   to be buried under it at z 960 (audit P0 #13). */
 #toast-stack {
-  position: fixed; right: 16px; bottom: 56px; z-index: 960;
-  display: flex; flex-direction: column-reverse; gap: 8px;
+  position: fixed; left: 268px; bottom: 128px; z-index: var(--z-toast, 9600);
+  display: flex; flex-direction: column-reverse; gap: 8px; align-items: flex-start;
   pointer-events: none; max-width: min(360px, 42vw);
 }
+@media (max-width: 900px) { #toast-stack { left: 12px; } }
 .toast {
   pointer-events: auto;
   border: 1px solid var(--ph-dim); border-left: 3px solid var(--ph);
@@ -158,12 +162,12 @@ textarea, select {
 .toast.bad  { border-left-color: var(--bad); }
 .toast.leaving { animation: toast-out var(--t-med) var(--ease-soft) forwards; }
 @keyframes toast-in {
-  from { opacity: 0; transform: translateX(24px); }
+  from { opacity: 0; transform: translateX(-24px); }
   to   { opacity: 1; transform: translateX(0); }
 }
 @keyframes toast-out {
   from { opacity: 1; transform: translateX(0); max-height: 60px; }
-  to   { opacity: 0; transform: translateX(24px); max-height: 0; margin-top: -8px; }
+  to   { opacity: 0; transform: translateX(-24px); max-height: 0; margin-top: -8px; }
 }
 
 /* ============================================================
@@ -172,7 +176,7 @@ textarea, select {
    replaced by a styled pill with an animated knob; glows when ON.
    Scoped to .set-row so only Settings-style toggles are affected.
    ============================================================ */
-.set-row input[type=checkbox] {
+.set-row input[type=checkbox], .mkt input[type=checkbox] {
   -webkit-appearance: none; appearance: none;
   position: relative; vertical-align: middle;
   width: 34px; height: 17px; margin: 0 8px 0 0; padding: 0;
@@ -184,7 +188,7 @@ textarea, select {
               background-color var(--t-fast) var(--ease-soft),
               box-shadow var(--t-fast) var(--ease-soft);
 }
-.set-row input[type=checkbox]::after {
+.set-row input[type=checkbox]::after, .mkt input[type=checkbox]::after {
   content: ''; position: absolute; top: 1px; left: 1px;
   width: 13px; height: 13px; border-radius: 50%;
   background: var(--ph-dim);
@@ -193,17 +197,17 @@ textarea, select {
               background-color var(--t-fast) var(--ease-soft),
               box-shadow var(--t-fast) var(--ease-soft);
 }
-.set-row input[type=checkbox]:checked {
+.set-row input[type=checkbox]:checked, .mkt input[type=checkbox]:checked {
   border-color: var(--ph);
   background: var(--ph-faint);
   box-shadow: inset 0 1px 3px rgba(0,0,0,0.6), 0 0 10px var(--ph-glow2);
 }
-.set-row input[type=checkbox]:checked::after {
+.set-row input[type=checkbox]:checked::after, .mkt input[type=checkbox]:checked::after {
   transform: translateX(17px);
   background: var(--ph);
   box-shadow: 0 0 8px var(--ph-glow);
 }
-.set-row input[type=checkbox]:disabled {
+.set-row input[type=checkbox]:disabled, .mkt input[type=checkbox]:disabled {
   opacity: 0.45; cursor: not-allowed;
 }
 /* keep the label text aligned with the new pill — ONLY on rows that carry a

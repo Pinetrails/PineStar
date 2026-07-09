@@ -4,7 +4,7 @@
    character skin), a two-pane character-select / DOSSIER layout, lane filter, clearance pips, footer. */
 
 .mkt-scrim {
-  position: fixed; inset: 0; z-index: 9000;
+  position: fixed; inset: 0; z-index: var(--z-overlay, 9000);
   display: flex; align-items: center; justify-content: center;
   background: radial-gradient(ellipse 90% 70% at 50% 40%, rgba(0,0,0,.72), rgba(0,0,0,.9));
   backdrop-filter: blur(1px);

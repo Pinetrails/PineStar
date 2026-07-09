@@ -70,6 +70,11 @@
   --s-1: 4px;    --s-2: 8px;    --s-3: 12px;   --s-4: 16px;   --s-5: 24px;
   --r-sm: 3px;   --r: 7px;      --r-lg: 11px;
 
+  /* z-scale tokens (F1) — the ONLY sanctioned stacking tiers. Windows live inside #terms
+     (z:50 stacking context); glass/scrim 940; full-bleed overlays (.mkt, dossier splash) 9000;
+     toasts must beat every overlay except the tutorial layer. */
+  --z-window: 50; --z-glass: 940; --z-overlay: 9000; --z-toast: 9600; --z-tutorial: 98999;
+
   /* NOTE: the composite depth recipes (--bezel/--well/--glass/--raise) are
      declared on `body`, NOT here. They reference the themeable phosphor tokens
      (--ph, --ph-glow2, --ph-dim), and a var() inside a custom property resolves
