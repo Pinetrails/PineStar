@@ -316,6 +316,24 @@ const Harness = (() => {
     }
   }
 
+  // PURE (test-locked in harness-internal.test.js): fold a sidecar error-response body into the human tail of
+  // the thrown "sidecar HTTP <status> — <detail>" message. JSON envelopes ({error}/{message}, + code when it
+  // isn't already in the text) unwrap to their message; anything else passes through. Bounded, never throws.
+  function sidecarErrorDetail(text) {
+    const t = String(text == null ? '' : text).slice(0, 600).trim();
+    if (!t) return '';
+    try {
+      const j = JSON.parse(t);
+      const msg = j && (j.error || j.message);
+      if (msg) {
+        let out = String(msg);
+        if (j.code && out.indexOf(String(j.code)) < 0) out += ' (' + String(j.code) + ')';
+        return out.slice(0, 600).trim();
+      }
+    } catch (_) {}
+    return t;
+  }
+
   /* Run an agent turn/task through the LOCAL SIDECAR (node sidecar/index.js), which holds the
      real agent loop + tools (web, files). We POST the request and read the response body as a
      stream of newline-delimited JSON events — the FROZEN agent.* U.bus events the harness emits.
@@ -352,7 +370,16 @@ const Harness = (() => {
     } catch (e) {
       throw new Error('cannot reach the STARNET sidecar — start it with `npm start` (node sidecar/index.js)');
     }
-    if (!res.ok || !res.body) throw new Error('sidecar HTTP ' + res.status);
+    // A pre-stream failure's TRUE reason lives in the response body — runRouteFailure's {"error":"sidecar
+    // failure: Not signed in to ChatGPT …"} JSON, handleRun's "missing key/model", the token gate's "forbidden
+    // token". The old bare throw discarded it, so the friendly-error ladder never saw the text it classifies on
+    // and the RECONNECT CHATGPT / reload doors were lost on this whole path (EL-10/EL-11). Read it (bounded)
+    // and carry it in the thrown message.
+    if (!res.ok || !res.body) {
+      let detail = '';
+      try { detail = sidecarErrorDetail(await res.text()); } catch (_) {}
+      throw new Error('sidecar HTTP ' + res.status + (detail ? ' — ' + detail : ''));
+    }
 
     const reader = res.body.getReader();
     const dec = new TextDecoder();
