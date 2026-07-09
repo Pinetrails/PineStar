@@ -885,6 +885,10 @@ fn sidecar_command(state: &AppState, entry: &Path, node: &Path) -> Command {
         // has no src-tauri/tauri.conf.json to fall back to). CARGO_PKG_VERSION is the
         // compile-time Cargo.toml version, kept in lockstep with tauri.conf.json by release-bump.
         .env("STARNET_APP_VERSION", env!("CARGO_PKG_VERSION"))
+        // The exact source this desktop was compiled from (build.rs → `git describe --always --dirty --tags`,
+        // e.g. "v0.4.1" clean or "v0.4.1-32-g8b5aae04-dirty"). Exported so the bundled sidecar can surface the
+        // real build provenance at /api/version — a packaged app has no .git to derive it from at runtime.
+        .env("STARNET_BUILD_DESCRIBE", env!("STARNET_BUILD_DESCRIBE"))
         .current_dir(&state.root);
     if let Some(key) = read_key() {
         cmd.env("SKYNET_OPENROUTER_KEY", key);
