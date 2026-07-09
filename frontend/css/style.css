@@ -928,18 +928,47 @@ body.no-scan .crt-scan { display: none; }
 #ns-state.ns-halt { color: #ffb0a8; opacity: 1; }
 #ns-why.ns-halt { color: #ffb0a8; opacity: 1; border: 1px solid rgba(255, 120, 100, 0.45); background: rgba(80, 10, 5, 0.18); padding: 7px; }
 /* CHANNELS panel — one card per messaging platform, generated from the channel catalog (stationui buildMessaging).
-   Reuses the shipped card vocabulary (.up-card family): phosphor border, panel2 fill, raise shadow. */
+   Speaks the marketplace-era card grammar: a per-platform --accent strip + coin plate for the glyph, hover lift and
+   the shared cardIn entrance, keeping the .on green glow for a truly-connected channel. */
+.ch-headless { font-size: 13px; margin: 6px 0 10px; color: var(--ph-bright); letter-spacing: .2px; }
+.ch-optin { display: block; margin: 2px 0 8px; }
+.ch-optin-t { }
+.ch-optin-d { display: block; margin-left: 22px; font-size: 12px; line-height: 1.25; }
 .ch-card {
-  border: 1px solid var(--ph-dim); background: var(--panel2); box-shadow: var(--raise);
-  border-radius: var(--r-sm); padding: 9px 10px; margin: 8px 0;
+  position: relative; border: 1px solid var(--ph-dim); background: var(--panel2); box-shadow: var(--raise);
+  border-radius: var(--r-sm); padding: 10px 11px 9px; margin: 9px 0; overflow: hidden;
+  animation: cardIn 0.34s var(--ease-out, ease) backwards;
+  transition: transform .12s var(--ease-out, ease), border-color .12s ease, box-shadow .12s ease;
 }
-.ch-card.on { border-color: var(--ok); box-shadow: var(--raise), inset 0 0 12px rgba(80, 255, 140, 0.08); }
-.ch-head { display: flex; align-items: baseline; gap: 8px; }
-.ch-glyph { color: var(--ph-bright); font-size: 15px; }
-.ch-title { margin: 0; letter-spacing: 2px; }
-.ch-state { margin-left: auto; font-size: 12px; letter-spacing: 0.5px; text-align: right; }
-.ch-tagline { margin-top: 4px; }
-.ch-setup { margin: 4px 0 6px; }
+.ch-card::before {   /* per-platform accent strip, fading out — the marketplace card signature */
+  content: ''; position: absolute; left: 0; top: 0; right: 0; height: 3px;
+  background: linear-gradient(90deg, var(--accent, var(--ph)), transparent 80%); opacity: .85;
+}
+.ch-card:hover {
+  transform: translateY(-2px); border-color: var(--ph);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent, var(--ph)) 45%, transparent), 0 6px 22px rgba(0,0,0,.55);
+}
+.ch-card.on { border-color: var(--ok); box-shadow: var(--raise), inset 0 0 12px rgba(80, 255, 140, 0.10); }
+.ch-card.on::before { opacity: 1; background: linear-gradient(90deg, var(--ok), transparent 80%); }
+.ch-head { display: flex; align-items: center; gap: 9px; }
+.ch-coin {   /* small engraved plate holding the platform glyph, accent-tinted (echoes the recruit coin seals) */
+  flex: 0 0 auto; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center;
+  border-radius: 50%; background: radial-gradient(circle at 38% 32%, rgba(255,255,255,.06), rgba(0,0,0,.35));
+  border: 1px solid color-mix(in srgb, var(--accent, var(--ph)) 45%, var(--ph-dim));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.06), inset 0 -3px 8px rgba(0,0,0,.6);
+}
+.ch-glyph { color: var(--accent, var(--ph-bright)); font-size: 16px; line-height: 1; text-shadow: 0 0 8px color-mix(in srgb, var(--accent, var(--ph)) 55%, transparent); }
+.ch-id { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.ch-title { margin: 0; letter-spacing: 2px; color: var(--ph); font-weight: normal; font-size: 15px; text-shadow: 0 1px 0 #000, 0 0 8px var(--ph-glow2); }
+.ch-adv { font-size: 9.5px; letter-spacing: 1px; color: var(--accent, var(--ph-dim)); border: 1px solid color-mix(in srgb, var(--accent, var(--ph)) 40%, transparent); border-radius: 3px; padding: 0 4px; vertical-align: middle; opacity: .9; }
+.ch-answers { font-size: 11px; letter-spacing: .5px; color: var(--ph-dim); }
+.ch-state { margin-left: auto; font-size: 12px; letter-spacing: 0.5px; text-align: right; white-space: nowrap; }
+.ch-state.st-up { color: var(--ok); }
+.ch-state.st-wait { color: var(--gold); }
+.ch-state.st-err { color: var(--bad); }
+.ch-state.st-off { color: var(--ph-dim); }
+.ch-tagline { margin-top: 5px; }
+.ch-setup { margin: 5px 0 6px; }
 .ch-setup > summary {
   cursor: pointer; font-size: 11px; letter-spacing: 2px; color: var(--ph-dim);
   list-style: none; user-select: none;
@@ -947,9 +976,20 @@ body.no-scan .crt-scan { display: none; }
 .ch-setup > summary::before { content: '▸ '; }
 .ch-setup[open] > summary::before { content: '▾ '; }
 .ch-setup > summary:hover { color: var(--ph-bright); }
-.ch-setup .set-about { margin-top: 4px; }
-.ch-card .set-save { margin-top: 6px; }
+.ch-steps { margin: 6px 0 4px; padding-left: 20px; font-size: 12px; line-height: 1.4; color: var(--ph); }
+.ch-steps li { margin: 2px 0; }
+.ch-steps li::marker { color: var(--accent, var(--ph-dim)); }
+.ch-note { font-size: 11px; color: var(--ph-dim); opacity: .85; margin: 2px 0 0; }
+/* dedicated field label — small-caps, no ms-h diamond/divider dressing (that header language is for section rules) */
+.ch-lbl { display: block; margin: 8px 0 3px; font-size: 11px; letter-spacing: 1.5px; color: var(--ph); text-transform: uppercase; }
+.ch-card .set-save { margin-top: 8px; align-items: center; }
 .ch-card .msg { min-height: 0; }
+.msg.info { color: var(--ph); }   /* neutral outcome (connecting…/disconnected/hints) — never the --bad error red */
+.ch-door {   /* inline deep-link door (e.g. → SETTINGS → PROVIDERS) styled as a phosphor text-button */
+  background: transparent; border: 0; border-bottom: 1px dotted currentColor; color: var(--gold);
+  font-family: inherit; font-size: inherit; letter-spacing: .5px; cursor: pointer; padding: 0; margin-left: 2px;
+}
+.ch-door:hover { color: var(--ph-bright); text-shadow: 0 0 6px var(--ph-glow2); }
 .up-mini {
   display: flex; align-items: center; justify-content: space-between; gap: 10px;
   border: 1px solid var(--ph-faint); background: var(--panel2); padding: 7px 8px; margin: 6px 0;

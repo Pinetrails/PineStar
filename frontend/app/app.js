@@ -1470,7 +1470,9 @@ const App = (() => {
   // pickedCustomVoice remain as state so RESUMED agents keep the voiceTraits/customVoice they already
   // carry — Personas.compose still honors them; a fresh create simply never sets them.
 
-  // a live preview: how the picked voice sounds, plus a readout of any tuning the Commander applied.
+  // a live preview: how the picked voice sounds. (The fine-tune UI is gone from this screen — the
+  // "tuned:" readout survives ONLY for resumed agents that still carry voiceTraits; a fresh create
+  // just names the archetype, no tuning-era "untuned" copy.)
   function renderVoicePreview() {
     const pv = el('voice-preview'); if (!pv || typeof Personas === 'undefined') return;
     const p = Personas.get(pickedPersona);
@@ -1483,7 +1485,7 @@ const App = (() => {
     pv.innerHTML = '';
     const q = document.createElement('div'); q.className = 'vp-quote'; q.textContent = '“' + p.sampleVoiceReply + '”';
     const m = document.createElement('div'); m.className = 'vp-meta';
-    m.textContent = p.name + (tweaks.length ? ' · tuned: ' + tweaks.join(', ') : ' · preset, untuned');
+    m.textContent = p.name + (tweaks.length ? ' · tuned: ' + tweaks.join(', ') : '');
     pv.appendChild(q); pv.appendChild(m);
   }
 

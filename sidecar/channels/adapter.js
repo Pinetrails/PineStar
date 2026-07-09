@@ -88,12 +88,19 @@
       return allowed.has(String(m.chatId));
     }
 
-    let started = false, stopped = false, down = false;
+    let started = false, stopped = false, down = false, confirmed = false;
     let offset = Number.isFinite(o.startOffset) ? o.startOffset : 0;   // next update id to fetch from
     let ac = null;          // aborts the in-flight getUpdates on disconnect
     let loopDone = null;    // resolves when the poll loop has fully exited
 
-    function statusUp() { if (down) { down = false; onStatus && onStatus({ state: 'up' }); } }
+    // HONEST CONNECT: `confirmed` stays false until the FIRST successful poll round-trip — only then do we assert
+    // 'up'. Before that the channel is genuinely just 'connecting' (the composition root reports that state), so the
+    // panel never claims CONNECTED on an unproven token. After the first success, statusUp/statusDown track live
+    // transport health exactly as before (a transient error still emits 'down' then 'up' on recovery).
+    function statusUp() {
+      if (!confirmed) { confirmed = true; down = false; onStatus && onStatus({ state: 'up' }); return; }
+      if (down) { down = false; onStatus && onStatus({ state: 'up' }); }
+    }
     function statusDown(detail) { if (!down) { down = true; onStatus && onStatus({ state: 'down', detail: detail }); } }
 
     function dispatch(raw) {
