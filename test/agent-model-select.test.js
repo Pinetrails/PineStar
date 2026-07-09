@@ -27,7 +27,10 @@ A.ok(/function summonModelBarHTML\(/.test(mkt), 'the bay renders a SUMMON model 
 A.ok(/ModelPicker\.shellHTML\(/.test(mkt), 'the bay model bar is built from the shared ModelPicker');
 A.ok(/ModelPicker\.populate\(modelWrap/.test(mkt), 'the bay populates the catalog after mount');
 A.ok(/modelPin:\s*pickedSummonModel/.test(mkt), 'the picked model is threaded into the onPick payload as modelPin');
-A.ok(/html \+= summonModelBarHTML\(\)/.test(mkt), 'the model bar is actually inserted into the summon stage');
+// Lane D moved APPEARANCE + MODEL into a collapsible SUMMON CONFIG strip (keeps the class roster above the fold);
+// the model bar is still wired end to end, now via summonConfigHTML() rather than a bare append.
+A.ok(/html \+= summonConfigHTML\(\)/.test(mkt), 'the SUMMON CONFIG strip is inserted into the summon stage');
+A.ok(/function summonConfigHTML[\s\S]{0,1600}summonModelBarHTML\(\)/.test(mkt), 'the config strip carries the model bar (still wired into summon)');
 
 // ---- SUMMON: the new agent takes the chosen model AND its provider + effort ----
 A.ok(/const pin = \(spec && spec\.modelPin\)/.test(appjs), 'summonAgent reads spec.modelPin');

@@ -750,16 +750,21 @@ const App = (() => {
       // ACTIONABLE FOLLOW-UP (audit B-1): a summoned specialist can't take FLOOR work until it has its own DESK
       // (a seated workstation). The old copy buried this required step in a passing remark ("give it its OWN PC")
       // with no way to act. Now the agent says it plainly — "desk", never "OWN PC" — and a chip opens REFIT with
-      // desk placement teed up. The toast still lands as the standing record; the diegetic line + chip is the door.
-      _notify(a.name + ' summoned — type to task it now. It needs a desk before it can take floor work.', 'good');
+      // desk placement teed up. FINALE (Lane D): the toast is ONE line now — the desk requirement + its door move
+      // into the diegetic line + chip below (the standing record no longer duplicates the whole instruction).
+      _notify(a.name + ' summoned — type to task it now.', 'good');
       if (typeof Chat !== 'undefined' && Chat.localLine && Chat.choices && (typeof Chat.isBusy !== 'function' || !Chat.isBusy())) {
         Chat.localLine(a.name + ' is here — but it has nowhere to sit yet. it needs a desk of its own before it can take floor work. want to place one?');
         Chat.choices([{ label: '▤ PLACE ITS DESK', value: 'desk' }, { label: 'later', value: 'later', skip: true }], item => {
           if (item && item.value === 'desk') openDeskPlacement();
         });
       }
+      // land the cursor in the COMMS composer so "type to task it now" is literal. Deferred a tick so it wins over
+      // the bay's close() focus-restore (which runs synchronously right after this returns, sending focus to the
+      // RECRUIT dock button). Guarded on visibility so a closed COMMS panel is a no-op.
+      setTimeout(() => { const ci = el('chat-input'); if (ci && ci.offsetParent !== null) { try { ci.focus(); } catch (_) {} } }, 0);
     } else {
-      _notify(a.name + ' summoned — overseer remains in COMMS. Switch to its stream to task it directly, or let the overseer delegate. Give it a desk in REFIT before it takes floor work of its own.', 'good');
+      _notify(a.name + ' summoned — switch to its stream to task it, or let the overseer delegate.', 'good');
     }
     // ONE loadout beat: state plainly what the class summon actually applied — the skills enabled, the effort
     // applied, and the STATION GEAR the class draws on (honest present/missing under the overseer, NOT per-agent

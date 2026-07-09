@@ -44,8 +44,10 @@
     auditor: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 2 L20 5 V11 C20 16 16.5 19.4 12 21.4 C7.5 19.4 4 16 4 11 V5 Z"/><circle cx="10.6" cy="10.4" r="3.3" fill="none" stroke="' + D + '" stroke-width="1.8"/><path d="M13 12.8 L16 15.8" stroke="' + D + '" stroke-width="2.1" stroke-linecap="round"/></svg>',
     // bookkeeper: a ledger book with ruled lines and a balance mark.
     bookkeeper: '<svg viewBox="0 0 24 24"><rect x="4" y="3" width="15" height="18" rx="1.6" fill="currentColor"/><rect x="4" y="3" width="3" height="18" fill="' + D + '"/><g fill="none" stroke="' + D + '" stroke-width="1.5" stroke-linecap="round"><path d="M9.4 7.4 H16"/><path d="M9.4 10.6 H16"/><path d="M9.4 13.8 H16"/></g><path fill="' + D + '" d="M9.2 16.4 L11 18.2 L15.4 15 L16.4 16 L11 20 L8.2 17.4 Z"/></svg>',
-    // translator: two-way arrows over glyphs — swapping languages.
-    translator: '<svg viewBox="0 0 24 24"><g fill="currentColor" font-family="serif"><text x="3" y="10" font-size="9" fill="currentColor">A</text><text x="14" y="22" font-size="9" fill="currentColor">文</text></g><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M13 5 H21 M18 2.4 L21 5 L18 7.6"/><path d="M11 19 H3 M6 16.4 L3 19 L6 21.6"/></g></svg>',
+    // translator: two-way arrows over two script marks — swapping languages. The glyphs are stroke PATHS (a Latin
+    // "A" top-left, an abstract CJK mark bottom-right), not <text> — <text> was the only seal that rendered with a
+    // system font, so it scaled + themed inconsistently against the other engraved paths.
+    translator: '<svg viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11 L5.5 3.6 L8 11 M3.9 8.6 H7.1"/><path d="M16 13.2 L18 14 M13.8 15.6 H20.2 M18 16 L14.2 21.4 M15.8 17.4 L20.2 21.4"/></g><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M13 5 H21 M18 2.4 L21 5 L18 7.6"/><path d="M11 19 H3 M6 16.4 L3 19 L6 21.6"/></g></svg>',
     // herald: a banner/pennant on a staff — the periodic broadcast.
     herald: '<svg viewBox="0 0 24 24"><rect x="5" y="2.6" width="2" height="18.8" rx=".6" fill="currentColor"/><path fill="currentColor" d="M7 3.4 H20 L16.8 7.6 L20 11.8 H7 Z"/><g fill="none" stroke="' + D + '" stroke-width="1.4" stroke-linecap="round"><path d="M9.6 6 H16"/><path d="M9.6 9 H14"/></g></svg>',
   };
