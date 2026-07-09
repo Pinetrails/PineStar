@@ -199,9 +199,15 @@
               </div>
             </div>
 
-            <div class="ov-model-lab"><label>MODEL <span class="dim" id="model-count"></span></label></div>
-            <input id="in-model" list="model-list" placeholder="loading models…" autocomplete="off" spellcheck="false">
-            <datalist id="model-list"></datalist>
+            <div class="ov-model-lab"><label for="in-model">MODEL <span class="dim" id="model-count"></span></label></div>
+            <!-- Themed grouped model picker (replaces the native <datalist>, which rendered ~370 raw slugs in an
+                 unstyleable OS dropdown). #in-model stays the text input (search-as-you-type); #model-pop is a
+                 phosphor listbox app.js fills GROUPED BY VENDOR with display names + context + $/M pricing. -->
+            <div class="ov-mdl-wrap">
+              <input id="in-model" placeholder="loading models…" autocomplete="off" spellcheck="false"
+                     role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="model-pop">
+              <div id="model-pop" class="ov-mdl-pop" role="listbox" aria-label="Model catalog" hidden></div>
+            </div>
             <!-- one-tap recommended slugs. Each chip just prefills #in-model; the live catalog hint then prices it. -->
             <div id="model-picks" class="model-picks" aria-label="Recommended models"></div>
             <div id="model-hint" class="dim hint">—</div>
