@@ -196,34 +196,15 @@ input::placeholder, textarea.key-input::placeholder { color: var(--ph-dim); opac
 .phosphor-swatches .swatch:hover { opacity: 1; }
 .phosphor-swatches .swatch.sel { opacity: 1; outline: 1px solid var(--ph-bright); outline-offset: 2px; box-shadow: 0 0 9px var(--sw); }
 .phosphor-swatches .swatch:focus-visible { outline: 2px solid var(--ph-bright); outline-offset: 2px; }
-.cc-ascii {
-  margin: 6px 0 2px; font-family: inherit; font-size: 14px; line-height: 1.05;
-  color: var(--ph); white-space: pre; letter-spacing: 0;
-  text-shadow: 0 0 10px var(--ph-glow), 0 0 2px var(--ph-glow); opacity: .92;
-}
 .cc-title-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
 .cc-title-row h2 { margin: 4px 0 0; }      /* the inverted-block h2 keeps its global look */
-.cc-stamp { color: var(--ph-dim); font-size: 14px; letter-spacing: 2px; text-transform: uppercase; white-space: nowrap; }
-.cc-stamp b { color: var(--gold); }
-.cc-cursor { color: var(--ph); margin-left: 3px; animation: cc-blink 1s steps(1) infinite; }
-@keyframes cc-blink { 0%,50% { opacity: 1; } 50.01%,100% { opacity: 0; } }
-.connect-panel .lead-banner { margin: 12px 22px 0; }
+@keyframes cc-blink { 0%,50% { opacity: 1; } 50.01%,100% { opacity: 0; } }   /* used by .sp-rec + .cc-tb-rec */
 
-/* ===== two-column body — the machinery on the left, the soul on the right ===== */
+/* .cc-grid is the CONNECTORS catalog grid (stationui.js), NOT genesis — genesis uses .ov-grid. Kept here;
+   the old genesis two-column body (cc-col, cc-emblem, cc-ascii, cc-stamp, cc-cursor, lead-banner) is deleted. */
 .cc-grid {
   display: grid; grid-template-columns: 1fr 1fr; gap: 0;
   padding: 10px 22px 2px;
-}
-.cc-col { min-width: 0; }
-.cc-col-core { padding-right: 22px; border-right: 1px solid var(--ph-faint); }   /* a hairline spine splits the two halves */
-.cc-col-voice { padding-left: 22px; display: flex; flex-direction: column; }
-.cc-col .cc-head:first-child { margin-top: 4px; }
-/* the orchestration-lattice emblem fills the voice column's slack (it's shorter than core) — pushed to
-   the bottom so the two columns end flush instead of leaving the right side hanging in dead space. */
-.cc-emblem {
-  margin: auto 0 2px; font-family: inherit; font-size: 13px; line-height: 1.12;
-  color: var(--ph-dim); white-space: pre; text-align: center; align-self: center;
-  text-shadow: 0 0 8px var(--ph-glow2); opacity: .72; letter-spacing: 1px; pointer-events: none;
 }
 
 /* recommended-model quick picks (OpenRouter): one-tap slugs for newcomers — premium + beginner-friendly */
@@ -241,8 +222,6 @@ input::placeholder, textarea.key-input::placeholder { color: var(--ph-dim); opac
 
 @media (max-width: 860px) {
   .cc-grid { grid-template-columns: 1fr; padding: 12px 18px 4px; }
-  .cc-col-core { padding-right: 0; border-right: none; padding-bottom: 6px; }
-  .cc-col-voice { padding-left: 0; border-top: 1px solid var(--ph-faint); padding-top: 6px; margin-top: 8px; }
 }
 
 /* ChatGPT-subscription (Codex OAuth) sign-in block on the connect screen */
@@ -274,18 +253,8 @@ input::placeholder, textarea.key-input::placeholder { color: var(--ph-dim); opac
 .connect-link { color: var(--gold); text-decoration: underline; text-underline-offset: 2px; }
 .connect-link:hover { filter: brightness(1.2); }
 
-/* "FINE-TUNE THE VOICE" reveal — calms the create screen so it leads with the archetype pick */
-.adv-toggle {
-  display: flex; align-items: center; gap: 8px; width: 100%; margin: 18px 0 0;
-  font-family: inherit; font-size: 16px; letter-spacing: 1px; color: var(--ph);
-  background: transparent; border: 1px dashed var(--ph-dim); border-radius: 5px;
-  padding: 8px 12px; cursor: pointer; text-align: left; text-shadow: 0 0 6px var(--ph-glow2);
-}
-.adv-toggle:hover { color: var(--ph-bright); border-color: var(--ph); background: var(--ph-faint); }
-.adv-toggle.open { border-style: solid; color: var(--ph-bright); }
-.adv-caret { color: var(--ph); flex: 0 0 auto; }
-.adv-body { margin-top: 4px; }
-.adv-body[hidden] { display: none; }
+/* (deleted: the .adv-toggle/.adv-caret/.adv-body "FINE-TUNE THE VOICE" reveal — the voice fine-tune UI was
+   removed from genesis 2026-07-09; the archetype chip is the whole voice choice now.) */
 
 /* ---------- GAME ---------- */
 #game-top {
@@ -1105,13 +1074,7 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 
 /* ---------- onboarding / save additions ---------- */
 /* (title-screen rules removed with the title screen; #data-status now styled by .title-status at the top of this file) */
-/* Orchestrator framing on the create screen */
-.lead-banner {
-  border: 2px solid var(--ph-dim); border-left: 4px solid var(--ph);
-  background: var(--ph-glow2); padding: 7px 12px; margin: 0 0 14px;   /* translucent amber wash over the bezel — NOT the opaque --ph-faint slab */
-  font-size: 14px; color: var(--ph-bright); letter-spacing: .5px; line-height: 1.28;
-}
-.lead-banner b { color: var(--gold); }
+/* (deleted: .lead-banner — the old create-screen orchestrator framing banner, unused since the ov-* redesign) */
 /* section subheads dominate the field labels they group (labels are 16px). A trailing dashed rule runs
    the head out to the column edge — terminal-readout texture without another heavy border. */
 .cc-head {
@@ -1231,13 +1194,11 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 .ov-vchip:hover { border-color: var(--ph-dim); color: var(--ph-bright); }
 .ov-vchip.sel { background: var(--ph); color: var(--ink); border-color: var(--ph); text-shadow: none; }
 .ov-vpreview { margin-top: 8px; }
-.ov-vtune { margin-top: 8px; }
 
 .ov-field-brain { margin-bottom: 0; }
 .ov-brain { border: 2px solid var(--ph-dim); border-radius: 7px; background: rgba(var(--ph-rgb),.04); padding: 10px 12px; }
-/* beginner-funnel lead-in: names the no-API-key path before the provider row so a newcomer knows the easy
-   option exists and that BYOK is still one click away. */
-.ov-brain-lead { font-size: 12px; line-height: 1.32; color: var(--ph-bright); margin: 0 0 9px; opacity: .95; }
+/* (deleted: .ov-vtune + .ov-brain-lead — the voice fine-tune well and the brain lead-in paragraph are both
+   gone; the hero ChatGPT card now carries the beginner message, so the lead-in was redundant.) */
 .ov-brain .provider-row { margin: 0 0 8px; }
 .ov-brain input { margin-bottom: 8px; }
 .ov-brain .model-picks { margin: 2px 0 6px; }
@@ -1342,7 +1303,6 @@ input.field-locked { opacity: .55; filter: none; cursor: not-allowed; background
   .ov-col-brain { border-top: none; }
   .ov-cards { grid-template-columns: 1fr 1fr; }
 }
-.skin-section { display: flex; gap: 12px; align-items: stretch; }
 .skin-picker {
   flex: 1; min-width: 0; display: flex; flex-wrap: wrap; gap: 6px;
   align-content: flex-start; max-height: 156px; overflow-y: auto; padding-right: 2px;
@@ -1358,45 +1318,16 @@ input.field-locked { opacity: .55; filter: none; cursor: not-allowed; background
 .skin-thumb:hover { border-color: var(--ph); background: var(--ph-faint); }
 .skin-thumb.sel { border-color: var(--ph-bright); box-shadow: 0 0 10px var(--ph-glow); }
 
-/* the live preview stage — the floor sprite itself, animated, so the demo can never lie */
-.skin-stage { flex: 0 0 132px; margin: 0; display: flex; flex-direction: column; align-items: center; gap: 6px; }
-.skin-stage-frame {
-  width: 132px; height: 132px; box-sizing: border-box; background: var(--panel2);
-  border: 2px solid var(--ph-dim); border-radius: 4px; overflow: hidden;
-  background-image: radial-gradient(ellipse 64% 44% at 50% 86%, var(--ph-glow2), transparent 72%);
-  display: flex; align-items: flex-end; justify-content: center;
-}
-.skin-stage-frame img {
-  width: 88%; height: 88%; object-fit: contain; object-position: center bottom;
-  image-rendering: pixelated; image-rendering: crisp-edges;
-}
+/* (deleted: the genesis .skin-stage/.skin-stage-frame preview — the ov-hero pod now uses .ov-stage/.ov-stage-frame;
+   the Recruitment Bay's SUMMON preview is the separate mkt-skin-stage* in marketplace.css.) */
 .skin-stage-name { color: var(--ph-bright); letter-spacing: 1px; font-size: 14px; text-align: center; }
 
 /* NOTE: the Recruitment Bay's SUMMON skin bar (.mkt-skinbar / .mkt-skin-section / .mkt-skin-stage) is styled
    in marketplace.css — a self-contained bespoke picker with its own large wells + live SkinStage preview.
    The earlier orphan .mkt-skin-section rules that used to sit here (never emitted by any JS) were removed. */
 
-/* VOICE & MANNER — grounded archetype cards + a live preview of how the picked voice sounds.
-   auto-fit/minmax self-collapses to one column on a narrow panel so the quoted cardLine never crushes. */
-/* compact 2-up card grid — the cards no longer dominate the screen; the live preview below carries the
-   full sample line, so each card just needs a name + a one-line teaser. */
-.archetype-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
-.archetype {
-  position: relative; font-family: inherit; text-align: left; cursor: pointer; color: var(--ph);
-  background: var(--panel2); border: 2px solid var(--ph-dim); border-radius: 4px;
-  padding: 6px 9px; display: flex; flex-direction: column; gap: 2px;
-}
-.archetype:hover { border-color: var(--ph); background: var(--ph-faint); }
-.archetype.sel { border-color: var(--ph-bright); background: var(--ph-faint); box-shadow: 0 0 10px var(--ph-glow); }
-/* a corner tick marks the picked voice — a small premium flourish over a plain glow */
-.archetype.sel::after { content: '▸'; position: absolute; top: 3px; right: 6px; color: var(--gold); font-size: 13px; }
-.arch-name { color: var(--ph-bright); letter-spacing: 1px; font-size: 14px; }
-.archetype.sel .arch-name { color: var(--gold); }
-.arch-line {
-  color: var(--text); opacity: .78; font-size: 12px; line-height: 1.2;
-  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
-}
-
+/* (deleted: the archetype/arch-name card grid — genesis personality is the .ov-vchip chip row now; the live
+   .voice-preview below is still used by renderVoicePreview.) */
 .voice-preview {
   margin-top: 9px; border: 1px dashed var(--ph-dim); border-radius: 5px;
   padding: 8px 10px; background: rgba(0,0,0,.3);
@@ -1404,35 +1335,9 @@ input.field-locked { opacity: .55; filter: none; cursor: not-allowed; background
 .vp-quote { color: var(--ph-bright); font-size: 15px; line-height: 1.25; }
 .vp-meta { color: var(--ph-dim); font-size: 12px; letter-spacing: .5px; margin-top: 4px; text-transform: uppercase; }
 
-/* FINE-TUNE dials, toggles, and the free-text voice note (behind the reveal) */
-.voice-traits { display: flex; flex-direction: column; gap: 7px; margin: 4px 0 2px; }
-.dial-row { display: flex; align-items: center; gap: 9px; }
-.dial-label { flex: 0 0 64px; color: var(--ph); font-size: 13px; letter-spacing: 1px; }
-.dial-seg { display: flex; gap: 3px; }
-.dial-cell { position: relative; width: 22px; height: 18px; padding: 0; cursor: pointer; background: var(--panel2); border: 2px solid var(--ph-dim); }
-.dial-cell:hover { border-color: var(--ph); }
-.dial-cell.sel { background: var(--ph); border-color: var(--ph-bright); box-shadow: 0 0 8px var(--ph-glow); }
-/* mark the NEUTRAL (default / untuned) step with a quiet centre dot, so the Commander can see where "leave it
-   as the preset" sits without reading a tooltip. Hidden once that cell is the selected one (the fill replaces it). */
-.dial-cell.neutral::after { content: ''; position: absolute; left: 50%; top: 50%; width: 3px; height: 3px; margin: -1.5px 0 0 -1.5px; border-radius: 50%; background: var(--ph-dim); }
-.dial-cell.neutral.sel::after { display: none; }
-/* keyboard focus is visible (a11y): the dials, archetype cards, and toggles all take Tab + Enter/Space. */
-.dial-cell:focus-visible, .vtoggle:focus-visible, .archetype:focus-visible { outline: 2px solid var(--ph-bright); outline-offset: 2px; }
-.dial-ends { color: var(--ph-dim); font-size: 12px; letter-spacing: .3px; }
-.voice-toggles { display: flex; gap: 6px; flex-wrap: wrap; }
-.vtoggle {
-  font-family: inherit; font-size: 13px; color: var(--ph); background: var(--panel2);
-  border: 2px solid var(--ph-dim); padding: 3px 10px; cursor: pointer; letter-spacing: 1px;
-}
-.vtoggle:hover { border-color: var(--ph); background: var(--ph-faint); color: var(--ph-bright); }
-.vtoggle.sel { background: var(--ph); color: var(--ink); border-color: var(--ph); text-shadow: none; }
-.voice-custom {
-  width: 100%; font-family: inherit; font-size: 15px; color: var(--ph-bright);
-  background: #000; border: 2px solid var(--ph-dim); padding: 6px 9px; outline: none; resize: vertical;
-  text-shadow: 0 0 5px var(--ph-glow2); box-shadow: inset 0 2px 5px rgba(0,0,0,.65);   /* match the app's text inputs */
-}
-.voice-custom:focus { border-color: var(--ph); box-shadow: inset 0 0 18px rgba(0,0,0,.7), 0 0 12px var(--ph-glow2); }
-.voice-custom::placeholder { color: var(--ph); opacity: .7; }   /* the global input::placeholder rule doesn't reach a textarea; bumped off --ph-dim so the hint stays legible. .7 (not .6) keeps it >=4.5:1 (WCAG AA) on --bg — .6 was ~4.2:1 in amber/blue */
+/* (deleted: the whole FINE-TUNE voice UI — voice-traits, the dial-row/dial-cell segments, voice-toggles,
+   vtoggle and voice-custom. The voice fine-tune dials + free-text note were removed from genesis 2026-07-09;
+   the archetype chip is the entire voice choice now. Resumed agents keep saved voiceTraits/customVoice.) */
 
 /* ============================================================
    STATION HUD — top bar · crew manifest · bottom bar · panels.
