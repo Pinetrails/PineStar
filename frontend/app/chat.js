@@ -356,8 +356,18 @@ const Chat = (() => {
     } catch (_) { return false; }
   }
 
+  // INPUT HISTORY — terminal-style recall of what the Commander already sent this session. ArrowUp in an
+  // EMPTY composer (or while already recalling) walks back; ArrowDown walks forward and lands back on the
+  // in-progress draft. Typing anything exits recall mode (the 'input' listener resets histIdx), so a
+  // multiline draft is never hijacked mid-edit. Session-scoped, never persisted.
+  const sentHistory = []; let histIdx = -1, histDraft = '';
+  const HIST_CAP = 100;
+  function recordSent(t) { if (!t) return; if (sentHistory[sentHistory.length - 1] !== t) { sentHistory.push(t); if (sentHistory.length > HIST_CAP) sentHistory.shift(); } histIdx = -1; histDraft = ''; }
+  function recallInto(v) { input.value = v; autoGrowInput(); try { input.setSelectionRange(v.length, v.length); } catch (_) {} }
+
   function init(opts) {
     system = opts.system || ''; name = opts.name || 'AGENT';
+    sentHistory.length = 0; histIdx = -1; histDraft = '';   // recall never crosses a session/agent switch
     onTurn = opts.onTurn || null; interview = null;
     proposalRunsSeen.clear(); receiptRunsSeen.clear(); studyRunsSeen.clear(); clearChoices(); turninQueue.length = 0; activeTurnin = null; wiQDepth.clear(); queued.clear(); interrupted.clear();   // C2: per-session run-tracking + the queue gauge + turn-control state start clean for each agent (listeners stay once-registered)
     // GROWTH Tier 1: the study side starts clean per session too — a prior hero's deferred study/taste beats must
@@ -374,9 +384,25 @@ const Chat = (() => {
     if (log && !log.__copyWired) {
       log.__copyWired = true;
       log.addEventListener('click', e => {
+        // SELECTION GUARD: the transcript is selectable text — a mouse-up that ENDS a drag-selection must
+        // never also fire a click action (chip toggle), or selecting inside a chip snaps it shut.
+        const selecting = !!(window.getSelection && String(window.getSelection()));
+        // LINKS (desktop): a linkified <a target=_blank> is silently dead under the Tauri window policy
+        // (same law as openSignIn / the workshop Open-it action) — hand real http(s) hrefs to the OS
+        // browser. In a plain browser the default target=_blank behavior stands.
+        const link = e.target.closest('a');
+        if (link && /^https?:\/\//i.test(link.getAttribute('href') || '')) {
+          if (selecting) { e.preventDefault(); return; }
+          const invoke = (typeof window !== 'undefined' && window.__TAURI__ && window.__TAURI__.core) ? window.__TAURI__.core.invoke : null;
+          if (invoke) {
+            e.preventDefault();
+            invoke('open_external_url', { url: link.href }).catch(() => { if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('could not open your browser for that link', 'warn'); });
+          }
+          return;
+        }
         // TOOL CHIP: clicking a chip's head toggles its expanded detail (checked before the copy button)
         const chipHead = e.target.closest('.tc-head');
-        if (chipHead) { toggleChip(chipHead); if (typeof SFX !== 'undefined' && SFX.click) SFX.click(); return; }
+        if (chipHead) { if (selecting) return; toggleChip(chipHead); if (typeof SFX !== 'undefined' && SFX.click) SFX.click(); return; }
         const btn = e.target.closest('.cmsg-copy'); if (!btn) return;
         const bodyEl = btn.closest('.cmsg') && btn.closest('.cmsg').querySelector('.body');
         const txt = bodyEl ? bodyEl.textContent : '';
@@ -412,10 +438,26 @@ const Chat = (() => {
         if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeSlash(); return; }
         // any other key falls through to normal typing → the 'input' listener re-filters the palette
       }
+      // INPUT HISTORY — recall starts only from an EMPTY box (a draft in progress is never hijacked);
+      // once recalling, ArrowUp/ArrowDown walk the sent list, ArrowDown past the newest restores the draft.
+      if (e.key === 'ArrowUp' && sentHistory.length && (histIdx >= 0 || input.value === '')) {
+        e.preventDefault();
+        if (histIdx < 0) { histDraft = input.value; histIdx = sentHistory.length; }
+        if (histIdx > 0) { histIdx--; recallInto(sentHistory[histIdx]); }
+        return;
+      }
+      if (e.key === 'ArrowDown' && histIdx >= 0) {
+        e.preventDefault();
+        histIdx++;
+        if (histIdx >= sentHistory.length) { histIdx = -1; recallInto(histDraft); histDraft = ''; }
+        else recallInto(sentHistory[histIdx]);
+        return;
+      }
       if (e.key === 'Enter' && !e.isComposing && !e.shiftKey) {   // Shift+Enter falls through → newline in the textarea
         e.preventDefault();
         const t = input.value.trim();
         if (!t) return;
+        recordSent(t);   // history records every sent line — commands included, like a shell
         // A "/name args" line whose palette is closed must still DISPATCH as a command, not get sent to the
         // agent as chat. runSlash reads its args off input.value, so hand it the raw line before clearing.
         if (t[0] === '/') { const cmd = commandFromLine(t); if (cmd) { closeSlash(); runSlash(cmd); return; } }
@@ -427,7 +469,7 @@ const Chat = (() => {
       }
     };
     // SLASH PALETTE: a leading "/" opens the command menu and filters it live as you type past it.
-    input.addEventListener('input', () => { autoGrowInput(); warmChat(); const v = input.value; if (v[0] === '/') openSlash(v.slice(1)); else closeSlash(); });
+    input.addEventListener('input', () => { autoGrowInput(); warmChat(); histIdx = -1; const v = input.value; if (v[0] === '/') openSlash(v.slice(1)); else closeSlash(); });   // real typing exits history-recall mode
     const stopBtn = el('chat-stop'); if (stopBtn) stopBtn.onclick = stopActive;
   }
 
@@ -634,10 +676,10 @@ const Chat = (() => {
     } else {
       d.appendChild(who); d.appendChild(body);
     }
-    // COPY: a hover-revealed copy button on the agent's MESSAGE rows. CSS hides it on the work-log beats
+    // COPY: a hover-revealed copy button on MESSAGE rows (agent + Commander). CSS hides it on the work-log beats
     // (tool / consent / turn-in / nudge / deliverable) — those aren't prose to copy. One delegated handler
     // in init() reads the row's .body text, so a streamed reply gains the button the moment its row exists.
-    if (role === 'agent') {
+    if (role === 'agent' || role === 'user') {
       const cp = document.createElement('button'); cp.className = 'cmsg-copy'; cp.type = 'button';
       cp.title = 'copy message'; cp.setAttribute('aria-label', 'Copy message'); cp.textContent = '⧉';
       d.appendChild(cp);

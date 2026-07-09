@@ -300,6 +300,13 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 .cmsg .who { font-size: 12px; letter-spacing: 1.5px; color: var(--ph-dim); display: block; margin: 9px 0 3px; text-transform: uppercase; font-weight: bold; }
 .cmsg .body { white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; }
 
+/* SELECTABLE TRANSCRIPT — the log is real text: mouse-select + copy anywhere in it, like any terminal
+   (overrides the game chrome's body { user-select: none }). Controls and labels stay unselectable so a
+   drag-select never smears button captions / speaker chips / timestamps into the copied prose. */
+#chat-log { user-select: text; }
+#chat-log .cmsg .body { cursor: text; }
+#chat-log button, #chat-log .who, #chat-log .cmsg-ts { user-select: none; }
+
 /* COPY — a hover-revealed ⧉ button at the top-right of an agent MESSAGE row (CSS keeps it off the work-log
    beats, which aren't prose). Flashes to ✓ on a successful copy. Touch/keyboard-focus reveal it too. */
 .cmsg-copy {
@@ -308,7 +315,7 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
   font-size: 12px; line-height: 1; padding: 2px 5px; border-radius: 4px; cursor: pointer;
   opacity: 0; transition: opacity .12s, color .12s, border-color .12s;
 }
-.cmsg.agent:hover > .cmsg-copy, .cmsg-copy:focus-visible { opacity: .85; }
+.cmsg.agent:hover > .cmsg-copy, .cmsg.user:hover > .cmsg-copy, .cmsg-copy:focus-visible { opacity: .85; }
 .cmsg-copy:hover { color: var(--ph-bright); border-color: var(--ph); opacity: 1; }
 .cmsg-copy.copied { color: var(--ph); border-color: var(--ph); opacity: 1; }
 /* the work-log beats are not "messages" → no copy button */
