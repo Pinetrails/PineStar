@@ -347,7 +347,7 @@
       </label>
       <span id="comms-agent-model" class="comms-agent-model" title="the model this agent runs on" aria-live="polite"></span>
     </div>
-    <div id="chat-log" class="scrolly"></div>
+    <div id="chat-log" class="scrolly" role="log" aria-live="polite" aria-label="Conversation transcript"></div>
     <!-- TYPE-AHEAD: follow-ups typed while the agent is working queue here as pills, auto-sent in order (chat.js) -->
     <div id="chat-queued" class="chat-queued" aria-live="polite"></div>
     <div id="chat-inputrow">
@@ -361,8 +361,12 @@
            On its OWN row so the message always spans the panel and a long message stays fully visible while typing. -->
       <div class="chat-editline">
         <span class="prompt">&gt;</span>
-        <textarea id="chat-input" rows="1" maxlength="500" placeholder="speak to your agent… ( / for commands )" autocomplete="off" aria-label="Message your agent"></textarea>
+        <textarea id="chat-input" rows="1" maxlength="4000" placeholder="speak to your agent… ( / for commands )" autocomplete="off" aria-label="Message your agent"></textarea>
+        <!-- SEND: an explicit send affordance beside Enter (Enter sends · Shift+Enter = newline). chat.js wires it to submitComposer(). -->
+        <button id="chat-send" class="chat-send" type="button" title="Enter sends · Shift+Enter = newline" aria-label="Send message"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 13.5V9.2l6-1.2-6-1.2V2.5L14 8z" fill="currentColor"/></svg><span class="cs-label">SEND</span></button>
       </div>
+      <!-- CHAR COUNTER: dim, appears only as the message nears the 4000-char cap; turns --warn at the edge (chat.js) -->
+      <div id="chat-charcount" class="chat-charcount" aria-hidden="true" hidden></div>
       <!-- CONTROL CLUSTER: interrupt · model dock · voice · mic — a second row so they never steal the input's width -->
       <div class="chat-tools">
       <!-- INTERRUPT: cancel just the active stream's run (also bound to Esc while COMMS is focused); hidden unless busy -->

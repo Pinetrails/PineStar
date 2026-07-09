@@ -355,9 +355,9 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 /* ===== COMMS as a CONVERSATION (not a stack of boxes) =====
    De-boxed + grouped by speaker: consecutive turns from the same speaker collapse under ONE
    name header (the repeated label is hidden), tied together by a thin side rail — agent on the
-   left, Commander on the right. The LIVE reply stays the lit headline pinned at the bottom; past
-   turns render as plain grouped messages (chat.js renderHistory no longer tags them .reply).
-   No per-message timestamps — the stored history carries none, and we don't fabricate them. */
+   left, Commander on the right. Every turn is a plain grouped message; the live streaming row is
+   just the newest one. Per-message HH:MM stamps come from each turn's REAL recorded ts (comms.css
+   .cmsg-ts) — a legacy turn with no stored ts renders no stamp rather than a fabricated one. */
 .cmsg { font-size: 16px; line-height: 1.4; min-width: 0; max-width: 100%; position: relative; }   /* min-width:0 lets long tokens wrap instead of stretching the column; position anchors the copy button */
 .cmsg .who { font-size: 12px; letter-spacing: 1.5px; color: var(--ph-dim); display: block; margin: 9px 0 3px; text-transform: uppercase; font-weight: bold; }
 .cmsg .body { white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; }
@@ -396,8 +396,9 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
   color: var(--ph-dim); opacity: .8; word-break: break-word;
 }
 
-/* the Commander: right-aligned with a gold right rail — a party opposite the agent, no heavy box */
-.cmsg.user { align-self: flex-end; max-width: 86%; text-align: left; border-right: 2px solid var(--gold); padding-right: 11px; }
+/* the Commander: right-aligned with a gold right rail — a party opposite the agent, no heavy box.
+   min-width keeps a one-word message ("hi") from collapsing to a cramped sliver against the rail. */
+.cmsg.user { align-self: flex-end; min-width: 4.5em; max-width: 86%; text-align: left; border-right: 2px solid var(--gold); padding-right: 11px; }
 .cmsg.user .who { color: var(--gold); text-align: right; }
 .cmsg.user .body { color: var(--ph-bright); }
 
@@ -409,19 +410,8 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 .cmsg .caret { display: inline-block; width: .5em; margin-left: 1px; color: var(--ph); text-shadow: 0 0 6px var(--ph-glow); animation: blink 1s steps(1) infinite; }
 @keyframes blink { 50% { opacity: 0; } }
 
-/* THE LIVE REPLY: the agent's in-progress / latest answer, pinned to the BOTTOM and lit as the
-   headline so it never hides under the dim tool log. It always shows its name (overriding the
-   group-collapse) and keeps the framed glass bloom. Past turns stay plain — the hierarchy reads
-   "this is the answer right now". */
-.cmsg.agent.reply {
-  padding: 9px 12px 9px 11px; border-radius: 0 5px 5px 0; margin-top: 4px;
-  background: linear-gradient(180deg, var(--ph-faint), rgba(0,0,0,.22));
-  border-left: 3px solid var(--ph);
-  box-shadow: inset 0 1px 0 rgba(var(--ph-bright-rgb),.07), 0 0 14px var(--ph-glow2);
-}
-.cmsg.agent.reply .who { display: block !important; color: var(--ph-bright); text-shadow: 0 0 4px var(--ph-glow); }
-.cmsg.agent.reply .body { color: var(--ph-bright); text-shadow: 0 0 6px var(--ph-glow); }
-.cmsg.agent.reply.err { border-left-color: var(--bad); }
+/* (The `.cmsg.agent.reply` lit-headline treatment was retired: chat.js never tags a row `.reply` — every turn,
+   live or replayed, is a plain grouped message and the streaming caret marks the newest one. Rules deleted.) */
 
 /* first-run / empty stream: a single dim hint instead of a blank void */
 .cmsg-empty { color: var(--ph-dim); font-size: 14px; line-height: 1.5; text-align: center; padding: 18px 10px; opacity: .85; }

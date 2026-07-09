@@ -459,18 +459,7 @@ const Chat = (() => {
       }
       if (e.key === 'Enter' && !e.isComposing && !e.shiftKey) {   // Shift+Enter falls through → newline in the textarea
         e.preventDefault();
-        const t = input.value.trim();
-        if (!t && !hasStagedAttachments()) return;   // ATTACHMENTS: a photo/file alone is a valid send (empty text ok)
-        if (t) recordSent(t);   // history records every sent line — commands included, like a shell (attachment-only send has no text to record)
-        // A "/name args" line whose palette is closed must still DISPATCH as a command, not get sent to the
-        // agent as chat. runSlash reads its args off input.value, so hand it the raw line before clearing.
-        if (t && t[0] === '/') { const cmd = commandFromLine(t); if (cmd) { closeSlash(); runSlash(cmd); return; } }
-        // ATTACHMENTS: while a run is busy, type-ahead can queue TEXT, but staged files wait for a real send
-        // (one run per stream) — so we don't take/clear them here; they stay in the strip for the next idle send.
-        if (isBusy()) { if (t) { input.value = ''; closeSlash(); autoGrowInput(); enqueue(t); } return; }
-        const atts = takeAttachments();   // snapshot the ready refs + clear the composer strip
-        input.value = ''; closeSlash(); autoGrowInput();   // COMPOSER: collapse back to one line after a send
-        send(t, { attachments: atts });
+        submitComposer();
       } else if (e.key === 'Escape' && isBusy()) {
         e.preventDefault(); e.stopPropagation();   // INTERRUPT: beat navdock's global Esc-closes-menus while a run is live
         stopActive();
@@ -479,7 +468,40 @@ const Chat = (() => {
     // SLASH PALETTE: a leading "/" opens the command menu and filters it live as you type past it.
     input.addEventListener('input', () => { autoGrowInput(); warmChat(); histIdx = -1; const v = input.value; if (v[0] === '/') openSlash(v.slice(1)); else closeSlash(); });   // real typing exits history-recall mode
     const stopBtn = el('chat-stop'); if (stopBtn) stopBtn.onclick = stopActive;
+    const sendBtn = el('chat-send'); if (sendBtn) sendBtn.onclick = () => { submitComposer(); input.focus(); };   // SEND chip: same path as Enter, keep the caret
     wireComposerAttachments();   // ATTACHMENTS: paperclip · paste · drag-drop -> stage files in the composer
+  }
+
+  // THE ONE SEND PATH — shared by Enter and the SEND chip. Handles: attachment-only sends, session history recall,
+  // typo'd/unknown slash commands (a LOCAL system line, never a paid model turn), type-ahead queueing while busy,
+  // and settling in-flight uploads so a staged file is never silently dropped.
+  async function submitComposer() {
+    const t = input.value.trim();
+    const hasStaged = pendingAtts.length > 0;   // ANY staged file (uploading or ready) makes this a valid send
+    if (!t && !hasStaged) return;
+    if (t) recordSent(t);   // history records every sent line — commands included, like a shell
+    // SLASH: a "/name …" line dispatches as a command, never chat. A recognised command runs; an UNKNOWN one
+    // (a typo like "/hlep") gets a local "unknown command" line — NOT sent to the agent as a paid model turn.
+    // Gate on a command-SHAPED first token (letters/digits/hyphen) so a real message that starts with a path
+    // ("/etc/hosts is broken") still goes to the agent instead of tripping the unknown-command line.
+    if (t && /^\/[a-z][\w-]*(?:\s|$)/i.test(t)) {
+      const cmd = commandFromLine(t);
+      closeSlash();
+      if (cmd) { runSlash(cmd); return; }
+      input.value = ''; autoGrowInput();
+      const nm = (t.match(/^\/(\S+)/) || ['', ''])[1];
+      localLine('Unknown command: /' + nm + '. Type "/" to browse commands, or /help.');
+      return;
+    }
+    // BUSY: type-ahead queues TEXT; staged files wait in the strip for the next idle send (one run per stream).
+    if (isBusy()) { if (t) { input.value = ''; closeSlash(); autoGrowInput(); enqueue(t); } return; }
+    // SETTLE UPLOADS: a staged attachment still uploading must not be silently dropped — uploads to the local
+    // sidecar are near-instant, so we AWAIT them before snapshotting. A failed one already notified per-file.
+    if (hasStaged) await settleAttachments();
+    const atts = takeAttachments();   // snapshot the READY refs + clear the composer strip
+    if (!t && !atts.length) return;   // everything failed to upload and there's no text → nothing to send
+    input.value = ''; closeSlash(); autoGrowInput();   // COMPOSER: collapse back to one line after a send
+    send(t, { attachments: atts });
   }
 
   /* ── ATTACHMENTS ────────────────────────────────────────────────────────────────────────────────────
@@ -525,16 +547,23 @@ const Chat = (() => {
     renderAttachStrip();
   }
   // stage one file: show a chip immediately (local thumbnail for images), then upload it in the background.
+  // The upload promise is kept on the entry (entry.p) so a send can AWAIT an in-flight upload instead of dropping it.
   function stageFile(file) {
     const kind = fileKind(file);
-    const entry = { name: file.name || 'file', kind, localUrl: (kind === 'image') ? URL.createObjectURL(file) : '', status: 'uploading', ref: null };
+    const entry = { name: file.name || 'file', kind, localUrl: (kind === 'image') ? URL.createObjectURL(file) : '', status: 'uploading', ref: null, p: null };
     pendingAtts.push(entry);
-    uploadAttachment(file).then(ref => {
+    entry.p = uploadAttachment(file).then(ref => {
       entry.status = 'ready'; entry.ref = ref;
     }).catch(() => {
       entry.status = 'error';
       if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('could not attach “' + entry.name + '”', 'warn');
     }).then(() => renderAttachStrip());
+  }
+  // wait for every still-uploading staged file to settle (resolve or fail) so a send never silently drops one
+  // that was mid-flight. Local-sidecar uploads are near-instant; this is a very short await in practice.
+  async function settleAttachments() {
+    const inflight = pendingAtts.filter(e => e && e.status === 'uploading' && e.p).map(e => e.p);
+    if (inflight.length) { try { await Promise.allSettled(inflight); } catch (_) {} }
   }
   function readAsDataUrl(file) {
     return new Promise((resolve, reject) => {
@@ -592,8 +621,8 @@ const Chat = (() => {
     pendingAtts.splice(i, 1);
     renderAttachStrip();
   }
-  // snapshot the READY refs for a send, then clear the strip. Uploads still in flight are dropped (uploads to
-  // the local sidecar are near-instant; the rare in-flight one is simply not attached rather than blocking send).
+  // snapshot the READY refs for a send, then clear the strip. (submitComposer awaits settleAttachments first, so
+  // an upload that was in flight is settled — not dropped — before this snapshot runs.)
   function takeAttachments() {
     const ready = pendingAtts.filter(e => e.status === 'ready' && e.ref).map(e => e.ref);
     clearAttachments();
@@ -619,6 +648,18 @@ const Chat = (() => {
     // a long placeholder wraps to 2 lines on a narrow panel, and its wrapped height would puff the
     // resting box up. Only a real value grows the box.
     if (input.value) input.style.height = input.scrollHeight + 'px';
+    updateCharCount();   // the char counter rides every value change (typed, recalled, recipe-filled, send-reset)
+  }
+  // COMPOSER CAP READOUT — the textarea maxlength is 4000; a dim counter appears only as the message NEARS the
+  // cap (so it never nags a normal message) and turns --warn at the very edge. Truthful: it reads the real length.
+  const COMPOSER_MAX = 4000, COMPOSER_WARN_AT = 3600;
+  function updateCharCount() {
+    const cc = el('chat-charcount'); if (!cc) return;
+    const n = input ? input.value.length : 0;
+    if (n < COMPOSER_WARN_AT) { if (!cc.hidden) { cc.hidden = true; cc.textContent = ''; cc.classList.remove('warn'); } return; }
+    cc.hidden = false;
+    cc.textContent = n + ' / ' + COMPOSER_MAX;
+    cc.classList.toggle('warn', n >= COMPOSER_MAX - 100);
   }
 
   /* ── COMMS AGENT LINE ────────────────────────────────────────────────────────────────────────────────
@@ -795,15 +836,18 @@ const Chat = (() => {
   function row(role, opts) {
     clearEmptyState();   // any real row supersedes the first-run hint
     const d = document.createElement('div'); d.className = 'cmsg ' + role;
-    // COMMS-PREMIUM: the speaker chip + a dim HH:MM stamp share one header row (a flex .cmsg-head). The
-    // stamp is a REAL wall-clock render-time stamp — replayed history passes stamp:false (no fabricated time).
+    // COMMS-PREMIUM: the speaker chip + a dim HH:MM stamp share one header row (a flex .cmsg-head).
     const who = document.createElement('span'); who.className = 'who';
-    who.textContent = role === 'user' ? 'COMMANDER' : name;
+    who.textContent = role === 'user' ? 'COMMANDER' : role === 'system' ? 'SYSTEM' : name;
     const body = document.createElement('span'); body.className = 'body';
-    const wantStamp = !!(opts && opts.stamp);
-    if (wantStamp) {
+    // TIMESTAMP TRUTH (P0): opts.stamp is `true` for a row created LIVE (real wall-clock now), a number/Date for a
+    // stored turn's REAL recorded time, or falsy for a legacy turn that carries no time — in which case we render
+    // NO stamp rather than fabricate the current clock (the module's own rule + truthful telemetry).
+    const stampVal = opts && opts.stamp;
+    if (stampVal) {
       const head = document.createElement('span'); head.className = 'cmsg-head';
-      const ts = document.createElement('span'); ts.className = 'cmsg-ts'; ts.textContent = fmtClock();
+      const ts = document.createElement('span'); ts.className = 'cmsg-ts';
+      ts.textContent = fmtClock(stampVal === true ? null : new Date(stampVal));
       head.appendChild(who); head.appendChild(ts);
       d.appendChild(head); d.appendChild(body);
     } else {
@@ -821,8 +865,10 @@ const Chat = (() => {
     autoscroll();
     return { d, body };
   }
-  function addUser(t, atts) {
-    const r = row('user', { stamp: true });
+  // stamp: omitted → live now (real); a number/Date → the turn's stored real time; false → no stamp (replay of a
+  // legacy turn that carries no time — never fabricate the current clock).
+  function addUser(t, atts, stamp) {
+    const r = row('user', { stamp: stamp === undefined ? true : stamp });
     if (t) r.body.textContent = t;
     if (atts && atts.length) renderUserAttachments(r.d, atts);   // ATTACHMENTS: thumbnails/file-chips under the message text
     autoscroll();
@@ -860,7 +906,18 @@ const Chat = (() => {
     }
     if (view.childNodes.length) rowEl.appendChild(view);
   }
-  function localLine(t) { row('agent', { stamp: true }).body.textContent = t; autoscroll(); }
+  // command / client-side output (/help, /whoami, version, unknown-command, …). A SYSTEM register — dim, no
+  // speaker chip, never copyable — so the station's own words are never mistaken for the agent's speech.
+  function localLine(t) { row('system').body.textContent = t; autoscroll(); }
+  // the history-cap marker ("…N earlier turns trimmed …") as a dim, centered, hairline-flanked system line —
+  // a scrollback boundary, not a dropped record. Reuses the broadcast register's chrome (theme tokens only).
+  function trimMarkerLine(t) {
+    if (!log) return;
+    clearEmptyState();
+    const d = document.createElement('div'); d.className = 'cmsg trim-marker'; d.setAttribute('role', 'separator');
+    const line = document.createElement('span'); line.className = 'tm-line'; line.textContent = String(t || '').replace(/^…?\(?/, '').replace(/\)$/, '');
+    d.appendChild(line); log.appendChild(d); autoscroll();
+  }
 
   /* ---------- CELEBRATION broadcast: a terse station system line (level-up / quest / trophy) ----------
      NOT a beat-slot card: it never touches activeNudge/the post-run precedence chain (turn-in→suggestion→
@@ -1400,18 +1457,25 @@ const Chat = (() => {
       b.onclick = () => decide(decision, doneLabel, isDeny);
       btns.appendChild(b); return b;
     };
-    const approveBtn = mk('Approve once', 'once', '', '✓ approved once', false);
+    mk('Approve once', 'once', '', '✓ approved once', false);
     mk('Always', 'always', '', '✓ always allowed', false);
     mk('Full access', 'full', 'danger', '✓ full access', false);
     mk('Deny', 'deny', 'deny', '✕ denied', true);
     r.body.appendChild(btns);
-    // a blocking, run-pausing prompt: make it keyboard-operable (Esc = Deny; the focused Approve takes Enter/Space)
+    // a blocking, run-pausing prompt: make it keyboard-operable. Esc on the focused CONTAINER = Deny (the row,
+    // not a button — so a reflexive Enter never lands on Approve and greenlights a write the user didn't read).
     r.d.tabIndex = -1;
     r.d.addEventListener('keydown', e => { if (e.key === 'Escape') { e.preventDefault(); decide('deny', '✕ denied', true); } });
     status('awaiting your approval…');
     if (typeof StationUI !== 'undefined') StationUI.notify(name + ' needs approval to ' + actionPhrase(p), 'warn', 'needsApproval');   // P1-8 category: consent prompt
-    log.scrollTop = log.scrollHeight;   // force into view: the run is paused until this is answered
-    try { approveBtn.focus(); } catch (_) {}
+    // FOCUS-STEAL GUARD (P0): a consent prompt must NEVER hijack focus from a Commander who is mid-typing or holds
+    // a draft — a stolen focus + a reflexive Enter could approve a file write they never read. Only follow the
+    // scroll when they were already at the bottom (honor stick), and only take focus (onto the row CONTAINER, so
+    // Esc=deny works but Enter can't approve) when the composer is idle. Esc still denies either way: an idle
+    // composer gets the row's Esc handler; a busy composer's own Esc handler stops the paused run (also a deny).
+    autoscroll();   // honors stick — never yanks a reader who scrolled up
+    const composerBusy = !!(input && (document.activeElement === input || (input.value && input.value.trim())));
+    if (!composerBusy) { try { r.d.focus({ preventScroll: true }); } catch (_) { try { r.d.focus(); } catch (_) {} } }
   }
 
   // ── "RATE THE WORK" — the PRIMARY leveling beat. After a run that actually DID work, the Commander gives a
@@ -3126,18 +3190,30 @@ const Chat = (() => {
 
   function renderHistory() {
     const h = activeWs ? activeWs.history : [];
+    let lastReal = null;   // the trailing dialogue turn (for the error-recovery re-offer below)
     for (const m of h) {
-      if (m && m.truncated) continue;   // E3: the local history-cap marker is a data record, not a dialogue turn
-      if (m.role === 'user') { addUser(m.content, m.attachments); continue; }
+      if (m && m.truncated) {   // E3: the local history-cap marker — render it as a dim centered SYSTEM line (not a dropped record)
+        if ((m.content || '').trim()) trimMarkerLine(m.content);
+        continue;
+      }
+      // TIMESTAMP TRUTH (P0): pass the turn's STORED real time (m.ts), or `false` when a legacy turn carries none —
+      // never `true` here (that would re-stamp replayed history with the current clock, the fabrication we're killing).
+      const stamp = (m && m.ts != null) ? m.ts : false;
+      if (m.role === 'user') { addUser(m.content, m.attachments, stamp); lastReal = m; continue; }
       // a SYSTEM STATUS marker (sys — e.g. an autosessions run-outcome framing line) renders as a system-styled
       // line, NOT as agent speech; it never seeds the model (historyWindow drops it) and it stays visible in-thread.
       if (m && m.sys) { if ((m.content || '').trim()) toolLine(m.content, !!m.error); continue; }
       if (m.role !== 'assistant') continue;   // only dialogue turns render (a stray system marker never shows as an agent reply)
       if (!(m.content || '').trim()) continue;   // skip a turn that produced no prose (tool-only / stopped run)
-      const r = row('agent', { stamp: true });   // past turns render as plain GROUPED messages; only the LIVE reply is the lit headline
+      const r = row('agent', { stamp: stamp });   // past turns render as plain GROUPED messages; only the LIVE reply is the lit headline
       if (m.error) r.d.classList.add('err');
       renderProse(r.body, m.content);   // same linkify path as live tokens, so replayed history matches
+      lastReal = m;
     }
+    // STRANDED-USER LAW: a reload/switch onto a stream whose LAST turn failed (error:true) must not leave the
+    // Commander with a dead thread and no way out — load() wiped the live recovery chips. Re-offer a plain retry
+    // (offerRetry's context-aware verdict isn't stored per-turn, so the safe universal recovery is a re-run).
+    if (lastReal && lastReal.role === 'assistant' && lastReal.error && !isBusy()) offerRetry(null);
   }
 
   // SWITCH-SURVIVAL: re-render whatever in-flight run we left on the now-displayed stream — its streamed
@@ -4306,7 +4382,9 @@ const Chat = (() => {
     const wiPlacedTs = Date.now();
     let wiPlaced = false;   // set below iff a crate actually rode — every wi* beat downstream gates on it
     stick = true;   // sending a message means you want to watch the exchange — re-follow the bottom
-    if (!retry) { addUser(text, attsIn); ws.history.push(attsIn.length ? { role: 'user', content: text, attachments: attsIn } : { role: 'user', content: text }); capHistory(ws); }   // on RETRY the user turn is already in the thread + on screen
+    // TIMESTAMP TRUTH (P0): stamp the turn with its REAL wall-clock time at push, and render the same instant on
+    // screen — so a later replay/switch shows this turn's actual time, never the reload clock.
+    if (!retry) { const uts = Date.now(); addUser(text, attsIn, uts); ws.history.push(attsIn.length ? { role: 'user', content: text, attachments: attsIn, ts: uts } : { role: 'user', content: text, ts: uts }); capHistory(ws); }   // on RETRY the user turn is already in the thread + on screen
     // name an untitled stream from its first real message (no-op on General / already-titled)
     if (typeof Workstreams !== 'undefined' && Workstreams.autoTitle(ws.id, text)) {
       if (typeof App !== 'undefined' && App.refreshRail) App.refreshRail();
@@ -4482,7 +4560,7 @@ const Chat = (() => {
         // Commander their run was interrupted and must be restarted, instead of leaving a silent dead run.
         if (v.kind === 'network' && thisRunId) { interruptedStreams.add(ws.id); armReconnectWatch(); }
         if (isActiveWs(ws)) { if (activeLiveRow) activeLiveRow.error(v.userMessage, v.raw); if (!isTask) World.say('…' + (v.userMessage.length > 40 ? v.userMessage.slice(0, 40) + '…' : v.userMessage)); }
-        ws.history.push({ role: 'assistant', content: '⚠ ' + v.userMessage, error: true });   // so the failure survives a switch-back, not just a transient notify
+        ws.history.push({ role: 'assistant', content: '⚠ ' + v.userMessage, error: true, ts: Date.now() });   // so the failure survives a switch-back, not just a transient notify
         if (typeof StationUI !== 'undefined') StationUI.notify(brief(v.userMessage), 'warn');
         if (isActiveWs(ws)) resolvePresence(ws, { error: true });   // COMMS-PREMIUM: presence card resolves red
         if (isActiveWs(ws)) offerRetry(v);   // RETRY: context-aware recovery chip (retry / Settings / SKILLS / none)
@@ -4490,7 +4568,7 @@ const Chat = (() => {
         const replyText = reply || acc;
         finalReply = replyText;
         titleOk = !!replyText.trim();   // a real, non-empty reply landed → this stream is eligible for a summary title
-        if (replyText.trim()) ws.history.push({ role: 'assistant', content: replyText });   // never persist an empty turn
+        if (replyText.trim()) ws.history.push({ role: 'assistant', content: replyText, ts: Date.now() });   // never persist an empty turn
         // Lane 5 (truthful telemetry): a reply the PROVIDER cut off — finishReason 'length' (hit max_tokens
         // mid-thought) or 'content_filter' (output filtered) — is an AMPUTATED turn even though endReason==='done'.
         // It must NOT ship a "◈ delivered" crate / XP / workitem.delivered as if it were complete. Treat it like a
@@ -4556,7 +4634,7 @@ const Chat = (() => {
       if (stopped) {
         // keep whatever already streamed, mark it stopped, and log NO error (the stop was intentional).
         if (isActiveWs(ws)) { if (activeLiveRow) activeLiveRow.done(); toolLine('⏹ stopped'); resolvePresence(ws, { stopped: true, steps: runToolsOk }); }
-        if (acc.trim()) ws.history.push({ role: 'assistant', content: acc });   // the partial reply survives a switch
+        if (acc.trim()) ws.history.push({ role: 'assistant', content: acc, ts: Date.now() });   // the partial reply survives a switch
         if (!isTask && isActiveWs(ws) && acc.trim()) World.say(acc);
       } else {
         // A throw that is NOT a deliberate Stop: an unexpected disconnect (the reader aborted with no Stop) or a
@@ -4566,7 +4644,7 @@ const Chat = (() => {
           ? Friendly.friendlyError(aborted ? new Error('cannot reach the STARNET sidecar — connection dropped') : e)
           : { userMessage: aborted ? 'Lost the connection — try again.' : (e.message || String(e)), retryable: true, action: null, raw: (e && e.message) || String(e) };
         if (isActiveWs(ws)) { if (activeLiveRow) activeLiveRow.error(v.userMessage, v.raw); if (!isTask) World.say('…connection trouble…'); resolvePresence(ws, { error: true }); }
-        ws.history.push({ role: 'assistant', content: '⚠ ' + v.userMessage, error: true });   // keep a readable trace of the failure
+        ws.history.push({ role: 'assistant', content: '⚠ ' + v.userMessage, error: true, ts: Date.now() });   // keep a readable trace of the failure
         if (isActiveWs(ws)) offerRetry(v);   // RETRY: context-aware recovery chip (a dropped connection is retryable)
       }
       // a THROWN teardown (abort/cancel/disconnect/network drop) means agent.run.end was LOST on the bus, so the
