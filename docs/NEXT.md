@@ -11,6 +11,14 @@ selectable transcript+input history+Open-it fix · PROJECTS-tab fix+beat flatten
 Slack/Matrix/Signal + CHANNELS panel · photo/file attachments.
 
 **QUEUE — audited unmerged gems, NOT yet restored (claim here before building):**
+- [ ] IN PROGRESS — launch-polish session (claude/starnet-launch-polish-b6ea54), 2026-07-09 eve:
+      (a) rescue-merge stranded EL-11 fix branches baaec246 (E-STOP reaches wedged beat) +
+      bcd13bad (background consent visibility) after still-needed verification; (b) connector-spine
+      COMMIT-rescue (commit the uncommitted tree to its branch, no port); (c) backend polish batch —
+      GB-9 workspaceDegraded honest status, /api/version harness placeholder, night-beat leash burn
+      on budget-exhausted no-ops, scout draft TTL eviction, .bugloops TTL (GB-27); (d) first-official-
+      version release prep (changelog/runbook staging). NOT touching frontend surfaces owned by the
+      live UI-finale session (claude/starnet-ui-ux-polish-709ca1).
 - [ ] **connector-spine rescue** — UNCOMMITTED in `C:/Users/andro/gen-trees/connector-spine`
       (8.7d stale, base 1171 commits behind): email/sms/webhook/whatsapp adapters + tests
       (new-file clean) + managed-credits billing seam. Its slack = superseded by trunk's; its
