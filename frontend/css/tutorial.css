@@ -23,7 +23,7 @@
   font-size: 15px;
   letter-spacing: .04em;
   color: var(--ph, #ffaa33);
-  background: rgba(8, 12, 9, 0.85);
+  background: var(--panel);
   border: 1px solid var(--ph, #ffaa33);
   border-radius: 6px;
   padding: 4px 11px;
@@ -41,8 +41,8 @@
   z-index: 99000;
   max-width: 320px;
   font-family: VT323, monospace;
-  color: #dceee0;
-  background: linear-gradient(180deg, rgba(12, 18, 14, 0.97), rgba(8, 12, 9, 0.97));
+  color: var(--text);
+  background: linear-gradient(180deg, var(--panel2), var(--panel));
   border: 1px solid var(--ph, #ffaa33);
   border-left: 3px solid var(--ph, #ffaa33);
   border-radius: 8px;
@@ -66,7 +66,7 @@
   font-family: VT323, monospace;
   font-size: 15px;
   letter-spacing: .03em;
-  color: #0a0f0b;
+  color: var(--ink);
   background: var(--ph, #ffaa33);
   border: 0;
   border-radius: 5px;
@@ -135,45 +135,45 @@
   z-index: 1300;
   width: 246px;
   font-family: VT323, monospace;
-  color: #dceee0;
-  background: linear-gradient(180deg, rgba(12, 18, 14, 0.96), rgba(8, 12, 9, 0.96));
+  color: var(--text);
+  background: linear-gradient(180deg, var(--panel2), var(--panel));
   border: 1px solid var(--ph, #ffaa33);
   border-radius: 8px;
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
   animation: tutCoachIn .25s ease both;
 }
 .tut-brief.no-anim { animation: none; }
-.tut-brief.complete { border-color: #62c487; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5), 0 0 14px rgba(98, 196, 135, 0.25); }
+.tut-brief.complete { border-color: var(--ok); box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5), 0 0 14px rgba(var(--ok-rgb), 0.25); }
 .tut-brief-head { display: flex; align-items: center; gap: 6px; padding: 7px 9px 5px; border-bottom: 1px solid var(--ph-glow2, rgba(255, 170, 51, 0.22)); }
 .tut-brief-title { flex: 1; color: var(--ph, #ffaa33); font-size: 14px; letter-spacing: .1em; }
-.tut-brief.complete .tut-brief-title { color: #62c487; }
-.tut-brief-count { color: #9fb0a4; font-size: 14px; }
-.tut-brief-x { background: none; border: 0; color: #9fb0a4; cursor: pointer; font-size: 14px; padding: 0 2px; line-height: 1; }
-.tut-brief-x:hover { color: #fff; }
+.tut-brief.complete .tut-brief-title { color: var(--ok); }
+.tut-brief-count { color: var(--ph-dim); font-size: 14px; }
+.tut-brief-x { background: none; border: 0; color: var(--ph-dim); cursor: pointer; font-size: 14px; padding: 0 2px; line-height: 1; }
+.tut-brief-x:hover { color: var(--ph-bright); }
 .tut-brief-list { list-style: none; margin: 0; padding: 6px 9px 4px; }
-.tut-brief-item { display: flex; gap: 7px; align-items: baseline; font-size: 16px; line-height: 1.3; padding: 2px 0; color: #cfe0d4; border-radius: 4px; }
-.tut-brief-item.done { color: #7f9686; text-decoration: line-through; text-decoration-color: rgba(127, 150, 134, 0.5); }
+.tut-brief-item { display: flex; gap: 7px; align-items: baseline; font-size: 16px; line-height: 1.3; padding: 2px 0; color: var(--text); border-radius: 4px; }
+.tut-brief-item.done { color: var(--ph-dim); text-decoration: line-through; text-decoration-color: var(--ph-dim); }
 .tut-brief-box { flex: 0 0 12px; color: var(--ph, #ffaa33); }
-.tut-brief-item.done .tut-brief-box { color: #62c487; }
+.tut-brief-item.done .tut-brief-box { color: var(--ok); }
 .tut-brief-item.flash { animation: tutBriefFlash .8s ease; }
-.tut-brief-foot { padding: 4px 9px 7px; font-size: 13px; color: #7a8a80; }
-@keyframes tutBriefFlash { from { background: rgba(98, 196, 135, 0.35); } to { background: transparent; } }
+.tut-brief-foot { padding: 4px 9px 7px; font-size: 13px; color: var(--ph-dim); }
+@keyframes tutBriefFlash { from { background: rgba(var(--ok-rgb), 0.35); } to { background: transparent; } }
 
 /* ---- P3 Field Manual: the codex, rendered inside a floating term-body (.fm-body) ---- */
 .fm-body .fm-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 10px; }
-.fm-tab { font-family: VT323, monospace; font-size: 14px; letter-spacing: .05em; color: #bcd; background: rgba(255, 255, 255, 0.04); border: 1px solid var(--ph-dim, rgba(255, 170, 51, 0.3)); border-radius: 5px; padding: 3px 9px; cursor: pointer; }
+.fm-tab { font-family: VT323, monospace; font-size: 14px; letter-spacing: .05em; color: var(--text); background: rgba(var(--ph-rgb), 0.05); border: 1px solid var(--ph-dim, rgba(255, 170, 51, 0.3)); border-radius: 5px; padding: 3px 9px; cursor: pointer; }
 .fm-tab:hover { border-color: var(--ph, #ffaa33); }
-.fm-tab.on { color: #0a0f0b; background: var(--ph, #ffaa33); border-color: var(--ph, #ffaa33); }
-.fm-lead { font-size: 16px; color: #cfe0d4; margin: 0 0 9px; line-height: 1.3; }
-.fm-note { font-size: 15px; color: #9fb0a4; margin: 10px 0 0; border-top: 1px dashed var(--ph-glow2, rgba(255, 170, 51, 0.25)); padding-top: 7px; line-height: 1.3; }
+.fm-tab.on { color: var(--ink); background: var(--ph, #ffaa33); border-color: var(--ph, #ffaa33); }
+.fm-lead { font-size: 16px; color: var(--text); margin: 0 0 9px; line-height: 1.3; }
+.fm-note { font-size: 15px; color: var(--ph-dim); margin: 10px 0 0; border-top: 1px dashed var(--ph-glow2, rgba(255, 170, 51, 0.25)); padding-top: 7px; line-height: 1.3; }
 .fm-entry { border-left: 2px solid var(--ph-dim, rgba(255, 170, 51, 0.4)); padding: 2px 0 5px 9px; margin: 7px 0; }
 .fm-entry-h { font-size: 16px; color: var(--ph, #ffaa33); letter-spacing: .04em; }
-.fm-entry-b { font-size: 15px; color: #cfe0d4; line-height: 1.28; }
+.fm-entry-b { font-size: 15px; color: var(--text); line-height: 1.28; }
 .fm-tag { display: inline-block; font-size: 12px; letter-spacing: .08em; padding: 0 5px; border-radius: 3px; margin-right: 6px; vertical-align: 1px; }
-.fm-tag.real { color: #07120b; background: #62c487; }
-.fm-tag.show { color: #11140f; background: #9fb0a4; }
+.fm-tag.real { color: var(--ink); background: var(--ok); }
+.fm-tag.show { color: var(--ink); background: var(--ph-dim); }
 .fm-steps { list-style: none; margin: 0; padding: 0; }
-.fm-steps li { font-size: 16px; color: #cfe0d4; padding: 3px 0; }
-.fm-steps li.done { color: #7f9686; text-decoration: line-through; }
+.fm-steps li { font-size: 16px; color: var(--text); padding: 3px 0; }
+.fm-steps li.done { color: var(--ph-dim); text-decoration: line-through; }
 .fm-steps li span { color: var(--ph, #ffaa33); }
-.fm-steps li.done span { color: #62c487; }
+.fm-steps li.done span { color: var(--ok); }

@@ -53,6 +53,7 @@
   --ph-bright-rgb: 255, 228, 180;
   --gold-rgb: 255, 211, 74;
   --ok: #7bc88a;              /* the "online / success" status green — CRT-muted (not neon) so it reads as good without breaking the amber-phosphor grade; tokenized so every surface themes through it */
+  --ok-rgb: 123, 200, 138;    /* rgb twin of --ok for translucent success fills (rgba(var(--ok-rgb), a)); constant like --ok — success green does not re-tint per theme */
   /* color grade applied to the station feed so the world sits inside the terminal.
      brightness kept at 1.0 — the darkness now comes from the in-world lightmap (localized,
      realistic pools) rather than a flat global dim, so lit areas stay bright ("not too dark"). */
