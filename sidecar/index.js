@@ -7254,8 +7254,20 @@ async function handleNightshiftBeatNow(req, res) {
   const emit = wrapEmitDiag(makeEmitter(bus, e => { if (e && e.event !== 'tool.web') console.warn('[event]', e.kind, e.event, (e.errors || []).join(';')); }));
   let result;
   const ac = new AbortController();
+  // EL-11 P0: this AC was created and never registered ANYWHERE the E-STOP reaches (killAll walks `runs`; the
+  // driver's abortBeat covers only the driver's own beat) and never aborted on request close — a wedged beat
+  // held the agent's run mutex (concurrencyGate) FOREVER with no way to clear it. Register it in `runs`/`runsMeta`
+  // like every other route-level run (same pattern as handleRun/workshop), so POST /api/halt aborts it (and counts
+  // it honestly) and a dropped connection stops the unattended spend.
+  const beatRunId = 'nsbeat-' + crypto.randomUUID();
+  runs.set(beatRunId, ac);
+  runsMeta.set(beatRunId, { agentId, startedAt: Date.now(), source: 'nightshift' });
+  const onClose = () => { try { ac.abort(); } catch (_) {} };
+  req.on('close', onClose);
   try { result = await runNightshiftBeat({ agentId, emit, broadcast: true, signal: ac.signal }); }
   catch (e) { result = { delivered: false, reason: 'error: ' + ((e && e.message) || e) }; }
+  finally { runs.delete(beatRunId); runsMeta.delete(beatRunId); try { req.removeListener('close', onClose); } catch (_) {} }
+  if (ac.signal.aborted && !(result && result.delivered)) result = { delivered: false, reason: 'aborted' };   // halted/disconnected mid-beat — name it honestly
   try { res.write(JSON.stringify({ name: 'nightshift.beat.result', payload: result }) + '\n'); } catch (_) {}
   try { res.end(); } catch (_) {}
 }
@@ -7441,7 +7453,8 @@ function handleHalt(req, res) {
   const halted = killAll(runs, tgInflight, dcInflight);   // browser runs + Telegram + Discord hub runs, in one kill (see sidecar/halt.js)
   let cronAborted = 0;
   try { cronAborted = cronDriver.abortAllLeases(); } catch (_) {}   // Phase 0: E-STOP also aborts in-flight cron runs (unattended spend)
-  try { nightshiftDriver.abortBeat(); } catch (_) {}   // NS-1: E-STOP also aborts an in-flight night-shift beat (unattended spend)
+  let beatAborted = 0;
+  try { beatAborted = nightshiftDriver.abortBeat() || 0; } catch (_) {}   // NS-1: E-STOP also aborts an in-flight night-shift beat (unattended spend); COUNTED so the toast is honest (a force-fired beat lives in `runs` and is already inside `halted`)
   // …and STAMP a durable halt so the shift stays stood-down AFTER this beat. Without it the leash unit + lastBeatAt
   // were already spent at accept-time, so the ~45-min cooldown was the ONLY thing pausing autonomy — beats resumed
   // on their own even though the Commander hit E-STOP. The flag persists (survives restart); it lifts only when the
@@ -7451,7 +7464,7 @@ function handleHalt(req, res) {
   try { subagents.interruptAll(); } catch (_) {}   // Phase 1: E-STOP aborts watchable background workers too
   try { cronLock.release(); } catch (_) {}  // G4.3: drop any cron lock this process holds so an E-STOP mid-tick never wedges the next tick (standalone halt-block addition; G2 will add connectors.close here)
   res.writeHead(200, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify({ halted, cronAborted }));   // honest counts: run-controllers aborted + cron leases aborted
+  res.end(JSON.stringify({ halted, cronAborted, beatAborted }));   // honest counts: run-controllers aborted + cron leases aborted + driver-path beat aborted (additive field)
 }
 
 // POST /api/channels/telegram/connect { token, key?, model, provider? } — the Messaging tab hands over the
