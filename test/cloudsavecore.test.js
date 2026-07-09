@@ -86,11 +86,33 @@ const now = 10_000_000;
 {
   const h = C.recordFailure(C.freshHealth(), now);
   const snap = C.snapshot(h, now);
-  A.eq(Object.keys(snap).sort().join(','), 'consecutiveFailures,lastPushFailAt,lastPushOkAt,nextRetryAt,stale', 'health snapshot has the documented keys');
+  A.eq(Object.keys(snap).sort().join(','), 'consecutiveFailures,lastPushFailAt,lastPushOkAt,nextRetryAt,stale,warn', 'health snapshot has the documented keys');
   A.eq(snap.stale, true, 'snapshot surfaces the stale verdict (failing, never confirmed)');
   A.eq(snap.consecutiveFailures, 1, 'snapshot carries the failure streak');
   const clean = C.snapshot(C.freshHealth(), now);
   A.eq(clean.stale, false, 'a clean snapshot is not stale');
+}
+
+// ---- EARLY-WARNING verdict (EL-11 FIX 4): 3 consecutive failures warn IMMEDIATELY — no 60-min blind window ----
+{
+  A.eq(C.WARN_AFTER_FAILURES, 3, 'the warn threshold is 3 consecutive failures');
+  // a FRESH success then a burst of failures: within minutes (far inside the 60-min stale window) the
+  // third consecutive failure must flip warn:true even though stale is still (truthfully) false.
+  let h = C.recordSuccess(C.freshHealth(), now);
+  h = C.recordFailure(h, now + S);
+  A.eq(C.isWarn(h), false, '1 failure does not warn');
+  h = C.recordFailure(h, now + 2 * S);
+  A.eq(C.isWarn(h), false, '2 failures do not warn');
+  h = C.recordFailure(h, now + 3 * S);
+  A.eq(C.isWarn(h), true, '3 consecutive failures WARN — the dot flips well before the 60-min stale line');
+  const snap = C.snapshot(h, now + 3 * S);
+  A.eq(snap.warn, true, 'snapshot surfaces warn for the save-dot');
+  A.eq(snap.stale, false, 'warn fires while stale is still (truthfully) false — recent success, live streak');
+  // one success clears it — recovery is instant and truthful
+  const ok = C.recordSuccess(h, now + 4 * S);
+  A.eq(C.isWarn(ok), false, 'a successful push clears the warn verdict');
+  A.eq(C.snapshot(ok, now + 4 * S).warn, false, 'clean snapshot is not warning');
+  A.eq(C.isWarn(C.freshHealth()), false, 'a fresh/quiet record never warns');
 }
 
 A.report('cloudsavecore');

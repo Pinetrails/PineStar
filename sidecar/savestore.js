@@ -76,13 +76,29 @@
     }
     // quarantine a corrupt main aside (rename to <file>.corrupt-<seq>) so it's preserved for forensics but no
     // longer blocks the store, then recover from <file>.bak if it holds a clean prior save. Best-effort + loud.
+    // Returns the quarantine destination path (null if the move failed) so the recovery marker can disclose it.
     function quarantine(file, why) {
       try {
         const dead = file + '.corrupt-' + (++tmpSeq);
         try { if (typeof fs.unlinkSync === 'function') fs.unlinkSync(dead); } catch (_) {}   // clear any stale target (Windows rename-onto fails)
         fs.renameSync(file, dead);
         try { console.warn('[savestore] quarantined corrupt save ' + file + ' -> ' + dead + ' (' + why + ')'); } catch (_) {}
-      } catch (_) { /* couldn't move it (locked/gone) — leave it; recovery below still tries .bak */ }
+        return dead;
+      } catch (_) { return null; /* couldn't move it (locked/gone) — leave it; recovery below still tries .bak */ }
+    }
+    // RECOVERY NOTICE (EL-11 FIX 2/3): when the store quarantines an unrecoverable save ('quarantined') or
+    // restores one from .bak ('recovered'), persist a sibling marker the frontend reads on the next boot —
+    // silent data loss / silent recovery is the lie class this kills. Worse news is STICKY: an unacked
+    // 'quarantined' marker is never papered over by a later 'recovered'. Best-effort, never throws (a notice
+    // failure must not block the store), and only written at the quarantine event itself (no churn on reads).
+    function recoveryFile(file) { return file.replace(/\.json$/, '') + '.recovery.json'; }
+    function writeRecoveryMarker(file, kind, extra) {
+      try {
+        const rf = recoveryFile(file);
+        const cur = readTaggedRaw(rf);
+        if (cur.status === 'ok' && cur.wrapper && cur.wrapper.kind === 'quarantined' && kind === 'recovered') return;
+        writeDurable(rf, JSON.stringify(Object.assign({ version: 1, kind: kind, at: clock.now() }, extra || {})));
+      } catch (_) { /* fail-open: the notice is best-effort */ }
     }
     // RESILIENT tagged read: main first; on a corrupt/torn main, quarantine it and recover from <file>.bak. An
     // 'unreadable' main is NOT quarantined (bytes are fine, just locked) — surfaced as-is so the caller stays
@@ -94,13 +110,19 @@
       // main is absent OR corrupt/torn — try the last-known-good .bak.
       const b = readTaggedRaw(file + '.bak');
       if (b.status === 'ok') {
-        if (m.status === 'corrupt') quarantine(file, 'main unparseable; recovered from .bak');
+        if (m.status === 'corrupt') {
+          const dead = quarantine(file, 'main unparseable; recovered from .bak');
+          writeRecoveryMarker(file, 'recovered', dead ? { quarantinedTo: dead } : undefined);
+        }
         return { status: 'recovered', wrapper: b.wrapper, err: m.err };
       }
       // no usable .bak. A genuinely-absent main with no .bak is just a new agent (absent). A corrupt main with
       // no clean .bak is unrecoverable — quarantine it so the next write starts fresh (preserves prior "corrupt
       // save is already lost" product behavior) and report corrupt.
-      if (m.status === 'corrupt') { quarantine(file, 'main unparseable and no usable .bak'); }
+      if (m.status === 'corrupt') {
+        const dead = quarantine(file, 'main unparseable and no usable .bak');
+        writeRecoveryMarker(file, 'quarantined', { quarantinedTo: dead || (file + ' (quarantine rename failed; left in place)') });
+      }
       return m.status === 'absent' ? { status: 'absent' } : { status: 'corrupt', err: m.err };
     }
     // back-compat convenience: the parsed wrapper, or undefined when absent/unreadable/corrupt.
@@ -170,7 +192,25 @@
         return { ok: true, updatedAt: incomingUpdated };
       },
 
-      _internals: { saveFile, AID_RE, num, readTagged }
+      // the persisted quarantine/recovery marker for this agent's save (EL-11 FIX 2/3), or undefined when there
+      // is none / it doesn't parse. { version, kind:'quarantined'|'recovered', at, quarantinedTo? }. Read-only —
+      // the frontend shows the honest notice and then acks via clearRecoveryNotice().
+      recoveryNotice(agentId) {
+        const r = readTaggedRaw(recoveryFile(saveFile(agentId)));
+        const w = (r.status === 'ok') ? r.wrapper : undefined;
+        return (w && typeof w === 'object' && (w.kind === 'quarantined' || w.kind === 'recovered')) ? w : undefined;
+      },
+
+      // the user has SEEN the notice — remove the marker so it shows exactly once. Best-effort boolean.
+      clearRecoveryNotice(agentId) {
+        try {
+          if (typeof fs.unlinkSync !== 'function') return false;
+          fs.unlinkSync(recoveryFile(saveFile(agentId)));
+          return true;
+        } catch (_) { return false; }
+      },
+
+      _internals: { saveFile, AID_RE, num, readTagged, recoveryFile }
     };
   }
 

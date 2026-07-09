@@ -30,6 +30,13 @@ const CloudSave = (() => {
   let pending = null;                  // newest doc awaiting a flush (older queued docs are superseded)
   let health = Core ? Core.freshHealth() : { lastPushOkAt: 0, lastPushFailAt: 0, consecutiveFailures: 0, nextRetryAt: 0 };
   let warnedStale = false;             // ONE console warn per failing↔healthy transition, never per attempt
+  // EL-11 FIX 1: the sidecar REFUSES writes when the workspace was stamped by a NEWER StarNet — as an HTTP 200
+  // body { ok:false, degraded:true }. That refusal gets its OWN persistent state (the save-dot renders it and
+  // stationui explains it); it is NOT a transient network failure and must never stamp health OK.
+  let degraded = false;
+  // EL-11 FIX 2/3: the persisted quarantine/recovery marker the sidecar returned on the last pull (GET /api/save
+  // carries `recovery`). The boot path reads it via recoveryNotice() and acks it after showing the honest notice.
+  let lastRecovery = null;
 
   function now() { return Date.now(); }
   function num(v) { const n = Number(v); return Number.isFinite(n) ? n : 0; }
@@ -99,10 +106,20 @@ const CloudSave = (() => {
     const doc = pending; pending = null;
     if (!isSave(doc)) return Promise.resolve(false);
     return postNow(doc)
-      .then(r => {
+      .then(async r => {
         // a non-ok HTTP status (e.g. 409 stale, 500) is a FAILURE, not a success — fetch only rejects on
         // network error, so we must inspect r.ok ourselves or we'd stamp health OK on a rejected write.
         if (r && r.ok === false) { throw new Error('save HTTP ' + r.status); }
+        // EL-11 FIX 1 ("the worst lie class"): the sidecar answers REFUSALS as HTTP 200 { ok:false, ... }
+        // (degraded workspace / stale stamp / unreadable prior) — the status line alone is NEVER proof the
+        // write landed. Parse the body: ok:false is a FAILED push, and degraded:true latches its own state.
+        // A non-JSON 200 (older sidecar / dev shim) still counts as landed — same trust as before.
+        let body = null;
+        try { body = await r.json(); } catch (_) { body = null; }
+        if (body && typeof body === 'object') {
+          degraded = (body.ok === false && body.degraded === true);   // any parsed answer re-proves (or clears) the degraded verdict
+          if (body.ok === false) throw new Error('save refused: ' + (body.error || (body.unreadable ? 'existing record unreadable' : body.stale ? 'stale write' : 'unknown')));
+        }
         markOk();
         return true;
       })
@@ -135,7 +152,16 @@ const CloudSave = (() => {
     try { ctl = new AbortController(); t = setTimeout(() => { try { ctl.abort(); } catch (_) {} }, 2500); } catch (_) {}
     return fetch(ENDPOINT + '?agent=' + encodeURIComponent(AGENT_ID), { cache: 'no-store', signal: ctl ? ctl.signal : undefined })
       .then(r => r.ok ? r.json() : null)
-      .then(j => { const s = j && j.save; return isSave(s) ? s : null; })
+      .then(j => {
+        if (j && typeof j === 'object') {
+          // EL-11 FIX 1 (GB-9): the sidecar tells us at boot-read time the workspace is degraded — latch it
+          // so the save-dot is honest from the first frame, not only after the first refused write.
+          if (j.degraded === true) degraded = true;
+          // EL-11 FIX 2/3: capture the persisted quarantine/recovery marker for the boot path's disclosure.
+          if (j.recovery && typeof j.recovery === 'object') lastRecovery = j.recovery;
+        }
+        const s = j && j.save; return isSave(s) ? s : null;
+      })
       .catch(() => null)              // unreachable/slow sidecar -> no remote, fall back to local
       .then(v => { if (t) clearTimeout(t); return v; });
   }
@@ -192,7 +218,9 @@ const CloudSave = (() => {
         // sendBeacon returns true only when the browser accepts the payload for background send. That's a
         // best-effort dispatch (not a confirmed 200), but it's the strongest signal we get on unload, so
         // stamp health OK on it — leaving the record frozen here would falsely read stale on the NEXT boot.
-        if (navigator.sendBeacon && navigator.sendBeacon(ENDPOINT, blob)) { pending = null; markOk(); return; }
+        // (…unless the workspace is known-degraded: the sidecar is REFUSING writes, so an accepted beacon
+        // proves dispatch, not persistence — don't launder a refused write into a healthy stamp.)
+        if (navigator.sendBeacon && navigator.sendBeacon(ENDPOINT, blob)) { pending = null; if (!degraded) markOk(); return; }
       } catch (_) {}
       flush();                         // fallback if sendBeacon is unavailable/rejected
     };
@@ -206,10 +234,26 @@ const CloudSave = (() => {
   // dot renders: persists are landing locally but the durable backup hasn't confirmed a write in > 60 min
   // AND there's a live failure streak. Never asserts "backed up" the harness can't prove.
   function healthNow() {
-    return Core ? Core.snapshot(health, now())
-      : { lastPushOkAt: health.lastPushOkAt, lastPushFailAt: health.lastPushFailAt, consecutiveFailures: health.consecutiveFailures, nextRetryAt: 0, stale: false };
+    const s = Core ? Core.snapshot(health, now())
+      : { lastPushOkAt: health.lastPushOkAt, lastPushFailAt: health.lastPushFailAt, consecutiveFailures: health.consecutiveFailures, nextRetryAt: 0, warn: false, stale: false };
+    s.degraded = degraded;   // EL-11 FIX 1: refused-by-newer-StarNet is its own persistent, renderable state
+    return s;
   }
 
-  return { push, pull, reconcile, flush, installUnloadFlush, health: healthNow, isFutureSentinel, _isSave: isSave, _isFutureSave: isFutureSave };
+  // EL-11 FIX 1: other write paths (app.js pushRoster) hit the SAME degraded refusal — let them latch the
+  // shared verdict so the save-dot tells one coherent story regardless of which write was refused first.
+  function markDegraded() { degraded = true; }
+
+  // EL-11 FIX 2/3: the quarantine/recovery marker seen on the last pull (null if none), and the one-shot ack
+  // that clears it server-side after the honest notice has been shown. Ack is best-effort (boolean promise).
+  function recoveryNotice() { return lastRecovery; }
+  function ackRecovery() {
+    const rec = lastRecovery; lastRecovery = null;
+    if (!rec) return Promise.resolve(false);
+    return fetch('/api/save/recovery-ack', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ agent: AGENT_ID }) })
+      .then(r => !!(r && r.ok)).catch(() => false);
+  }
+
+  return { push, pull, reconcile, flush, installUnloadFlush, health: healthNow, isFutureSentinel, markDegraded, recoveryNotice, ackRecovery, _isSave: isSave, _isFutureSave: isFutureSave };
 })();
 if (typeof module !== 'undefined' && module.exports) module.exports = CloudSave;
