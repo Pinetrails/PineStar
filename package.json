@@ -74,6 +74,8 @@
     "qa:beginner": "node scripts/qa/beginner-run.mjs",
     "qa:beginner:live": "node scripts/qa/beginner-run.mjs --live",
     "qa:janitor": "node scripts/qa/janitor.mjs",
+    "qa:sweep": "node scripts/qa/evidence-sweep.mjs",
+    "qa:sweep:dry": "node scripts/qa/evidence-sweep.mjs --dry-run",
     "qa:journeys": "node scripts/qa/journeys.mjs",
     "qa:atlas": "node scripts/qa/cartographer.mjs --sweep",
     "qa:atlas:static": "node scripts/qa/cartographer.mjs --sweep --static-only",
