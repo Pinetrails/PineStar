@@ -48,6 +48,7 @@
     let opening = false;    // an apps.connections.open round-trip is in flight
     let stopped = false;    // caller asked us to shut down for good
     let fatalError = null;  // a non-recoverable auth failure — thrown from the next getUpdates
+    let everOpened = false; // has apps.connections.open EVER succeeded (real transport proof)? — honest connect gate
 
     function closeSocket() { try { if (ws && typeof ws.close === 'function') ws.close(); } catch (_) {} ws = null; }
 
@@ -70,6 +71,7 @@
           return;   // transient open failure -> next poll retries (poll cadence is the backoff)
         }
         const sock = new WebSocketImpl(data.url);
+        everOpened = true;   // apps.connections.open succeeded with a real socket URL — the app-level token is proven
         sock.onmessage = (ev) => {
           let msg = null;
           try { msg = JSON.parse(String(ev && ev.data)); } catch (e) { return; }
@@ -100,6 +102,11 @@
         if (fatalError) throw fatalError;
         await openGateway();
         if (fatalError) throw fatalError;
+        // HONEST CONNECT: a poll that returns [] does NOT prove the channel is up — the socket may simply have
+        // failed to open (a transient blip on apps.connections.open leaves it null without a fatal error). Until the
+        // gateway has actually opened once, surface a transient (non-fatal) error so the adapter reports 'connecting'
+        // and retries, instead of the poll silently "succeeding" and the panel claiming CONNECTED before any proof.
+        if (!everOpened) throw new Error('slack socket not open yet — retrying');
         if (!buffer.length) { await sleep(parkMs); }
         if (signal && signal.aborted) { stopped = true; closeSocket(); return []; }
         return buffer.splice(0, buffer.length);

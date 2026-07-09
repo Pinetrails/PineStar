@@ -3522,16 +3522,20 @@ function startTelegram(token, key, model, agentCfg) {
     onCallback: hub.onCallback,
     onStatus: (s) => {
       const state = (s && s.state) || 'down';
-      // a fatal (401/invalid-token) error stops the poll loop -> mark disconnected so /status is honest.
-      telegramStatus = { connected: state === 'error' ? false : !!telegram, state: state, detail: (s && s.detail) || '' };
+      // Truthful telemetry: CONNECTED only when the transport actually proved 'up' AND we still hold a live adapter.
+      // The adapter emits 'up' on its FIRST successful poll round-trip (never optimistically), so this never claims
+      // connected before proof; a fatal/transient error drops it honestly instead of the old assume-up.
+      telegramStatus = { connected: state === 'up' && !!telegram, state: state, detail: (s && s.detail) || '' };
       hub.onStatus(s);
     }
   });
   adapterRef = adapter;
   telegram = { adapter: adapter, hub: hub };
-  telegramStatus = { connected: true, state: 'up', detail: '' };
+  // start HONEST: 'connecting' (not an optimistic 'up') — the adapter's onStatus flips it to 'up' the moment its
+  // first getUpdates round-trip succeeds, or to 'error' if the token is bad. The panel derives CONNECTED from this.
+  telegramStatus = { connected: false, state: 'connecting', detail: '' };
   adapter.connect();
-  console.log('  · telegram channel connected');
+  console.log('  · telegram channel connecting…');
 }
 function stopTelegram() {
   if (telegram && telegram.adapter) { try { telegram.adapter.disconnect(); } catch (_) {} }
@@ -3770,8 +3774,10 @@ function startGenericChannel(id, token, key, model, agentCfg) {
     },
     onStatus: (s) => {
       const state = (s && s.state) || 'down';
-      // a fatal (bad-token/endpoint) error stops the poll loop -> mark disconnected so /status is honest.
-      genericStatus[id] = { connected: state === 'error' ? false : !!genericChannels[id], state: state, detail: (s && s.detail) || '' };
+      // Truthful telemetry: CONNECTED only when the transport actually proved 'up' AND the adapter is still live.
+      // The adapter emits 'up' on its FIRST successful poll round-trip (never optimistically); a fatal/transient
+      // error drops it honestly instead of the old assume-up. Matches the telegram/discord pattern.
+      genericStatus[id] = { connected: state === 'up' && !!genericChannels[id], state: state, detail: (s && s.detail) || '' };
       const w = genericChannels[id]; if (w && w.hub) w.hub.onStatus(s);
     }
   };
@@ -3809,10 +3815,12 @@ function startGenericChannel(id, token, key, model, agentCfg) {
     adapter: adapterOpts
   });
   genericChannels[id] = { adapter: wired.adapter, hub: wired.hub };
-  // optimistic like Telegram: up until the transport reports down/error (a fatal auth flips it within seconds).
-  genericStatus[id] = { connected: true, state: 'up', detail: '' };
+  // start HONEST: 'connecting' (not an optimistic 'up') — the adapter's onStatus flips it to 'up' the moment its
+  // first transport round-trip succeeds (slack apps.connections.open / matrix whoami+sync / signal receive), or to
+  // 'error' if the auth/endpoint is bad. The panel derives CONNECTED from this, never from the connect POST.
+  genericStatus[id] = { connected: false, state: 'connecting', detail: '' };
   wired.adapter.connect();
-  console.log('  · ' + id + ' channel connected');
+  console.log('  · ' + id + ' channel connecting…');
 }
 function stopGenericChannel(id) {
   const w = genericChannels[id];
@@ -7478,7 +7486,9 @@ async function handleChannelConnect(req, res) {
   if (!model) return json(400, { error: 'connect your agent first (choose a model on the title screen)' });
   if (!providerHasCredential(provider, key, baseUrl)) return json(400, { error: providerCredentialError(provider) });
   try { startTelegram(token, providerUsesCodex(provider) ? '' : key, model, { agentId, system, name, provider, reasoningEffort, baseUrl }); } catch (e) { return json(500, { error: (e && e.message) || 'failed to start' }); }
-  json(200, { connected: true, state: telegramStatus.state });
+  // report the REAL post-start status (now 'connecting', not an assumed 'up') — the panel repaints from /status once
+  // the transport proves the round-trip. Never assert connected here.
+  json(200, { connected: !!telegramStatus.connected, state: telegramStatus.state });
 }
 
 // POST /api/channels/telegram/sync { agentId?, system?, model?, key?, provider?, agentName? } — refresh the agent identity
@@ -7547,7 +7557,8 @@ async function handleDiscordConnect(req, res) {
   if (!model) return json(400, { error: 'connect your agent first (choose a model on the title screen)' });
   if (!providerHasCredential(provider, key, baseUrl)) return json(400, { error: providerCredentialError(provider) });
   try { startDiscord(token, providerUsesCodex(provider) ? '' : key, model, { agentId, system, name, provider, reasoningEffort, baseUrl }); } catch (e) { return json(500, { error: (e && e.message) || 'failed to start' }); }
-  json(200, { connected: true, state: discordStatus.state });
+  // report the REAL post-start status ('connecting' until the gateway reaches READY) — the panel repaints from /status.
+  json(200, { connected: !!discordStatus.connected, state: discordStatus.state });
 }
 
 // POST /api/channels/discord/sync — refresh the agent identity the Discord bot runs as (mirrors handleChannelSync).
@@ -7621,7 +7632,10 @@ function channelStatusPayload(id) {
   const out = {
     id: id, connected: !!st.connected, configured: configured, durable: durable,
     state: st.state || 'down', detail: st.detail || '',
-    notifyAutonomous: !!(channelSecrets && channelSecrets.notifyAutonomous), ownerLocked: !!rec.ownerId
+    notifyAutonomous: !!(channelSecrets && channelSecrets.notifyAutonomous), ownerLocked: !!rec.ownerId,
+    // the agent NAME the channel answers as (never a secret) — the panel renders "ANSWERS AS: <name>" so the
+    // Commander can see which agent a DM will reach. Empty until a config is saved.
+    agentName: String(rec.name || '')
   };
   // endpoint/account are NON-secret connection config (a homeserver URL / a signal-cli URL + number) — surfacing
   // them lets the panel prefill its fields for a one-click reconnect. Tokens/keys stay server-side, always.
@@ -7676,7 +7690,8 @@ async function handleGenericChannelConnect(req, res, id) {
   if (!providerHasCredential(provider, key, baseUrl)) return json(400, { error: providerCredentialError(provider) });
   try { startGenericChannel(id, token, providerUsesCodex(provider) ? '' : key, model, { agentId, system, name, provider, reasoningEffort, baseUrl, endpoint, account }); }
   catch (e) { return json(500, { error: (e && e.message) || 'failed to start' }); }
-  json(200, { connected: true, state: (genericStatus[id] && genericStatus[id].state) || 'up' });
+  // report the REAL post-start status (now 'connecting', not an assumed 'up') — the panel repaints from /status.
+  json(200, { connected: !!(genericStatus[id] && genericStatus[id].connected), state: (genericStatus[id] && genericStatus[id].state) || 'connecting' });
 }
 
 // POST /api/channels/<id>/sync — refresh the agent identity the channel runs as (mirrors handleChannelSync).
