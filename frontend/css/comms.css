@@ -34,7 +34,7 @@
 /* speaker chip — inverted phosphor plate, mirroring the window title chips */
 .cmsg .cmsg-head .who {
   display: inline-block; margin: 0;
-  font-size: 10.5px; letter-spacing: 1.5px; font-weight: bold; text-transform: uppercase;
+  font-size: 10.5px; letter-spacing: 1.5px; text-transform: uppercase;
   color: var(--ink); background: var(--ph-dim);
   padding: 1px 7px; border-radius: 3px; line-height: 1.5;
   box-shadow: 0 1px 0 rgba(0,0,0,.4);
@@ -77,7 +77,7 @@
 .cmsg.system { font-size: 13.5px; padding-left: 11px; border-left: 1px dashed var(--ph-faint); }
 .cmsg.system .who {
   display: inline-block; margin: 6px 0 2px;
-  font-size: 9.5px; letter-spacing: 1.5px; font-weight: bold; text-transform: uppercase;
+  font-size: 9.5px; letter-spacing: 1.5px; text-transform: uppercase;
   color: var(--ph-dim); opacity: .7;
 }
 .cmsg.system .body { color: var(--ph-dim); letter-spacing: .3px; }
@@ -123,8 +123,8 @@
 
 /* TERMINAL MARKDOWN — a small, restrained subset in the agent's prose (chat.js renderMarkdown). Phosphor tokens
    only; a header is BRIGHT text, never oversized web type. XSS is handled upstream (escape-then-wrap). */
-.cmsg .body .md-b { color: var(--ph-bright); font-weight: bold; }
-.cmsg .body .md-h { display: inline-block; color: var(--ph-bright); font-weight: bold; letter-spacing: .5px; }
+.cmsg .body .md-b { color: var(--ph-bright); }
+.cmsg .body .md-h { display: inline-block; color: var(--ph-bright); letter-spacing: .5px; }
 .cmsg .body .md-li { display: inline-block; }
 .cmsg .body .md-li .md-bul { color: var(--ph); }
 .cmsg .body .md-code {
@@ -182,7 +182,7 @@
   padding: 3px 8px; line-height: 1.35; min-width: 0;
 }
 .tool-chip .tc-glyph { flex: 0 0 auto; color: var(--ph); }
-.tool-chip .tc-name { flex: 0 0 auto; color: var(--ph); font-weight: bold; letter-spacing: .4px; }
+.tool-chip .tc-name { flex: 0 0 auto; color: var(--ph); letter-spacing: .4px; }
 .tool-chip .tc-args {
   flex: 1 1 auto; min-width: 0; color: var(--ph-dim); opacity: .85;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -251,8 +251,7 @@
   animation: comms-blink 1s steps(1) infinite;
 }
 #comms-presence .cp-verb {
-  flex: 0 0 auto; color: var(--ph-bright); font-weight: bold;
-  letter-spacing: 1.5px; text-shadow: 0 0 5px var(--ph-glow2);
+  flex: 0 0 auto; color: var(--ph-bright); letter-spacing: 1.5px; text-shadow: 0 0 5px var(--ph-glow2);
 }
 #comms-presence .cp-tool {
   flex: 1 1 auto; min-width: 0; color: var(--ph-dim); font-size: 12px;
@@ -363,8 +362,8 @@
   white-space: nowrap; font-variant-numeric: tabular-nums;
 }
 .cmsg.broadcast .bc-glyph { color: var(--ph); opacity: .8; }
-/* the tinted name span already carries its inline suit colour; keep its weight up */
-.cmsg.broadcast .bc-name { font-weight: bold; }
+/* .bc-name carries its per-agent suit colour inline (chat.js) — that tint IS its emphasis;
+   no synthesized bold (VT323 is single-weight, so font-weight only smears). */
 /* trophies are rarer → a brighter, gold-accented treatment (kept restrained) */
 .cmsg.broadcast.broadcast-gold .bc-line { color: var(--gold); text-shadow: 0 0 7px var(--ph-glow); }
 .cmsg.broadcast.broadcast-gold .bc-glyph { color: var(--gold); opacity: 1; }
@@ -432,8 +431,7 @@
 .chat-send {
   flex: 0 0 auto; align-self: flex-end;
   display: inline-flex; align-items: center; gap: 5px;
-  font-family: inherit; font-size: 12px; letter-spacing: 1px; text-transform: uppercase; font-weight: bold;
-  color: var(--ink); background: var(--ph); border: 1px solid var(--ph-bright); border-radius: 4px;
+  font-family: inherit; font-size: 12px; letter-spacing: 1px; text-transform: uppercase; color: var(--ink); background: var(--ph); border: 1px solid var(--ph-bright); border-radius: 4px;
   padding: 5px 9px 5px 8px; cursor: pointer; user-select: none; line-height: 1.1;
   box-shadow: 0 1px 0 rgba(0,0,0,.4);
   transition: background-color var(--t-fast) var(--ease-soft), box-shadow var(--t-fast) var(--ease-soft);

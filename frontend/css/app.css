@@ -236,8 +236,7 @@ input::placeholder, textarea.key-input::placeholder { color: var(--ph-dim); opac
 .codex-code {
   font-size: 30px; letter-spacing: 6px; text-align: center; color: var(--ink);
   background: var(--ph); padding: 8px 6px; border-radius: 5px; user-select: all;
-  text-shadow: none; font-weight: bold;
-}
+  text-shadow: none;}
 .codex-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .hint { font-size: 15px; margin-top: 4px; min-height: 18px; }
 .connect-actions {
@@ -293,11 +292,10 @@ input::placeholder, textarea.key-input::placeholder { color: var(--ph-dim); opac
 }
 @keyframes keyctaIn { from { opacity: 0; transform: translate(-50%, 8px); } to { opacity: 1; transform: translate(-50%, 0); } }
 .key-cta[hidden] { display: none; }
-.key-cta-glyph { flex: 0 0 auto; font-weight: 800; }
+.key-cta-glyph { flex: 0 0 auto; }
 .key-cta-txt { min-width: 0; }
 .key-cta-act {
-  flex: 0 0 auto; cursor: pointer; padding: 5px 9px; font: inherit; font-size: 11px; font-weight: 800;
-  color: var(--ink, #010503); background: var(--warn, #ffb641); border: 0; border-radius: 3px; white-space: nowrap;
+  flex: 0 0 auto; cursor: pointer; padding: 5px 9px; font: inherit; font-size: 11px; color: var(--ink, #010503); background: var(--warn, #ffb641); border: 0; border-radius: 3px; white-space: nowrap;
 }
 .key-cta-act:hover { filter: brightness(1.12); }
 
@@ -363,7 +361,7 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
    just the newest one. Per-message HH:MM stamps come from each turn's REAL recorded ts (comms.css
    .cmsg-ts) — a legacy turn with no stored ts renders no stamp rather than a fabricated one. */
 .cmsg { font-size: 16px; line-height: 1.4; min-width: 0; max-width: 100%; position: relative; }   /* min-width:0 lets long tokens wrap instead of stretching the column; position anchors the copy button */
-.cmsg .who { font-size: 12px; letter-spacing: 1.5px; color: var(--ph-dim); display: block; margin: 9px 0 3px; text-transform: uppercase; font-weight: bold; }
+.cmsg .who { font-size: 12px; letter-spacing: 1.5px; color: var(--ph-dim); display: block; margin: 9px 0 3px; text-transform: uppercase; }
 .cmsg .body { white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; }
 
 /* SELECTABLE TRANSCRIPT — the log is real text: mouse-select + copy anywhere in it, like any terminal
@@ -684,7 +682,7 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 
 /* Cortex MEMORY CORE (M-mem.6): the provenance panel — every belief, traceable, with pin/edit/forget */
 .mc-note { font-size: 12px; color: var(--ph-dim); line-height: 1.4; margin: 2px 0 10px; }
-.mc-note b { color: var(--ph); font-weight: 600; }
+.mc-note b { color: var(--ph); }
 .mc-list { display: flex; flex-direction: column; gap: 8px; }
 .mc-empty { padding: 10px 4px; }   /* dim grade + size via the grouped empty rule (motion.css) */
 .mc-rec {
@@ -696,7 +694,7 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 .mc-rec.mc-declined { opacity: 0.78; border-left-color: var(--bad, #c0584e); background: transparent; }
 .mc-rec.mc-declined .mc-body { color: var(--ph-dim); }
 .mc-head { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; }
-.mc-rectitle { color: var(--ph-bright); font-size: 13px; font-weight: 600; }
+.mc-rectitle { color: var(--ph-bright); font-size: 13px; }
 .mc-scope { color: var(--ph-dim); font-size: 10px; letter-spacing: 0.5px; border: 1px solid var(--ph-dim); border-radius: 2px; padding: 0 4px; opacity: 0.85; }
 .mc-pinflag { margin-left: auto; color: var(--gold); font-size: 11px; letter-spacing: 0.5px; }
 .mc-body { color: var(--ph-bright); font-size: 14px; line-height: 1.4; white-space: pre-wrap; word-break: break-word; }
@@ -718,7 +716,7 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 .cd-ff { display: block; height: 100%; background: var(--gold); }
 .cd-fpct { color: var(--ph-bright); font-size: 12px; letter-spacing: 0.5px; }
 .cd-sub { font-size: 12px; color: var(--ph-dim); margin: 8px 0 6px; letter-spacing: 0.3px; }
-.cd-sub b { color: var(--ph); font-weight: 600; }
+.cd-sub b { color: var(--ph); }
 /* STATION RECORD (G3a pride layer): the durable lifetime counters — a compact grid of honest numbers.
    Reads PrideStore.snapshot(); a counter with no real sample yet shows "—" (never a fabricated 0). */
 .cd-record { margin: 12px 0 4px; padding: 9px 11px; background: var(--ph-faint); border-left: 2px solid var(--gold); border-radius: 0 5px 5px 0; }
@@ -729,10 +727,10 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 .cd-stat-n.dim { color: var(--ph-dim); text-shadow: none; }
 .cd-stat-l { font-size: 10px; letter-spacing: .1em; color: var(--ph-dim); text-transform: uppercase; }
 .cd-founded { margin-top: 9px; font-size: 11px; color: var(--ph-dim); letter-spacing: .3px; }
-.cd-founded b { color: var(--ph); font-weight: 600; }
+.cd-founded b { color: var(--ph); }
 .cd-sec { margin-top: 14px; }
 .cd-sech { display: flex; align-items: baseline; gap: 8px; margin-bottom: 6px; border-bottom: 1px solid var(--ph-faint); padding-bottom: 3px; }
-.cd-dim { color: var(--ph-bright); font-size: 13px; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase; }
+.cd-dim { color: var(--ph-bright); font-size: 13px; letter-spacing: 0.5px; text-transform: uppercase; }
 .cd-dn { color: var(--ph-dim); font-size: 11px; }
 .cd-empty { font-style: italic; padding: 4px 2px 6px; }   /* dim grade + size via the grouped empty rule (motion.css) */
 /* the curiosity question-state readout for a blank dimension: a quiet aside + the re-enable escape hatch */
@@ -754,7 +752,7 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 .cd-edit { width: 100%; box-sizing: border-box; font: inherit; font-size: 14px; color: var(--ph-bright); background: var(--ink); border: 1px solid var(--ph-dim); border-radius: 2px; padding: 4px 6px; min-height: 44px; resize: vertical; }
 .cd-edit:focus { outline: none; border-color: var(--ph); }
 .cd-actions-row { margin: 10px 0 2px; }
-.cd-interview { width: 100%; font: inherit; font-size: 13px; letter-spacing: 0.6px; font-weight: 600; cursor: pointer; color: var(--ink); background: var(--ph); border: 1px solid var(--ph); border-radius: 3px; padding: 8px 12px; }
+.cd-interview { width: 100%; font: inherit; font-size: 13px; letter-spacing: 0.6px; cursor: pointer; color: var(--ink); background: var(--ph); border: 1px solid var(--ph); border-radius: 3px; padding: 8px 12px; }
 .cd-interview:hover { background: var(--ph-bright); border-color: var(--ph-bright); box-shadow: 0 0 10px var(--ph-glow2); }
 
 /* THE AWAKENING — tappable suggestion chips in COMMS (the gamified first-meeting onboarding) */
@@ -837,7 +835,7 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 .chat-slash[hidden] { display: none; }
 .slash-head { padding: 4px 10px; color: var(--ph-dim); font-size: 11px; letter-spacing: 1.5px; border-bottom: 1px solid var(--ph-faint); position: sticky; top: 0; background: var(--panel); }
 .slash-item { display: flex; align-items: baseline; gap: 9px; padding: 5px 10px; cursor: pointer; }
-.slash-item .slash-name { color: var(--ph-bright); font-weight: bold; white-space: nowrap; flex: 0 0 auto; }
+.slash-item .slash-name { color: var(--ph-bright); white-space: nowrap; flex: 0 0 auto; }
 .slash-item .slash-desc { color: var(--ph-dim); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .slash-item.sel { background: var(--ph-faint); }
 .slash-item.sel .slash-desc { color: var(--ph); }
@@ -898,17 +896,16 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 }
 .model-dock-sigil {
   display: inline-grid; place-items: center; width: 16px; height: 16px;
-  border: 1px solid currentColor; font-size: 11px; font-weight: 800;
-}
+  border: 1px solid currentColor; font-size: 11px;}
 .model-dock-effort-chip {
   display: inline-block; max-width: 40px; overflow: hidden; text-overflow: clip;
-  white-space: nowrap; font-size: 10px; font-weight: 800; color: var(--ph-bright);
+  white-space: nowrap; font-size: 10px; color: var(--ph-bright);
 }
 /* resting-state model short-name: a dim MODEL label so the chip reads "MODEL · TIER" and its
    purpose is legible without a click. Capped + truncated so the composer never grows. */
 .model-dock-model-name {
   display: inline-block; max-width: 62px; overflow: hidden; text-overflow: ellipsis;
-  white-space: nowrap; font-size: 9px; font-weight: 700; letter-spacing: 0.3px;
+  white-space: nowrap; font-size: 9px; letter-spacing: 0.3px;
   color: var(--ph-dim); line-height: 1;
 }
 .model-dock-model-name.empty { color: var(--ph-dim); opacity: 0.7; }
@@ -934,8 +931,8 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
   border: 6px solid transparent; border-top-color: var(--ph);
 }
 .mdt-row { font-size: 12px; line-height: 1.35; white-space: normal; }
-.mdt-model { color: var(--ph-bright); font-weight: 800; font-size: 13px; }
-.mdt-prov { color: var(--gold); font-size: 10px; font-weight: 800; letter-spacing: 0.5px; margin-top: 1px; }
+.mdt-model { color: var(--ph-bright); font-size: 13px; }
+.mdt-prov { color: var(--gold); font-size: 10px; letter-spacing: 0.5px; margin-top: 1px; }
 .mdt-sep { height: 1px; background: var(--ph-dim); opacity: 0.5; margin: 6px 0; }
 .mdt-tier { color: var(--ph); }
 .mdt-tier b { color: var(--ph-bright); }
@@ -955,7 +952,7 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
   border-bottom: 1px solid var(--ph-dim); padding-bottom: 6px; min-width: 0;
 }
 .model-dock-provider {
-  color: var(--gold); font-size: 11px; font-weight: 800; white-space: nowrap;
+  color: var(--gold); font-size: 11px; white-space: nowrap;
 }
 .model-dock-current-model {
   min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -974,8 +971,7 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 .model-dock-effort {
   min-width: 0; height: 28px; padding: 0 3px; cursor: pointer;
   color: var(--ph); background: transparent; border: 1px solid var(--ph-dim);
-  border-radius: 3px; font: inherit; font-size: 10px; font-weight: 800;
-  overflow: hidden; text-overflow: clip; white-space: nowrap;
+  border-radius: 3px; font: inherit; font-size: 10px; overflow: hidden; text-overflow: clip; white-space: nowrap;
 }
 .model-dock-effort:hover { color: var(--ph-bright); border-color: var(--ph); background: var(--ph-faint); }
 .model-dock-effort.sel { color: var(--ink); background: var(--ph); border-color: var(--ph); }
@@ -984,7 +980,7 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
   border-top: 1px solid var(--ph-faint); border-bottom: 1px solid var(--ph-faint);
 }
 .model-dock-group {
-  color: var(--gold); font-size: 11px; font-weight: 800; padding: 8px 3px 3px;
+  color: var(--gold); font-size: 11px; padding: 8px 3px 3px;
   border-bottom: 1px solid var(--ph-faint);
 }
 .model-dock-row {
@@ -997,15 +993,14 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 .model-dock-row.sel { color: var(--ink); background: var(--ph); }
 /* E4: offline fallback — the live catalog was unreachable, these are a built-in unverified seed list.
    Amber group tag + dimmed rows so they never read as a verified live catalog. */
-.model-dock-group-offline { color: var(--warn, #e8a13a); font-size: 9px; font-weight: 600; font-style: normal; letter-spacing: 0.5px; }
+.model-dock-group-offline { color: var(--warn, #e8a13a); font-size: 9px; font-style: normal; letter-spacing: 0.5px; }
 .model-dock-row.fallback .model-dock-row-name { color: var(--ph-dim); }
 .model-dock-row.fallback.sel .model-dock-row-name { color: var(--ink); }
 .model-dock-row-name {
   min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px;
 }
 .model-dock-row-effort {
-  min-width: 38px; text-align: right; font-size: 10px; font-weight: 800;
-}
+  min-width: 38px; text-align: right; font-size: 10px;}
 .model-dock-empty {   /* dim grade + size via the grouped empty rule (motion.css) */
   padding: 18px 6px; text-align: center;
 }
@@ -1018,7 +1013,7 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
   border: 1px solid var(--warn, #e8b64c); border-radius: 3px;
 }
 .model-dock-keywarn:hover { background: color-mix(in srgb, var(--warn, #e8b64c) 22%, transparent); }
-.model-dock-keywarn .mdw-glyph { flex: 0 0 auto; font-weight: 800; }
+.model-dock-keywarn .mdw-glyph { flex: 0 0 auto; }
 .model-dock-keywarn .mdw-txt { min-width: 0; }
 /* resting chip flags a missing key with a warm hairline so it's noticeable before the dock is even opened */
 .model-dock-toggle.needs-key { border-color: var(--warn, #e8b64c); box-shadow: 0 0 6px color-mix(in srgb, var(--warn, #e8b64c) 40%, transparent); }
@@ -1028,8 +1023,7 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 .model-dock-foot button {
   min-width: 0; padding: 6px 4px; cursor: pointer;
   color: var(--ph); background: var(--panel2); border: 2px solid var(--ph-dim);
-  border-radius: 3px; font: inherit; font-size: 11px; font-weight: 800;
-}
+  border-radius: 3px; font: inherit; font-size: 11px;}
 .model-dock-foot button:hover { color: var(--ph-bright); border-color: var(--ph); background: var(--ph-faint); }
 
 @media (max-width: 780px) {
@@ -1544,7 +1538,7 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 .sk-toggle.busy { opacity: 0.4; pointer-events: none; }
 .sk-card-main { flex: 1 1 auto; min-width: 0; }
 .sk-name-row { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
-.sk-name { font-size: 13px; font-weight: 600; color: var(--text); }
+.sk-name { font-size: 13px; color: var(--ph-bright); }   /* emphasis via bright phosphor, not synthesized bold (VT323 is single-weight) */
 .sk-reqs { display: inline-flex; gap: 4px; flex-wrap: wrap; }
 .sk-badge { font-size: 8.5px; letter-spacing: 0.5px; padding: 1px 5px; border-radius: 2px; border: 1px solid var(--ph-faint); color: var(--ph-dim); white-space: nowrap; }
 .sk-badge.have { color: var(--ok); border-color: var(--ok); }
@@ -1741,7 +1735,7 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 .ws-tab:first-child { border-radius: 3px 0 0 3px; border-right-width: 0; }
 .ws-tab:last-child { border-radius: 0 3px 3px 0; }
 .ws-tab:hover { background: rgba(0,0,0,.2); opacity: .8; }
-.ws-tab.on { background: rgba(0,0,0,.34); opacity: 1; font-weight: 700; }
+.ws-tab.on { background: rgba(0,0,0,.34); opacity: 1; }
 #ws-addproject {
   font-family: inherit; font-size: 12px; letter-spacing: 1px; color: var(--ink);
   background: transparent; border: 1px solid rgba(0,0,0,.45); cursor: pointer; padding: 0 6px;
@@ -2230,7 +2224,7 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 }
 .refit-proptile-tag { position: absolute; top: 3px; right: 5px; font-size: 9px; color: var(--ph); opacity: .6; pointer-events: none; }
 /* capability prop badge — the plain POWER a prop grants (WEB/FILES/TERMINAL…), so the gallery shows at a glance which props matter */
-.refit-proptile-grant { position: absolute; top: 3px; left: 4px; font-size: 8px; font-weight: 700; letter-spacing: .04em; color: var(--ph-bright); background: var(--ph-faint); border: 1px solid var(--ph); border-radius: 3px; padding: 1px 3px; pointer-events: none; }
+.refit-proptile-grant { position: absolute; top: 3px; left: 4px; font-size: 8px; letter-spacing: .04em; color: var(--ph-bright); background: var(--ph-faint); border: 1px solid var(--ph); border-radius: 3px; padding: 1px 3px; pointer-events: none; }
 .refit-hint {
   flex: 0 0 auto; border-top: 1px solid var(--ph-faint); padding: 6px 10px 8px;
   font-size: 12px; color: var(--ph-dim); letter-spacing: 1px; min-height: 25px; text-align: left;

@@ -316,7 +316,7 @@ body.no-scan .mkt-scrim::after { display: none; }
 .mkt-save-acts .mkt-do-save.caution { background: transparent !important; color: var(--gold) !important; border-color: var(--gold) !important; }
 .mkt-launch-form textarea.mkt-in { resize: vertical; min-height: 2.6em; line-height: 1.45; font-size: 14px; }
 .mkt-recipe-form textarea.mkt-r-task { resize: vertical; min-height: 4.2em; line-height: 1.5; font-size: 14px; }
-.mkt-req { color: var(--bad); font-weight: bold; }
+.mkt-req { color: var(--bad); }   /* --bad IS the emphasis; no synthesized bold (VT323 single-weight) */
 .mkt-opt { color: var(--ph-dim); font-size: 10px; letter-spacing: .5px; }
 .mkt-in.mkt-bad { border-color: var(--bad); box-shadow: 0 0 8px rgba(255,92,77,.4); }
 .mkt-launch-note { color: var(--ph-dim); font-size: 11.5px; }
