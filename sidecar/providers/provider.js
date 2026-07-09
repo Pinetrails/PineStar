@@ -145,19 +145,35 @@
       const guard = new Promise((_resolve, reject) => {
         timer = setTimeout(() => {
           cancelled = true;
-          try { reader.cancel(); } catch (_) {}
+          // REJECT FIRST, cancel SECOND (order is load-bearing). A WHATWG reader's cancel() settles the pending
+          // read() as {done:true} SYNCHRONOUSLY, so cancel-before-reject let Promise.race adopt a clean
+          // end-of-stream and the timeout error was LOST — a hung provider stream ended as a successful 'done'
+          // run with tokens:0 (the 2026-07-08 stranded-user escape; night-shift beats inherited it and burned
+          // leash reporting success). Rejecting first guarantees the guard settles before cancel can resolve
+          // the read, so the watchdog genuinely errors the stream.
           reject(timeoutError(ms, 'idle'));
+          try { const p = reader.cancel(); if (p && typeof p.catch === 'function') p.catch(() => {}); } catch (_) {}
         }, ms);
         // NOTE: deliberately NOT unref'd. The watchdog must be able to fire even when the stalled read() is the
         // only pending work — unref'ing would let the process exit instead of timing out (and would also break
         // deterministic unit testing of the watchdog). The timer is always cleared in the finally below.
         if (signal && typeof signal.addEventListener === 'function') {
-          onAbort = () => { try { reader.cancel(); } catch (_) {} reject(makeAbortError()); };
+          // same ordering law as the watchdog: reject BEFORE cancel, or a user-cancel resolves {done:true} and
+          // the run ends 'done' instead of 'cancelled'.
+          onAbort = () => {
+            reject(makeAbortError());
+            try { const p = reader.cancel(); if (p && typeof p.catch === 'function') p.catch(() => {}); } catch (_) {}
+          };
           signal.addEventListener('abort', onAbort, { once: true });
         }
       });
       try {
-        return await Promise.race([reader.read(), guard]);
+        const r = await Promise.race([reader.read(), guard]);
+        // belt-and-braces: even if some reader settles its read() ahead of the guard's rejection, a fired
+        // watchdog must NEVER surface as a clean end-of-stream — the timeout always wins.
+        if (cancelled) throw timeoutError(ms, 'idle');
+        if (signal && signal.aborted) throw makeAbortError();
+        return r;
       } finally {
         if (timer) clearTimeout(timer);
         if (onAbort && signal && typeof signal.removeEventListener === 'function') signal.removeEventListener('abort', onAbort);

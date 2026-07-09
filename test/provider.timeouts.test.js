@@ -31,6 +31,43 @@ async function collect(p, req) { const out = []; for await (const e of p.stream(
     A.eq(cls.retryable, true, 'a timeout is retryable');
   }
 
+  // 1b. THE 2026-07-08 ESCAPE (EL-11): a WHATWG-faithful reader — cancel() settles the pending read() as
+  //     {done:true} synchronously, exactly like a real ReadableStream reader — must STILL surface the idle
+  //     timeout as an ERROR. The old cancel-before-reject order let Promise.race adopt the clean end-of-stream,
+  //     so a hung provider stream ended as a successful run (runs.jsonl reason:'done', tokens:0) and night-shift
+  //     beats burned leash reporting success. (Test 1's mock never resolved on cancel, so it couldn't catch this.)
+  function whatwgStallReader() {
+    let pendingResolve = null;
+    const r = {
+      cancelled: false,
+      read: () => new Promise(res => { pendingResolve = res; }),   // stalls until cancel() settles it
+      cancel: () => { r.cancelled = true; if (pendingResolve) pendingResolve({ done: true, value: undefined }); return Promise.resolve(); }
+    };
+    return r;
+  }
+  {
+    const r = whatwgStallReader();
+    const guarded = timeouts.idleGuardedReader(r, { idleMs: 25 });
+    let err = null, out = null;
+    try { out = await guarded.read(); } catch (e) { err = e; }
+    A.ok(err, 'a stalled read whose cancel resolves {done:true} still ERRORS — never a clean end-of-stream (got ' + JSON.stringify(out) + ')');
+    A.ok(err && /timed out/i.test(err.message), 'the surfaced error is the idle timeout');
+    A.eq(classifyApiError(err, {}).reason, 'timeout', 'and it classifies as timeout (retryable)');
+    A.ok(r.cancelled, 'the underlying reader was still cancelled');
+  }
+  // 1c. same WHATWG-faithful reader under a USER-CANCEL: AbortError, never a clean {done:true} end.
+  {
+    const ac = new AbortController();
+    const r = whatwgStallReader();
+    const guarded = timeouts.idleGuardedReader(r, { idleMs: 10000, signal: ac.signal });
+    const p = guarded.read();
+    ac.abort();
+    let err = null;
+    try { await p; } catch (e) { err = e; }
+    A.ok(err && err.name === 'AbortError', 'a user-cancel on a WHATWG-faithful reader surfaces as an AbortError, not a clean end');
+    A.ok(r.cancelled, 'the reader is cancelled on user-cancel');
+  }
+
   // 2. user-cancel through the guarded reader classifies as ABORT, never timeout (the CRITICAL invariant).
   {
     const ac = new AbortController();
@@ -173,8 +210,12 @@ async function collect(p, req) { const out = []; for await (const e of p.stream(
       pull(controller) {
         return new Promise(resolve => {
           setTimeout(() => {
-            if (i < chunks.length) controller.enqueue(new TextEncoder().encode(chunks[i++]));
-            else controller.close();
+            // a test that cancels mid-body (9b) leaves this timer dangling; enqueue/close on a cancelled stream
+            // throws (uncaught, inside a timer) — swallow it, the cancel already ended the stream on purpose.
+            try {
+              if (i < chunks.length) controller.enqueue(new TextEncoder().encode(chunks[i++]));
+              else controller.close();
+            } catch (_) {}
             resolve();
           }, perChunkMs);
         });
@@ -274,6 +315,34 @@ async function collect(p, req) { const out = []; for await (const e of p.stream(
       A.ok(!err || err.name === 'AbortError', 'a mid-body user-cancel is a clean cancel, never a timeout error');
       A.ok(!/timed out/i.test((err && err.message) || ''), 'a mid-body cancel is NOT reported as a timeout');
     }
+  }
+
+  // 10. THE HUNG-STREAM RUN-TRUTH ESCAPE, end-to-end through a real adapter + a REAL ReadableStream: the
+  //     provider accepts, streams ONE token, then goes byte-silent forever. The adapter stream MUST end in a
+  //     `timeout`-classified error — never as a clean end-of-stream (which is what let loop.js record a
+  //     successful turn and the run row read COMPLETE while the provider was wedged).
+  {
+    const savedI = process.env.SKYNET_PROVIDER_IDLE_MS;
+    process.env.SKYNET_PROVIDER_IDLE_MS = '40';
+    const fetchImpl = async (url) => {
+      if (!/chat\/completions/.test(url)) return new Response('{"data":[]}', { status: 200 });
+      let sent = false;
+      const stream = new ReadableStream({
+        pull(controller) {
+          if (!sent) { sent = true; controller.enqueue(new TextEncoder().encode('data: ' + JSON.stringify({ choices: [{ delta: { content: 'one' } }] }) + '\n')); return; }
+          return new Promise(() => {});   // wedged provider: no bytes, no close, forever
+        }
+      });
+      return new Response(stream, { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
+    };
+    const p = makeOpenRouterProvider({ fetch: fetchImpl, key: 'k' });
+    let err = null; const seen = [];
+    try { for await (const e of p.stream({ model: 'm', messages: [] })) seen.push(e.type); } catch (e) { err = e; }
+    A.ok(seen.indexOf('text') >= 0, 'the one real token was delivered before the hang');
+    A.ok(err, 'a hung stream ERRORS out of the adapter — it must NOT end as a clean (done-looking) stream');
+    A.ok(err && /timed out/i.test(err.message), 'the error is the idle timeout ("timed out")');
+    A.eq(classifyApiError(err, {}).reason, 'timeout', 'it classifies as timeout — retryable, honest agent.run.error, never a silent reason:done');
+    if (savedI != null) process.env.SKYNET_PROVIDER_IDLE_MS = savedI; else delete process.env.SKYNET_PROVIDER_IDLE_MS;
   }
 
   A.report('provider.timeouts.test');
