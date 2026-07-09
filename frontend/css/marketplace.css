@@ -107,7 +107,10 @@ body.no-scan .mkt-scrim::after { display: none; }
 /* ---- stage: two-pane roster + dossier (or a full-width form) ---- */
 .mkt-stage { position: relative; z-index: 10; flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: 1fr 360px; }
 .mkt-stage.form { display: block; overflow-y: auto; padding: 16px 18px; }
-.mkt-roster { overflow-y: auto; overflow-x: hidden; padding: 14px 16px 20px; }
+.mkt-roster { overflow-y: auto; overflow-x: hidden; padding: 14px 16px 32px;
+  /* soft-clip the scroll edge so a long roster doesn't hard-cut mid-card at the bottom (audit item 8) */
+  -webkit-mask-image: linear-gradient(180deg, #000 calc(100% - 26px), transparent);
+  mask-image: linear-gradient(180deg, #000 calc(100% - 26px), transparent); }
 .mkt-roster::-webkit-scrollbar, .mkt-dossier::-webkit-scrollbar { width: 9px; }
 .mkt-roster::-webkit-scrollbar-thumb, .mkt-dossier::-webkit-scrollbar-thumb { background: var(--ph-dim); border-radius: 9px; }
 
@@ -141,10 +144,11 @@ body.no-scan .mkt-scrim::after { display: none; }
     transform var(--t-fast, 120ms) var(--ease-out, ease),
     box-shadow var(--t-fast, 120ms) var(--ease-soft, ease),
     border-color var(--t-fast, 120ms) var(--ease-soft, ease);
-  /* shared card-entrance language (motion.css §13): capped per-index stagger via inline --ci */
-  animation: cardIn 0.34s var(--ease-out, ease) backwards;
-  animation-delay: calc(min(var(--ci, 0), 8) * 25ms);
 }
+/* shared card-entrance language (motion.css §13): capped per-index stagger via inline --ci. Scoped to .mkt-anim
+   so it plays ONCE on bay-open / tab-switch, never on every filter/search rebuild (audit item 8). */
+.mkt-roster.mkt-anim .mkt-card { animation: cardIn 0.34s var(--ease-out, ease) backwards;
+  animation-delay: calc(min(var(--ci, 0), 8) * 25ms); }
 .mkt-card::before { content: ""; position: absolute; left: 0; top: 0; right: 0; height: 3px;
   background: linear-gradient(90deg, var(--accent, var(--ph)), transparent 80%); opacity: .85; }
 .mkt-card:hover { transform: translateY(-2px); border-color: var(--ph); box-shadow: 0 0 0 1px var(--accent, var(--ph)), 0 6px 22px rgba(0,0,0,.6); }
@@ -225,7 +229,10 @@ body.no-scan .mkt-scrim::after { display: none; }
 .mkt-kit-row.mkt-kit-missing .mkt-kit-state { color: var(--ph-dim); }
 .mkt-kit-note { color: var(--ph-dim); font-size: 10.5px; letter-spacing: .4px; margin-top: 5px; opacity: .8; }
 .mkt-dos-cta { display: flex; flex-direction: column; gap: 8px; position: sticky; bottom: -20px;
-  padding-top: 12px; margin-top: 4px; background: linear-gradient(180deg, transparent, #070402 26%); }
+  padding-top: 16px; margin-top: 4px;
+  /* tightened so scrolled content is fully masked before the CTA (was a long 26% fade that let rows ghost
+     through under the button, audit item 8); the color matches the dossier's own #070402 floor. */
+  background: linear-gradient(180deg, transparent, #070402 20px); }
 .mkt-cta-row { display: flex; align-items: center; gap: 7px; }
 .mkt-cta-main { flex: 1 1 auto; cursor: pointer; font-family: inherit; font-size: 16px; letter-spacing: 1.5px; padding: 12px; border-radius: 8px;
   color: var(--ink); background: var(--accent, var(--ph)); border: 0; text-shadow: none;
@@ -498,6 +505,36 @@ body.no-scan .mkt-scrim::after { display: none; }
 .mkt-modelbar .mkt-modelpick { display: flex; align-items: center; gap: 8px; }
 .mkt-modelbar .mp-wrap { width: 100%; }
 .mkt-modelbar .mp-model { flex: 1 1 auto; }
+/* the live stage caption names itself: a dim "LIVE PREVIEW —" label + the skin name SkinStage fills in */
+.mkt-stage-lbl { color: var(--ph-dim); letter-spacing: 1.5px; font-size: 10.5px; }
+
+/* ---- SUMMON CONFIG: the collapsible APPEARANCE + MODEL strip (keeps the class roster above the fold) ----
+   Slim resting bar with a one-line summary of the current picks; expands to the full skin stage + model picker.
+   Plain-label header rank (NOT the amber roster plate, NOT gold) — config is a secondary decision. */
+.mkt-cfg { margin: 0 0 12px; border: 1px solid var(--ph-dim); border-radius: 8px; overflow: hidden;
+  background: linear-gradient(180deg, var(--ph-faint), transparent 60%), var(--panel2); }
+.mkt-cfg-head { display: flex; align-items: center; gap: 9px; width: 100%; font-family: inherit; text-align: left;
+  cursor: pointer; background: transparent; border: 0; color: var(--ph-bright); padding: 9px 12px; }
+.mkt-cfg-head:hover { background: var(--ph-faint); }
+.mkt-cfg-caret { color: var(--ph); font-size: 12px; flex: 0 0 auto; }
+.mkt-cfg-ttl { color: var(--ph); font-size: 11.5px; letter-spacing: 2px; flex: 0 0 auto; }
+.mkt-cfg-sum { color: var(--ph-dim); font-size: 11.5px; letter-spacing: .3px; flex: 1 1 auto;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mkt-cfg-sum .mkt-cfg-k { color: var(--ph); opacity: .8; letter-spacing: 1px; margin: 0 4px 0 10px; font-size: 9.5px; }
+.mkt-cfg-sum .mkt-cfg-k:first-child { margin-left: 0; }
+.mkt-cfg-body { padding: 4px 12px 12px; }
+/* inside the config body the bars lose their own frames — the strip already IS the frame */
+.mkt-cfg-body .mkt-skinbar { margin: 0 0 10px; padding: 0; border: 0; background: none; box-shadow: none; }
+.mkt-cfg-body .mkt-skinbar:last-child { margin-bottom: 0; }
+
+/* ---- SUMMON commit summary: the confirm row above the CTA (skin thumb + model/effort + class code) ---- */
+.mkt-commit { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; padding: 8px 11px; margin-bottom: 9px;
+  border-radius: 7px; background: var(--panel2); border: 1px solid var(--ph-faint); box-shadow: var(--well); }
+.mkt-cs-cell { display: inline-flex; align-items: center; gap: 7px; color: var(--ph-bright); font-size: 12px; letter-spacing: .4px; }
+.mkt-cs-k { color: var(--ph-dim); font-size: 9px; letter-spacing: 1.5px; }
+.mkt-cs-skin { width: 26px; height: 26px; object-fit: contain; object-position: center bottom; image-rendering: auto;
+  background: radial-gradient(ellipse 66% 40% at 50% 84%, var(--ph-glow2), transparent 72%); border-radius: 4px; }
+.mkt-adopt-cta { margin: 0 0 2px; }
 
 /* ---- the ＋ build tile (a dashed grid cell) + the custom-class builder form ---- */
 .mkt-build { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;

@@ -36,6 +36,8 @@ const Marketplace = (() => {
   let cronJobs = null, cronArmed = false, launchMode = 'run', launchCadence = null;
   let tab = 'agents';                            // 'agents' | 'recipes'
   let glassOpen = false;
+  let summonConfigOpen = false;                  // the collapsible APPEARANCE+MODEL strip (summon mode) — collapsed by default
+  let pendingCardAnim = false;                   // play the staggered card-entrance ONCE per open/tab-switch, not on every filter/search rebuild
   let pickedSummonSkin = null;
   let pickedSummonModel = null;   // SUMMON-only per-agent model choice: { model, provider, effort } or null = inherit the orchestrator's
   let focusAgent = null, focusRecipe = null;     // the spec/recipe id shown in the dossier (per tab)
@@ -178,6 +180,7 @@ const Marketplace = (() => {
     try { if (typeof ProspectStore !== 'undefined' && ProspectStore.refresh) { ProspectStore.pushContext(); ProspectStore.refresh(); } } catch (_) {}
     tab = (ctx.mode !== 'pick' && ctx.tab === 'recipes' && hasRecipes()) ? 'recipes' : 'agents';
     glassOpen = !acked();
+    summonConfigOpen = false;
     pickedSummonSkin = null;
     pickedSummonModel = null;
     const builtins = Specialties.builtins();
@@ -198,7 +201,7 @@ const Marketplace = (() => {
         '<div class="mkt-bar" id="mkt-bar"></div>' +
         '<div class="mkt-stage" id="mkt-stage"></div>' +
         '<div class="mkt-foot">' +
-          '<span>CLEARANCE&nbsp;&nbsp;<b>◆◆◆</b> DEEP&nbsp;·&nbsp;<b>◆◆</b> BALANCED&nbsp;·&nbsp;<b>◆</b> FAST</span>' +
+          '<span id="mkt-foot-legend">' + footLegendHTML() + '</span>' +
           '<span class="reg"><span class="dot"></span> LOCAL REGISTRY · 0 BYTES OFF-MACHINE</span>' +
         '</div>' +
       '</div>';
@@ -209,6 +212,7 @@ const Marketplace = (() => {
     if (q) q.addEventListener('input', () => { query = (q.value || '').toLowerCase().trim(); renderStage(); restoreSearchFocus(); });
     document.addEventListener('keydown', onKey, true);
     sfx('open');
+    pendingCardAnim = true;   // the first paint gets the staggered card entrance
     renderBar();
     renderStage();
     const panel = root.querySelector('.mkt'); if (panel) panel.focus();
@@ -325,31 +329,51 @@ const Marketplace = (() => {
         '<button class="mkt-import bb sm" title="import a recipe from a JSON file">⇪ IMPORT</button>' +
         '<input type="file" id="mkt-import-file" accept="application/json,.json" hidden>';
     } else {
-      const pool = Specialties.builtins();
-      const counts = { all: pool.length, code: 0, research: 0, general: 0 };
+      // FILTER counts span the WHOLE roster — built-ins AND the Commander's customs (audit item 8) — so a lane
+      // count never undercounts a class the Commander authored. MINE = the customs scope chip (mirrors RECIPES).
+      const customs = has() ? Specialties.customs() : [];
+      const pool = Specialties.builtins().concat(customs);
+      const counts = { all: pool.length, code: 0, research: 0, general: 0, mine: customs.length };
       pool.forEach(it => { counts[laneOf(it)] = (counts[laneOf(it)] || 0) + 1; });
       const lane = (id, label) => '<button class="mkt-lane' + (laneFilter === id ? ' on' : '') + '" data-lane="' + id + '">' +
         label + '<span class="ct">' + (counts[id] || 0) + '</span></button>';
-      html += '<span class="mkt-lanes-lbl">FILTER</span><div class="mkt-lanes">' +
-        lane('all', 'ALL') + lane('code', 'CODE') + lane('research', 'RESEARCH') + lane('general', 'OPS') + '</div>';
+      let rail = lane('all', 'ALL') + lane('code', 'CODE') + lane('research', 'RESEARCH') + lane('general', 'OPS');
+      if (customs.length) rail += lane('mine', 'MINE');
+      html += '<span class="mkt-lanes-lbl">FILTER</span><div class="mkt-lanes">' + rail + '</div>';
     }
     bar.innerHTML = html;
+    // per-tab search placeholder (audit item 8): name what "search" actually spans on this tab.
+    const q = root && root.querySelector('#mkt-q');
+    if (q) { const ph = (tab === 'recipes') ? 'search recipes…' : 'search classes, codes, purpose…';
+      q.placeholder = ph; q.setAttribute('aria-label', tab === 'recipes' ? 'Search recipes' : 'Search classes'); }
     bar.querySelectorAll('.mkt-tab').forEach(b => b.addEventListener('click', () => {
       const next = b.dataset.tab; if (!next || next === tab) return;
       tab = next; view = 'grid'; laneFilter = 'all'; catFilter = 'all'; sfx('click');
-      renderBar(); renderStage(); syncSub();
+      pendingCardAnim = true;   // a tab switch is a fresh context — animate; a filter/search rebuild is not
+      renderBar(); renderStage(); syncSub(); syncFoot();
     }));
     bar.querySelectorAll('.mkt-lane[data-lane]').forEach(b => b.addEventListener('click', () => {
       const next = b.dataset.lane; if (next === laneFilter) return;
       laneFilter = next; sfx('click'); renderBar(); renderStage();
+      // renderBar rebuilt the chips — return focus to the one just clicked (audit item 8), not to the modal shell.
+      const again = root.querySelector('.mkt-lane[data-lane="' + next + '"]'); if (again) again.focus();
     }));
     bar.querySelectorAll('.mkt-lane[data-cat]').forEach(b => b.addEventListener('click', () => {
       const next = b.dataset.cat; if (next === catFilter) return;
       catFilter = next; sfx('click'); renderBar(); renderStage();
+      const again = root.querySelector('.mkt-lane[data-cat="' + next + '"]'); if (again) again.focus();
     }));
     wireImport(bar);
   }
   function syncSub() { const s = root && root.querySelector('#mkt-sub'); if (s) s.textContent = subtitle(); }
+  // the footer legend explains the CARD glyphs of the CURRENT tab — clearance pips on AGENTS, setup marks on
+  // RECIPES (the pips legend was plain wrong on the recipes grid). Swapped on every tab change (audit item 8).
+  function footLegendHTML() {
+    return (tab === 'recipes' && hasRecipes())
+      ? 'SETUP&nbsp;&nbsp;<b>▤</b> needs inputs&nbsp;·&nbsp;<b>◷</b> no setup'
+      : 'CLEARANCE&nbsp;&nbsp;<b>◆◆◆</b> DEEP&nbsp;·&nbsp;<b>◆◆</b> BALANCED&nbsp;·&nbsp;<b>◆</b> FAST';
+  }
+  function syncFoot() { const f = root && root.querySelector('#mkt-foot-legend'); if (f) f.innerHTML = footLegendHTML(); }
 
   /* ---------- stage: two-pane (roster + dossier) OR a full-width form ---------- */
   function renderStage() {
@@ -368,7 +392,8 @@ const Marketplace = (() => {
     // a fresh grid render (open / tab / filter / search) always returns to the ROSTER view on a narrow bay — the
     // dossier SHEET is only entered by an explicit card click, never left stuck over a rebuilt roster.
     const mkt0 = root.querySelector('.mkt'); if (mkt0) mkt0.classList.remove('show-dossier');
-    stage.innerHTML = '<div class="mkt-roster" id="mkt-roster">' + rosterHTML() + '</div>' +
+    const animCls = pendingCardAnim ? ' mkt-anim' : ''; pendingCardAnim = false;   // entrance stagger only on open/tab-switch
+    stage.innerHTML = '<div class="mkt-roster' + animCls + '" id="mkt-roster">' + rosterHTML() + '</div>' +
                       '<div class="mkt-dossier" id="mkt-dossier">' + dossierHTML() + '</div>';
     wireRoster(stage);
     wireDossier(stage);
@@ -391,9 +416,15 @@ const Marketplace = (() => {
   /* ---------- filtering ---------- */
   function matchq(it) {
     if (!query) return true;
-    return ((it.name || '') + ' ' + (it.tagline || '') + ' ' + (it.blurb || '')).toLowerCase().includes(query);
+    // search spans name + tagline + blurb AND the class CODE (e.g. "ENG") + purpose text (audit item 8), so a
+    // Commander can find a class by its stamp or by what it actually does, not just its name.
+    const hay = (it.name || '') + ' ' + (it.tagline || '') + ' ' + (it.blurb || '') + ' ' +
+      (it.purpose || '') + ' ' + codeOf(it);
+    return hay.toLowerCase().includes(query);
   }
-  function passLane(it) { return laneFilter === 'all' || laneOf(it) === laneFilter; }
+  // MINE is a scope filter (customs only), handled by the roster; it must PASS-THROUGH here so filt() doesn't
+  // strip every card (no card's lane is literally "mine").
+  function passLane(it) { return laneFilter === 'all' || laneFilter === 'mine' || laneOf(it) === laneFilter; }
   function filt(list) { return list.filter(it => passLane(it) && matchq(it)); }
   // RECIPES tab filtering (R6): category rail + free-text search. 'all' passes everything, 'mine' passes customs,
   // any other value is a rail bucket. Search (matchq) also spans the blurb — the plan's name/tagline/blurb search.
@@ -410,35 +441,98 @@ const Marketplace = (() => {
   }
   function agentsRosterHTML() {
     const deploy = !ctx || ctx.mode !== 'pick';
+    const summon = !!(ctx && ctx.mode === 'pick' && ctx.summon);
+    // search OR a lane filter collapses the top shelves + config so the results grid owns the pane — the same
+    // discipline the RECIPES tab uses (audit item 7). MINE is a lane filter value, so it collapses too.
+    const filtering = !!query || laneFilter !== 'all';
+    // deploy mode keeps the SAVE-THIS-AGENT toolbar; summon drops the stale "pre-fills the wake screen" hint —
+    // the subtitle already states the summon promise, and the config strip + shelves carry the rest.
     const toolbar = deploy
-      ? '<div class="mkt-toolbar">' +
-          '<button class="bb sm mkt-saveas">＋ SAVE THIS AGENT AS A SPECIALTY</button>' +
-          '<label class="mkt-adopt"><input type="checkbox" class="mkt-adopt-cb"> adopt its voice too</label>' +
-        '</div>'
-      : '<div class="mkt-toolbar"><span class="mkt-hint">picking one pre-fills the wake screen — name, voice &amp; purpose, ready to tweak</span></div>';
+      ? '<div class="mkt-toolbar"><button class="bb sm mkt-saveas">＋ SAVE THIS AGENT AS A SPECIALTY</button></div>'
+      : '';
     let html = toolbar;
-    html += summonSkinBarHTML();
-    html += summonModelBarHTML();
-    html += glassHTML();
-    html += recShelfHTML();
-    html += prospectShelfHTML();
+
+    // TOP OF THE PANE (audit item 3): the class choice is primary, so the earned/recommended shelves + the roster
+    // sit up top; APPEARANCE + MODEL compress into a slim collapsible SUMMON CONFIG strip (good defaults, one click
+    // to expand). All of it hides while searching/filtering so the filtered grid is uncluttered.
+    if (!filtering) {
+      if (summon) html += summonConfigHTML();
+      html += glassHTML();          // '' in pick mode; STATION FAMILIARITY glass box in deploy mode
+      html += recShelfHTML();
+      html += prospectShelfHTML();
+    }
+
+    const buildTile = '<button class="mkt-build" type="button" aria-label="build a custom class">' +
+      '<span class="mkt-build-plus" aria-hidden="true">＋</span><span class="mkt-build-lbl">BUILD A CUSTOM CLASS</span></button>';
     const allBuiltins = Specialties.builtins();
     const builtins = filt(allBuiltins);
     const customs = filt(Specialties.customs());
-    html += '<div class="mkt-sect-h">▮ CLASS ROSTER</div>';
+    const hasAnyCustoms = Specialties.customs().length > 0;
+
+    // MINE view: the Commander's own specialists only (matches the RECIPES-tab MINE chip).
+    if (laneFilter === 'mine') {
+      html += sectH('▮ YOUR SPECIALISTS');
+      html += customs.length
+        ? '<div class="mkt-grid">' + customs.map(cardHTML).join('') + buildTile + '</div>'
+        : '<p class="mkt-hint mkt-yours-hint">' + (query ? 'none of your specialists match your search — '
+            : 'none yet — ') + 'build one from scratch below.</p><div class="mkt-grid">' + buildTile + '</div>';
+      return html;
+    }
+
+    // customs pinned ABOVE the built-in catalog when the Commander has some AND isn't searching (their own classes
+    // are the more relevant pick); otherwise CLASS ROSTER leads (beginners keep it above the fold) and YOUR
+    // SPECIALISTS + the build tile sit at the bottom. (audit item 7 reconciled with item 3)
+    const pinCustoms = hasAnyCustoms && !query;
+    if (pinCustoms) {
+      html += sectH('▮ YOUR SPECIALISTS');
+      html += '<div class="mkt-grid">' + customs.map(cardHTML).join('') + buildTile + '</div>';
+    }
+
+    html += sectH('▮ CLASS ROSTER');
     // truthful telemetry: an EMPTY catalog means the shared catalog script failed to load (a wiring
     // fault), not "no matches" — say so loudly instead of rendering a quietly blank roster.
     if (!allBuiltins.length) html += '<div class="mkt-empty">⚠ the class catalog failed to load (shared/specialties.js unreachable) — the built-in roster is unavailable. Restart the app; if it persists, this build is mis-wired.</div>';
     else html += builtins.length ? '<div class="mkt-grid">' + builtins.map(cardHTML).join('') + '</div>'
-      : '<div class="mkt-empty">no classes match your filter.</div>';
-    // the build tile (＋) is always available at the bottom — author a brand-new class however you want
-    const buildTile = '<button class="mkt-build" type="button" aria-label="build a custom class">' +
-      '<span class="mkt-build-plus" aria-hidden="true">＋</span><span class="mkt-build-lbl">BUILD A CUSTOM CLASS</span></button>';
-    html += '<div class="mkt-sect-h">▮ YOUR SPECIALISTS</div>';
-    if (!customs.length) html += '<p class="mkt-hint mkt-yours-hint">none yet — build one from scratch below' + (deploy ? ', or save the live agent as a specialty above' : '') + '.</p>';
-    html += '<div class="mkt-grid">' + customs.map(cardHTML).join('') + buildTile + '</div>';
+      : '<div class="mkt-empty">no classes match your ' + (query ? 'search' : 'filter') + '.</div>';
+
+    if (!pinCustoms) {
+      html += sectH('▮ YOUR SPECIALISTS');
+      if (!customs.length) html += '<p class="mkt-hint mkt-yours-hint">' +
+        (query ? 'none of your specialists match your search — ' : 'none yet — ') +
+        'build one from scratch below' + (deploy && !query ? ', or save the live agent as a specialty above' : '') + '.</p>';
+      html += '<div class="mkt-grid">' + customs.map(cardHTML).join('') + buildTile + '</div>';
+    }
     return html;
   }
+  // SUMMON CONFIG (audit item 3): a compact collapsible strip for APPEARANCE + MODEL. Both carry good defaults
+  // (Cadet skin, inherit the orchestrator's model), so it's COLLAPSED by default with a one-line summary of the
+  // current picks; expanding reveals the live skin stage + model picker. summonConfigOpen persists across the
+  // re-renders within one open bay.
+  function summonConfigHTML() {
+    if (!(ctx && ctx.mode === 'pick' && ctx.summon)) return '';
+    const modelSummary = (pickedSummonModel && pickedSummonModel.model) ? esc(shortModel(pickedSummonModel.model))
+      : (pickedSummonModel && pickedSummonModel.effort) ? 'inherit · ' + esc(String(pickedSummonModel.effort).toUpperCase()) + ' effort'
+      : 'same as orchestrator';
+    const head =
+      '<button type="button" class="mkt-cfg-head" aria-expanded="' + (summonConfigOpen ? 'true' : 'false') + '">' +
+        '<span class="mkt-cfg-caret" aria-hidden="true">' + (summonConfigOpen ? '▾' : '▸') + '</span>' +
+        '<span class="mkt-cfg-ttl">SUMMON CONFIG</span>' +
+        '<span class="mkt-cfg-sum"><span class="mkt-cfg-k">SKIN</span> ' + esc(summonSkinName()) +
+          ' <span class="mkt-cfg-k">MODEL</span> ' + modelSummary + '</span>' +
+      '</button>';
+    if (!summonConfigOpen) return '<div class="mkt-cfg">' + head + '</div>';
+    return '<div class="mkt-cfg open">' + head +
+      '<div class="mkt-cfg-body">' + summonSkinBarHTML() + summonModelBarHTML() + '</div></div>';
+  }
+  function summonSkinName() {
+    const id = (pickedSummonSkin && typeof DATA !== 'undefined' && DATA.SKINS && DATA.SKINS[pickedSummonSkin]) ? pickedSummonSkin : (typeof DATA !== 'undefined' ? DATA.DEFAULT_SKIN : '');
+    const sk = (typeof DATA !== 'undefined' && DATA.SKINS) ? DATA.SKINS[id] : null;
+    return (sk && sk.name) || id || '—';
+  }
+  function shortModel(m) { return String(m || '').split('/').pop().replace(/[-_]+/g, ' ').trim() || String(m || ''); }
+  // ONE section-header component (audit item 8): amber struck-metal plate for roster ranks. Shelves add their own
+  // gold/phosphor modifier class on top of .mkt-sect-h; the config strip uses its own plain .mkt-cfg-ttl label.
+  function sectH(label, extra) { return '<div class="mkt-sect-h' + (extra ? ' ' + extra : '') + '">' + label + '</div>'; }
   function recipesRosterHTML() {
     if (!hasRecipes()) return '<div class="mkt-empty">the recipe library isn’t available.</div>';
     let html = '<div class="mkt-toolbar"><button class="bb sm mkt-recipe-saveas">＋ SAVE A RECIPE</button>' +
@@ -480,10 +574,12 @@ const Marketplace = (() => {
         '<img src="assets/sprites/' + esc(sk.set) + '/rot_south.png" alt="' + esc(sk.name || id) + '" draggable="false"></button>';
     }).join('');
     // the live stage: SkinStage.mount binds these two ids in wireRoster and plays the picked skin's walk cycle.
+    // caption: a static "LIVE PREVIEW —" label + a name span SkinStage fills (mount targets the inner span, so the
+    // prefix survives every skin change). Names the live stage for what it is (audit item 8).
     const stage =
       '<figure class="mkt-skin-stage">' +
         '<div class="mkt-skin-stage-frame"><img id="mkt-skin-stage-img" alt="" draggable="false"></div>' +
-        '<figcaption class="mkt-skin-stage-name" id="mkt-skin-stage-name"></figcaption>' +
+        '<figcaption class="mkt-skin-stage-name"><span class="mkt-stage-lbl">LIVE PREVIEW —</span> <span id="mkt-skin-stage-name"></span></figcaption>' +
       '</figure>';
     return '<div class="mkt-skinbar"><label class="mkt-skinlabel">APPEARANCE <span class="mkt-hint">— the character this agent wears (your call, any class)</span></label>' +
       '<div class="mkt-skin-section">' +
@@ -659,15 +755,22 @@ const Marketplace = (() => {
     const custActs = s.custom
       ? '<div class="mkt-cta-row"><button class="bb sm mkt-edit" data-id="' + esc(s.id) + '">✎ EDIT</button>' +
         '<button class="bb sm danger mkt-del" data-id="' + esc(s.id) + '">⌫ DELETE</button></div>' : '';
-    // CLEARANCE is honest about what summon APPLIES vs INHERITS: the reasoning effort is applied to the agent
-    // record at summon; the model is a tier that resolves to the pinned/station-default model (advisory pip).
-    const effort = s.reasoningEffort ? esc(String(s.reasoningEffort).toUpperCase()) : null;
+    // CLEARANCE/EFFORT show the EFFECTIVE resolution (audit item 4): in summon mode a per-agent model/effort pinned
+    // in SUMMON CONFIG OVERRIDES the class default; otherwise the class tier resolves to the station-default model.
+    const pin = (ctx && ctx.mode === 'pick' && ctx.summon) ? pickedSummonModel : null;
+    const modelNote = (pin && pin.model)
+      ? 'model: ' + esc(shortModel(pin.model)) + ' — overrides class default'
+      : 'model: station default';
+    const effortEff = (pin && pin.effort) ? String(pin.effort).toUpperCase()
+      : (s.reasoningEffort ? String(s.reasoningEffort).toUpperCase() : null);
+    const effortNote = (pin && pin.effort) ? 'your pick — applied at summon'
+      : (s.reasoningEffort ? 'class default — applied at summon' : 'station default');
     const clearRow =
       '<span class="k" data-hint="clearance">CLEARANCE</span><span class="v">' + pipsOf(s.model) + ' ' + esc(clearanceLabel(s.model)) +
-        ' <span class="mkt-clr-note">model: station default</span></span>' +
+        ' <span class="mkt-clr-note">' + modelNote + '</span></span>' +
       '<span class="k" data-hint="effort">EFFORT</span><span class="v">' +
-        (effort ? '<span class="mkt-chip">' + effort + '</span> <span class="mkt-clr-note">applied at summon</span>'
-                : '<span class="mkt-clr-note">station default</span>') + '</span>';
+        (effortEff ? '<span class="mkt-chip">' + esc(effortEff) + '</span> <span class="mkt-clr-note">' + effortNote + '</span>'
+                   : '<span class="mkt-clr-note">station default</span>') + '</span>';
     return '<div class="mkt-dos-label">▮ CLASS DOSSIER</div>' +
       '<div class="mkt-dos-hero">' + sealHTML(s, true) +
         '<div class="mkt-dos-hi"><div class="mkt-dos-name">' + esc(s.name) + badges + '</div>' +
@@ -685,6 +788,9 @@ const Marketplace = (() => {
       (s.manual ? '<div class="mkt-block"><div class="bh">STANDING ORDERS</div><pre>' + esc(s.manual) + '</pre></div>' : '') +
       (s.starters && s.starters.length ? '<div class="mkt-block"><div class="bh">TRY ASKING — things you can say to it</div><ul class="mkt-starters">' + s.starters.map(x => '<li>' + esc(x) + '</li>').join('') + '</ul></div>' : '') +
       '<div class="mkt-dos-cta">' + custActs +
+        commitSummaryHTML(s) +
+        // adopt-voice sits BESIDE the DEPLOY CTA it modifies (audit item 8), not orphaned up in the toolbar.
+        (deploy ? '<label class="mkt-adopt mkt-adopt-cta"><input type="checkbox" class="mkt-adopt-cb"> adopt its voice too</label>' : '') +
         '<button class="mkt-cta-main mkt-deploy" data-id="' + esc(s.id) + '">' + ctaLabel + ' ▸</button>' +
         '<div class="mkt-cta-sub">' + ctaSub + '</div>' +
         // the merged recruit door's SECOND verb: in summon mode, a deploy context (onDeploy +
@@ -695,6 +801,21 @@ const Marketplace = (() => {
             '<div class="mkt-cta-sub">no new crew member — re-specs ' + esc(ctx.agentName) + '’s purpose &amp; standing orders</div>'
           : '') +
       '</div>';
+  }
+  // SUMMON commit summary (audit item 4): a compact confirm row directly above the CTA restating exactly what this
+  // summon will create — the SKIN it wears, the MODEL it runs on (pinned or inherited), and the CLASS. Summon-only.
+  function commitSummaryHTML(s) {
+    if (!(ctx && ctx.mode === 'pick' && ctx.summon) || typeof DATA === 'undefined' || !DATA.SKINS) return '';
+    const skinId = (pickedSummonSkin && DATA.SKINS[pickedSummonSkin]) ? pickedSummonSkin : DATA.DEFAULT_SKIN;
+    const sk = DATA.SKINS[skinId] || {};
+    const modelTxt = (pickedSummonModel && pickedSummonModel.model) ? esc(shortModel(pickedSummonModel.model)) : 'orchestrator model';
+    const effortTxt = (pickedSummonModel && pickedSummonModel.effort) ? esc(String(pickedSummonModel.effort).toUpperCase())
+      : (s.reasoningEffort ? esc(String(s.reasoningEffort).toUpperCase()) : '');
+    return '<div class="mkt-commit" aria-label="what this summon creates">' +
+      '<span class="mkt-cs-cell mkt-cs-appear"><img class="mkt-cs-skin" src="assets/sprites/' + esc(sk.set) + '/rot_south.png" alt="" draggable="false"><span>' + esc(sk.name || skinId) + '</span></span>' +
+      '<span class="mkt-cs-cell"><span class="mkt-cs-k">MODEL</span> ' + modelTxt + (effortTxt ? ' · ' + effortTxt : '') + '</span>' +
+      '<span class="mkt-cs-cell"><span class="mkt-cs-k">CLASS</span> ' + esc(codeOf(s)) + '</span>' +
+    '</div>';
   }
   // GEAR the recipe draws on — one advisory row per objectType: prop label + what it grants + a present/WANT
   // check against the live station gear (skills-panel WANT pattern). Missing gear is a WANT badge, NEVER a lock.
@@ -828,15 +949,18 @@ const Marketplace = (() => {
      When BOTH signals are silent (cold start) we fall back to an HONEST lane spread — the first class of each
      distinct interest lane in catalog order — under a header that says so (never a fake "recommended"). This
      shelf now renders in the summon/pick flow too: recruiting a NEW agent is exactly when guidance matters. */
-  function specGoalScore(s, gt) {
-    if (!s || !gt) return 0;
+  // the ACTUAL goal keywords a class matched (the persisted GOALS belief text ∩ the class's searchable text). The
+  // WHY chip names hits[0] so it says WHY truthfully ("matches your goal: X") instead of ×3 boilerplate.
+  function specGoalHits(s, gt) {
+    if (!s || !gt) return [];
     const words = String(gt).toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length >= 3);
-    if (!words.length) return 0;
-    const seen = {}; let hits = 0;
+    if (!words.length) return [];
+    const seen = {}; const hits = [];
     const hay = ((s.name || '') + ' ' + (s.tagline || '') + ' ' + Object.keys(s.tags || {}).join(' ')).toLowerCase();
-    for (const w of words) { if (seen[w]) continue; seen[w] = true; if (hay.indexOf(w) >= 0) hits++; }
+    for (const w of words) { if (seen[w]) continue; seen[w] = true; if (hay.indexOf(w) >= 0) hits.push(w); }
     return hits;
   }
+  function specGoalScore(s, gt) { return specGoalHits(s, gt).length; }
   function dominantLane(s) {
     let best = 'general', bv = -Infinity; const t = s.tags || {};
     for (const k in t) { const v = Number(t[k]); if (isFinite(v) && v > bv) { bv = v; best = k; } }
@@ -851,10 +975,12 @@ const Marketplace = (() => {
     let anySignal = false;
     const scored = pool.map((s, idx) => {
       const aff = scoreFn ? (Number(scoreFn(s.tags || {})) || 0) : 0;
-      const goal = specGoalScore(s, gt);
+      const goalHits = specGoalHits(s, gt);
+      const goal = goalHits.length;
       if (aff > 0 || goal > 0) anySignal = true;
-      // the honest per-pick WHY: profile affinity beats goal match when both fire (it's the stronger signal)
-      const why = (aff > 0 ? becauseText(s) : '') || (goal > 0 ? 'matches your stated goals' : '');
+      // the honest per-pick WHY: profile affinity beats goal match when both fire (it's the stronger signal). When
+      // it's a goal match, NAME the matched keyword (from the persisted goals text) rather than ×3 boilerplate.
+      const why = (aff > 0 ? becauseText(s) : '') || (goal > 0 ? ('matches your goal: “' + goalHits[0] + '”') : '');
       return { s, idx, v: aff * 4 + goal * 2, why };
     });
     if (anySignal) {
@@ -1100,9 +1226,45 @@ const Marketplace = (() => {
       });
     }
 
+    // SUMMON CONFIG strip: toggle expands/collapses APPEARANCE + MODEL (re-renders so wireRoster re-mounts the
+    // live skin stage + model picker on expand).
+    const cfgHead = stage.querySelector('.mkt-cfg-head');
+    if (cfgHead) cfgHead.addEventListener('click', () => { summonConfigOpen = !summonConfigOpen; sfx('click'); renderStage(); });
+
+    wireGridNav(stage);
     wireGlass(stage);
     wireSuggest(stage);
     wireProspect(stage);
+  }
+  // roving tabindex + arrow-key nav across the class/recipe grid (audit item 8): exactly one card is Tab-reachable
+  // (the selected one, else the first); Left/Right walk in DOM order, Up/Down jump a row (columns derived live from
+  // the auto-fill layout). Keeps the grid one Tab-stop instead of dozens, and makes it keyboard-drivable.
+  function wireGridNav(scope) {
+    const cards0 = Array.from(scope.querySelectorAll('.mkt-card'));
+    if (!cards0.length) return;
+    const fid = tab === 'recipes' ? focusRecipe : focusAgent;
+    let activeIdx = cards0.findIndex(c => c.dataset.id === fid); if (activeIdx < 0) activeIdx = 0;
+    cards0.forEach((c, i) => { c.tabIndex = (i === activeIdx ? 0 : -1); });
+    scope.addEventListener('keydown', e => {
+      const cur = document.activeElement;
+      if (!cur || !cur.classList || !cur.classList.contains('mkt-card') || !scope.contains(cur)) return;
+      if (['ArrowRight', 'ArrowLeft', 'ArrowUp', 'ArrowDown'].indexOf(e.key) < 0) return;
+      const list = Array.from(scope.querySelectorAll('.mkt-card'));
+      const i = list.indexOf(cur); if (i < 0) return;
+      // columns = how many cards share the first row's top offset (auto-fill layout, read live)
+      let cols = 0; const top0 = list[0].offsetTop;
+      for (const c of list) { if (c.offsetTop === top0) cols++; else break; }
+      cols = Math.max(1, cols);
+      let next = i;
+      if (e.key === 'ArrowRight') next = i + 1;
+      else if (e.key === 'ArrowLeft') next = i - 1;
+      else if (e.key === 'ArrowDown') next = i + cols;
+      else if (e.key === 'ArrowUp') next = i - cols;
+      if (next < 0 || next >= list.length || next === i) { e.preventDefault(); return; }
+      e.preventDefault();
+      list.forEach(c => { c.tabIndex = -1; });
+      list[next].tabIndex = 0; list[next].focus();
+    });
   }
 
   /* ---------- wiring: prospects (station-drafted new classes) ----------
