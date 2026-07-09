@@ -1,6 +1,6 @@
 /* STARNET — topbar.css : the TOPBAR INSTRUMENT CLUSTER.
    One coherent cockpit gauge group in #topbar, right of the logo:
-   STATION (level + XP sliver) · SPEND TODAY · UPLINK · ONLINE · save.
+   STATION (level + XP sliver) · UPLINK · ONLINE · save.
    Built in the premium CRT hardware language (recessed wells, hairline separators,
    small dim labels over bright values — the dossier stat-well vocabulary in a
    compact horizontal form). Additive layer over style.css/app.css/motion.css.
@@ -58,19 +58,6 @@
 #tb-station.lvup .tb-xp-fill { animation: tb-xp-pop 1.2s var(--ease-out, ease); }
 @keyframes tb-xp-pop { 0% { filter: brightness(2.2); } 100% { filter: brightness(1); } }
 
-/* ---- SPEND TODAY well: dim label, bright dollar value, glow-pulse on a fresh cost ---- */
-#tb-spend .tb-val { color: var(--ph-bright); }
-#tb-spend[data-zero="1"] .tb-val { color: var(--ph-dim); text-shadow: none; }   /* $0.00 sits quiet */
-/* E3: ledger poll dead → the shown spend is last-known, not live. Dim + amber tint, mirroring the
-   widget-rail stale cue and the canvas linkStaleDim (value present but not fresh). */
-#tb-spend[data-stale="1"] .tb-val { color: var(--warn, #e8a13a); opacity: 0.55; text-shadow: none; }
-/* a cost event just landed — brief phosphor bloom on the value (opacity/text only) */
-#tb-spend.tb-tick .tb-val { animation: tb-spend-tick var(--t-slow, 400ms) var(--ease-out, ease); }
-@keyframes tb-spend-tick {
-  0%   { color: var(--gold); text-shadow: 0 0 12px var(--gold); }
-  100% { color: var(--ph-bright); text-shadow: 0 0 8px var(--ph-glow2); }
-}
-
 /* ---- the moved-up STATUS group: UPLINK meter · ONLINE pill · save dot ----
    These carry their ORIGINAL ids (#sig / #status-pill / #save-dot) so their existing
    writers (main.js save(), stationui.js tick()/flashSave()) keep working untouched.
@@ -103,13 +90,12 @@
   #topbar .tb-sep { margin: 0; }
 }
 /* extreme: the logo subtitle is already hidden by style.css here; keep only the core
-   numbers (STATION + SPEND) + the ONLINE pill so nothing overflows. */
+   STATION number + the ONLINE pill so nothing overflows. */
 @media (max-width: 860px) {
   #topbar #sig { display: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {
   #tb-station.lvup .tb-xp-fill,
-  #tb-spend.tb-tick .tb-val,
   #tb-station .tb-xp-fill { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }

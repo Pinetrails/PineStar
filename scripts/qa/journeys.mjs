@@ -380,15 +380,6 @@ const PARITY_PROBE = `(() => {
   if (T && T.hud) {
     const hud = T.hud();
     if (hud && Array.isArray(hud.checks)) for (const c of hud.checks) add('topbar/' + c.metric, c.ok, 'displayed=' + c.displayed + ' ' + c.mode + ' expected=' + c.expected);
-    // spend chip: the displayed spend must be >= the event-reduced session cost sum (topbar folds agent.cost;
-    // it can be AHEAD of the frozen tap only by the authoritative ledger poll, never BEHIND the events it saw).
-    const reduced = hud.reduced && hud.reduced.totals ? hud.reduced.totals.cost : 0;
-    const spendEl = document.querySelector('#tb-spend .tb-val');
-    const parseUsd = s => { if (s == null) return null; const m = String(s).replace(/[$,]/g,'').match(/-?\\d+(?:\\.\\d+)?/); return m ? parseFloat(m[0]) : null; };
-    const shownSpend = spendEl ? parseUsd(spendEl.textContent) : null;
-    out.snap.shownSpend = shownSpend; out.snap.reducedCost = reduced;
-    // tolerate float dust; the invariant is "displayed is not LESS than what the bus billed this session".
-    add('topbar/spend-not-below-events', shownSpend == null || shownSpend + 1e-6 >= reduced, 'shown=' + shownSpend + ' reducedSessionCost=' + reduced);
   } else {
     add('topbar/hud-readable', false, '__SKYNET_TEST__.hud() unavailable');
   }

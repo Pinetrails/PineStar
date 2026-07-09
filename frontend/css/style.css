@@ -277,7 +277,10 @@ b { font-weight: normal; color: var(--ph-bright); }
   display: none; align-items: center; gap: 12px; flex-shrink: 0;
   position: fixed; z-index: 960; pointer-events: none;
 }
-body:has(#screen-game.active) #logo { display: flex; }   /* in-game only; the title screen has its own big logo */
+/* in-game only; the title screen has its own big logo, and REFIT (builder) is its own full screen —
+   the fixed z-960 logo must not float over it (2026-07-09 layering bug; :not(.refit-on) lives INSIDE
+   this rule because a separate body.refit-on override loses the specificity fight to the :has(#id)). */
+body:has(#screen-game.active):not(.refit-on) #logo { display: flex; }
 #logo-anchor { flex-shrink: 0; }
 .logo-mark { font-size: 27px; color: var(--bad); text-shadow: 0 0 12px rgba(255,92,77,0.7); animation: pulse 2.8s infinite; }
 /* the STARNET wordmark image sits in the chrome top-left; the big version

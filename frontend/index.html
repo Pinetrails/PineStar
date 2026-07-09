@@ -106,18 +106,9 @@
           <label>PERSONALITY <span class="dim">— how it talks to you (change it any time later)</span></label>
           <div id="voice-archetypes" class="ov-vchips" role="group" aria-label="Personality"></div>
           <div id="voice-preview" class="voice-preview ov-vpreview"></div>
-          <!-- FINE-TUNE: trait dials + a free-text voice note, behind a reveal so casual players just pick a chip.
-               All inputs stay in the DOM so onWake() reads them whether the section is open or closed. -->
-          <button type="button" id="adv-toggle" class="adv-toggle ov-vtune" aria-expanded="false" aria-controls="adv-body">
-            <span class="adv-caret">▸</span> fine-tune the voice <span class="dim">— dials &amp; your own words (optional)</span>
-          </button>
-          <div id="adv-body" class="adv-body" hidden>
-            <div id="voice-traits" class="voice-traits"></div>
-            <label>EXTRAS</label>
-            <div id="voice-toggles" class="voice-toggles"></div>
-            <label>IN YOUR OWN WORDS <span class="dim">— optional; this overrides the preset where they conflict</span></label>
-            <textarea id="voice-custom" class="voice-custom" rows="2" placeholder="e.g. talks like a calm senior engineer — concise, a little dry, no hype" spellcheck="false"></textarea>
-          </div>
+          <!-- Voice customization (fine-tune dials + free-text note) REMOVED from genesis (2026-07-09
+               decision) — the archetype chip is the whole voice choice here. Agents that already carry
+               voiceTraits/customVoice keep them (personas.js still composes them into the prompt). -->
         </div>
 
         <div class="ov-field">
@@ -304,17 +295,12 @@
            app.js writes and tutorial coachmarks / warroom approvals read in-voice. -->
       <div hidden><b id="gt-agent">—</b><b id="gt-model">—</b></div>
       <!-- INSTRUMENT CLUSTER (topbar.js) — one cockpit gauge group: STATION (level + XP sliver) ·
-           SPEND TODAY · the session-status instruments (UPLINK / ONLINE / save) moved up from
+           the session-status instruments (UPLINK / ONLINE / save) moved up from
            #bottombar .bb-right with their ids intact so their existing writers keep working. -->
       <div class="tb-stat station tb-inst" id="tb-station" title="The whole station's cumulative level — every agent's honest track record rolled up. Raise it.">
         <span class="tb-lbl">STATION</span>
         <b class="tb-val" id="gt-station">Lv 1</b>
         <span class="tb-xp" aria-hidden="true"><i class="tb-xp-fill"></i></span>
-      </div>
-      <span class="tb-sep" aria-hidden="true"></span>
-      <div class="tb-inst" id="tb-spend" data-zero="1" title="SPEND TODAY — real reconciled dollar spend across all agents today (from the live ledger). Ticks up as runs bill.">
-        <span class="tb-lbl">SPEND TODAY</span>
-        <b class="tb-val">$0.00</b>
       </div>
       <span class="tb-sep" aria-hidden="true"></span>
       <div class="tb-status">
