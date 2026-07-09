@@ -248,9 +248,30 @@ const Marketplace = (() => {
     return Array.from(root.querySelectorAll('button:not([disabled]), input:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])'))
       .filter(e => e.offsetWidth > 0 || e.offsetHeight > 0 || e === document.activeElement);
   }
+  // narrow bay = the responsive breakpoint where the dossier becomes a full-width sheet OVER the roster.
+  function isNarrowBay() { try { return typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(max-width: 820px)').matches; } catch (_) { return false; } }
+  function isTypingTarget(t) { return !!(t && t.tagName && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)); }
+  // dismiss the narrow dossier SHEET back to the roster (the stranded-state fix) and restore focus to the card
+  // that opened it, so a keyboard user isn't dropped at the top of the list.
+  function closeDossierSheet() {
+    const mkt = root && root.querySelector('.mkt'); if (!mkt) return;
+    mkt.classList.remove('show-dossier'); sfx('click');
+    const fid = tab === 'recipes' ? focusRecipe : focusAgent;
+    const card = fid && root.querySelector('.mkt-card[data-id="' + fid + '"]');
+    if (card && card.focus) { try { card.focus(); } catch (_) {} }
+  }
   function onKey(e) {
     if (!root) return;
-    if (e.key === 'Escape') { sfx('close'); close(); return; }
+    if (e.key === 'Escape') {
+      // Esc is a STEP-BACK, not an instant bay-close, whenever there's somewhere to step back to (stranded-user
+      // law): (1) a full-width form view routes through its own BACK (which resets the right editor state, never
+      // discards silently mid-bay); (2) the narrow dossier-only sheet returns to the roster. Only at the top-level
+      // grid does Esc close the whole bay.
+      if (view !== 'grid') { const back = root.querySelector('.mkt-cancel'); if (back) { e.preventDefault(); e.stopPropagation(); back.click(); return; } }
+      const mkt = root.querySelector('.mkt');
+      if (mkt && mkt.classList.contains('show-dossier') && isNarrowBay()) { e.preventDefault(); e.stopPropagation(); closeDossierSheet(); return; }
+      sfx('close'); close(); return;
+    }
     if (e.key === 'Tab') {
       const f = focusables();
       if (!f.length) { e.preventDefault(); const p = root.querySelector('.mkt'); if (p) p.focus(); return; }
@@ -258,6 +279,12 @@ const Marketplace = (() => {
       if (!root.contains(act)) { e.preventDefault(); first.focus(); }
       else if (e.shiftKey && act === first) { e.preventDefault(); last.focus(); }
       else if (!e.shiftKey && act === last) { e.preventDefault(); first.focus(); }
+      return;
+    }
+    // "/" jumps to the search box from anywhere in the bay (unless already typing) — the discovery shortcut.
+    if (e.key === '/' && !isTypingTarget(e.target)) {
+      const q = root.querySelector('#mkt-q');
+      if (q) { e.preventDefault(); q.focus(); try { q.setSelectionRange(q.value.length, q.value.length); } catch (_) {} }
     }
   }
   function subtitle() {
@@ -338,6 +365,9 @@ const Marketplace = (() => {
       return;
     }
     stage.className = 'mkt-stage';
+    // a fresh grid render (open / tab / filter / search) always returns to the ROSTER view on a narrow bay — the
+    // dossier SHEET is only entered by an explicit card click, never left stuck over a rebuilt roster.
+    const mkt0 = root.querySelector('.mkt'); if (mkt0) mkt0.classList.remove('show-dossier');
     stage.innerHTML = '<div class="mkt-roster" id="mkt-roster">' + rosterHTML() + '</div>' +
                       '<div class="mkt-dossier" id="mkt-dossier">' + dossierHTML() + '</div>';
     wireRoster(stage);
@@ -516,8 +546,13 @@ const Marketplace = (() => {
     const d = root && root.querySelector('#mkt-dossier'); const it = focusedItem();
     if (d && it && it.accent) d.style.setProperty('--accent', it.accent);
   }
+  // narrow-viewport escape hatch: at <=820px the dossier is a full-width sheet OVER the roster, so it needs a
+  // visible way back (the stranded-state fix). Hidden at wide widths by CSS (both panes show side by side).
+  function dossierBackHTML() {
+    return '<button type="button" class="mkt-dos-back" aria-label="back to the class roster">‹ ROSTER</button>';
+  }
   function dossierHTML() {
-    return (tab === 'recipes' && hasRecipes()) ? recipeDossierHTML() : agentDossierHTML();
+    return dossierBackHTML() + ((tab === 'recipes' && hasRecipes()) ? recipeDossierHTML() : agentDossierHTML());
   }
   // the capability objectTypes the STATION currently has placed anywhere (station-wide shared gear). Under the
   // shared-gear model a specialist owns only its desk and draws on these caps UNDER THE OVERSEER — so a class's
@@ -1054,8 +1089,14 @@ const Marketplace = (() => {
     if (modelWrap && typeof ModelPicker !== 'undefined') {
       ModelPicker.populate(modelWrap, { current: pickedSummonModel || {} }).catch(() => {});
       ModelPicker.onChange(modelWrap, (sel) => {
-        pickedSummonModel = (sel && sel.model) ? { model: sel.model, provider: sel.provider, effort: sel.effort || '' } : null;
+        // EFFORT is an independent axis (audit item 5): a chosen effort must survive even when the MODEL is left
+        // to inherit the orchestrator's. summonAgent/applyLoadout honor pin.effort independently of pin.model, so
+        // carry { model:'', effort } rather than dropping the whole pin the moment model is blank.
+        if (sel && sel.model) pickedSummonModel = { model: sel.model, provider: sel.provider, effort: sel.effort || '' };
+        else if (sel && sel.effort) pickedSummonModel = { model: '', provider: '', effort: sel.effort };
+        else pickedSummonModel = null;
         sfx('click');
+        renderDossier();   // repaint CLEARANCE/EFFORT + the commit-summary so they show the EFFECTIVE resolution
       });
     }
 
@@ -1112,27 +1153,45 @@ const Marketplace = (() => {
   /* ---------- wiring: dossier (the action button + custom edit/delete) ---------- */
   function wireDossier(scope) {
     const sc = scope || root; if (!sc) return;
+    const dosBack = sc.querySelector('.mkt-dos-back');
+    if (dosBack) dosBack.addEventListener('click', () => closeDossierSheet());
     const deployBtn = sc.querySelector('.mkt-deploy');
-    if (deployBtn) deployBtn.addEventListener('click', () => {
-      const s = Specialties.get(deployBtn.dataset.id); if (!s) return;
-      sfx('click');
+    if (deployBtn) {
       if (ctx && ctx.mode === 'pick') {
-        if (ctx.onPick) ctx.onPick(ctx.summon ? Object.assign({}, s, { skin: pickedSummonSkin || (typeof DATA !== 'undefined' && DATA.DEFAULT_SKIN), modelPin: pickedSummonModel || null }) : s);
-        close();
+        // SUMMON (pick mode) — additive, never destructive, so it fires on the first click (no arm). The P0 fix
+        // (audit #6): hand back { activate:true } so summonAgent LANDS the Commander in the new agent's chat
+        // thread (focus + Chat.load) instead of quietly toasting from behind the still-open bay. The desk-placement
+        // chip lives in summonAgent's activate branch, so routing through it delivers that guidance too. Non-summon
+        // pick (the wake screen) has no live agent to activate — it just hands the chosen spec back.
+        deployBtn.addEventListener('click', () => {
+          const s = Specialties.get(deployBtn.dataset.id); if (!s) return;
+          sfx('click');
+          if (ctx.onPick) {
+            if (ctx.summon) ctx.onPick(Object.assign({}, s, { skin: pickedSummonSkin || (typeof DATA !== 'undefined' && DATA.DEFAULT_SKIN), modelPin: pickedSummonModel || null }), { activate: true });
+            else ctx.onPick(s);
+          }
+          close();
+        });
       } else {
-        const cb = root && root.querySelector('.mkt-adopt-cb');
-        const adoptVoice = !!(cb && cb.checked);
-        if (ctx && ctx.onDeploy) ctx.onDeploy(s, { adoptVoice });
-        note(s.name + ' deployed to ' + ((ctx && ctx.agentName) || 'your agent') + (adoptVoice ? ' (+ voice)' : ''), 'good');
-        close();
+        // DEPLOY TO <current> (deploy mode) — a RE-SPEC that rewrites the live agent's purpose + standing orders.
+        // That's consequential, so it arms/confirms ("RE-SPEC <NAME>?") like every other irreversible bay action.
+        armCta(deployBtn, 'RE-SPEC ' + String((ctx && ctx.agentName) || 'AGENT').toUpperCase() + '?', () => {
+          const s = Specialties.get(deployBtn.dataset.id); if (!s) return;
+          const cb = root && root.querySelector('.mkt-adopt-cb');
+          const adoptVoice = !!(cb && cb.checked);
+          sfx('close');
+          if (ctx && ctx.onDeploy) ctx.onDeploy(s, { adoptVoice });
+          note(s.name + ' deployed to ' + ((ctx && ctx.agentName) || 'your agent') + (adoptVoice ? ' (+ voice)' : ''), 'good');
+          close();
+        });
       }
-    });
-    // second verb on the merged recruit door: DEPLOY TO <current> from summon mode (no voice
-    // adoption checkbox in this pane — deploy keeps the agent's voice; the dossier can retune it).
+    }
+    // second verb on the merged recruit door: DEPLOY TO <current> from summon mode (no voice adoption checkbox in
+    // this pane — deploy keeps the agent's voice; the dossier can retune it). Same re-spec, same arm/confirm.
     const deployCurBtn = sc.querySelector('.mkt-deploy-cur');
-    if (deployCurBtn) deployCurBtn.addEventListener('click', () => {
+    if (deployCurBtn) armCta(deployCurBtn, 'RE-SPEC ' + String((ctx && ctx.agentName) || 'AGENT').toUpperCase() + '?', () => {
       const s = Specialties.get(deployCurBtn.dataset.id); if (!s) return;
-      sfx('click');
+      sfx('close');
       if (ctx && ctx.onDeploy) ctx.onDeploy(s, { adoptVoice: false });
       note(s.name + ' deployed to ' + ((ctx && ctx.agentName) || 'your agent'), 'good');
       close();
@@ -1199,6 +1258,18 @@ const Marketplace = (() => {
       if (focusRecipe === rDel.dataset.id) focusRecipe = ((hasRecipes() && Recipes.builtins()[0]) || {}).id || null;
       note('removed recipe: ' + ((r && r.name) || rDel.dataset.id), 'good'); renderStage();
     }));
+  }
+  // arm/confirm a CTA (re-spec) in place: prefer the ONE shared ArmConfirm primitive (label swap + .armed +
+  // auto-disarm), fall back to the bay's local armDelete only where ArmConfirm isn't loaded. Distinct from
+  // armDelete in that the resting label is whatever the button already shows (a full CTA caption), not a fixed one.
+  function armCta(btn, armedLabel, onConfirm) {
+    if (!btn) return;
+    if (typeof ArmConfirm !== 'undefined' && ArmConfirm.wire) {
+      ArmConfirm.wire(btn, { armedLabel: armedLabel, timeoutMs: 4000, onConfirm: onConfirm });
+    } else {
+      const rest = btn.textContent;
+      btn.addEventListener('click', () => armDelete(btn, rest, onConfirm, armedLabel));
+    }
   }
   // two-step arm/confirm on a destructive button (the bay's idiom — never a native confirm)
   // armLabel is the text shown once armed (defaults to 'SURE?'); lets a destructive action admit permanence.
