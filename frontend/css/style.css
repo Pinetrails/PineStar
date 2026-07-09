@@ -725,7 +725,7 @@ body.no-scan .crt-scan { display: none; }
 }
 .ag-item-dot { flex: 0 0 auto; font-size: 11px; line-height: 1; }
 .ag-item-nm { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ag-item-st { flex: 0 0 auto; font-size: 9px; letter-spacing: 1px; color: var(--ph-dim); opacity: .7; text-transform: uppercase; }
+.ag-item-st { flex: 0 0 auto; font-size: 10px; letter-spacing: 1px; color: var(--ph-dim); opacity: .7; text-transform: uppercase; }
 .ag-item-st.working { color: var(--gold); opacity: 1; }
 .ag-item:hover { color: var(--ph-bright); border-color: var(--ph-dim); background: var(--ph-faint); }
 .ag-item:focus-visible { outline: 2px solid var(--ph-bright); outline-offset: 1px; }
@@ -1001,7 +1001,7 @@ body.no-scan .crt-scan { display: none; }
 .ch-glyph { color: var(--accent, var(--ph-bright)); font-size: 16px; line-height: 1; text-shadow: 0 0 8px color-mix(in srgb, var(--accent, var(--ph)) 55%, transparent); }
 .ch-id { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 .ch-title { margin: 0; letter-spacing: 2px; color: var(--ph); font-weight: normal; font-size: 15px; text-shadow: 0 1px 0 #000, 0 0 8px var(--ph-glow2); }
-.ch-adv { font-size: 9.5px; letter-spacing: 1px; color: var(--accent, var(--ph-dim)); border: 1px solid color-mix(in srgb, var(--accent, var(--ph)) 40%, transparent); border-radius: 3px; padding: 0 4px; vertical-align: middle; opacity: .9; }
+.ch-adv { font-size: 10.5px; letter-spacing: 1px; color: var(--accent, var(--ph-dim)); border: 1px solid color-mix(in srgb, var(--accent, var(--ph)) 40%, transparent); border-radius: 3px; padding: 0 4px; vertical-align: middle; opacity: .9; }
 .ch-answers { font-size: 11px; letter-spacing: .5px; color: var(--ph-dim); }
 .ch-state { margin-left: auto; font-size: 12px; letter-spacing: 0.5px; text-align: right; white-space: nowrap; }
 .ch-state.st-up { color: var(--ok); }
@@ -1206,7 +1206,7 @@ body.no-scan .crt-scan { display: none; }
 .rt-pipe-dot { width: 10px; height: 10px; border: 2px solid var(--ph-faint); background: var(--bg); }
 .rt-pipe-node.done .rt-pipe-dot { background: var(--ph-dim); border-color: var(--ph-dim); }
 .rt-pipe-node.cur .rt-pipe-dot { background: var(--ph); border-color: var(--ph); box-shadow: 0 0 6px var(--ph-glow); animation: pulse 1.2s infinite; }
-.rt-pipe-lbl { font-size: 9px; color: var(--ph-faint); text-align: center; margin-top: 2px; letter-spacing: 0.3px; line-height: 1.2; word-break: break-word; }
+.rt-pipe-lbl { font-size: 10px; color: var(--ph-faint); text-align: center; margin-top: 2px; letter-spacing: 0.3px; line-height: 1.2; word-break: break-word; }
 .rt-pipe-node.done .rt-pipe-lbl { color: var(--ph-dim); }
 .rt-pipe-node.cur .rt-pipe-lbl { color: var(--ph-bright); }
 

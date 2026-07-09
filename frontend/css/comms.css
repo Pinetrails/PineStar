@@ -77,7 +77,7 @@
 .cmsg.system { font-size: 13.5px; padding-left: 11px; border-left: 1px dashed var(--ph-faint); }
 .cmsg.system .who {
   display: inline-block; margin: 6px 0 2px;
-  font-size: 9.5px; letter-spacing: 1.5px; text-transform: uppercase;
+  font-size: 10.5px; letter-spacing: 1.5px; text-transform: uppercase;
   color: var(--ph-dim); opacity: .7;
 }
 .cmsg.system .body { color: var(--ph-dim); letter-spacing: .3px; }
@@ -92,7 +92,7 @@
   color: var(--ph-dim); background: transparent; border: 0; padding: 4px 6px 4px 11px;
 }
 .syscard-head:hover { color: var(--ph); }
-.syscard-head .syscard-chev { flex: 0 0 auto; font-size: 9px; transition: transform var(--t-fast) var(--ease-soft); }
+.syscard-head .syscard-chev { flex: 0 0 auto; font-size: 10px; transition: transform var(--t-fast) var(--ease-soft); }
 .cmsg.system.syscard.open .syscard-chev { transform: rotate(90deg); color: var(--ph); }
 .syscard-head .syscard-title { flex: 1 1 auto; letter-spacing: .3px; }
 .syscard-body { padding: 2px 6px 6px 22px; }
@@ -101,7 +101,7 @@
 
 /* SLASH PALETTE — a dim category tag on each row so the command surface reads by area (no reorder). */
 .slash-item .slash-cat {
-  margin-left: auto; flex: 0 0 auto; font-size: 9.5px; letter-spacing: 1px; text-transform: uppercase;
+  margin-left: auto; flex: 0 0 auto; font-size: 10.5px; letter-spacing: 1px; text-transform: uppercase;
   color: var(--ph-dim); opacity: .6; align-self: center;
 }
 
@@ -208,7 +208,7 @@
 .tool-chip.open .tc-detail { display: block; }
 /* EXPAND AFFORDANCE — a dim ▸ chevron on the chip head signals it opens; it rotates to ▾ when expanded, so the
    chip visibly reads as a disclosure control (aria-expanded lives on the .tc-head button for AT). */
-.tool-chip .tc-exp { flex: 0 0 auto; color: var(--ph-dim); font-size: 9px; opacity: .8; transition: transform var(--t-fast) var(--ease-soft); }
+.tool-chip .tc-exp { flex: 0 0 auto; color: var(--ph-dim); font-size: 10px; opacity: .8; transition: transform var(--t-fast) var(--ease-soft); }
 .tool-chip.open .tc-exp { transform: rotate(90deg); color: var(--ph); }
 .tool-chip .tc-d-args { color: var(--ph-dim); padding-top: 5px; }
 .tool-chip .tc-d-res  { color: var(--text); padding-top: 4px; }

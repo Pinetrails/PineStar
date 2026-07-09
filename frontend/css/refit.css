@@ -15,7 +15,7 @@
 .refit-sec {
   margin: 10px 0 5px; padding-top: 8px;
   border-top: 1px solid var(--ph-faint);
-  font-size: 9.5px; letter-spacing: 2px; color: var(--ph-dim);
+  font-size: 10.5px; letter-spacing: 2px; color: var(--ph-dim);
   text-transform: uppercase;
 }
 .refit-sec:first-child { margin-top: 4px; border-top: none; padding-top: 0; }

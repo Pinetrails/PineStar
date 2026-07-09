@@ -45,8 +45,8 @@
 .wg:active { cursor: grabbing; }
 
 .wg-meta { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; min-width: 0; }
-.wg-lbl { font-size: 9px; letter-spacing: var(--ls-3, 2px); color: var(--ph-dim); line-height: 1; white-space: nowrap; }
-.wg-src { display: inline-flex; align-items: center; gap: 3px; font-size: 8px; letter-spacing: 1px;
+.wg-lbl { font-size: 10px; letter-spacing: var(--ls-3, 2px); color: var(--ph-dim); line-height: 1; white-space: nowrap; }
+.wg-src { display: inline-flex; align-items: center; gap: 3px; font-size: 10.5px; letter-spacing: 1px;
   color: var(--ph-dim); line-height: 1; white-space: nowrap; }
 .wg-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--ok);
   box-shadow: 0 0 4px var(--ok); animation: wg-breathe 2.4s ease-in-out infinite; }
@@ -63,7 +63,7 @@
 .wg[data-stale="1"] .wg-val { opacity: 0.42; text-shadow: none; }
 .wg[data-stale="1"] .wg-src { color: var(--warn); }
 .wg[data-stale="1"] .wg-dot { background: var(--warn); box-shadow: 0 0 4px var(--warn); animation: none; }
-.wg-sub { font-size: 9px; letter-spacing: 1px; color: var(--ph-dim); white-space: nowrap; }
+.wg-sub { font-size: 10px; letter-spacing: 1px; color: var(--ph-dim); white-space: nowrap; }
 /* ticker form (agent-fed list): one cycling line at reading size instead of a big figure */
 .wg-sub.wg-ticktext { font-size: 12px; letter-spacing: 0.5px; color: var(--text, var(--ph-bright));
   max-width: 300px; overflow: hidden; text-overflow: ellipsis; }
@@ -84,7 +84,7 @@
 .wg-x {
   position: absolute; top: -6px; right: -6px; width: 15px; height: 15px;
   display: none; align-items: center; justify-content: center;
-  font-size: 9px; padding: 0; border-radius: 50%;
+  font-size: 10px; padding: 0; border-radius: 50%;
 }
 .wg:hover .wg-x { display: inline-flex; }
 
@@ -128,7 +128,7 @@
 .wg-pop-item.on i { color: var(--ok); }
 /* the popover's AGENT-FED section: a milled divider + an honest empty-state hint */
 .wg-pop-head { margin: 6px 6px 2px; padding-top: 6px; border-top: 1px solid var(--ph-faint);
-  font-size: 9px; letter-spacing: 2px; color: var(--gold); opacity: 0.85; }
+  font-size: 10px; letter-spacing: 2px; color: var(--gold); opacity: 0.85; }
 .wg-pop-none { padding: 4px 9px 6px; max-width: 230px; }   /* dim grade + size via the grouped empty rule (motion.css) */
 
 /* ---- responsive: the rails are the FIRST thing to shrink; never crowd the real instruments ---- */

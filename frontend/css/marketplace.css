@@ -129,7 +129,7 @@ body.no-scan .mkt-scrim::after { display: none; }
 .mkt-coin-ico svg { width: 100%; height: 100%; display: block; }
 .mkt-coin-emoji { position: relative; z-index: 2; font-size: calc(var(--coin, 64px) * .42); line-height: 1; color: var(--accent, var(--ph-bright)); }
 .mkt-seal { display: flex; flex-direction: column; align-items: center; gap: 5px; flex: 0 0 auto; }
-.mkt-seal-code { font-size: 9px; letter-spacing: 2.5px; color: var(--ph-dim); }
+.mkt-seal-code { font-size: 10px; letter-spacing: 2.5px; color: var(--ph-dim); }
 .mkt-pips { display: inline-flex; gap: 2px; align-items: center; color: var(--ph-dim); font-size: 10px; }
 .mkt-pips b { color: var(--gold); }
 
@@ -162,7 +162,7 @@ body.no-scan .mkt-scrim::after { display: none; }
 .mkt-tag { color: var(--accent, var(--ph)); font-size: 12px; letter-spacing: .3px; opacity: .92; }
 .mkt-meta { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; margin-top: 1px; }
 .mkt-meta .mkt-tier { color: var(--ph-dim); font-size: 10px; letter-spacing: 1px; }
-.mkt-badge { font-size: 9px; letter-spacing: 1px; color: var(--ink); background: var(--gold); padding: 1px 5px; text-shadow: none; }
+.mkt-badge { font-size: 10px; letter-spacing: 1px; color: var(--ink); background: var(--gold); padding: 1px 5px; text-shadow: none; }
 .mkt-badge.mkt-here { background: var(--accent, var(--ph)); color: var(--ink); }
 .mkt-chip { display: inline-flex; align-items: center; gap: 5px; font-size: 10.5px; letter-spacing: 1px;
   color: var(--text); background: var(--ph-faint); border: 1px solid var(--ph-dim); border-radius: 3px; padding: 2px 8px; }
@@ -423,7 +423,7 @@ body.no-scan .mkt-scrim::after { display: none; }
 .mkt-rec-name { color: var(--ph-bright); font-size: 14px; letter-spacing: .6px; }
 .mkt-rec-tag { color: var(--accent, var(--ph)); font-size: 11.5px; letter-spacing: .3px; margin-top: 1px; }
 .mkt-rec-why { font-size: 11.5px; line-height: 1.4; color: var(--text, var(--ph)); opacity: .85; }
-.mkt-rec-why-k { color: var(--gold); font-size: 9px; letter-spacing: 1.5px; padding: 0 4px; margin-right: 4px; border: 1px solid rgba(var(--gold-rgb),.4); border-radius: 3px; }
+.mkt-rec-why-k { color: var(--gold); font-size: 10px; letter-spacing: 1.5px; padding: 0 4px; margin-right: 4px; border: 1px solid rgba(var(--gold-rgb),.4); border-radius: 3px; }
 .mkt-suggest { border-color: var(--gold); }
 .mkt-suggest::before { background: var(--gold); }
 .mkt-suggest-spark { color: var(--gold); font-size: 18px; flex: 0 0 auto; filter: drop-shadow(0 0 7px rgba(var(--gold-rgb),.6)); }
@@ -527,7 +527,7 @@ body.no-scan .mkt-scrim::after { display: none; }
 .mkt-cfg-ttl { color: var(--ph); font-size: 11.5px; letter-spacing: 2px; flex: 0 0 auto; }
 .mkt-cfg-sum { color: var(--ph-dim); font-size: 11.5px; letter-spacing: .3px; flex: 1 1 auto;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.mkt-cfg-sum .mkt-cfg-k { color: var(--ph); opacity: .8; letter-spacing: 1px; margin: 0 4px 0 10px; font-size: 9.5px; }
+.mkt-cfg-sum .mkt-cfg-k { color: var(--ph); opacity: .8; letter-spacing: 1px; margin: 0 4px 0 10px; font-size: 10.5px; }
 .mkt-cfg-sum .mkt-cfg-k:first-child { margin-left: 0; }
 .mkt-cfg-body { padding: 4px 12px 12px; }
 /* inside the config body the bars lose their own frames — the strip already IS the frame */
@@ -538,7 +538,7 @@ body.no-scan .mkt-scrim::after { display: none; }
 .mkt-commit { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; padding: 8px 11px; margin-bottom: 9px;
   border-radius: 7px; background: var(--panel2); border: 1px solid var(--ph-faint); box-shadow: var(--well); }
 .mkt-cs-cell { display: inline-flex; align-items: center; gap: 7px; color: var(--ph-bright); font-size: 12px; letter-spacing: .4px; }
-.mkt-cs-k { color: var(--ph-dim); font-size: 9px; letter-spacing: 1.5px; }
+.mkt-cs-k { color: var(--ph-dim); font-size: 10px; letter-spacing: 1.5px; }
 .mkt-cs-skin { width: 26px; height: 26px; object-fit: contain; object-position: center bottom; image-rendering: auto;
   background: radial-gradient(ellipse 66% 40% at 50% 84%, var(--ph-glow2), transparent 72%); border-radius: 4px; }
 .mkt-adopt-cta { margin: 0 0 2px; }
