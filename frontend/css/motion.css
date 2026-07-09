@@ -41,6 +41,17 @@ textarea, select {
     box-shadow var(--t-fast) var(--ease-soft),
     color var(--t-fast) var(--ease-soft);
 }
+/* FLOOR — every native <button> inherits the tactile transition by default, so new buttons get the premium
+   feel for free without being re-listed above. Element-level specificity (0,0,1) on purpose: ANY bespoke
+   per-button transition in an earlier sheet (.chat-send, .chat-attach-btn, .mic-btn, .x-btn family, …) still
+   wins the cascade — this is a floor that ADDS coverage, never a clobber. Only the safe props are animated. */
+button {
+  transition:
+    border-color var(--t-fast) var(--ease-soft),
+    background-color var(--t-fast) var(--ease-soft),
+    box-shadow var(--t-fast) var(--ease-soft),
+    color var(--t-fast) var(--ease-soft);
+}
 
 /* subtle hover bloom — a soft phosphor glow, no layout shift */
 .btn:hover, .btn-xl:hover, .btn-sm:hover, .prov:hover,
@@ -57,6 +68,12 @@ textarea, select {
 .btn:active, .btn-xl:active, .btn-sm:active, .prov:active,
 .bb:active, .bb-grp:active, .lb-tab:active,
 .term-x:active {
+  filter: brightness(0.86);
+  transition-duration: 60ms;
+}
+/* FLOOR — every native <button> gets the press-sink by default (low specificity so a bespoke :active still
+   wins; where a button already sinks via translateY, this just adds the brightness dip). */
+button:active {
   filter: brightness(0.86);
   transition-duration: 60ms;
 }
@@ -599,6 +616,7 @@ textarea, select {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
   }
+  button, [role="button"],
   .btn, .btn-xl, .btn-sm, .prov, .bb, .bb-grp, .lb-tab,
   .mc-seg-btn, .set-theme, .phosphor-swatches .swatch, .term-x, .term-min, .term-chip,
   .empty-state .es-cta,
