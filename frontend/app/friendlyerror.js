@@ -11,7 +11,7 @@
    • kind        — a stable class (mirrors the sidecar classifier's reasons, plus the UI-level
                    `network` / `capdenied` / `user_abort` cases the browser sees but the API layer doesn't).
    • retryable   — whether a plain "↻ Try again" makes sense.
-   • action      — null | 'settings' | 'skills' | 'store' | 'refit': a context-aware DESTINATION
+   • action      — null | 'settings' | 'skills' | 'store' | 'refit' | 'reload': a context-aware DESTINATION
                    instead of a blind retry. capdenied's true unlock is REFIT (place the gear) —
                    NOT the SKILLS list — because a station quest, minted on the denial, completes
                    by PLACEMENT (stationqueststore.js). auth/no-key opens the PROVIDERS key field.
@@ -97,6 +97,10 @@
     // E-STOP) — friendlyError passes it through verbatim instead of flattening to `unknown` (2026-07-07 escape:
     // the user got "Something went wrong" in a loop while the real answer was one sentence away).
     agent_busy:    { retryable: true,  action: null,       msg: 'That agent is still busy with a previous run — wait for it to finish, or press E-STOP to abort everything.' },
+    // the SIDECAR's own token gate said no (a 403 with "forbidden token/origin/host"): after a sidecar
+    // crash+respawn the page still holds the OLD X-StarNet-Token, so EVERY action 403s. Retrying is doomed and
+    // "add a key" is the wrong door — the page needs the fresh boot token, which only a reload fetches.
+    stale_session: { retryable: false, action: 'reload',   msg: 'The station restarted — reload this page to reconnect.' },
     unknown:       { retryable: true,  action: null,       msg: 'Something went wrong on that turn — try again.' }
   };
 
@@ -167,6 +171,9 @@
     // HTTP status from "sidecar HTTP <status>" or an explicit status arg
     const s = status || (low.match(/\b(?:http|status)\s+(\d{3})\b/) ? Number(RegExp.$1) : null);
     if (s) {
+      // OUR OWN sidecar's token gate (crash+respawn → stale X-StarNet-Token): a "sidecar HTTP 403" throw or a
+      // "forbidden token/origin/host" body means reload for the fresh boot token — never the provider-key door.
+      if (s === 403 && (/sidecar http/.test(low) || /\bforbidden\b/.test(low))) return 'stale_session';
       if (s === 401 || s === 403) return 'auth';
       if (s === 402) return /(resets? at|retry[- ]?after|rate limit)/.test(low) ? 'rate_limit' : 'billing';
       if (s === 404) return 'model_not_found';
@@ -216,6 +223,11 @@
     } else if (/already running a task/.test(raw.toLowerCase())) {
       // the per-agent run mutex — UI-level, and the sidecar message already names the holder + doors.
       kind = 'agent_busy';
+    } else if (/sidecar http 403\b/.test(raw.toLowerCase()) || (status === 403 && /\bforbidden\b/.test(raw.toLowerCase()))) {
+      // OUR OWN sidecar's token gate said no (stale X-StarNet-Token after a crash+respawn) — UI-level, caught
+      // BEFORE delegating: the sidecar API classifier would read a bare 403 as provider `auth` and the error row
+      // would offer "🔑 Add a key", the wrong door (EL-11 FIX 2). The only fix is the fresh boot token → reload.
+      kind = 'stale_session';
     } else if (classifyApiError) {
       // delegate to the single-sourced truth table; synthesize the err shape it expects (status + message).
       try {
@@ -289,6 +301,10 @@
         if (verdict.kind === 'auth')
           return { label: '🔑 Add a key', run: () => openSettings('providers') };
         return { label: '⚙ Open Settings', run: () => openSettings(verdict.kind === 'model_not_found' ? 'models' : 'providers') };
+      case 'reload':
+        // stale_session: the page holds a dead boot token — a reload is the ONE honest reconnect (the token is
+        // injected at serve time; there is no in-page re-fetch handshake). Degrades quietly outside a browser.
+        return { label: '↻ RELOAD & RECONNECT', run: () => { try { if (typeof location !== 'undefined' && location.reload) location.reload(); } catch (_) {} } };
       case 'store':
         return { label: '🛒 Open STORE', run: () => openSettings('providers') };
       case 'skills':
