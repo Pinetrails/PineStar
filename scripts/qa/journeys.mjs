@@ -729,12 +729,16 @@ async function journeyBayIdleLife(cdp, A) {
  * EXECUTE the keydown→openSlash→matchCommands→runSlash→applySlashDirective path. Finding 070e8aca (Perfectionist,
  * P1). This journey drives the ACTUAL composer DOM (set #chat-input value + fire the real 'input' event + a real
  * Enter keydown → the real input.onkeydown handler decides) and asserts the RUNTIME behavior a grep can't:
- *   (a) an arg-taking "/model <id>" DISPATCHES as a command — a local .cmsg.agent line appears with the arg
+ *   (a) an arg-taking "/model <id>" DISPATCHES as a command — a LOCAL line appears with the arg
  *       intact, the agent config actually took the model value, and the "/model …" line is NOT echoed as a
  *       .cmsg.user chat row (the exact bug symptom);
- *   (b) a BARE "/whoami" (no args) dispatches as a command (local .cmsg.agent line, no slash user row);
+ *   (b) a BARE "/whoami" (no args) dispatches as a command (local line, no slash user row);
  *   (c) the CONVERSE — plain prose with no leading "/" is SENT to the agent as a .cmsg.user chat row (the fix
  *       must not over-capture ordinary chat into the command path).
+ * LOCAL LINE = .cmsg.system OR .cmsg.agent: the 2026-07-09 UI finale sprint moved command/client output from
+ * agent-attributed rows to a SYSTEM register (chat.js localLine → row('system'), lane C — by design). The probe
+ * reads BOTH registers so it asserts the dispatch truth, not one UI generation's styling. (First caught as a
+ * false P1 pair 3a0dce44/96dc8e88 when it read only .agent — the product was right, the instrument was stale.)
  * Mock boundary is fine: the seam under test is input→dispatch, not model output. */
 async function journeySlashTruth(cdp, A, mock) {
   try { mock.control.setMode('quick'); mock.control.release(); } catch (_) {}
@@ -760,15 +764,19 @@ async function journeySlashTruth(cdp, A, mock) {
     const textOf = r => { const b = r.querySelector('.body'); return b ? String(b.textContent || '') : ''; };
     const userTexts  = rows.filter(r => r.classList.contains('user')).map(textOf);
     const agentTexts = rows.filter(r => r.classList.contains('agent')).map(textOf);
+    // command/client output lives in the SYSTEM register since the 2026-07-09 UI finale (localLine → row('system'));
+    // localTexts = both registers, so the journey survives styling generations while still proving dispatch.
+    const sysTexts   = rows.filter(r => r.classList.contains('system')).map(textOf);
+    const localTexts = agentTexts.concat(sysTexts);
     let model = '';
     try { model = (typeof App !== 'undefined' && App.currentAgent && App.currentAgent()) ? (App.currentAgent().model || '') : ''; } catch (_) {}
     return {
-      userTexts, agentTexts,
+      userTexts, agentTexts, localTexts,
       slashUserRows: userTexts.filter(t => t.trim()[0] === '/'),
       inputVal: (document.getElementById('chat-input') || {}).value || '',
       model
     };
-  })()`).catch(() => ({ userTexts: [], agentTexts: [], slashUserRows: [], inputVal: '', model: '' }));
+  })()`).catch(() => ({ userTexts: [], agentTexts: [], localTexts: [], slashUserRows: [], inputVal: '', model: '' }));
   // poll until predicate(rows) OR timeout — dispatch is async when the command is server-backed (awaits /api/slash/dispatch).
   const until = async (pred, tries = 25) => { let last = await readRows(); for (let i = 0; i < tries; i++) { if (pred(last)) return last; await sleep(160); last = await readRows(); } return last; };
 
@@ -779,10 +787,10 @@ async function journeySlashTruth(cdp, A, mock) {
   const before = await readRows();
   const d1 = await driveLine('/model ' + MODEL_ARG);
   A.ok('J7/model-line-typed', d1 === 'typed', 'drove "/model ' + MODEL_ARG + '" through #chat-input: ' + d1);
-  const afterModel = await until(r => r.agentTexts.some(t => t.indexOf(MODEL_ARG) >= 0) || r.model === MODEL_ARG);
-  // DISPATCHED AS COMMAND: a local .cmsg.agent line carries the arg intact (modelCommand(args) ran).
-  const cmdEchoed = afterModel.agentTexts.some(t => /model set to/i.test(t) && t.indexOf(MODEL_ARG) >= 0);
-  A.ok('J7/arg-command-dispatched', cmdEchoed, cmdEchoed ? 'local agent line: "Model set to ' + MODEL_ARG + '"' : 'no dispatch confirmation carrying the arg — agentTexts=' + JSON.stringify(afterModel.agentTexts.slice(-3)));
+  const afterModel = await until(r => r.localTexts.some(t => t.indexOf(MODEL_ARG) >= 0) || r.model === MODEL_ARG);
+  // DISPATCHED AS COMMAND: a local line (SYSTEM register, or legacy agent row) carries the arg intact (modelCommand(args) ran).
+  const cmdEchoed = afterModel.localTexts.some(t => /model set to/i.test(t) && t.indexOf(MODEL_ARG) >= 0);
+  A.ok('J7/arg-command-dispatched', cmdEchoed, cmdEchoed ? 'local line: "Model set to ' + MODEL_ARG + '"' : 'no dispatch confirmation carrying the arg — localTexts=' + JSON.stringify(afterModel.localTexts.slice(-3)));
   // THE ARGUMENT SURVIVED input→dispatch — the precise value the 2026-07-05 bug dropped when it sent the line as chat.
   A.ok('J7/arg-reached-config', afterModel.model === MODEL_ARG, 'App.currentAgent().model=' + JSON.stringify(afterModel.model) + ' (expected the typed arg)');
   // NOT SENT AS CHAT: the "/model …" line must NOT appear as a user chat row (the bug's exact symptom).
@@ -793,12 +801,12 @@ async function journeySlashTruth(cdp, A, mock) {
 
   /* ── (b) BARE "/whoami" (no args) — dispatches as a command too. ── */
   const whoBefore = await readRows();
-  const preWho = new Set(whoBefore.agentTexts);
+  const preWho = new Set(whoBefore.localTexts);
   const d2 = await driveLine('/whoami');
   A.ok('J7/whoami-line-typed', d2 === 'typed', 'drove "/whoami": ' + d2);
-  const afterWho = await until(r => r.agentTexts.some(t => !preWho.has(t) && /^you are /i.test(t.trim())));
-  const whoLine = afterWho.agentTexts.some(t => !preWho.has(t) && /^you are /i.test(t.trim()));
-  A.ok('J7/bare-command-dispatched', whoLine, whoLine ? 'new local agent line from /whoami ("You are …")' : 'no /whoami identity line appeared — new agentTexts=' + JSON.stringify(afterWho.agentTexts.filter(t => !preWho.has(t)).slice(-2)));
+  const afterWho = await until(r => r.localTexts.some(t => !preWho.has(t) && /^you are /i.test(t.trim())));
+  const whoLine = afterWho.localTexts.some(t => !preWho.has(t) && /^you are /i.test(t.trim()));
+  A.ok('J7/bare-command-dispatched', whoLine, whoLine ? 'new local line from /whoami ("You are …")' : 'no /whoami identity line appeared — new localTexts=' + JSON.stringify(afterWho.localTexts.filter(t => !preWho.has(t)).slice(-2)));
   A.ok('J7/no-slash-user-rows', afterWho.slashUserRows.length === 0, afterWho.slashUserRows.length ? 'a slash line leaked as a user chat row: ' + JSON.stringify(afterWho.slashUserRows) : 'no user chat row starts with "/" — every slash line dispatched');
 
   /* ── (c) CONVERSE — plain prose (no leading "/") is SENT to the agent as a user chat row. ── */
