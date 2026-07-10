@@ -179,7 +179,7 @@ const DESKTOP_SHELL = /^(1|true|yes|on)$/i.test(String(ENV('DESKTOP_SHELL') || '
 // the per-launch token (GET data routes included) except a small header-less set. Native media/file loads
 // can pass the same token as ?token= on /api/file only; all other fetch-driven calls use the custom header.
 const apiauth = require('./apiauth.js');
-const { isAllowedApiOrigin, isAllowedHost, requiresApiToken } = apiauth;
+const { isAllowedApiOrigin, isAllowedHost, requiresApiToken, TAURI_ORIGINS } = apiauth;
 function applyApiCors(req, res) {
   const origin = String(req.headers.origin || '');
   if (origin && isAllowedApiOrigin(origin, PORT)) {
@@ -7423,7 +7423,10 @@ async function handleRunSteer(req, res) {
 let _versionCache = null;
 function computeVersionSurface() {
   if (_versionCache) return _versionCache;
-  const out = { harness: '', app: '', node: process.version, appSource: 'unknown', harnessSource: 'unknown' };
+  const out = {
+    harness: '', app: '', node: process.version, appSource: 'unknown', harnessSource: 'unknown',
+    buildSha: '', buildDirty: null
+  };
   const envHarness = String(ENV('BUILD_DESCRIBE') || '').trim();   // STARNET_BUILD_DESCRIBE — stamped by the build/release pipeline
   if (envHarness) { out.harness = envHarness; out.harnessSource = 'env'; }
   else {
@@ -7437,6 +7440,20 @@ function computeVersionSurface() {
     if (!out.harness) {   // no env stamp, no git (packaged app has neither) — fall back to the package.json version
       try { out.harness = String(require('../package.json').version || ''); out.harnessSource = 'pkg'; } catch (_) {}
     }
+  }
+  const envBuildSha = String(ENV('BUILD_SHA') || '').trim();
+  const envBuildDirty = String(ENV('BUILD_DIRTY') || '').trim();
+  if (/^[0-9a-f]{40}$/i.test(envBuildSha)) out.buildSha = envBuildSha.toLowerCase();
+  if (envBuildDirty === '0' || envBuildDirty === '1') out.buildDirty = envBuildDirty === '1';
+  if (!out.buildSha && out.harnessSource === 'git') {
+    try {
+      const { execSync } = require('node:child_process');
+      const sha = String(execSync('git rev-parse HEAD', {
+        cwd: path.resolve(__dirname, '..'), stdio: ['ignore', 'pipe', 'ignore'], timeout: 2000
+      }) || '').trim();
+      if (/^[0-9a-f]{40}$/i.test(sha)) out.buildSha = sha.toLowerCase();
+      out.buildDirty = /-dirty$/.test(out.harness);
+    } catch (_) {}
   }
   const envApp = String(ENV('APP_VERSION') || '').trim();   // STARNET_APP_VERSION (or SKYNET_APP_VERSION) — the packaged-app source of truth
   if (envApp) { out.app = envApp; out.appSource = 'env'; }
@@ -7469,7 +7486,7 @@ function handleDiagnostics(req, res) {
     const ver = computeVersionSurface();
     // desktop vs browser — provable from the request origin (Tauri custom-scheme origins are the desktop shell)
     const origin = String((req && req.headers && req.headers.origin) || '').toLowerCase();
-    const mode = (origin.indexOf('tauri') === 0 || origin.indexOf('app://') === 0) ? 'desktop' : (origin ? 'browser' : '');
+    const mode = TAURI_ORIGINS.has(origin) ? 'desktop' : (origin ? 'browser' : '');
     // active provider + model SLUG (never a key): the newest run is the strongest proof of what actually ran; fall
     // back to the primary roster agent's configured identity when no run has happened yet.
     const recent = (() => { try { return runStore.list(null, { limit: 1 })[0] || null; } catch (_) { return null; } })();

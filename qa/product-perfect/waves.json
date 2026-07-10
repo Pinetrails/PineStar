@@ -1,0 +1,152 @@
+{
+  "schemaVersion": 1,
+  "campaign": "StarNet product perfection",
+  "terminalVerdict": "PRODUCT PERFECT",
+  "policy": {
+    "serialization": "first-non-pass",
+    "candidateBinding": "exact-commit-and-wave-definition",
+    "unverifiable": "blocked",
+    "staleEvidence": "requeue",
+    "publishAuthorized": false
+  },
+  "waves": [
+    {
+      "id": "W0",
+      "slug": "proof-authority",
+      "name": "Proof authority",
+      "dependsOn": [],
+      "goal": "Make every later green verdict trustworthy and candidate-bound.",
+      "conditions": [
+        "The installed smoke can pass only after attaching to a packaged Tauri desktop surface, never a browser fallback.",
+        "The installed receipt derives its source identity from the running build and records a SHA-256 for the tested artifact; it never stamps ambient repository HEAD as the tested build.",
+        "The READY gate rejects browser-mode, dirty, artifact-unbound, stale, or source-mismatched installed receipts.",
+        "The product-perfect controller rejects missing, stale, hand-asserted, or definition-mismatched receipts."
+      ],
+      "verifier": {
+        "command": ["node", "scripts/qa/product-perfect/gates/wave-0-proof-authority.mjs"],
+        "timeoutMs": 600000
+      }
+    },
+    {
+      "id": "W1",
+      "slug": "security-trust",
+      "name": "Security and trust boundaries",
+      "dependsOn": ["W0"],
+      "goal": "Close every verified security and privacy escape at the boundary where it originates.",
+      "conditions": [
+        "Agent child processes receive an explicit allowlisted environment and no ambient StarNet, provider, channel, or connector secret.",
+        "The bundled Node runtime is a currently supported patched build and is proven by the packaged artifact.",
+        "Browser navigation resolves DNS and blocks private, loopback, link-local, metadata, and rebinding targets across redirects.",
+        "Filesystem search cannot follow a symlink or junction outside an authorized root.",
+        "Channel ownership requires explicit pairing and consent; a first inbound message cannot claim control.",
+        "Runnable Workshop content never receives a reusable global API token.",
+        "Default UI boot makes no unconsented third-party request, and persisted connector/channel secrets are protected and redacted."
+      ],
+      "verifier": {
+        "command": ["node", "scripts/qa/product-perfect/gates/wave-1-security-trust.mjs"],
+        "timeoutMs": 900000
+      }
+    },
+    {
+      "id": "W2",
+      "slug": "truthful-authority",
+      "name": "Truthful product authority",
+      "dependsOn": ["W1"],
+      "goal": "Ensure every product status and capability claim comes from authoritative backend state.",
+      "conditions": [
+        "Capability labels such as fullOffice reflect effective grants, not execution mode or account presence.",
+        "Uplink health follows transport heartbeat/connection authority and remains live during a healthy idle stream.",
+        "App-close, tray, channel, and background-operation copy matches the process lifecycle on every supported platform.",
+        "Global status, run state, counts, and health indicators are derived from the owning backend and contain no decorative success state."
+      ],
+      "verifier": {
+        "command": ["node", "scripts/qa/product-perfect/gates/wave-2-truthful-authority.mjs"],
+        "timeoutMs": 900000
+      }
+    },
+    {
+      "id": "W3",
+      "slug": "last-mile-recovery",
+      "name": "Last-mile UI and recovery",
+      "dependsOn": ["W2"],
+      "goal": "Remove stranded interactions and prove the complete recovery path for user-owned work.",
+      "conditions": [
+        "Export, backup, restore, OPEN, undo, and destructive-action recovery complete end to end with truthful feedback.",
+        "Base-URL configuration and OAuth start, success, cancellation, denial, timeout, and retry paths are usable and recoverable.",
+        "Every user-facing failure has a specific next action and no control ends in a silent or permanent busy state.",
+        "The attended visual pass finds no clipped, overlapping, inaccessible, placeholder, or inconsistent release-facing UI."
+      ],
+      "verifier": {
+        "command": ["node", "scripts/qa/product-perfect/gates/wave-3-last-mile-recovery.mjs"],
+        "timeoutMs": 900000
+      }
+    },
+    {
+      "id": "W4",
+      "slug": "autonomy-vision",
+      "name": "Autonomy vision",
+      "dependsOn": ["W3"],
+      "goal": "Prove that the differentiating autonomy promises are coherent, controllable, and measurably real.",
+      "conditions": [
+        "Signal synchronization has an observable source, conflict policy, recovery path, and live round-trip proof.",
+        "Commander composition provides one coherent context/control surface without hidden split authority.",
+        "Learning claims are backed by persisted, inspectable behavior changes and user controls; otherwise the claim is removed or relabeled.",
+        "Autonomous work remains interruptible, budget-bounded, permission-gated, and recoverable after restart."
+      ],
+      "verifier": {
+        "command": ["node", "scripts/qa/product-perfect/gates/wave-4-autonomy-vision.mjs"],
+        "timeoutMs": 1200000
+      }
+    },
+    {
+      "id": "W5",
+      "slug": "integration-reality",
+      "name": "External integration reality",
+      "dependsOn": ["W4"],
+      "goal": "Make every advertised external integration demonstrably usable or honestly limited.",
+      "conditions": [
+        "Each advertised provider, connector, channel, OAuth flow, and remote service has an attended real-credential success receipt and a failure/revocation receipt.",
+        "Unavailable, partial, or untested integrations are visibly labeled experimental or unsupported at the point of use.",
+        "No real credential is written to evidence, source, logs, scheduled-task definitions, URLs, or child-process environments."
+      ],
+      "verifier": {
+        "command": ["node", "scripts/qa/product-perfect/gates/wave-5-integration-reality.mjs"],
+        "timeoutMs": 1800000
+      }
+    },
+    {
+      "id": "W6",
+      "slug": "full-surface-proof",
+      "name": "Full UI and backend behavioral proof",
+      "dependsOn": ["W5"],
+      "goal": "Prove every created UI surface and backend promise against the running product.",
+      "conditions": [
+        "The Station Atlas is fresh on the candidate and reports perfected-fresh equal to total, with zero unmapped, mapped-only, audited-only, stale, or missing entries.",
+        "Backend-only tools, persistence boundaries, desktop commands, integrations, and lifecycle promises not represented by the Atlas have explicit machine/live proof.",
+        "Fast, HTTP/E2E, journey, recovery, restart, long-lived, visual, and installed-desktop suites all pass on the same candidate.",
+        "The product-facing ledger has zero open P0, P1, or P2 findings; accepted limitations are explicit non-product release exclusions, not hidden debt."
+      ],
+      "verifier": {
+        "command": ["node", "scripts/qa/product-perfect/gates/wave-6-full-surface-proof.mjs"],
+        "timeoutMs": 3600000
+      }
+    },
+    {
+      "id": "W7",
+      "slug": "frozen-candidate",
+      "name": "Frozen product-validation candidate",
+      "dependsOn": ["W6"],
+      "goal": "Validate one immutable desktop candidate long enough to justify the PRODUCT PERFECT verdict.",
+      "conditions": [
+        "Every receipt names the same clean source commit, app version, packaged artifact SHA-256 values, and wave-definition hash.",
+        "The frozen candidate completes at least 48 continuous hours of representative real-provider dogfood with no P0/P1, truth escape, data-loss event, wedged run, or unexplained sidecar death.",
+        "READY, installed desktop, full Atlas, security, recovery, integration, and behavioral gates are rerun after the soak without rebuilding the artifact.",
+        "The terminal output is PRODUCT PERFECT; it does not authorize publishing, signing, deployment, credential rotation, or public release."
+      ],
+      "verifier": {
+        "command": ["node", "scripts/qa/product-perfect/gates/wave-7-frozen-candidate.mjs"],
+        "timeoutMs": 3600000
+      }
+    }
+  ]
+}
