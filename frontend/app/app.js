@@ -1412,6 +1412,8 @@ const App = (() => {
 
   function selectProviderUI(p) {
     pickedProvider = normalizeProviderId(p);
+    // switching provider is the user ACTING on a wake-validation message — clear the stale line
+    { const m = el('connect-msg'); if (m) m.textContent = ''; }
     document.querySelectorAll('.provider-row .prov').forEach(b => { const on = b.dataset.prov === pickedProvider; b.classList.toggle('sel', on); b.setAttribute('aria-pressed', String(on)); });
     // a saved/selected tail provider must never be invisibly selected behind the fold
     { const sb = document.querySelector('.provider-row .prov.sel'); if (sb && sb.classList.contains('tail')) setProviderRowExpanded(true); }
