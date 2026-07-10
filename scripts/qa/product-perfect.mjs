@@ -316,8 +316,13 @@ export function currentCandidate() {
 
 export function candidateFromGitStatus(sha, statusOutput) {
   const allDirtyPaths = str(statusOutput) ? str(statusOutput).split(/\r?\n/).filter(Boolean) : [];
-  const operationalDirtyPaths = allDirtyPaths.filter(line => line.slice(3) === 'qa/STATUS.md');
-  const dirtyPaths = allDirtyPaths.filter(line => line.slice(3) !== 'qa/STATUS.md');
+  // git() trims stdout, so the first porcelain line may lose its leading blank status column
+  // (` M path` becomes `M path`). Recover the path from either valid shape. Only generated,
+  // non-authoritative dashboards are operational; Atlas shards and every other qa/ file are source.
+  const porcelainPath = (line) => line[2] === ' ' ? line.slice(3) : line[1] === ' ' ? line.slice(2) : line;
+  const operational = new Set(['qa/STATUS.md', 'qa/atlas/ATLAS.md']);
+  const operationalDirtyPaths = allDirtyPaths.filter(line => operational.has(porcelainPath(line)));
+  const dirtyPaths = allDirtyPaths.filter(line => !operational.has(porcelainPath(line)));
   return { sha: str(sha).toLowerCase(), clean: dirtyPaths.length === 0, dirtyPaths, operationalDirtyPaths };
 }
 
