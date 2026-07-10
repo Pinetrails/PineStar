@@ -94,12 +94,16 @@ fn main() {
     let mut describe = git_output(&["describe", "--always", "--dirty", "--tags"])
         .unwrap_or_else(|| "unknown".to_string());
 
-    // `git describe --dirty` covers tracked staged/unstaged edits. The status check adds untracked
-    // shipped inputs, which can also alter the packaged app but are otherwise invisible to describe.
+    // `git describe --dirty` sees every repository edit, including operational QA receipts that are
+    // deliberately outside the packaged app. The shipped-root status is the authoritative product
+    // dirt signal and also catches untracked packaged inputs. Fall back to describe only when Git
+    // cannot answer the scoped status query, so provenance remains fail-closed.
     let describe_dirty = describe.ends_with("-dirty");
-    let dirty = describe_dirty || shipped_inputs_dirty().unwrap_or(false);
+    let dirty = shipped_inputs_dirty().unwrap_or(describe_dirty);
     if dirty && !describe_dirty && describe != "unknown" {
         describe.push_str("-dirty");
+    } else if !dirty && describe_dirty {
+        describe.truncate(describe.len() - "-dirty".len());
     }
     let commit =
         git_output(&["rev-parse", "--short", "HEAD"]).unwrap_or_else(|| "unknown".to_string());

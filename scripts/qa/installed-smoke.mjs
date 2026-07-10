@@ -144,14 +144,23 @@ export const SMOKE_PROBE = `(async () => {
     let list = null; try { list = WS.list(); } catch (e) { /* fall through to well-formed=false */ }
     const wellFormed = Array.isArray(list);
     add('store/workstreams-wellformed', wellFormed, wellFormed ? (list.length + ' workstream(s) in the store') : 'Workstreams.list() did not return an array');
-    // no forever-running: if nothing is busy, no card may still show a RUNNING chip (same invariant as J5).
+    // no forever-running: require proof that TASKS is open, then permit a legitimately empty board.
+    // If nothing is busy, no rendered card may still show a RUNNING chip (same invariant as J5).
+    const boardEls = Array.from(document.querySelectorAll('.kb-cols'));
+    const boardOpen = boardEls.length === 1;
     const cardEls = Array.from(document.querySelectorAll('.kb-card'));
     const busyIds = (CH && CH.busyIds) ? CH.busyIds() : [];
-    if (cardEls.length && Array.isArray(busyIds) && busyIds.length === 0) {
+    if (!boardOpen) {
+      add('board/no-forever-running', false, 'TASKS board closed or ambiguous — expected exactly one .kb-cols, observed ' + boardEls.length);
+    } else if (!Array.isArray(busyIds)) {
+      add('board/no-forever-running', false, 'Channels.busyIds() did not return an array');
+    } else if (busyIds.length === 0) {
       const stuck = cardEls.filter(c => c.querySelector('.kb-state.running')).map(c => c.dataset.id).filter(Boolean);
-      add('board/no-forever-running', stuck.length === 0, stuck.length ? 'RUNNING chip with nothing busy: ' + stuck.join(',') : 'no stuck RUNNING chip while idle');
+      add('board/no-forever-running', stuck.length === 0, stuck.length
+        ? 'RUNNING chip with nothing busy: ' + stuck.join(',')
+        : 'TASKS board open; ' + cardEls.length + ' card(s); no stuck RUNNING chip while idle');
     } else {
-      add('board/no-forever-running', cardEls.length > 0, cardEls.length ? ((Array.isArray(busyIds) ? busyIds.length : 0) + ' run(s) legitimately in flight') : 'TASKS board closed — assertion not observed');
+      add('board/no-forever-running', true, busyIds.length + ' run(s) legitimately in flight on the open TASKS board');
     }
   } else {
     add('store/workstreams-wellformed', false, 'Workstreams store unavailable — installed parity is unproven');

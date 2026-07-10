@@ -88,8 +88,12 @@ A.eq(shippedGitRoots, ['frontend', 'sidecar', 'shared', 'src-tauri'],
   'dirty detection covers every Git-owned packaged root');
 A.ok(/"-C",\s*"\.\."/.test(buildRs) && /--porcelain=v1/.test(buildRs) && /--untracked-files=normal/.test(buildRs) && /cmd\.args\(SHIPPED_GIT_ROOTS\)/.test(buildRs),
   'dirty detection includes unstaged and untracked shipped inputs');
-A.ok(/describe_dirty\s*\|\|\s*shipped_inputs_dirty\(\)\.unwrap_or\(false\)/.test(buildRs),
-  'the embedded dirty bit combines git-describe truth with shipped-root status');
+A.ok(/shipped_inputs_dirty\(\)\.unwrap_or\(describe_dirty\)/.test(buildRs),
+  'packaged source roots are authoritative, with git-describe as the fail-closed fallback');
+A.ok(/!dirty\s*&&\s*describe_dirty[\s\S]*describe\.truncate/.test(buildRs),
+  'operational repository dirt is removed from the display stamp when packaged roots are clean');
+A.ok(/dirty\s*&&\s*!describe_dirty[\s\S]*describe\.push_str\("-dirty"\)/.test(buildRs),
+  'untracked packaged source dirt is added to the display stamp even when git-describe misses it');
 A.ok(/rev-parse",\s*"--git-path"/.test(buildRs),
   'Git metadata rerun paths resolve correctly in both primary checkouts and linked worktrees');
 
