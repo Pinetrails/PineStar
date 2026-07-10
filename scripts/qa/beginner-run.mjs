@@ -112,6 +112,13 @@ export function firstBootAdvanceKey(activeScreenId) {
   return String(activeScreenId || '') === 'screen-splash' ? 'Enter' : '';
 }
 
+export const BEGINNER_PROVIDER = 'openrouter';
+export function beginnerKeyFieldValue(mode, uiOnlyKey) {
+  // Live credentials already entered the isolated sidecar through env. Leaving the DOM field blank
+  // preserves that configured key; typing any sentinel would overwrite the real credential.
+  return mode === 'live' ? '' : String(uiOnlyKey || '');
+}
+
 // The step-budget accountant + timings recorder. Injected clock only (no Date.now() in the core).
 // Usage by the driver:
 //   const acct = makeRunAccountant({ clock, mode });
@@ -494,20 +501,25 @@ if (INVOKED_DIRECTLY) (async () => {
     acct.endStep();
     log('title ok — CREATE YOUR OVERSEER reached');
 
-    // STEP connect (fill name + key + model like a real first-timer) ------------------------------
+    // STEP connect (choose OpenRouter, then fill name + key + model like a real BYOK first-timer) --
     acct.startStep('connect');
-    // provider defaults to openrouter (the .prov.sel button); fill the three real inputs.
+    // Product defaults to the recommended keyless ChatGPT path. This detector's isolated placeholder/
+    // attended real-key modes intentionally exercise BYOK, so make that one-click choice explicitly.
     const filled = await evalJS(cdp, `(() => { try {
       const set = (id, v) => { const el = document.getElementById(id); if (!el) return false; el.value = v; el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); return true; };
+      const provider = document.querySelector('.prov[data-prov="${BEGINNER_PROVIDER}"]');
+      if (!provider) return { ok: false, provider: false };
+      provider.click();
       const nm = set('in-name', 'BEGINNER');
-      const key = set('in-key', ${JSON.stringify(MODE === 'live' ? '(live key entered server-side)' : UI_ONLY_KEY)});
+      const key = set('in-key', ${JSON.stringify(beginnerKeyFieldValue(MODE, UI_ONLY_KEY))});
       const model = set('in-model', ${JSON.stringify(PLACEHOLDER_MODEL)});
-      return { nm, key, model, ok: nm && model };
+      const providerSelected = provider.getAttribute('aria-pressed') === 'true';
+      return { nm, key, model, provider: providerSelected, ok: nm && key && model && providerSelected };
     } catch (e) { return { ok: false, err: e.message }; } })()`).catch(e => ({ ok: false, err: e.message }));
     await shoot('connect');
     if (!filled || !filled.ok) { await fail('connect', STEP_DEFS[2].label, 'could not populate the connect inputs (name/model): ' + JSON.stringify(filled)); throw new Error('connect-failed'); }
     acct.endStep();
-    log('connect ok — name/key/model entered');
+    log('connect ok — OpenRouter selected and name/key/model entered');
 
     // STEP create-agent (click WAKE OVERSEER; expect a transition off the connect screen) ---------
     acct.startStep('create-agent');

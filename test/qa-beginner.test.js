@@ -9,7 +9,8 @@
 'use strict';
 const A = require('./_assert.js');
 const {
-  makeRunAccountant, stepsForMode, firstBootAdvanceKey, buildStallFinding, stampFor, STEP_DEFS, TOTAL_BUDGET_MS
+  makeRunAccountant, stepsForMode, firstBootAdvanceKey, BEGINNER_PROVIDER, beginnerKeyFieldValue,
+  buildStallFinding, stampFor, STEP_DEFS, TOTAL_BUDGET_MS
 } = require('../scripts/qa/beginner-run.mjs');
 const { makeLedger, fingerprintOf } = require('../scripts/qa/ledger.mjs');
 
@@ -39,6 +40,9 @@ const clock = { now: () => clk };
   A.eq(firstBootAdvanceKey('screen-splash'), 'Enter', 'fresh boot receives one real Enter keypress');
   A.eq(firstBootAdvanceKey('screen-connect'), '', 'creation screen is never advanced again');
   A.eq(firstBootAdvanceKey('screen-game'), '', 'returning/in-game state is never disturbed');
+  A.eq(BEGINNER_PROVIDER, 'openrouter', 'the isolated BYOK path explicitly selects OpenRouter');
+  A.eq(beginnerKeyFieldValue('ui-only', 'dummy'), 'dummy', 'UI-only enters its non-secret placeholder');
+  A.eq(beginnerKeyFieldValue('live', 'dummy'), '', 'live mode never writes a credential sentinel into the DOM');
 }
 
 // ---- A2. the boundary (first-directive) budget must cover the WHOLE awakening cinematic ----
