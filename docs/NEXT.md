@@ -10,15 +10,40 @@ splash+overseer menus · CRT speech bubbles · scanlines toggle removed (Andrew:
 selectable transcript+input history+Open-it fix · PROJECTS-tab fix+beat flatten ·
 Slack/Matrix/Signal + CHANNELS panel · photo/file attachments.
 
+**LANDED 2026-07-09 (late eve) — LAUNCH-POLISH SESSION ✅ (all gates green on trunk e96079d7; digest in qa/STATUS.md):**
+rescue-merged BOTH stranded EL-11 fix branches (187724e3 hung-stream+wedged-beat-halt, 8b5aae04
+consent-visibility+visible-E-STOP — live DOM round-trips done) · connector-spine COMMIT-rescued
+(9d2e2d93 + archive tag; port = separate lane, 3 known conflicts incl. slack add/add vs trunk) ·
+backend polish batch merged (64b20752..9a4f0e6c): /api/version harness truth (live-proven) ·
+night-beat leash burn fixed (budget + no-provider pre-spend gates) · scout draft 14d TTL sweep
+(live-proven un-wedge) · .bugloops evidence sweep + guardian hook (real sweep fires next guardian
+cycle; manual run needs Andrew: `npm run qa:sweep`, dry first) · shipped-docs truth (PRIVACY
+channels, RC-soak doc-fiction, runbook staleness) · release-train provenance UNBLOCKED (real cause
+= CI shallow-checkout describe≠tag, NOT the binary stamp; fetch-depth:0 + parity test) · Quest V2
+celebration round-trip PROVEN live (21/21, item closed below). GB-9 was REFUTED — already shipped
+as EL-11 FIX 1; 200 {ok:false,degraded:true} is a LOCKED test-asserted design, do not "fix" to 5xx.
+
+**NEW QUEUE from the launch-polish session (claim before building):**
+- [ ] EL-11 leftovers 8-13, all frontend-owned (stationui.js/chat.js — was blocked on the 7/09 UI
+      session; fix shapes with file:line evidence in the 2026-07-09 launch-polish triage, session
+      transcript): 8 undo for out-of-jail artifacts (backend route + card affordance) · 9 EXPORT
+      AGENT full backup button in SETTINGS (Backup.exportAll exists, connect-screen-only) · 10
+      connector.state SSE bridge (needs ADDITIVE shared/events.js entry via owner) + global error
+      notify · 11 global channel.connect error notify (listener is panel-scoped today) · 12
+      base-URL edit post-onboarding (Harness.setBaseUrl exists, settings never calls it) · 13
+      connector OAuth cancel affordance + poller cleanup on panel close.
+- [ ] PRIVACY.md storage-table rows (channel tokens + message history) still enumerate only
+      Discord/Telegram — extend for slack/matrix/signal once each one's exact persistence
+      (keychain vs plaintext fallback) is verified (lane-D flag).
+- [ ] Provenance CI proof: after next trunk push, throwaway tag `v0.0.0-provtest` → watch the
+      train's provenance step go green → delete tag+draft (Andrew or any session with push).
+- [ ] Janitor teardown (classifier-blocked in-session, needs human-approved pass): worktree
+      .claude/worktrees/chat-bubbles-styling-c17d0f + branch claude/chat-bubbles-styling-c17d0f
+      (SUPERSEDED — patch-id-identical to trunk 970260e8; archive/chat-bubbles-styling tag pinned);
+      dead subagent worktrees agent-a2609846513e19866 + agent-afaa4833c73b46244 (both branches now
+      MERGED to trunk, trees clean).
+
 **QUEUE — audited unmerged gems, NOT yet restored (claim here before building):**
-- [ ] IN PROGRESS — launch-polish session (claude/starnet-launch-polish-b6ea54), 2026-07-09 eve:
-      (a) rescue-merge stranded EL-11 fix branches baaec246 (E-STOP reaches wedged beat) +
-      bcd13bad (background consent visibility) after still-needed verification; (b) connector-spine
-      COMMIT-rescue (commit the uncommitted tree to its branch, no port); (c) backend polish batch —
-      GB-9 workspaceDegraded honest status, /api/version harness placeholder, night-beat leash burn
-      on budget-exhausted no-ops, scout draft TTL eviction, .bugloops TTL (GB-27); (d) first-official-
-      version release prep (changelog/runbook staging). NOT touching frontend surfaces owned by the
-      live UI-finale session (claude/starnet-ui-ux-polish-709ca1).
 - [ ] **connector-spine rescue** — UNCOMMITTED in `C:/Users/andro/gen-trees/connector-spine`
       (8.7d stale, base 1171 commits behind): email/sms/webhook/whatsapp adapters + tests
       (new-file clean) + managed-credits billing seam. Its slack = superseded by trunk's; its
@@ -57,7 +82,9 @@ ritual per merge (fast + http gates green on trunk after each):
 3. **Quest V2 completion sweeps** (0b017a70) — audit found only `attest` could ever complete
    (bindRun 0 callers; prop/fact/artifact unhooked; attest unscoped → spoofable). Now all 4
    mechanical types complete at real truth points (sidecar/questsweeps.js) + attest enforces
-   openForAgent. OPEN: live-DOM celebration round-trip of a mechanical completion.
+   openForAgent. ✅ live-DOM celebration round-trip PROVEN 2026-07-09 (launch-polish lane Q:
+   8/8 backend + 13/13 frontend CDP asserts — open→done edge, .q-celebrate, gold toast, COMMS
+   broadcast, restart-durable; gotcha: mock /models must advertise supported_parameters:['tools']).
 4. **NS-6 thread TURN-IN CARD** (5106e671) — the ledger was a GHOST (no frontend hit
    /api/threads*; openThreads() forever empty). Now threadstore.js + gold-inset card via the
    beat arbiter (5th participant, memory>study>arc>trust>thread); LIVE DOM round-trip proven
@@ -78,9 +105,10 @@ proven; night-shift timer cross-process lock is BY-DESIGN absent (one-sidecar in
 user-understanding SILOS (6 aux-model passes per run-end re-extract the same signal into 5-6
 stores; scout interests duplicated vs browser profile; "declined" in 3 unsynced places — the
 NS-8 unified composer is the fix) · messaging-connectors merge (1555 lines, tested, rotting —
-70-commit divergence) · EL-2 saboteur mutators · .bugloops TTL (GB-27) · workspaceDegraded
-`200 {ok:false}` reads as success to status-only clients (GB-9) · /api/version harness field
-"0.0.0" placeholder · night beats still burn a leash unit on budget-exhausted no-op runs.
+70-commit divergence; NOTE 2026-07-09: now COMMITTED as 9d2e2d93 on agent/connector-spine) ·
+EL-2 saboteur mutators. (✅ CLOSED 2026-07-09 launch-polish: .bugloops TTL GB-27 · /api/version
+harness placeholder · night-beat leash burn. REFUTED: GB-9 workspaceDegraded — already shipped
+as EL-11 FIX 1, the 200 {ok:false,degraded:true} shape is LOCKED + test-asserted, don't "fix".)
 
 ## LANDED 2026-07-08 — GATE BURN-DOWN: qa:ready code side driven to zero (Fable session) ✅
 
@@ -121,7 +149,8 @@ persisted cadence, drafts agent prospects AND recipes, every attempt in a visibl
 station-drafted recipe cards; launch telemetry feeds FOR-YOU rank). Signal loosened: all-agent
 tool counting, CALIBRATING_N 5→3. Live-verified on dev seed (restart hydration, both shelves,
 accept/dismiss round-trips, telemetry). OPEN: first real-provider scout cycle unobserved;
-optional nightshift catch-up pass; scout-ledger surfacing in a UI panel.
+optional nightshift catch-up pass; scout-ledger surfacing in a UI panel. (✅ 2026-07-09
+launch-polish: staged-draft 14d TTL sweep landed — stale drafts can no longer wedge minting.)
 
 **The one moving file.** Update it when you land or invalidate an item; don't write a new
 plan doc. Reconciled against trunk `feat/harness-backend` + git log on **2026-07-06 (late night, trunk 7cb221ed)**.
@@ -380,6 +409,11 @@ promise?" (sibling of "where's its UI?").
 
 ## EL-11 · STRANDED-USER SWEEP 2026-07-08 (5 live-driven domains; THE ship gate) — 12 STRANDED + 1 lock / 22 ROUGH
 
+**STATUS 2026-07-09 (launch-polish session, code-verified per item):** items 1,3,5 ✅ FIXED via
+rescue merges 187724e3 + 8b5aae04 (fixes were finished-but-unmerged on dead subagent worktrees —
+lost-work law strikes again); items 2,4,6,7 ✅ were already fixed on trunk (a996da07 + b7f984b3);
+items 8-13 STILL OPEN, all frontend-owned, queued with fix shapes at the top of this file.
+
 LAW (memory stranded-user-testing-law): shippable = zero STRANDED. Each item = fix lane + EL-3 test.
 STRANDED (ranked): 1. hung provider stream ends RUN COMPLETE reason:done (provider.js:146-160 reader.cancel settles read as done — watchdog cannot fire; night beats inherit) 2. degraded workspace: writes refused 200 ok:false while save-dot healthy + cloudsave stamps success (cloudsave.js~105/app.js~990 check r.ok not body) 3. background-session consent invisible → auto-DENY at 120s (notify gated on isActiveWs; warroom hotspot removed) 4. night-shift durable halt (TONIGHT'S fix) invisible: panel says ACTIVE/standing-by + NEXT ELIGIBLE while halted:true never read by any frontend; lift (dial re-write) documented nowhere 5. wedged beat run holds agent mutex forever; /api/halt misses handleNightshiftBeatNow AC (index.js:7085) + E-STOP button doesn't exist (hotkey-only, error copy names it) 6. post-sidecar-respawn stale token → all 403 + "Add a key" misdirection (classify 403 as reload/re-auth) 7. double-corrupt save → silent GENESIS (quarantine works, zero disclosure) 8. no undo for out-of-jail artifacts (ns/ branches, workshop KEEP) 9. full-agent backup (save+memory) unreachable in-app (connect-screen only; STATION BACKUP = 1.4KB settings, no memories) 10. dead MCP connector invisible outside panel (connector.state → console.log only, GA-8) 11. dead channel invisible outside panel 12. custom/Ollama base-URL uneditable post-onboarding + 13. connector OAuth 5-min uncancelable lock survives panel reopen.
 ROUGH highlights: harness.js:355 discards error body (EL-10 door lost pre-stream) · key REMOVE doesn't revoke server-side · provider-down blamed on app · TG/DC "connected" lie pre-auth (1c09b36f) · 402 top-up URL not a link · budget stops never name cap/door (/api/budget/resume zero callers) · HALT toast "stopped 0 runs" lie · readiness-gate jargon hides the grant · awakening full-replay on reload · broken-brain invisible until failure · fresh workspace inherits codex tokens cross-root (sign-out violation) · disk-fail 60-min blind window · silent .bak recovery · no bulk memory delete · no tour replay.
@@ -609,7 +643,8 @@ E-STOP visibility + get-a-key link already chipped by Atlas — not re-listed.**
 - GB-24 Goal abandon button + quest dismiss beyond dossier-kind (queststate.js:88 gates).
 - GB-25 Voice: level indicator while listening, per-agent voice preview, STT language picker.
 - GB-26 Automated periodic backup + backup-before-update (manual export only).
-- GB-27 .bugloops unbounded (395MB/2066 files) — TTL sweep.
+- ~~GB-27 .bugloops unbounded (395MB/2066 files) — TTL sweep.~~ ✅ 2026-07-09 launch-polish:
+  evidence-sweep.mjs + qa:sweep + guardian-cycle hook (was 1,048MB when fixed).
 - GB-28 Multi-agent status dashboard (which of N agents stuck/failed/done — superset of GB-7).
 
 **Round 3 (GC) — closing sweeps 2026-07-07: external parity (ChatGPT/Claude Desktop/Cursor/
