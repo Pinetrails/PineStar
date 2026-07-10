@@ -8,6 +8,7 @@
 'use strict';
 const A = require('./_assert.js');
 const crypto = require('crypto');
+const vm = require('vm');
 const {
   RESULTS, SMOKE_CREW, SMOKE_PROBE, STAMP_SCHEMA, REQUIRED_CHECKS,
   classifyResult, normalizeStamp, validateStamp, buildFinding, makeSmoke
@@ -19,6 +20,33 @@ const SHA = 'a'.repeat(40);
 const ARTIFACT = { path: 'C:/Program Files/StarNet/StarNet.exe', sha256: 'b'.repeat(64), size: 123456 };
 const RUNTIME_EXECUTABLE = { sha256: ARTIFACT.sha256, size: ARTIFACT.size };
 const EVIDENCE = { path: 'qa/installed/run/probe.json', sha256: 'c'.repeat(64), size: 321 };
+
+async function runInPageProbe({ boardOpen, cards = [], busyIds = [] }) {
+  const context = {
+    location: { origin: 'http://tauri.localhost' },
+    window: {
+      __TAURI__: { core: { invoke: async () => ({
+        commit: 'aaaaaaaa', sha: SHA, describe: 'v0.3.0-1-gaaaaaaaa', dirty: false,
+        executableSha256: RUNTIME_EXECUTABLE.sha256, executableSize: RUNTIME_EXECUTABLE.size
+      }) } },
+      __STARNET_API_TOKEN__: 'test-token',
+      __world: {}
+    },
+    document: {
+      querySelector: () => ({}),
+      querySelectorAll: (selector) => selector === '.kb-cols' ? (boardOpen ? [{}] : []) : (selector === '.kb-card' ? cards : [])
+    },
+    Workstreams: { list: () => [] },
+    Channels: { busyIds: () => busyIds },
+    fetch: async (url) => ({
+      ok: true,
+      json: async () => url === '/api/version'
+        ? ({ app: '0.3.0', appSource: 'test', harness: 'v0.3.0', buildSha: SHA, buildDirty: false })
+        : ({ report: { mode: 'desktop' } })
+    })
+  };
+  return await vm.runInNewContext(SMOKE_PROBE, context);
+}
 
 // a fake io that records everything into inspectable arrays (no disk).
 function memIo() {
@@ -156,6 +184,15 @@ const GREEN_PROBE = {
 
 /* ---- E. makeSmoke: BLOCKED-on-unreachable — stamp written BLOCKED + a P0 finding, never silent green ---- */
 (async () => {
+  /* ---- A1. open-empty TASKS is observable proof; a closed board is still fail-closed ---- */
+  const emptyOpen = await runInPageProbe({ boardOpen: true });
+  const emptyOpenCheck = emptyOpen.checks.find(c => c.name === 'board/no-forever-running');
+  A.eq(emptyOpenCheck.ok, true, 'an open TASKS board with zero cards passes the no-forever-running invariant');
+  A.ok(/board open; 0 card/.test(emptyOpenCheck.detail), 'empty-board proof states that the TASKS container was observed');
+  const closed = await runInPageProbe({ boardOpen: false });
+  const closedCheck = closed.checks.find(c => c.name === 'board/no-forever-running');
+  A.eq(closedCheck.ok, false, 'a closed TASKS board remains unproven and fails closed');
+
   const io = memIo();
   const attach = async () => { throw new Error('ECONNREFUSED 127.0.0.1:9333'); };
   const smoke = makeSmoke({ attach, clock, expectedHead: SHA, artifact: ARTIFACT, io });
