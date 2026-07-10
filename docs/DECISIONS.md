@@ -85,3 +85,10 @@ many of these — they win on any wording conflict.
   whatever `qa:ready` says, nothing more. Why: session after session reported lane-green as
   project-green while the Guardian sat RED with open findings — the aggregate claim was never gated
   on anything. Now it is.
+  **Authority clarification (2026-07-10, W0):** `qa:ready` is the limited release-readiness
+  aggregate defined by those five checks. A READY receipt does **not** prove that every product
+  promise, UI surface, or backend implementation is perfected, and it must never be reported as
+  `PRODUCT PERFECT`. That exact terminal verdict is reserved to `npm run qa:product-perfect` after
+  every candidate-bound wave W0–W7 passes. Neither verdict authorizes publishing, deployment,
+  credential rotation, or any other external release operation; those still require the owner's
+  explicit authorization.

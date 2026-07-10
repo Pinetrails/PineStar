@@ -26,26 +26,38 @@ running binary:
     "sha256": "<64 hexadecimal characters>",
     "size": 123456789
   },
+  "runtimeExecutable": {
+    "sha256": "<same 64 hexadecimal characters reported by the running Tauri process>",
+    "size": 123456789
+  },
   "result": "GREEN",
-  "evidence": ["qa/installed/smoke-.../probe.json"],
+  "evidence": [{
+    "path": "qa/installed/smoke-.../probe.json",
+    "sha256": "<64 hexadecimal characters>",
+    "size": 12345
+  }],
   "notes": "..."
 }
 ```
 
 GREEN requires all of the following: a trusted Tauri origin, successful `starnet_build_info`, a
 clean full source SHA equal to the explicitly expected candidate, matching shell/sidecar versions
-and provenance, a hashed non-empty package artifact, persisted/read-back evidence, and every named
-smoke assertion present and passing. Browser mode, dirty/unknown source, missing assertions,
-mismatched candidate, or missing artifact/evidence is BLOCKED. A parity failure on an otherwise
-proven candidate is RED.
+and provenance, and an exact SHA-256/size match between `STARNET_SMOKE_ARTIFACT` and the executable
+bytes reported by the running Tauri process. Evidence is also content-bound by SHA-256/size, and
+every named smoke assertion must be present and passing. Browser mode, dirty/unknown source,
+missing assertions, mismatched candidate/executable, or missing artifact/evidence is BLOCKED. A
+parity failure on an otherwise proven candidate is RED.
 
-`npm run qa:ready` re-hashes the artifact and checks the evidence files before accepting the receipt.
-Legacy receipts are intentionally rejected.
+`npm run qa:ready` re-hashes the artifact and every evidence file, then re-checks that the artifact
+identity equals the runtime identity before accepting the receipt. Legacy receipts are intentionally
+rejected.
 
 ## Operator recipe
 
-Fully quit StarNet, then launch the exact candidate with WebView debugging enabled. Set both explicit
-proof inputs before running the smoke; neither has an ambient fallback.
+Fully quit StarNet, then launch the exact candidate executable with WebView debugging enabled. Set
+both explicit proof inputs before running the smoke; neither has an ambient fallback. Point the
+artifact variable at the executable launched by `Start-Process`, not an installer or archive. The
+receipt deliberately proves byte identity (SHA-256 + size), not the private runtime filesystem path.
 
 ```powershell
 $candidate = git rev-parse HEAD

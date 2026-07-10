@@ -55,6 +55,7 @@ import { mkdirSync, writeFileSync, rmSync, readFileSync, readdirSync } from 'nod
 import { createServer } from 'node:http';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { spawnSync } from 'node:child_process';
 import { sleep, launchChrome, connectCDP, evalJS, capture, collectDiagnostics } from '../lib/cdp.mjs';
 import { materializeSeedWorkspace, bootSeededSidecar, isUp, waitUp, waitDevReady, DEFAULT_MODEL } from '../lib/seed.mjs';
 import { closeOnly, openSel } from '../lib/states.mjs';
@@ -857,9 +858,13 @@ async function main() {
     try {
       const REPO = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
       const QA_DIR = join(REPO, 'qa');
+      const headRun = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: REPO, encoding: 'utf8', windowsHide: true });
+      const trunkHead = headRun.status === 0 && /^[0-9a-f]{40}$/i.test(String(headRun.stdout || '').trim())
+        ? String(headRun.stdout).trim().toLowerCase() : '';
       mkdirSync(QA_DIR, { recursive: true });
       writeFileSync(join(QA_DIR, 'journeys-last-run.json'), JSON.stringify({
         stampIso: new Date().toISOString(),
+        trunkHead,
         result: code === 0 ? 'pass' : code === 2 ? 'blocked' : 'fail',
         exitCode: code, passed, total: all.length, softFails,
       }, null, 2) + '\n', 'utf8');

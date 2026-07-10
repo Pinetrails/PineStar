@@ -58,10 +58,11 @@ when filling `blockedTiles`.
 ## Status
 
 - **Stage 1 (done):** model + module + first props; place/move/reclaim/undo/persist + blocking.
-- **Stage 2+3 (done):** all **84** v7 procedural props ported verbatim (1:1, lines 66–3568 of v7
-  `sprites.js`), full `CATALOG` with v7-authentic footprints, category-grouped palette
-  (work/ops/lab/storage/comms/lounge/decor), `blocks:false` decor. Verified in-browser: 84/84
-  place + render with animation; 100 worldmodel assertions; fast suite green.
+- **Stage 2+3 (done):** all **95** currently placeable procedural props are registered in the
+  authoritative `CATALOG`, with v7-authentic footprints and a category-grouped palette
+  (work/ops/lab/storage/comms/lounge/decor), `blocks:false` decor. The catalog-to-renderer contract
+  and all 95 entries are checked headlessly; the original 84-prop browser pass remains historical
+  evidence rather than a claim that the later additions were part of that older run.
 - **Stage 4 (later):** conveyor system — `beltH` belt segments + `boxes` that ride them (motion).
 - **Possible polish:** rotate/flip (R key), prop-aware footprint hints, an auto-desk-as-real-prop
   unification with the live-world workstation FSM.

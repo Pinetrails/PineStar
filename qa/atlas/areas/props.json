@@ -1,0 +1,1811 @@
+{
+  "area": "props",
+  "updatedAt": "2026-07-10T05:18:57.442Z",
+  "entries": [
+    {
+      "id": "prop/airlock",
+      "kind": "prop",
+      "area": "props",
+      "name": "AIRLOCK [functional/isolation] 1x1",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/arc-floorlight",
+      "kind": "prop",
+      "area": "props",
+      "name": "FLOOR LIGHT [cosmetic/decor] 1x1",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/arc-indexwall",
+      "kind": "prop",
+      "area": "props",
+      "name": "INDEX WALL [cosmetic/comms] 4x1",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/arc-ladder",
+      "kind": "prop",
+      "area": "props",
+      "name": "LADDER [cosmetic/decor] 1x1",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/arc-microfiche",
+      "kind": "prop",
+      "area": "props",
+      "name": "MICROFICHE [cosmetic/comms] 2x1",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/arcade",
+      "kind": "prop",
+      "area": "props",
+      "name": "ARCADE [cosmetic/lounge] 1x2",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/arcade2",
+      "kind": "prop",
+      "area": "props",
+      "name": "ARCADE II [cosmetic/lounge] 1x2",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/bar",
+      "kind": "prop",
+      "area": "props",
+      "name": "BAR [cosmetic/lounge] 4x1",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/bay",
+      "kind": "prop",
+      "area": "props",
+      "name": "BAY [functional/workflow] 2x2",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/bench",
+      "kind": "prop",
+      "area": "props",
+      "name": "BENCH [functional/workstation] 4x1",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/bigscreen",
+      "kind": "prop",
+      "area": "props",
+      "name": "BIG SCREEN [cosmetic/screens] 8x1",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/boxes",
+      "kind": "prop",
+      "area": "props",
+      "name": "BOXES [cosmetic/storage] 2x1",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/bridge-dispatch-pylon",
+      "kind": "prop",
+      "area": "props",
+      "name": "DISPATCH PYLON [cosmetic/screens] 1x2",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/bridge-orderqueue",
+      "kind": "prop",
+      "area": "props",
+      "name": "ORDER QUEUE [cosmetic/screens] 2x1",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/bridge-relaystack",
+      "kind": "prop",
+      "area": "props",
+      "name": "RELAY STACK [functional/capability] 1x2",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/bridge-tacscreen",
+      "kind": "prop",
+      "area": "props",
+      "name": "TAC SCREEN [cosmetic/screens] 2x1",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/bunk",
+      "kind": "prop",
+      "area": "props",
+      "name": "BUNK [cosmetic/lounge] 2x2",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/calwall",
+      "kind": "prop",
+      "area": "props",
+      "name": "CAL WALL [cosmetic/screens] 6x1",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/cans",
+      "kind": "prop",
+      "area": "props",
+      "name": "CANS [cosmetic/decor] 1x1",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/chair",
+      "kind": "prop",
+      "area": "props",
+      "name": "CHAIR [cosmetic/decor] 1x1",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/chartwall",
+      "kind": "prop",
+      "area": "props",
+      "name": "CHART WALL [cosmetic/screens] 3x1",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/coffee",
+      "kind": "prop",
+      "area": "props",
+      "name": "COFFEE [cosmetic/decor] 1x1",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/comms-beacon",
+      "kind": "prop",
+      "area": "props",
+      "name": "BEACON [functional/capability] 1x2",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/comms-dish",
+      "kind": "prop",
+      "area": "props",
+      "name": "DISH [functional/capability] 2x2",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/comms-inbox",
+      "kind": "prop",
+      "area": "props",
+      "name": "INBOX [cosmetic/comms] 2x1",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/comms-uplink",
+      "kind": "prop",
+      "area": "props",
+      "name": "UPLINK [functional/capability] 2x2",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/commswall",
+      "kind": "prop",
+      "area": "props",
+      "name": "COMMS WALL [cosmetic/comms] 6x1",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/connector-portal",
+      "kind": "prop",
+      "area": "props",
+      "name": "CONNECTOR [functional/capability] 1x2",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/console",
+      "kind": "prop",
+      "area": "props",
+      "name": "CONSOLE [functional/workstation] 2x1",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/consolel",
+      "kind": "prop",
+      "area": "props",
+      "name": "CONSOLE L [functional/workstation] 3x1",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/core",
+      "kind": "prop",
+      "area": "props",
+      "name": "CORE [functional/capability] 1x2",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/couch",
+      "kind": "prop",
+      "area": "props",
+      "name": "COUCH [cosmetic/lounge] 5x1",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/crate",
+      "kind": "prop",
+      "area": "props",
+      "name": "CRATE [cosmetic/storage] 2x1",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/desk",
+      "kind": "prop",
+      "area": "props",
+      "name": "DESK [functional/workstation] 2x1",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/desk2",
+      "kind": "prop",
+      "area": "props",
+      "name": "DESK ×2 [functional/workstation] 2x1",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/djbooth",
+      "kind": "prop",
+      "area": "props",
+      "name": "DJ BOOTH [cosmetic/lounge] 4x2",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/easel",
+      "kind": "prop",
+      "area": "props",
+      "name": "EASEL [cosmetic/lab] 3x2",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/etsy-dyevat",
+      "kind": "prop",
+      "area": "props",
+      "name": "DYE VAT [cosmetic/lab] 2x2",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/etsy-kiln",
+      "kind": "prop",
+      "area": "props",
+      "name": "KILN [cosmetic/lab] 2x2",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/etsy-packbot",
+      "kind": "prop",
+      "area": "props",
+      "name": "PACK BOT [cosmetic/lab] 2x2",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/etsy-threadrack",
+      "kind": "prop",
+      "area": "props",
+      "name": "THREAD RACK [cosmetic/lab] 2x1",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/fabricator",
+      "kind": "prop",
+      "area": "props",
+      "name": "FABRICATOR [cosmetic/lab] 3x2",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/filter",
+      "kind": "prop",
+      "area": "props",
+      "name": "FILTER [functional/workflow] 1x1",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/gigs-amp",
+      "kind": "prop",
+      "area": "props",
+      "name": "AMP [cosmetic/comms] 1x1",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/gigs-partsbin",
+      "kind": "prop",
+      "area": "props",
+      "name": "PARTS BIN [cosmetic/storage] 2x1",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/gigs-servercart",
+      "kind": "prop",
+      "area": "props",
+      "name": "SERVER CART [functional/capability] 1x1",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/gigs-thumbwall",
+      "kind": "prop",
+      "area": "props",
+      "name": "THUMB WALL [cosmetic/comms] 2x1",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/goldcrate",
+      "kind": "prop",
+      "area": "props",
+      "name": "GOLD CRATE [cosmetic/storage] 2x1",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/holotable",
+      "kind": "prop",
+      "area": "props",
+      "name": "HOLOTABLE [cosmetic/screens] 4x2",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/intake",
+      "kind": "prop",
+      "area": "props",
+      "name": "INBOX [functional/workflow] 2x2",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/jukebox",
+      "kind": "prop",
+      "area": "props",
+      "name": "JUKEBOX [cosmetic/lounge] 1x2",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/merger",
+      "kind": "prop",
+      "area": "props",
+      "name": "MERGER [functional/workflow] 1x1",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/missionboard",
+      "kind": "prop",
+      "area": "props",
+      "name": "MISSION BOARD [functional/command] 3x1",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/outbox",
+      "kind": "prop",
+      "area": "props",
+      "name": "OUTBOX [functional/workflow] 2x2",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/parcels",
+      "kind": "prop",
+      "area": "props",
+      "name": "PARCELS [cosmetic/storage] 1x2",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/pixelrig",
+      "kind": "prop",
+      "area": "props",
+      "name": "PIXEL RIG [functional/workstation] 2x1",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/plant",
+      "kind": "prop",
+      "area": "props",
+      "name": "PLANT [cosmetic/decor] 1x1",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/poster",
+      "kind": "prop",
+      "area": "props",
+      "name": "POSTER [cosmetic/decor] 1x1",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/pub-mailpod",
+      "kind": "prop",
+      "area": "props",
+      "name": "MAIL POD [cosmetic/comms] 2x1",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/pub-outboundchute",
+      "kind": "prop",
+      "area": "props",
+      "name": "OUTBOUND CHUTE [cosmetic/comms] 1x2",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/pub-publishpress",
+      "kind": "prop",
+      "area": "props",
+      "name": "PUBLISH PRESS [cosmetic/comms] 2x2",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/quarters-lockerbank",
+      "kind": "prop",
+      "area": "props",
+      "name": "LOCKERS [cosmetic/lounge] 3x1",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/quarters-minifridge",
+      "kind": "prop",
+      "area": "props",
+      "name": "MINIFRIDGE [cosmetic/lounge] 1x1",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/quarters-pooltable",
+      "kind": "prop",
+      "area": "props",
+      "name": "POOL TABLE [cosmetic/lounge] 4x2",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/quarters-vending",
+      "kind": "prop",
+      "area": "props",
+      "name": "VENDING [cosmetic/lounge] 1x2",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/rack",
+      "kind": "prop",
+      "area": "props",
+      "name": "RACK [functional/capability] 2x1",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/rackv",
+      "kind": "prop",
+      "area": "props",
+      "name": "RACK V [cosmetic/storage] 1x2",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/research-corelens",
+      "kind": "prop",
+      "area": "props",
+      "name": "CORE LENS [cosmetic/lab] 1x2",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/research-papers",
+      "kind": "prop",
+      "area": "props",
+      "name": "PAPERS [cosmetic/lab] 2x1",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/research-samplecart",
+      "kind": "prop",
+      "area": "props",
+      "name": "SAMPLE CART [cosmetic/lab] 2x1",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/research-trendpillar",
+      "kind": "prop",
+      "area": "props",
+      "name": "TREND PILLAR [cosmetic/lab] 1x2",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/rug",
+      "kind": "prop",
+      "area": "props",
+      "name": "RUG [cosmetic/decor] 4x3",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/safe",
+      "kind": "prop",
+      "area": "props",
+      "name": "SAFE [functional/capability] 1x2",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/screens",
+      "kind": "prop",
+      "area": "props",
+      "name": "SCREENS [cosmetic/screens] 2x1",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/shelf",
+      "kind": "prop",
+      "area": "props",
+      "name": "SHELF [functional/capability] 4x1",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/speaker",
+      "kind": "prop",
+      "area": "props",
+      "name": "SPEAKER [cosmetic/lounge] 1x1",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/splitter",
+      "kind": "prop",
+      "area": "props",
+      "name": "SPLITTER [functional/workflow] 1x1",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/stool",
+      "kind": "prop",
+      "area": "props",
+      "name": "STOOL [cosmetic/decor] 1x1",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/studio",
+      "kind": "prop",
+      "area": "props",
+      "name": "STUDIO [functional/capability] 2x2",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/tank",
+      "kind": "prop",
+      "area": "props",
+      "name": "TANK [cosmetic/screens] 2x1",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/ticker",
+      "kind": "prop",
+      "area": "props",
+      "name": "TICKER [cosmetic/screens] 4x1",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/treasury-coinsorter",
+      "kind": "prop",
+      "area": "props",
+      "name": "COIN SORTER [cosmetic/storage] 2x1",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/treasury-pnl-holo",
+      "kind": "prop",
+      "area": "props",
+      "name": "PNL HOLO [cosmetic/decor] 1x1",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/treasury-token-furnace",
+      "kind": "prop",
+      "area": "props",
+      "name": "TOKEN FURNACE [cosmetic/storage] 1x2",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/trophycase",
+      "kind": "prop",
+      "area": "props",
+      "name": "TROPHY CASE [functional/command] 2x2",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/tube",
+      "kind": "prop",
+      "area": "props",
+      "name": "TUBE [cosmetic/lab] 2x1",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/tv",
+      "kind": "prop",
+      "area": "props",
+      "name": "TV [cosmetic/lounge] 3x1",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/vat",
+      "kind": "prop",
+      "area": "props",
+      "name": "VAT [cosmetic/lab] 3x2",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/vault",
+      "kind": "prop",
+      "area": "props",
+      "name": "VAULT [functional/capability] 3x2",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/war-intelcab",
+      "kind": "prop",
+      "area": "props",
+      "name": "INTEL CAB [functional/capability] 1x2",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/war-pivotpanel",
+      "kind": "prop",
+      "area": "props",
+      "name": "PIVOT PANEL [cosmetic/screens] 2x1",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/war-threatcore",
+      "kind": "prop",
+      "area": "props",
+      "name": "THREAT CORE [cosmetic/screens] 1x2",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/wartable",
+      "kind": "prop",
+      "area": "props",
+      "name": "WAR TABLE [cosmetic/screens] 5x2",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/whiteboard",
+      "kind": "prop",
+      "area": "props",
+      "name": "WHITEBOARD [cosmetic/screens] 4x1",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    },
+    {
+      "id": "prop/workbench",
+      "kind": "prop",
+      "area": "props",
+      "name": "WORKBENCH [functional/workstation] 2x1",
+      "purpose": "",
+      "promise": "",
+      "wiring": {
+        "files": [],
+        "events": []
+      },
+      "coverage": [],
+      "status": "unmapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-10T05:18:57.443Z",
+      "lastSeen": "2026-07-10T05:18:57.443Z",
+      "missing": false
+    }
+  ]
+}

@@ -33,7 +33,7 @@
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-08T21:11:49.341Z",
+      "lastSeen": "2026-07-10T05:18:57.442Z",
       "missing": false,
       "notes": "live-proven wave-6: reflection controls round-trip /api/memory/config (probe-memcfg.json: 180000->300000 persisted). State enumerated by the cartographer shoot walk."
     },
@@ -67,7 +67,7 @@
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-08T21:11:49.341Z",
+      "lastSeen": "2026-07-10T05:18:57.442Z",
       "missing": false,
       "notes": "Live 78351f3e: state entered via openTerm(\"commander\"); familiarity \"21%\" backed by \"3 of 7 dimensions known\", 7 dimension sections, interview trigger. dossier.test.js locks summary()/familiarity/7-dims. Ev crew2-proof.json."
     },
@@ -106,7 +106,7 @@
         "fc9beb65"
       ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-08T21:11:49.341Z",
+      "lastSeen": "2026-07-10T05:18:57.442Z",
       "missing": false,
       "notes": "live-proven wave-6: .uiatlas/crew3-evidence/probe-02.json (18 builtins === 18 rendered .mkt-card seals; every class dossier shows its real kit power-words; custom create→delete round-trip)."
     },

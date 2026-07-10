@@ -16,6 +16,7 @@
       "name": "Proof authority",
       "dependsOn": [],
       "goal": "Make every later green verdict trustworthy and candidate-bound.",
+      "maxReceiptAgeMs": 86400000,
       "conditions": [
         "The installed smoke can pass only after attaching to a packaged Tauri desktop surface, never a browser fallback.",
         "The installed receipt derives its source identity from the running build and records a SHA-256 for the tested artifact; it never stamps ambient repository HEAD as the tested build.",
@@ -33,6 +34,7 @@
       "name": "Security and trust boundaries",
       "dependsOn": ["W0"],
       "goal": "Close every verified security and privacy escape at the boundary where it originates.",
+      "maxReceiptAgeMs": 86400000,
       "conditions": [
         "Agent child processes receive an explicit allowlisted environment and no ambient StarNet, provider, channel, or connector secret.",
         "The bundled Node runtime is a currently supported patched build and is proven by the packaged artifact.",
@@ -53,6 +55,7 @@
       "name": "Truthful product authority",
       "dependsOn": ["W1"],
       "goal": "Ensure every product status and capability claim comes from authoritative backend state.",
+      "maxReceiptAgeMs": 86400000,
       "conditions": [
         "Capability labels such as fullOffice reflect effective grants, not execution mode or account presence.",
         "Uplink health follows transport heartbeat/connection authority and remains live during a healthy idle stream.",
@@ -70,6 +73,7 @@
       "name": "Last-mile UI and recovery",
       "dependsOn": ["W2"],
       "goal": "Remove stranded interactions and prove the complete recovery path for user-owned work.",
+      "maxReceiptAgeMs": 86400000,
       "conditions": [
         "Export, backup, restore, OPEN, undo, and destructive-action recovery complete end to end with truthful feedback.",
         "Base-URL configuration and OAuth start, success, cancellation, denial, timeout, and retry paths are usable and recoverable.",
@@ -87,6 +91,7 @@
       "name": "Autonomy vision",
       "dependsOn": ["W3"],
       "goal": "Prove that the differentiating autonomy promises are coherent, controllable, and measurably real.",
+      "maxReceiptAgeMs": 86400000,
       "conditions": [
         "Signal synchronization has an observable source, conflict policy, recovery path, and live round-trip proof.",
         "Commander composition provides one coherent context/control surface without hidden split authority.",
@@ -104,6 +109,7 @@
       "name": "External integration reality",
       "dependsOn": ["W4"],
       "goal": "Make every advertised external integration demonstrably usable or honestly limited.",
+      "maxReceiptAgeMs": 86400000,
       "conditions": [
         "Each advertised provider, connector, channel, OAuth flow, and remote service has an attended real-credential success receipt and a failure/revocation receipt.",
         "Unavailable, partial, or untested integrations are visibly labeled experimental or unsupported at the point of use.",
@@ -120,6 +126,7 @@
       "name": "Full UI and backend behavioral proof",
       "dependsOn": ["W5"],
       "goal": "Prove every created UI surface and backend promise against the running product.",
+      "maxReceiptAgeMs": 21600000,
       "conditions": [
         "The Station Atlas is fresh on the candidate and reports perfected-fresh equal to total, with zero unmapped, mapped-only, audited-only, stale, or missing entries.",
         "Backend-only tools, persistence boundaries, desktop commands, integrations, and lifecycle promises not represented by the Atlas have explicit machine/live proof.",
@@ -137,6 +144,7 @@
       "name": "Frozen product-validation candidate",
       "dependsOn": ["W6"],
       "goal": "Validate one immutable desktop candidate long enough to justify the PRODUCT PERFECT verdict.",
+      "maxReceiptAgeMs": 3600000,
       "conditions": [
         "Every receipt names the same clean source commit, app version, packaged artifact SHA-256 values, and wave-definition hash.",
         "The frozen candidate completes at least 48 continuous hours of representative real-provider dogfood with no P0/P1, truth escape, data-loss event, wedged run, or unexplained sidecar death.",

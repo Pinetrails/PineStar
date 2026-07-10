@@ -32,7 +32,7 @@
         "e74ea483"
       ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-08T21:11:49.341Z",
+      "lastSeen": "2026-07-10T05:18:57.442Z",
       "missing": false,
       "notes": "Live-proven .uiatlas/work-evidence/probe-evidence.txt (bay opens via #bb-missions, SAVE A RECIPE editor opens, LAUNCH→RUN NOW created a NEW kind:task workstream \"Morning Brief\"). test/recipes.test.js guards fillTask/importRecipe/exportRecipe (the launch/round-trip primitives). NOTE: the UI button→dispatch seam itself is not journey-covered — see finding routed to work-recipes lane. [downgraded to AUDITED: a routed UI-seam coverage finding is attached — the store/route is guarded but the button→dispatch seam is not.]"
     },
@@ -74,7 +74,7 @@
         "5c6adcaa"
       ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-08T21:11:49.341Z",
+      "lastSeen": "2026-07-10T05:18:57.442Z",
       "missing": false,
       "notes": "Live-proven .uiatlas/work-evidence/probe-evidence.txt (preview server math, ADD ROUTINE→/api/cron created+enabled, active list renders with RUN NOW). cron.api/arm/run-now tests guard the routes the console drives. [downgraded to AUDITED: a routed UI-seam coverage finding is attached — the store/route is guarded but the button→dispatch seam is not.] [RE-PROVED @393e8cdb after sidecar/index.js moved (night-shift/cron NS-* commits): routines-preview ok + routines-add created(200,id,enabled) + routines-list GET /api/cron count 1 armed:false + routines-arm armedBefore:false→armedAfter:true — evidence .uiatlas/work2-evidence/cron-probe-evidence.txt]"
     },
@@ -110,7 +110,7 @@
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-08T21:11:49.341Z",
+      "lastSeen": "2026-07-10T05:18:57.442Z",
       "missing": false,
       "notes": "Live-proven .uiatlas/work-evidence/probe-evidence.txt (kb-add→kind:task TO DO, assign→IN PROGRESS, ship→SHIPPED). J1 (scripts/qa/journeys.mjs) guards the board-truth lifecycle: rows===kind:task store, RUNNING/DONE chip===Channels.isBusy, no chat session on the board."
     },

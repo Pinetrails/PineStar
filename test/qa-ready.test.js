@@ -7,9 +7,10 @@
    qa/ artifacts or run git (that is the IO shell's job). */
 'use strict';
 const A = require('./_assert.js');
+const crypto = require('crypto');
 const {
   evaluate, checkLedger, checkGuardian, checkJourneys, checkBeginner, checkInstalled,
-  freshness, humanAge, renderVerdict, DAY_MS, DEFAULTS,
+  freshness, humanAge, renderVerdict, verifyContentIdentity, DAY_MS, DEFAULTS,
 } = require('../scripts/qa/ready.mjs');
 const { makeLedger } = require('../scripts/qa/ledger.mjs');
 
@@ -18,20 +19,28 @@ const iso = (ms) => new Date(ms).toISOString();
 const FRESH = iso(NOW - 60 * 1000);         // 1 minute ago
 const STALE = iso(NOW - 26 * 60 * 60 * 1000); // 26h ago (> 24h window)
 const TRUNK = 'a'.repeat(40);
+const EXECUTABLE_IDENTITY = { sha256: 'b'.repeat(64), size: 123 };
+const EVIDENCE_BYTES = Buffer.from('installed smoke evidence', 'utf8');
+const EVIDENCE_IDENTITY = {
+  path: 'qa/installed/run/probe.json',
+  sha256: crypto.createHash('sha256').update(EVIDENCE_BYTES).digest('hex'),
+  size: EVIDENCE_BYTES.length
+};
 
 // A fully-GREEN artifact set + cfg, so each test perturbs exactly ONE thing.
 function greenArtifacts() {
   return {
     ledger: { ok: true, counts: { P0: 0, P1: 0, P2: 3 } },
     guardian: { stampIso: FRESH, trunkHead: TRUNK, result: 'green', gatesRan: ['test-fast', 'shoot', 'golden', 'audit', 'journeys'], gatesSkipped: [] },
-    journeys: { stampIso: FRESH, result: 'pass', passed: 120, total: 120 },
-    beginner: { stampIso: FRESH, result: 'PASS', mode: 'ui-only', totalMs: 84000 },
+    journeys: { stampIso: FRESH, trunkHead: TRUNK, result: 'pass', passed: 120, total: 120 },
+    beginner: { stampIso: FRESH, trunkHead: TRUNK, result: 'PASS', mode: 'ui-only', totalMs: 84000 },
     installed: {
       schemaVersion: 2, stampIso: iso(NOW - 2 * DAY_MS), expectedHead: TRUNK, buildCommit: TRUNK,
       buildDescribe: 'v0.3.0-1-gaaaaaaaa', buildDirty: false, appVersion: '0.3.0',
       sidecarHarness: 'v0.3.0-1-gaaaaaaaa', mode: 'desktop', origin: 'http://tauri.localhost',
-      artifact: { path: 'StarNet.exe', sha256: 'b'.repeat(64), size: 123 }, artifactVerified: true,
-      result: 'GREEN', evidence: ['x.png'], evidenceVerified: true
+      artifact: { path: 'StarNet.exe', sha256: EXECUTABLE_IDENTITY.sha256, size: EXECUTABLE_IDENTITY.size },
+      runtimeExecutable: EXECUTABLE_IDENTITY, artifactVerified: true,
+      result: 'GREEN', evidence: [EVIDENCE_IDENTITY], evidenceVerified: true
     },
   };
 }
@@ -75,6 +84,11 @@ function greenCfg() {
   arts2.guardian = { error: 'bad JSON' };
   const v2 = evaluate(arts2, greenCfg());
   A.eq(v2.ready, false, 'an unreadable guardian stamp -> NOT READY');
+
+  A.throws(() => makeLedger({ strictRead: true, io: { listFindings() { throw new Error('EACCES'); } } }),
+    'strict aggregate ledger propagates an unreadable findings store');
+  A.notThrows(() => makeLedger({ io: { listFindings() { throw new Error('EACCES'); } } }),
+    'non-aggregate detector lanes retain legacy fail-open ledger behavior');
 }
 
 /* ─── C. ledger P0/P1 counting: any open P0 or P1 blocks; P2-only passes ─── */
@@ -120,6 +134,15 @@ function greenCfg() {
   A.ok(/stale/.test(g.reason), 'the reason names staleness');
 }
 
+/* ---- D2. artifact/evidence bytes are reverified against their receipt identity ---- */
+{
+  A.eq(verifyContentIdentity(EVIDENCE_IDENTITY, EVIDENCE_BYTES).ok, true, 'unchanged evidence bytes match their receipt digest + size');
+  const tampered = Buffer.from('installed smoke evidence!', 'utf8');
+  A.eq(verifyContentIdentity(EVIDENCE_IDENTITY, tampered).ok, false, 'tampered evidence bytes fail closed');
+  A.eq(verifyContentIdentity(Object.assign({}, EVIDENCE_IDENTITY, { sha256: 'd'.repeat(64) }), EVIDENCE_BYTES).ok, false, 'wrong receipt SHA-256 fails closed');
+  A.eq(verifyContentIdentity(Object.assign({}, EVIDENCE_IDENTITY, { size: EVIDENCE_BYTES.length + 1 }), EVIDENCE_BYTES).ok, false, 'wrong receipt size fails closed');
+}
+
 /* ─── E. guardian: not-green, skipped gates, and trunk drift each block ─── */
 {
   const cfg = greenCfg();
@@ -143,22 +166,30 @@ function greenCfg() {
   // a git failure to compute drift is fail-closed.
   const errCfg = Object.assign(greenCfg(), { driftError: 'git rev-list failed' });
   A.eq(checkGuardian({ stampIso: FRESH, trunkHead: 'abc12345', result: 'green', gatesRan: ['test-fast', 'shoot', 'golden', 'audit', 'journeys'], gatesSkipped: [] }, errCfg).ok, false, 'a drift-compute error is fail-closed (NOT READY)');
+
+  const falseZero = Object.assign(greenCfg(), { trunkDrift: 0 });
+  A.eq(checkGuardian({ stampIso: FRESH, trunkHead: 'b'.repeat(40), result: 'green', gatesRan: ['test-fast', 'shoot', 'golden', 'audit', 'journeys'], gatesSkipped: [] }, falseZero).ok, false,
+    'a different guardian SHA cannot pass merely because one-way drift was zero');
 }
 
 /* ─── F. journeys + beginner + installed check semantics ─── */
 {
   const cfg = greenCfg();
-  A.eq(checkJourneys({ stampIso: FRESH, result: 'pass', passed: 5, total: 5 }, cfg).ok, true, 'fresh journeys pass -> ok');
+  A.eq(checkJourneys({ stampIso: FRESH, trunkHead: TRUNK, result: 'pass', passed: 5, total: 5 }, cfg).ok, true, 'fresh candidate-bound journeys pass -> ok');
   A.eq(checkJourneys({ stampIso: FRESH, result: 'blocked' }, cfg).ok, false, 'blocked journeys -> NOT READY');
   A.eq(checkJourneys({ stampIso: FRESH, result: 'fail' }, cfg).ok, false, 'failed journeys -> NOT READY');
-  A.eq(checkJourneys({ stampIso: STALE, result: 'pass' }, cfg).ok, false, 'a stale journeys pass -> NOT READY');
+  A.eq(checkJourneys({ stampIso: STALE, trunkHead: TRUNK, result: 'pass' }, cfg).ok, false, 'a stale journeys pass -> NOT READY');
+  A.eq(checkJourneys({ stampIso: FRESH, result: 'pass' }, cfg).ok, false, 'journeys missing candidate SHA -> NOT READY');
+  A.eq(checkJourneys({ stampIso: FRESH, trunkHead: 'b'.repeat(40), result: 'pass' }, cfg).ok, false, 'journeys on another candidate -> NOT READY');
 
-  A.eq(checkBeginner({ stampIso: FRESH, result: 'PASS', mode: 'ui-only' }, cfg).ok, true, 'fresh beginner PASS -> ok');
+  A.eq(checkBeginner({ stampIso: FRESH, trunkHead: TRUNK, result: 'PASS', mode: 'ui-only' }, cfg).ok, true, 'fresh candidate-bound beginner PASS -> ok');
   const stuck = checkBeginner({ stampIso: FRESH, result: 'STUCK@first-directive', mode: 'ui-only' }, cfg);
   A.eq(stuck.ok, false, 'a STUCK beginner run -> NOT READY');
   A.ok(/stuck/i.test(stuck.reason), 'the reason names the stuck fresh-user path');
   A.eq(checkBeginner({ stampIso: FRESH, result: 'FAIL' }, cfg).ok, false, 'a FAILED beginner run -> NOT READY');
-  A.eq(checkBeginner({ stampIso: STALE, result: 'PASS' }, cfg).ok, false, 'a stale beginner PASS -> NOT READY');
+  A.eq(checkBeginner({ stampIso: STALE, trunkHead: TRUNK, result: 'PASS' }, cfg).ok, false, 'a stale beginner PASS -> NOT READY');
+  A.eq(checkBeginner({ stampIso: FRESH, result: 'PASS' }, cfg).ok, false, 'beginner missing candidate SHA -> NOT READY');
+  A.eq(checkBeginner({ stampIso: FRESH, trunkHead: 'b'.repeat(40), result: 'PASS' }, cfg).ok, false, 'beginner on another candidate -> NOT READY');
 
   // installed uses the 7-day window, not 24h.
   const installed = greenArtifacts().installed;
@@ -168,7 +199,12 @@ function greenCfg() {
   A.eq(checkInstalled(Object.assign({}, installed, { stampIso: FRESH, result: 'BLOCKED' }), cfg).ok, false, 'a BLOCKED installed smoke -> NOT READY');
   A.eq(checkInstalled(Object.assign({}, installed, { mode: 'browser' }), cfg).ok, false, 'browser-mode installed receipt is rejected');
   A.eq(checkInstalled(Object.assign({}, installed, { buildCommit: 'c'.repeat(40) }), cfg).ok, false, 'binary built from another commit is rejected');
+  A.eq(checkInstalled(Object.assign({}, installed, { runtimeExecutable: null }), cfg).ok, false, 'missing runtime executable identity is rejected');
+  const differentRuntime = { sha256: 'd'.repeat(64), size: installed.artifact.size };
+  A.eq(checkInstalled(Object.assign({}, installed, { runtimeExecutable: differentRuntime }), cfg).ok, false, 'supplied artifact whose SHA-256 differs from the running executable is rejected');
+  A.eq(checkInstalled(Object.assign({}, installed, { runtimeExecutable: { sha256: installed.artifact.sha256, size: installed.artifact.size + 1 } }), cfg).ok, false, 'supplied artifact whose size differs from the running executable is rejected');
   A.eq(checkInstalled(Object.assign({}, installed, { artifactVerified: false }), cfg).ok, false, 'missing/mismatched artifact is rejected');
+  A.eq(checkInstalled(Object.assign({}, installed, { evidenceVerified: false, evidenceError: 'probe.json: file SHA-256 does not match receipt' }), cfg).ok, false, 'tampered content-bound evidence is rejected');
   A.eq(checkInstalled(Object.assign({}, installed, { schemaVersion: 1 }), cfg).ok, false, 'legacy installed receipt is rejected');
   A.ok(/installed app unverified/.test(checkInstalled({ missing: true }, cfg).reason), 'a missing installed smoke reads "installed app unverified"');
 }

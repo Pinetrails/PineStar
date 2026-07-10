@@ -9,8 +9,11 @@
  * value). Exit 0 ONLY when every check is READY.
  *
  * THE LAW IT ENFORCES (READY-GATE, docs/DECISIONS.md + .claude/skills/starnet-verify): no session,
- * report, or doc may claim StarNet is "ready", "perfect standing", or "go-public-able" without a
- * fresh `npm run qa:ready` receipt printed alongside the claim. Lane-level done stays lane-level.
+ * report, or doc may claim StarNet is release-ready / "ready" / "go-public-able" without a fresh
+ * `npm run qa:ready` receipt printed alongside the claim. Lane-level done stays lane-level.
+ * Scope boundary: READY is this five-check release-readiness aggregate only. It is not exhaustive
+ * product-perfection proof and must never be reported as `PRODUCT PERFECT`; that exact verdict is
+ * reserved to `npm run qa:product-perfect` after its candidate-bound W0–W7 campaign passes.
  *
  * THE FIVE CHECKS (each grounded in a real artifact; a check that CANNOT run is NOT READY — loud):
  *   1. ledger      — open P0/P1 findings == 0. Counted by the ledger's OWN authority
@@ -58,6 +61,24 @@ export const DEFAULTS = Object.freeze({
 
 function str(v) { return v == null ? '' : String(v); }
 function num(v) { return (typeof v === 'number' && isFinite(v)) ? v : 0; }
+
+// Verify bytes against a receipt identity without trusting a filename or prior stat result. The IO
+// shell uses this for both the supplied executable and every evidence file; tests can exercise the
+// tamper behavior with in-memory bytes.
+export function verifyContentIdentity(identity, contents) {
+  const sha256 = str(identity && identity.sha256).trim().toLowerCase();
+  const size = Number(identity && identity.size);
+  if (!identity || !/^[0-9a-f]{64}$/.test(sha256) || !Number.isSafeInteger(size) || size <= 0) {
+    return { ok: false, error: 'receipt identity is missing or invalid' };
+  }
+  let bytes;
+  try { bytes = Buffer.isBuffer(contents) ? contents : Buffer.from(contents); }
+  catch (_) { return { ok: false, error: 'file bytes are unreadable' }; }
+  if (bytes.length !== size) return { ok: false, error: 'file size does not match receipt' };
+  const observed = crypto.createHash('sha256').update(bytes).digest('hex');
+  if (observed !== sha256) return { ok: false, error: 'file SHA-256 does not match receipt' };
+  return { ok: true };
+}
 
 // Human-readable age for a receipt/reason string ("42s", "18m", "26h", "9d"). Coarse on purpose.
 export function humanAge(ms) {
@@ -128,6 +149,9 @@ export function checkGuardian(input, cfg) {
   if (cfg.driftError) return mk(false, 'could not verify the guardian saw current trunk: ' + str(cfg.driftError), value);
   const drift = num(cfg.trunkDrift);
   const maxDrift = cfg.maxTrunkDrift != null ? num(cfg.maxTrunkDrift) : DEFAULTS.maxTrunkDrift;
+  if (maxDrift === 0 && drift === 0 && str(input.trunkHead).toLowerCase() !== str(cfg.currentTrunk).toLowerCase()) {
+    return mk(false, 'guardian has not seen the exact current trunk (' + str(input.trunkHead).slice(0, 8) + ' vs ' + str(cfg.currentTrunk).slice(0, 8) + ')', value);
+  }
   if (drift > maxDrift) {
     return mk(false, 'guardian has not seen current trunk — it ran ' + drift + ' commit' + (drift === 1 ? '' : 's') + ' behind head (' + str(input.trunkHead).slice(0, 8) + ' vs ' + str(cfg.currentTrunk).slice(0, 8) + ')', value + ' behind by ' + drift);
   }
@@ -135,7 +159,7 @@ export function checkGuardian(input, cfg) {
 }
 
 // ---- CHECK 3: journeys last run == pass + fresh --------------------------------------------------
-// input: { missing?, error?, stampIso, result, passed, total, artifact? }
+// input: { missing?, error?, stampIso, trunkHead, result, passed, total, artifact? }
 export function checkJourneys(input, cfg) {
   input = input || {}; cfg = cfg || {};
   const artifact = input.artifact || 'qa/journeys-last-run.json';
@@ -146,13 +170,16 @@ export function checkJourneys(input, cfg) {
   const result = str(input.result).toLowerCase();
   const value = result.toUpperCase() + ' · ' + num(input.passed) + '/' + num(input.total) + ' assertions';
   if (result !== 'pass') return mk(false, 'last journeys run was ' + (result ? result.toUpperCase() : 'not a pass'), value);
+  if (!/^[0-9a-f]{40}$/i.test(str(input.trunkHead)) || str(input.trunkHead).toLowerCase() !== str(cfg.currentTrunk).toLowerCase()) {
+    return mk(false, 'journeys did not run on the exact current trunk (' + (str(input.trunkHead).slice(0, 8) || 'missing') + ' vs ' + str(cfg.currentTrunk).slice(0, 8) + ')', value);
+  }
   const fresh = freshness(input.stampIso, cfg.nowMs, cfg.maxStaleMs != null ? cfg.maxStaleMs : DEFAULTS.maxStaleMs);
   if (!fresh.ok) return mk(false, 'journeys run ' + fresh.reason, value);
   return mk(true, 'PASS, ' + fresh.reason, value);
 }
 
 // ---- CHECK 4: beginner run PASS (not STUCK/FAIL) + fresh -----------------------------------------
-// input: { missing?, error?, stampIso, result, mode, totalMs, stalledStep, artifact? }
+// input: { missing?, error?, stampIso, trunkHead, result, mode, totalMs, stalledStep, artifact? }
 export function checkBeginner(input, cfg) {
   input = input || {}; cfg = cfg || {};
   const artifact = input.artifact || 'qa/beginner-last-run.json';
@@ -167,6 +194,9 @@ export function checkBeginner(input, cfg) {
   if (up !== 'PASS') {
     const why = /^STUCK/.test(up) ? 'the fresh-user path is stuck (' + result + ')' : 'last Beginner Run result was ' + (result || 'not PASS');
     return mk(false, why, value);
+  }
+  if (!/^[0-9a-f]{40}$/i.test(str(input.trunkHead)) || str(input.trunkHead).toLowerCase() !== str(cfg.currentTrunk).toLowerCase()) {
+    return mk(false, 'Beginner Run did not run on the exact current trunk (' + (str(input.trunkHead).slice(0, 8) || 'missing') + ' vs ' + str(cfg.currentTrunk).slice(0, 8) + ')', value);
   }
   const fresh = freshness(input.stampIso, cfg.nowMs, cfg.maxStaleMs != null ? cfg.maxStaleMs : DEFAULTS.maxStaleMs);
   if (!fresh.ok) return mk(false, 'Beginner Run ' + fresh.reason, value);
@@ -203,7 +233,15 @@ export function checkInstalled(input, cfg) {
     return mk(false, 'installed app unverified — desktop shell and sidecar provenance disagree', value);
   }
   if (!input.artifact || !/^[0-9a-f]{64}$/i.test(str(input.artifact.sha256)) || !(Number(input.artifact.size) > 0)) {
-    return mk(false, 'installed app unverified — receipt has no hashed package artifact', value);
+    return mk(false, 'installed app unverified — receipt has no hashed executable artifact', value);
+  }
+  const runtimeSha256 = str(input.runtimeExecutable && input.runtimeExecutable.sha256).toLowerCase();
+  const runtimeSize = Number(input.runtimeExecutable && input.runtimeExecutable.size);
+  if (!/^[0-9a-f]{64}$/.test(runtimeSha256) || !Number.isSafeInteger(runtimeSize) || runtimeSize <= 0) {
+    return mk(false, 'installed app unverified — receipt has no runtime executable identity', value);
+  }
+  if (runtimeSha256 !== str(input.artifact.sha256).toLowerCase() || runtimeSize !== Number(input.artifact.size)) {
+    return mk(false, 'installed app unverified — supplied artifact does not equal the executable that was running', value);
   }
   if (input.artifactVerified !== true) return mk(false, 'installed app unverified — artifact path/hash could not be reverified' + (input.artifactError ? ': ' + str(input.artifactError) : ''), value);
   if (!Array.isArray(input.evidence) || input.evidence.length === 0 || input.evidenceVerified !== true) {
@@ -298,6 +336,7 @@ if (INVOKED_DIRECTLY) {
   const ledgerInput = (() => {
     try {
       const led = makeLedger({
+        strictRead: true,
         clock: { now: () => nowMs },
         io: {
           listFindings() {
@@ -353,22 +392,27 @@ if (INVOKED_DIRECTLY) {
   // ---- CHECK 3/4/5 inputs ----
   const jRead = readJsonMaybe(path.join(QA_DIR, 'journeys-last-run.json'));
   const journeysInput = jRead.missing ? { missing: true } : jRead.error ? { error: jRead.error }
-    : { stampIso: jRead.data.stampIso, result: jRead.data.result, passed: jRead.data.passed, total: jRead.data.total };
+    : { stampIso: jRead.data.stampIso, trunkHead: jRead.data.trunkHead, result: jRead.data.result, passed: jRead.data.passed, total: jRead.data.total };
 
   const bRead = readJsonMaybe(path.join(QA_DIR, 'beginner-last-run.json'));
   const beginnerInput = bRead.missing ? { missing: true } : bRead.error ? { error: bRead.error }
-    : { stampIso: bRead.data.stampIso, result: bRead.data.result, mode: bRead.data.mode, totalMs: bRead.data.totalMs, stalledStep: bRead.data.stalledStep };
+    : { stampIso: bRead.data.stampIso, trunkHead: bRead.data.trunkHead, result: bRead.data.result, mode: bRead.data.mode, totalMs: bRead.data.totalMs, stalledStep: bRead.data.stalledStep };
 
   const iRead = readJsonMaybe(path.join(QA_DIR, 'installed', 'last-smoke.json'));
   const verifyInstalledEvidence = (data) => {
     const evidence = Array.isArray(data && data.evidence) ? data.evidence : [];
-    if (!evidence.length) return { ok: false, error: 'no evidence paths' };
+    if (!evidence.length) return { ok: false, error: 'no content-bound evidence files' };
     for (const entry of evidence) {
-      const resolved = path.resolve(REPO, str(entry));
+      if (!entry || typeof entry !== 'object' || !str(entry.path)) return { ok: false, error: 'evidence identity missing or invalid' };
+      const resolved = path.resolve(REPO, str(entry.path));
       const rel = path.relative(REPO, resolved);
-      if (rel.startsWith('..') || path.isAbsolute(rel)) return { ok: false, error: 'evidence escapes repository: ' + str(entry) };
-      try { if (!fs.statSync(resolved).isFile()) return { ok: false, error: 'evidence is not a file: ' + str(entry) }; }
-      catch (_) { return { ok: false, error: 'evidence missing: ' + str(entry) }; }
+      if (rel.startsWith('..') || path.isAbsolute(rel)) return { ok: false, error: 'evidence escapes repository: ' + str(entry.path) };
+      try {
+        if (!fs.statSync(resolved).isFile()) return { ok: false, error: 'evidence is not a file: ' + str(entry.path) };
+        const proof = verifyContentIdentity(entry, fs.readFileSync(resolved));
+        if (!proof.ok) return { ok: false, error: str(entry.path) + ': ' + proof.error };
+      }
+      catch (_) { return { ok: false, error: 'evidence missing: ' + str(entry.path) }; }
     }
     return { ok: true };
   };
@@ -378,9 +422,9 @@ if (INVOKED_DIRECTLY) {
     try {
       const resolved = path.isAbsolute(str(artifact.path)) ? path.resolve(str(artifact.path)) : path.resolve(REPO, str(artifact.path));
       const stat = fs.statSync(resolved);
-      if (!stat.isFile() || stat.size !== Number(artifact.size)) return { ok: false, error: 'artifact size/path mismatch' };
-      const hash = crypto.createHash('sha256').update(fs.readFileSync(resolved)).digest('hex');
-      if (hash !== str(artifact.sha256).toLowerCase()) return { ok: false, error: 'artifact SHA-256 mismatch' };
+      if (!stat.isFile()) return { ok: false, error: 'artifact path is not a file' };
+      const proof = verifyContentIdentity(artifact, fs.readFileSync(resolved));
+      if (!proof.ok) return { ok: false, error: proof.error };
       return { ok: true };
     } catch (e) { return { ok: false, error: e && e.message || String(e) }; }
   };
@@ -399,6 +443,7 @@ if (INVOKED_DIRECTLY) {
         mode: iRead.data.mode,
         origin: iRead.data.origin,
         artifact: iRead.data.artifact,
+        runtimeExecutable: iRead.data.runtimeExecutable,
         result: iRead.data.result,
         evidence: iRead.data.evidence,
         notes: iRead.data.notes,

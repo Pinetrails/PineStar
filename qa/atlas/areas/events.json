@@ -34,7 +34,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-08T21:11:49.341Z",
+      "lastSeen": "2026-07-10T05:18:57.442Z",
       "missing": false
     },
     {
@@ -78,7 +78,7 @@
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-08T21:11:49.341Z",
+      "lastSeen": "2026-07-10T05:18:57.442Z",
       "missing": false,
       "notes": "[wave-7 final-a re-stale: re-proven via POST /api/run NDJSON chain on :8966. Evidence events-result.json.]"
     },
@@ -113,7 +113,7 @@
         "9c5ec90c"
       ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-08T21:11:49.341Z",
+      "lastSeen": "2026-07-10T05:18:57.442Z",
       "missing": false
     },
     {
@@ -159,7 +159,7 @@
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-08T21:11:49.341Z",
+      "lastSeen": "2026-07-10T05:18:57.442Z",
       "missing": false,
       "notes": "[wave-7 final-a re-stale: re-proven via POST /api/run NDJSON chain on :8966. Evidence events-result.json.]"
     },
@@ -197,7 +197,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-08T21:11:49.341Z",
+      "lastSeen": "2026-07-10T05:18:57.442Z",
       "missing": false
     },
     {
@@ -242,7 +242,7 @@
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-08T21:11:49.341Z",
+      "lastSeen": "2026-07-10T05:18:57.442Z",
       "missing": false,
       "notes": "[wave-7 final-a re-stale: re-proven via POST /api/run NDJSON chain on :8966. Evidence events-result.json.]"
     },
@@ -284,7 +284,7 @@
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-08T21:11:49.341Z",
+      "lastSeen": "2026-07-10T05:18:57.442Z",
       "missing": false,
       "notes": "[wave-7 final-a re-stale: re-proven via POST /api/run NDJSON chain on :8966. Evidence events-result.json.]"
     },
@@ -321,7 +321,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-08T21:11:49.341Z",
+      "lastSeen": "2026-07-10T05:18:57.442Z",
       "missing": false
     },
     {
@@ -357,7 +357,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-08T21:11:49.341Z",
+      "lastSeen": "2026-07-10T05:18:57.442Z",
       "missing": false
     },
     {
@@ -391,7 +391,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-08T21:11:49.341Z",
+      "lastSeen": "2026-07-10T05:18:57.442Z",
       "missing": false
     },
     {
@@ -426,7 +426,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-08T21:11:49.341Z",
+      "lastSeen": "2026-07-10T05:18:57.442Z",
       "missing": false
     },
     {
@@ -461,7 +461,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-08T21:11:49.341Z",
+      "lastSeen": "2026-07-10T05:18:57.442Z",
       "missing": false
     },
     {
@@ -495,7 +495,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-08T21:11:49.341Z",
+      "lastSeen": "2026-07-10T05:18:57.442Z",
       "missing": false
     },
     {
@@ -530,7 +530,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-08T21:11:49.341Z",
+      "lastSeen": "2026-07-10T05:18:57.442Z",
       "missing": false
     },
     {
@@ -564,7 +564,7 @@
         "9c5ec90c"
       ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-08T21:11:49.341Z",
+      "lastSeen": "2026-07-10T05:18:57.442Z",
       "missing": false
     },
     {
@@ -597,7 +597,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-08T21:11:49.341Z",
+      "lastSeen": "2026-07-10T05:18:57.442Z",
       "missing": false
     },
     {
@@ -631,7 +631,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-08T21:11:49.341Z",
+      "lastSeen": "2026-07-10T05:18:57.442Z",
       "missing": false
     },
     {
@@ -664,7 +664,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-08T21:11:49.341Z",
+      "lastSeen": "2026-07-10T05:18:57.442Z",
       "missing": false
     },
     {
@@ -698,7 +698,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-08T21:11:49.341Z",
+      "lastSeen": "2026-07-10T05:18:57.442Z",
       "missing": false
     },
     {
@@ -735,7 +735,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-08T21:11:49.341Z",
+      "lastSeen": "2026-07-10T05:18:57.442Z",
       "missing": false
     },
     {
@@ -771,7 +771,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-08T21:11:49.341Z",
+      "lastSeen": "2026-07-10T05:18:57.442Z",
       "missing": false
     },
     {
@@ -805,7 +805,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-08T21:11:49.341Z",
+      "lastSeen": "2026-07-10T05:18:57.442Z",
       "missing": false
     },
     {
@@ -838,7 +838,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-08T21:11:49.341Z",
+      "lastSeen": "2026-07-10T05:18:57.442Z",
       "missing": false
     },
     {
@@ -872,7 +872,7 @@
         "9c5ec90c"
       ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-08T21:11:49.341Z",
+      "lastSeen": "2026-07-10T05:18:57.442Z",
       "missing": false
     },
     {
@@ -913,7 +913,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-08T21:11:49.341Z",
+      "lastSeen": "2026-07-10T05:18:57.442Z",
       "missing": false
     },
     {
@@ -948,7 +948,7 @@
         "1019f6e1"
       ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-08T21:11:49.341Z",
+      "lastSeen": "2026-07-10T05:18:57.442Z",
       "missing": false
     },
     {
@@ -982,7 +982,7 @@
         "9c5ec90c"
       ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-08T21:11:49.341Z",
+      "lastSeen": "2026-07-10T05:18:57.442Z",
       "missing": false
     },
     {
@@ -1016,7 +1016,7 @@
         "9c5ec90c"
       ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-08T21:11:49.341Z",
+      "lastSeen": "2026-07-10T05:18:57.442Z",
       "missing": false
     },
     {
@@ -1049,7 +1049,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-08T21:11:49.341Z",
+      "lastSeen": "2026-07-10T05:18:57.442Z",
       "missing": false
     },
     {
@@ -1083,7 +1083,7 @@
         "9c5ec90c"
       ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-08T21:11:49.341Z",
+      "lastSeen": "2026-07-10T05:18:57.442Z",
       "missing": false
     },
     {
@@ -1121,7 +1121,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-08T21:11:49.341Z",
+      "lastSeen": "2026-07-10T05:18:57.442Z",
       "missing": false
     },
     {
@@ -1156,7 +1156,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-08T21:11:49.341Z",
+      "lastSeen": "2026-07-10T05:18:57.442Z",
       "missing": false
     },
     {
@@ -1190,7 +1190,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-08T21:11:49.341Z",
+      "lastSeen": "2026-07-10T05:18:57.442Z",
       "missing": false
     },
     {
@@ -1224,7 +1224,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-08T21:11:49.341Z",
+      "lastSeen": "2026-07-10T05:18:57.442Z",
       "missing": false
     },
     {
@@ -1259,7 +1259,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-08T21:11:49.341Z",
+      "lastSeen": "2026-07-10T05:18:57.442Z",
       "missing": false
     },
     {
@@ -1296,7 +1296,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-08T21:11:49.341Z",
+      "lastSeen": "2026-07-10T05:18:57.442Z",
       "missing": false
     },
     {
@@ -1330,7 +1330,7 @@
         "9c5ec90c"
       ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-08T21:11:49.341Z",
+      "lastSeen": "2026-07-10T05:18:57.442Z",
       "missing": false
     },
     {
@@ -1364,7 +1364,7 @@
         "9c5ec90c"
       ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-08T21:11:49.341Z",
+      "lastSeen": "2026-07-10T05:18:57.442Z",
       "missing": false
     },
     {
@@ -1398,7 +1398,7 @@
         "9c5ec90c"
       ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-08T21:11:49.341Z",
+      "lastSeen": "2026-07-10T05:18:57.442Z",
       "missing": false
     },
     {
@@ -1432,7 +1432,7 @@
         "9c5ec90c"
       ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-08T21:11:49.341Z",
+      "lastSeen": "2026-07-10T05:18:57.442Z",
       "missing": false
     },
     {
@@ -1466,7 +1466,7 @@
         "9c5ec90c"
       ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-08T21:11:49.341Z",
+      "lastSeen": "2026-07-10T05:18:57.442Z",
       "missing": false
     },
     {
@@ -1500,7 +1500,7 @@
         "9c5ec90c"
       ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-08T21:11:49.341Z",
+      "lastSeen": "2026-07-10T05:18:57.442Z",
       "missing": false
     },
     {
@@ -1536,7 +1536,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-08T21:11:49.341Z",
+      "lastSeen": "2026-07-10T05:18:57.442Z",
       "missing": false
     },
     {
@@ -1571,7 +1571,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-08T21:11:49.341Z",
+      "lastSeen": "2026-07-10T05:18:57.442Z",
       "missing": false
     },
     {
@@ -1607,7 +1607,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-08T21:11:49.341Z",
+      "lastSeen": "2026-07-10T05:18:57.442Z",
       "missing": false
     },
     {
@@ -1641,7 +1641,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-08T21:11:49.341Z",
+      "lastSeen": "2026-07-10T05:18:57.442Z",
       "missing": false
     },
     {
@@ -1675,7 +1675,7 @@
         "9c5ec90c"
       ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-08T21:11:49.341Z",
+      "lastSeen": "2026-07-10T05:18:57.442Z",
       "missing": false
     },
     {
@@ -1709,7 +1709,7 @@
         "9c5ec90c"
       ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-08T21:11:49.341Z",
+      "lastSeen": "2026-07-10T05:18:57.442Z",
       "missing": false
     },
     {
@@ -1743,7 +1743,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-08T21:11:49.341Z",
+      "lastSeen": "2026-07-10T05:18:57.442Z",
       "missing": false
     },
     {
@@ -1777,7 +1777,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-08T21:11:49.341Z",
+      "lastSeen": "2026-07-10T05:18:57.442Z",
       "missing": false
     },
     {
@@ -1811,7 +1811,7 @@
         "9c5ec90c"
       ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-08T21:11:49.341Z",
+      "lastSeen": "2026-07-10T05:18:57.442Z",
       "missing": false
     },
     {
@@ -1846,7 +1846,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-08T21:11:49.341Z",
+      "lastSeen": "2026-07-10T05:18:57.442Z",
       "missing": false
     },
     {
@@ -1879,7 +1879,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-08T21:11:49.341Z",
+      "lastSeen": "2026-07-10T05:18:57.442Z",
       "missing": false
     },
     {
@@ -1913,7 +1913,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-08T21:11:49.341Z",
+      "lastSeen": "2026-07-10T05:18:57.442Z",
       "missing": false
     },
     {
@@ -1947,7 +1947,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-08T21:11:49.341Z",
+      "lastSeen": "2026-07-10T05:18:57.442Z",
       "missing": false
     },
     {
@@ -1981,7 +1981,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-08T21:11:49.341Z",
+      "lastSeen": "2026-07-10T05:18:57.442Z",
       "missing": false
     },
     {
@@ -2015,7 +2015,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-08T21:11:49.341Z",
+      "lastSeen": "2026-07-10T05:18:57.442Z",
       "missing": false
     },
     {
@@ -2048,7 +2048,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-08T21:11:49.341Z",
+      "lastSeen": "2026-07-10T05:18:57.442Z",
       "missing": false
     },
     {
@@ -2081,7 +2081,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-08T21:11:49.341Z",
+      "lastSeen": "2026-07-10T05:18:57.442Z",
       "missing": false
     },
     {
@@ -2115,7 +2115,7 @@
         "9c5ec90c"
       ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-08T21:11:49.341Z",
+      "lastSeen": "2026-07-10T05:18:57.442Z",
       "missing": false
     }
   ]

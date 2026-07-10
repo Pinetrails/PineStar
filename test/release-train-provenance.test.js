@@ -24,6 +24,13 @@ const root = path.join(__dirname, '..');
 const yml = fs.readFileSync(path.join(root, '.github', 'workflows', 'release-train.yml'), 'utf8');
 const buildRs = fs.readFileSync(path.join(root, 'src-tauri', 'build.rs'), 'utf8');
 const mainRs = fs.readFileSync(path.join(root, 'src-tauri', 'src', 'main.rs'), 'utf8');
+const tauriConf = JSON.parse(fs.readFileSync(path.join(root, 'src-tauri', 'tauri.conf.json'), 'utf8'));
+
+function rustStringArray(name) {
+  const match = buildRs.match(new RegExp(`const ${name}: &\\[&str\\] = &\\[([\\s\\S]*?)\\];`));
+  A.ok(match, `build.rs declares ${name}`);
+  return Array.from(match[1].matchAll(/"([^"]+)"/g), row => row[1].replace(/\\\\/g, '/'));
+}
 
 // --- isolate the `build` job block (from its header to the next top-level job header) ---
 const hdr = yml.match(/^  build:$/m);
@@ -59,6 +66,33 @@ const ymlFlags = (ymlDescribe[1].match(/--[a-z]+/g) || []).sort();
 A.eq(ymlFlags, rsFlags,
   'yml and build.rs `git describe` use the same flag set (identical describe output feeds the gate)');
 
+// Cargo must invalidate build.rs for every path whose bytes can reach the packaged app. Watching only
+// .git/HEAD and .git/index misses ordinary unstaged edits because neither Git metadata file changes.
+const watchedInputs = rustStringArray('SHIPPED_INPUTS');
+const configuredResourceRoots = [tauriConf.build.frontendDist, ...Object.keys(tauriConf.bundle.resources)];
+const requiredInputs = [
+  ...configuredResourceRoots,
+  'src', 'capabilities', 'icons', 'installer', 'binaries',
+  'build.rs', 'Cargo.toml', 'Cargo.lock', 'tauri.conf.json'
+];
+for (const input of new Set(requiredInputs)) {
+  A.ok(watchedInputs.includes(input), `build.rs reruns when shipped input changes: ${input}`);
+}
+A.ok(/for path in SHIPPED_INPUTS[\s\S]*cargo:rerun-if-changed=\{path\}/.test(buildRs),
+  'every declared shipped input is emitted as a Cargo rerun dependency');
+
+// `git describe --dirty` ignores untracked files. Lock the supplemental status check to the same
+// top-level Git roots that tauri.conf packages, so a newly added shipped file cannot claim clean provenance.
+const shippedGitRoots = rustStringArray('SHIPPED_GIT_ROOTS');
+A.eq(shippedGitRoots, ['frontend', 'sidecar', 'shared', 'src-tauri'],
+  'dirty detection covers every Git-owned packaged root');
+A.ok(/"-C",\s*"\.\."/.test(buildRs) && /--porcelain=v1/.test(buildRs) && /--untracked-files=normal/.test(buildRs) && /cmd\.args\(SHIPPED_GIT_ROOTS\)/.test(buildRs),
+  'dirty detection includes unstaged and untracked shipped inputs');
+A.ok(/describe_dirty\s*\|\|\s*shipped_inputs_dirty\(\)\.unwrap_or\(false\)/.test(buildRs),
+  'the embedded dirty bit combines git-describe truth with shipped-root status');
+A.ok(/rev-parse",\s*"--git-path"/.test(buildRs),
+  'Git metadata rerun paths resolve correctly in both primary checkouts and linked worktrees');
+
 // Installed proof needs the full immutable candidate SHA, not only the human-facing short commit.
 A.ok(/rev-parse",\s*"HEAD/.test(buildRs) && /STARNET_BUILD_SHA/.test(buildRs),
   'build.rs embeds a full candidate SHA for installed-artifact proof');
@@ -66,5 +100,9 @@ A.ok(/\.env\("STARNET_BUILD_SHA",\s*env!\("STARNET_BUILD_SHA"\)\)/.test(mainRs),
   'desktop shell passes the full build SHA to the packaged sidecar');
 A.ok(/sha:\s*env!\("STARNET_BUILD_SHA"\)/.test(mainRs),
   'starnet_build_info exposes the same full build SHA to the installed page');
+A.ok(/std::env::current_exe\(\)/.test(mainRs) && /Sha256::new\(\)/.test(mainRs),
+  'desktop shell derives content identity from the executable that is actually running');
+A.ok(/rename\s*=\s*"executableSha256"/.test(mainRs) && /rename\s*=\s*"executableSize"/.test(mainRs),
+  'starnet_build_info exposes runtime executable SHA-256 + size without exposing its path');
 
 A.report('release-train-provenance.test');
