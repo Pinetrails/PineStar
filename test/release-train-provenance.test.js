@@ -100,5 +100,9 @@ A.ok(/\.env\("STARNET_BUILD_SHA",\s*env!\("STARNET_BUILD_SHA"\)\)/.test(mainRs),
   'desktop shell passes the full build SHA to the packaged sidecar');
 A.ok(/sha:\s*env!\("STARNET_BUILD_SHA"\)/.test(mainRs),
   'starnet_build_info exposes the same full build SHA to the installed page');
+A.ok(/std::env::current_exe\(\)/.test(mainRs) && /Sha256::new\(\)/.test(mainRs),
+  'desktop shell derives content identity from the executable that is actually running');
+A.ok(/rename\s*=\s*"executableSha256"/.test(mainRs) && /rename\s*=\s*"executableSize"/.test(mainRs),
+  'starnet_build_info exposes runtime executable SHA-256 + size without exposing its path');
 
 A.report('release-train-provenance.test');

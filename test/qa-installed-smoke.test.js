@@ -7,6 +7,7 @@
    comes from the injected clock, never Date.now(). */
 'use strict';
 const A = require('./_assert.js');
+const crypto = require('crypto');
 const {
   RESULTS, SMOKE_CREW, SMOKE_PROBE, STAMP_SCHEMA, REQUIRED_CHECKS,
   classifyResult, normalizeStamp, validateStamp, buildFinding, makeSmoke
@@ -16,6 +17,8 @@ const ISO = '2026-07-07T12:00:00.000Z';
 const clock = { nowIso: () => ISO };
 const SHA = 'a'.repeat(40);
 const ARTIFACT = { path: 'C:/Program Files/StarNet/StarNet.exe', sha256: 'b'.repeat(64), size: 123456 };
+const RUNTIME_EXECUTABLE = { sha256: ARTIFACT.sha256, size: ARTIFACT.size };
+const EVIDENCE = { path: 'qa/installed/run/probe.json', sha256: 'c'.repeat(64), size: 321 };
 
 // a fake io that records everything into inspectable arrays (no disk).
 function memIo() {
@@ -23,7 +26,13 @@ function memIo() {
   return {
     evidence, stamps, findings, logs,
     log: (...a) => logs.push(a.join(' ')),
-    writeEvidence(name, text) { const p = 'qa/installed/run/' + name; evidence.push({ name, text, path: p }); return p; },
+    writeEvidence(name, text) {
+      const p = 'qa/installed/run/' + name;
+      const bytes = Buffer.from(text, 'utf8');
+      const proof = { path: p, sha256: crypto.createHash('sha256').update(bytes).digest('hex'), size: bytes.length };
+      evidence.push({ name, text, proof });
+      return proof;
+    },
     writeStamp(obj) { stamps.push(obj); return 'qa/installed/last-smoke.json'; },
     readStamp() { return stamps.length ? stamps[stamps.length - 1] : null; },
     fileFinding(f) { findings.push(f); return true; }
@@ -39,11 +48,15 @@ const GREEN_PROBE = {
   appVersion: '0.3.0', appSource: 'env', harness: 'v0.3.0-1-gaaaaaaaa',
   sidecarBuildSha: SHA, sidecarBuildDirty: false,
   mode: 'desktop', origin: 'http://tauri.localhost',
-  shell: { version: '0.3.0', commit: 'aaaaaaaa', sha: SHA, describe: 'v0.3.0-1-gaaaaaaaa', dirty: false },
+  shell: {
+    version: '0.3.0', commit: 'aaaaaaaa', sha: SHA, describe: 'v0.3.0-1-gaaaaaaaa', dirty: false,
+    executableSha256: RUNTIME_EXECUTABLE.sha256, executableSize: RUNTIME_EXECUTABLE.size
+  },
   bootSane: true,
   checks: [
     { name: 'desktop/tauri-origin', ok: true, detail: 'ok' },
     { name: 'desktop/build-info', ok: true, detail: 'ok' },
+    { name: 'desktop/executable-identity', ok: true, detail: 'ok' },
     { name: 'boot/api-token-present', ok: true, detail: 'ok' },
     { name: 'version/app-nonblank', ok: true, detail: 'app=0.3.0' },
     { name: 'boot/world-present', ok: true, detail: 'canvas' },
@@ -68,7 +81,8 @@ const GREEN_PROBE = {
   A.ok(!/Authorization/i.test(SMOKE_PROBE), 'SMOKE_PROBE sends NO Authorization header (it trips the packaged build cross-origin preflight)');
   A.ok(!/Bearer/.test(SMOKE_PROBE), 'SMOKE_PROBE uses NO Bearer scheme (the sidecar rejects Bearer as forbidden token)');
   A.ok(/starnet_build_info/.test(SMOKE_PROBE), 'SMOKE_PROBE obtains source identity from the running Tauri binary');
-  A.ok(REQUIRED_CHECKS.includes('desktop/tauri-origin') && REQUIRED_CHECKS.includes('desktop/build-info'), 'desktop identity assertions are mandatory');
+  A.ok(/executableSha256/.test(SMOKE_PROBE) && /executableSize/.test(SMOKE_PROBE), 'SMOKE_PROBE obtains content identity from the running executable');
+  A.ok(REQUIRED_CHECKS.includes('desktop/tauri-origin') && REQUIRED_CHECKS.includes('desktop/build-info') && REQUIRED_CHECKS.includes('desktop/executable-identity'), 'desktop source + executable identity assertions are mandatory');
 }
 
 /* ---- A. classifyResult encodes the no-fake-green order ---- */
@@ -80,33 +94,37 @@ const GREEN_PROBE = {
   A.eq(classifyResult(Object.assign({}, proven, { mode: 'browser' })), RESULTS.BLOCKED, 'browser fallback can never produce installed GREEN');
   A.eq(classifyResult(Object.assign({}, proven, { shell: Object.assign({}, proven.shell, { dirty: true }) })), RESULTS.BLOCKED, 'dirty packaged build is BLOCKED');
   A.eq(classifyResult(Object.assign({}, proven, { expectedHead: 'c'.repeat(40) })), RESULTS.BLOCKED, 'wrong candidate build is BLOCKED');
+  A.eq(classifyResult(Object.assign({}, proven, { artifact: Object.assign({}, ARTIFACT, { sha256: 'd'.repeat(64) }) })), RESULTS.BLOCKED, 'a supplied artifact with different bytes is BLOCKED');
+  A.eq(classifyResult(Object.assign({}, proven, { artifact: Object.assign({}, ARTIFACT, { size: ARTIFACT.size + 1 }) })), RESULTS.BLOCKED, 'a supplied artifact with different size is BLOCKED');
+  A.eq(classifyResult(Object.assign({}, proven, { shell: Object.assign({}, proven.shell, { executableSha256: '' }) })), RESULTS.BLOCKED, 'missing runtime executable identity is BLOCKED');
   A.eq(classifyResult(Object.assign({}, proven, { checks: proven.checks.slice(1) })), RESULTS.BLOCKED, 'missing required assertion is BLOCKED');
   A.eq(classifyResult(Object.assign({}, proven, { checks: proven.checks.map(c => c.name === 'board/no-forever-running' ? { name: c.name, ok: false } : c) })), RESULTS.RED, 'exact build with a failed assertion -> RED');
 }
 
 /* ---- B. normalizeStamp coerces to the exact contract shape; unknown result clamps to BLOCKED ---- */
 {
-  const s = normalizeStamp({ expectedHead: SHA, buildCommit: SHA, buildDescribe: 'v0.3.0', buildDirty: false, appVersion: ' 0.3.0 ', sidecarHarness: 'v0.3.0', mode: 'desktop', origin: 'http://tauri.localhost', artifact: ARTIFACT, result: 'GREEN', evidence: ['a', '  ', 'b'], notes: ' hi ' }, { clock });
+  const s = normalizeStamp({ expectedHead: SHA, buildCommit: SHA, buildDescribe: 'v0.3.0', buildDirty: false, appVersion: ' 0.3.0 ', sidecarHarness: 'v0.3.0', mode: 'desktop', origin: 'http://tauri.localhost', artifact: ARTIFACT, runtimeExecutable: RUNTIME_EXECUTABLE, result: 'GREEN', evidence: [EVIDENCE, 'legacy-path-only.json'], notes: ' hi ' }, { clock });
   A.eq(s.schemaVersion, STAMP_SCHEMA, 'stamp carries the v2 schema');
   A.eq(s.stampIso, ISO, 'stampIso stamped from the injected clock');
   A.eq(s.appVersion, '0.3.0', 'appVersion trimmed');
   A.eq(s.expectedHead, SHA, 'explicit expected candidate is preserved');
   A.eq(s.buildCommit, SHA, 'observed binary commit is separate and preserved');
   A.eq(s.result, 'GREEN', 'valid result kept');
-  A.eq(s.evidence, ['a', 'b'], 'evidence trimmed + blanks dropped');
+  A.eq(s.evidence, [EVIDENCE], 'only content-bound evidence entries survive normalization');
+  A.eq(s.runtimeExecutable, RUNTIME_EXECUTABLE, 'receipt records content identity reported by the running executable');
   A.eq(s.notes, 'hi', 'notes trimmed');
   // exact key set the ready-gate reads — no extra/missing keys.
-  A.eq(Object.keys(s).sort(), ['appVersion', 'artifact', 'buildCommit', 'buildDescribe', 'buildDirty', 'evidence', 'expectedHead', 'mode', 'notes', 'origin', 'result', 'schemaVersion', 'sidecarHarness', 'stampIso'], 'stamp has exactly the v2 contract keys');
+  A.eq(Object.keys(s).sort(), ['appVersion', 'artifact', 'buildCommit', 'buildDescribe', 'buildDirty', 'evidence', 'expectedHead', 'mode', 'notes', 'origin', 'result', 'runtimeExecutable', 'schemaVersion', 'sidecarHarness', 'stampIso'], 'stamp has exactly the v2 contract keys');
   // an unknown/blank result is clamped to BLOCKED (never silently "" or GREEN).
   A.eq(normalizeStamp({ result: 'WAT' }, { clock }).result, RESULTS.BLOCKED, 'unknown result clamps to BLOCKED');
   A.eq(normalizeStamp({}, { clock }).result, RESULTS.BLOCKED, 'missing result clamps to BLOCKED');
-  // a lone evidence string coerces to a one-element array.
-  A.eq(normalizeStamp({ evidence: 'only.json' }, { clock }).evidence, ['only.json'], 'string evidence -> one-element array');
+  // a legacy path-only entry cannot become trusted evidence without content identity.
+  A.eq(normalizeStamp({ evidence: 'only.json' }, { clock }).evidence, [], 'path-only evidence is dropped rather than trusted');
 }
 
 /* ---- C. validateStamp accepts a well-formed stamp and rejects each contract violation ---- */
 {
-  const good = normalizeStamp({ expectedHead: SHA, buildCommit: SHA, buildDescribe: 'v0.3.0', buildDirty: false, appVersion: '0.3.0', sidecarHarness: 'v0.3.0', mode: 'desktop', origin: 'http://tauri.localhost', artifact: ARTIFACT, result: 'GREEN', evidence: ['e.json'], notes: 'n' }, { clock });
+  const good = normalizeStamp({ expectedHead: SHA, buildCommit: SHA, buildDescribe: 'v0.3.0', buildDirty: false, appVersion: '0.3.0', sidecarHarness: 'v0.3.0', mode: 'desktop', origin: 'http://tauri.localhost', artifact: ARTIFACT, runtimeExecutable: RUNTIME_EXECUTABLE, result: 'GREEN', evidence: [EVIDENCE], notes: 'n' }, { clock });
   A.eq(validateStamp(good).ok, true, 'a well-formed GREEN stamp validates');
   A.eq(validateStamp({}).ok, false, 'empty object fails validation');
   A.eq(validateStamp(null).ok, false, 'null fails validation');
@@ -115,8 +133,11 @@ const GREEN_PROBE = {
   A.ok(validateStamp(Object.assign({}, good, { appVersion: '' })).errors.some(e => /appVersion/.test(e)), 'GREEN without appVersion is a lie -> flagged');
   A.ok(validateStamp(Object.assign({}, good, { evidence: [] })).errors.some(e => /evidence/.test(e)), 'GREEN without evidence is flagged');
   A.ok(validateStamp(Object.assign({}, good, { mode: 'browser' })).errors.some(e => /desktop/.test(e)), 'browser-mode GREEN is invalid');
+  A.ok(validateStamp(Object.assign({}, good, { runtimeExecutable: null })).errors.some(e => /runtime executable/.test(e)), 'GREEN without runtime executable identity is invalid');
+  A.ok(validateStamp(Object.assign({}, good, { runtimeExecutable: { sha256: 'd'.repeat(64), size: ARTIFACT.size } })).errors.some(e => /must equal/.test(e)), 'GREEN whose supplied artifact differs from the runtime executable is invalid');
+  A.ok(validateStamp(Object.assign({}, good, { evidence: [{ path: 'e.json', sha256: 'x', size: 1 }] })).errors.some(e => /evidence entries/.test(e)), 'evidence without a valid digest is invalid');
   // a BLOCKED stamp with a blank appVersion is legitimately valid (that's exactly what BLOCKED means).
-  const blocked = normalizeStamp({ result: 'BLOCKED', evidence: ['e'], notes: 'n' }, { clock });
+  const blocked = normalizeStamp({ result: 'BLOCKED', evidence: [EVIDENCE], notes: 'n' }, { clock });
   A.eq(validateStamp(blocked).ok, true, 'BLOCKED with blank identity is a valid v2 receipt');
 }
 
@@ -127,7 +148,7 @@ const GREEN_PROBE = {
   A.eq(b.crew, SMOKE_CREW, 'finding is filed under the smoke crew');
   A.ok(b.evidence.length >= 1, 'BLOCKED finding still carries an evidence path (stamp fallback)');
   A.ok(/BLOCKED/.test(b.title), 'BLOCKED title says so');
-  const r = buildFinding(RESULTS.RED, 'appVersion=0.3.0 checks 5/6 pass', [{ name: 'board/no-forever-running', detail: 'stuck: w1' }], ['qa/installed/run/probe.json'], 'qa/installed/last-smoke.json');
+  const r = buildFinding(RESULTS.RED, 'appVersion=0.3.0 checks 5/6 pass', [{ name: 'board/no-forever-running', detail: 'stuck: w1' }], [EVIDENCE], 'qa/installed/last-smoke.json');
   A.eq(r.severity, 'P1', 'RED finding is P1');
   A.ok(/board\/no-forever-running/.test(r.subject), 'RED subject names the failed assertion (stable fingerprint)');
   A.eq(r.evidence, ['qa/installed/run/probe.json'], 'RED finding uses the real probe evidence');
@@ -177,6 +198,9 @@ const GREEN_PROBE = {
   A.eq(io4.stamps[0].result, RESULTS.GREEN, 'stamp reads GREEN');
   A.eq(validateStamp(io4.stamps[0]).ok, true, 'the GREEN stamp is a valid contract object');
   A.ok(io4.stamps[0].evidence.length >= 1, 'GREEN stamp carries the probe evidence');
+  A.eq(io4.stamps[0].runtimeExecutable, RUNTIME_EXECUTABLE, 'GREEN stamp binds the artifact to the executable that answered the probe');
+  A.eq(io4.stamps[0].artifact.sha256, io4.stamps[0].runtimeExecutable.sha256, 'GREEN receipt records exact artifact/runtime SHA-256 equality');
+  A.eq(io4.stamps[0].artifact.size, io4.stamps[0].runtimeExecutable.size, 'GREEN receipt records exact artifact/runtime size equality');
   A.eq(io4.findings.length, 0, 'a GREEN run files NO ledger finding (nothing to report)');
 
   /* ---- I. makeSmoke: attach ok but the in-page probe throws -> BLOCKED (proved nothing) ---- */

@@ -62,6 +62,24 @@ export const DEFAULTS = Object.freeze({
 function str(v) { return v == null ? '' : String(v); }
 function num(v) { return (typeof v === 'number' && isFinite(v)) ? v : 0; }
 
+// Verify bytes against a receipt identity without trusting a filename or prior stat result. The IO
+// shell uses this for both the supplied executable and every evidence file; tests can exercise the
+// tamper behavior with in-memory bytes.
+export function verifyContentIdentity(identity, contents) {
+  const sha256 = str(identity && identity.sha256).trim().toLowerCase();
+  const size = Number(identity && identity.size);
+  if (!identity || !/^[0-9a-f]{64}$/.test(sha256) || !Number.isSafeInteger(size) || size <= 0) {
+    return { ok: false, error: 'receipt identity is missing or invalid' };
+  }
+  let bytes;
+  try { bytes = Buffer.isBuffer(contents) ? contents : Buffer.from(contents); }
+  catch (_) { return { ok: false, error: 'file bytes are unreadable' }; }
+  if (bytes.length !== size) return { ok: false, error: 'file size does not match receipt' };
+  const observed = crypto.createHash('sha256').update(bytes).digest('hex');
+  if (observed !== sha256) return { ok: false, error: 'file SHA-256 does not match receipt' };
+  return { ok: true };
+}
+
 // Human-readable age for a receipt/reason string ("42s", "18m", "26h", "9d"). Coarse on purpose.
 export function humanAge(ms) {
   const n = num(ms);
@@ -215,7 +233,15 @@ export function checkInstalled(input, cfg) {
     return mk(false, 'installed app unverified — desktop shell and sidecar provenance disagree', value);
   }
   if (!input.artifact || !/^[0-9a-f]{64}$/i.test(str(input.artifact.sha256)) || !(Number(input.artifact.size) > 0)) {
-    return mk(false, 'installed app unverified — receipt has no hashed package artifact', value);
+    return mk(false, 'installed app unverified — receipt has no hashed executable artifact', value);
+  }
+  const runtimeSha256 = str(input.runtimeExecutable && input.runtimeExecutable.sha256).toLowerCase();
+  const runtimeSize = Number(input.runtimeExecutable && input.runtimeExecutable.size);
+  if (!/^[0-9a-f]{64}$/.test(runtimeSha256) || !Number.isSafeInteger(runtimeSize) || runtimeSize <= 0) {
+    return mk(false, 'installed app unverified — receipt has no runtime executable identity', value);
+  }
+  if (runtimeSha256 !== str(input.artifact.sha256).toLowerCase() || runtimeSize !== Number(input.artifact.size)) {
+    return mk(false, 'installed app unverified — supplied artifact does not equal the executable that was running', value);
   }
   if (input.artifactVerified !== true) return mk(false, 'installed app unverified — artifact path/hash could not be reverified' + (input.artifactError ? ': ' + str(input.artifactError) : ''), value);
   if (!Array.isArray(input.evidence) || input.evidence.length === 0 || input.evidenceVerified !== true) {
@@ -375,13 +401,18 @@ if (INVOKED_DIRECTLY) {
   const iRead = readJsonMaybe(path.join(QA_DIR, 'installed', 'last-smoke.json'));
   const verifyInstalledEvidence = (data) => {
     const evidence = Array.isArray(data && data.evidence) ? data.evidence : [];
-    if (!evidence.length) return { ok: false, error: 'no evidence paths' };
+    if (!evidence.length) return { ok: false, error: 'no content-bound evidence files' };
     for (const entry of evidence) {
-      const resolved = path.resolve(REPO, str(entry));
+      if (!entry || typeof entry !== 'object' || !str(entry.path)) return { ok: false, error: 'evidence identity missing or invalid' };
+      const resolved = path.resolve(REPO, str(entry.path));
       const rel = path.relative(REPO, resolved);
-      if (rel.startsWith('..') || path.isAbsolute(rel)) return { ok: false, error: 'evidence escapes repository: ' + str(entry) };
-      try { if (!fs.statSync(resolved).isFile()) return { ok: false, error: 'evidence is not a file: ' + str(entry) }; }
-      catch (_) { return { ok: false, error: 'evidence missing: ' + str(entry) }; }
+      if (rel.startsWith('..') || path.isAbsolute(rel)) return { ok: false, error: 'evidence escapes repository: ' + str(entry.path) };
+      try {
+        if (!fs.statSync(resolved).isFile()) return { ok: false, error: 'evidence is not a file: ' + str(entry.path) };
+        const proof = verifyContentIdentity(entry, fs.readFileSync(resolved));
+        if (!proof.ok) return { ok: false, error: str(entry.path) + ': ' + proof.error };
+      }
+      catch (_) { return { ok: false, error: 'evidence missing: ' + str(entry.path) }; }
     }
     return { ok: true };
   };
@@ -391,9 +422,9 @@ if (INVOKED_DIRECTLY) {
     try {
       const resolved = path.isAbsolute(str(artifact.path)) ? path.resolve(str(artifact.path)) : path.resolve(REPO, str(artifact.path));
       const stat = fs.statSync(resolved);
-      if (!stat.isFile() || stat.size !== Number(artifact.size)) return { ok: false, error: 'artifact size/path mismatch' };
-      const hash = crypto.createHash('sha256').update(fs.readFileSync(resolved)).digest('hex');
-      if (hash !== str(artifact.sha256).toLowerCase()) return { ok: false, error: 'artifact SHA-256 mismatch' };
+      if (!stat.isFile()) return { ok: false, error: 'artifact path is not a file' };
+      const proof = verifyContentIdentity(artifact, fs.readFileSync(resolved));
+      if (!proof.ok) return { ok: false, error: proof.error };
       return { ok: true };
     } catch (e) { return { ok: false, error: e && e.message || String(e) }; }
   };
@@ -412,6 +443,7 @@ if (INVOKED_DIRECTLY) {
         mode: iRead.data.mode,
         origin: iRead.data.origin,
         artifact: iRead.data.artifact,
+        runtimeExecutable: iRead.data.runtimeExecutable,
         result: iRead.data.result,
         evidence: iRead.data.evidence,
         notes: iRead.data.notes,

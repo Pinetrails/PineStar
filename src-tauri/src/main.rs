@@ -11,14 +11,16 @@
 // restarts the sidecar (which would kill the page the user is on).
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+use std::io::Read;
 use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
+use sha2::{Digest, Sha256};
 use tauri::{ipc::Channel, AppHandle, Manager, RunEvent, State, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_updater::{Update, UpdaterExt};
 
@@ -1637,16 +1639,103 @@ struct BuildInfo {
     sha: String,
     describe: String,
     dirty: bool,
+    #[serde(rename = "executableSha256")]
+    executable_sha256: String,
+    #[serde(rename = "executableSize")]
+    executable_size: u64,
+}
+
+/// Hash an executable without loading it wholesale into memory. The identity is intentionally
+/// content-only: installed-smoke can bind the operator-supplied artifact to the bytes that are
+/// actually running without exposing the user's install path to the WebView/evidence bundle.
+fn executable_identity(path: &Path) -> Option<(String, u64)> {
+    let mut file = std::fs::File::open(path).ok()?;
+    let expected_size = file.metadata().ok()?.len();
+    if expected_size == 0 {
+        return None;
+    }
+    let mut hasher = Sha256::new();
+    let mut buffer = [0_u8; 64 * 1024];
+    let mut bytes_read = 0_u64;
+    loop {
+        let count = file.read(&mut buffer).ok()?;
+        if count == 0 {
+            break;
+        }
+        hasher.update(&buffer[..count]);
+        bytes_read = bytes_read.checked_add(count as u64)?;
+    }
+    if bytes_read != expected_size {
+        return None;
+    }
+    Some((format!("{:x}", hasher.finalize()), bytes_read))
+}
+
+fn runtime_executable_identity() -> (String, u64) {
+    static IDENTITY: OnceLock<(String, u64)> = OnceLock::new();
+    IDENTITY
+        .get_or_init(|| {
+            std::env::current_exe()
+                .ok()
+                .and_then(|path| executable_identity(&path))
+                .unwrap_or_else(|| (String::new(), 0))
+        })
+        .clone()
+}
+
+#[cfg(test)]
+mod executable_identity_tests {
+    use super::executable_identity;
+
+    fn temp_file(name: &str) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!(
+            "starnet-executable-identity-{}-{}-{name}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|duration| duration.as_nanos())
+                .unwrap_or(0)
+        ))
+    }
+
+    #[test]
+    fn hashes_exact_file_bytes_and_size() {
+        let file = temp_file("nonempty.bin");
+        std::fs::write(&file, b"abc").unwrap();
+
+        let identity = executable_identity(&file).expect("non-empty file has an identity");
+        assert_eq!(
+            identity,
+            (
+                "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad".to_string(),
+                3
+            )
+        );
+
+        let _ = std::fs::remove_file(file);
+    }
+
+    #[test]
+    fn refuses_empty_or_missing_files() {
+        let empty = temp_file("empty.bin");
+        std::fs::write(&empty, []).unwrap();
+        assert_eq!(executable_identity(&empty), None);
+        let _ = std::fs::remove_file(&empty);
+        assert_eq!(executable_identity(&empty), None);
+    }
 }
 
 #[tauri::command]
 fn starnet_build_info(app: AppHandle) -> BuildInfo {
+    let (executable_sha256, executable_size) = runtime_executable_identity();
     BuildInfo {
         version: app.package_info().version.to_string(),
         commit: env!("STARNET_BUILD_COMMIT").to_string(),
         sha: env!("STARNET_BUILD_SHA").to_string(),
         describe: env!("STARNET_BUILD_DESCRIBE").to_string(),
         dirty: env!("STARNET_BUILD_DIRTY") == "1",
+        executable_sha256,
+        executable_size,
     }
 }
 
