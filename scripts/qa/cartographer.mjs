@@ -109,17 +109,22 @@ export function enumerateProps(catalog, hasRenderer) {
   if (!Array.isArray(catalog) || catalog.length === 0) throw new Error('[atlas] prop catalog is missing or empty');
   if (typeof hasRenderer !== 'function') throw new Error('[atlas] prop renderer authority is unavailable');
   const seen = new Set();
+  const seenAtlasIds = new Set();
   return catalog.map((prop, index) => {
     const where = 'prop catalog[' + index + ']';
     if (!prop || typeof prop !== 'object' || Array.isArray(prop)) throw new Error('[atlas] ' + where + ' is malformed');
     const id = str(prop.id).trim();
     if (!id || seen.has(id)) throw new Error('[atlas] ' + where + ' has a missing/duplicate id');
-    if (!str(prop.label).trim() || !str(prop.cat).trim() || !str(prop.tier).trim()) throw new Error('[atlas] ' + where + ' lacks label/category/tier');
-    if (!(Number(prop.w) > 0) || !(Number(prop.h) > 0)) throw new Error('[atlas] ' + where + ' lacks a positive footprint');
+    if (!str(prop.label).trim() || !str(prop.cat).trim() || !['functional', 'cosmetic'].includes(str(prop.tier).trim())) throw new Error('[atlas] ' + where + ' lacks valid label/category/tier');
+    if (!Number.isInteger(Number(prop.w)) || !Number.isInteger(Number(prop.h)) || !(Number(prop.w) > 0) || !(Number(prop.h) > 0)) {
+      throw new Error('[atlas] ' + where + ' lacks a positive integer footprint');
+    }
     if (!hasRenderer(id)) throw new Error('[atlas] ' + where + ' has no renderer: ' + id);
-    seen.add(id);
+    const atlasId = 'prop/' + slug(id);
+    if (seenAtlasIds.has(atlasId)) throw new Error('[atlas] ' + where + ' collides after Atlas ID normalization: ' + atlasId);
+    seen.add(id); seenAtlasIds.add(atlasId);
     return {
-      id: 'prop/' + slug(id), kind: 'prop', area: 'props',
+      id: atlasId, kind: 'prop', area: 'props',
       name: str(prop.label).trim() + ' [' + str(prop.tier).trim() + '/' + str(prop.cat).trim() + '] ' + Number(prop.w) + 'x' + Number(prop.h)
     };
   });

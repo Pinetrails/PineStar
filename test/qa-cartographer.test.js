@@ -244,7 +244,21 @@ const fullEntry = (over) => Object.assign({
   A.ok(/functional\/workstation/.test(rows[0].name), 'harvested name carries truthful tier/category metadata');
   A.throws(() => enumerateProps([], () => true), 'empty catalog blocks enumeration');
   A.throws(() => enumerateProps(catalog.concat(catalog[0]), () => true), 'duplicate prop IDs block enumeration');
+  A.throws(() => enumerateProps([
+    { id: 'a_b', label: 'A', cat: 'decor', tier: 'cosmetic', w: 1, h: 1 },
+    { id: 'a-b', label: 'B', cat: 'decor', tier: 'cosmetic', w: 1, h: 1 }
+  ], () => true), 'different raw IDs that normalize to one Atlas ID block enumeration');
   A.throws(() => enumerateProps(catalog, id => id !== 'rug'), 'catalog prop without a renderer blocks enumeration');
+  A.throws(() => enumerateProps([{ id: 'x', label: 'X', cat: 'decor', tier: 'unknown', w: 1, h: 1 }], () => true), 'invalid prop tier blocks enumeration');
+  A.throws(() => enumerateProps([{ id: 'x', label: 'X', cat: 'decor', tier: 'cosmetic', w: 1.5, h: 1 }], () => true), 'fractional prop footprint blocks enumeration');
+
+  const PropSprites = require('../frontend/app/propsprites.js');
+  const real = enumerateProps(PropSprites.CATALOG, PropSprites.has);
+  A.ok(real.length > 0 && real.length === PropSprites.CATALOG.length, 'real catalog is fully harvested and nonempty');
+  A.eq(new Set(real.map(row => row.id)).size, real.length, 'real catalog yields unique Atlas IDs');
+  A.ok(real.every(row => PropSprites.has(row.id.replace(/^prop\//, '').replace(/-/g, '_')) || PropSprites.CATALOG.some(p => 'prop/' + slug(p.id) === row.id && PropSprites.has(p.id))),
+    'every real harvested row resolves to a real renderer');
+  A.eq(real.some(row => row.id === 'prop/belth'), false, 'legacy draw-only beltH is excluded from the placeable catalog inventory');
 }
 
 // ---- (e) STATUS row splice: replaced vs inserted-after-Janitor ----
