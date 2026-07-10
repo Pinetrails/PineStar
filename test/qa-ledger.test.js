@@ -168,6 +168,19 @@ const base = (over) => Object.assign({
   A.eq(res.status, 'write-failed', 'write-failed status is explicit (so a CLI can exit nonzero)');
 }
 
+// ---- H2. aggregate authorities fail closed on unreadable or structurally malformed stores ----
+{
+  A.throws(() => makeLedger({ strictRead: true, clock, io: { listFindings() { throw new Error('EACCES'); } } }),
+    'strict authority propagates a read failure');
+  A.throws(() => makeLedger({ strictRead: true, clock, io: { listFindings() { return {}; } } }),
+    'strict authority rejects a non-array store');
+  A.throws(() => makeLedger({ strictRead: true, clock, io: { listFindings() { return [{ id: 'x' }]; } } }),
+    'strict authority rejects a syntactically valid but malformed finding');
+  const valid = { id: 'x', fingerprint: 'deadbeef', crew: 'Overseer', severity: 'P1', status: 'open', title: 'real', evidence: ['proof.log'] };
+  A.eq(makeLedger({ strictRead: true, clock, io: { listFindings() { return [valid]; } } }).openBySeverity().P1, 1,
+    'strict authority accepts a complete stored finding');
+}
+
 // ---- I. dedupCheck reports filed / known / new correctly ----
 {
   const fpKnown = fingerprintOf({ crew: 'Visual Auditor', checkId: 'VA-6', subject: 'clip' });

@@ -109,7 +109,9 @@ export function makeCartographer(opts) {
   // git is injected so staleness derivation is testable with a fake. Contract:
   //   git.logSince(sha, files) -> string (git log --oneline <sha>..HEAD -- <files...>); non-empty => moved.
   const git = opts.git || {};
-  const logSince = typeof git.logSince === 'function' ? git.logSince.bind(git) : () => '';
+  const logSince = typeof git.logSince === 'function'
+    ? git.logSince.bind(git)
+    : () => { throw new Error('[atlas] git.logSince unavailable — freshness is unprovable'); };
 
   // A stable id for an entry. UI/state ids include the area so `ui/system/x` never collides with
   // `ui/crew/x`; the static kinds are globally unique on their key already.
@@ -166,7 +168,55 @@ export function makeCartographer(opts) {
     if (entry.wiring && typeof entry.wiring !== 'object') bad('wiring must be an object');
     if (entry.coverage != null && !Array.isArray(entry.coverage)) bad('coverage must be an array');
     if (entry.findings != null && !Array.isArray(entry.findings)) bad('findings must be an array');
+    const status = str(entry.status);
+    if (status !== 'unmapped') {
+      if (!str(entry.purpose).trim()) bad(status + ' requires a non-blank purpose');
+      if (!str(entry.promise).trim()) bad(status + ' requires a non-blank promise');
+      const files = entry.wiring && arr(entry.wiring.files).map(str).map(s => s.trim()).filter(Boolean);
+      if (!files || files.length === 0) bad(status + ' requires non-empty wiring.files');
+    }
+    if (status === 'audited' || status === 'perfected') {
+      const audited = entry.auditedAt;
+      if (!audited || typeof audited !== 'object') bad(status + ' requires auditedAt');
+      if (!/^[0-9a-f]{40}$/i.test(str(audited && audited.sha))) bad(status + ' requires a full auditedAt.sha');
+      if (!str(audited && audited.date) || !Number.isFinite(Date.parse(str(audited && audited.date)))) bad(status + ' requires a parseable auditedAt.date');
+    }
+    if (status === 'perfected') {
+      const coverage = arr(entry.coverage);
+      if (coverage.length === 0) bad('perfected requires non-empty coverage');
+      for (const item of coverage) {
+        if (!item || typeof item !== 'object' || !str(item.kind).trim() || !str(item.ref).trim()) {
+          bad('perfected coverage entries require kind + ref');
+        }
+      }
+    }
     return entry;
+  }
+
+  // Validate the registry as one authority. A missing/corrupt/empty area must never collapse into a
+  // smaller denominator that can report 100%. This is intentionally separate from deriveStatus so
+  // small pure-unit shards remain useful, while every CLI/aggregate load is fail-closed.
+  function validateShardSet(shards, requiredAreas) {
+    if (!shards || typeof shards !== 'object' || Array.isArray(shards)) throw new Error('[atlas] shard set is not an object');
+    const required = arr(requiredAreas && requiredAreas.length ? requiredAreas : AREAS);
+    const missingAreas = required.filter(area => !Object.prototype.hasOwnProperty.call(shards, area));
+    if (missingAreas.length) throw new Error('[atlas] required area shard(s) missing: ' + missingAreas.join(', '));
+    const seen = new Set();
+    let total = 0;
+    for (const area of required) {
+      const shard = shards[area];
+      if (!shard || typeof shard !== 'object' || Array.isArray(shard)) throw new Error('[atlas] malformed shard: ' + area);
+      if (str(shard.area) !== area) throw new Error('[atlas] shard area mismatch: key=' + area + ' value=' + str(shard.area));
+      if (!Array.isArray(shard.entries) || shard.entries.length === 0) throw new Error('[atlas] required area shard is empty: ' + area);
+      for (const entry of shard.entries) {
+        validateEntry(entry, 'areas/' + area + '.json#' + str(entry && entry.id));
+        if (str(entry.area) !== area) throw new Error('[atlas] entry area mismatch: ' + str(entry.id) + ' is in ' + area + ' but declares ' + str(entry.area));
+        if (seen.has(str(entry.id))) throw new Error('[atlas] duplicate entry id: ' + str(entry.id));
+        seen.add(str(entry.id)); total++;
+      }
+    }
+    if (total === 0) throw new Error('[atlas] registry inventory is empty');
+    return { total, areas: required.slice(), ids: seen };
   }
 
   // Sort a shard's entries by id (stable, byte-clean diffs).
@@ -277,6 +327,7 @@ export function makeCartographer(opts) {
     for (const area of areas) {
       const per = { total: 0, unmapped: 0, mapped: 0, audited: 0, perfected: 0, stale: 0, missing: 0 };
       for (const e of arr(shards[area] && shards[area].entries)) {
+        validateEntry(e, 'areas/' + area + '.json#' + str(e && e.id));
         total++; per.total++;
         if (e.missing) { byStatus.missing++; per.missing++; continue; }
         let st = STATUS_SET.has(str(e.status)) ? str(e.status) : 'unmapped';
@@ -373,7 +424,7 @@ export function makeCartographer(opts) {
   }
 
   return {
-    entryId, slug, skeleton, validateEntry, mergeSweep, deriveStatus,
+    entryId, slug, skeleton, validateEntry, validateShardSet, mergeSweep, deriveStatus,
     renderAtlasMd, statusRow, renderStatus, areaOfState,
     _internals: { sortEntries, SCRIPT_OWNED }
   };
@@ -423,16 +474,21 @@ if (INVOKED_DIRECTLY) {
   function gitShell() {
     return {
       logSince(sha, files) {
-        if (!sha || !arr(files).length) return '';
+        if (!/^[0-9a-f]{40}$/i.test(str(sha)) || !arr(files).length) throw new Error('[atlas] invalid staleness proof input for ' + str(sha));
         try {
-          const r = spawnSync('git', ['log', '--oneline', shortSha(sha) + '..HEAD', '--'].concat(arr(files).map(String)),
+          const r = spawnSync('git', ['log', '--oneline', str(sha) + '..HEAD', '--'].concat(arr(files).map(String)),
             { cwd: REPO, encoding: 'utf8', windowsHide: true });
-          return r.status === 0 ? str(r.stdout).trim() : '';
-        } catch (_) { return ''; }
+          if (r.error || r.status !== 0) throw new Error(str(r.stderr || (r.error && r.error.message) || 'git log failed'));
+          return str(r.stdout).trim();
+        } catch (e) { throw new Error('[atlas] could not prove freshness from ' + str(sha) + ': ' + (e && e.message || e)); }
       },
       head() {
-        try { const r = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: REPO, encoding: 'utf8', windowsHide: true }); return r.status === 0 ? str(r.stdout).trim() : ''; }
-        catch (_) { return ''; }
+        try {
+          const r = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: REPO, encoding: 'utf8', windowsHide: true });
+          const sha = str(r.stdout).trim();
+          if (r.error || r.status !== 0 || !/^[0-9a-f]{40}$/i.test(sha)) throw new Error(str(r.stderr || (r.error && r.error.message) || 'invalid HEAD'));
+          return sha;
+        } catch (e) { throw new Error('[atlas] could not resolve exact HEAD: ' + (e && e.message || e)); }
       }
     };
   }
@@ -443,16 +499,21 @@ if (INVOKED_DIRECTLY) {
   function loadShards() {
     const shards = {};
     let names = [];
-    try { names = fs.readdirSync(AREAS_DIR); } catch (_) { return shards; }
+    try { names = fs.readdirSync(AREAS_DIR); }
+    catch (e) { throw new Error('[atlas] areas directory unreadable: ' + (e && e.message || e)); }
     for (const n of names) {
       if (!n.endsWith('.json')) continue;
       const shard = readJsonMaybe(path.join(AREAS_DIR, n));
-      if (!shard || typeof shard !== 'object') continue;
-      const area = str(shard.area) || n.replace(/\.json$/, '');
+      if (!shard || typeof shard !== 'object') throw new Error('[atlas] shard unreadable or invalid JSON: ' + n);
+      const fileArea = n.replace(/\.json$/, '');
+      const area = str(shard.area);
+      if (!area || area !== fileArea) throw new Error('[atlas] shard area mismatch: ' + n + ' declares ' + (area || '(blank)'));
+      if (Object.prototype.hasOwnProperty.call(shards, area)) throw new Error('[atlas] duplicate area shard: ' + area);
       // validate every entry LOUDLY (naming file + id) — a corrupt shard must never silently pass.
       for (const e of arr(shard.entries)) carto.validateEntry(e, n + '#' + str(e && e.id));
       shards[area] = { area, updatedAt: str(shard.updatedAt) || nowIsoReal(), entries: arr(shard.entries) };
     }
+    carto.validateShardSet(shards, AREAS);
     return shards;
   }
 
@@ -726,6 +787,8 @@ if (INVOKED_DIRECTLY) {
     for (const area of Object.keys(merge.shards)) byArea[area] = arr(merge.shards[area].entries).length;
 
     const report = {
+      schemaVersion: 1,
+      result: merge.missing.length ? 'RED' : 'GREEN',
       ranAt: nowIsoReal(), sha, staticOnly: !!staticOnly,
       counts, sweptKinds: [...sweptKinds],
       created: merge.created, updated: merge.updated,
@@ -734,14 +797,12 @@ if (INVOKED_DIRECTLY) {
       newIds: []   // filled below
     };
     // recover the ids created this sweep for the report (a skeleton has firstSeen === lastSeen just now).
-    try {
-      for (const area of Object.keys(merge.shards)) {
-        for (const e of arr(merge.shards[area].entries)) {
-          if (e.firstSeen && e.firstSeen === e.lastSeen && e.status === 'unmapped') report.newIds.push(e.id);
-        }
+    for (const area of Object.keys(merge.shards)) {
+      for (const e of arr(merge.shards[area].entries)) {
+        if (e.firstSeen && e.firstSeen === e.lastSeen && e.status === 'unmapped') report.newIds.push(e.id);
       }
-    } catch (_) {}
-    try { fs.writeFileSync(SWEEP_REPORT, JSON.stringify(report, null, 2) + '\n', 'utf8'); } catch (_) {}
+    }
+    fs.writeFileSync(SWEEP_REPORT, JSON.stringify(report, null, 2) + '\n', 'utf8');
 
     log('sweep done — created ' + merge.created + ', updated ' + merge.updated + ', missing ' + merge.missing.length);
     log('  static: ' + counts.command + ' commands · ' + counts.route + ' routes (' + (counts._routeMatched || counts.route) + ' matched / ' + (counts._routeGuards || '?') + ' method-guards) · ' + counts.event + ' events · ' + counts.state + ' states');

@@ -17,6 +17,7 @@ const { makeCartographer, slug, areaOfState, AREAS, STATUSES } = require('../scr
 let clk = Date.UTC(2026, 6, 7, 12, 0, 0);          // 2026-07-07T12:00:00.000Z
 const clock = { now: () => clk };
 const ISO0 = new Date(clk).toISOString();
+const AUDIT_SHA = 'a'.repeat(40);
 
 // a fake injected git: logSince returns whatever we stage per (sha) — non-empty => the files moved.
 function fakeGit(moved) {
@@ -39,7 +40,7 @@ const fullEntry = (over) => Object.assign({
   selector: '#bb-recruit', state: 'crew-recruit',
   purpose: 'opens the recruitment bay', promise: 'click -> bay overlay opens',
   wiring: { files: ['frontend/js/navdock.js'], events: [] }, coverage: [{ kind: 'journey', ref: 'J1' }],
-  status: 'perfected', auditedAt: { sha: 'abc1234', date: ISO0 }, findings: [],
+  status: 'perfected', auditedAt: { sha: AUDIT_SHA, date: ISO0 }, findings: [],
   firstSeen: ISO0, lastSeen: ISO0, missing: false
 }, over || {});
 
@@ -113,7 +114,7 @@ const fullEntry = (over) => Object.assign({
   A.eq(kept.state, 'crew-recruit', 'FIRST-seen state preserved (not overwritten by a later state)');
   A.eq(kept.purpose, 'opens the recruitment bay', 'session-owned purpose UNTOUCHED by the sweep');
   A.eq(kept.status, 'perfected', 'session-owned status UNTOUCHED (never regressed by the script)');
-  A.eq(JSON.stringify(kept.auditedAt), JSON.stringify({ sha: 'abc1234', date: ISO0 }), 'session-owned auditedAt UNTOUCHED');
+  A.eq(JSON.stringify(kept.auditedAt), JSON.stringify({ sha: AUDIT_SHA, date: ISO0 }), 'session-owned auditedAt UNTOUCHED');
   A.eq(JSON.stringify(kept.coverage), JSON.stringify([{ kind: 'journey', ref: 'J1' }]), 'session-owned coverage UNTOUCHED');
 
   // vanished element -> missing:true + a dead-entry finding routed to the ledger-ready list.
@@ -157,7 +158,7 @@ const fullEntry = (over) => Object.assign({
   A.ok(/PERFECTED-fresh 1 \/ total 1 \(100%\)/.test(dFresh.markdown), 'gauge renders 100% when the sole entry is perfected+fresh');
 
   // stale: git returns a commit line for the audited sha -> the entry is effectively STALE, not perfected.
-  const stale = makeCartographer({ clock, git: fakeGit({ 'abc1234': 'deadbee some later commit touched the file' }) });
+  const stale = makeCartographer({ clock, git: fakeGit({ [AUDIT_SHA]: 'deadbee some later commit touched the file' }) });
   const dStale = stale.deriveStatus(shardsFrom([fullEntry()]));
   A.eq(dStale.byStatus.perfected, 0, 'a perfected entry whose files MOVED is no longer counted perfected');
   A.eq(dStale.byStatus.stale, 1, 'the moved-files entry is effectively stale');
@@ -167,7 +168,7 @@ const fullEntry = (over) => Object.assign({
   A.eq(dStale.queue.stale, 1, 'stale feeds the re-queue count');
 
   // an entry with NO auditedAt sha can never be stale (no baseline to compare against).
-  const noSha = makeCartographer({ clock, git: fakeGit({ 'abc1234': 'x' }) });
+  const noSha = makeCartographer({ clock, git: fakeGit({ [AUDIT_SHA]: 'x' }) });
   const dNo = noSha.deriveStatus(shardsFrom([fullEntry({ auditedAt: null, status: 'mapped' })]));
   A.eq(dNo.byStatus.stale, 0, 'no auditedAt sha -> never stale');
   A.eq(dNo.byStatus.mapped, 1, 'a mapped entry is counted as mapped');
@@ -193,6 +194,12 @@ const fullEntry = (over) => Object.assign({
   A.throws(() => carto.validateEntry(fullEntry({ id: '' }), 'system.json#noid'), 'a missing id throws');
   // missing name
   A.throws(() => carto.validateEntry(fullEntry({ name: '' }), 'system.json#noname'), 'a missing name throws');
+  A.throws(() => carto.validateEntry(fullEntry({ purpose: '' }), 'system.json#nopurpose'), 'a perfected entry without purpose throws');
+  A.throws(() => carto.validateEntry(fullEntry({ promise: '' }), 'system.json#nopromise'), 'a perfected entry without promise throws');
+  A.throws(() => carto.validateEntry(fullEntry({ wiring: { files: [], events: [] } }), 'system.json#nowiring'), 'a perfected entry without wiring files throws');
+  A.throws(() => carto.validateEntry(fullEntry({ coverage: [] }), 'system.json#nocoverage'), 'a perfected entry without coverage throws');
+  A.throws(() => carto.validateEntry(fullEntry({ auditedAt: null }), 'system.json#noaudit'), 'a perfected entry without audit provenance throws');
+  A.throws(() => carto.validateEntry(fullEntry({ auditedAt: { sha: 'abc1234', date: ISO0 } }), 'system.json#shortsha'), 'a short/ambiguous audit SHA throws');
   // the error names the location (file+id) so a corrupt shard is greppable.
   let msg = '';
   try { carto.validateEntry(fullEntry({ kind: 'widget' }), 'areas/system.json#ui/system/bb-recruit'); }
@@ -202,6 +209,27 @@ const fullEntry = (over) => Object.assign({
   // the merge validates the SHAPE it would mint (a garbage harvest element is caught, not silently persisted).
   A.throws(() => carto.mergeSweep({}, { elements: [{ id: 'x/y', kind: 'bogus', area: 'commands', name: 'n' }], sweptKinds: [], reportRel: 'r' }),
     'the merge rejects a harvest element with a bad kind');
+}
+
+// ---- (d2) aggregate registry authority cannot shrink its denominator or double-count ids ----
+{
+  const carto = makeCartographer({ clock, git: fakeGit() });
+  const complete = {};
+  for (const area of AREAS) {
+    complete[area] = { area, updatedAt: ISO0, entries: [fullEntry({
+      id: 'state/' + area, kind: 'state', area, name: area
+    })] };
+  }
+  A.eq(carto.validateShardSet(complete).total, AREAS.length, 'complete non-empty required area set validates');
+  const missing = Object.assign({}, complete); delete missing.props;
+  A.throws(() => carto.validateShardSet(missing), 'missing props area blocks instead of shrinking the denominator');
+  const empty = Object.assign({}, complete, { props: { area: 'props', updatedAt: ISO0, entries: [] } });
+  A.throws(() => carto.validateShardSet(empty), 'empty required area blocks');
+  const duplicate = JSON.parse(JSON.stringify(complete));
+  duplicate.props.entries[0].id = duplicate.system.entries[0].id;
+  A.throws(() => carto.validateShardSet(duplicate), 'duplicate ids across shards block');
+  const gitError = makeCartographer({ clock, git: { logSince() { throw new Error('git unavailable'); } } });
+  A.throws(() => gitError.deriveStatus(shardsFrom([fullEntry()])), 'git failure blocks freshness instead of counting perfected');
 }
 
 // ---- (e) STATUS row splice: replaced vs inserted-after-Janitor ----

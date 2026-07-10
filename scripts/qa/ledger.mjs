@@ -97,6 +97,26 @@ function coerceEvidence(v) {
   return one ? [one] : [];
 }
 
+function validateStoredFindings(raw) {
+  if (!Array.isArray(raw)) throw new Error('ledger store must return an array');
+  const ids = new Set();
+  const fingerprints = new Set();
+  return raw.map((row, index) => {
+    const where = 'finding[' + index + ']';
+    if (!row || typeof row !== 'object' || Array.isArray(row)) throw new Error(where + ' must be an object');
+    for (const field of ['id', 'fingerprint', 'title', 'crew']) {
+      if (!str(row[field]).trim()) throw new Error(where + '.' + field + ' is required');
+    }
+    if (!Object.prototype.hasOwnProperty.call(SEVERITIES, str(row.severity).toUpperCase())) throw new Error(where + '.severity is invalid');
+    if (!Object.prototype.hasOwnProperty.call(STATUSES, str(row.status).toLowerCase())) throw new Error(where + '.status is invalid');
+    if (!Array.isArray(row.evidence) || coerceEvidence(row.evidence).length === 0) throw new Error(where + '.evidence is required');
+    if (ids.has(str(row.id))) throw new Error(where + '.id is duplicated');
+    if (fingerprints.has(str(row.fingerprint))) throw new Error(where + '.fingerprint is duplicated');
+    ids.add(str(row.id)); fingerprints.add(str(row.fingerprint));
+    return row;
+  });
+}
+
 export function makeLedger(opts) {
   opts = opts || {};
   const io = opts.io || {};
@@ -104,14 +124,20 @@ export function makeLedger(opts) {
   const listFindings = typeof io.listFindings === 'function' ? io.listFindings.bind(io) : () => [];
   const writeFinding = typeof io.writeFinding === 'function' ? io.writeFinding.bind(io) : () => {};
   const knownIo = typeof io.knownFingerprints === 'function' ? io.knownFingerprints.bind(io) : () => [];
+  const strictRead = opts.strictRead === true;
 
   // Load the on-disk findings once into an in-memory mirror so add()/digest()/status() are O(n) over
-  // RAM. Fail-open: a corrupt store degrades to empty rather than crashing the crew.
+  // RAM. Most detector lanes retain the historical fail-open behavior; aggregate release/product
+  // authorities opt into strictRead so an unreadable ledger can never become a false zero-findings green.
   let rows = [];
   try {
     const raw = listFindings();
-    if (Array.isArray(raw)) rows = raw.filter(r => r && typeof r === 'object');
-  } catch (_) { rows = []; }
+    if (strictRead) rows = validateStoredFindings(raw);
+    else if (Array.isArray(raw)) rows = raw.filter(r => r && typeof r === 'object');
+  } catch (error) {
+    if (strictRead) throw error;
+    rows = [];
+  }
 
   // fingerprints the baseline says must NEVER file (KNOWN_ISSUES.md) + any finding already on disk
   // whose status is dismissed/known. Both are refused on re-add (anti-nag law).
