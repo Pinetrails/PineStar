@@ -9,7 +9,7 @@
 'use strict';
 const A = require('./_assert.js');
 const {
-  makeRunAccountant, stepsForMode, buildStallFinding, stampFor, STEP_DEFS, TOTAL_BUDGET_MS
+  makeRunAccountant, stepsForMode, firstBootAdvanceKey, buildStallFinding, stampFor, STEP_DEFS, TOTAL_BUDGET_MS
 } = require('../scripts/qa/beginner-run.mjs');
 const { makeLedger, fingerprintOf } = require('../scripts/qa/ledger.mjs');
 
@@ -32,6 +32,13 @@ const clock = { now: () => clk };
   // selection never mutates the shared defs (returns copies).
   ui[0].budgetMs = -1;
   A.ok(STEP_DEFS[0].budgetMs > 0, 'stepsForMode returns copies — mutating a result never corrupts STEP_DEFS');
+}
+
+// ---- A3. first-boot splash is advanced only when the product proves that screen is active ----
+{
+  A.eq(firstBootAdvanceKey('screen-splash'), 'Enter', 'fresh boot receives one real Enter keypress');
+  A.eq(firstBootAdvanceKey('screen-connect'), '', 'creation screen is never advanced again');
+  A.eq(firstBootAdvanceKey('screen-game'), '', 'returning/in-game state is never disturbed');
 }
 
 // ---- A2. the boundary (first-directive) budget must cover the WHOLE awakening cinematic ----

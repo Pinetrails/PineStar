@@ -105,6 +105,13 @@ export function stepsForMode(mode) {
   return out;
 }
 
+// A genuine first boot now opens the explicit "PRESS ANY KEY" splash before creation. Returning
+// users never see it. Keep the detector aligned with the user path without bypassing product state:
+// it emits one real key only when the active screen proves the splash is present.
+export function firstBootAdvanceKey(activeScreenId) {
+  return String(activeScreenId || '') === 'screen-splash' ? 'Enter' : '';
+}
+
 // The step-budget accountant + timings recorder. Injected clock only (no Date.now() in the core).
 // Usage by the driver:
 //   const acct = makeRunAccountant({ clock, mode });
@@ -469,6 +476,14 @@ if (INVOKED_DIRECTLY) (async () => {
 
     // STEP title (the CREATE YOUR OVERSEER connect screen is the active screen) -----------------
     acct.startStep('title');
+    const beforeTitle = await evalJS(cdp, activeScreen).catch(() => '?');
+    const advanceKey = firstBootAdvanceKey(beforeTitle);
+    if (advanceKey) {
+      const keyEvent = { key: advanceKey, code: advanceKey, windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13 };
+      await cdp.send('Input.dispatchKeyEvent', Object.assign({ type: 'keyDown' }, keyEvent));
+      await cdp.send('Input.dispatchKeyEvent', Object.assign({ type: 'keyUp' }, keyEvent));
+      log('first-boot splash advanced with a real ' + advanceKey + ' keypress');
+    }
     const onConnect = await waitFor(connectReady, STEP_DEFS[1].budgetMs * STEP_SCALE);
     await shoot('title');
     if (!onConnect.ok) {
