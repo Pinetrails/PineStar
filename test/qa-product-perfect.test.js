@@ -137,13 +137,15 @@ const statusContext = { nowMs: NOW, key, readEvidence: validityContext(manifest.
 }
 
 {
-  const onlyStatus = candidateFromGitStatus(candidate.sha, ' M qa/STATUS.md');
-  A.eq(onlyStatus.clean, true, 'operational qa/STATUS dirt does not alter shipped source');
-  A.eq(onlyStatus.operationalDirtyPaths.length, 1, 'operational dirt remains visible');
+  const onlyStatus = candidateFromGitStatus(candidate.sha, 'M qa/STATUS.md\n M qa/atlas/ATLAS.md');
+  A.eq(onlyStatus.clean, true, 'trimmed porcelain output still recognizes generated dashboard dirt as operational');
+  A.eq(onlyStatus.operationalDirtyPaths.length, 2, 'operational dirt remains visible');
   const codeDirt = candidateFromGitStatus(candidate.sha, ' M qa/STATUS.md\n M sidecar/index.js');
   A.eq(codeDirt.clean, false, 'any shipped code dirt blocks the candidate');
   const manifestDirt = candidateFromGitStatus(candidate.sha, ' M qa/product-perfect/waves.json');
   A.eq(manifestDirt.clean, false, 'manifest dirt blocks the candidate');
+  const atlasDirt = candidateFromGitStatus(candidate.sha, ' M qa/atlas/areas/props.json');
+  A.eq(atlasDirt.clean, false, 'authoritative Atlas shard dirt blocks the candidate');
   const dirty = deriveStatus(manifest, codeDirt, { W0: receipt(manifest.waves[0]) }, authorities, statusContext);
   A.eq(dirty.productPerfect, false, 'dirty source invalidates a prior green receipt');
   A.eq(dirty.currentWave, 'W0', 'dirty source re-queues from the first wave');
