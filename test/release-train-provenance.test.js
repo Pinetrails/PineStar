@@ -23,6 +23,7 @@ const path = require('path');
 const root = path.join(__dirname, '..');
 const yml = fs.readFileSync(path.join(root, '.github', 'workflows', 'release-train.yml'), 'utf8');
 const buildRs = fs.readFileSync(path.join(root, 'src-tauri', 'build.rs'), 'utf8');
+const mainRs = fs.readFileSync(path.join(root, 'src-tauri', 'src', 'main.rs'), 'utf8');
 
 // --- isolate the `build` job block (from its header to the next top-level job header) ---
 const hdr = yml.match(/^  build:$/m);
@@ -57,5 +58,13 @@ A.ok(ymlDescribe, 'build job invokes `$(git describe …)`');
 const ymlFlags = (ymlDescribe[1].match(/--[a-z]+/g) || []).sort();
 A.eq(ymlFlags, rsFlags,
   'yml and build.rs `git describe` use the same flag set (identical describe output feeds the gate)');
+
+// Installed proof needs the full immutable candidate SHA, not only the human-facing short commit.
+A.ok(/rev-parse",\s*"HEAD/.test(buildRs) && /STARNET_BUILD_SHA/.test(buildRs),
+  'build.rs embeds a full candidate SHA for installed-artifact proof');
+A.ok(/\.env\("STARNET_BUILD_SHA",\s*env!\("STARNET_BUILD_SHA"\)\)/.test(mainRs),
+  'desktop shell passes the full build SHA to the packaged sidecar');
+A.ok(/sha:\s*env!\("STARNET_BUILD_SHA"\)/.test(mainRs),
+  'starnet_build_info exposes the same full build SHA to the installed page');
 
 A.report('release-train-provenance.test');

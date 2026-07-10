@@ -195,6 +195,9 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     A.eq(diag.status, 200, 'GET /api/diagnostics WITH the token -> 200');
     A.ok(diag.body && typeof diag.body.text === 'string' && diag.body.text.length > 0, 'diagnostics returns a paste-ready text block');
     A.ok(diag.body.report && typeof diag.body.report === 'object', 'diagnostics returns a structured report too');
+    const desktopDiagResponse = await fetch(B + '/api/diagnostics', { headers: Object.assign({ Origin: tauriOrigin }, tok) });
+    const desktopDiag = await desktopDiagResponse.json();
+    A.eq(desktopDiag.report.mode, 'desktop', 'http://tauri.localhost is classified as the packaged desktop origin');
     A.ok(/StarNet diagnostics/.test(diag.body.text), 'the block is clearly fenced');
     A.ok(/no keys, tokens, or message content/.test(diag.body.text), 'the block states it carries no secrets');
     A.eq(typeof diag.body.report.keyPresent, 'boolean', 'keyPresent is a boolean, never the key itself');

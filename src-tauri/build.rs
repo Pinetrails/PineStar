@@ -28,8 +28,12 @@ fn main() {
     // Split describe into a bare commit + a dirty flag so the frontend can render "DIRTY" distinctly.
     let dirty = describe.ends_with("-dirty");
     let commit = git_output(&["rev-parse", "--short", "HEAD"]).unwrap_or_else(|| "unknown".to_string());
+    // The short value remains the human-facing diagnostic label. The full SHA is a separate release-proof
+    // identity: prefix matching is not strong enough to bind an installed artifact to one immutable candidate.
+    let full_sha = git_output(&["rev-parse", "HEAD"]).unwrap_or_else(|| "unknown".to_string());
 
     println!("cargo:rustc-env=STARNET_BUILD_COMMIT={}", commit);
+    println!("cargo:rustc-env=STARNET_BUILD_SHA={}", full_sha);
     println!("cargo:rustc-env=STARNET_BUILD_DESCRIBE={}", describe);
     println!("cargo:rustc-env=STARNET_BUILD_DIRTY={}", if dirty { "1" } else { "0" });
 

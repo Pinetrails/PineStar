@@ -14,10 +14,12 @@
  *        & "$env:LOCALAPPDATA\..\StarNet.exe"     # or the Start-menu shortcut
  *      (9333 is the convention prior installed-exe CDP work used — desktop-bundles /
  *       voice-system memory. Override with STARNET_SMOKE_CDP_PORT.)
- *   2. `npm run qa:smoke:installed`  → attaches to that port, sweeps, writes the stamp.
+ *   2. Set STARNET_SMOKE_EXPECTED_HEAD (full candidate SHA) and STARNET_SMOKE_ARTIFACT (tested binary/package).
+ *   3. `npm run qa:smoke:installed`  → attaches to that port, sweeps, writes the stamp.
  *
  * THE STAMP CONTRACT (read by the qa:ready gate — scripts/qa/ready.mjs, lane agent/ready-gate):
- *   qa/installed/last-smoke.json = { stampIso, appVersion, trunkHead, result, evidence, notes }
+ *   qa/installed/last-smoke.json = schema v2 with expectedHead, observed buildCommit, desktop origin,
+ *   artifact SHA-256, result, and evidence. See qa/installed/README.md.
  *   result ∈ "GREEN" | "RED" | "BLOCKED". Do NOT change this shape without flagging the ready-gate lane.
  *
  * NO-FAKE-GREEN (Charter Part 5): can't attach, or can't PROVE the app version → result BLOCKED
@@ -26,7 +28,7 @@
  * assertion is GREEN. Findings go through scripts/qa/ledger.mjs (the ONE dedup/known authority).
  *
  * HOUSE PATTERN (matches scripts/qa/{ledger,cartographer}.mjs + the sidecar stores): the CORE is a
- * set of PURE, dependency-injected functions (attach / io / clock / gitHead are all injected), so the
+ * set of PURE, dependency-injected functions (attach / io / clock / expected candidate are all injected), so the
  * classifier + stamp writer/validator test headlessly with fakes (test/qa-installed-smoke.test.js).
  * The INVOKED_DIRECTLY block is the one place ambient effects (real CDP, real fs, real ledger CLI,
  * real git) live — exactly like ledger.mjs's CLI block.
@@ -35,6 +37,7 @@
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import * as crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { connectCDP, evalJS, collectDiagnostics } from '../lib/cdp.mjs';
 
@@ -43,6 +46,18 @@ import { connectCDP, evalJS, collectDiagnostics } from '../lib/cdp.mjs';
 export const RESULTS = { GREEN: 'GREEN', RED: 'RED', BLOCKED: 'BLOCKED' };
 const RESULT_SET = new Set([RESULTS.GREEN, RESULTS.RED, RESULTS.BLOCKED]);
 export const SMOKE_CREW = 'Installed Smoke';
+export const STAMP_SCHEMA = 2;
+export const TAURI_ORIGINS = new Set(['tauri://localhost', 'http://tauri.localhost', 'https://tauri.localhost', 'app://localhost']);
+export const REQUIRED_CHECKS = Object.freeze([
+  'desktop/tauri-origin',
+  'desktop/build-info',
+  'boot/api-token-present',
+  'version/app-nonblank',
+  'boot/world-present',
+  'boot/stage-rendered',
+  'store/workstreams-wellformed',
+  'board/no-forever-running'
+]);
 
 function str(v) { return v == null ? '' : String(v); }
 
@@ -63,8 +78,23 @@ function str(v) { return v == null ? '' : String(v); }
 // which is why this only ever surfaced on the installed build. (Kept OUTSIDE the probe string so the auth-scheme name
 // isn't part of SMOKE_PROBE — test/qa-installed-smoke.test.js A0 statically forbids those words appearing in it.)
 export const SMOKE_PROBE = `(async () => {
-  const out = { appVersion: '', appSource: '', harness: '', mode: '', bootSane: false, checks: [], notes: '' };
+  const out = {
+    appVersion: '', appSource: '', harness: '', sidecarBuildSha: '', sidecarBuildDirty: null,
+    mode: '', origin: String((location && location.origin) || ''), shell: null,
+    bootSane: false, checks: [], notes: ''
+  };
   const add = (name, ok, detail) => out.checks.push({ name: String(name), ok: !!ok, detail: String(detail == null ? '' : detail) });
+  const tauriOrigins = new Set(['tauri://localhost', 'http://tauri.localhost', 'https://tauri.localhost', 'app://localhost']);
+  add('desktop/tauri-origin', tauriOrigins.has(out.origin), 'origin=' + (out.origin || '(blank)'));
+  try {
+    const core = window.__TAURI__ && window.__TAURI__.core;
+    if (!core || typeof core.invoke !== 'function') throw new Error('Tauri invoke unavailable');
+    out.shell = await core.invoke('starnet_build_info');
+    const known = !!(out.shell && /^[0-9a-f]+$/i.test(String(out.shell.commit || '')) && String(out.shell.commit).toLowerCase() !== 'unknown');
+    add('desktop/build-info', known, known ? ('commit=' + out.shell.commit + ' describe=' + out.shell.describe + ' dirty=' + !!out.shell.dirty) : 'starnet_build_info returned no known commit');
+  } catch (e) {
+    add('desktop/build-info', false, 'starnet_build_info failed: ' + (e && e.message));
+  }
   const tok = (typeof window !== 'undefined' && window.__STARNET_API_TOKEN__) ? String(window.__STARNET_API_TOKEN__) : '';
   // X-StarNet-Token is the sidecar's auth header AND the only auth header its CORS allow-list accepts on the
   // cross-origin packaged build. See the long note above SMOKE_PROBE (finding 4d9992d9) before changing this.
@@ -79,6 +109,8 @@ export const SMOKE_PROBE = `(async () => {
       out.appVersion = String((v && v.app) || '');
       out.appSource = String((v && v.appSource) || '');
       out.harness = String((v && v.harness) || '');
+      out.sidecarBuildSha = String((v && v.buildSha) || '');
+      out.sidecarBuildDirty = (v && typeof v.buildDirty === 'boolean') ? v.buildDirty : null;
       add('version/app-nonblank', !!out.appVersion, 'app=' + (out.appVersion || '(blank)') + ' source=' + out.appSource + ' harness=' + out.harness);
     } else {
       add('version/app-nonblank', false, 'GET /api/version -> HTTP ' + r.status);
@@ -111,10 +143,10 @@ export const SMOKE_PROBE = `(async () => {
       const stuck = cardEls.filter(c => c.querySelector('.kb-state.running')).map(c => c.dataset.id).filter(Boolean);
       add('board/no-forever-running', stuck.length === 0, stuck.length ? 'RUNNING chip with nothing busy: ' + stuck.join(',') : 'no stuck RUNNING chip while idle');
     } else {
-      add('board/no-forever-running', true, cardEls.length ? ((Array.isArray(busyIds) ? busyIds.length : 0) + ' run(s) legitimately in flight') : 'TASKS board closed — no cards to inspect');
+      add('board/no-forever-running', cardEls.length > 0, cardEls.length ? ((Array.isArray(busyIds) ? busyIds.length : 0) + ' run(s) legitimately in flight') : 'TASKS board closed — assertion not observed');
     }
   } else {
-    add('store/workstreams-wellformed', true, 'Workstreams not exposed on this page yet — smoke tolerates (pre-boot store)');
+    add('store/workstreams-wellformed', false, 'Workstreams store unavailable — installed parity is unproven');
   }
 
   out.bootSane = hasWorld && hasStage;
@@ -127,9 +159,23 @@ export const SMOKE_PROBE = `(async () => {
 export function classifyResult(obs) {
   obs = obs || {};
   if (!obs.attached) return RESULTS.BLOCKED;
-  if (!str(obs.appVersion).trim()) return RESULTS.BLOCKED;   // can't prove the build → never green
+  if (!str(obs.appVersion).trim()) return RESULTS.BLOCKED;
+  if (str(obs.mode) !== 'desktop' || !TAURI_ORIGINS.has(str(obs.origin))) return RESULTS.BLOCKED;
+  const shell = obs.shell && typeof obs.shell === 'object' ? obs.shell : null;
+  const expectedHead = str(obs.expectedHead).trim().toLowerCase();
+  const buildCommit = str(shell && (shell.sha || shell.fullCommit || obs.sidecarBuildSha)).trim().toLowerCase();
+  if (!shell || !/^[0-9a-f]{40}$/.test(expectedHead) || !/^[0-9a-f]{40}$/.test(buildCommit)) return RESULTS.BLOCKED;
+  if (buildCommit !== expectedHead || str(obs.sidecarBuildSha).toLowerCase() !== expectedHead) return RESULTS.BLOCKED;
+  if (shell.dirty === true || obs.sidecarBuildDirty !== false) return RESULTS.BLOCKED;
+  if (str(shell.version) !== str(obs.appVersion)) return RESULTS.BLOCKED;
+  if (!str(shell.describe) || str(shell.describe) !== str(obs.harness)) return RESULTS.BLOCKED;
+  const artifact = obs.artifact && typeof obs.artifact === 'object' ? obs.artifact : null;
+  if (!artifact || !/^[0-9a-f]{64}$/i.test(str(artifact.sha256)) || !(Number(artifact.size) > 0)) return RESULTS.BLOCKED;
+  if (obs.evidencePersisted !== true) return RESULTS.BLOCKED;
   const checks = Array.isArray(obs.checks) ? obs.checks : [];
-  const anyFail = checks.some(c => c && c.ok === false);
+  const byName = new Map(checks.filter(Boolean).map(check => [str(check.name), check]));
+  if (REQUIRED_CHECKS.some(name => !byName.has(name))) return RESULTS.BLOCKED;
+  const anyFail = checks.some(check => check && check.ok === false);
   return anyFail ? RESULTS.RED : RESULTS.GREEN;
 }
 
@@ -144,9 +190,21 @@ export function normalizeStamp(input, opts) {
     ? input.evidence.map(str).map(s => s.trim()).filter(Boolean)
     : (input.evidence ? [str(input.evidence).trim()].filter(Boolean) : []);
   return {
+    schemaVersion: STAMP_SCHEMA,
     stampIso: str(input.stampIso || isoNow).trim(),
+    expectedHead: str(input.expectedHead).trim().toLowerCase(),
+    buildCommit: str(input.buildCommit).trim().toLowerCase(),
+    buildDescribe: str(input.buildDescribe).trim(),
+    buildDirty: input.buildDirty === true,
     appVersion: str(input.appVersion).trim(),
-    trunkHead: str(input.trunkHead).trim(),
+    sidecarHarness: str(input.sidecarHarness).trim(),
+    mode: str(input.mode).trim(),
+    origin: str(input.origin).trim(),
+    artifact: input.artifact && typeof input.artifact === 'object' ? {
+      path: str(input.artifact.path).trim(),
+      sha256: str(input.artifact.sha256).trim().toLowerCase(),
+      size: Number(input.artifact.size) || 0
+    } : null,
     result,
     evidence,
     notes: str(input.notes).trim()
@@ -157,11 +215,18 @@ export function normalizeStamp(input, opts) {
 export function validateStamp(obj) {
   const errors = [];
   if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return { ok: false, errors: ['stamp is not an object'] };
+  if (obj.schemaVersion !== STAMP_SCHEMA) errors.push('schemaVersion must be ' + STAMP_SCHEMA);
   if (typeof obj.stampIso !== 'string' || !obj.stampIso.trim()) errors.push('stampIso missing/blank');
   else if (isNaN(Date.parse(obj.stampIso))) errors.push('stampIso is not a parseable ISO timestamp');
   if (!RESULT_SET.has(obj.result)) errors.push('result must be one of GREEN|RED|BLOCKED');
   if (typeof obj.appVersion !== 'string') errors.push('appVersion must be a string');
-  if (typeof obj.trunkHead !== 'string') errors.push('trunkHead must be a string');
+  if (typeof obj.expectedHead !== 'string') errors.push('expectedHead must be a string');
+  if (typeof obj.buildCommit !== 'string') errors.push('buildCommit must be a string');
+  if (typeof obj.buildDescribe !== 'string') errors.push('buildDescribe must be a string');
+  if (typeof obj.buildDirty !== 'boolean') errors.push('buildDirty must be a boolean');
+  if (typeof obj.sidecarHarness !== 'string') errors.push('sidecarHarness must be a string');
+  if (typeof obj.mode !== 'string') errors.push('mode must be a string');
+  if (typeof obj.origin !== 'string') errors.push('origin must be a string');
   if (!Array.isArray(obj.evidence)) errors.push('evidence must be an array');
   if (typeof obj.notes !== 'string') errors.push('notes must be a string');
   // A GREEN stamp that can't name the build or carry an artifact is a lie — reject it as invalid.
@@ -169,6 +234,14 @@ export function validateStamp(obj) {
     errors.push('GREEN requires a non-blank appVersion (no-fake-green)');
   if (obj.result === RESULTS.GREEN && (!Array.isArray(obj.evidence) || obj.evidence.length === 0))
     errors.push('GREEN requires at least one evidence path (no-fake-green)');
+  if (obj.result === RESULTS.GREEN || obj.result === RESULTS.RED) {
+    if (!/^[0-9a-f]{40}$/i.test(str(obj.expectedHead))) errors.push('proved result requires a full expectedHead');
+    if (!/^[0-9a-f]{40}$/i.test(str(obj.buildCommit))) errors.push('proved result requires a full buildCommit');
+    if (str(obj.expectedHead).toLowerCase() !== str(obj.buildCommit).toLowerCase()) errors.push('buildCommit must equal expectedHead');
+    if (obj.buildDirty !== false) errors.push('proved result requires a clean build');
+    if (obj.mode !== 'desktop' || !TAURI_ORIGINS.has(str(obj.origin))) errors.push('proved result requires a trusted desktop origin');
+    if (!obj.artifact || !/^[0-9a-f]{64}$/i.test(str(obj.artifact.sha256)) || !(Number(obj.artifact.size) > 0)) errors.push('proved result requires a hashed artifact');
+  }
   return { ok: errors.length === 0, errors };
 }
 
@@ -205,17 +278,19 @@ export function buildFinding(result, notes, failedChecks, evidence, stampPath) {
  *   io.writeStamp(stampObj)      -> repo-relative path (defaults to qa/installed/last-smoke.json)
  *   io.fileFinding(finding)      -> bool (true = handled by the ledger, incl. dedup/known)
  *   io.log(...args)              -> void
- *   clock.nowIso() -> ISO string ; gitHead -> trunk HEAD sha string
+ *   clock.nowIso() -> ISO string ; expectedHead -> explicit candidate SHA ; artifact -> hashed binary
  */
 export function makeSmoke(opts) {
   opts = opts || {};
   const attach = typeof opts.attach === 'function' ? opts.attach : async () => { throw new Error('no attach injected'); };
   const clock = opts.clock || { nowIso: () => new Date(0).toISOString() };
-  const gitHead = str(opts.gitHead);
+  const expectedHead = str(opts.expectedHead).trim().toLowerCase();
+  const artifact = opts.artifact && typeof opts.artifact === 'object' ? opts.artifact : null;
   const io = opts.io || {};
   const log = typeof io.log === 'function' ? io.log : () => {};
   const writeEvidence = typeof io.writeEvidence === 'function' ? io.writeEvidence : () => '';
   const writeStamp = typeof io.writeStamp === 'function' ? io.writeStamp : () => '';
+  const readStamp = typeof io.readStamp === 'function' ? io.readStamp : () => null;
   const fileFinding = typeof io.fileFinding === 'function' ? io.fileFinding : () => true;
 
   async function run() {
@@ -239,22 +314,59 @@ export function makeSmoke(opts) {
 
     const appVersion = probe ? str(probe.appVersion) : '';
     const checks = probe ? (Array.isArray(probe.checks) ? probe.checks : []) : [];
-    const result = (!attached || !probe)
+    let result = (!attached || !probe)
       ? RESULTS.BLOCKED
-      : classifyResult({ attached, appVersion, checks });
+      : classifyResult({
+          attached, appVersion, checks, expectedHead, artifact,
+          evidencePersisted: evidence.length > 0,
+          mode: probe.mode, origin: probe.origin, shell: probe.shell,
+          harness: probe.harness, sidecarBuildSha: probe.sidecarBuildSha,
+          sidecarBuildDirty: probe.sidecarBuildDirty
+        });
 
     const failedChecks = checks.filter(c => c && c.ok === false);
     const notes = (() => {
       if (!attached) return blockReason;
       if (!probe) return blockReason || 'probe returned nothing';
       const parts = ['appVersion=' + (appVersion || '(blank)') + ' mode=' + (probe.mode || '?') +
+        ' build=' + str(probe.shell && (probe.shell.sha || probe.shell.fullCommit || probe.sidecarBuildSha)).slice(0, 12) +
         ' checks ' + (checks.length - failedChecks.length) + '/' + checks.length + ' pass'];
       if (failedChecks.length) parts.push('FAILED: ' + failedChecks.map(c => c.name).join(', '));
       return parts.join(' · ');
     })().slice(0, 500);
 
-    const stamp = normalizeStamp({ stampIso: clock.nowIso(), appVersion, trunkHead: gitHead, result, evidence, notes }, { clock });
-    const stampPath = writeStamp(stamp) || 'qa/installed/last-smoke.json';
+    let stamp = normalizeStamp({
+      stampIso: clock.nowIso(), expectedHead,
+      buildCommit: probe && probe.shell && (probe.shell.sha || probe.shell.fullCommit || probe.sidecarBuildSha),
+      buildDescribe: probe && probe.shell && probe.shell.describe,
+      buildDirty: !!(probe && probe.shell && probe.shell.dirty),
+      appVersion, sidecarHarness: probe && probe.harness,
+      mode: probe && probe.mode, origin: probe && probe.origin,
+      artifact, result, evidence, notes
+    }, { clock });
+    const validation = validateStamp(stamp);
+    if (!validation.ok && result !== RESULTS.BLOCKED) {
+      result = RESULTS.BLOCKED;
+      stamp = normalizeStamp(Object.assign({}, stamp, {
+        result,
+        notes: (notes + ' · invalid receipt: ' + validation.errors.join('; ')).slice(0, 500)
+      }), { clock });
+    }
+    const stampPath = writeStamp(stamp);
+    if (!stampPath) result = RESULTS.BLOCKED;
+    else {
+      let persisted = null;
+      try { persisted = readStamp(); } catch (_) {}
+      const persistedValidation = validateStamp(persisted);
+      if (!persistedValidation.ok || JSON.stringify(persisted) !== JSON.stringify(stamp)) {
+        result = RESULTS.BLOCKED;
+        stamp = normalizeStamp(Object.assign({}, stamp, {
+          result,
+          notes: (stamp.notes + ' · receipt write/read-back failed').slice(0, 500)
+        }), { clock });
+        writeStamp(stamp);
+      }
+    }
     log('result=' + result + ' app=' + (appVersion || '(unproven)') + ' → ' + stampPath);
 
     if (result !== RESULTS.GREEN) {
@@ -280,14 +392,22 @@ if (INVOKED_DIRECTLY) (async () => {
   const OUT_DIR = path.join(REPO, 'qa', 'installed');
   const STAMP_FILE = path.join(OUT_DIR, 'last-smoke.json');
   const PORT = parseInt(process.env.STARNET_SMOKE_CDP_PORT || '9333', 10);
+  const expectedHead = str(process.env.STARNET_SMOKE_EXPECTED_HEAD || process.env.STARNET_PRODUCT_PERFECT_CANDIDATE_SHA).trim().toLowerCase();
+  const artifactPath = str(process.env.STARNET_SMOKE_ARTIFACT).trim();
 
   const stampIsoNow = new Date().toISOString();
   const RUN_DIR = path.join(OUT_DIR, 'smoke-' + stampIsoNow.replace(/[:.]/g, '-'));
   const rel = (p) => path.relative(REPO, p).replace(/\\/g, '/');
 
-  const gitHead = (() => {
-    try { const r = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: REPO, encoding: 'utf8', windowsHide: true }); return String(r.stdout || '').trim(); }
-    catch (_) { return ''; }
+  const artifact = (() => {
+    if (!artifactPath) return null;
+    try {
+      const resolved = path.resolve(artifactPath);
+      const stat = fs.statSync(resolved);
+      if (!stat.isFile() || stat.size <= 0) return null;
+      const hash = crypto.createHash('sha256').update(fs.readFileSync(resolved)).digest('hex');
+      return { path: resolved, sha256: hash, size: stat.size };
+    } catch (_) { return null; }
   })();
 
   const io = {
@@ -299,6 +419,10 @@ if (INVOKED_DIRECTLY) (async () => {
     writeStamp(obj) {
       try { fs.mkdirSync(OUT_DIR, { recursive: true }); fs.writeFileSync(STAMP_FILE, JSON.stringify(obj, null, 2) + '\n', 'utf8'); return rel(STAMP_FILE); }
       catch (e) { console.error('[qa:smoke:installed] stamp write failed:', e && e.message); return ''; }
+    },
+    readStamp() {
+      try { return JSON.parse(fs.readFileSync(STAMP_FILE, 'utf8')); }
+      catch (_) { return null; }
     },
     fileFinding(finding) {
       const r = spawnSync(process.execPath, [LEDGER_CLI, '--add', '--json', JSON.stringify(finding)], { cwd: REPO, encoding: 'utf8', windowsHide: true });
@@ -322,7 +446,9 @@ if (INVOKED_DIRECTLY) (async () => {
   };
 
   io.log('attaching to installed exe CDP on 127.0.0.1:' + PORT + ' (relaunch it with WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=' + PORT + ')');
-  const smoke = makeSmoke({ attach, clock: { nowIso: () => stampIsoNow }, gitHead, io });
+  if (!expectedHead) io.log('BLOCKED — set STARNET_SMOKE_EXPECTED_HEAD to the full candidate commit SHA');
+  if (!artifact) io.log('BLOCKED — set STARNET_SMOKE_ARTIFACT to the exact installed executable or package being tested');
+  const smoke = makeSmoke({ attach, clock: { nowIso: () => stampIsoNow }, expectedHead, artifact, io });
   const { result } = await smoke.run();
   // Exit codes mirror the Cartographer: 0 clean (GREEN) · 1 red · 2 blocked.
   process.exit(result === RESULTS.GREEN ? 0 : (result === RESULTS.RED ? 1 : 2));

@@ -43,6 +43,7 @@
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import * as crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { makeLedger } from './ledger.mjs';
 
@@ -76,6 +77,7 @@ export function freshness(stampIso, nowMs, maxStaleMs) {
   const t = Date.parse(str(stampIso));
   if (!isFinite(t)) return { ok: false, ageMs: null, reason: 'unreadable stamp time "' + str(stampIso) + '"' };
   const ageMs = num(nowMs) - t;
+  if (ageMs < -5 * 60 * 1000) return { ok: false, ageMs, reason: 'future-dated by ' + humanAge(-ageMs) };
   if (ageMs > num(maxStaleMs)) return { ok: false, ageMs, reason: 'stale — ' + humanAge(ageMs) + ' old (max ' + humanAge(maxStaleMs) + ')' };
   return { ok: true, ageMs, reason: humanAge(ageMs) + ' old' };
 }
@@ -172,7 +174,7 @@ export function checkBeginner(input, cfg) {
 }
 
 // ---- CHECK 5: installed-exe smoke stamp GREEN + fresh (<=7d) -------------------------------------
-// input: { missing?, error?, stampIso, appVersion, trunkHead, result, evidence, notes, artifact? }
+// input: installed-smoke schema v2 plus host-verified evidence/artifact flags.
 export function checkInstalled(input, cfg) {
   input = input || {}; cfg = cfg || {};
   const artifact = input.artifact || 'qa/installed/last-smoke.json';
@@ -182,8 +184,31 @@ export function checkInstalled(input, cfg) {
   if (input.error) return mk(false, 'installed app unverified — smoke stamp unreadable: ' + str(input.error), 'ERROR');
 
   const result = str(input.result).toUpperCase();
-  const value = result + (input.appVersion ? ' · v' + str(input.appVersion) : '') + (input.trunkHead ? ' · @' + str(input.trunkHead).slice(0, 8) : '');
+  const value = result + (input.appVersion ? ' · v' + str(input.appVersion) : '') +
+    (input.buildCommit ? ' · @' + str(input.buildCommit).slice(0, 8) : '') +
+    (input.mode ? ' · ' + str(input.mode) : '');
+  if (input.schemaVersion !== 2) return mk(false, 'installed app unverified — legacy or unknown receipt schema (v2 desktop proof required)', value || 'INVALID SCHEMA');
   if (result !== 'GREEN') return mk(false, 'installed app unverified — last smoke was ' + (result || 'not GREEN'), value);
+  if (!str(input.appVersion).trim()) return mk(false, 'installed app unverified — receipt has no proven app version', value);
+  if (input.mode !== 'desktop' || !['tauri://localhost', 'http://tauri.localhost', 'https://tauri.localhost', 'app://localhost'].includes(str(input.origin))) {
+    return mk(false, 'installed app unverified — receipt did not prove a trusted packaged desktop origin', value);
+  }
+  if (input.buildDirty !== false) return mk(false, 'installed app unverified — packaged build is dirty or dirty state is unknown', value);
+  const head = str(cfg.currentTrunk).toLowerCase();
+  if (!/^[0-9a-f]{40}$/.test(head)) return mk(false, 'installed app unverified — current trunk commit is unresolved', value);
+  if (str(input.expectedHead).toLowerCase() !== head || str(input.buildCommit).toLowerCase() !== head) {
+    return mk(false, 'installed app unverified — tested binary source does not equal current trunk', value);
+  }
+  if (!str(input.buildDescribe) || str(input.buildDescribe) !== str(input.sidecarHarness)) {
+    return mk(false, 'installed app unverified — desktop shell and sidecar provenance disagree', value);
+  }
+  if (!input.artifact || !/^[0-9a-f]{64}$/i.test(str(input.artifact.sha256)) || !(Number(input.artifact.size) > 0)) {
+    return mk(false, 'installed app unverified — receipt has no hashed package artifact', value);
+  }
+  if (input.artifactVerified !== true) return mk(false, 'installed app unverified — artifact path/hash could not be reverified' + (input.artifactError ? ': ' + str(input.artifactError) : ''), value);
+  if (!Array.isArray(input.evidence) || input.evidence.length === 0 || input.evidenceVerified !== true) {
+    return mk(false, 'installed app unverified — evidence files are missing or unreadable' + (input.evidenceError ? ': ' + str(input.evidenceError) : ''), value);
+  }
   const fresh = freshness(input.stampIso, cfg.nowMs, cfg.maxInstalledStaleMs != null ? cfg.maxInstalledStaleMs : DEFAULTS.maxInstalledStaleMs);
   if (!fresh.ok) return mk(false, 'installed app unverified — smoke ' + fresh.reason, value);
   return mk(true, 'GREEN, ' + fresh.reason, value);
@@ -276,11 +301,12 @@ if (INVOKED_DIRECTLY) {
         clock: { now: () => nowMs },
         io: {
           listFindings() {
-            let names; try { names = fs.readdirSync(FINDINGS_DIR); } catch (_) { return []; }
+            let names; try { names = fs.readdirSync(FINDINGS_DIR); } catch (e) { throw new Error('findings directory unreadable: ' + (e && e.message || e)); }
             const out = [];
             for (const n of names) {
               if (!n.endsWith('.json')) continue;
-              try { out.push(JSON.parse(fs.readFileSync(path.join(FINDINGS_DIR, n), 'utf8'))); } catch (_) {}
+              try { out.push(JSON.parse(fs.readFileSync(path.join(FINDINGS_DIR, n), 'utf8'))); }
+              catch (e) { throw new Error('finding unreadable ' + n + ': ' + (e && e.message || e)); }
             }
             return out;
           },
@@ -334,8 +360,53 @@ if (INVOKED_DIRECTLY) {
     : { stampIso: bRead.data.stampIso, result: bRead.data.result, mode: bRead.data.mode, totalMs: bRead.data.totalMs, stalledStep: bRead.data.stalledStep };
 
   const iRead = readJsonMaybe(path.join(QA_DIR, 'installed', 'last-smoke.json'));
+  const verifyInstalledEvidence = (data) => {
+    const evidence = Array.isArray(data && data.evidence) ? data.evidence : [];
+    if (!evidence.length) return { ok: false, error: 'no evidence paths' };
+    for (const entry of evidence) {
+      const resolved = path.resolve(REPO, str(entry));
+      const rel = path.relative(REPO, resolved);
+      if (rel.startsWith('..') || path.isAbsolute(rel)) return { ok: false, error: 'evidence escapes repository: ' + str(entry) };
+      try { if (!fs.statSync(resolved).isFile()) return { ok: false, error: 'evidence is not a file: ' + str(entry) }; }
+      catch (_) { return { ok: false, error: 'evidence missing: ' + str(entry) }; }
+    }
+    return { ok: true };
+  };
+  const verifyInstalledArtifact = (data) => {
+    const artifact = data && data.artifact;
+    if (!artifact || !str(artifact.path)) return { ok: false, error: 'artifact path missing' };
+    try {
+      const resolved = path.isAbsolute(str(artifact.path)) ? path.resolve(str(artifact.path)) : path.resolve(REPO, str(artifact.path));
+      const stat = fs.statSync(resolved);
+      if (!stat.isFile() || stat.size !== Number(artifact.size)) return { ok: false, error: 'artifact size/path mismatch' };
+      const hash = crypto.createHash('sha256').update(fs.readFileSync(resolved)).digest('hex');
+      if (hash !== str(artifact.sha256).toLowerCase()) return { ok: false, error: 'artifact SHA-256 mismatch' };
+      return { ok: true };
+    } catch (e) { return { ok: false, error: e && e.message || String(e) }; }
+  };
+  const evidenceProof = !iRead.missing && !iRead.error ? verifyInstalledEvidence(iRead.data) : { ok: false };
+  const artifactProof = !iRead.missing && !iRead.error ? verifyInstalledArtifact(iRead.data) : { ok: false };
   const installedInput = iRead.missing ? { missing: true } : iRead.error ? { error: iRead.error }
-    : { stampIso: iRead.data.stampIso, appVersion: iRead.data.appVersion, trunkHead: iRead.data.trunkHead, result: iRead.data.result, evidence: iRead.data.evidence, notes: iRead.data.notes };
+    : {
+        schemaVersion: iRead.data.schemaVersion,
+        stampIso: iRead.data.stampIso,
+        expectedHead: iRead.data.expectedHead,
+        buildCommit: iRead.data.buildCommit,
+        buildDescribe: iRead.data.buildDescribe,
+        buildDirty: iRead.data.buildDirty,
+        appVersion: iRead.data.appVersion,
+        sidecarHarness: iRead.data.sidecarHarness,
+        mode: iRead.data.mode,
+        origin: iRead.data.origin,
+        artifact: iRead.data.artifact,
+        result: iRead.data.result,
+        evidence: iRead.data.evidence,
+        notes: iRead.data.notes,
+        evidenceVerified: evidenceProof.ok,
+        evidenceError: evidenceProof.error,
+        artifactVerified: artifactProof.ok,
+        artifactError: artifactProof.error
+      };
 
   const verdict = evaluate({ ledger: ledgerInput, guardian: guardianInput, journeys: journeysInput, beginner: beginnerInput, installed: installedInput }, cfg);
 

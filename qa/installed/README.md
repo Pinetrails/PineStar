@@ -1,55 +1,62 @@
-# `qa/installed/` — the installed-exe smoke stamp
+# `qa/installed/` — the installed-desktop proof
 
-This directory holds the receipt written by the **installed-exe smoke**
-(`scripts/qa/installed-smoke.mjs`, `npm run qa:smoke:installed`) — the one detector that proves
-behavior of the **packaged desktop exe** instead of a dev sidecar. Every other crew member
-(Guardian / Beginner / Journeys / Cartographer) boots a DEV sidecar and drives headless Chrome, so
-none of them can ever see the WebView2-cache class of bug (`docs/MISTAKES.md` → "Desktop /
-installed-app traps"): the desktop UI is the frontend **compiled into the exe**, served over
-`http://tauri.localhost`, and WebView2 caches it and never revalidates. CDP-attaching to the running
-exe is the only proof.
+This directory holds the machine-local receipt written by `npm run qa:smoke:installed`. It is the
+only QA detector that attaches to the running packaged Tauri application. Browser/dev-sidecar runs
+are not substitutes for installed proof.
 
-## The pinned stamp — `qa/installed/last-smoke.json`
+## Receipt schema v2
 
-`npm run qa:ready` (the READY-GATE, lane `agent/ready-gate`) READS this exact shape. **Do not change
-it without flagging the ready-gate lane.**
+`qa/installed/last-smoke.json` separates the expected candidate from identity observed in the
+running binary:
 
 ```json
 {
-  "stampIso":   "2026-07-07T12:00:00.000Z",   // when this smoke ran (ISO 8601)
-  "appVersion": "0.3.0",                        // the installed build's /api/version app (BLANK iff BLOCKED)
-  "trunkHead":  "e01831ab…",                    // the trunk HEAD sha the smoke ran against
-  "result":     "GREEN",                        // "GREEN" | "RED" | "BLOCKED"
-  "evidence":   ["qa/installed/smoke-…/probe.json"],
-  "notes":      "appVersion=0.3.0 mode=desktop checks 6/6 pass"
+  "schemaVersion": 2,
+  "stampIso": "2026-07-10T12:00:00.000Z",
+  "expectedHead": "<full 40-character candidate SHA>",
+  "buildCommit": "<full SHA reported by the packaged Tauri build>",
+  "buildDescribe": "v0.4.1-12-g12345678",
+  "buildDirty": false,
+  "appVersion": "0.4.1",
+  "sidecarHarness": "v0.4.1-12-g12345678",
+  "mode": "desktop",
+  "origin": "http://tauri.localhost",
+  "artifact": {
+    "path": "C:/Program Files/StarNet/StarNet.exe",
+    "sha256": "<64 hexadecimal characters>",
+    "size": 123456789
+  },
+  "result": "GREEN",
+  "evidence": ["qa/installed/smoke-.../probe.json"],
+  "notes": "..."
 }
 ```
 
-- **GREEN** — attached, the app version was proven, and every parity assertion passed.
-- **RED** — attached + versioned, but a parity assertion failed on the installed build (files a **P1**
-  ledger finding).
-- **BLOCKED** — could not attach, or could not prove the app version, or the in-page probe threw
-  (files a **P0** ledger finding). No-fake-green: a smoke that can't prove the build never reads GREEN.
+GREEN requires all of the following: a trusted Tauri origin, successful `starnet_build_info`, a
+clean full source SHA equal to the explicitly expected candidate, matching shell/sidecar versions
+and provenance, a hashed non-empty package artifact, persisted/read-back evidence, and every named
+smoke assertion present and passing. Browser mode, dirty/unknown source, missing assertions,
+mismatched candidate, or missing artifact/evidence is BLOCKED. A parity failure on an otherwise
+proven candidate is RED.
 
-Findings are filed through `scripts/qa/ledger.mjs` (the one dedup/known authority); the smoke never
-notifies. Per-run evidence lands in `qa/installed/smoke-<stampIso>/`. Both the stamp and the run dirs
-are gitignored machine-local artifacts (the ready-gate reads them via fs, never from git).
+`npm run qa:ready` re-hashes the artifact and checks the evidence files before accepting the receipt.
+Legacy receipts are intentionally rejected.
 
-## Running it — the operator recipe (Andrew's machine, weekly / at soak end)
+## Operator recipe
 
-The installed exe does **not** open a debug port by default. Relaunch it with the WebView2 debug arg,
-then run the smoke:
+Fully quit StarNet, then launch the exact candidate with WebView debugging enabled. Set both explicit
+proof inputs before running the smoke; neither has an ambient fallback.
 
 ```powershell
-# 1. Fully quit StarNet (and its msedgewebview2.exe children), then relaunch with the debug port open:
+$candidate = git rev-parse HEAD
+$artifact = 'C:\Program Files\StarNet\StarNet.exe'
 $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = '--remote-debugging-port=9333'
-Start-Process "$env:LOCALAPPDATA\..\StarNet\StarNet.exe"   # or the Start-menu shortcut
-# 2. Once the station has rendered, attach + sweep:
+$env:STARNET_SMOKE_EXPECTED_HEAD = $candidate
+$env:STARNET_SMOKE_ARTIFACT = $artifact
+Start-Process $artifact
 npm run qa:smoke:installed
 ```
 
-`9333` is the port convention prior installed-exe CDP work used (desktop-bundles / voice-system
-memory). Override with `STARNET_SMOKE_CDP_PORT`. Exit codes: **0** GREEN · **1** RED · **2** BLOCKED.
-
-This is a **SMOKE** (minutes, a handful of assertions), not the full Atlas. It is a session/operator
-task, not a headless scheduled job — the packaged exe must be running and reachable first.
+Open the TASKS board before the sweep so the installed UI assertion is actually observed. Override
+the conventional CDP port with `STARNET_SMOKE_CDP_PORT`. Exit codes are `0` GREEN, `1` RED, and `2`
+BLOCKED. Evidence and receipts are gitignored; never commit them or any credential.

@@ -17,19 +17,26 @@ const NOW = Date.parse('2026-07-07T12:00:00.000Z');
 const iso = (ms) => new Date(ms).toISOString();
 const FRESH = iso(NOW - 60 * 1000);         // 1 minute ago
 const STALE = iso(NOW - 26 * 60 * 60 * 1000); // 26h ago (> 24h window)
+const TRUNK = 'a'.repeat(40);
 
 // A fully-GREEN artifact set + cfg, so each test perturbs exactly ONE thing.
 function greenArtifacts() {
   return {
     ledger: { ok: true, counts: { P0: 0, P1: 0, P2: 3 } },
-    guardian: { stampIso: FRESH, trunkHead: 'abc12345', result: 'green', gatesRan: ['test-fast', 'shoot', 'golden', 'audit', 'journeys'], gatesSkipped: [] },
+    guardian: { stampIso: FRESH, trunkHead: TRUNK, result: 'green', gatesRan: ['test-fast', 'shoot', 'golden', 'audit', 'journeys'], gatesSkipped: [] },
     journeys: { stampIso: FRESH, result: 'pass', passed: 120, total: 120 },
     beginner: { stampIso: FRESH, result: 'PASS', mode: 'ui-only', totalMs: 84000 },
-    installed: { stampIso: iso(NOW - 2 * DAY_MS), appVersion: '0.3.0', trunkHead: 'abc12345', result: 'GREEN', evidence: ['x.png'] },
+    installed: {
+      schemaVersion: 2, stampIso: iso(NOW - 2 * DAY_MS), expectedHead: TRUNK, buildCommit: TRUNK,
+      buildDescribe: 'v0.3.0-1-gaaaaaaaa', buildDirty: false, appVersion: '0.3.0',
+      sidecarHarness: 'v0.3.0-1-gaaaaaaaa', mode: 'desktop', origin: 'http://tauri.localhost',
+      artifact: { path: 'StarNet.exe', sha256: 'b'.repeat(64), size: 123 }, artifactVerified: true,
+      result: 'GREEN', evidence: ['x.png'], evidenceVerified: true
+    },
   };
 }
 function greenCfg() {
-  return { nowMs: NOW, maxStaleMs: DEFAULTS.maxStaleMs, maxInstalledStaleMs: DEFAULTS.maxInstalledStaleMs, maxTrunkDrift: 0, currentTrunk: 'abc12345', trunkDrift: 0 };
+  return { nowMs: NOW, maxStaleMs: DEFAULTS.maxStaleMs, maxInstalledStaleMs: DEFAULTS.maxInstalledStaleMs, maxTrunkDrift: 0, currentTrunk: TRUNK, trunkDrift: 0 };
 }
 
 /* ─── A. the all-green baseline is READY (and only then) ─── */
@@ -106,6 +113,7 @@ function greenCfg() {
   A.eq(freshness(iso(NOW - DAY_MS + 1000), NOW, DAY_MS).ok, true, 'just under the window is fresh');
   A.eq(freshness('not-a-date', NOW, DAY_MS).ok, false, 'an unparseable stamp is NOT fresh (fail-closed, no-fake-green)');
   A.eq(freshness('', NOW, DAY_MS).ok, false, 'an empty stamp is NOT fresh');
+  A.eq(freshness(iso(NOW + 10 * 60 * 1000), NOW, DAY_MS).ok, false, 'materially future-dated evidence is rejected');
   // a stale guardian cycle (green + no drift) still fails the check.
   const g = checkGuardian({ stampIso: STALE, trunkHead: 'abc12345', result: 'green', gatesRan: ['test-fast'], gatesSkipped: [] }, greenCfg());
   A.eq(g.ok, false, 'a stale-but-green guardian cycle is NOT READY');
@@ -153,10 +161,15 @@ function greenCfg() {
   A.eq(checkBeginner({ stampIso: STALE, result: 'PASS' }, cfg).ok, false, 'a stale beginner PASS -> NOT READY');
 
   // installed uses the 7-day window, not 24h.
-  A.eq(checkInstalled({ stampIso: iso(NOW - 5 * DAY_MS), result: 'GREEN', appVersion: '0.3.0' }, cfg).ok, true, '5-day-old GREEN installed smoke is fresh (7d window)');
-  A.eq(checkInstalled({ stampIso: iso(NOW - 8 * DAY_MS), result: 'GREEN' }, cfg).ok, false, '8-day-old installed smoke is stale (> 7d)');
-  A.eq(checkInstalled({ stampIso: FRESH, result: 'RED' }, cfg).ok, false, 'a RED installed smoke -> NOT READY');
-  A.eq(checkInstalled({ stampIso: FRESH, result: 'BLOCKED' }, cfg).ok, false, 'a BLOCKED installed smoke -> NOT READY');
+  const installed = greenArtifacts().installed;
+  A.eq(checkInstalled(Object.assign({}, installed, { stampIso: iso(NOW - 5 * DAY_MS) }), cfg).ok, true, '5-day-old v2 desktop GREEN smoke is fresh (7d window)');
+  A.eq(checkInstalled(Object.assign({}, installed, { stampIso: iso(NOW - 8 * DAY_MS) }), cfg).ok, false, '8-day-old installed smoke is stale (> 7d)');
+  A.eq(checkInstalled(Object.assign({}, installed, { stampIso: FRESH, result: 'RED' }), cfg).ok, false, 'a RED installed smoke -> NOT READY');
+  A.eq(checkInstalled(Object.assign({}, installed, { stampIso: FRESH, result: 'BLOCKED' }), cfg).ok, false, 'a BLOCKED installed smoke -> NOT READY');
+  A.eq(checkInstalled(Object.assign({}, installed, { mode: 'browser' }), cfg).ok, false, 'browser-mode installed receipt is rejected');
+  A.eq(checkInstalled(Object.assign({}, installed, { buildCommit: 'c'.repeat(40) }), cfg).ok, false, 'binary built from another commit is rejected');
+  A.eq(checkInstalled(Object.assign({}, installed, { artifactVerified: false }), cfg).ok, false, 'missing/mismatched artifact is rejected');
+  A.eq(checkInstalled(Object.assign({}, installed, { schemaVersion: 1 }), cfg).ok, false, 'legacy installed receipt is rejected');
   A.ok(/installed app unverified/.test(checkInstalled({ missing: true }, cfg).reason), 'a missing installed smoke reads "installed app unverified"');
 }
 

@@ -1036,6 +1036,10 @@ fn sidecar_command(state: &AppState, entry: &Path, node: &Path) -> Command {
         // e.g. "v0.4.1" clean or "v0.4.1-32-g8b5aae04-dirty"). Exported so the bundled sidecar can surface the
         // real build provenance at /api/version — a packaged app has no .git to derive it from at runtime.
         .env("STARNET_BUILD_DESCRIBE", env!("STARNET_BUILD_DESCRIBE"))
+        // Full immutable source identity for installed-smoke/release receipts. Keep this separate from the
+        // short human-facing commit exposed by starnet_build_info.
+        .env("STARNET_BUILD_SHA", env!("STARNET_BUILD_SHA"))
+        .env("STARNET_BUILD_DIRTY", env!("STARNET_BUILD_DIRTY"))
         .current_dir(&state.root);
     if let Some(key) = read_key() {
         cmd.env("SKYNET_OPENROUTER_KEY", key);
@@ -1630,6 +1634,7 @@ async fn starnet_update_install(
 struct BuildInfo {
     version: String,
     commit: String,
+    sha: String,
     describe: String,
     dirty: bool,
 }
@@ -1639,6 +1644,7 @@ fn starnet_build_info(app: AppHandle) -> BuildInfo {
     BuildInfo {
         version: app.package_info().version.to_string(),
         commit: env!("STARNET_BUILD_COMMIT").to_string(),
+        sha: env!("STARNET_BUILD_SHA").to_string(),
         describe: env!("STARNET_BUILD_DESCRIBE").to_string(),
         dirty: env!("STARNET_BUILD_DIRTY") == "1",
     }
