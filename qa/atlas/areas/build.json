@@ -39,7 +39,7 @@
         "cbc5b114"
       ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-08T21:11:49.341Z",
+      "lastSeen": "2026-07-10T05:18:57.442Z",
       "missing": false,
       "notes": "Live-proven (.uiatlas/build3-evidence/build3-verify.json): /api/connectors/catalog count=37 === 37 .cc-card DOM nodes across 10 category groups, 37 site links, 21 ADD buttons. Truthful: rendered cards equal the catalog. Machine-guarded by connectors-ui.test.js + mcp.catalog.test.js."
     },
@@ -72,7 +72,7 @@
         "75af5388"
       ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-08T21:11:49.341Z",
+      "lastSeen": "2026-07-10T05:18:57.442Z",
       "missing": false,
       "notes": "Manual is a static help console (buildManual in frontend/app/stationui.js); tabs are section swaps, no backend claim. Left audited-not-perfected class exemplars; tabs mapped as clones (see MAN finding note)."
     },
@@ -109,7 +109,7 @@
         "cbc5b114"
       ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-08T21:11:49.341Z",
+      "lastSeen": "2026-07-10T05:18:57.442Z",
       "missing": false,
       "notes": "Live-proven (.uiatlas/build3-evidence/build3-verify.json): /api/skills catalog=38 === 38 .sk-card DOM nodes, 38 switches (one per card); sum reads \"38 recipes · 5 active for NOVA\". Truthful: the count equals the sidecar catalog. Machine-guarded by skills.library.test.js."
     },
@@ -144,7 +144,7 @@
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-08T21:11:49.341Z",
+      "lastSeen": "2026-07-10T05:18:57.442Z",
       "missing": false,
       "notes": "REFIT palette proven reachable live (.uiatlas/build3-evidence/build3-verify.json); room kinds come from station.KIND_ORDER (frontend/app/build.js). Room-kind tiles mapped as clones."
     },

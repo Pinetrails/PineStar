@@ -30,7 +30,7 @@
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-08T21:11:49.341Z",
+      "lastSeen": "2026-07-10T05:18:57.442Z",
       "missing": false,
       "notes": "Live-proven 2026-07-07T22:17:15.768Z (port 8968/CDP 9368): the seeded station loaded directly into the ingame state (376 model rows, dock tiles, widget rails all present). states.mjs:83 name:ingame drive:closeOnly. This IS the state every other world entry was harvested under."
     },
