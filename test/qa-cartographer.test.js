@@ -11,7 +11,7 @@
    Pure + deterministic — every timestamp comes from the injected clock, never Date.now(). */
 'use strict';
 const A = require('./_assert.js');
-const { makeCartographer, slug, areaOfState, AREAS, STATUSES } = require('../scripts/qa/cartographer.mjs');
+const { makeCartographer, enumerateProps, slug, areaOfState, AREAS, STATUSES } = require('../scripts/qa/cartographer.mjs');
 
 // a fixed clock so firstSeen/lastSeen are deterministic ISO strings.
 let clk = Date.UTC(2026, 6, 7, 12, 0, 0);          // 2026-07-07T12:00:00.000Z
@@ -230,6 +230,21 @@ const fullEntry = (over) => Object.assign({
   A.throws(() => carto.validateShardSet(duplicate), 'duplicate ids across shards block');
   const gitError = makeCartographer({ clock, git: { logSince() { throw new Error('git unavailable'); } } });
   A.throws(() => gitError.deriveStatus(shardsFrom([fullEntry()])), 'git failure blocks freshness instead of counting perfected');
+}
+
+// ---- (d3) props are harvested from the real catalog contract, never a copied inventory ----
+{
+  const catalog = [
+    { id: 'desk', label: 'DESK', cat: 'workstation', tier: 'functional', w: 2, h: 1 },
+    { id: 'rug', label: 'RUG', cat: 'decor', tier: 'cosmetic', w: 4, h: 3 }
+  ];
+  const rows = enumerateProps(catalog, id => id === 'desk' || id === 'rug');
+  A.eq(rows.map(row => row.id), ['prop/desk', 'prop/rug'], 'catalog IDs become stable prop Atlas IDs');
+  A.eq(rows[0].area, 'props', 'harvested props land in the props authority shard');
+  A.ok(/functional\/workstation/.test(rows[0].name), 'harvested name carries truthful tier/category metadata');
+  A.throws(() => enumerateProps([], () => true), 'empty catalog blocks enumeration');
+  A.throws(() => enumerateProps(catalog.concat(catalog[0]), () => true), 'duplicate prop IDs block enumeration');
+  A.throws(() => enumerateProps(catalog, id => id !== 'rug'), 'catalog prop without a renderer blocks enumeration');
 }
 
 // ---- (e) STATUS row splice: replaced vs inserted-after-Janitor ----

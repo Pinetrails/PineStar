@@ -102,6 +102,29 @@ export function areaOfState(name) {
   return 'world';
 }
 
+// Enumerate the real placeable furniture registry. `propsprites.js` exports CATALOG as the palette
+// and renderer contract, so harvesting that catalog is authoritative (not a hand-maintained list).
+// Fail closed if a catalog row is malformed, duplicated, or has no renderer.
+export function enumerateProps(catalog, hasRenderer) {
+  if (!Array.isArray(catalog) || catalog.length === 0) throw new Error('[atlas] prop catalog is missing or empty');
+  if (typeof hasRenderer !== 'function') throw new Error('[atlas] prop renderer authority is unavailable');
+  const seen = new Set();
+  return catalog.map((prop, index) => {
+    const where = 'prop catalog[' + index + ']';
+    if (!prop || typeof prop !== 'object' || Array.isArray(prop)) throw new Error('[atlas] ' + where + ' is malformed');
+    const id = str(prop.id).trim();
+    if (!id || seen.has(id)) throw new Error('[atlas] ' + where + ' has a missing/duplicate id');
+    if (!str(prop.label).trim() || !str(prop.cat).trim() || !str(prop.tier).trim()) throw new Error('[atlas] ' + where + ' lacks label/category/tier');
+    if (!(Number(prop.w) > 0) || !(Number(prop.h) > 0)) throw new Error('[atlas] ' + where + ' lacks a positive footprint');
+    if (!hasRenderer(id)) throw new Error('[atlas] ' + where + ' has no renderer: ' + id);
+    seen.add(id);
+    return {
+      id: 'prop/' + slug(id), kind: 'prop', area: 'props',
+      name: str(prop.label).trim() + ' [' + str(prop.tier).trim() + '/' + str(prop.cat).trim() + '] ' + Number(prop.w) + 'x' + Number(prop.h)
+    };
+  });
+}
+
 export function makeCartographer(opts) {
   opts = opts || {};
   const clock = opts.clock || { now() { return 0; } };
@@ -196,7 +219,9 @@ export function makeCartographer(opts) {
   // Validate the registry as one authority. A missing/corrupt/empty area must never collapse into a
   // smaller denominator that can report 100%. This is intentionally separate from deriveStatus so
   // small pure-unit shards remain useful, while every CLI/aggregate load is fail-closed.
-  function validateShardSet(shards, requiredAreas) {
+  function validateShardSet(shards, requiredAreas, options) {
+    options = options || {};
+    const allowEmptyAreas = new Set(arr(options.allowEmptyAreas));
     if (!shards || typeof shards !== 'object' || Array.isArray(shards)) throw new Error('[atlas] shard set is not an object');
     const required = arr(requiredAreas && requiredAreas.length ? requiredAreas : AREAS);
     const missingAreas = required.filter(area => !Object.prototype.hasOwnProperty.call(shards, area));
@@ -207,7 +232,7 @@ export function makeCartographer(opts) {
       const shard = shards[area];
       if (!shard || typeof shard !== 'object' || Array.isArray(shard)) throw new Error('[atlas] malformed shard: ' + area);
       if (str(shard.area) !== area) throw new Error('[atlas] shard area mismatch: key=' + area + ' value=' + str(shard.area));
-      if (!Array.isArray(shard.entries) || shard.entries.length === 0) throw new Error('[atlas] required area shard is empty: ' + area);
+      if (!Array.isArray(shard.entries) || (shard.entries.length === 0 && !allowEmptyAreas.has(area))) throw new Error('[atlas] required area shard is empty: ' + area);
       for (const entry of shard.entries) {
         validateEntry(entry, 'areas/' + area + '.json#' + str(entry && entry.id));
         if (str(entry.area) !== area) throw new Error('[atlas] entry area mismatch: ' + str(entry.id) + ' is in ' + area + ' but declares ' + str(entry.area));
@@ -496,7 +521,9 @@ if (INVOKED_DIRECTLY) {
   // ---- shard IO ----
   const carto = makeCartographer({ clock: { now: () => Date.now() }, git: gitShell() });
 
-  function loadShards() {
+  function loadShards(options) {
+    options = options || {};
+    const bootstrapAreas = new Set(arr(options.bootstrapAreas));
     const shards = {};
     let names = [];
     try { names = fs.readdirSync(AREAS_DIR); }
@@ -513,7 +540,11 @@ if (INVOKED_DIRECTLY) {
       for (const e of arr(shard.entries)) carto.validateEntry(e, n + '#' + str(e && e.id));
       shards[area] = { area, updatedAt: str(shard.updatedAt) || nowIsoReal(), entries: arr(shard.entries) };
     }
-    carto.validateShardSet(shards, AREAS);
+    for (const area of bootstrapAreas) {
+      if (!AREAS.includes(area)) throw new Error('[atlas] invalid bootstrap area: ' + area);
+      if (!Object.prototype.hasOwnProperty.call(shards, area)) shards[area] = { area, updatedAt: nowIsoReal(), entries: [] };
+    }
+    carto.validateShardSet(shards, AREAS, { allowEmptyAreas: [...bootstrapAreas] });
     return shards;
   }
 
@@ -532,7 +563,7 @@ if (INVOKED_DIRECTLY) {
   // Returns { elements, eyeballs } where eyeballs is a per-kind sanity count printed so a miss is visible.
   function staticEnumerate() {
     const elements = [];
-    const counts = { command: 0, route: 0, event: 0, state: 0 };
+    const counts = { command: 0, route: 0, event: 0, state: 0, prop: 0 };
 
     // 1. slash commands — enumerate the catalog with EMPTY recipes/skills (built-ins only), the same
     //    call /api/slash/catalog makes. One entry per built-in command.
@@ -596,7 +627,15 @@ if (INVOKED_DIRECTLY) {
       }
     } catch (e) { appendLog('static/events FAILED: ' + (e && e.message || e)); throw new Error('static enumeration of events failed: ' + (e && e.message || e)); }
 
-    // 4. shoot states — import buildStates() and one entry per state, area = its group.
+    // 4. placeable props — enumerate the real palette/renderer catalog, never a copied list.
+    try {
+      const props = require_(path.join(REPO, 'frontend', 'app', 'propsprites.js'));
+      const harvested = enumerateProps(props && props.CATALOG, props && props.has);
+      elements.push(...harvested);
+      counts.prop = harvested.length;
+    } catch (e) { appendLog('static/props FAILED: ' + (e && e.message || e)); throw new Error('static enumeration of props failed: ' + (e && e.message || e)); }
+
+    // 5. shoot states — import buildStates() and one entry per state, area = its group.
     try {
       const url = pathToFileURL(path.join(REPO, 'scripts', 'lib', 'states.mjs')).href;
       // dynamic import via the CLI's own loader (top-level await is fine here — this block only runs as a CLI).
@@ -755,7 +794,7 @@ if (INVOKED_DIRECTLY) {
     }
     const elements = staticResult.elements.slice();
     const counts = staticResult.counts;
-    const sweptKinds = new Set(['command', 'route', 'event', 'state']);
+    const sweptKinds = new Set(['command', 'route', 'event', 'state', 'prop']);
     let statesWalked = [];
 
     if (!staticOnly) {
@@ -774,9 +813,10 @@ if (INVOKED_DIRECTLY) {
     }
 
     // merge into the shards.
-    const shards = loadShards();
+    const shards = loadShards({ bootstrapAreas: ['props'] });
     const reportRel = path.relative(REPO, SWEEP_REPORT).replace(/\\/g, '/');
     const merge = carto.mergeSweep(shards, { elements, sweptKinds: [...sweptKinds], reportRel });
+    carto.validateShardSet(merge.shards, AREAS);
     writeShards(merge.shards);
 
     // file ONE ledger finding per vanished entry (skeletons are NOT findings — the registry is the queue).
@@ -805,7 +845,7 @@ if (INVOKED_DIRECTLY) {
     fs.writeFileSync(SWEEP_REPORT, JSON.stringify(report, null, 2) + '\n', 'utf8');
 
     log('sweep done — created ' + merge.created + ', updated ' + merge.updated + ', missing ' + merge.missing.length);
-    log('  static: ' + counts.command + ' commands · ' + counts.route + ' routes (' + (counts._routeMatched || counts.route) + ' matched / ' + (counts._routeGuards || '?') + ' method-guards) · ' + counts.event + ' events · ' + counts.state + ' states');
+    log('  static: ' + counts.command + ' commands · ' + counts.route + ' routes (' + (counts._routeMatched || counts.route) + ' matched / ' + (counts._routeGuards || '?') + ' method-guards) · ' + counts.event + ' events · ' + counts.state + ' states · ' + counts.prop + ' props');
     if (!staticOnly) log('  live: ' + (counts.ui || 0) + ' distinct UI elements across ' + statesWalked.length + ' states');
     log('  report: ' + reportRel);
     return merge.missing.length ? 1 : 0;
