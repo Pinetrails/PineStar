@@ -24,8 +24,8 @@ function greenArtifacts() {
   return {
     ledger: { ok: true, counts: { P0: 0, P1: 0, P2: 3 } },
     guardian: { stampIso: FRESH, trunkHead: TRUNK, result: 'green', gatesRan: ['test-fast', 'shoot', 'golden', 'audit', 'journeys'], gatesSkipped: [] },
-    journeys: { stampIso: FRESH, result: 'pass', passed: 120, total: 120 },
-    beginner: { stampIso: FRESH, result: 'PASS', mode: 'ui-only', totalMs: 84000 },
+    journeys: { stampIso: FRESH, trunkHead: TRUNK, result: 'pass', passed: 120, total: 120 },
+    beginner: { stampIso: FRESH, trunkHead: TRUNK, result: 'PASS', mode: 'ui-only', totalMs: 84000 },
     installed: {
       schemaVersion: 2, stampIso: iso(NOW - 2 * DAY_MS), expectedHead: TRUNK, buildCommit: TRUNK,
       buildDescribe: 'v0.3.0-1-gaaaaaaaa', buildDirty: false, appVersion: '0.3.0',
@@ -75,6 +75,11 @@ function greenCfg() {
   arts2.guardian = { error: 'bad JSON' };
   const v2 = evaluate(arts2, greenCfg());
   A.eq(v2.ready, false, 'an unreadable guardian stamp -> NOT READY');
+
+  A.throws(() => makeLedger({ strictRead: true, io: { listFindings() { throw new Error('EACCES'); } } }),
+    'strict aggregate ledger propagates an unreadable findings store');
+  A.notThrows(() => makeLedger({ io: { listFindings() { throw new Error('EACCES'); } } }),
+    'non-aggregate detector lanes retain legacy fail-open ledger behavior');
 }
 
 /* ─── C. ledger P0/P1 counting: any open P0 or P1 blocks; P2-only passes ─── */
@@ -143,22 +148,30 @@ function greenCfg() {
   // a git failure to compute drift is fail-closed.
   const errCfg = Object.assign(greenCfg(), { driftError: 'git rev-list failed' });
   A.eq(checkGuardian({ stampIso: FRESH, trunkHead: 'abc12345', result: 'green', gatesRan: ['test-fast', 'shoot', 'golden', 'audit', 'journeys'], gatesSkipped: [] }, errCfg).ok, false, 'a drift-compute error is fail-closed (NOT READY)');
+
+  const falseZero = Object.assign(greenCfg(), { trunkDrift: 0 });
+  A.eq(checkGuardian({ stampIso: FRESH, trunkHead: 'b'.repeat(40), result: 'green', gatesRan: ['test-fast', 'shoot', 'golden', 'audit', 'journeys'], gatesSkipped: [] }, falseZero).ok, false,
+    'a different guardian SHA cannot pass merely because one-way drift was zero');
 }
 
 /* ─── F. journeys + beginner + installed check semantics ─── */
 {
   const cfg = greenCfg();
-  A.eq(checkJourneys({ stampIso: FRESH, result: 'pass', passed: 5, total: 5 }, cfg).ok, true, 'fresh journeys pass -> ok');
+  A.eq(checkJourneys({ stampIso: FRESH, trunkHead: TRUNK, result: 'pass', passed: 5, total: 5 }, cfg).ok, true, 'fresh candidate-bound journeys pass -> ok');
   A.eq(checkJourneys({ stampIso: FRESH, result: 'blocked' }, cfg).ok, false, 'blocked journeys -> NOT READY');
   A.eq(checkJourneys({ stampIso: FRESH, result: 'fail' }, cfg).ok, false, 'failed journeys -> NOT READY');
-  A.eq(checkJourneys({ stampIso: STALE, result: 'pass' }, cfg).ok, false, 'a stale journeys pass -> NOT READY');
+  A.eq(checkJourneys({ stampIso: STALE, trunkHead: TRUNK, result: 'pass' }, cfg).ok, false, 'a stale journeys pass -> NOT READY');
+  A.eq(checkJourneys({ stampIso: FRESH, result: 'pass' }, cfg).ok, false, 'journeys missing candidate SHA -> NOT READY');
+  A.eq(checkJourneys({ stampIso: FRESH, trunkHead: 'b'.repeat(40), result: 'pass' }, cfg).ok, false, 'journeys on another candidate -> NOT READY');
 
-  A.eq(checkBeginner({ stampIso: FRESH, result: 'PASS', mode: 'ui-only' }, cfg).ok, true, 'fresh beginner PASS -> ok');
+  A.eq(checkBeginner({ stampIso: FRESH, trunkHead: TRUNK, result: 'PASS', mode: 'ui-only' }, cfg).ok, true, 'fresh candidate-bound beginner PASS -> ok');
   const stuck = checkBeginner({ stampIso: FRESH, result: 'STUCK@first-directive', mode: 'ui-only' }, cfg);
   A.eq(stuck.ok, false, 'a STUCK beginner run -> NOT READY');
   A.ok(/stuck/i.test(stuck.reason), 'the reason names the stuck fresh-user path');
   A.eq(checkBeginner({ stampIso: FRESH, result: 'FAIL' }, cfg).ok, false, 'a FAILED beginner run -> NOT READY');
-  A.eq(checkBeginner({ stampIso: STALE, result: 'PASS' }, cfg).ok, false, 'a stale beginner PASS -> NOT READY');
+  A.eq(checkBeginner({ stampIso: STALE, trunkHead: TRUNK, result: 'PASS' }, cfg).ok, false, 'a stale beginner PASS -> NOT READY');
+  A.eq(checkBeginner({ stampIso: FRESH, result: 'PASS' }, cfg).ok, false, 'beginner missing candidate SHA -> NOT READY');
+  A.eq(checkBeginner({ stampIso: FRESH, trunkHead: 'b'.repeat(40), result: 'PASS' }, cfg).ok, false, 'beginner on another candidate -> NOT READY');
 
   // installed uses the 7-day window, not 24h.
   const installed = greenArtifacts().installed;

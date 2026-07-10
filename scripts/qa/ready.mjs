@@ -128,6 +128,9 @@ export function checkGuardian(input, cfg) {
   if (cfg.driftError) return mk(false, 'could not verify the guardian saw current trunk: ' + str(cfg.driftError), value);
   const drift = num(cfg.trunkDrift);
   const maxDrift = cfg.maxTrunkDrift != null ? num(cfg.maxTrunkDrift) : DEFAULTS.maxTrunkDrift;
+  if (maxDrift === 0 && drift === 0 && str(input.trunkHead).toLowerCase() !== str(cfg.currentTrunk).toLowerCase()) {
+    return mk(false, 'guardian has not seen the exact current trunk (' + str(input.trunkHead).slice(0, 8) + ' vs ' + str(cfg.currentTrunk).slice(0, 8) + ')', value);
+  }
   if (drift > maxDrift) {
     return mk(false, 'guardian has not seen current trunk — it ran ' + drift + ' commit' + (drift === 1 ? '' : 's') + ' behind head (' + str(input.trunkHead).slice(0, 8) + ' vs ' + str(cfg.currentTrunk).slice(0, 8) + ')', value + ' behind by ' + drift);
   }
@@ -135,7 +138,7 @@ export function checkGuardian(input, cfg) {
 }
 
 // ---- CHECK 3: journeys last run == pass + fresh --------------------------------------------------
-// input: { missing?, error?, stampIso, result, passed, total, artifact? }
+// input: { missing?, error?, stampIso, trunkHead, result, passed, total, artifact? }
 export function checkJourneys(input, cfg) {
   input = input || {}; cfg = cfg || {};
   const artifact = input.artifact || 'qa/journeys-last-run.json';
@@ -146,13 +149,16 @@ export function checkJourneys(input, cfg) {
   const result = str(input.result).toLowerCase();
   const value = result.toUpperCase() + ' · ' + num(input.passed) + '/' + num(input.total) + ' assertions';
   if (result !== 'pass') return mk(false, 'last journeys run was ' + (result ? result.toUpperCase() : 'not a pass'), value);
+  if (!/^[0-9a-f]{40}$/i.test(str(input.trunkHead)) || str(input.trunkHead).toLowerCase() !== str(cfg.currentTrunk).toLowerCase()) {
+    return mk(false, 'journeys did not run on the exact current trunk (' + (str(input.trunkHead).slice(0, 8) || 'missing') + ' vs ' + str(cfg.currentTrunk).slice(0, 8) + ')', value);
+  }
   const fresh = freshness(input.stampIso, cfg.nowMs, cfg.maxStaleMs != null ? cfg.maxStaleMs : DEFAULTS.maxStaleMs);
   if (!fresh.ok) return mk(false, 'journeys run ' + fresh.reason, value);
   return mk(true, 'PASS, ' + fresh.reason, value);
 }
 
 // ---- CHECK 4: beginner run PASS (not STUCK/FAIL) + fresh -----------------------------------------
-// input: { missing?, error?, stampIso, result, mode, totalMs, stalledStep, artifact? }
+// input: { missing?, error?, stampIso, trunkHead, result, mode, totalMs, stalledStep, artifact? }
 export function checkBeginner(input, cfg) {
   input = input || {}; cfg = cfg || {};
   const artifact = input.artifact || 'qa/beginner-last-run.json';
@@ -167,6 +173,9 @@ export function checkBeginner(input, cfg) {
   if (up !== 'PASS') {
     const why = /^STUCK/.test(up) ? 'the fresh-user path is stuck (' + result + ')' : 'last Beginner Run result was ' + (result || 'not PASS');
     return mk(false, why, value);
+  }
+  if (!/^[0-9a-f]{40}$/i.test(str(input.trunkHead)) || str(input.trunkHead).toLowerCase() !== str(cfg.currentTrunk).toLowerCase()) {
+    return mk(false, 'Beginner Run did not run on the exact current trunk (' + (str(input.trunkHead).slice(0, 8) || 'missing') + ' vs ' + str(cfg.currentTrunk).slice(0, 8) + ')', value);
   }
   const fresh = freshness(input.stampIso, cfg.nowMs, cfg.maxStaleMs != null ? cfg.maxStaleMs : DEFAULTS.maxStaleMs);
   if (!fresh.ok) return mk(false, 'Beginner Run ' + fresh.reason, value);
@@ -298,6 +307,7 @@ if (INVOKED_DIRECTLY) {
   const ledgerInput = (() => {
     try {
       const led = makeLedger({
+        strictRead: true,
         clock: { now: () => nowMs },
         io: {
           listFindings() {
@@ -353,11 +363,11 @@ if (INVOKED_DIRECTLY) {
   // ---- CHECK 3/4/5 inputs ----
   const jRead = readJsonMaybe(path.join(QA_DIR, 'journeys-last-run.json'));
   const journeysInput = jRead.missing ? { missing: true } : jRead.error ? { error: jRead.error }
-    : { stampIso: jRead.data.stampIso, result: jRead.data.result, passed: jRead.data.passed, total: jRead.data.total };
+    : { stampIso: jRead.data.stampIso, trunkHead: jRead.data.trunkHead, result: jRead.data.result, passed: jRead.data.passed, total: jRead.data.total };
 
   const bRead = readJsonMaybe(path.join(QA_DIR, 'beginner-last-run.json'));
   const beginnerInput = bRead.missing ? { missing: true } : bRead.error ? { error: bRead.error }
-    : { stampIso: bRead.data.stampIso, result: bRead.data.result, mode: bRead.data.mode, totalMs: bRead.data.totalMs, stalledStep: bRead.data.stalledStep };
+    : { stampIso: bRead.data.stampIso, trunkHead: bRead.data.trunkHead, result: bRead.data.result, mode: bRead.data.mode, totalMs: bRead.data.totalMs, stalledStep: bRead.data.stalledStep };
 
   const iRead = readJsonMaybe(path.join(QA_DIR, 'installed', 'last-smoke.json'));
   const verifyInstalledEvidence = (data) => {

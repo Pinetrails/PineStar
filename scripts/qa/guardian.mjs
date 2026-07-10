@@ -622,6 +622,9 @@ if (INVOKED_DIRECTLY) {
       copyInto(path.join(PIN_DIR, '.uiaudit', 'audit-report.json'), cycleDir, 'audit-report.json');
     } else if (step.id === 'journeys') {
       copyInto(path.join(PIN_DIR, '.uijourneys', 'journeys-report.json'), cycleDir, 'journeys-report.json');
+      // The runner executes in the immutable pinned checkout, so its candidate-bound READY stamp
+      // lands there too. Preserve that exact stamp in the guardian repo before the next pin reset.
+      copyInto(path.join(PIN_DIR, 'qa', 'journeys-last-run.json'), QA_DIR, 'journeys-last-run.json');
       // copy every per-journey failure screenshot the runner captured (_FAIL-*.png / <id>.png) into the bundle.
       try {
         const shotDir = path.join(PIN_DIR, '.uijourneys');

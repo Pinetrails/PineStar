@@ -50,7 +50,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { sleep, launchChrome, connectCDP, evalJS, capture, collectDiagnostics } from '../lib/cdp.mjs';
 import { makeLedger } from './ledger.mjs';
 
@@ -379,9 +379,13 @@ if (INVOKED_DIRECTLY) (async () => {
   function writeQaStamp(res, verdict) {
     try {
       const QA_DIR = path.join(REPO, 'qa');
+      const headRun = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: REPO, encoding: 'utf8', windowsHide: true });
+      const trunkHead = headRun.status === 0 && /^[0-9a-f]{40}$/i.test(String(headRun.stdout || '').trim())
+        ? String(headRun.stdout).trim().toLowerCase() : '';
       fs.mkdirSync(QA_DIR, { recursive: true });
       fs.writeFileSync(path.join(QA_DIR, 'beginner-last-run.json'), JSON.stringify({
         stampIso: new Date(now()).toISOString(),
+        trunkHead,
         result: verdict,                         // 'PASS' | 'STUCK@<step>' | 'FAIL'
         mode: MODE, totalMs: res.totalMs, stalledStep: res.stalledStep || null,
       }, null, 2) + '\n', 'utf8');
