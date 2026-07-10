@@ -21,6 +21,7 @@ const { makeCredits } = require('./credits.js');   // managed-credit backend ada
 const budgetCaps = require('./budgetcaps.js');   // pure resolve(env,overrides) + validate patch — SETTINGS→Budget (P0-2)
 const fallbackChain = require('./fallbackchain.js');   // pure resolve(env,saved) + validate patch — SETTINGS→Models fallback chain (P0-3)
 const { makeConcurrencyGate } = require('./concurrency.js');
+const { makeConsentWait } = require('./consentwait.js');   // EL-11: fail-closed consent timer + human-visible ack extension
 const { killAll } = require('./halt.js');
 const { makeRegistry } = require('./tools/registry.js');
 const { makeWebTools } = require('./tools/builtin/web.js');
@@ -311,6 +312,11 @@ const CREDITS_PURCHASE_URL = String(ENV('CREDITS_PURCHASE_URL') || '').trim();
 // a live permission.prompt left unanswered this long auto-denies (never hangs a run). P1-9: env
 // STARNET_CONSENT_TIMEOUT_MS > a UI-saved override > the 120s default; the frozen resolve keeps it constant per boot.
 const CONSENT_TIMEOUT_MS = resolveKnob('CONSENT_TIMEOUT_MS', 'consentTimeoutMs', 120000);
+// EL-11 FIX 1c: when the browser ATTESTS a consent prompt is rendered to a human (POST /api/consent/ack —
+// fired for the active card AND the new background toast/rail marker), the deny deadline extends ONCE to this
+// bound. Unattended surfaces never ack, so their fail-closed floor above is untouched; an AFK human still
+// fail-closes at this bound (never indefinite). 5× the floor, hard-capped at 15 minutes.
+const CONSENT_ACK_EXTEND_MS = Math.min(CONSENT_TIMEOUT_MS * 5, 900000);
 // ---- cron / scheduled routines (autonomous, OPT-IN). The whole subsystem is INERT unless SKYNET_CRON_ENABLED
 // is set: no timer is armed, no run is fired, and the browser path is byte-identical. A fire uses the same
 // provider seam as /api/run: OpenRouter needs the live BYOK key (runtimeKey), while Codex uses the protected
@@ -2810,6 +2816,13 @@ let scoutState = (() => { try { const o = loadResilient(SCOUT_FILE, 'scout'); re
 function persistInterests() { try { saveResilient(INTERESTS_FILE, { v: 1, state: interestsState }); } catch (e) { console.warn('[scout] interests persist failed:', (e && e.message) || e); } }
 function persistScout() { try { saveResilient(SCOUT_FILE, { v: 1, state: scoutState }); } catch (e) { console.warn('[scout] state persist failed:', (e && e.message) || e); } }
 function scoutNote(entry) { scoutState = Scout.note(scoutState, entry, { now: Date.now() }); persistScout(); }
+// sweep aged-out undecided drafts (DRAFT_TTL_MS) before any decide()/status read, so stale drafts never
+// wedge minting at binding:'full'. Pure reducer; persist ONLY when it actually evicted something.
+function scoutSweep() {
+  const before = scoutState.staged.length;
+  scoutState = Scout.sweep(scoutState, Date.now());
+  if (scoutState.staged.length !== before) persistScout();
+}
 
 // the kit vocabulary a drafted spec may claim — the same 6 real CAP_REGISTRY keys the browser passes the
 // prospect pipeline (app.js getCapabilityKeys). 'computer' is deliberately absent (desktop reach is opt-in).
@@ -2877,6 +2890,7 @@ async function runScoutCycle(o) {
     // 2) MINT ATTEMPT — at most one per cycle; the pure gates decide if and which kind. A non-firing gate is
     //    NOT ledger-noise (it binds most runs by design); GET /api/scout reports the live binding instead.
     const warm = Interests.warm(interestsState, Date.now());
+    scoutSweep();   // age out stale drafts first — an undecided-draft backlog must not wedge the gate at 'full'
     const d = Scout.decide(scoutState, { now: Date.now(), warm: warm });
     if (!d.fire) return;
 
@@ -2938,6 +2952,7 @@ async function runScoutCycle(o) {
 // GET /api/scout — the bay's one read: warmth + the live gate binding + interests (with evidence) + staged
 // drafts + the attempt ledger tail. Every field derives from real persisted state (truthful telemetry).
 function handleScoutGet(req, res) {
+  scoutSweep();   // purge aged-out drafts even on an idle station (no runs) so the status read is truthful
   const now = Date.now();
   const gate = Scout.decide(scoutState, { now: now, warm: Interests.warm(interestsState, now) });
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
@@ -3070,6 +3085,22 @@ function nightshiftContextPack() {
 // have avoided (cold on both paths → tier not hot, or nothing eligible) costs no budget. Best-effort; fail OPEN.
 function nightshiftPrecheck() {
   try {
+    // LANE L — COST GATE (pre-spend). The leash is spent at ACCEPT time; a beat's FIRST model call then dies with
+    // reason 'budget' (loop.js) if a cross-run pool is exhausted — so with the day/global/agent pool dry every
+    // attempt burned a leash unit on a run that made ZERO model calls. Read the governor side-effect-free (runId=null
+    // → no live note, emit=null → no threshold crossing) and stand down BEFORE the spend. Returns a blocked
+    // {scope,usd,cap} (truthy) or null. Checked FIRST so an exhausted pool names the ACTIONABLE reason ('budget',
+    // which the Commander clears by resume/raising the cap) rather than a downstream 'no-provider'/'readiness'.
+    let b = null;
+    try { b = budget.check(null, NIGHTSHIFT_AGENT, 0, Date.now(), null); } catch (_) { b = null; }
+    if (b) return { ok: false, reason: 'budget' };
+    // LANE L — CAPABILITY GATE (pre-spend, same wart): with no runnable provider/credential a beat stands down at
+    // 'no-capability' AFTER the leash was spent (runNightshiftBeat). Read it locally (no model call) and decline
+    // before the spend. Best-effort — a lookup hiccup falls through to the readiness gate (never wedge the tick).
+    try {
+      const provider = cronProviderFor({ agentId: NIGHTSHIFT_AGENT });
+      if (!cronModelFor({ agentId: NIGHTSHIFT_AGENT }) || !cronHasCredential(provider, cronKeyFor(provider))) return { ok: false, reason: 'no-provider' };
+    } catch (_) { /* fall through to readiness */ }
     const snap = commanderPosture.beliefs() || {};
     const summary = { known: Array.isArray(snap.known) ? snap.known : Object.keys((snap.beliefs) || {}) };
     const beliefsByDim = (dim) => (snap.beliefs && snap.beliefs[dim]) || [];
@@ -3881,6 +3912,7 @@ function dispatchRoute(req, res) {
   if (req.method === 'GET' && req.url === '/api/diagnostics') return handleDiagnostics(req, res);   // T3.9 paste-ready bug report
   if (req.method === 'POST' && req.url === '/api/halt') return handleHalt(req, res);
   if (req.method === 'POST' && req.url === '/api/consent') return handleConsent(req, res);
+  if (req.method === 'POST' && req.url === '/api/consent/ack') return handleConsentAck(req, res);   // EL-11: the browser attests the prompt is human-visible
   if (req.method === 'GET' && req.url === '/api/permissions') return handlePermissionsList(req, res);
   if (req.method === 'POST' && req.url === '/api/permissions/grant') return handlePermissionsGrant(req, res);
   if (req.method === 'POST' && req.url === '/api/permissions/revoke') return handlePermissionsRevoke(req, res);
@@ -6100,25 +6132,15 @@ async function handleRun(req, res) {
   // THE LIVE CONSENT CHANNEL: emit a permission.prompt down the NDJSON stream and return a Promise that the loop's
   // dispatch await-pauses on. The browser answers via POST /api/consent (handleConsent), which calls the stored
   // finisher. Fail-closed safety: a disconnect (ac abort) or a CONSENT_TIMEOUT_MS stall auto-DENIES so a forgotten
-  // prompt can never hold a billable run open. Settles exactly once.
+  // prompt can never hold a billable run open. Settles exactly once. EL-11 FIX 1c: the timing now lives in the
+  // unit-tested waiter (consentwait.js) — same fail-closed contract, plus the one-shot CONSENT_ACK_EXTEND_MS
+  // extension the browser earns via POST /api/consent/ack once the prompt is provably rendered to a human.
   function askHuman(fields) {
-    return new Promise((resolve) => {
-      const promptId = crypto.randomUUID();
-      let settled = false, timer = null;
-      function onAbort() { finish('deny'); }
-      function finish(decision) {
-        if (settled) return; settled = true;
-        pending.delete(promptId);
-        if (timer) clearTimeout(timer);
-        try { ac.signal.removeEventListener('abort', onAbort); } catch (_) {}
-        resolve(decision);
-      }
-      pending.set(promptId, finish);
-      if (ac.signal.aborted) return finish('deny');
-      ac.signal.addEventListener('abort', onAbort, { once: true });
-      timer = setTimeout(() => finish('deny'), CONSENT_TIMEOUT_MS);
-      emit('permission.prompt', { promptId, agentId, tool: (fields && fields.tool) || 'tool', scope: (fields && fields.scope) || 'write', argsSummary: (fields && fields.argsSummary) || '' });
-    });
+    return makeConsentWait({
+      pending, signal: ac.signal, timeoutMs: CONSENT_TIMEOUT_MS, extendMs: CONSENT_ACK_EXTEND_MS,
+      uuid: () => crypto.randomUUID(),
+      emitPrompt: (promptId) => emit('permission.prompt', { promptId, agentId, tool: (fields && fields.tool) || 'tool', scope: (fields && fields.scope) || 'write', argsSummary: (fields && fields.argsSummary) || '' })
+    }).ask();
   }
   function promptConsent(call, tool) {
     return askHuman({ tool: call.name, scope: (tool && tool.scope) || 'write', argsSummary: consentSummary(call) });
@@ -6274,7 +6296,7 @@ async function runOnce(o) {
                  : 'The run holding it is a background one (a scheduled routine or delegated worker).';
     } catch (_) {}
     emit('agent.run.start', { agentId, runId, trigger: trigger, model });
-    emit('agent.run.error', { agentId, runId, transient: true, message: 'That agent is already running a task — one run at a time per agent (they share a workspace). ' + holder + ' Wait for it to finish, check ROUTINES for a recurring job on this agent, or press E-STOP to stop everything.' });
+    emit('agent.run.error', { agentId, runId, transient: true, message: 'That agent is already running a task — one run at a time per agent (they share a workspace). ' + holder + ' Wait for it to finish, check ROUTINES for a recurring job on this agent, or press E-STOP (the red control in the top bar, or Alt+H) to stop everything.' });
     emit('agent.run.end', { agentId, runId, reason: 'error', turns: 0, usd: 0 });
     return;   // no slot was taken (we checked BEFORE tryEnter), so nothing to leave; the outer finally is a no-op here
   }
@@ -7083,6 +7105,22 @@ async function handleConsent(req, res) {
   res.writeHead(200); res.end('ok');
 }
 
+// POST /api/consent/ack { runId, promptId } — EL-11 FIX 1c: the browser's attestation that this consent prompt
+// is now RENDERED to a human (the active consent card, or the global background toast + rail marker). A deny
+// that fires on a prompt nobody ever saw is a consent violation — so a human-visible prompt earns exactly ONE
+// bounded extension of the fail-closed deny timer (CONSENT_ACK_EXTEND_MS; see consentwait.js). Unattended
+// surfaces never POST this, so their CONSENT_TIMEOUT_MS floor is byte-identical; disconnect still denies
+// instantly. Stale/unknown ids are a harmless no-op (the run already ended, answered, or auto-denied).
+async function handleConsentAck(req, res) {
+  let body;
+  try { body = JSON.parse(await readBody(req, 4096)) || {}; } catch (e) { res.writeHead(400); return res.end('bad json'); }
+  const pend = pendingByRun.get(body.runId);
+  const finish = pend && pend.get(body.promptId);
+  const extended = !!(finish && typeof finish.extend === 'function' && finish.extend());
+  res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify({ ok: true, extended }));
+}
+
 // GET /api/permissions — the Permissions Panel's read: every standing grant the agent can use without asking
 // (honest — includes any non-curated class blessed via a past prompt) + the curated catalog the panel may add.
 // Privileged: behind the same x-starnet-token + loopback gate as every other /api route (apiauth, not TOKEN_EXEMPT).
@@ -7262,8 +7300,20 @@ async function handleNightshiftBeatNow(req, res) {
   const emit = wrapEmitDiag(makeEmitter(bus, e => { if (e && e.event !== 'tool.web') console.warn('[event]', e.kind, e.event, (e.errors || []).join(';')); }));
   let result;
   const ac = new AbortController();
+  // EL-11 P0: this AC was created and never registered ANYWHERE the E-STOP reaches (killAll walks `runs`; the
+  // driver's abortBeat covers only the driver's own beat) and never aborted on request close — a wedged beat
+  // held the agent's run mutex (concurrencyGate) FOREVER with no way to clear it. Register it in `runs`/`runsMeta`
+  // like every other route-level run (same pattern as handleRun/workshop), so POST /api/halt aborts it (and counts
+  // it honestly) and a dropped connection stops the unattended spend.
+  const beatRunId = 'nsbeat-' + crypto.randomUUID();
+  runs.set(beatRunId, ac);
+  runsMeta.set(beatRunId, { agentId, startedAt: Date.now(), source: 'nightshift' });
+  const onClose = () => { try { ac.abort(); } catch (_) {} };
+  req.on('close', onClose);
   try { result = await runNightshiftBeat({ agentId, emit, broadcast: true, signal: ac.signal }); }
   catch (e) { result = { delivered: false, reason: 'error: ' + ((e && e.message) || e) }; }
+  finally { runs.delete(beatRunId); runsMeta.delete(beatRunId); try { req.removeListener('close', onClose); } catch (_) {} }
+  if (ac.signal.aborted && !(result && result.delivered)) result = { delivered: false, reason: 'aborted' };   // halted/disconnected mid-beat — name it honestly
   try { res.write(JSON.stringify({ name: 'nightshift.beat.result', payload: result }) + '\n'); } catch (_) {}
   try { res.end(); } catch (_) {}
 }
@@ -7357,8 +7407,13 @@ async function handleRunSteer(req, res) {
   json(200, { ok: true, pending: buf.length });
 }
 
-// GET /api/version — the honest build/version surface for /version. Reads the repo package.json (harness version)
-// and the Tauri desktop app version; both are best-effort so a missing file never 500s.
+// GET /api/version — the honest build/version surface for /version. Resolves the harness build id and the Tauri
+// desktop app version; every lookup is best-effort so a missing file/git never 500s.
+//   harness fallback chain: env STARNET_BUILD_DESCRIBE → one-shot `git describe --always --dirty --tags` (cwd = repo
+//   root) → package.json version. The repo package.json is the intentional '0.0.0' PLACEHOLDER — real build ids come
+//   from the release pipeline — so reporting it raw is a truthful-telemetry violation on a diagnostic surface. The
+//   `git describe` runs ONCE (the whole surface is cached below). `harnessSource` is additive: it names WHERE harness
+//   came from ('env' | 'git' | 'pkg' | 'unknown').
 //   app-version fallback chain (GROUND_UP_AUDIT 2026-07-06 P2): env STARNET_APP_VERSION → src-tauri/tauri.conf.json
 //   → blank. In the PACKAGED desktop app src-tauri/ is NOT a bundled resource, so the conf lookup returns '' and a
 //   support ticket can't tell which build the user is on. The desktop shell should export STARNET_APP_VERSION when
@@ -7368,8 +7423,21 @@ async function handleRunSteer(req, res) {
 let _versionCache = null;
 function computeVersionSurface() {
   if (_versionCache) return _versionCache;
-  const out = { harness: '', app: '', node: process.version, appSource: 'unknown' };
-  try { out.harness = String(require('../package.json').version || ''); } catch (_) {}
+  const out = { harness: '', app: '', node: process.version, appSource: 'unknown', harnessSource: 'unknown' };
+  const envHarness = String(ENV('BUILD_DESCRIBE') || '').trim();   // STARNET_BUILD_DESCRIBE — stamped by the build/release pipeline
+  if (envHarness) { out.harness = envHarness; out.harnessSource = 'env'; }
+  else {
+    try {
+      const { execSync } = require('node:child_process');
+      const desc = String(execSync('git describe --always --dirty --tags', {
+        cwd: path.resolve(__dirname, '..'), stdio: ['ignore', 'pipe', 'ignore'], timeout: 2000
+      }) || '').trim();
+      if (desc) { out.harness = desc; out.harnessSource = 'git'; }
+    } catch (_) {}
+    if (!out.harness) {   // no env stamp, no git (packaged app has neither) — fall back to the package.json version
+      try { out.harness = String(require('../package.json').version || ''); out.harnessSource = 'pkg'; } catch (_) {}
+    }
+  }
   const envApp = String(ENV('APP_VERSION') || '').trim();   // STARNET_APP_VERSION (or SKYNET_APP_VERSION) — the packaged-app source of truth
   if (envApp) { out.app = envApp; out.appSource = 'env'; }
   else {
@@ -7449,7 +7517,8 @@ function handleHalt(req, res) {
   const halted = killAll(runs, tgInflight, dcInflight);   // browser runs + Telegram + Discord hub runs, in one kill (see sidecar/halt.js)
   let cronAborted = 0;
   try { cronAborted = cronDriver.abortAllLeases(); } catch (_) {}   // Phase 0: E-STOP also aborts in-flight cron runs (unattended spend)
-  try { nightshiftDriver.abortBeat(); } catch (_) {}   // NS-1: E-STOP also aborts an in-flight night-shift beat (unattended spend)
+  let beatAborted = 0;
+  try { beatAborted = nightshiftDriver.abortBeat() || 0; } catch (_) {}   // NS-1: E-STOP also aborts an in-flight night-shift beat (unattended spend); COUNTED so the toast is honest (a force-fired beat lives in `runs` and is already inside `halted`)
   // …and STAMP a durable halt so the shift stays stood-down AFTER this beat. Without it the leash unit + lastBeatAt
   // were already spent at accept-time, so the ~45-min cooldown was the ONLY thing pausing autonomy — beats resumed
   // on their own even though the Commander hit E-STOP. The flag persists (survives restart); it lifts only when the
@@ -7459,7 +7528,7 @@ function handleHalt(req, res) {
   try { subagents.interruptAll(); } catch (_) {}   // Phase 1: E-STOP aborts watchable background workers too
   try { cronLock.release(); } catch (_) {}  // G4.3: drop any cron lock this process holds so an E-STOP mid-tick never wedges the next tick (standalone halt-block addition; G2 will add connectors.close here)
   res.writeHead(200, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify({ halted, cronAborted }));   // honest counts: run-controllers aborted + cron leases aborted
+  res.end(JSON.stringify({ halted, cronAborted, beatAborted }));   // honest counts: run-controllers aborted + cron leases aborted + driver-path beat aborted (additive field)
 }
 
 // POST /api/channels/telegram/connect { token, key?, model, provider? } — the Messaging tab hands over the

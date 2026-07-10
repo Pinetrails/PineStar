@@ -472,7 +472,10 @@ const Harness = (() => {
     try {
       const r = await fetch('/api/halt', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
       const j = await r.json().catch(() => ({}));
-      return (j && typeof j.halted === 'number') ? j.halted : 0;
+      // honest total: run controllers (browser/hub/force-fired beats) + cron leases + the driver-path beat —
+      // everything the server ACTUALLY aborted, so the HALT toast never under-reports what the E-STOP stopped.
+      const n = k => (j && typeof j[k] === 'number') ? j[k] : 0;
+      return n('halted') + n('cronAborted') + n('beatAborted');
     } catch (_) { return 0; }
   }
 
@@ -481,6 +484,15 @@ const Harness = (() => {
   async function consent(runId, promptId, decision) {
     if (!runId || !promptId) return;
     try { await fetch('/api/consent', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ runId, promptId, decision }) }); } catch (_) {}
+  }
+
+  // EL-11 FIX 1c: attest to the sidecar that a live permission.prompt is now RENDERED to a human (the active
+  // consent card, or the global background toast + rail marker). Earns the run's paused consent ONE bounded
+  // extension of the fail-closed auto-deny timer — a deny on a prompt nobody saw is a consent violation.
+  // Fire-and-forget; a stale id is a harmless no-op on the sidecar.
+  async function consentAck(runId, promptId) {
+    if (!runId || !promptId) return;
+    try { await fetch('/api/consent/ack', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ runId, promptId }) }); } catch (_) {}
   }
 
   // answer a live crew.summon.request: report the new agentId we summoned (or null if we couldn't), which resolves
@@ -612,7 +624,7 @@ const Harness = (() => {
   return {
     isDesktop: () => DESKTOP,   // lets the UI tell a desktop keychain-store failure (token saved locally) from a browser no-op
     getKey, setKey, storeChannelToken, getModel, setModel, getProv, setProv, getBaseUrl, setBaseUrl, getReasoningEffort, setReasoningEffort, normalizeReasoningEffort, init, configured, hasStoredCredential,
-    listModels, priceOf, contextLimitOf, contextState, chat, cancel, haltAll, consent, summonAck, notebook,
+    listModels, priceOf, contextLimitOf, contextState, chat, cancel, haltAll, consent, consentAck, summonAck, notebook,
     memoryProposals, memoryTurnin, memoryVeto, memoryReset, memoryRecords, memoryDeclined, memoryRestore, memoryPin, memoryEdit, memoryForget,
     studyProposals,
     threadProposals, threadTurnin,

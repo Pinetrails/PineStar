@@ -123,6 +123,7 @@ test/qa-cartographer.test.js
 test/golden.test.js
 test/qa-beginner.test.js
 test/qa-janitor.test.js
+test/qa-evidence-sweep.test.js
 test/qa-installed-smoke.test.js
 test/transcript.test.js
 test/recall.test.js
@@ -268,6 +269,8 @@ test/propanchor.test.js
 test/waitanchor.test.js
 test/harness.integration.test.js
 test/consent.interactive.test.js
+test/consentwait.test.js
+test/consent-visibility.test.js
 test/channels.adapter.test.js
 test/channels.telegram.test.js
 test/channels.discord.test.js
@@ -294,5 +297,6 @@ test/channels.discord-wire.test.js
 test/widgets.test.js
 test/widgetfeed.test.js
 test/release-bump.test.js
+test/release-train-provenance.test.js
 test/lint-emits.js
 test/lint-determinism.js

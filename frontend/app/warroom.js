@@ -27,11 +27,26 @@
     } catch (_) { return null; }
   }
   /* ---------------- CREW instrument-cluster pulse (real activity) ---------------- */
+  // EL-11 FIX 1b: which AGENTS actually own a pending consent — resolved per workstream via Channels →
+  // Workstreams binding. The old global flip lit EVERY crew dot wr-await for ONE agent's prompt (untruthful
+  // telemetry: N-1 of those dots asserted a state their agent wasn't in), and being unlabeled it was the ONLY
+  // trace a background session's prompt left on screen.
+  function pendingAgentIds() {
+    const out = new Set();
+    if (typeof Channels === 'undefined') return out;
+    try {
+      for (const wsId of Channels.pendingIds()) {
+        const w = (typeof Workstreams !== 'undefined' && Workstreams.get) ? Workstreams.get(wsId) : null;
+        out.add((w && w.agentId) || 'agent');
+      }
+    } catch (_) {}
+    return out;
+  }
   function tickCrew() {
     const rows = document.querySelectorAll('#crew .crew-row'); if (!rows.length) return;
-    // A pending consent blocks the WHOLE station, so AWAIT is global; otherwise each dot reflects ITS OWN agent's
-    // live run (read per-agent from StationUI), not the single hero state that used to light every dot in lockstep.
-    const awaiting = !!currentPending();
+    // AWAIT is per-agent truth: only the agent(s) whose own workstream holds the pending consent flip —
+    // every other dot keeps reflecting ITS OWN agent's live run (read per-agent from StationUI).
+    const pendingAgents = pendingAgentIds();
     // work-vs-think flavour comes from the hero status line — only meaningful for the common single-agent station.
     const thinking = (($('#chat-status') || {}).textContent || '').toLowerCase().indexOf('think') >= 0;
     for (const row of rows) {
@@ -41,7 +56,7 @@
       // the DOM when the class actually changes (no redundant style invalidation every tick).
       const id = row.dataset.agentId || '';
       let cls = 'wr-idle';
-      if (awaiting) cls = 'wr-await';
+      if (pendingAgents.has(id)) cls = 'wr-await';
       else if (id && isAgentRunning(id)) cls = thinking ? 'wr-think' : 'wr-work';
       const next = 'dot on ' + cls;
       if (d.className !== next) d.className = next;

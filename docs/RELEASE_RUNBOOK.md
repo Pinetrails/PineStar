@@ -23,7 +23,10 @@ see or download anything.
   `https://github.com/nonfungiblefunyuns-ship-it/starnet-releases/releases/latest/download/latest.json`
 - Updater signing key: `~/.tauri/starnet-updater.key` (see section 4 — this is the single
   most dangerous thing to lose in the whole project).
-- Current shipped version at time of writing: `0.1.9` (`tauri.conf.json`).
+- Last version *built* at time of writing: `0.4.1` (`tauri.conf.json`). **Nothing has ever been
+  published** — `starnet-releases` carries no public release, so `releases/latest` currently 404s
+  and `v1.0.0` will be the first real public artifact. (The `0.1.9` / `0.2.0` version numbers used
+  as examples below are illustrative, not a shipped history.)
 
 ---
 
@@ -391,18 +394,25 @@ right answer is: **don't lose the key** (4.1).
 
 ---
 
-### UNVERIFIED (flag honestly — confirm against the parallel lanes / live app before trusting)
+### VERIFICATION STATUS (updated 2026-07-09)
 
-- **`npm run release:bump`, `release-assemble-manifest.mjs`, `release-train.yml`, and the
-  multi-platform extensions to `verify-update-host.mjs` are being built by parallel lanes and
-  were NOT present in trunk when this runbook was written.** Only `release:cut`,
-  `release:cut:dry`, and `release:verify-host` (Windows-only) existed. The commands and job
-  behavior in sections 1–2 are written to contracts C1–C4 in
-  `docs/RELEASE_TRAIN_BUILD_PLAN_2026-07-06.md`; re-confirm the exact flags/output once those
-  lanes merge.
-- **The `verify-host --expect-version` / `--require-platforms` / `--manifest` flags** are per
-  contract C3 (VERIFY lane). The current shipped `verify-update-host.mjs` supports `--endpoint`
-  and `--expect-version` only and checks `windows-x86_64` alone.
+The build tooling this runbook drives has since **merged to trunk** (`feat/harness-backend`) — it was
+being built by parallel lanes when the runbook was first written:
+
+- **`npm run release:bump`** (`scripts/release-bump.mjs`), **`scripts/release-assemble-manifest.mjs`**,
+  and the 4-job **`.github/workflows/release-train.yml`** (gate → build → assemble → stage-draft) all
+  exist on trunk now. Sections 1–2 describe real scripts/jobs, not pending ones.
+- **`verify-update-host.mjs`** now supports `--manifest <file>`, `--expect-version X.Y.Z`,
+  `--require-platforms <list>`, and `--check-urls`, and validates the full platform set — not
+  `windows-x86_64` alone (`npm run release:verify-host` is wired in `package.json`).
+
+**Still unverified — do not trust these until proven:**
+
+- **The release train has never completed a fully-green end-to-end run, and nothing has ever been
+  published.** The last version *built* is `0.4.1`; `starnet-releases` has no public release, so
+  `releases/latest` currently 404s. Sections 1–2 are written to the workflow as it stands, but the
+  tag-push → gate → build → assemble → stage-draft path has not been proven green on live CI (a prior
+  cut stalled at the P1.5 build-provenance stamp). Treat the first real cut as the shakedown run.
 - **The exact top-level click to reach Settings** in the packaged app was not pinned from code;
   the verified path *inside* Settings is `UPDATES` section → `UPDATE CENTER` button → then
   `CHECK NOW` / `INSTALL UPDATE` (`frontend/app/updates.js`). Confirm the Settings entry point

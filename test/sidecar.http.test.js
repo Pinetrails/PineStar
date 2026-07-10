@@ -24,7 +24,7 @@ const IPC_TOKEN = 'ipc-provider-config-test-token';
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 // spawn the host on a candidate port; resolve once it logs "listening", retry the next port on EADDRINUSE.
-function boot(port, workspaces, attemptsLeft) {
+function boot(port, workspaces, attemptsLeft, extraEnv) {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [INDEX], {
       env: Object.assign({}, process.env, {
@@ -79,8 +79,11 @@ function boot(port, workspaces, attemptsLeft) {
         // GROUND_UP_AUDIT P2: the packaged app injects its version via STARNET_APP_VERSION (src-tauri/ isn't a
         // bundled resource, so /api/version's conf lookup returns blank there). Set it so /api/version proves the
         // env-first fallback + honest appSource='env' below.
-        STARNET_APP_VERSION: '9.9.9-http-test'
-      }),
+        STARNET_APP_VERSION: '9.9.9-http-test',
+        // Clear any ambient build stamp so the DEFAULT boot deterministically exercises the harness git-describe
+        // fallback (harnessSource='git'); a per-boot `extraEnv` (below) sets it to prove the env override wins.
+        STARNET_BUILD_DESCRIBE: '', SKYNET_BUILD_DESCRIBE: ''
+      }, extraEnv || {}),
       stdio: ['ignore', 'pipe', 'pipe']
     });
     let out = '', settled = false;
@@ -89,7 +92,7 @@ function boot(port, workspaces, attemptsLeft) {
       if (!settled && out.indexOf('http://' + HOST + ':' + port) >= 0) { settled = true; resolve({ child, port, output: () => out }); }
       if (!settled && /already in use/i.test(out)) {
         settled = true; try { child.kill(); } catch (_) {}
-        if (attemptsLeft > 0) resolve(boot(port + 1, workspaces, attemptsLeft - 1));
+        if (attemptsLeft > 0) resolve(boot(port + 1, workspaces, attemptsLeft - 1, extraEnv));
         else reject(new Error('no free port'));
       }
     };
@@ -301,6 +304,33 @@ function boot(port, workspaces, attemptsLeft) {
     A.eq(ver.body.appSource, 'env', '/api/version reports appSource=env — honest about WHERE the version came from');
     A.ok(typeof ver.body.harness === 'string', '/api/version keeps the byte-compatible {harness} field');
     A.ok(typeof ver.body.node === 'string' && ver.body.node.length > 0, '/api/version keeps the node field');
+    // LANE V: the harness build id must NOT be the intentional '0.0.0' package placeholder — running from a git
+    // checkout it resolves via `git describe` (harnessSource='git'), and harnessSource always names WHERE it came from.
+    A.ok(ver.body.harness !== '0.0.0', '/api/version harness is NOT the 0.0.0 placeholder (git-describe truth in a checkout)');
+    A.ok(['env', 'git', 'pkg'].includes(ver.body.harnessSource), '/api/version reports an honest harnessSource (env|git|pkg)');
+    A.eq(ver.body.harnessSource, 'git', "/api/version resolves harness via git-describe when no build stamp is set");
+
+    // LANE V: env override wins — a boot with STARNET_BUILD_DESCRIBE set reports that exact string + harnessSource='env'
+    // (the release pipeline stamps the real build id this way). Dedicated second boot: the value is fixed at spawn time.
+    {
+      const bd = 'lane-v-build-2f3a9c1';
+      const ws2 = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-http-bd-'));
+      const b2 = await boot(port + 200, ws2, 20, { STARNET_BUILD_DESCRIBE: bd });
+      const B2 = 'http://' + HOST + ':' + b2.port;
+      try {
+        const tok2 = await bootToken(B2, B2);
+        const r2 = await fetch(B2 + '/api/version', { headers: { 'X-StarNet-Token': tok2, Origin: B2 } });
+        const v2 = await r2.json();
+        A.eq(r2.status, 200, 'GET /api/version (BUILD_DESCRIBE boot) -> 200');
+        A.eq(v2.harness, bd, '/api/version harness = STARNET_BUILD_DESCRIBE (env override wins over git/pkg)');
+        A.eq(v2.harnessSource, 'env', '/api/version reports harnessSource=env when the build stamp is set');
+        A.eq(v2.app, '9.9.9-http-test', '/api/version app still resolves independently of the harness stamp');
+      } finally {
+        try { b2.child.kill(); } catch (_) {}
+        await sleep(150);
+        try { fs.rmSync(ws2, { recursive: true, force: true }); } catch (_) {}
+      }
+    }
 
     // ---- GROUND_UP_AUDIT P2: a THROWN store read reports 500 {error}, not a 200-empty ----
     // Happy path already proven above (GET /api/runs -> 200 with {runs:[...]}). Force the runStore.list read to

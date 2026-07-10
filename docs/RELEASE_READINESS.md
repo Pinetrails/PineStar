@@ -66,9 +66,10 @@ git tag rc/0.3.1-rc.1
 git push origin rc/0.3.1 rc/0.3.1-rc.1
 ```
 
-`rc/0.3.1` is the frozen branch. `rc/0.3.1-rc.1` is the point-in-time tag for the FIRST build you'll
-soak (rc.2, rc.3, … as fixes cherry-pick in — section 3). The tag is what the release train builds the
-soak binary from; the branch is where the only allowed changes land.
+`rc/0.3.1` is the frozen branch. `rc/0.3.1-rc.1` is the point-in-time tag marking the FIRST commit you'll
+soak (rc.2, rc.3, … as fixes cherry-pick in — section 3). The tag is just a marker you cut the soak binary
+from **locally** (§2.1 — the release train does not build `rc/*` tags); the branch is where the only allowed
+changes land.
 
 ### 1.2 The freeze law (write it on your hand)
 
@@ -91,12 +92,19 @@ drift the freeze exists to stop. It goes on trunk and rides the *next* RC.
 
 ### 2.1 Build + install the RC as a real signed binary
 
-Do **not** soak a dev sidecar. Soak the thing users install. Build the installer from the RC tag via
-the existing release train, then install it locally:
+Do **not** soak a dev sidecar. Soak the thing users install. Build the installer **locally** from the
+frozen RC branch, then install it:
 
-- Run the release train against the RC tag exactly as `docs/RELEASE_RUNBOOK.md` §1.5–§1.6 describe
-  (push the `rc/0.3.1-rc.1` tag → the train's **gate → build → assemble → stage-draft** jobs produce
-  the signed platform installers). The RC draft stays a DRAFT — nothing is public.
+- Check out the RC branch (`git checkout rc/0.3.1`) and cut the signed installer locally with
+  `npm run release:cut`. That produces the signed Windows NSIS installer + updater `.sig` + a staged
+  `latest.json` under `release/` (it needs the updater key at `~/.tauri/starnet-updater.key`; see
+  `docs/RELEASE_RUNBOOK.md` §4 for key handling). **This is a local build, not the release train** —
+  `.github/workflows/release-train.yml` triggers only on `v*` tags and its `assemble` job hard-fails
+  unless the tag is exactly `v<version>` from `tauri.conf.json`, so an `rc/0.3.1-rc.1` tag does **not**
+  drive it. Nothing here touches GitHub Releases; the soak binary lives only on your machine.
+  (Future work: teach the train to build `rc/*` tags into a DRAFT prerelease so the RC binary is
+  CI-built and signed like the real release across all platforms — until then, `release:cut` is the
+  path, and it builds the Windows installer only.)
 - Install the Windows installer over your current StarNet (silent NSIS, same as
   `docs/RELEASE_RUNBOOK.md` §1.10's canary step). **Purge the WebView2 cache after installing** or the
   soak tests the OLD embedded frontend — `docs/MISTAKES.md` "WebView2 caches the embedded frontend"
@@ -170,7 +178,7 @@ exactly the READY receipt you just earned.
 
 ## 4. Abandoning an RC
 
-If the RC accumulates so many P0s that fix-forward is churn, abandon it: delete the RC draft on
-`starnet-releases` (drafts are invisible to users — harmless), leave `rc/0.3.1` for history, fix the pile
+If the RC accumulates so many P0s that fix-forward is churn, abandon it: discard the local RC build
+(it never left your machine — nothing to unpublish), leave `rc/0.3.1` for history, fix the pile
 on trunk, and cut a fresh RC (`rc/0.3.2`) off green trunk when `qa:ready` is READY again. A burned RC is
 cheap; a broken public release is not (`docs/MISTAKES.md` "CI / release traps").

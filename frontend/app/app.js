@@ -2481,7 +2481,9 @@ const App = (() => {
       const status = Channels.statusOf(w.id);
       const attn = /approval/.test(status);
       const started = Channels.startedAtOf(w.id);
-      return { dot: 'ws-dot ' + (attn ? 'attn' : 'running'), meta: started ? railFmtElapsed(Date.now() - started) : '…', busy: true, attn, status };
+      // EL-11: a pending consent gets an EXPLICIT marker on its own row (not just the dot recolor) — a
+      // background session's paused run must be findable at a glance before the sidecar's deny timer runs out.
+      return { dot: 'ws-dot ' + (attn ? 'attn' : 'running'), meta: attn ? '▣ NEEDS YOU' : (started ? railFmtElapsed(Date.now() - started) : '…'), busy: true, attn, status };
     }
     return { dot: 'ws-dot lane-' + w.lane, meta: railRelTime(w.lastActiveAt), busy: false, attn: false, status: '' };
   }

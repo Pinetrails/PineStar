@@ -154,6 +154,42 @@ A.ok(!!uc.usage.launches['heavy'] && uc.usage.launches['heavy'].n === 2, 'the re
 const ur = S.normalize(JSON.parse(JSON.stringify(u)), T0);
 A.eq(ur.usage.launches['fix-bug'].n, 1, 'usage round-trips normalize');
 
+/* ---------- sweep: an undecided draft expires on the interests horizon, un-wedging the mint pipeline ---------- */
+A.eq(S.DRAFT_TTL_MS, 14 * 86400000, 'the draft TTL is the same 14-day horizon interests decay over');
+let sw = S.fresh(T0);
+sw = S.stage(sw, { id: 'stale', kind: 'recipe', draft: { name: 'Old Radar' }, why: 'w', fingerprint: 'fp-stale' }, { now: T0 });
+const SWEEP_AT = T0 + S.DRAFT_TTL_MS + 1;                 // one ms past the TTL for the T0 draft
+sw = S.stage(sw, { id: 'fresh', kind: 'recipe', draft: { name: 'New Radar' }, why: 'w', fingerprint: 'fp-fresh' }, { now: SWEEP_AT });
+const swept = S.sweep(sw, SWEEP_AT);
+A.eq(swept.staged.length, 1, 'the aged-out draft is evicted, the fresh one kept');
+A.eq(swept.staged[0].id, 'fresh', 'the surviving draft is the fresh one');
+const expiredNotes = swept.ledger.filter(e => e.outcome === 'expired');
+A.eq(expiredNotes.length, 1, 'each eviction writes exactly one expired ledger note');
+A.eq(expiredNotes[0].kind, 'recipe', 'the expired note carries the drafted kind');
+A.eq(expiredNotes[0].title, 'Old Radar', 'the expired note names the drafted title');
+// expiry is NOT a dismissal — the fingerprint is NOT denylisted, so an equivalent draft may legitimately re-mint.
+A.eq(swept.denylist.length, 0, 'expiry never denylists — an equivalent draft may re-mint once the interest recurs');
+A.ok(swept.denylist.indexOf('fp-stale') < 0, 'the expired fingerprint is not on the denylist');
+// a boundary draft exactly AT the TTL survives (strict older-than), and a sweep with nothing stale is a no-op.
+let edge = S.stage(S.fresh(T0), { id: 'edge', kind: 'prospect', draft: { name: 'Edge' }, why: 'w', fingerprint: 'fp-edge' }, { now: T0 });
+A.eq(S.sweep(edge, T0 + S.DRAFT_TTL_MS).staged.length, 1, 'a draft exactly at the TTL is kept (strict older-than eviction)');
+const noop = S.sweep(swept, SWEEP_AT);
+A.eq(noop.staged.length, swept.staged.length, 'a sweep with nothing stale drops nothing');
+A.eq(noop.ledger.length, swept.ledger.length, 'a no-op sweep writes no ledger note');
+// decide() un-wedges: both shelves full of STALE drafts bind at 'full'; after the sweep clears them it fires again.
+let wedged = S.fresh(T0);
+for (let i = 0; i < S.MAX_LIVE; i++) wedged = S.stage(wedged, { id: 'wp' + i, kind: 'prospect', draft: { name: 'p' + i }, why: 'w', fingerprint: 'fp-wp' + i }, { now: T0 });
+for (let i = 0; i < S.MAX_LIVE; i++) wedged = S.stage(wedged, { id: 'wr' + i, kind: 'recipe', draft: { name: 'r' + i }, why: 'w', fingerprint: 'fp-wr' + i }, { now: T0 });
+for (let i = 0; i < S.MINT_EVERY_RUNS; i++) wedged = S.noteRun(wedged, T0);
+const wedgeAt = T0 + S.DRAFT_TTL_MS + S.MINT_MIN_GAP_MS + 1;
+A.eq(S.decide(wedged, { now: wedgeAt, warm: true }).binding, 'full', 'stale drafts filling both shelves wedge minting at binding:full');
+const unwedged = S.sweep(wedged, wedgeAt);
+A.eq(unwedged.staged.length, 0, 'the sweep clears every aged-out draft off both shelves');
+A.ok(S.decide(unwedged, { now: wedgeAt, warm: true }).fire, 'decide() fires again once the sweep un-wedges the shelves');
+// a re-minted equivalent of an EXPIRED draft is NOT blocked by parse (expiry left the denylist untouched).
+const remint = S.parseRecipe(GOOD, { existingRecipes: [], gearKeys: GEAR, denylist: swept.denylist });
+A.ok(remint && remint.draft, 'an equivalent of an expired draft re-mints (expiry did not denylist it)');
+
 /* ---------- normalize: corrupt saves degrade, never throw ---------- */
 const n = S.normalize({ staged: [{ id: 'ok', kind: 'recipe', draft: { name: 'x' } }, { id: '', kind: 'recipe', draft: {} }, { id: 'bad-kind', kind: 'zork', draft: {} }], denylist: [1, 'fp', ''], ledger: 'nope', runsSinceMint: 'NaN', lastMintAt: -5 }, T0);
 A.eq(n.staged.length, 1, 'malformed staged items are dropped on hydrate');

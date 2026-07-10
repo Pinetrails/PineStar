@@ -154,6 +154,21 @@ function setup(over) {
   A.ok(h.ledger.some(e => e.kind === 'decline' && e.binding === 'readiness' && e.preSpend === true), 'the decline is ledgered with binding:readiness + preSpend:true');
 })();
 
+// ---- LANE L: a pre-spend BUDGET/CAPABILITY stand-down does NOT spend a leash unit either ----
+// The precheck is generic over its reason: when it reports the cross-run budget pool is exhausted (or no provider is
+// runnable), a beat's first model call would die AFTER the leash was spent — so declining here saves the unit. The
+// driver must carry that reason through as the binding and spend nothing. (index.js wires budget.check/capability
+// into nightshiftPrecheck; nightshift-budget.e2e.test.js proves the wiring end-to-end.)
+(function budgetPreSpendNoSpend() {
+  const h = setup({ precheck: { ok: false, reason: 'budget' } });
+  const r = h.driver.applyTick(T0);
+  A.eq(r.fired, false, 'a budget-exhausted beat does NOT fire');
+  A.eq(r.binding, 'budget', 'the binding is budget (pool exhausted, pre-spend)');
+  A.eq(h.state.beatsUsedToday, 0, 'NO leash was spent on a budget-exhausted no-op (the burned-leash wart is fixed)');
+  A.eq(h.beats.length, 0, 'no model-call beat was launched (purely-local stand-down)');
+  A.ok(h.ledger.some(e => e.kind === 'decline' && e.binding === 'budget' && e.preSpend === true), 'the decline is ledgered with binding:budget + preSpend:true');
+})();
+
 // ---- NS-2: a beat that PASSES the precheck still spends at accept-time (anti-runaway preserved) ----
 (function passingPrecheckStillSpends() {
   const h = setup({ precheck: { ok: true }, autoResolve: false });
