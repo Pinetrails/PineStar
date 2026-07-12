@@ -67,6 +67,32 @@
   const PS_COMMAND_FLAGS = new Set(['-c', '-co', '-com', '-comm', '-comma', '-comman', '-command']);
   const PS_ENCODED_FLAGS = new Set(['-e', '-ec', '-en', '-enc', '-enco', '-encod', '-encode', '-encoded',
     '-encodedc', '-encodedco', '-encodedcom', '-encodedcomm', '-encodedcomma', '-encodedcomman', '-encodedcommand']);
+  const PS_CLI_OPTIONS = [
+    ['psconsolefile', true, 'option'], ['version', true, 'option'], ['nologo', false, 'option'],
+    ['noexit', false, 'option'], ['sta', false, 'option'], ['mta', false, 'option'],
+    ['noprofile', false, 'option'], ['noninteractive', false, 'option'], ['inputformat', true, 'option'],
+    ['outputformat', true, 'option'], ['windowstyle', true, 'option'], ['configurationname', true, 'option'],
+    ['executionpolicy', true, 'option'], ['workingdirectory', true, 'option'],
+    // -File makes the remaining argv script arguments, not an implicit command string.
+    ['file', true, 'file'], ['help', false, 'help'], ['?', false, 'help']
+  ].map(x => ({ name: x[0], takesValue: x[1], kind: x[2] }));
+  function parsePowerShellFlag(value) {
+    value = String(value == null ? '' : value);
+    if (value[0] !== '-' && value[0] !== '/') return null;
+    const body = value.slice(1);
+    const splitAt = body.search(/[:=]/);
+    const name = (splitAt >= 0 ? body.slice(0, splitAt) : body).toLowerCase();
+    return { flag: '-' + name, name, hasInline: splitAt >= 0, inline: splitAt >= 0 ? body.slice(splitAt + 1) : '' };
+  }
+  function resolvePowerShellCliOption(parsed) {
+    if (!parsed) return null;
+    if (PS_COMMAND_FLAGS.has(parsed.flag)) return { name: parsed.name, takesValue: true, kind: 'command' };
+    if (PS_ENCODED_FLAGS.has(parsed.flag)) return { name: parsed.name, takesValue: true, kind: 'encoded' };
+    const exact = PS_CLI_OPTIONS.find(o => o.name === parsed.name);
+    if (exact) return exact;
+    const matches = PS_CLI_OPTIONS.filter(o => o.name.indexOf(parsed.name) === 0);
+    return matches.length === 1 ? matches[0] : null;
+  }
 
   // Split only on REAL shell separators. A launcher name inside `echo ...`, a commit message, or another quoted
   // argument is data, not a command boundary. This is intentionally a small lexer instead of a raw substring regex.
@@ -154,34 +180,70 @@
   function resolveStartProcessOption(value) {
     value = String(value == null ? '' : value).toLowerCase();
     if (value[0] !== '-') return null;
-    const name = value.slice(1).split(':', 1)[0];
+    const body = value.slice(1);
+    const splitAt = body.search(/[:=]/);
+    const name = splitAt >= 0 ? body.slice(0, splitAt) : body;
+    const inline = splitAt >= 0 ? body.slice(splitAt + 1) : '';
+    const decorate = (o) => o && Object.assign({}, o, { hasInline: splitAt >= 0, inline: inline });
     const exact = START_PROCESS_OPTIONS.find(o => o.name === name);
-    if (exact) return exact;
+    if (exact) return decorate(exact);
     const matches = START_PROCESS_OPTIONS.filter(o => o.name.indexOf(name) === 0);
-    if (matches.length === 1) return matches[0];
+    if (matches.length === 1) return decorate(matches[0]);
     // The supported PowerShell generations expose slightly different common parameters. If a prefix is
     // unambiguous on the running host but ambiguous in this union, consuming a possible value is fail-closed:
     // we inspect the following positional executable too. A genuinely ambiguous host invocation does not run.
-    if (matches.length > 1) return { name: '', takesValue: matches.some(o => o.takesValue) };
+    if (matches.length > 1) return decorate({ name: '', takesValue: matches.some(o => o.takesValue) });
     return null;
+  }
+  function quoteCommandToken(value) {
+    value = String(value == null ? '' : value);
+    return /[\s&|;]/.test(value) ? '"' + value.replace(/"/g, '`"') + '"' : value;
   }
   function startProcessTarget(segment, tokens) {
     let target = -1;
     for (let i = 1; i < tokens.length; i++) {
       const opt = resolveStartProcessOption(tokens[i].value);
-      if (opt && opt.name === 'filepath') { target = i + 1; break; }
+      if (opt && opt.name === 'filepath') {
+        if (opt.hasInline) {
+          if (!opt.inline) return '';
+          const rest = afterToken(segment, tokens[i]);
+          return quoteCommandToken(opt.inline) + (rest ? ' ' + rest : '');
+        }
+        target = i + 1; break;
+      }
     }
     if (target < 0) {
       for (let i = 1; i < tokens.length; i++) {
         const v = String(tokens[i].value).toLowerCase();
         if (v[0] !== '-') { target = i; break; }
         const opt = resolveStartProcessOption(v);
-        if (opt && opt.takesValue && v.indexOf(':') < 0) i++;
+        if (opt && opt.takesValue && !opt.hasInline) i++;
       }
     }
     if (target < 1 || target >= tokens.length) return '';
     const rest = afterToken(segment, tokens[target]);
     return tokens[target].raw + (rest ? ' ' + rest : '');
+  }
+
+  function parsePowerShellInvocation(segment, tokens) {
+    for (let i = 1; i < tokens.length; i++) {
+      const parsed = parsePowerShellFlag(tokens[i].value);
+      if (!parsed) {
+        // powershell.exe's default mode treats the first non-option token and everything after it as -Command.
+        return { nested: unwrapCommandArg(String(segment).slice(tokens[i].start), 'powershell'), opaque: false };
+      }
+      const opt = resolvePowerShellCliOption(parsed);
+      if (!opt) return { nested: '', opaque: false };   // unknown/ambiguous CLI option: PowerShell rejects it
+      if (opt.kind === 'encoded') return { nested: '', opaque: true };
+      if (opt.kind === 'command') {
+        const rest = afterToken(segment, tokens[i]);
+        const raw = parsed.hasInline ? parsed.inline + (rest ? ' ' + rest : '') : rest;
+        return { nested: unwrapCommandArg(raw, 'powershell'), opaque: false };
+      }
+      if (opt.kind === 'file' || opt.kind === 'help') return { nested: '', opaque: false };
+      if (opt.takesValue && !parsed.hasInline) i++;
+    }
+    return { nested: '', opaque: false };
   }
 
   function analyzeCommands(cmd, depth, dialect) {
@@ -203,11 +265,9 @@
         nestedDialect = dialect === 'powershell' ? 'powershell' : dialect;
         nested = startProcessTarget(segment, tokens);
       } else if (verb === 'powershell' || verb === 'powershell.exe' || verb === 'pwsh' || verb === 'pwsh.exe') {
-        for (let i = 1; i < tokens.length; i++) {
-          const flag = String(tokens[i].value).toLowerCase();
-          if (PS_ENCODED_FLAGS.has(flag)) { result.opaquePowerShell = true; break; }
-          if (PS_COMMAND_FLAGS.has(flag)) { nestedDialect = 'powershell'; nested = unwrapCommandArg(afterToken(segment, tokens[i]), nestedDialect); break; }
-        }
+        const invocation = parsePowerShellInvocation(segment, tokens);
+        nestedDialect = 'powershell'; nested = invocation.nested;
+        if (invocation.opaque) result.opaquePowerShell = true;
       } else if (/^(?:sh|bash|zsh|dash|ksh)(?:\.exe)?$/.test(verb)) {
         const i = tokens.findIndex((t, n) => n > 0 && t.value === '-c');
         if (i >= 0) { nestedDialect = 'posix'; nested = unwrapCommandArg(afterToken(segment, tokens[i]), nestedDialect); }

@@ -75,6 +75,9 @@ A.eq(breaksMachineState(''), null, 'empty command not a machine trip');
 // ---- BYPASS HARDENING (code-review 2026-07-12): dangerous verbs hidden behind a launcher, separator, or
 //      interpreter must still be caught (command-head splitting), and false-positive rework must hold. ----
 A.ok(breaksMachineState('powershell -Command "shutdown /r /t 0"'), 'powershell -Command shutdown blocked');
+A.ok(breaksMachineState('powershell /Command "shutdown /r /t 0"'), 'powershell slash /Command shutdown blocked');
+A.ok(breaksMachineState('powershell shutdown /r /t 0'), 'PowerShell default command payload shutdown blocked');
+A.eq(breaksMachineState('powershell Write-Output STARNET_SAFE'), null, 'safe PowerShell default command payload allowed');
 A.ok(breaksMachineState('cmd /c "shutdown /r /t 0"'), 'quoted whole cmd /c shutdown payload blocked');
 A.ok(breaksMachineState('powershell -NoProfile -Command "Stop-Computer"'), 'powershell -Command Stop-Computer blocked');
 A.ok(breaksMachineState('pwsh -c "Restart-Computer"'), 'pwsh -c Restart-Computer blocked');
@@ -83,6 +86,9 @@ A.ok(breaksMachineState('bash -c reboot'), 'bash -c reboot blocked');
 A.ok(breaksMachineState('Start-Process shutdown -ArgumentList /r'), 'Start-Process shutdown blocked');
 A.ok(breaksMachineState('Start-Process -NoNewWindow -FilePath shutdown -ArgumentList /r'), 'Start-Process options before -FilePath shutdown blocked');
 A.ok(breaksMachineState('powershell -Command "Start-Process -WorkingD . shutdown /r"'), 'Start-Process accepted -WorkingDirectory abbreviation consumes its value before shutdown');
+A.ok(breaksMachineState('powershell -Command "Start-Process -FilePath:shutdown -ArgumentList /r"'), 'Start-Process inline -FilePath:value treats value as executable');
+A.ok(breaksMachineState('powershell -Command "Start-Process -F:shutdown -ArgumentList /r"'), 'Start-Process abbreviated inline -F:value treats value as executable');
+A.ok(breaksMachineState('powershell -Command "Start-Process -FilePath=shutdown -ArgumentList /r"'), 'Start-Process inline -FilePath=value is parsed fail-closed');
 A.ok(breaksMachineState('echo hi\nshutdown /r'), 'newline-separated shutdown blocked');
 A.ok(breaksMachineState('foo & reg add HKCU\\x /v y /d z'), 'reg add after & blocked');
 A.ok(breaksMachineState('powershell -e UwB0AG8AcAAtAENvbXB1dGVy'), 'powershell -e (base64 encoded) blocked outright');
@@ -106,15 +112,26 @@ if (process.platform === 'win32') {
 const PS_COMMAND_FLAGS = ['-c', '-co', '-com', '-comm', '-comma', '-comman', '-command'];
 const PS_ENCODED_FLAGS = ['-e', '-ec', '-en', '-enc', '-enco', '-encod', '-encode', '-encoded', '-encodedc',
   '-encodedco', '-encodedcom', '-encodedcomm', '-encodedcomma', '-encodedcomman', '-encodedcommand'];
+const PS_SLASH_COMMAND_FLAGS = PS_COMMAND_FLAGS.map(flag => '/' + flag.slice(1));
+const PS_SLASH_ENCODED_FLAGS = PS_ENCODED_FLAGS.map(flag => '/' + flag.slice(1));
 for (const flag of PS_COMMAND_FLAGS) {
   A.ok(breaksMachineState('powershell ' + flag + ' "shutdown /r /t 0"'), 'PowerShell ' + flag + ' command abbreviation blocked');
 }
 for (const flag of PS_ENCODED_FLAGS) {
   A.ok(breaksMachineState('powershell ' + flag + ' UwB0AG8AcAAtAENvbXB1dGVy'), 'PowerShell ' + flag + ' encoded abbreviation blocked');
 }
+for (const flag of PS_SLASH_COMMAND_FLAGS) {
+  A.ok(breaksMachineState('powershell ' + flag + ' "shutdown /r /t 0"'), 'PowerShell ' + flag + ' slash command abbreviation blocked');
+}
+for (const flag of PS_SLASH_ENCODED_FLAGS) {
+  A.ok(breaksMachineState('powershell ' + flag + ' UwB0AG8AcAAtAENvbXB1dGVy'), 'PowerShell ' + flag + ' slash encoded abbreviation blocked');
+}
 if (process.platform === 'win32') {
   const { spawnSync } = require('child_process');
   const psExe = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+  const defaultSafe = spawnSync(psExe, ['-NoProfile', '-NonInteractive', 'Write-Output', 'STARNET_SAFE'], { encoding: 'utf8', timeout: 10000, windowsHide: true });
+  A.eq(defaultSafe.status, 0, 'host accepts a safe implicit/default PowerShell command payload');
+  A.ok(/STARNET_SAFE/.test(defaultSafe.stdout || ''), 'safe implicit/default PowerShell payload executed as expected');
   for (const flag of PS_COMMAND_FLAGS) {
     const safe = spawnSync(psExe, ['-NoProfile', '-NonInteractive', flag, 'Write-Output STARNET_SAFE'], { encoding: 'utf8', timeout: 10000, windowsHide: true });
     A.eq(safe.status, 0, 'host accepts PowerShell ' + flag + ' for a safe command payload');
@@ -125,6 +142,22 @@ if (process.platform === 'win32') {
     const safe = spawnSync(psExe, ['-NoProfile', '-NonInteractive', flag, safeEncoded], { encoding: 'utf8', timeout: 10000, windowsHide: true });
     A.eq(safe.status, 0, 'host accepts PowerShell ' + flag + ' for a safe encoded payload');
     A.ok(/STARNET_SAFE/.test(safe.stdout || ''), 'safe PowerShell ' + flag + ' encoded payload executed as expected');
+  }
+  for (const flag of PS_SLASH_COMMAND_FLAGS) {
+    const safe = spawnSync(psExe, ['-NoProfile', '-NonInteractive', flag, 'Write-Output STARNET_SAFE'], { encoding: 'utf8', timeout: 10000, windowsHide: true });
+    A.eq(safe.status, 0, 'host accepts PowerShell ' + flag + ' for a safe command payload');
+    A.ok(/STARNET_SAFE/.test(safe.stdout || ''), 'safe PowerShell ' + flag + ' payload executed as expected');
+  }
+  for (const flag of PS_SLASH_ENCODED_FLAGS) {
+    const safe = spawnSync(psExe, ['-NoProfile', '-NonInteractive', flag, safeEncoded], { encoding: 'utf8', timeout: 10000, windowsHide: true });
+    A.eq(safe.status, 0, 'host accepts PowerShell ' + flag + ' for a safe encoded payload');
+    A.ok(/STARNET_SAFE/.test(safe.stdout || ''), 'safe PowerShell ' + flag + ' encoded payload executed as expected');
+  }
+  for (const fileFlag of ['-FilePath:cmd.exe', '-F:cmd.exe']) {
+    const script = "$p=Start-Process " + fileFlag + " -ArgumentList '/d /c exit 0' -NoNewWindow -Wait -PassThru; if ($p.ExitCode -ne 0) { exit 9 }; Write-Output STARNET_SAFE";
+    const safe = spawnSync(psExe, ['-NoProfile', '-NonInteractive', '-Command', script], { encoding: 'utf8', timeout: 10000, windowsHide: true });
+    A.eq(safe.status, 0, 'host accepts safe inline Start-Process ' + fileFlag + ' form');
+    A.ok(/STARNET_SAFE/.test(safe.stdout || '') && !/ParameterBindingException/.test(safe.stderr || ''), 'safe inline ' + fileFlag + ' target executed hidden and exited cleanly');
   }
   // Query metadata only (no process is launched): for every value-taking Start-Process parameter this host
   // actually exposes, derive its shortest unambiguous abbreviation and prove the parser consumes that value

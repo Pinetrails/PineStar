@@ -38,6 +38,8 @@ A.ok(opensVisibleWindow('Start-Process -NoNewWindow -FilePath "C:\\Program Files
   'Start-Process with intervening option + quoted full browser path blocked');
 A.ok(opensVisibleWindow('saps firefox'), 'saps (Start-Process alias) firefox blocked');
 A.ok(opensVisibleWindow('powershell -Command "start chrome"'), 'start chrome inside powershell -Command blocked');
+A.ok(opensVisibleWindow('powershell /Command "start chrome"'), 'start chrome inside slash-prefixed PowerShell /Command blocked');
+A.ok(opensVisibleWindow('powershell start http://x'), 'PowerShell default command payload start blocked');
 A.ok(opensVisibleWindow('echo hi\nchrome https://x'), 'newline-separated chrome launch blocked');
 A.ok(opensVisibleWindow('chrome --headlessx https://evil/game --mute-audio'), 'fake --headlessx (Chrome opens headed) blocked');
 A.ok(opensVisibleWindow('msedge --headless-new http://x'), 'fake --headless-new token blocked');
