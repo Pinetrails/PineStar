@@ -45,13 +45,14 @@ function live(overrides = {}) {
     { atMs: 0, sessionId, kind: 'link-state', state: 'UP' },
     Object.assign({ atMs: 100, sessionId, kind: 'transport-data', source: 'message', cdpObserved: true }, ENDPOINT),
     Object.assign({ atMs: 45101, sessionId, kind: 'transport-data', source: 'message', cdpObserved: true }, ENDPOINT),
-    { atMs: 46000, sessionId, kind: 'sidecar-process', pid: 1234, candidateCommit: SHA,
+    { atMs: 45500, sessionId, kind: 'link-state', state: 'UP', continuous: true },
+    { atMs: 46000, sessionId, kind: 'sidecar-process', pid: 1234, candidateCommit: SHA, instanceSha256: '1'.repeat(64),
       parentVerified: true, bundledNodeVerified: true, apiListenerVerified: true },
     { atMs: 46100, sessionId, kind: 'sidecar-exit', pid: 1234, observed: true },
     Object.assign({ atMs: 46200, sessionId, kind: 'transport-error', source: 'cdp-network-loading-failed', requestBound: true }, ENDPOINT),
     { atMs: 46300, sessionId, kind: 'link-state', state: 'DOWN', cause: 'eventsource-error' },
     { atMs: 47000, sessionId, kind: 'sidecar-recovery', pid: 5678, previousPid: 1234, candidateCommit: SHA,
-      parentVerified: true, bundledNodeVerified: true, apiListenerVerified: true, versionVerified: true, watchdog: true },
+      parentVerified: true, bundledNodeVerified: true, apiListenerVerified: true, versionVerified: true, watchdog: true, instanceSha256: '2'.repeat(64) },
     Object.assign({ atMs: 47100, sessionId, kind: 'recovery-transport-data', source: 'message', cdpObserved: true, requestBound: true, nativeReconnect: true }, ENDPOINT),
     { atMs: 47200, sessionId, kind: 'link-state', state: 'UP', recovered: true }
   ];
@@ -131,10 +132,31 @@ function clock(start = 1000, end = 51000) {
     A.eq(network.recoveryResponseOk && Number.isFinite(network.recoveryFrameAt), true, 'native recovery requires response plus browser-visible post-DOWN data');
     A.eq(JSON.stringify(network).includes('must-never-serialize'), false, 'request query/token bytes are discarded by the pure CDP fold');
   }
+  {
+    let stamp = 0;
+    const tracker = makeNetworkObservationTracker({ now: () => (stamp += 100) });
+    tracker.setApiPort(8787);
+    const request = id => ({ requestId: id, type: 'EventSource', request: { url: 'http://127.0.0.1:8787/api/channels/events?token=discarded' } });
+    tracker.request(request('generation-a'));
+    tracker.response({ requestId: 'generation-a', type: 'EventSource', response: { status: 200 } });
+    tracker.message({ requestId: 'generation-a', data: '{}' });
+    tracker.request(request('generation-b'));
+    A.eq(tracker.message({ requestId: 'generation-b', data: '{}' }), false, 'frame before the matching HTTP-200 response is rejected');
+    tracker.response({ requestId: 'generation-b', type: 'EventSource', response: { status: 200 } });
+    tracker.message({ requestId: 'generation-b', data: '{}' });
+    const network = tracker.snapshot();
+    A.eq(network.healthyGeneration, 2, 'a healthy-phase reconnect creates a new exact request generation');
+    A.eq(network.activeRequestId, 'generation-b', 'only the current EventSource request can own healthy proof');
+    A.eq(network.healthyFrames.length, 1, 'frames from the prior request generation are never aggregated');
+  }
 
   A.eq(verdict(live()).ok, true, 'real CDP frames, exact child exit, DOWN, and watchdog recovery validate');
   {
-    const networkFirst = live(); networkFirst.observations[5].atMs = 46050;
+    const noContinuousUp = live(); noContinuousUp.observations.splice(3, 1);
+    A.ok(verdict(noContinuousUp).errors.includes('healthy-transport-unproven'), 'healthy frames without a final continuously-UP product observation are rejected');
+  }
+  {
+    const networkFirst = live(); networkFirst.observations[6].atMs = 46050;
     networkFirst.observations.sort((a, b) => a.atMs - b.atMs);
     A.eq(verdict(networkFirst).ok, true, 'actual CDP failure may precede OS exit polling while DOWN still follows both');
   }
@@ -152,23 +174,27 @@ function clock(start = 1000, end = 51000) {
     A.ok(verdict(tokenUrl).errors.includes('healthy-transport-unproven'), 'query-bearing endpoint evidence is rejected rather than persisted');
   }
   {
-    const wrongPid = live(); wrongPid.observations[4].pid = 9999;
+    const wrongPid = live(); wrongPid.observations[5].pid = 9999;
     A.ok(verdict(wrongPid).errors.includes('sidecar-exit-unproven'), 'an unrelated process exit cannot prove sidecar loss');
   }
   {
-    const unboundPid = live(); unboundPid.observations[3].apiListenerVerified = false;
+    const unboundPid = live(); unboundPid.observations[4].apiListenerVerified = false;
     A.ok(verdict(unboundPid).errors.includes('sidecar-identity-unproven'), 'PID without exact API-listener ownership is rejected');
   }
   {
-    const noNetworkError = live(); noNetworkError.observations.splice(5, 1);
+    const noNetworkError = live(); noNetworkError.observations.splice(6, 1);
     A.ok(verdict(noNetworkError).errors.includes('eventsource-error-unproven'), 'DOWN without the exact CDP EventSource failure is rejected');
   }
   {
-    const samePid = live(); samePid.observations[7].pid = 1234;
+    const samePid = live(); samePid.observations[8].pid = 1234;
     A.ok(verdict(samePid).errors.includes('watchdog-recovery-unproven'), 'same/dead PID cannot impersonate watchdog recovery');
   }
   {
-    const fabricatedTime = live(); fabricatedTime.observations[9].atMs = 99999;
+    const sameInstance = live(); sameInstance.observations[8].instanceSha256 = '1'.repeat(64);
+    A.ok(verdict(sameInstance).errors.includes('watchdog-recovery-unproven'), 'reused process instance cannot impersonate watchdog recovery');
+  }
+  {
+    const fabricatedTime = live(); fabricatedTime.observations[10].atMs = 99999;
     A.ok(verdict(fabricatedTime).errors.includes('timeline-invalid'), 'observation timestamps beyond real wall time are rejected');
   }
   {
@@ -220,7 +246,9 @@ function clock(start = 1000, end = 51000) {
   const source = fs.readFileSync(path.join(ROOT, PROBE_RELATIVE_PATH), 'utf8');
   A.ok(/Network[.]eventSourceMessageReceived/.test(source), 'healthy frames come from CDP EventSource events');
   A.ok(/Network[.]loadingFailed/.test(source), 'loss comes from CDP network failure');
-  A.ok(/Get-NetTCPConnection/.test(source) && /ParentProcessId/.test(source) && /Stop-Process/.test(source), 'PID kill is bound to exact child/listener seam');
+  A.ok(/Get-NetTCPConnection/.test(source) && /ParentProcessId/.test(source) && /[.]Handle/.test(source) && /StartTime/.test(source) && /[.]Kill\(\)/.test(source), 'kill uses exact child/listener plus an opened process-instance handle');
+  A.ok(!/Stop-Process\s+-Id/.test(source), 'probe never kills by a reusable PID alone');
+  A.ok(/watchdog-version-pid-changed/.test(source) && /watchdog-final-pid-changed/.test(source), 'same recovered PID/creation identity is rebound after version and final link proof');
   A.ok(/CommandLine[^\n]+sidecar[^\n]+index/.test(source), 'process seam requires the packaged sidecar entry');
   A.ok(!/new\s+EventSource\s*\(/.test(source), 'probe never creates a synthetic page EventSource');
   A.ok(!/World[.]init\s*\(/.test(source), 'probe never initializes the product world to manufacture a bridge');

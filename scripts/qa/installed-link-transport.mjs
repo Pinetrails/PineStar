@@ -43,6 +43,13 @@ function sha256(bytes) {
   return crypto.createHash('sha256').update(bytes).digest('hex');
 }
 
+function processInstanceSha(record) {
+  const pid = Number(record && record.pid);
+  const createdTicks = str(record && record.createdTicks);
+  if (!Number.isInteger(pid) || pid <= 0 || !/^\d{8,32}$/.test(createdTicks)) return '';
+  return sha256(pid + ':' + createdTicks);
+}
+
 function fileIdentity(file) {
   try {
     const bytes = fs.readFileSync(file);
@@ -150,10 +157,12 @@ export function validateObservedTimeline(live, expected) {
   const data = events.filter(item => item && item.kind === 'transport-data' && item.source === 'message' &&
     item.cdpObserved === true && endpointMatches(item, expected.apiPort));
   const lastData = data[data.length - 1] || null;
-  if (!firstUp || data.length < 2 || !lastData || Number(lastData.atMs) - Number(data[0].atMs) <= MIN_HEALTHY_SPAN_MS) errors.push('healthy-transport-unproven');
+  const continuousUp = lastData && eventAt(events, item => item.kind === 'link-state' && item.state === 'UP' && item.continuous === true,
+    Number(lastData.atMs));
+  if (!firstUp || data.length < 2 || !lastData || Number(lastData.atMs) - Number(data[0].atMs) <= MIN_HEALTHY_SPAN_MS || !continuousUp) errors.push('healthy-transport-unproven');
   const sidecar = lastData && eventAt(events, item => item.kind === 'sidecar-process' && Number.isInteger(Number(item.pid)) && Number(item.pid) > 0 &&
     item.parentVerified === true && item.bundledNodeVerified === true && item.apiListenerVerified === true &&
-    lower(item.candidateCommit) === lower(expected.candidateCommit), Number(lastData.atMs));
+    SHA256.test(lower(item.instanceSha256)) && lower(item.candidateCommit) === lower(expected.candidateCommit), Number(lastData.atMs));
   const exited = sidecar && eventAt(events, item => item.kind === 'sidecar-exit' && item.observed === true && Number(item.pid) === Number(sidecar.pid), Number(sidecar.atMs));
   const networkError = sidecar && eventAt(events, item => item.kind === 'transport-error' && item.source === 'cdp-network-loading-failed' &&
     item.requestBound === true && endpointMatches(item, expected.apiPort), Number(sidecar.atMs));
@@ -167,6 +176,7 @@ export function validateObservedTimeline(live, expected) {
   const recovered = down && eventAt(events, item => item.kind === 'sidecar-recovery' && Number.isInteger(Number(item.pid)) && Number(item.pid) > 0 &&
     Number(item.pid) !== Number(sidecar && sidecar.pid) && item.parentVerified === true && item.bundledNodeVerified === true &&
     item.apiListenerVerified === true && item.versionVerified === true && item.watchdog === true &&
+    SHA256.test(lower(item.instanceSha256)) && lower(item.instanceSha256) !== lower(sidecar && sidecar.instanceSha256) &&
     lower(item.candidateCommit) === lower(expected.candidateCommit), Number(down.atMs));
   const recoveryData = recovered && eventAt(events, item => item.kind === 'recovery-transport-data' && item.source === 'message' &&
     item.cdpObserved === true && item.requestBound === true && item.nativeReconnect === true &&
@@ -344,6 +354,7 @@ $mode = [string]$env:STARNET_QA_PROCESS_MODE
 $artifact = [IO.Path]::GetFullPath([string]$env:STARNET_QA_ARTIFACT_PATH)
 $port = [int]$env:STARNET_QA_API_PORT
 $expectedPid = [int]$env:STARNET_QA_EXPECTED_PID
+$expectedCreatedTicks = [string]$env:STARNET_QA_EXPECTED_CREATED_TICKS
 $all = @(Get-CimInstance Win32_Process)
 $desktop = @($all | Where-Object { $_.ExecutablePath -and ([IO.Path]::GetFullPath([string]$_.ExecutablePath) -ieq $artifact) })
 if ($desktop.Count -ne 1) { @{ok=$false;code='desktop-process-count'} | ConvertTo-Json -Compress; exit 0 }
@@ -356,7 +367,14 @@ $children = @($all | Where-Object {
 })
 if ($mode -eq 'exited') {
   $alive = @($all | Where-Object { [int]$_.ProcessId -eq $expectedPid })
-  @{ok=($alive.Count -eq 0);code=$(if($alive.Count -eq 0){'exited'}else{'pid-still-alive'})} | ConvertTo-Json -Compress; exit 0
+  if ($alive.Count -eq 0) { @{ok=$true;code='exited'} | ConvertTo-Json -Compress; exit 0 }
+  try {
+    $aliveProcess = [Diagnostics.Process]::GetProcessById($expectedPid)
+    $null = $aliveProcess.Handle
+    $aliveCreatedTicks = $aliveProcess.StartTime.ToUniversalTime().Ticks.ToString()
+    $sameInstance = ($expectedCreatedTicks -and $aliveCreatedTicks -eq $expectedCreatedTicks)
+    @{ok=(-not $sameInstance);code=$(if($sameInstance){'process-instance-still-alive'}else{'exited-pid-reused'})} | ConvertTo-Json -Compress; exit 0
+  } catch { @{ok=$true;code='exited'} | ConvertTo-Json -Compress; exit 0 }
 }
 if ($children.Count -ne 1) { @{ok=$false;code='sidecar-process-count'} | ConvertTo-Json -Compress; exit 0 }
 $child = $children[0]
@@ -365,8 +383,15 @@ $listeners = @(Get-NetTCPConnection -State Listen -LocalPort $port | Where-Objec
 })
 if ($listeners.Count -lt 1) { @{ok=$false;code='sidecar-listener-mismatch'} | ConvertTo-Json -Compress; exit 0 }
 if ($expectedPid -gt 0 -and [int]$child.ProcessId -ne $expectedPid) { @{ok=$false;code='sidecar-pid-mismatch'} | ConvertTo-Json -Compress; exit 0 }
-if ($mode -eq 'terminate') { Stop-Process -Id ([int]$child.ProcessId) -Force }
-@{ok=$true;desktopPid=[int]$desktop[0].ProcessId;pid=[int]$child.ProcessId} | ConvertTo-Json -Compress
+$childProcess = [Diagnostics.Process]::GetProcessById([int]$child.ProcessId)
+$null = $childProcess.Handle
+$createdTicks = $childProcess.StartTime.ToUniversalTime().Ticks.ToString()
+if ($expectedCreatedTicks -and $createdTicks -ne $expectedCreatedTicks) { @{ok=$false;code='sidecar-process-instance-mismatch'} | ConvertTo-Json -Compress; exit 0 }
+if ($mode -eq 'terminate') {
+  if (-not $expectedCreatedTicks) { @{ok=$false;code='sidecar-process-instance-missing'} | ConvertTo-Json -Compress; exit 0 }
+  $childProcess.Kill()
+}
+@{ok=$true;desktopPid=[int]$desktop[0].ProcessId;pid=[int]$child.ProcessId;createdTicks=$createdTicks} | ConvertTo-Json -Compress
 `;
 
 function powershellExe() {
@@ -374,7 +399,7 @@ function powershellExe() {
   return path.join(root, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
 }
 
-function processCommand(mode, artifact, port, expectedPid = 0) {
+function processCommand(mode, artifact, port, expectedPid = 0, expectedCreatedTicks = '') {
   const childEnv = {};
   for (const name of ['SystemRoot', 'SYSTEMROOT', 'WINDIR', 'TEMP', 'TMP', 'USERPROFILE', 'LOCALAPPDATA', 'APPDATA', 'PSModulePath', 'ComSpec', 'COMSPEC']) {
     if (Object.prototype.hasOwnProperty.call(process.env, name)) childEnv[name] = process.env[name];
@@ -383,7 +408,8 @@ function processCommand(mode, artifact, port, expectedPid = 0) {
     STARNET_QA_PROCESS_MODE: str(mode),
     STARNET_QA_ARTIFACT_PATH: path.resolve(artifact),
     STARNET_QA_API_PORT: String(port),
-    STARNET_QA_EXPECTED_PID: String(expectedPid)
+    STARNET_QA_EXPECTED_PID: String(expectedPid),
+    STARNET_QA_EXPECTED_CREATED_TICKS: str(expectedCreatedTicks)
   });
   const result = spawnSync(powershellExe(), ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', PROCESS_SCRIPT], {
     cwd: ROOT, env: childEnv, encoding: 'utf8', windowsHide: true, timeout: 30000, maxBuffer: 1024 * 1024
@@ -404,8 +430,8 @@ export function inspectWindowsSidecarProcess(artifact, port) {
 
 const processApi = {
   find(artifact, port) { return processCommand('find', artifact, port, 0); },
-  terminate(artifact, port, pid) { return processCommand('terminate', artifact, port, pid); },
-  exited(artifact, port, pid) { return processCommand('exited', artifact, port, pid); }
+  terminate(artifact, port, pid, createdTicks) { return processCommand('terminate', artifact, port, pid, createdTicks); },
+  exited(artifact, port, pid, createdTicks) { return processCommand('exited', artifact, port, pid, createdTicks); }
 };
 
 async function waitUntil(check, timeoutMs, intervalMs = 100) {
@@ -429,18 +455,20 @@ export function makeNetworkObservationTracker(options = {}) {
   let phase = 'healthy';
   let endpointOrigin = '';
   let activeRequestId = '';
+  let healthyGeneration = 0;
   let recoveryRequestId = '';
   let recoveryResponseAfter = Infinity;
   let recoveryDataAfter = Infinity;
   let networkFailedAt = null;
   let recoveryFrameAt = null;
-  const healthyFrames = [];
   const records = new Map();
   function chooseRecovery() {
     let winner = null;
     for (const record of records.values()) {
-      if (record.id === activeRequestId || !Number.isFinite(record.responseAt) ||
-          !Number.isFinite(record.messageAt) || record.responseAt <= recoveryResponseAfter ||
+      if (record.id === activeRequestId || record.requestedPhase === 'healthy' ||
+          !Number.isFinite(record.requestedAt) || !Number.isFinite(record.responseAt) ||
+          !Number.isFinite(record.messageAt) || record.responseAt < record.requestedAt ||
+          record.messageAt < record.responseAt || record.responseAt <= recoveryResponseAfter ||
           record.messageAt <= recoveryDataAfter) continue;
       if (!winner || record.messageAt < winner.messageAt) winner = record;
     }
@@ -454,9 +482,9 @@ export function makeNetworkObservationTracker(options = {}) {
           Number(u.port) !== apiPort || u.pathname !== '/api/channels/events' || params.type !== 'EventSource') return false;
       const id = str(params.requestId);
       if (!id) return false;
-      records.set(id, { id, requestedAt: Number(now()), responseAt: null, messageAt: null });
+      records.set(id, { id, requestedAt: Number(now()), requestedPhase: phase, responseAt: null, messageAt: null, frames: [] });
       endpointOrigin = u.origin; // URL query/header bytes are intentionally discarded here.
-      if (phase === 'healthy') activeRequestId = id;
+      if (phase === 'healthy') { activeRequestId = id; healthyGeneration++; }
       return true;
     } catch (_) { return false; }
   }
@@ -464,7 +492,10 @@ export function makeNetworkObservationTracker(options = {}) {
     const id = str(params && params.requestId);
     const record = records.get(id);
     if (!record || params.type !== 'EventSource' || Number(params.response && params.response.status) !== 200) return false;
-    record.responseAt = Number(now());
+    if (Number.isFinite(record.responseAt)) return false;
+    const stamp = Number(now());
+    if (!Number.isFinite(stamp) || stamp < record.requestedAt) return false;
+    record.responseAt = stamp;
     if (phase === 'recovery') chooseRecovery();
     return true;
   }
@@ -473,7 +504,8 @@ export function makeNetworkObservationTracker(options = {}) {
     const record = records.get(id);
     if (!record || str(params && params.data).trim() !== '{}') return false;
     const stamp = Number(now());
-    if (phase === 'healthy' && id === activeRequestId) healthyFrames.push(stamp);
+    if (!Number.isFinite(record.responseAt) || stamp < record.responseAt) return false;
+    if (phase === 'healthy' && id === activeRequestId) record.frames.push(stamp);
     else if (id !== activeRequestId) { record.messageAt = stamp; if (phase === 'recovery') chooseRecovery(); }
     else return false;
     return true;
@@ -495,7 +527,8 @@ export function makeNetworkObservationTracker(options = {}) {
     snapshot() {
       return {
         phase, endpointOrigin, activeRequestId, recoveryRequestId, networkFailedAt, recoveryFrameAt,
-        healthyFrames: healthyFrames.slice(), activeResponseOk: Number.isFinite(records.get(activeRequestId)?.responseAt),
+        healthyGeneration, healthyFrames: (records.get(activeRequestId)?.frames || []).slice(),
+        activeResponseOk: Number.isFinite(records.get(activeRequestId)?.responseAt),
         recoveryResponseOk: Number.isFinite(records.get(recoveryRequestId)?.responseAt)
       };
     }
@@ -538,31 +571,46 @@ function makeLiveDriver(deps = {}) {
         }, 15000);
         if (!healthyOpen) throw Object.assign(new Error('product-eventsource-not-open'), { code: 'product-eventsource-not-open' });
         push({ kind: 'link-state', state: 'UP' });
+        const healthyGeneration = tracker.snapshot().healthyGeneration;
         let emitted = 0;
-        const healthy = await waitUntil(() => {
+        const healthy = await waitUntil(async () => {
           const network = tracker.snapshot();
+          let link = null;
+          try { link = await readLink(cdp); } catch (_) {}
+          if (network.healthyGeneration !== healthyGeneration || !link || link.bridged !== true || link.paused === true || link.down === true) {
+            return { lost: true };
+          }
           while (emitted < network.healthyFrames.length) {
             observations.push({ atMs: network.healthyFrames[emitted], sessionId, kind: 'transport-data', source: 'message',
               cdpObserved: true, endpointOrigin: network.endpointOrigin, endpointPath: '/api/channels/events' });
             emitted++;
           }
-          return network.healthyFrames.length >= 2 && network.healthyFrames[network.healthyFrames.length - 1] - network.healthyFrames[0] > MIN_HEALTHY_SPAN_MS;
+          return network.healthyFrames.length >= 2 && network.healthyFrames[network.healthyFrames.length - 1] - network.healthyFrames[0] > MIN_HEALTHY_SPAN_MS
+            ? { done: true } : null;
         }, 90000, 100);
         if (!healthy) throw Object.assign(new Error('healthy-transport-timeout'), { code: 'healthy-transport-timeout' });
+        if (healthy.lost) throw Object.assign(new Error('healthy-product-link-interrupted'), { code: 'healthy-product-link-interrupted' });
+        const healthyFinalLink = await readLink(cdp);
+        if (!healthyFinalLink || healthyFinalLink.bridged !== true || healthyFinalLink.paused === true || healthyFinalLink.down === true ||
+            tracker.snapshot().healthyGeneration !== healthyGeneration) {
+          throw Object.assign(new Error('healthy-product-link-not-up'), { code: 'healthy-product-link-not-up' });
+        }
+        push({ kind: 'link-state', state: 'UP', continuous: true });
         const sidecar = processes.find(invocation.artifact.path, apiPort);
-        if (!sidecar || sidecar.ok !== true || !Number.isInteger(Number(sidecar.pid)) || Number(sidecar.pid) <= 0) {
+        const sidecarInstanceSha = processInstanceSha(sidecar);
+        if (!sidecar || sidecar.ok !== true || !sidecarInstanceSha) {
           throw Object.assign(new Error('sidecar-identity-unproven'), { code: 'sidecar-identity-unproven' });
         }
         push({ kind: 'sidecar-process', pid: Number(sidecar.pid), candidateCommit: lower(invocation.candidateCommit),
-          parentVerified: true, bundledNodeVerified: true, apiListenerVerified: true });
+          instanceSha256: sidecarInstanceSha, parentVerified: true, bundledNodeVerified: true, apiListenerVerified: true });
         tracker.setPhase('loss');
-        const killed = processes.terminate(invocation.artifact.path, apiPort, Number(sidecar.pid));
-        if (!killed || killed.ok !== true || Number(killed.pid) !== Number(sidecar.pid)) {
+        const killed = processes.terminate(invocation.artifact.path, apiPort, Number(sidecar.pid), sidecar.createdTicks);
+        if (!killed || killed.ok !== true || Number(killed.pid) !== Number(sidecar.pid) || str(killed.createdTicks) !== str(sidecar.createdTicks)) {
           throw Object.assign(new Error('sidecar-termination-refused'), { code: 'sidecar-termination-refused' });
         }
         let exitedAt = null;
         const exited = await waitUntil(() => {
-          const result = processes.exited(invocation.artifact.path, apiPort, Number(sidecar.pid));
+          const result = processes.exited(invocation.artifact.path, apiPort, Number(sidecar.pid), sidecar.createdTicks);
           if (result && result.ok === true) { exitedAt = at(); return result; }
           return null;
         }, 10000);
@@ -585,7 +633,7 @@ function makeLiveDriver(deps = {}) {
         tracker.setPhase('recovery-wait');
         const recovered = await waitUntil(() => {
           const value = processes.find(invocation.artifact.path, apiPort);
-          return value && value.ok === true && Number(value.pid) > 0 && Number(value.pid) !== Number(sidecar.pid) ? value : null;
+          return value && value.ok === true && processInstanceSha(value) && Number(value.pid) !== Number(sidecar.pid) ? value : null;
         }, 20000, 250);
         if (!recovered) throw Object.assign(new Error('watchdog-sidecar-unrecovered'), { code: 'watchdog-sidecar-unrecovered' });
         const recoveredRuntime = await waitUntil(async () => {
@@ -594,6 +642,11 @@ function makeLiveDriver(deps = {}) {
           return verdict.ok ? value : null;
         }, 20000, 250);
         if (!recoveredRuntime) throw Object.assign(new Error('watchdog-version-unrecovered'), { code: 'watchdog-version-unrecovered' });
+        const recoveredAfterVersion = processes.find(invocation.artifact.path, apiPort);
+        if (!recoveredAfterVersion || recoveredAfterVersion.ok !== true || Number(recoveredAfterVersion.pid) !== Number(recovered.pid) ||
+            str(recoveredAfterVersion.createdTicks) !== str(recovered.createdTicks)) {
+          throw Object.assign(new Error('watchdog-version-pid-changed'), { code: 'watchdog-version-pid-changed' });
+        }
         const recoveredAt = at();
         tracker.beginRecovery(downEvent.atMs, recoveredAt);
         const recoveredLink = await waitUntil(async () => {
@@ -604,23 +657,32 @@ function makeLiveDriver(deps = {}) {
         }, 35000, 100);
         if (!recoveredLink) throw Object.assign(new Error('watchdog-link-unrecovered'), { code: 'watchdog-link-unrecovered' });
         const recoveryNetwork = tracker.snapshot();
+        const recoveredIdentity = await readIdentity(cdp);
+        const recoveredIdentityVerdict = validateInstalledObservation(recoveredIdentity, invocation);
+        if (!recoveredIdentityVerdict.ok) throw Object.assign(new Error('watchdog-final-identity-invalid'), { code: 'watchdog-final-identity-invalid' });
+        const recoveredFinalProcess = processes.find(invocation.artifact.path, apiPort);
+        if (!recoveredFinalProcess || recoveredFinalProcess.ok !== true || Number(recoveredFinalProcess.pid) !== Number(recovered.pid) ||
+            str(recoveredFinalProcess.createdTicks) !== str(recovered.createdTicks)) {
+          throw Object.assign(new Error('watchdog-final-pid-changed'), { code: 'watchdog-final-pid-changed' });
+        }
+        const recoveredInstanceSha = processInstanceSha(recoveredFinalProcess);
+        if (!recoveredInstanceSha || recoveredInstanceSha === sidecarInstanceSha) {
+          throw Object.assign(new Error('watchdog-process-instance-invalid'), { code: 'watchdog-process-instance-invalid' });
+        }
+        const artifactAfter = fileIdentity(invocation.artifact.path);
+        if (!artifactAfter || artifactAfter.sha256 !== lower(invocation.artifact.sha256) || artifactAfter.size !== Number(invocation.artifact.size)) {
+          throw Object.assign(new Error('artifact-changed-during-proof'), { code: 'artifact-changed-during-proof' });
+        }
         const recoveryEvents = [
           { atMs: recoveredAt, sessionId, kind: 'sidecar-recovery', pid: Number(recovered.pid), previousPid: Number(sidecar.pid),
             candidateCommit: lower(invocation.candidateCommit), parentVerified: true, bundledNodeVerified: true,
-            apiListenerVerified: true, versionVerified: true, watchdog: true },
+            apiListenerVerified: true, versionVerified: true, watchdog: true, instanceSha256: recoveredInstanceSha },
           { atMs: recoveryNetwork.recoveryFrameAt, sessionId, kind: 'recovery-transport-data', source: 'message',
             cdpObserved: true, requestBound: true, nativeReconnect: true,
             endpointOrigin: recoveryNetwork.endpointOrigin, endpointPath: '/api/channels/events' }
         ].sort((a, b) => a.atMs - b.atMs);
         observations.push(...recoveryEvents);
         push({ kind: 'link-state', state: 'UP', recovered: true });
-        const recoveredIdentity = await readIdentity(cdp);
-        const recoveredIdentityVerdict = validateInstalledObservation(recoveredIdentity, invocation);
-        if (!recoveredIdentityVerdict.ok) throw Object.assign(new Error('watchdog-final-identity-invalid'), { code: 'watchdog-final-identity-invalid' });
-        const artifactAfter = fileIdentity(invocation.artifact.path);
-        if (!artifactAfter || artifactAfter.sha256 !== lower(invocation.artifact.sha256) || artifactAfter.size !== Number(invocation.artifact.size)) {
-          throw Object.assign(new Error('artifact-changed-during-proof'), { code: 'artifact-changed-during-proof' });
-        }
         return { identity: recoveredIdentity, origin: recoveredIdentity.origin, sessionId, observations };
       } finally {
         try { cdp.ws.close(); } catch (_) {}
