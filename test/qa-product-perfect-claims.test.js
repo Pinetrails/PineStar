@@ -47,6 +47,11 @@ const A = require('./_assert.js');
   missingDomain.claims = missingDomain.claims.filter(row => row.domain !== 'release');
   A.eq(validateClaimsLedger(missingDomain, { repoRoot }).ok, false, 'a missing required claim domain is rejected');
 
+  const droppedFamily = clone(ledger);
+  droppedFamily.claims.splice(1, 1);
+  droppedFamily.expectedClaimCount = droppedFamily.claims.length;
+  A.eq(validateClaimsLedger(droppedFamily, { repoRoot }).ok, false, 'a reviewed claim family cannot be silently dropped');
+
   const changedBytes = clone(ledger);
   changedBytes.releaseSurface.files[0].sha256 = '0'.repeat(64);
   A.eq(inspectClaimsAuthority({ repoRoot, ledger: changedBytes }).planning.ok, false, 'changed reviewed bytes force re-audit');
@@ -81,6 +86,11 @@ const A = require('./_assert.js');
   const handAuthored = clone(ledger);
   delete handAuthored.releaseSurface.pathSetSha256;
   A.eq(inspectClaimsAuthority({ repoRoot, ledger: handAuthored }).planning.ok, false, 'hand-authored unlocked evidence is rejected');
+
+  const fakeExperimentalLabel = clone(ledger);
+  const experimental = fakeExperimentalLabel.claims.find(row => row.disposition === 'EXPERIMENTAL');
+  experimental.experimentalLabel.visible = true;
+  A.eq(validateClaimsLedger(fakeExperimentalLabel, { repoRoot }).ok, false, 'experimental status cannot be made terminal-visible by flipping a boolean over an absence check');
 
   const noRefs = clone(ledger);
   noRefs.claims[0].refsChecked = ['trunk@' + 'a'.repeat(40)];

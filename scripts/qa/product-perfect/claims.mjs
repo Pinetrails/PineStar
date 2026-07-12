@@ -38,6 +38,45 @@ const VERDICTS = new Set(['SHIPPED', 'PARTIAL', 'MISSING', 'REFUTED', 'EXPERIMEN
 const DISPOSITIONS = new Set(['PROVEN', 'FIX', 'COMPLETE', 'NARROW', 'EXPERIMENTAL']);
 const LIVE_PROOF = new Set(['NOT_REQUIRED', 'PENDING', 'PROVEN']);
 const CHECK_KINDS = new Set(['contains', 'absent']);
+const REQUIRED_CLAIM_IDS = Object.freeze([
+  'byok-chatgpt-connect',
+  'channel-token-keychain',
+  'comms-real-workflow',
+  'concurrent-agent-runs',
+  'crash-safe-forward-corrupt-recovery',
+  'curated-mcp-auth-tiers',
+  'first-boot-onboarding',
+  'free-no-markup-budget-caps',
+  'full-backup-export-restore',
+  'hallway-authorized-handoff',
+  'jailed-open-deliverables',
+  'layout-is-workflow',
+  'learning-improves-over-time',
+  'local-first-no-account',
+  'manual-mcp-connect',
+  'morning-report',
+  'night-patch-safe-branch',
+  'night-shift-away-work',
+  'no-analytics-telemetry',
+  'no-phone-home',
+  'object-capability-grant',
+  'one-click-estop',
+  'one-click-mutation-approval',
+  'persisted-real-roster',
+  'post-onboarding-base-url',
+  'project-bless-revoke',
+  'provider-catalog-custom',
+  'room-capability-team',
+  'routines-visible-unattended',
+  'secrets-keychain-never-render',
+  'self-update-verified',
+  'slack-matrix-signal',
+  'telegram-discord-messaging',
+  'three-platform-release-pipeline',
+  'truthful-tools-cost-work',
+  'unified-work-deliverables-ledger',
+  'work-after-app-close'
+]);
 const REQUIRED_EXCEPTION_IDS = Object.freeze([
   'api-version-truth',
   'consent-visibility',
@@ -226,9 +265,16 @@ export function validateClaimsLedger(ledger, _options = {}) {
       if (claim.disposition === 'EXPERIMENTAL') {
         const exp = claim.experimentalLabel;
         if (!exp || typeof exp !== 'object' || typeof exp.visible !== 'boolean') errors.push(label + '.experimentalLabel visibility is required');
-        else validateCheck(exp.check, label + '.experimentalLabel.check', errors);
+        else {
+          validateCheck(exp.check, label + '.experimentalLabel.check', errors);
+          if (exp.visible === true && exp.check && exp.check.kind !== 'contains') errors.push(label + '.experimentalLabel must use a present point-of-use check when visible');
+          if (exp.visible === false && exp.check && exp.check.kind !== 'absent') errors.push(label + '.experimentalLabel must use an absence check while not visible');
+        }
       }
     });
+    if (JSON.stringify(sortedUnique([...ids])) !== JSON.stringify([...REQUIRED_CLAIM_IDS].sort())) {
+      errors.push('claims must contain the exact reviewed material-family inventory');
+    }
     for (const domain of REQUIRED_DOMAINS) if (!domains.has(domain)) errors.push('required claim domain is missing: ' + domain);
   }
 
@@ -256,6 +302,7 @@ export function validateClaimsLedger(ledger, _options = {}) {
       const label = 'doNotRebuild[' + index + ']';
       validateAuthorityRow(row, label, errors);
       if (row && row.action !== 'DO_NOT_REBUILD') errors.push(label + '.action must be DO_NOT_REBUILD');
+      if (row && (row.verdict !== 'SHIPPED' || row.disposition !== 'PROVEN')) errors.push(label + ' must remain SHIPPED/PROVEN');
     });
     if (JSON.stringify(sortedUnique(ids)) !== JSON.stringify([...REQUIRED_EXCEPTION_IDS].sort())) {
       errors.push('doNotRebuild must contain the five locked exceptions');
