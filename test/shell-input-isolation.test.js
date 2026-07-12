@@ -57,6 +57,7 @@ try {
     open: 'vite --open'
   } }));
   A.ok(inputIsolationRisk('npm run smoke', { cwd: root, fs, pathMod: path }), 'npm pre/post lifecycle hooks cannot hide browser automation');
+  A.ok(inputIsolationRisk('npm run smoke', { cwd: path.join(root, 'src'), fs, pathMod: path }), 'npm lifecycle inspection follows a subdirectory cwd to its nearest project root');
   A.ok(inputIsolationRisk('powershell -File scripts/native-input.ps1', { cwd: root, fs, pathMod: path }), 'script containing a native cursor API is refused');
   A.ok(inputIsolationRisk('npm run open', { cwd: root, fs, pathMod: path }), 'framework --open indirection is refused');
   A.ok(inputIsolationRisk('python -c "import ctypes; ctypes.windll.user32.BlockInput(True)"', { cwd: root, fs, pathMod: path }), 'Python BlockInput cannot hide behind an inline interpreter');

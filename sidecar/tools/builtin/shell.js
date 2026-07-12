@@ -356,29 +356,36 @@
   function commandSources(cmd, opts) {
     opts = opts || {};
     const fs = opts.fs, P = opts.pathMod, cwd = opts.cwd, dialect = opts.dialect;
-    const queue = [String(cmd || '')], out = [], seen = new Set();
-    let packageDoc = null;
-    function scripts() {
-      if (packageDoc !== null) return packageDoc;
-      try { packageDoc = JSON.parse(readSmall(fs, P && cwd ? P.join(cwd, 'package.json') : '', 1 << 20) || '{}').scripts || {}; }
-      catch (_) { packageDoc = {}; }
-      return packageDoc;
+    const queue = [{ text: String(cmd || ''), baseDir: cwd }], out = [], seen = new Set(), packageCache = new Map();
+    function enqueue(text, baseDir) { if (text != null && String(text)) queue.push({ text: String(text), baseDir }); }
+    function packageAt(baseDir) {
+      const projectRoot = projectScanRoot(baseDir, fs, P);
+      const key = String(projectRoot || '');
+      if (packageCache.has(key)) return { root: projectRoot, scripts: packageCache.get(key) };
+      let doc = {};
+      try { doc = JSON.parse(readSmall(fs, P && projectRoot ? P.join(projectRoot, 'package.json') : '', 1 << 20) || '{}').scripts || {}; }
+      catch (_) { doc = {}; }
+      packageCache.set(key, doc);
+      return { root: projectRoot, scripts: doc };
     }
     for (let qi = 0; qi < queue.length && qi < 30; qi++) {
-      const text = String(queue[qi] || '');
-      if (!text || seen.has(text)) continue;
-      seen.add(text); out.push(text);
+      const entry = queue[qi] || {};
+      const text = String(entry.text || ''), baseDir = entry.baseDir || cwd;
+      const seenKey = String(baseDir || '') + '\0' + text;
+      if (!text || seen.has(seenKey)) continue;
+      seen.add(seenKey); out.push(text);
       for (const parsedHead of commandHeads(text, dialect)) {
         const head = (parsedHead && parsedHead.text != null ? parsedHead.text : String(parsedHead || '')).replace(/^\s*@/, '');
         let m = head.match(/^(?:npm|npm\.cmd)\s+(?:--[A-Za-z0-9_-]+(?:=[^\s]+)?\s+)*(?:run\s+)?([A-Za-z0-9:_-]+)\b/i);
         if (m) {
+          const pkg = packageAt(baseDir);
           const name = /^(?:test|start|stop|restart)$/i.test(m[1]) ? m[1].toLowerCase() : m[1];
-          if (scripts()['pre' + name]) queue.push(String(scripts()['pre' + name]));
-          if (scripts()[name]) queue.push(String(scripts()[name]));
-          if (scripts()['post' + name]) queue.push(String(scripts()['post' + name]));
+          enqueue(pkg.scripts['pre' + name], pkg.root);
+          enqueue(pkg.scripts[name], pkg.root);
+          enqueue(pkg.scripts['post' + name], pkg.root);
         }
         m = head.match(/^(?:pnpm|yarn)(?:\.cmd)?\s+(?:run\s+)?([A-Za-z0-9:_-]+)\b/i);
-        if (m && scripts()[m[1]]) queue.push(String(scripts()[m[1]]));
+        if (m) { const pkg = packageAt(baseDir); enqueue(pkg.scripts[m[1]], pkg.root); }
 
         const refs = [];
         const interpreted = head.match(/^(?:(?:node|node\.exe|python|python\d*(?:\.exe)?|py(?:\.exe)?|ruby|php|tsx|ts-node|bun|deno|bash|sh)(?:\s+run)?)(?:\s+--?[A-Za-z0-9_-]+(?:=[^\s]+)?)*\s+(?!-[eEpP]\b)("[^"]+"|'[^']+'|[^\s&|;]+)/i);
@@ -389,9 +396,9 @@
         if (direct && CODE_FILE_RE.test(unquoteToken(direct[1]))) refs.push(direct[1]);
         for (const raw of refs) {
           const rel = unquoteToken(raw);
-          if (!CODE_FILE_RE.test(rel) || !P || !cwd || P.isAbsolute(rel) || /(^|[\\/])\.\.([\\/]|$)/.test(rel)) continue;
-          const src = readSmall(fs, P.resolve(cwd, rel), 2 << 20);
-          if (src) queue.push(src);
+          if (!CODE_FILE_RE.test(rel) || !P || !baseDir || P.isAbsolute(rel) || /(^|[\\/])\.\.([\\/]|$)/.test(rel)) continue;
+          const src = readSmall(fs, P.resolve(baseDir, rel), 2 << 20);
+          if (src) enqueue(src, baseDir);
         }
       }
     }
@@ -649,7 +656,7 @@
       description: 'Run a shell command in your workspace directory and get back its combined stdout/stderr + exit code. '
         + 'Use it to run tests, builds, git, scripts — anything you would type in a terminal. Commands must NOT change the '
         + 'user\'s machine or screen: opening a window (start/explorer/headed browser), shutting down/rebooting, killing '
-        + 'processes, scheduled tasks, registry/service/firewall edits, and all-interfaces (0.0.0.0) binds are refused. To '
+        + 'processes, scheduled tasks, registry/service/firewall edits, and all-interfaces (0.0.0.0) binds are refused. '
         + 'If a visible app/window is genuinely needed, ask the Commander to open it themselves; ordinary agent runs have no real-screen tool. Commands run INSIDE your own '
         + 'workspace folder, and your working directory PERSISTS across calls (a `cd` carries over). Absolute and parent (..) '
         + 'paths are refused in cmd; pass cwd to run from a specific existing folder instead. On Windows local shells, cwd accepts C:\\Users\\...; /c/Users/... is normalized for compatibility, but prefer the exact path the Commander gave you. Commands use cmd.exe syntax. Optional timeoutMs (default 30s, max 120s). Set background:true for a long-running process '
