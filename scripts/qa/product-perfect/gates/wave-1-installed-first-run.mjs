@@ -115,14 +115,6 @@ for (const [label, args] of [
   if (status) process.exit(status);
 }
 
-const journey = runNode('installed fresh-user first-value journey', ['scripts/qa/installed-first-run.mjs'], 700000, {
-  STARNET_FIRST_RUN_EXPECTED_ARTIFACT_SHA256: artifact.sha256,
-  STARNET_FIRST_RUN_EXPECTED_ARTIFACT_SIZE: String(artifact.size),
-  STARNET_FIRST_RUN_CDP_PORT: String(cdpPort),
-  STARNET_SMOKE_CDP_PORT: String(cdpPort)
-});
-if (journey) process.exit(journey);
-
 const linkProbeInput = String(process.env.STARNET_W1_LINK_PROBE || '').trim().replace(/\\/g, '/');
 const linkProbePath = linkProbeInput ? path.resolve(ROOT, linkProbeInput) : '';
 const linkProbeRelative = linkProbePath ? path.relative(ROOT, linkProbePath).replace(/\\/g, '/') : '';
@@ -136,6 +128,15 @@ if (!probeOwned) {
   process.exit(2);
 }
 const probe = { path: linkProbeRelative, sha256: probeOwned.sha256 };
+
+const journey = runNode('installed fresh-user first-value journey', ['scripts/qa/installed-first-run.mjs'], 700000, {
+  STARNET_FIRST_RUN_EXPECTED_ARTIFACT_SHA256: artifact.sha256,
+  STARNET_FIRST_RUN_EXPECTED_ARTIFACT_SIZE: String(artifact.size),
+  STARNET_FIRST_RUN_CDP_PORT: String(cdpPort),
+  STARNET_SMOKE_CDP_PORT: String(cdpPort)
+});
+if (journey) process.exit(journey);
+
 const challenge = 'w1-' + crypto.randomBytes(32).toString('hex');
 const linkRunDir = path.join(QA_INSTALLED, 'smoke-' + new Date().toISOString().replace(/[:.]/g, '-') + '-link');
 const linkReceiptPath = path.join(linkRunDir, 'receipt.json');

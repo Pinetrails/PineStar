@@ -248,8 +248,11 @@ function scenario(overrides = {}) {
   A.ok(/STARNET_FIRST_RUN_EXPECTED_ARTIFACT_SHA256/.test(gate) && /artifactAfterProofSequence/.test(gate), 'one gate-minted artifact identity binds journey, link, and final bytes');
   A.ok(/for \(const name of \[/.test(gate) && !/process\.stdout\.write\(probeRun/.test(gate), 'link probe receives an allowlisted environment and its output is not forwarded');
   A.ok(/installed-first-run\.mjs/.test(gate), 'W1 gate invokes the live installed journey');
+  const linkProbePreflight = gate.indexOf('const probeOwned = candidateOwnedFile(linkProbeRelative)');
   const journeyCall = gate.indexOf("runNode('installed fresh-user first-value journey'");
   const linkProbeCall = gate.indexOf('spawnSync(process.execPath, [linkProbePath]');
+  A.ok(linkProbePreflight >= 0 && linkProbePreflight < journeyCall,
+    'W1 gate rejects missing or mismatched candidate-owned probe bytes before mutating the fresh profile');
   A.ok(journeyCall >= 0 && linkProbeCall >= 0 && journeyCall < linkProbeCall,
     'W1 gate completes the real first-user journey before challenging installed link transport');
   const runnerSource = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'qa', 'installed-first-run.mjs'), 'utf8');
