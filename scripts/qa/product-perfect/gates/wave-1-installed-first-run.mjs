@@ -115,6 +115,14 @@ for (const [label, args] of [
   if (status) process.exit(status);
 }
 
+const journey = runNode('installed fresh-user first-value journey', ['scripts/qa/installed-first-run.mjs'], 700000, {
+  STARNET_FIRST_RUN_EXPECTED_ARTIFACT_SHA256: artifact.sha256,
+  STARNET_FIRST_RUN_EXPECTED_ARTIFACT_SIZE: String(artifact.size),
+  STARNET_FIRST_RUN_CDP_PORT: String(cdpPort),
+  STARNET_SMOKE_CDP_PORT: String(cdpPort)
+});
+if (journey) process.exit(journey);
+
 const linkProbeInput = String(process.env.STARNET_W1_LINK_PROBE || '').trim().replace(/\\/g, '/');
 const linkProbePath = linkProbeInput ? path.resolve(ROOT, linkProbeInput) : '';
 const linkProbeRelative = linkProbePath ? path.relative(ROOT, linkProbePath).replace(/\\/g, '/') : '';
@@ -200,16 +208,9 @@ if (!linkVerdict.ok) {
 }
 console.log('[W1 PASS] installed link truth (>40s quiet UP; actual loss DOWN)');
 
-const journey = runNode('installed fresh-user first-value journey', ['scripts/qa/installed-first-run.mjs'], 700000, {
-  STARNET_FIRST_RUN_EXPECTED_ARTIFACT_SHA256: artifact.sha256,
-  STARNET_FIRST_RUN_EXPECTED_ARTIFACT_SIZE: String(artifact.size),
-  STARNET_FIRST_RUN_CDP_PORT: String(cdpPort),
-  STARNET_SMOKE_CDP_PORT: String(cdpPort)
-});
-if (journey) process.exit(journey);
-const artifactAfterJourney = hashFile(artifact.path);
-if (!artifactAfterJourney || artifactAfterJourney.sha256 !== artifact.sha256 || artifactAfterJourney.size !== artifact.size) {
-  console.error('[W1 BLOCKED] installed artifact bytes changed between link and journey proof');
+const artifactAfterProofSequence = hashFile(artifact.path);
+if (!artifactAfterProofSequence || artifactAfterProofSequence.sha256 !== artifact.sha256 || artifactAfterProofSequence.size !== artifact.size) {
+  console.error('[W1 BLOCKED] installed artifact bytes changed during journey and link proof');
   process.exit(2);
 }
 

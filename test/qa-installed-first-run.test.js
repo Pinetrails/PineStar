@@ -245,9 +245,13 @@ function scenario(overrides = {}) {
   A.ok(/STARNET_W1_LINK_PROBE/.test(gate), 'W1 gate invokes the candidate-owned installed link companion probe');
   A.ok(/STARNET_W1_LINK_CHALLENGE/.test(gate), 'W1 gate supplies a fresh challenge instead of accepting a prewritten receipt');
   A.ok(/validateLinkReceipt/.test(gate), 'W1 gate validates link receipt semantics');
-  A.ok(/STARNET_FIRST_RUN_EXPECTED_ARTIFACT_SHA256/.test(gate) && /artifactAfterJourney/.test(gate), 'one gate-minted artifact identity binds link, journey, and final bytes');
+  A.ok(/STARNET_FIRST_RUN_EXPECTED_ARTIFACT_SHA256/.test(gate) && /artifactAfterProofSequence/.test(gate), 'one gate-minted artifact identity binds journey, link, and final bytes');
   A.ok(/for \(const name of \[/.test(gate) && !/process\.stdout\.write\(probeRun/.test(gate), 'link probe receives an allowlisted environment and its output is not forwarded');
   A.ok(/installed-first-run\.mjs/.test(gate), 'W1 gate invokes the live installed journey');
+  const journeyCall = gate.indexOf("runNode('installed fresh-user first-value journey'");
+  const linkProbeCall = gate.indexOf('spawnSync(process.execPath, [linkProbePath]');
+  A.ok(journeyCall >= 0 && linkProbeCall >= 0 && journeyCall < linkProbeCall,
+    'W1 gate completes the real first-user journey before challenging installed link transport');
   const runnerSource = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'qa', 'installed-first-run.mjs'), 'utf8');
   A.ok(!/rev-parse['"`,\s]+HEAD/.test(runnerSource), 'runner never substitutes ambient HEAD for the candidate');
   A.ok(/Get-NetTCPConnection/.test(runnerSource) && /GetOwnerSid/.test(runnerSource) && /Get-Acl/.test(runnerSource), 'isolation binds runner, installed CDP listener, and repository owner principals');
