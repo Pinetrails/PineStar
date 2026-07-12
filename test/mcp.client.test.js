@@ -129,7 +129,8 @@ function makeFakeTransport(handle) {
 
     const ro = makeMcpToolDef({ connectorId: 'gh', mcpTool: { name: 'list_issues', annotations: { readOnlyHint: true }, inputSchema: { type: 'object' } }, call: () => Promise.resolve({ content: [] }) });
     A.eq(ro.scope, 'read', 'readOnlyHint -> read scope');
-    A.eq(ro.requiresConsent, false, 'a readOnly MCP tool needs no consent (like web_search)');
+    A.eq(ro.requiresConsent, false, 'readOnlyHint changes only the legacy consent flag');
+    A.eq(ro.impact, 'external-unknown', 'host authority still treats a declared read-only MCP tool as unknown');
 
     const errDef = makeMcpToolDef({ connectorId: 'x', mcpTool: { name: 't', inputSchema: { type: 'object' } }, call: () => Promise.resolve({ isError: true, content: [{ type: 'text', text: 'bad input' }] }) });
     let rThrew = false;
@@ -147,14 +148,15 @@ function makeFakeTransport(handle) {
     });
     reg.register(def);
     const mk = (args) => ({ id: 'c', name: def.name, args: args, argsRaw: JSON.stringify(args), parseError: null });
+    const exactAuthority = async () => ({ ok: true, oneShot: true, impact: 'external-unknown' });
 
-    const bad = await reg.dispatch(mk({}));                                   // missing required `path`
+    const bad = await reg.dispatch(mk({}), { authorize: exactAuthority });     // missing required `path`
     A.eq(bad.isError, true, 'the registry schema-validates a translated MCP tool BEFORE run()');
 
-    const denied = await reg.dispatch(mk({ path: '/x' }), { canUse: () => ({ ok: false, reason: 'not placed' }) });
+    const denied = await reg.dispatch(mk({ path: '/x' }), { authorize: exactAuthority, canUse: () => ({ ok: false, reason: 'not placed' }) });
     A.eq(denied.summary, 'capdenied', 'an MCP tool obeys the capability gate');
 
-    const okr = await reg.dispatch(mk({ path: '/etc/hosts' }), { canUse: () => ({ ok: true }) });
+    const okr = await reg.dispatch(mk({ path: '/etc/hosts' }), { authorize: exactAuthority, canUse: () => ({ ok: true }) });
     A.eq(okr.ok, true, 'a granted, valid MCP dispatch succeeds');
     A.eq(okr.content, 'FILE:/etc/hosts', 'dispatch returns the MCP tool output');
   }
