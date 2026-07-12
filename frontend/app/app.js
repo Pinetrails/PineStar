@@ -2890,20 +2890,43 @@ const App = (() => {
       .catch(() => { renderProjects(); });
   }
   // ADD A PROJECT: an inline editor row at the top of the projects list — a typed absolute-path field (the honest
-  // fallback everywhere) plus a native folder picker on the desktop shell IF it exposes one (Tauri starnet_pick_folder;
-  // the shipped shell has none yet, so it gracefully falls back to the typed path — exactly like the KEEP flow).
-  // Submitting POSTs /api/projects/bless, which blesses through the SAME path-grant machinery as conversational trust.
+  // fallback everywhere) plus a 📁 browse button that opens the REAL OS folder chooser. The picker is served by the
+  // sidecar (POST /api/projects/pickfolder — local-first: the sidecar runs on the user's machine, browser and desktop
+  // alike); a Tauri starnet_pick_folder command is tried first if the shell ever ships one. Picking fills the input
+  // only — Submitting POSTs /api/projects/bless, which blesses through the SAME path-grant machinery as conversational
+  // trust (the Add click stays the consent). If no picker exists (headless host), the honest reason lands in the hint
+  // and the typed path remains the fallback.
   function tauriCore() { return (typeof window !== 'undefined' && window.__TAURI__ && window.__TAURI__.core) ? window.__TAURI__.core : null; }
+  // one shared "open the native folder chooser" helper -> Promise<string|null> (null = cancelled/unavailable).
+  // onErr(reason) fires ONLY for a real failure/unavailability, never for a user cancel.
+  function pickFolderNative(onErr) {
+    const core = tauriCore();
+    const viaSidecar = () =>
+      fetch('/api/projects/pickfolder', { method: 'POST' })
+        .then(res => res.json().then(j => ({ ok: res.ok, j })).catch(() => ({ ok: false, j: null })))
+        .then(({ ok, j }) => {
+          if (ok && j && j.ok && j.path) return String(j.path);
+          if (ok && j && j.ok && j.cancelled) return null;
+          if (typeof onErr === 'function') onErr((j && j.reason) || 'no folder picker available — type the path instead');
+          return null;
+        })
+        .catch(() => { if (typeof onErr === 'function') onErr('could not reach the station'); return null; });
+    if (core && core.invoke) {
+      return Promise.resolve(core.invoke('starnet_pick_folder', {}))
+        .then(dir => (dir ? String(dir) : null))
+        .catch(viaSidecar);   // shell has no picker command — the sidecar's OS dialog is the real path
+    }
+    return viaSidecar();
+  }
   function beginAddProject() {
     if (railView !== 'projects') setRailView('projects');
     const ul = el('projects'); if (!ul) return;
     if (ul.querySelector('.proj-add')) { const inp = ul.querySelector('.proj-add input'); if (inp) inp.focus(); return; }
     const li = document.createElement('li'); li.className = 'proj-add';
-    const core = tauriCore();
     li.innerHTML =
       '<div class="proj-add-row">' +
         '<input type="text" spellcheck="false" placeholder="absolute folder path (e.g. C:\\Users\\you\\project)" aria-label="project folder path">' +
-        (core && core.invoke ? '<button class="proj-add-pick" title="pick a folder">📁</button>' : '') +
+        '<button class="proj-add-pick" title="browse for a folder">📁</button>' +
         '<button class="proj-add-go">Add</button>' +
         '<button class="proj-add-cancel">✕</button>' +
       '</div>' +
@@ -2928,7 +2951,19 @@ const App = (() => {
     input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); submit(); } else if (e.key === 'Escape') { e.preventDefault(); cancel(); } });
     { const g = li.querySelector('.proj-add-go'); if (g) g.onclick = submit; }
     { const c = li.querySelector('.proj-add-cancel'); if (c) c.onclick = cancel; }
-    { const pk = li.querySelector('.proj-add-pick'); if (pk && core && core.invoke) pk.onclick = () => { Promise.resolve(core.invoke('starnet_pick_folder', {})).then(dir => { if (dir) { input.value = String(dir); input.focus(); } }).catch(() => { input.focus(); }); }; }
+    { const pk = li.querySelector('.proj-add-pick');
+      if (pk) pk.onclick = () => {
+        if (pk.disabled) return;
+        pk.disabled = true;
+        showHint('folder picker open — choose in the system dialog…', false);
+        pickFolderNative(reason => showHint(reason, true))
+          .then(dir => {
+            if (dir) { input.value = dir; showHint('', false); }
+            else if (!hint.classList.contains('err') || hint.hidden) showHint('', false);   // cancel: clear the "open…" note, keep any real error
+          })
+          .finally(() => { if (pk.isConnected) pk.disabled = false; input.focus(); });
+      };
+    }
     input.focus();
     SFX.click();
   }
