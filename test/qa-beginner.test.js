@@ -9,7 +9,8 @@
 'use strict';
 const A = require('./_assert.js');
 const {
-  makeRunAccountant, stepsForMode, firstBootAdvanceKey, BEGINNER_PROVIDER, beginnerKeyFieldValue,
+  makeRunAccountant, stepsForMode, firstBootAdvanceKey, makeFirstBootAdvanceController,
+  BEGINNER_PROVIDER, beginnerKeyFieldValue,
   buildStallFinding, stampFor, STEP_DEFS, TOTAL_BUDGET_MS
 } = require('../scripts/qa/beginner-run.mjs');
 const { makeLedger, fingerprintOf } = require('../scripts/qa/ledger.mjs');
@@ -43,6 +44,35 @@ const clock = { now: () => clk };
   A.eq(BEGINNER_PROVIDER, 'openrouter', 'the isolated BYOK path explicitly selects OpenRouter');
   A.eq(beginnerKeyFieldValue('ui-only', 'dummy'), 'dummy', 'UI-only enters its non-secret placeholder');
   A.eq(beginnerKeyFieldValue('live', 'dummy'), '', 'live mode never writes a credential sentinel into the DOM');
+}
+
+// ---- A4. boot veil -> splash is retried statefully instead of sampling the title screen once ----
+// REGRESSION LOCK for STUCK@title: the static connect DOM can exist while screen-boot is active.
+// The splash becomes active later, so a one-shot sample sees the boot veil, sends no key, and waits forever
+// for a connect screen that cannot activate until the splash receives Enter. The controller is
+// observed on every title poll: it waits through the veil, advances the later splash exactly once,
+// then recognizes connect. Unexpected fresh-boot states fail loudly instead of being disturbed.
+{
+  const ctl = makeFirstBootAdvanceController();
+  const boot = ctl.observe('screen-boot');
+  A.eq(boot.status, 'waiting', 'the boot veil is a transient title state');
+  A.eq(boot.key, '', 'the boot veil is never advanced');
+
+  const splash = ctl.observe('screen-splash');
+  A.eq(splash.status, 'advancing', 'a splash discovered on a later poll is advanced');
+  A.eq(splash.key, 'Enter', 'the later splash receives the real Enter keypress');
+
+  const splashAgain = ctl.observe('screen-splash');
+  A.eq(splashAgain.status, 'waiting', 'the driver waits for the splash transition after Enter');
+  A.eq(splashAgain.key, '', 'the splash is advanced at most once');
+
+  const connect = ctl.observe('screen-connect');
+  A.eq(connect.status, 'connect', 'the creation screen is recognized as the title-step destination');
+  A.eq(connect.key, '', 'the creation screen is never advanced');
+
+  const bad = makeFirstBootAdvanceController().observe('screen-game');
+  A.eq(bad.status, 'failed', 'an unexpected in-game state fails the fresh-user title step');
+  A.ok(/screen-game/.test(bad.reason), 'the failure names the observed unexpected screen');
 }
 
 // ---- A2. the boundary (first-directive) budget must cover the WHOLE awakening cinematic ----
