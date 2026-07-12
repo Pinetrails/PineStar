@@ -1,0 +1,97 @@
+/* sidecar/inputpolicy.js — host authority for physical-input isolation.
+
+   Every current runOnce flow is synthetic-only. This module removes physical computer.use and
+   real-screen desktop.open from the resolved capability set before provider tool definitions
+   are built and stamps the dispatch context with an explicit deny. Prompt text, isTask,
+   surface:'interactive', Full Access, and permanent consent are deliberately irrelevant.
+
+   A future attended-control feature must be a separate host-minted, one-shot runId+callId lease;
+   it must not weaken these ordinary task/autonomous/test helpers. */
+'use strict';
+
+const REAL_DESKTOP_TOOLS = new Set(['computer.use', 'desktop.open']);
+
+function enforceSyntheticOnly(resolved) {
+  resolved = resolved || {};
+  const approvalRules = Object.assign({}, resolved.approvalRules || {});
+  const networkCaps = Object.assign({}, resolved.networkCaps || {});
+  for (const tool of REAL_DESKTOP_TOOLS) {
+    delete approvalRules[tool];
+    delete networkCaps[tool];
+  }
+  return Object.assign({}, resolved, {
+    tools: (resolved.tools || []).filter(t => !REAL_DESKTOP_TOOLS.has(t)),
+    grants: (resolved.grants || []).filter(g => g && !REAL_DESKTOP_TOOLS.has(g.tool)),
+    approvalRules,
+    networkCaps
+  });
+}
+
+function runInputContext(surface, isTask) {
+  return {
+    surface: surface || 'autonomous',
+    isTask: !!isTask,
+    physicalInputAuthorized: false,
+    inputMode: 'synthetic'
+  };
+}
+
+// Bind browser.test_navigate to the URL the agent-owned background server actually
+// advertised, not merely a requested command-line port (Vite may fall back 5173 -> 5174).
+function backgroundOwnsLoopbackUrl(status, rawUrl) {
+  if (!status || !status.running || status.killed) return false;
+  let requested;
+  try { requested = new URL(rawUrl); } catch (_) { return false; }
+  const h = String(requested.hostname || '').replace(/^\[|\]$/g, '').toLowerCase();
+  if (h !== 'localhost' && h !== '127.0.0.1' && h !== '::1') return false;
+  const requestedPort = Number(requested.port || (requested.protocol === 'https:' ? 443 : 80));
+  const tail = String(status.tail || '').replace(/\x1b\[[0-9;]*m/g, '');
+  const re = /https?:\/\/(?:localhost|127\.0\.0\.1|\[::1\])(?::(\d{1,5}))?/ig;
+  let m;
+  while ((m = re.exec(tail))) {
+    const endpointPort = Number(m[1] || (/^https:/i.test(m[0]) ? 443 : 80));
+    if (endpointPort === requestedPort) return true;
+  }
+  return false;
+}
+
+function loopbackPort(rawUrl) {
+  try {
+    const u = new URL(rawUrl);
+    const h = String(u.hostname || '').replace(/^\[|\]$/g, '').toLowerCase();
+    if (h !== 'localhost' && h !== '127.0.0.1' && h !== '::1') return 0;
+    return Number(u.port || (u.protocol === 'https:' ? 443 : 80));
+  } catch (_) { return 0; }
+}
+
+// OS-backed listener ownership: the process listening on the requested port must be the
+// background handle's PID or one of its descendants. Every ambient dependency is injected.
+function makeLoopbackListenerProbe(opts) {
+  opts = opts || {};
+  const run = opts.execFile, platform = opts.platform || process.platform, env = opts.env || process.env;
+  return async function listenerOwned(status, rawUrl) {
+    const port = loopbackPort(rawUrl), rootPid = Number(status && status.pid);
+    if (typeof run !== 'function' || !Number.isInteger(port) || port < 1 || port > 65535 || !Number.isInteger(rootPid) || rootPid < 1) return false;
+    let exe, args;
+    if (platform === 'win32') {
+      exe = env.SystemRoot ? env.SystemRoot + '\\System32\\WindowsPowerShell\\v1.0\\powershell.exe' : 'powershell.exe';
+      const script = '$port=' + port + ';$root=' + rootPid + ';$parents=@{};Get-CimInstance Win32_Process|%{$parents[[uint32]$_.ProcessId]=[uint32]$_.ParentProcessId};$owners=@(Get-NetTCPConnection -State Listen -LocalPort $port -ErrorAction SilentlyContinue|Select-Object -ExpandProperty OwningProcess -Unique);if($owners.Count -eq 0){exit 3};foreach($owner in $owners){$owned=$false;$p=[uint32]$owner;for($i=0;$i -lt 128 -and $p -ne 0;$i++){if($p -eq $root){$owned=$true;break};if(-not $parents.ContainsKey($p)){break};$next=$parents[$p];if($next -eq $p){break};$p=$next};if(-not $owned){exit 3}};exit 0';
+      args = ['-NoProfile', '-NonInteractive', '-Command', script];
+    } else if (platform === 'linux' || platform === 'darwin') {
+      exe = '/bin/sh';
+      const script = 'owners="$(lsof -nP -t -iTCP:"$1" -sTCP:LISTEN 2>/dev/null || true)"; [ -n "$owners" ] || exit 3; for owner in $owners; do p="$owner"; i=0; owned=0; while [ "$p" -gt 0 ] 2>/dev/null && [ "$i" -lt 128 ]; do if [ "$p" = "$2" ]; then owned=1; break; fi; next="$(ps -o ppid= -p "$p" 2>/dev/null | tr -d " ")"; [ -n "$next" ] || break; [ "$next" = "$p" ] && break; p="$next"; i=$((i+1)); done; [ "$owned" = 1 ] || exit 3; done; exit 0';
+      args = ['-c', script, 'starnet-listener-probe', String(port), String(rootPid)];
+    } else return false;
+    return new Promise(resolve => {
+      try { run(exe, args, { windowsHide: true, timeout: 5000 }, err => resolve(!err)); }
+      catch (_) { resolve(false); }
+    });
+  };
+}
+
+async function backgroundOwnsLocalUrl(status, rawUrl, listenerProbe) {
+  if (!backgroundOwnsLoopbackUrl(status, rawUrl) || typeof listenerProbe !== 'function') return false;
+  try { return await listenerProbe(status, rawUrl) === true; } catch (_) { return false; }
+}
+
+module.exports = { enforceSyntheticOnly, runInputContext, backgroundOwnsLoopbackUrl, backgroundOwnsLocalUrl, makeLoopbackListenerProbe, REAL_DESKTOP_TOOLS };

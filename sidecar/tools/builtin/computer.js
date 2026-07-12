@@ -144,15 +144,15 @@
     env = env || process.env;
     return /^(1|true|yes|on)$/i.test(String(env.STARNET_DESKTOP_SHELL || env.SKYNET_DESKTOP_SHELL || ''));
   }
-  // The real win32 desktop driver is active when: explicitly requested by env, OR we are
-  // on win32 running under the real desktop shell (and not explicitly disabled). A headless
-  // / server / CI `node sidecar/index.js` sets neither, so it keeps the safe no-driver stub.
+  // Environment selection is only ONE half of the authority check. Presence under the
+  // desktop shell used to auto-enable physical input for every task; that was unsafe.
+  // The shell marker is informational now: Windows plus an explicit driver selection is
+  // necessary, and makeComputerTools still requires a host-minted attended lease per call.
   function win32DriverActive(env, platform) {
     env = env || process.env;
     platform = platform || process.platform;
-    if (win32DriverRequested(env)) return true;
-    if (platform === 'win32' && underDesktopShell(env) && !win32DriverDisabled(env)) return true;
-    return false;
+    if (platform !== 'win32' || win32DriverDisabled(env)) return false;
+    return win32DriverRequested(env);
   }
   // ---- win32 keyboard (SendKeys) helpers ----
   // SendKeys treats + ^ % ~ ( ) { } [ ] as control chars; escape each by wrapping in {}
@@ -301,14 +301,39 @@ try {
 `, 20000)
     };
   }
+
+  // Fail-closed driver injected into every ordinary StarNet run. It throws instead of
+  // returning success, so telemetry never claims an input action that policy prevented.
+  function makeInertDriver(reason) {
+    const why = reason || 'physical input is disabled for agent runs';
+    const unavailable = async () => { throw new Error(why); };
+    return { perform: unavailable, capture: unavailable, foreground: unavailable, inert: true };
+  }
+
+  // A task, autonomous/test surface, standing approval, Full Access, and the desktop-shell
+  // environment are not input authority. The sole positive shape is reserved for a future
+  // host-owned one-shot attended channel. No current runOnce caller mints this lease.
+  function physicalInputAllowed(deps, ctx) {
+    deps = deps || {}; ctx = ctx || {};
+    return deps.allowPhysicalInput === true &&
+      ctx.physicalInputAuthorized === true &&
+      ctx.surface === 'interactive' &&
+      ctx.isTask === false &&
+      ctx.inputMode === 'attended';
+  }
+  function assertPhysicalInputAllowed(deps, ctx) {
+    if (!physicalInputAllowed(deps, ctx)) {
+      throw new Error('physical input is disabled: no explicit attended input lease; use headless CDP synthetic input instead');
+    }
+  }
+
   function makeDriver(deps) {
+    deps = deps || {};
+    if (deps.allowPhysicalInput !== true) return makeInertDriver();
     const d = deps && deps.driver;
     if (d && typeof d.perform === 'function') return d;
     if (process.platform === 'win32' && win32DriverActive(process.env, process.platform)) return makeWin32DesktopDriver();
-    return {
-      perform: async () => { throw new Error('computer-use unavailable: no desktop driver configured'); },
-      capture: async () => { throw new Error('computer-use unavailable: no desktop capture driver configured'); }
-    };
+    return makeInertDriver('computer-use unavailable: no explicitly configured attended desktop driver');
   }
 
   function makeComputerTools(deps) {
@@ -316,11 +341,12 @@ try {
     const driver = makeDriver(deps);
     const useTool = {
       name: 'computer.use',
-      capability: 'workbench',
+      // A cached shell/verify approval (`workbench:execute`) must never authorize input.
+      capability: 'physical-input',
       scope: 'execute',
       requiresConsent: true,
       timeoutMs: 15000,
-      description: 'LAST-RESORT control of the user\'s VISIBLE desktop (mouse/keyboard/screenshot), attended and consent-gated. Do NOT reach for this while a quieter path exists: a dedicated tool for the target service, the headless browser tools for the web, or shell.exec (installed apps can usually be driven invisibly via app URI schemes, CLIs, or PowerShell). Keyboard input lands in whatever window has FOCUS — pass expectApp (an app/window name substring, e.g. "spotify") with every type/key/hotkey so input is refused if focus moved; typing into StarNet\'s own window is always refused. Verify state-changing actions with capture_after:true. Supports screenshot, move, click, double_click, drag, scroll, type, key, hotkey, and wait. Destructive shortcuts and command-like typing are blocked.',
+      description: 'PHYSICAL mouse/keyboard/screen control. Disabled in ordinary task, autonomous, and test runs; use browser.test_* for headless CDP synthetic input. It can run only through a separate host-minted attended input lease (not a prompt, standing approval, or Full Access grant).',
       schema: {
         type: 'object',
         required: ['action'],
@@ -340,6 +366,7 @@ try {
         }
       },
       run: async (args, ctx) => {
+        assertPhysicalInputAllowed(deps, ctx);
         const action = hardBlock(args || {});
         const fgNote = await checkFocus(driver, action);   // throws BEFORE any input is sent when focus is wrong
         const result = await driver.perform(action);
@@ -354,8 +381,8 @@ try {
         return { content, summary: summarize(action) };
       }
     };
-    return { useTool, register(reg) { reg.register(useTool); return reg; }, _internals: { ACTIONS, KEYBOARD_ACTIONS, SELF_WINDOW_RE, checkFocus, hardBlock, validateAction, summarize, COMMAND_TEXT_RE, win32DriverRequested, win32DriverActive, win32DriverDisabled, underDesktopShell, makeWin32DesktopDriver, keyToSendKeys, hotkeyToSendKeys, sendKeysEscapeLiteral } };
+    return { useTool, register(reg) { reg.register(useTool); return reg; }, _internals: { ACTIONS, KEYBOARD_ACTIONS, SELF_WINDOW_RE, checkFocus, hardBlock, validateAction, summarize, COMMAND_TEXT_RE, win32DriverRequested, win32DriverActive, win32DriverDisabled, underDesktopShell, makeWin32DesktopDriver, makeInertDriver, physicalInputAllowed, assertPhysicalInputAllowed, keyToSendKeys, hotkeyToSendKeys, sendKeysEscapeLiteral } };
   }
 
-  return { makeComputerTools, _internals: { ACTIONS, KEYBOARD_ACTIONS, SELF_WINDOW_RE, checkFocus, hardBlock, validateAction, summarize, COMMAND_TEXT_RE, win32DriverRequested, win32DriverActive, win32DriverDisabled, underDesktopShell, makeWin32DesktopDriver, keyToSendKeys, hotkeyToSendKeys, sendKeysEscapeLiteral } };
+  return { makeComputerTools, _internals: { ACTIONS, KEYBOARD_ACTIONS, SELF_WINDOW_RE, checkFocus, hardBlock, validateAction, summarize, COMMAND_TEXT_RE, win32DriverRequested, win32DriverActive, win32DriverDisabled, underDesktopShell, makeWin32DesktopDriver, makeInertDriver, physicalInputAllowed, assertPhysicalInputAllowed, keyToSendKeys, hotkeyToSendKeys, sendKeysEscapeLiteral } };
 });

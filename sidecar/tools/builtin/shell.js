@@ -74,7 +74,7 @@
       heads.push(c.slice(m.index + m[0].length));
       if (HEAD_SEP.lastIndex === m.index) HEAD_SEP.lastIndex++;   // never loop on a zero-width match
     }
-    return heads.map(h => h.replace(/^[\s"']+/, ''));   // trim leading whitespace + an opening quote (interpreter -c "verb …")
+    return heads.map(h => h.replace(/^[\s"'@]+/, ''));   // trim whitespace/quote + batch echo-suppression @
   }
 
   // --- visible-window / input-capture floor ---
@@ -105,6 +105,137 @@
       if (!/--mute-audio\b/i.test(c)) {
         return 'a headless browser still plays sound on the user\'s speakers — add --mute-audio';
       }
+    }
+    return null;
+  }
+
+  // --- physical-input isolation floor ---------------------------------------------------------
+  // The incident was NOT a headed browser: a shell-authored Puppeteer/CDP smoke clicked Deploy
+  // in headless Chrome, the page called requestPointerLock(), and Chrome reached Win32 ClipCursor.
+  // Direct browser processes therefore belong to browser.test_* (which installs an in-page lock
+  // emulator), not shell.exec. We also expand normal npm/node/PowerShell indirection so the exact
+  // `npm run smoke -> node script -> puppeteer` escape cannot hide behind a package script.
+  const INPUT_CAPTURE_RE = /requestPointerLock|webkitRequestPointerLock|PointerLockControls|\bcontrols\s*\.\s*lock\s*\(|keyboard\s*\.\s*lock\s*\(|requestFullscreen|webkitRequestFullscreen|mozRequestFullScreen|ClipCursor|SetCursorPos|SendInput|RegisterRawInputDevices|SDL_SetRelativeMouseMode|GLFW_CURSOR_DISABLED/i;
+  const BROWSER_AUTOMATION_RE = /\b(?:puppeteer(?:-core)?|playwright|selenium|webdriver|chromedriver|geckodriver|chrome-remote-interface)\b|webSocketDebuggerUrl|Input\.dispatch(?:Mouse|Key)|--remote-debugging-port\b/i;
+  const NATIVE_INPUT_RE = /\b(?:SetCursorPos|mouse_event|SendInput|keybd_event|ClipCursor|SendKeys(?:\.SendWait)?|pyautogui|pynput|robotjs|nut\.js|xdotool|ydotool)\b/i;
+  const GUI_RUNTIME_RE = /\b(?:electron|nwjs|cargo\s+run|dotnet\s+run|java\s+-jar|rundll32)\b/i;
+  const LOCAL_PROGRAM_RE = /^(?:"|')?(?:(?:\.\\|\.\/)[^\s"']+|[^\s"']+\.exe)(?:"|'|\s|$)/i;
+  const CODE_FILE_RE = /\.(?:[cm]?js|ts|tsx|jsx|ps1|py|rb|php|sh|bash|cmd|bat|rs|cs|c|cc|cpp)$/i;
+  const SCAN_SKIP_RE = /^(?:node_modules|\.git|dist|build|coverage|\.cache|\.vite|target)$/i;
+
+  function readSmall(fs, p, max) {
+    if (!fs || !p) return '';
+    try {
+      const st = fs.statSync(p);
+      if (!st.isFile() || st.size > (max || (1 << 20))) return '';
+      return String(fs.readFileSync(p, 'utf8') || '');
+    } catch (_) { return ''; }
+  }
+  function unquoteToken(s) {
+    s = String(s || '').trim();
+    if ((s[0] === '"' && s[s.length - 1] === '"') || (s[0] === "'" && s[s.length - 1] === "'")) return s.slice(1, -1);
+    return s;
+  }
+  function commandSources(cmd, opts) {
+    opts = opts || {};
+    const fs = opts.fs, P = opts.pathMod, cwd = opts.cwd;
+    const queue = [String(cmd || '')], out = [], seen = new Set();
+    let packageDoc = null;
+    function scripts() {
+      if (packageDoc !== null) return packageDoc;
+      try { packageDoc = JSON.parse(readSmall(fs, P && cwd ? P.join(cwd, 'package.json') : '', 1 << 20) || '{}').scripts || {}; }
+      catch (_) { packageDoc = {}; }
+      return packageDoc;
+    }
+    for (let qi = 0; qi < queue.length && qi < 30; qi++) {
+      const text = String(queue[qi] || '');
+      if (!text || seen.has(text)) continue;
+      seen.add(text); out.push(text);
+      for (const head of commandHeads(text)) {
+        let m = head.match(/^(?:npm|npm\.cmd)\s+(?:--[A-Za-z0-9_-]+(?:=[^\s]+)?\s+)*(?:run\s+)?([A-Za-z0-9:_-]+)\b/i);
+        if (m) {
+          const name = /^(?:test|start|stop|restart)$/i.test(m[1]) ? m[1].toLowerCase() : m[1];
+          if (scripts()['pre' + name]) queue.push(String(scripts()['pre' + name]));
+          if (scripts()[name]) queue.push(String(scripts()[name]));
+          if (scripts()['post' + name]) queue.push(String(scripts()['post' + name]));
+        }
+        m = head.match(/^(?:pnpm|yarn)(?:\.cmd)?\s+(?:run\s+)?([A-Za-z0-9:_-]+)\b/i);
+        if (m && scripts()[m[1]]) queue.push(String(scripts()[m[1]]));
+
+        // Inspect the script file itself. This catches `node scripts/runtime-smoke.mjs` and
+        // `powershell -File script.ps1`, while staying bounded to an in-workspace relative path.
+        const refs = [];
+        const interpreted = head.match(/^(?:(?:node|node\.exe|python|python\d*(?:\.exe)?|py(?:\.exe)?|ruby|php|tsx|ts-node|bun|deno|bash|sh)(?:\s+run)?)(?:\s+--?[A-Za-z0-9_-]+(?:=[^\s]+)?)*\s+(?!-[eEpP]\b)("[^"]+"|'[^']+'|[^\s&|;]+)/i);
+        if (interpreted) refs.push(interpreted[1]);
+        const ps = head.match(/^(?:powershell|pwsh)(?:\.exe)?\b[^&|;]*?\s-(?:file|f)\s+("[^"]+"|'[^']+'|[^\s&|;]+)/i);
+        if (ps) refs.push(ps[1]);
+        const direct = head.match(/^("[^"]+"|'[^']+'|[^\s&|;]+)/);
+        if (direct && CODE_FILE_RE.test(unquoteToken(direct[1]))) refs.push(direct[1]);
+        for (const raw of refs) {
+          const rel = unquoteToken(raw);
+          if (!CODE_FILE_RE.test(rel) || !P || !cwd || P.isAbsolute(rel) || /(^|[\\/])\.\.([\\/]|$)/.test(rel)) continue;
+          const src = readSmall(fs, P.resolve(cwd, rel), 2 << 20);
+          if (src) queue.push(src);
+        }
+      }
+    }
+    return out;
+  }
+  function workspaceCapturesInput(cwd, fs, P) {
+    if (!cwd || !fs || !P) return false;
+    const stack = [cwd];
+    let files = 0, bytes = 0;
+    while (stack.length && files < 2000 && bytes < (8 << 20)) {
+      const dir = stack.pop();
+      let ents = [];
+      try { ents = fs.readdirSync(dir, { withFileTypes: true }); } catch (_) { continue; }
+      for (const ent of ents) {
+        if (SCAN_SKIP_RE.test(ent.name)) continue;
+        const p = P.join(dir, ent.name);
+        if (ent.isDirectory()) { stack.push(p); continue; }
+        if (!/\.(?:html?|[cm]?js|ts|tsx|jsx|vue|svelte|py|ps1|rs|cs|c|cc|cpp)$/i.test(ent.name)) continue;
+        const src = readSmall(fs, p, 1 << 20); files++; bytes += src.length;
+        if (INPUT_CAPTURE_RE.test(src)) return true;
+      }
+    }
+    return false;
+  }
+  function projectScanRoot(cwd, fs, P) {
+    if (!cwd || !fs || !P) return cwd;
+    let cur;
+    try { cur = P.resolve(cwd); } catch (_) { return cwd; }
+    let found = cur;
+    for (let i = 0; i < 12; i++) {
+      try {
+        if (fs.existsSync(P.join(cur, 'package.json')) || fs.existsSync(P.join(cur, 'Cargo.toml')) || fs.existsSync(P.join(cur, '.git'))) found = cur;
+      } catch (_) {}
+      const parent = P.dirname(cur);
+      if (!parent || parent === cur) break;
+      cur = parent;
+    }
+    return found;
+  }
+  function inputIsolationRisk(cmd, opts) {
+    const c = String(cmd == null ? '' : cmd);
+    const heads = commandHeads(c);
+    if (heads.some(h => BROWSER_HEAD_RE.test(h)) || BROWSER_QUOTED_RE.test(c)) {
+      return 'launches a browser outside StarNet\'s synthetic-input CDP sandbox — use browser.test_navigate/browser.test_input';
+    }
+    const sources = commandSources(c, opts);
+    const expanded = sources.join('\n');
+    // Inert prose is not execution. Script/expanded content and executable command heads are.
+    const activeHead = heads.some(h => !/^echo(?:\.exe)?\b/i.test(h) && NATIVE_INPUT_RE.test(h));
+    if (activeHead || sources.slice(1).some(s => NATIVE_INPUT_RE.test(s))) {
+      return 'can inject or confine the user\'s physical mouse/keyboard';
+    }
+    if (sources.some(s => /(?:^|\s)--open(?:[=\s]|$)/i.test(s))) {
+      return 'opens a framework/browser window on the user\'s screen — keep dev servers headless';
+    }
+    if (BROWSER_AUTOMATION_RE.test(expanded)) {
+      return 'runs browser automation outside StarNet\'s owned pointer-lock emulator — use browser.test_*';
+    }
+    if (GUI_RUNTIME_RE.test(expanded) || heads.some(h => LOCAL_PROGRAM_RE.test(h))) {
+      return 'launches a GUI/native runtime on the user\'s interactive desktop';
     }
     return null;
   }
@@ -287,8 +418,8 @@
       description: 'Run a shell command in your workspace directory and get back its combined stdout/stderr + exit code. '
         + 'Use it to run tests, builds, git, scripts — anything you would type in a terminal. Commands must NOT change the '
         + 'user\'s machine or screen: opening a window (start/explorer/headed browser), shutting down/rebooting, killing '
-        + 'processes, scheduled tasks, registry/service/firewall edits, and all-interfaces (0.0.0.0) binds are refused. To '
-        + 'DRIVE an installed app or open something for the user, use desktop.open (consent-gated), not `start`. Commands run INSIDE your own '
+        + 'processes, scheduled tasks, registry/service/firewall edits, and all-interfaces (0.0.0.0) binds are refused. '
+        + 'If a visible app/window is genuinely needed, ask the Commander to open it themselves; ordinary agent runs have no real-screen tool. Commands run INSIDE your own '
         + 'workspace folder, and your working directory PERSISTS across calls (a `cd` carries over). Absolute and parent (..) '
         + 'paths are refused in cmd; pass cwd to run from a specific existing folder instead. On Windows local shells, cwd accepts C:\\Users\\...; /c/Users/... is normalized for compatibility, but prefer the exact path the Commander gave you. Commands use cmd.exe syntax. Optional timeoutMs (default 30s, max 120s). Set background:true for a long-running process '
         + '(e.g. a dev server) — it returns immediately with a handle; check it with shell.bg.status, stop it with shell.bg.kill.',
@@ -301,7 +432,7 @@
         const deny = escapesWorkspace(cmd);
         if (deny) throw new Error('refused: ' + deny);
         const visDeny = opensVisibleWindow(cmd);
-        if (visDeny) throw new Error('refused: ' + visDeny + ' — builds and checks run invisibly, never on the user\'s screen. Verify with the headless browser tools or curl; if the Commander explicitly asked to SEE something, use desktop.open or browser.navigate visible:true (consent-gated).');
+        if (visDeny) throw new Error('refused: ' + visDeny + ' — builds and checks run invisibly, never on the user\'s screen. Verify local UI with browser.test_* or use an HTTP probe; ask the Commander to open anything they need to see.');
         const machineDeny = breaksMachineState(cmd);
         if (machineDeny) throw new Error('refused: this command ' + machineDeny + '. Agent work stays inside your workspace and never changes the user\'s machine. If the task genuinely needs a machine change, surface it to the Commander to run themselves.');
         const netDeny = exposesNetwork(cmd);
@@ -321,6 +452,10 @@
           cwd = resolveShellCwd({ pathMod: P, fs: fs, requested: args.cwd, current: cwd, jailRoot: jailRoot, root: ROOT, isWin: isWin, allowExternal: environment ? environment.backendId === 'local' : false });
           sessions.set(aid, { cwd: cwd });
         }
+        const hostCwd = environment && typeof environment.workspaceRoot === 'function' && environment.backendId !== 'local'
+          ? environment.workspaceRoot(aid) : cwd;
+        const inputDeny = inputIsolationRisk(cmd, { cwd: hostCwd, fs: fs, pathMod: P });
+        if (inputDeny) throw new Error('refused: this command ' + inputDeny + '. StarNet tests use synthetic/headless input only and never touch the physical mouse or keyboard.');
         if (!environment) { try { fs.mkdirSync(cwd, { recursive: true }); } catch (_) {} }
         // H2.2: a long-running process — hand it to the singleton bg manager (detached, ring-buffered, capped)
         // and return immediately. Inherits the persisted cwd. Still consent-gated (this IS shell.exec).
@@ -400,10 +535,10 @@
 
     return {
       execTool: execTool, bgStatusTool: bgStatusTool, bgKillTool: bgKillTool,
-      _internals: { escapesWorkspace: escapesWorkspace, opensVisibleWindow: opensVisibleWindow, breaksMachineState: breaksMachineState, exposesNetwork: exposesNetwork, killTree: killTree, safeAgentId: safeAgentId, normalizeWinCwd: normalizeWinCwd, resolveShellCwd: resolveShellCwd },
+      _internals: { escapesWorkspace: escapesWorkspace, opensVisibleWindow: opensVisibleWindow, inputIsolationRisk: inputIsolationRisk, workspaceCapturesInput: workspaceCapturesInput, projectScanRoot: projectScanRoot, breaksMachineState: breaksMachineState, exposesNetwork: exposesNetwork, killTree: killTree, safeAgentId: safeAgentId, normalizeWinCwd: normalizeWinCwd, resolveShellCwd: resolveShellCwd },
       register: function (reg) { reg.register(execTool); reg.register(bgStatusTool); reg.register(bgKillTool); return reg; }
     };
   }
 
-  return { makeShellTool: makeShellTool, runCommand: runCommand, escapesWorkspace: escapesWorkspace, opensVisibleWindow: opensVisibleWindow, breaksMachineState: breaksMachineState, exposesNetwork: exposesNetwork, safeAgentId: safeAgentId, buildMarkedCmd: buildMarkedCmd, parseMarker: parseMarker, withinJail: withinJail, normalizeWinCwd: normalizeWinCwd, resolveShellCwd: resolveShellCwd };
+  return { makeShellTool: makeShellTool, runCommand: runCommand, escapesWorkspace: escapesWorkspace, opensVisibleWindow: opensVisibleWindow, inputIsolationRisk: inputIsolationRisk, workspaceCapturesInput: workspaceCapturesInput, projectScanRoot: projectScanRoot, breaksMachineState: breaksMachineState, exposesNetwork: exposesNetwork, safeAgentId: safeAgentId, buildMarkedCmd: buildMarkedCmd, parseMarker: parseMarker, withinJail: withinJail, normalizeWinCwd: normalizeWinCwd, resolveShellCwd: resolveShellCwd };
 });

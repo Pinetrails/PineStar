@@ -1,12 +1,13 @@
 /* sidecar/tools/builtin/desktop.js - open-on-the-user's-real-screen tool.
 
-   desktop.open is the ONE builtin that surfaces a VISIBLE window on the user's
+   desktop.open is the legacy implementation that can surface a VISIBLE window on the user's
    actual screen: it hands a URL (or an app name) to the OS default handler
    (Windows Start-Process, macOS `open`, Linux `xdg-open`) so the human SEES it.
    This is deliberately distinct from browser.* — that family drives a HEADLESS
    Chromium the user cannot see. It is for when the user wants to SEE a window
    ("show me", "open it on my screen") — never a step in completing a task the
-   agent has quieter tools for (dedicated service tools, browser.*, shell.exec).
+   agent has quieter tools for (dedicated service tools, browser.*, shell.exec). It is not
+   granted by any ordinary capability/run; a future attended host channel may reuse it.
 
    SECURITY:
    - URLs reuse browser.js assertSafeUrl (http(s) only; private/loopback/intranet
@@ -120,7 +121,9 @@
 
     const openTool = {
       name: 'desktop.open',
-      capability: 'web',
+      // Separate danger class: a cached web click/type grant must never authorize a real
+      // OS window. Ordinary runOnce flows strip this tool entirely in inputpolicy.js.
+      capability: 'visible-desktop',
       scope: 'execute',
       requiresConsent: true,
       timeoutMs: 20000,

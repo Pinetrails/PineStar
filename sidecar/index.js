@@ -145,12 +145,14 @@ const { makeShellTool } = require('./tools/builtin/shell.js');      // the workb
 const { makeShellBg } = require('./shellbg.js');                    // H2.2: singleton background-process manager
 const { makeProcLedger } = require('./procledger.js');              // persistent child-PID ledger — boot sweep reaps force-kill orphans
 const { makeInputGuard } = require('./inputguard.js');              // stuck cursor-confinement (ClipCursor) release — 2026-07-12 incident
+const { enforceSyntheticOnly, runInputContext, backgroundOwnsLocalUrl, makeLoopbackListenerProbe } = require('./inputpolicy.js'); // per-run physical-input deny + synthetic CDP authority
 const { makeEnvironmentManager } = require('./environment.js');     // execution backend boundary (reference-harness-style)
 const { foldInsights } = require('./insights.js');                  // H3.3: usage insights folded from run history
 const { makeVerifyTool } = require('./tools/builtin/verify.js');    // the workbench verify.run check-runner
 const { makeOrchestrationTools } = require('./tools/builtin/orchestration.js');   // Stage 2: team.dispatch (lead->worker delegation)
 const { makeRoutineTools } = require('./tools/builtin/routines.js'); // ROUTINES: agent-created StarNet cron jobs
 const { execFile, spawn: childSpawn } = require('node:child_process');   // shadow-git runner + shell subprocess — ambient, here only
+const loopbackListenerProbe = makeLoopbackListenerProbe({ execFile, platform: process.platform, env: process.env });
 const { makeSubagentManager } = require('./subagents.js');          // durable background worker registry
 const Classify = require('../frontend/app/classify.js');   // the SAME task-vs-talk classifier the browser uses
 const sharedSpecialties = require('../shared/specialties.js');   // Class Loadouts S1: the ONE class catalog — no hardcoded class prose here
@@ -6355,6 +6357,9 @@ async function runOnce(o) {
   // leak-guard below — a `let` declared INSIDE a try block is NOT visible in that try's finally (referencing it
   // there throws a ReferenceError, which would swallow the return and skip concurrencyGate.leave → a hung run).
   let billed = false;
+  // Per-run headless CDP session. Kept outside the try so the outer finally always closes it,
+  // including provider refusal, abort, timeout, and thrown-tool paths.
+  let runBrowser = null;
   // Everything below is wrapped so the admission slot is ALWAYS released (early-return refusals above run
   // before tryEnter; every exit below — return, throw, or the normal finish — passes through leave()).
   try {
@@ -6406,8 +6411,31 @@ async function runOnce(o) {
   const imageTools = makeImageTools({ openrouter: openrouterToolKey ? { apiKey: openrouterToolKey, model } : null, fsp, pathMod: path, root: WORKSPACES, imageModel: String(ENV('IMAGE_MODEL') || '').trim() || undefined });
   // browser.vision uses the SAME vision model as image_analyze when a key exists; with no key it
   // reports "unavailable" honestly (never a success-shaped stub). Pass the dep only when usable.
-  makeBrowserTools({ vision: imageTools.hasVision ? imageTools.browserVision : null, ledger: procLedger }).register(registry);   // browser.* automation: exposed only through the web/dish capability
-  makeDesktopTools({}).register(registry);   // desktop.open: open URL/app on the user's REAL screen (visible), web/dish capability
+  runBrowser = makeBrowserTools({
+    vision: imageTools.hasVision ? imageTools.browserVision : null,
+    ledger: procLedger,
+    // Host authority, not model args: every normal run is headless and all page input locks
+    // are emulated before navigation. The browser.test_* workbench tools are the sanctioned
+    // localhost/game path and dispatch only CDP/page events.
+    allowVisible: false,
+    forceHeadless: true,
+    syntheticInputOnly: true,
+    // Chromium owns an ephemeral CDP port and a unique profile per run. Never attach to a
+    // process-wide endpoint where another agent (or the user's browser) may be listening.
+    cdpPort: 0,
+    profileDir: path.join(os.tmpdir(), 'starnet-browser-' + process.pid + '-' + String(runId || crypto.randomUUID()).replace(/[^A-Za-z0-9_-]/g, '')),
+    cleanupProfile: true,
+    requireOwnedServer: true,
+    ownsLocalUrl: async ({ url, serverId, agentId: owner }) => {
+      const st = shellBg.status(String(owner || agentId), String(serverId || ''));
+      // The owned background process must advertise the requested endpoint in captured output.
+      // Command-line intent alone is insufficient because a dev server can
+      // fall back to a different port when the requested one belongs to another process.
+      return backgroundOwnsLocalUrl(st, url, loopbackListenerProbe);
+    }
+  });
+  runBrowser.register(registry);   // browser.* + isolated browser.test_* automation
+  makeDesktopTools({}).register(registry);   // future attended host channel only; ordinary capability projection exposes none
   // NS-5: bind the per-run path-trust guard — the ONE way an fs call may reach outside the jail, mediated
   // against the station's blessed project roots. surface + pathPrompt are per-run: an autonomous run passes
   // no prompt, so pathTrustCore hard-denies any un-blessed outside path (the unattended rule).
@@ -6440,8 +6468,10 @@ async function runOnce(o) {
   makeShellTool({ spawn: childSpawn, fs: fs, pathMod: path, root: WORKSPACES, environment: executionEnvironment, redact: redact, clock: { now: () => Date.now() }, bg: shellBg }).register(registry);
   // verify.run (same workbench gate as shell): run the project check + emit verify.result. Also workbench-only.
   makeVerifyTool({ spawn: childSpawn, fs: fs, pathMod: path, root: WORKSPACES, environment: executionEnvironment, redact: redact, clock: { now: () => Date.now() } }).register(registry);
-  // computer.use (same workbench gate): desktop control is execute-scoped, consent-gated, and driver-injected by desktop builds.
-  makeComputerTools({}).register(registry);
+  // computer.use remains registered behind an INERT driver as defense in depth against a
+  // forged dispatch. It is removed from ordinary tool definitions below; no current run host
+  // mints the separate one-shot attended-input lease required by computer.js.
+  makeComputerTools({ allowPhysicalInput: false }).register(registry);
   // team.dispatch (Stage 2 orchestrator): registered every run but only EXPOSED when an 'orchestrator' object is
   // in the room — conferred ONLY on the lead run (below), so a delegated worker can never re-delegate. It calls
   // THIS SAME runOnce per worker; the roster supplies each worker's composed identity (system prompt + model).
@@ -6522,7 +6552,11 @@ async function runOnce(o) {
   // TOOLSET kill-switch: a family the Commander switched OFF in the TOOLSETS console is dropped here, so the
   // next model turn reflects it live (no restart). compute is never in this set; MCP connectors are projected
   // below and keep their own per-connector enabled flag, so they are unaffected.
-  const resolved = resolveTools(agentId, station, undefined, { disabledCaps: disabledCapsSet() });
+  const resolved = enforceSyntheticOnly(resolveTools(agentId, station, undefined, { disabledCaps: disabledCapsSet() }));
+  // REAL DESKTOP ACCESS IS NOT A TASK CAPABILITY. computer.use and desktop.open are stripped
+  // from the provider, capability telemetry, and dispatch allowlist in every current runOnce
+  // flow. A future attended-control endpoint must mint a one-shot runId+callId lease; prompt
+  // text, Full Access, permanent grants, and surface:'interactive' are insufficient.
   // MCP CONNECTORS (per-agent): a connector object placed in THIS agent's room grants its server's live tools.
   // Register them into this run's fresh registry and union their names into the resolved set so the capability
   // gate, network classification, and the wire tool-list treat them exactly like a built-in. Never breaks a run.
@@ -6568,7 +6602,11 @@ async function runOnce(o) {
   });
   // B1 (Cortex seam): thread runId onto capCtx so a tool's dispatch can stamp provenance (sourceRunId)
   // on memory writes. makeCapCtx merges `extra` verbatim; the consumer arrives with M-mem.2.
-  const capCtx = makeCapCtx(resolved, { emit, consent, summon, timeoutMs: CAPS.toolTimeoutMs, runId, streamId, signal: signal });
+  const capCtx = makeCapCtx(resolved, Object.assign({
+    emit, consent, summon, timeoutMs: CAPS.toolTimeoutMs, runId, streamId, signal: signal,
+    // Explicitly false in all current runOnce flows. This makes the deny visible at the
+    // tool boundary even if a future refactor accidentally re-adds computer.use to tools.
+  }, runInputContext(surface, isTask)));
 
   // ---- provider + cost ----
   // Codex (personal ChatGPT subscription) authenticates with a freshly-refreshed OAuth access_token instead of
@@ -6759,6 +6797,7 @@ async function runOnce(o) {
   const hasVerifyRun = wireNames.indexOf('verify_run') >= 0;
   const hasBgStatus = wireNames.indexOf('shell_bg_status') >= 0;
   const hasBrowserTools = wireNames.some(n => /^browser_/.test(n));
+  const hasBrowserTestTools = wireNames.indexOf('browser_test_navigate') >= 0;
   const hasNotebookWrite = wireNames.indexOf('notebook_write') >= 0;
   const hasScreenTools = wireNames.indexOf('desktop_open') >= 0 || wireNames.indexOf('computer_use') >= 0;
   const hasJukebox = wireNames.indexOf('spotify_play') >= 0;
@@ -6786,7 +6825,8 @@ async function runOnce(o) {
       : 'For source changes, prefer fs_edit/fs_write over giant quoted shell rewrites, and leave code readable. ') : '')
     + ((hasVerifyRun || hasShellExec) ? 'After edits, run the narrowest real verification that proves the change: verify_run when it matches the project, otherwise shell_exec for syntax/build/tests. ' : '')
     + (hasShellExec && hasBgStatus ? 'For dev servers, start them with shell_exec background:true, then call shell_bg_status to confirm the handle is alive before finalizing. ' : '')
-    + (hasBrowserTools ? 'For browser, UI, or game changes, use browser_navigate plus browser_console/browser_snapshot/browser_vision when the target is a public/reachable URL. For local/private dev servers that browser_navigate is not allowed to open, verify with shell_exec/shell_bg_status or an HTTP probe and report that browser verification was unavailable. ' : '')
+    + (hasBrowserTools ? 'For public browser changes, use browser_navigate plus browser_console/browser_snapshot/browser_vision. ' : '')
+    + (hasBrowserTestTools ? 'For LOCAL browser, UI, canvas, or game verification, start the dev server with shell_exec background:true, confirm its bg id/port with shell_bg_status, then MUST use browser_test_navigate(serverId) + browser_test_snapshot/browser_test_state/browser_test_input. They run headless CDP and emulate pointer/keyboard lock without touching physical devices. NEVER launch Chrome, Edge, Firefox, Puppeteer, Playwright, Selenium, or a browser smoke through shell_exec/verify_run for an input-capturing app; those paths are refused. ' : '')
     + ((hasShellExec || hasWriteTools || hasBrowserTools) ? 'Final reports must name changed files, verification commands/results, and any running server URL/background id or remaining limitation. ' : '');
   const toolNote = (isTask && wireNames.length)
     ? '\n\n[HARNESS] You are running in a REAL agent harness on the Commander\'s machine, at a workstation with '
@@ -7127,6 +7167,9 @@ async function runOnce(o) {
     // safety net: if managed credit was reserved but a throw before the inner finally left it unsettled, settle it
     // now (full refund on usd=0). billing.js's finishRun is idempotent, so a normal settle above makes this a no-op.
     if (billed) { try { credits.finishRun({ runId, agentId, usd: 0, reason: 'leak-guard' }); } catch (_) {} }
+    // A test browser must die with its run. Besides process hygiene, this guarantees that a
+    // broken page cannot retain any browser-level state after the task finishes.
+    if (runBrowser) { try { await runBrowser.session.close(); } catch (_) {} }
     concurrencyGate.leave(agentId);   // release the admission slot on EVERY exit (normal, early-return, or throw)
   }
 }

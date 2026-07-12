@@ -69,9 +69,8 @@
       { capId: 'web', tool: 'browser.dialog', scope: 'execute', requiresConsent: true, network: true },
       { capId: 'web', tool: 'browser.scroll', scope: 'execute', requiresConsent: false, network: true },
       { capId: 'web', tool: 'browser.back', scope: 'execute', requiresConsent: false, network: true },
-      // desktop.open: open a URL/app on the user's REAL screen (visible window), unlike the
-      // headless browser.* surface. Execute + consent-gated (an outward action on the desktop).
-      { capId: 'web', tool: 'desktop.open', scope: 'execute', requiresConsent: true, network: true }
+      // Real-screen desktop.open is not an ordinary run capability. The implementation remains
+      // registered inertly for a future separate attended host channel, never a placed dish.
     ],
     // CONNECTORS: a 'connector' object is a DYNAMIC capability — its grants are the tools its configured MCP
     // server reports at runtime (tools/list), which can't be statically listed here. The connector manager
@@ -87,7 +86,12 @@
     workbench: [
       { capId: 'workbench', tool: 'shell.exec', scope: 'execute', requiresConsent: true, network: true },
       { capId: 'workbench', tool: 'verify.run', scope: 'execute', requiresConsent: true, network: true },
-      { capId: 'workbench', tool: 'computer.use', scope: 'execute', requiresConsent: true, network: false },
+      // Local UI/game verification stays inside StarNet's headless CDP session. Pointer/keyboard
+      // lock is emulated in-page, and coordinate/key input is synthetic — never Win32 input.
+      { capId: 'workbench', tool: 'browser.test_navigate', scope: 'read', requiresConsent: false, network: true },
+      { capId: 'workbench', tool: 'browser.test_snapshot', scope: 'read', requiresConsent: false, network: false },
+      { capId: 'workbench', tool: 'browser.test_input', scope: 'execute', requiresConsent: false, network: false },
+      { capId: 'workbench', tool: 'browser.test_state', scope: 'read', requiresConsent: false, network: false },
       { capId: 'workbench', tool: 'shell.bg.status', scope: 'read', requiresConsent: false, network: false },   // H2.2: inspect your background processes
       { capId: 'workbench', tool: 'shell.bg.kill', scope: 'write', requiresConsent: false, network: false }      // H2.2: stop a background process you started
     ],

@@ -23,7 +23,8 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function (shell, verifyCore) {
   'use strict';
 
-  const runCommand = shell.runCommand, escapesWorkspace = shell.escapesWorkspace, safeAgentId = shell.safeAgentId;
+  const runCommand = shell.runCommand, escapesWorkspace = shell.escapesWorkspace,
+    inputIsolationRisk = shell.inputIsolationRisk, safeAgentId = shell.safeAgentId;
   const interpret = verifyCore.interpret;
   const WIN = (typeof process !== 'undefined' && process.platform) === 'win32';
   function clamp(n, lo, hi) { n = Number(n); if (!isFinite(n)) return lo; return Math.max(lo, Math.min(hi, n)); }
@@ -60,6 +61,8 @@
         }
         const deny = escapesWorkspace(cmd);
         if (deny) throw new Error('refused: ' + deny);
+        const inputDeny = inputIsolationRisk(cmd, { cwd: hostCwd, fs: fs, pathMod: P });
+        if (inputDeny) throw new Error('refused: this check ' + inputDeny + '. Use browser.test_* for local UI/game verification; physical input is never part of verify.run.');
         if (!environment) { try { fs.mkdirSync(cwd, { recursive: true }); } catch (_) {} }
         const timeoutMs = clamp((args && args.timeoutMs) || DEFAULT_MS, 1000, MAX_MS);
         const run = environment && typeof environment.execute === 'function'

@@ -54,7 +54,7 @@
     function count(agentId) { let n = 0; for (const p of procs.values()) if (p.agentId === agentId && p.running && !p.killed) n++; return n; }
     function view(r) {
       return {
-        bgId: r.bgId, cmd: r.cmd, running: r.running, exitCode: r.exitCode, killed: r.killed,
+        bgId: r.bgId, pid: r.child && r.child.pid || null, cmd: r.cmd, running: r.running, exitCode: r.exitCode, killed: r.killed,
         ms: Math.max(0, (r.endedAt != null ? r.endedAt : now()) - r.startedAt),
         tail: r.out.slice(-2000)
       };

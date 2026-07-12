@@ -21,8 +21,89 @@
 
   const MAX_TEXT = 12000;
   const DEFAULT_PORT = Number(process.env.STARNET_BROWSER_CDP || process.env.SKYNET_BROWSER_CDP || 9347);
-  // Headless by default ONLY when a headless env is set; on a real desktop run the
-  // controlled browser is HEADED so the user can watch (and hear) what the agent drives.
+  // Installed Chrome's "new" headless mode can still enter the platform pointer-lock path after
+  // a CDP click. On Windows that path calls ClipCursor and moves the REAL cursor. Install this
+  // bootstrap before every navigation so game code observes a faithful logical lock while the
+  // browser never reaches native pointer/keyboard lock. CDP Input.* remains fully synthetic.
+  const SYNTHETIC_INPUT_BOOTSTRAP = String.raw`(() => {
+    if (globalThis.__STARNET_SYNTHETIC_INPUT__) return;
+    const state = { pointer: null, keyboard: false, ready: false, popupBlocked: false, error: null };
+    let request = null, exit = null, blockedOpen = null, keyboardLock = null, keyboardUnlock = null;
+    const attestation = {};
+    Object.defineProperties(attestation, {
+      pointer: { get: () => state.pointer },
+      ready: { get: () => state.ready },
+      popupBlocked: { get: () => state.popupBlocked },
+      error: { get: () => state.error },
+      requestPointerLock: { get: () => request },
+      exitPointerLock: { get: () => exit },
+      blockedOpen: { get: () => blockedOpen },
+      keyboardLock: { get: () => keyboardLock },
+      keyboardUnlock: { get: () => keyboardUnlock }
+    });
+    Object.freeze(attestation);
+    Object.defineProperty(globalThis, '__STARNET_SYNTHETIC_INPUT__', { value: attestation, configurable: false, writable: false });
+    const fire = (name) => queueMicrotask(() => document.dispatchEvent(new Event(name)));
+    try {
+      request = function () { state.pointer = this; fire('pointerlockchange'); return Promise.resolve(); };
+      exit = function () { state.pointer = null; fire('pointerlockchange'); };
+      Object.defineProperty(Document.prototype, 'pointerLockElement', { configurable: false, get() { return state.pointer; } });
+      Object.defineProperty(Element.prototype, 'requestPointerLock', { configurable: false, writable: false, value: request });
+      Object.defineProperty(Document.prototype, 'exitPointerLock', { configurable: false, writable: false, value: exit });
+      for (const name of ['webkitRequestPointerLock','mozRequestPointerLock']) {
+        if (name in Element.prototype) Object.defineProperty(Element.prototype, name, { configurable: false, writable: false, value: request });
+      }
+      for (const name of ['webkitExitPointerLock','mozExitPointerLock']) {
+        if (name in Document.prototype) Object.defineProperty(Document.prototype, name, { configurable: false, writable: false, value: exit });
+      }
+      for (const name of ['webkitPointerLockElement','mozPointerLockElement']) {
+        if (name in Document.prototype) Object.defineProperty(Document.prototype, name, { configurable: false, get() { return state.pointer; } });
+      }
+      if (navigator.keyboard) {
+        keyboardLock = async function () { state.keyboard = true; return undefined; };
+        keyboardUnlock = function () { state.keyboard = false; };
+        Object.defineProperty(navigator.keyboard, 'lock', { configurable: false, writable: false, value: keyboardLock });
+        Object.defineProperty(navigator.keyboard, 'unlock', { configurable: false, writable: false, value: keyboardUnlock });
+      }
+      // A popup is a new CDP target and would not inherit a target-scoped preload. Local test
+      // sessions do not need new browsing contexts, so block them before any synthetic click
+      // can carry a user-activation token into an unshimmed page.
+      blockedOpen = function () { return null; };
+      Object.defineProperty(globalThis, 'open', { configurable: false, writable: false, value: blockedOpen });
+      const escapesTarget = (el, override) => {
+        const base=document.querySelector&&document.querySelector('base[target]');
+        const t=String(override||el&&el.target||base&&base.target||'').trim().toLowerCase();
+        return !!t && t !== '_self' && t !== '_top' && t !== '_parent';
+      };
+      globalThis.addEventListener('click', e => {
+        const p=typeof e.composedPath==='function'?e.composedPath():[];
+        const el=p.find(x => x instanceof HTMLAnchorElement || x instanceof HTMLAreaElement);
+        if(escapesTarget(el)){e.preventDefault();e.stopImmediatePropagation();}
+      }, true);
+      globalThis.addEventListener('submit', e => {
+        const ft=e.submitter&&(e.submitter.formTarget||e.submitter.getAttribute&&e.submitter.getAttribute('formtarget'));
+        if(escapesTarget(e.target,ft)){e.preventDefault();e.stopImmediatePropagation();}
+      }, true);
+      if (globalThis.HTMLFormElement) {
+        const nativeSubmit=HTMLFormElement.prototype.submit;
+        Object.defineProperty(HTMLFormElement.prototype,'submit',{configurable:false,writable:false,value:function(){
+          if(escapesTarget(this)) return undefined;
+          return nativeSubmit.call(this);
+        }});
+      }
+      state.popupBlocked = globalThis.open === blockedOpen;
+      const aliasesReady = ['webkitRequestPointerLock','mozRequestPointerLock'].every(n => !(n in Element.prototype) || Element.prototype[n] === request)
+        && ['webkitExitPointerLock','mozExitPointerLock'].every(n => !(n in Document.prototype) || Document.prototype[n] === exit);
+      const keyboardReady = !navigator.keyboard || (navigator.keyboard.lock === keyboardLock && navigator.keyboard.unlock === keyboardUnlock);
+      state.ready = Element.prototype.requestPointerLock === request && Document.prototype.exitPointerLock === exit && aliasesReady && keyboardReady && state.popupBlocked;
+      if (!state.ready) throw new Error('pointer-lock override did not stick');
+    } catch (e) {
+      state.ready = false;
+      state.error = String(e && e.message || e || 'bootstrap failed');
+    }
+  })();`;
+  // Environment-level headless selection. Production runOnce additionally passes forceHeadless,
+  // so neither model arguments nor desktop-shell presence can create a window there.
   function headlessRequested(env) {
     env = env || process.env;
     return /^(1|true|yes|on)$/i.test(String(env.STARNET_BROWSER_HEADLESS || env.SKYNET_BROWSER_HEADLESS || ''));
@@ -103,6 +184,18 @@
     }
     return u;
   }
+  // Separate from assertSafeUrl: public browsing retains its SSRF boundary. Only the workbench-
+  // scoped browser.test_navigate tool may use this validator, and only for an agent's local dev UI.
+  function assertLoopbackUrl(raw) {
+    let u;
+    try { u = new URL(raw); } catch (e) { throw new Error('invalid local test URL: ' + raw); }
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') throw new Error('local browser tests allow http(s) only');
+    const h = hostOf(u);
+    if (h !== 'localhost' && h !== '127.0.0.1' && h !== '::1') {
+      throw new Error('local browser tests are restricted to loopback (127.0.0.1/localhost/::1)');
+    }
+    return u;
+  }
   // Resolve a Chrome binary. When wantHeaded is true, PREFER a full Chrome (headless-shell
   // builds can't show a window); only fall back to a headless-shell binary if nothing else
   // exists. Returns { path, headless } where headless=true means "this binary is headless-only,
@@ -144,13 +237,15 @@
         }
       });
     }
-    send(method, params) {
+    send(method, params, sessionId) {
       const id = ++this.id;
       return new Promise((resolve, reject) => {
         const timer = setTimeout(() => { if (this.pending.has(id)) { this.pending.delete(id); reject(new Error('CDP timeout: ' + method)); } }, this.timeoutMs);
         if (timer && typeof timer.unref === 'function') timer.unref();
         this.pending.set(id, { resolve, reject, timer });
-        this.ws.send(JSON.stringify({ id, method, params: params || {} }));
+        const message = { id, method, params: params || {} };
+        if (sessionId) message.sessionId = sessionId;
+        this.ws.send(JSON.stringify(message));
       });
     }
     on(method, fn) {
@@ -169,25 +264,29 @@
     // A window appears only when the CALL asked for one (deps.headed — browser.navigate visible:true, i.e.
     // the Commander asked to watch) and no headless env pins it down (CI/soak rigs still win). Legacy
     // deps.headless===true keeps forcing headless for injected test rigs.
-    const wantHeaded = !!deps.headed && !headlessRequested(deps.env) && deps.headless !== true;
+    const wantHeaded = deps.forceHeadless !== true && !!deps.headed && !headlessRequested(deps.env) && deps.headless !== true;
     // Resolve the binary honoring the headed preference (skip headless-shell when headed).
     let chromePath = deps.chrome || null, binIsHeadlessOnly = false;
     if (!chromePath) {
       const r = resolveChrome(wantHeaded, deps.existsSync);
       if (r) { chromePath = r.path; binIsHeadlessOnly = r.headless; }
     }
-    const cdpPort = deps.cdpPort || DEFAULT_PORT;
+    // Production passes port 0 so Chromium allocates a private endpoint and writes it into
+    // this run's unique profile. A process-wide port can attach to another agent's browser.
+    const cdpPort = deps.cdpPort == null ? DEFAULT_PORT : Number(deps.cdpPort);
     const profileDir = deps.profileDir || P.join(OS.tmpdir(), 'starnet-browser-' + process.pid);
+    const activePortFile = P.join(profileDir, 'DevToolsActivePort');
     const timeoutMs = deps.timeoutMs || 15000;
     if (!fetchImpl || !WebSocketImpl) throw new Error('browser unavailable: Node WebSocket/fetch is not available');
     if (!chromePath) throw new Error('browser unavailable: Chromium not found; set STARNET_CHROME');
     // We run headed only if requested AND the chosen binary can actually show a window.
     const headed = wantHeaded && !binIsHeadlessOnly;
 
-    let proc = null, cdp = null, consoleLog = [], dialog = null;
+    let proc = null, procExited = false, procError = null, procClosePromise = null, cdp = null, consoleLog = [], dialog = null, attachedPort = null;
     async function connect() {
       if (cdp) return cdp;
       try { FS.mkdirSync(profileDir, { recursive: true }); } catch (_) {}
+      if (cdpPort === 0) { try { FS.rmSync(activePortFile, { force: true }); } catch (_) {} }
       const args = ['--disable-gpu', '--no-first-run', '--no-default-browser-check',
         '--remote-debugging-port=' + cdpPort, '--window-size=1440,900',
         '--user-data-dir=' + profileDir];
@@ -199,6 +298,11 @@
       }
       args.push('about:blank');
       proc = spawn(chromePath, args, { stdio: 'ignore', windowsHide: !headed });
+      procClosePromise = new Promise(resolve => {
+        if (proc && proc.on) proc.on('close', () => { procExited = true; resolve(true); });
+        else resolve(true);
+        if (proc && proc.on) proc.on('error', e => { procError = (e && e.message) || String(e); procExited = true; resolve(true); });
+      });
       // proc-ledger: a force-killed sidecar can't run close() — record the browser so the next boot's sweep
       // reaps it. The unique profile dir is the identity token, so PID reuse (or the user's OWN Chrome,
       // same exe) never matches and is never killed.
@@ -210,8 +314,15 @@
         }
       } catch (_) {}
       for (let i = 0; i < 40; i++) {
+        if (procExited) throw new Error('spawned Chromium exited before CDP ownership was established' + (procError ? ': ' + procError : ''));
         try {
-          const r = await fetchImpl('http://127.0.0.1:' + cdpPort + '/json/list');
+          let port = cdpPort;
+          if (port === 0) {
+            const line = String(FS.readFileSync(activePortFile, 'utf8') || '').split(/\r?\n/)[0];
+            port = Number(line);
+            if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('invalid private CDP port');
+          }
+          const r = await fetchImpl('http://127.0.0.1:' + port + '/json/list');
           const targets = await r.json();
           const page = targets.find(t => t && t.type === 'page');
           if (page && page.webSocketDebuggerUrl) {
@@ -221,8 +332,40 @@
               ws.addEventListener('error', reject, { once: true });
             });
             cdp = new CdpClient(ws, timeoutMs);
+            attachedPort = port;
+            if (deps.syntheticInputOnly !== false) {
+              // New page targets do not inherit a target-scoped preload. Pause every related
+              // target before its scripts run and close popups; inject the same shim into any
+              // out-of-process iframe before resuming it.
+              cdp.on('Target.attachedToTarget', p => {
+                const info = p.targetInfo || {}, sid = p.sessionId;
+                if (!sid) return;
+                if (info.type === 'page') {
+                  Promise.resolve(cdp.send('Target.closeTarget', { targetId: info.targetId })).catch(() => {});
+                  return;
+                }
+                if (info.type !== 'iframe') {
+                  // Workers have no DOM/input APIs. Resume them untouched so physics/service
+                  // workers keep working; only DOM-capable targets need the preload.
+                  Promise.resolve(cdp.send('Runtime.runIfWaitingForDebugger', {}, sid)).catch(() => {});
+                  return;
+                }
+                Promise.resolve()
+                  .then(() => cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: SYNTHETIC_INPUT_BOOTSTRAP }, sid))
+                  .then(() => cdp.send('Runtime.evaluate', { expression: SYNTHETIC_INPUT_BOOTSTRAP, awaitPromise: true }, sid))
+                  .then(() => cdp.send('Runtime.runIfWaitingForDebugger', {}, sid))
+                  .catch(() => { if (info.targetId) cdp.send('Target.closeTarget', { targetId: info.targetId }).catch(() => {}); });
+              });
+              await cdp.send('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: true, flatten: true });
+            }
             await cdp.send('Page.enable');
             await cdp.send('Runtime.enable');
+            if (deps.syntheticInputOnly !== false) {
+              // Install for all future documents AND the current about:blank. A page click can
+              // now satisfy its logical pointer-lock contract without touching Win32 ClipCursor.
+              await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: SYNTHETIC_INPUT_BOOTSTRAP });
+              await cdp.send('Runtime.evaluate', { expression: SYNTHETIC_INPUT_BOOTSTRAP, awaitPromise: true });
+            }
             cdp.on('Runtime.consoleAPICalled', p => {
               const text = (p.args || []).map(a => a.value != null ? a.value : (a.description || a.type || '')).join(' ');
               consoleLog.push({ type: p.type || 'log', text: clamp(text, 500) });
@@ -246,7 +389,28 @@
       const c = await connect();
       await c.send('Page.navigate', { url });
       await sleep(900);
-      return evalJS('location.href');
+      const finalUrl = await evalJS('location.href');
+      if (deps.syntheticInputOnly !== false) {
+        const isolation = await evalJS(`(() => {
+          const s=globalThis.__STARNET_SYNTHETIC_INPUT__;
+          const rd=Object.getOwnPropertyDescriptor(Element.prototype,'requestPointerLock');
+          const ed=Object.getOwnPropertyDescriptor(Document.prototype,'exitPointerLock');
+          const od=Object.getOwnPropertyDescriptor(globalThis,'open');
+          const kd=navigator.keyboard&&Object.getOwnPropertyDescriptor(navigator.keyboard,'lock');
+          const ku=navigator.keyboard&&Object.getOwnPropertyDescriptor(navigator.keyboard,'unlock');
+          const pointerReady=!!(s&&rd&&ed&&rd.value===s.requestPointerLock&&ed.value===s.exitPointerLock&&rd.writable===false&&ed.writable===false&&rd.configurable===false&&ed.configurable===false);
+          const popupReady=!!(s&&od&&od.value===s.blockedOpen&&od.writable===false&&od.configurable===false);
+          const keyboardReady=!navigator.keyboard||!!(kd&&ku&&kd.value===s.keyboardLock&&ku.value===s.keyboardUnlock&&kd.writable===false&&ku.writable===false&&kd.configurable===false&&ku.configurable===false);
+          return {ready:!!(s&&s.ready&&pointerReady&&popupReady&&keyboardReady),error:s&&s.error||null};
+        })()`);
+        if (!isolation || isolation.ready !== true) {
+          // Fail closed before the caller can dispatch a click/user gesture. Pointer lock cannot
+          // normally activate without that gesture, so an unsuccessful shim never gets driven.
+          try { await c.send('Page.navigate', { url: 'about:blank' }); } catch (_) {}
+          throw new Error('synthetic input isolation failed to install: ' + ((isolation && isolation.error) || 'unknown bootstrap failure'));
+        }
+      }
+      return finalUrl;
     }
     async function snapshot(limit) {
       return evalJS(`(() => {
@@ -284,6 +448,68 @@
       await c.send('Input.dispatchKeyEvent', { type: 'keyUp', key });
       return 'pressed ' + key;
     }
+    async function testInput(action) {
+      const a = Object.assign({}, action || {});
+      const c = await connect();
+      const kind = String(a.action || '');
+      const code = String(a.key || a.code || '');
+      const key = code.indexOf('Key') === 0 ? code.slice(3).toLowerCase()
+        : code.indexOf('Digit') === 0 ? code.slice(5) : (code || '');
+      if (kind === 'key_down' || kind === 'key_up') {
+        await c.send('Input.dispatchKeyEvent', { type: kind === 'key_down' ? 'keyDown' : 'keyUp', key, code });
+        return kind + ' ' + code;
+      }
+      if (kind === 'key_press') {
+        await c.send('Input.dispatchKeyEvent', { type: 'keyDown', key, code });
+        await c.send('Input.dispatchKeyEvent', { type: 'keyUp', key, code });
+        if (/^Escape$/i.test(code || key)) await evalJS('document.exitPointerLock()');
+        return 'key_press ' + code;
+      }
+      const x = Number(a.x) || 0, y = Number(a.y) || 0;
+      const button = String(a.button || 'left');
+      if (kind === 'mouse_move' && (a.dx != null || a.dy != null)) {
+        // Pointer lock is emulated, so synthesize relative motion in the page realm. The game
+        // receives movementX/Y while no platform cursor exists to confine or warp.
+        const dx = Number(a.dx) || 0, dy = Number(a.dy) || 0;
+        await evalJS(`(() => {
+          const s=globalThis.__STARNET_SYNTHETIC_INPUT__;
+          if(!s||!s.ready) throw new Error('synthetic input isolation is not active');
+          const e=new MouseEvent('mousemove',{bubbles:true,clientX:${JSON.stringify(x)},clientY:${JSON.stringify(y)}});
+          Object.defineProperty(e,'movementX',{value:${JSON.stringify(dx)}});
+          Object.defineProperty(e,'movementY',{value:${JSON.stringify(dy)}});
+          (s.pointer||document).dispatchEvent(e);
+        })()`);
+        return 'mouse_move relative ' + dx + ',' + dy;
+      }
+      if (kind === 'mouse_move') {
+        await c.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y, button: 'none' });
+        return 'mouse_move ' + x + ',' + y;
+      }
+      if (kind === 'mouse_down' || kind === 'mouse_up') {
+        await c.send('Input.dispatchMouseEvent', { type: kind === 'mouse_down' ? 'mousePressed' : 'mouseReleased', x, y, button, clickCount: 1 });
+        return kind + ' ' + button;
+      }
+      if (kind === 'click') {
+        await c.send('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button, clickCount: 1 });
+        await c.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button, clickCount: 1 });
+        return 'click ' + x + ',' + y;
+      }
+      throw new Error('unsupported synthetic browser input action: ' + kind);
+    }
+    async function testEval(expression) { return evalJS(String(expression || '')); }
+    async function testState(selector) {
+      const sel = selector == null ? 'null' : JSON.stringify(String(selector));
+      return evalJS(`(() => {
+        const s=globalThis.__STARNET_SYNTHETIC_INPUT__;
+        const q=${sel}; const el=q?document.querySelector(q):null;
+        let element=null;
+        if(q){
+          const r=el&&el.getBoundingClientRect();
+          element={exists:!!el,tag:el&&el.tagName||null,text:el&&String(el.innerText||el.textContent||'').trim().slice(0,4000),value:el&&'value'in el?String(el.value).slice(0,1000):null,visible:!!(r&&r.width>0&&r.height>0),className:el&&String(el.className||'').slice(0,1000)};
+        }
+        return {url:location.href,title:document.title,syntheticReady:!!(s&&s.ready),popupBlocked:!!(s&&s.popupBlocked),pointerLockTag:document.pointerLockElement&&document.pointerLockElement.tagName||null,element};
+      })()`);
+    }
     async function scroll(x, y) { await evalJS('window.scrollBy(' + (Number(x) || 0) + ',' + (Number(y) || 0) + ')'); return 'scrolled'; }
     async function back() { await evalJS('history.back()'); await sleep(500); return evalJS('location.href'); }
     async function getText(selector) {
@@ -300,16 +526,25 @@
       const r = await c.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
       return r.data || '';
     }
-    function close() {
+    async function close() {
+      const owned = proc, waitForClose = procClosePromise;
       try { cdp && cdp.close(); } catch (_) {}
-      try { proc && proc.kill('SIGKILL'); } catch (_) {}
+      try { owned && owned.kill('SIGKILL'); } catch (_) {}
       cdp = null; proc = null;
+      if (owned && waitForClose) {
+        let timer;
+        const timed = new Promise(resolve => { timer = setTimeout(() => resolve(false), 3000); if (timer.unref) timer.unref(); });
+        const exited = await Promise.race([waitForClose, timed]);
+        clearTimeout(timer);
+        if (!exited) throw new Error('owned Chromium did not exit after synthetic test session closed');
+      }
+      if (deps.cleanupProfile === true) { try { FS.rmSync(profileDir, { recursive: true, force: true }); } catch (_) {} }
     }
     // visible() is the TRUTH the model reports: true only if the controlled window is
     // actually on the user's screen. Headless mode, or a headless-only binary fallback in
     // a headed request, both read as not visible.
     function visible() { return headed; }
-    return { navigate, snapshot, click, type, press, scroll, back, getText, handleDialog, screenshot, close, consoleLog: () => consoleLog.slice(), lastDialog: () => dialog, visible, headed, headlessFallback: wantHeaded && binIsHeadlessOnly };
+    return { navigate, snapshot, click, type, press, testInput, testEval, testState, scroll, back, getText, handleDialog, screenshot, close, consoleLog: () => consoleLog.slice(), lastDialog: () => dialog, visible, headed, headlessFallback: wantHeaded && binIsHeadlessOnly, attachedPort: () => attachedPort, profileDir };
   }
 
   function makeBrowserSession(deps) {
@@ -318,7 +553,7 @@
     const injected = !!deps.driver;            // a test-injected driver never mode-switches
     const makeDriver = deps.makeDriver || makeCdpDriver;   // seam so tests can observe the headed flag
     let driverHeaded = null;                    // the REAL driver's current mode (null = none yet)
-    let version = 0, seq = 0;
+    let version = 0, seq = 0, localMode = false, localOrigin = null;
     const refs = new Map();
     /* ensureDriver(wantVisible):
          undefined  -> reuse whatever is running (or start HEADLESS — the default posture).
@@ -326,8 +561,9 @@
                        profile dir (cookies/logins survive the swap). Headless is the default; a visible
                        window exists only while the Commander asked for one. */
     function ensureDriver(wantVisible) {
-      const headed = wantVisible === undefined ? (driverHeaded === null ? false : driverHeaded)
-        : (!!wantVisible && !headlessRequested(deps.env) && deps.headless !== true);
+      const headed = deps.forceHeadless === true ? false
+        : (wantVisible === undefined ? (driverHeaded === null ? false : driverHeaded)
+          : (!!wantVisible && !headlessRequested(deps.env) && deps.headless !== true));
       if (driver) {
         if (injected || wantVisible === undefined || driverHeaded === headed) return driver;
         try { driver.close(); } catch (_) {}   // mode change -> relaunch (SIGKILL frees the CDP port)
@@ -349,15 +585,24 @@
       return r.node;
     }
     async function navigate(url, opts) {
-      const u = assertSafeUrl(url);
-      const d = ensureDriver(opts && 'visible' in opts ? !!opts.visible : undefined);
+      opts = opts || {};
+      const local = opts.local === true;
+      const validate = local ? assertLoopbackUrl : assertSafeUrl;
+      const u = validate(url);
+      const d = ensureDriver(local ? false : ('visible' in opts ? !!opts.visible : undefined));
       const finalUrl = await d.navigate(u.href);
       if (finalUrl) {
-        try { assertSafeUrl(finalUrl); } catch (e) {
+        try { validate(finalUrl); } catch (e) {
           try { await d.navigate('about:blank'); } catch (_) {}
           throw new Error('blocked unsafe redirect: ' + e.message);
         }
       }
+      if (local && new URL(finalUrl || u.href).origin !== u.origin) {
+        try { await d.navigate('about:blank'); } catch (_) {}
+        throw new Error('blocked local redirect outside the owned server origin');
+      }
+      localMode = local;
+      localOrigin = local ? u.origin : null;
       version++;
       return finalUrl || u.href;
     }
@@ -370,6 +615,32 @@
     async function click(ref) { return ensureDriver().click(requireRef(ref)); }
     async function type(ref, text) { return ensureDriver().type(requireRef(ref), text); }
     async function press(key) { return ensureDriver().press(key); }
+    async function requireLocalDriver() {
+      if (!localMode) throw new Error('browser.test_input requires browser.test_navigate to a loopback URL first');
+      const d = ensureDriver(false);
+      if (typeof d.testEval !== 'function') throw new Error('local browser URL verification is unavailable in this driver');
+      const href = await d.testEval('location.href');
+      let current;
+      try { current = assertLoopbackUrl(href); } catch (e) { localMode = false; localOrigin = null; throw new Error('local test page left its owned server: ' + e.message); }
+      if (current.origin !== localOrigin) { localMode = false; localOrigin = null; throw new Error('local test page left its owned server origin'); }
+      return d;
+    }
+    async function testInput(action) {
+      const d = await requireLocalDriver();
+      if (typeof d.testInput !== 'function') throw new Error('synthetic browser input is unavailable in this driver');
+      return d.testInput(action || {});
+    }
+    async function testEval(expression) {
+      const d = await requireLocalDriver();
+      if (typeof d.testEval !== 'function') throw new Error('local browser evaluation is unavailable in this driver');
+      return d.testEval(expression);
+    }
+    async function testState(selector) {
+      const d = await requireLocalDriver();
+      if (typeof d.testState !== 'function') throw new Error('local browser state inspection is unavailable in this driver');
+      return d.testState(selector);
+    }
+    async function testSnapshot(limit) { await requireLocalDriver(); return snapshot(limit); }
     async function scroll(x, y) { return ensureDriver().scroll(x, y); }
     async function back() { version++; return ensureDriver().back(); }
     async function getText(selector) { return ensureDriver().getText(selector); }
@@ -388,7 +659,7 @@
       // No vision provider wired — do NOT fake an answer. Report honestly.
       return { ok: false, bytes, reason: 'no vision model configured — connect an OpenRouter key to enable browser.vision' };
     }
-    function close() { if (driver && driver.close) driver.close(); }
+    async function close() { if (driver && driver.close) await driver.close(); }
     // Visibility of the controlled window, for truthful navigate reporting. Only meaningful
     // once a driver exists; an injected test driver may not expose it (default true = don't lie about headless).
     function visible() {
@@ -399,17 +670,28 @@
       const d = driver || null;
       return !!(d && d.headlessFallback);
     }
-    return { navigate, snapshot, click, type, press, scroll, back, getText, consoleLog, dialog, vision, close, visible, headlessFallback, _internals: { refs, version: () => version } };
+    function attachedPort() {
+      const d = driver || null;
+      return d && typeof d.attachedPort === 'function' ? d.attachedPort() : null;
+    }
+    return { navigate, snapshot, click, type, press, testInput, testEval, testState, testSnapshot, scroll, back, getText, consoleLog, dialog, vision, close, visible, headlessFallback, attachedPort, _internals: { refs, version: () => version, localMode: () => localMode, localOrigin: () => localOrigin } };
   }
 
   function makeBrowserTools(deps) {
     deps = deps || {};
     const session = deps.session || makeBrowserSession(deps);
+    const allowVisible = deps.allowVisible === true;
     const read = (name, description, schema, run) => ({ name, capability: 'web', scope: 'read', requiresConsent: false, timeoutMs: 20000, description, schema, run });
     const exec = (name, description, schema, run, consent) => ({ name, capability: 'web', scope: 'execute', requiresConsent: consent !== false, timeoutMs: 20000, description, schema, run });
+    const testRead = (name, description, schema, run) => ({ name, capability: 'workbench', scope: 'read', requiresConsent: false, timeoutMs: 20000, description, schema, run });
+    const testExec = (name, description, schema, run) => ({ name, capability: 'workbench', scope: 'execute', requiresConsent: false, timeoutMs: 20000, description, schema, run });
+    const navProps = { url: { type: 'string' } };
+    if (allowVisible) navProps.visible = { type: 'boolean' };
+    const localNavRequired = deps.requireOwnedServer === true ? ['url', 'serverId'] : ['url'];
     const tools = [
-      read('browser.navigate', 'Navigate the AGENT-CONTROLLED browser to a public http(s) URL, then drive it with browser.snapshot/click/type. HEADLESS BY DEFAULT: research and background browsing must never open anything on the user\'s screen. Pass visible:true ONLY when the Commander explicitly asked to SEE the browsing ("open youtube for me", "show me", "on my screen") — that puts the controlled window on their desktop (visible:false sends it back to headless). For a fire-and-forget open in the user\'s OWN default browser that you will NOT control afterward, use desktop.open. Private, loopback, intranet, and unsafe redirects are refused, so local dev servers need shell/HTTP verification instead.', { type: 'object', required: ['url'], properties: { url: { type: 'string' }, visible: { type: 'boolean' } } },
+      read('browser.navigate', 'Navigate the AGENT-CONTROLLED browser to a public http(s) URL. HEADLESS in ordinary agent runs: it never opens a window or uses the user\'s input. Private, loopback, intranet, and unsafe redirects remain refused; use browser.test_navigate for a local dev server.', { type: 'object', required: ['url'], properties: navProps },
         async a => {
+          if (a && a.visible === true && !allowVisible) throw new Error('visible browser mode is disabled: this run is headless-only');
           const url = await session.navigate(a.url, ('visible' in (a || {})) ? { visible: a.visible === true } : undefined);
           let vis = true;
           try { vis = session.visible(); } catch (_) {}
@@ -419,6 +701,32 @@
               ? ' (headless fallback — no visible window; no full Chrome found, only a headless-shell binary)'
               : ' (headless — not visible to the user)');
           return { content: 'Browser navigated to ' + url + suffix, summary: 'navigated' };
+        }),
+      testRead('browser.test_navigate', 'Open an agent-owned local dev URL (127.0.0.1/localhost/::1 only) in the HEADLESS CDP browser for UI/game testing. In normal runs serverId must name this agent\'s running shell background server. Physical pointer/keyboard locks are emulated inside the page, so they never reach Windows.', { type: 'object', required: localNavRequired, properties: { url: { type: 'string' }, serverId: { type: 'string' } } },
+        async (a, ctx) => {
+          assertLoopbackUrl(a.url);
+          if (deps.requireOwnedServer === true) {
+            const owns = typeof deps.ownsLocalUrl === 'function' && await deps.ownsLocalUrl({ url: a.url, serverId: String(a.serverId || ''), agentId: ctx && ctx.agentId, runId: ctx && ctx.runId });
+            if (!owns) throw new Error('local test URL is not proven to belong to this agent\'s running background server');
+          }
+          const url = await session.navigate(a.url, { local: true, visible: false });
+          return { content: 'Local browser navigated to ' + url + ' (headless, synthetic-input isolated; physical mouse/keyboard untouched)', summary: 'local test navigated' };
+        }),
+      testRead('browser.test_snapshot', 'Return interactive elements and coordinates from the current browser.test_navigate page. Refs expire after the next snapshot; use the reported coordinates with browser.test_input.', { type: 'object', properties: { limit: { type: 'number' } } },
+        async a => {
+          const nodes = await session.testSnapshot((a && a.limit) || 80);
+          return { content: nodes.length ? nodes.map(n => '[' + n.ref + '] ' + n.role + (n.text ? ' "' + n.text + '"' : '') + ' @ ' + n.x + ',' + n.y + ' ' + n.w + 'x' + n.h).join('\n') : '(no visible interactive elements)', summary: nodes.length + ' local elements' };
+        }),
+      testExec('browser.test_input', 'Dispatch synthetic input inside the current browser.test_navigate page through CDP/page events. Key down/up supports holds; relative mouse_move supplies movementX/Y for FPS camera tests. This never moves, clicks, confines, or types through the operating system.', {
+        type: 'object', required: ['action'], properties: {
+          action: { type: 'string', enum: ['key_down', 'key_up', 'key_press', 'mouse_move', 'mouse_down', 'mouse_up', 'click'] },
+          key: { type: 'string' }, x: { type: 'number' }, y: { type: 'number' }, dx: { type: 'number' }, dy: { type: 'number' }, button: { type: 'string' }
+        }
+      }, async a => ({ content: await session.testInput(a), summary: 'synthetic input' })),
+      testRead('browser.test_state', 'Read non-mutating state from the current local test page: URL/title, synthetic-isolation status, logical pointer-lock tag, and optional element text/value/visibility/class. Arbitrary page JavaScript and navigation are not exposed.', { type: 'object', properties: { selector: { type: 'string' } } },
+        async a => {
+          const value = await session.testState(a && a.selector);
+          return { content: JSON.stringify(value == null ? null : value), summary: 'local state' };
         }),
       read('browser.snapshot', 'Return a structured snapshot of visible interactive elements. Element refs expire after the next snapshot.', { type: 'object', properties: { limit: { type: 'number' } } },
         async a => {
@@ -458,8 +766,8 @@
           return { content: 'browser.vision unavailable: ' + reason + ' (captured ' + ((r && r.bytes) || 0) + ' bytes but did not analyze them).', summary: 'vision unavailable' };
         })
     ];
-    return { tools, session, register(reg) { tools.forEach(t => reg.register(t)); return reg; }, _internals: { assertSafeUrl, isPrivateV4, isPrivateV6, makeBrowserSession, makeCdpDriver, findChrome, resolveChrome, headlessRequested, CHROME_CANDIDATES } };
+    return { tools, session, register(reg) { tools.forEach(t => reg.register(t)); return reg; }, _internals: { assertSafeUrl, assertLoopbackUrl, isPrivateV4, isPrivateV6, makeBrowserSession, makeCdpDriver, findChrome, resolveChrome, headlessRequested, SYNTHETIC_INPUT_BOOTSTRAP, CHROME_CANDIDATES } };
   }
 
-  return { makeBrowserTools, _internals: { assertSafeUrl, isPrivateV4, isPrivateV6, makeBrowserSession, makeCdpDriver, findChrome, resolveChrome, headlessRequested, CHROME_CANDIDATES } };
+  return { makeBrowserTools, _internals: { assertSafeUrl, assertLoopbackUrl, isPrivateV4, isPrivateV6, makeBrowserSession, makeCdpDriver, findChrome, resolveChrome, headlessRequested, SYNTHETIC_INPUT_BOOTSTRAP, CHROME_CANDIDATES } };
 });
