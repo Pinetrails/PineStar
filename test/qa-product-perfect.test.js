@@ -8,7 +8,7 @@ const path = require('node:path');
 const A = require('./_assert.js');
 const {
   definitionHash, validateManifest, sealReceipt, receiptValidity, deriveStatus,
-  candidateFromGitStatus, loadReceiptKey
+  candidateFromGitStatus, loadReceiptKey, inspectAuthorities, authorityStageForStatus
 } = require('../scripts/qa/product-perfect.mjs');
 
 const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'qa', 'product-perfect', 'waves.json'), 'utf8'));
@@ -138,6 +138,33 @@ const statusContext = { nowMs: NOW, key, readEvidence: validityContext(manifest.
     ready: { ok: false, status: 'FAIL', reasons: ['post-soak READY rerun missing'] }
   }), statusContext);
   A.eq(noReady.currentWave, 'W7', 'broad READY is consumed at the frozen-candidate bar');
+
+  const authorityCalls = [];
+  const pass = id => ({ ok: true, status: 'PASS', reasons: [], id });
+  const inspectors = {
+    installed: () => { authorityCalls.push('installed'); return pass('installed'); },
+    claims: () => {
+      authorityCalls.push('claims');
+      return { planning: pass('claimsPlanning'), terminal: pass('claimsTerminal') };
+    },
+    ledger: () => { authorityCalls.push('ledger'); return pass('ledger'); },
+    atlas: () => { authorityCalls.push('atlas'); return pass('atlas'); },
+    ready: () => { authorityCalls.push('ready'); return pass('ready'); }
+  };
+  const w0Authorities = inspectAuthorities(candidate, { throughWave: 'W0', inspectors, nowMs: NOW });
+  A.eq(authorityCalls.join(','), 'installed,claims', 'W0 inspects only exact installed identity and claims authority');
+  A.eq(w0Authorities.ledger.status, 'DEFERRED', 'ledger is deferred until W6');
+  A.eq(w0Authorities.atlas.status, 'DEFERRED', 'Atlas is deferred until W6');
+  A.eq(w0Authorities.ready.status, 'DEFERRED', 'broad READY is deferred until W7');
+  authorityCalls.length = 0;
+  inspectAuthorities(candidate, { throughWave: 'W6', inspectors, nowMs: NOW });
+  A.eq(authorityCalls.join(','), 'installed,claims,ledger,atlas', 'W6 adds terminal ledger and Atlas authority without broad READY');
+  authorityCalls.length = 0;
+  inspectAuthorities(candidate, { throughWave: 'W7', inspectors, nowMs: NOW });
+  A.eq(authorityCalls.join(','), 'installed,claims,ledger,atlas,ready', 'W7 alone consumes broad READY');
+  A.eq(authorityStageForStatus({ currentWave: 'W5' }), 'W0', 'pre-W6 status stays on narrow authority inspection');
+  A.eq(authorityStageForStatus({ currentWave: 'W6' }), 'W6', 'W6 status activates terminal authorities');
+  A.eq(authorityStageForStatus({ currentWave: 'W7' }), 'W7', 'W7 status activates broad READY');
 }
 
 {

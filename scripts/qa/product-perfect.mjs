@@ -13,6 +13,8 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { makeLedger } from './ledger.mjs';
 import { makeCartographer, AREAS as ATLAS_AREAS } from './cartographer.mjs';
+import { inspectInstalledIdentity } from './ready.mjs';
+import { inspectClaimsAuthority } from './product-perfect/claims.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const REPO_ROOT = path.resolve(HERE, '..', '..');
@@ -459,12 +461,76 @@ function inspectAtlasAuthority(candidate) {
   }
 }
 
-export function inspectAuthorities(candidate) {
+const AUTHORITY_STAGE_RANK = Object.freeze({ W0: 0, W6: 6, W7: 7 });
+
+function deferredAuthority(id, wave) {
   return {
-    ready: inspectReadyAuthority(),
-    ledger: inspectLedgerAuthority(),
-    atlas: inspectAtlasAuthority(candidate)
+    ok: false,
+    status: 'DEFERRED',
+    reasons: [id + ' authority is not inspected before ' + wave]
   };
+}
+
+function inspectAuthority(id, run) {
+  try {
+    const result = run();
+    if (!result || typeof result !== 'object') throw new Error('inspector returned no verdict');
+    return result;
+  } catch (error) {
+    return { ok: false, status: 'BLOCKED', reasons: [id + ' authority unreadable: ' + str(error && error.message || error)] };
+  }
+}
+
+export function authorityStageForStatus(status) {
+  if (status && (status.productPerfect === true || status.currentWave === 'W7')) return 'W7';
+  if (status && status.currentWave === 'W6') return 'W6';
+  return 'W0';
+}
+
+export function inspectAuthorities(candidate, options = {}) {
+  const throughWave = Object.prototype.hasOwnProperty.call(AUTHORITY_STAGE_RANK, options.throughWave)
+    ? options.throughWave : 'W0';
+  const rank = AUTHORITY_STAGE_RANK[throughWave];
+  const inspectors = options.inspectors || {};
+  const installed = inspectAuthority('installed', () => inspectors.installed
+    ? inspectors.installed(candidate, options)
+    : inspectInstalledIdentity({
+        repoRoot: REPO_ROOT,
+        receiptPath: path.join(REPO_ROOT, 'qa', 'installed', 'last-smoke.json'),
+        candidateSha: candidate.sha,
+        nowMs: options.nowMs
+      }));
+  const claims = inspectAuthority('claims', () => inspectors.claims
+    ? inspectors.claims(candidate, options)
+    : inspectClaimsAuthority({ repoRoot: REPO_ROOT, candidateCommit: candidate.sha }));
+  const claimsPlanning = claims.planning && typeof claims.planning === 'object'
+    ? claims.planning : { ok: false, status: 'BLOCKED', reasons: ['claims planning verdict unavailable'] };
+  const claimsTerminal = claims.terminal && typeof claims.terminal === 'object'
+    ? claims.terminal : { ok: false, status: 'BLOCKED', reasons: ['claims terminal verdict unavailable'] };
+  const ledger = rank >= AUTHORITY_STAGE_RANK.W6
+    ? inspectAuthority('ledger', () => inspectors.ledger ? inspectors.ledger(candidate, options) : inspectLedgerAuthority())
+    : deferredAuthority('ledger', 'W6');
+  const atlas = rank >= AUTHORITY_STAGE_RANK.W6
+    ? inspectAuthority('atlas', () => inspectors.atlas ? inspectors.atlas(candidate, options) : inspectAtlasAuthority(candidate))
+    : deferredAuthority('atlas', 'W6');
+  const ready = rank >= AUTHORITY_STAGE_RANK.W7
+    ? inspectAuthority('ready', () => inspectors.ready ? inspectors.ready(candidate, options) : inspectReadyAuthority())
+    : deferredAuthority('ready', 'W7');
+  return { installed, claimsPlanning, claimsTerminal, ready, ledger, atlas };
+}
+
+export function inspectCampaignState(manifest, candidate, receipts, receiptContext = {}, options = {}) {
+  let stage = 'W0';
+  let authorities;
+  let status;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    authorities = inspectAuthorities(candidate, Object.assign({}, options, { throughWave: stage }));
+    status = deriveStatus(manifest, candidate, receipts, authorities, receiptContext);
+    const nextStage = authorityStageForStatus(status);
+    if (AUTHORITY_STAGE_RANK[nextStage] <= AUTHORITY_STAGE_RANK[stage]) break;
+    stage = nextStage;
+  }
+  return { authorities, status, stage };
 }
 
 function receiptDir(runtimeDir, candidate) { return path.join(runtimeDir, 'receipts', candidate.sha); }
@@ -661,7 +727,6 @@ if (INVOKED_DIRECTLY) {
     process.exit(2);
   }
   let receipts = manifest ? loadReceipts(manifest, candidate) : {};
-  let authorities = inspectAuthorities(candidate);
   const manifestValidation = validateManifest(manifest);
   let receiptKey = null;
   try { receiptKey = loadReceiptKey(DEFAULT_RUNTIME_DIR, { create: !statusOnly && manifestValidation.ok && candidate.clean }); }
@@ -671,7 +736,9 @@ if (INVOKED_DIRECTLY) {
     process.exit(2);
   }
   const receiptContext = { nowMs: Date.now(), key: receiptKey, runtimeDir: DEFAULT_RUNTIME_DIR };
-  let status = deriveStatus(manifest, candidate, receipts, authorities, receiptContext);
+  let campaignState = inspectCampaignState(manifest, candidate, receipts, receiptContext, { nowMs: receiptContext.nowMs });
+  let authorities = campaignState.authorities;
+  let status = campaignState.status;
   if (statusOnly) {
     console.log(jsonMode ? JSON.stringify(status, null, 2) : render(status));
     process.exit(status.productPerfect ? 0 : 2);
@@ -692,7 +759,8 @@ if (INVOKED_DIRECTLY) {
     if (unmet.length) return { blocked: 'dependencies not current and passing: ' + unmet.join(', ') };
     const run = runWaveVerifier(manifest, wave, candidate, DEFAULT_RUNTIME_DIR, { key: receiptKey });
     receipts = loadReceipts(manifest, candidate);
-    authorities = inspectAuthorities(candidate);
+    campaignState = inspectCampaignState(manifest, candidate, receipts, Object.assign({}, receiptContext, { nowMs: Date.now() }));
+    authorities = campaignState.authorities;
     return run;
   };
 
