@@ -18,8 +18,8 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "74aa4bbebbc827b6c53a281837b5ee74ad4a3446",
-    "pathSetSha256": "268ce5981e8b6049b7eade5ef9cbf89f1cfba0a7b4eed108d6657ad0b03b3177",
+    "sourceCommit": "521fd2a70bfc9c53d9bb58e7f0ca6be4fcf367d4",
+    "pathSetSha256": "27c5fe62bdadf0fc9140074ed67512cb1a2fcbd052386ac9f3d8e9264b71fed4",
     "files": [
       {
         "path": "INSTALL.md",
@@ -295,6 +295,11 @@
         "path": "frontend/app/keycta.js",
         "bytes": 6230,
         "sha256": "999a12c06b8354510b36e9214d7dc254284239bcb845b53142772708e41fc193"
+      },
+      {
+        "path": "frontend/app/leftrail.js",
+        "bytes": 1272,
+        "sha256": "9e4b516bf1345be748d79afeea7bc36ed697b858954e8a74262021dd36f4a86b"
       },
       {
         "path": "frontend/app/legacymigrate.js",
@@ -753,8 +758,8 @@
       },
       {
         "path": "frontend/css/app.css",
-        "bytes": 177745,
-        "sha256": "7cbb2f0a4888bd0ffa6919fea41c0a3ee4ad35d10d9f3ffae2fcde5b28b60365"
+        "bytes": 180108,
+        "sha256": "657d8f7d74066c517daa167ac9f5914215f659699696fbe119f448fb80cbfad0"
       },
       {
         "path": "frontend/css/comms.css",
@@ -808,8 +813,8 @@
       },
       {
         "path": "frontend/index.html",
-        "bytes": 55701,
-        "sha256": "96550035620cbb07c0522ac50fd8b930ce79ad043a396366836f484e087a719c"
+        "bytes": 56341,
+        "sha256": "554407092a863b7828f5ab673d74ea555c9f8760cb9a034d83e38093b84c7d96"
       },
       {
         "path": "frontend/js/arcade.js",
