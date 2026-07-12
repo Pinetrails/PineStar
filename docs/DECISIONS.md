@@ -69,6 +69,9 @@ many of these — they win on any wording conflict.
 - **Desktop architecture truth:** the installed app's webview loads the frontend COMPILED INTO
   THE EXE (tauri.localhost). Folder patches never touch the installed UI; CDP-attach is the
   only installed-UI proof. Updater feeds from GitHub Releases (`starnet-releases`).
+- **Open-source validation boundary:** TPM, fixed-VHDX, anti-admin, LocalSystem proof-broker,
+  and protected-CAS machinery were never product requirements; W0 identifies exact official,
+  reproducible-source, custom, and dirty-dev builds without trying to defeat the machine owner.
 - **Release gate order:** gate runs AFTER version bump, BEFORE tag push (v0.2.0/v0.2.1 were
   burned proving this).
 - **QA baseline suppression:** known defects live in `qa/KNOWN_ISSUES.md` fingerprints; the

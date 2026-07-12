@@ -36,6 +36,8 @@ if (/git\s+rev-parse\s+HEAD/.test(source) || /gitHead\s*[:=]/.test(source)) {
 
 const deterministic = [
   ['product-perfect controller tests', ['test/qa-product-perfect.test.js'], 60000],
+  ['finite advertised-claims tests', ['test/qa-product-perfect-claims.test.js'], 120000],
+  ['build provenance taxonomy tests', ['test/qa-product-perfect-provenance.test.js'], 60000],
   ['installed desktop proof tests', ['test/qa-installed-smoke.test.js'], 60000],
   ['READY proof tests', ['test/qa-ready.test.js'], 60000],
   ['release provenance tests', ['test/release-train-provenance.test.js'], 60000],
@@ -45,21 +47,9 @@ for (const [label, args, timeout] of deterministic) {
   if (!run(label, args, timeout)) process.exit(1);
 }
 
-const ready = spawnSync(process.execPath, ['scripts/qa/ready.mjs', '--json'], {
-  cwd: ROOT, encoding: 'utf8', windowsHide: true, timeout: 600000, maxBuffer: 16 * 1024 * 1024
-});
-let verdict = null;
-try { verdict = JSON.parse(String(ready.stdout || '')); } catch (_) {}
-if (!verdict || verdict.ready !== true || ready.status !== 0) {
-  const reasons = verdict && Array.isArray(verdict.reasons) ? verdict.reasons : ['READY receipt missing or unreadable'];
-  console.error('[W0 BLOCKED] hardened READY is not green for this candidate:');
-  for (const reason of reasons) console.error('  - ' + reason);
-  process.exit(2);
-}
-if (!verdict.trunk || String(verdict.trunk.head || '').toLowerCase() !== candidate) {
-  console.error('[W0 BLOCKED] READY vouches for another commit, not ' + candidate);
-  process.exit(2);
+if (!run('finite advertised-claims planning authority', ['scripts/qa/product-perfect/claims.mjs', '--planning'], 120000)) {
+  process.exit(1);
 }
 
-console.log('[W0 PASS] proof authority is candidate-bound and hardened READY is green @ ' + candidate);
+console.log('[W0 PASS] claims planning and proof primitives are candidate-bound @ ' + candidate);
 process.exit(0);

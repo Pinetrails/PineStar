@@ -1,5 +1,34 @@
 # NEXT.md — current priorities & task queue
 
+## IN PROGRESS — Codex W0 claims/provenance verdict (`agent/w0-claims-verdict`)
+
+Scope is the amended W0 only: code-verified SHIPPED/PARTIAL/MISSING/REFUTED verdicts before
+W2–W6 tasks, the open-source build-provenance taxonomy (official / reproducible-source /
+custom / dirty-dev), a finite advertised-claims ledger with experimental labeling, and the
+explicit retirement of TPM/VHDX/anti-admin work if grep confirms it was never a product
+requirement. No W1 implementation or W2+ fix lane starts until this bounded W0 audit commits.
+Controller owns `docs/NEXT.md`, the W0 ledger/provenance planning surfaces, and any narrowly
+required tests; it does not own `shared/events.js` or `shared/schema.js`.
+
+W0 grep-verdict checkpoint (`ef16fa08`, 2026-07-12):
+- **SHIPPED â€” do not rebuild:** durable E-STOP, background consent visibility, Night Shift
+  pre-spend/leash refusal, truthful `/api/version`, MCP mutation consent, cold-boot recap,
+  durable rejected-idea suppression, and the locked HTTP `200 {ok:false,degraded:true}`
+  workspace refusal.
+- **PARTIAL:** child-environment isolation, DNS-safe controlled-browser navigation, recursive
+  link/junction containment, Slack/Matrix keychain custody, channel pairing, the unified work
+  ledger, Settings full export, post-onboarding base URL, capability enforcement across run
+  modes, Commander-context composition, and reason-aware learning.
+- **MISSING:** scoped Workshop/file URL capabilities, zero-unconsented boot egress, attended
+  real integration lifecycle receipts, and complete point-of-use experimental labels.
+- **REFUTED:** work continuing after the desktop app closes, hallway-as-authorized-handoff,
+  blanket no-phone-home copy, and a Signal token-keychain requirement (Signal has no token in
+  the current adapter contract).
+- **Preserved refs checked:** completed-looking W2 security work remains held on the existing
+  `agent/pp-*` branches and will be re-audited only when W2 is active. The released dirty
+  `pp-w0-open-source-reset` and `pp-w0-open-source-promises` worktrees remain untouched and are
+  salvage-only, not merge authority.
+
 ## LANDED 2026-07-09 — LOST-WORK RESTORE: 7 built-but-unmerged features recovered to trunk (5b9cde3f) ✅
 
 Andrew noticed the new start menu + upgraded CREATE YOUR OVERSEER were missing from his build —
