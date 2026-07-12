@@ -120,6 +120,8 @@ test/qa-ledger.test.js
 test/qa-guardian.test.js
 test/qa-ready.test.js
 test/qa-product-perfect.test.js
+test/qa-product-perfect-claims.test.js
+test/qa-product-perfect-provenance.test.js
 test/qa-cartographer.test.js
 test/golden.test.js
 test/qa-beginner.test.js
