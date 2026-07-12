@@ -3630,6 +3630,10 @@ const World = (() => {
       let geom = null;
       if (typeof SPRITES !== 'undefined' && SPRITES.ready) geom = SPRITES.drawBody(ctx, who, now);
       if (!geom) drawFallback(now, who);
+      // remember the visible head-top (world px) so overlays (nameplate, speech bubble) anchor
+      // above the ACTUAL drawn sprite — skins are taller than the old 15px assumption, which
+      // parked bubbles over the face. Fallback bodies keep the legacy 15px estimate (null).
+      who.visTopPy = geom ? geom.top : null;
       ctx.globalAlpha = prevA;
       // the wake ripple — a triple-ringed sonar pulse of first breath, in the suit color (hero's awakening
       // uses the module wakeAt; a crew body uses its own per-body wakeAt set when it receives work)
@@ -3731,9 +3735,10 @@ const World = (() => {
 
     // anchor centered just above the head, crisp + clamped to the canvas
     const ax = (bodyPosX(who) * scale + panX) / dpr, ay = (bodyPosY(who) * scale + panY) / dpr;
-    const spriteH = 15 * scale / dpr;
+    // same head-top anchor as drawBubble: real drawn geometry when known, legacy 15px estimate otherwise
+    const topY = (who.visTopPy != null) ? (who.visTopPy * scale + panY) / dpr : ay - 15 * scale / dpr;
     const x = Math.round(Math.max(4, Math.min(Wc - w - 4, ax - w / 2)));
-    const y = Math.round(Math.max(4, Math.min(Hc - h - 4, ay - spriteH - 9 - h)));
+    const y = Math.round(Math.max(4, Math.min(Hc - h - 4, topY - 9 - h)));
 
     // plate: dark CRT glass + scanlines + an amber structural frame with a suit accent along the top
     ctx.fillStyle = 'rgba(6,5,4,0.92)'; ctx.fillRect(x, y, w, h);
@@ -3997,10 +4002,12 @@ const World = (() => {
 
     // anchor centered above the head, crisp + clamped to the canvas (same body->screen math as the nameplate)
     const ax = (bodyPosX(who) * scale + panX) / dpr, ay = (bodyPosY(who) * scale + panY) / dpr;
-    const spriteH = 15 * scale / dpr;
+    // anchor off the sprite's ACTUAL drawn head-top when known (set each frame in drawAgent);
+    // the old fixed 15-world-px estimate undershot real skins and parked the bubble on the face
+    const topY = (who.visTopPy != null) ? (who.visTopPy * scale + panY) / dpr : ay - 15 * scale / dpr;
     const cx = Math.round(Math.max(bw / 2 + 4, Math.min(Wc - bw / 2 - 4, ax)));
     const bx = Math.round(cx - bw / 2);
-    const by = Math.round(Math.max(4, Math.min(Hc - bh - tailH - 4, ay - spriteH - 6 - tailH - bh)));
+    const by = Math.round(Math.max(4, Math.min(Hc - bh - tailH - 4, topY - 6 - tailH - bh)));
     const tx = Math.round(Math.max(bx + tailW + 1, Math.min(bx + bw - tailW - 1, ax)));   // tail apex tracks the head, kept inside the box
 
     // CRT glass card + faint scanlines (nameplate material)
@@ -5672,6 +5679,8 @@ const World = (() => {
           tile: t, px: Math.round(b.px), py: Math.round(b.py), dir: b.dir, state: b.state,
           goal: b.goal || null, moving: !!b.target, working: !!b.working, sitting: !!b.sitting,
           seated: !!b.seated, unplaced: !!b.unplaced, summoned: !!b.summoned,   // summoned = carries the idle inner life (roster bodies must, post-relaunch too)
+          visTopPy: (b.visTopPy != null) ? Math.round(b.visTopPy) : null,       // drawn head-top (world px) — the overlay anchor drawBubble/drawNameplate use
+          say: (b.say && b.say.text && b.say.until > fnow) ? b.say.text : null,
           target: b.target ? { tile: tileOf(b.target.x, b.target.y), x: Math.round(b.target.x), y: Math.round(b.target.y) } : null,
           glance: b.glance ? { dir: b.glance.dir, ms: Math.max(0, Math.round((b.glance.until || 0) - fnow)) } : null,
           zone: z, inOwnZone: tileInZone(z, t.x, t.y)
