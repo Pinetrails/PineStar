@@ -84,6 +84,17 @@
       const tool = tools[call.name];
       if (!tool) return errResult('unknown tool: ' + call.name);
 
+      // User-control authority is a host hardline and runs before capability/consent. Full
+      // Access, cached approvals, model wording, or a lying external tool annotation cannot
+      // turn an ordinary task into physical/visible desktop authority.
+      let authority = null;
+      if (typeof ctx.authorize === 'function') {
+        try { authority = await ctx.authorize(call, tool); } catch (e) { authority = { ok: false, reason: 'authority error' }; }
+        if (!authority || authority.ok !== true) return errResult('user-control denied: ' + ((authority && authority.reason) || call.name), 'user-control-denied');
+      } else if (tool.impact === 'physical-input' || tool.impact === 'visible-desktop' || tool.impact === 'external-unknown') {
+        return errResult('user-control denied: no run authority for ' + tool.impact, 'user-control-denied');
+      }
+
       // capability gate (M1.3): is this tool granted to the agent right now?
       if (ctx.canUse) {
         const g = ctx.canUse(call, tool);
@@ -95,7 +106,8 @@
       if (!v.ok) return errResult('invalid arguments for ' + call.name + ': ' + v.errors.join('; '));
 
       // consent gate (M1.4): a denied/cancelled prompt performs NO action
-      if (tool.requiresConsent && ctx.consent) {
+      // external-unknown authority is itself an exact, non-cacheable one-call prompt.
+      if (tool.requiresConsent && ctx.consent && !(authority && authority.oneShot === true)) {
         let c;
         try { c = await ctx.consent(call, tool); } catch (e) { c = { allow: false, reason: 'consent error' }; }
         if (!c || !c.allow) return errResult('consent denied for ' + call.name + (c && c.reason ? ': ' + c.reason : ''), 'denied');

@@ -23,7 +23,8 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function (shell, verifyCore) {
   'use strict';
 
-  const runCommand = shell.runCommand, escapesWorkspace = shell.escapesWorkspace, safeAgentId = shell.safeAgentId;
+  const runCommand = shell.runCommand, escapesWorkspace = shell.escapesWorkspace,
+    commandSafetyRisk = shell.commandSafetyRisk, safeAgentId = shell.safeAgentId;
   const interpret = verifyCore.interpret;
   const WIN = (typeof process !== 'undefined' && process.platform) === 'win32';
   function clamp(n, lo, hi) { n = Number(n); if (!isFinite(n)) return lo; return Math.max(lo, Math.min(hi, n)); }
@@ -42,7 +43,7 @@
     const MAX_MS = L.maxTimeoutMs || 600000;
 
     const verifyTool = {
-      name: 'verify.run', capability: 'workbench', scope: 'execute', requiresConsent: true,
+      name: 'verify.run', capability: 'workbench', impact: 'workspace-process', scope: 'execute', requiresConsent: true,
       timeoutMs: MAX_MS + 10000,
       description: 'Run your project\'s check (tests/build) and get back a clear PASS/FAIL verdict — proof your '
         + 'change works. Pass { "cmd": "npm test" } (or your build/lint command); with no cmd it runs "npm test" '
@@ -52,7 +53,10 @@
         ctx = ctx || {};
         const aid = safeAgentId((ctx && ctx.agentId) || 'agent');
         const cwd = environment ? environment.getCwd(aid) : P.join(ROOT, aid);
-        const hostCwd = environment && typeof environment.workspaceRoot === 'function' ? environment.workspaceRoot(aid) : cwd;
+        // Local execution may be inside a nested project after shell.cd. Inspect the
+        // exact directory that will execute; only mapped backends need the host root.
+        const hostCwd = environment && environment.backendId !== 'local' && typeof environment.workspaceRoot === 'function'
+          ? environment.workspaceRoot(aid) : cwd;
         let cmd = String((args && args.cmd) || '').trim();
         if (!cmd) {
           if (fs && fs.existsSync && fs.existsSync(P.join(hostCwd, 'package.json'))) cmd = 'npm test';
@@ -60,6 +64,9 @@
         }
         const deny = escapesWorkspace(cmd);
         if (deny) throw new Error('refused: ' + deny);
+        const safetyDeny = commandSafetyRisk(cmd, { cwd: hostCwd, fs: fs, pathMod: P,
+          dialect: environment && environment.backendId !== 'local' ? 'posix' : (isWin ? 'cmd' : 'posix'), isWin: isWin });
+        if (safetyDeny) throw new Error('refused [' + safetyDeny.kind + ']: this check ' + safetyDeny.reason + '. verify.run cannot change the user\'s screen, session, processes, input, or network exposure; use browser.test_* for local UI/game verification.');
         if (!environment) { try { fs.mkdirSync(cwd, { recursive: true }); } catch (_) {} }
         const timeoutMs = clamp((args && args.timeoutMs) || DEFAULT_MS, 1000, MAX_MS);
         const run = environment && typeof environment.execute === 'function'

@@ -24,6 +24,7 @@
       scope: def.scope || 'read',
       readOnly: def.readOnly != null ? def.readOnly : (def.scope === 'read' || def.scope == null),
       capability: def.capability || null,
+      impact: def.impact || null,
       requiresConsent: !!def.requiresConsent,
       timeoutMs: def.timeoutMs || 0,
       run: def.run || (async () => { throw new Error('tool "' + def.name + '" has no run()'); })

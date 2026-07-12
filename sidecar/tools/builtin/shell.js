@@ -327,10 +327,142 @@
     return null;
   }
 
+  // A headless browser can still acquire native pointer/keyboard lock. Agent UI and
+  // game verification therefore runs only through browser.test_* where those APIs are
+  // emulated before navigation and input is dispatched synthetically over owned CDP.
+  const INPUT_CAPTURE_RE = /requestPointerLock|webkitRequestPointerLock|PointerLockControls|\bcontrols\s*\.\s*lock\s*\(|keyboard\s*\.\s*lock\s*\(|requestFullscreen|webkitRequestFullscreen|mozRequestFullScreen|ClipCursor|SetCursorPos|SendInput|BlockInput|SetCapture|SetWindowsHookEx|RegisterHotKey|RegisterRawInputDevices|SetForegroundWindow|SwitchToThisWindow|AttachThreadInput|HWND_TOPMOST|SetSystemCursor|ChangeDisplaySettings|SetDisplayConfig|SetMonitorBrightness|LockWorkStation|ExitWindowsEx|InitiateSystemShutdown|CGEventPost|CGAssociateMouseAndMouseCursorPosition|XTestFake|XGrabPointer|XGrabKeyboard|XWarpPointer|SDL_SetRelativeMouseMode|GLFW_CURSOR_DISABLED/i;
+  const BROWSER_AUTOMATION_RE = /\b(?:puppeteer(?:-core)?|playwright|selenium|webdriver|chromedriver|geckodriver|chrome-remote-interface)\b|webSocketDebuggerUrl|Input\.dispatch(?:Mouse|Key)|--remote-debugging-port\b/i;
+  const NATIVE_INPUT_RE = /\b(?:SetCursorPos|mouse_event|SendInput|keybd_event|ClipCursor|BlockInput|SetCapture|SetWindowsHookEx|RegisterHotKey|RegisterRawInputDevices|SetForegroundWindow|SwitchToThisWindow|AttachThreadInput|SetWindowPos|SetSystemCursor|SendKeys(?:\.SendWait)?|pyautogui|pynput|robotjs|nut\.js|xdotool|ydotool|xte|evemu|uinput|CGEventPost|CGWarpMouseCursorPosition|XTestFake|XGrabPointer|XGrabKeyboard|XWarpPointer)\b|\/dev\/uinput/i;
+  const USER_SESSION_RE = /\b(?:LockWorkStation|ExitWindowsEx|InitiateSystemShutdown|SetSuspendState|ChangeDisplaySettings|SetDisplayConfig|SetMonitorBrightness|WmiMonitorBrightnessMethods|SystemParametersInfo|SetClipboardData|OpenClipboard|Set-Clipboard|pbcopy|xclip|xsel|DisplaySwitch|xrandr|xinput|xset|chvt|loginctl|ddcutil|pactl|amixer|osascript)\b/i;
+  const OPAQUE_LAUNCH_RE = /\b(?:Invoke-Expression|iex|Invoke-Command|DownloadString|FromBase64String|Reflection\.Assembly|ShellExecute|os\.startfile|Process\.Start)\b/i;
+  const GUI_RUNTIME_RE = /\b(?:electron|nwjs|cargo\s+run|dotnet\s+run|java\s+-jar|rundll32|wscript|cscript|mshta|notepad|wordpad|mspaint|calc|write)\b/i;
+  const LOCAL_PROGRAM_RE = /^(?:"|')?(?:(?:\.\\|\.\/)[^\s"']+|[^\s"']+\.exe)(?:"|'|\s|$)/i;
+  const CODE_FILE_RE = /\.(?:[cm]?js|ts|tsx|jsx|ps1|py|rb|php|sh|bash|cmd|bat|rs|cs|c|cc|cpp)$/i;
+  const SCAN_SKIP_RE = /^(?:node_modules|\.git|dist|build|coverage|\.cache|\.vite|target)$/i;
+
+  function readSmall(fs, p, max) {
+    if (!fs || !p) return '';
+    try {
+      const st = fs.statSync(p);
+      if (!st.isFile() || st.size > (max || (1 << 20))) return '';
+      return String(fs.readFileSync(p, 'utf8') || '');
+    } catch (_) { return ''; }
+  }
+  function unquoteToken(s) {
+    s = String(s || '').trim();
+    if ((s[0] === '"' && s[s.length - 1] === '"') || (s[0] === "'" && s[s.length - 1] === "'")) return s.slice(1, -1);
+    return s;
+  }
+  function commandSources(cmd, opts) {
+    opts = opts || {};
+    const fs = opts.fs, P = opts.pathMod, cwd = opts.cwd, dialect = opts.dialect;
+    const queue = [{ text: String(cmd || ''), baseDir: cwd }], out = [], seen = new Set(), packageCache = new Map();
+    function enqueue(text, baseDir) { if (text != null && String(text)) queue.push({ text: String(text), baseDir }); }
+    function packageAt(baseDir) {
+      const projectRoot = projectScanRoot(baseDir, fs, P);
+      const key = String(projectRoot || '');
+      if (packageCache.has(key)) return { root: projectRoot, scripts: packageCache.get(key) };
+      let doc = {};
+      try { doc = JSON.parse(readSmall(fs, P && projectRoot ? P.join(projectRoot, 'package.json') : '', 1 << 20) || '{}').scripts || {}; }
+      catch (_) { doc = {}; }
+      packageCache.set(key, doc);
+      return { root: projectRoot, scripts: doc };
+    }
+    for (let qi = 0; qi < queue.length && qi < 30; qi++) {
+      const entry = queue[qi] || {};
+      const text = String(entry.text || ''), baseDir = entry.baseDir || cwd;
+      const seenKey = String(baseDir || '') + '\0' + text;
+      if (!text || seen.has(seenKey)) continue;
+      seen.add(seenKey); out.push(text);
+      for (const parsedHead of commandHeads(text, dialect)) {
+        const head = (parsedHead && parsedHead.text != null ? parsedHead.text : String(parsedHead || '')).replace(/^\s*@/, '');
+        let m = head.match(/^(?:npm|npm\.cmd)\s+(?:--[A-Za-z0-9_-]+(?:=[^\s]+)?\s+)*(?:run\s+)?([A-Za-z0-9:_-]+)\b/i);
+        if (m) {
+          const pkg = packageAt(baseDir);
+          const name = /^(?:test|start|stop|restart)$/i.test(m[1]) ? m[1].toLowerCase() : m[1];
+          enqueue(pkg.scripts['pre' + name], pkg.root);
+          enqueue(pkg.scripts[name], pkg.root);
+          enqueue(pkg.scripts['post' + name], pkg.root);
+        }
+        m = head.match(/^(?:pnpm|yarn)(?:\.cmd)?\s+(?:run\s+)?([A-Za-z0-9:_-]+)\b/i);
+        if (m) { const pkg = packageAt(baseDir); enqueue(pkg.scripts[m[1]], pkg.root); }
+
+        const refs = [];
+        const interpreted = head.match(/^(?:(?:node|node\.exe|python|python\d*(?:\.exe)?|py(?:\.exe)?|ruby|php|tsx|ts-node|bun|deno|bash|sh)(?:\s+run)?)(?:\s+--?[A-Za-z0-9_-]+(?:=[^\s]+)?)*\s+(?!-[eEpP]\b)("[^"]+"|'[^']+'|[^\s&|;]+)/i);
+        if (interpreted) refs.push(interpreted[1]);
+        const ps = head.match(/^(?:powershell|pwsh)(?:\.exe)?\b[^&|;]*?\s-(?:file|f)\s+("[^"]+"|'[^']+'|[^\s&|;]+)/i);
+        if (ps) refs.push(ps[1]);
+        const direct = head.match(/^("[^"]+"|'[^']+'|[^\s&|;]+)/);
+        if (direct && CODE_FILE_RE.test(unquoteToken(direct[1]))) refs.push(direct[1]);
+        for (const raw of refs) {
+          const rel = unquoteToken(raw);
+          if (!CODE_FILE_RE.test(rel) || !P || !baseDir || P.isAbsolute(rel) || /(^|[\\/])\.\.([\\/]|$)/.test(rel)) continue;
+          const src = readSmall(fs, P.resolve(baseDir, rel), 2 << 20);
+          if (src) enqueue(src, baseDir);
+        }
+      }
+    }
+    return out;
+  }
+  function workspaceCapturesInput(cwd, fs, P) {
+    if (!cwd || !fs || !P) return false;
+    const stack = [cwd];
+    let files = 0, bytes = 0;
+    while (stack.length && files < 2000 && bytes < (8 << 20)) {
+      const dir = stack.pop();
+      let ents = [];
+      try { ents = fs.readdirSync(dir, { withFileTypes: true }); } catch (_) { continue; }
+      for (const ent of ents) {
+        if (SCAN_SKIP_RE.test(ent.name)) continue;
+        const p = P.join(dir, ent.name);
+        if (ent.isDirectory()) { stack.push(p); continue; }
+        if (!/\.(?:html?|[cm]?js|ts|tsx|jsx|vue|svelte|py|ps1|rs|cs|c|cc|cpp)$/i.test(ent.name)) continue;
+        const src = readSmall(fs, p, 1 << 20); files++; bytes += src.length;
+        if (INPUT_CAPTURE_RE.test(src)) return true;
+      }
+    }
+    return false;
+  }
+  function projectScanRoot(cwd, fs, P) {
+    if (!cwd || !fs || !P) return cwd;
+    let cur;
+    try { cur = P.resolve(cwd); } catch (_) { return cwd; }
+    for (let i = 0; i < 12; i++) {
+      try {
+        if (fs.existsSync(P.join(cur, 'package.json')) || fs.existsSync(P.join(cur, 'Cargo.toml')) || fs.existsSync(P.join(cur, '.git'))) return cur;
+      } catch (_) {}
+      const parent = P.dirname(cur);
+      if (!parent || parent === cur) break;
+      cur = parent;
+    }
+    return cwd;
+  }
+  function inputIsolationRisk(cmd, opts) {
+    opts = opts || {};
+    const c = String(cmd == null ? '' : cmd), dialect = opts.dialect;
+    const heads = commandHeads(c, dialect);
+    if (heads.some(h => BROWSER_NAMES.has(exeName((headTokens(h)[0] || {}).value)))) {
+      return 'launches a browser outside StarNet\'s synthetic-input CDP sandbox — use browser.test_navigate/browser.test_input';
+    }
+    const sources = commandSources(c, opts);
+    const expanded = sources.join('\n');
+    const activeHead = heads.some(h => {
+      const text = canonicalHead(h);
+      return !/^echo(?:\.exe)?\b/i.test(text) && (NATIVE_INPUT_RE.test(text) || USER_SESSION_RE.test(text) || OPAQUE_LAUNCH_RE.test(text));
+    });
+    if (activeHead || sources.slice(1).some(s => NATIVE_INPUT_RE.test(s) || USER_SESSION_RE.test(s) || OPAQUE_LAUNCH_RE.test(s))) {
+      return 'can inject/capture input, launch opaque code, or alter the user\'s interactive session';
+    }
+    if (sources.some(s => /(?:^|\s)--open(?:[=\s]|$)/i.test(s))) return 'opens a framework/browser window on the user\'s screen — keep dev servers headless';
+    if (BROWSER_AUTOMATION_RE.test(expanded)) return 'runs browser automation outside StarNet\'s owned pointer-lock emulator — use browser.test_*';
+    if (GUI_RUNTIME_RE.test(expanded) || heads.some(h => LOCAL_PROGRAM_RE.test(h && h.text != null ? h.text : String(h || '')))) return 'launches a GUI/native runtime on the user\'s interactive desktop';
+    return null;
+  }
+
   // --- machine-state floor --- head-anchored rules (verb at the start of a command head) + a few whole-string
   // rules for signatures that are distinctive enough to match anywhere (registry hive refs, PS cmdlet names).
   const MACHINE_HEAD_RULES = [
-    { re: /^(?:shutdown|logoff|reboot|halt|poweroff)(?:\.exe)?\b/i, why: 'shuts down, reboots, or logs the user out of their machine' },
+    { re: /^(?:shutdown|logoff|reboot|halt|poweroff|tsdiscon|rwinsta)(?:\.exe)?\b/i, why: 'shuts down, reboots, disconnects, or logs the user out of their machine' },
     { re: /^(?:taskkill|tskill|pskill|kill|pkill|killall)(?:\.exe)?\b/i, why: 'kills processes the agent does not own — stop your OWN background processes with shell.bg.kill' },
     { re: /^schtasks(?:\.exe)?\b[\s\S]*?\s\/(?:create|change|delete|run)\b/i, why: 'creates or changes a Windows scheduled task (machine persistence that outlives StarNet)' },
     { re: /^reg(?:\.exe)?\s+(?:add|delete|import|load|unload|copy)\b/i, why: 'writes the Windows registry' },
@@ -339,11 +471,11 @@
     { re: /^netsh(?:\.exe)?\b/i, why: 'changes network / firewall configuration' },
     { re: /^net(?:\.exe)?\s+(?:user|localgroup|accounts|share|start|stop)\b/i, why: 'changes accounts, shares, or services' },
     { re: /^(?:setx|assoc|ftype)(?:\.exe)?\b/i, why: 'permanently changes environment variables or file associations' },
-    { re: /^(?:bcdedit|diskpart|format|chkdsk|cipher|vssadmin|wevtutil|powercfg|tzutil|w32tm|msg|mshta|wmic)(?:\.exe)?\b/i, why: 'system-level tool that alters or disrupts the machine' },
-    { re: /^(?:sudo|su|systemctl|launchctl|crontab|nvram|csrutil|diskutil)\b/i, why: 'system administration command' },
+    { re: /^(?:bcdedit|diskpart|format|chkdsk|cipher|vssadmin|wevtutil|powercfg|tzutil|w32tm|msg|mshta|wmic|displayswitch|xrandr|xinput|xset|chvt|ddcutil|pactl|amixer)(?:\.exe)?\b/i, why: 'system/display/input/audio tool that alters or disrupts the machine' },
+    { re: /^(?:sudo|su|systemctl|loginctl|launchctl|crontab|nvram|csrutil|diskutil|pmset|osascript)\b/i, why: 'system administration or interactive-session command' },
     // machine-altering PowerShell cmdlets — head-anchored so `echo restart-computer` (the word as an arg) is not a
     // trip, but `Restart-Computer`, `foo | Stop-Computer`, and `powershell -Command "Stop-Computer"` all are.
-    { re: /^(?:Stop-Computer|Restart-Computer|Register-ScheduledTask|New-ScheduledTask\w*|Stop-Process|Stop-Service|New-Service|Set-Service|Set-Date|Add-Computer|Set-ExecutionPolicy|Set-NetFirewall\w+|Disable-NetAdapter)\b/i, why: 'PowerShell cmdlet that alters machine state' }
+    { re: /^(?:Stop-Computer|Restart-Computer|Suspend-Computer|Register-ScheduledTask|New-ScheduledTask\w*|Stop-Process|Stop-Service|New-Service|Set-Service|Set-Date|Add-Computer|Set-ExecutionPolicy|Set-NetFirewall\w+|Disable-NetAdapter|Set-DisplayResolution|Set-Clipboard)\b/i, why: 'PowerShell cmdlet that alters machine or interactive-session state' }
   ];
   const MACHINE_GLOBAL_RULES = [
     { re: /\bHKEY_|(?:^|[\s"'`=(\\])HK(?:LM|CU|CR|U|CC)[:\\]/i, why: 'references a Windows registry hive' },
@@ -377,6 +509,22 @@
       || /--host(?:\s+--|\s*$)/i.test(c)) {
       return 'binds to ALL network interfaces — every device on the user\'s network could reach it; bind to 127.0.0.1';
     }
+    return null;
+  }
+
+  // One decision seam for every agent-controlled command runner. shell.exec and
+  // verify.run must stay in parity as new user-control floors are added.
+  function commandSafetyRisk(cmd, opts) {
+    opts = opts || {};
+    const dialect = opts.dialect || (opts.isWin === false ? 'posix' : undefined);
+    const visible = opensVisibleWindow(cmd, dialect);
+    if (visible) return { kind: 'visible-desktop', reason: visible };
+    const machine = breaksMachineState(cmd, dialect);
+    if (machine) return { kind: 'machine-state', reason: machine };
+    const network = exposesNetwork(cmd);
+    if (network) return { kind: 'network-exposure', reason: network };
+    const input = inputIsolationRisk(cmd, Object.assign({}, opts, { dialect }));
+    if (input) return { kind: 'user-control', reason: input };
     return null;
   }
 
@@ -503,13 +651,13 @@
     const sessions = new Map();   // H2.1: aid -> { cwd } — a persistent working dir that survives across calls (jail-clamped)
 
     const execTool = {
-      name: 'shell.exec', capability: 'workbench', scope: 'execute', requiresConsent: true,
+      name: 'shell.exec', capability: 'workbench', impact: 'workspace-process', scope: 'execute', requiresConsent: true,
       timeoutMs: MAX_MS + 10000,   // registry backstop ABOVE our own kill logic, so withTimeout never preempts the child-kill
       description: 'Run a shell command in your workspace directory and get back its combined stdout/stderr + exit code. '
         + 'Use it to run tests, builds, git, scripts — anything you would type in a terminal. Commands must NOT change the '
         + 'user\'s machine or screen: opening a window (start/explorer/headed browser), shutting down/rebooting, killing '
-        + 'processes, scheduled tasks, registry/service/firewall edits, and all-interfaces (0.0.0.0) binds are refused. To '
-        + 'DRIVE an installed app or open something for the user, use desktop.open (consent-gated), not `start`. Commands run INSIDE your own '
+        + 'processes, scheduled tasks, registry/service/firewall edits, and all-interfaces (0.0.0.0) binds are refused. '
+        + 'If a visible app/window is genuinely needed, ask the Commander to open it themselves; ordinary agent runs have no real-screen tool. Commands run INSIDE your own '
         + 'workspace folder, and your working directory PERSISTS across calls (a `cd` carries over). Absolute and parent (..) '
         + 'paths are refused in cmd; pass cwd to run from a specific existing folder instead. On Windows local shells, cwd accepts C:\\Users\\...; /c/Users/... is normalized for compatibility, but prefer the exact path the Commander gave you. Commands use cmd.exe syntax. Optional timeoutMs (default 30s, max 120s). Set background:true for a long-running process '
         + '(e.g. a dev server) — it returns immediately with a handle; check it with shell.bg.status, stop it with shell.bg.kill.',
@@ -521,13 +669,6 @@
         if (!cmd) throw new Error('empty command');
         const deny = escapesWorkspace(cmd);
         if (deny) throw new Error('refused: ' + deny);
-        const shellDialect = isWin ? 'cmd' : 'posix';
-        const visDeny = opensVisibleWindow(cmd, shellDialect);
-        if (visDeny) throw new Error('refused: ' + visDeny + ' — builds and checks run invisibly, never on the user\'s screen. Verify with the headless browser tools or curl; if the Commander explicitly asked to SEE something, use desktop.open or browser.navigate visible:true (consent-gated).');
-        const machineDeny = breaksMachineState(cmd, shellDialect);
-        if (machineDeny) throw new Error('refused: this command ' + machineDeny + '. Agent work stays inside your workspace and never changes the user\'s machine. If the task genuinely needs a machine change, surface it to the Commander to run themselves.');
-        const netDeny = exposesNetwork(cmd);
-        if (netDeny) throw new Error('refused: this command ' + netDeny + '.');
         const jailRoot = environment ? environment.ensureWorkspace(aid) : P.join(ROOT, aid);
         // H2.1: start in this agent's PERSISTED cwd (default = jail root). Defensive: only honor a stored cwd
         // that is still in-jail and still exists; otherwise fall back to the jail root.
@@ -543,6 +684,11 @@
           cwd = resolveShellCwd({ pathMod: P, fs: fs, requested: args.cwd, current: cwd, jailRoot: jailRoot, root: ROOT, isWin: isWin, allowExternal: environment ? environment.backendId === 'local' : false });
           sessions.set(aid, { cwd: cwd });
         }
+        const hostCwd = environment && typeof environment.workspaceRoot === 'function' && environment.backendId !== 'local'
+          ? environment.workspaceRoot(aid) : cwd;
+        const shellDialect = environment && environment.backendId !== 'local' ? 'posix' : (isWin ? 'cmd' : 'posix');
+        const safetyDeny = commandSafetyRisk(cmd, { cwd: hostCwd, fs: fs, pathMod: P, dialect: shellDialect, isWin });
+        if (safetyDeny) throw new Error('refused [' + safetyDeny.kind + ']: this command ' + safetyDeny.reason + '. StarNet task processes preserve the user\'s control of their computer; use browser.test_* for local UI/game verification.');
         if (!environment) { try { fs.mkdirSync(cwd, { recursive: true }); } catch (_) {} }
         // H2.2: a long-running process — hand it to the singleton bg manager (detached, ring-buffered, capped)
         // and return immediately. Inherits the persisted cwd. Still consent-gated (this IS shell.exec).
@@ -622,10 +768,10 @@
 
     return {
       execTool: execTool, bgStatusTool: bgStatusTool, bgKillTool: bgKillTool,
-      _internals: { escapesWorkspace: escapesWorkspace, opensVisibleWindow: opensVisibleWindow, breaksMachineState: breaksMachineState, exposesNetwork: exposesNetwork, killTree: killTree, safeAgentId: safeAgentId, normalizeWinCwd: normalizeWinCwd, resolveShellCwd: resolveShellCwd },
+      _internals: { escapesWorkspace: escapesWorkspace, opensVisibleWindow: opensVisibleWindow, inputIsolationRisk: inputIsolationRisk, commandSafetyRisk: commandSafetyRisk, workspaceCapturesInput: workspaceCapturesInput, projectScanRoot: projectScanRoot, breaksMachineState: breaksMachineState, exposesNetwork: exposesNetwork, killTree: killTree, safeAgentId: safeAgentId, normalizeWinCwd: normalizeWinCwd, resolveShellCwd: resolveShellCwd },
       register: function (reg) { reg.register(execTool); reg.register(bgStatusTool); reg.register(bgKillTool); return reg; }
     };
   }
 
-  return { makeShellTool: makeShellTool, runCommand: runCommand, escapesWorkspace: escapesWorkspace, opensVisibleWindow: opensVisibleWindow, breaksMachineState: breaksMachineState, exposesNetwork: exposesNetwork, safeAgentId: safeAgentId, buildMarkedCmd: buildMarkedCmd, parseMarker: parseMarker, withinJail: withinJail, normalizeWinCwd: normalizeWinCwd, resolveShellCwd: resolveShellCwd };
+  return { makeShellTool: makeShellTool, runCommand: runCommand, escapesWorkspace: escapesWorkspace, opensVisibleWindow: opensVisibleWindow, inputIsolationRisk: inputIsolationRisk, commandSafetyRisk: commandSafetyRisk, workspaceCapturesInput: workspaceCapturesInput, projectScanRoot: projectScanRoot, breaksMachineState: breaksMachineState, exposesNetwork: exposesNetwork, safeAgentId: safeAgentId, buildMarkedCmd: buildMarkedCmd, parseMarker: parseMarker, withinJail: withinJail, normalizeWinCwd: normalizeWinCwd, resolveShellCwd: resolveShellCwd };
 });

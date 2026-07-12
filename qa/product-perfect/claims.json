@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "cd5c73493e6a064c2769b2f815ad229970cba3ff",
+    "sourceCommit": "6daa9fde254e9ae36dbb890433d9c8679ede3df8",
     "pathSetSha256": "1838850606dd5ff7446f89767cc83ba394384f7e3cdcc981f3b820a4fe448d4a",
     "files": [
       {
@@ -628,8 +628,8 @@
       },
       {
         "path": "frontend/app/toolprops.js",
-        "bytes": 3241,
-        "sha256": "6854b810c2aab1b8bced197e955b1f54bf64aff84ba1a73075d02d06002f00a5"
+        "bytes": 3223,
+        "sha256": "b1010918bc148547f1eecf207f8b88a0a1a6d181907a07d060fccff582c37c21"
       },
       {
         "path": "frontend/app/topbar.js",
@@ -713,8 +713,8 @@
       },
       {
         "path": "frontend/app/workshopstore.js",
-        "bytes": 16735,
-        "sha256": "62be1a6a6d0bd85b3915727a314b5d96e2038e4bce4999b8bd39e6904625dc99"
+        "bytes": 16231,
+        "sha256": "cc259c1ddc0416e0830c75b7a59b723f36b99cf27389ee57d50fa83abbf3c377"
       },
       {
         "path": "frontend/app/worksignal.js",
@@ -2301,22 +2301,33 @@
     {
       "id": "W2-mcp-mutation-consent",
       "wave": "W2",
-      "item": "MCP mutating tools require consent while declared read-only tools may auto-run.",
+      "item": "Every custom MCP call requires an exact live per-call confirmation; local stdio additionally requires an isolated process broker.",
       "verdict": "SHIPPED",
       "disposition": "PROVEN",
       "ownerWave": "W2",
-      "qualification": "MCP translation maps readOnlyHint to requiresConsent.",
+      "qualification": "MCP annotations and transport are not trusted as proof of harmlessness: all connector tools are external-unknown, autonomous calls are absent, watched calls receive non-cacheable exact confirmation, and stdio defaults off without broker-proven isolation.",
       "authorityChecks": [
         {
           "kind": "contains",
           "path": "sidecar/mcp/translate.js",
-          "needle": "requiresConsent: !readOnly"
+          "needle": "impact: 'external-unknown'"
+        },
+        {
+          "kind": "contains",
+          "path": "sidecar/inputpolicy.js",
+          "needle": "unknown external effects require a watched, exact per-call confirmation"
+        },
+        {
+          "kind": "contains",
+          "path": "sidecar/mcp/transport.stdio.js",
+          "needle": "deps.userControlIsolated === true"
         }
       ],
       "refsChecked": [
         "trunk@ef16fa087ad872f9d266ecde8b72ef813cb9ca82",
         "branches@agent/pp-catalog-consent f33bae06",
-        "worktrees@git-worktree-list audited 2026-07-12"
+        "worktrees@git-worktree-list audited 2026-07-12",
+        "branch@agent/codex-input-isolation a439c164"
       ]
     },
     {

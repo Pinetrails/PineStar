@@ -62,6 +62,7 @@ test/grace.test.js
 test/shell-session.test.js
 test/shell-bg.test.js
 test/shell-visible-window.test.js
+test/shell-input-isolation.test.js
 test/shell-machine-state.test.js
 test/procledger.test.js
 test/inputguard.test.js
@@ -144,6 +145,7 @@ test/web.search.test.js
 test/browser.test.js
 test/desktop.test.js
 test/computer.test.js
+test/inputpolicy.test.js
 test/image.test.js
 test/attachments.test.js
 test/spotify.pkce.test.js

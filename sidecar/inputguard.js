@@ -1,19 +1,16 @@
-/* sidecar/inputguard.js — release a stuck cursor confinement (mouse-confinement incident, 2026-07-12).
+/* sidecar/inputguard.js - observe cursor confinement without changing global input state.
 
-   Windows keeps ONE global cursor clip rectangle (win32 ClipCursor). It is supposed to be released by
-   whoever set it — but when the setter dies without calling ClipCursor(NULL) (a pointer-lock game whose
-   browser was killed, a crashed test process), the user's REAL mouse stays walled into a small box with
-   nothing left alive to blame. In the incident the confinement survived closing StarNet entirely.
+   Windows keeps one global cursor clip rectangle. A previous recovery guard called
+   ClipCursor(NULL) at StarNet boot, shutdown, and E-STOP. Windows does not expose a reliable
+   owner for that rectangle, so doing so can release another application's legitimate pointer
+   lock and interfere with the user.
 
-   ensureFree(reason) reads GetClipCursor, compares it to the virtual screen (GetSystemMetrics 76-79), and
-   calls ClipCursor(NULL) only when the rect is actually smaller than the desktop. One PowerShell one-shot,
-   win32 only (no cursor clip concept to un-stick elsewhere); non-win32 resolves honestly as skipped.
+   observe(reason) is deliberately read-only. It reads GetClipCursor and the virtual-screen
+   bounds, reports confinement, and NEVER releases or changes it. A future emergency release
+   must live in a trusted native, direct-user-action path that can prove ownership.
 
-   Wired at: sidecar boot (after the proc-ledger orphan sweep), graceful shutdown, and E-STOP. Deliberately
-   NOT run periodically — while the user is playing their own game, its legitimate confinement is theirs;
-   we only clean at harness-lifecycle moments, where a constrained clip is either ours or abandoned.
-
-     makeInputGuard({ runPs?, platform?, log? }) -> { ensureFree(reason) -> Promise<{confined,cleared,rect}> } */
+     makeInputGuard({ runPs?, platform?, log? })
+       -> { observe(reason) -> Promise<{confined,mutated:false,rect}> } */
 'use strict';
 (function (root, factory) {
   const api = factory();
@@ -29,7 +26,6 @@ using System.Runtime.InteropServices;
 public struct SNRECT { public int Left, Top, Right, Bottom; }
 public class SNInputGuard {
   [DllImport("user32.dll")] public static extern bool GetClipCursor(out SNRECT rect);
-  [DllImport("user32.dll")] public static extern bool ClipCursor(IntPtr rect);
   [DllImport("user32.dll")] public static extern int GetSystemMetrics(int index);
 }
 "@
@@ -38,9 +34,7 @@ $r = New-Object SNRECT
 $vx = [SNInputGuard]::GetSystemMetrics(76); $vy = [SNInputGuard]::GetSystemMetrics(77)
 $vw = [SNInputGuard]::GetSystemMetrics(78); $vh = [SNInputGuard]::GetSystemMetrics(79)
 $confined = ($r.Left -gt $vx) -or ($r.Top -gt $vy) -or ($r.Right -lt ($vx + $vw)) -or ($r.Bottom -lt ($vy + $vh))
-$cleared = $false
-if ($confined) { $cleared = [SNInputGuard]::ClipCursor([IntPtr]::Zero) }
-[Console]::Out.Write((@{ confined = [bool]$confined; cleared = [bool]$cleared; rect = @($r.Left, $r.Top, $r.Right, $r.Bottom); screen = @($vx, $vy, $vw, $vh) } | ConvertTo-Json -Compress))
+[Console]::Out.Write((@{ confined = [bool]$confined; mutated = $false; rect = @($r.Left, $r.Top, $r.Right, $r.Bottom); screen = @($vx, $vy, $vw, $vh) } | ConvertTo-Json -Compress))
 `;
 
   function defaultRunPs() {
@@ -60,19 +54,19 @@ if ($confined) { $cleared = [SNInputGuard]::ClipCursor([IntPtr]::Zero) }
     const log = typeof deps.log === 'function' ? deps.log : () => {};
     const runPs = deps.runPs || (platform === 'win32' ? defaultRunPs() : null);
 
-    async function ensureFree(reason) {
-      if (platform !== 'win32' || !runPs) return { confined: false, cleared: false, skipped: true };
+    async function observe(reason) {
+      if (platform !== 'win32' || !runPs) return { confined: false, mutated: false, skipped: true };
       let out;
       try { out = JSON.parse(await runPs()); }
-      catch (e) { return { confined: false, cleared: false, error: String((e && e.message) || e) }; }
-      const res = { confined: !!(out && out.confined), cleared: !!(out && out.cleared), rect: (out && out.rect) || null };
+      catch (e) { return { confined: false, mutated: false, error: String((e && e.message) || e) }; }
+      const res = { confined: !!(out && out.confined), mutated: false, rect: (out && out.rect) || null };
       if (res.confined) {
-        log('[input-guard] cursor was confined to [' + (res.rect || []).join(',') + '] at ' + (reason || 'check') + (res.cleared ? ' — confinement released' : ' — RELEASE FAILED'));
+        log('[input-guard] cursor is confined to [' + (res.rect || []).join(',') + '] at ' + (reason || 'check') + ' - observed only; global input state left untouched');
       }
       return res;
     }
 
-    return { ensureFree, _internals: { SCRIPT } };
+    return { observe, _internals: { SCRIPT } };
   }
 
   return { makeInputGuard, _internals: { SCRIPT } };

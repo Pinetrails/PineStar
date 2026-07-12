@@ -83,12 +83,16 @@ function startMockOpenRouter() {
           let parsed = {}, msgs = [];
           try { parsed = JSON.parse(body); msgs = parsed.messages || []; } catch (_) {}
           const hasToolResult = msgs.some(m => m && m.role === 'tool');
+          const hasMcpTool = (parsed.tools || []).some(t => t && t.function && t.function.name === 'mcp__demo__lookup');
           requests.push(parsed);
 
           res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' });
-          if (!hasToolResult) {
+          if (!hasToolResult && hasMcpTool) {
             res.write('data: ' + JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, id: 'mcp_lookup', type: 'function', function: { name: 'mcp__demo__lookup', arguments: JSON.stringify({ query: 'alpha' }) } }] } }] }) + '\n\n');
             res.write('data: ' + JSON.stringify({ choices: [{ finish_reason: 'tool_calls', delta: {} }], usage: { prompt_tokens: 8, completion_tokens: 4, total_tokens: 12 } }) + '\n\n');
+          } else if (!hasToolResult) {
+            res.write('data: ' + JSON.stringify({ choices: [{ delta: { content: 'MCP unavailable in autonomous run' } }] }) + '\n\n');
+            res.write('data: ' + JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop' }], usage: { prompt_tokens: 8, completion_tokens: 4, total_tokens: 12 } }) + '\n\n');
           } else {
             res.write('data: ' + JSON.stringify({ choices: [{ delta: { content: 'MCP answer delivered' } }] }) + '\n\n');
             res.write('data: ' + JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop' }], usage: { prompt_tokens: 8, completion_tokens: 4, total_tokens: 12 } }) + '\n\n');
@@ -267,13 +271,12 @@ async function readNdjson(res) {
     const run = await fetch(B + '/api/cron/run', { method: 'POST', headers, body: JSON.stringify({ id: job.id }) });
     A.eq(run.status, 200, 'Run Now returns a stream');
     const panel = await readNdjson(run);
-    A.ok(panel.some(e => e.name === 'agent.tool_call' && e.payload && e.payload.name === 'mcp__demo__lookup'), 'panel stream includes the MCP tool call');
-    A.ok(panel.filter(e => e.name === 'agent.token').map(e => e.payload.delta).join('').indexOf('MCP answer delivered') >= 0, 'panel stream includes the post-MCP model answer');
-    A.ok(mcp.calls.some(c => c.msg && c.msg.method === 'tools/call' && c.msg.params && c.msg.params.name === 'lookup' && c.msg.params.arguments.query === 'alpha'), 'MCP server received tools/call with model arguments');
+    A.ok(!panel.some(e => e.name === 'agent.tool_call' && e.payload && e.payload.name === 'mcp__demo__lookup'), 'autonomous panel stream never calls an unknown external tool');
+    A.ok(panel.filter(e => e.name === 'agent.token').map(e => e.payload.delta).join('').indexOf('MCP unavailable in autonomous run') >= 0, 'panel stream truthfully completes without MCP authority');
+    A.ok(!mcp.calls.some(c => c.msg && c.msg.method === 'tools/call'), 'autonomous run never reaches the MCP server tool endpoint');
     A.ok(mcp.calls.some(c => c.headers && c.headers.authorization === 'Bearer mcp-secret-token'), 'MCP transport sent bearer token to the configured connector');
-    A.ok(llm.requests.some(r => (r.tools || []).some(t => t.function && t.function.name === 'mcp__demo__lookup')), 'model request exposed the discovered MCP tool');
+    A.ok(llm.requests.every(r => !(r.tools || []).some(t => t.function && t.function.name === 'mcp__demo__lookup')), 'autonomous model request does not expose the unknown MCP tool');
 
-    await sse.waitFor(events => events.some(e => e.name === 'agent.tool_call' && e.payload && e.payload.name === 'mcp__demo__lookup'), 5000, 'SSE MCP tool call');
     await sse.waitFor(events => events.some(e => e.name === 'agent.run.end' && e.payload && e.payload.agentId === 'mcp-agent'), 5000, 'SSE run end');
   } finally {
     if (sse) sse.close();

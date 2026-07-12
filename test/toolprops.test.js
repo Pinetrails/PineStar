@@ -39,7 +39,8 @@ A.eq(map('mcp__github__search_issues'), null, 'mcp__ tools stay with the connect
 A.eq(map('shell.exec'), null, 'shell.exec stays with the workbench pulse');
 A.eq(map('shell.bg.status'), null, 'shell.bg.* stays with the workbench');
 A.eq(map('verify.run'), null, 'verify.run stays with the workbench pulse');
-A.eq(map('computer.use'), null, 'computer.use stays with the workbench');
+A.eq(map('browser.test_input'), null, 'browser.test_* stays with the workbench pulse');
+A.eq(map('computer.use'), null, 'legacy computer.use has no floor prop pulse');
 A.eq(map('team.dispatch'), null, 'team.* stays with the handoff boxes');
 A.eq(map('routine.create'), null, 'routine.* has no cap-prop pulse');
 A.eq(map('model.chat'), null, 'model.chat is the compute gate, not a prop tool');

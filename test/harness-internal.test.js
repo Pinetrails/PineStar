@@ -80,7 +80,7 @@ A.ok(/prefer fs_patch for multi-line edits/.test(sidecar), 'work discipline pref
 A.ok(/Avoid temporary patch scripts/.test(sidecar), 'work discipline steers away from throwaway patch scripts');
 A.ok(/run the narrowest real verification/.test(sidecar), 'work discipline requires targeted verification');
 A.ok(/shell_exec background:true/.test(sidecar) && /shell_bg_status/.test(sidecar), 'work discipline checks background dev servers');
-A.ok(/browser_navigate plus browser_console\/browser_snapshot\/browser_vision[\s\S]*local\/private dev servers/.test(sidecar), 'work discipline asks browser-capable runs to verify reachable UI/browser behavior without looping on blocked localhost');
+A.ok(/browser_navigate plus browser_console\/browser_snapshot\/browser_vision[\s\S]*browser_test_navigate\(serverId\)[\s\S]*browser_test_snapshot\/browser_test_state\/browser_test_input/.test(sidecar), 'work discipline separates public browsing from owned local synthetic UI verification');
 A.ok(/Final reports must name changed files, verification commands\/results/.test(sidecar), 'work discipline requires concrete final evidence');
 
 // Task doctrine (2026-07-08 Hermes-parity): the general operating loop — proven outcomes, the quietest-path

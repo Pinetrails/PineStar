@@ -3,6 +3,9 @@
    capability projection, and graceful Chromium-missing errors. */
 'use strict';
 const A = require('./_assert.js');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 const { makeRegistry } = require('../sidecar/tools/registry.js');
 const { resolveTools } = require('../sidecar/capability/resolve.js');
 const { makeCapCtx } = require('../sidecar/capability/capGate.js');
@@ -15,7 +18,7 @@ async function rejects(p, re, msg) {
 }
 
 function fakeDriver() {
-  const log = { clicked: [], typed: [], pressed: [], scrolled: [], navigated: [] };
+  const log = { clicked: [], typed: [], pressed: [], scrolled: [], navigated: [], testInput: [], evaluated: [], states: [] };
   let pageText = 'Example page text';
   return {
     log,
@@ -36,7 +39,14 @@ function fakeDriver() {
     getText: async () => pageText,
     consoleLog: () => [{ type: 'warning', text: 'careful' }],
     handleDialog: async action => ({ type: action === 'dismiss' ? 'confirm' : 'alert', message: 'hello' }),
-    screenshot: async () => Buffer.from('png').toString('base64')
+    screenshot: async () => Buffer.from('png').toString('base64'),
+    testInput: async action => { log.testInput.push(action); return 'synthetic ' + action.action; },
+    testEval: async expression => {
+      log.evaluated.push(expression);
+      if (String(expression).trim() === 'location.href') return log.navigated[log.navigated.length - 1] || 'about:blank';
+      return { ok: true, expression };
+    },
+    testState: async selector => { log.states.push(selector); return { syntheticReady: true, pointerLockTag: 'CANVAS', element: { exists: true } }; }
   };
 }
 
@@ -46,13 +56,18 @@ function fakeDriver() {
   A.throws(() => T.assertSafeUrl('http://localhost:3000'), 'localhost URL is blocked');
   A.throws(() => T.assertSafeUrl('http://192.168.0.5'), 'private IPv4 URL is blocked');
   A.throws(() => T.assertSafeUrl('https://printer.lan'), 'intranet suffix URL is blocked');
+  A.notThrows(() => T.assertLoopbackUrl('http://127.0.0.1:5173/game'), 'local test route accepts numeric loopback');
+  A.notThrows(() => T.assertLoopbackUrl('http://localhost:4173/'), 'local test route accepts localhost');
+  A.throws(() => T.assertLoopbackUrl('http://192.168.0.5'), 'local test route never widens to the LAN');
+  A.throws(() => T.assertLoopbackUrl('https://example.com'), 'local test route accepts loopback only');
 
   const driver = fakeDriver();
   const B = makeBrowserTools({ driver, vision: async ({ question }) => 'vision answer: ' + question });
   const names = B.tools.map(t => t.name).sort();
   A.eq(names, [
     'browser.back', 'browser.click', 'browser.console', 'browser.dialog', 'browser.get_text',
-    'browser.navigate', 'browser.press', 'browser.scroll', 'browser.snapshot', 'browser.type', 'browser.vision'
+    'browser.navigate', 'browser.press', 'browser.scroll', 'browser.snapshot', 'browser.test_input',
+    'browser.test_navigate', 'browser.test_snapshot', 'browser.test_state', 'browser.type', 'browser.vision'
   ], 'browser action surface is complete');
   A.eq(B.tools.find(t => t.name === 'browser.click').requiresConsent, true, 'click is consent-gated');
   A.eq(B.tools.find(t => t.name === 'browser.snapshot').requiresConsent, false, 'snapshot is read-only');
@@ -62,16 +77,36 @@ function fakeDriver() {
     const out = await B.tools.find(t => t.name === 'browser.navigate').run({ url: 'https://example.com' }, {});
     A.ok(/https:\/\/example\.com/.test(out.content), 'navigate returns the final public URL');
     await rejects(B.session.navigate('https://redirect-private.example'), /blocked unsafe redirect/, 'unsafe redirect is refused explicitly');
+    const local = await B.tools.find(t => t.name === 'browser.test_navigate').run({ url: 'http://127.0.0.1:5173/' }, {});
+    A.ok(/synthetic-input isolated|headless/i.test(local.content), 'local test navigation reports its isolated posture');
+    await B.tools.find(t => t.name === 'browser.test_input').run({ action: 'key_down', key: 'KeyW' }, {});
+    await B.tools.find(t => t.name === 'browser.test_state').run({ selector: '#hud' }, {});
+    const localSnap = await B.tools.find(t => t.name === 'browser.test_snapshot').run({ limit: 5 }, {});
+    A.ok(/button|link|textbox/.test(localSnap.content), 'local snapshot exposes synthetic-click coordinates without arbitrary JavaScript');
+    A.eq(driver.log.testInput[0].action, 'key_down', 'local game input routes through the synthetic driver');
+    A.eq(driver.log.states[0], '#hud', 'local game state inspection routes through the bounded CDP state reader');
+
+    const ownedDriver = fakeDriver();
+    const owned = makeBrowserTools({ driver: ownedDriver, requireOwnedServer: true, ownsLocalUrl: async o => o.serverId === 'bg_1' });
+    const ownedNav = owned.tools.find(t => t.name === 'browser.test_navigate');
+    A.ok(ownedNav.schema.required.includes('serverId'), 'production local navigation requires an owned background-server handle');
+    await rejects(ownedNav.run({ url: 'http://127.0.0.1:5173/', serverId: 'bg_other' }, { agentId: 'ag' }), /not proven to belong/i, 'unowned localhost service is refused');
+    await ownedNav.run({ url: 'http://127.0.0.1:5173/', serverId: 'bg_1' }, { agentId: 'ag' });
+    A.eq(ownedDriver.log.navigated.length, 1, 'owned background service may enter the isolated browser');
+    ownedDriver.log.navigated.push('http://127.0.0.1:9999/admin');
+    await rejects(owned.tools.find(t => t.name === 'browser.test_input').run({ action: 'click', x: 1, y: 1 }, {}), /left its owned server origin/i, 'synthetic input is disabled if the page leaves its owned origin');
+    A.eq(ownedDriver.log.testInput.length, 0, 'origin drift is refused before another input event dispatches');
   }
 
   // refs expire after the next snapshot
   {
     const snap = await B.tools.find(t => t.name === 'browser.snapshot').run({}, {});
-    A.ok(/b1 \[button\] Search/.test(snap.content), 'snapshot returns stable element refs');
-    const click = await B.tools.find(t => t.name === 'browser.click').run({ ref: 'b1' }, {});
+    const searchRef = (snap.content.match(/(b\d+) \[button\] Search/) || [])[1];
+    A.ok(!!searchRef, 'snapshot returns stable element refs');
+    const click = await B.tools.find(t => t.name === 'browser.click').run({ ref: searchRef }, {});
     A.ok(/clicked Search/.test(click.content), 'click uses a snapshot ref');
     await B.session.snapshot();
-    await rejects(B.session.click('b1'), /stale browser ref/, 'old refs expire after a new snapshot');
+    await rejects(B.session.click(searchRef), /stale browser ref/, 'old refs expire after a new snapshot');
   }
 
   // type/press/scroll/back/console/dialog/get_text/vision all route through the driver
@@ -107,6 +142,9 @@ function fakeDriver() {
     const noDish = resolveTools('ag', { agents: { ag: { id: 'ag', room: 'r' } }, rooms: { r: { id: 'r', objects: [{ objectType: 'computer' }] } } });
     const denied = await reg.dispatch(call('browser.navigate', { url: 'https://example.com' }), makeCapCtx(noDish));
     A.eq(denied.summary, 'capdenied', 'without a dish, browser tools are capability-denied');
+
+    const workbench = resolveTools('ag', { agents: { ag: { id: 'ag', room: 'r' } }, rooms: { r: { id: 'r', objects: [{ objectType: 'computer' }, { objectType: 'workbench' }] } } });
+    A.ok(workbench.tools.indexOf('browser.test_navigate') >= 0 && workbench.tools.indexOf('browser.test_input') >= 0 && workbench.tools.indexOf('browser.test_state') >= 0, 'workbench grants the isolated local-game CDP surface');
   }
 
   // Chromium-missing degrades as a clean tool error through dispatch
@@ -136,10 +174,10 @@ function fakeDriver() {
   //      screen; a visible window exists ONLY while the Commander asked to watch) ----
   {
     const made = [];   // capture every driver launch + its mode via the makeDriver seam
-    const mkSession = (env) => T.makeBrowserSession({
+    const mkSession = (env, extra) => T.makeBrowserSession(Object.assign({
       env: env || {},
       makeDriver: (d) => { const drv = fakeDriver(); drv.headed = !!d.headed; drv.visible = () => !!d.headed; drv.close = () => { drv.closed = true; }; made.push(drv); return drv; }
-    });
+    }, extra || {}));
 
     const s = mkSession();
     await s.navigate('https://example.com');                        // plain research navigate
@@ -165,22 +203,120 @@ function fakeDriver() {
     const s2 = mkSession({ SKYNET_BROWSER_HEADLESS: '1' });
     await s2.navigate('https://example.com', { visible: true });
     A.eq(made[made.length - 1].headed, false, 'SKYNET_BROWSER_HEADLESS=1 wins over visible:true');
+
+    const s3 = mkSession({}, { forceHeadless: true });
+    await s3.navigate('https://example.com', { visible: true });
+    A.eq(made[made.length - 1].headed, false, 'host forceHeadless policy wins over model-controlled visible:true');
   }
 
-  // the tool surface: browser.navigate accepts visible and reports visibility truthfully
+  // The default tool surface is fail-closed: no model-controlled visible flag. A separately
+  // constructed attended host may opt in, but runOnce never does for tasks/autonomy/tests.
   {
     const made = [];
     const B2 = makeBrowserTools({
       makeDriver: (d) => { const drv = fakeDriver(); drv.headed = !!d.headed; drv.visible = () => !!d.headed; drv.close = () => {}; made.push(drv); return drv; }
     });
     const nav = B2.tools.find(t => t.name === 'browser.navigate');
-    A.ok(nav.schema.properties.visible, 'browser.navigate exposes the visible flag');
-    A.ok(/HEADLESS BY DEFAULT/i.test(nav.description), 'the description states the headless default');
+    A.eq(nav.schema.properties.visible, undefined, 'ordinary task browser schema cannot request a visible window');
+    A.ok(/HEADLESS/i.test(nav.description), 'the description states the headless posture');
     const r1 = await nav.run({ url: 'https://example.com' }, {});
     A.ok(/headless — not visible/.test(r1.content), 'a research navigate reports headless honestly');
-    const r2 = await nav.run({ url: 'https://example.com', visible: true }, {});
-    A.ok(/visible window/.test(r2.content), 'a visible:true navigate reports the window on screen');
-    A.eq(made.map(d => d.headed), [false, true], 'headless first, headed only on request');
+    await rejects(nav.run({ url: 'https://example.com', visible: true }, {}), /visible.*disabled|headless-only/i, 'forged visible:true is refused by host policy');
+    A.eq(made.map(d => d.headed), [false], 'ordinary task browsing never creates a headed driver');
+
+    const attended = makeBrowserTools({
+      allowVisible: true,
+      makeDriver: (d) => { const drv = fakeDriver(); drv.headed = !!d.headed; drv.visible = () => !!d.headed; drv.close = () => {}; made.push(drv); return drv; }
+    });
+    const attendedNav = attended.tools.find(t => t.name === 'browser.navigate');
+    A.ok(attendedNav.schema.properties.visible, 'a separately constructed attended surface may expose visible');
+    const r2 = await attendedNav.run({ url: 'https://example.com', visible: true }, {});
+    A.ok(/visible window/.test(r2.content), 'explicit attended surface reports its visible window truthfully');
+  }
+
+  // Pointer/keyboard locks are emulated inside the CDP page before navigation; the native
+  // browser implementation (and therefore Win32 ClipCursor) is never reached.
+  A.ok(/requestPointerLock/.test(T.SYNTHETIC_INPUT_BOOTSTRAP), 'isolation bootstrap overrides requestPointerLock');
+  A.ok(/exitPointerLock/.test(T.SYNTHETIC_INPUT_BOOTSTRAP), 'isolation bootstrap overrides exitPointerLock');
+  A.ok(/requestFullscreen/.test(T.SYNTHETIC_INPUT_BOOTSTRAP) && /exitFullscreen/.test(T.SYNTHETIC_INPUT_BOOTSTRAP), 'isolation bootstrap emulates fullscreen without a platform transition');
+  A.ok(/keyboard/.test(T.SYNTHETIC_INPUT_BOOTSTRAP) && /lock/.test(T.SYNTHETIC_INPUT_BOOTSTRAP), 'isolation bootstrap neutralizes keyboard lock');
+  A.ok(/wakeLock/.test(T.SYNTHETIC_INPUT_BOOTSTRAP) && /orientation/.test(T.SYNTHETIC_INPUT_BOOTSTRAP), 'isolation bootstrap neutralizes wake/orientation locks');
+  A.ok(/Object\.freeze\(attestation\)/.test(T.SYNTHETIC_INPUT_BOOTSTRAP), 'page code cannot forge the synthetic-isolation ready attestation');
+  A.ok(/getOwnPropertyDescriptor\(Element\.prototype,'requestPointerLock'\)/.test(T.makeCdpDriver.toString()), 'navigation verifies the actual non-writable pointer-lock descriptor');
+  A.ok(/getOwnPropertyDescriptor\(Element\.prototype,'requestFullscreen'\)/.test(T.makeCdpDriver.toString()), 'navigation verifies the actual non-writable fullscreen descriptor');
+
+  // Drive the real CDP adapter against an in-memory protocol peer: the bootstrap must be
+  // registered BEFORE Page.navigate, and the launched process must stay headless/muted.
+  {
+    const sent = [], launches = [];
+    let currentUrl = 'about:blank', isolationReady = true;
+    const fakeProc = pid => {
+      let close;
+      return { pid, on(ev, fn) { if (ev === 'close') close = fn; }, kill() { if (close) queueMicrotask(() => close(0)); } };
+    };
+    class FakeWS {
+      constructor() { this.handlers = {}; FakeWS.last = this; setTimeout(() => this.fire('open', {}), 0); }
+      addEventListener(name, fn) { (this.handlers[name] = this.handlers[name] || []).push(fn); }
+      fire(name, value) { for (const fn of this.handlers[name] || []) fn(value); }
+      send(raw) {
+        const m = JSON.parse(raw); sent.push(m);
+        if (m.method === 'Page.navigate') currentUrl = m.params.url;
+        let value = currentUrl;
+        if (m.method === 'Runtime.evaluate' && /return \{ready:/.test(String(m.params && m.params.expression || ''))) {
+          value = { ready: isolationReady, error: isolationReady ? null : 'simulated bootstrap refusal' };
+        }
+        const result = m.method === 'Runtime.evaluate' ? { result: { value } } : {};
+        setTimeout(() => this.fire('message', { data: JSON.stringify({ id: m.id, result }) }), 0);
+      }
+      close() {}
+    }
+    const d = T.makeCdpDriver({
+      chrome: 'fake-chrome.exe', forceHeadless: true, syntheticInputOnly: true, timeoutMs: 1000, cdpPort: 9347,
+      fetchImpl: async () => ({ json: async () => [{ type: 'page', webSocketDebuggerUrl: 'ws://fake' }] }),
+      WebSocketImpl: FakeWS,
+      spawn: (exe, args) => { launches.push({ exe, args }); return fakeProc(42); }
+    });
+    await d.navigate('http://127.0.0.1:5173/');
+    const installAt = sent.findIndex(m => m.method === 'Page.addScriptToEvaluateOnNewDocument');
+    const navAt = sent.findIndex(m => m.method === 'Page.navigate');
+    A.ok(installAt >= 0 && installAt < navAt, 'synthetic input bootstrap is installed before navigation');
+    A.ok(/requestPointerLock/.test(sent[installAt].params.source), 'CDP installs the pointer-lock override source');
+    A.ok(/state\.ready/.test(sent[installAt].params.source), 'pointer-lock bootstrap exposes a verifiable ready marker');
+    A.ok(launches[0].args.some(a => /^--headless/.test(a)) && launches[0].args.includes('--mute-audio'), 'CDP browser process is headless and muted');
+    A.ok(!launches[0].args.includes('--new-window'), 'synthetic test browser never requests a window');
+    A.ok(sent.some(m => m.method === 'Target.setAutoAttach' && m.params.waitForDebuggerOnStart === true), 'new targets are paused before scripts can reach native input APIs');
+    FakeWS.last.fire('message', { data: JSON.stringify({ method: 'Target.attachedToTarget', params: { sessionId: 'popup-session', targetInfo: { type: 'page', targetId: 'popup-target' } } }) });
+    await new Promise(resolve => setTimeout(resolve, 10));
+    A.ok(sent.some(m => m.method === 'Target.closeTarget' && m.params.targetId === 'popup-target'), 'unexpected popup target is closed while paused');
+    await d.close();
+
+    isolationReady = false; currentUrl = 'about:blank'; sent.length = 0;
+    const refused = T.makeCdpDriver({
+      chrome: 'fake-chrome.exe', forceHeadless: true, syntheticInputOnly: true, timeoutMs: 1000, cdpPort: 9348,
+      fetchImpl: async () => ({ json: async () => [{ type: 'page', webSocketDebuggerUrl: 'ws://fake-refused' }] }),
+      WebSocketImpl: FakeWS,
+      spawn: () => fakeProc(43)
+    });
+    await rejects(refused.navigate('http://127.0.0.1:5173/'), /isolation failed to install.*simulated bootstrap refusal/i, 'navigation fails closed before input when the lock shim is not proven');
+    A.ok(sent.some(m => m.method === 'Page.navigate' && m.params.url === 'about:blank'), 'failed isolation navigates away from the unshimmed page');
+    await refused.close();
+
+    const privateProfile = fs.mkdtempSync(path.join(os.tmpdir(), 'starnet-cdp-owner-'));
+    const fetched = [], privateLaunches = [];
+    isolationReady = true; currentUrl = 'about:blank'; sent.length = 0;
+    const privatePort = T.makeCdpDriver({
+      chrome: 'fake-chrome.exe', forceHeadless: true, syntheticInputOnly: true, timeoutMs: 1000,
+      cdpPort: 0, profileDir: privateProfile,
+      fetchImpl: async url => { fetched.push(url); return { json: async () => [{ type: 'page', webSocketDebuggerUrl: 'ws://owned-private' }] }; },
+      WebSocketImpl: FakeWS,
+      spawn: (exe, args) => { privateLaunches.push(args); fs.writeFileSync(path.join(privateProfile, 'DevToolsActivePort'), '45678\n/devtools/browser/private\n'); return fakeProc(44); }
+    });
+    await privatePort.navigate('http://127.0.0.1:5173/');
+    A.ok(privateLaunches[0].includes('--remote-debugging-port=0'), 'production mode asks Chromium for an ephemeral CDP port');
+    A.ok(fetched.some(u => /127\.0\.0\.1:45678\/json\/list/.test(u)), 'driver attaches only through the port written by its private profile');
+    A.eq(privatePort.attachedPort(), 45678, 'driver reports the privately owned attached port');
+    await privatePort.close();
+    fs.rmSync(privateProfile, { recursive: true, force: true });
   }
 
   A.report('browser.test');

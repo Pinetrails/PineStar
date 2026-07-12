@@ -10,9 +10,8 @@
      mcpTool : { name, description?, inputSchema?, annotations? }   // one tools/list entry
      call    : (toolName, args) => Promise<{ content, isError }>     // bound MCP callTool for THIS connector
 
-   Consent posture: an MCP server is an OUTWARD integration the Commander explicitly placed +
-   configured, so read-only tools (annotations.readOnlyHint) auto-allow (like web_search); every
-   other MCP tool is treated as mutating/execute and routed through the consent broker. */
+   Consent posture: MCP annotations are untrusted metadata. Every connector tool is an
+   external-unknown effect that requires an exact, live, non-cacheable per-call confirmation. */
 'use strict';
 (function (root, factory) {
   const api = factory();
@@ -90,7 +89,10 @@
       scope: readOnly ? 'read' : 'execute',
       readOnly: readOnly,
       capability: 'mcp:' + sanitizePart(connectorId),   // lets registry.list() grant a whole connector by capId
-      requiresConsent: !readOnly,
+      // Transport and server-supplied readOnlyHint cannot prove absence of local/user effects.
+      // Every custom connector call receives an exact non-cacheable live confirmation.
+      impact: 'external-unknown',
+      requiresConsent: o.localProcess === true || !readOnly,
       network: true,                                     // every remote MCP call is an outward network effect
       timeoutMs: o.timeoutMs || 0,                       // 0 -> inherit the host's per-tool timeout (CAPS.toolTimeoutMs)
       run: async function (args, ctx) {

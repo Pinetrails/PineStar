@@ -34,6 +34,9 @@ debugging or claiming anything done. Companions: [BRAIN.md](BRAIN.md) · [DECISI
 - **The installed app's UI is compiled into the exe** (webview loads `tauri.localhost`).
   Patching the repo/folder NEVER changes the installed UI — only an exe swap/reinstall does.
   The only proof of installed-UI behavior is CDP-attach (`--remote-debugging-port`).
+- **The installed sidecar is bundled at desktop build time too.** Editing `sidecar/` in the repo does
+  not change `%LOCALAPPDATA%\StarNet\sidecar`. A sidecar safety fix is not shipped until the desktop
+  app is rebuilt/reinstalled and the installed bundle is live-proven.
 - **WebView2 caches the embedded frontend** in `EBWebView\Default\{Cache,Code Cache}` and
   never revalidates — V8 can run OLD bytecode against NEW data (the 7/6 "missing agents"
   incident: data was never lost; a plain relaunch after cache purge healed it). Hot patches
@@ -105,6 +108,38 @@ debugging or claiming anything done. Companions: [BRAIN.md](BRAIN.md) · [DECISI
   win32 `foreground()` probe, `expectApp` match, and typing into a StarNet-titled window is
   hard-refused). LAW: a visible-screen tool is a last resort the agent must justify, and
   new loud tools ship with "when NOT to use me" text + the doctrine updated.
+
+- **Headless CDP is not automatically physical-input isolation (2026-07-12 FPS incident).**
+  Transcript forensics found zero `computer.use` calls: Puppeteer/CDP clicked a headless game, then
+  the page's real `requestPointerLock()` reached Chromium's Win32 `ClipCursor` path. Synthetic click
+  events are insufficient while page APIs can acquire native pointer/keyboard locks. Local game/UI
+  tests must use the owned, forced-headless `browser.test_*` path, install and verify lock emulation
+  before navigation, block unshimmed new targets, dispatch CDP/page input only, and await browser exit.
+  Boot/shutdown/E-STOP releases are recovery, not protection during a live run. Verify continuously
+  with `GetClipCursor` + `GetCursorPos`, use `GetLastInputInfo` to reject user-contaminated receipts,
+  and refuse to start if the cursor is already confined. Ordinary runs now expose no real-screen or
+  physical-input tool; a future attended channel must be separate and host-minted.
+
+- **Cleanup is still interference when it mutates unowned global state.** Calling
+  `ClipCursor(NULL)` at boot, shutdown, or E-STOP can release confinement owned by the user's game,
+  even when intended as recovery from StarNet. Observe global state, reap only processes StarNet can
+  prove it owns, and never “restore” desktop/input/session state without an ownership receipt.
+
+- **A token, renderer IPC call, or tool annotation is not a human gesture.** Same-user children can
+  inherit API/provider secrets; renderer script can invoke native commands; MCP servers can lie with
+  `readOnlyHint`. Strip host credentials from children, keep OS-launch routes inert, classify all custom
+  connectors as unknown, and require an exact non-cacheable live confirmation at the host boundary.
+
+- **Scan the process that will run, not a convenient parent project.** `verify.run` once executed from
+  `environment.getCwd()` while inspecting `workspaceRoot()`, and project-root discovery selected the
+  outermost monorepo marker. A nested package could therefore hide its scripts. Local command safety
+  inspection must use the actual cwd and the nearest project marker before process creation.
+
+- **Same-session arbitrary code defeats denylist guarantees.** Renamed binaries, FFI, dynamic code,
+  or a novel OS API can bypass command-pattern guards. Job Objects help with process lifetime but do not
+  provide a non-input desktop or sufficient security boundary. Unknown code must run under an OS-proven
+  noninteractive worker (restricted token/private desktop, container, or VM) or remain disabled; describe
+  regex and environment pins as defense in depth, never as a literal “never touches the PC” theorem.
 
 - **Never destroy the last copy of a secret without read-back proof of its new home.**
   The 2026-07-07 Telegram-token escape: desktop "keychain migration" stripped the plaintext

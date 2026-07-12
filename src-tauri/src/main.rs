@@ -1024,11 +1024,14 @@ fn sidecar_command(state: &AppState, entry: &Path, node: &Path) -> Command {
         .env("SKYNET_API_TOKEN", &state.api_token)
         .env("STARNET_WORKSPACES", state.workspaces.as_os_str())
         .env("SKYNET_WORKSPACES", state.workspaces.as_os_str())
-        // Tells the sidecar it is running under the real desktop shell (a visible
-        // WebView2 with a live screen), so the win32 computer-use driver defaults ON.
-        // A headless/server/CI `node sidecar/index.js` never sets this, so it keeps the
-        // safe no-driver stub. STARNET_COMPUTER_DRIVER still overrides either way.
+        // Desktop identity is informational only. Physical input is explicitly OFF in
+        // the installed sidecar, and controlled browsing is pinned headless; ordinary
+        // agent runs use browser.test_* CDP events with in-page lock emulation.
         .env("STARNET_DESKTOP_SHELL", "1")
+        .env("STARNET_COMPUTER_DRIVER", "0")
+        .env("STARNET_BROWSER_HEADLESS", "1")
+        .env("STARNET_USER_CONTROL_MODE", "preserve")
+        .env("STARNET_MCP_STDIO", "0")
         // The packaged build's true version — computeVersionSurface() reads this first, so
         // /api/diagnostics reports the real build instead of "unknown" (the bundled sidecar
         // has no src-tauri/tauri.conf.json to fall back to). CARGO_PKG_VERSION is the
