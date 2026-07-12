@@ -3,9 +3,12 @@
 'use strict';
 
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const A = require('./_assert.js');
+
+const TEST_ONLY_LEDGER_OVERRIDE = 'TEST_ONLY_UNCOMMITTED_LEDGER_FIXTURE';
 
 (async () => {
   const {
@@ -17,10 +20,11 @@ const A = require('./_assert.js');
 
   const repoRoot = path.resolve(__dirname, '..');
   const ledgerFile = path.join(repoRoot, 'qa', 'product-perfect', 'claims.json');
-  const ledger = JSON.parse(fs.readFileSync(ledgerFile, 'utf8'));
+  const ledgerBytes = fs.readFileSync(ledgerFile);
+  const ledger = JSON.parse(ledgerBytes.toString('utf8'));
   const clone = value => JSON.parse(JSON.stringify(value));
 
-  const inspected = inspectClaimsAuthority({ repoRoot, ledger });
+  const inspected = inspectClaimsAuthority({ repoRoot });
   A.eq(inspected.planning.ok, true, 'tracked finite claims audit passes planning authority');
   A.eq(inspected.planning.status, 'PASS', 'planning status is explicitly PASS');
   A.eq(inspected.terminal.ok, false, 'open and unlabelled claims block terminal authority');
@@ -34,7 +38,65 @@ const A = require('./_assert.js');
   A.eq(inspected.sourceCommit, ledger.releaseSurface.sourceCommit, 'runtime authority returns the accepted manifest source commit');
   A.ok(/^[0-9a-f]{64}$/.test(inspected.manifestDigest), 'runtime authority returns a deterministic manifest digest');
   A.ok(/^[0-9a-f]{64}$/.test(inspected.surfaceDigest), 'runtime authority returns a deterministic surface digest');
+  A.ok(/^[0-9a-f]{64}$/.test(inspected.candidateLedgerSha256), 'runtime authority returns the raw candidate ledger SHA-256');
+  A.ok(/^[0-9a-f]{64}$/.test(inspected.candidateLedgerDigest), 'runtime authority returns the canonical candidate ledger digest');
+  A.eq(inspected.candidateLedgerDigest, inspected.manifestDigest, 'default manifest digest is derived from the candidate ledger blob');
+  A.eq(inspected.ledgerSource, 'candidate-git-blob', 'default authority names the candidate Git blob as its ledger source');
   A.ok(inspected.candidateCommit !== inspected.sourceCommit, 'an unrelated descendant commit is allowed when every locked byte and locator stays exact');
+  const inspectedAgain = inspectClaimsAuthority({ repoRoot });
+  A.eq(inspectedAgain.candidateLedgerSha256, inspected.candidateLedgerSha256, 'raw candidate-ledger SHA is deterministic');
+  A.eq(inspectedAgain.manifestDigest, inspected.manifestDigest, 'canonical manifest digest is deterministic');
+
+  const equalObjectInjection = inspectClaimsAuthority({ repoRoot, ledger: clone(ledger) });
+  A.eq(equalObjectInjection.planning.ok, true, 'a canonical-equal injected object cannot change candidate authority');
+  A.eq(equalObjectInjection.ledgerSource, 'candidate-git-blob', 'equal object injection still uses the candidate blob');
+  const equalRawInjection = inspectClaimsAuthority({ repoRoot, ledgerBytes });
+  A.eq(equalRawInjection.planning.ok, true, 'raw candidate ledger bytes are accepted as an equality assertion');
+
+  const allGreenForgery = clone(ledger);
+  for (const claim of allGreenForgery.claims) {
+    claim.verdict = 'SHIPPED';
+    claim.disposition = 'PROVEN';
+    claim.liveProof = claim.liveProofRequired ? 'PROVEN' : 'NOT_REQUIRED';
+  }
+  for (const verdict of allGreenForgery.waveVerdicts) {
+    verdict.verdict = 'SHIPPED';
+    verdict.disposition = 'PROVEN';
+  }
+  const reproducedExploit = inspectClaimsAuthority({
+    repoRoot,
+    ledger: allGreenForgery,
+    testOnlyLedgerOverride: TEST_ONLY_LEDGER_OVERRIDE
+  });
+  A.eq(reproducedExploit.planning.ok, true, 'test-only seam reproduces the formerly accepted forged manifest');
+  A.eq(reproducedExploit.terminal.ok, true, 'test-only seam proves the forged statuses would otherwise turn terminal green');
+  const blockedExploit = inspectClaimsAuthority({ repoRoot, ledger: allGreenForgery });
+  A.eq(blockedExploit.planning.ok, false, 'production inspection rejects the all-green forged manifest');
+  A.eq(blockedExploit.terminal.ok, false, 'the all-green forged manifest cannot produce terminal PASS');
+  A.ok(blockedExploit.planning.reasons.some(reason => /ledger object does not match/.test(reason)), 'forged object rejection identifies candidate-ledger mismatch');
+  A.eq(blockedExploit.manifestDigest, inspected.manifestDigest, 'rejected injection cannot alter the manifest digest used by production authority');
+
+  const rawForgery = Buffer.from(ledgerBytes);
+  rawForgery[rawForgery.length - 2] = rawForgery[rawForgery.length - 2] === 0x20 ? 0x21 : 0x20;
+  const blockedRaw = inspectClaimsAuthority({ repoRoot, ledgerBytes: rawForgery });
+  A.eq(blockedRaw.planning.ok, false, 'production inspection rejects raw ledger bytes that differ from the candidate blob');
+  A.ok(blockedRaw.planning.reasons.some(reason => /ledger bytes do not match/.test(reason)), 'raw byte mismatch is explicit');
+
+  const ambientRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'starnet-claims-ambient-'));
+  try {
+    const ambientRepo = path.join(ambientRoot, 'repo');
+    execFileSync('git', ['clone', '--shared', '--no-checkout', repoRoot, ambientRepo], { stdio: 'ignore' });
+    const ambientLedger = path.join(ambientRepo, 'qa', 'product-perfect', 'claims.json');
+    fs.mkdirSync(path.dirname(ambientLedger), { recursive: true });
+    fs.writeFileSync(ambientLedger, JSON.stringify(allGreenForgery, null, 2));
+    const ambientInspection = inspectClaimsAuthority({ repoRoot: ambientRepo });
+    A.eq(ambientInspection.planning.ok, true, 'ambient working-tree ledger drift cannot replace the candidate blob');
+    A.eq(ambientInspection.terminal.ok, false, 'ambient all-green drift cannot turn candidate terminal authority green');
+    A.eq(ambientInspection.candidateLedgerSha256, inspected.candidateLedgerSha256, 'ambient drift preserves the exact candidate ledger SHA');
+    A.eq(ambientInspection.ledgerSource, 'candidate-git-blob', 'ambient drift still reports candidate Git authority');
+  } finally {
+    fs.rmSync(ambientRoot, { recursive: true, force: true });
+  }
 
   const surface = discoverReleaseSurface(repoRoot);
   A.ok(surface.length > 150, 'release surface includes all tracked frontend JS/HTML/CSS plus marketed docs');
@@ -62,7 +124,11 @@ const A = require('./_assert.js');
 
   const changedBytes = clone(ledger);
   changedBytes.releaseSurface.files[0].sha256 = '0'.repeat(64);
-  A.eq(inspectClaimsAuthority({ repoRoot, ledger: changedBytes }).planning.ok, false, 'changed reviewed bytes force re-audit');
+  A.eq(inspectClaimsAuthority({
+    repoRoot,
+    ledger: changedBytes,
+    testOnlyLedgerOverride: TEST_ONLY_LEDGER_OVERRIDE
+  }).planning.ok, false, 'changed reviewed bytes force re-audit');
 
   const addedSurface = clone(ledger);
   A.eq(inspectClaimsAuthority({
@@ -73,7 +139,11 @@ const A = require('./_assert.js');
 
   const badLocator = clone(ledger);
   badLocator.claims[0].surfaceLocators[0].needle = '__missing_surface_copy__';
-  A.eq(inspectClaimsAuthority({ repoRoot, ledger: badLocator }).planning.ok, false, 'stale user-facing locator is rejected');
+  A.eq(inspectClaimsAuthority({
+    repoRoot,
+    ledger: badLocator,
+    testOnlyLedgerOverride: TEST_ONLY_LEDGER_OVERRIDE
+  }).planning.ok, false, 'stale user-facing locator is rejected');
 
   const absenceClaim = ledger.claims.find(row => row.authorityChecks.some(check => check.kind === 'absent' && check.path));
   A.ok(!!absenceClaim, 'inventory contains machine-checked file absence authority');
@@ -93,7 +163,11 @@ const A = require('./_assert.js');
 
   const handAuthored = clone(ledger);
   delete handAuthored.releaseSurface.pathSetSha256;
-  A.eq(inspectClaimsAuthority({ repoRoot, ledger: handAuthored }).planning.ok, false, 'hand-authored unlocked evidence is rejected');
+  A.eq(inspectClaimsAuthority({
+    repoRoot,
+    ledger: handAuthored,
+    testOnlyLedgerOverride: TEST_ONLY_LEDGER_OVERRIDE
+  }).planning.ok, false, 'hand-authored unlocked evidence is rejected');
 
   const fakeExperimentalLabel = clone(ledger);
   const experimental = fakeExperimentalLabel.claims.find(row => row.disposition === 'EXPERIMENTAL');
@@ -108,13 +182,12 @@ const A = require('./_assert.js');
   };
   A.eq(validateClaimsLedger(marketingExperimentalLabel, { repoRoot }).ok, false, 'marketing copy cannot impersonate a visible point-of-use experimental label');
 
-  const nonAncestor = inspectClaimsAuthority({ repoRoot, ledger, isAncestor: () => false });
+  const nonAncestor = inspectClaimsAuthority({ repoRoot, isAncestor: () => false });
   A.eq(nonAncestor.planning.ok, false, 'a manifest source outside candidate ancestry is rejected');
   A.ok(nonAncestor.planning.reasons.some(reason => /not an ancestor/.test(reason)), 'ancestry rejection is explicit');
 
   const injectedMismatch = inspectClaimsAuthority({
     repoRoot,
-    ledger,
     candidateCommit: 'f'.repeat(40)
   });
   A.eq(injectedMismatch.planning.ok, false, 'an injected candidate that cannot resolve exactly is rejected');
@@ -131,7 +204,11 @@ const A = require('./_assert.js');
     verdict.disposition = 'PROVEN';
   }
   terminalRefuted.claims[0].verdict = 'REFUTED';
-  const refutedInspection = inspectClaimsAuthority({ repoRoot, ledger: terminalRefuted });
+  const refutedInspection = inspectClaimsAuthority({
+    repoRoot,
+    ledger: terminalRefuted,
+    testOnlyLedgerOverride: TEST_ONLY_LEDGER_OVERRIDE
+  });
   A.eq(refutedInspection.planning.ok, true, 'a truthful refuted verdict can remain planning-valid');
   A.eq(refutedInspection.terminal.ok, false, 'REFUTED/PROVEN can never satisfy terminal product authority');
 

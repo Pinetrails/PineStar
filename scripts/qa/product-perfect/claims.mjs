@@ -483,25 +483,7 @@ function terminalEligible(row) {
 
 export function inspectClaimsAuthority(options = {}) {
   const repoRoot = path.resolve(options.repoRoot || REPO_ROOT);
-  let ledger = options.ledger;
   const planningReasons = [];
-  if (!ledger) {
-    try { ledger = JSON.parse(fs.readFileSync(options.ledgerPath || path.join(repoRoot, 'qa', 'product-perfect', 'claims.json'), 'utf8')); }
-    catch (error) {
-      return {
-        planning: { ok: false, status: 'BLOCKED', reasons: ['claims ledger unreadable: ' + error.message] },
-        terminal: { ok: false, status: 'BLOCKED', reasons: ['claims planning authority is blocked'] },
-        candidateCommit: null,
-        sourceCommit: null,
-        manifestDigest: null,
-        surfaceDigest: null,
-        summary: { claims: 0, releaseSurfaceFiles: 0, waveVerdicts: 0 }
-      };
-    }
-  }
-  const schema = validateClaimsLedger(ledger, { repoRoot });
-  planningReasons.push(...schema.errors);
-  const sourceCommit = ledger && ledger.releaseSurface ? text(ledger.releaseSurface.sourceCommit).toLowerCase() : null;
   const injectedCandidate = options.candidateCommit || options.currentCommit;
   if (options.candidateCommit && options.currentCommit && text(options.candidateCommit).toLowerCase() !== text(options.currentCommit).toLowerCase()) {
     planningReasons.push('injected candidate mismatch: candidateCommit and currentCommit disagree');
@@ -509,6 +491,60 @@ export function inspectClaimsAuthority(options = {}) {
   let candidateCommit = null;
   try { candidateCommit = resolveCandidateCommit(repoRoot, injectedCandidate || 'HEAD'); }
   catch (error) { planningReasons.push((injectedCandidate ? 'injected candidate mismatch: ' : 'candidate commit unreadable: ') + error.message); }
+
+  let candidateLedgerBytes = null;
+  let candidateLedger = null;
+  if (candidateCommit) {
+    try {
+      candidateLedgerBytes = readAtCommit(repoRoot, candidateCommit, 'qa/product-perfect/claims.json');
+      candidateLedger = JSON.parse(candidateLedgerBytes.toString('utf8'));
+    } catch (error) { planningReasons.push('candidate claims ledger unreadable: ' + error.message); }
+  }
+  const candidateLedgerSha256 = candidateLedgerBytes ? sha256(candidateLedgerBytes) : null;
+  const candidateLedgerDigest = candidateLedger ? sha256(canonicalJson(candidateLedger)) : null;
+  const hasLedgerObject = Object.prototype.hasOwnProperty.call(options, 'ledger');
+  const hasLedgerBytes = Object.prototype.hasOwnProperty.call(options, 'ledgerBytes');
+  const hasLedgerPath = Object.prototype.hasOwnProperty.call(options, 'ledgerPath');
+  const testOnlyOverride = options.testOnlyLedgerOverride === 'TEST_ONLY_UNCOMMITTED_LEDGER_FIXTURE';
+  let ledger = candidateLedger;
+  let ledgerSource = 'candidate-git-blob';
+
+  if (hasLedgerObject || hasLedgerBytes || hasLedgerPath) {
+    if (testOnlyOverride) {
+      try {
+        if ([hasLedgerObject, hasLedgerBytes, hasLedgerPath].filter(Boolean).length !== 1) {
+          throw new Error('test-only ledger override requires exactly one fixture source');
+        }
+        if (hasLedgerObject) ledger = options.ledger;
+        else if (hasLedgerBytes) ledger = JSON.parse(Buffer.from(options.ledgerBytes).toString('utf8'));
+        else ledger = JSON.parse(fs.readFileSync(options.ledgerPath, 'utf8'));
+        ledgerSource = 'test-only-uncommitted-fixture';
+      } catch (error) { planningReasons.push('test-only ledger fixture unreadable: ' + error.message); }
+    } else {
+      if (hasLedgerPath) planningReasons.push('ambient ledgerPath overrides are forbidden; the candidate Git blob is authoritative');
+      if (hasLedgerBytes) {
+        try {
+          const injectedBytes = Buffer.from(options.ledgerBytes);
+          if (!candidateLedgerBytes || !injectedBytes.equals(candidateLedgerBytes)) {
+            planningReasons.push('injected ledger bytes do not match the candidate Git blob');
+          }
+        } catch (error) { planningReasons.push('injected ledger bytes are unreadable: ' + error.message); }
+      }
+      if (hasLedgerObject) {
+        try {
+          const injectedDigest = sha256(canonicalJson(options.ledger));
+          if (!candidateLedgerDigest || injectedDigest !== candidateLedgerDigest) {
+            planningReasons.push('injected ledger object does not match the candidate Git blob');
+          }
+        } catch (error) { planningReasons.push('injected ledger object is unreadable: ' + error.message); }
+      }
+      ledger = candidateLedger;
+    }
+  }
+
+  const schema = validateClaimsLedger(ledger, { repoRoot });
+  planningReasons.push(...schema.errors);
+  const sourceCommit = ledger && ledger.releaseSurface ? text(ledger.releaseSurface.sourceCommit).toLowerCase() : null;
   let resolvedSource = null;
   if (sourceCommit && /^[0-9a-f]{40}$/.test(sourceCommit)) {
     try { resolvedSource = resolveCandidateCommit(repoRoot, sourceCommit); }
@@ -588,13 +624,16 @@ export function inspectClaimsAuthority(options = {}) {
     terminal: { ok: uniqueTerminalReasons.length === 0, status: uniqueTerminalReasons.length ? 'BLOCKED' : 'PASS', reasons: uniqueTerminalReasons },
     candidateCommit,
     sourceCommit: resolvedSource || sourceCommit,
+    ledgerSource,
+    candidateLedgerSha256,
+    candidateLedgerDigest,
     manifestDigest: digests.manifestDigest,
     surfaceDigest: digests.surfaceDigest,
     summary: {
-      claims: Array.isArray(ledger.claims) ? ledger.claims.length : 0,
-      releaseSurfaceFiles: ledger.releaseSurface && Array.isArray(ledger.releaseSurface.files) ? ledger.releaseSurface.files.length : 0,
-      waveVerdicts: Array.isArray(ledger.waveVerdicts) ? ledger.waveVerdicts.length : 0,
-      doNotRebuild: Array.isArray(ledger.doNotRebuild) ? ledger.doNotRebuild.length : 0
+      claims: ledger && Array.isArray(ledger.claims) ? ledger.claims.length : 0,
+      releaseSurfaceFiles: ledger && ledger.releaseSurface && Array.isArray(ledger.releaseSurface.files) ? ledger.releaseSurface.files.length : 0,
+      waveVerdicts: ledger && Array.isArray(ledger.waveVerdicts) ? ledger.waveVerdicts.length : 0,
+      doNotRebuild: ledger && Array.isArray(ledger.doNotRebuild) ? ledger.doNotRebuild.length : 0
     }
   };
 }
