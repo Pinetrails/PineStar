@@ -75,12 +75,14 @@ A.eq(breaksMachineState(''), null, 'empty command not a machine trip');
 // ---- BYPASS HARDENING (code-review 2026-07-12): dangerous verbs hidden behind a launcher, separator, or
 //      interpreter must still be caught (command-head splitting), and false-positive rework must hold. ----
 A.ok(breaksMachineState('powershell -Command "shutdown /r /t 0"'), 'powershell -Command shutdown blocked');
+A.ok(breaksMachineState('cmd /c "shutdown /r /t 0"'), 'quoted whole cmd /c shutdown payload blocked');
 A.ok(breaksMachineState('powershell -NoProfile -Command "Stop-Computer"'), 'powershell -Command Stop-Computer blocked');
 A.ok(breaksMachineState('pwsh -c "Restart-Computer"'), 'pwsh -c Restart-Computer blocked');
 A.ok(breaksMachineState('sh -c "shutdown -h now"'), 'sh -c shutdown blocked');
 A.ok(breaksMachineState('bash -c reboot'), 'bash -c reboot blocked');
 A.ok(breaksMachineState('Start-Process shutdown -ArgumentList /r'), 'Start-Process shutdown blocked');
 A.ok(breaksMachineState('Start-Process -NoNewWindow -FilePath shutdown -ArgumentList /r'), 'Start-Process options before -FilePath shutdown blocked');
+A.ok(breaksMachineState('powershell -Command "Start-Process -WorkingD . shutdown /r"'), 'Start-Process accepted -WorkingDirectory abbreviation consumes its value before shutdown');
 A.ok(breaksMachineState('echo hi\nshutdown /r'), 'newline-separated shutdown blocked');
 A.ok(breaksMachineState('foo & reg add HKCU\\x /v y /d z'), 'reg add after & blocked');
 A.ok(breaksMachineState('powershell -e UwB0AG8AcAAtAENvbXB1dGVy'), 'powershell -e (base64 encoded) blocked outright');
@@ -94,6 +96,10 @@ A.eq(breaksMachineState('schtasks /query /tn x'), null, 'schtasks /query (read-o
 A.eq(breaksMachineState('echo restart-computer is a cmdlet'), null, 'the WORDS in an echo arg (no cmdlet at head) allowed');
 A.eq(breaksMachineState('echo Start-Process shutdown /r'), null, 'Start-Process words in echo output are not a launcher');
 if (process.platform === 'win32') A.eq(breaksMachineState('echo ^& shutdown /r'), null, 'cmd caret-escaped separator stays echo data, not a second command');
+if (process.platform === 'win32') {
+  A.ok(breaksMachineState("echo 'x & shutdown /r /t 0 & rem '"), 'cmd.exe single quotes do not hide command separators');
+  A.eq(breaksMachineState("echo 'x & shutdown /r /t 0 & rem '", 'posix'), null, 'POSIX single quotes still protect separators');
+}
 
 // Windows PowerShell accepts every unambiguous prefix below. Drive only a SAFE payload on this host, then assert
 // the parser rejects the same executable switches before an opaque/dangerous payload can ever reach PowerShell.
@@ -119,6 +125,29 @@ if (process.platform === 'win32') {
     const safe = spawnSync(psExe, ['-NoProfile', '-NonInteractive', flag, safeEncoded], { encoding: 'utf8', timeout: 10000, windowsHide: true });
     A.eq(safe.status, 0, 'host accepts PowerShell ' + flag + ' for a safe encoded payload');
     A.ok(/STARNET_SAFE/.test(safe.stdout || ''), 'safe PowerShell ' + flag + ' encoded payload executed as expected');
+  }
+  // Query metadata only (no process is launched): for every value-taking Start-Process parameter this host
+  // actually exposes, derive its shortest unambiguous abbreviation and prove the parser consumes that value
+  // before inspecting the positional executable. FilePath itself is the executable and is checked directly.
+  const metadataScript = "$p=(Get-Command Start-Process).Parameters.Values; $p | ForEach-Object { [pscustomobject]@{ Name=$_.Name; Switch=($_.ParameterType.FullName -eq 'System.Management.Automation.SwitchParameter') } } | ConvertTo-Json -Compress";
+  const metadataRun = spawnSync(psExe, ['-NoProfile', '-NonInteractive', '-Command', metadataScript], { encoding: 'utf8', timeout: 10000, windowsHide: true });
+  A.eq(metadataRun.status, 0, 'host Start-Process parameter metadata is readable without launching a process');
+  let hostParams = JSON.parse(metadataRun.stdout || '[]');
+  if (!Array.isArray(hostParams)) hostParams = [hostParams];
+  const hostNames = hostParams.map(p => String(p.Name));
+  const abbreviation = (name) => {
+    for (let n = 1; n <= name.length; n++) {
+      const prefix = name.slice(0, n).toLowerCase();
+      if (hostNames.filter(x => x.toLowerCase().indexOf(prefix) === 0).length === 1) return name.slice(0, n);
+    }
+    return name;
+  };
+  for (const param of hostParams.filter(p => !p.Switch)) {
+    const abbr = abbreviation(String(param.Name));
+    const command = String(param.Name).toLowerCase() === 'filepath'
+      ? 'powershell -Command "Start-Process -' + abbr + ' shutdown /r"'
+      : 'powershell -Command "Start-Process -' + abbr + ' placeholder shutdown /r"';
+    A.ok(breaksMachineState(command), 'host-accepted Start-Process -' + abbr + ' abbreviation cannot hide shutdown');
   }
 }
 

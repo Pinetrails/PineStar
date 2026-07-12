@@ -14,6 +14,7 @@ A.ok(opensVisibleWindow('start'), 'bare `start` (new console window) blocked');
 A.ok(opensVisibleWindow('npm run build && start dist\\index.html'), '`start` after && blocked');
 A.ok(opensVisibleWindow('echo done & start report.html'), '`start` after & blocked');
 A.ok(opensVisibleWindow('cmd /c start http://x'), '`start` behind cmd /c blocked');
+A.ok(opensVisibleWindow('cmd /c "start http://x"'), 'quoted whole cmd /c start payload blocked');
 A.ok(opensVisibleWindow('call start x.html'), '`start` behind call blocked');
 A.ok(opensVisibleWindow('explorer .'), 'explorer blocked');
 A.ok(opensVisibleWindow('explorer.exe C:\\somewhere'), 'explorer.exe blocked');
@@ -25,6 +26,7 @@ A.ok(opensVisibleWindow('"C:\\Program Files\\Google\\Chrome\\Application\\chrome
 A.ok(opensVisibleWindow('firefox http://localhost:3000'), 'headed firefox blocked');
 A.eq(opensVisibleWindow('msedge --headless=new --mute-audio --remote-debugging-port=9222 http://localhost:5173'), null, 'msedge WITH --headless --mute-audio allowed (the sanctioned smoke-test path)');
 A.eq(opensVisibleWindow('chrome --headless --mute-audio --dump-dom http://localhost:5173'), null, 'chrome --headless --mute-audio allowed');
+A.eq(opensVisibleWindow('chrome "--headless=new" "--mute-audio" about:blank'), null, 'quoted whole-token headless + mute flags allowed');
 // a headless browser still plays audio on the user's speakers unless muted — that half of the incident is blocked too
 A.ok(opensVisibleWindow('msedge --headless=new --remote-debugging-port=9222 http://x'), 'headless browser without --mute-audio is refused');
 
