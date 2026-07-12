@@ -60,15 +60,29 @@
     });
   }
 
+  // two stored roots name the same folder? Separators unified and case folded — Windows paths are
+  // case-insensitive, and the two anchor doors ("Work here" stores the server row's root; the path.trust
+  // "Always" card stores the prompt's proposed root) may differ only in case/slash shape for the same folder.
+  function sameRoot(a, b) {
+    const norm = function (p) {
+      let s = String(p == null ? '' : p).replace(/[\\/]+$/, '');
+      // Windows-shaped (drive letter or backslashes): separators unify and case folds — win32 paths are
+      // case-insensitive. A posix path keeps its case (case-SENSITIVE filesystems) and only sheds the tail slash.
+      if (/^[A-Za-z]:/.test(s) || s.indexOf('\\') >= 0) s = s.replace(/\//g, '\\').toLowerCase();
+      return s;
+    };
+    const na = norm(a), nb = norm(b);
+    return !!na && na === nb;
+  }
+
   // the sessions attached to ONE project root — a REAL stored link (w.projectRoot, stamped when "Work here"
-  // creates/joins a session), never a title guess (truthful telemetry: a listed session provably works in that
-  // root). Archived sessions are excluded; most-recently-active first (the sessions rail's own order). Null-title
-  // records read as the General stream's display name.
+  // creates/joins a session or when a path.trust "Always" blesses mid-chat), never a title guess (truthful
+  // telemetry: a listed session provably works in that root). Archived sessions are excluded; most-recently-
+  // active first (the sessions rail's own order). Null-title records read as the General stream's display name.
   function sessionsFor(root, workstreams, nowMs) {
-    const key = String(root == null ? '' : root);
-    if (!key) return [];
+    if (root == null || root === '') return [];
     return (Array.isArray(workstreams) ? workstreams : [])
-      .filter(function (w) { return w && !w.archived && String(w.projectRoot || '') === key; })
+      .filter(function (w) { return w && !w.archived && sameRoot(w.projectRoot, root); })
       .slice()
       .sort(function (a, b) { return (b.lastActiveAt || 0) - (a.lastActiveAt || 0); })
       .map(function (w) {
@@ -89,5 +103,5 @@
     };
   }
 
-  return { basename, relTime, toRows, sessionsFor, panels };
+  return { basename, relTime, toRows, sameRoot, sessionsFor, panels };
 });

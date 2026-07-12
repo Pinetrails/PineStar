@@ -1577,6 +1577,14 @@ const Chat = (() => {
       // surface the decision on the bus (schema: permission.response) so listeners — e.g. the first-run tutorial —
       // can tell an approve from a deny and narrate the consent loop honestly. Additive; the run resumes via Harness.consent.
       try { if (typeof U !== 'undefined' && U.bus) U.bus.emit('permission.response', { promptId: p.promptId, decision: decision }); } catch (_) {}
+      // NS conversational anchor: "Always" on a path.trust card IS the project bless (a standing path grant +
+      // known-projects row land on the sidecar). Stamp the origin session's projectRoot with the SAME proposed
+      // root so the PROJECTS rail lists this session under its project — the identical anchor "Work here" stamps.
+      // Only "Always" (once/full grant nothing standing, so there is no project row to attach to), and never
+      // overwrite an anchor the session already has.
+      if (p.tool === 'path.trust' && decision === 'always' && ws && typeof Workstreams !== 'undefined' && Workstreams.setProjectRoot) {
+        try { if (p.argsSummary && !(Workstreams.get(ws.id) || {}).projectRoot) Workstreams.setProjectRoot(ws.id, p.argsSummary); } catch (_) {}
+      }
       if (ws && typeof Channels !== 'undefined') Channels.clearPending(ws.id, Date.now());   // closes the paused span — approval wait never counts as run time
       if (isActiveWs(ws)) renderPresence();   // drop the paused styling the instant the run resumes
       btns.remove();

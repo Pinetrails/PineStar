@@ -65,6 +65,18 @@ A.eq(P.sessionsFor('', wsList, NOW).length, 0, 'empty root -> no attachments');
 A.eq(P.sessionsFor('/nowhere', wsList, NOW).length, 0, 'unknown root -> empty, never a fake list');
 A.eq(P.sessionsFor('/home/me/repo', null, NOW).length, 0, 'bad workstreams input -> safe empty');
 
+/* ---------- sameRoot: the two anchor doors may differ only in case/slash shape on Windows ---------- */
+A.eq(P.sameRoot('C:\\Proj\\Repo', 'c:\\proj\\repo'), true, 'win32 roots match case-insensitively');
+A.eq(P.sameRoot('C:/proj/repo', 'C:\\proj\\repo'), true, 'win32 separators unify');
+A.eq(P.sameRoot('C:\\proj\\repo\\', 'C:\\proj\\repo'), true, 'trailing separator ignored');
+A.eq(P.sameRoot('/home/me/Repo', '/home/me/repo'), false, 'posix roots stay case-SENSITIVE');
+A.eq(P.sameRoot('/home/me/repo/', '/home/me/repo'), true, 'posix trailing slash ignored');
+A.eq(P.sameRoot('', ''), false, 'empty never matches (no fake attachment)');
+A.eq(P.sameRoot(null, null), false, 'null never matches');
+// and sessionsFor attaches through the SAME matcher: a Windows-case-variant stored anchor still lists.
+const winWs = [{ id: 'w1', title: 'win work', projectRoot: 'c:\\proj\\WIN', archived: false, lastActiveAt: NOW }];
+A.eq(P.sessionsFor('C:\\proj\\win', winWs, NOW).length, 1, 'win32 case-variant anchor still attaches to its project');
+
 /* ---------- panels: the SESSIONS ↔ PROJECTS toggle truth table ---------- */
 const s = P.panels('sessions');
 A.eq(s.sessionsList, true, 'sessions view shows the sessions list');

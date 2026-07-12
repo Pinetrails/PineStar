@@ -2836,7 +2836,8 @@ const App = (() => {
     // so the session shows up under its project from here on.
     try {
       const open = (Workstreams.list() || []).filter(w => !w.archived);
-      ws = open.filter(w => w.projectRoot === r.root)[0] || open.filter(w => !w.projectRoot && (w.title || '') === r.name)[0] || null;
+      const same = (a, b) => (typeof Projects !== 'undefined' && Projects.sameRoot) ? Projects.sameRoot(a, b) : a === b;
+      ws = open.filter(w => same(w.projectRoot, r.root))[0] || open.filter(w => !w.projectRoot && (w.title || '') === r.name)[0] || null;
     } catch (_) {}
     if (!ws) ws = Workstreams.create(r.name, { activate: false, projectRoot: r.root });
     if (!ws) return;
