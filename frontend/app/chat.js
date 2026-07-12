@@ -1992,7 +1992,12 @@ const Chat = (() => {
       // lock / fullscreen, i.e. opening it will capture the Commander's REAL mouse. Say so BEFORE the click.
       if (m.capturesInput) {
         const warn = document.createElement('div'); warn.className = 'ws-line ws-capture-warn';
-        warn.textContent = '⚠ captures your mouse when opened (pointer lock) — press Esc to release it';
+        warn.textContent = '⚠ captures your mouse/keyboard when opened (pointer lock) — press Esc to release it';
+        r.body.appendChild(warn);
+      }
+      if (m.usesMedia) {
+        const warn = document.createElement('div'); warn.className = 'ws-line ws-capture-warn';
+        warn.textContent = '⚠ may ask to use your camera, microphone, or screen when opened';
         r.body.appendChild(warn);
       }
       openItBtn = document.createElement('button'); openItBtn.className = 'consent-btn'; openItBtn.textContent = 'Open it';

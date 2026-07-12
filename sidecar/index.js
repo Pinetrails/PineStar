@@ -5342,9 +5342,12 @@ async function validateWorkshopManifest(agentId, runId) {
   // mouse-confinement incident (2026-07-12): a deliverable that requests pointer lock / fullscreen will capture
   // the Commander's REAL mouse the moment they open it. Detect it here (disk-proven, like everything else on the
   // card) so the return card can say so BEFORE they click Open. Detection, never blocking — opening stays their call.
-  const CAPTURE_RE = /requestPointerLock|requestFullscreen|webkitRequestFullscreen|mozRequestFullScreen/;
+  // capturesInput: pointer lock, fullscreen, or keyboard lock — the deliverable will seize the mouse/keyboard/screen.
+  // usesMedia: camera/mic/screen capture — opening it may trigger a getUserMedia/getDisplayMedia permission grab.
+  const CAPTURE_RE = /requestPointerLock|requestFullscreen|webkitRequestFullscreen|mozRequestFullScreen|keyboard\.lock/;
+  const MEDIA_RE = /getUserMedia|getDisplayMedia/;
   const SCANNABLE_RE = /\.(html?|js|mjs|cjs|ts|jsx|tsx|css|svelte|vue)$/i;
-  let capturesInput = false;
+  let capturesInput = false, usesMedia = false;
   for (const f of man.files) {
     const p = String((f && f.path) || '').replace(/^[\\/]+/, '');
     if (!p || p === 'deliverable.json') continue;
@@ -5352,8 +5355,12 @@ async function validateWorkshopManifest(agentId, runId) {
     let st; try { st = await fsp.stat(abs); } catch (_) { continue; }
     if (st && st.isFile()) {
       provenFiles.push({ path: p, bytes: st.size });
-      if (!capturesInput && SCANNABLE_RE.test(p) && st.size <= 4 * 1024 * 1024) {
-        try { capturesInput = CAPTURE_RE.test(await fsp.readFile(abs, 'utf8')); } catch (_) {}
+      if ((!capturesInput || !usesMedia) && SCANNABLE_RE.test(p) && st.size <= 4 * 1024 * 1024) {
+        try {
+          const src = await fsp.readFile(abs, 'utf8');
+          if (!capturesInput) capturesInput = CAPTURE_RE.test(src);
+          if (!usesMedia) usesMedia = MEDIA_RE.test(src);
+        } catch (_) {}
       }
     }
   }
@@ -5372,7 +5379,8 @@ async function validateWorkshopManifest(agentId, runId) {
     howToUse: String(man.howToUse || '').slice(0, 4000),
     notVerified: Array.isArray(man.notVerified) ? man.notVerified.map(s => String(s).slice(0, 500)).slice(0, 40) : [],
     // disk-proven (scanned above), never the model's claim; the card warns before Open when true
-    capturesInput: capturesInput
+    capturesInput: capturesInput,
+    usesMedia: usesMedia
   };
 }
 
