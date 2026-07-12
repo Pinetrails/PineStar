@@ -1041,6 +1041,11 @@ fn sidecar_command(state: &AppState, entry: &Path, node: &Path) -> Command {
         // Full immutable source identity for installed-smoke/release receipts. Keep this separate from the
         // short human-facing commit exposed by starnet_build_info.
         .env("STARNET_BUILD_SHA", env!("STARNET_BUILD_SHA"))
+        .env("STARNET_BUILD_TREE", env!("STARNET_BUILD_TREE"))
+        .env(
+            "STARNET_BUILD_PROVENANCE_KIND",
+            env!("STARNET_BUILD_PROVENANCE_KIND"),
+        )
         .env("STARNET_BUILD_DIRTY", env!("STARNET_BUILD_DIRTY"))
         .current_dir(&state.root);
     if let Some(key) = read_key() {
@@ -1637,6 +1642,10 @@ struct BuildInfo {
     version: String,
     commit: String,
     sha: String,
+    #[serde(rename = "sourceTree")]
+    source_tree: String,
+    #[serde(rename = "provenanceKind")]
+    provenance_kind: String,
     describe: String,
     dirty: bool,
     #[serde(rename = "executableSha256")]
@@ -1732,6 +1741,8 @@ fn starnet_build_info(app: AppHandle) -> BuildInfo {
         version: app.package_info().version.to_string(),
         commit: env!("STARNET_BUILD_COMMIT").to_string(),
         sha: env!("STARNET_BUILD_SHA").to_string(),
+        source_tree: env!("STARNET_BUILD_TREE").to_string(),
+        provenance_kind: env!("STARNET_BUILD_PROVENANCE_KIND").to_string(),
         describe: env!("STARNET_BUILD_DESCRIBE").to_string(),
         dirty: env!("STARNET_BUILD_DIRTY") == "1",
         executable_sha256,

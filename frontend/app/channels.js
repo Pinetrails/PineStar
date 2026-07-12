@@ -41,8 +41,12 @@
                                   // the live run drew (not a dim text downgrade): [{ t:'call', callId, name, argsSummary }
                                   // | { t:'result', callId, name, summary, isError, ms }]
       pending: null,              // live consent awaiting a human: { promptId, tool, argsSummary, runId }
-      startedAt: 0,               // wall-clock ms this run began (the COMMS elapsed timer reads it; survives a switch)
-      status: 'online'            // 'online' | 'thinking…' | 'working…' | 'awaiting your approval…'
+      startedAt: 0,               // wall-clock ms this run began (the COMMS elapsed timer reads it; survives a switch).
+                                  // Stamped at send, RE-STAMPED by setRunId when the sidecar confirms the run — so the
+                                  // visible elapsed is real RUN time, not connect/queue latency counted as work.
+      pausedMs: 0,                // accumulated wall-clock spent PAUSED awaiting human approval (excluded from elapsed)
+      pausedAt: 0,                // if >0, the instant the current approval pause began (still paused now)
+      status: 'online'            // 'online' | 'connecting…' | 'thinking…' | 'working…' | 'awaiting your approval…'
     };
   }
 
@@ -64,7 +68,12 @@
     const c = get(wsId);
     c.busy = true; c.runId = null; c.acc = ''; c.tools = []; c.toolEvents = []; c.pending = null;
     c.startedAt = ts || 0;
-    c.status = 'thinking…';
+    c.pausedMs = 0; c.pausedAt = 0;
+    // TRUTHFUL TELEMETRY: at send time the sidecar has confirmed NOTHING — the request may still be
+    // connecting/queued (or the sidecar may be down). The channel says so; setRunId (the sidecar's
+    // agent.run.start) is what upgrades it to a real 'thinking…'. Callers that begin() off an event
+    // that IS server truth (e.g. a cron fire) should setStatus('thinking…') themselves right after.
+    c.status = 'connecting…';
     return c;
   }
   // the run finished (or errored/aborted) — drop transient state; the turn now lives in Workstreams.history.
@@ -72,9 +81,18 @@
     const c = peek(wsId); if (!c) return;
     c.busy = false; c.runId = null; c.acc = ''; c.tools = []; c.toolEvents = []; c.pending = null;
     c.startedAt = 0;
+    c.pausedMs = 0; c.pausedAt = 0;
     c.status = 'online';
   }
-  function setRunId(wsId, runId) { const c = get(wsId); c.runId = runId; return runId; }
+  // the sidecar confirmed the run (agent.run.start arrived). ts (optional, caller-injected wall-clock)
+  // RE-STAMPS startedAt so the elapsed timer measures the confirmed run, not send-click → first-byte
+  // latency; 'connecting…' upgrades to 'thinking…' (a later status like 'working…' is never downgraded).
+  function setRunId(wsId, runId, ts) {
+    const c = get(wsId); c.runId = runId;
+    if (ts) c.startedAt = ts;
+    if (c.status === 'connecting…') c.status = 'thinking…';
+    return runId;
+  }
   function setStatus(wsId, s) { const c = get(wsId); c.status = s; return s; }
   function appendToken(wsId, d) { const c = get(wsId); c.acc += (d == null ? '' : d); return c.acc; }
   function setAcc(wsId, text) { const c = get(wsId); c.acc = (text == null ? '' : String(text)); return c.acc; }
@@ -97,13 +115,23 @@
     c.toolEvents.push({ t: 'result', callId: (ev.callId == null ? null : ev.callId), name: String(ev.name || 'tool'), summary: String(ev.summary == null ? '' : ev.summary), isError: !!ev.isError, ms: (typeof ev.ms === 'number' ? ev.ms : 0) });
     return c.toolEvents.length;
   }
-  function setPending(wsId, p) { const c = get(wsId); c.pending = p || null; if (p) c.status = 'awaiting your approval…'; return c.pending; }
-  function clearPending(wsId) { const c = peek(wsId); if (c) { c.pending = null; c.status = c.busy ? 'working…' : 'online'; } }
+  // ts (optional, caller-injected wall-clock) opens/closes an approval PAUSE window: while a run sits
+  // waiting on the human, the clock is stopped — elapsedOf() excludes paused spans, so "RUN COMPLETE · 2:14"
+  // is machine time, never the Commander's think-time counted as agent work.
+  function setPending(wsId, p, ts) { const c = get(wsId); c.pending = p || null; if (p) { c.status = 'awaiting your approval…'; if (ts && !c.pausedAt) c.pausedAt = ts; } return c.pending; }
+  function clearPending(wsId, ts) { const c = peek(wsId); if (c) { c.pending = null; if (c.pausedAt) { c.pausedMs += Math.max(0, (ts || c.pausedAt) - c.pausedAt); c.pausedAt = 0; } c.status = c.busy ? 'working…' : 'online'; } }
 
   // ---------- queries ----------
   function isBusy(wsId) { const c = peek(wsId); return !!(c && c.busy); }
   function runIdOf(wsId) { const c = peek(wsId); return c ? c.runId : null; }
   function startedAtOf(wsId) { const c = peek(wsId); return c ? c.startedAt : 0; }
+  // the run's honest elapsed ms at `now` (caller-injected clock): wall-clock since the (re-stamped)
+  // start MINUS time spent paused on approvals (closed spans + the still-open one). 0 when not running.
+  function elapsedOf(wsId, now) {
+    const c = peek(wsId); if (!c || !c.startedAt) return 0;
+    const pausedOpen = c.pausedAt ? Math.max(0, now - c.pausedAt) : 0;
+    return Math.max(0, now - c.startedAt - c.pausedMs - pausedOpen);
+  }
   function statusOf(wsId) { const c = peek(wsId); return c ? c.status : 'online'; }
   function pendingOf(wsId) { const c = peek(wsId); return c ? c.pending : null; }
   function anyBusy() { for (const c of map.values()) if (c.busy) return true; return false; }
@@ -120,6 +148,7 @@
       toolEvents: (c.toolEvents || []).map(e => Object.assign({}, e)),
       pending: c.pending ? Object.assign({}, c.pending) : null,
       startedAt: c.startedAt,
+      pausedMs: c.pausedMs, pausedAt: c.pausedAt,
       status: c.status
     };
   }
@@ -136,7 +165,7 @@
     get: get, peek: peek, has: has,
     begin: begin, end: end, setRunId: setRunId, setStatus: setStatus,
     appendToken: appendToken, setAcc: setAcc, addTool: addTool, addToolCall: addToolCall, addToolResult: addToolResult, setPending: setPending, clearPending: clearPending,
-    isBusy: isBusy, runIdOf: runIdOf, startedAtOf: startedAtOf, statusOf: statusOf, pendingOf: pendingOf,
+    isBusy: isBusy, runIdOf: runIdOf, startedAtOf: startedAtOf, elapsedOf: elapsedOf, statusOf: statusOf, pendingOf: pendingOf,
     anyBusy: anyBusy, busyCount: busyCount, busyIds: busyIds, pendingIds: pendingIds, snapshot: snapshot,
     setComposeTarget: setComposeTarget, composeTarget: composeTarget,
     drop: drop, reset: reset

@@ -19,6 +19,20 @@ Changing source or a wave condition re-queues the affected proof. Missing/unread
 `BLOCKED`, never green. The controller serializes the campaign: later waves do not run while an
 earlier wave is failing or stale.
 
+W0 is intentionally narrow. It locks the current advertised-claims inventory, the
+official/reproducible-source/custom/dirty-dev taxonomy, and exact installed desktop identity. It
+does not require hardware-rooted anti-owner proof, and it does not run the broad `qa:ready`
+aggregate. W1 then proves the clean installed first-user journey. Only afterward may the
+W0-verdict-filtered security work (W2), UI/recovery unification (W3), capability decision matrix
+(W4), autonomy honesty (W5), integration/full-surface proof (W6), and frozen 48-hour candidate
+(W7) advance.
+
+The claims ledger has two distinct verdicts. Its W0 planning verdict means the finite inventory is
+source-current and every material promise has a code-backed SHIPPED/PARTIAL/MISSING/REFUTED or
+EXPERIMENTAL disposition. It is not product proof. Its terminal verdict stays blocked until W6
+has candidate-bound installed lifecycle evidence or a visible point-of-use experimental label for
+every advertised promise.
+
 ## Commands
 
 ```powershell

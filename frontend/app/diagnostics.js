@@ -75,9 +75,9 @@
     try { if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify(msg, kind || 'good'); } catch (_) {}
   }
 
-  /* P1.5 build provenance: the git commit + dirty state this desktop binary was compiled from (stamped by
+  /* P1.5 build provenance: the git commit/tree + taxonomy this desktop binary was compiled from (stamped by
      src-tauri/build.rs, exposed via the starnet_build_info Tauri command). Returns a formatted one-liner
-     "build <version> @ <commit>[ DIRTY]" or '' when unavailable — in a plain browser (no Tauri shell) there is NO
+     "build <version> @ <commit> [<kind> tree <prefix>][ DIRTY]" or '' when unavailable — in a plain browser there is NO
      binary provenance to report, so this MUST fail soft to '' and the caller omits the line. Truthful-telemetry:
      never render a fake commit for a browser session that wasn't built from any binary. */
   function tauriCore() {
@@ -93,6 +93,15 @@
     const commit = String(info.commit || '').trim();
     if (!version && !commit) return '';
     let line = 'build ' + (version || '?') + ' @ ' + (commit || 'unknown');
+    const tree = String(info.sourceTree || '').trim().toLowerCase();
+    let kind = String(info.provenanceKind || '').trim().toLowerCase();
+    if (info.dirty) kind = 'dirty-dev';
+    // `official` is earned only by external installed-artifact evidence. BuildInfo reports
+    // the binary's base class, so a self-asserted official value is displayed as custom.
+    if (kind === 'official') kind = 'custom';
+    if (['reproducible-source', 'custom', 'dirty-dev'].includes(kind) && /^[0-9a-f]{40}$/.test(tree)) {
+      line += ' [' + kind + ' tree ' + tree.slice(0, 12) + ']';
+    }
     if (info.dirty) line += ' DIRTY';
     return line;
   }

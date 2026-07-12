@@ -18,6 +18,9 @@ const key = Buffer.alloc(32, 7);
 const NOW = Date.parse('2026-07-10T00:02:00.000Z');
 const evidence = new Map();
 const authorities = {
+  installed: { ok: true, status: 'PASS', reasons: [] },
+  claimsPlanning: { ok: true, status: 'PASS', reasons: [] },
+  claimsTerminal: { ok: true, status: 'PASS', reasons: [] },
   ready: { ok: true, status: 'PASS', reasons: [] },
   ledger: { ok: true, status: 'PASS', reasons: [] },
   atlas: { ok: true, status: 'PASS', reasons: [] }
@@ -83,6 +86,10 @@ const statusContext = { nowMs: NOW, key, readEvidence: validityContext(manifest.
   const staleWindow = JSON.parse(JSON.stringify(manifest));
   staleWindow.waves[0].maxReceiptAgeMs *= 100;
   A.eq(validateManifest(staleWindow).ok, false, 'a weakened receipt freshness window is rejected');
+
+  const w0Gate = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'qa', 'product-perfect', 'gates', 'wave-0-proof-authority.mjs'), 'utf8');
+  A.ok(/claims\.mjs[^\n]*--planning/.test(w0Gate), 'W0 executes the finite claims planning authority');
+  A.ok(!/scripts\/qa\/ready\.mjs/.test(w0Gate), 'W0 never invokes the broad READY aggregate');
 }
 
 {
@@ -104,13 +111,33 @@ const statusContext = { nowMs: NOW, key, readEvidence: validityContext(manifest.
   const afterW0 = deriveStatus(manifest, candidate, { W0: w0 }, authorities, statusContext);
   A.eq(afterW0.currentWave, 'W1', 'controller advances only after W0 exact pass');
   A.eq(afterW0.waves[0].status, 'pass', 'signed exact W0 receipt is accepted');
+  const broadReadyRed = deriveStatus(manifest, candidate, { W0: w0 }, Object.assign({}, authorities, {
+    ready: { ok: false, status: 'FAIL', reasons: ['Beginner belongs to W1'] }
+  }), statusContext);
+  A.eq(broadReadyRed.currentWave, 'W1', 'broad READY cannot drag Beginner or later product readiness back into W0');
+  const noInstalled = deriveStatus(manifest, candidate, { W0: w0 }, Object.assign({}, authorities, {
+    installed: { ok: false, status: 'BLOCKED', reasons: ['exact installed identity missing'] }
+  }), statusContext);
+  A.eq(noInstalled.currentWave, 'W0', 'W0 still requires exact installed desktop identity');
+  const noPlanning = deriveStatus(manifest, candidate, { W0: w0 }, Object.assign({}, authorities, {
+    claimsPlanning: { ok: false, status: 'FAIL', reasons: ['claims surface changed'] }
+  }), statusContext);
+  A.eq(noPlanning.currentWave, 'W0', 'W0 requires a source-current finite claims inventory');
 
   const receipts = Object.fromEntries(manifest.waves.map(wave => [wave.id, receipt(wave)]));
   const all = deriveStatus(manifest, candidate, receipts, authorities, statusContext);
   A.eq(all.productPerfect, true, 'all signed exact receipts plus authorities reach terminal state');
   A.eq(all.verdict, 'PRODUCT PERFECT', 'terminal verdict is exact');
+  const noClaimsTerminal = deriveStatus(manifest, candidate, receipts, Object.assign({}, authorities, {
+    claimsTerminal: { ok: false, status: 'FAIL', reasons: ['unproven promises remain'] }
+  }), statusContext);
+  A.eq(noClaimsTerminal.currentWave, 'W6', 'terminal claims proof belongs to W6, not W0');
   const noAtlas = deriveStatus(manifest, candidate, receipts, Object.assign({}, authorities, { atlas: { ok: false, status: 'FAIL', reasons: ['not complete'] } }), statusContext);
   A.eq(noAtlas.productPerfect, false, 'receipts cannot bypass a terminal authority');
+  const noReady = deriveStatus(manifest, candidate, receipts, Object.assign({}, authorities, {
+    ready: { ok: false, status: 'FAIL', reasons: ['post-soak READY rerun missing'] }
+  }), statusContext);
+  A.eq(noReady.currentWave, 'W7', 'broad READY is consumed at the frozen-candidate bar');
 }
 
 {

@@ -8,9 +8,10 @@
 'use strict';
 const A = require('./_assert.js');
 const crypto = require('crypto');
+const path = require('path');
 const {
   evaluate, checkLedger, checkGuardian, checkJourneys, checkBeginner, checkInstalled,
-  freshness, humanAge, renderVerdict, verifyContentIdentity, DAY_MS, DEFAULTS,
+  inspectInstalledIdentity, freshness, humanAge, renderVerdict, verifyContentIdentity, DAY_MS, DEFAULTS,
 } = require('../scripts/qa/ready.mjs');
 const { makeLedger } = require('../scripts/qa/ledger.mjs');
 
@@ -19,6 +20,7 @@ const iso = (ms) => new Date(ms).toISOString();
 const FRESH = iso(NOW - 60 * 1000);         // 1 minute ago
 const STALE = iso(NOW - 26 * 60 * 60 * 1000); // 26h ago (> 24h window)
 const TRUNK = 'a'.repeat(40);
+const TREE = 'd'.repeat(40);
 const EXECUTABLE_IDENTITY = { sha256: 'b'.repeat(64), size: 123 };
 const EVIDENCE_BYTES = Buffer.from('installed smoke evidence', 'utf8');
 const EVIDENCE_IDENTITY = {
@@ -35,8 +37,10 @@ function greenArtifacts() {
     journeys: { stampIso: FRESH, trunkHead: TRUNK, result: 'pass', passed: 120, total: 120 },
     beginner: { stampIso: FRESH, trunkHead: TRUNK, result: 'PASS', mode: 'ui-only', totalMs: 84000 },
     installed: {
-      schemaVersion: 2, stampIso: iso(NOW - 2 * DAY_MS), expectedHead: TRUNK, buildCommit: TRUNK,
-      buildDescribe: 'v0.3.0-1-gaaaaaaaa', buildDirty: false, appVersion: '0.3.0',
+      schemaVersion: 3, stampIso: iso(NOW - 2 * DAY_MS), expectedHead: TRUNK, expectedTree: TREE,
+      buildCommit: TRUNK, sourceTree: TREE, buildDescribe: 'v0.3.0-1-gaaaaaaaa', buildDirty: false,
+      buildKind: 'reproducible-source', provenanceKind: 'reproducible-source', officialEvidence: null,
+      appVersion: '0.3.0',
       sidecarHarness: 'v0.3.0-1-gaaaaaaaa', mode: 'desktop', origin: 'http://tauri.localhost',
       artifact: { path: 'StarNet.exe', sha256: EXECUTABLE_IDENTITY.sha256, size: EXECUTABLE_IDENTITY.size },
       runtimeExecutable: EXECUTABLE_IDENTITY, artifactVerified: true,
@@ -45,7 +49,7 @@ function greenArtifacts() {
   };
 }
 function greenCfg() {
-  return { nowMs: NOW, maxStaleMs: DEFAULTS.maxStaleMs, maxInstalledStaleMs: DEFAULTS.maxInstalledStaleMs, maxTrunkDrift: 0, currentTrunk: TRUNK, trunkDrift: 0 };
+  return { nowMs: NOW, maxStaleMs: DEFAULTS.maxStaleMs, maxInstalledStaleMs: DEFAULTS.maxInstalledStaleMs, maxTrunkDrift: 0, currentTrunk: TRUNK, currentTree: TREE, trunkDrift: 0 };
 }
 
 /* ─── A. the all-green baseline is READY (and only then) ─── */
@@ -193,20 +197,101 @@ function greenCfg() {
 
   // installed uses the 7-day window, not 24h.
   const installed = greenArtifacts().installed;
-  A.eq(checkInstalled(Object.assign({}, installed, { stampIso: iso(NOW - 5 * DAY_MS) }), cfg).ok, true, '5-day-old v2 desktop GREEN smoke is fresh (7d window)');
+  A.eq(checkInstalled(Object.assign({}, installed, { stampIso: iso(NOW - 5 * DAY_MS) }), cfg).ok, true, '5-day-old v3 desktop GREEN smoke is fresh (7d window)');
   A.eq(checkInstalled(Object.assign({}, installed, { stampIso: iso(NOW - 8 * DAY_MS) }), cfg).ok, false, '8-day-old installed smoke is stale (> 7d)');
   A.eq(checkInstalled(Object.assign({}, installed, { stampIso: FRESH, result: 'RED' }), cfg).ok, false, 'a RED installed smoke -> NOT READY');
   A.eq(checkInstalled(Object.assign({}, installed, { stampIso: FRESH, result: 'BLOCKED' }), cfg).ok, false, 'a BLOCKED installed smoke -> NOT READY');
   A.eq(checkInstalled(Object.assign({}, installed, { mode: 'browser' }), cfg).ok, false, 'browser-mode installed receipt is rejected');
   A.eq(checkInstalled(Object.assign({}, installed, { buildCommit: 'c'.repeat(40) }), cfg).ok, false, 'binary built from another commit is rejected');
+  A.eq(checkInstalled(Object.assign({}, installed, { sourceTree: 'c'.repeat(40) }), cfg).ok, false, 'binary built from another source tree is rejected');
+  A.eq(checkInstalled(Object.assign({}, installed, { buildKind: 'dirty-dev', provenanceKind: 'dirty-dev' }), cfg).ok, false, 'dirty-dev classification is rejected');
+  A.eq(checkInstalled(Object.assign({}, installed, { provenanceKind: 'official', officialEvidenceVerified: false }), cfg).ok, false, 'hand-asserted official classification is rejected');
+  const officialEvidence = {
+    schemaVersion: 1, candidateCommit: TRUNK, sourceTree: TREE,
+    artifact: { sha256: installed.artifact.sha256, size: installed.artifact.size },
+    authority: 'release-attestation-verifier', verificationId: 'attestation-123'
+  };
+  A.eq(checkInstalled(Object.assign({}, installed, { provenanceKind: 'official', officialEvidence, officialEvidenceVerified: true }), cfg).ok, true, 'host-reverified exact official evidence is accepted');
+  A.eq(checkInstalled(Object.assign({}, installed, { buildKind: 'custom', provenanceKind: 'custom' }), cfg).ok, true, 'an exact clean custom open-source build is accepted as custom');
   A.eq(checkInstalled(Object.assign({}, installed, { runtimeExecutable: null }), cfg).ok, false, 'missing runtime executable identity is rejected');
   const differentRuntime = { sha256: 'd'.repeat(64), size: installed.artifact.size };
   A.eq(checkInstalled(Object.assign({}, installed, { runtimeExecutable: differentRuntime }), cfg).ok, false, 'supplied artifact whose SHA-256 differs from the running executable is rejected');
   A.eq(checkInstalled(Object.assign({}, installed, { runtimeExecutable: { sha256: installed.artifact.sha256, size: installed.artifact.size + 1 } }), cfg).ok, false, 'supplied artifact whose size differs from the running executable is rejected');
   A.eq(checkInstalled(Object.assign({}, installed, { artifactVerified: false }), cfg).ok, false, 'missing/mismatched artifact is rejected');
   A.eq(checkInstalled(Object.assign({}, installed, { evidenceVerified: false, evidenceError: 'probe.json: file SHA-256 does not match receipt' }), cfg).ok, false, 'tampered content-bound evidence is rejected');
-  A.eq(checkInstalled(Object.assign({}, installed, { schemaVersion: 1 }), cfg).ok, false, 'legacy installed receipt is rejected');
+  A.eq(checkInstalled(Object.assign({}, installed, { schemaVersion: 2 }), cfg).ok, false, 'legacy installed receipt is rejected');
   A.ok(/installed app unverified/.test(checkInstalled({ missing: true }, cfg).reason), 'a missing installed smoke reads "installed app unverified"');
+}
+
+/* ---- F2. W0 can inspect installed identity without invoking the broad READY aggregate ---- */
+{
+  const repoRoot = path.resolve('C:/virtual-starnet');
+  const receiptPath = path.join(repoRoot, 'qa', 'installed', 'last-smoke.json');
+  const artifactPath = path.join(repoRoot, 'StarNet.exe');
+  const evidencePath = path.join(repoRoot, EVIDENCE_IDENTITY.path);
+  const artifactBytes = Buffer.from('exact running StarNet executable', 'utf8');
+  const artifactIdentity = {
+    path: artifactPath,
+    sha256: crypto.createHash('sha256').update(artifactBytes).digest('hex'),
+    size: artifactBytes.length,
+  };
+  const receipt = Object.assign({}, greenArtifacts().installed, {
+    stampIso: FRESH,
+    artifact: artifactIdentity,
+    runtimeExecutable: { sha256: artifactIdentity.sha256, size: artifactIdentity.size },
+    evidence: [EVIDENCE_IDENTITY],
+  });
+  delete receipt.artifactVerified;
+  delete receipt.evidenceVerified;
+
+  const files = new Map([
+    [path.resolve(receiptPath), Buffer.from(JSON.stringify(receipt), 'utf8')],
+    [path.resolve(artifactPath), artifactBytes],
+    [path.resolve(evidencePath), EVIDENCE_BYTES],
+  ]);
+  const io = {
+    existsSync(file) { return files.has(path.resolve(file)); },
+    statSync(file) {
+      if (!files.has(path.resolve(file))) throw new Error('ENOENT');
+      return { isFile: () => true };
+    },
+    readFileSync(file, encoding) {
+      const value = files.get(path.resolve(file));
+      if (!value) throw new Error('ENOENT');
+      return encoding ? value.toString(encoding) : Buffer.from(value);
+    },
+  };
+  const opts = { repoRoot, receiptPath, candidateSha: TRUNK, nowMs: NOW, io, resolveCandidateTree: () => TREE };
+  const inspected = inspectInstalledIdentity(opts);
+  A.eq(inspected.ok, true, 'host-callable installed inspector accepts an exact content-bound receipt');
+  A.eq(inspected.status, 'PASS', 'installed inspector returns a standalone PASS status');
+  A.eq(inspected.reasons, [], 'standalone PASS has no reasons');
+
+  const officialReceipt = Object.assign({}, receipt, {
+    provenanceKind: 'official',
+    officialEvidence: {
+      schemaVersion: 1, candidateCommit: TRUNK, sourceTree: TREE,
+      artifact: { sha256: artifactIdentity.sha256, size: artifactIdentity.size },
+      authority: 'release-attestation-verifier', verificationId: 'attestation-123'
+    }
+  });
+  files.set(path.resolve(receiptPath), Buffer.from(JSON.stringify(officialReceipt), 'utf8'));
+  A.eq(inspectInstalledIdentity(opts).ok, false, 'standalone inspector rejects official receipt without an external verifier');
+  const externallyVerified = inspectInstalledIdentity(Object.assign({}, opts, {
+    verifyOfficialEvidence: (_normalized, raw) => ({
+      ok: raw.verificationId === 'attestation-123',
+      authority: raw.authority,
+      verificationId: raw.verificationId,
+    })
+  }));
+  A.eq(externallyVerified.ok, true, 'standalone inspector re-verifies exact official evidence through the host verifier');
+
+  files.set(path.resolve(receiptPath), Buffer.from(JSON.stringify(receipt), 'utf8'));
+
+  files.set(path.resolve(evidencePath), Buffer.from('tampered evidence', 'utf8'));
+  const tampered = inspectInstalledIdentity(opts);
+  A.eq(tampered.ok, false, 'standalone inspector rehashes and rejects tampered evidence');
+  A.ok(tampered.reasons.some(reason => /evidence/i.test(reason)), 'standalone inspector explains the evidence failure');
 }
 
 /* ─── G. aggregation: multiple failures are all numbered, in check order ─── */
