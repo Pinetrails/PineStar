@@ -146,6 +146,9 @@ const runStarted = Date.now();
 try {
   await tool('browser.test_navigate').run({ url }, {});
   ownedCdpPort = browser.session.attachedPort();
+  // DOM content can arrive before the deferred/module game runtime has created its
+  // renderer and attached the deploy handler. Wait for both instead of racing the click.
+  await until(() => evaluate(`!!document.querySelector('#deploy') && !!document.querySelector('canvas')`), 'FPS runtime readiness', 100);
   const initial = await evaluate(`(() => {
     const b=document.querySelector('#deploy'); const r=b&&b.getBoundingClientRect();
     window.__STARNET_PROOF_MOVES__=[];
