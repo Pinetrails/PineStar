@@ -28,6 +28,20 @@ A.eq(opensVisibleWindow('chrome --headless --mute-audio --dump-dom http://localh
 // a headless browser still plays audio on the user's speakers unless muted — that half of the incident is blocked too
 A.ok(opensVisibleWindow('msedge --headless=new --remote-debugging-port=9222 http://x'), 'headless browser without --mute-audio is refused');
 
+// ---- BYPASS HARDENING (code-review 2026-07-12): a browser launched via an alternate launcher, a newline, or
+//      a fake headless flag must still be caught (command-head splitting + whole-token flag checks). ----
+A.ok(opensVisibleWindow('Start-Process chrome https://evil/game'), 'Start-Process chrome (headed) blocked');
+A.ok(opensVisibleWindow('Start-Process -FilePath msedge'), 'Start-Process -FilePath msedge blocked');
+A.ok(opensVisibleWindow('saps firefox'), 'saps (Start-Process alias) firefox blocked');
+A.ok(opensVisibleWindow('powershell -Command "start chrome"'), 'start chrome inside powershell -Command blocked');
+A.ok(opensVisibleWindow('echo hi\nchrome https://x'), 'newline-separated chrome launch blocked');
+A.ok(opensVisibleWindow('chrome --headlessx https://evil/game --mute-audio'), 'fake --headlessx (Chrome opens headed) blocked');
+A.ok(opensVisibleWindow('msedge --headless-new http://x'), 'fake --headless-new token blocked');
+// NON-trips the hardening must preserve
+A.eq(opensVisibleWindow('curl -o ./chrome.exe https://example.com/x'), null, 'downloading a file named chrome.exe (browser as ARG) not blocked');
+A.eq(opensVisibleWindow('curl https://example.com/firefox.exe -o out'), null, 'firefox.exe as a URL arg not blocked');
+A.eq(opensVisibleWindow('git commit -m "start the chrome build"'), null, 'browser words in a commit message not blocked');
+
 // ---- NON-trips: the build/verify loop must keep working ----
 A.eq(opensVisibleWindow('npm start'), null, '`npm start` is NOT the cmd start builtin');
 A.eq(opensVisibleWindow('npm run start:dev'), null, 'npm run start:* not blocked');

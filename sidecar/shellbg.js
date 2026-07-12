@@ -73,7 +73,10 @@
       try { child = spawn(cmd, { cwd: o.cwd, shell: true, windowsHide: true, detached: !isWin }); }
       catch (e) { return { ok: false, error: 'could not start: ' + ((e && e.message) || e) }; }
       try { if (typeof child.unref === 'function') child.unref(); } catch (_) {}
-      try { if (ledger && child.pid) ledger.record({ pid: child.pid, cmd, kind: 'shell.bg' }); } catch (_) {}
+      // record a REDACTED command to the on-disk ledger — a backgrounded command can carry a secret on its argv
+      // (e.g. curl -H "Authorization: Bearer …"), and proc-ledger.json persists across sessions. redact() is a
+      // no-op for the common secret-free dev-server command, so the PID-reuse token match is unaffected there.
+      try { if (ledger && child.pid) ledger.record({ pid: child.pid, cmd: redact(cmd), kind: 'shell.bg' }); } catch (_) {}
       const bgId = 'bg_' + (++seq);
       const rec = { bgId, agentId, cmd, child, out: '', running: true, exitCode: null, killed: false, startedAt: now(), endedAt: null };
       const append = (buf) => { let s = ''; try { s = redact(String(buf)); } catch (_) { s = String(buf); } rec.out += s; if (rec.out.length > RING) rec.out = rec.out.slice(rec.out.length - RING); };

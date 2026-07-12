@@ -53,6 +53,34 @@ const { makeProcLedger, _internals } = require('../sidecar/procledger.js');
   const afterSweep = JSON.parse(fs.readFileSync(file, 'utf8'));
   A.eq(afterSweep.procs.length, 0, 'sweep clears the previous life\'s entries');
 
+  // ---- 3b. creation-time guard: a matching cmdline is STILL not killed if the live process started after we
+  //         recorded it (a recycled PID whose command coincidentally matches the user's own process) ----
+  const killedT = [];
+  const fileT = path.join(dir, 'ct.json');
+  const lT1 = makeProcLedger({ fs, pathMod: path, file: fileT, clock: { now: () => 100000 }, probe: async () => new Map(), killTree: async () => {} });
+  lT1.record({ pid: 700, cmd: 'npm run dev', kind: 'shell.bg' });   // recorded at t=100000
+  const lT2 = makeProcLedger({
+    fs, pathMod: path, file: fileT, clock: { now: () => 100000 },
+    // same command, but the live process was created LONG AFTER we recorded (200000 >> 100000) -> recycled PID
+    probe: async () => new Map([[700, { cmd: 'cmd.exe /d /s /c "npm run dev"', created: 200000 }]]),
+    killTree: async (pid) => killedT.push(pid)
+  });
+  const sT = await lT2.sweep();
+  A.eq(killedT.length, 0, 'a newer-than-recorded process is NOT killed even though its command matches');
+  A.eq(sT.reused, 1, 'creation-time guard counts it as a recycled pid');
+  // and the inverse: a process created BEFORE we recorded (our real orphan) IS killed
+  const killedT2 = [];
+  const fileT2 = path.join(dir, 'ct2.json');
+  const lU1 = makeProcLedger({ fs, pathMod: path, file: fileT2, clock: { now: () => 100000 }, probe: async () => new Map(), killTree: async () => {} });
+  lU1.record({ pid: 701, cmd: 'npm run dev', kind: 'shell.bg' });
+  const lU2 = makeProcLedger({
+    fs, pathMod: path, file: fileT2, clock: { now: () => 100000 },
+    probe: async () => new Map([[701, { cmd: 'cmd.exe /d /s /c "npm run dev"', created: 99000 }]]),   // created before startedAt
+    killTree: async (pid) => killedT2.push(pid)
+  });
+  await lU2.sweep();
+  A.eq(killedT2.join(','), '701', 'our real orphan (created before we recorded it) IS reaped');
+
   // ---- 4. sweep with an empty ledger is a no-op that never probes ----
   let probed = false;
   const l3 = makeProcLedger({ fs, pathMod: path, file, clock, probe: async () => { probed = true; return new Map(); }, killTree: async () => {} });

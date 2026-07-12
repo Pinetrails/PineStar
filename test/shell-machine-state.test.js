@@ -71,6 +71,34 @@ A.eq(breaksMachineState('git net-fetch'), null, 'net as part of another token no
 A.eq(breaksMachineState('service-worker.js'), null, 'service-worker filename not blocked');
 A.eq(breaksMachineState(''), null, 'empty command not a machine trip');
 
+// ---- BYPASS HARDENING (code-review 2026-07-12): dangerous verbs hidden behind a launcher, separator, or
+//      interpreter must still be caught (command-head splitting), and false-positive rework must hold. ----
+A.ok(breaksMachineState('powershell -Command "shutdown /r /t 0"'), 'powershell -Command shutdown blocked');
+A.ok(breaksMachineState('powershell -NoProfile -Command "Stop-Computer"'), 'powershell -Command Stop-Computer blocked');
+A.ok(breaksMachineState('pwsh -c "Restart-Computer"'), 'pwsh -c Restart-Computer blocked');
+A.ok(breaksMachineState('sh -c "shutdown -h now"'), 'sh -c shutdown blocked');
+A.ok(breaksMachineState('bash -c reboot'), 'bash -c reboot blocked');
+A.ok(breaksMachineState('Start-Process shutdown -ArgumentList /r'), 'Start-Process shutdown blocked');
+A.ok(breaksMachineState('echo hi\nshutdown /r'), 'newline-separated shutdown blocked');
+A.ok(breaksMachineState('foo & reg add HKCU\\x /v y /d z'), 'reg add after & blocked');
+A.ok(breaksMachineState('powershell -e UwB0AG8AcAAtAENvbXB1dGVy'), 'powershell -e (base64 encoded) blocked outright');
+A.ok(breaksMachineState('powershell -EncodedCommand ABCDEF'), 'powershell -EncodedCommand blocked outright');
+A.ok(breaksMachineState('schtasks /create /tn x /tr calc.exe & echo /query'), 'schtasks /create is NOT voided by a trailing /query');
+// NON-trips that the hardening must preserve
+A.eq(breaksMachineState('gcc -c file.c'), null, 'gcc -c (compile flag, not sh -c) allowed');
+A.eq(breaksMachineState('grep -c pattern file.txt'), null, 'grep -c (count flag) allowed');
+A.eq(breaksMachineState('powershell -ExecutionPolicy Bypass -File build.ps1'), null, 'powershell -ExecutionPolicy -File is NOT an encoded command');
+A.eq(breaksMachineState('schtasks /query /tn x'), null, 'schtasks /query (read-only) allowed');
+A.eq(breaksMachineState('echo restart-computer is a cmdlet'), null, 'the WORDS in an echo arg (no cmdlet at head) allowed');
+
+// ---- network exposure rework: explicit all-interfaces binds blocked; client 0.0.0.0 + bare mentions allowed ----
+A.ok(exposesNetwork('vite --host'), 'bare --host (framework binds 0.0.0.0) blocked');
+A.ok(exposesNetwork('server --host=::'), '--host=:: (IPv6 all-interfaces) blocked');
+A.ok(exposesNetwork('flask run --host 0.0.0.0'), '--host 0.0.0.0 (space form) blocked');
+A.eq(exposesNetwork('curl http://0.0.0.0:3000/health'), null, 'curl to 0.0.0.0 (client target, resolves loopback) allowed');
+A.eq(exposesNetwork('echo binding to 0.0.0.0 disabled'), null, 'echo mentioning 0.0.0.0 allowed');
+A.eq(exposesNetwork('vite --host 127.0.0.1'), null, '--host 127.0.0.1 allowed');
+
 // ---- integration: the real shell.exec tool refuses a machine-state command with a helpful message ----
 const fs = require('fs'), path = require('path'), os = require('os');
 const { spawn } = require('child_process');
