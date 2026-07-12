@@ -27,19 +27,25 @@
   // browser never reaches native pointer/keyboard lock. CDP Input.* remains fully synthetic.
   const SYNTHETIC_INPUT_BOOTSTRAP = String.raw`(() => {
     if (globalThis.__STARNET_SYNTHETIC_INPUT__) return;
-    const state = { pointer: null, keyboard: false, ready: false, popupBlocked: false, error: null };
-    let request = null, exit = null, blockedOpen = null, keyboardLock = null, keyboardUnlock = null;
+    const state = { pointer: null, fullscreen: null, keyboard: false, ready: false, popupBlocked: false, error: null };
+    let request = null, exit = null, fullscreenRequest = null, fullscreenExit = null, blockedOpen = null, keyboardLock = null, keyboardUnlock = null, wakeRequest = null, orientationLock = null, orientationUnlock = null;
     const attestation = {};
     Object.defineProperties(attestation, {
       pointer: { get: () => state.pointer },
+      fullscreen: { get: () => state.fullscreen },
       ready: { get: () => state.ready },
       popupBlocked: { get: () => state.popupBlocked },
       error: { get: () => state.error },
       requestPointerLock: { get: () => request },
       exitPointerLock: { get: () => exit },
+      requestFullscreen: { get: () => fullscreenRequest },
+      exitFullscreen: { get: () => fullscreenExit },
       blockedOpen: { get: () => blockedOpen },
       keyboardLock: { get: () => keyboardLock },
-      keyboardUnlock: { get: () => keyboardUnlock }
+      keyboardUnlock: { get: () => keyboardUnlock },
+      wakeRequest: { get: () => wakeRequest },
+      orientationLock: { get: () => orientationLock },
+      orientationUnlock: { get: () => orientationUnlock }
     });
     Object.freeze(attestation);
     Object.defineProperty(globalThis, '__STARNET_SYNTHETIC_INPUT__', { value: attestation, configurable: false, writable: false });
@@ -59,11 +65,35 @@
       for (const name of ['webkitPointerLockElement','mozPointerLockElement']) {
         if (name in Document.prototype) Object.defineProperty(Document.prototype, name, { configurable: false, get() { return state.pointer; } });
       }
+      fullscreenRequest = function () { state.fullscreen = this; fire('fullscreenchange'); return Promise.resolve(); };
+      fullscreenExit = function () { state.fullscreen = null; fire('fullscreenchange'); return Promise.resolve(); };
+      Object.defineProperty(Document.prototype, 'fullscreenElement', { configurable: false, get() { return state.fullscreen; } });
+      Object.defineProperty(Element.prototype, 'requestFullscreen', { configurable: false, writable: false, value: fullscreenRequest });
+      Object.defineProperty(Document.prototype, 'exitFullscreen', { configurable: false, writable: false, value: fullscreenExit });
+      for (const name of ['webkitRequestFullscreen','webkitRequestFullScreen','mozRequestFullScreen','msRequestFullscreen']) {
+        if (name in Element.prototype) Object.defineProperty(Element.prototype, name, { configurable: false, writable: false, value: fullscreenRequest });
+      }
+      for (const name of ['webkitExitFullscreen','webkitCancelFullScreen','mozCancelFullScreen','msExitFullscreen']) {
+        if (name in Document.prototype) Object.defineProperty(Document.prototype, name, { configurable: false, writable: false, value: fullscreenExit });
+      }
       if (navigator.keyboard) {
         keyboardLock = async function () { state.keyboard = true; return undefined; };
         keyboardUnlock = function () { state.keyboard = false; };
         Object.defineProperty(navigator.keyboard, 'lock', { configurable: false, writable: false, value: keyboardLock });
         Object.defineProperty(navigator.keyboard, 'unlock', { configurable: false, writable: false, value: keyboardUnlock });
+      }
+      if (navigator.wakeLock) {
+        wakeRequest = async function (type) {
+          let released = false;
+          return Object.freeze({ type: String(type || 'screen'), get released() { return released; }, async release() { released = true; }, addEventListener() {}, removeEventListener() {} });
+        };
+        Object.defineProperty(navigator.wakeLock, 'request', { configurable: false, writable: false, value: wakeRequest });
+      }
+      if (globalThis.screen && screen.orientation) {
+        orientationLock = async function () { return undefined; };
+        orientationUnlock = function () {};
+        Object.defineProperty(screen.orientation, 'lock', { configurable: false, writable: false, value: orientationLock });
+        Object.defineProperty(screen.orientation, 'unlock', { configurable: false, writable: false, value: orientationUnlock });
       }
       // A popup is a new CDP target and would not inherit a target-scoped preload. Local test
       // sessions do not need new browsing contexts, so block them before any synthetic click
@@ -95,8 +125,11 @@
       const aliasesReady = ['webkitRequestPointerLock','mozRequestPointerLock'].every(n => !(n in Element.prototype) || Element.prototype[n] === request)
         && ['webkitExitPointerLock','mozExitPointerLock'].every(n => !(n in Document.prototype) || Document.prototype[n] === exit);
       const keyboardReady = !navigator.keyboard || (navigator.keyboard.lock === keyboardLock && navigator.keyboard.unlock === keyboardUnlock);
-      state.ready = Element.prototype.requestPointerLock === request && Document.prototype.exitPointerLock === exit && aliasesReady && keyboardReady && state.popupBlocked;
-      if (!state.ready) throw new Error('pointer-lock override did not stick');
+      const fullscreenReady = Element.prototype.requestFullscreen === fullscreenRequest && Document.prototype.exitFullscreen === fullscreenExit;
+      const wakeReady = !navigator.wakeLock || navigator.wakeLock.request === wakeRequest;
+      const orientationReady = !globalThis.screen || !screen.orientation || (screen.orientation.lock === orientationLock && screen.orientation.unlock === orientationUnlock);
+      state.ready = Element.prototype.requestPointerLock === request && Document.prototype.exitPointerLock === exit && aliasesReady && fullscreenReady && keyboardReady && wakeReady && orientationReady && state.popupBlocked;
+      if (!state.ready) throw new Error('user-control override did not stick');
     } catch (e) {
       state.ready = false;
       state.error = String(e && e.message || e || 'bootstrap failed');
@@ -393,15 +426,20 @@
       if (deps.syntheticInputOnly !== false) {
         const isolation = await evalJS(`(() => {
           const s=globalThis.__STARNET_SYNTHETIC_INPUT__;
-          const rd=Object.getOwnPropertyDescriptor(Element.prototype,'requestPointerLock');
-          const ed=Object.getOwnPropertyDescriptor(Document.prototype,'exitPointerLock');
-          const od=Object.getOwnPropertyDescriptor(globalThis,'open');
+           const rd=Object.getOwnPropertyDescriptor(Element.prototype,'requestPointerLock');
+           const ed=Object.getOwnPropertyDescriptor(Document.prototype,'exitPointerLock');
+           const fd=Object.getOwnPropertyDescriptor(Element.prototype,'requestFullscreen');
+           const fe=Object.getOwnPropertyDescriptor(Document.prototype,'exitFullscreen');
+           const od=Object.getOwnPropertyDescriptor(globalThis,'open');
           const kd=navigator.keyboard&&Object.getOwnPropertyDescriptor(navigator.keyboard,'lock');
           const ku=navigator.keyboard&&Object.getOwnPropertyDescriptor(navigator.keyboard,'unlock');
-          const pointerReady=!!(s&&rd&&ed&&rd.value===s.requestPointerLock&&ed.value===s.exitPointerLock&&rd.writable===false&&ed.writable===false&&rd.configurable===false&&ed.configurable===false);
-          const popupReady=!!(s&&od&&od.value===s.blockedOpen&&od.writable===false&&od.configurable===false);
-          const keyboardReady=!navigator.keyboard||!!(kd&&ku&&kd.value===s.keyboardLock&&ku.value===s.keyboardUnlock&&kd.writable===false&&ku.writable===false&&kd.configurable===false&&ku.configurable===false);
-          return {ready:!!(s&&s.ready&&pointerReady&&popupReady&&keyboardReady),error:s&&s.error||null};
+           const pointerReady=!!(s&&rd&&ed&&rd.value===s.requestPointerLock&&ed.value===s.exitPointerLock&&rd.writable===false&&ed.writable===false&&rd.configurable===false&&ed.configurable===false);
+           const fullscreenReady=!!(s&&fd&&fe&&fd.value===s.requestFullscreen&&fe.value===s.exitFullscreen&&fd.writable===false&&fe.writable===false&&fd.configurable===false&&fe.configurable===false);
+           const popupReady=!!(s&&od&&od.value===s.blockedOpen&&od.writable===false&&od.configurable===false);
+           const keyboardReady=!navigator.keyboard||!!(kd&&ku&&kd.value===s.keyboardLock&&ku.value===s.keyboardUnlock&&kd.writable===false&&ku.writable===false&&kd.configurable===false&&ku.configurable===false);
+           const wakeReady=!navigator.wakeLock||navigator.wakeLock.request===s.wakeRequest;
+           const orientationReady=!globalThis.screen||!screen.orientation||(screen.orientation.lock===s.orientationLock&&screen.orientation.unlock===s.orientationUnlock);
+           return {ready:!!(s&&s.ready&&pointerReady&&fullscreenReady&&popupReady&&keyboardReady&&wakeReady&&orientationReady),error:s&&s.error||null};
         })()`);
         if (!isolation || isolation.ready !== true) {
           // Fail closed before the caller can dispatch a click/user gesture. Pointer lock cannot
@@ -681,10 +719,10 @@
     deps = deps || {};
     const session = deps.session || makeBrowserSession(deps);
     const allowVisible = deps.allowVisible === true;
-    const read = (name, description, schema, run) => ({ name, capability: 'web', scope: 'read', requiresConsent: false, timeoutMs: 20000, description, schema, run });
-    const exec = (name, description, schema, run, consent) => ({ name, capability: 'web', scope: 'execute', requiresConsent: consent !== false, timeoutMs: 20000, description, schema, run });
-    const testRead = (name, description, schema, run) => ({ name, capability: 'workbench', scope: 'read', requiresConsent: false, timeoutMs: 20000, description, schema, run });
-    const testExec = (name, description, schema, run) => ({ name, capability: 'workbench', scope: 'execute', requiresConsent: false, timeoutMs: 20000, description, schema, run });
+    const read = (name, description, schema, run) => ({ name, capability: 'web', impact: 'synthetic-browser', scope: 'read', requiresConsent: false, timeoutMs: 20000, description, schema, run });
+    const exec = (name, description, schema, run, consent) => ({ name, capability: 'web', impact: 'synthetic-browser', scope: 'execute', requiresConsent: consent !== false, timeoutMs: 20000, description, schema, run });
+    const testRead = (name, description, schema, run) => ({ name, capability: 'workbench', impact: 'synthetic-browser', scope: 'read', requiresConsent: false, timeoutMs: 20000, description, schema, run });
+    const testExec = (name, description, schema, run) => ({ name, capability: 'workbench', impact: 'synthetic-browser', scope: 'execute', requiresConsent: false, timeoutMs: 20000, description, schema, run });
     const navProps = { url: { type: 'string' } };
     if (allowVisible) navProps.visible = { type: 'boolean' };
     const localNavRequired = deps.requireOwnedServer === true ? ['url', 'serverId'] : ['url'];

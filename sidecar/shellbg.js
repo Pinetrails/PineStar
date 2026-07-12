@@ -70,7 +70,7 @@
       let child;
       // detached on POSIX so the child leads its own group (clean tree-kill); windowsHide everywhere. unref so a
       // live bg child never keeps the sidecar process alive on its own.
-      try { child = spawn(cmd, { cwd: o.cwd, shell: true, windowsHide: true, detached: !isWin }); }
+      try { child = spawn(cmd, { cwd: o.cwd, shell: true, windowsHide: true, detached: !isWin, env: o.env }); }
       catch (e) { return { ok: false, error: 'could not start: ' + ((e && e.message) || e) }; }
       try { if (typeof child.unref === 'function') child.unref(); } catch (_) {}
       // record a REDACTED command to the on-disk ledger — a backgrounded command can carry a secret on its argv

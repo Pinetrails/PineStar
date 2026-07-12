@@ -66,7 +66,7 @@ const ATTENDED = { surface: 'interactive', isTask: false, physicalInputAuthorize
   A.eq(T.win32DriverActive({ STARNET_DESKTOP_SHELL: '1' }, 'win32'), false, 'desktop shell marker alone never activates physical input');
   A.eq(T.win32DriverActive({ STARNET_DESKTOP_SHELL: '1' }, 'linux'), false, 'non-win32 desktop shell does NOT activate the win32 driver');
   A.eq(T.win32DriverActive({ STARNET_DESKTOP_SHELL: '1', STARNET_COMPUTER_DRIVER: '0' }, 'win32'), false, 'explicit disable overrides the desktop-shell default');
-  A.eq(T.win32DriverActive({ STARNET_COMPUTER_DRIVER: 'win32' }, 'win32'), true, 'explicit env request is recognized on win32');
+  A.eq(T.win32DriverActive({ STARNET_COMPUTER_DRIVER: 'win32' }, 'win32'), false, 'environment variables can never activate the removed Win32 driver');
   A.eq(T.win32DriverActive({ STARNET_COMPUTER_DRIVER: 'win32' }, 'linux'), false, 'win32 driver can never activate off Windows');
 
   // RUN-CONTEXT ESCAPE TEST: no normal StarNet task/autonomous/test/missing-context call may
@@ -123,7 +123,7 @@ const ATTENDED = { surface: 'interactive', isTask: false, physicalInputAuthorize
   }
   A.ok(/PHYSICAL/.test(tool.description) && /Disabled/.test(tool.description), 'description reports the fail-closed physical-input posture');
   A.ok(typeof tool.schema.properties.expectApp === 'object', 'expectApp is in the schema');
-  A.ok(typeof C._internals.makeWin32DesktopDriver().foreground === 'function', 'win32 driver ships a foreground probe');
+  A.ok(C._internals.makeWin32DesktopDriver().inert === true, 'legacy Win32 driver factory is permanently inert');
 
   // registry + capability gate
   {
@@ -141,7 +141,7 @@ const ATTENDED = { surface: 'interactive', isTask: false, physicalInputAuthorize
       rooms: { r: { id: 'r', objects: [{ objectType: 'computer' }] } }
     });
     const denied = await reg.dispatch(call('computer.use', { action: 'click', x: 1, y: 1 }), makeCapCtx(noWorkbench));
-    A.eq(denied.summary, 'capdenied', 'without a workbench, computer-use is capability-denied');
+    A.eq(denied.summary, 'user-control-denied', 'computer-use fails closed even when no run authority was attached');
   }
 
   // autonomous cannot execute desktop actions from cached grants
@@ -155,13 +155,13 @@ const ATTENDED = { surface: 'interactive', isTask: false, physicalInputAuthorize
     A.eq(separate.allow, false, 'a standing shell/verify grant does not authorize the separate physical-input danger class');
   }
 
-  // missing desktop driver degrades as a normal tool error through dispatch
+  // no registry caller can reach a physical driver without host run authority
   {
     const reg = makeRegistry();
     makeComputerTools({ allowPhysicalInput: true }).register(reg);
     const r = await reg.dispatch(call('computer.use', { action: 'screenshot' }), Object.assign({ consent: async () => ({ allow: true }) }, ATTENDED));
     A.eq(r.isError, true, 'missing driver returns tool error');
-    A.ok(/computer-use unavailable/.test(r.content), 'missing driver error is explicit');
+    A.ok(/user-control denied|no run authority/.test(r.content), 'missing authority error is explicit');
   }
 
   A.report('computer.test');

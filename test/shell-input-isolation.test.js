@@ -59,6 +59,10 @@ try {
   A.ok(inputIsolationRisk('npm run smoke', { cwd: root, fs, pathMod: path }), 'npm pre/post lifecycle hooks cannot hide browser automation');
   A.ok(inputIsolationRisk('powershell -File scripts/native-input.ps1', { cwd: root, fs, pathMod: path }), 'script containing a native cursor API is refused');
   A.ok(inputIsolationRisk('npm run open', { cwd: root, fs, pathMod: path }), 'framework --open indirection is refused');
+  A.ok(inputIsolationRisk('python -c "import ctypes; ctypes.windll.user32.BlockInput(True)"', { cwd: root, fs, pathMod: path }), 'Python BlockInput cannot hide behind an inline interpreter');
+  A.ok(inputIsolationRisk('node -e "require(\'child_process\').execSync(\'powershell LockWorkStation\')"', { cwd: root, fs, pathMod: path }), 'inline Node cannot lock the user session');
+  A.ok(inputIsolationRisk('powershell -Command "Add-Type SetWindowsHookEx"', { cwd: root, fs, pathMod: path }), 'global input hooks are refused');
+  A.ok(inputIsolationRisk('powershell -Command "Invoke-Expression $payload"', { cwd: root, fs, pathMod: path }), 'opaque PowerShell evaluation is refused');
 
   A.eq(inputIsolationRisk('npm run check', { cwd: root, fs, pathMod: path }), null, 'ordinary unit checks stay allowed');
   A.eq(inputIsolationRisk('npm run build', { cwd: root, fs, pathMod: path }), null, 'ordinary build stays allowed');

@@ -241,23 +241,22 @@ async function startSse(url) {
     //     open-seam log), and a TRAVERSAL path is refused before any open.
     const openOk = await fetch(B + '/api/workshop/open', { method: 'POST', headers, body: JSON.stringify({ agentId: 'builder', runId: webRun, path: 'README.md' }) });
     const openOkJ = await openOk.json();
-    A.ok(openOk.status === 200 && openOkJ.ok === true, 'W7: /api/workshop/open opens a real jailed file (200 ok)');
-    A.ok(typeof openOkJ.opened === 'string' && openOkJ.opened.indexOf(ws) === 0 && /README\.md$/.test(openOkJ.opened), 'W7: the opened path is the jailed ABS path under the workspace');
+    A.ok(openOk.status === 403 && /direct Commander click/.test(openOkJ.error || ''), 'W7: API-token-only open is refused');
     const readOpenLog = () => (fs.existsSync(openLog) ? fs.readFileSync(openLog, 'utf8') : '').split('\n').filter(Boolean).map(l => { try { return JSON.parse(l); } catch (_) { return {}; } });
     const openedTargets = () => readOpenLog().map(e => String(e.target || ''));
-    A.ok(openedTargets().some(t => /README\.md$/.test(t) && t.indexOf(ws) === 0), 'W7: the opener was actually invoked with the jailed abs path (CI seam log)');
+    A.eq(openedTargets().length, 0, 'W7: HTTP open never invokes an OS opener');
 
     const openBad = await fetch(B + '/api/workshop/open', { method: 'POST', headers, body: JSON.stringify({ agentId: 'builder', runId: webRun, path: '../../builder.workshop.json' }) });
-    A.ok(openBad.status === 403 || openBad.status === 400, 'W7: /api/workshop/open refuses a traversal path (403/400)');
+    A.eq(openBad.status, 403, 'W7: traversal cannot reach a native opener');
     const openMissing = await fetch(B + '/api/workshop/open', { method: 'POST', headers, body: JSON.stringify({ agentId: 'builder', runId: webRun, path: 'does-not-exist.txt' }) });
-    A.eq(openMissing.status, 404, 'W7: /api/workshop/open on a missing file 404s');
+    A.eq(openMissing.status, 403, 'W7: missing paths cannot reach a native opener');
 
     // (6) decide keep { open:true } shell-opens the DEST FOLDER after copy (CI seam records the folder open).
     const keepOpenDir = path.join(os.tmpdir(), 'starnet-keepopen-' + Date.now());
     const koRes = await fetch(B + '/api/workshop/decide', { method: 'POST', headers, body: JSON.stringify({ agentId: 'builder', runId: webRun, decision: 'keep', destPath: keepOpenDir, open: true }) });
     const koJ = await koRes.json();
-    A.ok(koRes.status === 200 && koJ.ok === true && koJ.opened === true, 'W7: keep with open:true copies AND opens the dest folder');
-    A.ok(openedTargets().some(t => t === keepOpenDir), 'W7: the dest folder was handed to the opener after keep');
+    A.ok(koRes.status === 200 && koJ.ok === true && koJ.opened === false, 'W7: keep copies but HTTP cannot open the destination');
+    A.eq(openedTargets().length, 0, 'W7: decide HTTP never invokes an OS opener');
     try { fs.rmSync(keepOpenDir, { recursive: true, force: true }); } catch (_) {}
 
     // 7. GRANT IS LOAD-BEARING: an UNGRANTED agent's autonomous fs.write is DENIED. Queue+shift on a NON-granted

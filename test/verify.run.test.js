@@ -50,6 +50,14 @@ const { makeVerifyTool } = require('../sidecar/tools/builtin/verify.js');
     fs.writeFileSync(path.join(root, 'a1', 'scripts', 'smoke.mjs'), "import puppeteer from 'puppeteer-core';\n");
     fs.writeFileSync(path.join(root, 'a1', 'package.json'), JSON.stringify({ name: 'x', scripts: { test: 'exit 0', smoke: 'node scripts/smoke.mjs' } }));
     A.throws(() => tool.run({ cmd: 'npm run smoke' }, ctx), 'verify.run refuses browser automation that can reach native pointer lock');
+
+    // verify.run is not a privileged alternate shell: every user-control/machine-state floor
+    // from shell.exec is shared through commandSafetyRisk and runs before process creation.
+    A.throws(() => tool.run({ cmd: 'shutdown /s /t 0' }, ctx), 'verify.run refuses shutdown');
+    A.throws(() => tool.run({ cmd: 'start notepad' }, ctx), 'verify.run refuses visible desktop apps');
+    A.throws(() => tool.run({ cmd: 'powershell -Command "Start-Process notepad"' }, ctx), 'verify.run refuses indirect desktop launchers');
+    A.throws(() => tool.run({ cmd: 'python -c "import ctypes; ctypes.windll.user32.BlockInput(True)"' }, ctx), 'verify.run refuses input blocking APIs');
+    A.throws(() => tool.run({ cmd: 'vite --host 0.0.0.0' }, ctx), 'verify.run refuses all-interface listeners');
   } finally {
     try { fs.rmSync(root, { recursive: true, force: true }); } catch (_) {}
   }

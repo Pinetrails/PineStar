@@ -145,7 +145,7 @@ const { makeShellTool } = require('./tools/builtin/shell.js');      // the workb
 const { makeShellBg } = require('./shellbg.js');                    // H2.2: singleton background-process manager
 const { makeProcLedger } = require('./procledger.js');              // persistent child-PID ledger — boot sweep reaps force-kill orphans
 const { makeInputGuard } = require('./inputguard.js');              // stuck cursor-confinement (ClipCursor) release — 2026-07-12 incident
-const { enforceSyntheticOnly, runInputContext, backgroundOwnsLocalUrl, makeLoopbackListenerProbe } = require('./inputpolicy.js'); // per-run physical-input deny + synthetic CDP authority
+const { enforceSyntheticOnly, enforceRunAuthority, makeRunAuthority, runInputContext, backgroundOwnsLocalUrl, makeLoopbackListenerProbe } = require('./inputpolicy.js'); // per-run user-control authority + synthetic CDP policy
 const { makeEnvironmentManager } = require('./environment.js');     // execution backend boundary (reference-harness-style)
 const { foldInsights } = require('./insights.js');                  // H3.3: usage insights folded from run history
 const { makeVerifyTool } = require('./tools/builtin/verify.js');    // the workbench verify.run check-runner
@@ -1072,8 +1072,9 @@ const threadsStore = makeThreadsStore({
 // file we deliberately DON'T classify/assert-url — the path is already jail-proven by resolveInside before we call
 // this — and a non-'app' kind maps to exactly "open this path with the default handler" on win32/darwin/linux.
 // Injectable for tests via the workshopOpener seam (a test stub records the argv without launching anything).
-const _desktopInternals = require('./tools/builtin/desktop.js')._internals;
-let workshopOpener = _desktopInternals.makeShellOpener({});   // ({ kind, target }) -> Promise<'launched'>; kind!=='app' = open-with-default
+// No production OS opener exists in the sidecar. The legacy variable is retained only for
+// the dev response-shape seam below; native launch belongs to trusted Tauri click commands.
+let workshopOpener = null;
 function setWorkshopOpener(fn) { workshopOpener = fn; }   // test seam
 // CI seam (never in a shipping build): STARNET_TEST_OPEN_LOG points at a file the opener APPENDS the target path to
 // instead of launching anything — so the e2e can assert /api/workshop/open invoked the opener with the jailed ABS
@@ -2175,7 +2176,7 @@ const inputGuard = makeInputGuard({ log: (m) => console.log(m) });
 if (require.main === module) {
   // real host boot only (unit tests require() this file and must not probe/kill or touch the real cursor state)
   procLedger.sweep().then(s => { if (s.examined) console.log('[proc-ledger] boot sweep: examined=' + s.examined + ' killed=' + s.killed + ' gone=' + s.gone + ' pid-reused=' + s.reused); }).catch(() => {});
-  inputGuard.ensureFree('boot').catch(() => {});
+  inputGuard.observe('boot').catch(() => {});
 }
 const shellBg = makeShellBg({ spawn: childSpawn, redact: redact, clock: { now: () => Date.now() }, onExit: (e) => chanEmit('shell.bg.exit', e), maxPerAgent: 5, ledger: procLedger });
 const executionEnvironment = makeEnvironmentManager({ spawn: childSpawn, fs: fs, pathMod: path, root: WORKSPACES, bg: shellBg, redact: redact, clock: { now: () => Date.now() }, env: process.env });
@@ -4213,7 +4214,7 @@ function gracefulShutdown(signal) {
   try { if (typeof shellBg !== 'undefined' && shellBg && shellBg.killAll) shellBg.killAll(); } catch (_) {}   // reap backgrounded shell children (dev servers etc.)
   // release any cursor confinement a reaped child leaves stuck (the PS one-shot outlives our exit; best-effort —
   // the boot-time ensureFree is the reliable cover for the force-kill path this handler can't see at all)
-  try { if (typeof inputGuard !== 'undefined' && inputGuard) inputGuard.ensureFree('shutdown').catch(() => {}); } catch (_) {}
+  try { if (typeof inputGuard !== 'undefined' && inputGuard) inputGuard.observe('shutdown').catch(() => {}); } catch (_) {}
   try { if (typeof executionEnvironment !== 'undefined' && executionEnvironment && executionEnvironment.killAllBackground) executionEnvironment.killAllBackground(); } catch (_) {}
   try { if (typeof subagents !== 'undefined' && subagents && subagents.interruptAll) subagents.interruptAll(); } catch (_) {}   // stop watchable background workers
   try { if (typeof connectors !== 'undefined' && connectors && connectors.close) Promise.resolve(connectors.close()).catch(() => {}); } catch (_) {}   // close MCP connectors (stdio children get taskkill/SIGTERM)
@@ -5732,8 +5733,10 @@ async function handleWorkshopDecide(req, res) {
   // W7 (c): optional one-click "Open folder" — shell-open Explorer at the destination so the kept files are
   // immediately in hand. Interactive by definition (the Commander clicked Keep). Best-effort: a failed open never
   // undoes a successful copy, so `opened` reports honestly whether Explorer actually launched.
-  let opened = false;
-  if (body.open === true) { try { await workshopOpener({ kind: 'file', target: destPath }); opened = true; } catch (_) { opened = false; } }
+  // Opening Explorer/Finder is deliberately NOT an HTTP side effect. The trusted compiled
+  // desktop UI may invoke starnet_open_user_directory after this copy succeeds; an API token
+  // or agent child process is never a user gesture.
+  const opened = false;
   // NS-3 APPROVE → SHIP + LEARN: keeping (copying the artifact OUT of the jail to the Commander's folder) IS the
   // ship. For a night-shift-built deliverable it also UP-weights its archetype so the station proposes that kind
   // more next time. Undo path: the run dir stays in the workshop as an archive (kept, not wiped) and the checkpoint
@@ -5803,6 +5806,11 @@ async function serveWorkshopRun(req, res) {
 // workshop/<runId>/ before it ever reaches the opener, so no traversal can escape the agent's workspace.
 async function handleWorkshopOpen(req, res) {
   const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  // Native app launch moved to starnet_open_workshop_file in the trusted Tauri shell. A
+  // token-authenticated HTTP request is not proof of a Commander click, so this legacy route
+  // is permanently inert in desktop, browser, autonomous, and test surfaces.
+  return json(403, { error: 'opening a desktop app requires a direct Commander click in the installed desktop shell' });
+  /* legacy validation retained temporarily for response-shape archaeology; unreachable */
   let body; try { body = JSON.parse(await readBody(req, 1 << 16)) || {}; } catch (e) { return json(400, { error: 'bad request' }); }
   const agentId = String(body.agentId || '');
   const runId = String(body.runId || '');
@@ -6293,7 +6301,10 @@ async function runOnce(o) {
   const baseUrl = providerRuntimeBaseUrl(providerId, o.baseUrl || o.base_url || '');
   const runKey = providerRuntimeKey(providerId, key);
   const streamId = o.streamId || null;   // M-mem.2b (browser run only; the headless hub omits it → global memory)
-  const surface = o.surface || 'interactive';
+  // Missing/unknown callers are unattended until proven otherwise. Only the watched /api/run
+  // path passes the exact interactive value and a live prompt channel.
+  const surface = o.surface === 'interactive' ? 'interactive' : 'autonomous';
+  const userControlAuthority = makeRunAuthority({ surface, isTask, environment: executionEnvironment });
   const prompt = o.prompt;
   const pathPrompt = o.pathPrompt;   // NS-5: the live "work in <root>? always/once/no" channel (browser runs only); undefined for headless/autonomous → path-trust hard-denies a new root
   const summon = o.summon;   // the live team.summon round-trip closure (browser runs only); undefined for headless/workers → tool degrades gracefully
@@ -6552,7 +6563,7 @@ async function runOnce(o) {
   // TOOLSET kill-switch: a family the Commander switched OFF in the TOOLSETS console is dropped here, so the
   // next model turn reflects it live (no restart). compute is never in this set; MCP connectors are projected
   // below and keep their own per-connector enabled flag, so they are unaffected.
-  const resolved = enforceSyntheticOnly(resolveTools(agentId, station, undefined, { disabledCaps: disabledCapsSet() }));
+  let resolved = enforceSyntheticOnly(resolveTools(agentId, station, undefined, { disabledCaps: disabledCapsSet() }));
   // REAL DESKTOP ACCESS IS NOT A TASK CAPABILITY. computer.use and desktop.open are stripped
   // from the provider, capability telemetry, and dispatch allowlist in every current runOnce
   // flow. A future attended-control endpoint must mint a one-shot runId+callId lease; prompt
@@ -6569,6 +6580,10 @@ async function runOnce(o) {
       resolved.approvalRules[def.name] = { requiresConsent: !!def.requiresConsent, scope: def.scope, network: true };
     }
   } catch (e) { console.warn('[mcp] connector tool projection failed:', (e && e.message) || e); }
+  // Connector projection happens after the base office is resolved. Re-apply the host floor so
+  // no dynamic server or future registration order can restore a real-screen tool by name.
+  resolved = enforceSyntheticOnly(resolved);
+  resolved = enforceRunAuthority(resolved, registry, userControlAuthority);
   // QUEST V2 §A — the PROP-contract sweep, wired at the one seam where the sidecar PROVES a capability is live:
   // resolveTools just projected the placed office (+ live connector tools) into this run's real grants. A prop
   // quest keyed to a live objectType / capId family / tool name completes here — there is no other server-side
@@ -6604,6 +6619,8 @@ async function runOnce(o) {
   // on memory writes. makeCapCtx merges `extra` verbatim; the consumer arrives with M-mem.2.
   const capCtx = makeCapCtx(resolved, Object.assign({
     emit, consent, summon, timeoutMs: CAPS.toolTimeoutMs, runId, streamId, signal: signal,
+    authorize: userControlAuthority.authorize,
+    userControl: userControlAuthority,
     // Explicitly false in all current runOnce flows. This makes the deny visible at the
     // tool boundary even if a future refactor accidentally re-adds computer.use to tools.
   }, runInputContext(surface, isTask)));
@@ -7625,7 +7642,7 @@ function handleHalt(req, res) {
   // dial is re-written (handleAutonomyPosture → nightshift.clearHalt). Truthful telemetry: status now reports halted.
   try { nightshiftState = nightshift.engageHalt(nightshiftState, Date.now()); saveNightshiftState(); } catch (_) {}
   try { executionEnvironment.killAllBackground(); } catch (_) {}   // H2.2/Phase 0: E-STOP also reaps backend-owned background processes
-  try { inputGuard.ensureFree('halt').catch(() => {}); } catch (_) {}   // a killed child may have left the user's cursor confined — release it
+  try { inputGuard.observe('halt').catch(() => {}); } catch (_) {}   // diagnostic only: never release an unowned global clip
   try { subagents.interruptAll(); } catch (_) {}   // Phase 1: E-STOP aborts watchable background workers too
   try { cronLock.release(); } catch (_) {}  // G4.3: drop any cron lock this process holds so an E-STOP mid-tick never wedges the next tick (standalone halt-block addition; G2 will add connectors.close here)
   res.writeHead(200, { 'Content-Type': 'application/json' });

@@ -1030,6 +1030,8 @@ fn sidecar_command(state: &AppState, entry: &Path, node: &Path) -> Command {
         .env("STARNET_DESKTOP_SHELL", "1")
         .env("STARNET_COMPUTER_DRIVER", "0")
         .env("STARNET_BROWSER_HEADLESS", "1")
+        .env("STARNET_USER_CONTROL_MODE", "preserve")
+        .env("STARNET_MCP_STDIO", "0")
         // The packaged build's true version — computeVersionSurface() reads this first, so
         // /api/diagnostics reports the real build instead of "unknown" (the bundled sidecar
         // has no src-tauri/tauri.conf.json to fall back to). CARGO_PKG_VERSION is the
@@ -1470,6 +1472,116 @@ fn harness_has_channel_token(channel: String) -> bool {
     is_known_channel(&channel) && read_channel_token(&channel).is_some()
 }
 
+fn valid_workshop_segment(value: &str, max: usize) -> bool {
+    !value.is_empty()
+        && value.len() <= max
+        && value
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+}
+
+fn inert_deliverable_extension(path: &Path) -> bool {
+    let ext = path
+        .extension()
+        .and_then(|v| v.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    matches!(
+        ext.as_str(),
+        "txt"
+            | "md"
+            | "json"
+            | "csv"
+            | "tsv"
+            | "pdf"
+            | "png"
+            | "jpg"
+            | "jpeg"
+            | "gif"
+            | "webp"
+            | "docx"
+            | "xlsx"
+            | "pptx"
+    )
+}
+
+fn open_user_selected_path(path: &Path) -> Result<(), String> {
+    #[cfg(windows)]
+    Command::new("explorer.exe")
+        .arg(path)
+        .spawn()
+        .map_err(|e| format!("Failed to open path: {e}"))?;
+
+    #[cfg(target_os = "macos")]
+    Command::new("open")
+        .arg(path)
+        .spawn()
+        .map_err(|e| format!("Failed to open path: {e}"))?;
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    Command::new("xdg-open")
+        .arg(path)
+        .spawn()
+        .map_err(|e| format!("Failed to open path: {e}"))?;
+
+    Ok(())
+}
+
+/// Open one inert workshop artifact after a click in the trusted, compiled Tauri UI.
+/// Agent tools and the loopback HTTP API cannot invoke this native command. Active content
+/// and executables are deliberately refused; HTML runs through the sidecar's opaque-origin
+/// sandbox instead.
+#[tauri::command]
+fn starnet_open_workshop_file(
+    agent_id: String,
+    run_id: String,
+    path: String,
+    state: State<AppState>,
+) -> Result<(), String> {
+    if !valid_workshop_segment(&agent_id, 40) || !valid_workshop_segment(&run_id, 80) {
+        return Err("invalid workshop identity".to_string());
+    }
+    let rel = Path::new(&path);
+    if rel.is_absolute()
+        || rel
+            .components()
+            .any(|c| !matches!(c, std::path::Component::Normal(_)))
+    {
+        return Err("invalid workshop path".to_string());
+    }
+    let base = state
+        .workspaces
+        .join(&agent_id)
+        .join("workshop")
+        .join(&run_id)
+        .canonicalize()
+        .map_err(|_| "workshop is no longer available".to_string())?;
+    let target = base
+        .join(rel)
+        .canonicalize()
+        .map_err(|_| "file is no longer available".to_string())?;
+    if !target.starts_with(&base) || !target.is_file() {
+        return Err("workshop path escaped its run".to_string());
+    }
+    if !inert_deliverable_extension(&target) {
+        return Err("active or executable deliverables cannot run on the user's desktop".to_string());
+    }
+    open_user_selected_path(&target)
+}
+
+/// Reveal a directory the Commander just selected as a Keep destination. This is native
+/// click-only IPC; the sidecar/API merely copies files and cannot launch Explorer/Finder.
+#[tauri::command]
+fn starnet_open_user_directory(path: String) -> Result<(), String> {
+    let target = PathBuf::from(path)
+        .canonicalize()
+        .map_err(|_| "folder is no longer available".to_string())?;
+    if !target.is_absolute() || !target.is_dir() {
+        return Err("only an existing folder can be opened".to_string());
+    }
+    open_user_selected_path(&target)
+}
+
 /// Open an OAuth/device-auth URL in the user's default system browser.
 #[tauri::command]
 fn open_external_url(url: String) -> Result<(), String> {
@@ -1770,6 +1882,8 @@ fn main() {
             harness_clear_key,
             harness_store_channel_token,
             harness_has_channel_token,
+            starnet_open_workshop_file,
+            starnet_open_user_directory,
             open_external_url,
             starnet_toggle_fullscreen,
             starnet_set_keep_awake,

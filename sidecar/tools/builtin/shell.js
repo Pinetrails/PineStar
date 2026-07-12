@@ -93,9 +93,11 @@
     const c = String(cmd == null ? '' : cmd);
     const heads = commandHeads(c);
     if (heads.some(h => START_RE.test(h))) return 'cmd `start` opens a visible window on the user\'s screen';
+    if (heads.some(h => /^(?:start-process|saps|invoke-item|ii)\b/i.test(h))) return 'PowerShell app/file launchers open a visible window on the user\'s screen';
     if (heads.some(h => EXPLORER_RE.test(h))) return '`explorer` opens a visible window on the user\'s screen';
     if (/rundll32\b[^&|]*url\.dll/i.test(c)) return 'rundll32 url.dll opens the user\'s default browser';
     if (!WIN && heads.some(h => OPEN_RE.test(h))) return '`open`/`xdg-open` opens a visible window on the user\'s screen';
+    if (heads.some(h => /^(?:notepad|wordpad|write|mspaint|calc|wscript|cscript|mshta)(?:\.exe)?\b/i.test(h))) return 'launches a desktop application on the user\'s screen';
     if (heads.some(h => BROWSER_HEAD_RE.test(h)) || BROWSER_QUOTED_RE.test(c)) {
       // whole-token flag tests: `--headlessx` is NOT --headless (Chrome ignores it and opens a headed window)
       if (!/--headless\b/i.test(c)) {
@@ -115,10 +117,12 @@
   // Direct browser processes therefore belong to browser.test_* (which installs an in-page lock
   // emulator), not shell.exec. We also expand normal npm/node/PowerShell indirection so the exact
   // `npm run smoke -> node script -> puppeteer` escape cannot hide behind a package script.
-  const INPUT_CAPTURE_RE = /requestPointerLock|webkitRequestPointerLock|PointerLockControls|\bcontrols\s*\.\s*lock\s*\(|keyboard\s*\.\s*lock\s*\(|requestFullscreen|webkitRequestFullscreen|mozRequestFullScreen|ClipCursor|SetCursorPos|SendInput|RegisterRawInputDevices|SDL_SetRelativeMouseMode|GLFW_CURSOR_DISABLED/i;
+  const INPUT_CAPTURE_RE = /requestPointerLock|webkitRequestPointerLock|PointerLockControls|\bcontrols\s*\.\s*lock\s*\(|keyboard\s*\.\s*lock\s*\(|requestFullscreen|webkitRequestFullscreen|mozRequestFullScreen|ClipCursor|SetCursorPos|SendInput|BlockInput|SetCapture|SetWindowsHookEx|RegisterHotKey|RegisterRawInputDevices|SetForegroundWindow|SwitchToThisWindow|AttachThreadInput|HWND_TOPMOST|SetSystemCursor|ChangeDisplaySettings|SetDisplayConfig|SetMonitorBrightness|LockWorkStation|ExitWindowsEx|InitiateSystemShutdown|CGEventPost|CGAssociateMouseAndMouseCursorPosition|XTestFake|XGrabPointer|XGrabKeyboard|XWarpPointer|SDL_SetRelativeMouseMode|GLFW_CURSOR_DISABLED/i;
   const BROWSER_AUTOMATION_RE = /\b(?:puppeteer(?:-core)?|playwright|selenium|webdriver|chromedriver|geckodriver|chrome-remote-interface)\b|webSocketDebuggerUrl|Input\.dispatch(?:Mouse|Key)|--remote-debugging-port\b/i;
-  const NATIVE_INPUT_RE = /\b(?:SetCursorPos|mouse_event|SendInput|keybd_event|ClipCursor|SendKeys(?:\.SendWait)?|pyautogui|pynput|robotjs|nut\.js|xdotool|ydotool)\b/i;
-  const GUI_RUNTIME_RE = /\b(?:electron|nwjs|cargo\s+run|dotnet\s+run|java\s+-jar|rundll32)\b/i;
+  const NATIVE_INPUT_RE = /\b(?:SetCursorPos|mouse_event|SendInput|keybd_event|ClipCursor|BlockInput|SetCapture|SetWindowsHookEx|RegisterHotKey|RegisterRawInputDevices|SetForegroundWindow|SwitchToThisWindow|AttachThreadInput|SetWindowPos|SetSystemCursor|SendKeys(?:\.SendWait)?|pyautogui|pynput|robotjs|nut\.js|xdotool|ydotool|xte|evemu|uinput|CGEventPost|CGWarpMouseCursorPosition|XTestFake|XGrabPointer|XGrabKeyboard|XWarpPointer)\b|\/dev\/uinput/i;
+  const USER_SESSION_RE = /\b(?:LockWorkStation|ExitWindowsEx|InitiateSystemShutdown|SetSuspendState|ChangeDisplaySettings|SetDisplayConfig|SetMonitorBrightness|WmiMonitorBrightnessMethods|SystemParametersInfo|SetClipboardData|OpenClipboard|Set-Clipboard|pbcopy|xclip|xsel|DisplaySwitch|xrandr|xinput|xset|chvt|loginctl|ddcutil|pactl|amixer|osascript)\b/i;
+  const OPAQUE_LAUNCH_RE = /\b(?:Invoke-Expression|iex|Invoke-Command|DownloadString|FromBase64String|Reflection\.Assembly|ShellExecute|os\.startfile|Process\.Start)\b/i;
+  const GUI_RUNTIME_RE = /\b(?:electron|nwjs|cargo\s+run|dotnet\s+run|java\s+-jar|rundll32|wscript|cscript|mshta|notepad|wordpad|mspaint|calc|write)\b/i;
   const LOCAL_PROGRAM_RE = /^(?:"|')?(?:(?:\.\\|\.\/)[^\s"']+|[^\s"']+\.exe)(?:"|'|\s|$)/i;
   const CODE_FILE_RE = /\.(?:[cm]?js|ts|tsx|jsx|ps1|py|rb|php|sh|bash|cmd|bat|rs|cs|c|cc|cpp)$/i;
   const SCAN_SKIP_RE = /^(?:node_modules|\.git|dist|build|coverage|\.cache|\.vite|target)$/i;
@@ -224,9 +228,9 @@
     const sources = commandSources(c, opts);
     const expanded = sources.join('\n');
     // Inert prose is not execution. Script/expanded content and executable command heads are.
-    const activeHead = heads.some(h => !/^echo(?:\.exe)?\b/i.test(h) && NATIVE_INPUT_RE.test(h));
-    if (activeHead || sources.slice(1).some(s => NATIVE_INPUT_RE.test(s))) {
-      return 'can inject or confine the user\'s physical mouse/keyboard';
+    const activeHead = heads.some(h => !/^echo(?:\.exe)?\b/i.test(h) && (NATIVE_INPUT_RE.test(h) || USER_SESSION_RE.test(h) || OPAQUE_LAUNCH_RE.test(h)));
+    if (activeHead || sources.slice(1).some(s => NATIVE_INPUT_RE.test(s) || USER_SESSION_RE.test(s) || OPAQUE_LAUNCH_RE.test(s))) {
+      return 'can inject/capture input, launch opaque code, or alter the user\'s interactive session';
     }
     if (sources.some(s => /(?:^|\s)--open(?:[=\s]|$)/i.test(s))) {
       return 'opens a framework/browser window on the user\'s screen — keep dev servers headless';
@@ -243,7 +247,7 @@
   // --- machine-state floor --- head-anchored rules (verb at the start of a command head) + a few whole-string
   // rules for signatures that are distinctive enough to match anywhere (registry hive refs, PS cmdlet names).
   const MACHINE_HEAD_RULES = [
-    { re: /^(?:shutdown|logoff|reboot|halt|poweroff)(?:\.exe)?\b/i, why: 'shuts down, reboots, or logs the user out of their machine' },
+    { re: /^(?:shutdown|logoff|reboot|halt|poweroff|tsdiscon|rwinsta)(?:\.exe)?\b/i, why: 'shuts down, reboots, disconnects, or logs the user out of their machine' },
     { re: /^(?:taskkill|tskill|pskill|kill|pkill|killall)(?:\.exe)?\b/i, why: 'kills processes the agent does not own — stop your OWN background processes with shell.bg.kill' },
     { re: /^schtasks(?:\.exe)?\b[\s\S]*?\s\/(?:create|change|delete|run)\b/i, why: 'creates or changes a Windows scheduled task (machine persistence that outlives StarNet)' },
     { re: /^reg(?:\.exe)?\s+(?:add|delete|import|load|unload|copy)\b/i, why: 'writes the Windows registry' },
@@ -252,11 +256,11 @@
     { re: /^netsh(?:\.exe)?\b/i, why: 'changes network / firewall configuration' },
     { re: /^net(?:\.exe)?\s+(?:user|localgroup|accounts|share|start|stop)\b/i, why: 'changes accounts, shares, or services' },
     { re: /^(?:setx|assoc|ftype)(?:\.exe)?\b/i, why: 'permanently changes environment variables or file associations' },
-    { re: /^(?:bcdedit|diskpart|format|chkdsk|cipher|vssadmin|wevtutil|powercfg|tzutil|w32tm|msg|mshta|wmic)(?:\.exe)?\b/i, why: 'system-level tool that alters or disrupts the machine' },
-    { re: /^(?:sudo|su|systemctl|launchctl|crontab|nvram|csrutil|diskutil)\b/i, why: 'system administration command' },
+    { re: /^(?:bcdedit|diskpart|format|chkdsk|cipher|vssadmin|wevtutil|powercfg|tzutil|w32tm|msg|mshta|wmic|displayswitch|xrandr|xinput|xset|chvt|ddcutil|pactl|amixer)(?:\.exe)?\b/i, why: 'system/display/input/audio tool that alters or disrupts the machine' },
+    { re: /^(?:sudo|su|systemctl|loginctl|launchctl|crontab|nvram|csrutil|diskutil|pmset|osascript)\b/i, why: 'system administration or interactive-session command' },
     // machine-altering PowerShell cmdlets — head-anchored so `echo restart-computer` (the word as an arg) is not a
     // trip, but `Restart-Computer`, `foo | Stop-Computer`, and `powershell -Command "Stop-Computer"` all are.
-    { re: /^(?:Stop-Computer|Restart-Computer|Register-ScheduledTask|New-ScheduledTask\w*|Stop-Process|Stop-Service|New-Service|Set-Service|Set-Date|Add-Computer|Set-ExecutionPolicy|Set-NetFirewall\w+|Disable-NetAdapter)\b/i, why: 'PowerShell cmdlet that alters machine state' }
+    { re: /^(?:Stop-Computer|Restart-Computer|Suspend-Computer|Register-ScheduledTask|New-ScheduledTask\w*|Stop-Process|Stop-Service|New-Service|Set-Service|Set-Date|Add-Computer|Set-ExecutionPolicy|Set-NetFirewall\w+|Disable-NetAdapter|Set-DisplayResolution|Set-Clipboard)\b/i, why: 'PowerShell cmdlet that alters machine or interactive-session state' }
   ];
   const MACHINE_GLOBAL_RULES = [
     { re: /\bHKEY_|(?:^|[\s"'`=(\\])HK(?:LM|CU|CR|U|CC)[:\\]/i, why: 'references a Windows registry hive' },
@@ -287,6 +291,21 @@
       || /--host(?:\s+--|\s*$)/i.test(c)) {
       return 'binds to ALL network interfaces — every device on the user\'s network could reach it; bind to 127.0.0.1';
     }
+    return null;
+  }
+
+  // One decision seam for every agent-controlled command runner. Keep the individual helpers
+  // exported for focused tests, but shell.exec and verify.run MUST call this aggregate so a new
+  // floor cannot silently protect one runner while leaving another as a bypass.
+  function commandSafetyRisk(cmd, opts) {
+    const visible = opensVisibleWindow(cmd);
+    if (visible) return { kind: 'visible-desktop', reason: visible };
+    const machine = breaksMachineState(cmd);
+    if (machine) return { kind: 'machine-state', reason: machine };
+    const network = exposesNetwork(cmd);
+    if (network) return { kind: 'network-exposure', reason: network };
+    const input = inputIsolationRisk(cmd, opts || {});
+    if (input) return { kind: 'user-control', reason: input };
     return null;
   }
 
@@ -413,7 +432,7 @@
     const sessions = new Map();   // H2.1: aid -> { cwd } — a persistent working dir that survives across calls (jail-clamped)
 
     const execTool = {
-      name: 'shell.exec', capability: 'workbench', scope: 'execute', requiresConsent: true,
+      name: 'shell.exec', capability: 'workbench', impact: 'workspace-process', scope: 'execute', requiresConsent: true,
       timeoutMs: MAX_MS + 10000,   // registry backstop ABOVE our own kill logic, so withTimeout never preempts the child-kill
       description: 'Run a shell command in your workspace directory and get back its combined stdout/stderr + exit code. '
         + 'Use it to run tests, builds, git, scripts — anything you would type in a terminal. Commands must NOT change the '
@@ -454,8 +473,8 @@
         }
         const hostCwd = environment && typeof environment.workspaceRoot === 'function' && environment.backendId !== 'local'
           ? environment.workspaceRoot(aid) : cwd;
-        const inputDeny = inputIsolationRisk(cmd, { cwd: hostCwd, fs: fs, pathMod: P });
-        if (inputDeny) throw new Error('refused: this command ' + inputDeny + '. StarNet tests use synthetic/headless input only and never touch the physical mouse or keyboard.');
+        const safetyDeny = commandSafetyRisk(cmd, { cwd: hostCwd, fs: fs, pathMod: P });
+        if (safetyDeny) throw new Error('refused [' + safetyDeny.kind + ']: this command ' + safetyDeny.reason + '. StarNet task processes preserve the user\'s control of their computer; use browser.test_* for local UI/game verification.');
         if (!environment) { try { fs.mkdirSync(cwd, { recursive: true }); } catch (_) {} }
         // H2.2: a long-running process — hand it to the singleton bg manager (detached, ring-buffered, capped)
         // and return immediately. Inherits the persisted cwd. Still consent-gated (this IS shell.exec).
@@ -535,10 +554,10 @@
 
     return {
       execTool: execTool, bgStatusTool: bgStatusTool, bgKillTool: bgKillTool,
-      _internals: { escapesWorkspace: escapesWorkspace, opensVisibleWindow: opensVisibleWindow, inputIsolationRisk: inputIsolationRisk, workspaceCapturesInput: workspaceCapturesInput, projectScanRoot: projectScanRoot, breaksMachineState: breaksMachineState, exposesNetwork: exposesNetwork, killTree: killTree, safeAgentId: safeAgentId, normalizeWinCwd: normalizeWinCwd, resolveShellCwd: resolveShellCwd },
+      _internals: { escapesWorkspace: escapesWorkspace, opensVisibleWindow: opensVisibleWindow, inputIsolationRisk: inputIsolationRisk, commandSafetyRisk: commandSafetyRisk, workspaceCapturesInput: workspaceCapturesInput, projectScanRoot: projectScanRoot, breaksMachineState: breaksMachineState, exposesNetwork: exposesNetwork, killTree: killTree, safeAgentId: safeAgentId, normalizeWinCwd: normalizeWinCwd, resolveShellCwd: resolveShellCwd },
       register: function (reg) { reg.register(execTool); reg.register(bgStatusTool); reg.register(bgKillTool); return reg; }
     };
   }
 
-  return { makeShellTool: makeShellTool, runCommand: runCommand, escapesWorkspace: escapesWorkspace, opensVisibleWindow: opensVisibleWindow, inputIsolationRisk: inputIsolationRisk, workspaceCapturesInput: workspaceCapturesInput, projectScanRoot: projectScanRoot, breaksMachineState: breaksMachineState, exposesNetwork: exposesNetwork, safeAgentId: safeAgentId, buildMarkedCmd: buildMarkedCmd, parseMarker: parseMarker, withinJail: withinJail, normalizeWinCwd: normalizeWinCwd, resolveShellCwd: resolveShellCwd };
+  return { makeShellTool: makeShellTool, runCommand: runCommand, escapesWorkspace: escapesWorkspace, opensVisibleWindow: opensVisibleWindow, inputIsolationRisk: inputIsolationRisk, commandSafetyRisk: commandSafetyRisk, workspaceCapturesInput: workspaceCapturesInput, projectScanRoot: projectScanRoot, breaksMachineState: breaksMachineState, exposesNetwork: exposesNetwork, safeAgentId: safeAgentId, buildMarkedCmd: buildMarkedCmd, parseMarker: parseMarker, withinJail: withinJail, normalizeWinCwd: normalizeWinCwd, resolveShellCwd: resolveShellCwd };
 });

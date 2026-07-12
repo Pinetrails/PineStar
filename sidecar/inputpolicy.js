@@ -10,6 +10,80 @@
 'use strict';
 
 const REAL_DESKTOP_TOOLS = new Set(['computer.use', 'desktop.open']);
+const IMPACTS = Object.freeze({
+  NONE: 'none',
+  SYNTHETIC_BROWSER: 'synthetic-browser',
+  WORKSPACE_PROCESS: 'workspace-process',
+  MEDIA_CONTROL: 'media-control',
+  EXTERNAL_SERVICE: 'external-service',
+  EXTERNAL_UNKNOWN: 'external-unknown',
+  VISIBLE_DESKTOP: 'visible-desktop',
+  PHYSICAL_INPUT: 'physical-input'
+});
+const IMPACT_SET = new Set(Object.keys(IMPACTS).map(k => IMPACTS[k]));
+const SAFE_BUILTIN_CAPS = new Set(['compute', 'cabinet', 'memory', 'quest', 'studio', 'orchestrator']);
+
+function impactOfTool(tool) {
+  tool = tool || {};
+  if (IMPACT_SET.has(tool.impact)) return tool.impact;
+  const name = String(tool.name || '');
+  const cap = String(tool.capability || '');
+  if (name === 'computer.use' || cap === 'physical-input') return IMPACTS.PHYSICAL_INPUT;
+  if (name === 'desktop.open' || cap === 'visible-desktop') return IMPACTS.VISIBLE_DESKTOP;
+  if (/^browser\./.test(name)) return IMPACTS.SYNTHETIC_BROWSER;
+  if (name === 'shell.exec' || name === 'verify.run') return IMPACTS.WORKSPACE_PROCESS;
+  if (/^shell\.bg\.(?:status|kill)$/.test(name)) return IMPACTS.NONE;
+  if (/^spotify_(?:play|pause|next|previous|queue)$/.test(name) || cap === 'jukebox') return IMPACTS.MEDIA_CONTROL;
+  if (SAFE_BUILTIN_CAPS.has(cap)) return IMPACTS.NONE;
+  if (cap === 'web' && !/^browser\./.test(name)) return IMPACTS.EXTERNAL_SERVICE;
+  // Dynamic/unknown capabilities fail closed. MCP translation supplies external-service
+  // explicitly for remote HTTP servers and external-unknown for local stdio processes.
+  return IMPACTS.EXTERNAL_UNKNOWN;
+}
+
+function makeRunAuthority(opts) {
+  opts = opts || {};
+  const surface = opts.surface === 'interactive' ? 'interactive' : 'autonomous';
+  const isTask = !!opts.isTask;
+  const environment = opts.environment || null;
+  const isolated = !!(environment && environment.supports && (environment.supports.userControlIsolation === true || environment.supports.hostileCodeSandbox === true));
+  function authorize(call, tool) {
+    const impact = impactOfTool(tool);
+    if (impact === IMPACTS.PHYSICAL_INPUT || impact === IMPACTS.VISIBLE_DESKTOP || impact === IMPACTS.EXTERNAL_UNKNOWN) {
+      return { ok: false, impact, reason: impact + ' is unavailable to ordinary StarNet runs; no native one-shot user lease exists' };
+    }
+    // Full Access, cached grants, and task text never turn an unattended run into authority
+    // over a host process or the user's active media session. This gate runs before consent.
+    if (surface !== 'interactive' && (impact === IMPACTS.WORKSPACE_PROCESS || impact === IMPACTS.MEDIA_CONTROL)) {
+      return { ok: false, impact, reason: 'unattended runs cannot use ' + impact + ' even under Full Access' };
+    }
+    return { ok: true, impact, surface, isTask, isolated };
+  }
+  return Object.freeze({ mode: 'preserve-user-control', surface, isTask, isolated, authorize });
+}
+
+function enforceRunAuthority(resolved, registry, authority) {
+  resolved = resolved || {};
+  const allowed = new Set();
+  for (const name of (resolved.tools || [])) {
+    const tool = registry && typeof registry.get === 'function' ? registry.get(name) : null;
+    const verdict = tool && authority && typeof authority.authorize === 'function'
+      ? authority.authorize({ name }, tool) : { ok: false };
+    if (verdict && verdict.ok === true) allowed.add(name);
+  }
+  const approvalRules = {};
+  const networkCaps = {};
+  for (const name of allowed) {
+    if (resolved.approvalRules && resolved.approvalRules[name]) approvalRules[name] = resolved.approvalRules[name];
+    if (resolved.networkCaps && resolved.networkCaps[name]) networkCaps[name] = resolved.networkCaps[name];
+  }
+  return Object.assign({}, resolved, {
+    tools: (resolved.tools || []).filter(name => allowed.has(name)),
+    grants: (resolved.grants || []).filter(g => g && allowed.has(g.tool)),
+    approvalRules,
+    networkCaps
+  });
+}
 
 function enforceSyntheticOnly(resolved) {
   resolved = resolved || {};
@@ -94,4 +168,4 @@ async function backgroundOwnsLocalUrl(status, rawUrl, listenerProbe) {
   try { return await listenerProbe(status, rawUrl) === true; } catch (_) { return false; }
 }
 
-module.exports = { enforceSyntheticOnly, runInputContext, backgroundOwnsLoopbackUrl, backgroundOwnsLocalUrl, makeLoopbackListenerProbe, REAL_DESKTOP_TOOLS };
+module.exports = { enforceSyntheticOnly, enforceRunAuthority, runInputContext, impactOfTool, makeRunAuthority, IMPACTS, backgroundOwnsLoopbackUrl, backgroundOwnsLocalUrl, makeLoopbackListenerProbe, REAL_DESKTOP_TOOLS };

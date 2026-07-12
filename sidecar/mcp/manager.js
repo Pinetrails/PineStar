@@ -287,7 +287,7 @@
       const c = conns.get(String(id));
       if (!c || c.state !== 'up' || !c.client) return [];
       const bound = (toolName, args) => call(c.id, toolName, args);
-      return (c.tools || []).map(t => makeToolDef({ connectorId: c.id, label: c.label, mcpTool: t, call: bound }));
+      return (c.tools || []).map(t => makeToolDef({ connectorId: c.id, label: c.label, mcpTool: t, call: bound, localProcess: c.transportKind === 'stdio' }));
     }
 
     // PER-AGENT projection: given the objects placed in ONE agent's room, return the tool defs for every

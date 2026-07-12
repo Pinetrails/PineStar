@@ -153,10 +153,18 @@ try {
     const s=window.__STARNET_SYNTHETIC_INPUT__;
     try{s.ready=false;Element.prototype.requestPointerLock=function(){throw new Error('forged')};}catch(_){}
     const d=Object.getOwnPropertyDescriptor(Element.prototype,'requestPointerLock');
+    const fd=Object.getOwnPropertyDescriptor(Element.prototype,'requestFullscreen');
+    const fe=Object.getOwnPropertyDescriptor(Document.prototype,'exitFullscreen');
     const tamperResistant=!!(s&&s.ready&&d&&d.value===s.requestPointerLock&&d.writable===false&&d.configurable===false);
-    return {synthetic:!!(s&&s.ready),tamperResistant,deploy:!!b,rect:r&&{x:r.x+r.width/2,y:r.y+r.height/2}};
+    const fullscreenResistant=!!(s&&fd&&fe&&fd.value===s.requestFullscreen&&fe.value===s.exitFullscreen&&fd.writable===false&&fe.writable===false&&fd.configurable===false&&fe.configurable===false);
+    const wakeNeutralized=!navigator.wakeLock||navigator.wakeLock.request===s.wakeRequest;
+    return {synthetic:!!(s&&s.ready),tamperResistant,fullscreenResistant,wakeNeutralized,deploy:!!b,rect:r&&{x:r.x+r.width/2,y:r.y+r.height/2}};
   })()`);
-  if (!initial.synthetic || !initial.tamperResistant || !initial.deploy || !initial.rect) throw new Error('FPS deploy/isolation state unavailable: ' + JSON.stringify(initial));
+  if (!initial.synthetic || !initial.tamperResistant || !initial.fullscreenResistant || !initial.wakeNeutralized || !initial.deploy || !initial.rect) throw new Error('FPS deploy/isolation state unavailable: ' + JSON.stringify(initial));
+  await evaluate(`document.documentElement.requestFullscreen()`);
+  await until(() => evaluate(`document.fullscreenElement===document.documentElement`), 'logical fullscreen');
+  await evaluate(`document.exitFullscreen()`);
+  await until(() => evaluate(`document.fullscreenElement===null`), 'logical fullscreen exit');
 
   await input({ action: 'click', x: initial.rect.x, y: initial.rect.y });
   await until(() => evaluate(`document.pointerLockElement?.tagName === 'CANVAS'`), 'synthetic pointer lock');

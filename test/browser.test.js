@@ -238,9 +238,12 @@ function fakeDriver() {
   // browser implementation (and therefore Win32 ClipCursor) is never reached.
   A.ok(/requestPointerLock/.test(T.SYNTHETIC_INPUT_BOOTSTRAP), 'isolation bootstrap overrides requestPointerLock');
   A.ok(/exitPointerLock/.test(T.SYNTHETIC_INPUT_BOOTSTRAP), 'isolation bootstrap overrides exitPointerLock');
+  A.ok(/requestFullscreen/.test(T.SYNTHETIC_INPUT_BOOTSTRAP) && /exitFullscreen/.test(T.SYNTHETIC_INPUT_BOOTSTRAP), 'isolation bootstrap emulates fullscreen without a platform transition');
   A.ok(/keyboard/.test(T.SYNTHETIC_INPUT_BOOTSTRAP) && /lock/.test(T.SYNTHETIC_INPUT_BOOTSTRAP), 'isolation bootstrap neutralizes keyboard lock');
+  A.ok(/wakeLock/.test(T.SYNTHETIC_INPUT_BOOTSTRAP) && /orientation/.test(T.SYNTHETIC_INPUT_BOOTSTRAP), 'isolation bootstrap neutralizes wake/orientation locks');
   A.ok(/Object\.freeze\(attestation\)/.test(T.SYNTHETIC_INPUT_BOOTSTRAP), 'page code cannot forge the synthetic-isolation ready attestation');
   A.ok(/getOwnPropertyDescriptor\(Element\.prototype,'requestPointerLock'\)/.test(T.makeCdpDriver.toString()), 'navigation verifies the actual non-writable pointer-lock descriptor');
+  A.ok(/getOwnPropertyDescriptor\(Element\.prototype,'requestFullscreen'\)/.test(T.makeCdpDriver.toString()), 'navigation verifies the actual non-writable fullscreen descriptor');
 
   // Drive the real CDP adapter against an in-memory protocol peer: the bootstrap must be
   // registered BEFORE Page.navigate, and the launched process must stay headless/muted.

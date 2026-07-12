@@ -149,10 +149,10 @@
   // The shell marker is informational now: Windows plus an explicit driver selection is
   // necessary, and makeComputerTools still requires a host-minted attended lease per call.
   function win32DriverActive(env, platform) {
-    env = env || process.env;
-    platform = platform || process.platform;
-    if (platform !== 'win32' || win32DriverDisabled(env)) return false;
-    return win32DriverRequested(env);
+    // The real Win32 driver no longer lives on an activatable production path. Environment
+    // variables are data a same-user child can forge; they can never mint desktop authority.
+    void env; void platform;
+    return false;
   }
   // ---- win32 keyboard (SendKeys) helpers ----
   // SendKeys treats + ^ % ~ ( ) { } [ ] as control chars; escape each by wrapping in {}
@@ -204,6 +204,12 @@ $keys = [System.Text.Encoding]::Unicode.GetString([System.Convert]::FromBase64St
 `;
   }
   function makeWin32DesktopDriver() {
+    // Removed from the ordinary sidecar trust domain. A future attended-control feature must
+    // be implemented by a native broker on a separate authority boundary with a one-shot,
+    // exact-action user lease. Keeping this factory inert prevents an env flip or accidental
+    // registration from reviving SetCursorPos/mouse_event.
+    return makeInertDriver('the Win32 physical-input driver was removed from the task sidecar');
+    /* istanbul ignore next - legacy implementation retained temporarily for source archaeology */
     function mouseScript(body) {
       return `
 Add-Type @"
@@ -343,6 +349,7 @@ try {
       name: 'computer.use',
       // A cached shell/verify approval (`workbench:execute`) must never authorize input.
       capability: 'physical-input',
+      impact: 'physical-input',
       scope: 'execute',
       requiresConsent: true,
       timeoutMs: 15000,

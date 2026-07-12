@@ -42,6 +42,12 @@ const WorkshopStore = (() => {
     };
   }
   const ready = () => !!state;
+  function nativeInvoke() {
+    try {
+      return (typeof window !== 'undefined' && window.__TAURI__ && window.__TAURI__.core && typeof window.__TAURI__.core.invoke === 'function')
+        ? window.__TAURI__.core.invoke : null;
+    } catch (_) { return null; }
+  }
 
   // ---- reads ----
   // undecided manifests the Commander hasn't acted on. Filters out anything they said "Later" to this
@@ -157,12 +163,18 @@ const WorkshopStore = (() => {
     save();
     const body = { agentId: agentId || 'agent', runId: runId, decision: decision };
     if (decision === 'keep' && destPath) body.destPath = destPath;
-    // W7 (f): keep with open:true asks the sidecar to shell-open the destination folder after a successful copy.
-    if (decision === 'keep' && extra && extra.open === true) body.open = true;
     try {
       const r = await fetch('/api/workshop/decide', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       const j = await r.json().catch(() => null);
-      if (r.ok && j && j.ok !== false) return { ok: true, destPath: (j && j.destPath) || body.destPath, opened: !!(j && j.opened) };
+      if (r.ok && j && j.ok !== false) {
+        const keptPath = (j && j.destPath) || body.destPath;
+        let opened = false;
+        const invoke = nativeInvoke();
+        if (decision === 'keep' && extra && extra.open === true && keptPath && invoke) {
+          try { await invoke('starnet_open_user_directory', { path: keptPath }); opened = true; } catch (_) { opened = false; }
+        }
+        return { ok: true, destPath: keptPath, opened: opened };
+      }
       return { ok: false, error: (j && j.error) || 'could not save your decision' };
     } catch (_) { return { ok: false, error: 'decision failed to reach the station' }; }
   }
@@ -203,6 +215,11 @@ const WorkshopStore = (() => {
   // window.fetch attaches the token header to /api/ URLs, so no manual token here.
   async function openFile(agentId, runId, relPath) {
     try {
+      const invoke = nativeInvoke();
+      if (invoke) {
+        await invoke('starnet_open_workshop_file', { agentId: agentId || 'agent', runId: runId, path: relPath });
+        return { ok: true };
+      }
       const r = await fetch('/api/workshop/open', { method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ agentId: agentId || 'agent', runId: runId, path: relPath }) });
       const j = await r.json().catch(() => null);

@@ -124,6 +124,7 @@
       // Separate danger class: a cached web click/type grant must never authorize a real
       // OS window. Ordinary runOnce flows strip this tool entirely in inputpolicy.js.
       capability: 'visible-desktop',
+      impact: 'visible-desktop',
       scope: 'execute',
       requiresConsent: true,
       timeoutMs: 20000,
@@ -135,10 +136,8 @@
           target: { type: 'string', description: 'A public http(s) URL (or bare host like youtube.com), or a bare app name like "notepad".' }
         }
       },
-      run: async (args) => {
-        const r = await open((args && args.target) || '');
-        const label = r.kind === 'url' ? r.target : 'app ' + r.target;
-        return { content: 'Opened ' + label + ' on the user\'s screen (' + r.result + ').', summary: 'opened ' + r.kind };
+      run: async () => {
+        throw new Error('visible desktop launch is not available to agent tools; the Commander must use a trusted desktop-shell button');
       }
     };
 

@@ -87,7 +87,23 @@
     for (const k of BASE_ENV_KEYS) if (src[k] != null) out[k] = String(src[k]);
     const e = normalizeEnv(extra);
     for (const k of Object.keys(e)) out[k] = e[k];
+    // Host-owned safety pins always win over connector-supplied env. These are defense in
+    // depth for a future isolated stdio worker; installed preserve mode refuses host stdio
+    // entirely below.
+    out.STARNET_USER_CONTROL_MODE = 'preserve';
+    out.STARNET_COMPUTER_DRIVER = '0';
+    out.STARNET_BROWSER_HEADLESS = '1';
+    out.STARNET_MCP_STDIO = '0';
+    out.BROWSER = 'none';
     return out;
+  }
+  function hostStdioAllowed(deps, env) {
+    env = env || {};
+    const explicit = String(env.STARNET_MCP_STDIO != null ? env.STARNET_MCP_STDIO : (env.SKYNET_MCP_STDIO || '')).trim();
+    if (/^(0|false|off|none)$/i.test(explicit)) return false;
+    const mode = String(env.STARNET_USER_CONTROL_MODE || env.SKYNET_USER_CONTROL_MODE || '').trim().toLowerCase();
+    if (mode === 'preserve' && !(deps && deps.userControlIsolated === true)) return false;
+    return true;
   }
   function redactEnv(env) {
     const e = normalizeEnv(env || {});
@@ -98,11 +114,15 @@
 
   function makeStdioTransport(deps) {
     deps = deps || {};
+    const processEnv = deps.processEnv || process.env || {};
+    if (!hostStdioAllowed(deps, processEnv)) {
+      throw new Error('mcp stdio is disabled on the interactive host: use an HTTP connector or an isolated execution backend');
+    }
     const command = assertAllowedCommand(deps.command, deps.allowedCommands);
     const args = normalizeArgs(deps.args);
     const cwd = deps.cwd ? String(deps.cwd) : undefined;
     if (cwd && /[\0\r\n]/.test(cwd)) throw new Error('mcp stdio cwd contains a control character');
-    const childEnv = buildChildEnv(deps.env, deps.processEnv);
+    const childEnv = buildChildEnv(deps.env, processEnv);
     const spawnImpl = deps.spawnImpl || CP.spawn;
     const platform = deps.platform || process.platform;
     const timeoutMs = deps.timeoutMs || 30000;
@@ -216,5 +236,5 @@
     return { send, onMessage, close, isClosed: function () { return closed; }, get childPid() { return child && child.pid; } };
   }
 
-  return { makeStdioTransport, _internals: { commandBase, assertAllowedCommand, normalizeArgs, normalizeEnv, buildChildEnv, redactEnv } };
+  return { makeStdioTransport, _internals: { commandBase, assertAllowedCommand, normalizeArgs, normalizeEnv, buildChildEnv, hostStdioAllowed, redactEnv } };
 });

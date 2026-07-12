@@ -25,5 +25,10 @@ A.ok(remoteUrls.every(u => u.indexOf('localhost') < 0), 'remote capability does 
 A.ok(remoteUrls.every(u => /\/api\/\*\*$/.test(u)), 'remote capability does not expose all loopback paths');
 A.ok(/fn sidecar_command[\s\S]*?\.env\("STARNET_COMPUTER_DRIVER", "0"\)/.test(mainRs), 'every desktop sidecar launch pins the physical-input driver off');
 A.ok(/fn sidecar_command[\s\S]*?\.env\("STARNET_BROWSER_HEADLESS", "1"\)/.test(mainRs), 'every desktop sidecar launch pins controlled browsing headless');
+A.ok(/fn sidecar_command[\s\S]*?\.env\("STARNET_USER_CONTROL_MODE", "preserve"\)/.test(mainRs), 'every desktop sidecar launch pins user-control preservation');
+A.ok(/fn sidecar_command[\s\S]*?\.env\("STARNET_MCP_STDIO", "0"\)/.test(mainRs), 'installed desktop refuses unsandboxed local MCP children');
+A.ok(/fn starnet_open_workshop_file[\s\S]*?inert_deliverable_extension/.test(mainRs), 'native click-only workshop opener allowlists inert files');
+A.ok(/active or executable deliverables cannot run on the user's desktop/.test(mainRs), 'native opener refuses active/executable deliverables');
+A.ok(/starnet_open_workshop_file[\s\S]*?starnet_open_user_directory[\s\S]*?open_external_url/.test(mainRs), 'click-only open commands are registered with Tauri, not exposed as agent tools');
 
 A.report('tauri.hardening.test');

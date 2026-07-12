@@ -6,7 +6,7 @@ const { makeCapCtx } = require('../sidecar/capability/capGate.js');
 const { makeRegistry } = require('../sidecar/tools/registry.js');
 const { makeComputerTools } = require('../sidecar/tools/builtin/computer.js');
 const { makeDesktopTools } = require('../sidecar/tools/builtin/desktop.js');
-const { enforceSyntheticOnly, runInputContext, backgroundOwnsLoopbackUrl, backgroundOwnsLocalUrl, makeLoopbackListenerProbe } = require('../sidecar/inputpolicy.js');
+const { enforceSyntheticOnly, enforceRunAuthority, runInputContext, impactOfTool, makeRunAuthority, IMPACTS, backgroundOwnsLoopbackUrl, backgroundOwnsLocalUrl, makeLoopbackListenerProbe } = require('../sidecar/inputpolicy.js');
 
 const station = {
   agents: { ag: { id: 'ag', room: 'r' } },
@@ -45,6 +45,26 @@ for (const [surface, isTask] of [['interactive', true], ['autonomous', true], ['
   A.eq(ctx.inputMode, 'synthetic', surface + ' context is synthetic-only');
 }
 
+const interactiveAuthority = makeRunAuthority({ surface: 'interactive', isTask: true, environment: { supports: { hostileCodeSandbox: false } } });
+const autonomousAuthority = makeRunAuthority({ surface: undefined, isTask: true, environment: { supports: { hostileCodeSandbox: false } } });
+A.eq(autonomousAuthority.surface, 'autonomous', 'missing surface fails closed to unattended');
+A.ok(interactiveAuthority.authorize({}, { name: 'shell.exec', capability: 'workbench' }).ok, 'watched workspace commands remain available behind their command/consent floors');
+A.ok(!autonomousAuthority.authorize({}, { name: 'shell.exec', capability: 'workbench' }).ok, 'unattended shell is denied above Full Access');
+A.ok(!interactiveAuthority.authorize({}, { name: 'computer.use', capability: 'physical-input' }).ok, 'physical input has no ordinary-run authority');
+A.ok(!interactiveAuthority.authorize({}, { name: 'desktop.open', capability: 'visible-desktop' }).ok, 'visible desktop has no ordinary-run authority');
+A.eq(impactOfTool({ name: 'future.magic', capability: 'future-cap' }), IMPACTS.EXTERNAL_UNKNOWN, 'unknown future tools fail closed instead of defaulting safe');
+A.eq(impactOfTool({ name: 'browser.test_input', capability: 'workbench' }), IMPACTS.SYNTHETIC_BROWSER, 'synthetic CDP input is explicitly classified');
+
+const fakeDefs = {
+  'shell.exec': { name: 'shell.exec', capability: 'workbench' },
+  'browser.test_input': { name: 'browser.test_input', capability: 'workbench' },
+  'future.magic': { name: 'future.magic', capability: 'future-cap' }
+};
+const matrixResolved = { tools: Object.keys(fakeDefs), grants: Object.keys(fakeDefs).map(tool => ({ tool })), approvalRules: {}, networkCaps: {} };
+const filteredAutonomous = enforceRunAuthority(matrixResolved, { get: n => fakeDefs[n] }, autonomousAuthority);
+A.ok(!filteredAutonomous.tools.includes('shell.exec') && !filteredAutonomous.tools.includes('future.magic'), 'provider projection removes unattended/unknown effects');
+A.ok(filteredAutonomous.tools.includes('browser.test_input'), 'provider projection retains synthetic input');
+
 const viteFallback = { running: true, killed: false, cmd: 'vite --port 5173', tail: '\u001b[32mLocal: http://localhost:5174/\u001b[0m' };
 A.eq(backgroundOwnsLoopbackUrl(viteFallback, 'http://127.0.0.1:5173/'), false, 'requested command port cannot impersonate another localhost service after dev-server fallback');
 A.eq(backgroundOwnsLoopbackUrl(viteFallback, 'http://127.0.0.1:5174/'), true, 'actual advertised loopback endpoint is accepted for the owned background handle');
@@ -76,9 +96,19 @@ A.eq(backgroundOwnsLoopbackUrl({ running: true, tail: 'Local: https://[::1]:4443
   });
   const computer = await registry.dispatch({ id: 'c1', name: 'computer.use', args: { action: 'screenshot' } }, ctx);
   const desktop = await registry.dispatch({ id: 'c2', name: 'desktop.open', args: { target: 'notepad' } }, ctx);
-  A.eq(computer.summary, 'capdenied', 'forged computer.use is capability-denied even with full consent');
-  A.eq(desktop.summary, 'capdenied', 'forged desktop.open is capability-denied even with full consent');
+  A.eq(computer.summary, 'user-control-denied', 'forged computer.use is denied even when a caller forgot to attach run authority');
+  A.eq(desktop.summary, 'user-control-denied', 'forged desktop.open is denied even when a caller forgot to attach run authority');
   A.eq(driverCalls, 0, 'forged physical-input dispatch never reaches the driver');
   A.eq(openerCalls, 0, 'forged real-window dispatch never reaches the opener');
+
+  const forgedResolved = Object.assign({}, safe, { tools: safe.tools.concat('computer.use', 'desktop.open') });
+  const hardCtx = Object.assign(makeCapCtx(forgedResolved), {
+    authorize: interactiveAuthority.authorize,
+    consent: async () => ({ allow: true, reason: 'full-access' })
+  });
+  const hardComputer = await registry.dispatch({ id: 'c3', name: 'computer.use', args: { action: 'screenshot' } }, hardCtx);
+  const hardDesktop = await registry.dispatch({ id: 'c4', name: 'desktop.open', args: { target: 'notepad' } }, hardCtx);
+  A.eq(hardComputer.summary, 'user-control-denied', 'central authority denies forged physical input before Full Access');
+  A.eq(hardDesktop.summary, 'user-control-denied', 'central authority denies forged visible desktop before Full Access');
   A.report('inputpolicy.test');
 })().catch(e => { console.error(e); process.exit(1); });

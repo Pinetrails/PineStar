@@ -36,26 +36,29 @@ function fakeOpener() {
   A.eq(tool.requiresConsent, true, 'desktop.open requires consent');
   A.ok(/real screen|user/i.test(tool.description) && /visible/i.test(tool.description), 'description promises a visible window on the user screen');
 
-  const out = await tool.run({ target: 'youtube.com' });
-  A.ok(/Opened https:\/\/youtube\.com/.test(out.content), 'opening a bare host reports the normalized https URL');
+  await rejects(tool.run({ target: 'youtube.com' }), /not available to agent tools/i, 'agent tools cannot launch a visible desktop even with a direct call');
+  A.eq(opener.log.length, 0, 'inert tool never reaches the opener');
+
+  const out = await D._internals.open('youtube.com');
+  A.eq(out.target, 'https://youtube.com/', 'internal user-click helper normalizes a bare host');
   A.eq(opener.log[0].kind, 'url', 'opener received a url kind');
   A.eq(opener.log[0].target, 'https://youtube.com/', 'opener received the assertSafeUrl-normalized href');
 
-  const appOut = await tool.run({ target: 'notepad' });
-  A.ok(/Opened app notepad/.test(appOut.content), 'opening an app reports the app name');
+  const appOut = await D._internals.open('notepad');
+  A.eq(appOut.target, 'notepad', 'internal user-click helper preserves the app name');
   A.eq(opener.log[1].kind, 'app', 'opener received an app kind');
 
   // URL safety is reused from browser.js — private/loopback/intranet refused
-  await rejects(tool.run({ target: 'http://localhost:8787' }), /private|loopback|intranet/i, 'localhost URL refused');
-  await rejects(tool.run({ target: '127.0.0.1' }), /private|loopback|intranet|not a valid/i, 'loopback IP refused');
-  await rejects(tool.run({ target: 'http://192.168.1.5/admin' }), /private|loopback|intranet/i, 'LAN IP refused');
-  await rejects(tool.run({ target: 'file:///etc/passwd' }), /http\(s\)|not a valid/i, 'non-http scheme refused');
+  await rejects(D._internals.open('http://localhost:8787'), /private|loopback|intranet/i, 'localhost URL refused');
+  await rejects(D._internals.open('127.0.0.1'), /private|loopback|intranet|not a valid/i, 'loopback IP refused');
+  await rejects(D._internals.open('http://192.168.1.5/admin'), /private|loopback|intranet/i, 'LAN IP refused');
+  await rejects(D._internals.open('file:///etc/passwd'), /http\(s\)|not a valid/i, 'non-http scheme refused');
   A.eq(opener.log.length, 2, 'refused targets never reach the opener');
 
   // app-name allowlist rejects paths / args / shell metacharacters
-  await rejects(tool.run({ target: 'notepad.exe & calc' }), /not a valid/i, 'app name with shell metachar refused');
-  await rejects(tool.run({ target: 'C:/Windows/System32/cmd.exe' }), /http\(s\)|not a valid/i, 'app path refused (parsed as c: scheme, not http(s))');
-  await rejects(tool.run({ target: 'cmd /c rd /s /q C:' }), /not a valid/i, 'command line refused');
+  await rejects(D._internals.open('notepad.exe & calc'), /not a valid/i, 'app name with shell metachar refused');
+  await rejects(D._internals.open('C:/Windows/System32/cmd.exe'), /http\(s\)|not a valid/i, 'app path refused (parsed as c: scheme, not http(s))');
+  await rejects(D._internals.open('cmd /c rd /s /q C:'), /not a valid/i, 'command line refused');
 
   // the shell opener passes target as a discrete argv token, never a shell string
   {
@@ -103,7 +106,7 @@ function fakeOpener() {
       rooms: { r: { id: 'r', objects: [] } }
     });
     const denied = await reg.dispatch(call('desktop.open', { target: 'youtube.com' }), makeCapCtx(noDish));
-    A.eq(denied.summary, 'capdenied', 'without a dish object, desktop.open is capability-denied');
+    A.eq(denied.summary, 'user-control-denied', 'desktop.open fails closed even when no run authority was attached');
   }
 
   A.report('desktop.test');

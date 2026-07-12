@@ -45,6 +45,9 @@ function writeServer(dir) {
     const childEnv = T.buildChildEnv({ SECRET_TOKEN: 'explicit-secret' }, { PATH: 'safe-path', OPENROUTER_KEY: 'ambient-secret' });
     A.eq(childEnv.SECRET_TOKEN, 'explicit-secret', 'explicit stdio env is passed through');
     A.eq(childEnv.OPENROUTER_KEY, undefined, 'ambient secret env is not inherited by default');
+    A.eq(childEnv.STARNET_COMPUTER_DRIVER, '0', 'connector env cannot enable the physical-input driver');
+    A.eq(childEnv.STARNET_BROWSER_HEADLESS, '1', 'connector env is pinned headless');
+    A.throws(() => makeStdioTransport({ command: process.execPath, allowedCommands: [nodeBase], processEnv: { STARNET_USER_CONTROL_MODE: 'preserve', STARNET_MCP_STDIO: '0' } }), 'installed preserve mode refuses stdio before spawn');
     const redacted = T.redactEnv({ SECRET_TOKEN: 'explicit-secret', MODE: 'test' });
     A.eq(redacted.SECRET_TOKEN, '<redacted>', 'secret-like env keys redact their value');
     A.eq(redacted.MODE, '<set>', 'non-secret env keys still avoid exposing values');
@@ -105,7 +108,8 @@ function writeServer(dir) {
       A.eq(JSON.stringify(status).indexOf('explicit-secret'), -1, 'manager summary never leaks the env secret');
       const defs = mgr.toolDefsFor('local');
       A.eq(defs.find(d => d.name === 'mcp__local__create_issue').requiresConsent, true, 'mutating MCP stdio tools still require consent');
-      A.eq(defs.find(d => d.name === 'mcp__local__read_note').requiresConsent, false, 'read-only MCP stdio tools remain consent-free');
+      A.eq(defs.find(d => d.name === 'mcp__local__read_note').requiresConsent, true, 'stdio MCP annotations cannot suppress live consent');
+      A.eq(defs.find(d => d.name === 'mcp__local__read_note').impact, 'external-unknown', 'stdio MCP tools are classified as untrusted local effects');
       const out = await defs.find(d => d.name === 'mcp__local__create_issue').run({ title: 'ship' }, {});
       A.ok(out.content.indexOf('called create_issue') >= 0, 'projected stdio MCP tool dispatches through the warm client');
       await mgr.close();

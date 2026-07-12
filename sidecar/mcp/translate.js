@@ -90,7 +90,8 @@
       scope: readOnly ? 'read' : 'execute',
       readOnly: readOnly,
       capability: 'mcp:' + sanitizePart(connectorId),   // lets registry.list() grant a whole connector by capId
-      requiresConsent: !readOnly,
+      impact: o.localProcess === true ? 'external-unknown' : 'external-service',
+      requiresConsent: o.localProcess === true || !readOnly,
       network: true,                                     // every remote MCP call is an outward network effect
       timeoutMs: o.timeoutMs || 0,                       // 0 -> inherit the host's per-tool timeout (CAPS.toolTimeoutMs)
       run: async function (args, ctx) {
