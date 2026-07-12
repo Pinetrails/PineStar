@@ -61,6 +61,7 @@ test/grace.test.js
 test/shell-session.test.js
 test/shell-bg.test.js
 test/shell-visible-window.test.js
+test/shell-machine-state.test.js
 test/procledger.test.js
 test/inputguard.test.js
 test/timeout.test.js

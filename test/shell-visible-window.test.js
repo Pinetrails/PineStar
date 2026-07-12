@@ -23,8 +23,10 @@ A.ok(opensVisibleWindow('rundll32 url.dll,FileProtocolHandler http://x'), 'rundl
 A.ok(opensVisibleWindow('msedge --remote-debugging-port=9222 http://localhost:5173'), 'headed msedge blocked');
 A.ok(opensVisibleWindow('"C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe" http://x'), 'headed chrome (full path) blocked');
 A.ok(opensVisibleWindow('firefox http://localhost:3000'), 'headed firefox blocked');
-A.eq(opensVisibleWindow('msedge --headless=new --remote-debugging-port=9222 http://localhost:5173'), null, 'msedge WITH --headless allowed (the sanctioned smoke-test path)');
-A.eq(opensVisibleWindow('chrome --headless --dump-dom http://localhost:5173'), null, 'chrome --headless allowed');
+A.eq(opensVisibleWindow('msedge --headless=new --mute-audio --remote-debugging-port=9222 http://localhost:5173'), null, 'msedge WITH --headless --mute-audio allowed (the sanctioned smoke-test path)');
+A.eq(opensVisibleWindow('chrome --headless --mute-audio --dump-dom http://localhost:5173'), null, 'chrome --headless --mute-audio allowed');
+// a headless browser still plays audio on the user's speakers unless muted — that half of the incident is blocked too
+A.ok(opensVisibleWindow('msedge --headless=new --remote-debugging-port=9222 http://x'), 'headless browser without --mute-audio is refused');
 
 // ---- NON-trips: the build/verify loop must keep working ----
 A.eq(opensVisibleWindow('npm start'), null, '`npm start` is NOT the cmd start builtin');
