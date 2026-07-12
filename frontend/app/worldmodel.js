@@ -953,8 +953,12 @@ const WorldModel = (() => {
     for (const id of doc.order) { const rm = doc.rooms[id]; if (!Array.isArray(rm.rects)) rm.rects = []; if (!rm.floorPaint) rm.floorPaint = {}; }
     // props are additive (v1 docs predate them); make the read paths total over any blob.
     if (!Array.isArray(doc.props)) doc.props = [];
+    // legacy repair: the 2×2 workflow docks shipped as block:false for a while, so agents walked
+    // straight through them. They are solid now (catalog blocks:true; belts hook to ring tiles,
+    // never under the footprint) — strip the stale flag from saved docs so old stations heal on load.
+    const LEGACY_WALKABLE_DOCKS = { intake: 1, bay: 1, outbox: 1 };
     doc.props = doc.props.filter(p => p && typeof p === 'object' && typeof p.t === 'string')
-      .map(p => { const o = { id: p.id || null, t: p.t, x: p.x | 0, y: p.y | 0, w: Math.max(1, p.w | 0 || 1), h: Math.max(1, p.h | 0 || 1) }; if (p.block === false) o.block = false; if (typeof p.agentId === 'string' && p.agentId) o.agentId = p.agentId; applyJunctionCfg(o, p); if (cleanDoor(p.door)) o.door = p.door; if (typeof p.connectorId === 'string' && p.connectorId.trim()) o.connectorId = p.connectorId.trim(); return o; });
+      .map(p => { const o = { id: p.id || null, t: p.t, x: p.x | 0, y: p.y | 0, w: Math.max(1, p.w | 0 || 1), h: Math.max(1, p.h | 0 || 1) }; if (p.block === false && !LEGACY_WALKABLE_DOCKS[p.t]) o.block = false; if (typeof p.agentId === 'string' && p.agentId) o.agentId = p.agentId; applyJunctionCfg(o, p); if (cleanDoor(p.door)) o.door = p.door; if (typeof p.connectorId === 'string' && p.connectorId.trim()) o.connectorId = p.connectorId.trim(); return o; });
     // belts are additive (v1 docs predate them); keep only well-formed "int,int" -> E|W|N|S entries.
     if (!doc.belts || typeof doc.belts !== 'object' || Array.isArray(doc.belts)) doc.belts = {};
     else { const clean = {}; for (const k in doc.belts) { const d = doc.belts[k]; if (/^-?\d+,-?\d+$/.test(k) && (d === 'E' || d === 'W' || d === 'N' || d === 'S')) clean[k] = d; } doc.belts = clean; }

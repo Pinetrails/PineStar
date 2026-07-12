@@ -4612,12 +4612,16 @@ const PropSprites = (() => {
     { id: "workbench", label: "WORKBENCH", cat: "workstation", tier: "functional", w: 2, h: 1, animated: true, blocks: true, desc: "WORKBENCH — grants the room's agent shell + verify, so it can run and test real code. Pair it with a workstation in the same room." },
     // WORKFLOW — how work enters, moves, routes, and leaves.
     // (id stays 'intake' — saves/routing keys never rename; INBOX is the user-facing word, mirroring OUTBOX)
-    { id: "intake", label: "INBOX", cat: "workflow", tier: "functional", w: 2, h: 2, animated: true, blocks: false, desc: "INBOX — where OUTSIDE work (a DM, a routine) arrives on the floor and drops onto a belt. Orders you give in COMMS skip it — they land straight at the agent's BAY. You don't need one for an agent to work — a BAY alone is enough; the inbox is for watching outside work ride in." },
-    { id: "bay", label: "BAY", cat: "workflow", tier: "functional", w: 2, h: 2, animated: true, blocks: false, desc: "BAY — the agent dock. Click it, assign an agent — done: work for that agent lands here, no belts required. Add belts to watch work ride in from an INBOX (and finished work ride out to an OUTBOX). The props in its room become its powers." },
+    // Docks (2×2 floor machines) are SOLID: belts hook to their ring tiles (connectBelt's pathable
+    // excludes every prop footprint), so nothing needs to stand ON them — agents route around.
+    // The 1×1 junctions below stay blocks:false: they sit ON a belt line (belt tile underneath),
+    // and belts are walkable floor machinery by contract.
+    { id: "intake", label: "INBOX", cat: "workflow", tier: "functional", w: 2, h: 2, animated: true, blocks: true, desc: "INBOX — where OUTSIDE work (a DM, a routine) arrives on the floor and drops onto a belt. Orders you give in COMMS skip it — they land straight at the agent's BAY. You don't need one for an agent to work — a BAY alone is enough; the inbox is for watching outside work ride in." },
+    { id: "bay", label: "BAY", cat: "workflow", tier: "functional", w: 2, h: 2, animated: true, blocks: true, desc: "BAY — the agent dock. Click it, assign an agent — done: work for that agent lands here, no belts required. Add belts to watch work ride in from an INBOX (and finished work ride out to an OUTBOX). The props in its room become its powers." },
     { id: "filter", label: "FILTER", cat: "workflow", tier: "functional", w: 1, h: 1, animated: true, blocks: false, desc: "FILTER — sorts UNADDRESSED work by its content, sending each kind down a different belt lane. Work already bound to an agent rides straight home past it. Click it to set the routes." },
     { id: "merger", label: "MERGER", cat: "workflow", tier: "functional", w: 1, h: 1, animated: true, blocks: false, desc: "MERGER — buffers K incoming boxes, then emits one combined box. A join / map-reduce barrier." },
     { id: "splitter", label: "SPLITTER", cat: "workflow", tier: "functional", w: 1, h: 1, animated: true, blocks: false, desc: "SPLITTER — fans one work stream across its lanes to run several agents in parallel (load-balance)." },
-    { id: "outbox", label: "OUTBOX", cat: "workflow", tier: "functional", w: 2, h: 2, animated: true, blocks: false, desc: "OUTBOX — the dispatch chute where an agent's finished reply leaves the station." },
+    { id: "outbox", label: "OUTBOX", cat: "workflow", tier: "functional", w: 2, h: 2, animated: true, blocks: true, desc: "OUTBOX — the dispatch chute where an agent's finished reply leaves the station." },
     // NOTE: the old "CONVEYOR" palette prop (beltH) is retired — it was inert scenery that LOOKED like the
     // routing system and taught users the wrong model (you can't assign or route through it). Real belts are
     // laid with the BELT tool and compile into the RoutingPlan. F.beltH stays so stations that placed one
