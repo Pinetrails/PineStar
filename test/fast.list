@@ -125,6 +125,7 @@ test/qa-product-perfect-provenance.test.js
 test/qa-cartographer.test.js
 test/golden.test.js
 test/qa-beginner.test.js
+test/qa-installed-first-run.test.js
 test/qa-janitor.test.js
 test/qa-evidence-sweep.test.js
 test/qa-installed-smoke.test.js
