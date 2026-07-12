@@ -20,14 +20,40 @@ A.ok(ca && ca.wsId === 'a', 'get creates+returns the channel');
 A.ok(C.get('a') === ca, 'get is idempotent (same object)');
 A.eq(C.get(null), null, 'get(null) is null (no channel for no workstream)');
 
-/* ---------- begin marks busy + thinking; clears stale state ---------- */
+/* ---------- begin marks busy + CONNECTING (unconfirmed); clears stale state ---------- */
 C.reset();
 C.appendToken('a', 'stale'); C.addTool('a', 'old');     // pre-existing crud
 C.begin('a');
 A.ok(C.isBusy('a'), 'begin marks the stream busy');
-A.eq(C.statusOf('a'), 'thinking…', 'begin sets status thinking');
+A.eq(C.statusOf('a'), 'connecting…', 'begin claims only "connecting" — the sidecar has confirmed nothing yet');
 A.eq(C.snapshot('a').acc, '', 'begin clears stale acc');
 A.eq(C.snapshot('a').tools, [], 'begin clears stale tool lines');
+
+/* ---------- setRunId = server confirmation: upgrades connecting→thinking, RE-STAMPS the start ---------- */
+C.reset();
+C.begin('a', 1000);
+A.eq(C.statusOf('a'), 'connecting…', 'pre-confirmation status is connecting');
+C.setRunId('a', 'run-1', 1600);                          // agent.run.start landed 600ms after the click
+A.eq(C.statusOf('a'), 'thinking…', 'run confirmation upgrades connecting to thinking');
+A.eq(C.startedAtOf('a'), 1600, 'confirmation RE-STAMPS startedAt — connect latency never counts as run time');
+C.setStatus('a', 'working…');
+C.setRunId('a', 'run-1');                                // a repeat confirm without ts
+A.eq(C.statusOf('a'), 'working…', 'confirmation never downgrades a later status');
+A.eq(C.startedAtOf('a'), 1600, 'confirmation without a ts leaves the stamp alone');
+
+/* ---------- approval pauses are excluded from the honest elapsed ---------- */
+C.reset();
+C.begin('a', 1000); C.setRunId('a', 'run-1', 1000);
+A.eq(C.elapsedOf('a', 5000), 4000, 'elapsedOf = now - confirmed start');
+C.setPending('a', { promptId: 'p', tool: 'fs.write', argsSummary: '', runId: 'run-1' }, 5000);
+A.eq(C.elapsedOf('a', 9000), 4000, 'the clock STOPS while paused on approval (open span excluded)');
+C.clearPending('a', 9000);
+A.eq(C.elapsedOf('a', 10000), 5000, 'after approval the clock resumes; the 4s pause never counted');
+C.setPending('a', { promptId: 'p2', tool: 'sh', argsSummary: '', runId: 'run-1' }, 10000);
+C.clearPending('a', 12000);
+A.eq(C.elapsedOf('a', 12000), 5000, 'multiple pauses accumulate (second 2s pause excluded too)');
+C.end('a');
+A.eq(C.elapsedOf('a', 13000), 0, 'end zeroes the elapsed');
 
 /* ---------- begin stamps the run-start (the COMMS elapsed timer); end clears it ---------- */
 C.reset();
