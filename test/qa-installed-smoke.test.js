@@ -17,9 +17,11 @@ const {
 const ISO = '2026-07-07T12:00:00.000Z';
 const clock = { nowIso: () => ISO };
 const SHA = 'a'.repeat(40);
+const TREE = 'd'.repeat(40);
 const ARTIFACT = { path: 'C:/Program Files/StarNet/StarNet.exe', sha256: 'b'.repeat(64), size: 123456 };
 const RUNTIME_EXECUTABLE = { sha256: ARTIFACT.sha256, size: ARTIFACT.size };
 const EVIDENCE = { path: 'qa/installed/run/probe.json', sha256: 'c'.repeat(64), size: 321 };
+const OFFICIAL_EVIDENCE = { schemaVersion: 1, candidateCommit: SHA, sourceTree: TREE, artifact: { sha256: ARTIFACT.sha256, size: ARTIFACT.size } };
 
 async function runInPageProbe({ boardOpen, cards = [], busyIds = [] }) {
   const context = {
@@ -27,6 +29,7 @@ async function runInPageProbe({ boardOpen, cards = [], busyIds = [] }) {
     window: {
       __TAURI__: { core: { invoke: async () => ({
         commit: 'aaaaaaaa', sha: SHA, describe: 'v0.3.0-1-gaaaaaaaa', dirty: false,
+        sourceTree: TREE, provenanceKind: 'reproducible-source',
         executableSha256: RUNTIME_EXECUTABLE.sha256, executableSize: RUNTIME_EXECUTABLE.size
       }) } },
       __STARNET_API_TOKEN__: 'test-token',
@@ -78,6 +81,7 @@ const GREEN_PROBE = {
   mode: 'desktop', origin: 'http://tauri.localhost',
   shell: {
     version: '0.3.0', commit: 'aaaaaaaa', sha: SHA, describe: 'v0.3.0-1-gaaaaaaaa', dirty: false,
+    sourceTree: TREE, provenanceKind: 'reproducible-source',
     executableSha256: RUNTIME_EXECUTABLE.sha256, executableSize: RUNTIME_EXECUTABLE.size
   },
   bootSane: true,
@@ -117,11 +121,13 @@ const GREEN_PROBE = {
 {
   A.eq(classifyResult({ attached: false }), RESULTS.BLOCKED, 'unreachable -> BLOCKED');
   A.eq(classifyResult({ attached: true, appVersion: '', checks: [] }), RESULTS.BLOCKED, 'attached but unversioned -> BLOCKED');
-  const proven = Object.assign({ attached: true, expectedHead: SHA, artifact: ARTIFACT, evidencePersisted: true }, GREEN_PROBE);
+  const proven = Object.assign({ attached: true, expectedHead: SHA, expectedTree: TREE, artifact: ARTIFACT, evidencePersisted: true }, GREEN_PROBE);
   A.eq(classifyResult(proven), RESULTS.GREEN, 'desktop + exact clean build + complete assertions -> GREEN');
   A.eq(classifyResult(Object.assign({}, proven, { mode: 'browser' })), RESULTS.BLOCKED, 'browser fallback can never produce installed GREEN');
   A.eq(classifyResult(Object.assign({}, proven, { shell: Object.assign({}, proven.shell, { dirty: true }) })), RESULTS.BLOCKED, 'dirty packaged build is BLOCKED');
   A.eq(classifyResult(Object.assign({}, proven, { expectedHead: 'c'.repeat(40) })), RESULTS.BLOCKED, 'wrong candidate build is BLOCKED');
+  A.eq(classifyResult(Object.assign({}, proven, { expectedTree: 'c'.repeat(40) })), RESULTS.BLOCKED, 'wrong candidate source tree is BLOCKED');
+  A.eq(classifyResult(Object.assign({}, proven, { shell: Object.assign({}, proven.shell, { provenanceKind: 'official' }) })), RESULTS.BLOCKED, 'a running build cannot self-assert official');
   A.eq(classifyResult(Object.assign({}, proven, { artifact: Object.assign({}, ARTIFACT, { sha256: 'd'.repeat(64) }) })), RESULTS.BLOCKED, 'a supplied artifact with different bytes is BLOCKED');
   A.eq(classifyResult(Object.assign({}, proven, { artifact: Object.assign({}, ARTIFACT, { size: ARTIFACT.size + 1 }) })), RESULTS.BLOCKED, 'a supplied artifact with different size is BLOCKED');
   A.eq(classifyResult(Object.assign({}, proven, { shell: Object.assign({}, proven.shell, { executableSha256: '' }) })), RESULTS.BLOCKED, 'missing runtime executable identity is BLOCKED');
@@ -131,18 +137,22 @@ const GREEN_PROBE = {
 
 /* ---- B. normalizeStamp coerces to the exact contract shape; unknown result clamps to BLOCKED ---- */
 {
-  const s = normalizeStamp({ expectedHead: SHA, buildCommit: SHA, buildDescribe: 'v0.3.0', buildDirty: false, appVersion: ' 0.3.0 ', sidecarHarness: 'v0.3.0', mode: 'desktop', origin: 'http://tauri.localhost', artifact: ARTIFACT, runtimeExecutable: RUNTIME_EXECUTABLE, result: 'GREEN', evidence: [EVIDENCE, 'legacy-path-only.json'], notes: ' hi ' }, { clock });
-  A.eq(s.schemaVersion, STAMP_SCHEMA, 'stamp carries the v2 schema');
+  const s = normalizeStamp({ expectedHead: SHA, expectedTree: TREE, buildCommit: SHA, sourceTree: TREE, buildDescribe: 'v0.3.0', buildDirty: false, buildKind: 'reproducible-source', provenanceKind: 'reproducible-source', appVersion: ' 0.3.0 ', sidecarHarness: 'v0.3.0', mode: 'desktop', origin: 'http://tauri.localhost', artifact: ARTIFACT, runtimeExecutable: RUNTIME_EXECUTABLE, result: 'GREEN', evidence: [EVIDENCE, 'legacy-path-only.json'], notes: ' hi ' }, { clock });
+  A.eq(s.schemaVersion, STAMP_SCHEMA, 'stamp carries the v3 schema');
   A.eq(s.stampIso, ISO, 'stampIso stamped from the injected clock');
   A.eq(s.appVersion, '0.3.0', 'appVersion trimmed');
   A.eq(s.expectedHead, SHA, 'explicit expected candidate is preserved');
   A.eq(s.buildCommit, SHA, 'observed binary commit is separate and preserved');
+  A.eq(s.expectedTree, TREE, 'expected candidate source tree is preserved');
+  A.eq(s.sourceTree, TREE, 'running build source tree is preserved');
+  A.eq(s.buildKind, 'reproducible-source', 'running BuildInfo kind is preserved');
+  A.eq(s.provenanceKind, 'reproducible-source', 'installed classification is preserved');
   A.eq(s.result, 'GREEN', 'valid result kept');
   A.eq(s.evidence, [EVIDENCE], 'only content-bound evidence entries survive normalization');
   A.eq(s.runtimeExecutable, RUNTIME_EXECUTABLE, 'receipt records content identity reported by the running executable');
   A.eq(s.notes, 'hi', 'notes trimmed');
   // exact key set the ready-gate reads — no extra/missing keys.
-  A.eq(Object.keys(s).sort(), ['appVersion', 'artifact', 'buildCommit', 'buildDescribe', 'buildDirty', 'evidence', 'expectedHead', 'mode', 'notes', 'origin', 'result', 'runtimeExecutable', 'schemaVersion', 'sidecarHarness', 'stampIso'], 'stamp has exactly the v2 contract keys');
+  A.eq(Object.keys(s).sort(), ['appVersion', 'artifact', 'buildCommit', 'buildDescribe', 'buildDirty', 'buildKind', 'evidence', 'expectedHead', 'expectedTree', 'mode', 'notes', 'officialEvidence', 'origin', 'provenanceKind', 'result', 'runtimeExecutable', 'schemaVersion', 'sidecarHarness', 'sourceTree', 'stampIso'], 'stamp has exactly the v3 contract keys');
   // an unknown/blank result is clamped to BLOCKED (never silently "" or GREEN).
   A.eq(normalizeStamp({ result: 'WAT' }, { clock }).result, RESULTS.BLOCKED, 'unknown result clamps to BLOCKED');
   A.eq(normalizeStamp({}, { clock }).result, RESULTS.BLOCKED, 'missing result clamps to BLOCKED');
@@ -152,7 +162,7 @@ const GREEN_PROBE = {
 
 /* ---- C. validateStamp accepts a well-formed stamp and rejects each contract violation ---- */
 {
-  const good = normalizeStamp({ expectedHead: SHA, buildCommit: SHA, buildDescribe: 'v0.3.0', buildDirty: false, appVersion: '0.3.0', sidecarHarness: 'v0.3.0', mode: 'desktop', origin: 'http://tauri.localhost', artifact: ARTIFACT, runtimeExecutable: RUNTIME_EXECUTABLE, result: 'GREEN', evidence: [EVIDENCE], notes: 'n' }, { clock });
+  const good = normalizeStamp({ expectedHead: SHA, expectedTree: TREE, buildCommit: SHA, sourceTree: TREE, buildDescribe: 'v0.3.0', buildDirty: false, buildKind: 'reproducible-source', provenanceKind: 'reproducible-source', appVersion: '0.3.0', sidecarHarness: 'v0.3.0', mode: 'desktop', origin: 'http://tauri.localhost', artifact: ARTIFACT, runtimeExecutable: RUNTIME_EXECUTABLE, result: 'GREEN', evidence: [EVIDENCE], notes: 'n' }, { clock });
   A.eq(validateStamp(good).ok, true, 'a well-formed GREEN stamp validates');
   A.eq(validateStamp({}).ok, false, 'empty object fails validation');
   A.eq(validateStamp(null).ok, false, 'null fails validation');
@@ -161,12 +171,14 @@ const GREEN_PROBE = {
   A.ok(validateStamp(Object.assign({}, good, { appVersion: '' })).errors.some(e => /appVersion/.test(e)), 'GREEN without appVersion is a lie -> flagged');
   A.ok(validateStamp(Object.assign({}, good, { evidence: [] })).errors.some(e => /evidence/.test(e)), 'GREEN without evidence is flagged');
   A.ok(validateStamp(Object.assign({}, good, { mode: 'browser' })).errors.some(e => /desktop/.test(e)), 'browser-mode GREEN is invalid');
+  A.ok(validateStamp(Object.assign({}, good, { sourceTree: 'c'.repeat(40) })).errors.some(e => /sourceTree/.test(e)), 'mismatched source tree is invalid');
+  A.ok(validateStamp(Object.assign({}, good, { provenanceKind: 'official', officialEvidence: null })).errors.some(e => /official evidence/.test(e)), 'hand-asserted official without evidence is invalid');
   A.ok(validateStamp(Object.assign({}, good, { runtimeExecutable: null })).errors.some(e => /runtime executable/.test(e)), 'GREEN without runtime executable identity is invalid');
   A.ok(validateStamp(Object.assign({}, good, { runtimeExecutable: { sha256: 'd'.repeat(64), size: ARTIFACT.size } })).errors.some(e => /must equal/.test(e)), 'GREEN whose supplied artifact differs from the runtime executable is invalid');
   A.ok(validateStamp(Object.assign({}, good, { evidence: [{ path: 'e.json', sha256: 'x', size: 1 }] })).errors.some(e => /evidence entries/.test(e)), 'evidence without a valid digest is invalid');
   // a BLOCKED stamp with a blank appVersion is legitimately valid (that's exactly what BLOCKED means).
   const blocked = normalizeStamp({ result: 'BLOCKED', evidence: [EVIDENCE], notes: 'n' }, { clock });
-  A.eq(validateStamp(blocked).ok, true, 'BLOCKED with blank identity is a valid v2 receipt');
+  A.eq(validateStamp(blocked).ok, true, 'BLOCKED with blank identity is a valid v3 receipt');
 }
 
 /* ---- D. buildFinding: BLOCKED -> P0, RED -> P1, evidence never empty ---- */
@@ -195,7 +207,7 @@ const GREEN_PROBE = {
 
   const io = memIo();
   const attach = async () => { throw new Error('ECONNREFUSED 127.0.0.1:9333'); };
-  const smoke = makeSmoke({ attach, clock, expectedHead: SHA, artifact: ARTIFACT, io });
+  const smoke = makeSmoke({ attach, clock, expectedHead: SHA, expectedTree: TREE, artifact: ARTIFACT, io });
   const res = await smoke.run();
   A.eq(res.result, RESULTS.BLOCKED, 'unreachable exe -> BLOCKED');
   A.eq(io.stamps.length, 1, 'a stamp was still written (no silent skip)');
@@ -211,7 +223,7 @@ const GREEN_PROBE = {
   /* ---- F. makeSmoke: attach ok but appVersion blank -> BLOCKED (can not prove the build) ---- */
   const io2 = memIo();
   const unversioned = Object.assign({}, GREEN_PROBE, { appVersion: '', checks: GREEN_PROBE.checks.map(c => c.name === 'version/app-nonblank' ? { name: c.name, ok: false, detail: 'blank' } : c) });
-  const smoke2 = makeSmoke({ attach: async () => sessionWith(unversioned), clock, expectedHead: SHA, artifact: ARTIFACT, io: io2 });
+  const smoke2 = makeSmoke({ attach: async () => sessionWith(unversioned), clock, expectedHead: SHA, expectedTree: TREE, artifact: ARTIFACT, io: io2 });
   const res2 = await smoke2.run();
   A.eq(res2.result, RESULTS.BLOCKED, 'attached but unversioned -> BLOCKED (no-fake-green)');
   A.eq(io2.findings[0].severity, 'P0', 'unversioned is a P0');
@@ -219,7 +231,7 @@ const GREEN_PROBE = {
   /* ---- G. makeSmoke: attached + versioned + a failed assertion -> RED + P1 finding ---- */
   const io3 = memIo();
   const redProbe = Object.assign({}, GREEN_PROBE, { checks: GREEN_PROBE.checks.map(c => c.name === 'board/no-forever-running' ? { name: c.name, ok: false, detail: 'RUNNING chip with nothing busy: w1' } : c) });
-  const smoke3 = makeSmoke({ attach: async () => sessionWith(redProbe), clock, expectedHead: SHA, artifact: ARTIFACT, io: io3 });
+  const smoke3 = makeSmoke({ attach: async () => sessionWith(redProbe), clock, expectedHead: SHA, expectedTree: TREE, artifact: ARTIFACT, io: io3 });
   const res3 = await smoke3.run();
   A.eq(res3.result, RESULTS.RED, 'a failed parity assertion -> RED');
   A.eq(io3.stamps[0].result, RESULTS.RED, 'stamp reads RED');
@@ -229,7 +241,7 @@ const GREEN_PROBE = {
 
   /* ---- H. makeSmoke: full green run -> GREEN stamp + NO finding filed ---- */
   const io4 = memIo();
-  const smoke4 = makeSmoke({ attach: async () => sessionWith(GREEN_PROBE), clock, expectedHead: SHA, artifact: ARTIFACT, io: io4 });
+  const smoke4 = makeSmoke({ attach: async () => sessionWith(GREEN_PROBE), clock, expectedHead: SHA, expectedTree: TREE, artifact: ARTIFACT, io: io4 });
   const res4 = await smoke4.run();
   A.eq(res4.result, RESULTS.GREEN, 'all pass -> GREEN');
   A.eq(io4.stamps[0].result, RESULTS.GREEN, 'stamp reads GREEN');
@@ -238,12 +250,33 @@ const GREEN_PROBE = {
   A.eq(io4.stamps[0].runtimeExecutable, RUNTIME_EXECUTABLE, 'GREEN stamp binds the artifact to the executable that answered the probe');
   A.eq(io4.stamps[0].artifact.sha256, io4.stamps[0].runtimeExecutable.sha256, 'GREEN receipt records exact artifact/runtime SHA-256 equality');
   A.eq(io4.stamps[0].artifact.size, io4.stamps[0].runtimeExecutable.size, 'GREEN receipt records exact artifact/runtime size equality');
+  A.eq(io4.stamps[0].sourceTree, TREE, 'GREEN receipt binds the exact source tree');
+  A.eq(io4.stamps[0].provenanceKind, 'reproducible-source', 'ordinary clean source build is classified reproducible-source');
   A.eq(io4.findings.length, 0, 'a GREEN run files NO ledger finding (nothing to report)');
+
+  /* ---- H2. official is externally earned; custom can never be promoted ---- */
+  const verifier = () => ({ ok: true, authority: 'release-attestation-verifier', verificationId: 'attestation-123' });
+  const ioOfficial = memIo();
+  const official = await makeSmoke({
+    attach: async () => sessionWith(GREEN_PROBE), clock, expectedHead: SHA, expectedTree: TREE,
+    artifact: ARTIFACT, officialEvidence: OFFICIAL_EVIDENCE, verifyOfficialEvidence: verifier, io: ioOfficial
+  }).run();
+  A.eq(official.result, RESULTS.GREEN, 'external official verification does not weaken installed behavior gates');
+  A.eq(official.stamp.provenanceKind, 'official', 'exact externally verified commit/tree/artifact earns official');
+  A.ok(official.stamp.officialEvidence && official.stamp.officialEvidence.verificationId === 'attestation-123', 'official receipt records its external verification identity');
+
+  const customProbe = Object.assign({}, GREEN_PROBE, { shell: Object.assign({}, GREEN_PROBE.shell, { provenanceKind: 'custom' }) });
+  const custom = await makeSmoke({
+    attach: async () => sessionWith(customProbe), clock, expectedHead: SHA, expectedTree: TREE,
+    artifact: ARTIFACT, officialEvidence: OFFICIAL_EVIDENCE, verifyOfficialEvidence: verifier, io: memIo()
+  }).run();
+  A.eq(custom.stamp.provenanceKind, 'custom', 'explicit custom build stays custom despite unrelated official evidence');
+  A.eq(custom.stamp.officialEvidence, null, 'custom receipt cannot retain an official-looking assertion');
 
   /* ---- I. makeSmoke: attach ok but the in-page probe throws -> BLOCKED (proved nothing) ---- */
   const io5 = memIo();
   const throwingSession = { async probe() { throw new Error('Runtime.evaluate detached'); }, diagnostics() { return {}; }, async close() {} };
-  const smoke5 = makeSmoke({ attach: async () => throwingSession, clock, expectedHead: SHA, artifact: ARTIFACT, io: io5 });
+  const smoke5 = makeSmoke({ attach: async () => throwingSession, clock, expectedHead: SHA, expectedTree: TREE, artifact: ARTIFACT, io: io5 });
   const res5 = await smoke5.run();
   A.eq(res5.result, RESULTS.BLOCKED, 'a probe that throws -> BLOCKED, not green');
   A.eq(io5.findings[0].severity, 'P0', 'probe-threw is a P0');
