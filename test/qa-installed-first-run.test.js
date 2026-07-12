@@ -146,6 +146,15 @@ function scenario(overrides = {}) {
     A.eq((await runner.run()).result, RESULTS.BLOCKED, 'unreachable installed CDP -> BLOCKED');
   }
   {
+    const io = memIo();
+    const runner = makeInstalledFirstRun({ driver: {}, candidateCommit: '', candidateTree: '', artifact: null,
+      isolation: {}, provider: {}, io, clock: { now: () => 0, nowIso: () => ISO } });
+    const out = await runner.run();
+    A.eq(out.result, RESULTS.BLOCKED, 'missing candidate stays BLOCKED');
+    A.eq(out.receipt.reasonCode, 'candidate-commit-missing', 'BLOCKED receipt preserves the first concrete blocker');
+    A.eq(out.receipt.isolation.observedFresh, false, 'BLOCKED receipt keeps explicit false precondition fields');
+  }
+  {
     const { runner } = scenario({ isolation: Object.assign({}, ISOLATION, { authority: 'appdata-env-redirect' }) });
     A.eq((await runner.run()).result, RESULTS.BLOCKED, 'unproven process-local isolation -> BLOCKED');
   }

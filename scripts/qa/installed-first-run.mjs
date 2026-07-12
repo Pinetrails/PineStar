@@ -185,16 +185,16 @@ function makeReceipt(state) {
       id: str(state.isolation && state.isolation.id), attended: state.isolation && state.isolation.attended === true,
       authority: str(state.isolation && state.isolation.authority),
       freshProfile: state.isolation && state.isolation.freshProfile === true,
-      observedFresh: state.fresh && state.fresh.ok === true
+      observedFresh: state.fresh?.ok === true
     },
     provider: {
       id: lower(state.provider && state.provider.id), model: str(state.provider && state.provider.model),
-      failureStateObserved: state.providerFailure && state.providerFailure.visible === true,
+      failureStateObserved: state.providerFailure?.visible === true,
       failureKind: str(state.providerFailure && state.providerFailure.kind),
-      recovered: state.created && state.created.providerConnected === true
+      recovered: state.created?.providerConnected === true
     },
     overseer: {
-      created: state.created && state.created.overseerCreated === true,
+      created: state.created?.overseerCreated === true,
       id: str(state.created && state.created.agentId), role: str(state.created && state.created.role)
     },
     task: {
@@ -226,9 +226,11 @@ export function validateJourneyReceipt(receipt) {
   if (receipt.schemaVersion !== RECEIPT_SCHEMA) errors.push('receipt-schema-mismatch');
   if (!RESULT_SET.has(receipt.result)) errors.push('receipt-result-invalid');
   if (!str(receipt.stampIso) || !Number.isFinite(Date.parse(receipt.stampIso))) errors.push('receipt-time-invalid');
-  if (!SHA40.test(lower(receipt.candidateCommit)) || !SHA40.test(lower(receipt.candidateTree))) errors.push('receipt-candidate-invalid');
-  if (!normalizedArtifact(receipt.artifact)) errors.push('receipt-artifact-invalid');
   if (containsSecretMaterial(JSON.stringify(receipt))) errors.push('receipt-secret-bearing');
+  if (receipt.result !== RESULTS.BLOCKED) {
+    if (!SHA40.test(lower(receipt.candidateCommit)) || !SHA40.test(lower(receipt.candidateTree))) errors.push('receipt-candidate-invalid');
+    if (!normalizedArtifact(receipt.artifact)) errors.push('receipt-artifact-invalid');
+  }
   if (receipt.result === RESULTS.PASS) {
     if (!receipt.installed || receipt.installed.mode !== 'desktop' || !TAURI_ORIGINS.has(receipt.installed.origin)) errors.push('receipt-installed-unproven');
     if (!receipt.isolation || !receipt.isolation.attended || !receipt.isolation.freshProfile || !receipt.isolation.observedFresh ||
