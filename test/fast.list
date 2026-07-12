@@ -60,6 +60,9 @@ test/keepawake.test.js
 test/grace.test.js
 test/shell-session.test.js
 test/shell-bg.test.js
+test/shell-visible-window.test.js
+test/procledger.test.js
+test/inputguard.test.js
 test/timeout.test.js
 test/phase4.evidence.test.js
 test/phase5.evidence.test.js
