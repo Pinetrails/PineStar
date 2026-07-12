@@ -1366,6 +1366,16 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 /* top bar: reuse the v7 logo (#logo, .logo-*) and .tb-stat; subtitle fit */
 #topbar .logo-sub { white-space: nowrap; }
 
+/* CREW header — the same solid ink-on-phosphor bar COMMS (#chat-panel h3) and the
+   SESSIONS rail head (.ws-head) wear; the old engraved-rule h3 read as leftover v7 chrome */
+#left h3 {
+  justify-content: space-between; align-items: baseline; flex-shrink: 0;
+  color: var(--ink); background: var(--ph); padding: 4px 12px; letter-spacing: 2px;
+  border-radius: 7px 7px 0 0;
+}
+#left h3::after { display: none; }   /* the global engraved-rule ::after doesn't belong on a solid bar */
+#left h3 .h3-aux { color: var(--ink); opacity: .7; text-shadow: none; font-size: 12px; letter-spacing: 1px; }
+
 /* crew manifest empty state */
 .crew-empty { padding: 14px 10px; font-size: 13px; color: var(--ph-dim); }
 
