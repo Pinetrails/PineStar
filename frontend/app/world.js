@@ -4331,6 +4331,23 @@ const World = (() => {
   const AWAIT_TTL_MS = 660000;                   // consent max (600s) + grace ⇒ a stuck await clears if its response was lost
   let awaitStampAt = 0;                           // performance.now() when the current awaitPrompt was last reinforced
   function stampRun(aid) { if (aid) runLastSeenByAgent.set(aid, (typeof performance !== 'undefined') ? performance.now() : fnow); }
+  /* OVERLAP-SAFE RUN REFCOUNT (the black-screen-while-working fix). The work pose, serverLit set and the
+     run clock are all AGENT-keyed, but an agent's runs can OVERLAP (a scheduled routine ending while a chat
+     run streams, two channel runs, a background workstream). Extinguishing on the FIRST run.end used to
+     tear the desk pose + darken the workstation screens of an agent that was still genuinely working — the
+     app asserting idle while the harness could prove a live run (truthful-telemetry violation, inverted).
+     So every live run registers by runId here, and only the LAST live run's end may extinguish agent-keyed
+     state. noteRunEnd is IDEMPOTENT per runId (Set.delete), so every run.end consumer can call it and read
+     the remaining count without depending on listener registration order. */
+  const liveRunsByAgent = new Map();   // agentId -> Set(runId), every live run regardless of trigger
+  function noteRunStart(aid, rid) { if (!aid || !rid) return; let s = liveRunsByAgent.get(aid); if (!s) { s = new Set(); liveRunsByAgent.set(aid, s); } s.add(rid); }
+  function noteRunEnd(aid, rid) {
+    const s = aid ? liveRunsByAgent.get(aid) : null; if (!s) return 0;
+    if (rid) s.delete(rid); else s.clear();   // a runId-less end can't be matched — treat it as agent-terminal (old behavior)
+    if (!s.size) liveRunsByAgent.delete(aid);
+    return s.size;
+  }
+  function agentRunsLive(aid) { const s = aid ? liveRunsByAgent.get(aid) : null; return s ? s.size : 0; }
   /* the once-per-second TTL sweep (E2). Degrades paired states whose reinforcing event was lost:
        • a run clock with no token/tool/start event for RUN_TTL_MS ⇒ clear runStartByAgent (+ its work pose,
          glyph, serverLit, and any leftover crew workUntil for that agent) so no eternal RUN clock is asserted.
@@ -4343,12 +4360,16 @@ const World = (() => {
         const seen = runLastSeenByAgent.get(aid) || runStartByAgent.get(aid) || 0;
         if (now - seen > RUN_TTL_MS) {
           runStartByAgent.delete(aid); runLastSeenByAgent.delete(aid);
+          liveRunsByAgent.delete(aid);                    // a leaked refcount (lost run.end) degrades with the clock
           glyphByAgent.delete(aid);                       // the in-flight tool glyph is just as stale
           if (serverLit.has(aid)) { serverLit.delete(aid); setActivityFor(aid, 'idle'); }   // drop an autonomous body out of the working pose
           const b = bodyForAgent(aid); if (b && b !== agent && b.workUntil) b.workUntil = 0;  // clear a stuck crew work pose
         }
       }
     }
+    // a serverLit entry whose agent has NO live run and NO run clock is a leftover from an overlap window
+    // (the scheduled run ended while a chat run kept the pose; the chat teardown owned the extinguish) — drop it.
+    for (const aid of Array.from(serverLit)) if (!agentRunsLive(aid) && !runStartByAgent.has(aid)) serverLit.delete(aid);
     if (awaitPrompt && awaitStampAt && (now - awaitStampAt > AWAIT_TTL_MS)) clearAwait();   // a lost permission.response never strands the hero
   }
   /* Lane E2 — reconnect reconciliation (the PRIMARY correction). On every SSE (re)open, ask the sidecar for the
@@ -4367,6 +4388,7 @@ const World = (() => {
     const out = Object.assign({}, snap);
     if (Array.isArray(snap.runs)) out.activeRuns = snap.runs.map(r => r && r.agentId ? {
       agentId: r.agentId,
+      runId: r.runId || null,
       startedMsAgo: (ts && +r.startedAt) ? Math.max(0, ts - (+r.startedAt)) : 0
     } : null).filter(Boolean);
     if (Array.isArray(snap.prompts)) out.pendingPrompts = snap.prompts;
@@ -4384,10 +4406,11 @@ const World = (() => {
         live.add(r.agentId);
         const startedAgo = Math.max(0, +r.startedMsAgo || 0);
         if (!runStartByAgent.has(r.agentId)) runStartByAgent.set(r.agentId, now - startedAgo);
+        noteRunStart(r.agentId, r.runId);   // rebuild the overlap refcount from the authoritative live set
         stampRun(r.agentId);
       }
       for (const aid of Array.from(runStartByAgent.keys())) if (!live.has(aid)) {   // ended during the outage
-        runStartByAgent.delete(aid); runLastSeenByAgent.delete(aid); glyphByAgent.delete(aid);
+        runStartByAgent.delete(aid); runLastSeenByAgent.delete(aid); glyphByAgent.delete(aid); liveRunsByAgent.delete(aid);
         if (serverLit.has(aid)) { serverLit.delete(aid); setActivityFor(aid, 'idle'); }
         const b = bodyForAgent(aid); if (b && b !== agent && b.workUntil) b.workUntil = 0;
       }
@@ -5201,8 +5224,11 @@ const World = (() => {
     // existing agent.tool_call / agent.run.* events (the delegated child's lifecycle is forwarded onto the lead's stream).
     U.bus.on('agent.tool_call', p => { if (p && /^team[._]dispatch$/.test(p.name || '')) { delegateLead = p.agentId; delegateCall = p.callId; } });
     U.bus.on('agent.tool_result', p => { if (p && p.callId && p.callId === delegateCall) { delegateLead = null; delegateCall = null; } });
+    // OVERLAP REFCOUNT: register every live run by runId (any trigger) BEFORE the extinguish consumers below —
+    // only the LAST live run's end may darken an agent's pose/screens (see noteRunStart/noteRunEnd).
+    U.bus.on('agent.run.start', p => { if (p && p.agentId) noteRunStart(p.agentId, p.runId); });
     U.bus.on('agent.run.start', p => { if (p && delegateLead) { const b = bodyForAgent(p.agentId); if (b && b !== agent) handoff(delegateLead, p.agentId, 'spawned'); } });
-    U.bus.on('agent.run.end', p => { if (p) { const b = bodyForAgent(p.agentId); if (b && b !== agent) handoff(null, p.agentId, 'done'); } });
+    U.bus.on('agent.run.end', p => { if (p) { const b = bodyForAgent(p.agentId); if (b && b !== agent && !noteRunEnd(p.agentId, p.runId)) handoff(null, p.agentId, 'done'); } });
     // AUTONOMOUS WORK (cron / channel): a server-initiated run has no in-app chat driving its body, so bind its
     // run lifecycle to the work pose HERE — the agent goes to its workstation and works for the run's REAL
     // duration, then stands when it ends. This is what makes a scheduled routine VISIBLE: the conveyor box rides
@@ -5210,7 +5236,7 @@ const World = (() => {
     // (trigger 'directive') drives its own body via chat.js and is excluded; a delegated worker (also 'directive')
     // is handled by the handoff bindings above — so this never double-drives a body.
     U.bus.on('agent.run.start', p => { if (p && p.agentId && (p.trigger === 'schedule' || p.trigger === 'event')) { serverLit.add(p.agentId); if (agent && p.agentId === agent.id) agent.taskViaConveyor = true; setActivityFor(p.agentId, 'task'); } });
-    U.bus.on('agent.run.end', p => { if (p && p.agentId && serverLit.has(p.agentId)) { serverLit.delete(p.agentId); setActivityFor(p.agentId, 'idle'); } });
+    U.bus.on('agent.run.end', p => { if (p && p.agentId && !noteRunEnd(p.agentId, p.runId) && serverLit.has(p.agentId)) { serverLit.delete(p.agentId); setActivityFor(p.agentId, 'idle'); } });
     // M-mem.4: a real auto-compaction fired (the loop folded older context into a summary) — raise a
     // one-line notify. Truthful: driven by the event's own before/after token counts. The bottom-bar
     // CTX gauge flashes its own mint "compacted" echo (StationUI listens to agent.compact directly).
@@ -5397,8 +5423,8 @@ const World = (() => {
     // G0.2 RUN CLOCK: elapsed-time bookkeeping keyed to the REAL run lifecycle (a run.error is always
     // followed by run.end reason 'error', so end is the one cleanup point). Internal reason-only runs
     // never reach U.bus (harness.js suppresses their start/end), so no clock ever shows for self-talk.
-    U.bus.on('agent.run.start', p => { if (p && p.agentId) { runStartByAgent.set(p.agentId, performance.now()); stampRun(p.agentId); } });
-    U.bus.on('agent.run.end', p => { if (p && p.agentId) { runStartByAgent.delete(p.agentId); runLastSeenByAgent.delete(p.agentId); } });
+    U.bus.on('agent.run.start', p => { if (p && p.agentId) { if (!runStartByAgent.has(p.agentId)) runStartByAgent.set(p.agentId, performance.now()); stampRun(p.agentId); } });   // an overlapping start keeps the EARLIEST clock (the agent has been running since then)
+    U.bus.on('agent.run.end', p => { if (p && p.agentId && !noteRunEnd(p.agentId, p.runId)) { runStartByAgent.delete(p.agentId); runLastSeenByAgent.delete(p.agentId); } });
     // G0.2 SIM-TASK PROGRESS: store a desk fraction ONLY when a producer publishes a real prog/dur pair
     // on the 'task' event (subagent status events carry none and store none). Terminal states clear it.
     U.bus.on('task', t => {
@@ -5607,7 +5633,7 @@ const World = (() => {
     pollFeed: () => pollFeedState(),
     pollShip: () => pollShipStats()
   });
-  return { init, rebake, crt: CRT, slagLog: () => (slaglog ? slaglog.recent() : []), loadStation, spawn, spawnAgent, despawnAgent, setSkin, relabel, setActivityFor, focusBody, setChatFocus, chatFocusPing, start, stop, setActivity, wakeIn, beginAwakening, setWakeProgress, igniteSpark, armKindle, kindleHold, camPushIn, camCreep, camPunch, camPullBack, awakenTurn, truthPulse, beginFlood, collapseFlood, endAwakening, releaseAwakening, say, focusAgent, getActivity: () => activity, getUse: () => (agent ? agent.usingProp : null), setOnClick, setOnArcade, setOnOutbox, setOnMissionBoard, setOnTrophyCase, setOnBayAssign, setOnIntakeFeed, refit, pauseBridge, resumeBridge, linkState, _dbgSeedRun, _dbgAgeRun, _dbgReconcile, _dbgSweep, _dbgLinkState, _dbgDropBridge, _dbgBeltLegibility,
+  return { init, rebake, crt: CRT, slagLog: () => (slaglog ? slaglog.recent() : []), loadStation, spawn, spawnAgent, despawnAgent, setSkin, relabel, setActivityFor, agentRunsLive, dropRun: noteRunEnd, focusBody, setChatFocus, chatFocusPing, start, stop, setActivity, wakeIn, beginAwakening, setWakeProgress, igniteSpark, armKindle, kindleHold, camPushIn, camCreep, camPunch, camPullBack, awakenTurn, truthPulse, beginFlood, collapseFlood, endAwakening, releaseAwakening, say, focusAgent, getActivity: () => activity, getUse: () => (agent ? agent.usingProp : null), setOnClick, setOnArcade, setOnOutbox, setOnMissionBoard, setOnTrophyCase, setOnBayAssign, setOnIntakeFeed, refit, pauseBridge, resumeBridge, linkState, _dbgSeedRun, _dbgAgeRun, _dbgReconcile, _dbgSweep, _dbgLinkState, _dbgDropBridge, _dbgBeltLegibility,
     // AGENT GROWTH: XpStore pushes pre-computed Xp.compute() snapshots here; pulseLevelUp fires
     // the addressed body's gold ring. The colony headline is the top-bar STATION chip.
     setXp: (agentId, a) => {
