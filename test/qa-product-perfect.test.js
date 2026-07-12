@@ -86,6 +86,10 @@ const statusContext = { nowMs: NOW, key, readEvidence: validityContext(manifest.
   const staleWindow = JSON.parse(JSON.stringify(manifest));
   staleWindow.waves[0].maxReceiptAgeMs *= 100;
   A.eq(validateManifest(staleWindow).ok, false, 'a weakened receipt freshness window is rejected');
+
+  const w0Gate = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'qa', 'product-perfect', 'gates', 'wave-0-proof-authority.mjs'), 'utf8');
+  A.ok(/claims\.mjs[^\n]*--planning/.test(w0Gate), 'W0 executes the finite claims planning authority');
+  A.ok(!/scripts\/qa\/ready\.mjs/.test(w0Gate), 'W0 never invokes the broad READY aggregate');
 }
 
 {
