@@ -158,7 +158,7 @@ const Chat = (() => {
     const ce = el('chat-elapsed'); if (!ce) return;
     const started = (activeWs && typeof Channels !== 'undefined') ? Channels.startedAtOf(activeWs.id) : 0;
     if (!isBusy() || !started) { if (ce.firstChild) ce.textContent = ''; return; }   // empty → CSS hides it
-    const txt = fmtElapsed(Date.now() - started);
+    const txt = fmtElapsed(Channels.elapsedOf(activeWs.id, Date.now()));   // honest elapsed: re-stamped to the confirmed run start, approval pauses excluded
     let num = ce.querySelector('.ce-num');
     if (!num) { ce.textContent = ''; num = document.createElement('span'); num.className = 'ce-num'; ce.appendChild(num); }
     if (num.textContent !== txt) num.textContent = txt;   // only the digits change → the pulsing dot never restarts
@@ -187,6 +187,11 @@ const Chat = (() => {
   function presenceCard() {
     if (!log) return null;
     let card = log.querySelector('#comms-presence');
+    // a RESOLVED card is transcript history ("■ RUN COMPLETE · …"), not the live indicator. Resurrecting it
+    // by id broke every run after a stream's first: its children were destroyed by the summary write, so the
+    // live verb/tool/time could never render again, and the re-pin below dragged the old summary under the
+    // new turn. Strip its id (it stays in place as history) and build a fresh live card.
+    if (card && card.classList.contains('resolved')) { card.removeAttribute('id'); card = null; }
     if (!card) {
       clearEmptyState();
       card = document.createElement('div'); card.id = 'comms-presence'; card.className = 'comms-presence';
@@ -207,6 +212,10 @@ const Chat = (() => {
     const p = (activeWs && typeof Channels !== 'undefined') ? Channels.pendingOf(activeWs.id) : null;
     if (p) return 'AWAITING APPROVAL';
     const cs = (activeWs && typeof Channels !== 'undefined' && Channels.statusOf) ? Channels.statusOf(activeWs.id) : '';
+    // TRUTHFUL TELEMETRY: until the sidecar's agent.run.start lands the card says CONNECTING — it never
+    // claims the agent is thinking/working on the strength of a click alone (a downed sidecar would
+    // otherwise show "THINKING" forever).
+    if (cs && /connect/i.test(cs)) return 'CONNECTING';
     return (cs && /work/i.test(cs)) ? 'WORKING' : 'THINKING';
   }
   function renderPresence() {
@@ -234,7 +243,7 @@ const Chat = (() => {
         if (tool.textContent !== t) tool.textContent = t; tool.classList.toggle('has', !!t);
       }
     }
-    const time = card.querySelector('.cp-time'); const txt = fmtElapsed(Date.now() - started);
+    const time = card.querySelector('.cp-time'); const txt = fmtElapsed(Channels.elapsedOf(activeWs.id, Date.now()));
     if (time && time.textContent !== txt) time.textContent = txt;
   }
   function startPresence(ws) {
@@ -244,14 +253,14 @@ const Chat = (() => {
   function presenceToolCall(ws, name) { presenceCurTool = name || null; if (isActiveWs(ws)) renderPresence(); }
   function presenceToolResult(ws) { presenceCurTool = null; if (isActiveWs(ws)) renderPresence(); }
   // remove any live presence card without a summary (used when switching away / re-rendering a stream)
-  function clearPresence() { const c = log && log.querySelector('#comms-presence'); if (c) c.remove(); presenceCurTool = null; }
+  function clearPresence() { const c = log && log.querySelector('#comms-presence'); if (c) { if (c.classList.contains('resolved')) c.removeAttribute('id'); else c.remove(); } presenceCurTool = null; }   // a resolved summary is history — keep it, only live cards are torn down
   // resolve the live card into a compact one-line summary that STAYS in the transcript. opts: { error, raw,
   // stopped, endReason, steps, cost }. Truthful: steps/cost only appear when a real number is supplied.
   function resolvePresence(ws, opts) {
     if (!isActiveWs(ws)) { clearPresence(); return; }
     opts = opts || {};
     const started = (typeof Channels !== 'undefined') ? Channels.startedAtOf(ws.id) : 0;
-    const dur = started ? fmtElapsed(Date.now() - started) : '';
+    const dur = started ? fmtElapsed(Channels.elapsedOf(ws.id, Date.now())) : '';   // machine time only — approval pauses excluded
     const card = log && log.querySelector('#comms-presence');
     if (!card) return;
     card.classList.remove('cp-live');
@@ -865,11 +874,12 @@ const Chat = (() => {
     if (!statusEl) return;
     statusEl.textContent = s;
     const low = String(s || '').toLowerCase();
-    statusEl.classList.remove('status-thinking', 'status-working', 'status-approval', 'status-stopping', 'status-online');
+    statusEl.classList.remove('status-thinking', 'status-working', 'status-approval', 'status-stopping', 'status-connecting', 'status-online');
     statusEl.classList.add(low.indexOf('approval') >= 0 ? 'status-approval'
       : low.indexOf('stopping') >= 0 ? 'status-stopping'
       : low.indexOf('working') >= 0 ? 'status-working'
       : low.indexOf('thinking') >= 0 ? 'status-thinking'
+      : low.indexOf('connecting') >= 0 ? 'status-connecting'
       : 'status-online');
   }
   // derive the DISPLAYED stream's status from real state, so a low-priority write (a finishing turn) can't
@@ -1567,7 +1577,7 @@ const Chat = (() => {
       // surface the decision on the bus (schema: permission.response) so listeners — e.g. the first-run tutorial —
       // can tell an approve from a deny and narrate the consent loop honestly. Additive; the run resumes via Harness.consent.
       try { if (typeof U !== 'undefined' && U.bus) U.bus.emit('permission.response', { promptId: p.promptId, decision: decision }); } catch (_) {}
-      if (ws && typeof Channels !== 'undefined') Channels.clearPending(ws.id);
+      if (ws && typeof Channels !== 'undefined') Channels.clearPending(ws.id, Date.now());   // closes the paused span — approval wait never counts as run time
       if (isActiveWs(ws)) renderPresence();   // drop the paused styling the instant the run resumes
       btns.remove();
       const tag = document.createElement('span');
@@ -3457,7 +3467,7 @@ const Chat = (() => {
     // GOAL LOOP: a deliberate Stop means "I'm taking over" — pause any active loop so the teardown's judge doesn't
     // fire the next continuation. (The user resumes it explicitly with /goal resume.)
     if (typeof GoalLoop !== 'undefined') { const g = goalOf(activeWs); if (g && GoalLoop.isActive(g)) { GoalLoop.pause(g, 'you stopped the run'); persistGoal(); } }
-    if (typeof Channels !== 'undefined' && Channels.clearPending) Channels.clearPending(id);   // a pending approval is moot once stopped
+    if (typeof Channels !== 'undefined' && Channels.clearPending) Channels.clearPending(id, Date.now());   // a pending approval is moot once stopped
     const ac = aborters.get(id); if (ac) { try { ac.abort(); } catch (_) {} }   // aborts the fetch → reader throws → send()'s catch
     const rid = (typeof Channels !== 'undefined') ? Channels.runIdOf(id) : null;
     if (rid && typeof Harness !== 'undefined' && Harness.cancel) Harness.cancel(rid);   // server-side kill (belt-and-suspenders)
@@ -4607,7 +4617,10 @@ const Chat = (() => {
     function walkToDesk() {   // idempotent: the FIRST real tool action of the turn sends THIS agent to its station
       if (walkedToDesk) return; walkedToDesk = true;
       if (World.setActivityFor) World.setActivityFor(turnAgentId, 'task'); else World.setActivity('task');
-      if (typeof Channels !== 'undefined' && Channels.setStatus) Channels.setStatus(ws.id, 'working…');
+      // TRUTHFUL TELEMETRY: 'working…' is only claimed once the sidecar has confirmed the run (runId set).
+      // The eager isTask walk fires before that — the walk happens, but the status stays 'connecting…' until
+      // agent.run.start lands (onRunId then upgrades it, honoring the task ruling: a confirmed task = working).
+      if (typeof Channels !== 'undefined' && Channels.setStatus && Channels.runIdOf(ws.id)) Channels.setStatus(ws.id, 'working…');
       if (isActiveWs(ws)) syncStatus();
     }
     // turn to face the Commander and listen (no camera yank); a spoken CHAT also softly frames the agent.
@@ -4618,7 +4631,7 @@ const Chat = (() => {
     // and still also fires on the first real tool call / permission prompt (covers a misclassified task).
     if (isTask) walkToDesk();
     if (!isTask && willSpeak && World.focusAgent) World.focusAgent({ soft: true });
-    status('thinking…');
+    syncStatus();           // header reads the channel truth: 'connecting…' until the sidecar confirms the run
     ensureElapsedTimer();   // start the live wall-clock the instant the turn begins (before the first token)
     if (isActiveWs(ws)) startPresence(ws);   // COMMS-PREMIUM: pin the live working-presence card at the transcript bottom
     updateControls();       // reveal the ⏹ Stop control for this run
@@ -4673,7 +4686,7 @@ const Chat = (() => {
         system: sys, messages: historyWindow(ws), agentId: ws.agentId || 'agent', isTask, recurring, signal: ac.signal, streamId: ws.id,
         placed: (typeof World !== 'undefined' && World.heroCaps) ? World.heroCaps(ws.agentId || 'agent') : [],   // THE MOAT: this run's TOOL reach = the agent's REAL placed props (dish→web · cabinet→files · workbench→terminal · …); compute is the freebie
         stationPlaced: (typeof World !== 'undefined' && World.stationCaps) ? World.stationCaps() : [],   // Class Loadouts (shared-gear): station-wide gear for SKILL availability — a desk-only specialist still gets its class skills when the STATION has the gear (tools stay room-scoped via `placed`)
-        onRunId: id => { thisRunId = id; runStartedAt = Date.now(); try { RUN_META.set(id, { isTask: !!isTask, title: (ws && ws.title) || '', directive: String(text || ''), fromRecipe: fromRecipe, agentId: ws.agentId || 'agent' }); if (RUN_META.size > 60) RUN_META.delete(RUN_META.keys().next().value); } catch (_) {} Channels.setRunId(ws.id, id); if (typeof Workstreams !== 'undefined') { Workstreams.appendRun(ws.id, id); if (typeof App !== 'undefined' && App.refreshRail) App.refreshRail(); } },
+        onRunId: id => { thisRunId = id; runStartedAt = Date.now(); try { RUN_META.set(id, { isTask: !!isTask, title: (ws && ws.title) || '', directive: String(text || ''), fromRecipe: fromRecipe, agentId: ws.agentId || 'agent' }); if (RUN_META.size > 60) RUN_META.delete(RUN_META.keys().next().value); } catch (_) {} Channels.setRunId(ws.id, id, Date.now()); if (walkedToDesk && Channels.setStatus) Channels.setStatus(ws.id, 'working…'); if (isActiveWs(ws)) { syncStatus(); renderPresence(); } if (typeof Workstreams !== 'undefined') { Workstreams.appendRun(ws.id, id); if (typeof App !== 'undefined' && App.refreshRail) App.refreshRail(); } },
         onToken: d => { acc += d; Channels.appendToken(ws.id, d); if (isActiveWs(ws)) { if (activeLiveRow) activeLiveRow.append(d); if (!isTask) World.say(acc); } if (willSpeak) pushSpeech(false); App.refreshUsage(); },
         onUsage: () => App.refreshUsage(),
         // COMMS-PREMIUM: the Channels store still records the pre-formatted STRING (replay/switch-survival is
@@ -4719,7 +4732,7 @@ const Chat = (() => {
         // a background stream fires the global clickable toast + rail marker (backgroundPermissionNotify). Both
         // paths then ACK the sidecar (consentAck) that the prompt is human-visible, earning the paused run its
         // one bounded extension of the fail-closed auto-deny timer.
-        onPermission: ev => { Channels.setPending(ws.id, { promptId: ev.promptId, tool: ev.tool, argsSummary: ev.argsSummary, runId: Channels.runIdOf(ws.id) }); walkToDesk(); if (isActiveWs(ws)) { breakLive(); permissionRow(ev, ws); renderPresence(); } else { backgroundPermissionNotify(ev, ws); } try { Harness.consentAck(Channels.runIdOf(ws.id), ev.promptId); } catch (_) {} },
+        onPermission: ev => { Channels.setPending(ws.id, { promptId: ev.promptId, tool: ev.tool, argsSummary: ev.argsSummary, runId: Channels.runIdOf(ws.id) }, Date.now()); walkToDesk(); if (isActiveWs(ws)) { breakLive(); permissionRow(ev, ws); renderPresence(); } else { backgroundPermissionNotify(ev, ws); } try { Harness.consentAck(Channels.runIdOf(ws.id), ev.promptId); } catch (_) {} },
         // the lead's team.summon tool asked the station to create a worker: run the REAL summon (App.summonForRequest
         // → the Recruitment Bay's own summonAgent), then ack with the new id so the lead can delegate to it. The id
         // resolves only after the roster POST lands (App awaits it), so the lead's next team.dispatch finds the worker.
