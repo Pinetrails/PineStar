@@ -305,7 +305,7 @@ A.ok(/o\.stationObjects[\s\S]{0,120}roomTypes\.concat\(o\.stationObjects\)/.test
   'skill availability unions the room objects with the STATION-WIDE gear (a desk-only specialist still gets its class skills)');
 A.ok(/placedTypes: skillPlacedTypes/.test(composeSeg), 'skillsCatalog.compose gates on the shared-gear placedTypes');
 // and TOOL reach is still resolved from the room only (NOT widened by stationObjects) — the guard the task requires.
-A.ok(/const resolved = resolveTools\(agentId, station(,[^)]*)?\)/.test(idx), 'resolveTools still projects TOOLS from the agent room only (tool reach unchanged)');
+A.ok(/const resolved = enforceSyntheticOnly\(resolveTools\(agentId, station,/.test(idx), 'room-scoped tool projection is preserved, then the host removes real-desktop tools');
 A.ok(!/resolveTools\([^)]*stationObjects/.test(idx), 'stationObjects is NOT fed into the tool projection (only skills widen to shared gear)');
 // 4c. FUNCTIONAL: catalog.compose availability with the shared-gear union — a package skill that requires cabinet
 // composes when the STATION has a cabinet even though the agent's own room is desk (compute) only.

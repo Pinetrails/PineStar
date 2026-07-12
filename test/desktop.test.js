@@ -86,7 +86,8 @@ function fakeOpener() {
     await rejects(p, /boom/, 'a non-zero exit rejects async with the stderr message');
   }
 
-  // capability projection: desktop.open granted by the web/dish object, denied without it
+  // capability projection: desktop.open is absent even with a dish; the implementation is
+  // retained only behind a future separate attended host channel.
   {
     const reg = makeRegistry();
     makeDesktopTools({ opener: fakeOpener().open }).register(reg);
@@ -94,8 +95,8 @@ function fakeOpener() {
       agents: { ag: { id: 'ag', room: 'r' } },
       rooms: { r: { id: 'r', objects: [{ objectType: 'dish' }] } }
     });
-    A.ok(withDish.tools.indexOf('desktop.open') >= 0, 'dish (web) grants desktop.open');
-    A.eq(withDish.approvalRules['desktop.open'].requiresConsent, true, 'capability rule records consent');
+    A.eq(withDish.tools.indexOf('desktop.open'), -1, 'ordinary dish capability never advertises a real-screen opener');
+    A.eq(withDish.approvalRules['desktop.open'], undefined, 'ordinary resolver has no real-screen approval rule');
 
     const noDish = resolveTools('ag', {
       agents: { ag: { id: 'ag', room: 'r' } },

@@ -41,6 +41,15 @@ const { makeVerifyTool } = require('../sidecar/tools/builtin/verify.js');
     fs.writeFileSync(path.join(root, 'a1', 'package.json'), JSON.stringify({ name: 'x', scripts: { test: 'exit 0' } }));
     const auto = await tool.run({ timeoutMs: 60000 }, ctx);
     A.ok(/PASSED|FAILED/.test(auto.content), 'a bare verify.run auto-detects + runs the project check');
+
+    // The verify shortcut must enforce the same input-isolation floor as shell.exec. Otherwise
+    // `verify.run npm run smoke` bypasses the shell guard and can acquire Win32 pointer lock.
+    fs.mkdirSync(path.join(root, 'a1', 'src'), { recursive: true });
+    fs.mkdirSync(path.join(root, 'a1', 'scripts'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'a1', 'src', 'game.js'), 'canvas.requestPointerLock();\n');
+    fs.writeFileSync(path.join(root, 'a1', 'scripts', 'smoke.mjs'), "import puppeteer from 'puppeteer-core';\n");
+    fs.writeFileSync(path.join(root, 'a1', 'package.json'), JSON.stringify({ name: 'x', scripts: { test: 'exit 0', smoke: 'node scripts/smoke.mjs' } }));
+    A.throws(() => tool.run({ cmd: 'npm run smoke' }, ctx), 'verify.run refuses browser automation that can reach native pointer lock');
   } finally {
     try { fs.rmSync(root, { recursive: true, force: true }); } catch (_) {}
   }

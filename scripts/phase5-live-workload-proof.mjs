@@ -31,8 +31,7 @@ const REQUIRED_TOOL_GROUPS = [
   ['notebook_write'],
   ['shell_exec', 'verify_run'],
   ['browser_navigate'],
-  ['browser_get_text'],
-  ['computer_use']
+  ['browser_get_text']
 ];
 
 const J = (v) => JSON.stringify(v);
@@ -147,7 +146,9 @@ async function waitRunComplete(cdp) {
 async function boot({ preserve = false } = {}) {
   if (!preserve) materializeSeedWorkspace(SCRATCH, MODEL);
   if (await isUp(APP_URL)) throw new Error('proof port already in use: ' + PORT);
-  const env = process.platform === 'win32' ? { STARNET_COMPUTER_DRIVER: 'win32' } : {};
+  // Proof runs are synthetic-only too. A QA script must never quietly widen the exact
+  // physical-input authority production denies.
+  const env = { STARNET_COMPUTER_DRIVER: '0', STARNET_BROWSER_HEADLESS: '1' };
   const sidecar = bootSeededSidecar({ port: PORT, scratchDir: SCRATCH, key, model: MODEL, fullAccess: true, env });
   if (!(await waitUp(APP_URL))) throw new Error('sidecar failed to boot on :' + PORT);
   return sidecar;
@@ -200,16 +201,15 @@ async function main() {
       'Required tool work:',
       '1. Call browser.navigate to https://example.com.',
       '2. Call browser.get_text and use the visible page text as evidence.',
-      '3. Call computer.use with action=screenshot and capture_after=true.',
-      '4. Call shell_exec or verify_run with a harmless command that prints phase5-shell-ok.',
-      '5. Call fs_write to create phase5-hermes-workload.md.',
-      '6. Call notebook_write to remember phase5-hermes-workload-memory.',
+      '3. Call shell_exec or verify_run with a harmless command that prints phase5-shell-ok.',
+      '4. Call fs_write to create phase5-hermes-workload.md.',
+      '5. Call notebook_write to remember phase5-hermes-workload-memory.',
       'Do not use web_search or web_fetch as a substitute for browser.navigate and browser.get_text.',
       'The Markdown file must include these exact lines:',
       '# Phase 5 Hermes Workload',
       'verdict: live StarNet workload proof',
       'browser: example.com text captured',
-      'computer: attended screenshot captured',
+      'input: synthetic-only (physical driver disabled)',
       'shell: live command attempted',
       'memory: phase5-hermes-workload-memory',
       'Finish with one short sentence naming the saved file.'
@@ -233,7 +233,6 @@ async function main() {
     const toolGroupsPresent = REQUIRED_TOOL_GROUPS.every(group => toolGroupPresent(toolNames, group));
     const okTerminal = toolGroupPresent(okToolNames, ['shell_exec', 'verify_run']);
     const okBrowser = okToolNames.includes('browser_navigate') && okToolNames.includes('browser_get_text');
-    const okComputer = okToolNames.includes('computer_use');
     report.checks.workloadPassed = sameWork.ends.some(e => e.reason === 'done')
       && sameWork.errors.length === 0
       && sameWork.costs.some(c => (c.usd || 0) > 0)
@@ -244,9 +243,11 @@ async function main() {
       && toolGroupsPresent
       && okTerminal
       && okBrowser
-      && okComputer;
+      && !toolNames.includes('computer_use');
     report.checks.browserHermesProven = okBrowser;
-    report.checks.computerHermesProven = okComputer;
+    // Absence of a call is not an installed input-isolation proof. Keep this false until the
+    // rebuilt desktop bundle completes the full Win32 observer receipt.
+    report.checks.computerHermesProven = false;
 
     try { sidecar.kill('SIGKILL'); } catch {}
     await sleep(1000);
@@ -293,12 +294,10 @@ async function main() {
         : 'Live workload has not yet produced successful browser.navigate plus browser.get_text evidence.'
     };
     existing.surface.computer = {
-      status: okComputer ? 'hermes-proven' : ((existing.surface.computer && existing.surface.computer.status) || 'blocked'),
-      proofLevel: okComputer ? 'live-ui-attended-driver' : ((existing.surface.computer && existing.surface.computer.proofLevel) || ''),
+      status: 'blocked',
+      proofLevel: 'synthetic-input-isolation-pending-installed-proof',
       logs: unique((existing.surface.computer && existing.surface.computer.logs || []).concat(join(OUT, 'phase5-workload-report.json'))),
-      notes: okComputer
-        ? 'Live workload used computer.use through the attended local desktop driver and captured screenshot proof.'
-        : 'Live workload has not yet produced successful attended computer.use evidence.'
+      notes: 'Physical computer.use is intentionally disabled in proof and product runs. An installed browser.test_* plus Win32 observer receipt is required before this surface can be promoted.'
     };
     existing.soak = Object.assign({}, existing.soak || {}, {
       phase5WorkloadGreen: !!report.checks.workloadPassed,

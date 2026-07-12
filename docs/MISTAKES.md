@@ -34,6 +34,9 @@ debugging or claiming anything done. Companions: [BRAIN.md](BRAIN.md) · [DECISI
 - **The installed app's UI is compiled into the exe** (webview loads `tauri.localhost`).
   Patching the repo/folder NEVER changes the installed UI — only an exe swap/reinstall does.
   The only proof of installed-UI behavior is CDP-attach (`--remote-debugging-port`).
+- **The installed sidecar is bundled at desktop build time too.** Editing `sidecar/` in the repo does
+  not change `%LOCALAPPDATA%\StarNet\sidecar`. A sidecar safety fix is not shipped until the desktop
+  app is rebuilt/reinstalled and the installed bundle is live-proven.
 - **WebView2 caches the embedded frontend** in `EBWebView\Default\{Cache,Code Cache}` and
   never revalidates — V8 can run OLD bytecode against NEW data (the 7/6 "missing agents"
   incident: data was never lost; a plain relaunch after cache purge healed it). Hot patches
@@ -105,6 +108,17 @@ debugging or claiming anything done. Companions: [BRAIN.md](BRAIN.md) · [DECISI
   win32 `foreground()` probe, `expectApp` match, and typing into a StarNet-titled window is
   hard-refused). LAW: a visible-screen tool is a last resort the agent must justify, and
   new loud tools ship with "when NOT to use me" text + the doctrine updated.
+
+- **Headless CDP is not automatically physical-input isolation (2026-07-12 FPS incident).**
+  Transcript forensics found zero `computer.use` calls: Puppeteer/CDP clicked a headless game, then
+  the page's real `requestPointerLock()` reached Chromium's Win32 `ClipCursor` path. Synthetic click
+  events are insufficient while page APIs can acquire native pointer/keyboard locks. Local game/UI
+  tests must use the owned, forced-headless `browser.test_*` path, install and verify lock emulation
+  before navigation, block unshimmed new targets, dispatch CDP/page input only, and await browser exit.
+  Boot/shutdown/E-STOP releases are recovery, not protection during a live run. Verify continuously
+  with `GetClipCursor` + `GetCursorPos`, use `GetLastInputInfo` to reject user-contaminated receipts,
+  and refuse to start if the cursor is already confined. Ordinary runs now expose no real-screen or
+  physical-input tool; a future attended channel must be separate and host-minted.
 
 - **Never destroy the last copy of a secret without read-back proof of its new home.**
   The 2026-07-07 Telegram-token escape: desktop "keychain migration" stripped the plaintext

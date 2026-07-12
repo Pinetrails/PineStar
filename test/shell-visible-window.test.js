@@ -1,11 +1,12 @@
 /* node test/shell-visible-window.test.js — BUILDS ARE INVISIBLE (mouse-confinement incident, 2026-07-12).
    Locks the shell.exec floor that refuses commands which would put a window on the user's screen: cmd `start`,
-   explorer, rundll32 url.dll, and headed browser launches. Equally important: the NON-trips — `npm start`,
-   `findstr chrome`, `taskkill /im chrome.exe`, and --headless browser launches must all stay allowed, or the
-   agent loses its legitimate build/verify loop. Pure predicate — no spawning, fast gate. */
+   explorer, rundll32 url.dll, and headed browser launches. `npm start`, `findstr chrome`, and task-list
+   inspection remain non-trips. The visibility predicate recognizes a muted headless browser, while the
+   separate input-isolation floor refuses that direct launch and routes testing through browser.test_*.
+   Pure predicates — no spawning, fast gate. */
 'use strict';
 const A = require('./_assert.js');
-const { opensVisibleWindow } = require('../sidecar/tools/builtin/shell.js');
+const { opensVisibleWindow, inputIsolationRisk } = require('../sidecar/tools/builtin/shell.js');
 
 // ---- blocked: window openers at command position ----
 A.ok(opensVisibleWindow('start http://localhost:5173'), 'cmd `start <url>` blocked');
@@ -23,8 +24,10 @@ A.ok(opensVisibleWindow('rundll32 url.dll,FileProtocolHandler http://x'), 'rundl
 A.ok(opensVisibleWindow('msedge --remote-debugging-port=9222 http://localhost:5173'), 'headed msedge blocked');
 A.ok(opensVisibleWindow('"C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe" http://x'), 'headed chrome (full path) blocked');
 A.ok(opensVisibleWindow('firefox http://localhost:3000'), 'headed firefox blocked');
-A.eq(opensVisibleWindow('msedge --headless=new --mute-audio --remote-debugging-port=9222 http://localhost:5173'), null, 'msedge WITH --headless --mute-audio allowed (the sanctioned smoke-test path)');
+A.eq(opensVisibleWindow('msedge --headless=new --mute-audio --remote-debugging-port=9222 http://localhost:5173'), null, 'visibility-only predicate recognizes a truly headless/muted launch');
 A.eq(opensVisibleWindow('chrome --headless --mute-audio --dump-dom http://localhost:5173'), null, 'chrome --headless --mute-audio allowed');
+A.ok(inputIsolationRisk('msedge --headless=new --mute-audio --remote-debugging-port=9222 http://localhost:5173'), 'input-isolation floor still refuses direct headless browsers');
+A.ok(inputIsolationRisk('chrome --headless --mute-audio --dump-dom http://localhost:5173'), 'local browser checks must use the owned browser.test_* path');
 // a headless browser still plays audio on the user's speakers unless muted — that half of the incident is blocked too
 A.ok(opensVisibleWindow('msedge --headless=new --remote-debugging-port=9222 http://x'), 'headless browser without --mute-audio is refused');
 
