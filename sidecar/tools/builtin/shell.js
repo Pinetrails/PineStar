@@ -100,8 +100,17 @@
     return dialect === 'cmd' || dialect === 'powershell' || dialect === 'posix' ? dialect : (WIN ? 'cmd' : 'posix');
   }
   function isDialectQuote(ch, dialect) { return ch === '"' || (ch === "'" && dialect !== 'cmd'); }
-  function isDialectEscape(ch, dialect) {
-    return (dialect === 'cmd' && ch === '^') || (dialect === 'powershell' && ch === '`') || (dialect === 'posix' && ch === '\\');
+  function isDialectEscape(ch, dialect, activeQuote, nextCh) {
+    // cmd.exe: caret escapes metacharacters only outside double quotes; inside, it is ordinary data.
+    if (dialect === 'cmd') return ch === '^' && activeQuote == null;
+    // PowerShell: backtick escapes outside/double-quoted text, but is literal inside single-quoted text.
+    if (dialect === 'powershell') return ch === '`' && activeQuote !== "'";
+    if (dialect === 'posix' && ch === '\\') {
+      if (activeQuote === "'") return false;   // everything is literal inside POSIX single quotes
+      if (activeQuote === '"') return nextCh === '$' || nextCh === '`' || nextCh === '"' || nextCh === '\\' || nextCh === '\n';
+      return true;
+    }
+    return false;
   }
   function splitCommandSegments(input, dialect) {
     const c = String(input == null ? '' : input);
@@ -111,11 +120,11 @@
     for (let i = 0; i < c.length; i++) {
       const ch = c[i];
       if (quote) {
-        if (isDialectEscape(ch, dialect) && i + 1 < c.length) { i++; continue; }
+        if (isDialectEscape(ch, dialect, quote, c[i + 1]) && i + 1 < c.length) { i++; continue; }
         if (ch === quote) quote = null;
         continue;
       }
-      if (isDialectEscape(ch, dialect) && i + 1 < c.length) { i++; continue; }
+      if (isDialectEscape(ch, dialect, null, c[i + 1]) && i + 1 < c.length) { i++; continue; }
       if (isDialectQuote(ch, dialect)) { quote = ch; continue; }
       if (ch === '&' || ch === '|' || ch === ';' || ch === '\r' || ch === '\n') {
         const part = c.slice(start, i).trim();
@@ -142,10 +151,11 @@
       while (i < c.length) {
         const ch = c[i];
         if (quote) {
-          if (isDialectEscape(ch, dialect) && i + 1 < c.length) { value += c[i + 1]; i += 2; continue; }
+          if (isDialectEscape(ch, dialect, quote, c[i + 1]) && i + 1 < c.length) { value += c[i + 1]; i += 2; continue; }
           if (ch === quote) { quote = null; i++; continue; }
           value += ch; i++; continue;
         }
+        if (isDialectEscape(ch, dialect, null, c[i + 1]) && i + 1 < c.length) { value += c[i + 1]; i += 2; continue; }
         if (isDialectQuote(ch, dialect)) { quote = ch; i++; continue; }
         if (/\s/.test(ch)) break;
         value += ch; i++;
@@ -344,6 +354,10 @@
     const c = String(cmd == null ? '' : cmd);
     const analysis = analyzeCommands(c, 0, dialect);
     if (analysis.opaquePowerShell) return 'runs a base64-encoded PowerShell command that cannot be inspected — write the script to a file and run it plainly';
+    if (analysis.heads.some(h => {
+      const first = (headTokens(h)[0] || {}).value || '';
+      return /^(?:%[^%\s]+%|![^!\s]+!)$/.test(first);
+    })) return 'uses an environment-expanded executable at a command boundary, so the command cannot be inspected safely';
     const heads = analysis.heads.map(canonicalHead);
     for (const r of MACHINE_HEAD_RULES) if (heads.some(h => r.re.test(h))) return r.why;
     for (const r of MACHINE_GLOBAL_RULES) if (r.re.test(c)) return r.why;

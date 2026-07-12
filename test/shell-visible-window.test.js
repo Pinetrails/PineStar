@@ -13,6 +13,7 @@ A.ok(opensVisibleWindow('start index.html'), 'cmd `start <file>` blocked');
 A.ok(opensVisibleWindow('start'), 'bare `start` (new console window) blocked');
 A.ok(opensVisibleWindow('npm run build && start dist\\index.html'), '`start` after && blocked');
 A.ok(opensVisibleWindow('echo done & start report.html'), '`start` after & blocked');
+A.ok(opensVisibleWindow('echo "x^" & start http://x'), 'cmd caret inside double quotes does not hide a following start command');
 A.ok(opensVisibleWindow('cmd /c start http://x'), '`start` behind cmd /c blocked');
 A.ok(opensVisibleWindow('cmd /c "start http://x"'), 'quoted whole cmd /c start payload blocked');
 A.ok(opensVisibleWindow('call start x.html'), '`start` behind call blocked');

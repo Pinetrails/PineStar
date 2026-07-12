@@ -103,9 +103,19 @@ A.eq(breaksMachineState('echo restart-computer is a cmdlet'), null, 'the WORDS i
 A.eq(breaksMachineState('echo Start-Process shutdown /r'), null, 'Start-Process words in echo output are not a launcher');
 if (process.platform === 'win32') A.eq(breaksMachineState('echo ^& shutdown /r'), null, 'cmd caret-escaped separator stays echo data, not a second command');
 if (process.platform === 'win32') {
+  A.ok(breaksMachineState('echo "x^" & shutdown /r /t 0'), 'cmd caret inside double quotes does not escape the closing quote');
   A.ok(breaksMachineState("echo 'x & shutdown /r /t 0 & rem '"), 'cmd.exe single quotes do not hide command separators');
   A.eq(breaksMachineState("echo 'x & shutdown /r /t 0 & rem '", 'posix'), null, 'POSIX single quotes still protect separators');
 }
+A.ok(breaksMachineState("echo 'x\\' ; shutdown -h now", 'posix'), 'POSIX backslash is literal inside single quotes and cannot hide shutdown');
+A.ok(breaksMachineState("Write-Output 'x`' ; shutdown -h now", 'powershell'), 'PowerShell backtick is literal inside single quotes and cannot hide shutdown');
+A.eq(breaksMachineState('Write-Output "x`" ; shutdown -h now"', 'powershell'), null, 'PowerShell backtick inside double quotes escapes the quote and keeps shutdown as string data');
+
+// cmd expansion is too broad to emulate safely. Fail closed only when the whole executable head is dynamic.
+A.ok(breaksMachineState('set "STARNET_VERB=shutdown" & call %STARNET_VERB% /r /t 0'), 'call-expanded %VAR% executable head refused');
+A.ok(breaksMachineState('cmd /v:on /c "set STARNET_VERB=shutdown&!STARNET_VERB! /r /t 0"'), 'delayed !VAR! executable head refused');
+A.eq(breaksMachineState('echo %PATH%'), null, 'ordinary percent expansion as an argument remains allowed');
+A.eq(breaksMachineState('echo !STARNET_VERB!'), null, 'ordinary delayed expansion as an argument remains allowed');
 
 // Windows PowerShell accepts every unambiguous prefix below. Drive only a SAFE payload on this host, then assert
 // the parser rejects the same executable switches before an opaque/dangerous payload can ever reach PowerShell.
@@ -129,6 +139,29 @@ for (const flag of PS_SLASH_ENCODED_FLAGS) {
 if (process.platform === 'win32') {
   const { spawnSync } = require('child_process');
   const psExe = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+  const cmdExe = process.env.ComSpec || path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'cmd.exe');
+  const outputLines = (s) => String(s || '').split(/\r?\n/).filter(Boolean);
+  const caretSafe = spawnSync(cmdExe, ['/d', '/s', '/c', 'echo "x^" & echo STARNET_CMD_SECOND'], { encoding: 'utf8', timeout: 10000, windowsHide: true });
+  A.eq(caretSafe.status, 0, 'harmless host cmd caret/quote probe executed');
+  A.ok(outputLines(caretSafe.stdout).includes('STARNET_CMD_SECOND'), 'host cmd confirms caret inside quotes did not hide the second command');
+  for (const dynamic of [
+    { args: ['/d', '/c', 'call %STARNET_VERB% STARNET_CALL_SECOND'], line: 'STARNET_CALL_SECOND' },
+    { args: ['/d', '/v:on', '/c', '!STARNET_VERB! STARNET_DELAYED_SECOND'], line: 'STARNET_DELAYED_SECOND' }
+  ]) {
+    const safe = spawnSync(cmdExe, dynamic.args, { encoding: 'utf8', timeout: 10000, windowsHide: true, env: Object.assign({}, process.env, { STARNET_VERB: 'echo' }) });
+    A.eq(safe.status, 0, 'harmless host cmd dynamic-head probe executed');
+    A.ok(outputLines(safe.stdout).includes(dynamic.line), 'host cmd confirms dynamic executable head expansion');
+  }
+  const psSingleQuote = spawnSync(psExe, ['-NoProfile', '-NonInteractive', '-Command', "Write-Output 'x`' ; Write-Output STARNET_PS_SINGLE_SECOND"], { encoding: 'utf8', timeout: 10000, windowsHide: true });
+  A.ok(outputLines(psSingleQuote.stdout).includes('STARNET_PS_SINGLE_SECOND'), 'host PowerShell confirms backtick is literal inside single quotes');
+  const psDoubleQuote = spawnSync(psExe, ['-NoProfile', '-NonInteractive', '-Command', 'Write-Output "x`" ; Write-Output STARNET_PS_DOUBLE_SECOND"'], { encoding: 'utf8', timeout: 10000, windowsHide: true });
+  A.ok(!outputLines(psDoubleQuote.stdout).includes('STARNET_PS_DOUBLE_SECOND'), 'host PowerShell confirms backtick escapes a quote inside double quotes');
+  const gitSh = 'C:\\Program Files\\Git\\bin\\sh.exe';
+  if (require('fs').existsSync(gitSh)) {
+    const posixSingleQuote = spawnSync(gitSh, ['-c', "printf '%s\\n' 'x\\' ; printf '%s\\n' STARNET_POSIX_SECOND"], { encoding: 'utf8', timeout: 10000, windowsHide: true });
+    A.eq(posixSingleQuote.status, 0, 'harmless Git sh single-quote probe executed');
+    A.ok(outputLines(posixSingleQuote.stdout).includes('STARNET_POSIX_SECOND'), 'Git sh confirms backslash is literal inside POSIX single quotes');
+  }
   const defaultSafe = spawnSync(psExe, ['-NoProfile', '-NonInteractive', 'Write-Output', 'STARNET_SAFE'], { encoding: 'utf8', timeout: 10000, windowsHide: true });
   A.eq(defaultSafe.status, 0, 'host accepts a safe implicit/default PowerShell command payload');
   A.ok(/STARNET_SAFE/.test(defaultSafe.stdout || ''), 'safe implicit/default PowerShell payload executed as expected');
