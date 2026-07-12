@@ -166,9 +166,11 @@ export function validateObservedTimeline(live, expected) {
   if (!down) errors.push('link-down-unproven');
   const recovered = down && eventAt(events, item => item.kind === 'sidecar-recovery' && Number.isInteger(Number(item.pid)) && Number(item.pid) > 0 &&
     Number(item.pid) !== Number(sidecar && sidecar.pid) && item.parentVerified === true && item.bundledNodeVerified === true &&
-    item.apiListenerVerified === true && item.versionVerified === true && lower(item.candidateCommit) === lower(expected.candidateCommit), Number(down.atMs));
+    item.apiListenerVerified === true && item.versionVerified === true && item.watchdog === true &&
+    lower(item.candidateCommit) === lower(expected.candidateCommit), Number(down.atMs));
   const recoveryData = recovered && eventAt(events, item => item.kind === 'recovery-transport-data' && item.source === 'message' &&
-    item.cdpObserved === true && item.requestBound === true && endpointMatches(item, expected.apiPort), Number(recovered.atMs));
+    item.cdpObserved === true && item.requestBound === true && item.nativeReconnect === true &&
+    endpointMatches(item, expected.apiPort), Number(recovered.atMs));
   const recoveredUp = recoveryData && eventAt(events, item => item.kind === 'link-state' && item.state === 'UP' &&
     item.recovered === true, Number(recoveryData.atMs));
   if (!recovered || !recoveryData || !recoveredUp) errors.push('watchdog-recovery-unproven');
@@ -417,9 +419,10 @@ async function waitUntil(check, timeoutMs, intervalMs = 100) {
   return null;
 }
 
-// Pure CDP event fold. Requests that race while the UI is proving loss are deliberately
-// not promoted to recovery authority; after DOWN the live driver cycles the real product
-// bridge and this fold binds only that fresh post-loss request.
+// Pure CDP event fold. Native EventSource retries can race the OS/watchdog polls, so every
+// exact non-active request is retained without its token-bearing URL. Once the UI's real DOWN
+// observation supplies a boundary, only a candidate with a successful response and browser-
+// visible empty data frame after that boundary can become recovery authority.
 export function makeNetworkObservationTracker(options = {}) {
   const now = typeof options.now === 'function' ? options.now : () => Date.now();
   let apiPort = 0;
@@ -427,11 +430,23 @@ export function makeNetworkObservationTracker(options = {}) {
   let endpointOrigin = '';
   let activeRequestId = '';
   let recoveryRequestId = '';
+  let recoveryResponseAfter = Infinity;
+  let recoveryDataAfter = Infinity;
   let networkFailedAt = null;
   let recoveryFrameAt = null;
   const healthyFrames = [];
-  const requestIds = new Set();
-  const responseIds = new Set();
+  const records = new Map();
+  function chooseRecovery() {
+    let winner = null;
+    for (const record of records.values()) {
+      if (record.id === activeRequestId || !Number.isFinite(record.responseAt) ||
+          !Number.isFinite(record.messageAt) || record.responseAt <= recoveryResponseAfter ||
+          record.messageAt <= recoveryDataAfter) continue;
+      if (!winner || record.messageAt < winner.messageAt) winner = record;
+    }
+    recoveryRequestId = winner ? winner.id : '';
+    recoveryFrameAt = winner ? winner.messageAt : null;
+  }
   function request(params) {
     try {
       const u = new URL(str(params && params.request && params.request.url));
@@ -439,24 +454,27 @@ export function makeNetworkObservationTracker(options = {}) {
           Number(u.port) !== apiPort || u.pathname !== '/api/channels/events' || params.type !== 'EventSource') return false;
       const id = str(params.requestId);
       if (!id) return false;
-      requestIds.add(id);
+      records.set(id, { id, requestedAt: Number(now()), responseAt: null, messageAt: null });
       endpointOrigin = u.origin; // URL query/header bytes are intentionally discarded here.
       if (phase === 'healthy') activeRequestId = id;
-      else if (phase === 'recovery') recoveryRequestId = id;
       return true;
     } catch (_) { return false; }
   }
   function response(params) {
     const id = str(params && params.requestId);
-    if (!requestIds.has(id) || params.type !== 'EventSource' || Number(params.response && params.response.status) !== 200) return false;
-    responseIds.add(id); return true;
+    const record = records.get(id);
+    if (!record || params.type !== 'EventSource' || Number(params.response && params.response.status) !== 200) return false;
+    record.responseAt = Number(now());
+    if (phase === 'recovery') chooseRecovery();
+    return true;
   }
   function message(params) {
     const id = str(params && params.requestId);
-    if (!requestIds.has(id) || str(params && params.data).trim() !== '{}') return false;
+    const record = records.get(id);
+    if (!record || str(params && params.data).trim() !== '{}') return false;
     const stamp = Number(now());
     if (phase === 'healthy' && id === activeRequestId) healthyFrames.push(stamp);
-    else if (phase === 'recovery' && id === recoveryRequestId) recoveryFrameAt = stamp;
+    else if (id !== activeRequestId) { record.messageAt = stamp; if (phase === 'recovery') chooseRecovery(); }
     else return false;
     return true;
   }
@@ -468,13 +486,17 @@ export function makeNetworkObservationTracker(options = {}) {
   return {
     setApiPort(value) { apiPort = Number(value) || 0; },
     setPhase(value) { phase = str(value); },
-    resetRecovery() { phase = 'recovery'; recoveryRequestId = ''; recoveryFrameAt = null; },
+    beginRecovery(downAt, sidecarRecoveredAt = downAt) {
+      phase = 'recovery'; recoveryResponseAfter = Number(downAt); recoveryDataAfter = Number(sidecarRecoveredAt);
+      recoveryRequestId = ''; recoveryFrameAt = null;
+      chooseRecovery();
+    },
     request, response, message, failed,
     snapshot() {
       return {
         phase, endpointOrigin, activeRequestId, recoveryRequestId, networkFailedAt, recoveryFrameAt,
-        healthyFrames: healthyFrames.slice(), activeResponseOk: responseIds.has(activeRequestId),
-        recoveryResponseOk: responseIds.has(recoveryRequestId)
+        healthyFrames: healthyFrames.slice(), activeResponseOk: Number.isFinite(records.get(activeRequestId)?.responseAt),
+        recoveryResponseOk: Number.isFinite(records.get(recoveryRequestId)?.responseAt)
       };
     }
   };
@@ -491,7 +513,10 @@ function makeLiveDriver(deps = {}) {
       const sessionId = 'link-session-' + crypto.randomBytes(16).toString('hex');
       const observations = [];
       const at = () => Date.now() - started;
-      const push = item => observations.push(Object.assign({ atMs: at(), sessionId }, item));
+      const push = item => {
+        const event = Object.assign({ atMs: at(), sessionId }, item);
+        observations.push(event); return event;
+      };
       let apiPort = 0;
       const tracker = makeNetworkObservationTracker({ now: at });
       cdp.on('Network.requestWillBeSent', params => tracker.request(params));
@@ -556,7 +581,7 @@ function makeLiveDriver(deps = {}) {
           return link && link.bridged === true && link.paused === false && link.down === true ? link : null;
         }, 5000, 25);
         if (!down) throw Object.assign(new Error('product-link-down-unobserved'), { code: 'product-link-down-unobserved' });
-        push({ kind: 'link-state', state: 'DOWN', cause: 'eventsource-error' });
+        const downEvent = push({ kind: 'link-state', state: 'DOWN', cause: 'eventsource-error' });
         tracker.setPhase('recovery-wait');
         const recovered = await waitUntil(() => {
           const value = processes.find(invocation.artifact.path, apiPort);
@@ -569,10 +594,8 @@ function makeLiveDriver(deps = {}) {
           return verdict.ok ? value : null;
         }, 20000, 250);
         if (!recoveredRuntime) throw Object.assign(new Error('watchdog-version-unrecovered'), { code: 'watchdog-version-unrecovered' });
-        push({ kind: 'sidecar-recovery', pid: Number(recovered.pid), previousPid: Number(sidecar.pid), candidateCommit: lower(invocation.candidateCommit),
-          parentVerified: true, bundledNodeVerified: true, apiListenerVerified: true, versionVerified: true });
-        tracker.resetRecovery();
-        await cycleProductBridge(cdp); // real product lifecycle; guarantees a post-DOWN request even if watchdog raced early
+        const recoveredAt = at();
+        tracker.beginRecovery(downEvent.atMs, recoveredAt);
         const recoveredLink = await waitUntil(async () => {
           const network = tracker.snapshot();
           const link = await readLink(cdp);
@@ -581,8 +604,15 @@ function makeLiveDriver(deps = {}) {
         }, 35000, 100);
         if (!recoveredLink) throw Object.assign(new Error('watchdog-link-unrecovered'), { code: 'watchdog-link-unrecovered' });
         const recoveryNetwork = tracker.snapshot();
-        observations.push({ atMs: recoveryNetwork.recoveryFrameAt, sessionId, kind: 'recovery-transport-data', source: 'message',
-          cdpObserved: true, requestBound: true, endpointOrigin: recoveryNetwork.endpointOrigin, endpointPath: '/api/channels/events' });
+        const recoveryEvents = [
+          { atMs: recoveredAt, sessionId, kind: 'sidecar-recovery', pid: Number(recovered.pid), previousPid: Number(sidecar.pid),
+            candidateCommit: lower(invocation.candidateCommit), parentVerified: true, bundledNodeVerified: true,
+            apiListenerVerified: true, versionVerified: true, watchdog: true },
+          { atMs: recoveryNetwork.recoveryFrameAt, sessionId, kind: 'recovery-transport-data', source: 'message',
+            cdpObserved: true, requestBound: true, nativeReconnect: true,
+            endpointOrigin: recoveryNetwork.endpointOrigin, endpointPath: '/api/channels/events' }
+        ].sort((a, b) => a.atMs - b.atMs);
+        observations.push(...recoveryEvents);
         push({ kind: 'link-state', state: 'UP', recovered: true });
         const recoveredIdentity = await readIdentity(cdp);
         const recoveredIdentityVerdict = validateInstalledObservation(recoveredIdentity, invocation);

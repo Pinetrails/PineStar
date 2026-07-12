@@ -51,8 +51,8 @@ function live(overrides = {}) {
     Object.assign({ atMs: 46200, sessionId, kind: 'transport-error', source: 'cdp-network-loading-failed', requestBound: true }, ENDPOINT),
     { atMs: 46300, sessionId, kind: 'link-state', state: 'DOWN', cause: 'eventsource-error' },
     { atMs: 47000, sessionId, kind: 'sidecar-recovery', pid: 5678, previousPid: 1234, candidateCommit: SHA,
-      parentVerified: true, bundledNodeVerified: true, apiListenerVerified: true, versionVerified: true },
-    Object.assign({ atMs: 47100, sessionId, kind: 'recovery-transport-data', source: 'message', cdpObserved: true, requestBound: true }, ENDPOINT),
+      parentVerified: true, bundledNodeVerified: true, apiListenerVerified: true, versionVerified: true, watchdog: true },
+    Object.assign({ atMs: 47100, sessionId, kind: 'recovery-transport-data', source: 'message', cdpObserved: true, requestBound: true, nativeReconnect: true }, ENDPOINT),
     { atMs: 47200, sessionId, kind: 'link-state', state: 'UP', recovered: true }
   ];
   return Object.assign({ identity: IDENTITY, origin: IDENTITY.origin, sessionId, observations }, overrides);
@@ -106,7 +106,7 @@ function clock(start = 1000, end = 51000) {
   A.ok(validateInstalledObservation(Object.assign({}, IDENTITY, { version: Object.assign({}, IDENTITY.version, { buildSha: 'f'.repeat(40) }) }), INVOCATION).errors.includes('sidecar-commit-mismatch'), 'wrong sidecar build is rejected');
   A.ok(validateInstalledObservation(Object.assign({}, IDENTITY, { apiBase: 'http://example.com:8787' }), INVOCATION).errors.includes('api-base-invalid'), 'non-loopback API seam is rejected');
   A.ok(validateInstalledObservation(Object.assign({}, IDENTITY, { link: { bridged: true, paused: false, down: true } }), INVOCATION).errors.includes('product-link-not-up'), 'a preexisting DOWN state cannot seed green proof');
-  A.eq(validateInstalledObservation(Object.assign({}, IDENTITY, { link: { bridged: true, paused: false, down: true } }), INVOCATION, { requireLink: false }).ok, true, 'watchdog version can be rechecked before the bridge is deliberately recycled');
+  A.eq(validateInstalledObservation(Object.assign({}, IDENTITY, { link: { bridged: true, paused: false, down: true } }), INVOCATION, { requireLink: false }).ok, true, 'watchdog version can be rechecked before the native bridge recovers');
 
   {
     let stamp = 0;
@@ -117,20 +117,18 @@ function clock(start = 1000, end = 51000) {
     tracker.response({ requestId: 'healthy', type: 'EventSource', response: { status: 200 } });
     tracker.message({ requestId: 'healthy', data: '{}' });
     tracker.setPhase('loss');
+    tracker.request(request('too-early'));
+    tracker.response({ requestId: 'too-early', type: 'EventSource', response: { status: 200 } });
+    tracker.message({ requestId: 'too-early', data: '{}' });
     tracker.request(request('raced-before-down'));
     tracker.response({ requestId: 'raced-before-down', type: 'EventSource', response: { status: 200 } });
-    A.eq(tracker.message({ requestId: 'raced-before-down', data: '{}' }), false, 'a watchdog reconnect racing before DOWN is not accepted as recovery proof');
     tracker.failed({ requestId: 'healthy' });
-    tracker.setPhase('recovery-wait');
-    tracker.request(request('raced-during-version-check'));
-    A.eq(tracker.snapshot().recoveryRequestId, '', 'loss/recovery-wait requests cannot steal the post-DOWN recovery slot');
-    tracker.resetRecovery();
-    tracker.request(request('fresh-after-down'));
-    tracker.response({ requestId: 'fresh-after-down', type: 'EventSource', response: { status: 200 } });
-    tracker.message({ requestId: 'fresh-after-down', data: '{}' });
+    tracker.beginRecovery(750, 950);
+    A.eq(tracker.snapshot().recoveryRequestId, '', 'a retry whose data arrived before DOWN cannot impersonate recovery');
+    tracker.message({ requestId: 'raced-before-down', data: '{}' });
     const network = tracker.snapshot();
-    A.eq(network.recoveryRequestId, 'fresh-after-down', 'real post-DOWN bridge cycle binds a fresh request');
-    A.eq(network.recoveryResponseOk && Number.isFinite(network.recoveryFrameAt), true, 'fresh recovery requires response plus browser-visible data');
+    A.eq(network.recoveryRequestId, 'raced-before-down', 'native request started during loss can prove recovery only after post-DOWN data');
+    A.eq(network.recoveryResponseOk && Number.isFinite(network.recoveryFrameAt), true, 'native recovery requires response plus browser-visible post-DOWN data');
     A.eq(JSON.stringify(network).includes('must-never-serialize'), false, 'request query/token bytes are discarded by the pure CDP fold');
   }
 
@@ -229,7 +227,7 @@ function clock(start = 1000, end = 51000) {
   A.ok(!/__STARNET_API_TOKEN__/.test(source), 'probe never reads the launch token');
   A.ok(!/endpointUrl/.test(source), 'raw token-bearing request URLs are never serialized');
   A.ok(/sidecar-recovery/.test(source) && /recovery-transport-data/.test(source), 'probe leaves the same desktop recovered for the following journey');
-  A.eq((source.match(/await cycleProductBridge\(cdp\)/g) || []).length, 2, 'real product bridge is cycled once for measurement and once after DOWN to close the watchdog race');
+  A.eq((source.match(/await cycleProductBridge\(cdp\)/g) || []).length, 1, 'bridge is cycled only for initial measurement; recovery remains the product native retry');
 
   if (process.platform === 'win32') {
     const missingArtifact = path.join(os.tmpdir(), 'starnet-definitely-missing-' + process.pid + '.exe');
