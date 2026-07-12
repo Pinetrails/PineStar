@@ -4154,9 +4154,20 @@ const World = (() => {
     return tag;
   }
   // amber (warn) / red (blocker) corner brackets + a one-line instruction over the broken piece, gently pulsing
+  // label collision (2026-07-11): neighboring nags on one row — or two nags on the SAME prop (e.g.
+  // BAY_NOT_FED + NO COMPUTE) — used to print on a shared baseline and mash into garble. Each label
+  // claims a box; a collider steps UP one line at a time until it fits. Rebuilt per draw call.
+  function placeNagLabel(placed, cx, y, w, h) {
+    const hits = b => cx - w / 2 < b.x + b.w && cx + w / 2 > b.x && y < b.y + b.h && y + h > b.y;
+    let guard = 24;
+    while (guard-- > 0 && placed.some(hits)) y -= h + 1;
+    placed.push({ x: cx - w / 2, y, w, h });
+    return y;
+  }
   function drawRoutingNags(now) {
     if (!routingNags || !routingNags.length) return;
     const pulse = 0.55 + 0.35 * Math.sin(now / 280);
+    const placed = [];
     for (const n of routingNags) {
       const X = n.x * T, Y = n.y * T, Wd = n.w * T, Hd = n.h * T;
       const col = n.warn ? '#ffbe3c' : '#ff5046';
@@ -4172,7 +4183,9 @@ const World = (() => {
       ctx.stroke();
       ctx.font = NAG_FONT; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
       ctx.shadowBlur = 3; ctx.shadowColor = col; ctx.fillStyle = col;
-      ctx.fillText(n.label, X + Wd / 2, Y - 3);
+      // alphabetic baseline at y: label box spans roughly [y-8, y] (8px VT323)
+      const ly = placeNagLabel(placed, X + Wd / 2, Y - 3 - 8, ctx.measureText(n.label).width, 9);
+      ctx.fillText(n.label, X + Wd / 2, ly + 8);
       ctx.restore();
     }
   }
