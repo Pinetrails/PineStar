@@ -47,6 +47,71 @@
     return null;
   }
 
+  /* BUILDS ARE INVISIBLE (mouse-confinement incident, 2026-07-12): agent work must never put a window on the
+     user's screen or touch their input. A shell command that opens a visible window (cmd `start`, explorer,
+     a headed browser, macOS `open`/xdg-open) is refused with a pointer to the sanctioned paths: headless
+     browser tools for verification, desktop.open (consent-gated) when the Commander explicitly asked to see
+     something. Command-POSITION anchored so `npm start`, `findstr chrome`, `taskkill /im chrome.exe` never trip. */
+  const CMD_POS = '(?:^|[&|(;]|/[ck]\\s+|\\bcall\\s+)\\s*"?';   // start-of-command positions (cmd.exe & POSIX)
+  const START_RE = new RegExp(CMD_POS + 'start(?:\\s|$)', 'i');
+  const EXPLORER_RE = new RegExp(CMD_POS + 'explorer(?:\\.exe)?"?(?:\\s|$)', 'i');
+  const OPEN_RE = new RegExp(CMD_POS + '(?:xdg-)?open(?:\\s|$)', 'i');
+  // path prefix allows spaces (quoted "C:\Program Files\...\chrome.exe") but must END in a path separator
+  // immediately before the browser name — so `taskkill /im chrome.exe` (space before the name) never trips.
+  const BROWSER_EXE_RE = new RegExp(CMD_POS + '(?:[^"&|;]*[\\\\/])?(msedge|chrome|chromium(?:-browser)?|firefox|brave|opera|iexplore|safari)(?:\\.exe)?"?(?:\\s|$)', 'i');
+  function opensVisibleWindow(cmd) {
+    const c = String(cmd == null ? '' : cmd);
+    if (START_RE.test(c)) return 'cmd `start` opens a visible window on the user\'s screen';
+    if (EXPLORER_RE.test(c)) return '`explorer` opens a visible window on the user\'s screen';
+    if (/rundll32\b[^&|]*url\.dll/i.test(c)) return 'rundll32 url.dll opens the user\'s default browser';
+    if (!WIN && OPEN_RE.test(c)) return '`open`/`xdg-open` opens a visible window on the user\'s screen';
+    if (BROWSER_EXE_RE.test(c) && !/--headless/i.test(c)) {
+      return 'launching a browser without --headless opens a visible window (and a page can capture the user\'s mouse via pointer lock)';
+    }
+    // a headless browser still renders AUDIO to the user's speakers (the phantom-gunfire half of the
+    // 2026-07-12 incident) — sound on their machine is as much an interruption as a window on their screen.
+    if (BROWSER_EXE_RE.test(c) && /--headless/i.test(c) && !/--mute-audio/i.test(c)) {
+      return 'a headless browser still plays sound on the user\'s speakers — add --mute-audio';
+    }
+    return null;
+  }
+
+  /* THE MACHINE IS NOT THE WORKSPACE (incident follow-up, 2026-07-12): an agent building in its jail has no
+     business rebooting the computer, killing processes it doesn't own, installing persistence (scheduled
+     tasks / Run keys / services / startup folder), or permanently rewriting machine config (setx, assoc,
+     firewall, registry). Every rule refuses with the reason; requests that genuinely need machine changes
+     get routed to the Commander instead of silently executed. Command-position anchored like the visible-
+     window floor, so `npm run format`, `git log --format=%H`, `echo shutdown` etc. never trip. */
+  const MACHINE_STATE_RULES = [
+    { re: new RegExp(CMD_POS + '(?:shutdown|logoff|reboot|halt|poweroff)(?:\\.exe)?(?:\\s|$)', 'i'), why: 'shuts down, reboots, or logs the user out of their machine' },
+    { re: new RegExp(CMD_POS + '(?:taskkill|tskill|pskill|kill|pkill|killall)(?:\\.exe)?(?:\\s|$)', 'i'), why: 'kills processes the agent does not own — stop your OWN background processes with shell.bg.kill' },
+    { re: new RegExp(CMD_POS + 'schtasks(?:\\.exe)?\\b(?![\\s\\S]*/query)[\\s\\S]*/(?:create|change|delete|run)\\b', 'i'), why: 'creates or changes a Windows scheduled task (machine persistence that outlives StarNet)' },
+    { re: new RegExp(CMD_POS + 'reg(?:\\.exe)?\\s+(?:add|delete|import|load|unload|copy)\\b', 'i'), why: 'writes the Windows registry' },
+    { re: new RegExp(CMD_POS + 'regedit(?:\\.exe)?(?:\\s|$)', 'i'), why: 'opens or imports into the Windows registry' },
+    { re: /\bHKEY_|(^|[\s"'`=(\\])HK(?:LM|CU|CR|U|CC)([:\\]|\b)/i, why: 'references a Windows registry hive' },
+    { re: new RegExp(CMD_POS + 'sc(?:\\.exe)?\\s+(?:create|config|delete|start|stop|failure|sdset)\\b', 'i'), why: 'creates or changes Windows services' },
+    { re: new RegExp(CMD_POS + 'netsh(?:\\.exe)?(?:\\s|$)', 'i'), why: 'changes network / firewall configuration' },
+    { re: new RegExp(CMD_POS + 'net(?:\\.exe)?\\s+(?:user|localgroup|accounts|share|start|stop)\\b', 'i'), why: 'changes accounts, shares, or services' },
+    { re: new RegExp(CMD_POS + '(?:setx|assoc|ftype)(?:\\.exe)?(?:\\s|$)', 'i'), why: 'permanently changes environment variables or file associations' },
+    { re: new RegExp(CMD_POS + '(?:bcdedit|diskpart|format|chkdsk|cipher|vssadmin|wevtutil|powercfg|tzutil|w32tm|msg|mshta|wmic)(?:\\.exe)?(?:\\s|$)', 'i'), why: 'system-level tool that alters or disrupts the machine' },
+    { re: /\b(?:Stop-Computer|Restart-Computer|Register-ScheduledTask|New-ScheduledTask\w*|Stop-Process|Stop-Service|New-Service|Set-Service|Set-Date|Add-Computer|Set-ExecutionPolicy|Set-NetFirewall\w+|Disable-NetAdapter)\b/i, why: 'PowerShell cmdlet that alters machine state' },
+    { re: new RegExp(CMD_POS + '(?:sudo|su|systemctl|launchctl|crontab|nvram|csrutil|diskutil|shutdown|reboot)(?:\\s|$)', 'i'), why: 'system administration command' },
+    { re: /\bdefaults\s+write\b/i, why: 'changes macOS system preferences' },
+    { re: /(^|[\s"'`=(])shell:startup\b|Start\s?Menu[\\/]+Programs[\\/]+Startup/i, why: 'writes to the Startup folder (machine persistence that outlives StarNet)' }
+  ];
+  function breaksMachineState(cmd) {
+    const c = String(cmd == null ? '' : cmd);
+    for (const r of MACHINE_STATE_RULES) if (r.re.test(c)) return r.why;
+    return null;
+  }
+
+  // Binding to 0.0.0.0 exposes an agent dev server to the user's WHOLE network (the 2026-07-12 game server
+  // did exactly this). Everything an agent serves is loopback-only; there is no legitimate all-interfaces bind.
+  function exposesNetwork(cmd) {
+    if (/\b0\.0\.0\.0\b/.test(String(cmd == null ? '' : cmd))) return 'binds to ALL network interfaces (0.0.0.0) — every device on the user\'s network could reach it; bind to 127.0.0.1';
+    return null;
+  }
+
   /* H2.1 — persistent session cwd. A command runs in one shell invocation, so a `cd` only survives if we
      RECOVER the final cwd from that same invocation. We append a marker that prints the working dir + the real
      exit code (captured BEFORE the marker so the appended echo can't mask it), parse it back, strip it from the
@@ -173,9 +238,10 @@
       name: 'shell.exec', capability: 'workbench', scope: 'execute', requiresConsent: true,
       timeoutMs: MAX_MS + 10000,   // registry backstop ABOVE our own kill logic, so withTimeout never preempts the child-kill
       description: 'Run a shell command in your workspace directory and get back its combined stdout/stderr + exit code. '
-        + 'Use it to run tests, builds, git, scripts — anything you would type in a terminal. Installed desktop apps can '
-        + 'usually be driven HEADLESSLY from here (app URI schemes like `start spotify:track:<id>`, app CLIs, PowerShell) — '
-        + 'prefer that over visible screen control. Commands run INSIDE your own '
+        + 'Use it to run tests, builds, git, scripts — anything you would type in a terminal. Commands must NOT change the '
+        + 'user\'s machine or screen: opening a window (start/explorer/headed browser), shutting down/rebooting, killing '
+        + 'processes, scheduled tasks, registry/service/firewall edits, and all-interfaces (0.0.0.0) binds are refused. To '
+        + 'DRIVE an installed app or open something for the user, use desktop.open (consent-gated), not `start`. Commands run INSIDE your own '
         + 'workspace folder, and your working directory PERSISTS across calls (a `cd` carries over). Absolute and parent (..) '
         + 'paths are refused in cmd; pass cwd to run from a specific existing folder instead. On Windows local shells, cwd accepts C:\\Users\\...; /c/Users/... is normalized for compatibility, but prefer the exact path the Commander gave you. Commands use cmd.exe syntax. Optional timeoutMs (default 30s, max 120s). Set background:true for a long-running process '
         + '(e.g. a dev server) — it returns immediately with a handle; check it with shell.bg.status, stop it with shell.bg.kill.',
@@ -187,6 +253,12 @@
         if (!cmd) throw new Error('empty command');
         const deny = escapesWorkspace(cmd);
         if (deny) throw new Error('refused: ' + deny);
+        const visDeny = opensVisibleWindow(cmd);
+        if (visDeny) throw new Error('refused: ' + visDeny + ' — builds and checks run invisibly, never on the user\'s screen. Verify with the headless browser tools or curl; if the Commander explicitly asked to SEE something, use desktop.open or browser.navigate visible:true (consent-gated).');
+        const machineDeny = breaksMachineState(cmd);
+        if (machineDeny) throw new Error('refused: this command ' + machineDeny + '. Agent work stays inside your workspace and never changes the user\'s machine. If the task genuinely needs a machine change, surface it to the Commander to run themselves.');
+        const netDeny = exposesNetwork(cmd);
+        if (netDeny) throw new Error('refused: this command ' + netDeny + '.');
         const jailRoot = environment ? environment.ensureWorkspace(aid) : P.join(ROOT, aid);
         // H2.1: start in this agent's PERSISTED cwd (default = jail root). Defensive: only honor a stored cwd
         // that is still in-jail and still exists; otherwise fall back to the jail root.
@@ -281,10 +353,10 @@
 
     return {
       execTool: execTool, bgStatusTool: bgStatusTool, bgKillTool: bgKillTool,
-      _internals: { escapesWorkspace: escapesWorkspace, killTree: killTree, safeAgentId: safeAgentId, normalizeWinCwd: normalizeWinCwd, resolveShellCwd: resolveShellCwd },
+      _internals: { escapesWorkspace: escapesWorkspace, opensVisibleWindow: opensVisibleWindow, breaksMachineState: breaksMachineState, exposesNetwork: exposesNetwork, killTree: killTree, safeAgentId: safeAgentId, normalizeWinCwd: normalizeWinCwd, resolveShellCwd: resolveShellCwd },
       register: function (reg) { reg.register(execTool); reg.register(bgStatusTool); reg.register(bgKillTool); return reg; }
     };
   }
 
-  return { makeShellTool: makeShellTool, runCommand: runCommand, escapesWorkspace: escapesWorkspace, safeAgentId: safeAgentId, buildMarkedCmd: buildMarkedCmd, parseMarker: parseMarker, withinJail: withinJail, normalizeWinCwd: normalizeWinCwd, resolveShellCwd: resolveShellCwd };
+  return { makeShellTool: makeShellTool, runCommand: runCommand, escapesWorkspace: escapesWorkspace, opensVisibleWindow: opensVisibleWindow, breaksMachineState: breaksMachineState, exposesNetwork: exposesNetwork, safeAgentId: safeAgentId, buildMarkedCmd: buildMarkedCmd, parseMarker: parseMarker, withinJail: withinJail, normalizeWinCwd: normalizeWinCwd, resolveShellCwd: resolveShellCwd };
 });

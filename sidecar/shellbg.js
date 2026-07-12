@@ -43,6 +43,9 @@
     const isWinDefault = (deps.isWin != null) ? deps.isWin : WIN;
     const MAX = deps.maxPerAgent || 5;
     const RING = deps.ringBytes || 16000;
+    // persistent PID ledger (procledger.js): killAll() only reaps on a GRACEFUL stop; a force-killed sidecar
+    // (desktop shell TerminateProcess) runs no handlers, so recorded children are swept at the NEXT boot.
+    const ledger = (deps.ledger && typeof deps.ledger.record === 'function') ? deps.ledger : null;
 
     const procs = new Map();   // bgId -> rec
     let seq = 0;
@@ -70,6 +73,7 @@
       try { child = spawn(cmd, { cwd: o.cwd, shell: true, windowsHide: true, detached: !isWin }); }
       catch (e) { return { ok: false, error: 'could not start: ' + ((e && e.message) || e) }; }
       try { if (typeof child.unref === 'function') child.unref(); } catch (_) {}
+      try { if (ledger && child.pid) ledger.record({ pid: child.pid, cmd, kind: 'shell.bg' }); } catch (_) {}
       const bgId = 'bg_' + (++seq);
       const rec = { bgId, agentId, cmd, child, out: '', running: true, exitCode: null, killed: false, startedAt: now(), endedAt: null };
       const append = (buf) => { let s = ''; try { s = redact(String(buf)); } catch (_) { s = String(buf); } rec.out += s; if (rec.out.length > RING) rec.out = rec.out.slice(rec.out.length - RING); };
@@ -79,6 +83,7 @@
         if (!rec.running) return;
         rec.running = false; rec.endedAt = now();
         rec.exitCode = (typeof code === 'number') ? code : -1;
+        try { if (ledger && child.pid) ledger.release(child.pid); } catch (_) {}
         try { onExit({ agentId, bgId, exitCode: rec.exitCode, ms: Math.max(0, rec.endedAt - rec.startedAt), killed: rec.killed }); } catch (_) {}
       };
       if (child.on) { child.on('close', settle); child.on('error', () => settle(-1)); }

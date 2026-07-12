@@ -143,6 +143,8 @@ const Recipes = require('../frontend/app/recipes.js');     // built-in mission r
 const { makeCheckpointStore } = require('./checkpoint-store.js');   // the shadow-git rollback net (ambient edge)
 const { makeShellTool } = require('./tools/builtin/shell.js');      // the workbench capability: shell.exec
 const { makeShellBg } = require('./shellbg.js');                    // H2.2: singleton background-process manager
+const { makeProcLedger } = require('./procledger.js');              // persistent child-PID ledger — boot sweep reaps force-kill orphans
+const { makeInputGuard } = require('./inputguard.js');              // stuck cursor-confinement (ClipCursor) release — 2026-07-12 incident
 const { makeEnvironmentManager } = require('./environment.js');     // execution backend boundary (reference-harness-style)
 const { foldInsights } = require('./insights.js');                  // H3.3: usage insights folded from run history
 const { makeVerifyTool } = require('./tools/builtin/verify.js');    // the workbench verify.run check-runner
@@ -2163,7 +2165,17 @@ const chanEmit = (name, payload) => { try { return chanEmitValidated(name, redac
 // H2.2: the SINGLETON background-process manager — persists across runs so a backgrounded dev server survives the
 // run that started it. shell.bg.exit fires AFTER the originating run's NDJSON stream closed, so it rides the
 // durable channel bus (chanEmit). Children are unref'd; killAll() reaps them on E-STOP (handleHalt) / shutdown.
-const shellBg = makeShellBg({ spawn: childSpawn, redact: redact, clock: { now: () => Date.now() }, onExit: (e) => chanEmit('shell.bg.exit', e), maxPerAgent: 5 });
+// Persistent PID ledger + input guard (mouse-confinement incident, 2026-07-12): a desktop-shell stop is
+// TerminateProcess (uncatchable — see gracefulShutdown), so children recorded here are swept at the NEXT
+// boot, and a cursor confinement a dead child left stuck on the user's desktop is released.
+const procLedger = makeProcLedger({ fs: fs, pathMod: path, file: path.join(WORKSPACES, 'proc-ledger.json'), clock: { now: () => Date.now() }, log: (m) => console.log(m) });
+const inputGuard = makeInputGuard({ log: (m) => console.log(m) });
+if (require.main === module) {
+  // real host boot only (unit tests require() this file and must not probe/kill or touch the real cursor state)
+  procLedger.sweep().then(s => { if (s.examined) console.log('[proc-ledger] boot sweep: examined=' + s.examined + ' killed=' + s.killed + ' gone=' + s.gone + ' pid-reused=' + s.reused); }).catch(() => {});
+  inputGuard.ensureFree('boot').catch(() => {});
+}
+const shellBg = makeShellBg({ spawn: childSpawn, redact: redact, clock: { now: () => Date.now() }, onExit: (e) => chanEmit('shell.bg.exit', e), maxPerAgent: 5, ledger: procLedger });
 const executionEnvironment = makeEnvironmentManager({ spawn: childSpawn, fs: fs, pathMod: path, root: WORKSPACES, bg: shellBg, redact: redact, clock: { now: () => Date.now() }, env: process.env });
 try { console.log('[exec-env]', JSON.stringify(executionEnvironment.describe())); } catch (_) {}
 const subagents = makeSubagentManager({ fs: fs, pathMod: path, file: path.join(WORKSPACES, 'subagents.json'), clock: { now: () => Date.now() }, emit: chanEmit, newId: () => crypto.randomUUID(), keep: 200 });
@@ -4197,6 +4209,9 @@ function gracefulShutdown(signal) {
   try { if (typeof cronTimer !== 'undefined' && cronTimer) { clearInterval(cronTimer); } } catch (_) {}
   try { if (typeof nightshiftTimer !== 'undefined' && nightshiftTimer) { clearInterval(nightshiftTimer); } } catch (_) {}   // NS-1: stop the night-shift ticker on shutdown
   try { if (typeof shellBg !== 'undefined' && shellBg && shellBg.killAll) shellBg.killAll(); } catch (_) {}   // reap backgrounded shell children (dev servers etc.)
+  // release any cursor confinement a reaped child leaves stuck (the PS one-shot outlives our exit; best-effort —
+  // the boot-time ensureFree is the reliable cover for the force-kill path this handler can't see at all)
+  try { if (typeof inputGuard !== 'undefined' && inputGuard) inputGuard.ensureFree('shutdown').catch(() => {}); } catch (_) {}
   try { if (typeof executionEnvironment !== 'undefined' && executionEnvironment && executionEnvironment.killAllBackground) executionEnvironment.killAllBackground(); } catch (_) {}
   try { if (typeof subagents !== 'undefined' && subagents && subagents.interruptAll) subagents.interruptAll(); } catch (_) {}   // stop watchable background workers
   try { if (typeof connectors !== 'undefined' && connectors && connectors.close) Promise.resolve(connectors.close()).catch(() => {}); } catch (_) {}   // close MCP connectors (stdio children get taskkill/SIGTERM)
@@ -5324,12 +5339,30 @@ async function validateWorkshopManifest(agentId, runId) {
   // model's number) and drop any listed file that isn't actually there — an empty proven set fails validation.
   const runDirRel = relDir + '/';
   const provenFiles = [];
+  // mouse-confinement incident (2026-07-12): a deliverable that requests pointer lock / fullscreen will capture
+  // the Commander's REAL mouse the moment they open it. Detect it here (disk-proven, like everything else on the
+  // card) so the return card can say so BEFORE they click Open. Detection, never blocking — opening stays their call.
+  // capturesInput: pointer lock, fullscreen, or keyboard lock — the deliverable will seize the mouse/keyboard/screen.
+  // usesMedia: camera/mic/screen capture — opening it may trigger a getUserMedia/getDisplayMedia permission grab.
+  const CAPTURE_RE = /requestPointerLock|requestFullscreen|webkitRequestFullscreen|mozRequestFullScreen|keyboard\.lock/;
+  const MEDIA_RE = /getUserMedia|getDisplayMedia/;
+  const SCANNABLE_RE = /\.(html?|js|mjs|cjs|ts|jsx|tsx|css|svelte|vue)$/i;
+  let capturesInput = false, usesMedia = false;
   for (const f of man.files) {
     const p = String((f && f.path) || '').replace(/^[\\/]+/, '');
     if (!p || p === 'deliverable.json') continue;
     let abs; try { ({ abs } = await fsJail.resolveInside(agentId, runDirRel + p)); } catch (_) { continue; }
     let st; try { st = await fsp.stat(abs); } catch (_) { continue; }
-    if (st && st.isFile()) provenFiles.push({ path: p, bytes: st.size });
+    if (st && st.isFile()) {
+      provenFiles.push({ path: p, bytes: st.size });
+      if ((!capturesInput || !usesMedia) && SCANNABLE_RE.test(p) && st.size <= 4 * 1024 * 1024) {
+        try {
+          const src = await fsp.readFile(abs, 'utf8');
+          if (!capturesInput) capturesInput = CAPTURE_RE.test(src);
+          if (!usesMedia) usesMedia = MEDIA_RE.test(src);
+        } catch (_) {}
+      }
+    }
   }
   if (!provenFiles.length) { console.warn('[workshop] no listed file actually exists on disk for run', runId, '— not emitting'); return null; }
   // return a normalized, disk-proven manifest (the card renders THIS, not the model's raw claims).
@@ -5344,7 +5377,10 @@ async function validateWorkshopManifest(agentId, runId) {
     summary: String(man.summary || '').slice(0, 4000),
     files: provenFiles,
     howToUse: String(man.howToUse || '').slice(0, 4000),
-    notVerified: Array.isArray(man.notVerified) ? man.notVerified.map(s => String(s).slice(0, 500)).slice(0, 40) : []
+    notVerified: Array.isArray(man.notVerified) ? man.notVerified.map(s => String(s).slice(0, 500)).slice(0, 40) : [],
+    // disk-proven (scanned above), never the model's claim; the card warns before Open when true
+    capturesInput: capturesInput,
+    usesMedia: usesMedia
   };
 }
 
@@ -6366,7 +6402,7 @@ async function runOnce(o) {
   const imageTools = makeImageTools({ openrouter: openrouterToolKey ? { apiKey: openrouterToolKey, model } : null, fsp, pathMod: path, root: WORKSPACES, imageModel: String(ENV('IMAGE_MODEL') || '').trim() || undefined });
   // browser.vision uses the SAME vision model as image_analyze when a key exists; with no key it
   // reports "unavailable" honestly (never a success-shaped stub). Pass the dep only when usable.
-  makeBrowserTools({ vision: imageTools.hasVision ? imageTools.browserVision : null }).register(registry);   // browser.* automation: exposed only through the web/dish capability
+  makeBrowserTools({ vision: imageTools.hasVision ? imageTools.browserVision : null, ledger: procLedger }).register(registry);   // browser.* automation: exposed only through the web/dish capability
   makeDesktopTools({}).register(registry);   // desktop.open: open URL/app on the user's REAL screen (visible), web/dish capability
   // NS-5: bind the per-run path-trust guard — the ONE way an fs call may reach outside the jail, mediated
   // against the station's blessed project roots. surface + pathPrompt are per-run: an autonomous run passes
@@ -7542,6 +7578,7 @@ function handleHalt(req, res) {
   // dial is re-written (handleAutonomyPosture → nightshift.clearHalt). Truthful telemetry: status now reports halted.
   try { nightshiftState = nightshift.engageHalt(nightshiftState, Date.now()); saveNightshiftState(); } catch (_) {}
   try { executionEnvironment.killAllBackground(); } catch (_) {}   // H2.2/Phase 0: E-STOP also reaps backend-owned background processes
+  try { inputGuard.ensureFree('halt').catch(() => {}); } catch (_) {}   // a killed child may have left the user's cursor confined — release it
   try { subagents.interruptAll(); } catch (_) {}   // Phase 1: E-STOP aborts watchable background workers too
   try { cronLock.release(); } catch (_) {}  // G4.3: drop any cron lock this process holds so an E-STOP mid-tick never wedges the next tick (standalone halt-block addition; G2 will add connectors.close here)
   res.writeHead(200, { 'Content-Type': 'application/json' });

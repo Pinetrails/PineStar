@@ -199,6 +199,16 @@
       }
       args.push('about:blank');
       proc = spawn(chromePath, args, { stdio: 'ignore', windowsHide: !headed });
+      // proc-ledger: a force-killed sidecar can't run close() — record the browser so the next boot's sweep
+      // reaps it. The unique profile dir is the identity token, so PID reuse (or the user's OWN Chrome,
+      // same exe) never matches and is never killed.
+      try {
+        if (deps.ledger && proc && proc.pid) {
+          const pid = proc.pid;
+          deps.ledger.record({ pid, cmd: chromePath + ' --user-data-dir=' + profileDir, kind: 'browser' });
+          if (proc.on) proc.on('close', () => { try { deps.ledger.release(pid); } catch (_) {} });
+        }
+      } catch (_) {}
       for (let i = 0; i < 40; i++) {
         try {
           const r = await fetchImpl('http://127.0.0.1:' + cdpPort + '/json/list');
