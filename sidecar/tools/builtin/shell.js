@@ -64,45 +64,263 @@
   // /c|/k, cmd `call`, PowerShell `Start-Process [-FilePath]`, and an interpreter's -Command/-c STRING
   // (powershell/pwsh -Command "…", sh/bash -c "…"). The interpreter alternatives REQUIRE the interpreter name so
   // a bare `-c` compile/count flag (gcc -c, grep -c) is never a command boundary.
-  const HEAD_SEP = /[&|;\r\n]+|\/[ck]\s+|\bcall\s+|\b(?:start-process|saps)\s+(?:-filepath\s+)?|\b(?:powershell|pwsh)(?:\.exe)?\b[^&|;\r\n]*?\s-(?:command|c)\s+|\b(?:sh|bash|zsh|dash|ksh)\b[^&|;\r\n]*?\s-c\s+/gi;
-  function commandHeads(cmd) {
-    const c = String(cmd == null ? '' : cmd);
-    const heads = [c];
-    HEAD_SEP.lastIndex = 0;
-    let m, guard = 0;
-    while ((m = HEAD_SEP.exec(c)) !== null && guard++ < 200) {
-      heads.push(c.slice(m.index + m[0].length));
-      if (HEAD_SEP.lastIndex === m.index) HEAD_SEP.lastIndex++;   // never loop on a zero-width match
+  const PS_COMMAND_FLAGS = new Set(['-c', '-co', '-com', '-comm', '-comma', '-comman', '-command']);
+  const PS_ENCODED_FLAGS = new Set(['-e', '-ec', '-en', '-enc', '-enco', '-encod', '-encode', '-encoded',
+    '-encodedc', '-encodedco', '-encodedcom', '-encodedcomm', '-encodedcomma', '-encodedcomman', '-encodedcommand']);
+  const PS_CLI_OPTIONS = [
+    ['psconsolefile', true, 'option'], ['version', true, 'option'], ['nologo', false, 'option'],
+    ['noexit', false, 'option'], ['sta', false, 'option'], ['mta', false, 'option'],
+    ['noprofile', false, 'option'], ['noninteractive', false, 'option'], ['inputformat', true, 'option'],
+    ['outputformat', true, 'option'], ['windowstyle', true, 'option'], ['configurationname', true, 'option'],
+    ['executionpolicy', true, 'option'], ['workingdirectory', true, 'option'],
+    // -File makes the remaining argv script arguments, not an implicit command string.
+    ['file', true, 'file'], ['help', false, 'help'], ['?', false, 'help']
+  ].map(x => ({ name: x[0], takesValue: x[1], kind: x[2] }));
+  function parsePowerShellFlag(value) {
+    value = String(value == null ? '' : value);
+    if (value[0] !== '-' && value[0] !== '/') return null;
+    const body = value.slice(1);
+    const splitAt = body.search(/[:=]/);
+    const name = (splitAt >= 0 ? body.slice(0, splitAt) : body).toLowerCase();
+    return { flag: '-' + name, name, hasInline: splitAt >= 0, inline: splitAt >= 0 ? body.slice(splitAt + 1) : '' };
+  }
+  function resolvePowerShellCliOption(parsed) {
+    if (!parsed) return null;
+    if (PS_COMMAND_FLAGS.has(parsed.flag)) return { name: parsed.name, takesValue: true, kind: 'command' };
+    if (PS_ENCODED_FLAGS.has(parsed.flag)) return { name: parsed.name, takesValue: true, kind: 'encoded' };
+    const exact = PS_CLI_OPTIONS.find(o => o.name === parsed.name);
+    if (exact) return exact;
+    const matches = PS_CLI_OPTIONS.filter(o => o.name.indexOf(parsed.name) === 0);
+    return matches.length === 1 ? matches[0] : null;
+  }
+
+  // Split only on REAL shell separators. A launcher name inside `echo ...`, a commit message, or another quoted
+  // argument is data, not a command boundary. This is intentionally a small lexer instead of a raw substring regex.
+  function normalizeDialect(dialect) {
+    return dialect === 'cmd' || dialect === 'powershell' || dialect === 'posix' ? dialect : (WIN ? 'cmd' : 'posix');
+  }
+  function isDialectQuote(ch, dialect) { return ch === '"' || (ch === "'" && dialect !== 'cmd'); }
+  function isDialectEscape(ch, dialect, activeQuote, nextCh) {
+    // cmd.exe: caret escapes metacharacters only outside double quotes; inside, it is ordinary data.
+    if (dialect === 'cmd') return ch === '^' && activeQuote == null;
+    // PowerShell: backtick escapes outside/double-quoted text, but is literal inside single-quoted text.
+    if (dialect === 'powershell') return ch === '`' && activeQuote !== "'";
+    if (dialect === 'posix' && ch === '\\') {
+      if (activeQuote === "'") return false;   // everything is literal inside POSIX single quotes
+      if (activeQuote === '"') return nextCh === '$' || nextCh === '`' || nextCh === '"' || nextCh === '\\' || nextCh === '\n';
+      return true;
     }
-    return heads.map(h => h.replace(/^[\s"']+/, ''));   // trim leading whitespace + an opening quote (interpreter -c "verb …")
+    return false;
+  }
+  function splitCommandSegments(input, dialect) {
+    const c = String(input == null ? '' : input);
+    dialect = normalizeDialect(dialect);
+    const out = [];
+    let start = 0, quote = null;
+    for (let i = 0; i < c.length; i++) {
+      const ch = c[i];
+      if (quote) {
+        if (isDialectEscape(ch, dialect, quote, c[i + 1]) && i + 1 < c.length) { i++; continue; }
+        if (ch === quote) quote = null;
+        continue;
+      }
+      if (isDialectEscape(ch, dialect, null, c[i + 1]) && i + 1 < c.length) { i++; continue; }
+      if (isDialectQuote(ch, dialect)) { quote = ch; continue; }
+      if (ch === '&' || ch === '|' || ch === ';' || ch === '\r' || ch === '\n') {
+        const part = c.slice(start, i).trim();
+        if (part) out.push(part);
+        while (i + 1 < c.length && /[&|;\r\n]/.test(c[i + 1])) i++;
+        start = i + 1;
+      }
+    }
+    const tail = c.slice(start).trim();
+    if (tail) out.push(tail);
+    return out;
+  }
+
+  function shellTokens(input, dialect) {
+    const c = String(input == null ? '' : input);
+    dialect = normalizeDialect(dialect);
+    const out = [];
+    let i = 0;
+    while (i < c.length) {
+      while (i < c.length && /\s/.test(c[i])) i++;
+      if (i >= c.length) break;
+      const start = i;
+      let quote = null, value = '';
+      while (i < c.length) {
+        const ch = c[i];
+        if (quote) {
+          if (isDialectEscape(ch, dialect, quote, c[i + 1]) && i + 1 < c.length) { value += c[i + 1]; i += 2; continue; }
+          if (ch === quote) { quote = null; i++; continue; }
+          value += ch; i++; continue;
+        }
+        if (isDialectEscape(ch, dialect, null, c[i + 1]) && i + 1 < c.length) { value += c[i + 1]; i += 2; continue; }
+        if (isDialectQuote(ch, dialect)) { quote = ch; i++; continue; }
+        if (/\s/.test(ch)) break;
+        value += ch; i++;
+      }
+      out.push({ value, raw: c.slice(start, i), start, end: i });
+    }
+    return out;
+  }
+
+  function exeName(value) {
+    const bits = String(value == null ? '' : value).split(/[\\/]/);
+    return (bits[bits.length - 1] || '').toLowerCase();
+  }
+  function afterToken(segment, token) { return String(segment).slice(token.end).trim(); }
+  function unwrapCommandArg(raw, dialect) {
+    raw = String(raw == null ? '' : raw).trim();
+    dialect = normalizeDialect(dialect);
+    if (raw.length >= 2 && isDialectQuote(raw[0], dialect) && raw[raw.length - 1] === raw[0]) return raw.slice(1, -1);
+    return raw;
+  }
+  const START_PROCESS_OPTIONS = [
+    ['argumentlist', true], ['credential', true], ['environment', true], ['filepath', true],
+    ['loaduserprofile', false], ['nonewwindow', false], ['passthru', false],
+    ['redirectstandarderror', true], ['redirectstandardinput', true], ['redirectstandardoutput', true],
+    ['usenewenvironment', false], ['verb', true], ['wait', false], ['windowstyle', true], ['workingdirectory', true],
+    // Common PowerShell parameters are valid between Start-Process and its positional FilePath too.
+    ['confirm', false], ['debug', false], ['erroraction', true], ['errorvariable', true],
+    ['informationaction', true], ['informationvariable', true], ['outbuffer', true], ['outvariable', true],
+    ['pipelinevariable', true], ['progressaction', true], ['verbose', false], ['warningaction', true],
+    ['warningvariable', true], ['whatif', false]
+  ].map(x => ({ name: x[0], takesValue: x[1] }));
+  function resolveStartProcessOption(value) {
+    value = String(value == null ? '' : value).toLowerCase();
+    if (value[0] !== '-') return null;
+    const body = value.slice(1);
+    const splitAt = body.search(/[:=]/);
+    const name = splitAt >= 0 ? body.slice(0, splitAt) : body;
+    const inline = splitAt >= 0 ? body.slice(splitAt + 1) : '';
+    const decorate = (o) => o && Object.assign({}, o, { hasInline: splitAt >= 0, inline: inline });
+    const exact = START_PROCESS_OPTIONS.find(o => o.name === name);
+    if (exact) return decorate(exact);
+    const matches = START_PROCESS_OPTIONS.filter(o => o.name.indexOf(name) === 0);
+    if (matches.length === 1) return decorate(matches[0]);
+    // The supported PowerShell generations expose slightly different common parameters. If a prefix is
+    // unambiguous on the running host but ambiguous in this union, consuming a possible value is fail-closed:
+    // we inspect the following positional executable too. A genuinely ambiguous host invocation does not run.
+    if (matches.length > 1) return decorate({ name: '', takesValue: matches.some(o => o.takesValue) });
+    return null;
+  }
+  function quoteCommandToken(value) {
+    value = String(value == null ? '' : value);
+    return /[\s&|;]/.test(value) ? '"' + value.replace(/"/g, '`"') + '"' : value;
+  }
+  function startProcessTarget(segment, tokens) {
+    let target = -1;
+    for (let i = 1; i < tokens.length; i++) {
+      const opt = resolveStartProcessOption(tokens[i].value);
+      if (opt && opt.name === 'filepath') {
+        if (opt.hasInline) {
+          if (!opt.inline) return '';
+          const rest = afterToken(segment, tokens[i]);
+          return quoteCommandToken(opt.inline) + (rest ? ' ' + rest : '');
+        }
+        target = i + 1; break;
+      }
+    }
+    if (target < 0) {
+      for (let i = 1; i < tokens.length; i++) {
+        const v = String(tokens[i].value).toLowerCase();
+        if (v[0] !== '-') { target = i; break; }
+        const opt = resolveStartProcessOption(v);
+        if (opt && opt.takesValue && !opt.hasInline) i++;
+      }
+    }
+    if (target < 1 || target >= tokens.length) return '';
+    const rest = afterToken(segment, tokens[target]);
+    return tokens[target].raw + (rest ? ' ' + rest : '');
+  }
+
+  function parsePowerShellInvocation(segment, tokens) {
+    for (let i = 1; i < tokens.length; i++) {
+      const parsed = parsePowerShellFlag(tokens[i].value);
+      if (!parsed) {
+        // powershell.exe's default mode treats the first non-option token and everything after it as -Command.
+        return { nested: unwrapCommandArg(String(segment).slice(tokens[i].start), 'powershell'), opaque: false };
+      }
+      const opt = resolvePowerShellCliOption(parsed);
+      if (!opt) return { nested: '', opaque: false };   // unknown/ambiguous CLI option: PowerShell rejects it
+      if (opt.kind === 'encoded') return { nested: '', opaque: true };
+      if (opt.kind === 'command') {
+        const rest = afterToken(segment, tokens[i]);
+        const raw = parsed.hasInline ? parsed.inline + (rest ? ' ' + rest : '') : rest;
+        return { nested: unwrapCommandArg(raw, 'powershell'), opaque: false };
+      }
+      if (opt.kind === 'file' || opt.kind === 'help') return { nested: '', opaque: false };
+      if (opt.takesValue && !parsed.hasInline) i++;
+    }
+    return { nested: '', opaque: false };
+  }
+
+  function analyzeCommands(cmd, depth, dialect) {
+    dialect = normalizeDialect(dialect);
+    const result = { heads: [], opaquePowerShell: false };
+    if ((depth || 0) > 8) return result;
+    for (const segment of splitCommandSegments(cmd, dialect)) {
+      const tokens = shellTokens(segment, dialect);
+      if (!tokens.length) continue;
+      result.heads.push({ text: segment, dialect: dialect });
+      const verb = exeName(tokens[0].value);
+      let nested = '', nestedDialect = dialect;
+      if (verb === 'cmd' || verb === 'cmd.exe') {
+        const i = tokens.findIndex((t, n) => n > 0 && /^\/[ck]$/i.test(t.value));
+        if (i >= 0) { nestedDialect = 'cmd'; nested = unwrapCommandArg(afterToken(segment, tokens[i]), nestedDialect); }
+      } else if (verb === 'call') {
+        nestedDialect = 'cmd'; nested = afterToken(segment, tokens[0]);
+      } else if (verb === 'start-process' || verb === 'saps') {
+        nestedDialect = dialect === 'powershell' ? 'powershell' : dialect;
+        nested = startProcessTarget(segment, tokens);
+      } else if (verb === 'powershell' || verb === 'powershell.exe' || verb === 'pwsh' || verb === 'pwsh.exe') {
+        const invocation = parsePowerShellInvocation(segment, tokens);
+        nestedDialect = 'powershell'; nested = invocation.nested;
+        if (invocation.opaque) result.opaquePowerShell = true;
+      } else if (/^(?:sh|bash|zsh|dash|ksh)(?:\.exe)?$/.test(verb)) {
+        const i = tokens.findIndex((t, n) => n > 0 && t.value === '-c');
+        if (i >= 0) { nestedDialect = 'posix'; nested = unwrapCommandArg(afterToken(segment, tokens[i]), nestedDialect); }
+      }
+      if (nested) {
+        const child = analyzeCommands(nested, (depth || 0) + 1, nestedDialect);
+        result.heads.push.apply(result.heads, child.heads);
+        if (child.opaquePowerShell) result.opaquePowerShell = true;
+      }
+    }
+    return result;
+  }
+
+  function commandHeads(cmd, dialect) { return analyzeCommands(cmd, 0, dialect).heads; }
+  function headTokens(head) { return shellTokens(head && head.text != null ? head.text : head, head && head.dialect); }
+  function canonicalHead(head) {
+    const tokens = headTokens(head);
+    if (!tokens.length) return '';
+    return [exeName(tokens[0].value)].concat(tokens.slice(1).map(t => t.value)).join(' ');
   }
 
   // --- visible-window / input-capture floor ---
-  const START_RE = /^start(?:\.exe)?(?:\s|$)/i;                 // cmd `start` (NOT `start-process` — its arg is head-checked)
-  const EXPLORER_RE = /^"?explorer(?:\.exe)?\b/i;
-  const OPEN_RE = /^"?(?:xdg-)?open(?:\s|$)/i;
-  const BROWSERS = 'msedge|chrome|chromium(?:-browser)?|firefox|brave|opera|iexplore|safari';
-  // A browser as the LEADING token of a head: optional NO-SPACE path prefix (./chrome, C:\tools\chrome.exe) or a
-  // leading quote (`"chrome.exe`). A no-space prefix is what stops `curl -o ./chrome.exe URL` from tripping —
-  // there `curl` is the head's leading token, not the browser.
-  const BROWSER_HEAD_RE = new RegExp('^"?(?:[^"\\s&|;]*[\\\\/])?(?:' + BROWSERS + ')(?:\\.exe)?(?:["\\s]|$)', 'i');
-  // A quoted full path WITH spaces ("C:\Program Files\…\chrome.exe") but only at a command position, so an
-  // argument like `curl -o "C:\dl\chrome.exe"` (quote not at command start) does not trip.
-  const BROWSER_QUOTED_RE = new RegExp('(?:^|[&|;(]\\s*)"[^"]*[\\\\/](?:' + BROWSERS + ')(?:\\.exe)?"', 'i');
-  function opensVisibleWindow(cmd) {
-    const c = String(cmd == null ? '' : cmd);
-    const heads = commandHeads(c);
-    if (heads.some(h => START_RE.test(h))) return 'cmd `start` opens a visible window on the user\'s screen';
-    if (heads.some(h => EXPLORER_RE.test(h))) return '`explorer` opens a visible window on the user\'s screen';
-    if (/rundll32\b[^&|]*url\.dll/i.test(c)) return 'rundll32 url.dll opens the user\'s default browser';
-    if (!WIN && heads.some(h => OPEN_RE.test(h))) return '`open`/`xdg-open` opens a visible window on the user\'s screen';
-    if (heads.some(h => BROWSER_HEAD_RE.test(h)) || BROWSER_QUOTED_RE.test(c)) {
+  const BROWSER_NAMES = new Set(['msedge', 'msedge.exe', 'chrome', 'chrome.exe', 'chromium', 'chromium.exe',
+    'chromium-browser', 'chromium-browser.exe', 'firefox', 'firefox.exe', 'brave', 'brave.exe', 'opera', 'opera.exe',
+    'iexplore', 'iexplore.exe', 'safari', 'safari.exe']);
+  function opensVisibleWindow(cmd, dialect) {
+    dialect = normalizeDialect(dialect);
+    const heads = commandHeads(cmd, dialect);
+    if (heads.some(h => /^(?:start|start\.exe)$/.test(exeName((headTokens(h)[0] || {}).value)))) return 'cmd `start` opens a visible window on the user\'s screen';
+    if (heads.some(h => /^(?:explorer|explorer\.exe)$/.test(exeName((headTokens(h)[0] || {}).value)))) return '`explorer` opens a visible window on the user\'s screen';
+    if (heads.some(h => {
+      const tokens = headTokens(h); return /^(?:rundll32|rundll32\.exe)$/.test(exeName((tokens[0] || {}).value)) && tokens.slice(1).some(t => /url\.dll/i.test(t.value));
+    })) return 'rundll32 url.dll opens the user\'s default browser';
+    if (dialect === 'posix' && heads.some(h => /^(?:open|xdg-open)$/.test(exeName((headTokens(h)[0] || {}).value)))) return '`open`/`xdg-open` opens a visible window on the user\'s screen';
+    const browserHeads = heads.filter(h => BROWSER_NAMES.has(exeName((headTokens(h)[0] || {}).value)));
+    for (const h of browserHeads) {
+      const args = headTokens(h).slice(1).map(t => String(t.value).toLowerCase());
       // whole-token flag tests: `--headlessx` is NOT --headless (Chrome ignores it and opens a headed window)
-      if (!/--headless\b/i.test(c)) {
+      if (!args.some(v => /^--headless(?:=|$)/.test(v))) {
         return 'launching a browser without --headless opens a visible window (and a page can capture the user\'s mouse via pointer lock)';
       }
       // a headless browser still renders AUDIO to the user's speakers (the phantom-gunfire half of the incident)
-      if (!/--mute-audio\b/i.test(c)) {
+      if (!args.some(v => v === '--mute-audio' || v.indexOf('--mute-audio=') === 0)) {
         return 'a headless browser still plays sound on the user\'s speakers — add --mute-audio';
       }
     }
@@ -129,15 +347,18 @@
   ];
   const MACHINE_GLOBAL_RULES = [
     { re: /\bHKEY_|(?:^|[\s"'`=(\\])HK(?:LM|CU|CR|U|CC)[:\\]/i, why: 'references a Windows registry hive' },
-    // a base64-encoded PowerShell payload can't be inspected for any of the above — refuse it outright rather than
-    // wave through an opaque command (write the script to a file and run it plainly if it's legitimate).
-    { re: /\b(?:powershell|pwsh)(?:\.exe)?\b[^&|;\r\n]*?\s-e(?:nc(?:odedcommand)?)?\b/i, why: 'runs a base64-encoded PowerShell command that cannot be inspected — write the script to a file and run it plainly' },
     { re: /\bdefaults\s+write\b/i, why: 'changes macOS system preferences' },
     { re: /(?:^|[\s"'`=(])shell:startup\b|Start\s?Menu[\\/]+Programs[\\/]+Startup/i, why: 'writes to the Startup folder (machine persistence that outlives StarNet)' }
   ];
-  function breaksMachineState(cmd) {
+  function breaksMachineState(cmd, dialect) {
     const c = String(cmd == null ? '' : cmd);
-    const heads = commandHeads(c);
+    const analysis = analyzeCommands(c, 0, dialect);
+    if (analysis.opaquePowerShell) return 'runs a base64-encoded PowerShell command that cannot be inspected — write the script to a file and run it plainly';
+    if (analysis.heads.some(h => {
+      const first = (headTokens(h)[0] || {}).value || '';
+      return /^(?:%[^%\s]+%|![^!\s]+!)$/.test(first);
+    })) return 'uses an environment-expanded executable at a command boundary, so the command cannot be inspected safely';
+    const heads = analysis.heads.map(canonicalHead);
     for (const r of MACHINE_HEAD_RULES) if (heads.some(h => r.re.test(h))) return r.why;
     for (const r of MACHINE_GLOBAL_RULES) if (r.re.test(c)) return r.why;
     return null;
@@ -300,9 +521,10 @@
         if (!cmd) throw new Error('empty command');
         const deny = escapesWorkspace(cmd);
         if (deny) throw new Error('refused: ' + deny);
-        const visDeny = opensVisibleWindow(cmd);
+        const shellDialect = isWin ? 'cmd' : 'posix';
+        const visDeny = opensVisibleWindow(cmd, shellDialect);
         if (visDeny) throw new Error('refused: ' + visDeny + ' — builds and checks run invisibly, never on the user\'s screen. Verify with the headless browser tools or curl; if the Commander explicitly asked to SEE something, use desktop.open or browser.navigate visible:true (consent-gated).');
-        const machineDeny = breaksMachineState(cmd);
+        const machineDeny = breaksMachineState(cmd, shellDialect);
         if (machineDeny) throw new Error('refused: this command ' + machineDeny + '. Agent work stays inside your workspace and never changes the user\'s machine. If the task genuinely needs a machine change, surface it to the Commander to run themselves.');
         const netDeny = exposesNetwork(cmd);
         if (netDeny) throw new Error('refused: this command ' + netDeny + '.');

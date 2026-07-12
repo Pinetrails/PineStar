@@ -81,6 +81,51 @@ const { makeProcLedger, _internals } = require('../sidecar/procledger.js');
   await lU2.sweep();
   A.eq(killedT2.join(','), '701', 'our real orphan (created before we recorded it) IS reaped');
 
+  // ---- 3c. exact OS identity: redact the secret-bearing argv on disk, then pin PID + creation time. The next
+  //         boot must reap that exact child even though the redacted command cannot token-match the live argv.
+  const secret = 'Bearer super-secret-value';
+  const redacted = 'curl -H "Authorization: Bearer [REDACTED]" http://127.0.0.1';
+  const realCmd = 'cmd.exe /d /s /c "curl -H \\"Authorization: ' + secret + '\\" http://127.0.0.1"';
+  const fileS = path.join(dir, 'secret-identity.json');
+  const lS1 = makeProcLedger({
+    fs, pathMod: path, file: fileS, clock: { now: () => 300000 },
+    probe: async () => new Map([[702, { cmd: realCmd, created: 299999 }]]),
+    killTree: async () => {}
+  });
+  lS1.record({ pid: 702, cmd: redacted, kind: 'shell.bg' });
+  await lS1.pinIdentity(702);
+  const pinnedRaw = fs.readFileSync(fileS, 'utf8');
+  A.ok(pinnedRaw.indexOf('super-secret-value') < 0, 'the exact orphan identity never persists plaintext argv secrets');
+  const pinned = JSON.parse(pinnedRaw).procs[0];
+  A.eq(pinned.created, 299999, 'record pins the exact OS process creation time after spawn');
+  const killedS = [];
+  const lS2 = makeProcLedger({
+    fs, pathMod: path, file: fileS, clock: { now: () => 300000 },
+    probe: async () => new Map([[702, { cmd: realCmd, created: 299999 }]]),
+    killTree: async (pid) => killedS.push(pid)
+  });
+  await lS2.sweep();
+  A.eq(killedS.join(','), '702', 'exact PID + creation identity reaps a secret-bearing orphan despite redacted cmd mismatch');
+
+  // A matching PID and command with creation time even ONE millisecond newer is a recycled process. Never kill it.
+  const fileR = path.join(dir, 'exact-reuse.json');
+  const lR1 = makeProcLedger({
+    fs, pathMod: path, file: fileR, clock: { now: () => 400000 },
+    probe: async () => new Map([[703, { cmd: 'cmd.exe /c npm run dev', created: 399999 }]]),
+    killTree: async () => {}
+  });
+  lR1.record({ pid: 703, cmd: 'npm run dev', kind: 'shell.bg' });
+  await lR1.pinIdentity(703);
+  const killedR = [];
+  const lR2 = makeProcLedger({
+    fs, pathMod: path, file: fileR, clock: { now: () => 400000 },
+    probe: async () => new Map([[703, { cmd: 'cmd.exe /c npm run dev', created: 400000 }]]),
+    killTree: async (pid) => killedR.push(pid)
+  });
+  const sR = await lR2.sweep();
+  A.eq(killedR.length, 0, 'creation identity +1ms is PID reuse and is never killed');
+  A.eq(sR.reused, 1, 'exact creation mismatch is reported as PID reuse');
+
   // ---- 4. sweep with an empty ledger is a no-op that never probes ----
   let probed = false;
   const l3 = makeProcLedger({ fs, pathMod: path, file, clock, probe: async () => { probed = true; return new Map(); }, killTree: async () => {} });
