@@ -1,0 +1,97 @@
+/* W0 advertised-claims authority: finite inventory, source lock, live locators, and
+   separate planning/terminal verdicts. */
+'use strict';
+
+const fs = require('node:fs');
+const path = require('node:path');
+const A = require('./_assert.js');
+
+(async () => {
+  const {
+    buildReleaseSurface,
+    discoverReleaseSurface,
+    inspectClaimsAuthority,
+    validateClaimsLedger
+  } = await import('../scripts/qa/product-perfect/claims.mjs');
+
+  const repoRoot = path.resolve(__dirname, '..');
+  const ledgerFile = path.join(repoRoot, 'qa', 'product-perfect', 'claims.json');
+  const ledger = JSON.parse(fs.readFileSync(ledgerFile, 'utf8'));
+  const clone = value => JSON.parse(JSON.stringify(value));
+
+  const inspected = inspectClaimsAuthority({ repoRoot, ledger });
+  A.eq(inspected.planning.ok, true, 'tracked finite claims audit passes planning authority');
+  A.eq(inspected.planning.status, 'PASS', 'planning status is explicitly PASS');
+  A.eq(inspected.terminal.ok, false, 'open and unlabelled claims block terminal authority');
+  A.eq(inspected.terminal.status, 'BLOCKED', 'terminal status is explicitly BLOCKED');
+  A.eq(ledger.claims.length, 37, 'the reviewed inventory is 37 normalized material claim families');
+  A.eq(new Set(ledger.claims.map(row => row.id)).size, 37, 'claim IDs are unique');
+  A.ok(inspected.terminal.reasons.some(reason => /claim/i.test(reason)), 'terminal explains open claim work');
+  A.ok(inspected.terminal.reasons.some(reason => /wave verdict/i.test(reason)), 'terminal explains open grep-verdict work');
+
+  const surface = discoverReleaseSurface(repoRoot);
+  A.ok(surface.length > 140, 'release surface includes all tracked frontend JS/HTML plus marketed docs');
+  A.ok(surface.includes('frontend/index.html'), 'frontend HTML is source-locked');
+  A.ok(surface.includes('README.md') && surface.includes('docs/DOWNLOAD_PAGE.md'), 'marketed docs are source-locked');
+  A.eq(surface, ledger.releaseSurface.files.map(row => row.path), 'locked release path-set is complete and sorted');
+  const refreshed = buildReleaseSurface(repoRoot);
+  A.eq(refreshed.files, ledger.releaseSurface.files, 'read-only refresh helper reproduces the exact tracked file lock');
+  A.eq(refreshed.pathSetSha256, ledger.releaseSurface.pathSetSha256, 'read-only refresh helper reproduces the path-set hash');
+  A.ok(/^[0-9a-f]{40}$/.test(refreshed.sourceCommit), 'read-only refresh helper stamps the exact source commit');
+
+  const duplicate = clone(ledger);
+  duplicate.claims[1].id = duplicate.claims[0].id;
+  A.eq(validateClaimsLedger(duplicate, { repoRoot }).ok, false, 'duplicate claim IDs are rejected');
+
+  const missingDomain = clone(ledger);
+  missingDomain.claims = missingDomain.claims.filter(row => row.domain !== 'release');
+  A.eq(validateClaimsLedger(missingDomain, { repoRoot }).ok, false, 'a missing required claim domain is rejected');
+
+  const changedBytes = clone(ledger);
+  changedBytes.releaseSurface.files[0].sha256 = '0'.repeat(64);
+  A.eq(inspectClaimsAuthority({ repoRoot, ledger: changedBytes }).planning.ok, false, 'changed reviewed bytes force re-audit');
+
+  const addedSurface = clone(ledger);
+  A.eq(inspectClaimsAuthority({
+    repoRoot,
+    ledger: addedSurface,
+    surfacePaths: surface.concat('frontend/app/new-unreviewed-surface.js')
+  }).planning.ok, false, 'new tracked release-surface paths force re-audit');
+
+  const badLocator = clone(ledger);
+  badLocator.claims[0].surfaceLocators[0].needle = '__missing_surface_copy__';
+  A.eq(inspectClaimsAuthority({ repoRoot, ledger: badLocator }).planning.ok, false, 'stale user-facing locator is rejected');
+
+  const absenceClaim = ledger.claims.find(row => row.authorityChecks.some(check => check.kind === 'absent' && check.path));
+  A.ok(!!absenceClaim, 'inventory contains machine-checked file absence authority');
+  if (absenceClaim) {
+    const check = absenceClaim.authorityChecks.find(item => item.kind === 'absent' && item.path);
+    const realRead = relative => fs.readFileSync(path.join(repoRoot, relative));
+    const injected = inspectClaimsAuthority({
+      repoRoot,
+      ledger,
+      readFile: relative => relative === check.path
+        ? Buffer.concat([realRead(relative), Buffer.from('\n' + check.needles[0] + '\n')])
+        : realRead(relative),
+      skipSurfaceHashes: true
+    });
+    A.eq(injected.planning.ok, false, 'an absence escape turns the planning authority red');
+  }
+
+  const handAuthored = clone(ledger);
+  delete handAuthored.releaseSurface.pathSetSha256;
+  A.eq(inspectClaimsAuthority({ repoRoot, ledger: handAuthored }).planning.ok, false, 'hand-authored unlocked evidence is rejected');
+
+  const noRefs = clone(ledger);
+  noRefs.claims[0].refsChecked = ['trunk@' + 'a'.repeat(40)];
+  A.eq(validateClaimsLedger(noRefs, { repoRoot }).ok, false, 'claims must record trunk, branch, and worktree searches');
+
+  A.eq(ledger.doNotRebuild.length, 5, 'all five locked do-not-rebuild exceptions are present');
+  A.eq(new Set(ledger.doNotRebuild.map(row => row.id)).size, 5, 'do-not-rebuild exception IDs are unique');
+  A.ok(ledger.waveVerdicts.length >= 15, 'W2-W6 grep-verdict matrix is present');
+
+  A.report('qa-product-perfect-claims.test');
+})().catch(error => {
+  console.error(error && error.stack || error);
+  process.exit(1);
+});

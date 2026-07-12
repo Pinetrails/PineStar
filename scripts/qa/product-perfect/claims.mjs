@@ -1,0 +1,399 @@
+#!/usr/bin/env node
+/* W0 advertised-claims authority.
+ *
+ * This module is intentionally read-only. It locks the reviewed public surface to exact
+ * tracked paths and bytes, verifies every claim locator/authority check, and exposes two
+ * independent decisions:
+ *   - planning: the finite audit is current and mechanically reproducible;
+ *   - terminal: every claim is proven (including required live proof) or visibly labelled
+ *     experimental, and every W2-W6 grep-verdict row is closed.
+ */
+
+import * as crypto from 'node:crypto';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+export const REPO_ROOT = path.resolve(HERE, '..', '..', '..');
+export const DEFAULT_LEDGER = path.join(REPO_ROOT, 'qa', 'product-perfect', 'claims.json');
+
+export const REQUIRED_DOMAINS = Object.freeze([
+  'core', 'work', 'capabilities', 'security', 'recovery',
+  'autonomy', 'integrations', 'privacy', 'release'
+]);
+
+export const MARKETED_DOCS = Object.freeze([
+  'INSTALL.md',
+  'PRIVACY.md',
+  'README.md',
+  'RELEASE_NOTES.md',
+  'TERMS.md',
+  'docs/DOWNLOAD_PAGE.md',
+  'docs/RELEASE_NOTES_v1.0.0_DRAFT.md'
+]);
+
+const VERDICTS = new Set(['SHIPPED', 'PARTIAL', 'MISSING', 'REFUTED', 'EXPERIMENTAL']);
+const DISPOSITIONS = new Set(['PROVEN', 'FIX', 'COMPLETE', 'NARROW', 'EXPERIMENTAL']);
+const LIVE_PROOF = new Set(['NOT_REQUIRED', 'PENDING', 'PROVEN']);
+const CHECK_KINDS = new Set(['contains', 'absent']);
+const REQUIRED_EXCEPTION_IDS = Object.freeze([
+  'api-version-truth',
+  'consent-visibility',
+  'degraded-workspace-200',
+  'durable-estop-halt',
+  'night-beat-leash-pre-spend'
+]);
+const REQUIRED_WAVE_VERDICT_IDS = Object.freeze([
+  'W2-channel-pairing',
+  'W2-channel-token-keychain',
+  'W2-dns-safe-navigation',
+  'W2-link-junction-containment',
+  'W2-mcp-mutation-consent',
+  'W2-scoped-url-capabilities',
+  'W2-secret-free-child-env',
+  'W2-zero-boot-egress',
+  'W3-cold-boot-recap',
+  'W3-settings-base-url',
+  'W3-settings-full-export',
+  'W3-unified-work-ledger',
+  'W4-run-mode-capability-matrix',
+  'W5-after-close-continuation',
+  'W5-rejected-idea-suppression',
+  'W5-unified-composer',
+  'W6-real-integration-lifecycle'
+]);
+
+export function sha256(value) {
+  return crypto.createHash('sha256').update(value).digest('hex');
+}
+
+function text(value) { return value == null ? '' : String(value); }
+function sortedUnique(values) { return [...new Set(values.map(text).filter(Boolean))].sort(); }
+function safeRelative(relative) {
+  const normalized = text(relative).replace(/\\/g, '/');
+  if (!normalized || normalized.startsWith('/') || /^[A-Za-z]:/.test(normalized) || normalized.split('/').includes('..')) {
+    throw new Error('unsafe repository-relative path: ' + text(relative));
+  }
+  return normalized;
+}
+
+export function trackedPaths(repoRoot = REPO_ROOT) {
+  const result = spawnSync('git', ['ls-files', '-z'], {
+    cwd: repoRoot, encoding: 'buffer', windowsHide: true, maxBuffer: 32 * 1024 * 1024
+  });
+  if (result.status !== 0 || result.error) {
+    const detail = result.error ? result.error.message : Buffer.from(result.stderr || '').toString('utf8').trim();
+    throw new Error('could not enumerate tracked source: ' + (detail || 'git ls-files failed'));
+  }
+  return sortedUnique(Buffer.from(result.stdout || '').toString('utf8').split('\0'));
+}
+
+export function discoverReleaseSurface(repoRoot = REPO_ROOT, inputPaths = null) {
+  const tracked = inputPaths ? sortedUnique(inputPaths) : trackedPaths(repoRoot);
+  const marketed = new Set(MARKETED_DOCS);
+  const surface = tracked.filter(relative =>
+    (relative.startsWith('frontend/') && /\.(?:html|js)$/i.test(relative)) || marketed.has(relative)
+  );
+  for (const relative of MARKETED_DOCS) {
+    if (!tracked.includes(relative)) throw new Error('marketed release document is not tracked: ' + relative);
+  }
+  return sortedUnique(surface);
+}
+
+export function buildReleaseSurface(repoRoot = REPO_ROOT) {
+  const files = discoverReleaseSurface(repoRoot).map(relative => {
+    const bytes = defaultRead(repoRoot, relative);
+    return { path: relative, bytes: bytes.length, sha256: sha256(bytes) };
+  });
+  return {
+    algorithm: 'sha256',
+    sourceCommit: (() => {
+      const result = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: repoRoot, encoding: 'utf8', windowsHide: true });
+      if (result.status !== 0 || !/^[0-9a-f]{40}$/i.test(text(result.stdout).trim())) throw new Error('could not resolve source commit');
+      return text(result.stdout).trim().toLowerCase();
+    })(),
+    pathSetSha256: sha256(files.map(row => row.path).join('\n') + '\n'),
+    files
+  };
+}
+
+function defaultRead(repoRoot, relative) {
+  return fs.readFileSync(path.join(repoRoot, ...safeRelative(relative).split('/')));
+}
+
+function validateRefs(refs, label, errors) {
+  if (!Array.isArray(refs) || refs.some(ref => !text(ref).trim())) {
+    errors.push(label + '.refsChecked must be non-blank strings');
+    return;
+  }
+  if (!refs.some(ref => /^trunk@/i.test(ref))) errors.push(label + '.refsChecked must record the trunk audit');
+  if (!refs.some(ref => /^branches@/i.test(ref))) errors.push(label + '.refsChecked must record the unmerged-branch audit');
+  if (!refs.some(ref => /^worktrees@/i.test(ref))) errors.push(label + '.refsChecked must record the live/stale-worktree audit');
+}
+
+function validateCheck(check, label, errors) {
+  if (!check || typeof check !== 'object' || Array.isArray(check)) {
+    errors.push(label + ' must be an object');
+    return;
+  }
+  if (!CHECK_KINDS.has(check.kind)) errors.push(label + '.kind must be contains or absent');
+  const hasPath = !!text(check.path).trim();
+  const hasPaths = Array.isArray(check.paths) && check.paths.length > 0 && check.paths.every(item => text(item).trim());
+  if (!hasPath && !hasPaths) errors.push(label + '.path or .paths is required');
+  if (hasPath && hasPaths) errors.push(label + ' must use path or paths, not both');
+  try {
+    if (hasPath) safeRelative(check.path);
+    if (hasPaths) check.paths.forEach(item => safeRelative(item));
+  } catch (error) { errors.push(label + ' ' + error.message); }
+  if (check.kind === 'contains' && !text(check.needle).length) errors.push(label + '.needle is required');
+  if (check.kind === 'absent' && (!Array.isArray(check.needles) || !check.needles.length || check.needles.some(item => !text(item).length))) {
+    errors.push(label + '.needles must contain literal absence probes');
+  }
+}
+
+function validateAuthorityRow(row, label, errors) {
+  if (!row || typeof row !== 'object' || Array.isArray(row)) {
+    errors.push(label + ' must be an object');
+    return;
+  }
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(text(row.id))) errors.push(label + '.id is invalid');
+  if (!VERDICTS.has(row.verdict)) errors.push(label + '.verdict is invalid');
+  if (!DISPOSITIONS.has(row.disposition)) errors.push(label + '.disposition is invalid');
+  if (!/^W[0-7]$/.test(text(row.ownerWave || row.wave))) errors.push(label + '.ownerWave/wave must be W0-W7');
+  if (!text(row.qualification).trim()) errors.push(label + '.qualification is required');
+  if (!Array.isArray(row.authorityChecks) || !row.authorityChecks.length) errors.push(label + '.authorityChecks are required');
+  else row.authorityChecks.forEach((check, index) => validateCheck(check, label + '.authorityChecks[' + index + ']', errors));
+  validateRefs(row.refsChecked, label, errors);
+}
+
+export function validateClaimsLedger(ledger, _options = {}) {
+  const errors = [];
+  if (!ledger || typeof ledger !== 'object' || Array.isArray(ledger)) return { ok: false, errors: ['claims ledger must be an object'] };
+  if (ledger.schemaVersion !== 1) errors.push('schemaVersion must be 1');
+  if (ledger.authority !== 'StarNet advertised claims') errors.push('authority must be StarNet advertised claims');
+  if (!/^[0-9a-f]{40}$/i.test(text(ledger.auditBaseSha))) errors.push('auditBaseSha must be an exact commit');
+  if (!Array.isArray(ledger.requiredDomains) || JSON.stringify(ledger.requiredDomains) !== JSON.stringify(REQUIRED_DOMAINS)) {
+    errors.push('requiredDomains must preserve the locked complete domain set');
+  }
+  const surface = ledger.releaseSurface;
+  if (!surface || typeof surface !== 'object' || Array.isArray(surface)) errors.push('releaseSurface is required');
+  else {
+    if (surface.algorithm !== 'sha256') errors.push('releaseSurface.algorithm must be sha256');
+    if (!/^[0-9a-f]{40}$/i.test(text(surface.sourceCommit))) errors.push('releaseSurface.sourceCommit must be an exact refresh commit');
+    if (!/^[0-9a-f]{64}$/i.test(text(surface.pathSetSha256))) errors.push('releaseSurface.pathSetSha256 is required');
+    if (!Array.isArray(surface.files) || surface.files.length < 1) errors.push('releaseSurface.files are required');
+    else {
+      const paths = surface.files.map(row => row && row.path);
+      if (JSON.stringify(paths) !== JSON.stringify(sortedUnique(paths))) errors.push('releaseSurface.files must be unique and path-sorted');
+      for (let index = 0; index < surface.files.length; index += 1) {
+        const row = surface.files[index] || {};
+        const label = 'releaseSurface.files[' + index + ']';
+        try { safeRelative(row.path); } catch (error) { errors.push(label + '.path ' + error.message); }
+        if (!Number.isInteger(row.bytes) || row.bytes < 0) errors.push(label + '.bytes must be a non-negative integer');
+        if (!/^[0-9a-f]{64}$/i.test(text(row.sha256))) errors.push(label + '.sha256 is invalid');
+      }
+    }
+  }
+
+  if (!Array.isArray(ledger.claims) || ledger.claims.length < 28 || ledger.claims.length > 37) {
+    errors.push('claims must contain 28-37 normalized material families');
+  } else {
+    if (ledger.expectedClaimCount !== ledger.claims.length) errors.push('expectedClaimCount must equal claims.length');
+    const ids = new Set();
+    const domains = new Set();
+    ledger.claims.forEach((claim, index) => {
+      const label = 'claims[' + index + ']';
+      validateAuthorityRow(claim, label, errors);
+      if (ids.has(claim.id)) errors.push(label + '.id is duplicated: ' + claim.id);
+      ids.add(claim.id);
+      if (!REQUIRED_DOMAINS.includes(claim.domain)) errors.push(label + '.domain is invalid');
+      domains.add(claim.domain);
+      if (!text(claim.claim).trim()) errors.push(label + '.claim is required');
+      if (!Array.isArray(claim.surfaceLocators) || !claim.surfaceLocators.length) errors.push(label + '.surfaceLocators are required');
+      else claim.surfaceLocators.forEach((locator, locatorIndex) => {
+        const locatorLabel = label + '.surfaceLocators[' + locatorIndex + ']';
+        if (!locator || typeof locator !== 'object' || !text(locator.path).trim() || !text(locator.needle).length) {
+          errors.push(locatorLabel + ' requires path and literal needle');
+        } else {
+          try { safeRelative(locator.path); } catch (error) { errors.push(locatorLabel + '.path ' + error.message); }
+        }
+      });
+      if (typeof claim.liveProofRequired !== 'boolean') errors.push(label + '.liveProofRequired must be boolean');
+      if (!LIVE_PROOF.has(claim.liveProof)) errors.push(label + '.liveProof is invalid');
+      if (!claim.liveProofRequired && claim.liveProof === 'PENDING') errors.push(label + '.liveProof cannot be PENDING when not required');
+      if (claim.disposition === 'EXPERIMENTAL') {
+        const exp = claim.experimentalLabel;
+        if (!exp || typeof exp !== 'object' || typeof exp.visible !== 'boolean') errors.push(label + '.experimentalLabel visibility is required');
+        else validateCheck(exp.check, label + '.experimentalLabel.check', errors);
+      }
+    });
+    for (const domain of REQUIRED_DOMAINS) if (!domains.has(domain)) errors.push('required claim domain is missing: ' + domain);
+  }
+
+  if (!Array.isArray(ledger.waveVerdicts)) errors.push('waveVerdicts are required');
+  else {
+    const ids = ledger.waveVerdicts.map(row => row && row.id);
+    if (ids.length !== new Set(ids).size) errors.push('waveVerdict IDs must be unique');
+    ledger.waveVerdicts.forEach((row, index) => {
+      const label = 'waveVerdicts[' + index + ']';
+      validateAuthorityRow(row, label, errors);
+      if (row && row.wave !== text(row.id).slice(0, 2)) errors.push(label + '.wave must match the ID prefix');
+      if (!text(row.item).trim()) errors.push(label + '.item is required');
+    });
+    const actual = sortedUnique(ids);
+    if (JSON.stringify(actual) !== JSON.stringify([...REQUIRED_WAVE_VERDICT_IDS].sort())) {
+      errors.push('waveVerdicts must contain the exact reviewed W2-W6 matrix');
+    }
+  }
+
+  if (!Array.isArray(ledger.doNotRebuild)) errors.push('doNotRebuild exceptions are required');
+  else {
+    const ids = ledger.doNotRebuild.map(row => row && row.id);
+    if (ids.length !== new Set(ids).size) errors.push('doNotRebuild IDs must be unique');
+    ledger.doNotRebuild.forEach((row, index) => {
+      const label = 'doNotRebuild[' + index + ']';
+      validateAuthorityRow(row, label, errors);
+      if (row && row.action !== 'DO_NOT_REBUILD') errors.push(label + '.action must be DO_NOT_REBUILD');
+    });
+    if (JSON.stringify(sortedUnique(ids)) !== JSON.stringify([...REQUIRED_EXCEPTION_IDS].sort())) {
+      errors.push('doNotRebuild must contain the five locked exceptions');
+    }
+  }
+  return { ok: errors.length === 0, errors };
+}
+
+function verifyCheck(check, readFile, label, errors, allTracked) {
+  let targets = [];
+  if (check.path) targets = [safeRelative(check.path)];
+  else {
+    const prefixes = check.paths.map(item => safeRelative(item));
+    targets = (allTracked || []).filter(relative => prefixes.some(prefix => relative === prefix || relative.startsWith(prefix.endsWith('/') ? prefix : prefix + '/')));
+    if (!targets.length) { errors.push(label + ' scope matched no tracked files'); return; }
+  }
+  for (const target of targets) {
+    let contents;
+    try { contents = Buffer.from(readFile(target)).toString('utf8'); }
+    catch (error) { errors.push(label + ' unreadable ' + target + ': ' + error.message); continue; }
+    if (check.kind === 'contains' && !contents.includes(check.needle)) {
+      errors.push(label + ' locator missing in ' + target + ': ' + JSON.stringify(check.needle));
+    }
+    if (check.kind === 'absent') {
+      for (const needle of check.needles) {
+        if (contents.toLowerCase().includes(text(needle).toLowerCase())) errors.push(label + ' absence escaped in ' + target + ': ' + JSON.stringify(needle));
+      }
+    }
+  }
+}
+
+function terminalEligible(row) {
+  if (row.disposition === 'EXPERIMENTAL') return row.verdict === 'EXPERIMENTAL' && row.experimentalLabel && row.experimentalLabel.visible === true;
+  return row.disposition === 'PROVEN' && (row.verdict === 'SHIPPED' || row.verdict === 'REFUTED');
+}
+
+export function inspectClaimsAuthority(options = {}) {
+  const repoRoot = path.resolve(options.repoRoot || REPO_ROOT);
+  let ledger = options.ledger;
+  const planningReasons = [];
+  if (!ledger) {
+    try { ledger = JSON.parse(fs.readFileSync(options.ledgerPath || path.join(repoRoot, 'qa', 'product-perfect', 'claims.json'), 'utf8')); }
+    catch (error) {
+      return {
+        planning: { ok: false, status: 'BLOCKED', reasons: ['claims ledger unreadable: ' + error.message] },
+        terminal: { ok: false, status: 'BLOCKED', reasons: ['claims planning authority is blocked'] },
+        summary: { claims: 0, releaseSurfaceFiles: 0, waveVerdicts: 0 }
+      };
+    }
+  }
+  const schema = validateClaimsLedger(ledger, { repoRoot });
+  planningReasons.push(...schema.errors);
+  const readFile = options.readFile || (relative => defaultRead(repoRoot, relative));
+  let allTracked = [];
+  try { allTracked = options.trackedPaths ? sortedUnique(options.trackedPaths) : trackedPaths(repoRoot); }
+  catch (error) { planningReasons.push('tracked source unreadable: ' + error.message); }
+  let surfacePaths = [];
+  try { surfacePaths = options.surfacePaths ? sortedUnique(options.surfacePaths) : discoverReleaseSurface(repoRoot); }
+  catch (error) { planningReasons.push('release surface unreadable: ' + error.message); }
+
+  if (schema.ok && ledger.releaseSurface) {
+    const lockedPaths = ledger.releaseSurface.files.map(row => row.path);
+    if (JSON.stringify(surfacePaths) !== JSON.stringify(lockedPaths)) planningReasons.push('release surface path-set changed; re-audit required');
+    const pathSetHash = sha256(lockedPaths.join('\n') + '\n');
+    if (pathSetHash !== ledger.releaseSurface.pathSetSha256) planningReasons.push('release surface path-set hash mismatch');
+    if (!options.skipSurfaceHashes) {
+      for (const row of ledger.releaseSurface.files) {
+        let bytes;
+        try { bytes = Buffer.from(readFile(row.path)); }
+        catch (error) { planningReasons.push('release surface unreadable ' + row.path + ': ' + error.message); continue; }
+        if (bytes.length !== row.bytes || sha256(bytes) !== row.sha256) planningReasons.push('release surface bytes changed: ' + row.path);
+      }
+    }
+    const locked = new Set(lockedPaths);
+    for (const claim of ledger.claims) {
+      for (let index = 0; index < claim.surfaceLocators.length; index += 1) {
+        const locator = claim.surfaceLocators[index];
+        const label = claim.id + '.surfaceLocators[' + index + ']';
+        if (!locked.has(locator.path)) planningReasons.push(label + ' is outside the locked release surface: ' + locator.path);
+        verifyCheck({ kind: 'contains', path: locator.path, needle: locator.needle }, readFile, label, planningReasons, allTracked);
+      }
+      claim.authorityChecks.forEach((check, index) => verifyCheck(check, readFile, claim.id + '.authorityChecks[' + index + ']', planningReasons, allTracked));
+      if (claim.disposition === 'EXPERIMENTAL') verifyCheck(claim.experimentalLabel.check, readFile, claim.id + '.experimentalLabel', planningReasons, allTracked);
+    }
+    for (const row of ledger.waveVerdicts) row.authorityChecks.forEach((check, index) => verifyCheck(check, readFile, row.id + '.authorityChecks[' + index + ']', planningReasons, allTracked));
+    for (const row of ledger.doNotRebuild) row.authorityChecks.forEach((check, index) => verifyCheck(check, readFile, row.id + '.authorityChecks[' + index + ']', planningReasons, allTracked));
+  }
+
+  const uniquePlanningReasons = sortedUnique(planningReasons);
+  const planning = { ok: uniquePlanningReasons.length === 0, status: uniquePlanningReasons.length ? 'BLOCKED' : 'PASS', reasons: uniquePlanningReasons };
+  const terminalReasons = [];
+  if (!planning.ok) terminalReasons.push('claims planning authority is blocked');
+  else {
+    for (const claim of ledger.claims) {
+      if (!terminalEligible(claim)) terminalReasons.push('claim ' + claim.id + ' remains ' + claim.verdict + '/' + claim.disposition);
+      if (claim.liveProofRequired && claim.liveProof !== 'PROVEN') terminalReasons.push('claim ' + claim.id + ' live proof is ' + claim.liveProof);
+    }
+    for (const row of ledger.waveVerdicts) {
+      if (!terminalEligible(row)) terminalReasons.push('wave verdict ' + row.id + ' remains ' + row.verdict + '/' + row.disposition);
+    }
+  }
+  const uniqueTerminalReasons = sortedUnique(terminalReasons);
+  return {
+    planning,
+    terminal: { ok: uniqueTerminalReasons.length === 0, status: uniqueTerminalReasons.length ? 'BLOCKED' : 'PASS', reasons: uniqueTerminalReasons },
+    summary: {
+      claims: Array.isArray(ledger.claims) ? ledger.claims.length : 0,
+      releaseSurfaceFiles: ledger.releaseSurface && Array.isArray(ledger.releaseSurface.files) ? ledger.releaseSurface.files.length : 0,
+      waveVerdicts: Array.isArray(ledger.waveVerdicts) ? ledger.waveVerdicts.length : 0,
+      doNotRebuild: Array.isArray(ledger.doNotRebuild) ? ledger.doNotRebuild.length : 0
+    }
+  };
+}
+
+function render(selected, mode, summary) {
+  const lines = [];
+  lines.push(selected.status + ' claims ' + mode + ' authority Â· ' + summary.claims + ' claims Â· ' + summary.releaseSurfaceFiles + ' locked surface files');
+  const limit = 12;
+  for (const reason of selected.reasons.slice(0, limit)) lines.push('  - ' + reason);
+  if (selected.reasons.length > limit) lines.push('  - â€¦ +' + (selected.reasons.length - limit) + ' more');
+  return lines.join('\n');
+}
+
+const INVOKED_DIRECTLY = (() => {
+  try { return process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href; }
+  catch (_) { return false; }
+})();
+
+if (INVOKED_DIRECTLY) {
+  const args = process.argv.slice(2);
+  if (args.includes('--refresh-surface')) {
+    // Read-only by design: callers review/apply this stdout payload explicitly.
+    console.log(JSON.stringify(buildReleaseSurface(), null, 2));
+    process.exit(0);
+  }
+  const mode = args.includes('--terminal') ? 'terminal' : 'planning';
+  const result = inspectClaimsAuthority();
+  const selected = result[mode];
+  console.log(args.includes('--json') ? JSON.stringify(result, null, 2) : render(selected, mode, result.summary));
+  process.exit(selected.ok ? 0 : 2);
+}

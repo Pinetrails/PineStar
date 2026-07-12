@@ -1,0 +1,2650 @@
+{
+  "schemaVersion": 1,
+  "authority": "StarNet advertised claims",
+  "auditBaseSha": "ef16fa087ad872f9d266ecde8b72ef813cb9ca82",
+  "reviewedAt": "2026-07-12",
+  "scope": "Finite normalized material claims across tracked frontend JS/HTML and marketed docs; literal duplicate strings are folded into one family.",
+  "requiredDomains": [
+    "core",
+    "work",
+    "capabilities",
+    "security",
+    "recovery",
+    "autonomy",
+    "integrations",
+    "privacy",
+    "release"
+  ],
+  "expectedClaimCount": 37,
+  "releaseSurface": {
+    "algorithm": "sha256",
+    "sourceCommit": "ef16fa087ad872f9d266ecde8b72ef813cb9ca82",
+    "pathSetSha256": "50c7bab0c0d9e9d19fc0715274a1811b1241c8e73e79378e38595dc5bffaf7d2",
+    "files": [
+      {
+        "path": "INSTALL.md",
+        "bytes": 7210,
+        "sha256": "353043b62321057a3f013835c0dc75fd169a87c263359d84589103b8ca90c39d"
+      },
+      {
+        "path": "PRIVACY.md",
+        "bytes": 9610,
+        "sha256": "c57b1051b7a065a0e03703166213520b4431692ec6e3d61f4cd6e82443e8d4d2"
+      },
+      {
+        "path": "README.md",
+        "bytes": 4415,
+        "sha256": "fa80cbf5195412303ea241667cc2bc23eacdf763b593d34e5d1dcbe32648b8eb"
+      },
+      {
+        "path": "RELEASE_NOTES.md",
+        "bytes": 1793,
+        "sha256": "f22bacd2adc95c394b11bbb542a03f809b22c196801b64ba584e90e46bb9309c"
+      },
+      {
+        "path": "TERMS.md",
+        "bytes": 3128,
+        "sha256": "9c4288ae8facc306c8c8f742568c7df70bc4ff62b947b73fa92f6bf831530abe"
+      },
+      {
+        "path": "docs/DOWNLOAD_PAGE.md",
+        "bytes": 5893,
+        "sha256": "48c5cee288fcc4b0738c442d7e06ee9fcf7ce18a37688f9942a5f88f207726bc"
+      },
+      {
+        "path": "docs/RELEASE_NOTES_v1.0.0_DRAFT.md",
+        "bytes": 4243,
+        "sha256": "1f981a7fe9210642e22318fbf2632213a0ab51433c958ca31063bc6d429b8d41"
+      },
+      {
+        "path": "frontend/app/agentid.js",
+        "bytes": 2068,
+        "sha256": "ec0b2bef2cfed3b33205687c624bd8fe5edee421e8ab66c77a35791b8e63a7c8"
+      },
+      {
+        "path": "frontend/app/app.js",
+        "bytes": 236561,
+        "sha256": "5acadbb9b99f3166dbb6cad644ea6d75af7f10c31f53a6d5c86ae26518abd440"
+      },
+      {
+        "path": "frontend/app/armconfirm.js",
+        "bytes": 5439,
+        "sha256": "2b53e6a23fdac31adf133c7b0ba4acee6e31c74b31d33b2db7916853362dfb5f"
+      },
+      {
+        "path": "frontend/app/autojobs.js",
+        "bytes": 16504,
+        "sha256": "849c1ad696b5ae136e35e4dc5959c56c5968d19271b5b0c662d71d843dee270d"
+      },
+      {
+        "path": "frontend/app/autojobstore.js",
+        "bytes": 16118,
+        "sha256": "225f9a0993751b4405d7c3fc58dfe4a147cec3f9151236aa66fb208a524e761f"
+      },
+      {
+        "path": "frontend/app/autonomy.js",
+        "bytes": 9761,
+        "sha256": "6c9098f70c79f9ce8cfd80236dc2aa65623ce69e51d5cbe438c71d57cee1b962"
+      },
+      {
+        "path": "frontend/app/autonomystore.js",
+        "bytes": 4844,
+        "sha256": "c44a32442ba6bb995efa6c68cc003e53116600441c697c82f3bdbe1b9efd8a55"
+      },
+      {
+        "path": "frontend/app/autopilot.js",
+        "bytes": 47720,
+        "sha256": "4dd3ae09d739a44127f5bbbb90e41142cc01782bdc175fe70c0670cd912f8108"
+      },
+      {
+        "path": "frontend/app/autopilotstore.js",
+        "bytes": 18825,
+        "sha256": "afbdfdda0d5988367d0185a3d835616f68fa5bedf10929ec59074a1f1f77c6d1"
+      },
+      {
+        "path": "frontend/app/autosessions.js",
+        "bytes": 17459,
+        "sha256": "2690ab5b7bcbfb045a039aa292f2f5b05d75f60907be80b15c840648c1267561"
+      },
+      {
+        "path": "frontend/app/backup.js",
+        "bytes": 8648,
+        "sha256": "6e78690293ec9082147612e088864db374b9c43d9448f073ea8d41e130d837a6"
+      },
+      {
+        "path": "frontend/app/bottlestore.js",
+        "bytes": 9538,
+        "sha256": "0530140e4c32757099c4a41e33c7d65227570f7981bb7f2cc6364ffaab6b4053"
+      },
+      {
+        "path": "frontend/app/build.js",
+        "bytes": 101600,
+        "sha256": "ba827ca5f148fedcfb75713f2094f3492486d4ad5dded79777859dd28f3d19c3"
+      },
+      {
+        "path": "frontend/app/channels.js",
+        "bytes": 8313,
+        "sha256": "cf859c2a11164e438daeb2dadac05b43dbb353f1d741b9629c75dd3f5c5e52a1"
+      },
+      {
+        "path": "frontend/app/chat.js",
+        "bytes": 365164,
+        "sha256": "1f971b29cadcf2733a41e4af3cf5fec881e5e5e0b1f1b8791b793bd19b0da057"
+      },
+      {
+        "path": "frontend/app/chatresize.js",
+        "bytes": 3435,
+        "sha256": "7404d3d739ff411c47267bd768ab371cfd11ff1052d8b8a3095d2a5b6239cd5c"
+      },
+      {
+        "path": "frontend/app/classicons.js",
+        "bytes": 15015,
+        "sha256": "30ebfe9b4c6bf789b55d54beab574be3e008c7776a2e466b729db71e75e0a1a3"
+      },
+      {
+        "path": "frontend/app/classify.js",
+        "bytes": 6267,
+        "sha256": "e745e7e0cc274131a3fce19a6c391ca4fd3fa13d1a5a6815b889d28cec76fc02"
+      },
+      {
+        "path": "frontend/app/clip.js",
+        "bytes": 22861,
+        "sha256": "cfa726bb3b3a62550250bfe6745e75290c87b8225c5f3832cbc519a34ff4e9df"
+      },
+      {
+        "path": "frontend/app/cloudsave.js",
+        "bytes": 17846,
+        "sha256": "008b3d120980249cbe978bd5550f00afe4feda6f140c8f7cf25c199fd3b6946d"
+      },
+      {
+        "path": "frontend/app/cloudsavecore.js",
+        "bytes": 5596,
+        "sha256": "b5bb80d02e23ba1fbaf74ae098abd03d3f46d38d6eeeb52fa50949daff435fff"
+      },
+      {
+        "path": "frontend/app/codexsignin.js",
+        "bytes": 4016,
+        "sha256": "bde2d16170a18fd66fe68d91d3f53f00246391a842aeb41cc3b2bc1a57557ce0"
+      },
+      {
+        "path": "frontend/app/confbeats.js",
+        "bytes": 7900,
+        "sha256": "356bb1ef5742018ced40908f772a01db096f64bbf0369edd72ba5651fa65d94b"
+      },
+      {
+        "path": "frontend/app/conveyor.js",
+        "bytes": 36548,
+        "sha256": "8e6c0df75eb0a6e31eea6b1e87e0aa06de406d6bf73462d77fef945ff197ce31"
+      },
+      {
+        "path": "frontend/app/crtlab.js",
+        "bytes": 10977,
+        "sha256": "85b1537d5392ac60cee4b9588dddb68315a63b6ac269bb59ba14c955e8f5213b"
+      },
+      {
+        "path": "frontend/app/ctxgauge.js",
+        "bytes": 3267,
+        "sha256": "96857c8e72967b4662bc2c7a4c0e9a3379c362f7865918b1df15d5d57998fb65"
+      },
+      {
+        "path": "frontend/app/curiosity.js",
+        "bytes": 5910,
+        "sha256": "a53a79ef23833e58e9c4653238e061ab94f261707c9abfbb48ea9d86b6f6203f"
+      },
+      {
+        "path": "frontend/app/curiositystore.js",
+        "bytes": 6135,
+        "sha256": "3372e09e7040896530b27aa0361741225bb85f60ca709cb03fb533a92ee31585"
+      },
+      {
+        "path": "frontend/app/data-shim.js",
+        "bytes": 2104,
+        "sha256": "f5d16c681c75256e57291a3371bebe22f1844516426a19e84ee5d0fc7f60e62e"
+      },
+      {
+        "path": "frontend/app/diagnostics.js",
+        "bytes": 10704,
+        "sha256": "e41171410d791a05241a426f4240ddf613b8e3f22b7c7fca6307c8918668ac31"
+      },
+      {
+        "path": "frontend/app/dialogue.js",
+        "bytes": 13575,
+        "sha256": "67639ec4ffaf17fdcc20ac1dc7127b9826c77da0ac2cfbaa315c0063256fd630"
+      },
+      {
+        "path": "frontend/app/dockglow.js",
+        "bytes": 4519,
+        "sha256": "c7fb3204260168b80bd4ece91071c1872b7812694f17a96ee399131f34410261"
+      },
+      {
+        "path": "frontend/app/dossier.js",
+        "bytes": 12572,
+        "sha256": "19303c411d5eee39448032810d07d0f8ecbc253ec6b4fc9f43ab94d5f575d861"
+      },
+      {
+        "path": "frontend/app/dossierstore.js",
+        "bytes": 6090,
+        "sha256": "e4cabc6674b4b54299cb0ba9cac830d3c6ad40ef2262038d6c736f52265867e3"
+      },
+      {
+        "path": "frontend/app/floorstats.js",
+        "bytes": 8941,
+        "sha256": "ddb7c08b1e4af154d203c2c407157076ac8a77346131fb366c806aedc4da0ec8"
+      },
+      {
+        "path": "frontend/app/fork.js",
+        "bytes": 6108,
+        "sha256": "96c6208b55f168d82a03191f0adcc53a52d21a22d45d8b28e7f13087641691ef"
+      },
+      {
+        "path": "frontend/app/friendlyerror.js",
+        "bytes": 24463,
+        "sha256": "c21dc7ed48e18a11921ad76a4269288a8a9ccad0301ba38e704d661fe36150a3"
+      },
+      {
+        "path": "frontend/app/fullscreen.js",
+        "bytes": 5088,
+        "sha256": "844af5605d3f3e39e4223ccbd110c05e95b83346b4a795eb71a07326f0af248d"
+      },
+      {
+        "path": "frontend/app/glossary.js",
+        "bytes": 4711,
+        "sha256": "f6dd01e03709963978f71841fcc526581c2b1acfc0983fdcd2fb432b18adfde1"
+      },
+      {
+        "path": "frontend/app/goalloop.js",
+        "bytes": 15204,
+        "sha256": "567957db451a377c511b171b9327a459dcdbaa5278f22a798d43b1e0f6cf0b62"
+      },
+      {
+        "path": "frontend/app/goals.js",
+        "bytes": 20269,
+        "sha256": "1effcf27e8526f57969a94916d4d4c5eeba231cc232194472e2140968a076b83"
+      },
+      {
+        "path": "frontend/app/goalstore.js",
+        "bytes": 23177,
+        "sha256": "0db1667220f6dabc537a7c057b0ba0f14f4fd6e76fae296a575fe6ca70a04bcb"
+      },
+      {
+        "path": "frontend/app/harness.js",
+        "bytes": 37940,
+        "sha256": "e04a64a9ec26080025dd4f47cffb6144a2d1fd846f2fc30ef09393ad9d60e926"
+      },
+      {
+        "path": "frontend/app/hint.js",
+        "bytes": 7881,
+        "sha256": "1d726dee288d0f87c88b1c604b57af981b9a00d902bd9c95360d3397572373cd"
+      },
+      {
+        "path": "frontend/app/intake.js",
+        "bytes": 7826,
+        "sha256": "24abcf22eb63d0903ae8fade254b7fcb0a3e8781cf17e95d0d098af195ff14e2"
+      },
+      {
+        "path": "frontend/app/interview.js",
+        "bytes": 6086,
+        "sha256": "c928079d06fd3e7fbaced792f72f2ff36c021bcbe45a248efa890b93e597b1b2"
+      },
+      {
+        "path": "frontend/app/keepawake.js",
+        "bytes": 2826,
+        "sha256": "5a2e446ed18eaf4f8be5e6e65ff67e3360ba991d3829a8dc8f321e5a949c5c33"
+      },
+      {
+        "path": "frontend/app/keycta.js",
+        "bytes": 6230,
+        "sha256": "999a12c06b8354510b36e9214d7dc254284239bcb845b53142772708e41fc193"
+      },
+      {
+        "path": "frontend/app/legacymigrate.js",
+        "bytes": 2307,
+        "sha256": "59b365ec22af9e6480231e67b88406549da7721d1e1c221d0b89c58effba3866"
+      },
+      {
+        "path": "frontend/app/maintquests.js",
+        "bytes": 11328,
+        "sha256": "3ec61a7b9136b45657308bd422401f5039803a5bdc014068d9bd8db12239d5a4"
+      },
+      {
+        "path": "frontend/app/maintqueststore.js",
+        "bytes": 10294,
+        "sha256": "575ac9efa001ea4919db71de2862d5a7554e4b4868d606baba3c5ce38f1548c7"
+      },
+      {
+        "path": "frontend/app/marketplace.js",
+        "bytes": 152579,
+        "sha256": "655eb0dd3a7084da7d1fe1d2f68a029dddcbdb12ce490878657ed81f897ce9d5"
+      },
+      {
+        "path": "frontend/app/mint.js",
+        "bytes": 12343,
+        "sha256": "9f21ff0e708423025301b63fad1b2d8871a9a57ab63e6fa5fc1825a31abbab6c"
+      },
+      {
+        "path": "frontend/app/mintstore.js",
+        "bytes": 4224,
+        "sha256": "20e8b38573520a13f40ad7b30fb46e1e946566ab4f7f85c33ab8f7ef734ac7d2"
+      },
+      {
+        "path": "frontend/app/modeldock.js",
+        "bytes": 35026,
+        "sha256": "53d4a8a078715b0d89fa6aebf87addea97b1a378227523e2b6ef9fd014f9aabc"
+      },
+      {
+        "path": "frontend/app/modelpicker.js",
+        "bytes": 9941,
+        "sha256": "2511cb9b605a1904425f0712297bc580e77f148e208af000a087748ec79830fa"
+      },
+      {
+        "path": "frontend/app/navdock.js",
+        "bytes": 8607,
+        "sha256": "35434a4a1c63d6c4f059bb572e6b4cab66cbef65cbe54c4fe8b9d791e9895744"
+      },
+      {
+        "path": "frontend/app/nightreport.js",
+        "bytes": 14332,
+        "sha256": "0cb78bbb6f962e96f933c01832f54419ce51ecc35f0099c2af5801e18137efc9"
+      },
+      {
+        "path": "frontend/app/nightreportstore.js",
+        "bytes": 8561,
+        "sha256": "d82b8d7c065aa8eed09348cd6b403be48c710a2ff486628f886dc588425bff0a"
+      },
+      {
+        "path": "frontend/app/onboarding.js",
+        "bytes": 41477,
+        "sha256": "8292474e2c5648b825067d3fb50057d69f95c375053cca5ee379cf3ba6ec3d0a"
+      },
+      {
+        "path": "frontend/app/permissions.js",
+        "bytes": 9679,
+        "sha256": "1c72d178af61b4a596e983338f4c957fafd5e9eb6bd255180bcc7497ee22e6a6"
+      },
+      {
+        "path": "frontend/app/permissionsstore.js",
+        "bytes": 6814,
+        "sha256": "dd3a8d9a5597243c82e2a5b4f9a725173d307de981289b352a6eb11544709efa"
+      },
+      {
+        "path": "frontend/app/personas.js",
+        "bytes": 16451,
+        "sha256": "e34fd3ecd26577f95551c6cb043bed3284a64a8d77f05c65b6db0c7c7490ac6e"
+      },
+      {
+        "path": "frontend/app/pipeline.js",
+        "bytes": 21734,
+        "sha256": "236969a2fb7ba8e886d35954d6f4b19da97a16bd353ba048b23a0629b650d94c"
+      },
+      {
+        "path": "frontend/app/pitch.js",
+        "bytes": 18279,
+        "sha256": "492179dd8ff504e64be2fcc8e4201b00ac7e671799a34c452c8dce4cf00651b0"
+      },
+      {
+        "path": "frontend/app/pitchstore.js",
+        "bytes": 14709,
+        "sha256": "d467e3c55411b425aa7565198b62a2a0edd8d7ea81fe81aae1ff9fce18b5e9af"
+      },
+      {
+        "path": "frontend/app/postcard.js",
+        "bytes": 16631,
+        "sha256": "b0fd43086d2d4ec5cbb1edd382131dd8e4d782209179ecde0bc4632cfbfd6456"
+      },
+      {
+        "path": "frontend/app/pride.js",
+        "bytes": 6414,
+        "sha256": "8c099cc27f2259fde452bbec76734da67914a574624f64770dcf34b5c8fe9ef8"
+      },
+      {
+        "path": "frontend/app/pridestore.js",
+        "bytes": 2682,
+        "sha256": "6832d4b14d369d3dcdca78801b5d4a2184ac73bd1fabf91e2792b913257f8a14"
+      },
+      {
+        "path": "frontend/app/profile.js",
+        "bytes": 7264,
+        "sha256": "181e3d9f3743ca0e98f98db1d9c5f982c734349218b68a76a0515ba13e7a0e3b"
+      },
+      {
+        "path": "frontend/app/profilestore.js",
+        "bytes": 4202,
+        "sha256": "51e9719fadfeaf77c23de8a4bc6df98cad09ab29b834528d49ff05357ff96cab"
+      },
+      {
+        "path": "frontend/app/projects.js",
+        "bytes": 3780,
+        "sha256": "9fc037993d42ad857de3378daa76315d5b01621100165c26db6809da816428dc"
+      },
+      {
+        "path": "frontend/app/propanchor.js",
+        "bytes": 3246,
+        "sha256": "225462acc5305e430aa6cfc58913d893effa09560771d135a3ab4463c831010d"
+      },
+      {
+        "path": "frontend/app/propsprites.js",
+        "bytes": 300237,
+        "sha256": "a790a1c9e1137f8e38fb5135bbbbdb495e09a30cb7663222b7bae8ad2ede052d"
+      },
+      {
+        "path": "frontend/app/prospect.js",
+        "bytes": 9508,
+        "sha256": "a6d86fb04c6b54dda12068c0d18ed2be36db0392164ea10ced01d9f5e4bc4d0a"
+      },
+      {
+        "path": "frontend/app/prospectstore.js",
+        "bytes": 9612,
+        "sha256": "2ec30addc7b29d1f0c0c3f82ede9a1b24dae7031b789350fa52b2d0cdca7edab"
+      },
+      {
+        "path": "frontend/app/questledgerstore.js",
+        "bytes": 11650,
+        "sha256": "3f39d14a8276bb2b47e90f0de1ceea9da64209c0073486c4dfd19c027ebd1b8b"
+      },
+      {
+        "path": "frontend/app/quests.js",
+        "bytes": 10824,
+        "sha256": "3b6453c40edd4bce47199c16bfa9def79e987ce17e388af4e1acb38dffdf016e"
+      },
+      {
+        "path": "frontend/app/queststate.js",
+        "bytes": 8667,
+        "sha256": "08fb48dadd7b5337f9c00def7f76bdf7d66518a89e2af38da383d632218078be"
+      },
+      {
+        "path": "frontend/app/queststatestore.js",
+        "bytes": 5510,
+        "sha256": "eb8b058d2b6276f20cedcc7ed5ed9a9b110a0f7604d340186ecfbb439c573060"
+      },
+      {
+        "path": "frontend/app/queststore.js",
+        "bytes": 5104,
+        "sha256": "3e488e80d11608f15e89111b16482f991695cb6758b512eb95ff3498635c4295"
+      },
+      {
+        "path": "frontend/app/recipe-catalog/core.js",
+        "bytes": 9057,
+        "sha256": "e518bb8b1c170ab6a7afe27871192a5ec58678dc777062417c0aca36b393c46b"
+      },
+      {
+        "path": "frontend/app/recipe-catalog/creator.js",
+        "bytes": 9998,
+        "sha256": "a2957f4a6b428ea1409b3ba120909a87c41a2a6b16c767a227b9bee0f6852734"
+      },
+      {
+        "path": "frontend/app/recipe-catalog/dev.js",
+        "bytes": 9950,
+        "sha256": "902148e54f9d3341425680a2482791ffb2b45cec7cacfe218c4c61f0b5b65f7c"
+      },
+      {
+        "path": "frontend/app/recipe-catalog/index.js",
+        "bytes": 2286,
+        "sha256": "a87d2769a8416ef81ae9fc49ac7fa015321d9ce38fdd5d71ae91fc661b7ec7cf"
+      },
+      {
+        "path": "frontend/app/recipe-catalog/ops.js",
+        "bytes": 10208,
+        "sha256": "bf48b8290155ecec9b908e55fcd749cd0639178d1063a0f0ac0e6957ae6fdfca"
+      },
+      {
+        "path": "frontend/app/recipe-catalog/research.js",
+        "bytes": 9838,
+        "sha256": "3481eb045352db38d21abf7fdc528443a424f3c342dbe21febcf341d4e28fdfe"
+      },
+      {
+        "path": "frontend/app/recipes.js",
+        "bytes": 39551,
+        "sha256": "66684caae056af8f16e955728bf8531489e5b16e82c7326f4c01dc23837ae06e"
+      },
+      {
+        "path": "frontend/app/recruiter.js",
+        "bytes": 9641,
+        "sha256": "2106650408a33483a21cf8a424ee37121db89284d7bf3234ba6dd773917d57c1"
+      },
+      {
+        "path": "frontend/app/recruiterstore.js",
+        "bytes": 4076,
+        "sha256": "497ab2c243e8c137973a283c330262580a9b8e90a833aa3202e15416a4da2fa9"
+      },
+      {
+        "path": "frontend/app/resummonstore.js",
+        "bytes": 9991,
+        "sha256": "a8be763d5b41253326778e552903ba57c98ebdeef27239df0db0ce923b2a6c6d"
+      },
+      {
+        "path": "frontend/app/returns.js",
+        "bytes": 6657,
+        "sha256": "d0ad21971c1ed0359d54262c9c87e2d9072847014a96c6cfaa79139ba279248e"
+      },
+      {
+        "path": "frontend/app/returnstore.js",
+        "bytes": 7608,
+        "sha256": "6d083a41c293511f6228928b9fb5dc0e5505d48d172fc39fbcb3415a94dd24ff"
+      },
+      {
+        "path": "frontend/app/safety.js",
+        "bytes": 3421,
+        "sha256": "8cbd8332e133168c95f5ecf7204b040aea482e5fd81a983f292db5daa699a9da"
+      },
+      {
+        "path": "frontend/app/save.js",
+        "bytes": 6595,
+        "sha256": "c29bba72aeecdf635f927ccaf94c7f02ccdc0a750cb2f7f63756af9f579a7f7f"
+      },
+      {
+        "path": "frontend/app/seedcredit.js",
+        "bytes": 4962,
+        "sha256": "5a586801329597d3b1d231a0b08f4c7e4e82949fc9baa03cbc9edfbff238c3c8"
+      },
+      {
+        "path": "frontend/app/seedreuse.js",
+        "bytes": 6191,
+        "sha256": "ae52be84bc45ed87e06182bcc7e88c47976748ceed2398d48084103ba3baf202"
+      },
+      {
+        "path": "frontend/app/seedreusestore.js",
+        "bytes": 4138,
+        "sha256": "13fe02190e993d4ced52bcead251a94161033c831ee7420f9cc2ef2152573b94"
+      },
+      {
+        "path": "frontend/app/seeds.js",
+        "bytes": 3262,
+        "sha256": "234bbe504823d2e22c5a3d78a109b3fa0caae51617cc7fc68c93ad757cda1c89"
+      },
+      {
+        "path": "frontend/app/seedstore.js",
+        "bytes": 4905,
+        "sha256": "da477ecadf8b38bc95e4bbd631d934704c9aeb6436039f430dc253e0194e5182"
+      },
+      {
+        "path": "frontend/app/skinstage.js",
+        "bytes": 3022,
+        "sha256": "e49e2f8e5b85619c536c0584ab470ce76f1b323ab130d3bd279c0e745a2d1986"
+      },
+      {
+        "path": "frontend/app/slaglog.js",
+        "bytes": 4372,
+        "sha256": "d0c7ebccad1427ce99e63cee0d33a1b11a5c581551811c241587da2468f0e033"
+      },
+      {
+        "path": "frontend/app/specialties.js",
+        "bytes": 10860,
+        "sha256": "adfbf91552b20673180a5ac3d4cd721eb6c4ecba0ae1c13ea27c5eae5fd64269"
+      },
+      {
+        "path": "frontend/app/stationbake.js",
+        "bytes": 45694,
+        "sha256": "dfab115c46689f56863e57ffb350be2a52f48acd801e01b056d5616c78e1007e"
+      },
+      {
+        "path": "frontend/app/stationquests.js",
+        "bytes": 9507,
+        "sha256": "abd68429b33ee1d6bf2d622abaa0eff44ec5aeaf38c8eeb6e93ae426806cb070"
+      },
+      {
+        "path": "frontend/app/stationqueststore.js",
+        "bytes": 12379,
+        "sha256": "f0a3fc834ad28872b2dc8407f9557fdae4369baa286b6369d3491c97dc7e4e95"
+      },
+      {
+        "path": "frontend/app/stationui.js",
+        "bytes": 405104,
+        "sha256": "52c5477d94fbced272534e2f036bfae2ff19bbfdb29c5dac3f295b4f4ff4f116"
+      },
+      {
+        "path": "frontend/app/study.js",
+        "bytes": 24415,
+        "sha256": "593e57a1a81703e4b4d30c926b867e8f14f83b05ebab05abc917137fd2ab0ef6"
+      },
+      {
+        "path": "frontend/app/studystore.js",
+        "bytes": 15202,
+        "sha256": "aefe52849668d2bb8e3c5bfa96a4a132bbe83bf6ed278a86cb1b995cd83db889"
+      },
+      {
+        "path": "frontend/app/subagentsprites.js",
+        "bytes": 4933,
+        "sha256": "8d48f32dd83ca7dce708977e5143a5b1f9847dba8f5cb2688f3b080b197eb6fa"
+      },
+      {
+        "path": "frontend/app/suggeststore.js",
+        "bytes": 14963,
+        "sha256": "a1ff19a55fb71d5bf56189b8258f6b6914764076891e994d567b6afcbdc06f49"
+      },
+      {
+        "path": "frontend/app/testapi.js",
+        "bytes": 8261,
+        "sha256": "daf3db1fb443a49915e0c9467b1c91553855d96a798b26a25bb3d7e2c696a92d"
+      },
+      {
+        "path": "frontend/app/threadstore.js",
+        "bytes": 8896,
+        "sha256": "674a1a1877c83997d797a5f8ae53016c2f772c26ec47488ef0ec3af4b1bd6142"
+      },
+      {
+        "path": "frontend/app/toolprops.js",
+        "bytes": 3241,
+        "sha256": "6854b810c2aab1b8bced197e955b1f54bf64aff84ba1a73075d02d06002f00a5"
+      },
+      {
+        "path": "frontend/app/topbar.js",
+        "bytes": 5699,
+        "sha256": "17195e375ab54bd433f4137f42065d4df2efd87613367446d95d9ef7bd891b5c"
+      },
+      {
+        "path": "frontend/app/trophies.js",
+        "bytes": 4927,
+        "sha256": "9a2bf2c77283bfa5126cf00252925d3fb76b04bb6bb0a696188675d31de4461f"
+      },
+      {
+        "path": "frontend/app/trust.js",
+        "bytes": 16531,
+        "sha256": "78b7f8ede29ed93716cc1ccd63c0028df8f8d4793a05cb56de039160c4fa42ef"
+      },
+      {
+        "path": "frontend/app/truststore.js",
+        "bytes": 18534,
+        "sha256": "7e0aa2e2e2e69f5c1493fa001746721302d5a95ffda0c52869aedda7f9097378"
+      },
+      {
+        "path": "frontend/app/tutorial.js",
+        "bytes": 64557,
+        "sha256": "bf6f5bc78028323e623f3029d086590a531f3cfce18e65fd1464d2aae2c98efb"
+      },
+      {
+        "path": "frontend/app/understanding.js",
+        "bytes": 8577,
+        "sha256": "1e2e220bd08a470d729119a9fc36d18f19dd728068087b7a93512b58ab277928"
+      },
+      {
+        "path": "frontend/app/understandingstore.js",
+        "bytes": 9568,
+        "sha256": "ad693eaa1f23633fdc40bfa2c2cac3b4d1c5b08dea4ee4f92194364ea7e3d4df"
+      },
+      {
+        "path": "frontend/app/updatecore.js",
+        "bytes": 4735,
+        "sha256": "c57aa716ba2760748409ed0355f148fb099637fc9352b0817513aba7952194ee"
+      },
+      {
+        "path": "frontend/app/updates.js",
+        "bytes": 14615,
+        "sha256": "3178e5084e97ee060434e60e36ece3a4eb12efd2f60b1b6e3fd250213ea908df"
+      },
+      {
+        "path": "frontend/app/voice.js",
+        "bytes": 76790,
+        "sha256": "b26dbfbbb9dc7fbe7e403d899112cfbc74416a5d3f4e0094567472146e316e78"
+      },
+      {
+        "path": "frontend/app/waitanchor.js",
+        "bytes": 5193,
+        "sha256": "7691145fd7ba41a0d589eb6426f063d91ce6fada18cc7fea436d3f7547985691"
+      },
+      {
+        "path": "frontend/app/wakemind.js",
+        "bytes": 12016,
+        "sha256": "f8f44aa09aaa60263f350499f66b0a9162a66695161a280fff54e36791e96795"
+      },
+      {
+        "path": "frontend/app/warroom.js",
+        "bytes": 5979,
+        "sha256": "a7de4fac348313f6eddeb6cc216b89ece1ff2c94736ac1fc85310db653f5a90c"
+      },
+      {
+        "path": "frontend/app/widgets.js",
+        "bytes": 27095,
+        "sha256": "381d20de104863c50fa2a225a3c5135f35ffaa3697d707731a405e51e7f603c6"
+      },
+      {
+        "path": "frontend/app/workquests.js",
+        "bytes": 11613,
+        "sha256": "6425abec1ba5f6960ff36eb22913f860d3635a09fe60fce353627749272a7b98"
+      },
+      {
+        "path": "frontend/app/workqueststore.js",
+        "bytes": 10502,
+        "sha256": "9517cd2ca7228cabb5a6c6503483a64a711cb34fb698e34f53cb6c7c443adedb"
+      },
+      {
+        "path": "frontend/app/workshopstore.js",
+        "bytes": 16735,
+        "sha256": "62be1a6a6d0bd85b3915727a314b5d96e2038e4bce4999b8bd39e6904625dc99"
+      },
+      {
+        "path": "frontend/app/worksignal.js",
+        "bytes": 7936,
+        "sha256": "f365e92ce80b3d9df9c4a35177eff5c0ff93844218b3cbac1ce85e011c6d2e68"
+      },
+      {
+        "path": "frontend/app/worksignalstore.js",
+        "bytes": 5865,
+        "sha256": "2a09046907d3c46a45dc538c3869765d0a81ae4b73bab0726ec6b2e8b6bb671c"
+      },
+      {
+        "path": "frontend/app/workstreams.js",
+        "bytes": 17222,
+        "sha256": "df64fb615e5d6326f4ed8025d9832a2b0284b92608f1221f055e6c2b82928f13"
+      },
+      {
+        "path": "frontend/app/world.js",
+        "bytes": 431366,
+        "sha256": "78d936371c17195369acb9746fb19f84cd745c9246c4642c7520a8d7a8e8137f"
+      },
+      {
+        "path": "frontend/app/worldmodel.js",
+        "bytes": 55145,
+        "sha256": "028c9844f845e0e8edb61ccc6124946aa43b78864049563687c46f381effdcc2"
+      },
+      {
+        "path": "frontend/app/xp.js",
+        "bytes": 20762,
+        "sha256": "0617ccbad98cdffc1d03e901c3d2a4f71058e17dc17c1e87e8f8ae853316d272"
+      },
+      {
+        "path": "frontend/app/xpstore.js",
+        "bytes": 7504,
+        "sha256": "cf4e50ff9eba8de03a98c03ac937972fb87b438e35445fc4693578a01d313de3"
+      },
+      {
+        "path": "frontend/app/zones.js",
+        "bytes": 10429,
+        "sha256": "1ce254eaf1c37a188f5739c5afba152d73635a83cb8e44afb7fa361d4df774a2"
+      },
+      {
+        "path": "frontend/index.html",
+        "bytes": 55710,
+        "sha256": "88058d6230534339c9a2712789227b9d56fa415898e475df2171814ef40d14ea"
+      },
+      {
+        "path": "frontend/js/arcade.js",
+        "bytes": 17923,
+        "sha256": "2e3b97d9cecf986fb299d1356e279a433f20db31e57c76c6424e46c806ec80b7"
+      },
+      {
+        "path": "frontend/js/assets.js",
+        "bytes": 11876,
+        "sha256": "7d02aaff3fc3ebad5b2f96ff1d23fd5a850f6d4fb4daeb2aa0a9d35d881f4cd9"
+      },
+      {
+        "path": "frontend/js/audio.js",
+        "bytes": 2315,
+        "sha256": "fd53075d74c410d16125babc1d7f3e8b3d8560ef44ca456fe03efd9c0a79f39c"
+      },
+      {
+        "path": "frontend/js/util.js",
+        "bytes": 22828,
+        "sha256": "dd16cf6b538a5043b18e707e43d171ae20cad61f61e544bfbd9f5453405128c8"
+      }
+    ]
+  },
+  "claims": [
+    {
+      "id": "first-boot-onboarding",
+      "domain": "core",
+      "claim": "A new user gets the splash, Overseer creation, awakening, and interview journey.",
+      "surfaceLocators": [
+        {
+          "path": "docs/RELEASE_NOTES_v1.0.0_DRAFT.md",
+          "needle": "**First-boot ceremony**"
+        }
+      ],
+      "authorityChecks": [
+        {
+          "kind": "contains",
+          "path": "frontend/app/app.js",
+          "needle": "CREATE YOUR OVERSEER"
+        },
+        {
+          "kind": "contains",
+          "path": "frontend/app/onboarding.js",
+          "needle": "function start"
+        }
+      ],
+      "verdict": "SHIPPED",
+      "disposition": "PROVEN",
+      "ownerWave": "W1",
+      "qualification": "Static wiring exists; the clean installed under-ten-minute journey remains required.",
+      "liveProofRequired": true,
+      "liveProof": "PENDING",
+      "refsChecked": [
+        "trunk@ef16fa087ad872f9d266ecde8b72ef813cb9ca82",
+        "branches@refs/heads/* audited 2026-07-12",
+        "worktrees@git-worktree-list audited 2026-07-12"
+      ]
+    },
+    {
+      "id": "byok-chatgpt-connect",
+      "domain": "core",
+      "claim": "Users can connect BYOK providers or sign in with a ChatGPT subscription.",
+      "surfaceLocators": [
+        {
+          "path": "README.md",
+          "needle": "bring your own OpenRouter API key (BYOK)"
+        }
+      ],
+      "authorityChecks": [
+        {
+          "kind": "contains",
+          "path": "frontend/app/harness.js",
+          "needle": "getKey, setKey"
+        },
+        {
+          "kind": "contains",
+          "path": "frontend/app/app.js",
+          "needle": "sign in with ChatGPT first, or switch to OpenRouter"
+        }
+      ],
+      "verdict": "SHIPPED",
+      "disposition": "PROVEN",
+      "ownerWave": "W1",
+      "qualification": "Wiring is present; installed provider-connect proof remains required.",
+      "liveProofRequired": true,
+      "liveProof": "PENDING",
+      "refsChecked": [
+        "trunk@ef16fa087ad872f9d266ecde8b72ef813cb9ca82",
+        "branches@refs/heads/* audited 2026-07-12",
+        "worktrees@git-worktree-list audited 2026-07-12"
+      ]
+    },
+    {
+      "id": "provider-catalog-custom",
+      "domain": "integrations",
+      "claim": "OpenRouter, native providers, Ollama, and custom OpenAI-compatible endpoints are offered.",
+      "surfaceLocators": [
+        {
+          "path": "PRIVACY.md",
+          "needle": "another OpenAI-compatible provider you point it at"
+        }
+      ],
+      "authorityChecks": [
+        {
+          "kind": "contains",
+          "path": "frontend/app/stationui.js",
+          "needle": "{ id: 'ollama'"
+        },
+        {
+          "kind": "contains",
+          "path": "frontend/app/stationui.js",
+          "needle": "{ id: 'custom'"
+        }
+      ],
+      "verdict": "PARTIAL",
+      "disposition": "COMPLETE",
+      "ownerWave": "W6",
+      "qualification": "Catalog rows exist, but every advertised provider lifecycle has not been proven installed.",
+      "liveProofRequired": true,
+      "liveProof": "PENDING",
+      "refsChecked": [
+        "trunk@ef16fa087ad872f9d266ecde8b72ef813cb9ca82",
+        "branches@refs/heads/* audited 2026-07-12",
+        "worktrees@git-worktree-list audited 2026-07-12"
+      ]
+    },
+    {
+      "id": "post-onboarding-base-url",
+      "domain": "recovery",
+      "claim": "A custom or Ollama base URL can be edited after onboarding.",
+      "surfaceLocators": [
+        {
+          "path": "frontend/app/stationui.js",
+          "needle": "any /v1 base URL"
+        }
+      ],
+      "authorityChecks": [
+        {
+          "kind": "contains",
+          "path": "frontend/app/harness.js",
+          "needle": "const setBaseUrl ="
+        },
+        {
+          "kind": "absent",
+          "path": "frontend/app/stationui.js",
+          "needles": [
+            "Harness.setBaseUrl("
+          ]
+        }
+      ],
+      "verdict": "MISSING",
+      "disposition": "FIX",
+      "ownerWave": "W3",
+      "qualification": "The engine and onboarding writer exist; Settings exposes no writer.",
+      "liveProofRequired": true,
+      "liveProof": "PENDING",
+      "refsChecked": [
+        "trunk@ef16fa087ad872f9d266ecde8b72ef813cb9ca82",
+        "branches@refs/heads/* audited 2026-07-12",
+        "worktrees@git-worktree-list audited 2026-07-12"
+      ]
+    },
+    {
+      "id": "persisted-real-roster",
+      "domain": "core",
+      "claim": "The visible agent roster is persisted and drives real backend agent identities.",
+      "surfaceLocators": [
+        {
+          "path": "README.md",
+          "needle": "genuinely distinct, bounded agent run"
+        }
+      ],
+      "authorityChecks": [
+        {
+          "kind": "contains",
+          "path": "frontend/app/app.js",
+          "needle": "function pushRoster()"
+        },
+        {
+          "kind": "contains",
+          "path": "sidecar/index.js",
+          "needle": "const agentRoster = new Map"
+        }
+      ],
+      "verdict": "SHIPPED",
+      "disposition": "PROVEN",
+      "ownerWave": "W1",
+      "qualification": "Browser and sidecar roster seams exist; installed restart proof remains required.",
+      "liveProofRequired": true,
+      "liveProof": "PENDING",
+      "refsChecked": [
+        "trunk@ef16fa087ad872f9d266ecde8b72ef813cb9ca82",
+        "branches@refs/heads/* audited 2026-07-12",
+        "worktrees@git-worktree-list audited 2026-07-12"
+      ]
+    },
+    {
+      "id": "concurrent-agent-runs",
+      "domain": "core",
+      "claim": "Multiple agents can execute concurrently as distinct bounded runs.",
+      "surfaceLocators": [
+        {
+          "path": "README.md",
+          "needle": "run **more, concurrently**"
+        }
+      ],
+      "authorityChecks": [
+        {
+          "kind": "contains",
+          "path": "sidecar/tools/builtin/orchestration.js",
+          "needle": "function makeOrchestrationTools"
+        },
+        {
+          "kind": "contains",
+          "path": "sidecar/index.js",
+          "needle": "MAX_CONCURRENT_AGENTS"
+        }
+      ],
+      "verdict": "SHIPPED",
+      "disposition": "PROVEN",
+      "ownerWave": "W1",
+      "qualification": "Concurrency admission and delegation code exist; clean installed journey remains required.",
+      "liveProofRequired": true,
+      "liveProof": "PENDING",
+      "refsChecked": [
+        "trunk@ef16fa087ad872f9d266ecde8b72ef813cb9ca82",
+        "branches@refs/heads/* audited 2026-07-12",
+        "worktrees@git-worktree-list audited 2026-07-12"
+      ]
+    },
+    {
+      "id": "comms-real-workflow",
+      "domain": "work",
+      "claim": "COMMS streams real runs with attachments, stop controls, and transcripts.",
+      "surfaceLocators": [
+        {
+          "path": "docs/RELEASE_NOTES_v1.0.0_DRAFT.md",
+          "needle": "**COMMS**: streaming chat"
+        }
+      ],
+      "authorityChecks": [
+        {
+          "kind": "contains",
+          "path": "frontend/app/harness.js",
+          "needle": "case 'agent.token'"
+        },
+        {
+          "kind": "contains",
+          "path": "frontend/app/chat.js",
+          "needle": "agent.tool_call"
+        },
+        {
+          "kind": "contains",
+          "path": "sidecar/index.js",
+          "needle": "POST /api/run"
+        }
+      ],
+      "verdict": "SHIPPED",
+      "disposition": "PROVEN",
+      "ownerWave": "W1",
+      "qualification": "Core seams exist; installed end-to-end proof remains required.",
+      "liveProofRequired": true,
+      "liveProof": "PENDING",
+      "refsChecked": [
+        "trunk@ef16fa087ad872f9d266ecde8b72ef813cb9ca82",
+        "branches@refs/heads/* audited 2026-07-12",
+        "worktrees@git-worktree-list audited 2026-07-12"
+      ]
+    },
+    {
+      "id": "truthful-tools-cost-work",
+      "domain": "work",
+      "claim": "Tool activity, work state, token use, and cost are derived from runtime facts.",
+      "surfaceLocators": [
+        {
+          "path": "README.md",
+          "needle": "real model calls, real tools, real cost"
+        }
+      ],
+      "authorityChecks": [
+        {
+          "kind": "contains",
+          "path": "frontend/app/chat.js",
+          "needle": "agent.tool_call"
+        },
+        {
+          "kind": "contains",
+          "path": "frontend/app/workstreams.js",
+          "needle": "root.Workstreams = api"
+        },
+        {
+          "kind": "contains",
+          "path": "sidecar/index.js",
+          "needle": "spend ledger + budget"
+        }
+      ],
+      "verdict": "SHIPPED",
+      "disposition": "PROVEN",
+      "ownerWave": "W6",
+      "qualification": "Telemetry reducers are present; terminal proof still needs live reconciliation.",
+      "liveProofRequired": true,
+      "liveProof": "PENDING",
+      "refsChecked": [
+        "trunk@ef16fa087ad872f9d266ecde8b72ef813cb9ca82",
+        "branches@refs/heads/* audited 2026-07-12",
+        "worktrees@git-worktree-list audited 2026-07-12"
+      ]
+    },
+    {
+      "id": "object-capability-grant",
+      "domain": "capabilities",
+      "claim": "Placing an object grants real tools and removing it revokes them.",
+      "surfaceLocators": [
+        {
+          "path": "README.md",
+          "needle": "a placed object is a real capability grant"
+        }
+      ],
+      "authorityChecks": [
+        {
+          "kind": "contains",
+          "path": "frontend/app/worldmodel.js",
+          "needle": "function bayObjects"
+        },
+        {
+          "kind": "contains",
+          "path": "sidecar/capability/resolve.js",
+          "needle": "function resolveTools"
+        }
+      ],
+      "verdict": "SHIPPED",
+      "disposition": "PROVEN",
+      "ownerWave": "W4",
+      "qualification": "The object-to-tool projection exists; W4 live mode matrix must re-prove it.",
+      "liveProofRequired": true,
+      "liveProof": "PENDING",
+      "refsChecked": [
+        "trunk@ef16fa087ad872f9d266ecde8b72ef813cb9ca82",
+        "branches@refs/heads/* audited 2026-07-12",
+        "worktrees@git-worktree-list audited 2026-07-12"
+      ]
+    },
+    {
+      "id": "room-capability-team",
+      "domain": "capabilities",
+      "claim": "A room is a capability-scoped team.",
+      "surfaceLocators": [
+        {
+          "path": "README.md",
+          "needle": "A room is a capability-scoped team"
+        }
+      ],
+      "authorityChecks": [
+        {
+          "kind": "contains",
+          "path": "sidecar/capability/resolve.js",
+          "needle": "function resolveTools"
+        },
+        {
+          "kind": "contains",
+          "path": "frontend/app/app.js",
+          "needle": "station-wide shared gear"
+        }
+      ],
+      "verdict": "PARTIAL",
+      "disposition": "NARROW",
+      "ownerWave": "W4",
+      "qualification": "Object grants are real, but most gear is explicitly station-shared rather than room-team scoped.",
+      "liveProofRequired": true,
+      "liveProof": "PENDING",
+      "refsChecked": [
+        "trunk@ef16fa087ad872f9d266ecde8b72ef813cb9ca82",
+        "branches@refs/heads/* audited 2026-07-12",
+        "worktrees@git-worktree-list audited 2026-07-12"
+      ]
+    },
+    {
+      "id": "hallway-authorized-handoff",
+      "domain": "capabilities",
+      "claim": "A hallway is an authorized handoff lane.",
+      "surfaceLocators": [
+        {
+          "path": "README.md",
+          "needle": "a hallway is"
+        }
+      ],
+      "authorityChecks": [
+        {
+          "kind": "absent",
+          "path": "frontend/app/worldmodel.js",
+          "needles": [
+            "authorizedHandoff",
+            "handoffLane",
+            "handoffGrant"
+          ]
+        }
+      ],
+      "verdict": "REFUTED",
+      "disposition": "NARROW",
+      "ownerWave": "W4",
+      "qualification": "Hallways are geometry; no authorization implementation was found on trunk, branches, or worktrees.",
+      "liveProofRequired": true,
+      "liveProof": "PENDING",
+      "refsChecked": [
+        "trunk@ef16fa087ad872f9d266ecde8b72ef813cb9ca82",
+        "branches@refs/heads/* audited 2026-07-12",
+        "worktrees@git-worktree-list audited 2026-07-12"
+      ]
+    },
+    {
+      "id": "layout-is-workflow",
+      "domain": "capabilities",
+      "claim": "The drawn station layout is the workflow agents execute.",
+      "surfaceLocators": [
+        {
+          "path": "README.md",
+          "needle": "The layout you draw *is* the workflow"
+        }
+      ],
+      "authorityChecks": [
+        {
+          "kind": "contains",
+          "path": "sidecar/capability/resolve.js",
+          "needle": "function resolveTools"
+        },
+        {
+          "kind": "contains",
+          "path": "sidecar/tools/builtin/orchestration.js",
+          "needle": "team.dispatch"
+        }
+      ],
+      "verdict": "PARTIAL",
+      "disposition": "NARROW",
+      "ownerWave": "W4",
+      "qualification": "Placed objects affect tools, while orchestration remains tool-driven rather than graph-edge driven.",
+      "liveProofRequired": true,
+      "liveProof": "PENDING",
+      "refsChecked": [
+        "trunk@ef16fa087ad872f9d266ecde8b72ef813cb9ca82",
+        "branches@refs/heads/* audited 2026-07-12",
+        "worktrees@git-worktree-list audited 2026-07-12"
+      ]
+    },
+    {
+      "id": "one-click-mutation-approval",
+      "domain": "security",
+      "claim": "File writes and commands always pause for one-click approval.",
+      "surfaceLocators": [
+        {
+          "path": "frontend/app/stationui.js",
+          "needle": "pause for one-click approval in COMMS"
+        }
+      ],
+      "authorityChecks": [
+        {
+          "kind": "contains",
+          "path": "frontend/app/app.js",
+          "needle": "approvalMode === 'full'"
+        },
+        {
+          "kind": "contains",
+          "path": "sidecar/index.js",
+          "needle": "agentFullAccess"
+        }
+      ],
+      "verdict": "PARTIAL",
+      "disposition": "NARROW",
+      "ownerWave": "W2",
+      "qualification": "Full-access and unattended modes bypass interactive prompting by design; copy must state that qualification.",
+      "liveProofRequired": true,
+      "liveProof": "PENDING",
+      "refsChecked": [
+        "trunk@ef16fa087ad872f9d266ecde8b72ef813cb9ca82",
+        "branches@refs/heads/* audited 2026-07-12",
+        "worktrees@git-worktree-list audited 2026-07-12"
+      ]
+    },
+    {
+      "id": "project-bless-revoke",
+      "domain": "security",
+      "claim": "Users can bless and revoke project roots; unattended work cannot bless new roots.",
+      "surfaceLocators": [
+        {
+          "path": "docs/RELEASE_NOTES_v1.0.0_DRAFT.md",
+          "needle": "**Project lens**"
+        }
+      ],
+      "authorityChecks": [
+        {
+          "kind": "contains",
+          "path": "sidecar/projectbless.js",
+          "needle": "async function blessPath"
+        },
+        {
+          "kind": "contains",
+          "path": "sidecar/index.js",
+          "needle": "/api/permissions/revoke"
+        }
+      ],
+      "verdict": "SHIPPED",
+      "disposition": "PROVEN",
+      "ownerWave": "W2",
+      "qualification": "The grant/revoke path exists; live installed path proof remains required.",
+      "liveProofRequired": true,
+      "liveProof": "PENDING",
+      "refsChecked": [
+        "trunk@ef16fa087ad872f9d266ecde8b72ef813cb9ca82",
+        "branches@refs/heads/* audited 2026-07-12",
+        "worktrees@git-worktree-list audited 2026-07-12"
+      ]
+    },
+    {
+      "id": "night-patch-safe-branch",
+      "domain": "autonomy",
+      "claim": "Night Shift project patches apply only to a fresh ns/ branch, never main and never push.",
+      "surfaceLocators": [
+        {
+          "path": "docs/RELEASE_NOTES_v1.0.0_DRAFT.md",
+          "needle": "fresh `ns/` branch, never main, never pushed"
+        }
+      ],
+      "authorityChecks": [
+        {
+          "kind": "contains",
+          "path": "sidecar/nightpatch.js",
+          "needle": "NEVER onto main/master"
+        },
+        {
+          "kind": "contains",
+          "path": "sidecar/index.js",
+          "needle": "async function applyNightPatch"
+        }
+      ],
+      "verdict": "SHIPPED",
+      "disposition": "PROVEN",
+      "ownerWave": "W4",
+      "qualification": "The guarded patch path exists; a real-project installed proof remains required.",
+      "liveProofRequired": true,
+      "liveProof": "PENDING",
+      "refsChecked": [
+        "trunk@ef16fa087ad872f9d266ecde8b72ef813cb9ca82",
+        "branches@refs/heads/* audited 2026-07-12",
+        "worktrees@git-worktree-list audited 2026-07-12"
+      ]
+    },
+    {
+      "id": "jailed-open-deliverables",
+      "domain": "work",
+      "claim": "Finished workshop deliverables are jailed and opened as artifacts rather than dumped as source.",
+      "surfaceLocators": [
+        {
+          "path": "docs/RELEASE_NOTES_v1.0.0_DRAFT.md",
+          "needle": "the payoff action is OPEN"
+        }
+      ],
+      "authorityChecks": [
+        {
+          "kind": "contains",
+          "path": "frontend/app/chat.js",
+          "needle": "openItBtn.textContent = 'Open it'"
+        },
+        {
+          "kind": "contains",
+          "path": "sidecar/index.js",
+          "needle": "/workshop-run/"
+        }
+      ],
+      "verdict": "SHIPPED",
+      "disposition": "PROVEN",
+      "ownerWave": "W3",
+      "qualification": "OPEN and jailed serving exist; installed-open proof remains required.",
+      "liveProofRequired": true,
+      "liveProof": "PENDING",
+      "refsChecked": [
+        "trunk@ef16fa087ad872f9d266ecde8b72ef813cb9ca82",
+        "branches@refs/heads/* audited 2026-07-12",
+        "worktrees@git-worktree-list audited 2026-07-12"
+      ]
+    },
+    {
+      "id": "unified-work-deliverables-ledger",
+      "domain": "work",
+      "claim": "One coherent visible ledger unifies tasks, deliverables, routines, and past work.",
+      "surfaceLocators": [
+        {
+          "path": "docs/RELEASE_NOTES_v1.0.0_DRAFT.md",
+          "needle": "routines fire real scheduled runs with visible"
+        }
+      ],
+      "authorityChecks": [
+        {
+          "kind": "contains",
+          "path": "frontend/app/workstreams.js",
+          "needle": "root.Workstreams = api"
+        },
+        {
+          "kind": "contains",
+          "path": "frontend/app/chat.js",
+          "needle": "END-OF-RUN RECAP"
+        }
+      ],
+      "verdict": "PARTIAL",
+      "disposition": "COMPLETE",
+      "ownerWave": "W3",
+      "qualification": "The data and separate views exist, but there is no single unified ledger/library.",
+      "liveProofRequired": true,
+      "liveProof": "PENDING",
+      "refsChecked": [
+        "trunk@ef16fa087ad872f9d266ecde8b72ef813cb9ca82",
+        "branches@refs/heads/* audited 2026-07-12",
+        "worktrees@git-worktree-list audited 2026-07-12"
+      ]
+    },
+    {
+      "id": "routines-visible-unattended",
+      "domain": "autonomy",
+      "claim": "Routines run unattended and show schedule, next run, last result, and pause controls.",
+      "surfaceLocators": [
+        {
+          "path": "docs/RELEASE_NOTES_v1.0.0_DRAFT.md",
+          "needle": "routines fire real scheduled runs with visible"
+        }
+      ],
+      "authorityChecks": [
+        {
+          "kind": "contains",
+          "path": "frontend/app/stationui.js",
+          "needle": "ROUTINES"
+        },
+        {
+          "kind": "contains",
+          "path": "sidecar/index.js",
+          "needle": "GET /api/cron"
+        }
+      ],
+      "verdict": "SHIPPED",
+      "disposition": "PROVEN",
+      "ownerWave": "W4",
+      "qualification": "Scheduler and UI exist; the app process must remain running.",
+      "liveProofRequired": true,
+      "liveProof": "PENDING",
+      "refsChecked": [
+        "trunk@ef16fa087ad872f9d266ecde8b72ef813cb9ca82",
+        "branches@refs/heads/* audited 2026-07-12",
+        "worktrees@git-worktree-list audited 2026-07-12"
+      ]
+    },
+    {
+      "id": "night-shift-away-work",
+      "domain": "autonomy",
+      "claim": "Night Shift performs leash-bounded real work while the user is away.",
+      "surfaceLocators": [
+        {
+          "path": "docs/RELEASE_NOTES_v1.0.0_DRAFT.md",
+          "needle": "**Night shift**: leave the station and it works"
+        }
+      ],
+      "authorityChecks": [
+        {
+          "kind": "contains",
+          "path": "frontend/app/autonomy.js",
+          "needle": "run free toward my goals while i’m away"
+        },
+        {
+          "kind": "contains",
+          "path": "sidecar/nightshift.js",
+          "needle": "function beatsLeft"
+        },
+        {
+          "kind": "contains",
+          "path": "sidecar/nightshift-driver.js",
+          "needle": "function makeNightshiftDriver"
+        }
+      ],
+      "verdict": "SHIPPED",
+      "disposition": "PROVEN",
+      "ownerWave": "W4",
+      "qualification": "Server-owned cadence exists; first installed real-provider overnight remains required.",
+      "liveProofRequired": true,
+      "liveProof": "PENDING",
+      "refsChecked": [
+        "trunk@ef16fa087ad872f9d266ecde8b72ef813cb9ca82",
+        "branches@refs/heads/* audited 2026-07-12",
+        "worktrees@git-worktree-list audited 2026-07-12"
+      ]
+    },
+    {
+      "id": "work-after-app-close",
+      "domain": "autonomy",
+      "claim": "Agents and messaging continue working after the app closes.",
+      "surfaceLocators": [
+        {
+          "path": "frontend/app/stationui.js",
+          "needle": "even with this window (and the app) closed"
+        }
+      ],
+      "authorityChecks": [
+        {
+          "kind": "absent",
+          "path": "src-tauri/src/main.rs",
+          "needles": [
+            "TrayIcon",
+            "SystemTray",
+            "tauri_plugin_autostart"
+          ]
+        }
+      ],
+      "verdict": "REFUTED",
+      "disposition": "NARROW",
+      "ownerWave": "W5",
+      "qualification": "The product is one sidecar owned by the app; closing the app ends it.",
+      "liveProofRequired": true,
+      "liveProof": "PENDING",
+      "refsChecked": [
+        "trunk@ef16fa087ad872f9d266ecde8b72ef813cb9ca82",
+        "branches@refs/heads/* audited 2026-07-12",
+        "worktrees@git-worktree-list audited 2026-07-12"
+      ]
+    },
+    {
+      "id": "morning-report",
+      "domain": "recovery",
+      "claim": "A cold return produces an evidence-backed morning report.",
+      "surfaceLocators": [
+        {
+          "path": "docs/RELEASE_NOTES_v1.0.0_DRAFT.md",
+          "needle": "a morning report of everything it"
+        }
+      ],
+      "authorityChecks": [
+        {
+          "kind": "contains",
+          "path": "frontend/app/nightreport.js",
+          "needle": "PURE engine for the MORNING REPORT"
+        },
+        {
+          "kind": "contains",
+          "path": "frontend/app/nightreportstore.js",
+          "needle": "nightreport.compose()"
+        }
+      ],
+      "verdict": "SHIPPED",
+      "disposition": "PROVEN",
+      "ownerWave": "W3",
+      "qualification": "The report engine/store exist; an attended installed return remains required.",
+      "liveProofRequired": true,
+      "liveProof": "PENDING",
+      "refsChecked": [
+        "trunk@ef16fa087ad872f9d266ecde8b72ef813cb9ca82",
+        "branches@refs/heads/* audited 2026-07-12",
+        "worktrees@git-worktree-list audited 2026-07-12"
+      ]
+    },
+    {
+      "id": "learning-improves-over-time",
+      "domain": "autonomy",
+      "claim": "The station learns from use and measurably gets better over time.",
+      "surfaceLocators": [
+        {
+          "path": "frontend/app/stationui.js",
+          "needle": "Reusable procedures this agent created or learned"
+        }
+      ],
+      "authorityChecks": [
+        {
+          "kind": "contains",
+          "path": "sidecar/contextpack.js",
+          "needle": "RECENCY-WEIGHTED CONTEXT PACK"
+        },
+        {
+          "kind": "contains",
+          "path": "sidecar/threads-store.js",
+          "needle": "declineReason"
+        }
+      ],
+      "verdict": "PARTIAL",
+      "disposition": "COMPLETE",
+      "ownerWave": "W4",
+      "qualification": "Context and rejection memory exist, but measurable longitudinal compounding is not proven.",
+      "liveProofRequired": true,
+      "liveProof": "PENDING",
+      "refsChecked": [
+        "trunk@ef16fa087ad872f9d266ecde8b72ef813cb9ca82",
+        "branches@refs/heads/* audited 2026-07-12",
+        "worktrees@git-worktree-list audited 2026-07-12"
+      ]
+    },
+    {
+      "id": "telegram-discord-messaging",
+      "domain": "integrations",
+      "claim": "Telegram and Discord provide real bidirectional channel access.",
+      "surfaceLocators": [
+        {
+          "path": "PRIVACY.md",
+          "needle": "Discord / Telegram"
+        }
+      ],
+      "authorityChecks": [
+        {
+          "kind": "contains",
+          "path": "frontend/app/stationui.js",
+          "needle": "id: 'telegram'"
+        },
+        {
+          "kind": "contains",
+          "path": "frontend/app/stationui.js",
+          "needle": "id: 'discord'"
+        },
+        {
+          "kind": "contains",
+          "path": "sidecar/channels/registry.js",
+          "needle": "telegram"
+        }
+      ],
+      "verdict": "SHIPPED",
+      "disposition": "PROVEN",
+      "ownerWave": "W6",
+      "qualification": "Adapters and UI exist; real-token connect/fail/revoke proof belongs to W6.",
+      "liveProofRequired": true,
+      "liveProof": "PENDING",
+      "refsChecked": [
+        "trunk@ef16fa087ad872f9d266ecde8b72ef813cb9ca82",
+        "branches@refs/heads/* audited 2026-07-12",
+        "worktrees@git-worktree-list audited 2026-07-12"
+      ]
+    },
+    {
+      "id": "slack-matrix-signal",
+      "domain": "integrations",
+      "claim": "Slack, Matrix, and Signal are available as experimental channels.",
+      "surfaceLocators": [
+        {
+          "path": "docs/RELEASE_NOTES_v1.0.0_DRAFT.md",
+          "needle": "Slack/Matrix/Signal are new this release"
+        }
+      ],
+      "authorityChecks": [
+        {
+          "kind": "contains",
+          "path": "frontend/app/stationui.js",
+          "needle": "id: 'slack'"
+        },
+        {
+          "kind": "contains",
+          "path": "frontend/app/stationui.js",
+          "needle": "id: 'matrix'"
+        },
+        {
+          "kind": "contains",
+          "path": "frontend/app/stationui.js",
+          "needle": "id: 'signal'"
+        }
+      ],
+      "verdict": "EXPERIMENTAL",
+      "disposition": "EXPERIMENTAL",
+      "ownerWave": "W6",
+      "qualification": "Adapters exist, but point-of-use cards lack experimental labels and real-token proof.",
+      "liveProofRequired": true,
+      "liveProof": "PENDING",
+      "refsChecked": [
+        "trunk@ef16fa087ad872f9d266ecde8b72ef813cb9ca82",
+        "branches@refs/heads/* audited 2026-07-12",
+        "worktrees@git-worktree-list audited 2026-07-12"
+      ],
+      "experimentalLabel": {
+        "visible": false,
+        "check": {
+          "kind": "absent",
+          "path": "frontend/app/stationui.js",
+          "needles": [
+            "SLACK (EXPERIMENTAL)",
+            "MATRIX (EXPERIMENTAL)",
+            "SIGNAL (EXPERIMENTAL)"
+          ]
+        }
+      }
+    },
+    {
+      "id": "channel-token-keychain",
+      "domain": "security",
+      "claim": "Every channel token is stored in the OS keychain on desktop and never displayed.",
+      "surfaceLocators": [
+        {
+          "path": "PRIVACY.md",
+          "needle": "Discord / Telegram bot tokens | OS keychain"
+        }
+      ],
+      "authorityChecks": [
+        {
+          "kind": "contains",
+          "path": "src-tauri/src/main.rs",
+          "needle": "const SIDECAR_CHANNEL_TOKEN_ENVS: [(&str, &str); 2]"
+        },
+        {
+          "kind": "contains",
+          "path": "frontend/app/stationui.js",
+          "needle": "Both tokens are stored locally by the sidecar and never displayed"
+        }
+      ],
+      "verdict": "PARTIAL",
+      "disposition": "FIX",
+      "ownerWave": "W2",
+      "qualification": "Desktop keychain coverage is limited to Telegram and Discord; Slack/Matrix/Signal need verified migration/read-back.",
+      "liveProofRequired": true,
+      "liveProof": "PENDING",
+      "refsChecked": [
+        "trunk@ef16fa087ad872f9d266ecde8b72ef813cb9ca82",
+        "branches@refs/heads/* audited 2026-07-12",
+        "worktrees@git-worktree-list audited 2026-07-12"
+      ]
+    },
+    {
+      "id": "manual-mcp-connect",
+      "domain": "integrations",
+      "claim": "Users can connect HTTP or local stdio MCP servers and discover their tools.",
+      "surfaceLocators": [
+        {
+          "path": "frontend/app/stationui.js",
+          "needle": "Remote http(s) servers, or a local"
+        }
+      ],
+      "authorityChecks": [
+        {
+          "kind": "contains",
+          "path": "sidecar/mcp/manager.js",
+          "needle": "async function connect"
+        },
+        {
+          "kind": "contains",
+          "path": "sidecar/mcp/manager.js",
+          "needle": "tools/list"
+        }
+      ],
+      "verdict": "SHIPPED",
+      "disposition": "PROVEN",
+      "ownerWave": "W6",
+      "qualification": "Manual manager paths exist; W6 still needs live connect/fail/revoke evidence.",
+      "liveProofRequired": true,
+      "liveProof": "PENDING",
+      "refsChecked": [
+        "trunk@ef16fa087ad872f9d266ecde8b72ef813cb9ca82",
+        "branches@refs/heads/* audited 2026-07-12",
+        "worktrees@git-worktree-list audited 2026-07-12"
+      ]
+    },
+    {
+      "id": "curated-mcp-auth-tiers",
+      "domain": "integrations",
+      "claim": "The curated MCP catalog provides one-click, API-key, and OAuth tiers.",
+      "surfaceLocators": [
+        {
+          "path": "docs/RELEASE_NOTES_v1.0.0_DRAFT.md",
+          "needle": "a curated one-click MCP catalog with OAuth 2.1"
+        }
+      ],
+      "authorityChecks": [
+        {
+          "kind": "contains",
+          "path": "sidecar/mcp/catalog.js",
+          "needle": "const INSTALLABLE_AUTH = ['none', 'apikey']"
+        },
+        {
+          "kind": "contains",
+          "path": "frontend/app/stationui.js",
+          "needle": "cc-lg-oauth"
+        }
+      ],
+      "verdict": "EXPERIMENTAL",
+      "disposition": "EXPERIMENTAL",
+      "ownerWave": "W6",
+      "qualification": "Catalog and OAuth plumbing exist, but lifecycle proof and point-of-use experimental labelling are incomplete.",
+      "liveProofRequired": true,
+      "liveProof": "PENDING",
+      "refsChecked": [
+        "trunk@ef16fa087ad872f9d266ecde8b72ef813cb9ca82",
+        "branches@refs/heads/* audited 2026-07-12",
+        "worktrees@git-worktree-list audited 2026-07-12"
+      ],
+      "experimentalLabel": {
+        "visible": false,
+        "check": {
+          "kind": "absent",
+          "path": "frontend/app/stationui.js",
+          "needles": [
+            "MCP CONNECTORS (EXPERIMENTAL)"
+          ]
+        }
+      }
+    },
+    {
+      "id": "local-first-no-account",
+      "domain": "privacy",
+      "claim": "StarNet is local-first with no StarNet cloud account or data server.",
+      "surfaceLocators": [
+        {
+          "path": "PRIVACY.md",
+          "needle": "no StarNet cloud, no StarNet"
+        }
+      ],
+      "authorityChecks": [
+        {
+          "kind": "contains",
+          "path": "sidecar/index.js",
+          "needle": "server.listen(PORT, '127.0.0.1'"
+        },
+        {
+          "kind": "contains",
+          "path": "TERMS.md",
+          "needle": "runs AI agents on your own computer"
+        }
+      ],
+      "verdict": "SHIPPED",
+      "disposition": "PROVEN",
+      "ownerWave": "W2",
+      "qualification": "The app server and stores are local; third-party provider/channel/update traffic remains qualified.",
+      "liveProofRequired": true,
+      "liveProof": "PENDING",
+      "refsChecked": [
+        "trunk@ef16fa087ad872f9d266ecde8b72ef813cb9ca82",
+        "branches@refs/heads/* audited 2026-07-12",
+        "worktrees@git-worktree-list audited 2026-07-12"
+      ]
+    },
+    {
+      "id": "no-analytics-telemetry",
+      "domain": "privacy",
+      "claim": "StarNet contains no analytics, telemetry, crash-reporting, or ad SDK.",
+      "surfaceLocators": [
+        {
+          "path": "PRIVACY.md",
+          "needle": "There is no telemetry, no analytics, no crash reporting"
+        }
+      ],
+      "authorityChecks": [
+        {
+          "kind": "absent",
+          "paths": [
+            "frontend/",
+            "sidecar/",
+            "src-tauri/"
+          ],
+          "needles": [
+            "Sentry.init(",
+            "@sentry/",
+            "posthog.init(",
+            "mixpanel.init(",
+            "segment.com/analytics",
+            "google-analytics.com/analytics",
+            "amplitude.init(",
+            "datadogRum.init("
+          ]
+        }
+      ],
+      "verdict": "SHIPPED",
+      "disposition": "PROVEN",
+      "ownerWave": "W2",
+      "qualification": "Exact tracked shipped-source grep is clean for the named analytics/crash SDK endpoints.",
+      "liveProofRequired": true,
+      "liveProof": "PENDING",
+      "refsChecked": [
+        "trunk@ef16fa087ad872f9d266ecde8b72ef813cb9ca82",
+        "branches@refs/heads/* audited 2026-07-12",
+        "worktrees@git-worktree-list audited 2026-07-12"
+      ]
+    },
+    {
+      "id": "no-phone-home",
+      "domain": "privacy",
+      "claim": "StarNet performs no phone-home or unrequested boot egress.",
+      "surfaceLocators": [
+        {
+          "path": "PRIVACY.md",
+          "needle": "no \"phone home\" of any kind"
+        }
+      ],
+      "authorityChecks": [
+        {
+          "kind": "contains",
+          "path": "frontend/index.html",
+          "needle": "fonts.googleapis.com"
+        },
+        {
+          "kind": "contains",
+          "path": "sidecar/index.js",
+          "needle": "warmModelCatalog().then("
+        }
+      ],
+      "verdict": "REFUTED",
+      "disposition": "NARROW",
+      "ownerWave": "W2",
+      "qualification": "Google Fonts and the boot-time OpenRouter catalog warm contradict the blanket claim.",
+      "liveProofRequired": true,
+      "liveProof": "PENDING",
+      "refsChecked": [
+        "trunk@ef16fa087ad872f9d266ecde8b72ef813cb9ca82",
+        "branches@refs/heads/* audited 2026-07-12",
+        "worktrees@git-worktree-list audited 2026-07-12"
+      ]
+    },
+    {
+      "id": "secrets-keychain-never-render",
+      "domain": "security",
+      "claim": "All secrets use the OS keychain on desktop and full values never render.",
+      "surfaceLocators": [
+        {
+          "path": "README.md",
+          "needle": "Secrets are held by the sidecar / OS keychain, never in the frontend"
+        }
+      ],
+      "authorityChecks": [
+        {
+          "kind": "contains",
+          "path": "src-tauri/src/main.rs",
+          "needle": "keychain_entry_for(provider)"
+        },
+        {
+          "kind": "contains",
+          "path": "frontend/app/stationui.js",
+          "needle": "function maskKey"
+        }
+      ],
+      "verdict": "PARTIAL",
+      "disposition": "FIX",
+      "ownerWave": "W2",
+      "qualification": "Provider keys and Telegram/Discord are covered; Codex/Spotify and three channels remain outside that blanket.",
+      "liveProofRequired": true,
+      "liveProof": "PENDING",
+      "refsChecked": [
+        "trunk@ef16fa087ad872f9d266ecde8b72ef813cb9ca82",
+        "branches@refs/heads/* audited 2026-07-12",
+        "worktrees@git-worktree-list audited 2026-07-12"
+      ]
+    },
+    {
+      "id": "crash-safe-forward-corrupt-recovery",
+      "domain": "recovery",
+      "claim": "Persistence is crash-safe, rejects forward-version writes, and discloses corrupt recovery.",
+      "surfaceLocators": [
+        {
+          "path": "docs/RELEASE_NOTES_v1.0.0_DRAFT.md",
+          "needle": "Crash-safe persistence with atomic writes"
+        }
+      ],
+      "authorityChecks": [
+        {
+          "kind": "contains",
+          "path": "sidecar/durable-store.js",
+          "needle": "function saveJsonVerified"
+        },
+        {
+          "kind": "contains",
+          "path": "frontend/app/save.js",
+          "needle": "const CURRENT"
+        }
+      ],
+      "verdict": "PARTIAL",
+      "disposition": "COMPLETE",
+      "ownerWave": "W3",
+      "qualification": "Protected sidecar stores are hardened, while browser station state still uses localStorage and full recovery proof is incomplete.",
+      "liveProofRequired": true,
+      "liveProof": "PENDING",
+      "refsChecked": [
+        "trunk@ef16fa087ad872f9d266ecde8b72ef813cb9ca82",
+        "branches@refs/heads/* audited 2026-07-12",
+        "worktrees@git-worktree-list audited 2026-07-12"
+      ]
+    },
+    {
+      "id": "full-backup-export-restore",
+      "domain": "recovery",
+      "claim": "Settings exposes a secret-free full backup/export and restore.",
+      "surfaceLocators": [
+        {
+          "path": "frontend/app/stationui.js",
+          "needle": "STATION BACKUP"
+        }
+      ],
+      "authorityChecks": [
+        {
+          "kind": "contains",
+          "path": "frontend/app/backup.js",
+          "needle": "async function exportAll()"
+        },
+        {
+          "kind": "contains",
+          "path": "sidecar/configexport.js",
+          "needle": "SECRET"
+        }
+      ],
+      "verdict": "PARTIAL",
+      "disposition": "COMPLETE",
+      "ownerWave": "W3",
+      "qualification": "The full engine exists but Settings reaches only the smaller station backup surface.",
+      "liveProofRequired": true,
+      "liveProof": "PENDING",
+      "refsChecked": [
+        "trunk@ef16fa087ad872f9d266ecde8b72ef813cb9ca82",
+        "branches@refs/heads/* audited 2026-07-12",
+        "worktrees@git-worktree-list audited 2026-07-12"
+      ]
+    },
+    {
+      "id": "three-platform-release-pipeline",
+      "domain": "release",
+      "claim": "Windows, macOS, and Linux ship from one updater-signed release pipeline.",
+      "surfaceLocators": [
+        {
+          "path": "INSTALL.md",
+          "needle": "StarNet desktop ships for **Windows, macOS, and Linux**"
+        }
+      ],
+      "authorityChecks": [
+        {
+          "kind": "contains",
+          "path": ".github/workflows/release-train.yml",
+          "needle": "name: release-train"
+        },
+        {
+          "kind": "contains",
+          "path": "src-tauri/tauri.conf.json",
+          "needle": "endpoints"
+        }
+      ],
+      "verdict": "PARTIAL",
+      "disposition": "COMPLETE",
+      "ownerWave": "W7",
+      "qualification": "Pipeline configuration exists; clean installed proof for every artifact is absent.",
+      "liveProofRequired": true,
+      "liveProof": "PENDING",
+      "refsChecked": [
+        "trunk@ef16fa087ad872f9d266ecde8b72ef813cb9ca82",
+        "branches@refs/heads/* audited 2026-07-12",
+        "worktrees@git-worktree-list audited 2026-07-12"
+      ]
+    },
+    {
+      "id": "self-update-verified",
+      "domain": "release",
+      "claim": "Every platform self-updates and everything advertised is verified live.",
+      "surfaceLocators": [
+        {
+          "path": "docs/DOWNLOAD_PAGE.md",
+          "needle": "StarNet keeps itself up to date"
+        }
+      ],
+      "authorityChecks": [
+        {
+          "kind": "contains",
+          "path": "frontend/app/updates.js",
+          "needle": "autoCheck: false"
+        },
+        {
+          "kind": "contains",
+          "path": "docs/RELEASE_NOTES_v1.0.0_DRAFT.md",
+          "needle": "Everything below ships working, verified"
+        }
+      ],
+      "verdict": "REFUTED",
+      "disposition": "NARROW",
+      "ownerWave": "W7",
+      "qualification": "Automatic checks default off and the blanket verified-live statement lacks installed evidence.",
+      "liveProofRequired": true,
+      "liveProof": "PENDING",
+      "refsChecked": [
+        "trunk@ef16fa087ad872f9d266ecde8b72ef813cb9ca82",
+        "branches@refs/heads/* audited 2026-07-12",
+        "worktrees@git-worktree-list audited 2026-07-12"
+      ]
+    },
+    {
+      "id": "free-no-markup-budget-caps",
+      "domain": "release",
+      "claim": "The app is free/no-markup and enforces configurable spend caps.",
+      "surfaceLocators": [
+        {
+          "path": "TERMS.md",
+          "needle": "StarNet does not resell model access"
+        }
+      ],
+      "authorityChecks": [
+        {
+          "kind": "contains",
+          "path": "sidecar/index.js",
+          "needle": "BUDGET_CAP_KEYS"
+        },
+        {
+          "kind": "contains",
+          "path": "frontend/app/stationui.js",
+          "needle": "Hard money limits your agents cannot exceed"
+        }
+      ],
+      "verdict": "SHIPPED",
+      "disposition": "PROVEN",
+      "ownerWave": "W6",
+      "qualification": "Budget enforcement exists; free/no-markup remains an owner business-policy claim.",
+      "liveProofRequired": true,
+      "liveProof": "PENDING",
+      "refsChecked": [
+        "trunk@ef16fa087ad872f9d266ecde8b72ef813cb9ca82",
+        "branches@refs/heads/* audited 2026-07-12",
+        "worktrees@git-worktree-list audited 2026-07-12"
+      ]
+    },
+    {
+      "id": "one-click-estop",
+      "domain": "security",
+      "claim": "One E-STOP halts every live run and durable Night Shift activity.",
+      "surfaceLocators": [
+        {
+          "path": "docs/DOWNLOAD_PAGE.md",
+          "needle": "a one-click halt that stops"
+        }
+      ],
+      "authorityChecks": [
+        {
+          "kind": "contains",
+          "path": "frontend/app/safety.js",
+          "needle": "Harness.haltAll"
+        },
+        {
+          "kind": "contains",
+          "path": "sidecar/nightshift.js",
+          "needle": "haltedAt"
+        }
+      ],
+      "verdict": "SHIPPED",
+      "disposition": "PROVEN",
+      "ownerWave": "W0",
+      "qualification": "Durable halt and UI control are already shipped; do not rebuild.",
+      "liveProofRequired": true,
+      "liveProof": "PENDING",
+      "refsChecked": [
+        "trunk@ef16fa087ad872f9d266ecde8b72ef813cb9ca82",
+        "branches@refs/heads/* audited 2026-07-12",
+        "worktrees@git-worktree-list audited 2026-07-12"
+      ]
+    }
+  ],
+  "waveVerdicts": [
+    {
+      "id": "W2-secret-free-child-env",
+      "wave": "W2",
+      "item": "Secret-free child environments across every child execution path.",
+      "verdict": "PARTIAL",
+      "disposition": "FIX",
+      "ownerWave": "W2",
+      "qualification": "MCP stdio builds a bounded child env, while shell/browser/computer/desktop retain ambient process access.",
+      "authorityChecks": [
+        {
+          "kind": "contains",
+          "path": "sidecar/mcp/transport.stdio.js",
+          "needle": "ambient process.env is not inherited wholesale"
+        },
+        {
+          "kind": "contains",
+          "path": "sidecar/tools/builtin/browser.js",
+          "needle": "env = env || process.env"
+        }
+      ],
+      "refsChecked": [
+        "trunk@ef16fa087ad872f9d266ecde8b72ef813cb9ca82",
+        "branches@agent/pp-child-env c26c8ee8",
+        "worktrees@git-worktree-list audited 2026-07-12"
+      ]
+    },
+    {
+      "id": "W2-dns-safe-navigation",
+      "wave": "W2",
+      "item": "Shared DNS-aware and rebinding-safe web/browser navigation.",
+      "verdict": "PARTIAL",
+      "disposition": "FIX",
+      "ownerWave": "W2",
+      "qualification": "web_fetch resolves DNS; browser.navigate checks URL syntax/host classes without DNS resolution.",
+      "authorityChecks": [
+        {
+          "kind": "contains",
+          "path": "sidecar/tools/builtin/web.js",
+          "needle": "dns.promises.lookup"
+        },
+        {
+          "kind": "absent",
+          "path": "sidecar/tools/builtin/browser.js",
+          "needles": [
+            "dns.promises.lookup",
+            "require('node:dns')"
+          ]
+        }
+      ],
+      "refsChecked": [
+        "trunk@ef16fa087ad872f9d266ecde8b72ef813cb9ca82",
+        "branches@agent/pp-browser-dns 271449d2",
+        "worktrees@git-worktree-list audited 2026-07-12"
+      ]
+    },
+    {
+      "id": "W2-link-junction-containment",
+      "wave": "W2",
+      "item": "Recursive filesystem link/junction containment without check/use escape.",
+      "verdict": "PARTIAL",
+      "disposition": "FIX",
+      "ownerWave": "W2",
+      "qualification": "The path guard checks the deepest existing realpath, but no handle-relative/no-follow boundary closes TOCTOU.",
+      "authorityChecks": [
+        {
+          "kind": "contains",
+          "path": "sidecar/tools/builtin/fs.js",
+          "needle": "deepestExisting"
+        },
+        {
+          "kind": "absent",
+          "path": "sidecar/tools/builtin/fs.js",
+          "needles": [
+            "O_NOFOLLOW",
+            "FILE_FLAG_OPEN_REPARSE_POINT"
+          ]
+        }
+      ],
+      "refsChecked": [
+        "trunk@ef16fa087ad872f9d266ecde8b72ef813cb9ca82",
+        "branches@agent/pp-fs-root 6cf56c14",
+        "worktrees@git-worktree-list audited 2026-07-12"
+      ]
+    },
+    {
+      "id": "W2-channel-pairing",
+      "wave": "W2",
+      "item": "Explicit channel pairing rather than trust-on-first-message ownership.",
+      "verdict": "PARTIAL",
+      "disposition": "FIX",
+      "ownerWave": "W2",
+      "qualification": "The shared adapter still uses trust-on-first-use owner claiming.",
+      "authorityChecks": [
+        {
+          "kind": "contains",
+          "path": "sidecar/channels/adapter.js",
+          "needle": "trust-on-first-use"
+        },
+        {
+          "kind": "contains",
+          "path": "sidecar/channels/adapter.js",
+          "needle": "owner = uid"
+        }
+      ],
+      "refsChecked": [
+        "trunk@ef16fa087ad872f9d266ecde8b72ef813cb9ca82",
+        "branches@agent/pp-pairing-core fef6e4a9; agent/pp-channel-pairing 32571661",
+        "worktrees@git-worktree-list audited 2026-07-12"
+      ]
+    },
+    {
+      "id": "W2-scoped-url-capabilities",
+      "wave": "W2",
+      "item": "Short-lived scoped Workshop/file/SSE URL capabilities with no reusable global query token.",
+      "verdict": "MISSING",
+      "disposition": "FIX",
+      "ownerWave": "W2",
+      "qualification": "SSE and file loads accept the global launch token in the query string.",
+      "authorityChecks": [
+        {
+          "kind": "contains",
+          "path": "sidecar/apiauth.js",
+          "needle": "get('token')"
+        },
+        {
+          "kind": "absent",
+          "path": "sidecar/apiauth.js",
+          "needles": [
+            "scopedCapability",
+            "shortLivedCapability"
+          ]
+        }
+      ],
+      "refsChecked": [
+        "trunk@ef16fa087ad872f9d266ecde8b72ef813cb9ca82",
+        "branches@agent/pp-url-token-elimination 200d75f9",
+        "worktrees@git-worktree-list audited 2026-07-12"
+      ]
+    },
+    {
+      "id": "W2-mcp-mutation-consent",
+      "wave": "W2",
+      "item": "MCP mutating tools require consent while declared read-only tools may auto-run.",
+      "verdict": "SHIPPED",
+      "disposition": "PROVEN",
+      "ownerWave": "W2",
+      "qualification": "MCP translation maps readOnlyHint to requiresConsent.",
+      "authorityChecks": [
+        {
+          "kind": "contains",
+          "path": "sidecar/mcp/translate.js",
+          "needle": "requiresConsent: !readOnly"
+        }
+      ],
+      "refsChecked": [
+        "trunk@ef16fa087ad872f9d266ecde8b72ef813cb9ca82",
+        "branches@agent/pp-catalog-consent f33bae06",
+        "worktrees@git-worktree-list audited 2026-07-12"
+      ]
+    },
+    {
+      "id": "W2-zero-boot-egress",
+      "wave": "W2",
+      "item": "Boot performs zero outbound egress before user consent/configured need.",
+      "verdict": "MISSING",
+      "disposition": "FIX",
+      "ownerWave": "W2",
+      "qualification": "The sidecar warms OpenRouter models at server listen and the frontend loads Google Fonts.",
+      "authorityChecks": [
+        {
+          "kind": "contains",
+          "path": "sidecar/index.js",
+          "needle": "warmModelCatalog().then("
+        },
+        {
+          "kind": "contains",
+          "path": "frontend/index.html",
+          "needle": "fonts.googleapis.com"
+        }
+      ],
+      "refsChecked": [
+        "trunk@ef16fa087ad872f9d266ecde8b72ef813cb9ca82",
+        "branches@refs/heads/* audited 2026-07-12",
+        "worktrees@git-worktree-list audited 2026-07-12"
+      ]
+    },
+    {
+      "id": "W2-channel-token-keychain",
+      "wave": "W2",
+      "item": "Slack/Matrix/Signal join Telegram/Discord keychain durability with read-back before deletion.",
+      "verdict": "PARTIAL",
+      "disposition": "FIX",
+      "ownerWave": "W2",
+      "qualification": "The shell keychain allowlist contains exactly Telegram and Discord.",
+      "authorityChecks": [
+        {
+          "kind": "contains",
+          "path": "src-tauri/src/main.rs",
+          "needle": "const SIDECAR_CHANNEL_TOKEN_ENVS: [(&str, &str); 2]"
+        }
+      ],
+      "refsChecked": [
+        "trunk@ef16fa087ad872f9d266ecde8b72ef813cb9ca82",
+        "branches@agent/pp-secret-foundation cd900f32",
+        "worktrees@git-worktree-list audited 2026-07-12"
+      ]
+    },
+    {
+      "id": "W3-unified-work-ledger",
+      "wave": "W3",
+      "item": "One visible work/deliverables ledger backed by existing stores.",
+      "verdict": "PARTIAL",
+      "disposition": "COMPLETE",
+      "ownerWave": "W3",
+      "qualification": "Workstreams and return cards exist separately; unified browse/search is absent.",
+      "authorityChecks": [
+        {
+          "kind": "contains",
+          "path": "frontend/app/workstreams.js",
+          "needle": "root.Workstreams = api"
+        },
+        {
+          "kind": "contains",
+          "path": "frontend/app/chat.js",
+          "needle": "END-OF-RUN RECAP"
+        }
+      ],
+      "refsChecked": [
+        "trunk@ef16fa087ad872f9d266ecde8b72ef813cb9ca82",
+        "branches@refs/heads/* audited 2026-07-12",
+        "worktrees@git-worktree-list audited 2026-07-12"
+      ]
+    },
+    {
+      "id": "W3-cold-boot-recap",
+      "wave": "W3",
+      "item": "Cold boot/return recap from existing durable stores.",
+      "verdict": "SHIPPED",
+      "disposition": "PROVEN",
+      "ownerWave": "W3",
+      "qualification": "Return and morning-report stores already hydrate and render recap paths.",
+      "authorityChecks": [
+        {
+          "kind": "contains",
+          "path": "frontend/app/nightreportstore.js",
+          "needle": "nightreport.compose()"
+        },
+        {
+          "kind": "contains",
+          "path": "frontend/app/returnstore.js",
+          "needle": "while-away"
+        }
+      ],
+      "refsChecked": [
+        "trunk@ef16fa087ad872f9d266ecde8b72ef813cb9ca82",
+        "branches@refs/heads/* audited 2026-07-12",
+        "worktrees@git-worktree-list audited 2026-07-12"
+      ]
+    },
+    {
+      "id": "W3-settings-full-export",
+      "wave": "W3",
+      "item": "Settings exposes Backup.exportAll.",
+      "verdict": "PARTIAL",
+      "disposition": "COMPLETE",
+      "ownerWave": "W3",
+      "qualification": "Backup.exportAll exists, but the Settings control is the smaller station backup.",
+      "authorityChecks": [
+        {
+          "kind": "contains",
+          "path": "frontend/app/backup.js",
+          "needle": "async function exportAll()"
+        },
+        {
+          "kind": "absent",
+          "path": "frontend/app/stationui.js",
+          "needles": [
+            "Backup.exportAll("
+          ]
+        }
+      ],
+      "refsChecked": [
+        "trunk@ef16fa087ad872f9d266ecde8b72ef813cb9ca82",
+        "branches@refs/heads/* audited 2026-07-12",
+        "worktrees@git-worktree-list audited 2026-07-12"
+      ]
+    },
+    {
+      "id": "W3-settings-base-url",
+      "wave": "W3",
+      "item": "Settings can edit the custom/Ollama base URL after onboarding.",
+      "verdict": "MISSING",
+      "disposition": "FIX",
+      "ownerWave": "W3",
+      "qualification": "Harness.setBaseUrl exists only in onboarding paths.",
+      "authorityChecks": [
+        {
+          "kind": "contains",
+          "path": "frontend/app/harness.js",
+          "needle": "const setBaseUrl ="
+        },
+        {
+          "kind": "absent",
+          "path": "frontend/app/stationui.js",
+          "needles": [
+            "Harness.setBaseUrl("
+          ]
+        }
+      ],
+      "refsChecked": [
+        "trunk@ef16fa087ad872f9d266ecde8b72ef813cb9ca82",
+        "branches@refs/heads/* audited 2026-07-12",
+        "worktrees@git-worktree-list audited 2026-07-12"
+      ]
+    },
+    {
+      "id": "W4-run-mode-capability-matrix",
+      "wave": "W4",
+      "item": "Direct, scheduled, channel, Night Shift, and delegated modes have an evidence-backed capability matrix.",
+      "verdict": "PARTIAL",
+      "disposition": "COMPLETE",
+      "ownerWave": "W4",
+      "qualification": "Individual posture/capability engines exist; a complete enforced/not-enforced decision list is not yet authority.",
+      "authorityChecks": [
+        {
+          "kind": "contains",
+          "path": "frontend/app/autonomy.js",
+          "needle": "function cadencePresets()"
+        },
+        {
+          "kind": "contains",
+          "path": "sidecar/capability/resolve.js",
+          "needle": "function resolveTools"
+        }
+      ],
+      "refsChecked": [
+        "trunk@ef16fa087ad872f9d266ecde8b72ef813cb9ca82",
+        "branches@refs/heads/* audited 2026-07-12",
+        "worktrees@git-worktree-list audited 2026-07-12"
+      ]
+    },
+    {
+      "id": "W5-after-close-continuation",
+      "wave": "W5",
+      "item": "Work continues after the desktop app closes.",
+      "verdict": "REFUTED",
+      "disposition": "NARROW",
+      "ownerWave": "W5",
+      "qualification": "Single-process desktop ownership means close stops the sidecar; this is a copy-honesty fix.",
+      "authorityChecks": [
+        {
+          "kind": "contains",
+          "path": "frontend/app/stationui.js",
+          "needle": "even with this window (and the app) closed"
+        },
+        {
+          "kind": "absent",
+          "path": "src-tauri/src/main.rs",
+          "needles": [
+            "TrayIcon",
+            "SystemTray"
+          ]
+        }
+      ],
+      "refsChecked": [
+        "trunk@ef16fa087ad872f9d266ecde8b72ef813cb9ca82",
+        "branches@refs/heads/* audited 2026-07-12",
+        "worktrees@git-worktree-list audited 2026-07-12"
+      ]
+    },
+    {
+      "id": "W5-unified-composer",
+      "wave": "W5",
+      "item": "All autonomous lanes share one commander-context composer.",
+      "verdict": "MISSING",
+      "disposition": "COMPLETE",
+      "ownerWave": "W5",
+      "qualification": "Context pack, dossier, goals, recall, and threads remain separate composition paths.",
+      "authorityChecks": [
+        {
+          "kind": "absent",
+          "paths": [
+            "sidecar/",
+            "frontend/app/"
+          ],
+          "needles": [
+            "commander-context-composer",
+            "composeCommanderContext"
+          ]
+        }
+      ],
+      "refsChecked": [
+        "trunk@ef16fa087ad872f9d266ecde8b72ef813cb9ca82",
+        "branches@refs/heads/* audited 2026-07-12",
+        "worktrees@git-worktree-list audited 2026-07-12"
+      ]
+    },
+    {
+      "id": "W5-rejected-idea-suppression",
+      "wave": "W5",
+      "item": "Rejected ideas are suppressed and optional reasons feed the unified understanding.",
+      "verdict": "PARTIAL",
+      "disposition": "COMPLETE",
+      "ownerWave": "W5",
+      "qualification": "Thread-level permanent suppression and reason fields exist, but the unified composer is absent.",
+      "authorityChecks": [
+        {
+          "kind": "contains",
+          "path": "sidecar/threads-store.js",
+          "needle": "declineReason"
+        },
+        {
+          "kind": "contains",
+          "path": "sidecar/threads-store.js",
+          "needle": "NEVER re-proposed"
+        }
+      ],
+      "refsChecked": [
+        "trunk@ef16fa087ad872f9d266ecde8b72ef813cb9ca82",
+        "branches@refs/heads/* audited 2026-07-12",
+        "worktrees@git-worktree-list audited 2026-07-12"
+      ]
+    },
+    {
+      "id": "W6-real-integration-lifecycle",
+      "wave": "W6",
+      "item": "Every advertised provider/channel/MCP integration has real connect/fail/revoke evidence.",
+      "verdict": "MISSING",
+      "disposition": "COMPLETE",
+      "ownerWave": "W6",
+      "qualification": "No exhaustive installed real-credential lifecycle receipt exists.",
+      "authorityChecks": [
+        {
+          "kind": "absent",
+          "paths": [
+            "qa/installed/",
+            "test/"
+          ],
+          "needles": [
+            "real-integration-lifecycle-receipt",
+            "installed-integration-lifecycle-pass"
+          ]
+        }
+      ],
+      "refsChecked": [
+        "trunk@ef16fa087ad872f9d266ecde8b72ef813cb9ca82",
+        "branches@refs/heads/* audited 2026-07-12",
+        "worktrees@git-worktree-list audited 2026-07-12"
+      ]
+    }
+  ],
+  "doNotRebuild": [
+    {
+      "id": "durable-estop-halt",
+      "action": "DO_NOT_REBUILD",
+      "verdict": "SHIPPED",
+      "disposition": "PROVEN",
+      "ownerWave": "W0",
+      "qualification": "Durable Night Shift halt is already implemented and test-covered.",
+      "authorityChecks": [
+        {
+          "kind": "contains",
+          "path": "sidecar/nightshift.js",
+          "needle": "haltedAt"
+        }
+      ],
+      "refsChecked": [
+        "trunk@ef16fa087ad872f9d266ecde8b72ef813cb9ca82",
+        "branches@refs/heads/* audited 2026-07-12",
+        "worktrees@git-worktree-list audited 2026-07-12"
+      ]
+    },
+    {
+      "id": "consent-visibility",
+      "action": "DO_NOT_REBUILD",
+      "verdict": "SHIPPED",
+      "disposition": "PROVEN",
+      "ownerWave": "W0",
+      "qualification": "Background pending consent already receives an explicit visible marker/notification.",
+      "authorityChecks": [
+        {
+          "kind": "contains",
+          "path": "frontend/app/app.js",
+          "needle": "pending consent gets an EXPLICIT marker"
+        }
+      ],
+      "refsChecked": [
+        "trunk@ef16fa087ad872f9d266ecde8b72ef813cb9ca82",
+        "branches@refs/heads/* audited 2026-07-12",
+        "worktrees@git-worktree-list audited 2026-07-12"
+      ]
+    },
+    {
+      "id": "night-beat-leash-pre-spend",
+      "action": "DO_NOT_REBUILD",
+      "verdict": "SHIPPED",
+      "disposition": "PROVEN",
+      "ownerWave": "W0",
+      "qualification": "Night Shift readiness stands down before spending a leash unit.",
+      "authorityChecks": [
+        {
+          "kind": "contains",
+          "path": "sidecar/nightshift-driver.js",
+          "needle": "COLD-LEASH FIX"
+        }
+      ],
+      "refsChecked": [
+        "trunk@ef16fa087ad872f9d266ecde8b72ef813cb9ca82",
+        "branches@refs/heads/* audited 2026-07-12",
+        "worktrees@git-worktree-list audited 2026-07-12"
+      ]
+    },
+    {
+      "id": "api-version-truth",
+      "action": "DO_NOT_REBUILD",
+      "verdict": "SHIPPED",
+      "disposition": "PROVEN",
+      "ownerWave": "W0",
+      "qualification": "The honest /api/version handler already exists.",
+      "authorityChecks": [
+        {
+          "kind": "contains",
+          "path": "sidecar/index.js",
+          "needle": "req.url === '/api/version'"
+        }
+      ],
+      "refsChecked": [
+        "trunk@ef16fa087ad872f9d266ecde8b72ef813cb9ca82",
+        "branches@refs/heads/* audited 2026-07-12",
+        "worktrees@git-worktree-list audited 2026-07-12"
+      ]
+    },
+    {
+      "id": "degraded-workspace-200",
+      "action": "DO_NOT_REBUILD",
+      "verdict": "SHIPPED",
+      "disposition": "PROVEN",
+      "ownerWave": "W0",
+      "qualification": "The locked degraded-save contract is HTTP 200 with ok:false,degraded:true.",
+      "authorityChecks": [
+        {
+          "kind": "contains",
+          "path": "sidecar/index.js",
+          "needle": "return json(200, { ok: false, error: 'workspace written by newer StarNet', degraded: true })"
+        }
+      ],
+      "refsChecked": [
+        "trunk@ef16fa087ad872f9d266ecde8b72ef813cb9ca82",
+        "branches@refs/heads/* audited 2026-07-12",
+        "worktrees@git-worktree-list audited 2026-07-12"
+      ]
+    }
+  ]
+}
