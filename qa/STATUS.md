@@ -1,5 +1,9 @@
 # QA STATION — dashboard
 
+**2026-07-12 merge digest:** `agent/codex-input-isolation` → `feat/harness-backend` at `cf7984ba`;
+`test:fast` 315/315, full `test:http`, and Rust all-target checks are green; the 0.4.2 bundle was
+built, while signing, reinstall, and installed-app proof remain pending.
+
 One-page status for the Self-Testing Station crew. Scripts detect + write findings to
 `qa/findings/`; sessions (Overseer) read the ledger, judge, and notify. The live
 per-crew roll-up below can be regenerated any time with:

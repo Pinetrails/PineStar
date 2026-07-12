@@ -1,6 +1,6 @@
 # NEXT.md — current priorities & task queue
 
-## BUILT 2026-07-12 — PER-RUN PHYSICAL-INPUT ISOLATION (`agent/codex-input-isolation`, awaiting merge)
+## MERGED 2026-07-12 — PER-RUN PHYSICAL-INPUT ISOLATION (`cf7984ba`)
 
 Transcript-first forensics changed the diagnosis. FPS stream `ws_mrhb6bm3cpz4` made zero
 `computer.use` calls and launched no headed test browser. Shell-authored Puppeteer/CDP clicked
@@ -59,10 +59,15 @@ current machine has no available container/sandbox worker. Do not advertise the 
 shipped; do not enable unattended local execution while that boundary is absent.
 
 Ship blockers:
-- [x] `test:fast` 313/313, full `test:http`, and `cargo check --locked --all-targets` green.
-- [ ] Merge through the controller, rebuild/reinstall the desktop app, then run a real installed FPS
-      agent task while the Win32 observer spans the entire run and browser teardown; grep its new
-      transcript for `browser.test_*` and absence of shell browser / `computer.use` / `desktop.open`.
+- [x] Merged through the controller at `cf7984ba`; the merged tree is byte-identical to the reviewed
+      feature head. `test:fast` 315/315, full `test:http`, and
+      `cargo check --locked --all-targets` are green on trunk.
+- [x] Rebuilt the trunk 0.4.2 desktop executable and NSIS bundle. The source, release, and debug
+      sidecars match and contain no Win32 physical-input driver symbols. Artifact signing stopped
+      because `TAURI_SIGNING_PRIVATE_KEY` is unavailable; the already-created local bundle is unsigned.
+- [ ] Sign/reinstall the desktop app, then run a real installed FPS agent task while the Win32 observer
+      spans the entire run and browser teardown; grep its new transcript for `browser.test_*` and
+      absence of shell browser / `computer.use` / `desktop.open`.
 - [ ] Phase-5 computer evidence deliberately remains `blocked` until that installed receipt exists.
 
 ## LANDED 2026-07-12 — BOOT/SHUTDOWN MOUSE-CONFINEMENT GUARDRAILS (merged as `c069cba3`)
