@@ -7,14 +7,14 @@
 
    This ledger closes the gap ACROSS process death: every long-lived child is recorded to a JSON file the moment
    it spawns and released when it exits. On the NEXT sidecar boot, sweep() reads what the previous life left
-   behind, re-probes each PID, and kills only processes whose live command line still matches what we recorded
-   (PID-reuse guard — a recycled PID belonging to some innocent user process is dropped, never killed).
+   behind, re-probes each PID, and uses exact (PID, OS creation-time) identity wherever the OS probe supplies it.
+   Unpinned/legacy entries fall back to command matching; a recycled PID is dropped, never killed.
 
    PURE deps (fs/clock/probe/kill injected) so it is headless-testable; real win32/posix probes are built from
    an injected execFile only when not supplied.
 
      makeProcLedger({ fs, pathMod, file, clock, isWin?, execFile?, probe?, killTree?, log? }) ->
-       { record({pid,cmd,kind?}), release(pid), sweep() -> Promise<summary>, list(), _internals } */
+       { record({pid,cmd,kind?}), pinIdentity(pid), release(pid), sweep() -> Promise<summary>, list(), _internals } */
 'use strict';
 (function (root, factory) {
   const api = factory();
@@ -25,10 +25,6 @@
 
   const WIN = (typeof process !== 'undefined' && process.platform) === 'win32';
   const MAX_ENTRIES = 100;
-  // A live process whose start time is more than this AFTER our recorded startedAt is a recycled PID, not our
-  // orphan. record() runs just after spawn, so our real child's start time is ~always < startedAt; the margin only
-  // absorbs clock resolution. Generous on purpose — we would rather skip a real orphan than kill the user's process.
-  const REUSE_MARGIN_MS = 5000;
 
   // normalize for the reuse-guard match: collapse whitespace, strip quoting, lowercase.
   function normCmd(s) { return String(s == null ? '' : s).replace(/["']/g, '').replace(/\s+/g, ' ').trim().toLowerCase(); }
@@ -106,6 +102,7 @@
 
     let live = [];    // entries recorded by THIS process life
     let stale = [];   // entries a previous life left behind (consumed by sweep)
+    const pinning = new Map();
     try {
       const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
       stale = (raw && Array.isArray(raw.procs) ? raw.procs : []).filter(r => r && Number(r.pid) > 0 && r.cmd);
@@ -124,10 +121,39 @@
       o = o || {};
       const pid = Number(o.pid);
       if (!(pid > 0)) return null;
-      const entry = { pid, cmd: String(o.cmd || '').slice(0, 400), kind: String(o.kind || 'proc'), startedAt: now() };
+      // cmd may already be redacted by the caller. Plaintext argv is not durable identity: pinIdentity() records
+      // the kernel-reported creation time after spawn, making (pid, created) the exact identity instead.
+      const entry = { pid, cmd: String(o.cmd || '').slice(0, 400), kind: String(o.kind || 'proc'), startedAt: now(), created: null };
       live = live.filter(r => r.pid !== pid).concat([entry]).slice(-MAX_ENTRIES);
       save();
+      // All callers (including browser children) get exact identity. Callers may also await pinIdentity(pid);
+      // concurrent requests dedupe onto the same probe below.
+      Promise.resolve(pinIdentity(pid)).catch(() => {});
       return entry;
+    }
+
+    // Pin the exact OS identity after spawn without persisting the real command line (which can contain secrets).
+    // Failure is deliberately safe: the entry remains unpinned and sweep() falls back to the legacy cmd guard.
+    async function pinIdentity(pid) {
+      pid = Number(pid);
+      const entry = live.find(r => r.pid === pid);
+      if (!entry) return null;
+      if (Number(entry.created) > 0) return Number(entry.created);
+      if (pinning.has(pid)) return pinning.get(pid);
+      const work = (async () => {
+        let alive;
+        try { alive = await probe([pid]); } catch (_) { return null; }
+        const info = alive && alive.get ? alive.get(pid) : null;
+        const created = (info && typeof info === 'object') ? Number(info.created) : NaN;
+        if (!(created > 0) || live.indexOf(entry) < 0) return null;
+        // record() runs after spawn. A later creation time means the PID already recycled during the probe.
+        if (Number(entry.startedAt) > 0 && created > Number(entry.startedAt)) return null;
+        entry.created = created;
+        save();
+        return created;
+      })();
+      pinning.set(pid, work);
+      try { return await work; } finally { if (pinning.get(pid) === work) pinning.delete(pid); }
     }
 
     function release(pid) {
@@ -153,10 +179,16 @@
         // tolerate both probe shapes: the string form (older/injected probes) and the {cmd, created} form.
         const liveCmd = (typeof info === 'string') ? info : (info && info.cmd) || '';
         const created = (info && typeof info === 'object') ? info.created : null;
-        if (!cmdMatches(r.cmd, liveCmd)) { summary.reused++; continue; }   // PID recycled by an unrelated process — never kill
-        // creation-time guard: a process that started meaningfully AFTER we recorded this entry is a recycled PID,
-        // not our orphan — never kill it, even though its command line matched (protects the user's own process).
-        if (created != null && Number(r.startedAt) > 0 && created > Number(r.startedAt) + REUSE_MARGIN_MS) { summary.reused++; continue; }
+        const pinnedCreated = Number(r.created);
+        if (pinnedCreated > 0) {
+          // Exact identity wins over argv: the stored command may be redacted. Missing or +1ms-different creation
+          // time is a recycled/uncertain PID and is NEVER killed.
+          if (!(Number(created) > 0) || Number(created) !== pinnedCreated) { summary.reused++; continue; }
+        } else {
+          if (!cmdMatches(r.cmd, liveCmd)) { summary.reused++; continue; }   // legacy/unpinned entry
+          // record() happens after spawn, so even 1ms newer than startedAt is not our original child.
+          if (created != null && Number(r.startedAt) > 0 && Number(created) > Number(r.startedAt)) { summary.reused++; continue; }
+        }
         try { await killTree(r.pid); summary.killed++; log('[proc-ledger] reaped orphan ' + r.kind + ' pid=' + r.pid + ' (' + String(r.cmd).slice(0, 80) + ')'); } catch (_) {}
       }
       save();
@@ -165,7 +197,7 @@
 
     function list() { return stale.concat(live).map(r => Object.assign({}, r)); }
 
-    return { record, release, sweep, list, _internals: { save, cmdMatches, normCmd } };
+    return { record, pinIdentity, release, sweep, list, _internals: { save, cmdMatches, normCmd } };
   }
 
   return { makeProcLedger, _internals: { normCmd, cmdMatches, makeWin32Probe, makePosixProbe, makeKillTree } };

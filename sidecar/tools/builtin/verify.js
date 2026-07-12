@@ -64,7 +64,8 @@
         }
         const deny = escapesWorkspace(cmd);
         if (deny) throw new Error('refused: ' + deny);
-        const safetyDeny = commandSafetyRisk(cmd, { cwd: hostCwd, fs: fs, pathMod: P });
+        const safetyDeny = commandSafetyRisk(cmd, { cwd: hostCwd, fs: fs, pathMod: P,
+          dialect: environment && environment.backendId !== 'local' ? 'posix' : (isWin ? 'cmd' : 'posix'), isWin: isWin });
         if (safetyDeny) throw new Error('refused [' + safetyDeny.kind + ']: this check ' + safetyDeny.reason + '. verify.run cannot change the user\'s screen, session, processes, input, or network exposure; use browser.test_* for local UI/game verification.');
         if (!environment) { try { fs.mkdirSync(cwd, { recursive: true }); } catch (_) {} }
         const timeoutMs = clamp((args && args.timeoutMs) || DEFAULT_MS, 1000, MAX_MS);

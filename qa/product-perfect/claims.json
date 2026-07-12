@@ -18,8 +18,8 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "1937613e3deb92912c8cdb17d2eefa0744271683",
-    "pathSetSha256": "268ce5981e8b6049b7eade5ef9cbf89f1cfba0a7b4eed108d6657ad0b03b3177",
+    "sourceCommit": "cd5c73493e6a064c2769b2f815ad229970cba3ff",
+    "pathSetSha256": "1838850606dd5ff7446f89767cc83ba394384f7e3cdcc981f3b820a4fe448d4a",
     "files": [
       {
         "path": "INSTALL.md",
@@ -63,8 +63,8 @@
       },
       {
         "path": "frontend/app/app.js",
-        "bytes": 237061,
-        "sha256": "1fd1fc155053adf1d74b819d9d7ec8545c8ceabf9aee938f4fce697e251630f6"
+        "bytes": 237885,
+        "sha256": "249129b23a79953c9aa80776ddb0534acb6a0318c56ee22946c1e1a14bb9d42c"
       },
       {
         "path": "frontend/app/armconfirm.js",
@@ -622,9 +622,14 @@
         "sha256": "674a1a1877c83997d797a5f8ae53016c2f772c26ec47488ef0ec3af4b1bd6142"
       },
       {
+        "path": "frontend/app/titlebar.js",
+        "bytes": 6417,
+        "sha256": "902a158c709a0161d4ffca14b2892d832136792e9564dbd61cfdd7abd1f60b5f"
+      },
+      {
         "path": "frontend/app/toolprops.js",
-        "bytes": 3223,
-        "sha256": "b1010918bc148547f1eecf207f8b88a0a1a6d181907a07d060fccff582c37c21"
+        "bytes": 3241,
+        "sha256": "6854b810c2aab1b8bced197e955b1f54bf64aff84ba1a73075d02d06002f00a5"
       },
       {
         "path": "frontend/app/topbar.js",
@@ -708,8 +713,8 @@
       },
       {
         "path": "frontend/app/workshopstore.js",
-        "bytes": 16231,
-        "sha256": "cc259c1ddc0416e0830c75b7a59b723f36b99cf27389ee57d50fa83abbf3c377"
+        "bytes": 16735,
+        "sha256": "62be1a6a6d0bd85b3915727a314b5d96e2038e4bce4999b8bd39e6904625dc99"
       },
       {
         "path": "frontend/app/worksignal.js",
@@ -728,8 +733,8 @@
       },
       {
         "path": "frontend/app/world.js",
-        "bytes": 435859,
-        "sha256": "c056b71464a1e49f2d83a9cbb6cca216355ed530cab5ff354ae9070237223362"
+        "bytes": 439930,
+        "sha256": "746f879124443cc9088ab9e2ee8f493a22f06df0c210b8c58f1c249b3804412b"
       },
       {
         "path": "frontend/app/worldmodel.js",
@@ -787,6 +792,11 @@
         "sha256": "33e94c0d2e5421fa0004b261d33dfdd7902a74a9bf8110debd18e03e6e4ae75d"
       },
       {
+        "path": "frontend/css/titlebar.css",
+        "bytes": 3914,
+        "sha256": "05f136ec51bf13b37010eda6a93fcc7f4c7178391f4b343c6d1ba257b9cb0221"
+      },
+      {
         "path": "frontend/css/topbar.css",
         "bytes": 5261,
         "sha256": "2396ccd88954baabfbccf38ca0abc28c8b454914725c809c2fed94e245d6c45a"
@@ -808,8 +818,8 @@
       },
       {
         "path": "frontend/index.html",
-        "bytes": 55710,
-        "sha256": "88058d6230534339c9a2712789227b9d56fa415898e475df2171814ef40d14ea"
+        "bytes": 56071,
+        "sha256": "4f8e2e234584cc9ef39b0422ce3a17e81d6226fec41cb80cb9c99d44606b4968"
       },
       {
         "path": "frontend/js/arcade.js",
@@ -1471,7 +1481,7 @@
         {
           "kind": "contains",
           "path": "frontend/app/autonomy.js",
-          "needle": "run free toward my goals while i’m away"
+          "needle": "run free toward my goals while i\u2019m away"
         },
         {
           "kind": "contains",
@@ -2317,7 +2327,7 @@
         "trunk@ef16fa087ad872f9d266ecde8b72ef813cb9ca82",
         "branches@agent/pp-catalog-consent f33bae06",
         "worktrees@git-worktree-list audited 2026-07-12",
-        "branch@agent/codex-input-isolation 1937613e"
+        "branch@agent/codex-input-isolation a439c164"
       ]
     },
     {

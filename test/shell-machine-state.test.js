@@ -6,6 +6,7 @@
    happen to contain a scary substring must stay allowed. Pure predicate, no spawning, fast gate. */
 'use strict';
 const A = require('./_assert.js');
+const path = require('path');
 const shell = require('../sidecar/tools/builtin/shell.js');
 const { breaksMachineState, exposesNetwork, opensVisibleWindow } = shell;
 
@@ -74,11 +75,20 @@ A.eq(breaksMachineState(''), null, 'empty command not a machine trip');
 // ---- BYPASS HARDENING (code-review 2026-07-12): dangerous verbs hidden behind a launcher, separator, or
 //      interpreter must still be caught (command-head splitting), and false-positive rework must hold. ----
 A.ok(breaksMachineState('powershell -Command "shutdown /r /t 0"'), 'powershell -Command shutdown blocked');
+A.ok(breaksMachineState('powershell /Command "shutdown /r /t 0"'), 'powershell slash /Command shutdown blocked');
+A.ok(breaksMachineState('powershell shutdown /r /t 0'), 'PowerShell default command payload shutdown blocked');
+A.eq(breaksMachineState('powershell Write-Output STARNET_SAFE'), null, 'safe PowerShell default command payload allowed');
+A.ok(breaksMachineState('cmd /c "shutdown /r /t 0"'), 'quoted whole cmd /c shutdown payload blocked');
 A.ok(breaksMachineState('powershell -NoProfile -Command "Stop-Computer"'), 'powershell -Command Stop-Computer blocked');
 A.ok(breaksMachineState('pwsh -c "Restart-Computer"'), 'pwsh -c Restart-Computer blocked');
 A.ok(breaksMachineState('sh -c "shutdown -h now"'), 'sh -c shutdown blocked');
 A.ok(breaksMachineState('bash -c reboot'), 'bash -c reboot blocked');
 A.ok(breaksMachineState('Start-Process shutdown -ArgumentList /r'), 'Start-Process shutdown blocked');
+A.ok(breaksMachineState('Start-Process -NoNewWindow -FilePath shutdown -ArgumentList /r'), 'Start-Process options before -FilePath shutdown blocked');
+A.ok(breaksMachineState('powershell -Command "Start-Process -WorkingD . shutdown /r"'), 'Start-Process accepted -WorkingDirectory abbreviation consumes its value before shutdown');
+A.ok(breaksMachineState('powershell -Command "Start-Process -FilePath:shutdown -ArgumentList /r"'), 'Start-Process inline -FilePath:value treats value as executable');
+A.ok(breaksMachineState('powershell -Command "Start-Process -F:shutdown -ArgumentList /r"'), 'Start-Process abbreviated inline -F:value treats value as executable');
+A.ok(breaksMachineState('powershell -Command "Start-Process -FilePath=shutdown -ArgumentList /r"'), 'Start-Process inline -FilePath=value is parsed fail-closed');
 A.ok(breaksMachineState('echo hi\nshutdown /r'), 'newline-separated shutdown blocked');
 A.ok(breaksMachineState('foo & reg add HKCU\\x /v y /d z'), 'reg add after & blocked');
 A.ok(breaksMachineState('powershell -e UwB0AG8AcAAtAENvbXB1dGVy'), 'powershell -e (base64 encoded) blocked outright');
@@ -90,6 +100,122 @@ A.eq(breaksMachineState('grep -c pattern file.txt'), null, 'grep -c (count flag)
 A.eq(breaksMachineState('powershell -ExecutionPolicy Bypass -File build.ps1'), null, 'powershell -ExecutionPolicy -File is NOT an encoded command');
 A.eq(breaksMachineState('schtasks /query /tn x'), null, 'schtasks /query (read-only) allowed');
 A.eq(breaksMachineState('echo restart-computer is a cmdlet'), null, 'the WORDS in an echo arg (no cmdlet at head) allowed');
+A.eq(breaksMachineState('echo Start-Process shutdown /r'), null, 'Start-Process words in echo output are not a launcher');
+if (process.platform === 'win32') A.eq(breaksMachineState('echo ^& shutdown /r'), null, 'cmd caret-escaped separator stays echo data, not a second command');
+if (process.platform === 'win32') {
+  A.ok(breaksMachineState('echo "x^" & shutdown /r /t 0'), 'cmd caret inside double quotes does not escape the closing quote');
+  A.ok(breaksMachineState("echo 'x & shutdown /r /t 0 & rem '"), 'cmd.exe single quotes do not hide command separators');
+  A.eq(breaksMachineState("echo 'x & shutdown /r /t 0 & rem '", 'posix'), null, 'POSIX single quotes still protect separators');
+}
+A.ok(breaksMachineState("echo 'x\\' ; shutdown -h now", 'posix'), 'POSIX backslash is literal inside single quotes and cannot hide shutdown');
+A.ok(breaksMachineState("Write-Output 'x`' ; shutdown -h now", 'powershell'), 'PowerShell backtick is literal inside single quotes and cannot hide shutdown');
+A.eq(breaksMachineState('Write-Output "x`" ; shutdown -h now"', 'powershell'), null, 'PowerShell backtick inside double quotes escapes the quote and keeps shutdown as string data');
+
+// cmd expansion is too broad to emulate safely. Fail closed only when the whole executable head is dynamic.
+A.ok(breaksMachineState('set "STARNET_VERB=shutdown" & call %STARNET_VERB% /r /t 0'), 'call-expanded %VAR% executable head refused');
+A.ok(breaksMachineState('cmd /v:on /c "set STARNET_VERB=shutdown&!STARNET_VERB! /r /t 0"'), 'delayed !VAR! executable head refused');
+A.eq(breaksMachineState('echo %PATH%'), null, 'ordinary percent expansion as an argument remains allowed');
+A.eq(breaksMachineState('echo !STARNET_VERB!'), null, 'ordinary delayed expansion as an argument remains allowed');
+
+// Windows PowerShell accepts every unambiguous prefix below. Drive only a SAFE payload on this host, then assert
+// the parser rejects the same executable switches before an opaque/dangerous payload can ever reach PowerShell.
+const PS_COMMAND_FLAGS = ['-c', '-co', '-com', '-comm', '-comma', '-comman', '-command'];
+const PS_ENCODED_FLAGS = ['-e', '-ec', '-en', '-enc', '-enco', '-encod', '-encode', '-encoded', '-encodedc',
+  '-encodedco', '-encodedcom', '-encodedcomm', '-encodedcomma', '-encodedcomman', '-encodedcommand'];
+const PS_SLASH_COMMAND_FLAGS = PS_COMMAND_FLAGS.map(flag => '/' + flag.slice(1));
+const PS_SLASH_ENCODED_FLAGS = PS_ENCODED_FLAGS.map(flag => '/' + flag.slice(1));
+for (const flag of PS_COMMAND_FLAGS) {
+  A.ok(breaksMachineState('powershell ' + flag + ' "shutdown /r /t 0"'), 'PowerShell ' + flag + ' command abbreviation blocked');
+}
+for (const flag of PS_ENCODED_FLAGS) {
+  A.ok(breaksMachineState('powershell ' + flag + ' UwB0AG8AcAAtAENvbXB1dGVy'), 'PowerShell ' + flag + ' encoded abbreviation blocked');
+}
+for (const flag of PS_SLASH_COMMAND_FLAGS) {
+  A.ok(breaksMachineState('powershell ' + flag + ' "shutdown /r /t 0"'), 'PowerShell ' + flag + ' slash command abbreviation blocked');
+}
+for (const flag of PS_SLASH_ENCODED_FLAGS) {
+  A.ok(breaksMachineState('powershell ' + flag + ' UwB0AG8AcAAtAENvbXB1dGVy'), 'PowerShell ' + flag + ' slash encoded abbreviation blocked');
+}
+if (process.platform === 'win32') {
+  const { spawnSync } = require('child_process');
+  const psExe = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+  const cmdExe = process.env.ComSpec || path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'cmd.exe');
+  const outputLines = (s) => String(s || '').split(/\r?\n/).filter(Boolean);
+  const caretSafe = spawnSync(cmdExe, ['/d', '/s', '/c', 'echo "x^" & echo STARNET_CMD_SECOND'], { encoding: 'utf8', timeout: 10000, windowsHide: true });
+  A.eq(caretSafe.status, 0, 'harmless host cmd caret/quote probe executed');
+  A.ok(outputLines(caretSafe.stdout).includes('STARNET_CMD_SECOND'), 'host cmd confirms caret inside quotes did not hide the second command');
+  for (const dynamic of [
+    { args: ['/d', '/c', 'call %STARNET_VERB% STARNET_CALL_SECOND'], line: 'STARNET_CALL_SECOND' },
+    { args: ['/d', '/v:on', '/c', '!STARNET_VERB! STARNET_DELAYED_SECOND'], line: 'STARNET_DELAYED_SECOND' }
+  ]) {
+    const safe = spawnSync(cmdExe, dynamic.args, { encoding: 'utf8', timeout: 10000, windowsHide: true, env: Object.assign({}, process.env, { STARNET_VERB: 'echo' }) });
+    A.eq(safe.status, 0, 'harmless host cmd dynamic-head probe executed');
+    A.ok(outputLines(safe.stdout).includes(dynamic.line), 'host cmd confirms dynamic executable head expansion');
+  }
+  const psSingleQuote = spawnSync(psExe, ['-NoProfile', '-NonInteractive', '-Command', "Write-Output 'x`' ; Write-Output STARNET_PS_SINGLE_SECOND"], { encoding: 'utf8', timeout: 10000, windowsHide: true });
+  A.ok(outputLines(psSingleQuote.stdout).includes('STARNET_PS_SINGLE_SECOND'), 'host PowerShell confirms backtick is literal inside single quotes');
+  const psDoubleQuote = spawnSync(psExe, ['-NoProfile', '-NonInteractive', '-Command', 'Write-Output "x`" ; Write-Output STARNET_PS_DOUBLE_SECOND"'], { encoding: 'utf8', timeout: 10000, windowsHide: true });
+  A.ok(!outputLines(psDoubleQuote.stdout).includes('STARNET_PS_DOUBLE_SECOND'), 'host PowerShell confirms backtick escapes a quote inside double quotes');
+  const gitSh = 'C:\\Program Files\\Git\\bin\\sh.exe';
+  if (require('fs').existsSync(gitSh)) {
+    const posixSingleQuote = spawnSync(gitSh, ['-c', "printf '%s\\n' 'x\\' ; printf '%s\\n' STARNET_POSIX_SECOND"], { encoding: 'utf8', timeout: 10000, windowsHide: true });
+    A.eq(posixSingleQuote.status, 0, 'harmless Git sh single-quote probe executed');
+    A.ok(outputLines(posixSingleQuote.stdout).includes('STARNET_POSIX_SECOND'), 'Git sh confirms backslash is literal inside POSIX single quotes');
+  }
+  const defaultSafe = spawnSync(psExe, ['-NoProfile', '-NonInteractive', 'Write-Output', 'STARNET_SAFE'], { encoding: 'utf8', timeout: 10000, windowsHide: true });
+  A.eq(defaultSafe.status, 0, 'host accepts a safe implicit/default PowerShell command payload');
+  A.ok(/STARNET_SAFE/.test(defaultSafe.stdout || ''), 'safe implicit/default PowerShell payload executed as expected');
+  for (const flag of PS_COMMAND_FLAGS) {
+    const safe = spawnSync(psExe, ['-NoProfile', '-NonInteractive', flag, 'Write-Output STARNET_SAFE'], { encoding: 'utf8', timeout: 10000, windowsHide: true });
+    A.eq(safe.status, 0, 'host accepts PowerShell ' + flag + ' for a safe command payload');
+    A.ok(/STARNET_SAFE/.test(safe.stdout || ''), 'safe PowerShell ' + flag + ' payload executed as expected');
+  }
+  const safeEncoded = Buffer.from('Write-Output STARNET_SAFE', 'utf16le').toString('base64');
+  for (const flag of PS_ENCODED_FLAGS) {
+    const safe = spawnSync(psExe, ['-NoProfile', '-NonInteractive', flag, safeEncoded], { encoding: 'utf8', timeout: 10000, windowsHide: true });
+    A.eq(safe.status, 0, 'host accepts PowerShell ' + flag + ' for a safe encoded payload');
+    A.ok(/STARNET_SAFE/.test(safe.stdout || ''), 'safe PowerShell ' + flag + ' encoded payload executed as expected');
+  }
+  for (const flag of PS_SLASH_COMMAND_FLAGS) {
+    const safe = spawnSync(psExe, ['-NoProfile', '-NonInteractive', flag, 'Write-Output STARNET_SAFE'], { encoding: 'utf8', timeout: 10000, windowsHide: true });
+    A.eq(safe.status, 0, 'host accepts PowerShell ' + flag + ' for a safe command payload');
+    A.ok(/STARNET_SAFE/.test(safe.stdout || ''), 'safe PowerShell ' + flag + ' payload executed as expected');
+  }
+  for (const flag of PS_SLASH_ENCODED_FLAGS) {
+    const safe = spawnSync(psExe, ['-NoProfile', '-NonInteractive', flag, safeEncoded], { encoding: 'utf8', timeout: 10000, windowsHide: true });
+    A.eq(safe.status, 0, 'host accepts PowerShell ' + flag + ' for a safe encoded payload');
+    A.ok(/STARNET_SAFE/.test(safe.stdout || ''), 'safe PowerShell ' + flag + ' encoded payload executed as expected');
+  }
+  for (const fileFlag of ['-FilePath:cmd.exe', '-F:cmd.exe']) {
+    const script = "$p=Start-Process " + fileFlag + " -ArgumentList '/d /c exit 0' -NoNewWindow -Wait -PassThru; if ($p.ExitCode -ne 0) { exit 9 }; Write-Output STARNET_SAFE";
+    const safe = spawnSync(psExe, ['-NoProfile', '-NonInteractive', '-Command', script], { encoding: 'utf8', timeout: 10000, windowsHide: true });
+    A.eq(safe.status, 0, 'host accepts safe inline Start-Process ' + fileFlag + ' form');
+    A.ok(/STARNET_SAFE/.test(safe.stdout || '') && !/ParameterBindingException/.test(safe.stderr || ''), 'safe inline ' + fileFlag + ' target executed hidden and exited cleanly');
+  }
+  // Query metadata only (no process is launched): for every value-taking Start-Process parameter this host
+  // actually exposes, derive its shortest unambiguous abbreviation and prove the parser consumes that value
+  // before inspecting the positional executable. FilePath itself is the executable and is checked directly.
+  const metadataScript = "$p=(Get-Command Start-Process).Parameters.Values; $p | ForEach-Object { [pscustomobject]@{ Name=$_.Name; Switch=($_.ParameterType.FullName -eq 'System.Management.Automation.SwitchParameter') } } | ConvertTo-Json -Compress";
+  const metadataRun = spawnSync(psExe, ['-NoProfile', '-NonInteractive', '-Command', metadataScript], { encoding: 'utf8', timeout: 10000, windowsHide: true });
+  A.eq(metadataRun.status, 0, 'host Start-Process parameter metadata is readable without launching a process');
+  let hostParams = JSON.parse(metadataRun.stdout || '[]');
+  if (!Array.isArray(hostParams)) hostParams = [hostParams];
+  const hostNames = hostParams.map(p => String(p.Name));
+  const abbreviation = (name) => {
+    for (let n = 1; n <= name.length; n++) {
+      const prefix = name.slice(0, n).toLowerCase();
+      if (hostNames.filter(x => x.toLowerCase().indexOf(prefix) === 0).length === 1) return name.slice(0, n);
+    }
+    return name;
+  };
+  for (const param of hostParams.filter(p => !p.Switch)) {
+    const abbr = abbreviation(String(param.Name));
+    const command = String(param.Name).toLowerCase() === 'filepath'
+      ? 'powershell -Command "Start-Process -' + abbr + ' shutdown /r"'
+      : 'powershell -Command "Start-Process -' + abbr + ' placeholder shutdown /r"';
+    A.ok(breaksMachineState(command), 'host-accepted Start-Process -' + abbr + ' abbreviation cannot hide shutdown');
+  }
+}
 
 // ---- network exposure rework: explicit all-interfaces binds blocked; client 0.0.0.0 + bare mentions allowed ----
 A.ok(exposesNetwork('vite --host'), 'bare --host (framework binds 0.0.0.0) blocked');
@@ -100,7 +226,7 @@ A.eq(exposesNetwork('echo binding to 0.0.0.0 disabled'), null, 'echo mentioning 
 A.eq(exposesNetwork('vite --host 127.0.0.1'), null, '--host 127.0.0.1 allowed');
 
 // ---- integration: the real shell.exec tool refuses a machine-state command with a helpful message ----
-const fs = require('fs'), path = require('path'), os = require('os');
+const fs = require('fs'), os = require('os');
 const { spawn } = require('child_process');
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-mach-'));
 const tool = shell.makeShellTool({ spawn, fs, pathMod: path, root, clock: { now: () => 0 }, redact: s => s }).execTool;

@@ -79,6 +79,25 @@ let T = 1000; const clock = { now: () => T };
   A.ok(!bg.kill('a', 'nope').ok, 'killing an unknown id -> not ok');
 }
 
+// ---- redacted command + exact OS identity pin ----
+{
+  const spawn = makeFakeSpawn();
+  const ledgerCalls = { records: [], pins: [] };
+  const ledger = {
+    record: (entry) => ledgerCalls.records.push(entry),
+    pinIdentity: async (pid) => { ledgerCalls.pins.push(pid); },
+    release: () => {}
+  };
+  const bg = makeShellBg({
+    spawn, clock, maxPerAgent: 5, isWin: true, ledger,
+    redact: (s) => String(s).replace(/super-secret-value/g, '[REDACTED]')
+  });
+  bg.start({ agentId: 'secret', cmd: 'curl -H "Authorization: Bearer super-secret-value" http://127.0.0.1' });
+  A.eq(ledgerCalls.records.length, 1, 'background child is recorded in the persistent ledger');
+  A.ok(ledgerCalls.records[0].cmd.indexOf('super-secret-value') < 0, 'ledger record receives only the redacted command');
+  A.eq(ledgerCalls.pins.join(','), String(spawn.children[0].pid), 'background child asks the ledger to pin exact OS identity after spawn');
+}
+
 // ---- agent isolation + killAll ----
 {
   const spawn = makeFakeSpawn();
