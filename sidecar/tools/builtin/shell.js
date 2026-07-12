@@ -47,6 +47,30 @@
     return null;
   }
 
+  /* BUILDS ARE INVISIBLE (mouse-confinement incident, 2026-07-12): agent work must never put a window on the
+     user's screen or touch their input. A shell command that opens a visible window (cmd `start`, explorer,
+     a headed browser, macOS `open`/xdg-open) is refused with a pointer to the sanctioned paths: headless
+     browser tools for verification, desktop.open (consent-gated) when the Commander explicitly asked to see
+     something. Command-POSITION anchored so `npm start`, `findstr chrome`, `taskkill /im chrome.exe` never trip. */
+  const CMD_POS = '(?:^|[&|(;]|/[ck]\\s+|\\bcall\\s+)\\s*"?';   // start-of-command positions (cmd.exe & POSIX)
+  const START_RE = new RegExp(CMD_POS + 'start(?:\\s|$)', 'i');
+  const EXPLORER_RE = new RegExp(CMD_POS + 'explorer(?:\\.exe)?"?(?:\\s|$)', 'i');
+  const OPEN_RE = new RegExp(CMD_POS + '(?:xdg-)?open(?:\\s|$)', 'i');
+  // path prefix allows spaces (quoted "C:\Program Files\...\chrome.exe") but must END in a path separator
+  // immediately before the browser name — so `taskkill /im chrome.exe` (space before the name) never trips.
+  const BROWSER_EXE_RE = new RegExp(CMD_POS + '(?:[^"&|;]*[\\\\/])?(msedge|chrome|chromium(?:-browser)?|firefox|brave|opera|iexplore|safari)(?:\\.exe)?"?(?:\\s|$)', 'i');
+  function opensVisibleWindow(cmd) {
+    const c = String(cmd == null ? '' : cmd);
+    if (START_RE.test(c)) return 'cmd `start` opens a visible window on the user\'s screen';
+    if (EXPLORER_RE.test(c)) return '`explorer` opens a visible window on the user\'s screen';
+    if (/rundll32\b[^&|]*url\.dll/i.test(c)) return 'rundll32 url.dll opens the user\'s default browser';
+    if (!WIN && OPEN_RE.test(c)) return '`open`/`xdg-open` opens a visible window on the user\'s screen';
+    if (BROWSER_EXE_RE.test(c) && !/--headless/i.test(c)) {
+      return 'launching a browser without --headless opens a visible window (and a page can capture the user\'s mouse via pointer lock)';
+    }
+    return null;
+  }
+
   /* H2.1 — persistent session cwd. A command runs in one shell invocation, so a `cd` only survives if we
      RECOVER the final cwd from that same invocation. We append a marker that prints the working dir + the real
      exit code (captured BEFORE the marker so the appended echo can't mask it), parse it back, strip it from the
@@ -187,6 +211,8 @@
         if (!cmd) throw new Error('empty command');
         const deny = escapesWorkspace(cmd);
         if (deny) throw new Error('refused: ' + deny);
+        const visDeny = opensVisibleWindow(cmd);
+        if (visDeny) throw new Error('refused: ' + visDeny + ' — builds and checks run invisibly, never on the user\'s screen. Verify with the headless browser tools or curl; if the Commander explicitly asked to SEE something, use desktop.open or browser.navigate visible:true (consent-gated).');
         const jailRoot = environment ? environment.ensureWorkspace(aid) : P.join(ROOT, aid);
         // H2.1: start in this agent's PERSISTED cwd (default = jail root). Defensive: only honor a stored cwd
         // that is still in-jail and still exists; otherwise fall back to the jail root.
@@ -281,10 +307,10 @@
 
     return {
       execTool: execTool, bgStatusTool: bgStatusTool, bgKillTool: bgKillTool,
-      _internals: { escapesWorkspace: escapesWorkspace, killTree: killTree, safeAgentId: safeAgentId, normalizeWinCwd: normalizeWinCwd, resolveShellCwd: resolveShellCwd },
+      _internals: { escapesWorkspace: escapesWorkspace, opensVisibleWindow: opensVisibleWindow, killTree: killTree, safeAgentId: safeAgentId, normalizeWinCwd: normalizeWinCwd, resolveShellCwd: resolveShellCwd },
       register: function (reg) { reg.register(execTool); reg.register(bgStatusTool); reg.register(bgKillTool); return reg; }
     };
   }
 
-  return { makeShellTool: makeShellTool, runCommand: runCommand, escapesWorkspace: escapesWorkspace, safeAgentId: safeAgentId, buildMarkedCmd: buildMarkedCmd, parseMarker: parseMarker, withinJail: withinJail, normalizeWinCwd: normalizeWinCwd, resolveShellCwd: resolveShellCwd };
+  return { makeShellTool: makeShellTool, runCommand: runCommand, escapesWorkspace: escapesWorkspace, opensVisibleWindow: opensVisibleWindow, safeAgentId: safeAgentId, buildMarkedCmd: buildMarkedCmd, parseMarker: parseMarker, withinJail: withinJail, normalizeWinCwd: normalizeWinCwd, resolveShellCwd: resolveShellCwd };
 });
