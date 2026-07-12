@@ -3,6 +3,8 @@
    capability gating, autonomous lockout, and graceful missing-driver errors. */
 'use strict';
 const A = require('./_assert.js');
+const fs = require('fs');
+const path = require('path');
 const { makeRegistry } = require('../sidecar/tools/registry.js');
 const { resolveTools } = require('../sidecar/capability/resolve.js');
 const { makeCapCtx } = require('../sidecar/capability/capGate.js');
@@ -28,6 +30,10 @@ function fakeDriver() {
 const ATTENDED = { surface: 'interactive', isTask: false, physicalInputAuthorized: true, inputMode: 'attended' };
 
 (async () => {
+  const source = fs.readFileSync(path.join(__dirname, '../sidecar/tools/builtin/computer.js'), 'utf8');
+  A.ok(!/SetCursorPos|mouse_event|SendInput|keybd_event/.test(source), 'task sidecar contains no Win32 input injection implementation');
+  A.ok(!/SendKeys|CopyFromScreen/.test(source), 'task sidecar contains no keyboard or desktop capture implementation');
+
   const driver = fakeDriver();
   const C = makeComputerTools({ driver, allowPhysicalInput: true });
   const tool = C.useTool;
@@ -81,14 +87,6 @@ const ATTENDED = { surface: 'interactive', isTask: false, physicalInputAuthorize
     await rejects(IT.run({ action: 'click', x: 1, y: 1 }, { surface: 'interactive', isTask: false }), /attended.*lease|physical input.*disabled/i, 'interactive call without host lease fails closed');
     A.eq(isolated.log.length, 0, 'all non-attended contexts make zero driver calls');
   }
-
-  // keyboard token mapping (SendKeys)
-  A.eq(T.sendKeysEscapeLiteral('a+b(c)'), 'a{+}b{(}c{)}', 'literal text escapes SendKeys control chars');
-  A.eq(T.keyToSendKeys('Enter'), '{ENTER}', 'named key maps to a SendKeys token');
-  A.eq(T.keyToSendKeys('a'), 'a', 'single printable key passes through');
-  A.eq(T.hotkeyToSendKeys(['Ctrl', 'a']), '^(a)', 'ctrl+a maps to a modifier-prefixed group');
-  A.eq(T.hotkeyToSendKeys(['Ctrl', 'Shift', 't']), '^+(t)', 'ctrl+shift+t stacks modifiers');
-  await rejects((async () => T.hotkeyToSendKeys(['Win', 'r']))(), /win\/meta/i, 'win/meta hotkeys are refused, not silently dropped');
 
   // FOCUS-TRUTH GUARD: keyboard input is only delivered to a proven foreground window
   {

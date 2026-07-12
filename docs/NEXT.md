@@ -37,7 +37,8 @@ The follow-up audit extends this from the FPS route to a harness-wide user-contr
   global `ClipCursor(NULL)` and therefore cannot disturb a game or app the user owns.
 - Workshop HTTP routes, decision payloads, frontend code, and Tauri IPC contain no file/folder launcher.
   A token or renderer message is not accepted as proof of a human gesture; the user opens kept paths
-  manually. The legacy `desktop.open` tool and Win32 computer driver are inert and never projected.
+  manually. The task sidecar contains no Win32 input/capture implementation; its computer factory and
+  legacy `desktop.open` tool are inert and never projected.
 
 Focused gates are green (browser 79, computer 58, desktop 34, shell isolation 29, input policy 31,
 shell-bg 31, shell machine-state 74, harness integration 90). A hands-off FPS substrate run used an
