@@ -1839,6 +1839,11 @@ fn main() {
             let init = format!(
                 "window.__STARNET_API__='http://127.0.0.1:{port}';window.__STARNET_API_TOKEN__='{api_token}';var _sf=window.fetch;window.fetch=function(u,o){{if(typeof u==='string'&&u.indexOf('/api/')===0)u=window.__STARNET_API__+u;return _sf(u,o)}};"
             );
+            // Windows runs WITHOUT native decorations (see the window builder below): this flag
+            // tells the frontend (app/titlebar.js) to render its own themed titlebar with
+            // MIN/MAX/CLOSE riding the Commander's phosphor theme. macOS/browser never set it.
+            #[cfg(windows)]
+            let init = format!("{init}window.__STARNET_CUSTOM_CHROME__=1;");
 
             // Purge stale WebView2 compiled/GPU caches when the app version changed, BEFORE the
             // webview window is created — otherwise V8 can run old bytecode against new data
@@ -1856,7 +1861,7 @@ fn main() {
                 );
             }
 
-            WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
+            let main_window = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
                 .title("StarNet")
                 .inner_size(1280.0, 832.0)
                 .min_inner_size(960.0, 600.0)
@@ -1866,8 +1871,15 @@ fn main() {
                 // Reveal only after the document paints — avoids a white flash.
                 .on_page_load(|window, _payload| {
                     let _ = window.show();
-                })
-                .build()?;
+                });
+            // Windows: drop the stock titlebar/border — the frontend draws its own themed
+            // chrome (titlebar.js, gated on __STARNET_CUSTOM_CHROME__ above). shadow(true)
+            // keeps the DWM drop shadow, and Tauri's undecorated-resize handling keeps the
+            // edge-drag resize grips working. macOS keeps native decorations until a mac
+            // pass is designed (unverified there — do not blind-apply).
+            #[cfg(windows)]
+            let main_window = main_window.decorations(false).shadow(true);
+            main_window.build()?;
 
             Ok(())
         })

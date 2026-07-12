@@ -18,8 +18,8 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "b1b2b8a8c8068a7b7f8523afba170b54da3a1571",
-    "pathSetSha256": "268ce5981e8b6049b7eade5ef9cbf89f1cfba0a7b4eed108d6657ad0b03b3177",
+    "sourceCommit": "f49c5b0c1681c0fb9088e6422fc23e71096e6155",
+    "pathSetSha256": "1838850606dd5ff7446f89767cc83ba394384f7e3cdcc981f3b820a4fe448d4a",
     "files": [
       {
         "path": "INSTALL.md",
@@ -622,6 +622,11 @@
         "sha256": "674a1a1877c83997d797a5f8ae53016c2f772c26ec47488ef0ec3af4b1bd6142"
       },
       {
+        "path": "frontend/app/titlebar.js",
+        "bytes": 6417,
+        "sha256": "902a158c709a0161d4ffca14b2892d832136792e9564dbd61cfdd7abd1f60b5f"
+      },
+      {
         "path": "frontend/app/toolprops.js",
         "bytes": 3241,
         "sha256": "6854b810c2aab1b8bced197e955b1f54bf64aff84ba1a73075d02d06002f00a5"
@@ -787,6 +792,11 @@
         "sha256": "33e94c0d2e5421fa0004b261d33dfdd7902a74a9bf8110debd18e03e6e4ae75d"
       },
       {
+        "path": "frontend/css/titlebar.css",
+        "bytes": 3914,
+        "sha256": "05f136ec51bf13b37010eda6a93fcc7f4c7178391f4b343c6d1ba257b9cb0221"
+      },
+      {
         "path": "frontend/css/topbar.css",
         "bytes": 5261,
         "sha256": "2396ccd88954baabfbccf38ca0abc28c8b454914725c809c2fed94e245d6c45a"
@@ -808,8 +818,8 @@
       },
       {
         "path": "frontend/index.html",
-        "bytes": 55710,
-        "sha256": "88058d6230534339c9a2712789227b9d56fa415898e475df2171814ef40d14ea"
+        "bytes": 56071,
+        "sha256": "d43c564667e3ce2cbf13a42f810ffeba568deff9746b3444b7b602cde160abb3"
       },
       {
         "path": "frontend/js/arcade.js",
@@ -1471,7 +1481,7 @@
         {
           "kind": "contains",
           "path": "frontend/app/autonomy.js",
-          "needle": "run free toward my goals while i’m away"
+          "needle": "run free toward my goals while i\u2019m away"
         },
         {
           "kind": "contains",
