@@ -71,6 +71,13 @@ function runTeeView(name, payload) {
 // reader drains far below it; only a truly stuck socket ever gets here.
 const SSE_MAX_BUFFER_BYTES = 4 * 1024 * 1024;
 
+// EventSource deliberately hides SSE comment lines from JavaScript. The station uses receipt of a
+// MessageEvent as its proof that the live telemetry link is still carrying bytes, so the idle
+// keepalive must be a DATA frame. An empty object is valid JSON but has neither a product-event
+// `name` nor `payload`; world.js refreshes its link clock and then emits nothing to U.bus.
+// Pure + exported so the exact browser-visible wire contract stays unit-testable.
+function formatKeepalive() { return 'data: {}\n\n'; }
+
 function makeSseHub() {
   const clients = new Set();
 
@@ -105,7 +112,21 @@ function makeSseHub() {
     return n;
   }
 
-  return { add, remove, size, broadcast, format, _internals: { SSE_MAX_BUFFER_BYTES } };
+  // Keep one registered idle client visibly alive to EventSource.onmessage. This mirrors broadcast's
+  // dead-socket and bounded-backpressure policy so the periodic frame cannot retain a zombie response.
+  function keepalive(res) {
+    if (!clients.has(res)) return false;
+    let ok;
+    try { ok = res.write(formatKeepalive()); }
+    catch (_) { evict(res); return false; }
+    if (ok === false && Number(res.writableLength) > SSE_MAX_BUFFER_BYTES) {
+      evict(res);
+      return false;
+    }
+    return true;
+  }
+
+  return { add, remove, size, broadcast, keepalive, format, _internals: { SSE_MAX_BUFFER_BYTES } };
 }
 
-module.exports = { makeSseHub, runTeeView };
+module.exports = { makeSseHub, runTeeView, formatKeepalive };

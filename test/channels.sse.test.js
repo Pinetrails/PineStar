@@ -6,7 +6,62 @@
    agent.tool_call tees NAME-ONLY (args stripped structurally), agent.token never tees. */
 'use strict';
 const A = require('./_assert.js');
-const { makeSseHub, runTeeView } = require('../sidecar/channels/sse.js');
+const { makeSseHub, runTeeView, formatKeepalive } = require('../sidecar/channels/sse.js');
+
+// Minimal WHATWG SSE message extraction for the keepalive contract: comments are ignored and
+// only one or more `data:` fields produce a browser-visible MessageEvent. This is the exact seam
+// behind the healthy-idle LINK DOWN escape: TCP bytes in a comment keep the socket alive, but an
+// EventSource listener never learns that those bytes arrived.
+function eventDataOf(frame) {
+  const data = [];
+  for (const line of String(frame || '').split('\n')) {
+    if (!line || line.startsWith(':')) continue;
+    const sep = line.indexOf(':');
+    const field = sep < 0 ? line : line.slice(0, sep);
+    let value = sep < 0 ? '' : line.slice(sep + 1);
+    if (value.startsWith(' ')) value = value.slice(1);
+    if (field === 'data') data.push(value);
+  }
+  return data.length ? data.join('\n') : null;
+}
+
+// Escape-first proof: the old comment is invisible to EventSource.onmessage, while the channel
+// keepalive must be a harmless data frame so world.js can refresh its last-byte clock without
+// synthesizing a product event on U.bus.
+A.eq(eventDataOf(': ka\n\n'), null, 'an SSE comment cannot satisfy a JavaScript message listener');
+const keepaliveFrame = formatKeepalive();
+A.eq(eventDataOf(keepaliveFrame), '{}', 'the channel keepalive dispatches one empty JSON MessageEvent');
+const keepalivePayload = JSON.parse(eventDataOf(keepaliveFrame));
+A.ok(!('name' in keepalivePayload), 'the keepalive has no product-event name');
+A.ok(!('payload' in keepalivePayload), 'the keepalive has no product-event payload');
+
+// The periodic write obeys the hub's existing dead-client and memory bounds, rather than bypassing
+// them with a raw res.write() in index.js.
+{
+  const keepaliveHub = makeSseHub();
+  const frames = [];
+  const live = { write: frame => { frames.push(frame); return true; } };
+  keepaliveHub.add(live);
+  A.eq(keepaliveHub.keepalive(live), true, 'a registered live client accepts the keepalive');
+  A.eq(frames[0], keepaliveFrame, 'the hub writes the exact pure keepalive frame');
+
+  const dead = { write: () => { throw new Error('EPIPE'); }, end: () => {}, destroy: () => {} };
+  keepaliveHub.add(dead);
+  A.eq(keepaliveHub.keepalive(dead), false, 'a throwing keepalive client is reported dead');
+  A.eq(keepaliveHub.size(), 1, 'a throwing keepalive client is evicted');
+
+  let ended = false, destroyed = false;
+  const zombie = {
+    write: () => false,
+    writableLength: keepaliveHub._internals.SSE_MAX_BUFFER_BYTES + 1,
+    end: () => { ended = true; },
+    destroy: () => { destroyed = true; }
+  };
+  keepaliveHub.add(zombie);
+  A.eq(keepaliveHub.keepalive(zombie), false, 'an over-buffered keepalive client is reported dead');
+  A.eq(keepaliveHub.size(), 1, 'an over-buffered keepalive client is evicted');
+  A.ok(ended && destroyed, 'keepalive eviction releases the zombie response buffer');
+}
 
 const hub = makeSseHub();
 A.eq(hub.size(), 0, 'a fresh hub has no clients');
@@ -118,6 +173,13 @@ A.eq(runTeeView('agent.reasoning', { agentId: 'a1', runId: 'r1', on: true }), nu
   const seg = src.slice(i, i + 400);
   A.ok(/runTeeView\(name,\s*payload\)/.test(seg), 'the tee routes through the runTeeView egress policy');
   A.ok(/redact\(view\)/.test(seg), 'the teed view still passes redact() as a second backstop');
+
+  const keepaliveAt = src.indexOf('const ka = setInterval', src.indexOf('function handleChannelEvents'));
+  A.ok(keepaliveAt > 0, 'handleChannelEvents owns one bounded keepalive interval');
+  const keepaliveSeg = src.slice(keepaliveAt, keepaliveAt + 160);
+  A.ok(/sse\.keepalive\(res\)/.test(keepaliveSeg), 'the channel interval uses the tested hub keepalive path');
+  A.ok(/25000/.test(keepaliveSeg), 'the existing 25-second keepalive cadence is preserved');
+  A.ok(!src.includes("res.write(': ka\\n\\n')"), 'the browser-invisible SSE comment keepalive is retired');
 }
 
 A.report('channels.sse');
