@@ -95,7 +95,7 @@ function loopbackApiPort(value) {
   } catch (_) { return 0; }
 }
 
-export function validateInstalledObservation(observed, expected) {
+export function validateInstalledObservation(observed, expected, options = {}) {
   observed = observed || {}; expected = expected || {};
   const errors = [];
   const shell = observed.shell || {};
@@ -112,7 +112,7 @@ export function validateInstalledObservation(observed, expected) {
   if (!str(version.app).trim() || str(shell.version).trim() !== str(version.app).trim()) errors.push('version-mismatch');
   if (!str(shell.describe).trim() || str(shell.describe).trim() !== str(version.harness).trim()) errors.push('description-mismatch');
   if (!apiPort) errors.push('api-base-invalid');
-  if (!observed.link || observed.link.bridged !== true || observed.link.paused === true || observed.link.down === true) errors.push('product-link-not-up');
+  if (options.requireLink !== false && (!observed.link || observed.link.bridged !== true || observed.link.paused === true || observed.link.down === true)) errors.push('product-link-not-up');
   return { ok: errors.length === 0, errors, apiPort };
 }
 
@@ -155,10 +155,11 @@ export function validateObservedTimeline(live, expected) {
     item.parentVerified === true && item.bundledNodeVerified === true && item.apiListenerVerified === true &&
     lower(item.candidateCommit) === lower(expected.candidateCommit), Number(lastData.atMs));
   const exited = sidecar && eventAt(events, item => item.kind === 'sidecar-exit' && item.observed === true && Number(item.pid) === Number(sidecar.pid), Number(sidecar.atMs));
-  const networkError = exited && eventAt(events, item => item.kind === 'transport-error' && item.source === 'cdp-network-loading-failed' &&
-    item.requestBound === true && endpointMatches(item, expected.apiPort), Number(exited.atMs));
-  const down = networkError && eventAt(events, item => item.kind === 'link-state' && item.state === 'DOWN' &&
-    item.cause === 'eventsource-error', Number(networkError.atMs));
+  const networkError = sidecar && eventAt(events, item => item.kind === 'transport-error' && item.source === 'cdp-network-loading-failed' &&
+    item.requestBound === true && endpointMatches(item, expected.apiPort), Number(sidecar.atMs));
+  const lossObservedAt = exited && networkError ? Math.max(Number(exited.atMs), Number(networkError.atMs)) : Infinity;
+  const down = Number.isFinite(lossObservedAt) && eventAt(events, item => item.kind === 'link-state' && item.state === 'DOWN' &&
+    item.cause === 'eventsource-error', lossObservedAt);
   if (!sidecar) errors.push('sidecar-identity-unproven');
   if (!exited) errors.push('sidecar-exit-unproven');
   if (!networkError) errors.push('eventsource-error-unproven');
@@ -416,6 +417,69 @@ async function waitUntil(check, timeoutMs, intervalMs = 100) {
   return null;
 }
 
+// Pure CDP event fold. Requests that race while the UI is proving loss are deliberately
+// not promoted to recovery authority; after DOWN the live driver cycles the real product
+// bridge and this fold binds only that fresh post-loss request.
+export function makeNetworkObservationTracker(options = {}) {
+  const now = typeof options.now === 'function' ? options.now : () => Date.now();
+  let apiPort = 0;
+  let phase = 'healthy';
+  let endpointOrigin = '';
+  let activeRequestId = '';
+  let recoveryRequestId = '';
+  let networkFailedAt = null;
+  let recoveryFrameAt = null;
+  const healthyFrames = [];
+  const requestIds = new Set();
+  const responseIds = new Set();
+  function request(params) {
+    try {
+      const u = new URL(str(params && params.request && params.request.url));
+      if (!apiPort || u.protocol !== 'http:' || !['127.0.0.1', 'localhost', '[::1]'].includes(u.hostname) ||
+          Number(u.port) !== apiPort || u.pathname !== '/api/channels/events' || params.type !== 'EventSource') return false;
+      const id = str(params.requestId);
+      if (!id) return false;
+      requestIds.add(id);
+      endpointOrigin = u.origin; // URL query/header bytes are intentionally discarded here.
+      if (phase === 'healthy') activeRequestId = id;
+      else if (phase === 'recovery') recoveryRequestId = id;
+      return true;
+    } catch (_) { return false; }
+  }
+  function response(params) {
+    const id = str(params && params.requestId);
+    if (!requestIds.has(id) || params.type !== 'EventSource' || Number(params.response && params.response.status) !== 200) return false;
+    responseIds.add(id); return true;
+  }
+  function message(params) {
+    const id = str(params && params.requestId);
+    if (!requestIds.has(id) || str(params && params.data).trim() !== '{}') return false;
+    const stamp = Number(now());
+    if (phase === 'healthy' && id === activeRequestId) healthyFrames.push(stamp);
+    else if (phase === 'recovery' && id === recoveryRequestId) recoveryFrameAt = stamp;
+    else return false;
+    return true;
+  }
+  function failed(params) {
+    const id = str(params && params.requestId);
+    if (phase !== 'loss' || !id || id !== activeRequestId) return false;
+    networkFailedAt = Number(now()); return true;
+  }
+  return {
+    setApiPort(value) { apiPort = Number(value) || 0; },
+    setPhase(value) { phase = str(value); },
+    resetRecovery() { phase = 'recovery'; recoveryRequestId = ''; recoveryFrameAt = null; },
+    request, response, message, failed,
+    snapshot() {
+      return {
+        phase, endpointOrigin, activeRequestId, recoveryRequestId, networkFailedAt, recoveryFrameAt,
+        healthyFrames: healthyFrames.slice(), activeResponseOk: responseIds.has(activeRequestId),
+        recoveryResponseOk: responseIds.has(recoveryRequestId)
+      };
+    }
+  };
+}
+
 function makeLiveDriver(deps = {}) {
   const processes = deps.processes || processApi;
   const connect = deps.connect || connectTrustedTarget;
@@ -429,61 +493,35 @@ function makeLiveDriver(deps = {}) {
       const at = () => Date.now() - started;
       const push = item => observations.push(Object.assign({ atMs: at(), sessionId }, item));
       let apiPort = 0;
-      let endpointOrigin = '';
-      let activeRequestId = '';
-      let networkFailed = false;
-      let phase = 'healthy';
-      let recoveryRequestId = '';
-      const healthyFrames = [];
-      let recoveryFrame = false;
-      const requestIds = new Set();
-      const responseIds = new Set();
-      cdp.on('Network.requestWillBeSent', params => {
-        try {
-          const u = new URL(str(params && params.request && params.request.url));
-          if (!apiPort || u.protocol !== 'http:' || !['127.0.0.1', 'localhost', '[::1]'].includes(u.hostname) ||
-              Number(u.port) !== apiPort || u.pathname !== '/api/channels/events' || params.type !== 'EventSource') return;
-          endpointOrigin = u.origin;
-          requestIds.add(str(params.requestId));
-          if (phase === 'recovery') recoveryRequestId = str(params.requestId);
-          else if (phase === 'healthy') activeRequestId = str(params.requestId);
-        } catch (_) {}
-      });
-      cdp.on('Network.responseReceived', params => {
-        const id = str(params && params.requestId);
-        if (requestIds.has(id) && params.type === 'EventSource' && Number(params.response && params.response.status) === 200) responseIds.add(id);
-      });
-      cdp.on('Network.eventSourceMessageReceived', params => {
-        const id = str(params && params.requestId);
-        if (!requestIds.has(id) || str(params && params.data).trim() !== '{}') return;
-        if (phase === 'recovery' && id === recoveryRequestId) recoveryFrame = true;
-        else if (phase === 'healthy' && id === activeRequestId) healthyFrames.push(at());
-      });
-      cdp.on('Network.loadingFailed', params => {
-        const id = str(params && params.requestId);
-        if (id && id === activeRequestId && phase === 'loss') networkFailed = true;
-      });
+      const tracker = makeNetworkObservationTracker({ now: at });
+      cdp.on('Network.requestWillBeSent', params => tracker.request(params));
+      cdp.on('Network.responseReceived', params => tracker.response(params));
+      cdp.on('Network.eventSourceMessageReceived', params => tracker.message(params));
+      cdp.on('Network.loadingFailed', params => tracker.failed(params));
       try {
         await cdp.send('Network.enable');
         const before = await readIdentity(cdp);
         const identityVerdict = validateInstalledObservation(before, invocation);
         if (!identityVerdict.ok) throw Object.assign(new Error(identityVerdict.errors[0]), { code: identityVerdict.errors[0] });
         apiPort = identityVerdict.apiPort;
+        tracker.setApiPort(apiPort);
         await cycleProductBridge(cdp);
         const healthyOpen = await waitUntil(async () => {
+          const network = tracker.snapshot();
           const link = await readLink(cdp);
-          return activeRequestId && responseIds.has(activeRequestId) && link && link.bridged === true && link.paused === false && link.down === false ? link : null;
+          return network.activeRequestId && network.activeResponseOk && link && link.bridged === true && link.paused === false && link.down === false ? link : null;
         }, 15000);
         if (!healthyOpen) throw Object.assign(new Error('product-eventsource-not-open'), { code: 'product-eventsource-not-open' });
         push({ kind: 'link-state', state: 'UP' });
         let emitted = 0;
         const healthy = await waitUntil(() => {
-          while (emitted < healthyFrames.length) {
-            observations.push({ atMs: healthyFrames[emitted], sessionId, kind: 'transport-data', source: 'message',
-              cdpObserved: true, endpointOrigin, endpointPath: '/api/channels/events' });
+          const network = tracker.snapshot();
+          while (emitted < network.healthyFrames.length) {
+            observations.push({ atMs: network.healthyFrames[emitted], sessionId, kind: 'transport-data', source: 'message',
+              cdpObserved: true, endpointOrigin: network.endpointOrigin, endpointPath: '/api/channels/events' });
             emitted++;
           }
-          return healthyFrames.length >= 2 && healthyFrames[healthyFrames.length - 1] - healthyFrames[0] > MIN_HEALTHY_SPAN_MS;
+          return network.healthyFrames.length >= 2 && network.healthyFrames[network.healthyFrames.length - 1] - network.healthyFrames[0] > MIN_HEALTHY_SPAN_MS;
         }, 90000, 100);
         if (!healthy) throw Object.assign(new Error('healthy-transport-timeout'), { code: 'healthy-transport-timeout' });
         const sidecar = processes.find(invocation.artifact.path, apiPort);
@@ -492,49 +530,63 @@ function makeLiveDriver(deps = {}) {
         }
         push({ kind: 'sidecar-process', pid: Number(sidecar.pid), candidateCommit: lower(invocation.candidateCommit),
           parentVerified: true, bundledNodeVerified: true, apiListenerVerified: true });
-        phase = 'loss';
+        tracker.setPhase('loss');
         const killed = processes.terminate(invocation.artifact.path, apiPort, Number(sidecar.pid));
         if (!killed || killed.ok !== true || Number(killed.pid) !== Number(sidecar.pid)) {
           throw Object.assign(new Error('sidecar-termination-refused'), { code: 'sidecar-termination-refused' });
         }
+        let exitedAt = null;
         const exited = await waitUntil(() => {
           const result = processes.exited(invocation.artifact.path, apiPort, Number(sidecar.pid));
-          return result && result.ok === true ? result : null;
+          if (result && result.ok === true) { exitedAt = at(); return result; }
+          return null;
         }, 10000);
         if (!exited) throw Object.assign(new Error('sidecar-exit-unobserved'), { code: 'sidecar-exit-unobserved' });
-        push({ kind: 'sidecar-exit', pid: Number(sidecar.pid), observed: true });
-        const failed = await waitUntil(() => networkFailed, 10000);
+        const failed = await waitUntil(() => Number.isFinite(tracker.snapshot().networkFailedAt), 10000);
         if (!failed) throw Object.assign(new Error('eventsource-error-unobserved'), { code: 'eventsource-error-unobserved' });
-        push({ kind: 'transport-error', source: 'cdp-network-loading-failed', requestBound: true,
-          endpointOrigin, endpointPath: '/api/channels/events' });
+        const lossNetwork = tracker.snapshot();
+        const lossEvents = [
+          { atMs: exitedAt, sessionId, kind: 'sidecar-exit', pid: Number(sidecar.pid), observed: true },
+          { atMs: lossNetwork.networkFailedAt, sessionId, kind: 'transport-error', source: 'cdp-network-loading-failed', requestBound: true,
+            endpointOrigin: lossNetwork.endpointOrigin, endpointPath: '/api/channels/events' }
+        ].sort((a, b) => a.atMs - b.atMs);
+        observations.push(...lossEvents);
         const down = await waitUntil(async () => {
           const link = await readLink(cdp);
           return link && link.bridged === true && link.paused === false && link.down === true ? link : null;
         }, 5000, 25);
         if (!down) throw Object.assign(new Error('product-link-down-unobserved'), { code: 'product-link-down-unobserved' });
         push({ kind: 'link-state', state: 'DOWN', cause: 'eventsource-error' });
-        phase = 'recovery';
+        tracker.setPhase('recovery-wait');
         const recovered = await waitUntil(() => {
           const value = processes.find(invocation.artifact.path, apiPort);
           return value && value.ok === true && Number(value.pid) > 0 && Number(value.pid) !== Number(sidecar.pid) ? value : null;
         }, 20000, 250);
         if (!recovered) throw Object.assign(new Error('watchdog-sidecar-unrecovered'), { code: 'watchdog-sidecar-unrecovered' });
-        const recoveredIdentity = await waitUntil(async () => {
+        const recoveredRuntime = await waitUntil(async () => {
           const value = await readIdentity(cdp);
-          const verdict = validateInstalledObservation(value, invocation);
+          const verdict = validateInstalledObservation(value, invocation, { requireLink: false });
           return verdict.ok ? value : null;
         }, 20000, 250);
-        if (!recoveredIdentity) throw Object.assign(new Error('watchdog-version-unrecovered'), { code: 'watchdog-version-unrecovered' });
+        if (!recoveredRuntime) throw Object.assign(new Error('watchdog-version-unrecovered'), { code: 'watchdog-version-unrecovered' });
         push({ kind: 'sidecar-recovery', pid: Number(recovered.pid), previousPid: Number(sidecar.pid), candidateCommit: lower(invocation.candidateCommit),
           parentVerified: true, bundledNodeVerified: true, apiListenerVerified: true, versionVerified: true });
+        tracker.resetRecovery();
+        await cycleProductBridge(cdp); // real product lifecycle; guarantees a post-DOWN request even if watchdog raced early
         const recoveredLink = await waitUntil(async () => {
+          const network = tracker.snapshot();
           const link = await readLink(cdp);
-          return recoveryRequestId && responseIds.has(recoveryRequestId) && recoveryFrame && link && link.bridged === true && link.paused === false && link.down === false ? link : null;
+          return network.recoveryRequestId && network.recoveryResponseOk && Number.isFinite(network.recoveryFrameAt) &&
+            link && link.bridged === true && link.paused === false && link.down === false ? link : null;
         }, 35000, 100);
         if (!recoveredLink) throw Object.assign(new Error('watchdog-link-unrecovered'), { code: 'watchdog-link-unrecovered' });
-        push({ kind: 'recovery-transport-data', source: 'message', cdpObserved: true, requestBound: true,
-          endpointOrigin, endpointPath: '/api/channels/events' });
+        const recoveryNetwork = tracker.snapshot();
+        observations.push({ atMs: recoveryNetwork.recoveryFrameAt, sessionId, kind: 'recovery-transport-data', source: 'message',
+          cdpObserved: true, requestBound: true, endpointOrigin: recoveryNetwork.endpointOrigin, endpointPath: '/api/channels/events' });
         push({ kind: 'link-state', state: 'UP', recovered: true });
+        const recoveredIdentity = await readIdentity(cdp);
+        const recoveredIdentityVerdict = validateInstalledObservation(recoveredIdentity, invocation);
+        if (!recoveredIdentityVerdict.ok) throw Object.assign(new Error('watchdog-final-identity-invalid'), { code: 'watchdog-final-identity-invalid' });
         const artifactAfter = fileIdentity(invocation.artifact.path);
         if (!artifactAfter || artifactAfter.sha256 !== lower(invocation.artifact.sha256) || artifactAfter.size !== Number(invocation.artifact.size)) {
           throw Object.assign(new Error('artifact-changed-during-proof'), { code: 'artifact-changed-during-proof' });

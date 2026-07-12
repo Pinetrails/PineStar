@@ -11,7 +11,8 @@ const {
   LINK_RECEIPT_SCHEMA, LINK_PRODUCER, OBSERVATION_PRODUCER, MIN_HEALTHY_SPAN_MS,
   PROBE_RELATIVE_PATH, containsSecretMaterial, validateInvocation,
   validateInstalledObservation, validateObservedTimeline, buildObservationDocument,
-  buildReceipt, makeInstalledLinkTransportProbe, inspectWindowsSidecarProcess
+  buildReceipt, makeInstalledLinkTransportProbe, inspectWindowsSidecarProcess,
+  makeNetworkObservationTracker
 } = require('../scripts/qa/installed-link-transport.mjs');
 
 const SHA = 'a'.repeat(40);
@@ -105,8 +106,40 @@ function clock(start = 1000, end = 51000) {
   A.ok(validateInstalledObservation(Object.assign({}, IDENTITY, { version: Object.assign({}, IDENTITY.version, { buildSha: 'f'.repeat(40) }) }), INVOCATION).errors.includes('sidecar-commit-mismatch'), 'wrong sidecar build is rejected');
   A.ok(validateInstalledObservation(Object.assign({}, IDENTITY, { apiBase: 'http://example.com:8787' }), INVOCATION).errors.includes('api-base-invalid'), 'non-loopback API seam is rejected');
   A.ok(validateInstalledObservation(Object.assign({}, IDENTITY, { link: { bridged: true, paused: false, down: true } }), INVOCATION).errors.includes('product-link-not-up'), 'a preexisting DOWN state cannot seed green proof');
+  A.eq(validateInstalledObservation(Object.assign({}, IDENTITY, { link: { bridged: true, paused: false, down: true } }), INVOCATION, { requireLink: false }).ok, true, 'watchdog version can be rechecked before the bridge is deliberately recycled');
+
+  {
+    let stamp = 0;
+    const tracker = makeNetworkObservationTracker({ now: () => (stamp += 100) });
+    tracker.setApiPort(8787);
+    const request = (id) => ({ requestId: id, type: 'EventSource', request: { url: 'http://127.0.0.1:8787/api/channels/events?token=must-never-serialize' } });
+    tracker.request(request('healthy'));
+    tracker.response({ requestId: 'healthy', type: 'EventSource', response: { status: 200 } });
+    tracker.message({ requestId: 'healthy', data: '{}' });
+    tracker.setPhase('loss');
+    tracker.request(request('raced-before-down'));
+    tracker.response({ requestId: 'raced-before-down', type: 'EventSource', response: { status: 200 } });
+    A.eq(tracker.message({ requestId: 'raced-before-down', data: '{}' }), false, 'a watchdog reconnect racing before DOWN is not accepted as recovery proof');
+    tracker.failed({ requestId: 'healthy' });
+    tracker.setPhase('recovery-wait');
+    tracker.request(request('raced-during-version-check'));
+    A.eq(tracker.snapshot().recoveryRequestId, '', 'loss/recovery-wait requests cannot steal the post-DOWN recovery slot');
+    tracker.resetRecovery();
+    tracker.request(request('fresh-after-down'));
+    tracker.response({ requestId: 'fresh-after-down', type: 'EventSource', response: { status: 200 } });
+    tracker.message({ requestId: 'fresh-after-down', data: '{}' });
+    const network = tracker.snapshot();
+    A.eq(network.recoveryRequestId, 'fresh-after-down', 'real post-DOWN bridge cycle binds a fresh request');
+    A.eq(network.recoveryResponseOk && Number.isFinite(network.recoveryFrameAt), true, 'fresh recovery requires response plus browser-visible data');
+    A.eq(JSON.stringify(network).includes('must-never-serialize'), false, 'request query/token bytes are discarded by the pure CDP fold');
+  }
 
   A.eq(verdict(live()).ok, true, 'real CDP frames, exact child exit, DOWN, and watchdog recovery validate');
+  {
+    const networkFirst = live(); networkFirst.observations[5].atMs = 46050;
+    networkFirst.observations.sort((a, b) => a.atMs - b.atMs);
+    A.eq(verdict(networkFirst).ok, true, 'actual CDP failure may precede OS exit polling while DOWN still follows both');
+  }
   {
     const exactForty = live(); exactForty.observations[2].atMs = 40100;
     A.ok(verdict(exactForty).errors.includes('healthy-transport-unproven'), 'data frames spanning exactly forty seconds are insufficient');
@@ -196,6 +229,7 @@ function clock(start = 1000, end = 51000) {
   A.ok(!/__STARNET_API_TOKEN__/.test(source), 'probe never reads the launch token');
   A.ok(!/endpointUrl/.test(source), 'raw token-bearing request URLs are never serialized');
   A.ok(/sidecar-recovery/.test(source) && /recovery-transport-data/.test(source), 'probe leaves the same desktop recovered for the following journey');
+  A.eq((source.match(/await cycleProductBridge\(cdp\)/g) || []).length, 2, 'real product bridge is cycled once for measurement and once after DOWN to close the watchdog race');
 
   if (process.platform === 'win32') {
     const missingArtifact = path.join(os.tmpdir(), 'starnet-definitely-missing-' + process.pid + '.exe');
