@@ -30,6 +30,12 @@ description: LOCKED StarNet frontend/canvas/UI laws — windows, COMMS beats, sp
 - Author sprites chunky ~48px; in-world draw = **smooth-downscale the 92px master in
   drawBody** — never NN-crush.
 - drawBody anchors agent **FEET** (per-skin foot padding) to the floor line, not image bottom.
+- **Body positions live in the LOCAL pixel frame** (origin = station bounds − margin), so any
+  floor edit that grows the bounds shifts the frame. Every per-body pixel/tile field (px/py,
+  seatPx/seatPy, leash home, in-flight paths) MUST ride rederive's crew re-frame block — an
+  unshifted field renders the body in the void (2026-07-12 escape). `containBody()` /
+  per-tick `ensureAgentValid()` are the containment BACKSTOP, never the fix; locked by
+  test/crew-containment.test.js.
 - Walls follow the tall-walls bake laws (WALL knobs live in crtlab).
 - Props follow the v3 LOCKED STYLE LAW; no bare `require()` in prop modules.
 - Specialists own only their desk; other props are station-shared via the overseer — never

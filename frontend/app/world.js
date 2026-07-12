@@ -370,6 +370,26 @@ const World = (() => {
     placeDesk();
     compileRouting();              // recompile the RoutingPlan (+ POST to the sidecar) — the single point floor edits flow through
     junctions = buildJunctions();
+    // CREW RE-FRAME (agent-in-the-void escape, 2026-07-12): crew bodies live in the same LOCAL pixel
+    // frame as the hero, but only the hero got the origin-shift correction below — so any floor edit
+    // that moved the station's bounding box (a room added/removed at the north/west edge) left every
+    // crew body's px/py in the OLD frame, rendering it offset into the void, with its old-frame path
+    // walking it further out. Mirror the hero's treatment for EVERY crew body BEFORE syncCrewFromPlan
+    // (whose walkable checks must see new-frame positions): shift the pixels (and the seated render
+    // pos + leash home, same frame), then drop the in-flight path so it re-plans in the new frame.
+    if (oldOrigin) {
+      const cdx = (oldOrigin.tx - geo.origin.tx) * T, cdy = (oldOrigin.ty - geo.origin.ty) * T;
+      for (const b of crew) {
+        if (cdx || cdy) {
+          b.px += cdx; b.py += cdy;
+          b.seatPx += cdx; b.seatPy += cdy;
+          if (b.pendSeat) { b.pendSeat.px += cdx; b.pendSeat.py += cdy; }
+          if (b.home) { b.home.x += oldOrigin.tx - geo.origin.tx; b.home.y += oldOrigin.ty - geo.origin.ty; }
+        }
+        b.pathPts = null; b.target = null;   // the in-flight path is in the OLD frame — re-path fresh
+        if (b.state === 'walk') { b.state = 'idle'; b.idleUntil = 0; }
+      }
+    }
     syncCrewFromPlan();            // reconcile the light crew bodies with the plan's bound bays
     if (agent) {
       if (agent.unplaced) placeAgent();
@@ -1301,10 +1321,31 @@ const World = (() => {
       decideIdle(now);   // the want-engine (wander is its fallback) — caged to zoneFor(self)
     }
   }
+  // CONTAINMENT BACKSTOP (agent-in-the-void escape, 2026-07-12): a standing body whose feet are not
+  // on real floor is out of the world — whatever re-frame/re-foot path was missed, it must never be
+  // RENDERED adrift. Prefer the nearest walkable tile (a prop dropped underfoot stays local); a body
+  // truly in the void (no floor within the ring) re-homes to the spawn room like the hero's
+  // ensureAgentValid. Seated/desk-sitting poses keep their logical foot on a walkable tile (the
+  // cushion swap is draw-time only), so a standing-body check is the complete invariant.
+  function containBody(b, now) {
+    if (b.seated || b.sitting) return;
+    const t = tileOf(b.px, b.py);
+    if (geo.walkable(t.x, t.y, blocked)) return;
+    seizeFromIdle(b);   // off the floor = every in-flight goal/claim is in a broken frame — drop them
+    let f = null;
+    for (let r = 1; r <= 6 && !f; r++) for (let dy = -r; dy <= r && !f; dy++) for (let dx = -r; dx <= r && !f; dx++) {
+      if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+      if (geo.walkable(t.x + dx, t.y + dy, blocked)) f = footOf(t.x + dx, t.y + dy);
+    }
+    if (!f) f = workerFoot();
+    b.px = f.x; b.py = f.y; b.home = tileOf(f.x, f.y);
+    b.pathPts = null; b.target = null; b.state = 'idle'; b.idleUntil = now + U.irnd(400, 1200);
+  }
   function stepCrew(dt, now) {
     if (!geo || !crew.length) return;
     for (const b of crew) {
       if (b.unplaced) continue;
+      containBody(b, now);   // never step (or render) a body that is off the floor
       if (b.working) {                                 // running → sit at its desk if it has one, else stand where work is delivered
         const dp = deskPropFor(b.agentId), s = dp ? deskSeat(dp) : null;
         if (s) stepCrewToSeat(b, s, dt, now);
@@ -2912,6 +2953,7 @@ const World = (() => {
     if (socialBeat && (now >= socialBeat.until || encounterBroken(now))) endEncounter(now);
     sweepChase(now);                                              // TIER D · D4: station-level chase sweep (G4) — a seized/despawned/chat-focused chaser ALWAYS frees the lock same-tick, independent of its own stepper
     tickNeeds(dt);                                                 // the inner meters drain/refill by what it is doing
+    if (!agent.sitting && !agent.seated) ensureAgentValid();       // CONTAINMENT BACKSTOP (2026-07-12): a standing hero off the floor re-homes NOW, not at the next refit (rederive was the only caller — any missed frame-shift left it adrift until then)
     stepCrew(dt, now);                                             // the OTHER agents wander the station while idle (the hero is below)
     const SPEED = 34 * (agent.pers ? agent.pers.pace : 1);         // temperament: each agent walks at its own pace
     // settle: a beat of sitting (loading context) before the screens light + typing latches on
@@ -4798,7 +4840,11 @@ const World = (() => {
   function syncCrewFromPlan() {
     // No bound bays (or no geo yet): drop the plan-derived crew, but KEEP summoned bodies — a summoned-but-unbound
     // agent has no bay, so an empty plan must NOT wipe it (else it vanishes on the next rederive, e.g. a build toggle).
-    if (!routingPlan || !routingPlan.bays || !routingPlan.bays.length || !geo) { crew = crew.filter(b => b.summoned); sweepAgentMaps(); return; }
+    if (!routingPlan || !routingPlan.bays || !routingPlan.bays.length || !geo) {
+      crew = crew.filter(b => b.summoned);
+      if (geo) refootStranded();   // the no-bays plan used to SKIP the stranded re-foot entirely — a summoned body off the floor (pre-geo {0,0} park, a refit) stayed in the void forever (2026-07-12)
+      sweepAgentMaps(); return;
+    }
     const want = new Map();
     for (const bay of routingPlan.bays) {
       if (agent && bay.agentId === agent.id) continue;                 // the hero already represents its own bay
@@ -4822,13 +4868,21 @@ const World = (() => {
       if (b) { b.px = pos.x; b.py = pos.y; }
       else if (!crew.some(x => x.agentId === aid)) crew.push(makeCrewBody(aid, aid, crewColor(aid), pos.x, pos.y));
     }
-    // a refit may have moved the floor under a summoned body — re-foot any that no longer stand on a walkable tile.
-    for (const b of crew) {
-      if (!b.summoned) continue;
-      const t = tileOf(b.px, b.py);
-      if (!geo.walkable(t.x, t.y, blocked)) { const f = workerFoot(); b.px = f.x; b.py = f.y; b.home = tileOf(f.x, f.y); }   // re-foot AND re-pin the leash home: the spawn spot genuinely moved (A2 stays centred on the new home)
-    }
+    refootStranded();   // a refit may have moved the floor under a summoned body — re-foot any that no longer stand on a walkable tile.
     sweepAgentMaps();   // E6b: an agent dropped from the roster leaves per-agent map entries — evict them here
+  }
+  // re-foot every SUMMONED body that no longer stands on a walkable tile (plan-derived bodies are
+  // re-set at their bay foot by syncCrewFromPlan itself; a deliberately-fallback bay foot may sit on
+  // the bay footprint, so they are excluded). Re-pins the leash home too: the spawn spot genuinely
+  // moved (A2 stays centred on the new home). Seated/desk-sitting bodies legitimately render on a
+  // prop tile — never evict those.
+  function refootStranded() {
+    if (!geo) return;
+    for (const b of crew) {
+      if (!b.summoned || b.seated || b.sitting) continue;
+      const t = tileOf(b.px, b.py);
+      if (!geo.walkable(t.x, t.y, blocked)) { const f = workerFoot(); b.px = f.x; b.py = f.y; b.home = tileOf(f.x, f.y); }
+    }
   }
   /* Lane E6b — roster-change map sweep. The per-agent maps (heat/deskProg/xp/computeOk) and the pairwise social
      cooldown accumulate an entry per agent id that appears; a roster removal (a bay unbound, a summoned worker
@@ -5678,6 +5732,9 @@ const World = (() => {
     // DEV harness. No world state touched (both are pure; borderTileFor takes an injected walkable predicate).
     // The headless coverage lives in test/social-border.test.js (extracts the D3-PURE-GEOMETRY block from source).
     _dbgSocialGeom: { sharedEdge: (ra, rb) => sharedEdge(ra, rb), borderTileFor: (rect, edge, cur, walkableFn) => borderTileFor(rect, edge, cur, walkableFn) },
+    // TEST/DEBUG ONLY — containment harness: raw-place a body (bypassing every walkable-checked picker)
+    // so the per-tick containment backstop (containBody / hero ensureAgentValid) is provable live.
+    _dbgTeleport: (aid, px, py) => { const b = bodyForAgent(aid); if (!b) return false; b.pathPts = null; b.target = null; b.sitting = false; b.seated = false; b.px = +px; b.py = +py; return true; },
     // read-only body snapshot for the DEV test harness (window.__SKYNET_TEST__) — the Tier A/B/C substrate.
     // Pure read, no side effects: the hero + every crew body, each with tile/zone/glance/goal/moving so the
     // floor invariants (idle stays in-zone · awareness is gaze-only · summoned walks to its OWN workstation)
