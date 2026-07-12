@@ -37,6 +37,9 @@ const EXPECTED_POLICY = Object.freeze({
   staleEvidence: 'requeue',
   publishAuthorized: false
 });
+const AUTHORITY_IDS = Object.freeze([
+  'installed', 'claimsPlanning', 'claimsTerminal', 'ready', 'ledger', 'atlas'
+]);
 
 function str(value) { return value == null ? '' : String(value); }
 function sha256(value) { return crypto.createHash('sha256').update(value).digest('hex'); }
@@ -192,7 +195,7 @@ export function receiptValidity(receipt, context) {
 
 function normalizedAuthorities(authorities) {
   const out = {};
-  for (const id of ['ready', 'ledger', 'atlas']) {
+  for (const id of AUTHORITY_IDS) {
     const value = authorities && authorities[id];
     out[id] = value && typeof value === 'object'
       ? value
@@ -203,7 +206,9 @@ function normalizedAuthorities(authorities) {
 }
 
 function authorityErrorsForWave(waveId, authorities) {
-  const required = waveId === 'W0' ? ['ready'] : waveId === 'W6' ? ['ledger', 'atlas'] : [];
+  const required = waveId === 'W0' ? ['installed', 'claimsPlanning']
+    : waveId === 'W6' ? ['claimsTerminal', 'ledger', 'atlas']
+      : waveId === 'W7' ? ['ready'] : [];
   const errors = [];
   for (const id of required) {
     const authority = authorities[id];
@@ -268,7 +273,7 @@ export function deriveStatus(manifest, candidate, receiptsByWave, authorityInput
       } : null
     });
   }
-  const authorityPerfect = ['ready', 'ledger', 'atlas'].every(id => authorities[id].ok === true);
+  const authorityPerfect = AUTHORITY_IDS.every(id => authorities[id].ok === true);
   let productPerfect = waves.length > 0 && waves.every(wave => wave.status === 'pass') && authorityPerfect;
   if (!productPerfect && !currentWave && !authorityPerfect) {
     const targetId = manifest.waves.some(wave => wave.id === 'W6') ? 'W6' : manifest.waves[manifest.waves.length - 1].id;
@@ -616,7 +621,7 @@ function render(status) {
     lines.push('  [INFO] operational evidence dirt excluded from shipped-source cleanliness: ' + status.candidate.operationalDirtyPaths.join(', '));
   }
   if (status.manifestErrors) for (const error of status.manifestErrors) lines.push('  [BLOCKED] manifest — ' + error);
-  for (const id of ['ready', 'ledger', 'atlas']) {
+  for (const id of AUTHORITY_IDS) {
     const authority = status.authorities && status.authorities[id];
     if (!authority) continue;
     lines.push('  [' + str(authority.status || (authority.ok ? 'PASS' : 'BLOCKED')).toUpperCase() + '] authority/' + id);
