@@ -1988,8 +1988,17 @@ const Chat = (() => {
     // secondary path to the details + Keep/Discard actions.
     let openItBtn = null;
     if (htmlEntry) {
+      // disk-proven by validateWorkshopManifest (never the model's claim): this deliverable requests pointer
+      // lock / fullscreen, i.e. opening it will capture the Commander's REAL mouse. Say so BEFORE the click.
+      if (m.capturesInput) {
+        const warn = document.createElement('div'); warn.className = 'ws-line ws-capture-warn';
+        warn.textContent = '⚠ captures your mouse when opened (pointer lock) — press Esc to release it';
+        r.body.appendChild(warn);
+      }
       openItBtn = document.createElement('button'); openItBtn.className = 'consent-btn'; openItBtn.textContent = 'Open it';
-      openItBtn.title = 'run this tool in a new browser tab';
+      openItBtn.title = m.capturesInput
+        ? 'run this tool in a new browser tab — it will capture your mouse; Esc releases it'
+        : 'run this tool in a new browser tab';
       openItBtn.onclick = () => openRunTab(htmlEntry);
       foot.appendChild(openItBtn);
     }

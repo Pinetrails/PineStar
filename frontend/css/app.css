@@ -590,6 +590,9 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 .ws-pane { flex:1 1 220px; min-width:0; background:var(--ph-faint); border:1px solid var(--ph-glow2);
   border-radius:3px; padding:7px 8px; box-sizing:border-box; }
 .ws-summary .ws-line { display:block; margin-bottom:5px; font-size:13px; line-height:1.35; overflow-wrap:anywhere; }
+/* disk-proven input-capture notice (validateWorkshopManifest.capturesInput) — shown above the Open-it action */
+.ws-capture-warn { display:block; margin-top:6px; font-size:12px; line-height:1.35; color:var(--gold);
+  background:rgba(var(--gold-rgb),.07); border:1px solid rgba(var(--gold-rgb),.35); border-radius:3px; padding:4px 7px; }
 .ws-summary .ws-k { display:block; color:var(--gold); font-size:10px; letter-spacing:1px; text-transform:uppercase; }
 .ws-summary .ws-v { display:block; color:var(--ph-bright); }
 .ws-fhead { color:var(--gold); font-size:10px; letter-spacing:1px; text-transform:uppercase; margin-bottom:4px; }
