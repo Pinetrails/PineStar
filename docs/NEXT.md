@@ -1,6 +1,76 @@
 # NEXT.md — current priorities & task queue
 
-## BUILT 2026-07-12 — MOUSE-CONFINEMENT GUARDRAILS (branch claude/starnet-mouse-confinement-0a89f5, awaiting merge)
+## MERGED 2026-07-12 — PER-RUN PHYSICAL-INPUT ISOLATION (`cf7984ba`)
+
+Transcript-first forensics changed the diagnosis. FPS stream `ws_mrhb6bm3cpz4` made zero
+`computer.use` calls and launched no headed test browser. Shell-authored Puppeteer/CDP clicked
+Deploy in headless Chromium; the game then called the real DOM `requestPointerLock()`, which entered
+Chromium's Win32 `ClipCursor` path. CDP clicks were synthetic; native pointer lock was not. The
+boot/shutdown/E-STOP guardrails below are recovery layers and cannot prevent confinement mid-run.
+
+This lane closes both reproduced routes:
+- Ordinary runs expose neither `computer.use` nor `desktop.open`; both are removed from capability
+  telemetry/provider wire/dispatch, the computer driver is inert, physical input has a separate
+  danger class, and the packaged sidecar forces `STARNET_COMPUTER_DRIVER=0` + headless browsing.
+- Local UI/game tests use owned `browser.test_*` only: the agent's running background-server handle
+  and advertised origin are required; each run gets a private profile + ephemeral CDP port; pointer
+  and keyboard locks are emulated before navigation; popups are paused/closed; arbitrary eval is not
+  exposed; CDP/page input is synthetic; and Chromium exit is awaited in the outer `finally`.
+- `shell.exec` and `verify.run` categorically refuse direct browsers/browser automation, native input
+  APIs, GUI/native runtimes, local executables, `--open`, and normal npm/node/Python/PowerShell/cmd/
+  Bun/Deno indirection. Build/unit/HTTP work remains available.
+
+The follow-up audit extends this from the FPS route to a harness-wide user-control policy:
+- A central impact authority runs before capability grants, Full Access, and cached consent. Missing
+  run surfaces are autonomous; autonomous runs cannot start workspace processes, control media, use
+  unknown connectors, launch a desktop app, or access physical input. Physical-input and visible-
+  desktop impacts are unconditionally unavailable until a future native one-shot gesture lease exists.
+- Every custom MCP tool is `external-unknown` regardless of transport or server-supplied `readOnlyHint`.
+  It is absent from autonomous runs and requires an exact live, non-cacheable confirmation per call in
+  a watched run. MCP stdio defaults off and only a broker-proven isolated worker can enable it.
+- Child processes receive a minimal environment with StarNet/API/provider/channel credentials and
+  execution hooks stripped. Host safety pins force headless browsing, disable the computer driver and
+  local MCP stdio, and preserve user control.
+- `verify.run` uses the same command decision seam as `shell.exec` and scans the exact nearest nested
+  project it executes. Fullscreen, pointer/keyboard lock, wake lock, orientation lock, and popup APIs
+  are neutralized inside the owned CDP test browser. Inputguard is observation-only: cleanup never calls
+  global `ClipCursor(NULL)` and therefore cannot disturb a game or app the user owns.
+- Workshop HTTP routes, decision payloads, frontend code, and Tauri IPC contain no file/folder launcher.
+  A token or renderer message is not accepted as proof of a human gesture; the user opens kept paths
+  manually. The task sidecar contains no Win32 input/capture implementation; its computer factory and
+  legacy `desktop.open` tool are inert and never projected.
+
+Focused gates are green (browser 79, computer 58, desktop 34, shell isolation 29, input policy 31,
+shell-bg 31, shell machine-state 74, harness integration 90). A hands-off FPS substrate run used an
+owned ephemeral CDP port (`51772`) and completed deploy, movement, relative aim, ADS, fire, reload,
+pause, resume, tamper-resistance checks, and confirmed browser exit; 255 continuous Win32 samples
+showed zero confinement, unchanged cursor position, and unchanged `GetLastInputInfo`.
+The stricter QA now refuses a pre-confined baseline. That refusal caught a pre-existing real-window
+lock live: foreground user Chrome titled `IRON & ASH — Free For All` owned clip rectangle
+`[5,92,1915,1027]` before the proof began and retained it afterward — the proof browser was never
+started. The observer cannot attribute who opened that Chrome window, but it independently confirms
+why real-window routes cannot remain ordinary agent tools.
+
+Residual release blocker: supported/modelled StarNet paths are closed, but a hostile or obfuscated
+arbitrary binary in the same interactive Windows session cannot be made absolutely input-safe by regex,
+environment variables, or a Job Object. A literal unknown-code guarantee requires a restricted process
+token plus private non-input desktop/session, or a container/VM such as Windows Sandbox/Hyper-V. The
+current machine has no available container/sandbox worker. Do not advertise the stronger OS boundary as
+shipped; do not enable unattended local execution while that boundary is absent.
+
+Ship blockers:
+- [x] Merged through the controller at `cf7984ba`; the merged tree is byte-identical to the reviewed
+      feature head. `test:fast` 315/315, full `test:http`, and
+      `cargo check --locked --all-targets` are green on trunk.
+- [x] Rebuilt the trunk 0.4.2 desktop executable and NSIS bundle. The source, release, and debug
+      sidecars match and contain no Win32 physical-input driver symbols. Artifact signing stopped
+      because `TAURI_SIGNING_PRIVATE_KEY` is unavailable; the already-created local bundle is unsigned.
+- [ ] Sign/reinstall the desktop app, then run a real installed FPS agent task while the Win32 observer
+      spans the entire run and browser teardown; grep its new transcript for `browser.test_*` and
+      absence of shell browser / `computer.use` / `desktop.open`.
+- [ ] Phase-5 computer evidence deliberately remains `blocked` until that installed receipt exists.
+
+## LANDED 2026-07-12 — BOOT/SHUTDOWN MOUSE-CONFINEMENT GUARDRAILS (merged as `c069cba3`)
 
 Incident: an agent-built pointer-lock FPS left a smoke browser + dev server alive after StarNet
 was force-closed, and a stuck win32 ClipCursor walled the user's REAL mouse until cleared by hand
@@ -9,9 +79,11 @@ green, boot-sweep + clip-release live-proven on an isolated sidecar (planted orp
 chrome untouched, planted clip released):
 - sidecar/procledger.js — persistent child-PID ledger; NEXT boot sweeps force-kill orphans
   (token-wise cmdline match = PID-reuse guard). Wired: shell.bg + agent browser + boot.
-- sidecar/inputguard.js — stuck-ClipCursor release at boot / shutdown / E-STOP (never periodic).
-- shell.exec opensVisibleWindow hard-block — cmd start/explorer/rundll32 url.dll/headed browsers
-  refused; npm start · findstr chrome · --headless launches locked ALLOWED (regression test).
+- sidecar/inputguard.js originally released global ClipCursor state at boot / shutdown / E-STOP. The
+  per-run lane supersedes that behavior with observation-only telemetry: StarNet must not mutate clip
+  state it cannot prove it owns, including clip state belonging to the user's own game.
+- `shell.exec` originally blocked visible launches while allowing `--headless`; the per-run isolation
+  lane above supersedes that exception because headless Chromium can still reach native pointer lock.
 - Open-it card warns "captures your mouse (pointer lock) — Esc releases" via disk-proven
   manifest.capturesInput scan in validateWorkshopManifest.
 - [ ] OPEN: walk the capture-warning card live in a full workshop round-trip (code+gate only so far).

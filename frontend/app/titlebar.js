@@ -1,0 +1,155 @@
+/* STARNET titlebar.js
+   Custom window chrome for the Windows desktop shell. The Rust shell drops the
+   native titlebar/border (decorations(false)) and stamps
+   window.__STARNET_CUSTOM_CHROME__ = 1 in its init script; ONLY then does this
+   module render the themed titlebar — a drag region plus MIN / MAX / CLOSE that
+   ride the body.theme-* phosphor vars (css/titlebar.css). Browser preview and
+   macOS keep their native chrome, so this module stays completely inert there.
+   Truthful chrome: if the Tauri window API can't be resolved the bar is NOT
+   rendered at all — never dead buttons over a window they can't control. */
+'use strict';
+
+(function (root, factory) {
+  const api = factory(root);
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  else root.Titlebar = api;
+})(typeof globalThis !== 'undefined' ? globalThis : this, function (root) {
+  'use strict';
+
+  /** The shell opted this window into custom chrome (set by main.rs, Windows only). */
+  function shouldInstall(win) {
+    return !!(win && win.__STARNET_CUSTOM_CHROME__);
+  }
+
+  /** Resolve the current Tauri window handle across API shapes (same ladder as fullscreen.js). */
+  function tauriWindow(win) {
+    const api = win && win.__TAURI__;
+    if (!api) return null;
+    const windowApi = api.window || api.webviewWindow;
+    if (!windowApi) return null;
+    if (typeof windowApi.getCurrentWindow === 'function') return windowApi.getCurrentWindow();
+    if (typeof windowApi.getCurrentWebviewWindow === 'function') return windowApi.getCurrentWebviewWindow();
+    if (windowApi.Window && typeof windowApi.Window.getCurrent === 'function') return windowApi.Window.getCurrent();
+    if (windowApi.WebviewWindow && typeof windowApi.WebviewWindow.getCurrent === 'function') return windowApi.WebviewWindow.getCurrent();
+    if (windowApi.appWindow) return windowApi.appWindow;
+    return null;
+  }
+
+  /** Button actions against a resolved window handle. Each swallows failures —
+      a broken IPC call must never throw out of a click handler. */
+  function handlers(appWindow, warn) {
+    const guard = p => Promise.resolve(p).catch(err => {
+      if (typeof warn === 'function') warn('[titlebar] window control failed', err);
+    });
+    return {
+      min() { return guard(appWindow.minimize()); },
+      max() { return guard(appWindow.toggleMaximize()); },
+      close() { return guard(appWindow.close()); }
+    };
+  }
+
+  /** Apply the observed window state to the chrome: MAX button flips to the
+      restore glyph while maximized; fullscreen hides the bar entirely (body.sn-fs). */
+  function applyState(state, body, maxBtn) {
+    const maximized = !!(state && state.maximized);
+    const fullscreen = !!(state && state.fullscreen);
+    if (maxBtn && maxBtn.classList) {
+      maxBtn.classList.toggle('is-max', maximized);
+      if (typeof maxBtn.setAttribute === 'function') {
+        maxBtn.setAttribute('aria-label', maximized ? 'Restore' : 'Maximize');
+      }
+    }
+    if (body && body.classList) body.classList.toggle('sn-fs', fullscreen);
+    return { maximized, fullscreen };
+  }
+
+  /** Read maximized/fullscreen from the live window; resolves {maximized,fullscreen}.
+      Missing probes read as false — the bar simply keeps its default glyphs. */
+  function readState(appWindow) {
+    const probe = fn => {
+      try {
+        return typeof appWindow[fn] === 'function'
+          ? Promise.resolve(appWindow[fn]()).catch(() => false)
+          : Promise.resolve(false);
+      } catch (_) {
+        return Promise.resolve(false);
+      }
+    };
+    return Promise.all([probe('isMaximized'), probe('isFullscreen')])
+      .then(([maximized, fullscreen]) => ({ maximized, fullscreen }));
+  }
+
+  function buildBar(doc) {
+    const bar = doc.createElement('div');
+    bar.id = 'sn-titlebar';
+    bar.setAttribute('data-tauri-drag-region', '');
+
+    const mark = doc.createElement('span');
+    mark.className = 'sn-tb-mark';
+    mark.setAttribute('data-tauri-drag-region', '');
+    mark.textContent = '◆ STARNET';
+
+    const rule = doc.createElement('span');
+    rule.className = 'sn-tb-rule';
+    rule.setAttribute('data-tauri-drag-region', '');
+
+    const controls = doc.createElement('div');
+    controls.className = 'sn-tb-controls';
+
+    const mkBtn = (id, label, iconClass, extra) => {
+      const b = doc.createElement('button');
+      b.id = id;
+      b.type = 'button';
+      b.className = 'sn-tb-btn' + (extra ? ' ' + extra : '');
+      b.setAttribute('aria-label', label);
+      const ic = doc.createElement('span');
+      ic.className = 'sn-ic ' + iconClass;
+      b.appendChild(ic);
+      controls.appendChild(b);
+      return b;
+    };
+    const btnMin = mkBtn('sn-tb-min', 'Minimize', 'sn-ic-min');
+    const btnMax = mkBtn('sn-tb-max', 'Maximize', 'sn-ic-max');
+    const btnClose = mkBtn('sn-tb-close', 'Close', 'sn-ic-close', 'sn-tb-x');
+
+    bar.appendChild(mark);
+    bar.appendChild(rule);
+    bar.appendChild(controls);
+    return { bar, btnMin, btnMax, btnClose };
+  }
+
+  function install(win, doc) {
+    win = win || root;
+    doc = doc || (win && win.document);
+    if (!doc || !doc.body || !shouldInstall(win)) return false;
+    if (win.__STARNET_TITLEBAR_WIRED__) return false;
+    const appWindow = tauriWindow(win);
+    if (!appWindow) return false; // no handle → no chrome; native-less window still closable via Alt+F4
+    win.__STARNET_TITLEBAR_WIRED__ = true;
+
+    const els = buildBar(doc);
+    const act = handlers(appWindow, win.console && win.console.warn ? win.console.warn.bind(win.console) : null);
+    els.btnMin.addEventListener('click', act.min);
+    els.btnMax.addEventListener('click', act.max);
+    els.btnClose.addEventListener('click', act.close);
+
+    const refresh = () => readState(appWindow).then(s => applyState(s, doc.body, els.btnMax));
+    // resize fires on maximize/restore AND fullscreen toggles — one honest probe path.
+    win.addEventListener('resize', refresh);
+
+    doc.body.classList.add('sn-chrome');
+    doc.body.appendChild(els.bar);
+    refresh();
+    return true;
+  }
+
+  if (root && root.document) {
+    if (root.document.readyState === 'loading') {
+      root.document.addEventListener('DOMContentLoaded', () => install(root, root.document), { once: true });
+    } else {
+      install(root, root.document);
+    }
+  }
+
+  return { shouldInstall, tauriWindow, handlers, applyState, readState, buildBar, install };
+});

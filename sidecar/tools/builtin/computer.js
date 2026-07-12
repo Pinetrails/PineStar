@@ -1,7 +1,7 @@
-/* sidecar/tools/builtin/computer.js - desktop computer-use tool.
-   The real OS driver is injected by the desktop shell. This module owns the
-   harness contract: action enum, consent/execute scope, destructive input
-   hard-blocks, and capture_after proof.
+/* sidecar/tools/builtin/computer.js - inert computer-use contract.
+   The task sidecar contains no real OS input/screen driver. This module owns
+   the schema, hard-blocks, and the host lease boundary for a future native
+   attended broker or injected test-only driver.
 
    makeComputerTools({ driver? }) -> { useTool, register(reg), _internals }
      driver.perform(action) -> Promise
@@ -14,8 +14,6 @@
   else { root.SK = root.SK || {}; root.SK.tools = root.SK.tools || {}; (root.SK.tools.builtin = root.SK.tools.builtin || {}).computer = api; }
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
-
-  const CP = require('node:child_process');
 
   const ACTIONS = ['screenshot', 'move', 'click', 'double_click', 'drag', 'scroll', 'type', 'key', 'hotkey', 'wait'];
   // Keyboard input lands in whatever window has FOCUS — these are the actions the focus-truth guard covers.
@@ -102,34 +100,6 @@
     }
     return 'foreground="' + title + '" (' + proc + ')';
   }
-  function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
-  // ASYNC (was CP.spawnSync): a computer.use action drives PowerShell for up to 15s; spawnSync BLOCKED the whole
-  // sidecar event loop for that entire window — /api/health, every other run, and the SSE keep-alives all froze
-  // behind a single mouse move. execFile runs the child off-thread so the host stays responsive. Same argv,
-  // timeout, and windowsHide; the {error,status,stdout,stderr} handling maps onto execFile's (err, stdout, stderr).
-  function runPowerShell(script, timeoutMs) {
-    const exe = process.env.SystemRoot ? process.env.SystemRoot + '\\System32\\WindowsPowerShell\\v1.0\\powershell.exe' : 'powershell.exe';
-    return new Promise((resolve, reject) => {
-      CP.execFile(exe, ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-STA', '-Command', script], {
-        encoding: 'utf8',
-        timeout: timeoutMs || 15000,
-        windowsHide: true,
-        maxBuffer: 8 * 1024 * 1024   // a screenshot capture returns a JSON blob; keep headroom (spawnSync had no cap)
-      }, (err, stdout, stderr) => {
-        if (err) {
-          // execFile folds a non-zero exit, a spawn failure, and a timeout into err; preserve the old message shape
-          // (prefer stderr, then stdout, then a generic fallback).
-          const msg = (String(stderr || '').trim() || String(stdout || '').trim() || (err && err.message) || 'PowerShell desktop driver failed');
-          return reject(new Error(msg));
-        }
-        resolve(String(stdout || '').trim());
-      });
-    });
-  }
-  async function runPowerShellJson(script, timeoutMs) {
-    const out = await runPowerShell(script, timeoutMs);
-    try { return JSON.parse(out); } catch (e) { throw new Error('desktop driver returned invalid JSON: ' + out.slice(0, 200)); }
-  }
   function win32DriverRequested(env) {
     env = env || process.env;
     return /^(1|true|win32|windows)$/i.test(String(env.STARNET_COMPUTER_DRIVER || env.SKYNET_COMPUTER_DRIVER || ''));
@@ -144,171 +114,52 @@
     env = env || process.env;
     return /^(1|true|yes|on)$/i.test(String(env.STARNET_DESKTOP_SHELL || env.SKYNET_DESKTOP_SHELL || ''));
   }
-  // The real win32 desktop driver is active when: explicitly requested by env, OR we are
-  // on win32 running under the real desktop shell (and not explicitly disabled). A headless
-  // / server / CI `node sidecar/index.js` sets neither, so it keeps the safe no-driver stub.
+  // Environment selection is only ONE half of the authority check. Presence under the
+  // desktop shell used to auto-enable physical input for every task; that was unsafe.
+  // The shell marker is informational now: Windows plus an explicit driver selection is
+  // necessary, and makeComputerTools still requires a host-minted attended lease per call.
   function win32DriverActive(env, platform) {
-    env = env || process.env;
-    platform = platform || process.platform;
-    if (win32DriverRequested(env)) return true;
-    if (platform === 'win32' && underDesktopShell(env) && !win32DriverDisabled(env)) return true;
+    // The real Win32 driver no longer lives on an activatable production path. Environment
+    // variables are data a same-user child can forge; they can never mint desktop authority.
+    void env; void platform;
     return false;
   }
-  // ---- win32 keyboard (SendKeys) helpers ----
-  // SendKeys treats + ^ % ~ ( ) { } [ ] as control chars; escape each by wrapping in {}
-  // so LITERAL text types verbatim. (hardBlock already ran in the tool layer.)
-  function sendKeysEscapeLiteral(s) {
-    return String(s == null ? '' : s).replace(/[+^%~(){}\[\]]/g, ch => '{' + ch + '}');
-  }
-  // Named single keys -> SendKeys tokens. Printable single chars pass through (escaped).
-  const SENDKEYS_NAMED = {
-    enter: '{ENTER}', return: '{ENTER}', tab: '{TAB}', esc: '{ESC}', escape: '{ESC}',
-    backspace: '{BACKSPACE}', bs: '{BACKSPACE}', delete: '{DELETE}', del: '{DELETE}',
-    up: '{UP}', down: '{DOWN}', left: '{LEFT}', right: '{RIGHT}', home: '{HOME}', end: '{END}',
-    pageup: '{PGUP}', pagedown: '{PGDN}', space: ' ', spacebar: ' ', insert: '{INSERT}',
-    f1: '{F1}', f2: '{F2}', f3: '{F3}', f4: '{F4}', f5: '{F5}', f6: '{F6}', f7: '{F7}',
-    f8: '{F8}', f9: '{F9}', f10: '{F10}', f11: '{F11}', f12: '{F12}'
-  };
-  const SENDKEYS_MOD = { ctrl: '^', control: '^', alt: '%', shift: '+', win: '', meta: '' };
-  function keyToSendKeys(key) {
-    const k = String(key == null ? '' : key).trim();
-    const named = SENDKEYS_NAMED[k.toLowerCase()];
-    if (named) return named;
-    if (k.length === 1) return sendKeysEscapeLiteral(k);
-    throw new Error('unsupported desktop key: ' + key);
-  }
-  // A hotkey combo: last token is the key, the rest are modifiers. Win/meta cannot be
-  // expressed via SendKeys, so a combo requiring it is refused (rather than silently dropped).
-  function hotkeyToSendKeys(keys) {
-    const arr = (Array.isArray(keys) ? keys : String(keys || '').split('+')).map(s => String(s).trim()).filter(Boolean);
-    if (!arr.length) throw new Error('empty desktop hotkey');
-    const mods = arr.slice(0, -1), main = arr[arr.length - 1];
-    let prefix = '';
-    for (const m of mods) {
-      const ml = m.toLowerCase();
-      if (!(ml in SENDKEYS_MOD)) throw new Error('unsupported hotkey modifier: ' + m);
-      if (ml === 'win' || ml === 'meta') throw new Error('win/meta hotkeys are not supported by the local driver: ' + arr.join('+'));
-      prefix += SENDKEYS_MOD[ml];
-    }
-    return prefix + '(' + keyToSendKeys(main) + ')';
-  }
-  // Build the PowerShell that SendWait's a SendKeys token string. The token string is passed
-  // base64-encoded so no quoting/interpolation of user text ever reaches the shell.
-  function sendKeysScript(tokens) {
-    const b64 = Buffer.from(String(tokens || ''), 'utf16le').toString('base64');
-    return `
-Add-Type -AssemblyName System.Windows.Forms
-$keys = [System.Text.Encoding]::Unicode.GetString([System.Convert]::FromBase64String('${b64}'))
-[System.Windows.Forms.SendKeys]::SendWait($keys)
-[Console]::Out.Write((@{ ok = $true } | ConvertTo-Json -Compress))
-`;
-  }
   function makeWin32DesktopDriver() {
-    function mouseScript(body) {
-      return `
-Add-Type @"
-using System;
-using System.Runtime.InteropServices;
-public class StarNetMouse {
-  [DllImport("user32.dll")] public static extern bool SetCursorPos(int X, int Y);
-  [DllImport("user32.dll")] public static extern void mouse_event(int flags, int dx, int dy, int data, int extra);
-}
-"@
-${body}
-[Console]::Out.Write((@{ ok = $true } | ConvertTo-Json -Compress))
-`;
-    }
-    return {
-      perform: async (action) => {
-        const a = validateAction(action);
-        if (a.action === 'screenshot') return 'desktop screenshot requested';
-        if (a.action === 'wait') { await sleep(a.durationMs || 500); return 'waited ' + (a.durationMs || 500) + 'ms'; }
-        if (a.action === 'move') {
-          await runPowerShellJson(mouseScript('[StarNetMouse]::SetCursorPos(' + Math.round(a.x || 0) + ', ' + Math.round(a.y || 0) + ') | Out-Null'));
-          return 'moved pointer';
-        }
-        if (a.action === 'click' || a.action === 'double_click') {
-          const x = Math.round(a.x || 0), y = Math.round(a.y || 0);
-          const click = '[StarNetMouse]::mouse_event(2,0,0,0,0); Start-Sleep -Milliseconds 40; [StarNetMouse]::mouse_event(4,0,0,0,0);';
-          const body = '[StarNetMouse]::SetCursorPos(' + x + ', ' + y + ') | Out-Null; ' + click + (a.action === 'double_click' ? ' Start-Sleep -Milliseconds 80; ' + click : '');
-          await runPowerShellJson(mouseScript(body));
-          return a.action + ' delivered';
-        }
-        if (a.action === 'scroll') {
-          const data = Math.round(Number(a.dy || 0) || Number(a.y || 0) || 0);
-          await runPowerShellJson(mouseScript('[StarNetMouse]::mouse_event(2048,0,0,' + data + ',0);'));
-          return 'scroll delivered';
-        }
-        if (a.action === 'type') {
-          // hardBlock (command-like typing) already ran in the tool layer.
-          await runPowerShellJson(sendKeysScript(sendKeysEscapeLiteral(a.text || '')));
-          return 'typed ' + String(a.text || '').length + ' chars';
-        }
-        if (a.action === 'key') {
-          // hardBlock (destructive key) already ran in the tool layer.
-          await runPowerShellJson(sendKeysScript(keyToSendKeys(a.key)));
-          return 'key ' + a.key + ' delivered';
-        }
-        if (a.action === 'hotkey') {
-          // hardBlock (destructive hotkey) already ran in the tool layer.
-          const combo = (a.keys && a.keys.length) ? a.keys : a.key;
-          await runPowerShellJson(sendKeysScript(hotkeyToSendKeys(combo)));
-          return 'hotkey ' + ((a.keys || []).join('+') || a.key || '') + ' delivered';
-        }
-        if (a.action === 'drag') throw new Error('local win32 desktop driver does not yet support drag');
-        throw new Error('unsupported win32 desktop action: ' + a.action);
-      },
-      // Which window will keyboard input actually land in? Title + owning process of the OS foreground window.
-      foreground: async () => runPowerShellJson(`
-Add-Type @"
-using System;
-using System.Text;
-using System.Runtime.InteropServices;
-public class StarNetFg {
-  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
-  [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetWindowText(IntPtr hWnd, StringBuilder text, int count);
-  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint pid);
-}
-"@
-$h = [StarNetFg]::GetForegroundWindow()
-$sb = New-Object System.Text.StringBuilder 512
-[StarNetFg]::GetWindowText($h, $sb, 512) | Out-Null
-$fgPid = [uint32]0
-[StarNetFg]::GetWindowThreadProcessId($h, [ref]$fgPid) | Out-Null
-$pname = ''
-try { $pname = (Get-Process -Id $fgPid -ErrorAction Stop).ProcessName } catch {}
-[Console]::Out.Write((@{ title = $sb.ToString(); process = $pname } | ConvertTo-Json -Compress))
-`),
-      capture: async () => runPowerShellJson(`
-Add-Type -AssemblyName System.Windows.Forms
-Add-Type -AssemblyName System.Drawing
-$bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
-if ($bounds.Width -le 0 -or $bounds.Height -le 0) { throw "primary screen has no size" }
-$path = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), "starnet-computer-" + [guid]::NewGuid().ToString() + ".png")
-$bmp = New-Object System.Drawing.Bitmap $bounds.Width, $bounds.Height
-$g = [System.Drawing.Graphics]::FromImage($bmp)
-try {
-  $g.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size)
-  $bmp.Save($path, [System.Drawing.Imaging.ImageFormat]::Png)
-  $hash = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
-  $bytes = (Get-Item -LiteralPath $path).Length
-  [Console]::Out.Write((@{ width = $bounds.Width; height = $bounds.Height; bytes = $bytes; sha256 = $hash } | ConvertTo-Json -Compress))
-} finally {
-  try { $g.Dispose() } catch {}
-  try { $bmp.Dispose() } catch {}
-  try { Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue } catch {}
-}
-`, 20000)
-    };
+    return makeInertDriver('the Win32 physical-input driver was removed from the task sidecar');
   }
+
+  // Fail-closed driver injected into every ordinary StarNet run. It throws instead of
+  // returning success, so telemetry never claims an input action that policy prevented.
+  function makeInertDriver(reason) {
+    const why = reason || 'physical input is disabled for agent runs';
+    const unavailable = async () => { throw new Error(why); };
+    return { perform: unavailable, capture: unavailable, foreground: unavailable, inert: true };
+  }
+
+  // A task, autonomous/test surface, standing approval, Full Access, and the desktop-shell
+  // environment are not input authority. The sole positive shape is reserved for a future
+  // host-owned one-shot attended channel. No current runOnce caller mints this lease.
+  function physicalInputAllowed(deps, ctx) {
+    deps = deps || {}; ctx = ctx || {};
+    return deps.allowPhysicalInput === true &&
+      ctx.physicalInputAuthorized === true &&
+      ctx.surface === 'interactive' &&
+      ctx.isTask === false &&
+      ctx.inputMode === 'attended';
+  }
+  function assertPhysicalInputAllowed(deps, ctx) {
+    if (!physicalInputAllowed(deps, ctx)) {
+      throw new Error('physical input is disabled: no explicit attended input lease; use headless CDP synthetic input instead');
+    }
+  }
+
   function makeDriver(deps) {
+    deps = deps || {};
+    if (deps.allowPhysicalInput !== true) return makeInertDriver();
     const d = deps && deps.driver;
     if (d && typeof d.perform === 'function') return d;
     if (process.platform === 'win32' && win32DriverActive(process.env, process.platform)) return makeWin32DesktopDriver();
-    return {
-      perform: async () => { throw new Error('computer-use unavailable: no desktop driver configured'); },
-      capture: async () => { throw new Error('computer-use unavailable: no desktop capture driver configured'); }
-    };
+    return makeInertDriver('computer-use unavailable: no explicitly configured attended desktop driver');
   }
 
   function makeComputerTools(deps) {
@@ -316,11 +167,13 @@ try {
     const driver = makeDriver(deps);
     const useTool = {
       name: 'computer.use',
-      capability: 'workbench',
+      // A cached shell/verify approval (`workbench:execute`) must never authorize input.
+      capability: 'physical-input',
+      impact: 'physical-input',
       scope: 'execute',
       requiresConsent: true,
       timeoutMs: 15000,
-      description: 'LAST-RESORT control of the user\'s VISIBLE desktop (mouse/keyboard/screenshot), attended and consent-gated. Do NOT reach for this while a quieter path exists: a dedicated tool for the target service, the headless browser tools for the web, or shell.exec (installed apps can usually be driven invisibly via app URI schemes, CLIs, or PowerShell). Keyboard input lands in whatever window has FOCUS — pass expectApp (an app/window name substring, e.g. "spotify") with every type/key/hotkey so input is refused if focus moved; typing into StarNet\'s own window is always refused. Verify state-changing actions with capture_after:true. Supports screenshot, move, click, double_click, drag, scroll, type, key, hotkey, and wait. Destructive shortcuts and command-like typing are blocked.',
+      description: 'PHYSICAL mouse/keyboard/screen control. Disabled in ordinary task, autonomous, and test runs; use browser.test_* for headless CDP synthetic input. It can run only through a separate host-minted attended input lease (not a prompt, standing approval, or Full Access grant).',
       schema: {
         type: 'object',
         required: ['action'],
@@ -340,6 +193,7 @@ try {
         }
       },
       run: async (args, ctx) => {
+        assertPhysicalInputAllowed(deps, ctx);
         const action = hardBlock(args || {});
         const fgNote = await checkFocus(driver, action);   // throws BEFORE any input is sent when focus is wrong
         const result = await driver.perform(action);
@@ -354,8 +208,8 @@ try {
         return { content, summary: summarize(action) };
       }
     };
-    return { useTool, register(reg) { reg.register(useTool); return reg; }, _internals: { ACTIONS, KEYBOARD_ACTIONS, SELF_WINDOW_RE, checkFocus, hardBlock, validateAction, summarize, COMMAND_TEXT_RE, win32DriverRequested, win32DriverActive, win32DriverDisabled, underDesktopShell, makeWin32DesktopDriver, keyToSendKeys, hotkeyToSendKeys, sendKeysEscapeLiteral } };
+    return { useTool, register(reg) { reg.register(useTool); return reg; }, _internals: { ACTIONS, KEYBOARD_ACTIONS, SELF_WINDOW_RE, checkFocus, hardBlock, validateAction, summarize, COMMAND_TEXT_RE, win32DriverRequested, win32DriverActive, win32DriverDisabled, underDesktopShell, makeWin32DesktopDriver, makeInertDriver, physicalInputAllowed, assertPhysicalInputAllowed } };
   }
 
-  return { makeComputerTools, _internals: { ACTIONS, KEYBOARD_ACTIONS, SELF_WINDOW_RE, checkFocus, hardBlock, validateAction, summarize, COMMAND_TEXT_RE, win32DriverRequested, win32DriverActive, win32DriverDisabled, underDesktopShell, makeWin32DesktopDriver, keyToSendKeys, hotkeyToSendKeys, sendKeysEscapeLiteral } };
+  return { makeComputerTools, _internals: { ACTIONS, KEYBOARD_ACTIONS, SELF_WINDOW_RE, checkFocus, hardBlock, validateAction, summarize, COMMAND_TEXT_RE, win32DriverRequested, win32DriverActive, win32DriverDisabled, underDesktopShell, makeWin32DesktopDriver, makeInertDriver, physicalInputAllowed, assertPhysicalInputAllowed } };
 });

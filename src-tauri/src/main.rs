@@ -1024,11 +1024,14 @@ fn sidecar_command(state: &AppState, entry: &Path, node: &Path) -> Command {
         .env("SKYNET_API_TOKEN", &state.api_token)
         .env("STARNET_WORKSPACES", state.workspaces.as_os_str())
         .env("SKYNET_WORKSPACES", state.workspaces.as_os_str())
-        // Tells the sidecar it is running under the real desktop shell (a visible
-        // WebView2 with a live screen), so the win32 computer-use driver defaults ON.
-        // A headless/server/CI `node sidecar/index.js` never sets this, so it keeps the
-        // safe no-driver stub. STARNET_COMPUTER_DRIVER still overrides either way.
+        // Desktop identity is informational only. Physical input is explicitly OFF in
+        // the installed sidecar, and controlled browsing is pinned headless; ordinary
+        // agent runs use browser.test_* CDP events with in-page lock emulation.
         .env("STARNET_DESKTOP_SHELL", "1")
+        .env("STARNET_COMPUTER_DRIVER", "0")
+        .env("STARNET_BROWSER_HEADLESS", "1")
+        .env("STARNET_USER_CONTROL_MODE", "preserve")
+        .env("STARNET_MCP_STDIO", "0")
         // The packaged build's true version — computeVersionSurface() reads this first, so
         // /api/diagnostics reports the real build instead of "unknown" (the bundled sidecar
         // has no src-tauri/tauri.conf.json to fall back to). CARGO_PKG_VERSION is the
@@ -1839,6 +1842,11 @@ fn main() {
             let init = format!(
                 "window.__STARNET_API__='http://127.0.0.1:{port}';window.__STARNET_API_TOKEN__='{api_token}';var _sf=window.fetch;window.fetch=function(u,o){{if(typeof u==='string'&&u.indexOf('/api/')===0)u=window.__STARNET_API__+u;return _sf(u,o)}};"
             );
+            // Windows runs WITHOUT native decorations (see the window builder below): this flag
+            // tells the frontend (app/titlebar.js) to render its own themed titlebar with
+            // MIN/MAX/CLOSE riding the Commander's phosphor theme. macOS/browser never set it.
+            #[cfg(windows)]
+            let init = format!("{init}window.__STARNET_CUSTOM_CHROME__=1;");
 
             // Purge stale WebView2 compiled/GPU caches when the app version changed, BEFORE the
             // webview window is created — otherwise V8 can run old bytecode against new data
@@ -1856,7 +1864,7 @@ fn main() {
                 );
             }
 
-            WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
+            let main_window = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
                 .title("StarNet")
                 .inner_size(1280.0, 832.0)
                 .min_inner_size(960.0, 600.0)
@@ -1866,8 +1874,15 @@ fn main() {
                 // Reveal only after the document paints — avoids a white flash.
                 .on_page_load(|window, _payload| {
                     let _ = window.show();
-                })
-                .build()?;
+                });
+            // Windows: drop the stock titlebar/border — the frontend draws its own themed
+            // chrome (titlebar.js, gated on __STARNET_CUSTOM_CHROME__ above). shadow(true)
+            // keeps the DWM drop shadow, and Tauri's undecorated-resize handling keeps the
+            // edge-drag resize grips working. macOS keeps native decorations until a mac
+            // pass is designed (unverified there — do not blind-apply).
+            #[cfg(windows)]
+            let main_window = main_window.decorations(false).shadow(true);
+            main_window.build()?;
 
             Ok(())
         })

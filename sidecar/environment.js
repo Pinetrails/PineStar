@@ -51,6 +51,27 @@
     }
     return dflt;
   }
+  const SECRET_ENV_NAME_RE = /(?:^|_)(?:TOKEN|KEY|SECRET|PASSWORD|PASS|AUTH|BEARER|COOKIE|CREDENTIAL)(?:_|$)/i;
+  const INTERNAL_ENV_NAME_RE = /^(?:STARNET|SKYNET)_/i;
+  const EXECUTION_HOOK_ENV_RE = /^(?:NODE_OPTIONS|NODE_PATH|npm_config_script_shell|COMSPEC)$/i;
+  function sanitizeChildEnv(base) {
+    const src = base || {};
+    const out = {};
+    for (const k of Object.keys(src)) {
+      if (SECRET_ENV_NAME_RE.test(k) || INTERNAL_ENV_NAME_RE.test(k) || EXECUTION_HOOK_ENV_RE.test(k)) continue;
+      const v = src[k];
+      if (v != null) out[k] = String(v);
+    }
+    // Reserved safety pins are host authority. A task command/project hook cannot inherit or
+    // override a switch that re-enables physical input, headed browsing, or local MCP children.
+    out.STARNET_USER_CONTROL_MODE = 'preserve';
+    out.STARNET_COMPUTER_DRIVER = '0';
+    out.STARNET_BROWSER_HEADLESS = '1';
+    out.STARNET_MCP_STDIO = '0';
+    out.BROWSER = 'none';
+    if (src.SystemRoot) out.ComSpec = String(src.SystemRoot).replace(/[\\/]+$/, '') + '\\System32\\cmd.exe';
+    return out;
+  }
   function backendFromEnv(env) {
     return firstEnv(env, ['STARNET_EXEC_BACKEND', 'SKYNET_EXEC_BACKEND'], 'local').trim().toLowerCase();
   }
@@ -159,6 +180,7 @@
     const clock = deps.clock || { now: function () { return 0; } };
     const platform = deps.platform || (WIN ? 'win32' : 'posix');
     const isWin = platform === 'win32';
+    const childEnv = sanitizeChildEnv(deps.env || (typeof process !== 'undefined' ? process.env : {}));
     const sessions = new Map();
 
     function workspaceRoot(agentId) {
@@ -205,7 +227,7 @@
           spawn: spawn,
           file: String(opts.cmd || ''),
           args: null,
-          spawnOptions: { cwd: opts.cwd || getCwd(aid), shell: true, windowsHide: true },
+          spawnOptions: { cwd: opts.cwd || getCwd(aid), shell: true, windowsHide: true, env: childEnv },
           timeoutMs: opts.timeoutMs,
           maxTimeoutMs: opts.maxTimeoutMs,
           maxBytes: opts.maxBytes,
@@ -217,7 +239,7 @@
       startBackground: function (opts) {
         if (!bg || typeof bg.start !== 'function') return { ok: false, error: 'background processes are not available for the local backend' };
         const aid = safeAgentId((opts && opts.agentId) || 'agent');
-        return bg.start({ agentId: aid, cmd: opts.cmd, cwd: opts.cwd || getCwd(aid), isWin: isWin });
+        return bg.start({ agentId: aid, cmd: opts.cmd, cwd: opts.cwd || getCwd(aid), isWin: isWin, env: childEnv });
       },
       statusBackground: function (agentId, bgId) {
         return bg && typeof bg.status === 'function' ? bg.status(safeAgentId(agentId || 'agent'), bgId) : (bgId ? null : []);
@@ -340,9 +362,9 @@
       killBackground: backend.killBackground,
       killAllBackground: backend.killAllBackground,
       _backend: backend,
-      _internals: { safeAgentId: safeAgentId, makeConfig: makeConfig, runProcess: runProcess, hostInside: hostInside, posixInside: posixInside }
+      _internals: { safeAgentId: safeAgentId, makeConfig: makeConfig, sanitizeChildEnv: sanitizeChildEnv, runProcess: runProcess, hostInside: hostInside, posixInside: posixInside }
     };
   }
 
-  return { makeEnvironmentManager: makeEnvironmentManager, makeConfig: makeConfig, safeAgentId: safeAgentId, runProcess: runProcess };
+  return { makeEnvironmentManager: makeEnvironmentManager, makeConfig: makeConfig, sanitizeChildEnv: sanitizeChildEnv, safeAgentId: safeAgentId, runProcess: runProcess };
 });

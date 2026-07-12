@@ -22,6 +22,7 @@
 <link rel="stylesheet" href="css/motion.css">
 <link rel="stylesheet" href="css/topbar.css"><!-- topbar instrument cluster: builds on motion.css's premium component vocabulary -->
 <link rel="stylesheet" href="css/widgets.css"><!-- widget rails: pinnable telemetry instruments in the chrome's dead space (widgets.js) -->
+<link rel="stylesheet" href="css/titlebar.css"><!-- custom window chrome (Windows desktop shell): themed titlebar + MIN/MAX/CLOSE; inert unless body.sn-chrome (titlebar.js) -->
 
 </head>
 <body class="theme-amber">
@@ -322,7 +323,7 @@
      being tinted by the themed top-glow and striped by the scanlines. A .screen is a z-index:10
      stacking context, so nothing inside one can ever out-stack the glass. #logo-anchor below
      reserves its seat in the topbar; app.js positionLogo() keeps the two aligned. -->
-<div id="logo"><img class="logo-img" src="assets/brand/starnet-logo.png" alt="STARNET"><span class="logo-sub">AI-AGENT HARNESS</span></div>
+<div id="logo"><img class="logo-img" src="assets/brand/starnet-mark.svg" alt="STARNET"><span class="logo-sub">AI-AGENT HARNESS</span></div>
 
 <section id="screen-game" class="screen">
 
@@ -354,7 +355,7 @@
   </header>
 
   <aside id="left">
-    <h3>▮ CREW MANIFEST<span class="h3-aux" id="crew-n"></span></h3>
+    <h3>▮ CREW<span class="crew-h3-right"><span class="h3-aux" id="crew-n"></span><button id="crew-hide" class="crew-hide" type="button" title="Hide the crew rail" aria-label="Hide the crew rail" aria-expanded="true">◂</button></span></h3>
     <ul id="crew"></ul>
     <div id="crew-sum"></div>
     <div id="ws-wrap">
@@ -374,6 +375,9 @@
       <span class="cam-rec">● REC</span>
       <span class="cam-feed">FEED: LIVE</span>
     </div>
+    <!-- CREW rail restore handle (leftrail.js): a slim phosphor drawer tab on the stage's left edge,
+         visible only while the rail is hidden -->
+    <button id="crew-show" class="crew-show" type="button" title="Show the crew rail" aria-label="Show the crew rail" hidden>▸ CREW</button>
   </div>
 
   <aside id="chat-panel">
@@ -538,6 +542,7 @@
 <script src="app/updatecore.js"></script>
 <script src="app/updates.js"></script>
 <script src="app/fullscreen.js"></script>
+<script src="app/titlebar.js"></script><!-- custom window chrome: renders the themed titlebar ONLY when the desktop shell sets __STARNET_CUSTOM_CHROME__ (Windows, decorations off) -->
 <script src="app/ctxgauge.js"></script>
 <script src="app/floorstats.js"></script>
 <script src="app/slaglog.js"></script>
@@ -616,6 +621,8 @@ document.write('<script src="' + ((window.__STARNET_API__ || '') + '/shared/spec
 <script src="app/stationui.js"></script>
 <script src="app/navdock.js"></script>
 <script src="app/chatresize.js"></script>
+<script src="app/leftrail.js"></script><!-- hide/show the CREW rail (◂ in the rail header · ▸ CREW drawer tab on the stage edge); persisted per machine -->
+
 <script src="app/worldmodel.js"></script>
 <script src="app/stationbake.js"></script>
 <script src="app/crtlab.js"></script><!-- DEV-only CRT/lighting tuning panel; inert unless ?crtlab is in the URL -->

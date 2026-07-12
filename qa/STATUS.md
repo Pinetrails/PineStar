@@ -1,5 +1,9 @@
 # QA STATION — dashboard
 
+**2026-07-12 merge digest:** `agent/codex-input-isolation` → `feat/harness-backend` at `cf7984ba`;
+`test:fast` 315/315, full `test:http`, and Rust all-target checks are green; the 0.4.2 bundle was
+built, while signing, reinstall, and installed-app proof remain pending.
+
 One-page status for the Self-Testing Station crew. Scripts detect + write findings to
 `qa/findings/`; sessions (Overseer) read the ledger, judge, and notify. The live
 per-crew roll-up below can be regenerated any time with:
@@ -313,3 +317,6 @@ node scripts/qa/ledger.mjs --status
 - 2026-07-12 · workstation-screen fix RE-merged as f2695c82 (first merge 493ff4aa was collateral-reset by the bubble-pos session's red-gate rollback). GATE-RED ROOT CAUSE PROVEN: test/qa-product-perfect-claims.test.js passes at exactly e7b06795 and fails (9 FAILs, planning BLOCKED) on ANY descendant commit — the W0 candidate ledger is SHA-bound, so test:fast is structurally red for every post-stamp merge, product code irrelevant (verified in clean worktrees at e7b06795=OK vs 6771231d/f2695c82=FAIL). Instrument-not-product (QA-escape-loop precedent) — merge kept. W0 lane must re-stamp per trunk advance or scope the claims test out of test:fast.
 - 2026-07-12 claude/starnet-conveyor-ui-overlap-72372d → f6e1b669 (+ 82ba23a4 W0 surface re-stamp): machinery-callout label collision fix (REFIT marks, belt glow, world nags); test:fast 309 green
 - 2026-07-12 claude/starnet-agent-approval-951b93 -> b1b2b8a8 (+ 9104c151 W0 surface re-stamp): approvalClause fix — both FULL ACCESS and ASK FIRST prompt clauses now route approvals through the real permission.prompt consent card and forbid asking in chat text (agent had asked 'approve?' in prose, invisible to the broker); live-verified composed prompt in seeded app; test:fast 311 green
+- 2026-07-12 claude/custom-window-theme-borders-853614 → 32c29d8c (ff; + c47577b7 W0 surface re-stamp covering the concurrent 00fca6e8 logo + ccfb4936 escape-fix merges that skipped their stamps): Windows custom window chrome — decorations(false)+shadow(true), themed titlebar (drag + MIN/MAX/CLOSE on --ph vars, fullscreen-aware), window-control capabilities; mac/browser untouched; live DOM-verified; test:fast 313 green on trunk
+- 2026-07-12 claude/starnet-logo-quality-4cb2b1 → 00fca6e8 (stamp covered by c47577b7): topbar brand mark rebuilt as crisp vector starnet-mark.svg (the 1100px ASCII-mosaic PNG collapsed to speckle at 30px; title screen keeps the big art) + positionLogo() deterministic re-seat (topbar ResizeObserver + wordmark load event); live-verified aligned on cold load, no console errors; test:fast 313 green on trunk tip
+- 2026-07-12 claude/starnet-agent-escape-fix-497679 → ccfb4936: agent-in-the-void escape fix — rederive now re-frames EVERY crew body across station origin shifts (was hero-only), syncCrewFromPlan no-bays path re-foots stranded bodies, per-tick containBody/ensureAgentValid backstop re-homes any off-floor body; live-verified (void teleport re-homes in 1 frame; addRoom origin shift moves hero+crew together); locked by test/crew-containment.test.js; gate 312/313 green (qa-product-perfect-claims red PRE-EXISTS at 00fca6e8, not this merge)

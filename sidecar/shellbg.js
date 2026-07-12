@@ -54,7 +54,7 @@
     function count(agentId) { let n = 0; for (const p of procs.values()) if (p.agentId === agentId && p.running && !p.killed) n++; return n; }
     function view(r) {
       return {
-        bgId: r.bgId, cmd: r.cmd, running: r.running, exitCode: r.exitCode, killed: r.killed,
+        bgId: r.bgId, pid: r.child && r.child.pid || null, cmd: r.cmd, running: r.running, exitCode: r.exitCode, killed: r.killed,
         ms: Math.max(0, (r.endedAt != null ? r.endedAt : now()) - r.startedAt),
         tail: r.out.slice(-2000)
       };
@@ -70,7 +70,7 @@
       let child;
       // detached on POSIX so the child leads its own group (clean tree-kill); windowsHide everywhere. unref so a
       // live bg child never keeps the sidecar process alive on its own.
-      try { child = spawn(cmd, { cwd: o.cwd, shell: true, windowsHide: true, detached: !isWin }); }
+      try { child = spawn(cmd, { cwd: o.cwd, shell: true, windowsHide: true, detached: !isWin, env: o.env }); }
       catch (e) { return { ok: false, error: 'could not start: ' + ((e && e.message) || e) }; }
       try { if (typeof child.unref === 'function') child.unref(); } catch (_) {}
       // record a REDACTED command to the on-disk ledger — a backgrounded command can carry a secret on its argv

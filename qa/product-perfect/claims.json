@@ -18,8 +18,8 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "0bc58b3df7ce4666957ffa704bc37b4e131bdfe2",
-    "pathSetSha256": "268ce5981e8b6049b7eade5ef9cbf89f1cfba0a7b4eed108d6657ad0b03b3177",
+    "sourceCommit": "aa1eaeb23cd1328a818529ff6864979fede58b98",
+    "pathSetSha256": "7eb7a83f508ffd0ef6fd8058ddf15370a953b404d9555462119fb730712a9876",
     "files": [
       {
         "path": "INSTALL.md",
@@ -63,8 +63,8 @@
       },
       {
         "path": "frontend/app/app.js",
-        "bytes": 240627,
-        "sha256": "0aac3a4e92320d9432f34b57bee240e2d2529d5af415111be5c2e349688a02d2"
+        "bytes": 237885,
+        "sha256": "249129b23a79953c9aa80776ddb0534acb6a0318c56ee22946c1e1a14bb9d42c"
       },
       {
         "path": "frontend/app/armconfirm.js",
@@ -128,8 +128,8 @@
       },
       {
         "path": "frontend/app/chat.js",
-        "bytes": 370327,
-        "sha256": "6fd3fac367523bbc8350275dd1ab2f0864140b62c807ed4e85acef38642c07ac"
+        "bytes": 368885,
+        "sha256": "3a34cd1c191979934c6b3b03773bc7386a4318d2f88ebe5a6408d49fb56e5bcc"
       },
       {
         "path": "frontend/app/chatresize.js",
@@ -297,6 +297,11 @@
         "sha256": "999a12c06b8354510b36e9214d7dc254284239bcb845b53142772708e41fc193"
       },
       {
+        "path": "frontend/app/leftrail.js",
+        "bytes": 1272,
+        "sha256": "9e4b516bf1345be748d79afeea7bc36ed697b858954e8a74262021dd36f4a86b"
+      },
+      {
         "path": "frontend/app/legacymigrate.js",
         "bytes": 2307,
         "sha256": "59b365ec22af9e6480231e67b88406549da7721d1e1c221d0b89c58effba3866"
@@ -413,8 +418,8 @@
       },
       {
         "path": "frontend/app/projects.js",
-        "bytes": 5632,
-        "sha256": "020cc272aafb603406526a9bea9dd53633aa24dd700d02b20ba267832c5e97bf"
+        "bytes": 3780,
+        "sha256": "9fc037993d42ad857de3378daa76315d5b01621100165c26db6809da816428dc"
       },
       {
         "path": "frontend/app/propanchor.js",
@@ -622,9 +627,14 @@
         "sha256": "674a1a1877c83997d797a5f8ae53016c2f772c26ec47488ef0ec3af4b1bd6142"
       },
       {
+        "path": "frontend/app/titlebar.js",
+        "bytes": 6417,
+        "sha256": "902a158c709a0161d4ffca14b2892d832136792e9564dbd61cfdd7abd1f60b5f"
+      },
+      {
         "path": "frontend/app/toolprops.js",
-        "bytes": 3241,
-        "sha256": "6854b810c2aab1b8bced197e955b1f54bf64aff84ba1a73075d02d06002f00a5"
+        "bytes": 3223,
+        "sha256": "b1010918bc148547f1eecf207f8b88a0a1a6d181907a07d060fccff582c37c21"
       },
       {
         "path": "frontend/app/topbar.js",
@@ -708,8 +718,8 @@
       },
       {
         "path": "frontend/app/workshopstore.js",
-        "bytes": 16735,
-        "sha256": "62be1a6a6d0bd85b3915727a314b5d96e2038e4bce4999b8bd39e6904625dc99"
+        "bytes": 16231,
+        "sha256": "cc259c1ddc0416e0830c75b7a59b723f36b99cf27389ee57d50fa83abbf3c377"
       },
       {
         "path": "frontend/app/worksignal.js",
@@ -723,13 +733,13 @@
       },
       {
         "path": "frontend/app/workstreams.js",
-        "bytes": 18117,
-        "sha256": "813707cb9bd5e9b3ea59612ee6f15856711720e2827ac4eeb58e701124c0c3bd"
+        "bytes": 17222,
+        "sha256": "df64fb615e5d6326f4ed8025d9832a2b0284b92608f1221f055e6c2b82928f13"
       },
       {
         "path": "frontend/app/world.js",
-        "bytes": 435859,
-        "sha256": "c056b71464a1e49f2d83a9cbb6cca216355ed530cab5ff354ae9070237223362"
+        "bytes": 439930,
+        "sha256": "746f879124443cc9088ab9e2ee8f493a22f06df0c210b8c58f1c249b3804412b"
       },
       {
         "path": "frontend/app/worldmodel.js",
@@ -753,8 +763,8 @@
       },
       {
         "path": "frontend/css/app.css",
-        "bytes": 177960,
-        "sha256": "87b73ed58ed451940dba0400037bf599b9cf57800ce110006815ad5b11986f43"
+        "bytes": 180108,
+        "sha256": "657d8f7d74066c517daa167ac9f5914215f659699696fbe119f448fb80cbfad0"
       },
       {
         "path": "frontend/css/comms.css",
@@ -787,6 +797,11 @@
         "sha256": "33e94c0d2e5421fa0004b261d33dfdd7902a74a9bf8110debd18e03e6e4ae75d"
       },
       {
+        "path": "frontend/css/titlebar.css",
+        "bytes": 3914,
+        "sha256": "05f136ec51bf13b37010eda6a93fcc7f4c7178391f4b343c6d1ba257b9cb0221"
+      },
+      {
         "path": "frontend/css/topbar.css",
         "bytes": 5261,
         "sha256": "2396ccd88954baabfbccf38ca0abc28c8b454914725c809c2fed94e245d6c45a"
@@ -808,8 +823,8 @@
       },
       {
         "path": "frontend/index.html",
-        "bytes": 55710,
-        "sha256": "88058d6230534339c9a2712789227b9d56fa415898e475df2171814ef40d14ea"
+        "bytes": 56702,
+        "sha256": "30cd14a8430b2b37f560279a3c3683a30f9f126eb4b2b7c64fe18cd9011e876d"
       },
       {
         "path": "frontend/js/arcade.js",
@@ -2291,22 +2306,33 @@
     {
       "id": "W2-mcp-mutation-consent",
       "wave": "W2",
-      "item": "MCP mutating tools require consent while declared read-only tools may auto-run.",
+      "item": "Every custom MCP call requires an exact live per-call confirmation; local stdio additionally requires an isolated process broker.",
       "verdict": "SHIPPED",
       "disposition": "PROVEN",
       "ownerWave": "W2",
-      "qualification": "MCP translation maps readOnlyHint to requiresConsent.",
+      "qualification": "MCP annotations and transport are not trusted as proof of harmlessness: all connector tools are external-unknown, autonomous calls are absent, watched calls receive non-cacheable exact confirmation, and stdio defaults off without broker-proven isolation.",
       "authorityChecks": [
         {
           "kind": "contains",
           "path": "sidecar/mcp/translate.js",
-          "needle": "requiresConsent: !readOnly"
+          "needle": "impact: 'external-unknown'"
+        },
+        {
+          "kind": "contains",
+          "path": "sidecar/inputpolicy.js",
+          "needle": "unknown external effects require a watched, exact per-call confirmation"
+        },
+        {
+          "kind": "contains",
+          "path": "sidecar/mcp/transport.stdio.js",
+          "needle": "deps.userControlIsolated === true"
         }
       ],
       "refsChecked": [
         "trunk@ef16fa087ad872f9d266ecde8b72ef813cb9ca82",
         "branches@agent/pp-catalog-consent f33bae06",
-        "worktrees@git-worktree-list audited 2026-07-12"
+        "worktrees@git-worktree-list audited 2026-07-12",
+        "branch@agent/codex-input-isolation a439c164"
       ]
     },
     {

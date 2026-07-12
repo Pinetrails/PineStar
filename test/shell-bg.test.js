@@ -47,6 +47,7 @@ let T = 1000; const clock = { now: () => T };
   A.ok(spawn.children[0].unrefed, 'the child is unref\'d (never blocks sidecar exit)');
   let st = bg.status('a', 'bg_1');
   A.ok(st && st.running && st.exitCode === null, 'status reports running');
+  A.eq(st.pid, spawn.children[0].pid, 'status exposes the owned root PID for localhost listener attestation');
 
   spawn.children[0]._emit('Server listening on :3000\n');
   A.ok(bg.status('a', 'bg_1').tail.indexOf('listening on :3000') >= 0, 'stdout streams into the status tail');

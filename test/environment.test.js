@@ -55,12 +55,21 @@ function makeFakeSpawn() {
         status: () => [],
         kill: () => ({ ok: true })
       };
-      const env = makeEnvironmentManager({ spawn, fs, pathMod: path, root, bg, clock, config: { backend: 'local' } });
+      const env = makeEnvironmentManager({ spawn, fs, pathMod: path, root, bg, clock,
+        env: { PATH: 'safe-path', SKYNET_API_TOKEN: 'api-secret', STARNET_IPC_TOKEN: 'ipc-secret', OPENAI_API_KEY: 'provider-secret', TELEGRAM_BOT_TOKEN: 'channel-secret', STARNET_COMPUTER_DRIVER: '1', NODE_OPTIONS: '--require evil.js' },
+        config: { backend: 'local' } });
       A.eq(env.backendId, 'local', 'local backend selected');
       await env.execute({ agentId: 'a1', cmd: 'echo ok', timeoutMs: 1000 });
       A.eq(spawn.calls[0].file, 'echo ok', 'local executes command through shell string');
       A.eq(spawn.calls[0].opts.shell, true, 'local uses shell:true');
       A.eq(spawn.calls[0].opts.cwd, path.join(root, 'a1'), 'local cwd is the per-agent workspace');
+      A.eq(spawn.calls[0].opts.env.PATH, 'safe-path', 'safe build environment survives');
+      A.ok(!('SKYNET_API_TOKEN' in spawn.calls[0].opts.env) && !('STARNET_IPC_TOKEN' in spawn.calls[0].opts.env), 'sidecar API/IPC tokens never reach task children');
+      A.ok(!('OPENAI_API_KEY' in spawn.calls[0].opts.env) && !('TELEGRAM_BOT_TOKEN' in spawn.calls[0].opts.env), 'provider/channel secrets never reach task children');
+      A.ok(!('NODE_OPTIONS' in spawn.calls[0].opts.env), 'ambient execution hooks never reach task children');
+      A.eq(spawn.calls[0].opts.env.STARNET_COMPUTER_DRIVER, '0', 'physical-input disable is pinned in task children');
+      A.eq(spawn.calls[0].opts.env.STARNET_BROWSER_HEADLESS, '1', 'headless browser mode is pinned in task children');
+      A.eq(spawn.calls[0].opts.env.STARNET_USER_CONTROL_MODE, 'preserve', 'user-control preservation mode is pinned');
       fs.mkdirSync(path.join(root, 'a1', 'sub'), { recursive: true });
       env.rememberCwd('a1', path.join(root, 'a1', 'sub'));
       A.eq(env.getCwd('a1'), path.join(root, 'a1', 'sub'), 'local persists in-jail cwd');
@@ -68,6 +77,8 @@ function makeFakeSpawn() {
       A.eq(env.getCwd('a1'), path.join(root, 'a1', 'sub'), 'local refuses out-of-jail cwd persistence');
       env.startBackground({ agentId: 'a1', cmd: 'npm run dev' });
       A.eq(bgCalls[0].cwd, path.join(root, 'a1', 'sub'), 'background local inherits backend cwd');
+      A.eq(bgCalls[0].env.STARNET_COMPUTER_DRIVER, '0', 'background processes receive the same safety pins');
+      A.ok(!('SKYNET_API_TOKEN' in bgCalls[0].env), 'background processes receive no sidecar token');
     }
 
     // ---- docker backend: builds a hardened run command around the same workspace ----

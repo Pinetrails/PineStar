@@ -41,6 +41,45 @@ const { makeVerifyTool } = require('../sidecar/tools/builtin/verify.js');
     fs.writeFileSync(path.join(root, 'a1', 'package.json'), JSON.stringify({ name: 'x', scripts: { test: 'exit 0' } }));
     const auto = await tool.run({ timeoutMs: 60000 }, ctx);
     A.ok(/PASSED|FAILED/.test(auto.content), 'a bare verify.run auto-detects + runs the project check');
+
+    // The verify shortcut must enforce the same input-isolation floor as shell.exec. Otherwise
+    // `verify.run npm run smoke` bypasses the shell guard and can acquire Win32 pointer lock.
+    fs.mkdirSync(path.join(root, 'a1', 'src'), { recursive: true });
+    fs.mkdirSync(path.join(root, 'a1', 'scripts'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'a1', 'src', 'game.js'), 'canvas.requestPointerLock();\n');
+    fs.writeFileSync(path.join(root, 'a1', 'scripts', 'smoke.mjs'), "import puppeteer from 'puppeteer-core';\n");
+    fs.writeFileSync(path.join(root, 'a1', 'package.json'), JSON.stringify({ name: 'x', scripts: { test: 'exit 0', smoke: 'node scripts/smoke.mjs' } }));
+    A.throws(() => tool.run({ cmd: 'npm run smoke' }, ctx), 'verify.run refuses browser automation that can reach native pointer lock');
+
+    // verify.run is not a privileged alternate shell: every user-control/machine-state floor
+    // from shell.exec is shared through commandSafetyRisk and runs before process creation.
+    A.throws(() => tool.run({ cmd: 'shutdown /s /t 0' }, ctx), 'verify.run refuses shutdown');
+    A.throws(() => tool.run({ cmd: 'start notepad' }, ctx), 'verify.run refuses visible desktop apps');
+    A.throws(() => tool.run({ cmd: 'powershell -Command "Start-Process notepad"' }, ctx), 'verify.run refuses indirect desktop launchers');
+    A.throws(() => tool.run({ cmd: 'python -c "import ctypes; ctypes.windll.user32.BlockInput(True)"' }, ctx), 'verify.run refuses input blocking APIs');
+    A.throws(() => tool.run({ cmd: 'vite --host 0.0.0.0' }, ctx), 'verify.run refuses all-interface listeners');
+
+    // A local shell can cd into a nested package. Safety inspection must follow the
+    // actual execution cwd rather than scanning only the agent workspace root.
+    const nested = path.join(root, 'a1', 'nested');
+    fs.mkdirSync(nested, { recursive: true });
+    fs.mkdirSync(path.join(nested, 'scripts'), { recursive: true });
+    fs.writeFileSync(path.join(nested, 'scripts', 'smoke.mjs'), "import puppeteer from 'puppeteer-core';\n");
+    fs.writeFileSync(path.join(nested, 'package.json'), JSON.stringify({
+      name: 'unsafe-nested', scripts: { test: 'node scripts/smoke.mjs' }
+    }));
+    let nestedExecCalls = 0;
+    const nestedTool = makeVerifyTool({
+      fs, pathMod: path,
+      environment: {
+        backendId: 'local',
+        getCwd: () => nested,
+        workspaceRoot: () => path.join(root, 'a1'),
+        execute: () => { nestedExecCalls++; return Promise.resolve({ exitCode: 0, out: '', ms: 0 }); }
+      }
+    }).verifyTool;
+    A.throws(() => nestedTool.run({ cmd: 'npm test' }, ctx), 'verify.run scans the nested project that will execute');
+    A.eq(nestedExecCalls, 0, 'unsafe nested verification is refused before process creation');
   } finally {
     try { fs.rmSync(root, { recursive: true, force: true }); } catch (_) {}
   }

@@ -146,12 +146,14 @@ const { makeShellTool } = require('./tools/builtin/shell.js');      // the workb
 const { makeShellBg } = require('./shellbg.js');                    // H2.2: singleton background-process manager
 const { makeProcLedger } = require('./procledger.js');              // persistent child-PID ledger — boot sweep reaps force-kill orphans
 const { makeInputGuard } = require('./inputguard.js');              // stuck cursor-confinement (ClipCursor) release — 2026-07-12 incident
+const { enforceSyntheticOnly, enforceRunAuthority, makeRunAuthority, runInputContext, backgroundOwnsLocalUrl, makeLoopbackListenerProbe } = require('./inputpolicy.js'); // per-run user-control authority + synthetic CDP policy
 const { makeEnvironmentManager } = require('./environment.js');     // execution backend boundary (reference-harness-style)
 const { foldInsights } = require('./insights.js');                  // H3.3: usage insights folded from run history
 const { makeVerifyTool } = require('./tools/builtin/verify.js');    // the workbench verify.run check-runner
 const { makeOrchestrationTools } = require('./tools/builtin/orchestration.js');   // Stage 2: team.dispatch (lead->worker delegation)
 const { makeRoutineTools } = require('./tools/builtin/routines.js'); // ROUTINES: agent-created StarNet cron jobs
 const { execFile, spawn: childSpawn } = require('node:child_process');   // shadow-git runner + shell subprocess — ambient, here only
+const loopbackListenerProbe = makeLoopbackListenerProbe({ execFile, platform: process.platform, env: process.env });
 const { makeSubagentManager } = require('./subagents.js');          // durable background worker registry
 const Classify = require('../frontend/app/classify.js');   // the SAME task-vs-talk classifier the browser uses
 const sharedSpecialties = require('../shared/specialties.js');   // Class Loadouts S1: the ONE class catalog — no hardcoded class prose here
@@ -1066,28 +1068,7 @@ const threadsStore = makeThreadsStore({
   onCorrupt: (key, file) => quarantineCorrupt(file, 'threads'),
   warn: (...args) => console.warn.apply(console, args)
 });
-// W7 — a shell opener that hands a REAL absolute PATH to the OS default app (Start-Process / open / xdg-open).
-// REUSES desktop.js's makeShellOpener (the same launcher desktop.open uses) rather than rolling a new spawn: for a
-// file we deliberately DON'T classify/assert-url — the path is already jail-proven by resolveInside before we call
-// this — and a non-'app' kind maps to exactly "open this path with the default handler" on win32/darwin/linux.
-// Injectable for tests via the workshopOpener seam (a test stub records the argv without launching anything).
-const _desktopInternals = require('./tools/builtin/desktop.js')._internals;
-let workshopOpener = _desktopInternals.makeShellOpener({});   // ({ kind, target }) -> Promise<'launched'>; kind!=='app' = open-with-default
-function setWorkshopOpener(fn) { workshopOpener = fn; }   // test seam
-// CI seam (never in a shipping build): STARNET_TEST_OPEN_LOG points at a file the opener APPENDS the target path to
-// instead of launching anything — so the e2e can assert /api/workshop/open invoked the opener with the jailed ABS
-// path without spawning a real app on the runner. This proves the wiring (jail-proven abs path reaches the launcher).
-// HARD GATE: the fake opener installs ONLY in dev/test mode (DEV_MODE, i.e. SKYNET_DEV/STARNET_DEV — a flag the
-// packaged desktop build NEVER sets; dev/seed.js:19). Env-var-alone is NOT enough: without this gate, a production
-// process that happened to carry STARNET_TEST_OPEN_LOG would make /api/workshop/open report `launched` while opening
-// nothing (a truthful-telemetry violation — the app asserting state the harness didn't perform). If the var is set
-// outside dev mode we keep the REAL opener and warn, so the misconfiguration is visible rather than silently faked.
-(function installTestOpenLog() {
-  const logFile = String(ENV('TEST_OPEN_LOG') || '').trim();
-  if (!logFile) return;
-  if (!DEV_MODE) { try { console.warn('[workshop] STARNET_TEST_OPEN_LOG is set but DEV_MODE is off — ignoring the test open-seam; using the real shell opener.'); } catch (_) {} return; }
-  workshopOpener = ({ kind, target }) => { try { fs.appendFileSync(logFile, JSON.stringify({ kind, target }) + '\n'); } catch (_) {} return Promise.resolve('launched'); };
-})();
+// No sidecar workshop opener exists: API possession is never a user gesture.
 // honest run-liveness for the workshop zombie-claim reclaim: a runId is live iff its controller is still in the
 // `runs` map AND not aborted. A crashed shift leaves a buildingRunId whose controller is gone -> not live -> reaped.
 // (`runs` is declared below at module scope; this closure reads it lazily so hoisting is a non-issue.)
@@ -2179,7 +2160,7 @@ const inputGuard = makeInputGuard({ log: (m) => console.log(m) });
 if (require.main === module) {
   // real host boot only (unit tests require() this file and must not probe/kill or touch the real cursor state)
   procLedger.sweep().then(s => { if (s.examined) console.log('[proc-ledger] boot sweep: examined=' + s.examined + ' killed=' + s.killed + ' gone=' + s.gone + ' pid-reused=' + s.reused); }).catch(() => {});
-  inputGuard.ensureFree('boot').catch(() => {});
+  inputGuard.observe('boot').catch(() => {});
 }
 const shellBg = makeShellBg({ spawn: childSpawn, redact: redact, clock: { now: () => Date.now() }, onExit: (e) => chanEmit('shell.bg.exit', e), maxPerAgent: 5, ledger: procLedger });
 const executionEnvironment = makeEnvironmentManager({ spawn: childSpawn, fs: fs, pathMod: path, root: WORKSPACES, bg: shellBg, redact: redact, clock: { now: () => Date.now() }, env: process.env });
@@ -4218,7 +4199,7 @@ function gracefulShutdown(signal) {
   try { if (typeof shellBg !== 'undefined' && shellBg && shellBg.killAll) shellBg.killAll(); } catch (_) {}   // reap backgrounded shell children (dev servers etc.)
   // release any cursor confinement a reaped child leaves stuck (the PS one-shot outlives our exit; best-effort —
   // the boot-time ensureFree is the reliable cover for the force-kill path this handler can't see at all)
-  try { if (typeof inputGuard !== 'undefined' && inputGuard) inputGuard.ensureFree('shutdown').catch(() => {}); } catch (_) {}
+  try { if (typeof inputGuard !== 'undefined' && inputGuard) inputGuard.observe('shutdown').catch(() => {}); } catch (_) {}
   try { if (typeof executionEnvironment !== 'undefined' && executionEnvironment && executionEnvironment.killAllBackground) executionEnvironment.killAllBackground(); } catch (_) {}
   try { if (typeof subagents !== 'undefined' && subagents && subagents.interruptAll) subagents.interruptAll(); } catch (_) {}   // stop watchable background workers
   try { if (typeof connectors !== 'undefined' && connectors && connectors.close) Promise.resolve(connectors.close()).catch(() => {}); } catch (_) {}   // close MCP connectors (stdio children get taskkill/SIGTERM)
@@ -5734,11 +5715,9 @@ async function handleWorkshopDecide(req, res) {
   // kept = decided: retire the backlog item so /pending never re-lists (and the card never resurrects) a kept
   // build. The run dir stays in the workshop as an archive; unlike discard, the title is NOT denylisted.
   if (item) { try { await workshopStore.complete(agentId, item.id); } catch (_) {} }
-  // W7 (c): optional one-click "Open folder" — shell-open Explorer at the destination so the kept files are
-  // immediately in hand. Interactive by definition (the Commander clicked Keep). Best-effort: a failed open never
-  // undoes a successful copy, so `opened` reports honestly whether Explorer actually launched.
-  let opened = false;
-  if (body.open === true) { try { await workshopOpener({ kind: 'file', target: destPath }); opened = true; } catch (_) { opened = false; } }
+  // Keep never launches Explorer/Finder. A loopback API token or renderer IPC
+  // message is not proof of a fresh human gesture; return the path for manual use.
+  const opened = false;
   // NS-3 APPROVE → SHIP + LEARN: keeping (copying the artifact OUT of the jail to the Commander's folder) IS the
   // ship. For a night-shift-built deliverable it also UP-weights its archetype so the station proposes that kind
   // more next time. Undo path: the run dir stays in the workshop as an archive (kept, not wiped) and the checkpoint
@@ -5802,31 +5781,11 @@ async function serveWorkshopRun(req, res) {
   stream.pipe(res);
 }
 
-// POST /api/workshop/open { agentId, runId, path } — shell-open the REAL jailed file with the OS default app. This is
-// an INTERACTIVE user-click action by definition (a route, not a tool — so its surface is inherently interactive),
-// validated as strictly as decide: agentId regex + resolveInside jail proof. The path is proven inside
-// workshop/<runId>/ before it ever reaches the opener, so no traversal can escape the agent's workspace.
+// POST /api/workshop/open is an inert compatibility response. API possession is
+// not proof of a fresh human gesture and can never launch a desktop application.
 async function handleWorkshopOpen(req, res) {
   const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
-  let body; try { body = JSON.parse(await readBody(req, 1 << 16)) || {}; } catch (e) { return json(400, { error: 'bad request' }); }
-  const agentId = String(body.agentId || '');
-  const runId = String(body.runId || '');
-  const relPath = String(body.path || '');
-  if (!/^[A-Za-z0-9_-]{1,40}$/.test(agentId)) return json(400, { error: 'choose a valid agent' });
-  if (!/^[A-Za-z0-9_-]{1,80}$/.test(runId)) return json(400, { error: 'bad runId' });
-  if (!relPath) return json(400, { error: 'no file to open' });
-  let abs;
-  try { ({ abs } = await fsJail.resolveInside(agentId, 'workshop/' + runId + '/' + relPath)); }   // throws on escape
-  catch (e) {
-    const msg = (e && e.message) || '';
-    if (/escape|illegal|bad agentId/.test(msg)) return json(403, { error: 'forbidden' });
-    return json(400, { error: 'bad path' });
-  }
-  let st; try { st = await fsp.stat(abs); } catch (_) { return json(404, { error: 'that file is no longer there' }); }
-  if (!st.isFile()) return json(404, { error: 'that is not a file' });
-  try { await workshopOpener({ kind: 'file', target: abs }); }        // Start-Process / open / xdg-open the abs path
-  catch (e) { return json(500, { error: 'could not open that file: ' + ((e && e.message) || e) }); }
-  return json(200, { ok: true, opened: abs });
+  return json(403, { error: 'Open this file manually; StarNet cannot launch desktop applications from a run.' });
 }
 
 // POST /api/workshop/shift { agentId } — force-fire ONE workshop shift NOW (attended test of the unattended path).
@@ -6298,7 +6257,10 @@ async function runOnce(o) {
   const baseUrl = providerRuntimeBaseUrl(providerId, o.baseUrl || o.base_url || '');
   const runKey = providerRuntimeKey(providerId, key);
   const streamId = o.streamId || null;   // M-mem.2b (browser run only; the headless hub omits it → global memory)
-  const surface = o.surface || 'interactive';
+  // Missing/unknown callers are unattended until proven otherwise. Only the watched /api/run
+  // path passes the exact interactive value and a live prompt channel.
+  const surface = o.surface === 'interactive' ? 'interactive' : 'autonomous';
+  const userControlAuthority = makeRunAuthority({ surface, isTask, environment: executionEnvironment, confirm: o.prompt });
   const prompt = o.prompt;
   const pathPrompt = o.pathPrompt;   // NS-5: the live "work in <root>? always/once/no" channel (browser runs only); undefined for headless/autonomous → path-trust hard-denies a new root
   const summon = o.summon;   // the live team.summon round-trip closure (browser runs only); undefined for headless/workers → tool degrades gracefully
@@ -6362,6 +6324,9 @@ async function runOnce(o) {
   // leak-guard below — a `let` declared INSIDE a try block is NOT visible in that try's finally (referencing it
   // there throws a ReferenceError, which would swallow the return and skip concurrencyGate.leave → a hung run).
   let billed = false;
+  // Per-run headless CDP session. Kept outside the try so the outer finally always closes it,
+  // including provider refusal, abort, timeout, and thrown-tool paths.
+  let runBrowser = null;
   // Everything below is wrapped so the admission slot is ALWAYS released (early-return refusals above run
   // before tryEnter; every exit below — return, throw, or the normal finish — passes through leave()).
   try {
@@ -6413,8 +6378,31 @@ async function runOnce(o) {
   const imageTools = makeImageTools({ openrouter: openrouterToolKey ? { apiKey: openrouterToolKey, model } : null, fsp, pathMod: path, root: WORKSPACES, imageModel: String(ENV('IMAGE_MODEL') || '').trim() || undefined });
   // browser.vision uses the SAME vision model as image_analyze when a key exists; with no key it
   // reports "unavailable" honestly (never a success-shaped stub). Pass the dep only when usable.
-  makeBrowserTools({ vision: imageTools.hasVision ? imageTools.browserVision : null, ledger: procLedger }).register(registry);   // browser.* automation: exposed only through the web/dish capability
-  makeDesktopTools({}).register(registry);   // desktop.open: open URL/app on the user's REAL screen (visible), web/dish capability
+  runBrowser = makeBrowserTools({
+    vision: imageTools.hasVision ? imageTools.browserVision : null,
+    ledger: procLedger,
+    // Host authority, not model args: every normal run is headless and all page input locks
+    // are emulated before navigation. The browser.test_* workbench tools are the sanctioned
+    // localhost/game path and dispatch only CDP/page events.
+    allowVisible: false,
+    forceHeadless: true,
+    syntheticInputOnly: true,
+    // Chromium owns an ephemeral CDP port and a unique profile per run. Never attach to a
+    // process-wide endpoint where another agent (or the user's browser) may be listening.
+    cdpPort: 0,
+    profileDir: path.join(os.tmpdir(), 'starnet-browser-' + process.pid + '-' + String(runId || crypto.randomUUID()).replace(/[^A-Za-z0-9_-]/g, '')),
+    cleanupProfile: true,
+    requireOwnedServer: true,
+    ownsLocalUrl: async ({ url, serverId, agentId: owner }) => {
+      const st = shellBg.status(String(owner || agentId), String(serverId || ''));
+      // The owned background process must advertise the requested endpoint in captured output.
+      // Command-line intent alone is insufficient because a dev server can
+      // fall back to a different port when the requested one belongs to another process.
+      return backgroundOwnsLocalUrl(st, url, loopbackListenerProbe);
+    }
+  });
+  runBrowser.register(registry);   // browser.* + isolated browser.test_* automation
+  makeDesktopTools({}).register(registry);   // future attended host channel only; ordinary capability projection exposes none
   // NS-5: bind the per-run path-trust guard — the ONE way an fs call may reach outside the jail, mediated
   // against the station's blessed project roots. surface + pathPrompt are per-run: an autonomous run passes
   // no prompt, so pathTrustCore hard-denies any un-blessed outside path (the unattended rule).
@@ -6447,8 +6435,10 @@ async function runOnce(o) {
   makeShellTool({ spawn: childSpawn, fs: fs, pathMod: path, root: WORKSPACES, environment: executionEnvironment, redact: redact, clock: { now: () => Date.now() }, bg: shellBg }).register(registry);
   // verify.run (same workbench gate as shell): run the project check + emit verify.result. Also workbench-only.
   makeVerifyTool({ spawn: childSpawn, fs: fs, pathMod: path, root: WORKSPACES, environment: executionEnvironment, redact: redact, clock: { now: () => Date.now() } }).register(registry);
-  // computer.use (same workbench gate): desktop control is execute-scoped, consent-gated, and driver-injected by desktop builds.
-  makeComputerTools({}).register(registry);
+  // computer.use remains registered behind an INERT driver as defense in depth against a
+  // forged dispatch. It is removed from ordinary tool definitions below; no current run host
+  // mints the separate one-shot attended-input lease required by computer.js.
+  makeComputerTools({ allowPhysicalInput: false }).register(registry);
   // team.dispatch (Stage 2 orchestrator): registered every run but only EXPOSED when an 'orchestrator' object is
   // in the room — conferred ONLY on the lead run (below), so a delegated worker can never re-delegate. It calls
   // THIS SAME runOnce per worker; the roster supplies each worker's composed identity (system prompt + model).
@@ -6529,7 +6519,11 @@ async function runOnce(o) {
   // TOOLSET kill-switch: a family the Commander switched OFF in the TOOLSETS console is dropped here, so the
   // next model turn reflects it live (no restart). compute is never in this set; MCP connectors are projected
   // below and keep their own per-connector enabled flag, so they are unaffected.
-  const resolved = resolveTools(agentId, station, undefined, { disabledCaps: disabledCapsSet() });
+  let resolved = enforceSyntheticOnly(resolveTools(agentId, station, undefined, { disabledCaps: disabledCapsSet() }));
+  // REAL DESKTOP ACCESS IS NOT A TASK CAPABILITY. computer.use and desktop.open are stripped
+  // from the provider, capability telemetry, and dispatch allowlist in every current runOnce
+  // flow. A future attended-control endpoint must mint a one-shot runId+callId lease; prompt
+  // text, Full Access, permanent grants, and surface:'interactive' are insufficient.
   // MCP CONNECTORS (per-agent): a connector object placed in THIS agent's room grants its server's live tools.
   // Register them into this run's fresh registry and union their names into the resolved set so the capability
   // gate, network classification, and the wire tool-list treat them exactly like a built-in. Never breaks a run.
@@ -6542,6 +6536,10 @@ async function runOnce(o) {
       resolved.approvalRules[def.name] = { requiresConsent: !!def.requiresConsent, scope: def.scope, network: true };
     }
   } catch (e) { console.warn('[mcp] connector tool projection failed:', (e && e.message) || e); }
+  // Connector projection happens after the base office is resolved. Re-apply the host floor so
+  // no dynamic server or future registration order can restore a real-screen tool by name.
+  resolved = enforceSyntheticOnly(resolved);
+  resolved = enforceRunAuthority(resolved, registry, userControlAuthority);
   // QUEST V2 §A — the PROP-contract sweep, wired at the one seam where the sidecar PROVES a capability is live:
   // resolveTools just projected the placed office (+ live connector tools) into this run's real grants. A prop
   // quest keyed to a live objectType / capId family / tool name completes here — there is no other server-side
@@ -6575,7 +6573,13 @@ async function runOnce(o) {
   });
   // B1 (Cortex seam): thread runId onto capCtx so a tool's dispatch can stamp provenance (sourceRunId)
   // on memory writes. makeCapCtx merges `extra` verbatim; the consumer arrives with M-mem.2.
-  const capCtx = makeCapCtx(resolved, { emit, consent, summon, timeoutMs: CAPS.toolTimeoutMs, runId, streamId, signal: signal });
+  const capCtx = makeCapCtx(resolved, Object.assign({
+    emit, consent, summon, timeoutMs: CAPS.toolTimeoutMs, runId, streamId, signal: signal,
+    authorize: userControlAuthority.authorize,
+    userControl: userControlAuthority,
+    // Explicitly false in all current runOnce flows. This makes the deny visible at the
+    // tool boundary even if a future refactor accidentally re-adds computer.use to tools.
+  }, runInputContext(surface, isTask)));
 
   // ---- provider + cost ----
   // Codex (personal ChatGPT subscription) authenticates with a freshly-refreshed OAuth access_token instead of
@@ -6766,6 +6770,7 @@ async function runOnce(o) {
   const hasVerifyRun = wireNames.indexOf('verify_run') >= 0;
   const hasBgStatus = wireNames.indexOf('shell_bg_status') >= 0;
   const hasBrowserTools = wireNames.some(n => /^browser_/.test(n));
+  const hasBrowserTestTools = wireNames.indexOf('browser_test_navigate') >= 0;
   const hasNotebookWrite = wireNames.indexOf('notebook_write') >= 0;
   const hasScreenTools = wireNames.indexOf('desktop_open') >= 0 || wireNames.indexOf('computer_use') >= 0;
   const hasJukebox = wireNames.indexOf('spotify_play') >= 0;
@@ -6793,7 +6798,8 @@ async function runOnce(o) {
       : 'For source changes, prefer fs_edit/fs_write over giant quoted shell rewrites, and leave code readable. ') : '')
     + ((hasVerifyRun || hasShellExec) ? 'After edits, run the narrowest real verification that proves the change: verify_run when it matches the project, otherwise shell_exec for syntax/build/tests. ' : '')
     + (hasShellExec && hasBgStatus ? 'For dev servers, start them with shell_exec background:true, then call shell_bg_status to confirm the handle is alive before finalizing. ' : '')
-    + (hasBrowserTools ? 'For browser, UI, or game changes, use browser_navigate plus browser_console/browser_snapshot/browser_vision when the target is a public/reachable URL. For local/private dev servers that browser_navigate is not allowed to open, verify with shell_exec/shell_bg_status or an HTTP probe and report that browser verification was unavailable. ' : '')
+    + (hasBrowserTools ? 'For public browser changes, use browser_navigate plus browser_console/browser_snapshot/browser_vision. ' : '')
+    + (hasBrowserTestTools ? 'For LOCAL browser, UI, canvas, or game verification, start the dev server with shell_exec background:true, confirm its bg id/port with shell_bg_status, then MUST use browser_test_navigate(serverId) + browser_test_snapshot/browser_test_state/browser_test_input. They run headless CDP and emulate pointer/keyboard lock without touching physical devices. NEVER launch Chrome, Edge, Firefox, Puppeteer, Playwright, Selenium, or a browser smoke through shell_exec/verify_run for an input-capturing app; those paths are refused. ' : '')
     + ((hasShellExec || hasWriteTools || hasBrowserTools) ? 'Final reports must name changed files, verification commands/results, and any running server URL/background id or remaining limitation. ' : '');
   const toolNote = (isTask && wireNames.length)
     ? '\n\n[HARNESS] You are running in a REAL agent harness on the Commander\'s machine, at a workstation with '
@@ -7134,6 +7140,9 @@ async function runOnce(o) {
     // safety net: if managed credit was reserved but a throw before the inner finally left it unsettled, settle it
     // now (full refund on usd=0). billing.js's finishRun is idempotent, so a normal settle above makes this a no-op.
     if (billed) { try { credits.finishRun({ runId, agentId, usd: 0, reason: 'leak-guard' }); } catch (_) {} }
+    // A test browser must die with its run. Besides process hygiene, this guarantees that a
+    // broken page cannot retain any browser-level state after the task finishes.
+    if (runBrowser) { try { await runBrowser.session.close(); } catch (_) {} }
     concurrencyGate.leave(agentId);   // release the admission slot on EVERY exit (normal, early-return, or throw)
   }
 }
@@ -7601,7 +7610,7 @@ function handleHalt(req, res) {
   // dial is re-written (handleAutonomyPosture → nightshift.clearHalt). Truthful telemetry: status now reports halted.
   try { nightshiftState = nightshift.engageHalt(nightshiftState, Date.now()); saveNightshiftState(); } catch (_) {}
   try { executionEnvironment.killAllBackground(); } catch (_) {}   // H2.2/Phase 0: E-STOP also reaps backend-owned background processes
-  try { inputGuard.ensureFree('halt').catch(() => {}); } catch (_) {}   // a killed child may have left the user's cursor confined — release it
+  try { inputGuard.observe('halt').catch(() => {}); } catch (_) {}   // diagnostic only: never release an unowned global clip
   try { subagents.interruptAll(); } catch (_) {}   // Phase 1: E-STOP aborts watchable background workers too
   try { cronLock.release(); } catch (_) {}  // G4.3: drop any cron lock this process holds so an E-STOP mid-tick never wedges the next tick (standalone halt-block addition; G2 will add connectors.close here)
   res.writeHead(200, { 'Content-Type': 'application/json' });
