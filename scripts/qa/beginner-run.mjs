@@ -107,9 +107,47 @@ export function stepsForMode(mode) {
 
 // A genuine first boot now opens the explicit "PRESS ANY KEY" splash before creation. Returning
 // users never see it. Keep the detector aligned with the user path without bypassing product state:
-// it emits one real key only when the active screen proves the splash is present.
+// this pure policy emits a real key only when the active screen proves the splash is present.
 export function firstBootAdvanceKey(activeScreenId) {
   return String(activeScreenId || '') === 'screen-splash' ? 'Enter' : '';
+}
+
+// The connect screen exists statically in index.html while async boot reconciliation is still
+// showing #screen-boot. A one-shot active-screen sample can therefore see the boot veil before the
+// genuine first-run splash appears, send no key, and deadlock waiting for connect. This controller is
+// deliberately tiny and pure: the CDP loop observes it on every poll, while the unit test can replay
+// the exact boot -> splash -> connect sequence deterministically. It advances splash at most once and
+// fails loud on a state that cannot belong to the isolated fresh-user title path.
+export function makeFirstBootAdvanceController() {
+  let advanced = false;
+  let lastScreen = '?';
+
+  function observe(activeScreenId) {
+    const screen = String(activeScreenId || '?');
+    lastScreen = screen;
+
+    if (screen === 'screen-connect') return { status: 'connect', key: '', screen };
+    if (screen === 'screen-splash') {
+      if (!advanced) {
+        advanced = true;
+        return { status: 'advancing', key: firstBootAdvanceKey(screen), screen };
+      }
+      return { status: 'waiting', key: '', screen };
+    }
+    if (screen === 'screen-boot' || screen === '?') {
+      return { status: 'waiting', key: '', screen };
+    }
+    return {
+      status: 'failed', key: '', screen,
+      reason: 'unexpected active screen ' + screen + ' during the isolated fresh-user title step'
+    };
+  }
+
+  return {
+    observe,
+    lastScreen() { return lastScreen; },
+    didAdvance() { return advanced; }
+  };
 }
 
 export const BEGINNER_PROVIDER = 'openrouter';
@@ -442,6 +480,35 @@ if (INVOKED_DIRECTLY) (async () => {
     return { ok: false, reason: 'per-step budget of ' + budgetMs + 'ms exhausted' };
   }
 
+  async function waitForFirstBootConnect(budgetMs, pollMs = 500) {
+    const deadline = now() + budgetMs;
+    const title = makeFirstBootAdvanceController();
+    while (now() < deadline) {
+      if (acct.overTotal()) return { ok: false, reason: 'total 10-minute budget exceeded' };
+
+      const screen = await evalJS(cdp, activeScreen).catch(() => '?');
+      const state = title.observe(screen);
+      if (state.status === 'failed') return { ok: false, reason: state.reason };
+
+      if (state.key) {
+        const keyEvent = { key: state.key, code: state.key, windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13 };
+        await cdp.send('Input.dispatchKeyEvent', Object.assign({ type: 'keyDown' }, keyEvent));
+        await cdp.send('Input.dispatchKeyEvent', Object.assign({ type: 'keyUp' }, keyEvent));
+        log('first-boot splash advanced with a real ' + state.key + ' keypress');
+      }
+
+      if (state.status === 'connect') {
+        const ready = await evalJS(cdp, connectReady).catch(() => false);
+        if (ready) return { ok: true };
+      }
+      await sleep(pollMs);
+    }
+    return {
+      ok: false,
+      reason: 'per-step budget of ' + budgetMs + 'ms exhausted (last active screen=' + title.lastScreen() + ')'
+    };
+  }
+
   /* ---- the run ---- */
   let exitCode = 0;
   async function fail(step, label, reason, extraEvidence) {
@@ -483,15 +550,7 @@ if (INVOKED_DIRECTLY) (async () => {
 
     // STEP title (the CREATE YOUR OVERSEER connect screen is the active screen) -----------------
     acct.startStep('title');
-    const beforeTitle = await evalJS(cdp, activeScreen).catch(() => '?');
-    const advanceKey = firstBootAdvanceKey(beforeTitle);
-    if (advanceKey) {
-      const keyEvent = { key: advanceKey, code: advanceKey, windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13 };
-      await cdp.send('Input.dispatchKeyEvent', Object.assign({ type: 'keyDown' }, keyEvent));
-      await cdp.send('Input.dispatchKeyEvent', Object.assign({ type: 'keyUp' }, keyEvent));
-      log('first-boot splash advanced with a real ' + advanceKey + ' keypress');
-    }
-    const onConnect = await waitFor(connectReady, STEP_DEFS[1].budgetMs * STEP_SCALE);
+    const onConnect = await waitForFirstBootConnect(STEP_DEFS[1].budgetMs * STEP_SCALE);
     await shoot('title');
     if (!onConnect.ok) {
       const screen = await evalJS(cdp, activeScreen).catch(() => '?');
