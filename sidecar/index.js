@@ -4240,7 +4240,11 @@ function handleChannelEvents(req, res) {
   try { res.write('retry: 3000\n\n'); } catch (_) {}        // EventSource auto-reconnects after 3s if dropped
   sse.add(res);
   const done = () => { clearInterval(ka); sse.remove(res); };   // evict on disconnect — mirrors /api/run cleanup; idempotent
-  const ka = setInterval(() => { try { res.write(': ka\n\n'); } catch (_) { done(); } }, 25000);   // keep-alive; self-evicts on write failure
+  // DATA (not an SSE comment): EventSource hides comments from JS, so the old `: ka` kept TCP open
+  // while world.js truthfully aged the unobservable link to LINK DOWN. The hub emits an empty JSON
+  // MessageEvent through its normal dead/backpressured-client bounds; world.js refreshes freshness
+  // but sees no product-event name to forward onto U.bus.
+  const ka = setInterval(() => { if (!sse.keepalive(res)) done(); }, 25000);
   req.on('close', done); req.on('aborted', done); res.on('error', done);
 }
 
