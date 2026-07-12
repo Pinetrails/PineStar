@@ -16,6 +16,7 @@
 
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -115,34 +116,103 @@ export function validateFreshPrecondition(observed, isolation, providerId) {
   if (isolation.freshProfile !== true) errors.push('fresh-profile-unattested');
   if (!SAFE_ID.test(str(isolation.id).trim())) errors.push('isolation-id-invalid');
   if (!ISOLATION_AUTHORITIES.has(str(isolation.authority))) errors.push('fresh-profile-authority-invalid');
+  if (isolation.machineVerified !== true || !SHA256.test(lower(isolation.principalSha256)) ||
+      !SHA256.test(lower(isolation.profileSha256)) || !SHA256.test(lower(isolation.runtimeOwnerSha256)) || !str(isolation.proof).trim() ||
+      str(isolation.id) !== str(isolation.authority) + '-' + lower(isolation.principalSha256).slice(0, 12)) {
+    errors.push('fresh-profile-machine-unverified');
+  }
   if (!['screen-splash', 'screen-connect'].includes(str(observed.activeScreen))) errors.push('fresh-screen-not-visible');
   if (observed.saveStatus !== 'none' || observed.savePresent !== false) errors.push('existing-save-present');
   if (observed.currentAgentPresent !== false || Number(observed.rosterCount) !== 0) errors.push('existing-agent-present');
   if (observed.recoveryVisible !== false) errors.push('recovery-mode-present');
   if (observed.providerConfigured !== false) errors.push('provider-already-configured');
   if (lower(observed.providerChecked) !== lower(providerId)) errors.push('provider-precondition-unchecked');
+  if (observed.backendSavePresent !== false || observed.backendRecoveryPresent !== false ||
+      Number(observed.backendRunCount) !== 0 || Number(observed.backendAgentCount) !== 0 ||
+      observed.backendLastRunPresent !== false || observed.backendWorkspaceDegraded !== false) {
+    errors.push('existing-sidecar-state-present');
+  }
   return { ok: errors.length === 0, errors };
 }
 
-export function validateLinkReceipt(receipt, expected) {
+function validateLinkObservation(doc, expected) {
+  doc = doc || {}; expected = expected || {};
+  const errors = [];
+  const artifact = normalizedArtifact(expected.artifact);
+  const observations = Array.isArray(doc.observations) ? doc.observations : [];
+  const sessionId = str(doc.sessionId).trim();
+  if (doc.schemaVersion !== LINK_RECEIPT_SCHEMA || doc.producer !== 'installed-link-observation-v1') errors.push('link-observation-schema-mismatch');
+  if (!str(expected.challenge) || doc.challenge !== expected.challenge) errors.push('link-challenge-mismatch');
+  if (lower(doc.candidateCommit) !== lower(expected.candidateCommit)) errors.push('link-candidate-mismatch');
+  if (lower(doc.candidateTree) !== lower(expected.candidateTree)) errors.push('link-tree-mismatch');
+  if (!artifact || lower(doc.artifact && doc.artifact.sha256) !== artifact.sha256 || Number(doc.artifact && doc.artifact.size) !== artifact.size) errors.push('link-artifact-mismatch');
+  if (doc.mode !== 'desktop' || !TAURI_ORIGINS.has(str(doc.origin))) errors.push('link-not-installed-desktop');
+  if (!Number.isInteger(Number(expected.cdpPort)) || Number(doc.cdpPort) !== Number(expected.cdpPort)) errors.push('link-cdp-port-mismatch');
+  if (!SAFE_ID.test(sessionId)) errors.push('link-session-invalid');
+  const elapsedMs = Number(doc.elapsedMs);
+  const wallElapsedMs = Number(expected.wallElapsedMs);
+  const startedAt = Date.parse(str(doc.startedIso));
+  const endedAt = Date.parse(str(doc.endedIso));
+  if (!Number.isFinite(elapsedMs) || elapsedMs <= 40000 || !Number.isFinite(wallElapsedMs) || wallElapsedMs <= 40000 || elapsedMs > wallElapsedMs + 2000) {
+    errors.push('link-elapsed-time-invalid');
+  }
+  if (!Number.isFinite(startedAt) || !Number.isFinite(endedAt) || endedAt <= startedAt ||
+      Math.abs((endedAt - startedAt) - elapsedMs) > 2000 ||
+      (Number.isFinite(Number(expected.gateStartedAt)) && startedAt < Number(expected.gateStartedAt) - 2000) ||
+      (Number.isFinite(Number(expected.gateEndedAt)) && endedAt > Number(expected.gateEndedAt) + 2000)) errors.push('link-observation-time-invalid');
+  let prior = -1;
+  let malformed = false;
+  for (const item of observations) {
+    const at = Number(item && item.atMs);
+    if (!item || !Number.isFinite(at) || at < prior || at < 0 || at > elapsedMs + 1000 || str(item.sessionId) !== sessionId) malformed = true;
+    prior = at;
+  }
+  if (!observations.length || malformed) errors.push('link-observations-invalid');
+  const data = observations.filter(item => item && item.kind === 'transport-data' && item.source === 'message');
+  const up = observations.filter(item => item && item.kind === 'link-state' && item.state === 'UP');
+  const firstUp = up[0] || null;
+  const lastData = data[data.length - 1] || null;
+  const sidecar = observations.find(item => item && item.kind === 'sidecar-process' && Number.isInteger(Number(item.pid)) && Number(item.pid) > 0 && lower(item.candidateCommit) === lower(expected.candidateCommit)) || null;
+  const loss = sidecar ? observations.find(item => item && item.kind === 'sidecar-exit' && item.observed === true && Number(item.pid) === Number(sidecar.pid) && Number(item.atMs) > Number(sidecar.atMs)) : null;
+  const down = loss ? observations.find(item => item && item.kind === 'link-state' && item.state === 'DOWN' && item.cause === 'eventsource-error' && Number(item.atMs) > Number(loss.atMs)) : null;
+  const downBeforeLoss = loss ? observations.some(item => item && item.kind === 'link-state' && item.state === 'DOWN' && Number(item.atMs) < Number(loss.atMs)) : true;
+  if (!firstUp || !lastData || data.length < 2 || Number(lastData.atMs) - Number(firstUp.atMs) <= 40000 ||
+      (loss && Number(lastData.atMs) >= Number(loss.atMs)) || downBeforeLoss) errors.push('healthy-idle-up-unproven');
+  if (!loss || !down) errors.push('actual-loss-down-unproven');
+  if (containsSecretMaterial(JSON.stringify(doc))) errors.push('link-evidence-secret-bearing');
+  return { ok: errors.length === 0, errors };
+}
+
+export function validateLinkReceipt(receipt, expected, rawEvidence = []) {
   receipt = receipt || {}; expected = expected || {};
   const errors = [];
   const artifact = normalizedArtifact(expected.artifact);
   const evidence = Array.isArray(receipt.evidence) ? receipt.evidence.map(normalizedEvidence).filter(Boolean) : [];
   if (receipt.schemaVersion !== LINK_RECEIPT_SCHEMA) errors.push('link-schema-mismatch');
-  if (receipt.producer !== 'installed-link-transport-v1') errors.push('link-producer-mismatch');
+  if (receipt.producer !== 'installed-link-transport-v2') errors.push('link-producer-mismatch');
+  if (!str(expected.challenge) || receipt.challenge !== expected.challenge) errors.push('link-challenge-mismatch');
+  if (!expected.probe || !receipt.probe || str(receipt.probe.path) !== str(expected.probe.path) ||
+      lower(receipt.probe.sha256) !== lower(expected.probe.sha256)) errors.push('link-probe-mismatch');
   if (lower(receipt.candidateCommit) !== lower(expected.candidateCommit)) errors.push('link-candidate-mismatch');
   if (lower(receipt.candidateTree) !== lower(expected.candidateTree)) errors.push('link-tree-mismatch');
   if (!artifact || lower(receipt.artifact && receipt.artifact.sha256) !== artifact.sha256 || Number(receipt.artifact && receipt.artifact.size) !== artifact.size)
     errors.push('link-artifact-mismatch');
   if (receipt.mode !== 'desktop' || !TAURI_ORIGINS.has(str(receipt.origin))) errors.push('link-not-installed-desktop');
-  if (!receipt.healthyIdle || receipt.healthyIdle.observed !== true || receipt.healthyIdle.stayedUp !== true ||
-      Number(receipt.healthyIdle.durationMs) <= 40000 || receipt.healthyIdle.state !== 'UP') errors.push('healthy-idle-up-unproven');
-  if (!receipt.connectionLoss || receipt.connectionLoss.observed !== true || receipt.connectionLoss.actualLoss !== true ||
-      receipt.connectionLoss.transitionedDown !== true || receipt.connectionLoss.state !== 'DOWN') errors.push('actual-loss-down-unproven');
-  if (!str(receipt.stampIso).trim() || !Number.isFinite(Date.parse(receipt.stampIso))) errors.push('link-stamp-invalid');
+  if (!Number.isInteger(Number(expected.cdpPort)) || Number(receipt.cdpPort) !== Number(expected.cdpPort)) errors.push('link-cdp-port-mismatch');
+  const stampMs = Date.parse(str(receipt.stampIso));
+  if (!Number.isFinite(stampMs) ||
+      (Number.isFinite(Number(expected.gateStartedAt)) && stampMs < Number(expected.gateStartedAt) - 2000) ||
+      (Number.isFinite(Number(expected.gateEndedAt)) && stampMs > Number(expected.gateEndedAt) + 2000)) errors.push('link-stamp-invalid');
   if (!Array.isArray(receipt.evidence) || evidence.length !== receipt.evidence.length || evidence.length === 0) errors.push('link-evidence-invalid');
   if (containsSecretMaterial(JSON.stringify(receipt))) errors.push('link-evidence-secret-bearing');
+  if (!Array.isArray(rawEvidence) || rawEvidence.length !== evidence.length || rawEvidence.length === 0) {
+    errors.push('link-raw-evidence-missing');
+  } else {
+    for (const doc of rawEvidence) {
+      const verdict = validateLinkObservation(doc, expected);
+      for (const error of verdict.errors) if (!errors.includes(error)) errors.push(error);
+    }
+  }
   return { ok: errors.length === 0, errors, evidence };
 }
 
@@ -164,6 +234,8 @@ function publicIdentity(observed) {
     appVersion: str(version.app), buildCommit: lower(shell.sha || shell.fullCommit),
     sourceTree: lower(shell.sourceTree), buildDescribe: str(shell.describe),
     buildDirty: shell.dirty === true, buildKind: lower(shell.provenanceKind),
+    sidecarCommit: lower(version.buildSha), sidecarDirty: version.buildDirty === true,
+    sidecarDescribe: str(version.harness),
     runtimeExecutable: { sha256: lower(shell.executableSha256), size: Number(shell.executableSize) || 0 }
   };
 }
@@ -185,7 +257,14 @@ function makeReceipt(state) {
       id: str(state.isolation && state.isolation.id), attended: state.isolation && state.isolation.attended === true,
       authority: str(state.isolation && state.isolation.authority),
       freshProfile: state.isolation && state.isolation.freshProfile === true,
-      observedFresh: state.fresh?.ok === true
+      machineVerified: state.isolation && state.isolation.machineVerified === true,
+      proof: str(state.isolation && state.isolation.proof),
+      principalSha256: lower(state.isolation && state.isolation.principalSha256),
+      profileSha256: lower(state.isolation && state.isolation.profileSha256),
+      runtimeOwnerSha256: lower(state.isolation && state.isolation.runtimeOwnerSha256),
+      repositoryOwnerSha256: lower(state.isolation && state.isolation.repositoryOwnerSha256),
+      observedFresh: state.fresh?.ok === true,
+      sidecarStorageFresh: state.fresh?.sidecarStorageFresh === true
     },
     provider: {
       id: lower(state.provider && state.provider.id), model: str(state.provider && state.provider.model),
@@ -203,14 +282,20 @@ function makeReceipt(state) {
       runIdSha256: task.runId ? sha256Text(task.runId) : '',
       realProvider: task.realProvider === true,
       permissionPromptObserved: task.permissionPromptObserved === true,
-      approvedOnce: task.approvedOnce === true
+      approvedOnce: task.approvedOnce === true,
+      baselineAbsent: task.baselineAbsent === true,
+      fsWriteObserved: task.fsWriteObserved === true,
+      fsReadObserved: task.fsReadObserved === true,
+      toolsBoundToRun: task.toolsBoundToRun === true
     },
     deliverable: {
       eventObserved: deliverable.eventObserved === true,
       path: str(deliverable.path), sha256: lower(deliverable.sha256), size: Number(deliverable.size) || 0,
       contentVerified: deliverable.contentVerified === true,
       opened: opened.opened === true, pointerClick: opened.pointerClick === true,
-      mechanism: str(opened.mechanism), targetScheme: str(opened.targetScheme)
+      mechanism: str(opened.mechanism), targetScheme: str(opened.targetScheme),
+      openedSha256: lower(opened.deliverableSha256), openedSize: Number(opened.deliverableSize) || 0,
+      targetUrlSha256: lower(opened.targetUrlSha256), targetBoundToBytes: opened.targetBoundToBytes === true
     },
     timing: {
       maxMs: MAX_JOURNEY_MS, totalMs: Number(state.totalMs) || 0,
@@ -232,16 +317,33 @@ export function validateJourneyReceipt(receipt) {
     if (!normalizedArtifact(receipt.artifact)) errors.push('receipt-artifact-invalid');
   }
   if (receipt.result === RESULTS.PASS) {
-    if (!receipt.installed || receipt.installed.mode !== 'desktop' || !TAURI_ORIGINS.has(receipt.installed.origin)) errors.push('receipt-installed-unproven');
+    const artifact = normalizedArtifact(receipt.artifact);
+    const installed = receipt.installed || {};
+    if (installed.mode !== 'desktop' || !TAURI_ORIGINS.has(installed.origin)) errors.push('receipt-installed-unproven');
+    if (!artifact || lower(installed.buildCommit) !== lower(receipt.candidateCommit) ||
+        lower(installed.sourceTree) !== lower(receipt.candidateTree) || installed.buildDirty !== false ||
+        ![KINDS.REPRODUCIBLE_SOURCE, KINDS.CUSTOM].includes(lower(installed.buildKind)) ||
+        lower(installed.sidecarCommit) !== lower(receipt.candidateCommit) || installed.sidecarDirty !== false ||
+        !installed.runtimeExecutable || lower(installed.runtimeExecutable.sha256) !== artifact.sha256 ||
+        Number(installed.runtimeExecutable.size) !== artifact.size) errors.push('receipt-installed-candidate-mismatch');
     if (!receipt.isolation || !receipt.isolation.attended || !receipt.isolation.freshProfile || !receipt.isolation.observedFresh ||
+        !receipt.isolation.machineVerified || !receipt.isolation.sidecarStorageFresh ||
+        !SHA256.test(lower(receipt.isolation.principalSha256)) || !SHA256.test(lower(receipt.isolation.profileSha256)) || !SHA256.test(lower(receipt.isolation.runtimeOwnerSha256)) ||
+        (receipt.isolation.authority === 'separate-windows-user' && !SHA256.test(lower(receipt.isolation.repositoryOwnerSha256))) ||
+        str(receipt.isolation.id) !== str(receipt.isolation.authority) + '-' + lower(receipt.isolation.principalSha256).slice(0, 12) ||
         !ISOLATION_AUTHORITIES.has(receipt.isolation.authority)) errors.push('receipt-fresh-unproven');
     if (!receipt.provider || !receipt.provider.failureStateObserved || !receipt.provider.recovered) errors.push('receipt-provider-recovery-unproven');
     if (!receipt.overseer || !receipt.overseer.created || receipt.overseer.role !== 'orchestrator') errors.push('receipt-overseer-unproven');
     if (!receipt.task || !receipt.task.started || !receipt.task.completed || receipt.task.reason !== 'done' || !receipt.task.realProvider ||
-        !receipt.task.permissionPromptObserved || !receipt.task.approvedOnce) errors.push('receipt-real-task-unproven');
+        !receipt.task.permissionPromptObserved || !receipt.task.approvedOnce || !receipt.task.baselineAbsent ||
+        !receipt.task.fsWriteObserved || !receipt.task.fsReadObserved || !receipt.task.toolsBoundToRun ||
+        !SHA256.test(lower(receipt.task.runIdSha256))) errors.push('receipt-real-task-unproven');
     if (!receipt.deliverable || !receipt.deliverable.eventObserved || basename(receipt.deliverable.path).toLowerCase() !== FIRST_TASK_PATH ||
         !SHA256.test(lower(receipt.deliverable.sha256)) || Number(receipt.deliverable.size) <= 0 || !receipt.deliverable.contentVerified ||
-        !receipt.deliverable.opened || !receipt.deliverable.pointerClick || !receipt.deliverable.mechanism) errors.push('receipt-open-deliverable-unproven');
+        !receipt.deliverable.opened || !receipt.deliverable.pointerClick || !receipt.deliverable.targetBoundToBytes ||
+        receipt.deliverable.openedSha256 !== receipt.deliverable.sha256 || Number(receipt.deliverable.openedSize) !== Number(receipt.deliverable.size) ||
+        !SHA256.test(lower(receipt.deliverable.targetUrlSha256)) ||
+        !['target-created', 'window-open-accepted', 'native-open-accepted'].includes(receipt.deliverable.mechanism)) errors.push('receipt-open-deliverable-unproven');
     if (!receipt.timing || !receipt.timing.underTenMinutes || Number(receipt.timing.totalMs) >= MAX_JOURNEY_MS) errors.push('receipt-ten-minute-bar-failed');
   }
   return { ok: errors.length === 0, errors };
@@ -297,7 +399,10 @@ export function makeInstalledFirstRun(options = {}) {
       requireCondition(SHA40.test(candidateTree), 'candidate-tree-missing', RESULTS.BLOCKED);
       requireCondition(!!artifact, 'candidate-artifact-missing', RESULTS.BLOCKED);
       requireCondition(isolation.attended === true && isolation.freshProfile === true && SAFE_ID.test(str(isolation.id)) &&
-        ISOLATION_AUTHORITIES.has(str(isolation.authority)),
+        ISOLATION_AUTHORITIES.has(str(isolation.authority)) && isolation.machineVerified === true &&
+        SHA256.test(lower(isolation.principalSha256)) && SHA256.test(lower(isolation.profileSha256)) && SHA256.test(lower(isolation.runtimeOwnerSha256)) && str(isolation.proof).trim() &&
+        (str(isolation.authority) !== 'separate-windows-user' || SHA256.test(lower(isolation.repositoryOwnerSha256))) &&
+        str(isolation.id) === str(isolation.authority) + '-' + lower(isolation.principalSha256).slice(0, 12),
         'isolated-fresh-profile-unattested', RESULTS.BLOCKED);
       requireCondition(provider.attended === true, 'attended-provider-action-unproven', RESULTS.BLOCKED);
       requireCondition(providerId === 'codex' || BYOK_PROVIDERS.has(providerId), 'provider-unsupported', RESULTS.BLOCKED);
@@ -323,7 +428,7 @@ export function makeInstalledFirstRun(options = {}) {
         const observed = await session.readFreshState(providerId);
         const verdict = validateFreshPrecondition(observed, isolation, providerId);
         requireCondition(verdict.ok, verdict.errors[0] || 'fresh-profile-unproven', RESULTS.BLOCKED);
-        return { ok: true };
+        return { ok: true, sidecarStorageFresh: true };
       });
 
       state.providerFailure = await step('visible-provider-failure', async deadline => {
@@ -352,6 +457,9 @@ export function makeInstalledFirstRun(options = {}) {
         requireCondition(observed && observed.started === true, 'real-task-never-started', RESULTS.FAIL);
         requireCondition(observed.completed === true && observed.reason === 'done', 'real-task-did-not-complete', RESULTS.FAIL);
         requireCondition(observed.realProvider === true, 'real-provider-run-unproven', RESULTS.FAIL);
+        requireCondition(observed.baselineAbsent === true, 'hello-file-preexisted', RESULTS.FAIL);
+        requireCondition(observed.fsWriteObserved === true && observed.fsReadObserved === true && observed.toolsBoundToRun === true,
+          'run-scoped-write-read-unproven', RESULTS.FAIL);
         requireCondition(observed.permissionPromptObserved === true && observed.approvedOnce === true,
           'real-consent-loop-unproven', RESULTS.FAIL);
         requireCondition(deliverable.eventObserved === true, 'assistant-reply-is-not-a-deliverable', RESULTS.FAIL);
@@ -360,7 +468,8 @@ export function makeInstalledFirstRun(options = {}) {
           'hello-file-bytes-unproven', RESULTS.FAIL);
         return {
           started: true, completed: true, reason: 'done', runId: str(observed.runId), realProvider: true,
-          permissionPromptObserved: true, approvedOnce: true,
+          permissionPromptObserved: true, approvedOnce: true, baselineAbsent: true,
+          fsWriteObserved: true, fsReadObserved: true, toolsBoundToRun: true,
           deliverable: {
             eventObserved: true, path: str(deliverable.path), sha256: lower(deliverable.sha256),
             size: Number(deliverable.size), contentVerified: true
@@ -374,11 +483,14 @@ export function makeInstalledFirstRun(options = {}) {
         requireCondition(observed && observed.pointerClick === true, 'deliverable-open-was-not-user-action', RESULTS.FAIL);
         requireCondition(observed.opened === true, 'deliverable-open-not-observed', RESULTS.FAIL);
         requireCondition(observed.deliverableSha256 === state.task.deliverable.sha256, 'opened-deliverable-mismatch', RESULTS.FAIL);
+        requireCondition(Number(observed.deliverableSize) === Number(state.task.deliverable.size) && observed.targetBoundToBytes === true &&
+          SHA256.test(lower(observed.targetUrlSha256)), 'opened-deliverable-bytes-unproven', RESULTS.FAIL);
         requireCondition(['target-created', 'window-open-accepted', 'native-open-accepted'].includes(str(observed.mechanism)),
           'deliverable-open-mechanism-unproven', RESULTS.FAIL);
         return {
           pointerClick: true, opened: true, mechanism: str(observed.mechanism),
-          targetScheme: str(observed.targetScheme), deliverableSha256: str(observed.deliverableSha256)
+          targetScheme: str(observed.targetScheme), deliverableSha256: str(observed.deliverableSha256),
+          deliverableSize: Number(observed.deliverableSize), targetUrlSha256: lower(observed.targetUrlSha256), targetBoundToBytes: true
         };
       });
 
@@ -462,12 +574,14 @@ export const INSTALLED_IDENTITY_PROBE = `(async () => {
 const OBSERVER_INSTALL = `(() => {
   if (window.__STARNET_W1_OBS__) return true;
   if (typeof U === 'undefined' || !U.bus) return false;
-  const cap = (a, v) => { a.push(v); if (a.length > 20) a.shift(); };
-  const out = window.__STARNET_W1_OBS__ = { starts: [], ends: [], deliverables: [], permissions: [], responses: [] };
+  const out = window.__STARNET_W1_OBS__ = { seq: 0, starts: [], ends: [], calls: [], results: [], deliverables: [], permissions: [], responses: [] };
+  const cap = (a, v) => { v.seq = ++out.seq; a.push(v); if (a.length > 40) a.shift(); };
   U.bus.on('agent.run.start', p => cap(out.starts, { runId: String(p && p.runId || ''), agentId: String(p && p.agentId || ''), model: String(p && p.model || '') }));
   U.bus.on('agent.run.end', p => cap(out.ends, { runId: String(p && p.runId || ''), agentId: String(p && p.agentId || ''), reason: String(p && p.reason || '') }));
+  U.bus.on('agent.tool_call', p => cap(out.calls, { runId: String(p && p.runId || ''), agentId: String(p && p.agentId || ''), callId: String(p && p.callId || ''), name: String(p && p.name || ''), argsSummary: String(p && p.argsSummary || '') }));
+  U.bus.on('agent.tool_result', p => cap(out.results, { runId: String(p && p.runId || ''), agentId: String(p && p.agentId || ''), callId: String(p && p.callId || ''), ok: p && p.ok === true, isError: p && p.isError === true }));
   U.bus.on('deliverable', p => cap(out.deliverables, { title: String(p && p.title || ''), kind: String(p && p.kind || ''), agentId: String(p && p.agentId || '') }));
-  U.bus.on('permission.prompt', p => cap(out.permissions, { promptId: String(p && p.promptId || ''), tool: String(p && p.tool || '') }));
+  U.bus.on('permission.prompt', p => cap(out.permissions, { promptId: String(p && p.promptId || ''), agentId: String(p && p.agentId || ''), tool: String(p && p.tool || ''), argsSummary: String(p && p.argsSummary || '') }));
   U.bus.on('permission.response', p => cap(out.responses, { promptId: String(p && p.promptId || ''), decision: String(p && p.decision || '') }));
   return true;
 })()`;
@@ -496,7 +610,7 @@ export function makeCdpInstalledDriver(options = {}) {
       const targetEvents = [];
       cdp.on('Target.targetCreated', event => {
         const info = event && event.targetInfo || {};
-        targetEvents.push({ at: Date.now(), type: str(info.type), scheme: safeScheme(info.url) });
+        targetEvents.push({ at: Date.now(), type: str(info.type), scheme: safeScheme(info.url), urlSha256: sha256Text(str(info.url)) });
         if (targetEvents.length > 20) targetEvents.shift();
       });
 
@@ -610,12 +724,14 @@ export function makeCdpInstalledDriver(options = {}) {
             const r = (typeof Harness !== 'undefined' && Harness.apiFetch)
               ? await Harness.apiFetch('/api/file?agent=agent&path=' + encodeURIComponent('hello.txt'), { cache: 'no-store' })
               : await fetch('/api/file?agent=agent&path=' + encodeURIComponent('hello.txt'), { cache: 'no-store' });
-            if (!r || !r.ok) return null;
+            if (!r) return { known: false, exists: null };
+            if (r.status === 404) return { known: true, exists: false };
+            if (!r.ok) return { known: false, exists: null, status: Number(r.status) || 0 };
             const bytes = new Uint8Array(await r.arrayBuffer());
             const hash = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))).map(b => b.toString(16).padStart(2, '0')).join('');
             const text = new TextDecoder().decode(bytes);
-            return { path: 'hello.txt', sha256: hash, size: bytes.byteLength, contentVerified: text.trim() === 'starnet online' };
-          } catch (_) { return null; }
+            return { known: true, exists: true, path: 'hello.txt', sha256: hash, size: bytes.byteLength, contentVerified: text.trim() === 'starnet online' };
+          } catch (_) { return { known: false, exists: null }; }
         })()`);
       }
 
@@ -628,7 +744,7 @@ export function makeCdpInstalledDriver(options = {}) {
             return ['screen-splash', 'screen-connect'].includes(screen) ? screen : null;
           }, Date.now() + 45000, 300);
           if (!ready) throw new JourneyFault('fresh-screen-timeout', RESULTS.BLOCKED);
-          return await evalJS(cdp, `(() => {
+          return await evalJS(cdp, `(async () => {
             const provider = ${JSON.stringify(lower(providerId))};
             const activeScreen = String((document.querySelector('.screen.active') || {}).id || '');
             let status = 'error', present = true, current = true, count = -1, configured = true;
@@ -636,14 +752,37 @@ export function makeCdpInstalledDriver(options = {}) {
             try { current = !!App.currentAgent(); count = (App.agents() || []).length; } catch (_) {}
             try { configured = !!Harness.configured(provider); } catch (_) {}
             const recovery = document.getElementById('cc-recovery');
+            const apiJson = async (url) => {
+              try {
+                const r = (typeof Harness !== 'undefined' && Harness.apiFetch) ? await Harness.apiFetch(url, { cache: 'no-store' }) : await fetch(url, { cache: 'no-store' });
+                return r && r.ok ? await r.json() : null;
+              } catch (_) { return null; }
+            };
+            const save = await apiJson('/api/save?agent=agent');
+            const runs = await apiJson('/api/runs?agent=agent&limit=1');
+            const diagnostics = await apiJson('/api/diagnostics');
+            const report = diagnostics && diagnostics.report;
             return { activeScreen, saveStatus: status, savePresent: present, currentAgentPresent: current,
               rosterCount: count, recoveryVisible: !!(recovery && !recovery.classList.contains('hidden')),
-              providerChecked: provider, providerConfigured: configured };
+              providerChecked: provider, providerConfigured: configured,
+              backendSavePresent: save ? !!save.save : null,
+              backendRecoveryPresent: save ? !!save.recovery : null,
+              backendWorkspaceDegraded: save ? save.degraded === true : null,
+              backendRunCount: runs && Array.isArray(runs.runs) ? runs.runs.length : -1,
+              backendAgentCount: report && Number.isFinite(Number(report.agentCount)) ? Number(report.agentCount) : -1,
+              backendLastRunPresent: report ? !!report.lastRun : null };
           })()`);
         },
 
         async exerciseProviderFailure({ id, model, deadline }) {
           if (!await ensureConnect(deadline)) throw new JourneyFault('connect-screen-timeout', RESULTS.FAIL);
+          const stale = await evalJS(cdp, `(() => {
+            const e = document.getElementById('connect-msg'); if (!e) return false;
+            const r = e.getBoundingClientRect(), s = getComputedStyle(e), m = String(e.textContent || '').toLowerCase();
+            const visible = r.width > 0 && r.height > 0 && s.display !== 'none' && s.visibility !== 'hidden' && Number(s.opacity || 1) > 0;
+            return visible && /sign in.*chatgpt|sign in first|api key|enter your .* key/.test(m);
+          })()`);
+          if (stale) throw new JourneyFault('provider-failure-state-stale', RESULTS.FAIL);
           if (!await clickSelector('.prov[data-prov="' + lower(id) + '"]')) throw new JourneyFault('provider-control-missing', RESULTS.FAIL);
           if (!await fill('#in-name', 'W1 OVERSEER')) throw new JourneyFault('overseer-name-control-missing', RESULTS.FAIL);
           if (!await fill('#in-model', model)) throw new JourneyFault('provider-model-control-missing', RESULTS.FAIL);
@@ -651,7 +790,10 @@ export function makeCdpInstalledDriver(options = {}) {
           if (!await clickSelector('#btn-wake')) throw new JourneyFault('wake-control-missing', RESULTS.FAIL);
           const kind = await waitValue(async () => {
             return await evalJS(cdp, `(() => {
-              const m = String((document.getElementById('connect-msg') || {}).textContent || '').toLowerCase();
+              const e = document.getElementById('connect-msg'); if (!e) return '';
+              const r = e.getBoundingClientRect(), s = getComputedStyle(e);
+              if (!(r.width > 0 && r.height > 0 && s.display !== 'none' && s.visibility !== 'hidden' && Number(s.opacity || 1) > 0)) return '';
+              const m = String(e.textContent || '').toLowerCase();
               if (/sign in.*chatgpt|sign in first/.test(m)) return 'signin-required';
               if (/api key|enter your .* key/.test(m)) return 'credential-required';
               return '';
@@ -688,30 +830,43 @@ export function makeCdpInstalledDriver(options = {}) {
         },
 
         async completeFirstTask({ deadline }) {
-          let approvedOnce = false;
+          const baseline = await fileProof();
+          if (!baseline || baseline.known !== true) throw new JourneyFault('hello-file-baseline-unreadable', RESULTS.BLOCKED);
+          if (baseline.exists !== false) throw new JourneyFault('hello-file-preexisted', RESULTS.FAIL);
           while (Date.now() < deadline) {
             const state = await pageState();
             const starts = state.observer && state.observer.starts || [];
             const ends = state.observer && state.observer.ends || [];
+            const calls = state.observer && state.observer.calls || [];
+            const results = state.observer && state.observer.results || [];
             const deliverables = state.observer && state.observer.deliverables || [];
             const permissions = state.observer && state.observer.permissions || [];
             const responses = state.observer && state.observer.responses || [];
             const start = starts.find(x => x && x.agentId === 'agent') || null;
             const end = start ? [...ends].reverse().find(x => x && x.runId === start.runId) : null;
-            const event = [...deliverables].reverse().find(x => x && basename(x.title).toLowerCase() === FIRST_TASK_PATH) || null;
-            approvedOnce = approvedOnce || responses.some(x => x && x.decision === 'once');
-            if (start && end && event && state.link) {
+            const inRun = x => start && x && Number(x.seq) > Number(start.seq) && (!end || Number(x.seq) < Number(end.seq));
+            const runCalls = start ? calls.filter(x => x && x.runId === start.runId && x.agentId === 'agent') : [];
+            const helloArg = value => /(^|["'\\/])hello\.txt(["'\\/,}]|$)/i.test(value || '');
+            const writeCall = runCalls.find(x => x.name === 'fs.write' && helloArg(x.argsSummary)) || null;
+            const readCall = runCalls.find(x => x.name === 'fs.read' && helloArg(x.argsSummary)) || null;
+            const resultOk = call => !!(call && results.find(x => x && x.runId === start.runId && x.callId === call.callId && x.ok === true && x.isError === false));
+            const prompt = permissions.find(x => inRun(x) && x.agentId === 'agent' && x.tool === 'fs.write' && helloArg(x.argsSummary)) || null;
+            const approval = prompt ? responses.find(x => inRun(x) && x.promptId === prompt.promptId && x.decision === 'once') : null;
+            const event = [...deliverables].reverse().find(x => inRun(x) && x.agentId === 'agent' && basename(x.title).toLowerCase() === FIRST_TASK_PATH) || null;
+            if (start && end && writeCall && readCall && resultOk(writeCall) && resultOk(readCall) && prompt && approval && event && state.link) {
               const proof = await fileProof();
+              if (!proof || proof.known !== true || proof.exists !== true) throw new JourneyFault('hello-file-postrun-unreadable', RESULTS.FAIL);
               return {
                 started: true, completed: end.reason === 'done', reason: end.reason, runId: start.runId,
                 realProvider: !!connectedProviderId && connectedProviderId !== 'replay' && str(start.model) === connectedModel,
-                permissionPromptObserved: permissions.length > 0,
-                approvedOnce, deliverable: Object.assign({ eventObserved: true }, proof || { path: event.title })
+                permissionPromptObserved: true, approvedOnce: true, baselineAbsent: true,
+                fsWriteObserved: true, fsReadObserved: true, toolsBoundToRun: true,
+                deliverable: Object.assign({ eventObserved: true }, proof)
               };
             }
 
             if (state.consent) {
-              if (await clickSelector('.cmsg.consent .consent-btn', 'Approve once')) approvedOnce = true;
+              await clickSelector('.cmsg.consent .consent-btn', 'Approve once');
               await sleepFn(350); continue;
             }
 
@@ -751,35 +906,65 @@ export function makeCdpInstalledDriver(options = {}) {
           await evalJS(cdp, `(() => {
             if (window.__STARNET_W1_OPEN_INSTRUMENTED__) return true;
             const original = window.open;
+            const originalCreate = URL.createObjectURL;
             window.__STARNET_W1_OPEN_ORIGINAL__ = original;
+            window.__STARNET_W1_CREATE_ORIGINAL__ = originalCreate;
             window.__STARNET_W1_OPEN_CALLS__ = [];
+            window.__STARNET_W1_BLOBS__ = [];
+            URL.createObjectURL = function(blob) {
+              const url = originalCreate.apply(this, arguments);
+              window.__STARNET_W1_BLOBS__.push({ url: String(url || ''), blob });
+              return url;
+            };
             window.open = function(url) {
               let accepted = false, ret = null;
               try { ret = original.apply(this, arguments); accepted = !!ret; return ret; }
               finally {
                 let scheme = ''; try { scheme = new URL(String(url || ''), location.href).protocol; } catch (_) {}
-                window.__STARNET_W1_OPEN_CALLS__.push({ accepted, scheme });
+                window.__STARNET_W1_OPEN_CALLS__.push({ accepted, scheme, url: String(url || '') });
               }
             };
             window.__STARNET_W1_OPEN_INSTRUMENTED__ = true;
             return true;
           })()`);
           const eventStart = targetEvents.length;
+          const expectedSha256 = lower(deliverable && deliverable.sha256);
+          const expectedSize = Number(deliverable && deliverable.size) || 0;
           const clicked = await clickSelector('.cmsg.deliverable .deliverable-link, .cmsg.recap .deliverable-link', 'hello.txt');
-          if (!clicked) return { pointerClick: false, opened: false, deliverableSha256: str(deliverable && deliverable.sha256) };
+          if (!clicked) return { pointerClick: false, opened: false, deliverableSha256: '', deliverableSize: 0, targetBoundToBytes: false };
           const observed = await waitValue(async () => {
-            const call = await evalJS(cdp, `(() => {
+            const call = await evalJS(cdp, `(async () => {
               const a = window.__STARNET_W1_OPEN_CALLS__ || []; return a.length ? a[a.length - 1] : null;
             })()`);
-            const target = targetEvents.slice(eventStart).find(x => x && ['blob:', 'http:', 'https:', 'file:'].includes(x.scheme));
-            if (target) return { mechanism: 'target-created', targetScheme: target.scheme };
-            if (call && call.accepted) return { mechanism: 'window-open-accepted', targetScheme: safeScheme(call.scheme) || str(call.scheme) };
+            if (!call || call.scheme !== 'blob:' || !call.url) return null;
+            const proof = await evalJS(cdp, `(async () => {
+              const calls = window.__STARNET_W1_OPEN_CALLS__ || [];
+              const call = calls.length ? calls[calls.length - 1] : null;
+              if (!call || !call.url) return null;
+              const rec = (window.__STARNET_W1_BLOBS__ || []).find(x => x && x.url === call.url);
+              if (!rec || !rec.blob) return null;
+              const bytes = new Uint8Array(await rec.blob.arrayBuffer());
+              const digest = async value => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', value))).map(b => b.toString(16).padStart(2, '0')).join('');
+              return {
+                accepted: call.accepted === true, scheme: call.scheme,
+                targetUrlSha256: await digest(new TextEncoder().encode(call.url)),
+                deliverableSha256: await digest(bytes), deliverableSize: bytes.byteLength,
+                contentVerified: new TextDecoder().decode(bytes).trim() === ${JSON.stringify(FIRST_TASK_CONTENT)}
+              };
+            })()`);
+            if (!proof || proof.deliverableSha256 !== expectedSha256 ||
+                Number(proof.deliverableSize) !== expectedSize || proof.contentVerified !== true) return null;
+            const target = targetEvents.slice(eventStart).find(x => x && x.urlSha256 === proof.targetUrlSha256 && x.scheme === proof.scheme);
+            if (target) return Object.assign({ mechanism: 'target-created', targetScheme: target.scheme }, proof);
+            if (proof.accepted) return Object.assign({ mechanism: 'window-open-accepted', targetScheme: proof.scheme }, proof);
             return null;
           }, cdpDeadline(deadline, 12000), 250);
           return {
             pointerClick: true, opened: !!observed,
             mechanism: observed ? observed.mechanism : '', targetScheme: observed ? observed.targetScheme : '',
-            deliverableSha256: str(deliverable && deliverable.sha256)
+            deliverableSha256: observed ? observed.deliverableSha256 : '',
+            deliverableSize: observed ? Number(observed.deliverableSize) : 0,
+            targetUrlSha256: observed ? observed.targetUrlSha256 : '', targetBoundToBytes: !!observed
           };
         },
 
@@ -787,7 +972,9 @@ export function makeCdpInstalledDriver(options = {}) {
           try {
             await evalJS(cdp, `(() => {
               if (window.__STARNET_W1_OPEN_INSTRUMENTED__ && window.__STARNET_W1_OPEN_ORIGINAL__) window.open = window.__STARNET_W1_OPEN_ORIGINAL__;
-              delete window.__STARNET_W1_OPEN_ORIGINAL__; delete window.__STARNET_W1_OPEN_CALLS__; delete window.__STARNET_W1_OPEN_INSTRUMENTED__;
+              if (window.__STARNET_W1_OPEN_INSTRUMENTED__ && window.__STARNET_W1_CREATE_ORIGINAL__) URL.createObjectURL = window.__STARNET_W1_CREATE_ORIGINAL__;
+              delete window.__STARNET_W1_OPEN_ORIGINAL__; delete window.__STARNET_W1_CREATE_ORIGINAL__;
+              delete window.__STARNET_W1_OPEN_CALLS__; delete window.__STARNET_W1_BLOBS__; delete window.__STARNET_W1_OPEN_INSTRUMENTED__;
               return true;
             })()`);
           } catch (_) {}
@@ -815,6 +1002,64 @@ function hashFile(file) {
   } catch (_) { return null; }
 }
 
+function commandText(file, args) {
+  try {
+    const result = spawnSync(file, args, { encoding: 'utf8', windowsHide: true, timeout: 10000 });
+    return result.status === 0 ? str(result.stdout).trim() : '';
+  } catch (_) { return ''; }
+}
+
+/* The installed WebView ignores process-local APPDATA redirection, so isolation cannot be an
+ * operator-chosen label. Derive a pseudonymous principal/profile identity from this process and
+ * require a machine fact appropriate to the selected authority. Raw user names, SIDs, host names,
+ * and profile paths never enter evidence. */
+export function runtimeIsolation(authority, cdpPort) {
+  authority = str(authority).trim();
+  let user = '', uid = '', profile = '', sid = '';
+  try { const info = os.userInfo(); user = str(info.username); uid = str(info.uid); profile = str(info.homedir); } catch (_) {}
+  profile = str(process.env.USERPROFILE || profile);
+  if (process.platform === 'win32') {
+    sid = (commandText('whoami.exe', ['/user', '/fo', 'csv', '/nh']).match(/S-1-[0-9-]+/i) || [])[0] || '';
+  }
+  const host = str(os.hostname()).toLowerCase();
+  const principalSha256 = sha256Text([host, lower(user), sid || uid].join('\0'));
+  const profileSha256 = sha256Text(path.resolve(profile || '.').toLowerCase());
+  let runtimeOwnerSha256 = '';
+  if (process.platform === 'win32' && sid && Number.isInteger(Number(cdpPort)) && Number(cdpPort) > 0) {
+    const ownerSid = commandText('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
+      "$p=(Get-NetTCPConnection -State Listen -LocalPort " + Number(cdpPort) + " -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty OwningProcess); if($p){$w=Get-CimInstance Win32_Process -Filter ('ProcessId='+$p); (Invoke-CimMethod -InputObject $w -MethodName GetOwnerSid).Sid}"]);
+    if (ownerSid) runtimeOwnerSha256 = sha256Text([host, lower(ownerSid)].join('\0'));
+  }
+  const currentOwnerSha256 = sid ? sha256Text([host, lower(sid)].join('\0')) : '';
+  const runtimeOwnerMatches = SHA256.test(runtimeOwnerSha256) && runtimeOwnerSha256 === currentOwnerSha256;
+  const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+  const quotedRepo = repo.replace(/'/g, "''");
+  const repositoryOwnerSid = process.platform === 'win32' ? commandText('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
+    "$o=(Get-Acl -LiteralPath '" + quotedRepo + "').Owner; ([System.Security.Principal.NTAccount]$o).Translate([System.Security.Principal.SecurityIdentifier]).Value"]) : '';
+  const repositoryOwnerSha256 = repositoryOwnerSid ? sha256Text([host, lower(repositoryOwnerSid)].join('\0')) : '';
+  let machineVerified = false, proof = '';
+  if (authority === 'separate-windows-user') {
+    machineVerified = process.platform === 'win32' && !!sid && runtimeOwnerMatches && SHA256.test(repositoryOwnerSha256) && repositoryOwnerSha256 !== currentOwnerSha256;
+    proof = machineVerified ? 'distinct-repository-owner-principal' : '';
+  } else if (authority === 'virtual-machine') {
+    const system = process.platform === 'win32' ? commandText('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
+      "$c=Get-CimInstance Win32_ComputerSystem; (($c.Manufacturer)+' '+($c.Model))"]) : '';
+    machineVerified = runtimeOwnerMatches && /virtual|vmware|hyper-v|virtualbox|kvm|qemu|parallels|xen/i.test(system);
+    proof = machineVerified ? 'hypervisor-detected' : '';
+  } else if (authority === 'clean-machine') {
+    // "Clean" is StarNet state, not Windows age. The CDP listener must belong to this principal here;
+    // readFreshState then independently proves empty browser + sidecar stores before any mutation.
+    machineVerified = runtimeOwnerMatches;
+    proof = machineVerified ? 'runtime-owner-plus-empty-starnet-stores' : '';
+  }
+  return {
+    id: authority + '-' + principalSha256.slice(0, 12), authority,
+    freshProfile: process.env.STARNET_FIRST_RUN_FRESH_PROFILE === '1',
+    attended: process.env.STARNET_FIRST_RUN_ATTENDED === '1',
+    machineVerified, proof, principalSha256, profileSha256, runtimeOwnerSha256, repositoryOwnerSha256
+  };
+}
+
 if (INVOKED_DIRECTLY) (async () => {
   const here = path.dirname(fileURLToPath(import.meta.url));
   const repo = path.resolve(here, '..', '..');
@@ -825,21 +1070,20 @@ if (INVOKED_DIRECTLY) (async () => {
     const value = lower(result.stdout);
     return result.status === 0 && SHA40.test(value) ? value : '';
   })();
-  const artifact = hashFile(process.env.STARNET_FIRST_RUN_ARTIFACT || process.env.STARNET_SMOKE_ARTIFACT || '');
+  const artifactObserved = hashFile(process.env.STARNET_FIRST_RUN_ARTIFACT || process.env.STARNET_SMOKE_ARTIFACT || '');
+  const expectedArtifactSha256 = lower(process.env.STARNET_FIRST_RUN_EXPECTED_ARTIFACT_SHA256);
+  const expectedArtifactSize = Number(process.env.STARNET_FIRST_RUN_EXPECTED_ARTIFACT_SIZE);
+  const artifact = artifactObserved && SHA256.test(expectedArtifactSha256) && Number.isSafeInteger(expectedArtifactSize) && expectedArtifactSize > 0 &&
+    artifactObserved.sha256 === expectedArtifactSha256 && artifactObserved.size === expectedArtifactSize ? artifactObserved : null;
+  const port = Number(process.env.STARNET_FIRST_RUN_CDP_PORT || process.env.STARNET_SMOKE_CDP_PORT) || 9333;
   const attended = process.env.STARNET_FIRST_RUN_ATTENDED === '1';
-  const isolation = {
-    id: str(process.env.STARNET_FIRST_RUN_ISOLATION_ID).trim(),
-    authority: str(process.env.STARNET_FIRST_RUN_ISOLATION_AUTHORITY).trim(),
-    freshProfile: process.env.STARNET_FIRST_RUN_FRESH_PROFILE === '1',
-    attended
-  };
+  const isolation = runtimeIsolation(process.env.STARNET_FIRST_RUN_ISOLATION_AUTHORITY, port);
   const provider = {
     id: lower(process.env.STARNET_FIRST_RUN_PROVIDER || 'openrouter'),
     model: str(process.env.STARNET_FIRST_RUN_MODEL).trim(),
     credential: str(process.env.STARNET_FIRST_RUN_PROVIDER_SECRET),
     attended
   };
-  const port = Number(process.env.STARNET_FIRST_RUN_CDP_PORT || process.env.STARNET_SMOKE_CDP_PORT) || 9333;
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
   const runDir = path.join(repo, 'qa', 'installed', 'smoke-' + stamp + '-first-run');
   const evidenceFile = path.join(runDir, 'journey.json');
@@ -876,8 +1120,12 @@ if (INVOKED_DIRECTLY) (async () => {
   io.log('candidate=' + (candidateCommit || '(missing)') + ' cdp=127.0.0.1:' + port +
     ' isolation=' + (isolation.authority || '(missing)') + '/' + (isolation.id || '(missing)') +
     ' provider=' + (provider.id || '(missing)'));
+  if (!artifact) io.log('BLOCKED — artifact path bytes must match gate-minted STARNET_FIRST_RUN_EXPECTED_ARTIFACT_SHA256/SIZE');
   if (!ISOLATION_AUTHORITIES.has(isolation.authority)) {
     io.log('BLOCKED — isolation authority must be separate-windows-user, virtual-machine, or clean-machine; APPDATA/LOCALAPPDATA process redirection is not isolation');
+  }
+  if (ISOLATION_AUTHORITIES.has(isolation.authority) && !isolation.machineVerified) {
+    io.log('BLOCKED — isolation authority was not machine-verified (the installed CDP listener must belong to this principal; separate-user mode also requires a different repository owner, VM mode requires detected virtualization)');
   }
   if (!provider.model) io.log('BLOCKED — set STARNET_FIRST_RUN_MODEL');
   if (BYOK_PROVIDERS.has(provider.id) && !provider.credential) io.log('BLOCKED — set STARNET_FIRST_RUN_PROVIDER_SECRET in the attended shell (its value is never logged or written)');

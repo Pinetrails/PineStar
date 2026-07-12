@@ -18,7 +18,13 @@ const ARTIFACT = { path: 'C:/Program Files/StarNet/skynet-desktop.exe', sha256: 
 const EVIDENCE = { path: 'qa/installed/smoke-run/link.json', sha256: 'd'.repeat(64), size: 123 };
 const ISO = '2026-07-12T12:00:00.000Z';
 const SECRET = 'sk-or-v1-attended-runtime-secret-value';
-const ISOLATION = { id: 'vm-w1-clean-001', authority: 'virtual-machine', freshProfile: true, attended: true };
+const CHALLENGE = 'challenge-' + '9'.repeat(48);
+const PROBE = { path: 'scripts/qa/installed-link-probe.mjs', sha256: 'f'.repeat(64) };
+const ISOLATION = {
+  id: 'virtual-machine-' + '1'.repeat(12), authority: 'virtual-machine', freshProfile: true, attended: true,
+  machineVerified: true, proof: 'hypervisor-detected', principalSha256: '1'.repeat(64), profileSha256: '2'.repeat(64),
+  runtimeOwnerSha256: '4'.repeat(64)
+};
 const PROVIDER = { id: 'openrouter', model: 'openai/gpt-5', credential: SECRET, attended: true };
 const IDENTITY = {
   origin: 'http://tauri.localhost', mode: 'desktop',
@@ -32,17 +38,40 @@ const IDENTITY = {
 const FRESH = {
   activeScreen: 'screen-connect', saveStatus: 'none', savePresent: false,
   currentAgentPresent: false, rosterCount: 0, recoveryVisible: false,
-  providerChecked: 'openrouter', providerConfigured: false
+  providerChecked: 'openrouter', providerConfigured: false,
+  backendSavePresent: false, backendRecoveryPresent: false, backendRunCount: 0,
+  backendAgentCount: 0, backendLastRunPresent: false, backendWorkspaceDegraded: false
 };
 const TASK = {
   started: true, completed: true, reason: 'done', runId: 'run-real-123', realProvider: true,
-  permissionPromptObserved: true, approvedOnce: true,
+  permissionPromptObserved: true, approvedOnce: true, baselineAbsent: true,
+  fsWriteObserved: true, fsReadObserved: true, toolsBoundToRun: true,
   deliverable: { eventObserved: true, path: 'hello.txt', sha256: 'e'.repeat(64), size: 15, contentVerified: true }
 };
 const OPENED = {
   pointerClick: true, opened: true, mechanism: 'target-created', targetScheme: 'blob:',
-  deliverableSha256: TASK.deliverable.sha256
+  deliverableSha256: TASK.deliverable.sha256, deliverableSize: TASK.deliverable.size,
+  targetUrlSha256: '3'.repeat(64), targetBoundToBytes: true
 };
+
+function linkEvidence(overrides = {}) {
+  const sessionId = 'link-session-' + '7'.repeat(24);
+  const base = {
+    schemaVersion: 1, producer: 'installed-link-observation-v1', challenge: CHALLENGE,
+    candidateCommit: SHA, candidateTree: TREE, artifact: ARTIFACT,
+    mode: 'desktop', origin: 'http://tauri.localhost', cdpPort: 9444, sessionId,
+    startedIso: ISO, endedIso: '2026-07-12T12:00:45.000Z', elapsedMs: 45000,
+    observations: [
+      { atMs: 0, kind: 'link-state', state: 'UP', sessionId },
+      { atMs: 1, kind: 'transport-data', source: 'message', sessionId },
+      { atMs: 41002, kind: 'transport-data', source: 'message', sessionId },
+      { atMs: 41500, kind: 'sidecar-process', sessionId, pid: 1234, candidateCommit: SHA },
+      { atMs: 42000, kind: 'sidecar-exit', sessionId, pid: 1234, observed: true },
+      { atMs: 43000, kind: 'link-state', state: 'DOWN', sessionId, cause: 'eventsource-error' }
+    ]
+  };
+  return Object.assign(base, overrides);
+}
 
 function memIo(opts = {}) {
   const evidence = [], stamps = [], logs = [];
@@ -101,24 +130,36 @@ function scenario(overrides = {}) {
   A.ok(validateInstalledIdentity(Object.assign({}, IDENTITY, { shell: Object.assign({}, IDENTITY.shell, { sourceTree: 'f'.repeat(40) }) }), { candidateCommit: SHA, candidateTree: TREE, artifact: ARTIFACT }).errors.includes('source-tree-mismatch'), 'wrong source tree is rejected');
   A.ok(validateInstalledIdentity(Object.assign({}, IDENTITY, { shell: Object.assign({}, IDENTITY.shell, { executableSha256: 'f'.repeat(64) }) }), { candidateCommit: SHA, candidateTree: TREE, artifact: ARTIFACT }).errors.includes('runtime-artifact-mismatch'), 'different executable bytes are rejected');
 
-  // Fresh proof requires a real isolation authority; process env redirection is deliberately not one.
-  A.eq(validateFreshPrecondition(FRESH, ISOLATION, 'openrouter').ok, true, 'separate VM + fresh observed state validates');
+  // Fresh proof requires machine-backed isolation plus empty browser AND sidecar storage.
+  A.eq(validateFreshPrecondition(FRESH, ISOLATION, 'openrouter').ok, true, 'machine-backed VM + fresh browser/sidecar state validates');
   A.ok(validateFreshPrecondition(FRESH, Object.assign({}, ISOLATION, { authority: 'appdata-env-redirect' }), 'openrouter').errors.includes('fresh-profile-authority-invalid'), 'APPDATA/LOCALAPPDATA redirection is not accepted as isolation');
+  A.ok(validateFreshPrecondition(FRESH, Object.assign({}, ISOLATION, { machineVerified: false }), 'openrouter').errors.includes('fresh-profile-machine-unverified'), 'an environment authority label alone is rejected');
   A.ok(validateFreshPrecondition(Object.assign({}, FRESH, { savePresent: true }), ISOLATION, 'openrouter').errors.includes('existing-save-present'), 'existing save invalidates new-user proof');
+  A.ok(validateFreshPrecondition(Object.assign({}, FRESH, { backendRunCount: 1 }), ISOLATION, 'openrouter').errors.includes('existing-sidecar-state-present'), 'existing sidecar run history invalidates fresh-user proof');
   A.ok(validateFreshPrecondition(Object.assign({}, FRESH, { providerConfigured: true }), ISOLATION, 'openrouter').errors.includes('provider-already-configured'), 'pre-existing credential invalidates explicit-connect proof');
 
   const LINK = {
-    schemaVersion: 1, producer: 'installed-link-transport-v1', stampIso: ISO,
+    schemaVersion: 1, producer: 'installed-link-transport-v2', stampIso: ISO,
+    challenge: CHALLENGE, probe: PROBE,
     candidateCommit: SHA, candidateTree: TREE, artifact: ARTIFACT,
-    mode: 'desktop', origin: 'http://tauri.localhost',
-    healthyIdle: { observed: true, durationMs: 41001, stayedUp: true, state: 'UP' },
-    connectionLoss: { observed: true, actualLoss: true, transitionedDown: true, state: 'DOWN' },
+    mode: 'desktop', origin: 'http://tauri.localhost', cdpPort: 9444,
     evidence: [EVIDENCE]
   };
-  A.eq(validateLinkReceipt(LINK, { candidateCommit: SHA, candidateTree: TREE, artifact: ARTIFACT }).ok, true, 'candidate-bound UP/DOWN link receipt validates');
-  A.ok(validateLinkReceipt(Object.assign({}, LINK, { healthyIdle: Object.assign({}, LINK.healthyIdle, { durationMs: 40000 }) }), { candidateCommit: SHA, candidateTree: TREE, artifact: ARTIFACT }).errors.includes('healthy-idle-up-unproven'), 'exactly 40s is insufficient; proof must exceed stale threshold');
-  A.ok(validateLinkReceipt(Object.assign({}, LINK, { connectionLoss: Object.assign({}, LINK.connectionLoss, { actualLoss: false }) }), { candidateCommit: SHA, candidateTree: TREE, artifact: ARTIFACT }).errors.includes('actual-loss-down-unproven'), 'simulated label without actual loss is rejected');
-  A.ok(validateLinkReceipt(Object.assign({}, LINK, { producer: 'handwritten' }), { candidateCommit: SHA, candidateTree: TREE, artifact: ARTIFACT }).errors.includes('link-producer-mismatch'), 'wrong/handwritten producer contract is rejected');
+  const LINK_EXPECTED = { candidateCommit: SHA, candidateTree: TREE, artifact: ARTIFACT, challenge: CHALLENGE, probe: PROBE, cdpPort: 9444, wallElapsedMs: 45000 };
+  A.eq(validateLinkReceipt(LINK, LINK_EXPECTED, [linkEvidence()]).ok, true, 'candidate-owned challenged probe + raw UP/DOWN timeline validates');
+  A.ok(validateLinkReceipt(LINK, LINK_EXPECTED, []).errors.includes('link-raw-evidence-missing'), 'summary booleans and a hash alone cannot self-authenticate transport proof');
+  A.ok(validateLinkReceipt(LINK, LINK_EXPECTED, [linkEvidence({ elapsedMs: 40000, endedIso: '2026-07-12T12:00:40.000Z', observations: [
+    { atMs: 0, kind: 'link-state', state: 'UP', sessionId: 'link-session-' + '7'.repeat(24) },
+    { atMs: 0, kind: 'transport-data', sessionId: 'link-session-' + '7'.repeat(24) },
+    { atMs: 40000, kind: 'transport-data', sessionId: 'link-session-' + '7'.repeat(24) }
+  ] })]).errors.includes('healthy-idle-up-unproven'), 'exactly 40s is insufficient; raw data observations must exceed stale threshold');
+  const fakeLoss = linkEvidence(); fakeLoss.observations[4].observed = false;
+  A.ok(validateLinkReceipt(LINK, LINK_EXPECTED, [fakeLoss]).errors.includes('actual-loss-down-unproven'), 'a loss label without observed process exit is rejected');
+  A.ok(validateLinkReceipt(Object.assign({}, LINK, { challenge: 'old-challenge' }), LINK_EXPECTED, [linkEvidence()]).errors.includes('link-challenge-mismatch'), 'prewritten/stale receipt cannot answer the gate challenge');
+  A.ok(validateLinkReceipt(Object.assign({}, LINK, { cdpPort: 9333 }), LINK_EXPECTED, [linkEvidence()]).errors.includes('link-cdp-port-mismatch'), 'link proof and journey must target the same normalized CDP port');
+  A.ok(validateLinkReceipt(Object.assign({}, LINK, { producer: 'handwritten' }), LINK_EXPECTED, [linkEvidence()]).errors.includes('link-producer-mismatch'), 'wrong/handwritten producer contract is rejected');
+  const secretLink = linkEvidence({ diagnostic: 'api_key = ' + SECRET });
+  A.ok(validateLinkReceipt(LINK, LINK_EXPECTED, [secretLink]).errors.includes('link-evidence-secret-bearing'), 'raw companion evidence containing a secret is rejected');
 
   A.eq(containsSecretMaterial('safe candidate ' + SHA, [SECRET]), false, 'ordinary receipt material is secret-free');
   A.eq(containsSecretMaterial('oops ' + SECRET, [SECRET]), true, 'exact attended credential is detected');
@@ -136,9 +177,13 @@ function scenario(overrides = {}) {
     A.eq(out.receipt.task.permissionPromptObserved, true, 'real consent prompt is recorded');
     A.eq(out.receipt.deliverable.path, 'hello.txt', 'receipt names the actual produced file');
     A.eq(out.receipt.deliverable.opened, true, 'receipt requires the real OPEN action');
+    A.eq(out.receipt.task.fsWriteObserved && out.receipt.task.fsReadObserved, true, 'receipt proves run-scoped write then read tools');
+    A.eq(out.receipt.deliverable.targetBoundToBytes, true, 'OPEN target is bound to the produced file bytes');
     A.eq(out.receipt.timing.underTenMinutes, true, 'journey completed under ten minutes');
     A.eq(JSON.stringify(out.receipt).includes(SECRET), false, 'credential bytes never enter receipt');
     A.eq(JSON.stringify(io.evidence[0].receipt).includes(SECRET), false, 'credential bytes never enter evidence');
+    const wrongInstalled = JSON.parse(JSON.stringify(out.receipt)); wrongInstalled.installed.buildCommit = 'f'.repeat(40);
+    A.ok(validateJourneyReceipt(wrongInstalled).errors.includes('receipt-installed-candidate-mismatch'), 'PASS receipt internally binds installed commit/tree/executable to candidate/artifact');
   }
 
   {
@@ -172,8 +217,20 @@ function scenario(overrides = {}) {
     A.eq((await runner.run()).result, RESULTS.FAIL, 'assistant reply without a produced file -> FAIL');
   }
   {
+    const { runner } = scenario({ task: Object.assign({}, TASK, { baselineAbsent: false }) });
+    A.eq((await runner.run()).result, RESULTS.FAIL, 'a preexisting hello.txt cannot satisfy the run');
+  }
+  {
+    const { runner } = scenario({ task: Object.assign({}, TASK, { fsReadObserved: false }) });
+    A.eq((await runner.run()).result, RESULTS.FAIL, 'file bytes without a run-scoped fs.read result cannot satisfy the tutorial task');
+  }
+  {
     const { runner } = scenario({ opened: Object.assign({}, OPENED, { opened: false, mechanism: '' }) });
     A.eq((await runner.run()).result, RESULTS.FAIL, 'file bytes without a real OPEN -> FAIL');
+  }
+  {
+    const { runner } = scenario({ opened: Object.assign({}, OPENED, { deliverableSha256: 'f'.repeat(64), targetBoundToBytes: false }) });
+    A.eq((await runner.run()).result, RESULTS.FAIL, 'opening an unrelated target cannot satisfy OPEN proof');
   }
   {
     const { runner } = scenario({ taskMs: MAX_JOURNEY_MS });
@@ -185,10 +242,17 @@ function scenario(overrides = {}) {
   }
 
   const gate = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'qa', 'product-perfect', 'gates', 'wave-1-installed-first-run.mjs'), 'utf8');
-  A.ok(/STARNET_W1_LINK_RECEIPT/.test(gate), 'W1 gate requires the disjoint installed link companion receipt');
+  A.ok(/STARNET_W1_LINK_PROBE/.test(gate), 'W1 gate invokes the candidate-owned installed link companion probe');
+  A.ok(/STARNET_W1_LINK_CHALLENGE/.test(gate), 'W1 gate supplies a fresh challenge instead of accepting a prewritten receipt');
   A.ok(/validateLinkReceipt/.test(gate), 'W1 gate validates link receipt semantics');
+  A.ok(/STARNET_FIRST_RUN_EXPECTED_ARTIFACT_SHA256/.test(gate) && /artifactAfterJourney/.test(gate), 'one gate-minted artifact identity binds link, journey, and final bytes');
+  A.ok(/for \(const name of \[/.test(gate) && !/process\.stdout\.write\(probeRun/.test(gate), 'link probe receives an allowlisted environment and its output is not forwarded');
   A.ok(/installed-first-run\.mjs/.test(gate), 'W1 gate invokes the live installed journey');
-  A.ok(!/rev-parse['"`,\s]+HEAD/.test(fs.readFileSync(path.join(__dirname, '..', 'scripts', 'qa', 'installed-first-run.mjs'), 'utf8')), 'runner never substitutes ambient HEAD for the candidate');
+  const runnerSource = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'qa', 'installed-first-run.mjs'), 'utf8');
+  A.ok(!/rev-parse['"`,\s]+HEAD/.test(runnerSource), 'runner never substitutes ambient HEAD for the candidate');
+  A.ok(/Get-NetTCPConnection/.test(runnerSource) && /GetOwnerSid/.test(runnerSource) && /Get-Acl/.test(runnerSource), 'isolation binds runner, installed CDP listener, and repository owner principals');
+  A.ok(!/CONTROLLER_PRINCIPAL_SHA256/.test(runnerSource), 'separate-user proof cannot be supplied as an arbitrary controller hash');
+  A.ok(/getBoundingClientRect/.test(runnerSource) && /provider-failure-state-stale/.test(runnerSource), 'provider failure proof requires newly visible UI, not stale hidden text');
   const blockedGate = spawnSync(process.execPath, ['scripts/qa/product-perfect/gates/wave-1-installed-first-run.mjs'], {
     cwd: path.join(__dirname, '..'), env: Object.assign({}, process.env, { STARNET_PRODUCT_PERFECT_CANDIDATE_SHA: '' }), encoding: 'utf8'
   });
