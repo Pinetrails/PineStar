@@ -47,68 +47,115 @@
     return null;
   }
 
-  /* BUILDS ARE INVISIBLE (mouse-confinement incident, 2026-07-12): agent work must never put a window on the
-     user's screen or touch their input. A shell command that opens a visible window (cmd `start`, explorer,
-     a headed browser, macOS `open`/xdg-open) is refused with a pointer to the sanctioned paths: headless
-     browser tools for verification, desktop.open (consent-gated) when the Commander explicitly asked to see
-     something. Command-POSITION anchored so `npm start`, `findstr chrome`, `taskkill /im chrome.exe` never trip. */
-  const CMD_POS = '(?:^|[&|(;]|/[ck]\\s+|\\bcall\\s+)\\s*"?';   // start-of-command positions (cmd.exe & POSIX)
-  const START_RE = new RegExp(CMD_POS + 'start(?:\\s|$)', 'i');
-  const EXPLORER_RE = new RegExp(CMD_POS + 'explorer(?:\\.exe)?"?(?:\\s|$)', 'i');
-  const OPEN_RE = new RegExp(CMD_POS + '(?:xdg-)?open(?:\\s|$)', 'i');
-  // path prefix allows spaces (quoted "C:\Program Files\...\chrome.exe") but must END in a path separator
-  // immediately before the browser name — so `taskkill /im chrome.exe` (space before the name) never trips.
-  const BROWSER_EXE_RE = new RegExp(CMD_POS + '(?:[^"&|;]*[\\\\/])?(msedge|chrome|chromium(?:-browser)?|firefox|brave|opera|iexplore|safari)(?:\\.exe)?"?(?:\\s|$)', 'i');
+  /* BUILDS ARE INVISIBLE / THE MACHINE IS NOT THE WORKSPACE (mouse-confinement incident + follow-up, 2026-07-12,
+     hardened after code-review 2026-07-12). Agent work must never put a window on the user's screen, touch their
+     input, kill processes it doesn't own, install machine persistence, or rewrite machine config.
+
+     ALTITUDE NOTE (honest): this is a denylist, and a denylist can never win an arms race against a determined
+     prompt-injection (a renamed binary, a novel launcher). The DURABLE fix is OS containment — running shell.exec
+     children under a restricted token / Win32 Job Object so `shutdown`/`reg`/`sc` fail regardless of spelling
+     (tracked in docs/NEXT.md). What this floor MUST do well is catch the forms a NORMAL agent reaches for and the
+     OBVIOUS injection forms — so instead of matching the raw string (which a newline, `Start-Process`, or
+     `powershell -Command "…"` trivially defeats), we split the command into its COMMAND HEADS and test the verb
+     at the start of each head. That closes the whole class of "dangerous verb hidden behind a launcher/separator"
+     in one place. */
+
+  // Every point where a NEW command begins: the whole string, plus after each separator (& | ; newline), cmd
+  // /c|/k, cmd `call`, PowerShell `Start-Process [-FilePath]`, and an interpreter's -Command/-c STRING
+  // (powershell/pwsh -Command "…", sh/bash -c "…"). The interpreter alternatives REQUIRE the interpreter name so
+  // a bare `-c` compile/count flag (gcc -c, grep -c) is never a command boundary.
+  const HEAD_SEP = /[&|;\r\n]+|\/[ck]\s+|\bcall\s+|\b(?:start-process|saps)\s+(?:-filepath\s+)?|\b(?:powershell|pwsh)(?:\.exe)?\b[^&|;\r\n]*?\s-(?:command|c)\s+|\b(?:sh|bash|zsh|dash|ksh)\b[^&|;\r\n]*?\s-c\s+/gi;
+  function commandHeads(cmd) {
+    const c = String(cmd == null ? '' : cmd);
+    const heads = [c];
+    HEAD_SEP.lastIndex = 0;
+    let m, guard = 0;
+    while ((m = HEAD_SEP.exec(c)) !== null && guard++ < 200) {
+      heads.push(c.slice(m.index + m[0].length));
+      if (HEAD_SEP.lastIndex === m.index) HEAD_SEP.lastIndex++;   // never loop on a zero-width match
+    }
+    return heads.map(h => h.replace(/^[\s"']+/, ''));   // trim leading whitespace + an opening quote (interpreter -c "verb …")
+  }
+
+  // --- visible-window / input-capture floor ---
+  const START_RE = /^start(?:\.exe)?(?:\s|$)/i;                 // cmd `start` (NOT `start-process` — its arg is head-checked)
+  const EXPLORER_RE = /^"?explorer(?:\.exe)?\b/i;
+  const OPEN_RE = /^"?(?:xdg-)?open(?:\s|$)/i;
+  const BROWSERS = 'msedge|chrome|chromium(?:-browser)?|firefox|brave|opera|iexplore|safari';
+  // A browser as the LEADING token of a head: optional NO-SPACE path prefix (./chrome, C:\tools\chrome.exe) or a
+  // leading quote (`"chrome.exe`). A no-space prefix is what stops `curl -o ./chrome.exe URL` from tripping —
+  // there `curl` is the head's leading token, not the browser.
+  const BROWSER_HEAD_RE = new RegExp('^"?(?:[^"\\s&|;]*[\\\\/])?(?:' + BROWSERS + ')(?:\\.exe)?(?:["\\s]|$)', 'i');
+  // A quoted full path WITH spaces ("C:\Program Files\…\chrome.exe") but only at a command position, so an
+  // argument like `curl -o "C:\dl\chrome.exe"` (quote not at command start) does not trip.
+  const BROWSER_QUOTED_RE = new RegExp('(?:^|[&|;(]\\s*)"[^"]*[\\\\/](?:' + BROWSERS + ')(?:\\.exe)?"', 'i');
   function opensVisibleWindow(cmd) {
     const c = String(cmd == null ? '' : cmd);
-    if (START_RE.test(c)) return 'cmd `start` opens a visible window on the user\'s screen';
-    if (EXPLORER_RE.test(c)) return '`explorer` opens a visible window on the user\'s screen';
+    const heads = commandHeads(c);
+    if (heads.some(h => START_RE.test(h))) return 'cmd `start` opens a visible window on the user\'s screen';
+    if (heads.some(h => EXPLORER_RE.test(h))) return '`explorer` opens a visible window on the user\'s screen';
     if (/rundll32\b[^&|]*url\.dll/i.test(c)) return 'rundll32 url.dll opens the user\'s default browser';
-    if (!WIN && OPEN_RE.test(c)) return '`open`/`xdg-open` opens a visible window on the user\'s screen';
-    if (BROWSER_EXE_RE.test(c) && !/--headless/i.test(c)) {
-      return 'launching a browser without --headless opens a visible window (and a page can capture the user\'s mouse via pointer lock)';
-    }
-    // a headless browser still renders AUDIO to the user's speakers (the phantom-gunfire half of the
-    // 2026-07-12 incident) — sound on their machine is as much an interruption as a window on their screen.
-    if (BROWSER_EXE_RE.test(c) && /--headless/i.test(c) && !/--mute-audio/i.test(c)) {
-      return 'a headless browser still plays sound on the user\'s speakers — add --mute-audio';
+    if (!WIN && heads.some(h => OPEN_RE.test(h))) return '`open`/`xdg-open` opens a visible window on the user\'s screen';
+    if (heads.some(h => BROWSER_HEAD_RE.test(h)) || BROWSER_QUOTED_RE.test(c)) {
+      // whole-token flag tests: `--headlessx` is NOT --headless (Chrome ignores it and opens a headed window)
+      if (!/--headless\b/i.test(c)) {
+        return 'launching a browser without --headless opens a visible window (and a page can capture the user\'s mouse via pointer lock)';
+      }
+      // a headless browser still renders AUDIO to the user's speakers (the phantom-gunfire half of the incident)
+      if (!/--mute-audio\b/i.test(c)) {
+        return 'a headless browser still plays sound on the user\'s speakers — add --mute-audio';
+      }
     }
     return null;
   }
 
-  /* THE MACHINE IS NOT THE WORKSPACE (incident follow-up, 2026-07-12): an agent building in its jail has no
-     business rebooting the computer, killing processes it doesn't own, installing persistence (scheduled
-     tasks / Run keys / services / startup folder), or permanently rewriting machine config (setx, assoc,
-     firewall, registry). Every rule refuses with the reason; requests that genuinely need machine changes
-     get routed to the Commander instead of silently executed. Command-position anchored like the visible-
-     window floor, so `npm run format`, `git log --format=%H`, `echo shutdown` etc. never trip. */
-  const MACHINE_STATE_RULES = [
-    { re: new RegExp(CMD_POS + '(?:shutdown|logoff|reboot|halt|poweroff)(?:\\.exe)?(?:\\s|$)', 'i'), why: 'shuts down, reboots, or logs the user out of their machine' },
-    { re: new RegExp(CMD_POS + '(?:taskkill|tskill|pskill|kill|pkill|killall)(?:\\.exe)?(?:\\s|$)', 'i'), why: 'kills processes the agent does not own — stop your OWN background processes with shell.bg.kill' },
-    { re: new RegExp(CMD_POS + 'schtasks(?:\\.exe)?\\b(?![\\s\\S]*/query)[\\s\\S]*/(?:create|change|delete|run)\\b', 'i'), why: 'creates or changes a Windows scheduled task (machine persistence that outlives StarNet)' },
-    { re: new RegExp(CMD_POS + 'reg(?:\\.exe)?\\s+(?:add|delete|import|load|unload|copy)\\b', 'i'), why: 'writes the Windows registry' },
-    { re: new RegExp(CMD_POS + 'regedit(?:\\.exe)?(?:\\s|$)', 'i'), why: 'opens or imports into the Windows registry' },
-    { re: /\bHKEY_|(^|[\s"'`=(\\])HK(?:LM|CU|CR|U|CC)([:\\]|\b)/i, why: 'references a Windows registry hive' },
-    { re: new RegExp(CMD_POS + 'sc(?:\\.exe)?\\s+(?:create|config|delete|start|stop|failure|sdset)\\b', 'i'), why: 'creates or changes Windows services' },
-    { re: new RegExp(CMD_POS + 'netsh(?:\\.exe)?(?:\\s|$)', 'i'), why: 'changes network / firewall configuration' },
-    { re: new RegExp(CMD_POS + 'net(?:\\.exe)?\\s+(?:user|localgroup|accounts|share|start|stop)\\b', 'i'), why: 'changes accounts, shares, or services' },
-    { re: new RegExp(CMD_POS + '(?:setx|assoc|ftype)(?:\\.exe)?(?:\\s|$)', 'i'), why: 'permanently changes environment variables or file associations' },
-    { re: new RegExp(CMD_POS + '(?:bcdedit|diskpart|format|chkdsk|cipher|vssadmin|wevtutil|powercfg|tzutil|w32tm|msg|mshta|wmic)(?:\\.exe)?(?:\\s|$)', 'i'), why: 'system-level tool that alters or disrupts the machine' },
-    { re: /\b(?:Stop-Computer|Restart-Computer|Register-ScheduledTask|New-ScheduledTask\w*|Stop-Process|Stop-Service|New-Service|Set-Service|Set-Date|Add-Computer|Set-ExecutionPolicy|Set-NetFirewall\w+|Disable-NetAdapter)\b/i, why: 'PowerShell cmdlet that alters machine state' },
-    { re: new RegExp(CMD_POS + '(?:sudo|su|systemctl|launchctl|crontab|nvram|csrutil|diskutil|shutdown|reboot)(?:\\s|$)', 'i'), why: 'system administration command' },
+  // --- machine-state floor --- head-anchored rules (verb at the start of a command head) + a few whole-string
+  // rules for signatures that are distinctive enough to match anywhere (registry hive refs, PS cmdlet names).
+  const MACHINE_HEAD_RULES = [
+    { re: /^(?:shutdown|logoff|reboot|halt|poweroff)(?:\.exe)?\b/i, why: 'shuts down, reboots, or logs the user out of their machine' },
+    { re: /^(?:taskkill|tskill|pskill|kill|pkill|killall)(?:\.exe)?\b/i, why: 'kills processes the agent does not own — stop your OWN background processes with shell.bg.kill' },
+    { re: /^schtasks(?:\.exe)?\b[\s\S]*?\s\/(?:create|change|delete|run)\b/i, why: 'creates or changes a Windows scheduled task (machine persistence that outlives StarNet)' },
+    { re: /^reg(?:\.exe)?\s+(?:add|delete|import|load|unload|copy)\b/i, why: 'writes the Windows registry' },
+    { re: /^regedit(?:\.exe)?\b/i, why: 'opens or imports into the Windows registry' },
+    { re: /^sc(?:\.exe)?\s+(?:create|config|delete|start|stop|failure|sdset)\b/i, why: 'creates or changes Windows services' },
+    { re: /^netsh(?:\.exe)?\b/i, why: 'changes network / firewall configuration' },
+    { re: /^net(?:\.exe)?\s+(?:user|localgroup|accounts|share|start|stop)\b/i, why: 'changes accounts, shares, or services' },
+    { re: /^(?:setx|assoc|ftype)(?:\.exe)?\b/i, why: 'permanently changes environment variables or file associations' },
+    { re: /^(?:bcdedit|diskpart|format|chkdsk|cipher|vssadmin|wevtutil|powercfg|tzutil|w32tm|msg|mshta|wmic)(?:\.exe)?\b/i, why: 'system-level tool that alters or disrupts the machine' },
+    { re: /^(?:sudo|su|systemctl|launchctl|crontab|nvram|csrutil|diskutil)\b/i, why: 'system administration command' },
+    // machine-altering PowerShell cmdlets — head-anchored so `echo restart-computer` (the word as an arg) is not a
+    // trip, but `Restart-Computer`, `foo | Stop-Computer`, and `powershell -Command "Stop-Computer"` all are.
+    { re: /^(?:Stop-Computer|Restart-Computer|Register-ScheduledTask|New-ScheduledTask\w*|Stop-Process|Stop-Service|New-Service|Set-Service|Set-Date|Add-Computer|Set-ExecutionPolicy|Set-NetFirewall\w+|Disable-NetAdapter)\b/i, why: 'PowerShell cmdlet that alters machine state' }
+  ];
+  const MACHINE_GLOBAL_RULES = [
+    { re: /\bHKEY_|(?:^|[\s"'`=(\\])HK(?:LM|CU|CR|U|CC)[:\\]/i, why: 'references a Windows registry hive' },
+    // a base64-encoded PowerShell payload can't be inspected for any of the above — refuse it outright rather than
+    // wave through an opaque command (write the script to a file and run it plainly if it's legitimate).
+    { re: /\b(?:powershell|pwsh)(?:\.exe)?\b[^&|;\r\n]*?\s-e(?:nc(?:odedcommand)?)?\b/i, why: 'runs a base64-encoded PowerShell command that cannot be inspected — write the script to a file and run it plainly' },
     { re: /\bdefaults\s+write\b/i, why: 'changes macOS system preferences' },
-    { re: /(^|[\s"'`=(])shell:startup\b|Start\s?Menu[\\/]+Programs[\\/]+Startup/i, why: 'writes to the Startup folder (machine persistence that outlives StarNet)' }
+    { re: /(?:^|[\s"'`=(])shell:startup\b|Start\s?Menu[\\/]+Programs[\\/]+Startup/i, why: 'writes to the Startup folder (machine persistence that outlives StarNet)' }
   ];
   function breaksMachineState(cmd) {
     const c = String(cmd == null ? '' : cmd);
-    for (const r of MACHINE_STATE_RULES) if (r.re.test(c)) return r.why;
+    const heads = commandHeads(c);
+    for (const r of MACHINE_HEAD_RULES) if (heads.some(h => r.re.test(h))) return r.why;
+    for (const r of MACHINE_GLOBAL_RULES) if (r.re.test(c)) return r.why;
     return null;
   }
 
-  // Binding to 0.0.0.0 exposes an agent dev server to the user's WHOLE network (the 2026-07-12 game server
-  // did exactly this). Everything an agent serves is loopback-only; there is no legitimate all-interfaces bind.
+  // Binding a dev server to all interfaces exposes it to the user's WHOLE network (the 2026-07-12 game server did
+  // this). Match an explicit all-interfaces BIND FLAG (so `curl http://0.0.0.0` — 0.0.0.0 as a client target,
+  // which resolves to loopback — is NOT refused), plus a bare `--host` (vite/webpack treat it as 0.0.0.0). NOTE:
+  // a framework whose DEFAULT bind is 0.0.0.0 with no flag (python -m http.server) still slips this string check —
+  // the OS-containment layer (docs/NEXT.md) is the real closure; here we catch the explicit forms honestly.
+  const ALL_IFACES = '0\\.0\\.0\\.0|::(?![0-9a-f])|\\[::\\]';
   function exposesNetwork(cmd) {
-    if (/\b0\.0\.0\.0\b/.test(String(cmd == null ? '' : cmd))) return 'binds to ALL network interfaces (0.0.0.0) — every device on the user\'s network could reach it; bind to 127.0.0.1';
+    const c = String(cmd == null ? '' : cmd);
+    if (new RegExp('(?:--host|--bind|--address|-b|-H)[=\\s:]+["\']?(?:' + ALL_IFACES + ')', 'i').test(c)
+      || new RegExp('\\bhost["\']?\\s*[:=]\\s*["\']?(?:' + ALL_IFACES + ')', 'i').test(c)
+      || /--host(?:\s+--|\s*$)/i.test(c)) {
+      return 'binds to ALL network interfaces — every device on the user\'s network could reach it; bind to 127.0.0.1';
+    }
     return null;
   }
 

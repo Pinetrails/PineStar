@@ -25,6 +25,10 @@
 
   const WIN = (typeof process !== 'undefined' && process.platform) === 'win32';
   const MAX_ENTRIES = 100;
+  // A live process whose start time is more than this AFTER our recorded startedAt is a recycled PID, not our
+  // orphan. record() runs just after spawn, so our real child's start time is ~always < startedAt; the margin only
+  // absorbs clock resolution. Generous on purpose — we would rather skip a real orphan than kill the user's process.
+  const REUSE_MARGIN_MS = 5000;
 
   // normalize for the reuse-guard match: collapse whitespace, strip quoting, lowercase.
   function normCmd(s) { return String(s == null ? '' : s).replace(/["']/g, '').replace(/\s+/g, ' ').trim().toLowerCase(); }
@@ -40,11 +44,15 @@
     return tokens.every(t => live.indexOf(t) >= 0);
   }
 
+  // A probe returns Map<pid, { cmd, created }> — created is the process's start time in epoch ms (null if the
+  // platform can't report it). created is the SECOND half of the PID-reuse guard: even if a recycled PID's
+  // command line coincidentally matches, a process created AFTER we recorded the entry is provably not ours.
   function makeWin32Probe(execFile) {
     return (pids) => new Promise((resolve) => {
       if (!pids.length) return resolve(new Map());
       const filter = pids.map(p => 'ProcessId=' + Number(p)).join(' OR ');
-      const script = 'Get-CimInstance Win32_Process -Filter "' + filter + '" | Select-Object ProcessId, CommandLine | ConvertTo-Json -Compress';
+      // CreationDate → epoch ms so the sweep can compare it to the recorded startedAt (also epoch ms).
+      const script = 'Get-CimInstance Win32_Process -Filter "' + filter + '" | ForEach-Object { [pscustomobject]@{ ProcessId = $_.ProcessId; CommandLine = $_.CommandLine; CreatedMs = [int64]([datetimeoffset]$_.CreationDate).ToUnixTimeMilliseconds() } } | ConvertTo-Json -Compress';
       const exe = process.env.SystemRoot ? process.env.SystemRoot + '\\System32\\WindowsPowerShell\\v1.0\\powershell.exe' : 'powershell.exe';
       execFile(exe, ['-NoProfile', '-NonInteractive', '-Command', script], { encoding: 'utf8', timeout: 15000, windowsHide: true }, (err, stdout) => {
         const out = new Map();
@@ -52,7 +60,7 @@
         try {
           let rows = JSON.parse(String(stdout || '').trim() || '[]');
           if (!Array.isArray(rows)) rows = [rows];
-          for (const r of rows) if (r && r.ProcessId != null) out.set(Number(r.ProcessId), String(r.CommandLine || ''));
+          for (const r of rows) if (r && r.ProcessId != null) out.set(Number(r.ProcessId), { cmd: String(r.CommandLine || ''), created: Number(r.CreatedMs) || null });
         } catch (_) {}
         resolve(out);
       });
@@ -66,7 +74,7 @@
         if (err) return resolve(out);
         for (const line of String(stdout || '').split('\n')) {
           const m = /^\s*(\d+)\s+(.*)$/.exec(line);
-          if (m) out.set(Number(m[1]), m[2]);
+          if (m) out.set(Number(m[1]), { cmd: m[2], created: null });   // posix start-time parsing is fiddly; fall back to cmd-match only
         }
         resolve(out);
       });
@@ -140,9 +148,15 @@
       let alive = new Map();
       try { alive = await probe(entries.map(r => r.pid)); } catch (_) {}
       for (const r of entries) {
-        const liveCmd = alive.get(Number(r.pid));
-        if (liveCmd == null) { summary.gone++; continue; }
+        const info = alive.get(Number(r.pid));
+        if (info == null) { summary.gone++; continue; }
+        // tolerate both probe shapes: the string form (older/injected probes) and the {cmd, created} form.
+        const liveCmd = (typeof info === 'string') ? info : (info && info.cmd) || '';
+        const created = (info && typeof info === 'object') ? info.created : null;
         if (!cmdMatches(r.cmd, liveCmd)) { summary.reused++; continue; }   // PID recycled by an unrelated process — never kill
+        // creation-time guard: a process that started meaningfully AFTER we recorded this entry is a recycled PID,
+        // not our orphan — never kill it, even though its command line matched (protects the user's own process).
+        if (created != null && Number(r.startedAt) > 0 && created > Number(r.startedAt) + REUSE_MARGIN_MS) { summary.reused++; continue; }
         try { await killTree(r.pid); summary.killed++; log('[proc-ledger] reaped orphan ' + r.kind + ' pid=' + r.pid + ' (' + String(r.cmd).slice(0, 80) + ')'); } catch (_) {}
       }
       save();
