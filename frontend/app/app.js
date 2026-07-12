@@ -138,8 +138,8 @@ const App = (() => {
   // the consent gate; 'ask' = the broker prompts the Commander on any mutation/network call.
   function approvalClause(a) {
     const full = a && a.approvalMode === 'full';
-    if (full) return '\n\nAPPROVAL — FULL ACCESS: the Commander has granted you full access. You may run your tools — including file writes and shell commands — without stopping to ask each time. A hard safety floor still blocks the most dangerous actions; use judgment and flag anything truly irreversible before you do it.';
-    return '\n\nAPPROVAL — ASK FIRST: before any action that writes a file, runs a command, or reaches out over the network, you STOP and ask the Commander for approval, then wait for their go-ahead. Reasoning over what you already have does not need approval.';
+    if (full) return '\n\nAPPROVAL — FULL ACCESS: the Commander has granted you full access. Run your tools directly — file writes, shell commands, network — without pausing to ask; never request approval in a chat message, and never wait for a go-ahead before acting. A hard safety floor in the harness still blocks the most dangerous actions automatically. For anything truly irreversible (deleting data, messaging outside the station, spending money), briefly state what you are doing AS you do it — the way to act is always the tool call itself, never a request for permission.';
+    return '\n\nAPPROVAL — ASK FIRST: actions that write files, run commands, or reach the network need the Commander\'s approval — but you NEVER ask for it in a chat message. The approval system cannot see chat text; typed replies like "I approve" grant nothing. Instead, just make the tool call: the harness pauses it and shows the Commander a real approval prompt with Approve/Deny buttons, and the decision comes back to you automatically. Reasoning over what you already have needs no approval.';
   }
   // an always-appended SYSTEM truth: what the agent ACTUALLY runs on. Mirrors approvalClause — derived fresh each
   // compose, never stored in the editable identity.md (so it can't be edited away and never drifts stale). Fixes the
