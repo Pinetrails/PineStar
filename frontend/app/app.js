@@ -2788,16 +2788,32 @@ const App = (() => {
           ul.innerHTML = '<li class="proj-empty">No trusted projects yet. Tell an agent to “work in C:\\path\\to\\project”, or use <b>+ ADD</b> to bless a folder now.</li>';
           return;
         }
+        // sessions attached to each project — the REAL stored w.projectRoot link (stamped by "Work here"),
+        // rendered as indented sub-rows right under their project. A project with none shows none (no fake list).
+        const sessFor = (root) => {
+          try { return (Projects.sessionsFor ? Projects.sessionsFor(root, Workstreams.all(), Date.now()) : []); } catch (_) { return []; }
+        };
         ul.innerHTML = rows.map(r => {
           const tip = r.path + (r.blessed ? (r.isGitRepo ? ' · git repo' : '') : ' · REVOKED (trust withdrawn)') + ' — click to work here · right-click for actions';
+          const sess = sessFor(r.root);
           return '<li class="ws-row proj-row' + (r.blessed ? '' : ' proj-revoked') + '" data-root="' + U.esc(r.root) + '" title="' + U.esc(tip) + '">' +
             '<span class="' + projDot(r) + '"></span>' +
             '<span class="ws-title">' + U.esc(r.name) + '</span>' +
             (r.blessed && r.isGitRepo ? '<span class="proj-git-badge" aria-hidden="true">git</span>' : '') +
+            (sess.length ? '<span class="proj-sess-n" title="' + sess.length + ' session' + (sess.length === 1 ? '' : 's') + ' in this project">' + sess.length + '</span>' : '') +
             (r.blessed ? '<span class="ws-meta">' + U.esc(r.rel) + '</span>' : '<span class="proj-tag">REVOKED</span>') +
             '<button class="ws-kebab" tabindex="-1" aria-label="project actions" title="project actions">⋯</button>' +
-            '</li>';
+            '</li>' +
+            sess.map(s =>
+              '<li class="proj-sess" data-ws="' + U.esc(s.id) + '" title="open this session">' +
+                '<span class="proj-sess-glyph" aria-hidden="true">└</span>' +
+                '<span class="ws-title">' + U.esc(s.title) + '</span>' +
+                '<span class="ws-meta">' + U.esc(s.rel) + '</span>' +
+              '</li>').join('');
         }).join('');
+        ul.querySelectorAll('.proj-sess').forEach(li => {
+          li.onclick = (e) => { e.stopPropagation(); const id = li.dataset.ws; setRailView('sessions'); if (id !== Workstreams.activeId()) switchWorkstream(id); SFX.open(); };
+        });
         ul.querySelectorAll('.proj-row').forEach(li => {
           const root = li.dataset.root;
           const row = rows.find(x => x.root === root);
@@ -2816,9 +2832,15 @@ const App = (() => {
     if (!r) return;
     setRailView('sessions');
     let ws = null;
-    try { ws = (Workstreams.list() || []).filter(w => (w.title || '') === r.name && !w.archived)[0] || null; } catch (_) {}
-    if (!ws) ws = Workstreams.create(r.name, { activate: false });
+    // prefer the REAL stored anchor (w.projectRoot); fall back to the legacy title match once, then stamp it
+    // so the session shows up under its project from here on.
+    try {
+      const open = (Workstreams.list() || []).filter(w => !w.archived);
+      ws = open.filter(w => w.projectRoot === r.root)[0] || open.filter(w => !w.projectRoot && (w.title || '') === r.name)[0] || null;
+    } catch (_) {}
+    if (!ws) ws = Workstreams.create(r.name, { activate: false, projectRoot: r.root });
     if (!ws) return;
+    if (!ws.projectRoot && Workstreams.setProjectRoot) Workstreams.setProjectRoot(ws.id, r.root);
     if (ws.id !== Workstreams.activeId()) switchWorkstream(ws.id);
     else { focusAgent(ws.agentId || 'agent'); Chat.load(ws); refreshUsage(); }
     if (typeof Chat !== 'undefined' && Chat.prefill) Chat.prefill('work in ' + r.path + ' — ');

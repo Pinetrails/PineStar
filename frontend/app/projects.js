@@ -60,6 +60,22 @@
     });
   }
 
+  // the sessions attached to ONE project root — a REAL stored link (w.projectRoot, stamped when "Work here"
+  // creates/joins a session), never a title guess (truthful telemetry: a listed session provably works in that
+  // root). Archived sessions are excluded; most-recently-active first (the sessions rail's own order). Null-title
+  // records read as the General stream's display name.
+  function sessionsFor(root, workstreams, nowMs) {
+    const key = String(root == null ? '' : root);
+    if (!key) return [];
+    return (Array.isArray(workstreams) ? workstreams : [])
+      .filter(function (w) { return w && !w.archived && String(w.projectRoot || '') === key; })
+      .slice()
+      .sort(function (a, b) { return (b.lastActiveAt || 0) - (a.lastActiveAt || 0); })
+      .map(function (w) {
+        return { id: w.id, title: (w.title != null && w.title !== '') ? w.title : 'General', rel: relTime(w.lastActiveAt || 0, nowMs) };
+      });
+  }
+
   // the toggle's show/hide truth table (pure — app.js applies these to the real `hidden` flags). PROJECTS view
   // swaps the sessions list + its NEW action for the projects list + its ADD action, and vice-versa. The archived
   // reveal is NOT a head action — it's a footer row INSIDE #workstreams, so it follows sessionsList for free.
@@ -73,5 +89,5 @@
     };
   }
 
-  return { basename, relTime, toRows, panels };
+  return { basename, relTime, toRows, sessionsFor, panels };
 });

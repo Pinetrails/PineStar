@@ -47,6 +47,24 @@ A.eq(rows[2].name, 'win', 'win32 displayPath basename');
 A.eq(P.toRows([{ root: '/a/b', displayPath: '/a/b' }], NOW)[0].blessed, true, 'absent blessed defaults true');
 A.eq(P.toRows(null).length, 0, 'null input -> empty rows');
 
+/* ---------- sessionsFor: the REAL stored w.projectRoot link, never a title guess ---------- */
+const wsList = [
+  { id: 'a', title: 'repo work', projectRoot: '/home/me/repo', archived: false, lastActiveAt: NOW - 60_000 },
+  { id: 'b', title: 'older repo work', projectRoot: '/home/me/repo', archived: false, lastActiveAt: NOW - 3_600_000 },
+  { id: 'c', title: 'repo-ish but unanchored', projectRoot: null, archived: false, lastActiveAt: NOW },
+  { id: 'd', title: 'archived repo work', projectRoot: '/home/me/repo', archived: true, lastActiveAt: NOW },
+  { id: 'e', title: null, projectRoot: '/other', archived: false, lastActiveAt: NOW - 1000 }
+];
+const sess = P.sessionsFor('/home/me/repo', wsList, NOW);
+A.eq(sess.length, 2, 'only live sessions with the EXACT stored root attach (no title guessing, archived excluded)');
+A.eq(sess[0].id, 'a', 'most-recently-active first');
+A.eq(sess[1].id, 'b', 'older second');
+A.eq(sess[0].rel, '1m', 'session rows speak the rail relTime vocabulary');
+A.eq(P.sessionsFor('/other', wsList, NOW)[0].title, 'General', 'a null-title record reads as General');
+A.eq(P.sessionsFor('', wsList, NOW).length, 0, 'empty root -> no attachments');
+A.eq(P.sessionsFor('/nowhere', wsList, NOW).length, 0, 'unknown root -> empty, never a fake list');
+A.eq(P.sessionsFor('/home/me/repo', null, NOW).length, 0, 'bad workstreams input -> safe empty');
+
 /* ---------- panels: the SESSIONS ↔ PROJECTS toggle truth table ---------- */
 const s = P.panels('sessions');
 A.eq(s.sessionsList, true, 'sessions view shows the sessions list');

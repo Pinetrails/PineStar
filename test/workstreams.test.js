@@ -246,4 +246,20 @@ W.init(dumpedKind);
 A.eq(W.get('kept_task').kind, 'task', 'kind survives a serialize/init round-trip (task)');
 A.eq(W.get('kept_chat').kind, 'chat', 'kind survives a serialize/init round-trip (chat)');
 
+/* ---------- projectRoot: the Projects-rail session anchor (additive; round-trips; setProjectRoot) ---------- */
+{
+  const anchored = W.create('repo work', { activate: false, projectRoot: 'C:\\proj\\repo' });
+  A.eq(anchored.projectRoot, 'C:\\proj\\repo', 'create() stores the projectRoot anchor');
+  const plain = W.create('plain chat', { activate: false });
+  A.eq(plain.projectRoot, null, 'a session created without a project reads null (never a guessed root)');
+  A.eq(W.setProjectRoot(plain.id, 'C:\\proj\\repo'), true, 'setProjectRoot stamps a live session');
+  A.eq(W.get(plain.id).projectRoot, 'C:\\proj\\repo', 'stamp landed');
+  A.eq(W.setProjectRoot(plain.id, null), true, 'null clears the anchor');
+  A.eq(W.get(plain.id).projectRoot, null, 'anchor cleared');
+  A.eq(W.setProjectRoot('nope', '/x'), false, 'unknown id refused');
+  const dumpedRoot = JSON.parse(JSON.stringify(W.serialize()));
+  W.init(dumpedRoot);
+  A.eq(W.get(anchored.id).projectRoot, 'C:\\proj\\repo', 'projectRoot survives a serialize/init round-trip');
+}
+
 A.report('workstreams.test');
