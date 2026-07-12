@@ -1,5 +1,21 @@
 # NEXT.md — current priorities & task queue
 
+## BUILT 2026-07-12 — MOUSE-CONFINEMENT GUARDRAILS (branch claude/starnet-mouse-confinement-0a89f5, awaiting merge)
+
+Incident: an agent-built pointer-lock FPS left a smoke browser + dev server alive after StarNet
+was force-closed, and a stuck win32 ClipCursor walled the user's REAL mouse until cleared by hand
+(desktop-shell stop = TerminateProcess, so gracefulShutdown never ran). Four guardrails, gate 306
+green, boot-sweep + clip-release live-proven on an isolated sidecar (planted orphan reaped, decoy
+chrome untouched, planted clip released):
+- sidecar/procledger.js — persistent child-PID ledger; NEXT boot sweeps force-kill orphans
+  (token-wise cmdline match = PID-reuse guard). Wired: shell.bg + agent browser + boot.
+- sidecar/inputguard.js — stuck-ClipCursor release at boot / shutdown / E-STOP (never periodic).
+- shell.exec opensVisibleWindow hard-block — cmd start/explorer/rundll32 url.dll/headed browsers
+  refused; npm start · findstr chrome · --headless launches locked ALLOWED (regression test).
+- Open-it card warns "captures your mouse (pointer lock) — Esc releases" via disk-proven
+  manifest.capturesInput scan in validateWorkshopManifest.
+- [ ] OPEN: walk the capture-warning card live in a full workshop round-trip (code+gate only so far).
+
 ## IN PROGRESS — Codex W0 claims/provenance verdict (`agent/w0-claims-verdict`)
 
 Scope is the amended W0 only: code-verified SHIPPED/PARTIAL/MISSING/REFUTED verdicts before

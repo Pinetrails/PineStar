@@ -3630,6 +3630,10 @@ const World = (() => {
       let geom = null;
       if (typeof SPRITES !== 'undefined' && SPRITES.ready) geom = SPRITES.drawBody(ctx, who, now);
       if (!geom) drawFallback(now, who);
+      // remember the visible head-top (world px) so overlays (nameplate, speech bubble) anchor
+      // above the ACTUAL drawn sprite — skins are taller than the old 15px assumption, which
+      // parked bubbles over the face. Fallback bodies keep the legacy 15px estimate (null).
+      who.visTopPy = geom ? geom.top : null;
       ctx.globalAlpha = prevA;
       // the wake ripple — a triple-ringed sonar pulse of first breath, in the suit color (hero's awakening
       // uses the module wakeAt; a crew body uses its own per-body wakeAt set when it receives work)
@@ -3731,9 +3735,10 @@ const World = (() => {
 
     // anchor centered just above the head, crisp + clamped to the canvas
     const ax = (bodyPosX(who) * scale + panX) / dpr, ay = (bodyPosY(who) * scale + panY) / dpr;
-    const spriteH = 15 * scale / dpr;
+    // same head-top anchor as drawBubble: real drawn geometry when known, legacy 15px estimate otherwise
+    const topY = (who.visTopPy != null) ? (who.visTopPy * scale + panY) / dpr : ay - 15 * scale / dpr;
     const x = Math.round(Math.max(4, Math.min(Wc - w - 4, ax - w / 2)));
-    const y = Math.round(Math.max(4, Math.min(Hc - h - 4, ay - spriteH - 9 - h)));
+    const y = Math.round(Math.max(4, Math.min(Hc - h - 4, topY - 9 - h)));
 
     // plate: dark CRT glass + scanlines + an amber structural frame with a suit accent along the top
     ctx.fillStyle = 'rgba(6,5,4,0.92)'; ctx.fillRect(x, y, w, h);
@@ -3997,10 +4002,12 @@ const World = (() => {
 
     // anchor centered above the head, crisp + clamped to the canvas (same body->screen math as the nameplate)
     const ax = (bodyPosX(who) * scale + panX) / dpr, ay = (bodyPosY(who) * scale + panY) / dpr;
-    const spriteH = 15 * scale / dpr;
+    // anchor off the sprite's ACTUAL drawn head-top when known (set each frame in drawAgent);
+    // the old fixed 15-world-px estimate undershot real skins and parked the bubble on the face
+    const topY = (who.visTopPy != null) ? (who.visTopPy * scale + panY) / dpr : ay - 15 * scale / dpr;
     const cx = Math.round(Math.max(bw / 2 + 4, Math.min(Wc - bw / 2 - 4, ax)));
     const bx = Math.round(cx - bw / 2);
-    const by = Math.round(Math.max(4, Math.min(Hc - bh - tailH - 4, ay - spriteH - 6 - tailH - bh)));
+    const by = Math.round(Math.max(4, Math.min(Hc - bh - tailH - 4, topY - 6 - tailH - bh)));
     const tx = Math.round(Math.max(bx + tailW + 1, Math.min(bx + bw - tailW - 1, ax)));   // tail apex tracks the head, kept inside the box
 
     // CRT glass card + faint scanlines (nameplate material)
@@ -4147,9 +4154,20 @@ const World = (() => {
     return tag;
   }
   // amber (warn) / red (blocker) corner brackets + a one-line instruction over the broken piece, gently pulsing
+  // label collision (2026-07-11): neighboring nags on one row — or two nags on the SAME prop (e.g.
+  // BAY_NOT_FED + NO COMPUTE) — used to print on a shared baseline and mash into garble. Each label
+  // claims a box; a collider steps UP one line at a time until it fits. Rebuilt per draw call.
+  function placeNagLabel(placed, cx, y, w, h) {
+    const hits = b => cx - w / 2 < b.x + b.w && cx + w / 2 > b.x && y < b.y + b.h && y + h > b.y;
+    let guard = 24;
+    while (guard-- > 0 && placed.some(hits)) y -= h + 1;
+    placed.push({ x: cx - w / 2, y, w, h });
+    return y;
+  }
   function drawRoutingNags(now) {
     if (!routingNags || !routingNags.length) return;
     const pulse = 0.55 + 0.35 * Math.sin(now / 280);
+    const placed = [];
     for (const n of routingNags) {
       const X = n.x * T, Y = n.y * T, Wd = n.w * T, Hd = n.h * T;
       const col = n.warn ? '#ffbe3c' : '#ff5046';
@@ -4165,7 +4183,9 @@ const World = (() => {
       ctx.stroke();
       ctx.font = NAG_FONT; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
       ctx.shadowBlur = 3; ctx.shadowColor = col; ctx.fillStyle = col;
-      ctx.fillText(n.label, X + Wd / 2, Y - 3);
+      // alphabetic baseline at y: label box spans roughly [y-8, y] (8px VT323)
+      const ly = placeNagLabel(placed, X + Wd / 2, Y - 3 - 8, ctx.measureText(n.label).width, 9);
+      ctx.fillText(n.label, X + Wd / 2, ly + 8);
       ctx.restore();
     }
   }
@@ -4331,6 +4351,23 @@ const World = (() => {
   const AWAIT_TTL_MS = 660000;                   // consent max (600s) + grace ⇒ a stuck await clears if its response was lost
   let awaitStampAt = 0;                           // performance.now() when the current awaitPrompt was last reinforced
   function stampRun(aid) { if (aid) runLastSeenByAgent.set(aid, (typeof performance !== 'undefined') ? performance.now() : fnow); }
+  /* OVERLAP-SAFE RUN REFCOUNT (the black-screen-while-working fix). The work pose, serverLit set and the
+     run clock are all AGENT-keyed, but an agent's runs can OVERLAP (a scheduled routine ending while a chat
+     run streams, two channel runs, a background workstream). Extinguishing on the FIRST run.end used to
+     tear the desk pose + darken the workstation screens of an agent that was still genuinely working — the
+     app asserting idle while the harness could prove a live run (truthful-telemetry violation, inverted).
+     So every live run registers by runId here, and only the LAST live run's end may extinguish agent-keyed
+     state. noteRunEnd is IDEMPOTENT per runId (Set.delete), so every run.end consumer can call it and read
+     the remaining count without depending on listener registration order. */
+  const liveRunsByAgent = new Map();   // agentId -> Set(runId), every live run regardless of trigger
+  function noteRunStart(aid, rid) { if (!aid || !rid) return; let s = liveRunsByAgent.get(aid); if (!s) { s = new Set(); liveRunsByAgent.set(aid, s); } s.add(rid); }
+  function noteRunEnd(aid, rid) {
+    const s = aid ? liveRunsByAgent.get(aid) : null; if (!s) return 0;
+    if (rid) s.delete(rid); else s.clear();   // a runId-less end can't be matched — treat it as agent-terminal (old behavior)
+    if (!s.size) liveRunsByAgent.delete(aid);
+    return s.size;
+  }
+  function agentRunsLive(aid) { const s = aid ? liveRunsByAgent.get(aid) : null; return s ? s.size : 0; }
   /* the once-per-second TTL sweep (E2). Degrades paired states whose reinforcing event was lost:
        • a run clock with no token/tool/start event for RUN_TTL_MS ⇒ clear runStartByAgent (+ its work pose,
          glyph, serverLit, and any leftover crew workUntil for that agent) so no eternal RUN clock is asserted.
@@ -4343,12 +4380,16 @@ const World = (() => {
         const seen = runLastSeenByAgent.get(aid) || runStartByAgent.get(aid) || 0;
         if (now - seen > RUN_TTL_MS) {
           runStartByAgent.delete(aid); runLastSeenByAgent.delete(aid);
+          liveRunsByAgent.delete(aid);                    // a leaked refcount (lost run.end) degrades with the clock
           glyphByAgent.delete(aid);                       // the in-flight tool glyph is just as stale
           if (serverLit.has(aid)) { serverLit.delete(aid); setActivityFor(aid, 'idle'); }   // drop an autonomous body out of the working pose
           const b = bodyForAgent(aid); if (b && b !== agent && b.workUntil) b.workUntil = 0;  // clear a stuck crew work pose
         }
       }
     }
+    // a serverLit entry whose agent has NO live run and NO run clock is a leftover from an overlap window
+    // (the scheduled run ended while a chat run kept the pose; the chat teardown owned the extinguish) — drop it.
+    for (const aid of Array.from(serverLit)) if (!agentRunsLive(aid) && !runStartByAgent.has(aid)) serverLit.delete(aid);
     if (awaitPrompt && awaitStampAt && (now - awaitStampAt > AWAIT_TTL_MS)) clearAwait();   // a lost permission.response never strands the hero
   }
   /* Lane E2 — reconnect reconciliation (the PRIMARY correction). On every SSE (re)open, ask the sidecar for the
@@ -4367,6 +4408,7 @@ const World = (() => {
     const out = Object.assign({}, snap);
     if (Array.isArray(snap.runs)) out.activeRuns = snap.runs.map(r => r && r.agentId ? {
       agentId: r.agentId,
+      runId: r.runId || null,
       startedMsAgo: (ts && +r.startedAt) ? Math.max(0, ts - (+r.startedAt)) : 0
     } : null).filter(Boolean);
     if (Array.isArray(snap.prompts)) out.pendingPrompts = snap.prompts;
@@ -4384,10 +4426,11 @@ const World = (() => {
         live.add(r.agentId);
         const startedAgo = Math.max(0, +r.startedMsAgo || 0);
         if (!runStartByAgent.has(r.agentId)) runStartByAgent.set(r.agentId, now - startedAgo);
+        noteRunStart(r.agentId, r.runId);   // rebuild the overlap refcount from the authoritative live set
         stampRun(r.agentId);
       }
       for (const aid of Array.from(runStartByAgent.keys())) if (!live.has(aid)) {   // ended during the outage
-        runStartByAgent.delete(aid); runLastSeenByAgent.delete(aid); glyphByAgent.delete(aid);
+        runStartByAgent.delete(aid); runLastSeenByAgent.delete(aid); glyphByAgent.delete(aid); liveRunsByAgent.delete(aid);
         if (serverLit.has(aid)) { serverLit.delete(aid); setActivityFor(aid, 'idle'); }
         const b = bodyForAgent(aid); if (b && b !== agent && b.workUntil) b.workUntil = 0;
       }
@@ -5201,8 +5244,11 @@ const World = (() => {
     // existing agent.tool_call / agent.run.* events (the delegated child's lifecycle is forwarded onto the lead's stream).
     U.bus.on('agent.tool_call', p => { if (p && /^team[._]dispatch$/.test(p.name || '')) { delegateLead = p.agentId; delegateCall = p.callId; } });
     U.bus.on('agent.tool_result', p => { if (p && p.callId && p.callId === delegateCall) { delegateLead = null; delegateCall = null; } });
+    // OVERLAP REFCOUNT: register every live run by runId (any trigger) BEFORE the extinguish consumers below —
+    // only the LAST live run's end may darken an agent's pose/screens (see noteRunStart/noteRunEnd).
+    U.bus.on('agent.run.start', p => { if (p && p.agentId) noteRunStart(p.agentId, p.runId); });
     U.bus.on('agent.run.start', p => { if (p && delegateLead) { const b = bodyForAgent(p.agentId); if (b && b !== agent) handoff(delegateLead, p.agentId, 'spawned'); } });
-    U.bus.on('agent.run.end', p => { if (p) { const b = bodyForAgent(p.agentId); if (b && b !== agent) handoff(null, p.agentId, 'done'); } });
+    U.bus.on('agent.run.end', p => { if (p) { const b = bodyForAgent(p.agentId); if (b && b !== agent && !noteRunEnd(p.agentId, p.runId)) handoff(null, p.agentId, 'done'); } });
     // AUTONOMOUS WORK (cron / channel): a server-initiated run has no in-app chat driving its body, so bind its
     // run lifecycle to the work pose HERE — the agent goes to its workstation and works for the run's REAL
     // duration, then stands when it ends. This is what makes a scheduled routine VISIBLE: the conveyor box rides
@@ -5210,7 +5256,7 @@ const World = (() => {
     // (trigger 'directive') drives its own body via chat.js and is excluded; a delegated worker (also 'directive')
     // is handled by the handoff bindings above — so this never double-drives a body.
     U.bus.on('agent.run.start', p => { if (p && p.agentId && (p.trigger === 'schedule' || p.trigger === 'event')) { serverLit.add(p.agentId); if (agent && p.agentId === agent.id) agent.taskViaConveyor = true; setActivityFor(p.agentId, 'task'); } });
-    U.bus.on('agent.run.end', p => { if (p && p.agentId && serverLit.has(p.agentId)) { serverLit.delete(p.agentId); setActivityFor(p.agentId, 'idle'); } });
+    U.bus.on('agent.run.end', p => { if (p && p.agentId && !noteRunEnd(p.agentId, p.runId) && serverLit.has(p.agentId)) { serverLit.delete(p.agentId); setActivityFor(p.agentId, 'idle'); } });
     // M-mem.4: a real auto-compaction fired (the loop folded older context into a summary) — raise a
     // one-line notify. Truthful: driven by the event's own before/after token counts. The bottom-bar
     // CTX gauge flashes its own mint "compacted" echo (StationUI listens to agent.compact directly).
@@ -5397,8 +5443,8 @@ const World = (() => {
     // G0.2 RUN CLOCK: elapsed-time bookkeeping keyed to the REAL run lifecycle (a run.error is always
     // followed by run.end reason 'error', so end is the one cleanup point). Internal reason-only runs
     // never reach U.bus (harness.js suppresses their start/end), so no clock ever shows for self-talk.
-    U.bus.on('agent.run.start', p => { if (p && p.agentId) { runStartByAgent.set(p.agentId, performance.now()); stampRun(p.agentId); } });
-    U.bus.on('agent.run.end', p => { if (p && p.agentId) { runStartByAgent.delete(p.agentId); runLastSeenByAgent.delete(p.agentId); } });
+    U.bus.on('agent.run.start', p => { if (p && p.agentId) { if (!runStartByAgent.has(p.agentId)) runStartByAgent.set(p.agentId, performance.now()); stampRun(p.agentId); } });   // an overlapping start keeps the EARLIEST clock (the agent has been running since then)
+    U.bus.on('agent.run.end', p => { if (p && p.agentId && !noteRunEnd(p.agentId, p.runId)) { runStartByAgent.delete(p.agentId); runLastSeenByAgent.delete(p.agentId); } });
     // G0.2 SIM-TASK PROGRESS: store a desk fraction ONLY when a producer publishes a real prog/dur pair
     // on the 'task' event (subagent status events carry none and store none). Terminal states clear it.
     U.bus.on('task', t => {
@@ -5607,7 +5653,7 @@ const World = (() => {
     pollFeed: () => pollFeedState(),
     pollShip: () => pollShipStats()
   });
-  return { init, rebake, crt: CRT, slagLog: () => (slaglog ? slaglog.recent() : []), loadStation, spawn, spawnAgent, despawnAgent, setSkin, relabel, setActivityFor, focusBody, setChatFocus, chatFocusPing, start, stop, setActivity, wakeIn, beginAwakening, setWakeProgress, igniteSpark, armKindle, kindleHold, camPushIn, camCreep, camPunch, camPullBack, awakenTurn, truthPulse, beginFlood, collapseFlood, endAwakening, releaseAwakening, say, focusAgent, getActivity: () => activity, getUse: () => (agent ? agent.usingProp : null), setOnClick, setOnArcade, setOnOutbox, setOnMissionBoard, setOnTrophyCase, setOnBayAssign, setOnIntakeFeed, refit, pauseBridge, resumeBridge, linkState, _dbgSeedRun, _dbgAgeRun, _dbgReconcile, _dbgSweep, _dbgLinkState, _dbgDropBridge, _dbgBeltLegibility,
+  return { init, rebake, crt: CRT, slagLog: () => (slaglog ? slaglog.recent() : []), loadStation, spawn, spawnAgent, despawnAgent, setSkin, relabel, setActivityFor, agentRunsLive, dropRun: noteRunEnd, focusBody, setChatFocus, chatFocusPing, start, stop, setActivity, wakeIn, beginAwakening, setWakeProgress, igniteSpark, armKindle, kindleHold, camPushIn, camCreep, camPunch, camPullBack, awakenTurn, truthPulse, beginFlood, collapseFlood, endAwakening, releaseAwakening, say, focusAgent, getActivity: () => activity, getUse: () => (agent ? agent.usingProp : null), setOnClick, setOnArcade, setOnOutbox, setOnMissionBoard, setOnTrophyCase, setOnBayAssign, setOnIntakeFeed, refit, pauseBridge, resumeBridge, linkState, _dbgSeedRun, _dbgAgeRun, _dbgReconcile, _dbgSweep, _dbgLinkState, _dbgDropBridge, _dbgBeltLegibility,
     // AGENT GROWTH: XpStore pushes pre-computed Xp.compute() snapshots here; pulseLevelUp fires
     // the addressed body's gold ring. The colony headline is the top-bar STATION chip.
     setXp: (agentId, a) => {
@@ -5646,6 +5692,8 @@ const World = (() => {
           tile: t, px: Math.round(b.px), py: Math.round(b.py), dir: b.dir, state: b.state,
           goal: b.goal || null, moving: !!b.target, working: !!b.working, sitting: !!b.sitting,
           seated: !!b.seated, unplaced: !!b.unplaced, summoned: !!b.summoned,   // summoned = carries the idle inner life (roster bodies must, post-relaunch too)
+          visTopPy: (b.visTopPy != null) ? Math.round(b.visTopPy) : null,       // drawn head-top (world px) — the overlay anchor drawBubble/drawNameplate use
+          say: (b.say && b.say.text && b.say.until > fnow) ? b.say.text : null,
           target: b.target ? { tile: tileOf(b.target.x, b.target.y), x: Math.round(b.target.x), y: Math.round(b.target.y) } : null,
           glance: b.glance ? { dir: b.glance.dir, ms: Math.max(0, Math.round((b.glance.until || 0) - fnow)) } : null,
           zone: z, inOwnZone: tileInZone(z, t.x, t.y)

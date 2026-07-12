@@ -1988,8 +1988,22 @@ const Chat = (() => {
     // secondary path to the details + Keep/Discard actions.
     let openItBtn = null;
     if (htmlEntry) {
+      // disk-proven by validateWorkshopManifest (never the model's claim): this deliverable requests pointer
+      // lock / fullscreen, i.e. opening it will capture the Commander's REAL mouse. Say so BEFORE the click.
+      if (m.capturesInput) {
+        const warn = document.createElement('div'); warn.className = 'ws-line ws-capture-warn';
+        warn.textContent = '⚠ captures your mouse/keyboard when opened (pointer lock) — press Esc to release it';
+        r.body.appendChild(warn);
+      }
+      if (m.usesMedia) {
+        const warn = document.createElement('div'); warn.className = 'ws-line ws-capture-warn';
+        warn.textContent = '⚠ may ask to use your camera, microphone, or screen when opened';
+        r.body.appendChild(warn);
+      }
       openItBtn = document.createElement('button'); openItBtn.className = 'consent-btn'; openItBtn.textContent = 'Open it';
-      openItBtn.title = 'run this tool in a new browser tab';
+      openItBtn.title = m.capturesInput
+        ? 'run this tool in a new browser tab — it will capture your mouse; Esc releases it'
+        : 'run this tool in a new browser tab';
       openItBtn.onclick = () => openRunTab(htmlEntry);
       foot.appendChild(openItBtn);
     }
@@ -4857,9 +4871,17 @@ const Chat = (() => {
       // between turns); otherwise he stands up and goes back to idle. Only steer the world if THIS finished
       // stream is the one on screen — a background stream finishing must not move the view.
       const stayFacing = typeof Voice !== 'undefined' && Voice.inVoiceMode && Voice.inVoiceMode();
-      // a summoned crew body extinguishes the moment ITS run ends — even if it finished off-screen (a
-      // background crew run must stop "working").
-      if ((ws.agentId || 'agent') !== 'agent') { if (World.setActivityFor) World.setActivityFor(ws.agentId, 'idle'); }
+      // OVERLAP GUARD (the black-screen fix): this stream's run is over, but the SAME agent may still be
+      // working another live run (a scheduled routine, a channel run, another workstream). Extinguishing the
+      // pose then darkens the workstation screens of an agent that is provably still working. dropRun retires
+      // THIS run from World's refcount (idempotent — the bus run.end usually already did; an aborted stream's
+      // run.end was LOST so this is its cleanup) and the pose is only released when NO run remains live.
+      const othersLive = (World.dropRun && World.agentRunsLive)
+        ? (World.dropRun(ws.agentId || 'agent', thisRunId), World.agentRunsLive(ws.agentId || 'agent') > 0) : false;
+      // a summoned crew body extinguishes the moment its LAST live run ends — even if it finished off-screen
+      // (a background crew run must stop "working").
+      if ((ws.agentId || 'agent') !== 'agent') { if (!othersLive && World.setActivityFor) World.setActivityFor(ws.agentId, 'idle'); }
+      else if (othersLive) { /* the hero is still mid-run elsewhere — leave the working pose alone (work wins) */ }
       else {
         // HERO: split the two concerns the old single gate conflated. (1) POSE — a hero run that finished in a
         // BACKGROUND workstream must ALSO stop "working" (the tick tears it out of the desk pose the instant

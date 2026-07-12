@@ -1334,10 +1334,22 @@ const Build = (() => {
      which kills the frame-drift bug that misplaced ghosts on off-origin floors.
      Red = blocking (loop / no default lane / dup agent / dry intake); amber = fixable advice. */
   const VAL_FONT = () => Math.max(9, 11 / zoom) + "px 'VT323','Courier New',monospace";
+  /* LABEL COLLISION (2026-07-11): callouts are laid out, not just painted — neighboring findings on one
+     row (or two findings on the SAME prop) used to print on a shared baseline and mash into garble
+     ("NO COMPUT|NOT ADD THPC..."). Each label claims a box; a collider steps AWAY from the prop (up for
+     above-labels, down for below-labels) one line at a time until it fits. Cleared per frame. */
+  function placeLabel(placed, cx, y, w, h, dir) {
+    const hits = b => cx - w / 2 < b.x + b.w && cx + w / 2 > b.x && y < b.y + b.h && y + h > b.y;
+    let guard = 24;
+    while (guard-- > 0 && placed.some(hits)) y += dir * (h + 1);
+    placed.push({ x: cx - w / 2, y, w, h });
+    return y;
+  }
   function drawRoutingValidation(t, now) {
     if (!cacheGeo) return;
     const o = cacheGeo.origin || { tx: 0, ty: 0 };
     const pulse = 0.55 + 0.35 * Math.sin(now / 280);
+    const placed = [];
     const mark = (rect, col, label) => {
       // rect arrives in LOCAL tiles → draw in WORLD px (bake + props frame)
       const X = (rect.x1 + o.tx) * t, Y = (rect.y1 + o.ty) * t;
@@ -1354,7 +1366,10 @@ const Build = (() => {
       ctx.stroke();
       ctx.font = VAL_FONT(); ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
       ctx.shadowBlur = 3; ctx.shadowColor = col; ctx.fillStyle = col;
-      ctx.fillText(label, X + Wd / 2, Y - 2 / zoom);
+      // baseline-bottom label: its box spans [y-lh, y] — colliders step UP (dir -1), away from the machinery
+      const lh = Math.max(9, 11 / zoom) + 2 / zoom;
+      const ly = placeLabel(placed, X + Wd / 2, Y - 2 / zoom - lh, ctx.measureText(label).width, lh, -1);
+      ctx.fillText(label, X + Wd / 2, ly + lh);
       ctx.restore();
     };
     // routing findings from the compiled plan — every label names the FIX (see VAL_LABEL)
@@ -1392,6 +1407,7 @@ const Build = (() => {
   function drawBeltEndpointGlow(t, now) {
     if (tool !== 'belt' || !station) return;
     const pulse = 0.45 + 0.3 * Math.sin(now / 260);
+    const placed = [];
     ctx.save();
     ctx.font = VAL_FONT(); ctx.textAlign = 'center'; ctx.textBaseline = 'top';
     for (const p of station.props()) {
@@ -1407,7 +1423,10 @@ const Build = (() => {
       ctx.strokeStyle = col; ctx.lineWidth = (isFrom ? 2.5 : 1.5) / zoom;
       ctx.strokeRect(X - 1, Y - 1, Wd + 2, Hd + 2);
       ctx.shadowBlur = 3; ctx.shadowColor = col; ctx.fillStyle = col;
-      ctx.fillText(role, X + Wd / 2, Y + Hd + 2 / zoom);
+      // baseline-top label below the prop: colliders step DOWN (dir +1), away from the machinery
+      const lh = Math.max(9, 11 / zoom) + 2 / zoom;
+      const ly = placeLabel(placed, X + Wd / 2, Y + Hd + 2 / zoom, ctx.measureText(role).width, lh, 1);
+      ctx.fillText(role, X + Wd / 2, ly);
       ctx.shadowBlur = 0;
     }
     ctx.restore();
