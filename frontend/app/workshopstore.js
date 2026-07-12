@@ -42,13 +42,6 @@ const WorkshopStore = (() => {
     };
   }
   const ready = () => !!state;
-  function nativeInvoke() {
-    try {
-      return (typeof window !== 'undefined' && window.__TAURI__ && window.__TAURI__.core && typeof window.__TAURI__.core.invoke === 'function')
-        ? window.__TAURI__.core.invoke : null;
-    } catch (_) { return null; }
-  }
-
   // ---- reads ----
   // undecided manifests the Commander hasn't acted on. Filters out anything they said "Later" to this
   // session (anti-nag) and anything already shown this session (poll-race guard). Fail-open to [].
@@ -168,12 +161,9 @@ const WorkshopStore = (() => {
       const j = await r.json().catch(() => null);
       if (r.ok && j && j.ok !== false) {
         const keptPath = (j && j.destPath) || body.destPath;
-        let opened = false;
-        const invoke = nativeInvoke();
-        if (decision === 'keep' && extra && extra.open === true && keptPath && invoke) {
-          try { await invoke('starnet_open_user_directory', { path: keptPath }); opened = true; } catch (_) { opened = false; }
-        }
-        return { ok: true, destPath: keptPath, opened: opened };
+        // Keep is a filesystem copy only. Renderer IPC cannot prove a fresh user
+        // gesture, so a run may not launch an OS file manager on the user's desktop.
+        return { ok: true, destPath: keptPath, opened: false };
       }
       return { ok: false, error: (j && j.error) || 'could not save your decision' };
     } catch (_) { return { ok: false, error: 'decision failed to reach the station' }; }
@@ -210,22 +200,10 @@ const WorkshopStore = (() => {
       + '?token=' + encodeURIComponent(tok);
   }
 
-  // W7 — shell-open a NON-web deliverable file with the OS default app (POST /api/workshop/open). Interactive-only
-  // by definition (the Commander clicked the file row). Returns { ok, error? }; never throws. The hardened
-  // window.fetch attaches the token header to /api/ URLs, so no manual token here.
+  // W7 — OS launch is intentionally unavailable: neither loopback API possession nor
+  // renderer IPC proves a fresh human gesture. The caller presents manual-open guidance.
   async function openFile(agentId, runId, relPath) {
-    try {
-      const invoke = nativeInvoke();
-      if (invoke) {
-        await invoke('starnet_open_workshop_file', { agentId: agentId || 'agent', runId: runId, path: relPath });
-        return { ok: true };
-      }
-      const r = await fetch('/api/workshop/open', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ agentId: agentId || 'agent', runId: runId, path: relPath }) });
-      const j = await r.json().catch(() => null);
-      if (r.ok && j && j.ok) return { ok: true };
-      return { ok: false, error: (j && (j.error || j.message)) || 'could not open that file' };
-    } catch (_) { return { ok: false, error: 'could not reach the station' }; }
+    return { ok: false, error: 'Open this file manually; StarNet cannot launch desktop applications from a run.' };
   }
 
   // the sensible default Keep destination (the Commander's Desktop, when the desktop shell knows it).
@@ -245,7 +223,7 @@ const WorkshopStore = (() => {
       readFile: readFile,
       desktopDefault: desktopDefault(),
       runUrl: (relPath) => runUrl(aid, m.runId, relPath),          // W7: URL that RUNS a web file in a tab
-      openFile: (relPath) => openFile(aid, m.runId, relPath),      // W7: shell-open a non-web file (OS default app)
+      openFile: (relPath) => openFile(aid, m.runId, relPath),      // W7: manual-open guidance; never OS-launch
       onDecide: (decision, destPath, extra) => decide(aid, m.runId, decision, destPath, extra)
     });
   }

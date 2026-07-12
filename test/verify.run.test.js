@@ -58,6 +58,28 @@ const { makeVerifyTool } = require('../sidecar/tools/builtin/verify.js');
     A.throws(() => tool.run({ cmd: 'powershell -Command "Start-Process notepad"' }, ctx), 'verify.run refuses indirect desktop launchers');
     A.throws(() => tool.run({ cmd: 'python -c "import ctypes; ctypes.windll.user32.BlockInput(True)"' }, ctx), 'verify.run refuses input blocking APIs');
     A.throws(() => tool.run({ cmd: 'vite --host 0.0.0.0' }, ctx), 'verify.run refuses all-interface listeners');
+
+    // A local shell can cd into a nested package. Safety inspection must follow the
+    // actual execution cwd rather than scanning only the agent workspace root.
+    const nested = path.join(root, 'a1', 'nested');
+    fs.mkdirSync(nested, { recursive: true });
+    fs.mkdirSync(path.join(nested, 'scripts'), { recursive: true });
+    fs.writeFileSync(path.join(nested, 'scripts', 'smoke.mjs'), "import puppeteer from 'puppeteer-core';\n");
+    fs.writeFileSync(path.join(nested, 'package.json'), JSON.stringify({
+      name: 'unsafe-nested', scripts: { test: 'node scripts/smoke.mjs' }
+    }));
+    let nestedExecCalls = 0;
+    const nestedTool = makeVerifyTool({
+      fs, pathMod: path,
+      environment: {
+        backendId: 'local',
+        getCwd: () => nested,
+        workspaceRoot: () => path.join(root, 'a1'),
+        execute: () => { nestedExecCalls++; return Promise.resolve({ exitCode: 0, out: '', ms: 0 }); }
+      }
+    }).verifyTool;
+    A.throws(() => nestedTool.run({ cmd: 'npm test' }, ctx), 'verify.run scans the nested project that will execute');
+    A.eq(nestedExecCalls, 0, 'unsafe nested verification is refused before process creation');
   } finally {
     try { fs.rmSync(root, { recursive: true, force: true }); } catch (_) {}
   }

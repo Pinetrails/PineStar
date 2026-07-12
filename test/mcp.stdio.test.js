@@ -47,6 +47,7 @@ function writeServer(dir) {
     A.eq(childEnv.OPENROUTER_KEY, undefined, 'ambient secret env is not inherited by default');
     A.eq(childEnv.STARNET_COMPUTER_DRIVER, '0', 'connector env cannot enable the physical-input driver');
     A.eq(childEnv.STARNET_BROWSER_HEADLESS, '1', 'connector env is pinned headless');
+    A.throws(() => makeStdioTransport({ command: process.execPath, allowedCommands: [nodeBase], processEnv: {} }), 'stdio defaults to denied without an isolated process broker');
     A.throws(() => makeStdioTransport({ command: process.execPath, allowedCommands: [nodeBase], processEnv: { STARNET_USER_CONTROL_MODE: 'preserve', STARNET_MCP_STDIO: '0' } }), 'installed preserve mode refuses stdio before spawn');
     const redacted = T.redactEnv({ SECRET_TOKEN: 'explicit-secret', MODE: 'test' });
     A.eq(redacted.SECRET_TOKEN, '<redacted>', 'secret-like env keys redact their value');
@@ -56,6 +57,7 @@ function writeServer(dir) {
     {
       const errors = [];
       const tp = makeStdioTransport({
+        userControlIsolated: true,
         command: process.execPath,
         args: [server],
         env: { SECRET_TOKEN: 'explicit-secret' },
@@ -84,6 +86,7 @@ function writeServer(dir) {
         makeTransport: cfg => {
           A.eq(cfg.transport, 'stdio', 'manager passes the stdio transport kind to the transport factory');
           return makeStdioTransport(Object.assign({}, cfg, {
+            userControlIsolated: true,
             processEnv: { PATH: process.env.PATH || '', OPENROUTER_KEY: 'ambient-secret' },
             allowedCommands: [nodeBase],
             timeoutMs: 1000

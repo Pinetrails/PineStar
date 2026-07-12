@@ -101,9 +101,9 @@
     env = env || {};
     const explicit = String(env.STARNET_MCP_STDIO != null ? env.STARNET_MCP_STDIO : (env.SKYNET_MCP_STDIO || '')).trim();
     if (/^(0|false|off|none)$/i.test(explicit)) return false;
-    const mode = String(env.STARNET_USER_CONTROL_MODE || env.SKYNET_USER_CONTROL_MODE || '').trim().toLowerCase();
-    if (mode === 'preserve' && !(deps && deps.userControlIsolated === true)) return false;
-    return true;
+    // Default deny everywhere, including dev/bare sidecar. Only a process broker that proves
+    // a noninteractive execution cell may opt in; a user/env flag alone is insufficient.
+    return !!(deps && deps.userControlIsolated === true);
   }
   function redactEnv(env) {
     const e = normalizeEnv(env || {});

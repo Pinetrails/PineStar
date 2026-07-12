@@ -208,16 +208,17 @@
     if (!cwd || !fs || !P) return cwd;
     let cur;
     try { cur = P.resolve(cwd); } catch (_) { return cwd; }
-    let found = cur;
     for (let i = 0; i < 12; i++) {
       try {
-        if (fs.existsSync(P.join(cur, 'package.json')) || fs.existsSync(P.join(cur, 'Cargo.toml')) || fs.existsSync(P.join(cur, '.git'))) found = cur;
+        // The nearest project owns the command being run. Continuing upward to the
+        // outermost monorepo marker would skip a nested package's scripts and sources.
+        if (fs.existsSync(P.join(cur, 'package.json')) || fs.existsSync(P.join(cur, 'Cargo.toml')) || fs.existsSync(P.join(cur, '.git'))) return cur;
       } catch (_) {}
       const parent = P.dirname(cur);
       if (!parent || parent === cur) break;
       cur = parent;
     }
-    return found;
+    return cwd;
   }
   function inputIsolationRisk(cmd, opts) {
     const c = String(cmd == null ? '' : cmd);

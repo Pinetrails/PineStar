@@ -20,6 +20,25 @@ This lane closes both reproduced routes:
   APIs, GUI/native runtimes, local executables, `--open`, and normal npm/node/Python/PowerShell/cmd/
   Bun/Deno indirection. Build/unit/HTTP work remains available.
 
+The follow-up audit extends this from the FPS route to a harness-wide user-control policy:
+- A central impact authority runs before capability grants, Full Access, and cached consent. Missing
+  run surfaces are autonomous; autonomous runs cannot start workspace processes, control media, use
+  unknown connectors, launch a desktop app, or access physical input. Physical-input and visible-
+  desktop impacts are unconditionally unavailable until a future native one-shot gesture lease exists.
+- Every custom MCP tool is `external-unknown` regardless of transport or server-supplied `readOnlyHint`.
+  It is absent from autonomous runs and requires an exact live, non-cacheable confirmation per call in
+  a watched run. MCP stdio defaults off and only a broker-proven isolated worker can enable it.
+- Child processes receive a minimal environment with StarNet/API/provider/channel credentials and
+  execution hooks stripped. Host safety pins force headless browsing, disable the computer driver and
+  local MCP stdio, and preserve user control.
+- `verify.run` uses the same command decision seam as `shell.exec` and scans the exact nearest nested
+  project it executes. Fullscreen, pointer/keyboard lock, wake lock, orientation lock, and popup APIs
+  are neutralized inside the owned CDP test browser. Inputguard is observation-only: cleanup never calls
+  global `ClipCursor(NULL)` and therefore cannot disturb a game or app the user owns.
+- Workshop HTTP routes, decision payloads, frontend code, and Tauri IPC contain no file/folder launcher.
+  A token or renderer message is not accepted as proof of a human gesture; the user opens kept paths
+  manually. The legacy `desktop.open` tool and Win32 computer driver are inert and never projected.
+
 Focused gates are green (browser 79, computer 58, desktop 34, shell isolation 29, input policy 31,
 shell-bg 31, shell machine-state 74, harness integration 90). A hands-off FPS substrate run used an
 owned ephemeral CDP port (`51772`) and completed deploy, movement, relative aim, ADS, fire, reload,
@@ -31,10 +50,12 @@ lock live: foreground user Chrome titled `IRON & ASH — Free For All` owned cli
 started. The observer cannot attribute who opened that Chrome window, but it independently confirms
 why real-window routes cannot remain ordinary agent tools.
 
-Residual boundary: the normal modeled paths are closed, but a hostile/obfuscated arbitrary binary in
-the same interactive Windows session cannot be made absolutely input-safe by string inspection. A
-true unknown-code guarantee requires the existing Docker backend or a separate non-interactive Windows
-desktop/session. Do not advertise that stronger OS boundary as shipped.
+Residual release blocker: supported/modelled StarNet paths are closed, but a hostile or obfuscated
+arbitrary binary in the same interactive Windows session cannot be made absolutely input-safe by regex,
+environment variables, or a Job Object. A literal unknown-code guarantee requires a restricted process
+token plus private non-input desktop/session, or a container/VM such as Windows Sandbox/Hyper-V. The
+current machine has no available container/sandbox worker. Do not advertise the stronger OS boundary as
+shipped; do not enable unattended local execution while that boundary is absent.
 
 Ship blockers:
 - [x] `test:fast` 313/313, full `test:http`, and `cargo check --locked --all-targets` green.
@@ -52,7 +73,9 @@ green, boot-sweep + clip-release live-proven on an isolated sidecar (planted orp
 chrome untouched, planted clip released):
 - sidecar/procledger.js — persistent child-PID ledger; NEXT boot sweeps force-kill orphans
   (token-wise cmdline match = PID-reuse guard). Wired: shell.bg + agent browser + boot.
-- sidecar/inputguard.js — stuck-ClipCursor release at boot / shutdown / E-STOP (never periodic).
+- sidecar/inputguard.js originally released global ClipCursor state at boot / shutdown / E-STOP. The
+  per-run lane supersedes that behavior with observation-only telemetry: StarNet must not mutate clip
+  state it cannot prove it owns, including clip state belonging to the user's own game.
 - `shell.exec` originally blocked visible launches while allowing `--headless`; the per-run isolation
   lane above supersedes that exception because headless Chromium can still reach native pointer lock.
 - Open-it card warns "captures your mouse (pointer lock) — Esc releases" via disk-proven

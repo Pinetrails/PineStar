@@ -53,7 +53,10 @@
         ctx = ctx || {};
         const aid = safeAgentId((ctx && ctx.agentId) || 'agent');
         const cwd = environment ? environment.getCwd(aid) : P.join(ROOT, aid);
-        const hostCwd = environment && typeof environment.workspaceRoot === 'function' ? environment.workspaceRoot(aid) : cwd;
+        // Local execution may be inside a nested project after shell.cd. Inspect the
+        // exact directory that will execute; only mapped backends need the host root.
+        const hostCwd = environment && environment.backendId !== 'local' && typeof environment.workspaceRoot === 'function'
+          ? environment.workspaceRoot(aid) : cwd;
         let cmd = String((args && args.cmd) || '').trim();
         if (!cmd) {
           if (fs && fs.existsSync && fs.existsSync(P.join(hostCwd, 'package.json'))) cmd = 'npm test';

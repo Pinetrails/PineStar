@@ -83,6 +83,34 @@ A.eq(backgroundOwnsLoopbackUrl({ running: true, tail: 'Local: https://[::1]:4443
   A.ok(probeCalls[0].args.some(x => /foreach\(\$owner in \$owners\)[\s\S]*if\(-not \$owned\)\{exit 3\}[\s\S]*exit 0/.test(x)), 'mixed owned/unowned listeners fail closed instead of accepting the first owned PID');
   A.eq(await backgroundOwnsLocalUrl(ownedStatus, 'http://127.0.0.1:5174/', async () => false), false, 'spoofed stdout URL cannot authorize a listener owned by another process');
   A.eq(await backgroundOwnsLocalUrl(Object.assign({}, ownedStatus, { pid: null }), 'http://127.0.0.1:5174/', ownedProbe), false, 'missing background PID fails listener ownership closed');
+
+  let exactPrompts = 0, standingPrompts = 0, externalRuns = 0;
+  const exactAuthority = makeRunAuthority({
+    surface: 'interactive', isTask: true,
+    environment: { supports: { hostileCodeSandbox: false } },
+    confirm: async () => { exactPrompts++; return 'once'; }
+  });
+  const unknownRegistry = makeRegistry();
+  unknownRegistry.register({
+    name: 'mcp__custom__maybe_read', capability: 'mcp:custom', impact: 'external-unknown',
+    scope: 'read', requiresConsent: true, schema: { type: 'object', properties: {} },
+    run: async () => { externalRuns++; return { content: 'ok' }; }
+  });
+  const unknownResult = await unknownRegistry.dispatch(
+    { id: 'u1', name: 'mcp__custom__maybe_read', args: {} },
+    { authorize: exactAuthority.authorize, consent: async () => { standingPrompts++; return { allow: true }; } }
+  );
+  A.eq(unknownResult.ok, true, 'unknown connector effect runs only after exact live confirmation');
+  A.eq(exactPrompts, 1, 'unknown connector receives one exact per-call prompt');
+  A.eq(standingPrompts, 0, 'exact one-shot authority does not fall through to a weaker cached-consent prompt');
+  A.eq(externalRuns, 1, 'confirmed connector call executes exactly once');
+  const deniedUnknown = await unknownRegistry.dispatch(
+    { id: 'u2', name: 'mcp__custom__maybe_read', args: {} },
+    { authorize: autonomousAuthority.authorize, consent: async () => ({ allow: true }) }
+  );
+  A.eq(deniedUnknown.summary, 'user-control-denied', 'autonomous connector calls are denied despite consent state');
+  A.eq(externalRuns, 1, 'denied autonomous connector never executes');
+
   let driverCalls = 0, openerCalls = 0;
   const registry = makeRegistry();
   makeComputerTools({ allowPhysicalInput: true, driver: { perform: async () => { driverCalls++; return {}; } } }).register(registry);

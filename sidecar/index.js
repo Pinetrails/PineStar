@@ -1067,29 +1067,7 @@ const threadsStore = makeThreadsStore({
   onCorrupt: (key, file) => quarantineCorrupt(file, 'threads'),
   warn: (...args) => console.warn.apply(console, args)
 });
-// W7 — a shell opener that hands a REAL absolute PATH to the OS default app (Start-Process / open / xdg-open).
-// REUSES desktop.js's makeShellOpener (the same launcher desktop.open uses) rather than rolling a new spawn: for a
-// file we deliberately DON'T classify/assert-url — the path is already jail-proven by resolveInside before we call
-// this — and a non-'app' kind maps to exactly "open this path with the default handler" on win32/darwin/linux.
-// Injectable for tests via the workshopOpener seam (a test stub records the argv without launching anything).
-// No production OS opener exists in the sidecar. The legacy variable is retained only for
-// the dev response-shape seam below; native launch belongs to trusted Tauri click commands.
-let workshopOpener = null;
-function setWorkshopOpener(fn) { workshopOpener = fn; }   // test seam
-// CI seam (never in a shipping build): STARNET_TEST_OPEN_LOG points at a file the opener APPENDS the target path to
-// instead of launching anything — so the e2e can assert /api/workshop/open invoked the opener with the jailed ABS
-// path without spawning a real app on the runner. This proves the wiring (jail-proven abs path reaches the launcher).
-// HARD GATE: the fake opener installs ONLY in dev/test mode (DEV_MODE, i.e. SKYNET_DEV/STARNET_DEV — a flag the
-// packaged desktop build NEVER sets; dev/seed.js:19). Env-var-alone is NOT enough: without this gate, a production
-// process that happened to carry STARNET_TEST_OPEN_LOG would make /api/workshop/open report `launched` while opening
-// nothing (a truthful-telemetry violation — the app asserting state the harness didn't perform). If the var is set
-// outside dev mode we keep the REAL opener and warn, so the misconfiguration is visible rather than silently faked.
-(function installTestOpenLog() {
-  const logFile = String(ENV('TEST_OPEN_LOG') || '').trim();
-  if (!logFile) return;
-  if (!DEV_MODE) { try { console.warn('[workshop] STARNET_TEST_OPEN_LOG is set but DEV_MODE is off — ignoring the test open-seam; using the real shell opener.'); } catch (_) {} return; }
-  workshopOpener = ({ kind, target }) => { try { fs.appendFileSync(logFile, JSON.stringify({ kind, target }) + '\n'); } catch (_) {} return Promise.resolve('launched'); };
-})();
+// No sidecar workshop opener exists: API possession is never a user gesture.
 // honest run-liveness for the workshop zombie-claim reclaim: a runId is live iff its controller is still in the
 // `runs` map AND not aborted. A crashed shift leaves a buildingRunId whose controller is gone -> not live -> reaped.
 // (`runs` is declared below at module scope; this closure reads it lazily so hoisting is a non-issue.)
@@ -5730,12 +5708,8 @@ async function handleWorkshopDecide(req, res) {
   // kept = decided: retire the backlog item so /pending never re-lists (and the card never resurrects) a kept
   // build. The run dir stays in the workshop as an archive; unlike discard, the title is NOT denylisted.
   if (item) { try { await workshopStore.complete(agentId, item.id); } catch (_) {} }
-  // W7 (c): optional one-click "Open folder" — shell-open Explorer at the destination so the kept files are
-  // immediately in hand. Interactive by definition (the Commander clicked Keep). Best-effort: a failed open never
-  // undoes a successful copy, so `opened` reports honestly whether Explorer actually launched.
-  // Opening Explorer/Finder is deliberately NOT an HTTP side effect. The trusted compiled
-  // desktop UI may invoke starnet_open_user_directory after this copy succeeds; an API token
-  // or agent child process is never a user gesture.
+  // Keep never launches Explorer/Finder. A loopback API token or renderer IPC
+  // message is not proof of a fresh human gesture; return the path for manual use.
   const opened = false;
   // NS-3 APPROVE → SHIP + LEARN: keeping (copying the artifact OUT of the jail to the Commander's folder) IS the
   // ship. For a night-shift-built deliverable it also UP-weights its archetype so the station proposes that kind
@@ -5800,36 +5774,11 @@ async function serveWorkshopRun(req, res) {
   stream.pipe(res);
 }
 
-// POST /api/workshop/open { agentId, runId, path } — shell-open the REAL jailed file with the OS default app. This is
-// an INTERACTIVE user-click action by definition (a route, not a tool — so its surface is inherently interactive),
-// validated as strictly as decide: agentId regex + resolveInside jail proof. The path is proven inside
-// workshop/<runId>/ before it ever reaches the opener, so no traversal can escape the agent's workspace.
+// POST /api/workshop/open is an inert compatibility response. API possession is
+// not proof of a fresh human gesture and can never launch a desktop application.
 async function handleWorkshopOpen(req, res) {
   const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
-  // Native app launch moved to starnet_open_workshop_file in the trusted Tauri shell. A
-  // token-authenticated HTTP request is not proof of a Commander click, so this legacy route
-  // is permanently inert in desktop, browser, autonomous, and test surfaces.
-  return json(403, { error: 'opening a desktop app requires a direct Commander click in the installed desktop shell' });
-  /* legacy validation retained temporarily for response-shape archaeology; unreachable */
-  let body; try { body = JSON.parse(await readBody(req, 1 << 16)) || {}; } catch (e) { return json(400, { error: 'bad request' }); }
-  const agentId = String(body.agentId || '');
-  const runId = String(body.runId || '');
-  const relPath = String(body.path || '');
-  if (!/^[A-Za-z0-9_-]{1,40}$/.test(agentId)) return json(400, { error: 'choose a valid agent' });
-  if (!/^[A-Za-z0-9_-]{1,80}$/.test(runId)) return json(400, { error: 'bad runId' });
-  if (!relPath) return json(400, { error: 'no file to open' });
-  let abs;
-  try { ({ abs } = await fsJail.resolveInside(agentId, 'workshop/' + runId + '/' + relPath)); }   // throws on escape
-  catch (e) {
-    const msg = (e && e.message) || '';
-    if (/escape|illegal|bad agentId/.test(msg)) return json(403, { error: 'forbidden' });
-    return json(400, { error: 'bad path' });
-  }
-  let st; try { st = await fsp.stat(abs); } catch (_) { return json(404, { error: 'that file is no longer there' }); }
-  if (!st.isFile()) return json(404, { error: 'that is not a file' });
-  try { await workshopOpener({ kind: 'file', target: abs }); }        // Start-Process / open / xdg-open the abs path
-  catch (e) { return json(500, { error: 'could not open that file: ' + ((e && e.message) || e) }); }
-  return json(200, { ok: true, opened: abs });
+  return json(403, { error: 'Open this file manually; StarNet cannot launch desktop applications from a run.' });
 }
 
 // POST /api/workshop/shift { agentId } — force-fire ONE workshop shift NOW (attended test of the unattended path).
@@ -6304,7 +6253,7 @@ async function runOnce(o) {
   // Missing/unknown callers are unattended until proven otherwise. Only the watched /api/run
   // path passes the exact interactive value and a live prompt channel.
   const surface = o.surface === 'interactive' ? 'interactive' : 'autonomous';
-  const userControlAuthority = makeRunAuthority({ surface, isTask, environment: executionEnvironment });
+  const userControlAuthority = makeRunAuthority({ surface, isTask, environment: executionEnvironment, confirm: o.prompt });
   const prompt = o.prompt;
   const pathPrompt = o.pathPrompt;   // NS-5: the live "work in <root>? always/once/no" channel (browser runs only); undefined for headless/autonomous → path-trust hard-denies a new root
   const summon = o.summon;   // the live team.summon round-trip closure (browser runs only); undefined for headless/workers → tool degrades gracefully

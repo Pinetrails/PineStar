@@ -120,6 +120,27 @@ debugging or claiming anything done. Companions: [BRAIN.md](BRAIN.md) · [DECISI
   and refuse to start if the cursor is already confined. Ordinary runs now expose no real-screen or
   physical-input tool; a future attended channel must be separate and host-minted.
 
+- **Cleanup is still interference when it mutates unowned global state.** Calling
+  `ClipCursor(NULL)` at boot, shutdown, or E-STOP can release confinement owned by the user's game,
+  even when intended as recovery from StarNet. Observe global state, reap only processes StarNet can
+  prove it owns, and never “restore” desktop/input/session state without an ownership receipt.
+
+- **A token, renderer IPC call, or tool annotation is not a human gesture.** Same-user children can
+  inherit API/provider secrets; renderer script can invoke native commands; MCP servers can lie with
+  `readOnlyHint`. Strip host credentials from children, keep OS-launch routes inert, classify all custom
+  connectors as unknown, and require an exact non-cacheable live confirmation at the host boundary.
+
+- **Scan the process that will run, not a convenient parent project.** `verify.run` once executed from
+  `environment.getCwd()` while inspecting `workspaceRoot()`, and project-root discovery selected the
+  outermost monorepo marker. A nested package could therefore hide its scripts. Local command safety
+  inspection must use the actual cwd and the nearest project marker before process creation.
+
+- **Same-session arbitrary code defeats denylist guarantees.** Renamed binaries, FFI, dynamic code,
+  or a novel OS API can bypass command-pattern guards. Job Objects help with process lifetime but do not
+  provide a non-input desktop or sufficient security boundary. Unknown code must run under an OS-proven
+  noninteractive worker (restricted token/private desktop, container, or VM) or remain disabled; describe
+  regex and environment pins as defense in depth, never as a literal “never touches the PC” theorem.
+
 - **Never destroy the last copy of a secret without read-back proof of its new home.**
   The 2026-07-07 Telegram-token escape: desktop "keychain migration" stripped the plaintext
   bot token from `channels/secrets.json` while the keychain write was best-effort

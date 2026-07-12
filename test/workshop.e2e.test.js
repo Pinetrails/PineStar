@@ -237,11 +237,11 @@ async function startSse(url) {
     const dirReq2 = await fetch(runBase + '?token=' + encodeURIComponent(token));
     A.ok(dirReq2.status === 404, 'W7: the run dir with no trailing file also 404s');
 
-    // (5) POST /api/workshop/open — happy path invokes the opener with the JAILED ABS path (asserted via the CI
-    //     open-seam log), and a TRAVERSAL path is refused before any open.
+    // (5) POST /api/workshop/open is inert for every payload; token possession
+    //     never reaches an OS opener and does not stand in for a human gesture.
     const openOk = await fetch(B + '/api/workshop/open', { method: 'POST', headers, body: JSON.stringify({ agentId: 'builder', runId: webRun, path: 'README.md' }) });
     const openOkJ = await openOk.json();
-    A.ok(openOk.status === 403 && /direct Commander click/.test(openOkJ.error || ''), 'W7: API-token-only open is refused');
+    A.ok(openOk.status === 403 && /Open this file manually/.test(openOkJ.error || ''), 'W7: API-token-only open is refused');
     const readOpenLog = () => (fs.existsSync(openLog) ? fs.readFileSync(openLog, 'utf8') : '').split('\n').filter(Boolean).map(l => { try { return JSON.parse(l); } catch (_) { return {}; } });
     const openedTargets = () => readOpenLog().map(e => String(e.target || ''));
     A.eq(openedTargets().length, 0, 'W7: HTTP open never invokes an OS opener');
@@ -251,7 +251,7 @@ async function startSse(url) {
     const openMissing = await fetch(B + '/api/workshop/open', { method: 'POST', headers, body: JSON.stringify({ agentId: 'builder', runId: webRun, path: 'does-not-exist.txt' }) });
     A.eq(openMissing.status, 403, 'W7: missing paths cannot reach a native opener');
 
-    // (6) decide keep { open:true } shell-opens the DEST FOLDER after copy (CI seam records the folder open).
+    // (6) decide keep { open:true } copies only and never opens the destination.
     const keepOpenDir = path.join(os.tmpdir(), 'starnet-keepopen-' + Date.now());
     const koRes = await fetch(B + '/api/workshop/decide', { method: 'POST', headers, body: JSON.stringify({ agentId: 'builder', runId: webRun, decision: 'keep', destPath: keepOpenDir, open: true }) });
     const koJ = await koRes.json();

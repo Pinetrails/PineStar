@@ -36,8 +36,8 @@ function impactOfTool(tool) {
   if (/^spotify_(?:play|pause|next|previous|queue)$/.test(name) || cap === 'jukebox') return IMPACTS.MEDIA_CONTROL;
   if (SAFE_BUILTIN_CAPS.has(cap)) return IMPACTS.NONE;
   if (cap === 'web' && !/^browser\./.test(name)) return IMPACTS.EXTERNAL_SERVICE;
-  // Dynamic/unknown capabilities fail closed. MCP translation supplies external-service
-  // explicitly for remote HTTP servers and external-unknown for local stdio processes.
+  // Dynamic/unknown capabilities fail closed. MCP translation classifies every custom
+  // connector as external-unknown regardless of transport or self-declared annotations.
   return IMPACTS.EXTERNAL_UNKNOWN;
 }
 
@@ -46,11 +46,30 @@ function makeRunAuthority(opts) {
   const surface = opts.surface === 'interactive' ? 'interactive' : 'autonomous';
   const isTask = !!opts.isTask;
   const environment = opts.environment || null;
+  const confirm = typeof opts.confirm === 'function' ? opts.confirm : null;
   const isolated = !!(environment && environment.supports && (environment.supports.userControlIsolation === true || environment.supports.hostileCodeSandbox === true));
+  function project(tool) {
+    const impact = impactOfTool(tool);
+    if (impact === IMPACTS.PHYSICAL_INPUT || impact === IMPACTS.VISIBLE_DESKTOP) return false;
+    if (impact === IMPACTS.EXTERNAL_UNKNOWN) return surface === 'interactive' && !!confirm;
+    if (surface !== 'interactive' && (impact === IMPACTS.WORKSPACE_PROCESS || impact === IMPACTS.MEDIA_CONTROL)) return false;
+    return true;
+  }
   function authorize(call, tool) {
     const impact = impactOfTool(tool);
-    if (impact === IMPACTS.PHYSICAL_INPUT || impact === IMPACTS.VISIBLE_DESKTOP || impact === IMPACTS.EXTERNAL_UNKNOWN) {
+    if (impact === IMPACTS.PHYSICAL_INPUT || impact === IMPACTS.VISIBLE_DESKTOP) {
       return { ok: false, impact, reason: impact + ' is unavailable to ordinary StarNet runs; no native one-shot user lease exists' };
+    }
+    if (impact === IMPACTS.EXTERNAL_UNKNOWN) {
+      if (surface !== 'interactive' || !confirm) return { ok: false, impact, reason: 'unknown external effects require a watched, exact per-call confirmation' };
+      // Deliberately bypass the standing-grant broker: any affirmative UI choice authorizes
+      // this call ONCE only. "Always", Full Access, and cached grants are not recorded here.
+      return Promise.resolve(confirm(call, tool)).then(decision => {
+        const allow = /^(?:once|session|always|full)$/i.test(String(decision || ''));
+        return allow
+          ? { ok: true, impact, surface, isTask, isolated, oneShot: true }
+          : { ok: false, impact, reason: 'exact external-effect confirmation was denied' };
+      }, () => ({ ok: false, impact, reason: 'exact external-effect confirmation failed' }));
     }
     // Full Access, cached grants, and task text never turn an unattended run into authority
     // over a host process or the user's active media session. This gate runs before consent.
@@ -59,7 +78,7 @@ function makeRunAuthority(opts) {
     }
     return { ok: true, impact, surface, isTask, isolated };
   }
-  return Object.freeze({ mode: 'preserve-user-control', surface, isTask, isolated, authorize });
+  return Object.freeze({ mode: 'preserve-user-control', surface, isTask, isolated, project, authorize });
 }
 
 function enforceRunAuthority(resolved, registry, authority) {
@@ -67,9 +86,9 @@ function enforceRunAuthority(resolved, registry, authority) {
   const allowed = new Set();
   for (const name of (resolved.tools || [])) {
     const tool = registry && typeof registry.get === 'function' ? registry.get(name) : null;
-    const verdict = tool && authority && typeof authority.authorize === 'function'
-      ? authority.authorize({ name }, tool) : { ok: false };
-    if (verdict && verdict.ok === true) allowed.add(name);
+    const projected = tool && authority && typeof authority.project === 'function'
+      ? authority.project(tool) : false;
+    if (projected === true) allowed.add(name);
   }
   const approvalRules = {};
   const networkCaps = {};
