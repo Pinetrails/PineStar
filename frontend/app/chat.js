@@ -4857,9 +4857,17 @@ const Chat = (() => {
       // between turns); otherwise he stands up and goes back to idle. Only steer the world if THIS finished
       // stream is the one on screen — a background stream finishing must not move the view.
       const stayFacing = typeof Voice !== 'undefined' && Voice.inVoiceMode && Voice.inVoiceMode();
-      // a summoned crew body extinguishes the moment ITS run ends — even if it finished off-screen (a
-      // background crew run must stop "working").
-      if ((ws.agentId || 'agent') !== 'agent') { if (World.setActivityFor) World.setActivityFor(ws.agentId, 'idle'); }
+      // OVERLAP GUARD (the black-screen fix): this stream's run is over, but the SAME agent may still be
+      // working another live run (a scheduled routine, a channel run, another workstream). Extinguishing the
+      // pose then darkens the workstation screens of an agent that is provably still working. dropRun retires
+      // THIS run from World's refcount (idempotent — the bus run.end usually already did; an aborted stream's
+      // run.end was LOST so this is its cleanup) and the pose is only released when NO run remains live.
+      const othersLive = (World.dropRun && World.agentRunsLive)
+        ? (World.dropRun(ws.agentId || 'agent', thisRunId), World.agentRunsLive(ws.agentId || 'agent') > 0) : false;
+      // a summoned crew body extinguishes the moment its LAST live run ends — even if it finished off-screen
+      // (a background crew run must stop "working").
+      if ((ws.agentId || 'agent') !== 'agent') { if (!othersLive && World.setActivityFor) World.setActivityFor(ws.agentId, 'idle'); }
+      else if (othersLive) { /* the hero is still mid-run elsewhere — leave the working pose alone (work wins) */ }
       else {
         // HERO: split the two concerns the old single gate conflated. (1) POSE — a hero run that finished in a
         // BACKGROUND workstream must ALSO stop "working" (the tick tears it out of the desk pose the instant
