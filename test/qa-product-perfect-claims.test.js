@@ -4,6 +4,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const { execFileSync } = require('node:child_process');
 const A = require('./_assert.js');
 
 (async () => {
@@ -28,16 +29,23 @@ const A = require('./_assert.js');
   A.eq(new Set(ledger.claims.map(row => row.id)).size, 37, 'claim IDs are unique');
   A.ok(inspected.terminal.reasons.some(reason => /claim/i.test(reason)), 'terminal explains open claim work');
   A.ok(inspected.terminal.reasons.some(reason => /wave verdict/i.test(reason)), 'terminal explains open grep-verdict work');
+  A.ok(/^[0-9a-f]{40}$/.test(inspected.candidateCommit), 'runtime authority returns the exact candidate commit');
+  A.eq(inspected.candidateCommit, execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repoRoot, encoding: 'utf8' }).trim(), 'default inspection derives the current Git HEAD');
+  A.eq(inspected.sourceCommit, ledger.releaseSurface.sourceCommit, 'runtime authority returns the accepted manifest source commit');
+  A.ok(/^[0-9a-f]{64}$/.test(inspected.manifestDigest), 'runtime authority returns a deterministic manifest digest');
+  A.ok(/^[0-9a-f]{64}$/.test(inspected.surfaceDigest), 'runtime authority returns a deterministic surface digest');
+  A.ok(inspected.candidateCommit !== inspected.sourceCommit, 'an unrelated descendant commit is allowed when every locked byte and locator stays exact');
 
   const surface = discoverReleaseSurface(repoRoot);
-  A.ok(surface.length > 140, 'release surface includes all tracked frontend JS/HTML plus marketed docs');
+  A.ok(surface.length > 150, 'release surface includes all tracked frontend JS/HTML/CSS plus marketed docs');
   A.ok(surface.includes('frontend/index.html'), 'frontend HTML is source-locked');
+  A.ok(surface.includes('frontend/css/app.css'), 'frontend CSS generated copy is source-locked');
   A.ok(surface.includes('README.md') && surface.includes('docs/DOWNLOAD_PAGE.md'), 'marketed docs are source-locked');
   A.eq(surface, ledger.releaseSurface.files.map(row => row.path), 'locked release path-set is complete and sorted');
-  const refreshed = buildReleaseSurface(repoRoot);
+  const refreshed = buildReleaseSurface(repoRoot, { candidateCommit: ledger.releaseSurface.sourceCommit });
   A.eq(refreshed.files, ledger.releaseSurface.files, 'read-only refresh helper reproduces the exact tracked file lock');
   A.eq(refreshed.pathSetSha256, ledger.releaseSurface.pathSetSha256, 'read-only refresh helper reproduces the path-set hash');
-  A.ok(/^[0-9a-f]{40}$/.test(refreshed.sourceCommit), 'read-only refresh helper stamps the exact source commit');
+  A.eq(refreshed.sourceCommit, ledger.releaseSurface.sourceCommit, 'read-only refresh helper stamps the accepted source snapshot');
 
   const duplicate = clone(ledger);
   duplicate.claims[1].id = duplicate.claims[0].id;
@@ -91,6 +99,41 @@ const A = require('./_assert.js');
   const experimental = fakeExperimentalLabel.claims.find(row => row.disposition === 'EXPERIMENTAL');
   experimental.experimentalLabel.visible = true;
   A.eq(validateClaimsLedger(fakeExperimentalLabel, { repoRoot }).ok, false, 'experimental status cannot be made terminal-visible by flipping a boolean over an absence check');
+
+  const marketingExperimentalLabel = clone(ledger);
+  const marketingExperimental = marketingExperimentalLabel.claims.find(row => row.disposition === 'EXPERIMENTAL');
+  marketingExperimental.experimentalLabel = {
+    visible: true,
+    check: { kind: 'contains', path: 'README.md', needle: 'StarNet' }
+  };
+  A.eq(validateClaimsLedger(marketingExperimentalLabel, { repoRoot }).ok, false, 'marketing copy cannot impersonate a visible point-of-use experimental label');
+
+  const nonAncestor = inspectClaimsAuthority({ repoRoot, ledger, isAncestor: () => false });
+  A.eq(nonAncestor.planning.ok, false, 'a manifest source outside candidate ancestry is rejected');
+  A.ok(nonAncestor.planning.reasons.some(reason => /not an ancestor/.test(reason)), 'ancestry rejection is explicit');
+
+  const injectedMismatch = inspectClaimsAuthority({
+    repoRoot,
+    ledger,
+    candidateCommit: 'f'.repeat(40)
+  });
+  A.eq(injectedMismatch.planning.ok, false, 'an injected candidate that cannot resolve exactly is rejected');
+  A.ok(injectedMismatch.planning.reasons.some(reason => /injected candidate mismatch/.test(reason)), 'injected candidate rejection is explicit');
+
+  const terminalRefuted = clone(ledger);
+  for (const claim of terminalRefuted.claims) {
+    claim.verdict = 'SHIPPED';
+    claim.disposition = 'PROVEN';
+    claim.liveProof = claim.liveProofRequired ? 'PROVEN' : 'NOT_REQUIRED';
+  }
+  for (const verdict of terminalRefuted.waveVerdicts) {
+    verdict.verdict = 'SHIPPED';
+    verdict.disposition = 'PROVEN';
+  }
+  terminalRefuted.claims[0].verdict = 'REFUTED';
+  const refutedInspection = inspectClaimsAuthority({ repoRoot, ledger: terminalRefuted });
+  A.eq(refutedInspection.planning.ok, true, 'a truthful refuted verdict can remain planning-valid');
+  A.eq(refutedInspection.terminal.ok, false, 'REFUTED/PROVEN can never satisfy terminal product authority');
 
   const noRefs = clone(ledger);
   noRefs.claims[0].refsChecked = ['trunk@' + 'a'.repeat(40)];

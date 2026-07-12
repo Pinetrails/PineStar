@@ -112,7 +112,7 @@ function text(value) { return value == null ? '' : String(value); }
 function sortedUnique(values) { return [...new Set(values.map(text).filter(Boolean))].sort(); }
 function safeRelative(relative) {
   const normalized = text(relative).replace(/\\/g, '/');
-  if (!normalized || normalized.startsWith('/') || /^[A-Za-z]:/.test(normalized) || normalized.split('/').includes('..')) {
+  if (!normalized || /[\0\r\n]/.test(normalized) || normalized.startsWith('/') || /^[A-Za-z]:/.test(normalized) || normalized.split('/').includes('..')) {
     throw new Error('unsafe repository-relative path: ' + text(relative));
   }
   return normalized;
@@ -133,7 +133,7 @@ export function discoverReleaseSurface(repoRoot = REPO_ROOT, inputPaths = null) 
   const tracked = inputPaths ? sortedUnique(inputPaths) : trackedPaths(repoRoot);
   const marketed = new Set(MARKETED_DOCS);
   const surface = tracked.filter(relative =>
-    (relative.startsWith('frontend/') && /\.(?:html|js)$/i.test(relative)) || marketed.has(relative)
+    (relative.startsWith('frontend/') && /\.(?:css|html|js)$/i.test(relative)) || marketed.has(relative)
   );
   for (const relative of MARKETED_DOCS) {
     if (!tracked.includes(relative)) throw new Error('marketed release document is not tracked: ' + relative);
@@ -141,18 +141,127 @@ export function discoverReleaseSurface(repoRoot = REPO_ROOT, inputPaths = null) 
   return sortedUnique(surface);
 }
 
-export function buildReleaseSurface(repoRoot = REPO_ROOT) {
-  const files = discoverReleaseSurface(repoRoot).map(relative => {
-    const bytes = defaultRead(repoRoot, relative);
+function git(repoRoot, args, options = {}) {
+  const result = spawnSync('git', args, {
+    cwd: repoRoot,
+    encoding: options.encoding === 'buffer' ? null : (options.encoding || 'utf8'),
+    input: options.input,
+    windowsHide: true,
+    maxBuffer: 64 * 1024 * 1024
+  });
+  if (result.status !== 0 || result.error) {
+    const stderr = Buffer.isBuffer(result.stderr)
+      ? result.stderr.toString('utf8').trim()
+      : text(result.stderr).trim();
+    throw new Error(result.error ? result.error.message : (stderr || 'git command failed'));
+  }
+  return result.stdout;
+}
+
+const RESOLVED_COMMITS = new Map();
+
+export function resolveCandidateCommit(repoRoot = REPO_ROOT, candidate = 'HEAD') {
+  const requested = text(candidate || 'HEAD').trim();
+  const cacheKey = path.resolve(repoRoot) + '\0' + requested;
+  const exactRequested = /^[0-9a-f]{40}$/i.test(requested);
+  if (exactRequested && RESOLVED_COMMITS.has(cacheKey)) return RESOLVED_COMMITS.get(cacheKey);
+  const resolved = text(git(repoRoot, ['rev-parse', '--verify', requested + '^{commit}'])).trim().toLowerCase();
+  if (!/^[0-9a-f]{40}$/.test(resolved)) throw new Error('candidate did not resolve to an exact commit');
+  if (exactRequested && requested.toLowerCase() !== resolved) {
+    throw new Error('injected candidate mismatch: requested object is not the resolved commit');
+  }
+  if (exactRequested) RESOLVED_COMMITS.set(cacheKey, resolved);
+  RESOLVED_COMMITS.set(path.resolve(repoRoot) + '\0' + resolved, resolved);
+  return resolved;
+}
+
+const TRACKED_AT_COMMIT = new Map();
+const BLOB_AT_COMMIT = new Map();
+
+export function trackedPathsAtCommit(repoRoot = REPO_ROOT, candidateCommit = 'HEAD') {
+  const commit = resolveCandidateCommit(repoRoot, candidateCommit);
+  const key = path.resolve(repoRoot) + '\0' + commit;
+  if (!TRACKED_AT_COMMIT.has(key)) {
+    const output = git(repoRoot, ['ls-tree', '-r', '-z', '--name-only', commit], { encoding: 'buffer' });
+    TRACKED_AT_COMMIT.set(key, sortedUnique(Buffer.from(output || '').toString('utf8').split('\0')));
+  }
+  return [...TRACKED_AT_COMMIT.get(key)];
+}
+
+function readAtCommit(repoRoot, candidateCommit, relative) {
+  const commit = resolveCandidateCommit(repoRoot, candidateCommit);
+  const safe = safeRelative(relative);
+  const key = path.resolve(repoRoot) + '\0' + commit + '\0' + safe;
+  if (!BLOB_AT_COMMIT.has(key)) preloadAtCommit(repoRoot, commit, [safe]);
+  return Buffer.from(BLOB_AT_COMMIT.get(key));
+}
+
+function preloadAtCommit(repoRoot, candidateCommit, relativePaths) {
+  const commit = resolveCandidateCommit(repoRoot, candidateCommit);
+  const root = path.resolve(repoRoot);
+  const missing = sortedUnique(relativePaths).map(safeRelative).filter(relative => !BLOB_AT_COMMIT.has(root + '\0' + commit + '\0' + relative));
+  if (!missing.length) return;
+  const input = missing.map(relative => commit + ':' + relative).join('\n') + '\n';
+  const output = Buffer.from(git(repoRoot, ['cat-file', '--batch'], { encoding: 'buffer', input }));
+  let offset = 0;
+  for (const relative of missing) {
+    const lineEnd = output.indexOf(0x0a, offset);
+    if (lineEnd < 0) throw new Error('git cat-file batch ended before ' + relative);
+    const header = output.subarray(offset, lineEnd).toString('utf8');
+    const match = /^([0-9a-f]{40}) blob ([0-9]+)$/.exec(header);
+    if (!match) throw new Error('git cat-file could not read ' + relative + ': ' + header);
+    const size = Number(match[2]);
+    const start = lineEnd + 1;
+    const end = start + size;
+    if (end >= output.length || output[end] !== 0x0a) throw new Error('git cat-file returned truncated bytes for ' + relative);
+    BLOB_AT_COMMIT.set(root + '\0' + commit + '\0' + relative, Buffer.from(output.subarray(start, end)));
+    offset = end + 1;
+  }
+}
+
+function isAncestor(repoRoot, sourceCommit, candidateCommit) {
+  const result = spawnSync('git', ['merge-base', '--is-ancestor', sourceCommit, candidateCommit], {
+    cwd: repoRoot, encoding: 'utf8', windowsHide: true
+  });
+  if (result.error) throw result.error;
+  if (result.status === 0) return true;
+  if (result.status === 1) return false;
+  throw new Error(text(result.stderr).trim() || 'git merge-base failed');
+}
+
+function canonicalJson(value) {
+  if (Array.isArray(value)) return '[' + value.map(canonicalJson).join(',') + ']';
+  if (value && typeof value === 'object') {
+    return '{' + Object.keys(value).sort().map(key => JSON.stringify(key) + ':' + canonicalJson(value[key])).join(',') + '}';
+  }
+  return JSON.stringify(value);
+}
+
+function authorityDigests(ledger) {
+  const surface = ledger && ledger.releaseSurface;
+  return {
+    manifestDigest: sha256(canonicalJson(ledger)),
+    surfaceDigest: sha256(canonicalJson(surface ? {
+      algorithm: surface.algorithm,
+      pathSetSha256: surface.pathSetSha256,
+      files: surface.files
+    } : null))
+  };
+}
+
+export function buildReleaseSurface(repoRoot = REPO_ROOT, options = {}) {
+  const requested = typeof options === 'string' ? options : options.candidateCommit;
+  const sourceCommit = resolveCandidateCommit(repoRoot, requested || 'HEAD');
+  const tracked = trackedPathsAtCommit(repoRoot, sourceCommit);
+  const releasePaths = discoverReleaseSurface(repoRoot, tracked);
+  preloadAtCommit(repoRoot, sourceCommit, releasePaths);
+  const files = releasePaths.map(relative => {
+    const bytes = readAtCommit(repoRoot, sourceCommit, relative);
     return { path: relative, bytes: bytes.length, sha256: sha256(bytes) };
   });
   return {
     algorithm: 'sha256',
-    sourceCommit: (() => {
-      const result = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: repoRoot, encoding: 'utf8', windowsHide: true });
-      if (result.status !== 0 || !/^[0-9a-f]{40}$/i.test(text(result.stdout).trim())) throw new Error('could not resolve source commit');
-      return text(result.stdout).trim().toLowerCase();
-    })(),
+    sourceCommit,
     pathSetSha256: sha256(files.map(row => row.path).join('\n') + '\n'),
     files
   };
@@ -220,7 +329,7 @@ export function validateClaimsLedger(ledger, _options = {}) {
   if (!surface || typeof surface !== 'object' || Array.isArray(surface)) errors.push('releaseSurface is required');
   else {
     if (surface.algorithm !== 'sha256') errors.push('releaseSurface.algorithm must be sha256');
-    if (!/^[0-9a-f]{40}$/i.test(text(surface.sourceCommit))) errors.push('releaseSurface.sourceCommit must be an exact refresh commit');
+    if (!/^[0-9a-f]{40}$/i.test(text(surface.sourceCommit))) errors.push('releaseSurface.sourceCommit must be an exact accepted source snapshot commit');
     if (!/^[0-9a-f]{64}$/i.test(text(surface.pathSetSha256))) errors.push('releaseSurface.pathSetSha256 is required');
     if (!Array.isArray(surface.files) || surface.files.length < 1) errors.push('releaseSurface.files are required');
     else {
@@ -268,6 +377,10 @@ export function validateClaimsLedger(ledger, _options = {}) {
         else {
           validateCheck(exp.check, label + '.experimentalLabel.check', errors);
           if (exp.visible === true && exp.check && exp.check.kind !== 'contains') errors.push(label + '.experimentalLabel must use a present point-of-use check when visible');
+          if (exp.visible === true && exp.check && (
+            typeof exp.check.path !== 'string' ||
+            !/^frontend\/.+\.(?:css|html|js)$/i.test(exp.check.path)
+          )) errors.push(label + '.experimentalLabel visible check must target frontend HTML, JS, or CSS at point of use');
           if (exp.visible === false && exp.check && exp.check.kind !== 'absent') errors.push(label + '.experimentalLabel must use an absence check while not visible');
         }
       }
@@ -311,14 +424,38 @@ export function validateClaimsLedger(ledger, _options = {}) {
   return { ok: errors.length === 0, errors };
 }
 
-function verifyCheck(check, readFile, label, errors, allTracked) {
-  let targets = [];
-  if (check.path) targets = [safeRelative(check.path)];
-  else {
+function checkTargets(check, allTracked) {
+  if (check.path) return [safeRelative(check.path)];
+  if (Array.isArray(check.paths)) {
     const prefixes = check.paths.map(item => safeRelative(item));
-    targets = (allTracked || []).filter(relative => prefixes.some(prefix => relative === prefix || relative.startsWith(prefix.endsWith('/') ? prefix : prefix + '/')));
-    if (!targets.length) { errors.push(label + ' scope matched no tracked files'); return; }
+    return (allTracked || []).filter(relative => prefixes.some(prefix => relative === prefix || relative.startsWith(prefix.endsWith('/') ? prefix : prefix + '/')));
   }
+  return [];
+}
+
+function verificationPaths(ledger, allTracked) {
+  const paths = [];
+  const addChecks = rows => {
+    for (const row of rows || []) {
+      for (const check of row.authorityChecks || []) paths.push(...checkTargets(check, allTracked));
+    }
+  };
+  for (const row of (ledger.releaseSurface && ledger.releaseSurface.files) || []) paths.push(row.path);
+  for (const claim of ledger.claims || []) {
+    for (const locator of claim.surfaceLocators || []) paths.push(locator.path);
+    if (claim.disposition === 'EXPERIMENTAL' && claim.experimentalLabel && claim.experimentalLabel.check) {
+      paths.push(...checkTargets(claim.experimentalLabel.check, allTracked));
+    }
+  }
+  addChecks(ledger.claims);
+  addChecks(ledger.waveVerdicts);
+  addChecks(ledger.doNotRebuild);
+  return sortedUnique(paths);
+}
+
+function verifyCheck(check, readFile, label, errors, allTracked) {
+  const targets = checkTargets(check, allTracked);
+  if (!targets.length) { errors.push(label + ' scope matched no tracked files'); return; }
   for (const target of targets) {
     let contents;
     try { contents = Buffer.from(readFile(target)).toString('utf8'); }
@@ -335,8 +472,13 @@ function verifyCheck(check, readFile, label, errors, allTracked) {
 }
 
 function terminalEligible(row) {
-  if (row.disposition === 'EXPERIMENTAL') return row.verdict === 'EXPERIMENTAL' && row.experimentalLabel && row.experimentalLabel.visible === true;
-  return row.disposition === 'PROVEN' && (row.verdict === 'SHIPPED' || row.verdict === 'REFUTED');
+  if (row.disposition === 'EXPERIMENTAL') {
+    const label = row.experimentalLabel;
+    return row.verdict === 'EXPERIMENTAL' && label && label.visible === true &&
+      label.check && label.check.kind === 'contains' &&
+      /^frontend\/.+\.(?:css|html|js)$/i.test(text(label.check.path));
+  }
+  return row.disposition === 'PROVEN' && row.verdict === 'SHIPPED';
 }
 
 export function inspectClaimsAuthority(options = {}) {
@@ -349,19 +491,54 @@ export function inspectClaimsAuthority(options = {}) {
       return {
         planning: { ok: false, status: 'BLOCKED', reasons: ['claims ledger unreadable: ' + error.message] },
         terminal: { ok: false, status: 'BLOCKED', reasons: ['claims planning authority is blocked'] },
+        candidateCommit: null,
+        sourceCommit: null,
+        manifestDigest: null,
+        surfaceDigest: null,
         summary: { claims: 0, releaseSurfaceFiles: 0, waveVerdicts: 0 }
       };
     }
   }
   const schema = validateClaimsLedger(ledger, { repoRoot });
   planningReasons.push(...schema.errors);
-  const readFile = options.readFile || (relative => defaultRead(repoRoot, relative));
+  const sourceCommit = ledger && ledger.releaseSurface ? text(ledger.releaseSurface.sourceCommit).toLowerCase() : null;
+  const injectedCandidate = options.candidateCommit || options.currentCommit;
+  if (options.candidateCommit && options.currentCommit && text(options.candidateCommit).toLowerCase() !== text(options.currentCommit).toLowerCase()) {
+    planningReasons.push('injected candidate mismatch: candidateCommit and currentCommit disagree');
+  }
+  let candidateCommit = null;
+  try { candidateCommit = resolveCandidateCommit(repoRoot, injectedCandidate || 'HEAD'); }
+  catch (error) { planningReasons.push((injectedCandidate ? 'injected candidate mismatch: ' : 'candidate commit unreadable: ') + error.message); }
+  let resolvedSource = null;
+  if (sourceCommit && /^[0-9a-f]{40}$/.test(sourceCommit)) {
+    try { resolvedSource = resolveCandidateCommit(repoRoot, sourceCommit); }
+    catch (error) { planningReasons.push('release surface source commit unreadable: ' + error.message); }
+  }
+  if (candidateCommit && resolvedSource) {
+    try {
+      const ancestor = options.isAncestor
+        ? options.isAncestor(resolvedSource, candidateCommit)
+        : isAncestor(repoRoot, resolvedSource, candidateCommit);
+      if (!ancestor) planningReasons.push('release surface source commit is not an ancestor of the candidate');
+    } catch (error) { planningReasons.push('release surface ancestry unreadable: ' + error.message); }
+  }
+  const readFile = options.readFile || (candidateCommit
+    ? (relative => readAtCommit(repoRoot, candidateCommit, relative))
+    : (relative => defaultRead(repoRoot, relative)));
   let allTracked = [];
-  try { allTracked = options.trackedPaths ? sortedUnique(options.trackedPaths) : trackedPaths(repoRoot); }
+  try {
+    allTracked = options.trackedPaths
+      ? sortedUnique(options.trackedPaths)
+      : (candidateCommit ? trackedPathsAtCommit(repoRoot, candidateCommit) : trackedPaths(repoRoot));
+  }
   catch (error) { planningReasons.push('tracked source unreadable: ' + error.message); }
   let surfacePaths = [];
-  try { surfacePaths = options.surfacePaths ? sortedUnique(options.surfacePaths) : discoverReleaseSurface(repoRoot); }
+  try { surfacePaths = options.surfacePaths ? sortedUnique(options.surfacePaths) : discoverReleaseSurface(repoRoot, allTracked); }
   catch (error) { planningReasons.push('release surface unreadable: ' + error.message); }
+  if (!options.readFile && candidateCommit && schema.ok) {
+    try { preloadAtCommit(repoRoot, candidateCommit, verificationPaths(ledger, allTracked)); }
+    catch (error) { planningReasons.push('candidate source unreadable: ' + error.message); }
+  }
 
   if (schema.ok && ledger.releaseSurface) {
     const lockedPaths = ledger.releaseSurface.files.map(row => row.path);
@@ -405,9 +582,14 @@ export function inspectClaimsAuthority(options = {}) {
     }
   }
   const uniqueTerminalReasons = sortedUnique(terminalReasons);
+  const digests = authorityDigests(ledger);
   return {
     planning,
     terminal: { ok: uniqueTerminalReasons.length === 0, status: uniqueTerminalReasons.length ? 'BLOCKED' : 'PASS', reasons: uniqueTerminalReasons },
+    candidateCommit,
+    sourceCommit: resolvedSource || sourceCommit,
+    manifestDigest: digests.manifestDigest,
+    surfaceDigest: digests.surfaceDigest,
     summary: {
       claims: Array.isArray(ledger.claims) ? ledger.claims.length : 0,
       releaseSurfaceFiles: ledger.releaseSurface && Array.isArray(ledger.releaseSurface.files) ? ledger.releaseSurface.files.length : 0,
@@ -435,7 +617,10 @@ if (INVOKED_DIRECTLY) {
   const args = process.argv.slice(2);
   if (args.includes('--refresh-surface')) {
     // Read-only by design: callers review/apply this stdout payload explicitly.
-    console.log(JSON.stringify(buildReleaseSurface(), null, 2));
+    const candidateIndex = args.indexOf('--candidate');
+    if (candidateIndex >= 0 && !args[candidateIndex + 1]) throw new Error('--candidate requires an exact commit');
+    const candidateCommit = candidateIndex >= 0 ? args[candidateIndex + 1] : null;
+    console.log(JSON.stringify(buildReleaseSurface(REPO_ROOT, { candidateCommit }), null, 2));
     process.exit(0);
   }
   const mode = args.includes('--terminal') ? 'terminal' : 'planning';

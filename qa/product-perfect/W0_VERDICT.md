@@ -4,13 +4,13 @@
 
 ## Current machine verdict
 
-- Planning: **PASS** — 37 finite material claim families, 17 W2–W6 grep-verdict rows, 5 protected exceptions, and 151 exact public-surface files.
+- Planning: **PASS** — 37 finite material claim families, 17 W2–W6 grep-verdict rows, 5 protected exceptions, and 162 exact public-surface files.
 - Terminal: **BLOCKED** — open FIX/COMPLETE/NARROW work, point-of-use experimental labels, and required live receipts remain intentionally pending.
 - Reproduce planning: `node scripts/qa/product-perfect/claims.mjs --planning`.
 - Reproduce terminal: `node scripts/qa/product-perfect/claims.mjs --terminal` (exit 2 while blocked).
 - Refresh after an accepted source merge: `node scripts/qa/product-perfect/claims.mjs --refresh-surface` prints a read-only replacement lock to stdout; review and apply it explicitly.
 
-The release-surface path-set hash is `50c7bab0c0d9e9d19fc0715274a1811b1241c8e73e79378e38595dc5bffaf7d2`. The locked scope is every tracked `frontend/**/*.js` and `frontend/**/*.html` file plus README, install, privacy, terms, release notes, and download-page marketing documents. A changed byte, deleted path, or new tracked frontend JS/HTML path blocks planning until re-audited.
+The release-surface path-set hash is `268ce5981e8b6049b7eade5ef9cbf89f1cfba0a7b4eed108d6657ad0b03b3177`. The locked scope is every tracked `frontend/**/*.js`, `frontend/**/*.html`, and `frontend/**/*.css` file plus README, install, privacy, terms, release notes, and download-page marketing documents. A changed byte, deleted path, or new tracked frontend JS/HTML/CSS path blocks planning until re-audited. The manifest records the accepted source snapshot; runtime inspection derives the current candidate commit, proves ancestry, and rechecks every locked byte and locator before emitting deterministic manifest and surface digests.
 
 Verdicts: EXPERIMENTAL 2 · MISSING 1 · PARTIAL 11 · REFUTED 4 · SHIPPED 19. Dispositions: COMPLETE 6 · EXPERIMENTAL 2 · FIX 3 · NARROW 7 · PROVEN 19.
 
