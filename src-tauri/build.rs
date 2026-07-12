@@ -1,4 +1,4 @@
-use std::{path::Path, process::Command};
+use std::{env, path::Path, process::Command};
 
 // Cargo only re-runs a build script when one of its declared inputs changes. Git's HEAD/index
 // cover commits and staged edits, but not an unstaged edit to a file that Tauri embeds. Keep this
@@ -73,6 +73,7 @@ fn emit_git_rerun_path(name: &str) {
 }
 
 fn emit_rerun_inputs() {
+    println!("cargo:rerun-if-env-changed=STARNET_BUILD_PROVENANCE_KIND");
     for path in SHIPPED_INPUTS {
         println!("cargo:rerun-if-changed={path}");
     }
@@ -84,6 +85,32 @@ fn emit_rerun_inputs() {
     }
     if let Some(head_ref) = git_output(&["symbolic-ref", "-q", "HEAD"]) {
         emit_git_rerun_path(&head_ref);
+    }
+}
+
+fn exact_git_oid(value: &str) -> bool {
+    value.len() == 40 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
+// BuildInfo may report the open-source build's base class, but a build environment can never
+// self-assert `official`. That label is promoted later by installed proof only after external
+// release evidence matches this commit, tree, and the running executable bytes.
+fn build_provenance_kind(dirty: bool, commit: &str, source_tree: &str) -> &'static str {
+    if dirty || !exact_git_oid(commit) || !exact_git_oid(source_tree) {
+        return "dirty-dev";
+    }
+    match env::var("STARNET_BUILD_PROVENANCE_KIND")
+        .unwrap_or_default()
+        .trim()
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "" | "reproducible-source" => "reproducible-source",
+        "custom" => "custom",
+        // `official` and every unknown declaration are custom until external evidence earns
+        // another classification. This prevents a one-line environment assertion from forging
+        // the official label while preserving owner/source-builder authority.
+        _ => "custom",
     }
 }
 
@@ -110,9 +137,17 @@ fn main() {
     // The short value remains the human-facing diagnostic label. The full SHA is a separate release-proof
     // identity: prefix matching is not strong enough to bind an installed artifact to one immutable candidate.
     let full_sha = git_output(&["rev-parse", "HEAD"]).unwrap_or_else(|| "unknown".to_string());
+    let source_tree =
+        git_output(&["rev-parse", "HEAD^{tree}"]).unwrap_or_else(|| "unknown".to_string());
+    let provenance_kind = build_provenance_kind(dirty, &full_sha, &source_tree);
 
     println!("cargo:rustc-env=STARNET_BUILD_COMMIT={}", commit);
     println!("cargo:rustc-env=STARNET_BUILD_SHA={}", full_sha);
+    println!("cargo:rustc-env=STARNET_BUILD_TREE={}", source_tree);
+    println!(
+        "cargo:rustc-env=STARNET_BUILD_PROVENANCE_KIND={}",
+        provenance_kind
+    );
     println!("cargo:rustc-env=STARNET_BUILD_DESCRIBE={}", describe);
     println!(
         "cargo:rustc-env=STARNET_BUILD_DIRTY={}",

@@ -18,8 +18,9 @@
  *   3. `npm run qa:smoke:installed`  → attaches to that port, sweeps, writes the stamp.
  *
  * THE STAMP CONTRACT (read by the qa:ready gate — scripts/qa/ready.mjs, lane agent/ready-gate):
- *   qa/installed/last-smoke.json = schema v2 with expectedHead, observed buildCommit, desktop origin,
- *   artifact SHA-256, result, and evidence. See qa/installed/README.md.
+ *   qa/installed/last-smoke.json = schema v3 with expected commit/tree, observed build kind,
+ *   installed provenance kind, desktop origin, artifact SHA-256, result, and evidence. See
+ *   qa/installed/README.md.
  *   result ∈ "GREEN" | "RED" | "BLOCKED". Do NOT change this shape without flagging the ready-gate lane.
  *
  * NO-FAKE-GREEN (Charter Part 5): can't attach, or can't PROVE the app version → result BLOCKED
@@ -40,13 +41,19 @@ import * as path from 'node:path';
 import * as crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { connectCDP, evalJS, collectDiagnostics } from '../lib/cdp.mjs';
+import {
+  KINDS,
+  classifyProvenance,
+  externallyVerifyOfficialEvidence,
+  normalizeOfficialEvidence,
+} from './product-perfect/provenance.mjs';
 
 /* ─────────────────────────────── PURE CORE ─────────────────────────────── */
 
 export const RESULTS = { GREEN: 'GREEN', RED: 'RED', BLOCKED: 'BLOCKED' };
 const RESULT_SET = new Set([RESULTS.GREEN, RESULTS.RED, RESULTS.BLOCKED]);
 export const SMOKE_CREW = 'Installed Smoke';
-export const STAMP_SCHEMA = 2;
+export const STAMP_SCHEMA = 3;
 export const TAURI_ORIGINS = new Set(['tauri://localhost', 'http://tauri.localhost', 'https://tauri.localhost', 'app://localhost']);
 export const REQUIRED_CHECKS = Object.freeze([
   'desktop/tauri-origin',
@@ -91,8 +98,12 @@ export const SMOKE_PROBE = `(async () => {
     const core = window.__TAURI__ && window.__TAURI__.core;
     if (!core || typeof core.invoke !== 'function') throw new Error('Tauri invoke unavailable');
     out.shell = await core.invoke('starnet_build_info');
-    const known = !!(out.shell && /^[0-9a-f]+$/i.test(String(out.shell.commit || '')) && String(out.shell.commit).toLowerCase() !== 'unknown');
-    add('desktop/build-info', known, known ? ('commit=' + out.shell.commit + ' describe=' + out.shell.describe + ' dirty=' + !!out.shell.dirty) : 'starnet_build_info returned no known commit');
+    const knownKinds = new Set(['reproducible-source', 'custom', 'dirty-dev']);
+    const known = !!(out.shell && /^[0-9a-f]{40}$/i.test(String(out.shell.sha || '')) &&
+      /^[0-9a-f]{40}$/i.test(String(out.shell.sourceTree || '')) && knownKinds.has(String(out.shell.provenanceKind || '')));
+    add('desktop/build-info', known, known
+      ? ('commit=' + out.shell.sha + ' tree=' + out.shell.sourceTree + ' kind=' + out.shell.provenanceKind + ' describe=' + out.shell.describe + ' dirty=' + !!out.shell.dirty)
+      : 'starnet_build_info returned no known commit/tree/provenance kind');
     const executableSha256 = String((out.shell && out.shell.executableSha256) || '').toLowerCase();
     const executableSize = Number(out.shell && out.shell.executableSize);
     const executableKnown = /^[0-9a-f]{64}$/.test(executableSha256) && Number.isSafeInteger(executableSize) && executableSize > 0;
@@ -180,10 +191,18 @@ export function classifyResult(obs) {
   if (str(obs.mode) !== 'desktop' || !TAURI_ORIGINS.has(str(obs.origin))) return RESULTS.BLOCKED;
   const shell = obs.shell && typeof obs.shell === 'object' ? obs.shell : null;
   const expectedHead = str(obs.expectedHead).trim().toLowerCase();
+  const expectedTree = str(obs.expectedTree).trim().toLowerCase();
   const buildCommit = str(shell && (shell.sha || shell.fullCommit || obs.sidecarBuildSha)).trim().toLowerCase();
-  if (!shell || !/^[0-9a-f]{40}$/.test(expectedHead) || !/^[0-9a-f]{40}$/.test(buildCommit)) return RESULTS.BLOCKED;
+  const sourceTree = str(shell && shell.sourceTree).trim().toLowerCase();
+  const buildKind = str(shell && shell.provenanceKind).trim().toLowerCase();
+  if (!shell || !/^[0-9a-f]{40}$/.test(expectedHead) || !/^[0-9a-f]{40}$/.test(buildCommit) ||
+      !/^[0-9a-f]{40}$/.test(expectedTree) || !/^[0-9a-f]{40}$/.test(sourceTree)) return RESULTS.BLOCKED;
   if (buildCommit !== expectedHead || str(obs.sidecarBuildSha).toLowerCase() !== expectedHead) return RESULTS.BLOCKED;
+  if (sourceTree !== expectedTree) return RESULTS.BLOCKED;
   if (shell.dirty === true || obs.sidecarBuildDirty !== false) return RESULTS.BLOCKED;
+  // The running binary reports only its base build class. `official` is never a build-time
+  // assertion; it can be earned only when the host externally verifies exact release evidence.
+  if (buildKind !== KINDS.REPRODUCIBLE_SOURCE && buildKind !== KINDS.CUSTOM) return RESULTS.BLOCKED;
   if (str(shell.version) !== str(obs.appVersion)) return RESULTS.BLOCKED;
   if (!str(shell.describe) || str(shell.describe) !== str(obs.harness)) return RESULTS.BLOCKED;
   const artifact = obs.artifact && typeof obs.artifact === 'object' ? obs.artifact : null;
@@ -194,6 +213,14 @@ export function classifyResult(obs) {
   if (!/^[0-9a-f]{64}$/.test(executableSha256) || !Number.isSafeInteger(executableSize) || executableSize <= 0) return RESULTS.BLOCKED;
   if (!artifact || !/^[0-9a-f]{64}$/.test(artifactSha256) || !Number.isSafeInteger(artifactSize) || artifactSize <= 0) return RESULTS.BLOCKED;
   if (artifactSha256 !== executableSha256 || artifactSize !== executableSize) return RESULTS.BLOCKED;
+  const baseProvenance = classifyProvenance({
+    commitSha: buildCommit,
+    sourceTree,
+    dirty: shell.dirty === true,
+    declaredKind: buildKind,
+    artifact,
+  });
+  if (baseProvenance.kind !== buildKind) return RESULTS.BLOCKED;
   if (obs.evidencePersisted !== true) return RESULTS.BLOCKED;
   const checks = Array.isArray(obs.checks) ? obs.checks : [];
   const byName = new Map(checks.filter(Boolean).map(check => [str(check.name), check]));
@@ -204,6 +231,21 @@ export function classifyResult(obs) {
 
 // Coerce arbitrary input into the exact stamp shape ready-gate reads. An unknown/blank result clamps to
 // BLOCKED (no-fake-green: a stamp that can't say GREEN honestly must not read GREEN).
+function normalizeOfficialSummary(value) {
+  const evidence = normalizeOfficialEvidence(value);
+  const authority = str(value && value.authority).trim();
+  const verificationId = str(value && value.verificationId).trim();
+  if (!evidence || !authority || !verificationId) return null;
+  return {
+    schemaVersion: evidence.schemaVersion,
+    candidateCommit: evidence.candidateCommit,
+    sourceTree: evidence.sourceTree,
+    artifact: { sha256: evidence.artifact.sha256, size: evidence.artifact.size },
+    authority,
+    verificationId,
+  };
+}
+
 export function normalizeStamp(input, opts) {
   input = input || {}; opts = opts || {};
   const clock = opts.clock || {};
@@ -219,9 +261,14 @@ export function normalizeStamp(input, opts) {
     schemaVersion: STAMP_SCHEMA,
     stampIso: str(input.stampIso || isoNow).trim(),
     expectedHead: str(input.expectedHead).trim().toLowerCase(),
+    expectedTree: str(input.expectedTree).trim().toLowerCase(),
     buildCommit: str(input.buildCommit).trim().toLowerCase(),
+    sourceTree: str(input.sourceTree).trim().toLowerCase(),
     buildDescribe: str(input.buildDescribe).trim(),
     buildDirty: input.buildDirty === true,
+    buildKind: str(input.buildKind || KINDS.DIRTY_DEV).trim().toLowerCase(),
+    provenanceKind: str(input.provenanceKind || KINDS.DIRTY_DEV).trim().toLowerCase(),
+    officialEvidence: normalizeOfficialSummary(input.officialEvidence),
     appVersion: str(input.appVersion).trim(),
     sidecarHarness: str(input.sidecarHarness).trim(),
     mode: str(input.mode).trim(),
@@ -251,9 +298,14 @@ export function validateStamp(obj) {
   if (!RESULT_SET.has(obj.result)) errors.push('result must be one of GREEN|RED|BLOCKED');
   if (typeof obj.appVersion !== 'string') errors.push('appVersion must be a string');
   if (typeof obj.expectedHead !== 'string') errors.push('expectedHead must be a string');
+  if (typeof obj.expectedTree !== 'string') errors.push('expectedTree must be a string');
   if (typeof obj.buildCommit !== 'string') errors.push('buildCommit must be a string');
+  if (typeof obj.sourceTree !== 'string') errors.push('sourceTree must be a string');
   if (typeof obj.buildDescribe !== 'string') errors.push('buildDescribe must be a string');
   if (typeof obj.buildDirty !== 'boolean') errors.push('buildDirty must be a boolean');
+  if (!Object.values(KINDS).includes(obj.buildKind)) errors.push('buildKind must be a provenance kind');
+  if (!Object.values(KINDS).includes(obj.provenanceKind)) errors.push('provenanceKind must be a provenance kind');
+  if (obj.officialEvidence !== null && !normalizeOfficialSummary(obj.officialEvidence)) errors.push('officialEvidence must be an externally verified evidence summary or null');
   if (typeof obj.sidecarHarness !== 'string') errors.push('sidecarHarness must be a string');
   if (typeof obj.mode !== 'string') errors.push('mode must be a string');
   if (typeof obj.origin !== 'string') errors.push('origin must be a string');
@@ -271,7 +323,14 @@ export function validateStamp(obj) {
     if (!/^[0-9a-f]{40}$/i.test(str(obj.expectedHead))) errors.push('proved result requires a full expectedHead');
     if (!/^[0-9a-f]{40}$/i.test(str(obj.buildCommit))) errors.push('proved result requires a full buildCommit');
     if (str(obj.expectedHead).toLowerCase() !== str(obj.buildCommit).toLowerCase()) errors.push('buildCommit must equal expectedHead');
+    if (!/^[0-9a-f]{40}$/i.test(str(obj.expectedTree))) errors.push('proved result requires a full expectedTree');
+    if (!/^[0-9a-f]{40}$/i.test(str(obj.sourceTree))) errors.push('proved result requires a full sourceTree');
+    if (str(obj.expectedTree).toLowerCase() !== str(obj.sourceTree).toLowerCase()) errors.push('sourceTree must equal expectedTree');
     if (obj.buildDirty !== false) errors.push('proved result requires a clean build');
+    if (obj.buildKind !== KINDS.REPRODUCIBLE_SOURCE && obj.buildKind !== KINDS.CUSTOM) errors.push('proved result requires reproducible-source or custom BuildInfo');
+    if (obj.provenanceKind === KINDS.DIRTY_DEV) errors.push('proved result cannot be dirty-dev');
+    if (obj.buildKind === KINDS.CUSTOM && obj.provenanceKind !== KINDS.CUSTOM) errors.push('an explicit custom build must stay custom');
+    if (obj.buildKind === KINDS.REPRODUCIBLE_SOURCE && ![KINDS.REPRODUCIBLE_SOURCE, KINDS.OFFICIAL].includes(obj.provenanceKind)) errors.push('reproducible-source build has an invalid installed classification');
     if (obj.mode !== 'desktop' || !TAURI_ORIGINS.has(str(obj.origin))) errors.push('proved result requires a trusted desktop origin');
     const artifactSha256 = str(obj.artifact && obj.artifact.sha256).toLowerCase();
     const artifactSize = Number(obj.artifact && obj.artifact.size);
@@ -280,6 +339,16 @@ export function validateStamp(obj) {
     if (!obj.artifact || !str(obj.artifact.path).trim() || !/^[0-9a-f]{64}$/.test(artifactSha256) || !Number.isSafeInteger(artifactSize) || artifactSize <= 0) errors.push('proved result requires a hashed artifact');
     if (!obj.runtimeExecutable || !/^[0-9a-f]{64}$/.test(runtimeSha256) || !Number.isSafeInteger(runtimeSize) || runtimeSize <= 0) errors.push('proved result requires the runtime executable identity');
     if (artifactSha256 !== runtimeSha256 || artifactSize !== runtimeSize) errors.push('artifact identity must equal the runtime executable identity');
+    const official = normalizeOfficialSummary(obj.officialEvidence);
+    if (obj.provenanceKind === KINDS.OFFICIAL) {
+      if (!official) errors.push('official provenance requires official evidence');
+      else {
+        if (official.candidateCommit !== str(obj.buildCommit).toLowerCase() || official.sourceTree !== str(obj.sourceTree).toLowerCase()) errors.push('official evidence must match buildCommit and sourceTree');
+        if (official.artifact.sha256 !== artifactSha256 || official.artifact.size !== artifactSize) errors.push('official evidence must match the executable artifact');
+      }
+    } else if (obj.officialEvidence !== null) {
+      errors.push('non-official provenance must not carry official evidence');
+    }
   }
   return { ok: errors.length === 0, errors };
 }
@@ -327,6 +396,7 @@ export function makeSmoke(opts) {
   const attach = typeof opts.attach === 'function' ? opts.attach : async () => { throw new Error('no attach injected'); };
   const clock = opts.clock || { nowIso: () => new Date(0).toISOString() };
   const expectedHead = str(opts.expectedHead).trim().toLowerCase();
+  const expectedTree = str(opts.expectedTree).trim().toLowerCase();
   const artifact = opts.artifact && typeof opts.artifact === 'object' ? opts.artifact : null;
   const io = opts.io || {};
   const log = typeof io.log === 'function' ? io.log : () => {};
@@ -356,10 +426,19 @@ export function makeSmoke(opts) {
 
     const appVersion = probe ? str(probe.appVersion) : '';
     const checks = probe ? (Array.isArray(probe.checks) ? probe.checks : []) : [];
+    const officialVerification = externallyVerifyOfficialEvidence(opts.officialEvidence, opts.verifyOfficialEvidence);
+    const provenance = classifyProvenance({
+      commitSha: probe && probe.shell && (probe.shell.sha || probe.shell.fullCommit || probe.sidecarBuildSha),
+      sourceTree: probe && probe.shell && probe.shell.sourceTree,
+      dirty: !!(probe && probe.shell && probe.shell.dirty),
+      declaredKind: probe && probe.shell && probe.shell.provenanceKind,
+      artifact,
+      verifiedOfficialEvidence: officialVerification.capability,
+    });
     let result = (!attached || !probe)
       ? RESULTS.BLOCKED
       : classifyResult({
-          attached, appVersion, checks, expectedHead, artifact,
+          attached, appVersion, checks, expectedHead, expectedTree, artifact,
           evidencePersisted: evidence.some(entry => entry && typeof entry === 'object' && str(entry.path).trim() && /^[0-9a-f]{64}$/i.test(str(entry.sha256)) && Number.isSafeInteger(Number(entry.size)) && Number(entry.size) > 0),
           mode: probe.mode, origin: probe.origin, shell: probe.shell,
           harness: probe.harness, sidecarBuildSha: probe.sidecarBuildSha,
@@ -372,16 +451,22 @@ export function makeSmoke(opts) {
       if (!probe) return blockReason || 'probe returned nothing';
       const parts = ['appVersion=' + (appVersion || '(blank)') + ' mode=' + (probe.mode || '?') +
         ' build=' + str(probe.shell && (probe.shell.sha || probe.shell.fullCommit || probe.sidecarBuildSha)).slice(0, 12) +
+        ' tree=' + str(probe.shell && probe.shell.sourceTree).slice(0, 12) +
+        ' kind=' + provenance.kind +
         ' checks ' + (checks.length - failedChecks.length) + '/' + checks.length + ' pass'];
       if (failedChecks.length) parts.push('FAILED: ' + failedChecks.map(c => c.name).join(', '));
       return parts.join(' · ');
     })().slice(0, 500);
 
     let stamp = normalizeStamp({
-      stampIso: clock.nowIso(), expectedHead,
+      stampIso: clock.nowIso(), expectedHead, expectedTree,
       buildCommit: probe && probe.shell && (probe.shell.sha || probe.shell.fullCommit || probe.sidecarBuildSha),
+      sourceTree: probe && probe.shell && probe.shell.sourceTree,
       buildDescribe: probe && probe.shell && probe.shell.describe,
       buildDirty: !!(probe && probe.shell && probe.shell.dirty),
+      buildKind: probe && probe.shell && probe.shell.provenanceKind,
+      provenanceKind: provenance.kind,
+      officialEvidence: provenance.officialEvidence,
       appVersion, sidecarHarness: probe && probe.harness,
       mode: probe && probe.mode, origin: probe && probe.origin,
       artifact,
@@ -440,6 +525,12 @@ if (INVOKED_DIRECTLY) (async () => {
   const STAMP_FILE = path.join(OUT_DIR, 'last-smoke.json');
   const PORT = parseInt(process.env.STARNET_SMOKE_CDP_PORT || '9333', 10);
   const expectedHead = str(process.env.STARNET_SMOKE_EXPECTED_HEAD || process.env.STARNET_PRODUCT_PERFECT_CANDIDATE_SHA).trim().toLowerCase();
+  const expectedTree = (() => {
+    if (!/^[0-9a-f]{40}$/.test(expectedHead)) return '';
+    const result = spawnSync('git', ['rev-parse', expectedHead + '^{tree}'], { cwd: REPO, encoding: 'utf8', windowsHide: true });
+    const value = str(result.stdout).trim().toLowerCase();
+    return result.status === 0 && /^[0-9a-f]{40}$/.test(value) ? value : '';
+  })();
   const artifactPath = str(process.env.STARNET_SMOKE_ARTIFACT).trim();
 
   const stampIsoNow = new Date().toISOString();
@@ -502,7 +593,8 @@ if (INVOKED_DIRECTLY) (async () => {
   io.log('attaching to installed exe CDP on 127.0.0.1:' + PORT + ' (relaunch it with WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=' + PORT + ')');
   if (!expectedHead) io.log('BLOCKED — set STARNET_SMOKE_EXPECTED_HEAD to the full candidate commit SHA');
   if (!artifact) io.log('BLOCKED — set STARNET_SMOKE_ARTIFACT to the exact installed executable bytes being run');
-  const smoke = makeSmoke({ attach, clock: { nowIso: () => stampIsoNow }, expectedHead, artifact, io });
+  if (!expectedTree) io.log('BLOCKED - the expected candidate source tree could not be resolved');
+  const smoke = makeSmoke({ attach, clock: { nowIso: () => stampIsoNow }, expectedHead, expectedTree, artifact, io });
   const { result } = await smoke.run();
   // Exit codes mirror the Cartographer: 0 clean (GREEN) · 1 red · 2 blocked.
   process.exit(result === RESULTS.GREEN ? 0 : (result === RESULTS.RED ? 1 : 2));

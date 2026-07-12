@@ -13,6 +13,8 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { makeLedger } from './ledger.mjs';
 import { makeCartographer, AREAS as ATLAS_AREAS } from './cartographer.mjs';
+import { inspectInstalledIdentity } from './ready.mjs';
+import { inspectClaimsAuthority } from './product-perfect/claims.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const REPO_ROOT = path.resolve(HERE, '..', '..');
@@ -22,12 +24,12 @@ const RECEIPT_SCHEMA = 1;
 const FUTURE_SKEW_MS = 5 * 60 * 1000;
 const EXPECTED_WAVES = Object.freeze([
   ['W0', 'proof-authority', 86400000, 'scripts/qa/product-perfect/gates/wave-0-proof-authority.mjs'],
-  ['W1', 'security-trust', 86400000, 'scripts/qa/product-perfect/gates/wave-1-security-trust.mjs'],
-  ['W2', 'truthful-authority', 86400000, 'scripts/qa/product-perfect/gates/wave-2-truthful-authority.mjs'],
+  ['W1', 'installed-first-run', 86400000, 'scripts/qa/product-perfect/gates/wave-1-installed-first-run.mjs'],
+  ['W2', 'security-trust', 86400000, 'scripts/qa/product-perfect/gates/wave-2-security-trust.mjs'],
   ['W3', 'last-mile-recovery', 86400000, 'scripts/qa/product-perfect/gates/wave-3-last-mile-recovery.mjs'],
-  ['W4', 'autonomy-vision', 86400000, 'scripts/qa/product-perfect/gates/wave-4-autonomy-vision.mjs'],
-  ['W5', 'integration-reality', 86400000, 'scripts/qa/product-perfect/gates/wave-5-integration-reality.mjs'],
-  ['W6', 'full-surface-proof', 21600000, 'scripts/qa/product-perfect/gates/wave-6-full-surface-proof.mjs'],
+  ['W4', 'capability-enforcement', 86400000, 'scripts/qa/product-perfect/gates/wave-4-capability-enforcement.mjs'],
+  ['W5', 'autonomy-honesty', 86400000, 'scripts/qa/product-perfect/gates/wave-5-autonomy-honesty.mjs'],
+  ['W6', 'integration-full-proof', 21600000, 'scripts/qa/product-perfect/gates/wave-6-integration-full-proof.mjs'],
   ['W7', 'frozen-candidate', 3600000, 'scripts/qa/product-perfect/gates/wave-7-frozen-candidate.mjs']
 ]);
 const EXPECTED_POLICY = Object.freeze({
@@ -37,6 +39,9 @@ const EXPECTED_POLICY = Object.freeze({
   staleEvidence: 'requeue',
   publishAuthorized: false
 });
+const AUTHORITY_IDS = Object.freeze([
+  'installed', 'claimsPlanning', 'claimsTerminal', 'ready', 'ledger', 'atlas'
+]);
 
 function str(value) { return value == null ? '' : String(value); }
 function sha256(value) { return crypto.createHash('sha256').update(value).digest('hex'); }
@@ -192,7 +197,7 @@ export function receiptValidity(receipt, context) {
 
 function normalizedAuthorities(authorities) {
   const out = {};
-  for (const id of ['ready', 'ledger', 'atlas']) {
+  for (const id of AUTHORITY_IDS) {
     const value = authorities && authorities[id];
     out[id] = value && typeof value === 'object'
       ? value
@@ -203,7 +208,9 @@ function normalizedAuthorities(authorities) {
 }
 
 function authorityErrorsForWave(waveId, authorities) {
-  const required = waveId === 'W0' ? ['ready'] : waveId === 'W6' ? ['ledger', 'atlas'] : [];
+  const required = waveId === 'W0' ? ['installed', 'claimsPlanning']
+    : waveId === 'W6' ? ['claimsTerminal', 'ledger', 'atlas']
+      : waveId === 'W7' ? ['ready'] : [];
   const errors = [];
   for (const id of required) {
     const authority = authorities[id];
@@ -268,7 +275,7 @@ export function deriveStatus(manifest, candidate, receiptsByWave, authorityInput
       } : null
     });
   }
-  const authorityPerfect = ['ready', 'ledger', 'atlas'].every(id => authorities[id].ok === true);
+  const authorityPerfect = AUTHORITY_IDS.every(id => authorities[id].ok === true);
   let productPerfect = waves.length > 0 && waves.every(wave => wave.status === 'pass') && authorityPerfect;
   if (!productPerfect && !currentWave && !authorityPerfect) {
     const targetId = manifest.waves.some(wave => wave.id === 'W6') ? 'W6' : manifest.waves[manifest.waves.length - 1].id;
@@ -454,12 +461,76 @@ function inspectAtlasAuthority(candidate) {
   }
 }
 
-export function inspectAuthorities(candidate) {
+const AUTHORITY_STAGE_RANK = Object.freeze({ W0: 0, W6: 6, W7: 7 });
+
+function deferredAuthority(id, wave) {
   return {
-    ready: inspectReadyAuthority(),
-    ledger: inspectLedgerAuthority(),
-    atlas: inspectAtlasAuthority(candidate)
+    ok: false,
+    status: 'DEFERRED',
+    reasons: [id + ' authority is not inspected before ' + wave]
   };
+}
+
+function inspectAuthority(id, run) {
+  try {
+    const result = run();
+    if (!result || typeof result !== 'object') throw new Error('inspector returned no verdict');
+    return result;
+  } catch (error) {
+    return { ok: false, status: 'BLOCKED', reasons: [id + ' authority unreadable: ' + str(error && error.message || error)] };
+  }
+}
+
+export function authorityStageForStatus(status) {
+  if (status && (status.productPerfect === true || status.currentWave === 'W7')) return 'W7';
+  if (status && status.currentWave === 'W6') return 'W6';
+  return 'W0';
+}
+
+export function inspectAuthorities(candidate, options = {}) {
+  const throughWave = Object.prototype.hasOwnProperty.call(AUTHORITY_STAGE_RANK, options.throughWave)
+    ? options.throughWave : 'W0';
+  const rank = AUTHORITY_STAGE_RANK[throughWave];
+  const inspectors = options.inspectors || {};
+  const installed = inspectAuthority('installed', () => inspectors.installed
+    ? inspectors.installed(candidate, options)
+    : inspectInstalledIdentity({
+        repoRoot: REPO_ROOT,
+        receiptPath: path.join(REPO_ROOT, 'qa', 'installed', 'last-smoke.json'),
+        candidateSha: candidate.sha,
+        nowMs: options.nowMs
+      }));
+  const claims = inspectAuthority('claims', () => inspectors.claims
+    ? inspectors.claims(candidate, options)
+    : inspectClaimsAuthority({ repoRoot: REPO_ROOT, candidateCommit: candidate.sha }));
+  const claimsPlanning = claims.planning && typeof claims.planning === 'object'
+    ? claims.planning : { ok: false, status: 'BLOCKED', reasons: ['claims planning verdict unavailable'] };
+  const claimsTerminal = claims.terminal && typeof claims.terminal === 'object'
+    ? claims.terminal : { ok: false, status: 'BLOCKED', reasons: ['claims terminal verdict unavailable'] };
+  const ledger = rank >= AUTHORITY_STAGE_RANK.W6
+    ? inspectAuthority('ledger', () => inspectors.ledger ? inspectors.ledger(candidate, options) : inspectLedgerAuthority())
+    : deferredAuthority('ledger', 'W6');
+  const atlas = rank >= AUTHORITY_STAGE_RANK.W6
+    ? inspectAuthority('atlas', () => inspectors.atlas ? inspectors.atlas(candidate, options) : inspectAtlasAuthority(candidate))
+    : deferredAuthority('atlas', 'W6');
+  const ready = rank >= AUTHORITY_STAGE_RANK.W7
+    ? inspectAuthority('ready', () => inspectors.ready ? inspectors.ready(candidate, options) : inspectReadyAuthority())
+    : deferredAuthority('ready', 'W7');
+  return { installed, claimsPlanning, claimsTerminal, ready, ledger, atlas };
+}
+
+export function inspectCampaignState(manifest, candidate, receipts, receiptContext = {}, options = {}) {
+  let stage = 'W0';
+  let authorities;
+  let status;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    authorities = inspectAuthorities(candidate, Object.assign({}, options, { throughWave: stage }));
+    status = deriveStatus(manifest, candidate, receipts, authorities, receiptContext);
+    const nextStage = authorityStageForStatus(status);
+    if (AUTHORITY_STAGE_RANK[nextStage] <= AUTHORITY_STAGE_RANK[stage]) break;
+    stage = nextStage;
+  }
+  return { authorities, status, stage };
 }
 
 function receiptDir(runtimeDir, candidate) { return path.join(runtimeDir, 'receipts', candidate.sha); }
@@ -616,7 +687,7 @@ function render(status) {
     lines.push('  [INFO] operational evidence dirt excluded from shipped-source cleanliness: ' + status.candidate.operationalDirtyPaths.join(', '));
   }
   if (status.manifestErrors) for (const error of status.manifestErrors) lines.push('  [BLOCKED] manifest — ' + error);
-  for (const id of ['ready', 'ledger', 'atlas']) {
+  for (const id of AUTHORITY_IDS) {
     const authority = status.authorities && status.authorities[id];
     if (!authority) continue;
     lines.push('  [' + str(authority.status || (authority.ok ? 'PASS' : 'BLOCKED')).toUpperCase() + '] authority/' + id);
@@ -656,7 +727,6 @@ if (INVOKED_DIRECTLY) {
     process.exit(2);
   }
   let receipts = manifest ? loadReceipts(manifest, candidate) : {};
-  let authorities = inspectAuthorities(candidate);
   const manifestValidation = validateManifest(manifest);
   let receiptKey = null;
   try { receiptKey = loadReceiptKey(DEFAULT_RUNTIME_DIR, { create: !statusOnly && manifestValidation.ok && candidate.clean }); }
@@ -666,7 +736,9 @@ if (INVOKED_DIRECTLY) {
     process.exit(2);
   }
   const receiptContext = { nowMs: Date.now(), key: receiptKey, runtimeDir: DEFAULT_RUNTIME_DIR };
-  let status = deriveStatus(manifest, candidate, receipts, authorities, receiptContext);
+  let campaignState = inspectCampaignState(manifest, candidate, receipts, receiptContext, { nowMs: receiptContext.nowMs });
+  let authorities = campaignState.authorities;
+  let status = campaignState.status;
   if (statusOnly) {
     console.log(jsonMode ? JSON.stringify(status, null, 2) : render(status));
     process.exit(status.productPerfect ? 0 : 2);
@@ -687,7 +759,8 @@ if (INVOKED_DIRECTLY) {
     if (unmet.length) return { blocked: 'dependencies not current and passing: ' + unmet.join(', ') };
     const run = runWaveVerifier(manifest, wave, candidate, DEFAULT_RUNTIME_DIR, { key: receiptKey });
     receipts = loadReceipts(manifest, candidate);
-    authorities = inspectAuthorities(candidate);
+    campaignState = inspectCampaignState(manifest, candidate, receipts, Object.assign({}, receiptContext, { nowMs: Date.now() }));
+    authorities = campaignState.authorities;
     return run;
   };
 

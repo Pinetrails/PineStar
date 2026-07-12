@@ -49,6 +49,12 @@ import * as path from 'node:path';
 import * as crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { makeLedger } from './ledger.mjs';
+import {
+  KINDS,
+  classifyProvenance,
+  externallyVerifyOfficialEvidence,
+  normalizeOfficialEvidence,
+} from './product-perfect/provenance.mjs';
 
 /* ─────────────────────────────── PURE CORE ─────────────────────────────── */
 
@@ -204,7 +210,7 @@ export function checkBeginner(input, cfg) {
 }
 
 // ---- CHECK 5: installed-exe smoke stamp GREEN + fresh (<=7d) -------------------------------------
-// input: installed-smoke schema v2 plus host-verified evidence/artifact flags.
+// input: installed-smoke schema v3 plus host-verified evidence/artifact flags.
 export function checkInstalled(input, cfg) {
   input = input || {}; cfg = cfg || {};
   const artifact = input.artifact || 'qa/installed/last-smoke.json';
@@ -216,8 +222,9 @@ export function checkInstalled(input, cfg) {
   const result = str(input.result).toUpperCase();
   const value = result + (input.appVersion ? ' · v' + str(input.appVersion) : '') +
     (input.buildCommit ? ' · @' + str(input.buildCommit).slice(0, 8) : '') +
+    (input.provenanceKind ? ' · ' + str(input.provenanceKind) : '') +
     (input.mode ? ' · ' + str(input.mode) : '');
-  if (input.schemaVersion !== 2) return mk(false, 'installed app unverified — legacy or unknown receipt schema (v2 desktop proof required)', value || 'INVALID SCHEMA');
+  if (input.schemaVersion !== 3) return mk(false, 'installed app unverified — legacy or unknown receipt schema (v3 desktop proof required)', value || 'INVALID SCHEMA');
   if (result !== 'GREEN') return mk(false, 'installed app unverified — last smoke was ' + (result || 'not GREEN'), value);
   if (!str(input.appVersion).trim()) return mk(false, 'installed app unverified — receipt has no proven app version', value);
   if (input.mode !== 'desktop' || !['tauri://localhost', 'http://tauri.localhost', 'https://tauri.localhost', 'app://localhost'].includes(str(input.origin))) {
@@ -228,6 +235,11 @@ export function checkInstalled(input, cfg) {
   if (!/^[0-9a-f]{40}$/.test(head)) return mk(false, 'installed app unverified — current trunk commit is unresolved', value);
   if (str(input.expectedHead).toLowerCase() !== head || str(input.buildCommit).toLowerCase() !== head) {
     return mk(false, 'installed app unverified — tested binary source does not equal current trunk', value);
+  }
+  const tree = str(cfg.currentTree).toLowerCase();
+  if (!/^[0-9a-f]{40}$/.test(tree)) return mk(false, 'installed app unverified — current source tree is unresolved', value);
+  if (str(input.expectedTree).toLowerCase() !== tree || str(input.sourceTree).toLowerCase() !== tree) {
+    return mk(false, 'installed app unverified — tested binary source tree does not equal the candidate tree', value);
   }
   if (!str(input.buildDescribe) || str(input.buildDescribe) !== str(input.sidecarHarness)) {
     return mk(false, 'installed app unverified — desktop shell and sidecar provenance disagree', value);
@@ -243,6 +255,37 @@ export function checkInstalled(input, cfg) {
   if (runtimeSha256 !== str(input.artifact.sha256).toLowerCase() || runtimeSize !== Number(input.artifact.size)) {
     return mk(false, 'installed app unverified — supplied artifact does not equal the executable that was running', value);
   }
+  const buildKind = str(input.buildKind).toLowerCase();
+  const provenanceKind = str(input.provenanceKind).toLowerCase();
+  if (buildKind !== KINDS.REPRODUCIBLE_SOURCE && buildKind !== KINDS.CUSTOM) {
+    return mk(false, 'installed app unverified — running BuildInfo has no clean reproducible-source/custom classification', value);
+  }
+  const base = classifyProvenance({
+    commitSha: input.buildCommit,
+    sourceTree: input.sourceTree,
+    dirty: input.buildDirty !== false,
+    declaredKind: buildKind,
+    artifact: input.artifact,
+  });
+  if (base.kind !== buildKind) return mk(false, 'installed app unverified — BuildInfo provenance classification is inconsistent', value);
+  if (buildKind === KINDS.CUSTOM && provenanceKind !== KINDS.CUSTOM) {
+    return mk(false, 'installed app unverified — an explicit custom build was relabeled', value);
+  }
+  if (buildKind === KINDS.REPRODUCIBLE_SOURCE && provenanceKind !== KINDS.REPRODUCIBLE_SOURCE && provenanceKind !== KINDS.OFFICIAL) {
+    return mk(false, 'installed app unverified — installed provenance classification is invalid', value);
+  }
+  if (provenanceKind !== KINDS.OFFICIAL && input.officialEvidence != null) {
+    return mk(false, 'installed app unverified — non-official receipt carries an official-evidence assertion', value);
+  }
+  if (provenanceKind === KINDS.OFFICIAL) {
+    const official = normalizeOfficialEvidence(input.officialEvidence);
+    const exactOfficial = official && official.candidateCommit === str(input.buildCommit).toLowerCase() &&
+      official.sourceTree === str(input.sourceTree).toLowerCase() &&
+      official.artifact.sha256 === str(input.artifact.sha256).toLowerCase() && official.artifact.size === Number(input.artifact.size);
+    if (!exactOfficial || input.officialEvidenceVerified !== true) {
+      return mk(false, 'installed app unverified — official label lacks externally reverified exact release evidence' + (input.officialEvidenceError ? ': ' + str(input.officialEvidenceError) : ''), value);
+    }
+  }
   if (input.artifactVerified !== true) return mk(false, 'installed app unverified — artifact path/hash could not be reverified' + (input.artifactError ? ': ' + str(input.artifactError) : ''), value);
   if (!Array.isArray(input.evidence) || input.evidence.length === 0 || input.evidenceVerified !== true) {
     return mk(false, 'installed app unverified — evidence files are missing or unreadable' + (input.evidenceError ? ': ' + str(input.evidenceError) : ''), value);
@@ -250,6 +293,124 @@ export function checkInstalled(input, cfg) {
   const fresh = freshness(input.stampIso, cfg.nowMs, cfg.maxInstalledStaleMs != null ? cfg.maxInstalledStaleMs : DEFAULTS.maxInstalledStaleMs);
   if (!fresh.ok) return mk(false, 'installed app unverified — smoke ' + fresh.reason, value);
   return mk(true, 'GREEN, ' + fresh.reason, value);
+}
+
+/* Read-only, host-callable installed identity authority for W0 and other narrow gates.
+ * It reads exactly one receipt, rehashes the named executable/evidence, resolves the supplied
+ * candidate's source tree, and returns a standalone verdict. It does not run Guardian/Journeys,
+ * mutate process state, write evidence, print, or exit.
+ */
+export function inspectInstalledIdentity(opts) {
+  opts = opts || {};
+  const repoRoot = path.resolve(str(opts.repoRoot || '.'));
+  const receiptPath = path.resolve(str(opts.receiptPath || path.join(repoRoot, 'qa', 'installed', 'last-smoke.json')));
+  const candidateSha = str(opts.candidateSha).trim().toLowerCase();
+  const io = opts.io || fs;
+  const nowMs = Number.isFinite(Number(opts.nowMs)) ? Number(opts.nowMs) : Date.now();
+  const resolveCandidateTree = typeof opts.resolveCandidateTree === 'function'
+    ? opts.resolveCandidateTree
+    : (sha, cwd) => {
+        if (!/^[0-9a-f]{40}$/.test(sha)) return '';
+        const result = spawnSync('git', ['rev-parse', sha + '^{tree}'], { cwd, encoding: 'utf8', windowsHide: true });
+        return result.status === 0 ? str(result.stdout).trim().toLowerCase() : '';
+      };
+  let candidateTree = '';
+  try { candidateTree = str(resolveCandidateTree(candidateSha, repoRoot)).trim().toLowerCase(); }
+  catch (_) { candidateTree = ''; }
+
+  let data = null;
+  let input;
+  try {
+    if (!io.existsSync(receiptPath)) input = { missing: true };
+    else data = JSON.parse(io.readFileSync(receiptPath, 'utf8'));
+  } catch (error) {
+    input = { error: str(error && error.message || error) };
+  }
+
+  if (data) {
+    const evidence = Array.isArray(data.evidence) ? data.evidence : [];
+    let evidenceProof = evidence.length ? { ok: true, error: '' } : { ok: false, error: 'no content-bound evidence files' };
+    for (const entry of evidenceProof.ok ? evidence : []) {
+      if (!entry || typeof entry !== 'object' || !str(entry.path)) {
+        evidenceProof = { ok: false, error: 'evidence identity missing or invalid' };
+        break;
+      }
+      const resolved = path.resolve(repoRoot, str(entry.path));
+      const rel = path.relative(repoRoot, resolved);
+      if (rel.startsWith('..') || path.isAbsolute(rel)) {
+        evidenceProof = { ok: false, error: 'evidence escapes repository: ' + str(entry.path) };
+        break;
+      }
+      try {
+        if (!io.statSync(resolved).isFile()) throw new Error('evidence is not a file');
+        const proof = verifyContentIdentity(entry, io.readFileSync(resolved));
+        if (!proof.ok) {
+          evidenceProof = { ok: false, error: str(entry.path) + ': ' + proof.error };
+          break;
+        }
+      } catch (error) {
+        evidenceProof = { ok: false, error: 'evidence missing or unreadable: ' + str(entry.path) + ' (' + str(error && error.message || error) + ')' };
+        break;
+      }
+    }
+
+    let artifactProof = { ok: false, error: 'artifact path missing' };
+    const artifact = data.artifact;
+    if (artifact && str(artifact.path)) {
+      try {
+        const resolved = path.isAbsolute(str(artifact.path)) ? path.resolve(str(artifact.path)) : path.resolve(repoRoot, str(artifact.path));
+        if (!io.statSync(resolved).isFile()) throw new Error('artifact path is not a file');
+        artifactProof = verifyContentIdentity(artifact, io.readFileSync(resolved));
+      } catch (error) {
+        artifactProof = { ok: false, error: str(error && error.message || error) };
+      }
+    }
+
+    let officialEvidenceVerified = false;
+    let officialEvidenceError = '';
+    if (str(data.provenanceKind).toLowerCase() === KINDS.OFFICIAL) {
+      const external = externallyVerifyOfficialEvidence(data.officialEvidence, opts.verifyOfficialEvidence);
+      const classified = classifyProvenance({
+        commitSha: data.buildCommit,
+        sourceTree: data.sourceTree,
+        dirty: data.buildDirty !== false,
+        declaredKind: data.buildKind,
+        artifact: data.artifact,
+        verifiedOfficialEvidence: external.capability,
+      });
+      officialEvidenceVerified = external.ok === true && classified.kind === KINDS.OFFICIAL;
+      officialEvidenceError = external.error || (officialEvidenceVerified ? '' : 'official evidence did not match candidate/tree/artifact');
+    }
+
+    input = Object.assign({}, data, {
+      artifactVerified: artifactProof.ok,
+      artifactError: artifactProof.error,
+      evidenceVerified: evidenceProof.ok,
+      evidenceError: evidenceProof.error,
+      officialEvidenceVerified,
+      officialEvidenceError,
+    });
+  }
+
+  input = input || { error: 'installed receipt could not be read' };
+  const cfg = {
+    nowMs,
+    maxInstalledStaleMs: opts.maxInstalledStaleMs != null ? Number(opts.maxInstalledStaleMs) : DEFAULTS.maxInstalledStaleMs,
+    currentTrunk: candidateSha,
+    currentTree: candidateTree,
+  };
+  const check = checkInstalled(input, cfg);
+  const status = check.ok ? 'PASS' : (str(input.result).toUpperCase() === 'RED' ? 'RED' : 'BLOCKED');
+  return {
+    ok: check.ok,
+    status,
+    reasons: check.ok ? [] : [check.reason],
+    check,
+    input,
+    receiptPath,
+    candidateSha,
+    candidateTree,
+  };
 }
 
 // Fold every check into ONE verdict. `artifacts` carries each check's already-read input; `cfg` carries
@@ -398,60 +559,15 @@ if (INVOKED_DIRECTLY) {
   const beginnerInput = bRead.missing ? { missing: true } : bRead.error ? { error: bRead.error }
     : { stampIso: bRead.data.stampIso, trunkHead: bRead.data.trunkHead, result: bRead.data.result, mode: bRead.data.mode, totalMs: bRead.data.totalMs, stalledStep: bRead.data.stalledStep };
 
-  const iRead = readJsonMaybe(path.join(QA_DIR, 'installed', 'last-smoke.json'));
-  const verifyInstalledEvidence = (data) => {
-    const evidence = Array.isArray(data && data.evidence) ? data.evidence : [];
-    if (!evidence.length) return { ok: false, error: 'no content-bound evidence files' };
-    for (const entry of evidence) {
-      if (!entry || typeof entry !== 'object' || !str(entry.path)) return { ok: false, error: 'evidence identity missing or invalid' };
-      const resolved = path.resolve(REPO, str(entry.path));
-      const rel = path.relative(REPO, resolved);
-      if (rel.startsWith('..') || path.isAbsolute(rel)) return { ok: false, error: 'evidence escapes repository: ' + str(entry.path) };
-      try {
-        if (!fs.statSync(resolved).isFile()) return { ok: false, error: 'evidence is not a file: ' + str(entry.path) };
-        const proof = verifyContentIdentity(entry, fs.readFileSync(resolved));
-        if (!proof.ok) return { ok: false, error: str(entry.path) + ': ' + proof.error };
-      }
-      catch (_) { return { ok: false, error: 'evidence missing: ' + str(entry.path) }; }
-    }
-    return { ok: true };
-  };
-  const verifyInstalledArtifact = (data) => {
-    const artifact = data && data.artifact;
-    if (!artifact || !str(artifact.path)) return { ok: false, error: 'artifact path missing' };
-    try {
-      const resolved = path.isAbsolute(str(artifact.path)) ? path.resolve(str(artifact.path)) : path.resolve(REPO, str(artifact.path));
-      const stat = fs.statSync(resolved);
-      if (!stat.isFile()) return { ok: false, error: 'artifact path is not a file' };
-      const proof = verifyContentIdentity(artifact, fs.readFileSync(resolved));
-      if (!proof.ok) return { ok: false, error: proof.error };
-      return { ok: true };
-    } catch (e) { return { ok: false, error: e && e.message || String(e) }; }
-  };
-  const evidenceProof = !iRead.missing && !iRead.error ? verifyInstalledEvidence(iRead.data) : { ok: false };
-  const artifactProof = !iRead.missing && !iRead.error ? verifyInstalledArtifact(iRead.data) : { ok: false };
-  const installedInput = iRead.missing ? { missing: true } : iRead.error ? { error: iRead.error }
-    : {
-        schemaVersion: iRead.data.schemaVersion,
-        stampIso: iRead.data.stampIso,
-        expectedHead: iRead.data.expectedHead,
-        buildCommit: iRead.data.buildCommit,
-        buildDescribe: iRead.data.buildDescribe,
-        buildDirty: iRead.data.buildDirty,
-        appVersion: iRead.data.appVersion,
-        sidecarHarness: iRead.data.sidecarHarness,
-        mode: iRead.data.mode,
-        origin: iRead.data.origin,
-        artifact: iRead.data.artifact,
-        runtimeExecutable: iRead.data.runtimeExecutable,
-        result: iRead.data.result,
-        evidence: iRead.data.evidence,
-        notes: iRead.data.notes,
-        evidenceVerified: evidenceProof.ok,
-        evidenceError: evidenceProof.error,
-        artifactVerified: artifactProof.ok,
-        artifactError: artifactProof.error
-      };
+  const installedInspection = inspectInstalledIdentity({
+    repoRoot: REPO,
+    receiptPath: path.join(QA_DIR, 'installed', 'last-smoke.json'),
+    candidateSha: currentTrunk,
+    nowMs,
+    maxInstalledStaleMs: cfg.maxInstalledStaleMs,
+  });
+  cfg.currentTree = installedInspection.candidateTree;
+  const installedInput = installedInspection.input;
 
   const verdict = evaluate({ ledger: ledgerInput, guardian: guardianInput, journeys: journeysInput, beginner: beginnerInput, installed: installedInput }, cfg);
 

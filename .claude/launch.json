@@ -505,6 +505,18 @@
       }
     },
     {
+      "name": "comms-honesty-seed",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "C:/Users/andro/Desktop/gen/.claude/worktrees/starnet-open-now-link-23ab84/dev/seed-mock-comms.js"
+      ],
+      "port": 8923,
+      "autoPort": false,
+      "env": {
+        "SKYNET_PORT": "8923"
+      }
+    },
+    {
       "name": "codexdead-seed",
       "runtimeExecutable": "node",
       "runtimeArgs": [

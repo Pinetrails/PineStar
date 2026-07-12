@@ -120,6 +120,8 @@ test/qa-ledger.test.js
 test/qa-guardian.test.js
 test/qa-ready.test.js
 test/qa-product-perfect.test.js
+test/qa-product-perfect-claims.test.js
+test/qa-product-perfect-provenance.test.js
 test/qa-cartographer.test.js
 test/golden.test.js
 test/qa-beginner.test.js
@@ -254,6 +256,7 @@ test/subagents.test.js
 test/subagentsprites.test.js
 test/orchestration.test.js
 test/channels.test.js
+test/comms-presence.test.js
 test/toolprops.test.js
 test/worldmodel.test.js
 test/station-authority.test.js
