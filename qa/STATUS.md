@@ -16,13 +16,13 @@ own runner (Q1 Guardian, Q2 Beginner Run, Q4 Janitor) or the Overseer digest; th
 
 | Crew member | Question it answers | Last run | Result | Open findings |
 | --- | --- | --- | --- | --- |
-| Green Guardian | Is trunk green and does the app still boot + look right? | 2026-07-10 00:58Z @ 4eb3ab95 | GREEN | 0 |
-| Beginner Run | Can a brand-new user reach first value, unassisted? | 2026-07-09T13:01:34.546Z · ui-only · 92441ms | PASS | 0 |
+| Green Guardian | Is trunk green and does the app still boot + look right? | 2026-07-12 04:04Z @ ef16fa08 | GREEN | 3 |
+| Beginner Run | Can a brand-new user reach first value, unassisted? | 2026-07-11T13:00:42.799Z · ui-only · 38349ms | STUCK@title | 0 |
 | Truth Auditor | Does the UI show what actually happened? | 2026-07-01 23:28Z (in Guardian cycle) | GREEN | 0 |
 | Visual Auditor | Is the rendered game coherent? (needs eyes) | — (local /loop; not headless) | — | 0 |
 | Overseer | What broke today, what needs Andrew? | 2026-07-01 (digest rendered) | 0 P0 · 106 P2 | — |
 | Janitor | What's rotting in the workshop? | 2026-07-01 | 106 findings | 106 |
-| Cartographer | Is every surface element mapped and perfected? | 2026-07-07 22:59Z @ 6290b3bb | PERFECTED-fresh 184 / total 1288 (14%) | 0 |
+| Cartographer | Is every surface element mapped and perfected? | 2026-07-10 18:17Z @ ef16fa08 | PERFECTED-fresh 0 / total 1410 (0%) | 123 |
 | Dogfood | Does StarNet survive being USED like a real user uses it? | 2026-07-07 (proof shift · mock) @ e01831ab | SURVIVED — 0 anomalies (mock seam shift) | 0 |
 
 _The rows above are the Q5 **movie test** (2026-07-01): one real cycle of every headless
@@ -303,3 +303,7 @@ node scripts/qa/ledger.mjs --status
 - 2026-07-09 merge: bcd13bad -> feat/harness-backend (8b5aae04, launch-polish session) — STRANDED EL-11 RESCUE 2 of 2 (background consent visibility, EL-11 STRANDED #3): backgroundPermissionNotify — a consent prompt on a NON-active workstream now fires a clickable toast (opens that session) + '▣ NEEDS YOU' rail meta; per-agent warroom await truth (pendingAgentIds — one agent's prompt no longer lights ALL dots); fail-closed 120s deny timer gains one-shot bounded ack-extend (sidecar/consentwait.js + POST /api/consent/ack); visible ⏹ E-STOP restored to the topbar status cluster (error copy no longer names a control that doesn't exist; teaches Alt+H in its title). Conflict: friendlyerror.js take-both (new agent_busy copy + trunk's stale_session block). Gates ON TRUNK post-merge: test:fast 299 GREEN (+consent-visibility +consentwait) + test:http full GREEN. LIVE DOM round-trip :8966: #estop-btn present/visible in topbar, click → POST /api/halt {halted,cronAborted,beatAborted} + honest 'HALT — stopped 0 runs' toast on idle seed. NOT live-driven: background-consent toast under a real background run (unit+e2e proven).
 
 - 2026-07-09 UI finale polish sprint → trunk 3b81b2d3 (FF; incl. wake-msg walk fix): F1 primitives + lanes A/BC/D/E/G/H + F2 hygiene, 30 files +2843/-893; gates test:fast 301 + test:http green; goldens re-blessed (7 intentional frames); all 13 audit P0s fixed & live-driven post-merge (audit: docs/UI_FINALE_AUDIT_2026-07-09.md)
+
+- 2026-07-12 · claude/comms-ui-reliability-138b9f -> trunk 2310cce3 · gate GREEN (303 steps) · COMMS honest run-status (connecting state, timer restamp, pause-aware elapsed) + presence-card resurrection fix, regression-locked by test/comms-presence.test.js
+- 2026-07-12 merge: agent/w0-claims-verdict -> feat/harness-backend e7b06795 (ff) - W0 open-source authority restored: 37-family/162-file candidate-bound claims ledger + official/reproducible-source/custom/dirty-dev provenance + exact installed executable/tree/hash receipt v3 + staged W0/W6/W7 authorities. Independent audits caught and closed forged-ledger PASS escape. Post-merge test:fast 305/305 GREEN; W0 verifier receipt PASS; installed executable receipt still correctly BLOCKED.
+- 2026-07-12 · claude/workstation-screen-brightness-17e038 -> trunk (merge of f6cc4c73) · workstation screens no longer go black while the agent still works: overlap-safe per-agent runId refcount (liveRunsByAgent) — serverLit/handoff/run-clock/chat-teardown extinguish only on the LAST live run's end; aborted-stream lost run.end cleaned in chat.js finally; TTL sweep + snapshot reconcile clear leaks. Live-verified headless (overlap repro: desk stays lit through first run.end, darkens after last). Branch gate GREEN 302/302. Trunk gate: test:fast halts at step 122 qa-product-perfect-claims (9 FAILs) — PRE-EXISTING at snapshot 6771231d (verified in a clean worktree), not from this merge; looks like candidate-ledger drift as trunk advanced past the stamped w0 candidate — w0 lane to re-stamp or de-drift the instrument.
