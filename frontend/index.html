@@ -22,6 +22,7 @@
 <link rel="stylesheet" href="css/motion.css">
 <link rel="stylesheet" href="css/topbar.css"><!-- topbar instrument cluster: builds on motion.css's premium component vocabulary -->
 <link rel="stylesheet" href="css/widgets.css"><!-- widget rails: pinnable telemetry instruments in the chrome's dead space (widgets.js) -->
+<link rel="stylesheet" href="css/titlebar.css"><!-- custom window chrome (Windows desktop shell): themed titlebar + MIN/MAX/CLOSE; inert unless body.sn-chrome (titlebar.js) -->
 
 </head>
 <body class="theme-amber">
@@ -538,6 +539,7 @@
 <script src="app/updatecore.js"></script>
 <script src="app/updates.js"></script>
 <script src="app/fullscreen.js"></script>
+<script src="app/titlebar.js"></script><!-- custom window chrome: renders the themed titlebar ONLY when the desktop shell sets __STARNET_CUSTOM_CHROME__ (Windows, decorations off) -->
 <script src="app/ctxgauge.js"></script>
 <script src="app/floorstats.js"></script>
 <script src="app/slaglog.js"></script>
