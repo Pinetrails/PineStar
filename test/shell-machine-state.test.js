@@ -6,6 +6,7 @@
    happen to contain a scary substring must stay allowed. Pure predicate, no spawning, fast gate. */
 'use strict';
 const A = require('./_assert.js');
+const path = require('path');
 const shell = require('../sidecar/tools/builtin/shell.js');
 const { breaksMachineState, exposesNetwork, opensVisibleWindow } = shell;
 
@@ -79,6 +80,7 @@ A.ok(breaksMachineState('pwsh -c "Restart-Computer"'), 'pwsh -c Restart-Computer
 A.ok(breaksMachineState('sh -c "shutdown -h now"'), 'sh -c shutdown blocked');
 A.ok(breaksMachineState('bash -c reboot'), 'bash -c reboot blocked');
 A.ok(breaksMachineState('Start-Process shutdown -ArgumentList /r'), 'Start-Process shutdown blocked');
+A.ok(breaksMachineState('Start-Process -NoNewWindow -FilePath shutdown -ArgumentList /r'), 'Start-Process options before -FilePath shutdown blocked');
 A.ok(breaksMachineState('echo hi\nshutdown /r'), 'newline-separated shutdown blocked');
 A.ok(breaksMachineState('foo & reg add HKCU\\x /v y /d z'), 'reg add after & blocked');
 A.ok(breaksMachineState('powershell -e UwB0AG8AcAAtAENvbXB1dGVy'), 'powershell -e (base64 encoded) blocked outright');
@@ -90,6 +92,35 @@ A.eq(breaksMachineState('grep -c pattern file.txt'), null, 'grep -c (count flag)
 A.eq(breaksMachineState('powershell -ExecutionPolicy Bypass -File build.ps1'), null, 'powershell -ExecutionPolicy -File is NOT an encoded command');
 A.eq(breaksMachineState('schtasks /query /tn x'), null, 'schtasks /query (read-only) allowed');
 A.eq(breaksMachineState('echo restart-computer is a cmdlet'), null, 'the WORDS in an echo arg (no cmdlet at head) allowed');
+A.eq(breaksMachineState('echo Start-Process shutdown /r'), null, 'Start-Process words in echo output are not a launcher');
+if (process.platform === 'win32') A.eq(breaksMachineState('echo ^& shutdown /r'), null, 'cmd caret-escaped separator stays echo data, not a second command');
+
+// Windows PowerShell accepts every unambiguous prefix below. Drive only a SAFE payload on this host, then assert
+// the parser rejects the same executable switches before an opaque/dangerous payload can ever reach PowerShell.
+const PS_COMMAND_FLAGS = ['-c', '-co', '-com', '-comm', '-comma', '-comman', '-command'];
+const PS_ENCODED_FLAGS = ['-e', '-ec', '-en', '-enc', '-enco', '-encod', '-encode', '-encoded', '-encodedc',
+  '-encodedco', '-encodedcom', '-encodedcomm', '-encodedcomma', '-encodedcomman', '-encodedcommand'];
+for (const flag of PS_COMMAND_FLAGS) {
+  A.ok(breaksMachineState('powershell ' + flag + ' "shutdown /r /t 0"'), 'PowerShell ' + flag + ' command abbreviation blocked');
+}
+for (const flag of PS_ENCODED_FLAGS) {
+  A.ok(breaksMachineState('powershell ' + flag + ' UwB0AG8AcAAtAENvbXB1dGVy'), 'PowerShell ' + flag + ' encoded abbreviation blocked');
+}
+if (process.platform === 'win32') {
+  const { spawnSync } = require('child_process');
+  const psExe = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+  for (const flag of PS_COMMAND_FLAGS) {
+    const safe = spawnSync(psExe, ['-NoProfile', '-NonInteractive', flag, 'Write-Output STARNET_SAFE'], { encoding: 'utf8', timeout: 10000, windowsHide: true });
+    A.eq(safe.status, 0, 'host accepts PowerShell ' + flag + ' for a safe command payload');
+    A.ok(/STARNET_SAFE/.test(safe.stdout || ''), 'safe PowerShell ' + flag + ' payload executed as expected');
+  }
+  const safeEncoded = Buffer.from('Write-Output STARNET_SAFE', 'utf16le').toString('base64');
+  for (const flag of PS_ENCODED_FLAGS) {
+    const safe = spawnSync(psExe, ['-NoProfile', '-NonInteractive', flag, safeEncoded], { encoding: 'utf8', timeout: 10000, windowsHide: true });
+    A.eq(safe.status, 0, 'host accepts PowerShell ' + flag + ' for a safe encoded payload');
+    A.ok(/STARNET_SAFE/.test(safe.stdout || ''), 'safe PowerShell ' + flag + ' encoded payload executed as expected');
+  }
+}
 
 // ---- network exposure rework: explicit all-interfaces binds blocked; client 0.0.0.0 + bare mentions allowed ----
 A.ok(exposesNetwork('vite --host'), 'bare --host (framework binds 0.0.0.0) blocked');
@@ -100,7 +131,7 @@ A.eq(exposesNetwork('echo binding to 0.0.0.0 disabled'), null, 'echo mentioning 
 A.eq(exposesNetwork('vite --host 127.0.0.1'), null, '--host 127.0.0.1 allowed');
 
 // ---- integration: the real shell.exec tool refuses a machine-state command with a helpful message ----
-const fs = require('fs'), path = require('path'), os = require('os');
+const fs = require('fs'), os = require('os');
 const { spawn } = require('child_process');
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-mach-'));
 const tool = shell.makeShellTool({ spawn, fs, pathMod: path, root, clock: { now: () => 0 }, redact: s => s }).execTool;

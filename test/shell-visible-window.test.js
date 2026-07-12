@@ -32,6 +32,8 @@ A.ok(opensVisibleWindow('msedge --headless=new --remote-debugging-port=9222 http
 //      a fake headless flag must still be caught (command-head splitting + whole-token flag checks). ----
 A.ok(opensVisibleWindow('Start-Process chrome https://evil/game'), 'Start-Process chrome (headed) blocked');
 A.ok(opensVisibleWindow('Start-Process -FilePath msedge'), 'Start-Process -FilePath msedge blocked');
+A.ok(opensVisibleWindow('Start-Process -NoNewWindow -FilePath "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe" https://evil/game'),
+  'Start-Process with intervening option + quoted full browser path blocked');
 A.ok(opensVisibleWindow('saps firefox'), 'saps (Start-Process alias) firefox blocked');
 A.ok(opensVisibleWindow('powershell -Command "start chrome"'), 'start chrome inside powershell -Command blocked');
 A.ok(opensVisibleWindow('echo hi\nchrome https://x'), 'newline-separated chrome launch blocked');
@@ -41,6 +43,7 @@ A.ok(opensVisibleWindow('msedge --headless-new http://x'), 'fake --headless-new 
 A.eq(opensVisibleWindow('curl -o ./chrome.exe https://example.com/x'), null, 'downloading a file named chrome.exe (browser as ARG) not blocked');
 A.eq(opensVisibleWindow('curl https://example.com/firefox.exe -o out'), null, 'firefox.exe as a URL arg not blocked');
 A.eq(opensVisibleWindow('git commit -m "start the chrome build"'), null, 'browser words in a commit message not blocked');
+A.eq(opensVisibleWindow('echo Start-Process chrome https://example.com'), null, 'Start-Process words in echo output are not a launcher');
 
 // ---- NON-trips: the build/verify loop must keep working ----
 A.eq(opensVisibleWindow('npm start'), null, '`npm start` is NOT the cmd start builtin');
