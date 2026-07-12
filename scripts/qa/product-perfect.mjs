@@ -22,12 +22,12 @@ const RECEIPT_SCHEMA = 1;
 const FUTURE_SKEW_MS = 5 * 60 * 1000;
 const EXPECTED_WAVES = Object.freeze([
   ['W0', 'proof-authority', 86400000, 'scripts/qa/product-perfect/gates/wave-0-proof-authority.mjs'],
-  ['W1', 'security-trust', 86400000, 'scripts/qa/product-perfect/gates/wave-1-security-trust.mjs'],
-  ['W2', 'truthful-authority', 86400000, 'scripts/qa/product-perfect/gates/wave-2-truthful-authority.mjs'],
+  ['W1', 'installed-first-run', 86400000, 'scripts/qa/product-perfect/gates/wave-1-installed-first-run.mjs'],
+  ['W2', 'security-trust', 86400000, 'scripts/qa/product-perfect/gates/wave-2-security-trust.mjs'],
   ['W3', 'last-mile-recovery', 86400000, 'scripts/qa/product-perfect/gates/wave-3-last-mile-recovery.mjs'],
-  ['W4', 'autonomy-vision', 86400000, 'scripts/qa/product-perfect/gates/wave-4-autonomy-vision.mjs'],
-  ['W5', 'integration-reality', 86400000, 'scripts/qa/product-perfect/gates/wave-5-integration-reality.mjs'],
-  ['W6', 'full-surface-proof', 21600000, 'scripts/qa/product-perfect/gates/wave-6-full-surface-proof.mjs'],
+  ['W4', 'capability-enforcement', 86400000, 'scripts/qa/product-perfect/gates/wave-4-capability-enforcement.mjs'],
+  ['W5', 'autonomy-honesty', 86400000, 'scripts/qa/product-perfect/gates/wave-5-autonomy-honesty.mjs'],
+  ['W6', 'integration-full-proof', 21600000, 'scripts/qa/product-perfect/gates/wave-6-integration-full-proof.mjs'],
   ['W7', 'frozen-candidate', 3600000, 'scripts/qa/product-perfect/gates/wave-7-frozen-candidate.mjs']
 ]);
 const EXPECTED_POLICY = Object.freeze({
@@ -37,6 +37,9 @@ const EXPECTED_POLICY = Object.freeze({
   staleEvidence: 'requeue',
   publishAuthorized: false
 });
+const AUTHORITY_IDS = Object.freeze([
+  'installed', 'claimsPlanning', 'claimsTerminal', 'ready', 'ledger', 'atlas'
+]);
 
 function str(value) { return value == null ? '' : String(value); }
 function sha256(value) { return crypto.createHash('sha256').update(value).digest('hex'); }
@@ -192,7 +195,7 @@ export function receiptValidity(receipt, context) {
 
 function normalizedAuthorities(authorities) {
   const out = {};
-  for (const id of ['ready', 'ledger', 'atlas']) {
+  for (const id of AUTHORITY_IDS) {
     const value = authorities && authorities[id];
     out[id] = value && typeof value === 'object'
       ? value
@@ -203,7 +206,9 @@ function normalizedAuthorities(authorities) {
 }
 
 function authorityErrorsForWave(waveId, authorities) {
-  const required = waveId === 'W0' ? ['ready'] : waveId === 'W6' ? ['ledger', 'atlas'] : [];
+  const required = waveId === 'W0' ? ['installed', 'claimsPlanning']
+    : waveId === 'W6' ? ['claimsTerminal', 'ledger', 'atlas']
+      : waveId === 'W7' ? ['ready'] : [];
   const errors = [];
   for (const id of required) {
     const authority = authorities[id];
@@ -268,7 +273,7 @@ export function deriveStatus(manifest, candidate, receiptsByWave, authorityInput
       } : null
     });
   }
-  const authorityPerfect = ['ready', 'ledger', 'atlas'].every(id => authorities[id].ok === true);
+  const authorityPerfect = AUTHORITY_IDS.every(id => authorities[id].ok === true);
   let productPerfect = waves.length > 0 && waves.every(wave => wave.status === 'pass') && authorityPerfect;
   if (!productPerfect && !currentWave && !authorityPerfect) {
     const targetId = manifest.waves.some(wave => wave.id === 'W6') ? 'W6' : manifest.waves[manifest.waves.length - 1].id;
@@ -616,7 +621,7 @@ function render(status) {
     lines.push('  [INFO] operational evidence dirt excluded from shipped-source cleanliness: ' + status.candidate.operationalDirtyPaths.join(', '));
   }
   if (status.manifestErrors) for (const error of status.manifestErrors) lines.push('  [BLOCKED] manifest — ' + error);
-  for (const id of ['ready', 'ledger', 'atlas']) {
+  for (const id of AUTHORITY_IDS) {
     const authority = status.authorities && status.authorities[id];
     if (!authority) continue;
     lines.push('  [' + str(authority.status || (authority.ok ? 'PASS' : 'BLOCKED')).toUpperCase() + '] authority/' + id);

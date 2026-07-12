@@ -16,6 +16,13 @@ description: LOCKED StarNet frontend/canvas/UI laws — windows, COMMS beats, sp
 - **Hover = glance:** a tiny nameplate only. NEVER open a window on hover.
 - COMMS beats: decided cards must `vanish()`; **one post-run beat at a time** (a single shared
   slot); asides use the gold-inset beat family, never `.reply`.
+- COMMS run-status honesty (2026-07-11, locked by test/comms-presence.test.js): a run indicator
+  may claim thinking/working ONLY after the sidecar's `agent.run.start` confirms the run
+  (`Channels.runIdOf` set) — before that the honest state is `connecting…`. Any displayed
+  duration reads `Channels.elapsedOf` (start re-stamped at confirmation, approval pauses
+  excluded), never `Date.now() - startedAt`. A RESOLVED `#comms-presence` card is transcript
+  HISTORY: shed its id, never reuse/re-pin it as the next run's live card (the resurrection bug
+  killed every post-first-run working indicator).
 - Dock targets stay hidden until their window opens; never hardcode prop labels — resolve via
   `resolveKit`.
 

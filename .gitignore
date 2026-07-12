@@ -26,6 +26,8 @@ dev/.env.dev
 dev/.scratch-workspace/
 # mock-cron dev sidecar runtime state (roster/goals/cron json + .bak churn; never committed)
 dev/.scratch-mock-cron/
+# mock-comms dev sidecar runtime state (same shape; never committed)
+dev/.scratch-mock-comms/
 
 # rust / tauri desktop shell build output
 src-tauri/target/
