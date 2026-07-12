@@ -29,6 +29,18 @@ W0 grep-verdict checkpoint (`ef16fa08`, 2026-07-12):
   `pp-w0-open-source-reset` and `pp-w0-open-source-promises` worktrees remain untouched and are
   salvage-only, not merge authority.
 
+W1 read-only preflight (do not implement until W0 passes):
+- Beginner `STUCK@title` is a driver race, not a product splash bug. `beginner-run.mjs` waits for
+  the static connect element, samples the active screen once while it is still `screen-loader`,
+  and never retries Enter when `screen-splash` appears. Add a loader-to-splash fail-first test and
+  retry the advance against observed screen state.
+- Healthy-idle `LINK DOWN` is false because `world.js` ages only `onopen/onmessage`, while the
+  server's 25-second SSE keepalive is a comment that `EventSource` never exposes. Held commit
+  `9298c52f` already replaces this with header-auth fetch streaming and timestamps keepalive bytes;
+  audit and merge-forward it in W1 rather than rebuilding it.
+- `world.js` ownership must first be serialized with the stale
+  `link-down-starnet-b85d52`, chat-bubble, and conveyor worktrees; no lane may overlap them.
+
 ## LANDED 2026-07-09 — LOST-WORK RESTORE: 7 built-but-unmerged features recovered to trunk (5b9cde3f) ✅
 
 Andrew noticed the new start menu + upgraded CREATE YOUR OVERSEER were missing from his build —
