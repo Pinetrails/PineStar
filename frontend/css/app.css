@@ -1374,7 +1374,29 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
   border-radius: 7px 7px 0 0;
 }
 #left h3::after { display: none; }   /* the global engraved-rule ::after doesn't belong on a solid bar */
-#left h3 .h3-aux { color: var(--ink); opacity: .7; text-shadow: none; font-size: 12px; letter-spacing: 1px; }
+#left h3 .h3-aux { color: var(--ink); opacity: .7; text-shadow: none; font-size: 12px; letter-spacing: 1px; order: 0; }   /* order reset: the global .h3-aux order:2 would shove the count past the ◂ button */
+/* right cluster: agent count + the hide control, so space-between keeps them together */
+.crew-h3-right { display: inline-flex; align-items: center; gap: 7px; }
+/* ◂ hide — same ink-bordered button vocabulary as the SESSIONS head's + NEW */
+.crew-hide {
+  font-family: inherit; font-size: 12px; line-height: 1.2; color: var(--ink);
+  background: transparent; border: 1px solid rgba(0,0,0,.45); border-radius: 3px;
+  cursor: pointer; padding: 1px 6px;
+}
+.crew-hide:hover { background: rgba(0,0,0,.2); }
+/* ▸ CREW restore — a slim phosphor drawer handle on the stage's left edge while the rail is hidden.
+   Sits at z4, above the tube-face overlay (z2) and cam HUD (z3, pointer-events:none). */
+.crew-show {
+  position: absolute; left: 0; top: 50%; transform: translateY(-50%); z-index: 4;
+  writing-mode: vertical-rl; text-orientation: mixed;
+  font-family: inherit; font-size: 12px; letter-spacing: 2px; color: var(--ph);
+  background: rgba(5,3,1,.82); border: 1px solid var(--ph-dim); border-left: 0;
+  border-radius: 0 5px 5px 0; padding: 10px 3px; cursor: pointer;
+  text-shadow: 0 0 6px var(--ph-glow2);
+  transition: color .12s, border-color .12s, box-shadow .12s;
+}
+.crew-show:hover { color: var(--ph-bright); border-color: var(--ph); box-shadow: 0 0 10px var(--ph-glow2); }
+.crew-show[hidden] { display: none; }
 
 /* crew manifest empty state */
 .crew-empty { padding: 14px 10px; font-size: 13px; color: var(--ph-dim); }
@@ -2120,6 +2142,28 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
   #chat-panel { flex: initial; }
   /* let the bottom-bar docks wrap onto a second line instead of clipping off-screen */
   #bottombar { flex-wrap: wrap; row-gap: 4px; overflow: visible; }
+}
+
+/* ---- CREW rail hidden (leftrail.js): the left column leaves the grid entirely and the stage
+   absorbs the space; the ▸ CREW drawer tab (.crew-show) is the only way back. The body-class
+   selector out-specifies every breakpoint's #screen-game.active rule, so each override below
+   mirrors its breakpoint's remaining columns. ---- */
+body.crew-rail-off #left { display: none; }
+body.crew-rail-off #screen-game.active {
+  grid-template-columns: 1fr var(--chat-w, 360px);
+  grid-template-areas: "top top" "center chat" "bot bot";
+}
+@media (max-width: 1120px) {
+  body.crew-rail-off #screen-game.active { grid-template-columns: 1fr var(--chat-w, 300px); }
+}
+@media (max-width: 1000px) {
+  body.crew-rail-off #screen-game.active { grid-template-columns: 1fr 264px; }
+}
+@media (max-width: 860px) {
+  body.crew-rail-off #screen-game.active {
+    grid-template-columns: 1fr;
+    grid-template-areas: "top" "center" "chat" "bot";
+  }
 }
 
 /* ============================================================
