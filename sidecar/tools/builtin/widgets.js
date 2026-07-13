@@ -27,9 +27,20 @@
   const KEY = 'station';          // ONE station-scoped record list (widgets are station chrome, not per-agent)
   const MAX_WIDGETS = 12;         // the rails are small; a fleet of stale gauges is noise, not signal
   const ID_RE = /^[a-z0-9][a-z0-9-]{0,23}$/;
-  const LIM = { label: 28, value: 24, sub: 28, listItem: 90, listLen: 5 };
+  const LIM = { label: 28, value: 24, sub: 28, listItem: 90, listLen: 5, sparkLen: 24 };
+  const TONES = ['ok', 'warn', 'bad'];    // the instrument tint palette — semantic, theme-mapped by the chrome
 
   const trunc = (s, n) => { s = String(s); return s.length > n ? s.slice(0, n - 1) + '…' : s; };
+  // spark: keep only finite numbers, cap the series; <2 points can't draw a line → null
+  const cleanSpark = (raw) => {
+    if (!Array.isArray(raw)) return null;
+    const pts = raw.slice(0, LIM.sparkLen).map(Number).filter(v => isFinite(v));
+    return pts.length >= 2 ? pts : null;
+  };
+  const cleanProgress = (raw) => {
+    const n = Number(raw);
+    return isFinite(n) ? Math.max(0, Math.min(100, n)) : null;
+  };
 
   function makeWidgetTools(deps) {
     deps = deps || {};
@@ -56,7 +67,10 @@
         'so keep it fresh: re-set the same id whenever you have a newer figure (a routine is the natural driver). ' +
         'Use a stable `id` per readout; setting an existing id overwrites it. `value` is the big number/figure ' +
         '(short — "$​1,240", "+7"); `sub` is an optional small caption ("today", "▲ +$180"); `list` (up to 5 short lines) makes a ' +
-        'ticker instead of a number — right for headlines. Pass `clear: true` to retire a readout you no longer maintain. ' +
+        'ticker instead of a number — right for headlines. Optional dressing: `tone` ("ok"|"warn"|"bad") tints the figure, ' +
+        '`spark` (2-24 numbers, oldest first) draws a tiny trend line, `progress` (0-100) draws a small bar — use them when the ' +
+        'data genuinely carries that shape (a trend series, a completion fraction), never as decoration. ' +
+        'Pass `clear: true` to retire a readout you no longer maintain. ' +
         'SKIP: secrets, walls of text, anything you cannot back with a real source when asked.',
       schema: {
         type: 'object', required: ['id'],
@@ -66,6 +80,9 @@
           value: { type: 'string', description: 'The big figure, kept short (max 24 chars), e.g. "$​1,240".' },
           sub: { type: 'string', description: 'Optional small line under/next to the value, e.g. "today" (max 28 chars).' },
           list: { type: 'array', items: { type: 'string' }, description: 'Up to 5 short lines rendered as a cycling ticker (headlines). Use INSTEAD of value.' },
+          tone: { type: 'string', enum: ['ok', 'warn', 'bad'], description: 'Optional semantic tint for the figure: "ok" (good), "warn", "bad". Omit for neutral.' },
+          spark: { type: 'array', items: { type: 'number' }, description: 'Optional trend series (2-24 numbers, oldest first) drawn as a tiny sparkline beside the value.' },
+          progress: { type: 'number', description: 'Optional completion fraction 0-100 drawn as a small bar (e.g. a goal or quota).' },
           clear: { type: 'boolean', description: 'true = remove this readout from the rails.' }
         }
       },
@@ -97,6 +114,9 @@
           value: hasValue ? trunc(redact(String(args.value)), LIM.value) : null,
           sub: (args.sub !== undefined && String(args.sub).trim() !== '') ? trunc(redact(String(args.sub)), LIM.sub) : null,
           list: rawList.slice(0, LIM.listLen).map(x => trunc(redact(x), LIM.listItem)),
+          tone: TONES.indexOf(args.tone) >= 0 ? args.tone : null,
+          spark: cleanSpark(args.spark),
+          progress: cleanProgress(args.progress),
           agentId: aid,
           runId: ctx && ctx.runId ? String(ctx.runId) : null,   // provenance: which run fed it
           updatedAt: clock.now()

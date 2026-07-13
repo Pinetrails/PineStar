@@ -123,10 +123,17 @@ const Widgets = (() => {
     const list = Array.isArray(raw.list) ? raw.list.slice(0, 5).map(x => s(x, 90)).filter(Boolean) : [];
     const value = s(raw.value, 24);
     if (value === null && !list.length) return null;   // nothing to show — never render an empty gauge
+    // expressive dressing (tone/spark/progress) — trust nothing: whitelist the tone, keep only
+    // finite spark numbers (≥2 to draw a line), clamp progress into 0-100. All optional.
+    const spark = Array.isArray(raw.spark) ? raw.spark.slice(0, 24).map(Number).filter(v => isFinite(v)) : [];
+    const prog = Number(raw.progress);
     return {
       slug: slug,
       label: s(raw.label, 28) || slug.toUpperCase(),
       value: value, sub: s(raw.sub, 28), list: list,
+      tone: (raw.tone === 'ok' || raw.tone === 'warn' || raw.tone === 'bad') ? raw.tone : null,
+      spark: spark.length >= 2 ? spark : null,
+      progress: isFinite(prog) ? Math.max(0, Math.min(100, prog)) : null,
       agentId: s(raw.agentId, 40) || 'agent',
       updatedAt: Number(raw.updatedAt) || 0
     };
@@ -206,8 +213,8 @@ const Widgets = (() => {
         const rec = feed.get(slug);
         if (!rec) return { val: null, sub: 'no signal', prov: null };
         const prov = agentNameOf(rec.agentId) + ' · ' + fmtAge(Date.now(), rec.updatedAt);
-        if (rec.list.length) return { tick: rec.list[tickerStep % rec.list.length], prov: prov };
-        return { val: rec.value, sub: rec.sub || '', prov: prov };
+        if (rec.list.length) return { tick: rec.list[tickerStep % rec.list.length], prov: prov, tone: rec.tone };
+        return { val: rec.value, sub: rec.sub || '', prov: prov, tone: rec.tone, series: rec.spark || undefined, prog: rec.progress };
       }
     };
   }
@@ -229,11 +236,26 @@ const Widgets = (() => {
   function sparkSvg(series) {
     const w = 46, h = 16;
     if (!series || series.length < 2) return '';
-    const mx = Math.max(1, ...series);
-    const pts = series.map((v, i) =>
-      ((i / (series.length - 1)) * w).toFixed(1) + ',' + (h - 1 - (v / mx) * (h - 3)).toFixed(1)).join(' ');
+    // normalize against the series RANGE (not just the max) so a flat-ish agent series
+    // (e.g. revenue 1200..1240) still shows its shape instead of a flat line at the top.
+    const mx = Math.max(...series), mn = Math.min(...series);
+    const span = (mx - mn) || 1;
+    const xy = series.map((v, i) => [
+      (i / (series.length - 1)) * w,
+      h - 2 - ((v - mn) / span) * (h - 5)
+    ]);
+    const pts = xy.map(p => p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' ');
+    const last = xy[xy.length - 1];
+    // area fill under the line + a bright endpoint dot — the "now" reading
     return '<svg class="wg-spark" viewBox="0 0 ' + w + ' ' + h + '" aria-hidden="true">'
-      + '<polyline points="' + pts + '" fill="none"/></svg>';
+      + '<polygon points="0,' + h + ' ' + pts + ' ' + w + ',' + h + '" stroke="none"/>'
+      + '<polyline points="' + pts + '" fill="none"/>'
+      + '<circle cx="' + last[0].toFixed(1) + '" cy="' + last[1].toFixed(1) + '" r="1.6" stroke="none"/></svg>';
+  }
+
+  // a small milled progress bar — width is a sanitized 0-100 number, never agent markup
+  function progHtml(pct) {
+    return '<i class="wg-prog"><i class="wg-prog-fill" style="width:' + Number(pct).toFixed(1) + '%"></i></i>';
   }
 
   function makeWidget(id) {
@@ -274,7 +296,13 @@ const Widgets = (() => {
       if (sub) { sub.classList.remove('wg-ticktext'); sub.textContent = p.sub || ''; }
       el.setAttribute('data-empty', p.val == null ? '1' : '0');
     }
-    if (slot) slot.innerHTML = (p.val == null || p.tick != null) ? '' : sparkSvg(p.series);
+    // tone: an agent-declared semantic tint (whitelisted at sanitize) — the chrome maps it to theme colours
+    el.setAttribute('data-tone', p.tone || '');
+    if (slot) {
+      if (p.val == null || p.tick != null) slot.innerHTML = '';
+      else if (p.prog != null) slot.innerHTML = progHtml(p.prog);   // progress beats spark: one accessory per instrument
+      else slot.innerHTML = sparkSvg(p.series);
+    }
     if (def.fed && srct) srct.textContent = p.prov || 'no signal';   // provenance: who fed it · how long ago
     // E3: STATIC widgets carry a hardcoded 'live' source tag. When the source goes stale (poll failure
     // or SSE drop) flip it to 'stale' and dim the value — but ONLY when a real latched value is showing.
@@ -545,7 +573,9 @@ const Widgets = (() => {
   return { init, _layout: () => ({ top: layout.top.slice(), bot: layout.bot.slice() }), _paintAll: paintAll,
            _foldRuns: foldRuns, _foldTokens: foldTokens, _fmtCount: fmtCount, _sanitizeLayout: sanitizeLayout,
            _sanitizeFeedRecord: sanitizeFeedRecord, _fmtAge: fmtAge, _FEED_RE: FEED_RE, _pollFeed: pollFeed,
-           _staleFor: staleFor, _pollFail: pollFail, _setInsights: (v) => { insights = v; } };
+           _staleFor: staleFor, _pollFail: pollFail, _setInsights: (v) => { insights = v; },
+           _setFeed: (recs) => { feed.clear(); for (const raw of (recs || [])) { const rec = sanitizeFeedRecord(raw); if (rec) feed.set(rec.slug, rec); } },
+           _sparkSvg: sparkSvg };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = { Widgets };
