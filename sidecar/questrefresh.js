@@ -95,8 +95,17 @@
     return { fire: false, why: null, binding: openCount === 0 ? 'gap' : 'cooldown' };
   }
 
+  // does the station know ANYTHING worth grounding a refresh on? A cold save (no goal, no star, empty
+  // dossier, no activity, no interests) should SKIP the model call and say so — never pay to guess.
+  function hasEvidence(ctx) {
+    ctx = ctx || {};
+    return !!(str(ctx.goalNote).trim() || (ctx.northStar && str(ctx.northStar.text).trim())
+      || str(ctx.dossierBlock).trim() || str(ctx.activityBlock).trim() || str(ctx.interestsBlock).trim());
+  }
+
   /* ---- the refresh directive. ctx = { goalNote, northStar:{text,groundedIn}|null, dossierBlock,
-     activityBlock, openQuests:[{title,contract:{type}}], deniedTitles:[..], propKeys:[..] } ---- */
+     activityBlock, interestsBlock, openQuests:[{title,contract:{type}}], completedQuests:[{title}],
+     deniedTitles:[..], propKeys:[..] } ---- */
   function buildDirective(ctx) {
     ctx = ctx || {};
     const lines = [];
@@ -113,10 +122,19 @@
     }
     if (str(ctx.dossierBlock).trim()) { lines.push(''); lines.push('COMMANDER DOSSIER:'); lines.push(str(ctx.dossierBlock).trim()); }
     if (str(ctx.activityBlock).trim()) { lines.push(''); lines.push('RECENT REAL ACTIVITY:'); lines.push(str(ctx.activityBlock).trim()); }
+    if (str(ctx.interestsBlock).trim()) { lines.push(''); lines.push('RECURRING INTERESTS THE STATION OBSERVED (with evidence):'); lines.push(str(ctx.interestsBlock).trim()); }
     const open = (Array.isArray(ctx.openQuests) ? ctx.openQuests : []).map(q => '• ' + str(q && q.title)).filter(t => t.length > 2).join('\n');
     lines.push('');
     lines.push('QUESTS ALREADY OPEN (never propose these or trivial variants):');
     lines.push(open || '(none)');
+    // PROGRESSION: the just-finished work is the strongest signal for what comes NEXT — the slate should
+    // read as a path toward the north star, each refresh building on the last, never a reshuffle.
+    const doneQ = (Array.isArray(ctx.completedQuests) ? ctx.completedQuests : []).map(q => '• ' + str(q && q.title)).filter(t => t.length > 2).join('\n');
+    if (doneQ) {
+      lines.push('');
+      lines.push('RECENTLY COMPLETED (build on these — propose the natural NEXT step along the same path; never re-propose them):');
+      lines.push(doneQ);
+    }
     const denied = (Array.isArray(ctx.deniedTitles) ? ctx.deniedTitles : []).map(str).filter(Boolean);
     if (denied.length) {
       lines.push('');
@@ -260,7 +278,7 @@
   }
 
   return {
-    fresh, normalize, decide, buildDirective, parse, parseContract,
+    fresh, normalize, decide, buildDirective, parse, parseContract, hasEvidence,
     note, stampCycle, stampMint, setNorthStar,
     REFRESH_EVERY_MS, CAUGHT_UP_GAP_MS, MAX_MINTS_PER_CYCLE, LEDGER_CAP, CONTRACT_TYPES,
     _internals: { norm: norm, grabFrom: grabFrom, MIN_FACT_KEY: MIN_FACT_KEY, MAX_STEPS: MAX_STEPS }

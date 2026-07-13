@@ -3410,27 +3410,43 @@ async function runQuestRefreshCycle(why) {
   const timer = setTimeout(() => { try { ac.abort(); } catch (_) {} }, QUESTREFRESH_TIMEOUT_MS);
   let usd = 0, tokens = 0;
   try {
-    let provider;
-    if (usingCodex) { const token = await ensureCodexAccessToken(); provider = selectProvider({ provider: providerId, fetch: globalThis.fetch, token, baseUrl }); }
-    else provider = selectProvider({ provider: providerId, fetch: globalThis.fetch, key, baseUrl });
-    const cost = makeCostEngine({ priceOf: provider.priceOf });
-    const unmetered = !!((getProviderProfile(providerId) || {}).unmetered);
-
     const pack = nightshiftContextPack();
     const activityBlock = (pack.activityLines || []).slice(0, 10).map(a => '• ' + a).join('\n');
+    // RELEVANCE: the interest histogram (what the Commander keeps asking about) is already distilled by the
+    // scout lane — fold it into the evidence so quests can ground in real recurring topics, not just the dossier.
+    let interestsBlock = '';
+    try { interestsBlock = Interests.topicsBlock(interestsState, { now: Date.now(), limit: 6 }); } catch (_) { interestsBlock = ''; }
     const rec = questStore.read();
     const open = rec.quests.filter(q => q.status === 'open');
+    // PROGRESSION: the most recently completed quests feed the directive so each refresh proposes the NEXT
+    // step along the same path (and their titles join the dedup set — done work is never re-proposed).
+    const completed = rec.quests.filter(q => q.status === 'done')
+      .sort((a, b) => (b.completedAt || 0) - (a.completedAt || 0)).slice(0, 5);
     const goalNote = commanderGoals.note();
     const dossierBlock = commanderDossier.get();
-    const directive = QuestRefresh.buildDirective({
+    const evidenceCtx = {
       goalNote: goalNote,
       northStar: questRefreshState.northStar,
       dossierBlock: dossierBlock,
       activityBlock: activityBlock,
+      interestsBlock: interestsBlock,
       openQuests: open.map(q => ({ title: q.title })),
+      completedQuests: completed.map(q => ({ title: q.title })),
       deniedTitles: rec.deniedTitles,
       propKeys: QUESTREFRESH_PROP_KEYS
-    });
+    };
+    // COLD-STATE HONESTY: a station that knows nothing yet has nothing to ground a quest in. Skip the model
+    // call entirely and say so — a paid guess would be exactly the ungrounded busywork the doctrine forbids.
+    if (!QuestRefresh.hasEvidence(evidenceCtx)) {
+      questRefreshNote({ outcome: 'skipped', reason: 'not enough is known yet (empty dossier, no goal, no activity) — the refresh waits for the station to learn more' });
+      return;
+    }
+    // evidence exists → NOW pay for the provider (codex token fetch is a network hop; never spend it on a cold save).
+    let provider;
+    if (usingCodex) { const token = await ensureCodexAccessToken(); provider = selectProvider({ provider: providerId, fetch: globalThis.fetch, token, baseUrl }); }
+    else provider = selectProvider({ provider: providerId, fetch: globalThis.fetch, key, baseUrl });
+    const cost = makeCostEngine({ priceOf: provider.priceOf });
+    const directive = QuestRefresh.buildDirective(evidenceCtx);
     // ONE streamed completion (the scout/reflection aux plumbing), spend reconciled + booked below.
     const req = { model, stream: true, signal: ac.signal, messages: [
       { role: 'system', content: 'You are the station\'s quest master. Follow the format exactly; ground every claim in the provided evidence.' },
@@ -3444,8 +3460,11 @@ async function runQuestRefreshCycle(why) {
     const c = cost.reconcile(usage, model);
     usd += c.usd || 0; tokens += (c.tokensIn || 0) + (c.tokensOut || 0);
 
-    const grounding = [goalNote, dossierBlock, activityBlock].filter(Boolean).join('\n');
-    const parsed = QuestRefresh.parse(out, { openTitles: open.map(q => q.title), deniedTitles: rec.deniedTitles, propKeys: QUESTREFRESH_PROP_KEYS, grounding: grounding });
+    const grounding = [goalNote, dossierBlock, activityBlock, interestsBlock].filter(Boolean).join('\n');
+    const parsed = QuestRefresh.parse(out, {
+      openTitles: open.map(q => q.title).concat(completed.map(q => q.title)),   // done work is never re-proposed
+      deniedTitles: rec.deniedTitles, propKeys: QUESTREFRESH_PROP_KEYS, grounding: grounding
+    });
 
     // NORTH STAR: the Commander's own active goal ALWAYS outranks an inference; the model's line only lands
     // when no goal arc is set. Persisted so the next cycle re-shows it (revise-on-evidence, not re-derive).
@@ -3462,7 +3481,7 @@ async function runQuestRefreshCycle(why) {
         title: q.title, desc: q.desc, reward: q.reward, kind: 'generated', createdBy: 'system:quest-refresh',
         agentId: null, contract: q.contract, steps: q.steps, groundedIn: q.groundedIn
       }, Date.now());
-      if (r && r.ok) { minted++; questRefreshNote({ outcome: 'minted', reason: (why === 'caught-up' ? 'caught-up' : 'daily') + ' refresh — ' + q.groundedIn, title: q.title }); }
+      if (r && r.ok) { minted++; questRefreshNote({ outcome: 'minted', reason: why + ' refresh — ' + q.groundedIn, title: q.title }); }
       else questRefreshNote({ outcome: 'rejected', reason: (r && r.error) || 'the store rejected the mint', title: q.title });
     }
     if (minted) { questRefreshState = QuestRefresh.stampMint(questRefreshState, { now: Date.now() }); persistQuestRefresh(); }
@@ -4150,6 +4169,7 @@ function dispatchRoute(req, res) {
   if (req.method === 'POST' && req.url === '/api/quests/confirm') return handleQuestsConfirm(req, res);
   if (req.method === 'POST' && req.url === '/api/quests/dismiss') return handleQuestsDismiss(req, res);
   if (req.method === 'GET' && req.url.split('?')[0] === '/api/quests/refresh') return handleQuestsRefreshStatus(req, res);   // QUEST V3: north star + refresh ledger + due state
+  if (req.method === 'POST' && req.url === '/api/quests/refresh/run') return handleQuestsRefreshRun(req, res);               // QUEST V3: force a refresh cycle NOW (manual override)
   // W7 — OPEN the deliverable, don't display its code. Two routes let the Commander RUN/OPEN what an agent built:
   //   POST /api/workshop/open  — shell-open a REAL jailed file with the OS default app (interactive user-click only).
   if (req.method === 'POST' && req.url === '/api/workshop/open') return handleWorkshopOpen(req, res);
@@ -5659,6 +5679,22 @@ async function handleQuestsDismiss(req, res) {
   let did; try { did = await questStore.dismiss(id, Date.now()); } catch (e) { return json(500, { ok: false, error: 'could not dismiss that quest' }); }
   if (did) { try { questRefreshTick(); } catch (_) {} }   // caught-up nudge (QUEST V3) — same early look as confirm
   json(200, { ok: !!did });
+}
+
+// POST /api/quests/refresh/run — force a refresh cycle NOW (the manual override for a "refresh quests"
+// button / dev proof). Bypasses the due gates on purpose — a Commander asking IS the trigger — but still
+// respects the in-flight guard, the opt-out, and stamps the cadence like any other attempt. Honest reply:
+// started:true only when a cycle actually launched; otherwise the reason why not.
+async function handleQuestsRefreshRun(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  try { await readBody(req, 4096); } catch (_) {}
+  if (process.env.SKYNET_QUEST_REFRESH === '0') return json(200, { ok: false, started: false, error: 'quest refresh is disabled (SKYNET_QUEST_REFRESH=0)' });
+  if (questRefreshingNow) return json(200, { ok: false, started: false, error: 'a refresh cycle is already running' });
+  questRefreshState = QuestRefresh.stampCycle(questRefreshState, { now: Date.now() });
+  persistQuestRefresh();
+  questRefreshingNow = true;
+  runQuestRefreshCycle('manual').catch(() => {}).finally(() => { questRefreshingNow = false; });
+  json(200, { ok: true, started: true });
 }
 
 // GET /api/quests/refresh → the QUEST V3 refresh engine's honest status: the north star (Commander goal or

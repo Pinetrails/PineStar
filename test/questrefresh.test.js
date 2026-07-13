@@ -49,6 +49,20 @@ A.ok(dirGoal.indexOf('dish, cabinet') >= 0, 'the honest prop vocabulary is spell
 const dirNS = R.buildDirective({ northStar: { text: 'Become a full-time creator' }, propKeys: PROPS });
 A.ok(dirNS.indexOf('CURRENT NORTH STAR') >= 0 && dirNS.indexOf('full-time creator') >= 0, 'a prior inferred star is re-shown, not re-derived');
 A.ok(R.buildDirective({ propKeys: PROPS }).indexOf('NO NORTH STAR IS KNOWN YET') >= 0, 'a cold state asks for the inference');
+// PROGRESSION + RELEVANCE blocks
+const dirProg = R.buildDirective({ goalNote: 'Current goal: Launch.', interestsBlock: '• davinci color grading (asked 4x)', completedQuests: [{ title: 'Publish episode 3' }], propKeys: PROPS });
+A.ok(dirProg.indexOf('RECURRING INTERESTS THE STATION OBSERVED') >= 0 && dirProg.indexOf('davinci color grading') >= 0, 'the interest histogram rides the directive');
+A.ok(dirProg.indexOf('RECENTLY COMPLETED') >= 0 && dirProg.indexOf('Publish episode 3') >= 0, 'completed quests ride as the progression anchor');
+A.ok(dirProg.indexOf('NEXT step along the same path') >= 0, 'the directive commands progression, not a reshuffle');
+A.ok(R.buildDirective({ goalNote: 'g', propKeys: PROPS }).indexOf('RECENTLY COMPLETED') < 0, 'no completed quests -> no empty progression block');
+
+/* ---------- hasEvidence: the cold-save guard ---------- */
+A.eq(R.hasEvidence({}), false, 'a fully cold save has no evidence');
+A.eq(R.hasEvidence({ goalNote: '', dossierBlock: '  ', activityBlock: '' }), false, 'whitespace is not evidence');
+A.eq(R.hasEvidence({ goalNote: 'Current goal: X' }), true, 'an active goal is evidence');
+A.eq(R.hasEvidence({ northStar: { text: 'Ship it' } }), true, 'a prior north star is evidence');
+A.eq(R.hasEvidence({ interestsBlock: '• kubernetes ops' }), true, 'observed interests are evidence');
+A.eq(R.hasEvidence({ activityBlock: '• ran a research task' }), true, 'real activity is evidence');
 
 /* ---------- parse: round-trip, dedup, grounding, caps, NONE ---------- */
 const GROUNDING = 'Goals: grow the youtube channel to sustainable income\n• edited episode 3 of the interview series';

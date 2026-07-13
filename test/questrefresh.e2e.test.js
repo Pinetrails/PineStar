@@ -148,6 +148,18 @@ const CRED = { SKYNET_OPENROUTER_KEY: 'sk-or-v1-questrefresh-fake', SKYNET_DEFAU
       A.ok(JSON.stringify(onDiskQuests).indexOf('Publish episode 3') >= 0, '_station.quests.json persisted the mint');
       const onDiskState = JSON.parse(fs.readFileSync(path.join(ws, '_station.questrefresh.json'), 'utf8'));
       A.ok(onDiskState.state && onDiskState.state.northStar && onDiskState.state.northStar.source === 'goal', '_station.questrefresh.json persisted the north star');
+
+      // MANUAL OVERRIDE: POST /refresh/run fires a real cycle NOW (gates bypassed). The mock replays the
+      // same two quests — both titles are now OPEN, so the parse dedup drops them and the cycle records an
+      // honest 'rejected' (proving the route ran a full real cycle, and dup-mint spam is impossible).
+      const runRes = await (await fetch(B + '/api/quests/refresh/run', { method: 'POST', headers: { 'X-StarNet-Token': token, Origin: B } })).json();
+      A.ok(runRes.ok && runRes.started, 'the manual refresh route launches a cycle');
+      const st2 = await pollRefresh(B, token,
+        p => (p.ledger || []).some(e => e.outcome === 'rejected'),
+        'the manual cycle deduping the replayed quests');
+      A.eq(st2.ledger.filter(e => e.outcome === 'minted').length, 2, 'the manual re-run minted NOTHING new (dedup held)');
+      const q2 = await (await fetch(B + '/api/quests', { headers: { 'X-StarNet-Token': token, Origin: B } })).json();
+      A.eq((q2.quests || []).filter(x => x.createdBy === 'system:quest-refresh').length, 2, 'still exactly two quests on the ledger');
     } finally {
       try { child.kill(); } catch (_) {}
       try { mock.server.close(); } catch (_) {}
@@ -180,6 +192,29 @@ const CRED = { SKYNET_OPENROUTER_KEY: 'sk-or-v1-questrefresh-fake', SKYNET_DEFAU
       A.ok(st.lastCycleAt > 0, 'the failed attempt still spent the cadence (no tick-hammering)');
       const q = await (await fetch(B + '/api/quests', { headers: { 'X-StarNet-Token': token, Origin: B } })).json();
       A.eq((q.quests || []).filter(x => x.createdBy === 'system:quest-refresh').length, 0, 'the quest ledger stayed clean');
+    } finally {
+      try { child.kill(); } catch (_) {}
+      try { mock.server.close(); } catch (_) {}
+      await sleep(150);
+      try { fs.rmSync(ws, { recursive: true, force: true }); } catch (_) {}
+    }
+  }
+
+  /* ================= BOOT 3 — the cold-save guard (no evidence → no model call, honest skip) ================= */
+  {
+    const mock = await startMock('NORTH_STAR: should never be requested');
+    const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-qrefresh-e2e-'));
+    // NO dossier, NO goal, NO activity: the due boot-look cycle must SKIP before spending the model call.
+    const { child, port } = await boot(9005 + (process.pid % 10), Object.assign({ SKYNET_WORKSPACES: ws, SKYNET_OPENROUTER_BASE: mock.base }, CRED, QUIET), 20);
+    const B = 'http://' + HOST + ':' + port;
+    try {
+      const token = await bootToken(B, B);
+      const st = await pollRefresh(B, token,
+        p => (p.ledger || []).some(e => e.outcome === 'skipped' && /not enough is known/.test(e.reason)),
+        "the cold-save 'skipped' ledger note");
+      A.ok(true, 'COLD SAVE: the due cycle skipped honestly instead of paying to guess');
+      A.ok(!(st.ledger || []).some(e => e.outcome === 'minted' || e.outcome === 'rejected'), 'no model round-trip happened on the cold save');
+      A.ok(!st.northStar, 'no invented north star on a cold save');
     } finally {
       try { child.kill(); } catch (_) {}
       try { mock.server.close(); } catch (_) {}
