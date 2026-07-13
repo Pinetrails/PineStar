@@ -47,6 +47,11 @@
   const TITLE_MAX = 80, DESC_MAX = 300, REWARD_MAX = 120, WHY_MAX = 200, KEY_MAX = 200;
   const MIN_FACT_KEY = 4;                     // mirrors questsweeps.MIN_FACT_KEY — a shorter fact key can never sweep
   const MAX_STEPS = 4;
+  // SLATE-FULL guard: quest-store caps OPEN kind:'generated' quests at 3 PER SCOPE, and a refresh mints
+  // station-wide (agentId null). At that ceiling every mint a refresh proposes is rejected 'max open
+  // generated quests' — so a cycle at cap spends a model call for a foregone-rejected result, every time.
+  // This mirrors the store's OPEN_GENERATED_CAP so the ambient half can SKIP the paid call and say so.
+  const OPEN_GENERATED_CAP = 3;
 
   // contract vocabulary this engine may mint. 'run' is deliberately absent (nothing to bind), and 'attest'
   // is the fallback for outcomes only the Commander can verify.
@@ -93,6 +98,13 @@
     if (now - s.lastCycleAt >= REFRESH_EVERY_MS) return { fire: true, why: 'daily', binding: null };
     if (openCount === 0 && now - s.lastCycleAt >= CAUGHT_UP_GAP_MS) return { fire: true, why: 'caught-up', binding: null };
     return { fire: false, why: null, binding: openCount === 0 ? 'gap' : 'cooldown' };
+  }
+
+  // slate-full: are there already OPEN_GENERATED_CAP open station-wide generated quests? At/over the ceiling a
+  // refresh cycle can mint nothing new (the store rejects every one) — the ambient half must skip the paid model
+  // call and record an honest 'slate full' outcome instead of a rejected-mint trail nobody asked for.
+  function slateFull(openGeneratedCount) {
+    return (Math.max(0, Number(openGeneratedCount) || 0)) >= OPEN_GENERATED_CAP;
   }
 
   // does the station know ANYTHING worth grounding a refresh on? A cold save (no goal, no star, empty
@@ -278,9 +290,9 @@
   }
 
   return {
-    fresh, normalize, decide, buildDirective, parse, parseContract, hasEvidence,
+    fresh, normalize, decide, buildDirective, parse, parseContract, hasEvidence, slateFull,
     note, stampCycle, stampMint, setNorthStar,
-    REFRESH_EVERY_MS, CAUGHT_UP_GAP_MS, MAX_MINTS_PER_CYCLE, LEDGER_CAP, CONTRACT_TYPES,
+    REFRESH_EVERY_MS, CAUGHT_UP_GAP_MS, MAX_MINTS_PER_CYCLE, OPEN_GENERATED_CAP, LEDGER_CAP, CONTRACT_TYPES,
     _internals: { norm: norm, grabFrom: grabFrom, MIN_FACT_KEY: MIN_FACT_KEY, MAX_STEPS: MAX_STEPS }
   };
 });

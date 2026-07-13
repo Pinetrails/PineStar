@@ -56,6 +56,17 @@ A.ok(dirProg.indexOf('RECENTLY COMPLETED') >= 0 && dirProg.indexOf('Publish epis
 A.ok(dirProg.indexOf('NEXT step along the same path') >= 0, 'the directive commands progression, not a reshuffle');
 A.ok(R.buildDirective({ goalNote: 'g', propKeys: PROPS }).indexOf('RECENTLY COMPLETED') < 0, 'no completed quests -> no empty progression block');
 
+/* ---------- slateFull: the cap-full fast path (cost + honesty) ---------- */
+// mirrors quest-store OPEN_GENERATED_CAP (3). At/over the ceiling a refresh can mint nothing new, so the
+// ambient half must SKIP the paid model call — this pure predicate is that gate (no model call downstream of it).
+A.eq(R.OPEN_GENERATED_CAP, 3, 'the refresh mirrors the store open-generated cap');
+A.eq(R.slateFull(0), false, 'an empty slate is not full — a cycle may run');
+A.eq(R.slateFull(2), false, 'below the cap the model call is still worth paying for');
+A.eq(R.slateFull(R.OPEN_GENERATED_CAP), true, 'AT the cap the slate is full — skip the (foregone-rejected) model call');
+A.eq(R.slateFull(R.OPEN_GENERATED_CAP + 1), true, 'over the cap stays full');
+A.eq(R.slateFull(-5), false, 'a junk negative count is not full');
+A.eq(R.slateFull('x'), false, 'a junk non-numeric count is not full');
+
 /* ---------- hasEvidence: the cold-save guard ---------- */
 A.eq(R.hasEvidence({}), false, 'a fully cold save has no evidence');
 A.eq(R.hasEvidence({ goalNote: '', dossierBlock: '  ', activityBlock: '' }), false, 'whitespace is not evidence');

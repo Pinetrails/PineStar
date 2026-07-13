@@ -3444,6 +3444,15 @@ async function runQuestRefreshCycle(why) {
     try { interestsBlock = Interests.topicsBlock(interestsState, { now: Date.now(), limit: 6 }); } catch (_) { interestsBlock = ''; }
     const rec = questStore.read();
     const open = rec.quests.filter(q => q.status === 'open');
+    // SLATE-FULL FAST PATH (cost + honesty): the store caps OPEN kind:'generated' quests at 3 per scope, and a
+    // refresh mints station-wide (agentId null). At that ceiling every proposed mint is foredoomed 'max open
+    // generated quests' — so skip the paid model call entirely and record ONE honest outcome, mirroring the
+    // cold-save guard below. (Completing or dismissing an open generated quest re-opens the fast path.)
+    const openGenStationWide = rec.quests.filter(q => q.status === 'open' && q.kind === 'generated' && q.agentId == null).length;
+    if (QuestRefresh.slateFull(openGenStationWide)) {
+      questRefreshNote({ outcome: 'skipped', reason: 'slate full — ' + openGenStationWide + ' open generated quests already await; complete or dismiss one to earn a fresh cycle' });
+      return;
+    }
     // PROGRESSION: the most recently completed quests feed the directive so each refresh proposes the NEXT
     // step along the same path (and their titles join the dedup set — done work is never re-proposed).
     const completed = rec.quests.filter(q => q.status === 'done')
