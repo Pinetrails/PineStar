@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "661ad74591504f381425ac927481ec10c3919aab",
+    "sourceCommit": "5ffdb7f25abca0f921474e956a526ca0cee214b2",
     "pathSetSha256": "7eb7a83f508ffd0ef6fd8058ddf15370a953b404d9555462119fb730712a9876",
     "files": [
       {
@@ -128,8 +128,8 @@
       },
       {
         "path": "frontend/app/chat.js",
-        "bytes": 370327,
-        "sha256": "6fd3fac367523bbc8350275dd1ab2f0864140b62c807ed4e85acef38642c07ac"
+        "bytes": 370384,
+        "sha256": "e6ed2a5b1ea1264c5cd36b4127176e0c53ba699c167dcd9719aeef7dfd0580b1"
       },
       {
         "path": "frontend/app/chatresize.js",
@@ -763,18 +763,18 @@
       },
       {
         "path": "frontend/css/app.css",
-        "bytes": 180919,
-        "sha256": "a1c7c7a25b483e38a1369ac728ad754109dcfc111d08e9a4e3860cdb6a440d45"
+        "bytes": 187168,
+        "sha256": "59eb5b8ff1d9f40949d5d47bdc516db4a81fee1382cdd93a51c86732f9b18c3c"
       },
       {
         "path": "frontend/css/comms.css",
-        "bytes": 32791,
-        "sha256": "de7aa906f4cc8da84ffacfd71ed92af8411edbe67a01a1cded6ca9ea7fb8cdc9"
+        "bytes": 34934,
+        "sha256": "716e931067fe2ccd87ea24c0d0235141868dcf96c2d1411b4b1ba68f39fee92f"
       },
       {
         "path": "frontend/css/marketplace.css",
-        "bytes": 47678,
-        "sha256": "75991d47ea833ed6bdd0527897b4ad0d3213490c4885843081b3a1b4ebc24055"
+        "bytes": 47876,
+        "sha256": "61af8b9126363ef0d5d484f9e9d9b3c69e36e58081620592bca46edb23496378"
       },
       {
         "path": "frontend/css/motion.css",
@@ -793,8 +793,8 @@
       },
       {
         "path": "frontend/css/style.css",
-        "bytes": 77254,
-        "sha256": "33e94c0d2e5421fa0004b261d33dfdd7902a74a9bf8110debd18e03e6e4ae75d"
+        "bytes": 78023,
+        "sha256": "c24d8135a6f5ae01ff1085da2debcfb5016f9af4f93e0662c3c528e6d4c8ae38"
       },
       {
         "path": "frontend/css/titlebar.css",
