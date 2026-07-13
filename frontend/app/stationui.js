@@ -3041,6 +3041,10 @@ const StationUI = (() => {
       '<h4 class="ms-h">NIGHT SHIFT <span class="dim">— what it’s doing while you’re away, right now</span></h4>' +
       '<div class="set-row"><span class="dim">STATE</span> <span id="ns-state" class="dim">…</span></div>' +
       '<p class="set-about" id="ns-why"></p>' +
+      // MODE — build-vs-draft honesty (status.buildMode/draftReason) + the cold-start readiness bars, so a station
+      // that is running but degraded (drafts only / still learning) SAYS so instead of silently doing less.
+      '<div class="set-row"><span class="dim">MODE</span> <span id="ns-mode" class="dim">…</span></div>' +
+      '<p class="set-about" id="ns-readiness"></p>' +
       '<div class="set-row"><span class="dim">LEASH</span> <span id="ns-leash" class="dim">…</span></div>' +
       '<div class="set-row"><span class="dim">LAST BEAT</span> <span id="ns-last" class="dim">…</span></div>' +
       '<div class="set-row"><span class="dim">NEXT ELIGIBLE</span> <span id="ns-next" class="dim">…</span></div>' +
@@ -3285,7 +3289,8 @@ const StationUI = (() => {
     // so every rendered value maps to a route field (truthful telemetry). Fail-open, honest loading/error states.
     if (typeof NightReport !== 'undefined') {
       const nsState = host.querySelector('#ns-state'), nsWhy = host.querySelector('#ns-why'), nsLeash = host.querySelector('#ns-leash'),
-            nsLast = host.querySelector('#ns-last'), nsNext = host.querySelector('#ns-next'), nsTrail = host.querySelector('#ns-trail');
+            nsLast = host.querySelector('#ns-last'), nsNext = host.querySelector('#ns-next'), nsTrail = host.querySelector('#ns-trail'),
+            nsMode = host.querySelector('#ns-mode'), nsReadiness = host.querySelector('#ns-readiness');
       const tz = () => { try { return -new Date().getTimezoneOffset(); } catch (_) { return 0; } };
       const setDim = (el, txt) => { if (el) el.textContent = txt; };
       const paintPanel = (status) => {
@@ -3297,10 +3302,16 @@ const StationUI = (() => {
         if (!m.reachable) {
           setDim(nsState, m.stateText);        // "station telemetry unreachable" — never a fake 0/3
           setDim(nsWhy, ''); setDim(nsLeash, '—'); setDim(nsLast, '—'); setDim(nsNext, '—');
+          setDim(nsMode, '—'); setDim(nsReadiness, '');
           return;
         }
         setDim(nsState, m.stateText);
         setDim(nsWhy, m.why || '');
+        // MODE + READINESS honesty: modeText '' (older sidecar / halted model) renders as an em-dash, never a guess;
+        // ns-halt highlights the no-grant degrade (the dial promises building the harness can't deliver).
+        setDim(nsMode, m.modeText || '—');
+        if (nsMode) nsMode.classList.toggle('ns-halt', !!m.modeWarn);
+        setDim(nsReadiness, m.readinessText || '');
         setDim(nsLeash, m.leashText + ' · ' + m.presence);
         setDim(nsLast, m.lastBeatText);
         setDim(nsNext, m.nextEligibleText);

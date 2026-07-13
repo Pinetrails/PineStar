@@ -32,6 +32,9 @@
     // NS-2 pre-spend readiness: the station lacks grounded knowledge (a fresh/stale dossier AND too little recent
     // activity) so a beat could not have reached a model call. Honest about what feeds it: real work + answers.
     readiness: 'the station doesn’t know you well enough yet to act unattended — run a few real tasks (or answer its questions) so it learns',
+    // NS-2 pre-spend gates the precheck can also bind on (they flow through statusDecision as bindings):
+    budget: 'the spending budget is exhausted — raise the cap or resume to let beats run',
+    'no-provider': 'no runnable provider/model is configured — add a key so beats can run',
     cooldown: 'it wasn’t time for the next beat yet',
     concurrency: 'the desk was busy with another run',
     'in-flight': 'a beat was still running',
@@ -217,8 +220,31 @@
       leashText: leashText,
       leashSpent: leash != null && used >= leash,
       lastBeatText: fmtLocalTime(s.lastBeatAt, tz) || 'no beat yet',
-      nextEligibleText: fmtLocalTime(s.nextEligibleAt, tz) || 'when the next window opens'
+      nextEligibleText: fmtLocalTime(s.nextEligibleAt, tz) || 'when the next window opens',
+      modeText: modeText(s),
+      modeWarn: s.buildMode === 'draft' && s.draftReason === 'no-workshop-grant',
+      readinessText: readinessText(s.readiness)
     };
+  }
+
+  // BUILD-vs-DRAFT honesty (2026-07-13): name which mode the next beat runs in, straight from the status route's
+  // buildMode/draftReason (server-proven). An older sidecar without the field → '' (render nothing, never guess).
+  function modeText(s) {
+    if (!s || (s.buildMode !== 'build' && s.buildMode !== 'draft')) return '';
+    if (s.buildMode === 'build') return 'beats BUILD real deliverables in the workshop';
+    if (s.draftReason === 'no-workshop-grant') return 'drafts only — the away-workshop grant is off, so beats can’t build for real';
+    return 'drafts only — raise REACH to sandbox to let beats build for real';
+  }
+
+  // the cold-start explanation behind a 'readiness' stand-down: how far the station is from EITHER hot bar
+  // (dossier breadth or recent-run evidence). '' when already hot / no detail (an empty line is never invented).
+  function readinessText(rd) {
+    if (!rd || typeof rd !== 'object' || rd.tier === 'hot') return '';
+    const dims = Array.isArray(rd.usableDims) ? rd.usableDims.length : 0;
+    const dimsBar = Number.isFinite(Number(rd.hotDimsMin)) ? Number(rd.hotDimsMin) : 4;
+    const runsBar = Number.isFinite(Number(rd.hotRunsMin)) ? Number(rd.hotRunsMin) : 4;
+    const runs = Number(rd.activityCount) || 0;
+    return 'still learning you — knows ' + dims + '/' + dimsBar + ' areas · ' + runs + '/' + runsBar + ' recent runs (either bar unlocks acting)';
   }
 
   // one decision-trail row for the panel's scrollable ledger: "1:10 AM · declined · leash spent". Pure; a bad row
@@ -234,5 +260,5 @@
     return when + ' · ' + kind + (tail ? ' · ' + tail : '');
   }
 
-  return { compose, panelModel, trailLine, fmtLocalTime, bindingPhrase, plural, BINDING_PHRASE };
+  return { compose, panelModel, trailLine, fmtLocalTime, bindingPhrase, plural, modeText, readinessText, BINDING_PHRASE };
 });

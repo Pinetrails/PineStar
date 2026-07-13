@@ -164,6 +164,30 @@ A.ok(!/standing by|on watch/i.test(NR.panelModel({ status: { active: true, away:
 A.eq(panelActive.halted, false, 'a live status carries halted:false');
 A.eq(panelOff.halted, false, 'an OFF status carries halted:false');
 
+/* ---------- panelModel(): BUILD-vs-DRAFT mode + cold-start readiness honesty (2026-07-13) ----------
+   Regression: at dial=free/sandbox with no away-workshop grant every beat silently degraded to a reason-only
+   draft, and a cold dossier declined every beat for hours — with NOTHING on the panel saying so. */
+const stBase = { active: true, away: true, beatsUsedToday: 0, leashPerDay: 3, binding: null, lastBeatAt: 0, nextEligibleAt: 0 };
+const pmBuild = NR.panelModel({ status: Object.assign({}, stBase, { buildMode: 'build', draftReason: null, workshopGranted: true }), tzOffsetMin: 0 });
+A.ok(/build/i.test(pmBuild.modeText), 'buildMode:build names real building');
+A.eq(pmBuild.modeWarn, false, 'build mode is not a warning');
+const pmNoGrant = NR.panelModel({ status: Object.assign({}, stBase, { buildMode: 'draft', draftReason: 'no-workshop-grant', workshopGranted: false }), tzOffsetMin: 0 });
+A.ok(/drafts only/i.test(pmNoGrant.modeText) && /grant/i.test(pmNoGrant.modeText), 'the no-grant degrade says drafts-only AND names the missing grant');
+A.eq(pmNoGrant.modeWarn, true, 'dial-promises-building-but-degraded IS a warning');
+const pmReach = NR.panelModel({ status: Object.assign({}, stBase, { buildMode: 'draft', draftReason: 'reach' }), tzOffsetMin: 0 });
+A.ok(/reach/i.test(pmReach.modeText), 'reach-gated draft mode names the REACH dial as the unlock');
+A.eq(pmReach.modeWarn, false, 'reach-gated drafting is the Commander’s setting, not a warning');
+A.eq(NR.panelModel({ status: stBase, tzOffsetMin: 0 }).modeText, '', 'an older sidecar without buildMode → empty modeText (never a guess)');
+// readiness: cold/warm tiers explain BOTH hot bars; hot / absent → no line.
+const rdWarm = { tier: 'warm', usableDims: ['goals', 'pain', 'ambition'], goalsUsable: true, activityCount: 1, hotDimsMin: 4, hotRunsMin: 4 };
+const pmWarm = NR.panelModel({ status: Object.assign({}, stBase, { binding: 'readiness', readiness: rdWarm }), tzOffsetMin: 0 });
+A.ok(/3\/4 areas/.test(pmWarm.readinessText) && /1\/4 recent runs/.test(pmWarm.readinessText), 'readinessText shows dims and runs against the hot bars');
+A.eq(NR.panelModel({ status: Object.assign({}, stBase, { readiness: { tier: 'hot' } }), tzOffsetMin: 0 }).readinessText, '', 'hot readiness → no still-learning line');
+A.eq(NR.panelModel({ status: stBase, tzOffsetMin: 0 }).readinessText, '', 'absent readiness detail → no line (never invented)');
+// the new binding phrases are real sentences, not the forward-compat fallback.
+A.ok(!/held back by/.test(NR.bindingPhrase('budget')), 'budget binding has a plain phrase');
+A.ok(!/held back by/.test(NR.bindingPhrase('no-provider')), 'no-provider binding has a plain phrase');
+
 /* ---------- trailLine(): one honest ledger row for the panel ---------- */
 A.eq(NR.trailLine({ ts: T0610Z, kind: 'decline', binding: 'leash' }, -300), '1:10 AM · declined · the daily leash was already spent', 'a decline row: local time · declined · gate reason');
 A.eq(NR.trailLine({ ts: T0610Z, kind: 'act', detail: { title: 'Wrote X' } }, -300), '1:10 AM · acted · Wrote X', 'an act row names the title from detail');
