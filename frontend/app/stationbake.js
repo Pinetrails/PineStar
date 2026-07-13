@@ -147,6 +147,20 @@ const StationBake = (() => {
         px(X + (n % 5), Y + (n % 7) + 2, 4, 1, 'rgba(0,0,0,0.12)');
         px(X + (n % 7) + 1, Y + (n % 4) + 6, 3, 1, 'rgba(255,255,255,0.05)');
       }
+      // FLOOR WEAR — a lived-in deck: hash-keyed scuffs, drag marks, worn-pale patches and
+      // grime films over the plates above. Same idiom (opaque-ish 1px marks, deterministic on
+      // the tile hash); DEPTH.floorWear scales alpha, 0 = the pristine pre-wear floor exactly.
+      const wear = Math.max(0, DEPTH.floorWear);
+      if (wear > 0.001) {
+        const wa = a => (a * wear).toFixed(3);
+        if (n % 9 === 1) px(X + (n % 6), Y + 3 + (n % 8), 4 + (n % 3), 1, 'rgba(0,0,0,' + wa(0.18) + ')');          // boot scuff streak
+        else if (n % 11 === 6) px(X + 3 + (n % 8), Y + (n % 5), 1, 3 + (n % 3), 'rgba(0,0,0,' + wa(0.15) + ')');    // vertical scrape
+        else if (n % 17 === 8) {                                                                                     // parallel drag marks (something heavy moved)
+          px(X + 2, Y + 5 + (n % 4), 6 + (n % 4), 1, 'rgba(0,0,0,' + wa(0.14) + ')');
+          px(X + 2, Y + 7 + (n % 4), 6 + (n % 4), 1, 'rgba(0,0,0,' + wa(0.14) + ')');
+        } else if (n % 27 === 4) px(X + 2, Y + 2, T - 4, T - 4, 'rgba(255,244,220,' + wa(0.05) + ')');               // worn-pale patch (foot polish)
+        if (n % 13 === 9) px(X, Y, T, T, 'rgba(0,0,0,' + wa(0.06) + ')');                                            // grime film over the whole plate
+      }
     }
   }
 
@@ -160,6 +174,8 @@ const StationBake = (() => {
       if (n % 6 === 0) px(X, Y, T, T, 'rgba(0,0,0,0.07)');
       px(X, Y, T, 1, U.shade(base, -0.34));
       if (n % 23 === 5) { px(X + 2, Y + 2, T - 4, T - 4, U.shade(base, -0.16)); b.strokeStyle = U.shade(base, -0.4); b.lineWidth = 1; b.strokeRect(X + 2.5, Y + 2.5, T - 5, T - 5); }
+      // corridor wear ticks (see the room-floor wear block for the idiom)
+      if (DEPTH.floorWear > 0.001 && n % 7 === 2) px(X + (n % 6), Y + 2 + (n % 7), 3 + (n % 3), 1, 'rgba(0,0,0,' + (0.16 * DEPTH.floorWear).toFixed(3) + ')');
     }
     // long-axis rib bands + edge air-grilles
     b.fillStyle = 'rgba(0,0,0,0.12)';
@@ -169,6 +185,23 @@ const StationBake = (() => {
     b.fillStyle = U.shade('#2c2924', -0.5);
     if (vertical) { for (let yy = y1 + 3; yy < y1 + rh; yy += 5) { b.fillRect(x1 + 1, yy, 1, 2); b.fillRect(x1 + rw - 2, yy, 1, 2); } }
     else { for (let xx = x1 + 3; xx < x1 + rw; xx += 5) { b.fillRect(xx, y1 + 1, 2, 1); b.fillRect(xx, y1 + rh - 2, 2, 1); } }
+    // TRAFFIC LANES (floor wear) — two foot-polished tracks down the corridor's long axis where
+    // the crew actually walks: a pale sheen lane with a faint grime line hugging its outside.
+    // Rides DEPTH.floorWear like the per-tile wear marks; 0 = off.
+    const wear = Math.max(0, DEPTH.floorWear);
+    if (wear > 0.001) {
+      const lane = 'rgba(255,244,220,' + (0.05 * wear).toFixed(3) + ')';
+      const grime = 'rgba(0,0,0,' + (0.10 * wear).toFixed(3) + ')';
+      if (vertical) {
+        const cx = Math.round(x1 + rw / 2);
+        b.fillStyle = lane; b.fillRect(cx - 4, y1 + 2, 2, rh - 4); b.fillRect(cx + 2, y1 + 2, 2, rh - 4);
+        b.fillStyle = grime; b.fillRect(cx - 5, y1 + 2, 1, rh - 4); b.fillRect(cx + 4, y1 + 2, 1, rh - 4);
+      } else {
+        const cy = Math.round(y1 + rh / 2);
+        b.fillStyle = lane; b.fillRect(x1 + 2, cy - 4, rw - 4, 2); b.fillRect(x1 + 2, cy + 2, rw - 4, 2);
+        b.fillStyle = grime; b.fillRect(x1 + 2, cy - 5, rw - 4, 1); b.fillRect(x1 + 2, cy + 4, rw - 4, 1);
+      }
+    }
   }
 
   function bakeEdgeAO(b) {
