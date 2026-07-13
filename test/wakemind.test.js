@@ -36,14 +36,39 @@ const r4 = W.parsePainReply(longAck);
 A.ok(r4.ack.length <= W.ACK_CHARS, 'a runaway ACK is clamped to ACK_CHARS (' + W.ACK_CHARS + ')');
 A.ok(r4.ask.length <= W.ASK_CHARS, 'a runaway ASK is clamped to ASK_CHARS (' + W.ASK_CHARS + ')');
 
+/* ---------- buildAmbitionReply: same discipline as the pain reply — deterministic, grounded, digs once ---------- */
+const amb = W.buildAmbitionReply({ ambition: 'launch the   tools site', pain: 'editing shorts', about: 'i run a small AI channel', name: 'ULTRON' });
+A.eq(amb, W.buildAmbitionReply({ ambition: 'launch the   tools site', pain: 'editing shorts', about: 'i run a small AI channel', name: 'ULTRON' }),
+  'buildAmbitionReply is deterministic (same ctx → byte-identical)');
+A.ok(amb.indexOf('"launch the tools site"') >= 0, 'the directive quotes the ambition answer (whitespace collapsed)');
+A.ok(amb.indexOf('"editing shorts"') >= 0 && amb.indexOf('"i run a small AI channel"') >= 0,
+  'earlier answers ride along as aim (so the follow-up never re-asks them)');
+A.ok(/INTERNAL/.test(amb) && /Do not run any tools/.test(amb), 'the ambition directive is INTERNAL + reason-only');
+A.ok(/^ACK:/m.test(amb) && /^ASK:/m.test(amb), 'the directive demands the exact ACK/ASK format');
+A.ok(/it depends/.test(amb), 'the ASK spec bans it-depends questions');
+A.ok(/answerable in one breath/.test(amb), 'the ASK spec encodes the awakening-question hard rule (concrete, one-breath answerable)');
+const ambBare = W.buildAmbitionReply({ ambition: 'launch the tools site', name: 'ULTRON' });
+A.ok(ambBare.indexOf('Earlier they named') < 0 && ambBare.indexOf('who they are') < 0,
+  'skipped earlier answers never appear as empty context');
+
+/* ---------- parseAmbitionReply: same contract as parsePainReply ---------- */
+const ar1 = W.parseAmbitionReply('ACK: the tools site — that’s been waiting long enough.\nASK: what’s the first tool on it — the one you’d ship day one?');
+A.ok(ar1 && ar1.ack.indexOf('tools site') > 0 && ar1.ask.indexOf('first tool') > 0, 'parseAmbitionReply grabs ACK + ASK');
+A.eq(W.parseAmbitionReply('ASK: a question but no ack'), null, 'a reply with no ACK is null');
+A.eq(W.parseAmbitionReply(''), null, 'empty reply → null');
+const ar2 = W.parseAmbitionReply('ACK: ' + 'x'.repeat(600) + '\nASK: ' + 'y'.repeat(600));
+A.ok(ar2.ack.length <= W.ACK_CHARS && ar2.ask.length <= W.ASK_CHARS, 'runaway ambition ACK/ASK are clamped');
+
 /* ---------- buildSynthesis: only given answers are shown; deterministic ---------- */
-const full = W.buildSynthesis({ pain: 'editing shorts', about: 'i run a small AI channel', ambition: 'launch the tools site', name: 'ULTRON' });
+const full = W.buildSynthesis({ pain: 'editing shorts', about: 'i run a small AI channel', ambition: 'launch the tools site', dream: 'a directory of AI tools with my reviews', name: 'ULTRON' });
 A.ok(full.indexOf('"editing shorts"') >= 0 && full.indexOf('"i run a small AI channel"') >= 0 && full.indexOf('"launch the tools site"') >= 0,
   'buildSynthesis quotes all three answers when given');
+A.ok(full.indexOf('"a directory of AI tools with my reviews"') >= 0, 'the dug ambition detail (dream) rides into the read');
 A.ok(/^READ:/m.test(full) && /^PURPOSE:/m.test(full) && /^STACK:/m.test(full), 'the synthesis directive demands READ/PURPOSE/STACK');
 A.ok(/Do not run any tools/.test(full), 'synthesis is reason-only too');
 const partial = W.buildSynthesis({ ambition: 'launch the tools site' });
-A.ok(partial.indexOf('the work they want gone') < 0 && partial.indexOf('who they are') < 0, 'skipped answers never appear as empty bullets');
+A.ok(partial.indexOf('the work they want gone') < 0 && partial.indexOf('who they are') < 0 && partial.indexOf('the concrete shape of it') < 0,
+  'skipped answers never appear as empty bullets');
 A.ok(partial.indexOf('"launch the tools site"') >= 0, 'the one given answer still appears');
 A.eq(W.buildSynthesis({ pain: 'x', name: 'N' }), W.buildSynthesis({ pain: 'x', name: 'N' }), 'buildSynthesis is deterministic');
 

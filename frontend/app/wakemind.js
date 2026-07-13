@@ -4,16 +4,21 @@
    acknowledgments — the agent never actually LISTENED. This engine gives the ceremony a real mind:
    the agent's reactions and its read of the Commander are REASONED by the live model, not templated.
 
-   Three moments live here (directive → tolerant parse, exactly the pitch.js pattern):
+   Four moments live here (directive → tolerant parse, exactly the pitch.js pattern):
      1. THE PAIN REPLY — after the Commander names the work they want gone, the agent reacts to their
-        SPECIFIC words (proof it heard) and asks ONE targeted follow-up that finds out who they are /
-        what that work is for. This replaces the old broad "tell me about your world" context question
-        (the banned it-depends shape) with a question grounded in what the Commander just said.
-     2. THE SYNTHESIS — after pain + follow-up + ambition, the agent speaks its READ back ("here's my
-        read…") and authors its OWN purpose.md from it. The Commander confirms or corrects. This
-        replaces the old 5-option PURPOSE picker: the mission is derived from real context, not chosen
-        from a menu. (Reverse value flow, applied to onboarding itself.)
-     3. THE CONFIRM — always exactly two choices: "that's me" or a correction path. Never a menu.
+        SPECIFIC words (proof it heard) and asks ONE targeted follow-up that pulls the bigger picture
+        behind the chore — the project/business it serves and who they are in it. This replaces the old
+        broad "tell me about your world" context question (the banned it-depends shape) with a question
+        grounded in what the Commander just said.
+     2. THE AMBITION REPLY — same shape after the shelf answer: react to the SPECIFIC ambition, then ONE
+        follow-up that makes it concrete (what it actually is / who it's for / the first real piece).
+        The canned "noted." used to end this beat exactly where the richest material — their projects
+        and ideas — was sitting on the table; now the agent digs, once.
+     3. THE SYNTHESIS — after pain + follow-up + ambition (+ its dug detail), the agent speaks its READ
+        back ("here's my read…") and authors its OWN purpose.md from it. The Commander confirms or
+        corrects. This replaces the old 5-option PURPOSE picker: the mission is derived from real
+        context, not chosen from a menu. (Reverse value flow, applied to onboarding itself.)
+     4. THE CONFIRM — always exactly two choices: "that's me" or a correction path. Never a menu.
 
    HARD RULE (awakening-question-design): every question this engine emits must be concrete + targeted,
    answerable in one breath from the Commander's real life — never abstract, never "it depends". The
@@ -61,8 +66,8 @@
     lines.push('You are minutes old, meeting your Commander for the first time. They just told you the work they wish was gone:');
     lines.push(quote(ctx.pain));
     lines.push('Reply with EXACTLY these two lines, nothing else:');
-    lines.push('ACK: <one short reaction in your own lowercase voice. React to the SPECIFIC thing they named — prove you heard the details, never generic sympathy. No question in this line. Under 120 characters.>');
-    lines.push('ASK: <ONE follow-up question that finds out who they are or what that work is FOR. Concrete and targeted: answerable in one breath from their real life. Never abstract (no "what does success look like"), never a question whose honest answer is "it depends". Under 140 characters.>');
+    lines.push('ACK: <one short reaction in your own lowercase voice. React to the SPECIFIC thing they named — prove you heard the details, never generic sympathy — and let your appetite for taking it off their plate show. No question in this line. Under 120 characters.>');
+    lines.push('ASK: <ONE follow-up question that pulls the bigger picture behind that chore — the project, business, or channel it serves, and who they are in it. Concrete and targeted: answerable in one breath from their real life. Never abstract (no "what does success look like"), never a question whose honest answer is "it depends". Under 140 characters.>');
     return lines.join('\n');
   }
   // → { ack, ask } | null. ACK is required (a reply that heard nothing is worthless); ASK is optional.
@@ -72,8 +77,32 @@
     return { ack, ask: clamp(grab(text, 'ASK'), ASK_CHARS) };
   }
 
-  /* ---- 2. THE SYNTHESIS — the agent's read of its Commander + a self-authored mission ---- */
-  // ctx: { pain, about, ambition, name } — any subset; only given answers are shown to the model.
+  /* ---- 2. THE AMBITION REPLY — a want-it-too reaction + ONE follow-up that makes it concrete ---- */
+  // ctx: { ambition, pain, about, name } — pain/about (when given) aim the question so it never re-asks
+  // what the Commander already said. Deterministic: same ctx → byte-identical directive.
+  function buildAmbitionReply(ctx) {
+    ctx = ctx || {};
+    const lines = [];
+    lines.push('INTERNAL — YOUR FIRST MEETING, THE SHELF. Do not run any tools. Reason only, then reply in the exact format below.');
+    lines.push('You are minutes old, meeting your Commander for the first time. They just told you the thing they keep meaning to get to but never reach:');
+    lines.push(quote(ctx.ambition));
+    if (String(ctx.pain || '').trim()) lines.push('(Earlier they named the work they want gone: ' + quote(ctx.pain) + ')');
+    if (String(ctx.about || '').trim()) lines.push('(And who they are / what it is for: ' + quote(ctx.about) + ')');
+    lines.push('This shelved thing is the reason you exist. Reply with EXACTLY these two lines, nothing else:');
+    lines.push('ACK: <one short reaction in your own lowercase voice. React to the SPECIFIC thing they named — show you get why it matters and that you want it off the shelf as much as they do. No question in this line. Under 120 characters.>');
+    lines.push('ASK: <ONE follow-up question that makes the ambition concrete — what it actually IS, who or what it is for, or the piece of it they can already picture. Never re-ask anything shown above. Concrete and targeted: answerable in one breath from their real life. Never abstract, never a question whose honest answer is "it depends". Under 140 characters.>');
+    return lines.join('\n');
+  }
+  // → { ack, ask } | null — same contract as parsePainReply (ACK required, ASK optional).
+  function parseAmbitionReply(text) {
+    const ack = clamp(grab(text, 'ACK'), ACK_CHARS);
+    if (!ack) return null;
+    return { ack, ask: clamp(grab(text, 'ASK'), ASK_CHARS) };
+  }
+
+  /* ---- 3. THE SYNTHESIS — the agent's read of its Commander + a self-authored mission ---- */
+  // ctx: { pain, about, ambition, dream, name } — any subset; only given answers are shown to the model.
+  // `dream` is the ambition follow-up's answer — the concrete shape of the shelved thing.
   function buildSynthesis(ctx) {
     ctx = ctx || {};
     const lines = [];
@@ -82,6 +111,7 @@
     if (String(ctx.pain || '').trim()) lines.push('- the work they want gone: ' + quote(ctx.pain));
     if (String(ctx.about || '').trim()) lines.push('- who they are / what it is for: ' + quote(ctx.about));
     if (String(ctx.ambition || '').trim()) lines.push('- what they keep meaning to get to: ' + quote(ctx.ambition));
+    if (String(ctx.dream || '').trim()) lines.push('- the concrete shape of it: ' + quote(ctx.dream));
     lines.push('Put it together. Reply with EXACTLY these lines, nothing else:');
     lines.push('READ: <speak your read back to them in your own lowercase voice — two short sentences tying together what they actually said (use their specifics, never a paraphrase so loose it could be anyone), ending with what that makes YOU for. Under 280 characters.>');
     lines.push('PURPOSE: <author your own mission from it, as a standing order to yourself ("Help them …") — one or two sentences. This becomes your permanent purpose.md, so make it durable: the mission, not this week\'s task.>');
@@ -147,7 +177,7 @@
     return got >= 3 ? s : null;
   }
 
-  /* ---- 3. THE CONFIRM — the read-back lands as a choice, never a menu ---- */
+  /* ---- 4. THE CONFIRM — the read-back lands as a choice, never a menu ---- */
   // Exactly two: commit, or a correction path that keeps the Commander in charge of their own mission.
   function confirmChoices() {
     return [
@@ -156,5 +186,5 @@
     ];
   }
 
-  return { buildBirthScript, parseBirthScript, splitFrags, buildPainReply, parsePainReply, buildSynthesis, parseSynthesis, confirmChoices, ACK_CHARS, ASK_CHARS, READ_CHARS, PURPOSE_CHARS, BELIEF_CHARS, LINE_CHARS };
+  return { buildBirthScript, parseBirthScript, splitFrags, buildPainReply, parsePainReply, buildAmbitionReply, parseAmbitionReply, buildSynthesis, parseSynthesis, confirmChoices, ACK_CHARS, ASK_CHARS, READ_CHARS, PURPOSE_CHARS, BELIEF_CHARS, LINE_CHARS };
 });

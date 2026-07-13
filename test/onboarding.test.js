@@ -114,8 +114,25 @@ A.ok(/bs\('mandate'\)\s*\|\|\s*'and i’m built to run a floor/.test(src),
 // a live-configured wire that answers DEAD is owned diegetically at the close, pointing at CONNECT.
 A.ok(/birthFailed[\s\S]{0,700}CONNECT/.test(src),
   'a dead wire during the ceremony is owned honestly at the close (the CONNECT repair line)');
-// the stakes beat: extraction earns attention by declaring what the answers become, before asking.
+// the stakes beat: extraction earns attention by declaring what the answers become, before asking —
+// and earns GENEROSITY by declaring the trade (sharper picture in → sharper first move out).
 A.ok(/permanent operating file/.test(src),
   'the meeting opens by staking why the questions matter (permanent operating file)');
+A.ok(/vague in, vague out/.test(src),
+  'the stakes beat states the give-to-get trade plainly (vague in, vague out)');
+
+/* ---------- the AMBITION dig: the live mind reacts + asks once, and the answer is KEPT ---------- */
+// the ambition beat gets the same listened-to treatment as pain: a generated ack + ONE follow-up.
+A.ok(/llmCall\(WakeMind\.buildAmbitionReply\(/.test(src),
+  'the ambition answer gets a live-mind reply (buildAmbitionReply), not just a canned ack');
+A.ok(/mindWait\([^)]*parseAmbitionReply[^)]*AMBITION_PATTER/.test(src),
+  'the ambition reply waits with patience patter, bounded by the reply ceiling');
+// the follow-up answer becomes a SECOND ambition belief — the concrete shape of the shelved thing —
+// so the dossier keeps the real version, not just the chip category.
+A.ok(/DossierStore\.upsert\('ambition',\s*\{\s*text:\s*dreamT/.test(src),
+  'the ambition follow-up answer is kept as a second ambition belief (dreamT)');
+// and it feeds the synthesized read, so the self-authored mission is built from the richest version.
+A.ok(/buildSynthesis\(\{[^}]*dream:\s*dreamT/.test(src),
+  'the dug ambition detail rides into the synthesis (dream: dreamT)');
 
 A.report('onboarding.test');

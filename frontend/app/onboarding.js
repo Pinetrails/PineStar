@@ -120,6 +120,7 @@ const Onboarding = (() => {
           { label: 'A project i keep shelving', value: 'Has a project they keep shelving for lack of time and hands.' },
           { label: 'Something i want to learn', value: 'Keeps postponing learning a skill they actually want.' },
           { label: 'An audience i keep meaning to build', value: 'Keeps meaning to build an audience or channel but never starts.' },
+          { label: 'An idea i can’t stop circling', value: 'Has an idea they keep circling back to but have never started building.' },
           { label: 'Skip for now', value: '', skip: true }
         ],
         custom: true, customLabel: 'name it straight', placeholder: 'the thing you’d finally start with a hand that never clocks out…',
@@ -386,6 +387,10 @@ const Onboarding = (() => {
     'almost — i want to say this right the first time.',
     'still composing. you handed me something real; i’m not going to waste it.'
   ];
+  const AMBITION_PATTER = [
+    '…hold that thought — i want to ask the right thing here.',
+    'still here. sorting what you said from what you meant.'
+  ];
   // reason-only + internal — no tools reachable (placed:[]), no run.start/end on the bus (the awakening
   // thinking about you is not a shipped task; XP/telemetry stay honest), cost still counted.
   function llmCall(directive) {
@@ -479,17 +484,19 @@ const Onboarding = (() => {
   }
 
   // THE MEETING (Interview 2.0, orchestrator only). PAIN (the validated anchor) → a follow-up the agent
-  // asked ITSELF from their answer → AMBITION → the agent's spoken READ + self-authored mission
-  // (confirm / put-it-my-way) → the autonomy cadence. Fewer questions than the old form, more extracted:
-  // one rich answer fills context.md + the stack dim + goals (via purpose) instead of one question per slot.
+  // asked ITSELF from their answer → AMBITION → a second self-asked follow-up that makes the shelved
+  // thing concrete → the agent's spoken READ + self-authored mission (confirm / put-it-my-way) → the
+  // autonomy cadence. Still three questions on the marquee, but each answer earns a LISTENED-to dig:
+  // one conversation fills context.md + pain + ambition (×2) + the stack dim + goals (via purpose).
   async function runLeadMeeting() {
     const stepOf = k => steps.find(x => x.dossierDim === k) || null;
     const painStep = stepOf('pain'), ambitionStep = stepOf('ambition');
     const postureStep = steps.find(x => x.posturePreset) || null;
 
     // 0. THE STAKES — before any question, the agent says plainly why these answers matter: they become
-    // its permanent operating file. Extraction earns attention by being honest about what it's for.
-    await Dialogue.say([seg('three questions before we start. your answers become my permanent operating file — i act on them every day from here. give me real ones, or skip — but whatever you give me, i keep.', 42, 380)]);
+    // its permanent operating file, and the quality of what it gives back scales with what it's given.
+    // Give-to-get, stated honestly — extraction earns generosity by declaring the exchange up front.
+    await Dialogue.say([seg('three questions before we start. your answers become my permanent operating file — i act on them every day from here. and the trade is real: the sharper the picture you give me, the sharper my first move gets. vague in, vague out. skip anything — but whatever you give me, i keep.', 42, 380)]);
     if (!running) return;
 
     // 1. PAIN — ask + commit (quiet), then react with the LIVE mind; canned ack when it's quiet.
@@ -523,26 +530,46 @@ const Onboarding = (() => {
       }
     }
 
-    // 3. AMBITION — quiet ask, then KICK the synthesis before the ambition ack types: the ack's own
-    //    screen time (and the "hold on" beat after it) becomes free cover for the read composing.
-    let ambitionT = '';
+    // 3. AMBITION — quiet ask, then the live mind DIGS: a want-it-too ack + ONE follow-up that makes
+    //    the shelved thing concrete (what it IS / who it's for). The canned "noted." used to end this
+    //    beat exactly where the richest material — their projects and ideas — was on the table; now the
+    //    answer becomes a SECOND ambition belief and feeds the read. Canned ack when the mind is quiet.
+    let ambitionT = '', dreamT = '';
     if (ambitionStep) {
       ambitionT = (await askStep(ambitionStep, { quietAck: true })).text;
       if (!running) return;
+      bumpTruth();   // the truth lands on the answer — the mind composes over it, never dead air
+      const pending = (ambitionT && brainReady()) ? llmCall(WakeMind.buildAmbitionReply({ ambition: ambitionT, pain: painT, about: aboutT, name: NAME })) : null;
+      const reply = await mindWait(pending, WakeMind.parseAmbitionReply, AMBITION_PATTER, PAIN_REPLY_MS);
+      if (!running) return;
+      await Dialogue.say([seg(reply ? reply.ack : (typeof ambitionStep.ack === 'function' ? ambitionStep.ack(ambitionT) : ambitionStep.ack), 44, 360)]);
+      if (!running) return;
+      if (reply && reply.ask) {
+        const f = await Dialogue.node({
+          lines: [seg(reply.ask, 46, 0)],
+          options: [{ label: 'Skip for now', value: '', skip: true }],
+          allowCustom: true, customLabel: 'paint it for me', customPlaceholder: 'the real shape of it — straight into my dossier…',
+          skipOnEmpty: true
+        });
+        if (!running) return;
+        dreamT = (!f.skip && f.value != null) ? String(f.value).trim() : '';
+        if (dreamT) {
+          if (typeof DossierStore !== 'undefined' && DossierStore.upsert) DossierStore.upsert('ambition', { text: dreamT, source: 'onboarding' });
+          bumpTruth();
+          await Dialogue.say([seg('that’s the version i’m keeping — the real one.', 44, 360)]);
+          if (!running) return;
+        }
+      }
     }
 
     // 4. THE READ — the agent puts it together, speaks its read, and authors its OWN mission; the
     //    Commander confirms or corrects it. This replaces the 5-option purpose picker: the mission is
-    //    DERIVED from real context, not chosen from a menu. The call is already in flight while the
-    //    ambition ack + "hold on" beats type; past that, patter covers the wait up to the hard ceiling.
+    //    DERIVED from real context, not chosen from a menu. The call kicks the moment the last answer
+    //    is in (it needs the dug ambition detail, so it can no longer prefetch under the ambition ack);
+    //    the "hold on" beat + patter cover the wait up to the hard ceiling.
     let purposeDone = false;
-    const synPending = (brainReady() && (painT || aboutT || ambitionT))
-      ? llmCall(WakeMind.buildSynthesis({ pain: painT, about: aboutT, ambition: ambitionT, name: NAME })) : null;
-    if (ambitionStep) {
-      bumpTruth();
-      await Dialogue.say([seg(typeof ambitionStep.ack === 'function' ? ambitionStep.ack(ambitionT) : ambitionStep.ack, 44, 360)]);
-      if (!running) return;
-    }
+    const synPending = (brainReady() && (painT || aboutT || ambitionT || dreamT))
+      ? llmCall(WakeMind.buildSynthesis({ pain: painT, about: aboutT, ambition: ambitionT, dream: dreamT, name: NAME })) : null;
     if (synPending) {
       await Dialogue.say([seg('hold on — let me put together what you just handed me…', 44, 240)]);
       if (!running) return;
@@ -590,7 +617,7 @@ const Onboarding = (() => {
     Dialogue.open({ name: NAME });
     beatN = 0;
     if (specialty) { beatTotal = Math.max(1, steps.length); await runSteps(steps); }
-    else { beatTotal = 5; await runLeadMeeting(); }
+    else { beatTotal = 6; await runLeadMeeting(); }   // pain, its follow-up, ambition, its follow-up, purpose, cadence
     if (!running) return;
     finish();
   }
