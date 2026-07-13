@@ -59,7 +59,7 @@ const StationBake = (() => {
        floorDetail= amplitude of the V2 floor-material pass (deck plates, seams, rivets,
                     per-kind recipes, perimeter trim). Scales every U.shade delta the floor
                     draws, so 0 = a flat unadorned deck, 1 = shipped, >1 = overdriven. */
-  const DEPTH = { wallShadow: 0.5, sheen: 0.14, cornerAO: 0.55, dither: 0.8, floorWear: 0.55, floorDetail: 1 };
+  const DEPTH = { wallShadow: 0.5, sheen: 0.14, cornerAO: 0.55, dither: 0.15, floorWear: 0.55, floorDetail: 1 };   // dither 0.15 = Andrew's dialed value (2026-07-13 crtlab COPY VALUES)
 
   const CORNER = {
     tl: { cx: 1, cy: 1, a0: Math.PI, a1: 1.5 * Math.PI },
