@@ -245,8 +245,6 @@ test/seedcredit.test.js
 test/seedreuse.test.js
 test/seedreusestore.test.js
 test/trophies.test.js
-test/postcard.test.js
-test/clip.test.js
 test/confbeats.test.js
 test/cron.test.js
 test/cron-store.test.js
