@@ -11,10 +11,11 @@
   const game = document.getElementById('screen-game');
   if (!handle || !game) return;
 
-  const LEFT_COL = 232, PAD = 11, GAP = 9, MIN = 300, MIN_CENTER = 300, HARD_MAX = 820;
-  // the widest COMMS may get while still leaving the centre stage a sane minimum
+  const LEFT_COL = 232, PAD = 11, GAP = 9, MIN = 300, MIN_CENTER = 96;
+  // COMMS may grow as far left as the Commander drags it — the only ceiling is keeping a
+  // sliver of centre stage alive so the world canvas never collapses to zero width
   function maxWidth() {
-    return Math.max(MIN, Math.min(HARD_MAX, window.innerWidth - LEFT_COL - GAP * 2 - PAD * 2 - MIN_CENTER));
+    return Math.max(MIN, window.innerWidth - LEFT_COL - GAP * 2 - PAD * 2 - MIN_CENTER);
   }
   const clamp = w => Math.max(MIN, Math.min(maxWidth(), w));
   function apply(w) { game.style.setProperty('--chat-w', clamp(w) + 'px'); }
