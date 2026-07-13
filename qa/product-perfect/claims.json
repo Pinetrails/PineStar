@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "42749310903b4a4c9ea2691106303278a74e7a4e",
+    "sourceCommit": "3b611984cef8262b683ed92fe81aa201e9b7bba5",
     "pathSetSha256": "b8e93307384653e2959b21cdae26c253979fb6ec71fe9ce8652f5ffc34a8c312",
     "files": [
       {
@@ -693,8 +693,8 @@
       },
       {
         "path": "frontend/app/widgets.js",
-        "bytes": 27095,
-        "sha256": "381d20de104863c50fa2a225a3c5135f35ffaa3697d707731a405e51e7f603c6"
+        "bytes": 29084,
+        "sha256": "7fd3dfc6c1ade132d1c060d9d1cf3de49c2a6ad4d62b1d80278f108891172cea"
       },
       {
         "path": "frontend/app/workquests.js",
@@ -758,8 +758,8 @@
       },
       {
         "path": "frontend/css/comms.css",
-        "bytes": 34934,
-        "sha256": "716e931067fe2ccd87ea24c0d0235141868dcf96c2d1411b4b1ba68f39fee92f"
+        "bytes": 35728,
+        "sha256": "b6620207cdfd460a53e32ae851e842886512dafeb165fcd6c7bcfd46e6b51ed4"
       },
       {
         "path": "frontend/css/marketplace.css",
@@ -808,8 +808,8 @@
       },
       {
         "path": "frontend/css/widgets.css",
-        "bytes": 8457,
-        "sha256": "b1117069d084f654b825bc0dc4ec363f46bf60e9b32a4db888a4f5ec595ca33d"
+        "bytes": 12552,
+        "sha256": "57ccfc7513699e6bf9229b0991384c140865c4e37a733e31015b3b213803198c"
       },
       {
         "path": "frontend/index.html",
