@@ -5582,14 +5582,16 @@ const World = (() => {
     if (depth <= 0 || !geo || !geo.props) return;
     const intake = geo.props.find(p => p.t === 'intake');
     if (!intake) return;
-    const MAXVIS = 6, shown = Math.min(depth, MAXVIS);
+    // MAXVIS 3 (was 6): a deep backlog made a six-crate tower that dominated the room —
+    // the pile stays a short glanceable jam and the '+N' counter carries the real depth.
+    const MAXVIS = 3, shown = Math.min(depth, MAXVIS);
     const cx = (intake.x + (intake.w || 1) / 2) * T;       // centered on the intake footprint
     const top = intake.y * T - 3;                          // crates climb upward off the intake's top edge
     ctx.save();
     if (linkStaleDim) ctx.globalAlpha = 0.3;   // E1: link down → this jam length is last-known, not live; dim it
     for (let i = 0; i < shown; i++) drawWaitCrate(cx, top - i * 6 + Math.sin(now / 360 + i * 0.7) * 0.6);   // gentle idle bob
     if (depth > MAXVIS) {
-      ctx.fillStyle = '#e8c860'; ctx.font = '7px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#e8c860'; ctx.font = "7px 'VT323','Courier New',monospace"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.fillText('+' + (depth - MAXVIS), cx, top - shown * 6 - 3);
     }
     ctx.restore();
