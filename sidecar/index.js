@@ -8140,9 +8140,16 @@ async function handleTts(req, res) {
   if (String((body && body.provider) || '').trim().toLowerCase() === 'elevenlabs') return ttsElevenLabs(res, body, text, fallback);
 
   // WHICH credential speaks: an explicit key from the page (tagged with its provider) wins; otherwise
-  // the first provider in TTS_KEY_PROVIDERS the sidecar itself holds a credential for (runtime push /
-  // keychain env / provider env) — so any station that can run an agent on OpenRouter, Gemini, or OpenAI
-  // gets the neural voice out of the box, no separate voice key.
+  // the first provider in the chain the sidecar itself holds a credential for (runtime push / keychain
+  // env / provider env) — so any station that can run an agent on OpenRouter, Gemini, or OpenAI gets the
+  // neural voice out of the box, no separate voice key. The chain is REORDERED to put the user's active
+  // RUN provider (body.preferProvider) first when it has a native voice API — the station speaks from
+  // the same account it thinks with. A run provider with no voice API (codex/anthropic/…) isn't in
+  // TTS_KEY_PROVIDERS, so the default order stands.
+  const prefer = normalizeProviderId(String((body && body.preferProvider) || ''));
+  const ttsChain = TTS_KEY_PROVIDERS.indexOf(prefer) >= 0
+    ? [prefer].concat(TTS_KEY_PROVIDERS.filter(p => p !== prefer))
+    : TTS_KEY_PROVIDERS;
   let ttsProvider = '', ttsKey = '';
   const explicitKey = String((body && body.key) || '').trim();
   if (explicitKey) {
@@ -8150,7 +8157,7 @@ async function handleTts(req, res) {
     if (TTS_KEY_PROVIDERS.indexOf(ttsProvider) < 0) ttsProvider = 'openrouter';
     ttsKey = explicitKey;
   } else {
-    for (const p of TTS_KEY_PROVIDERS) { const k = providerRuntimeKey(p, ''); if (k) { ttsProvider = p; ttsKey = k; break; } }
+    for (const p of ttsChain) { const k = providerRuntimeKey(p, ''); if (k) { ttsProvider = p; ttsKey = k; break; } }
   }
   if (!ttsKey) return fallback('no key');
 

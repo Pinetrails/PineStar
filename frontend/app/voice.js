@@ -210,14 +210,25 @@ const Voice = (() => {
   }
   function noteNeuralOk() { fbStreak = 0; if (fbNotified) { fbNotified = ''; fbMsg = ''; reflectToggle(); } }
   function apiKey() { return (typeof Harness !== 'undefined' && Harness.getKey) ? (Harness.getKey() || '') : ''; }
-  // Providers whose credential can synthesize the neural voice, in preference order. The sidecar mirrors
-  // this list — Codex (ChatGPT OAuth) is NOT on it because that token has no audio endpoint to call.
+  // Providers whose credential can synthesize the neural voice, in default preference order. The sidecar
+  // mirrors this list — Codex (ChatGPT OAuth) is NOT on it because that token has no audio endpoint to call.
   const TTS_PROVIDERS = ['openrouter', 'gemini', 'openai'];
+  // the provider the user actually RUNS agents on (the connect-screen choice). Its NATIVE voice API is
+  // preferred, so the station speaks from the same account it thinks with — an OpenAI station speaks via
+  // OpenAI, a Gemini station via Gemini. A run provider with no voice API (codex/anthropic/…) simply isn't
+  // in TTS_PROVIDERS and the default order stands.
+  function runProvider() {
+    try { return (typeof Harness !== 'undefined' && Harness.getProv) ? String(Harness.getProv() || '') : ''; } catch (_) { return ''; }
+  }
+  function ttsProviderOrder() {
+    const p = runProvider();
+    return TTS_PROVIDERS.indexOf(p) >= 0 ? [p].concat(TTS_PROVIDERS.filter(x => x !== p)) : TTS_PROVIDERS;
+  }
   // the best TTS-capable credential the PAGE holds → {key, provider}. Empty key is fine (desktop / dev:
   // the sidecar resolves its own keychain/env credential); provider then rides along as '' too.
   function ttsCred() {
     if (typeof Harness !== 'undefined' && Harness.getKey) {
-      for (const p of TTS_PROVIDERS) { const k = Harness.getKey(p) || ''; if (k) return { key: k, provider: p }; }
+      for (const p of ttsProviderOrder()) { const k = Harness.getKey(p) || ''; if (k) return { key: k, provider: p }; }
     }
     return { key: '', provider: '' };
   }
@@ -278,7 +289,7 @@ const Voice = (() => {
         // sidecar to synthesize + cache it; we discard the audio. A failure is silent (best-effort).
         const r = await fetch('/api/tts', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ key: cred.key, keyProvider: cred.provider, text, model: cfg.model, voice: cfg.voice, style: cfg.style })
+          body: JSON.stringify({ key: cred.key, keyProvider: cred.provider, preferProvider: runProvider(), text, model: cfg.model, voice: cfg.voice, style: cfg.style })
         });
         try { await r.arrayBuffer(); } catch (_) {}
       } catch (_) { break; }   // network gone → stop warming, don't hammer
@@ -562,7 +573,7 @@ const Voice = (() => {
     const ac = new AbortController(); job.ac = ac; ttsAbort = ac;
     job.result = fetch('/api/tts', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: ac.signal,
-      body: JSON.stringify({ key: cred.key, keyProvider: cred.provider, text: job.text, model: cfg.model, voice: cfg.voice, style: cfg.style })
+      body: JSON.stringify({ key: cred.key, keyProvider: cred.provider, preferProvider: runProvider(), text: job.text, model: cfg.model, voice: cfg.voice, style: cfg.style })
     }).then(async r => {
       const ct = r.headers.get('Content-Type') || '';
       if (r.ok && ct.indexOf('audio') === 0) { const blob = await r.blob(); if (blob && blob.size) { noteNeuralOk(); return { kind: 'neural', blob }; } }
