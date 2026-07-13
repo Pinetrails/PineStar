@@ -135,7 +135,17 @@
 
     const refresh = () => readState(appWindow).then(s => applyState(s, doc.body, els.btnMax));
     // resize fires on maximize/restore AND fullscreen toggles — one honest probe path.
-    win.addEventListener('resize', refresh);
+    // Windows settles isMaximized/isFullscreen AFTER the resize event during
+    // fullscreen enter/exit, so a lone immediate probe can freeze a stale glyph
+    // (restore icon on a windowed frame); a trailing re-probe reads the settled truth.
+    let settle = 0;
+    const onResize = () => {
+      refresh();
+      if (settle) win.clearTimeout(settle);
+      settle = win.setTimeout(() => { settle = 0; refresh(); }, 250);
+    };
+    win.addEventListener('resize', onResize);
+    win.addEventListener('focus', refresh);
 
     doc.body.classList.add('sn-chrome');
     doc.body.appendChild(els.bar);

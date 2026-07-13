@@ -80,7 +80,11 @@ body.sn-chrome .sn-ic-close::after { transform: rotate(-45deg); }
 /* ---- layout shift: every screen (fixed, inset:0) drops below the bar.
    #screen-game.active IS the game grid, so this one rule re-sizes the whole app. ---- */
 body.sn-chrome .screen { top: var(--sn-tb-h); }
+/* REFIT mode is its own fixed overlay (not a .screen) with its OWN top toolbar —
+   without this its ✓ DONE row sits under the titlebar (z930 > z80) and is unclickable */
+body.sn-chrome .refit-overlay { top: var(--sn-tb-h); }
 
 /* fullscreen (F11): no window chrome to manage — hide the bar, reclaim the strip */
 body.sn-chrome.sn-fs #sn-titlebar { display: none; }
 body.sn-chrome.sn-fs .screen { top: 0; }
+body.sn-chrome.sn-fs .refit-overlay { top: 0; }

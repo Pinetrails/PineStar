@@ -166,6 +166,9 @@ body {
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
 html, body { height: 100%; overflow: hidden; }
+/* undecorated desktop shell: maximize/fullscreen transitions expose the root for a
+   frame — paint it tube-black so resizes never flash a white sliver */
+html { background: #030201; }
 body {
   background: var(--bg);
   color: var(--text);
