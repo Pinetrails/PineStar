@@ -111,6 +111,10 @@ const ProspectStore = (() => {
   function interests() { return (cache && Array.isArray(cache.interests)) ? cache.interests : []; }
   function gate() { return (cache && cache.gate) || null; }
   function warm() { return !!(cache && cache.warm); }
+  // the scout's visible ATTEMPT LEDGER (server truth: GET /api/scout .ledger, tail already sliced server-side).
+  // Every entry is one recorded mint outcome { at, kind, outcome, reason, title } — the bay renders it so a
+  // dismissed draft is never the whole story (truthful telemetry). Empty until a /api/scout read lands.
+  function ledger() { return (cache && Array.isArray(cache.ledger)) ? cache.ledger : []; }
 
   /* ---- decide surface ----
      A legacy (local) draft is decided locally, same semantics as before (dismiss denylists the fingerprint).
@@ -169,7 +173,7 @@ const ProspectStore = (() => {
   // a brand-new hero drops the browser-side state; the server store is the station's own memory (kept).
   function reset() { legacy = hydrateLegacy(null); cache = null; try { localStorage.removeItem(KEY); } catch (_) {} }
 
-  return { init, refresh, pushContext, list, recipeDrafts, get, interests, gate, warm, dismiss, accept, reset,
+  return { init, refresh, pushContext, list, recipeDrafts, get, interests, gate, warm, ledger, dismiss, accept, reset,
     noteLaunch, launches,
     isDenied: fp => isDenied(fp), _hydrateLegacy: hydrateLegacy, _setCacheForTest: c => { cache = c; } };
 })();

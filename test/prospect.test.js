@@ -111,7 +111,10 @@ global.localStorage = { _s: {}, getItem(k){ return this._s[k] == null ? null : t
       { id: 'sp1', kind: 'prospect', draft: { name: 'Market Analyst', kit: ['dish'] }, why: 'dish-heavy research, no pricing role', fingerprint: 'fp-sp1', at: 5 },
       { id: 'sr1', kind: 'recipe', draft: { name: 'Stock Radar', task: 'Check {t}.', params: [{ key: 't' }] }, why: 'you keep asking about stocks', fingerprint: 'fp-sr1', at: 6 }
     ],
-    ledger: []
+    ledger: [
+      { at: 5, kind: 'prospect', outcome: 'staged', reason: 'dish-heavy research, no pricing role', title: 'Market Analyst' },
+      { at: 7, kind: 'recipe', outcome: 'rejected', reason: 'draft failed hard validation (near-duplicate)', title: '' }
+    ]
   };
   const fakeFetch = async (u, init) => {
     calls.push({ u: u, init: init || {} });
@@ -143,6 +146,10 @@ global.localStorage = { _s: {}, getItem(k){ return this._s[k] == null ? null : t
   A.eq(ProspectStore.warm(), true, 'warmth mirrors the server read');
   A.ok(ProspectStore.interests()[0].evidence.length > 0, 'interests carry their evidence quotes');
   A.eq(ProspectStore.gate().binding, 'cooldown', 'the live gate binding is exposed (honest shelf copy)');
+  // the attempt ledger is exposed for the SCOUT LOG view — server truth, every recorded outcome (truthful telemetry)
+  A.eq(ProspectStore.ledger().length, 2, 'the scout attempt ledger is exposed for the SCOUT LOG');
+  A.eq(ProspectStore.ledger()[0].outcome, 'staged', 'a MINTED (staged) outcome round-trips with its reason');
+  A.eq(ProspectStore.ledger()[1].outcome, 'rejected', 'a REJECTED outcome round-trips (a dismissed draft is not the whole story)');
 
   // LEGACY decide: local, dismiss denylists (never re-mint an equivalent client-side draft)
   A.eq(ProspectStore.dismiss('legacy1'), true, 'a legacy draft dismisses locally');
