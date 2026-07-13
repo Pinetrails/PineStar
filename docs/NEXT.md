@@ -1,5 +1,22 @@
 # NEXT.md — current priorities & task queue
 
+## 2026-07-13 — NIGHT-SHIFT "never does anything" fix (dial-is-the-consent + honesty)
+
+Root cause of "idle for hours, zero autonomous work": at dial free/sandbox every beat silently
+degraded to a reason-only draft because the SEPARATE per-agent away-workshop grant was never
+recorded (`workshopOf()` false ⇒ `runNightshiftActShift` unreachable), and the cold-start
+readiness gate declined every beat for hours with nothing in the UI saying why. Shipped:
+- POST /api/autonomy/posture with `buildsUnattended` now records the night-shift agent's grant
+  through `workshopStore.grantIfUndecided` (same authority as /api/workshop/grant; an EXPLICIT
+  per-agent decision is never overridden; the standalone workshop-shift cron stays opt-in).
+- GET /api/nightshift/status adds `workshopGranted` / `buildMode` / `draftReason` / `readiness`
+  (dims + recent-run bars); the NIGHT SHIFT panel renders MODE + a "still learning you" line;
+  a dial-says-build-but-no-grant degrade is a visible warning AND an autonomy-ledger note.
+- Proof: test/nightshift-grant.e2e.test.js (auto-grant, restart round-trip, revoke-wins,
+  status honesty) + nightreport/workshop-store unit coverage; live-verified on the dev seed.
+OPEN follow-ups: consider surfacing the readiness bars during onboarding (the first idle hours
+are still gated cold by design), and a COMMS nudge when drafts pile up unseen.
+
 ## MERGED 2026-07-12 — PER-RUN PHYSICAL-INPUT ISOLATION (`cf7984ba`)
 
 Transcript-first forensics changed the diagnosis. FPS stream `ws_mrhb6bm3cpz4` made zero
