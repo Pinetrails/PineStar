@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "fcb0d7b8effe14b3080da5c15c17a65e602ccefd",
+    "sourceCommit": "453368735c9329e39a28b408fa747e314f076770",
     "pathSetSha256": "5fe1d68bbbae5fdb083b1b38b603fbb0a3e9f0de77042470ca346b27d1ca3317",
     "files": [
       {
@@ -318,8 +318,8 @@
       },
       {
         "path": "frontend/app/marketplace.js",
-        "bytes": 152579,
-        "sha256": "655eb0dd3a7084da7d1fe1d2f68a029dddcbdb12ce490878657ed81f897ce9d5"
+        "bytes": 156990,
+        "sha256": "c345452a9041e952b0ed91a3e0bd0cb90c9d926cd2fe6bf518da279fa224cd44"
       },
       {
         "path": "frontend/app/mint.js",
@@ -438,8 +438,8 @@
       },
       {
         "path": "frontend/app/prospectstore.js",
-        "bytes": 9612,
-        "sha256": "2ec30addc7b29d1f0c0c3f82ede9a1b24dae7031b789350fa52b2d0cdca7edab"
+        "bytes": 10040,
+        "sha256": "98b79ed888999443d4f8fd7b371e3e70d9c334afe559bcfc02f47ef2f51978fb"
       },
       {
         "path": "frontend/app/questledgerstore.js",
@@ -503,8 +503,8 @@
       },
       {
         "path": "frontend/app/recruiter.js",
-        "bytes": 9641,
-        "sha256": "2106650408a33483a21cf8a424ee37121db89284d7bf3234ba6dd773917d57c1"
+        "bytes": 10048,
+        "sha256": "724e87bec1525588547c540c1ca685d8a45d7b624790184e94855f93a696fe4e"
       },
       {
         "path": "frontend/app/recruiterstore.js",
@@ -778,8 +778,8 @@
       },
       {
         "path": "frontend/css/marketplace.css",
-        "bytes": 47876,
-        "sha256": "61af8b9126363ef0d5d484f9e9d9b3c69e36e58081620592bca46edb23496378"
+        "bytes": 50346,
+        "sha256": "952c8192701d8988d4a515f680aacf4e1c60edf19eb41d0824b22363bcb99752"
       },
       {
         "path": "frontend/css/motion.css",
