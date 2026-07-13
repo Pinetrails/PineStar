@@ -1796,7 +1796,19 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
   border: 1px solid currentColor; border-radius: 2px; padding: 0 3px; line-height: 1.3;
 }
 .proj-git-badge { flex: 0 0 auto; font-size: 10px; color: var(--ph-dim); letter-spacing: .5px; }
+/* Hermes-parity drill-in: breadcrumb back-row + entered-project header + full session rows */
+.proj-crumb { padding: 0 6px 2px; }
+.proj-back {
+  font-family: inherit; font-size: 11px; letter-spacing: 1px; color: var(--ph-dim);
+  background: transparent; border: 0; cursor: pointer; padding: 2px 2px;
+}
+.proj-back:hover { color: var(--ph); }
+.ws-row.proj-head { background: rgba(0,0,0,.28); border-left: 2px solid var(--ph); }
+.ws-row.proj-head .ws-title { color: var(--ph-bright); letter-spacing: .5px; }
+/* full session rows inside an entered project: indented, otherwise the sessions rail's own vocabulary */
+.ws-row.proj-sess-full { margin-left: 10px; }
 /* sessions attached to a project — indented sub-rows under their project row (the REAL w.projectRoot link) */
+.proj-sess.on { color: var(--ph); border-left-color: var(--ph); }
 .proj-sess-n {
   flex: 0 0 auto; min-width: 14px; text-align: center; font-size: 10px; line-height: 1.4;
   color: var(--ph); border: 1px solid var(--ph-dim); border-radius: 8px; padding: 0 3px;
