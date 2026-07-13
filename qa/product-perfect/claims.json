@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "81a516a09b92249859fa373aaad3d77d66780b32",
+    "sourceCommit": "7413b2740fed8c922eef670540385b025539ec79",
     "pathSetSha256": "852da3f413ea706b32aba7e975ddd2ebd7664d8e8a9ac7f4c3c11e4559488b85",
     "files": [
       {
@@ -138,8 +138,8 @@
       },
       {
         "path": "frontend/app/chatresize.js",
-        "bytes": 3435,
-        "sha256": "7404d3d739ff411c47267bd768ab371cfd11ff1052d8b8a3095d2a5b6239cd5c"
+        "bytes": 3492,
+        "sha256": "653b04e56cfe5b05598947776836831601c2a18913d3888272f0e7a1cbb07355"
       },
       {
         "path": "frontend/app/classicons.js",
@@ -678,8 +678,8 @@
       },
       {
         "path": "frontend/app/voice.js",
-        "bytes": 78675,
-        "sha256": "6c98adef0f92fb3259969e4254d0be7672e94636aff81a609d5f93d9c9d38557"
+        "bytes": 78669,
+        "sha256": "19d864582d3e0db4b54ac2d44efc7c4e2eb1d4f16bb1aa4c563c8cf43dd3a4e0"
       },
       {
         "path": "frontend/app/waitanchor.js",
@@ -758,8 +758,8 @@
       },
       {
         "path": "frontend/css/app.css",
-        "bytes": 186356,
-        "sha256": "9f4b6acbdc397d24d27d6eda3497454733cb97b1cf482e09bdb71b2f2b3650da"
+        "bytes": 186227,
+        "sha256": "8215cc9c8c1021eff60a33dc36fa38c1ddc9a7bdec0ac72f8aebb6159a69831e"
       },
       {
         "path": "frontend/css/asciifx.css",
@@ -768,8 +768,8 @@
       },
       {
         "path": "frontend/css/comms.css",
-        "bytes": 35728,
-        "sha256": "b6620207cdfd460a53e32ae851e842886512dafeb165fcd6c7bcfd46e6b51ed4"
+        "bytes": 35386,
+        "sha256": "3c154999c8103505e47e7fa2e0fb6d39447aebca9d2c2e768f7c2ec95568b171"
       },
       {
         "path": "frontend/css/marketplace.css",
@@ -823,8 +823,8 @@
       },
       {
         "path": "frontend/index.html",
-        "bytes": 56661,
-        "sha256": "990f9a8db0a537a01051d1f0db36495859cbe12db6cf087004beb458a7122332"
+        "bytes": 57129,
+        "sha256": "d181f7e20b87996471852acb9ebe2c5cc6081ebb15fb0f50d475ce1336439170"
       },
       {
         "path": "frontend/js/arcade.js",
