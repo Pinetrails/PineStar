@@ -524,6 +524,38 @@ const StationBake = (() => {
     b.globalCompositeOperation = 'source-over';
   }
 
+  /* ORDERED DITHER — the light map is the one surface still painted in smooth alpha falloff,
+     which reads soft/"digital" against the hard-stepped floors and walls. This pass quantizes
+     its alpha into a few hard levels and breaks each transition with a 4x4 Bayer checker, so
+     the LIGHTING speaks the same chunky pixel dialect as the geometry. Rules that keep the
+     chunk cache honest (stationbake.chunk.test.js asserts chunk↔monolithic pixel parity):
+       - the Bayer threshold is keyed on WORLD pixel coords (canvas-local + VX/VY), so a pixel
+         dithers identically no matter which chunk viewport bakes it;
+       - contexts that can't read pixels back (the headless canvas mock) skip the pass — both
+         bake paths skip together, so parity holds there too.
+     DEPTH.dither = mix between the smooth original and the fully dithered result (0 = off). */
+  const BAYER4 = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
+  function ditherLight(L, w, h) {
+    const k = Math.max(0, Math.min(1, DEPTH.dither));
+    if (k <= 0.001) return;
+    if (typeof L.getImageData !== 'function' || typeof L.putImageData !== 'function') return;
+    const img = L.getImageData(0, 0, w, h);
+    const d = img.data;
+    const STEPS = 5;   // alpha quantized to 6 hard values (0, 51, 102 … 255)
+    for (let y = 0; y < h; y++) {
+      const row = ((y + VY) & 3) << 2;
+      for (let x = 0; x < w; x++) {
+        const i = ((y * w + x) << 2) + 3;
+        const a = d[i];
+        if (!a || a === 255) continue;
+        const t = (BAYER4[row | ((x + VX) & 3)] + 0.5) / 16;
+        const q = Math.min(STEPS, Math.floor((a / 255) * STEPS + t)) * (255 / STEPS);
+        d[i] = Math.round(a + (q - a) * k);
+      }
+    }
+    L.putImageData(img, 0, 0);
+  }
+
   function buildLightMap() {
     const lightCv = canvas(CW, CH);
     const L = translatedContext(lightCv);
@@ -565,6 +597,7 @@ const StationBake = (() => {
     // doorway light spill so corridors and rooms read as connected
     for (const [x1, y1, x2, y2] of G.doorDefs) cut((x1 + x2 + 1) / 2 * T, (y1 + y2 + 1) / 2 * T, T * 1.6, LIGHT.door);
     L.globalCompositeOperation = 'source-over';
+    ditherLight(L, lightCv.width, lightCv.height);
     const flickers = [];
     for (let i = 0; i < lampPos.length; i += 2) flickers.push(lampPos[i]);
     return { lightCv, flickers };
