@@ -2,6 +2,18 @@
   "version": "0.0.1",
   "configurations": [
     {
+      "name": "onboard-fresh",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "dev/onboard-fresh.js"
+      ],
+      "port": 8991,
+      "autoPort": false,
+      "env": {
+        "SKYNET_PORT": "8991"
+      }
+    },
+    {
       "name": "ascii-anim-seed",
       "runtimeExecutable": "node",
       "runtimeArgs": [
