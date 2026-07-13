@@ -162,28 +162,32 @@ const StationBake = (() => {
       const sh = d => U.shade(base, d * fd);
       px(X, Y, T, T, base);
       // per-PLATE tone: every tile of a plate shares one of 5 hard tones (world-anchored),
-      // so the deck reads as engineered multi-tile plates instead of a 1-tile checker
+      // so the deck reads as engineered multi-tile plates instead of a 1-tile checker.
+      // RESTRAINT PASS: the floor is a BACKGROUND surface — structure stays, every contrast
+      // sits low enough that agents/props pop over it instead of competing with it.
       const pn = h2(Math.floor(x / PW), Math.floor(y / PH), r.z + ':pl');
-      const checker = mat === 'tile' ? ((Math.floor(x / PW) + Math.floor(y / PH)) % 2 ? 0.035 : -0.025) : 0;
-      px(X, Y, T, T, sh(((pn % 5) - 2) * 0.022 + checker));
-      // brushed grain: faint hairlines (panels comb straight; labs stay clean-machined)
-      if (mat === 'panel') { px(X, Y + 4, T, 1, sh(0.035)); px(X, Y + 9, T, 1, sh(-0.045)); }
-      else if (mat !== 'tile') { px(X, Y + 3 + (n % 4), T, 1, sh(0.035)); px(X, Y + 7 + (n % 4), T, 1, sh(-0.045)); }
-      // plate seams on the plate grid: dark cut + a 1px catch-light beside it
-      if (x % PW === 0) { px(X, Y, 1, T, sh(-0.34)); px(X + 1, Y, 1, T, sh(0.09)); }
-      if (y % PH === 0) { px(X, Y, T, 1, sh(-0.34)); px(X, Y + 1, T, 1, sh(0.09)); }
-      // material dressing
-      if ((mat === 'plate' || mat === 'tread') && x % PW === 0 && y % PH === 0) {   // corner rivet at the plate joint
-        px(X + 2, Y + 2, 2, 2, sh(0.22)); px(X + 3, Y + 3, 1, 1, sh(-0.30));
+      const checker = mat === 'tile' ? ((Math.floor(x / PW) + Math.floor(y / PH)) % 2 ? 0.022 : -0.016) : 0;
+      px(X, Y, T, T, sh(((pn % 5) - 2) * 0.014 + checker));
+      // brushed grain: sparse faint hairlines — a third of tiles, not every tile
+      if (mat === 'panel' && n % 3 === 0) { px(X, Y + 4, T, 1, sh(0.025)); px(X, Y + 9, T, 1, sh(-0.03)); }
+      else if (mat !== 'tile' && mat !== 'panel' && n % 3 === 0) { px(X, Y + 3 + (n % 4), T, 1, sh(0.025)); px(X, Y + 7 + (n % 4), T, 1, sh(-0.03)); }
+      // plate seams on the plate grid: a quiet dark cut, catch-light only on room trim
+      if (x % PW === 0) px(X, Y, 1, T, sh(-0.26));
+      if (y % PH === 0) px(X, Y, T, 1, sh(-0.26));
+      // material dressing — rivets on alternating plate joints only
+      if ((mat === 'plate' || mat === 'tread') && x % PW === 0 && y % PH === 0 && (Math.floor(x / PW) + Math.floor(y / PH)) % 2 === 0) {
+        px(X + 2, Y + 2, 2, 2, sh(0.16)); px(X + 3, Y + 3, 1, 1, sh(-0.22));
       }
       if (mat === 'tread') {
-        px(X + 2 + (n % 3), Y + 4, 3, 1, sh(-0.20));                 // stamped tread ticks
-        px(X + 5 + (n % 3), Y + 8, 3, 1, sh(-0.20));
-        if (y % (PH * 3) === 0) px(X, Y, T, 1, sh(-0.50));           // weld line every 3rd plate row
+        if (n % 2 === 0) {                                           // stamped tread ticks on half the tiles
+          px(X + 2 + (n % 3), Y + 4, 3, 1, sh(-0.14));
+          px(X + 5 + (n % 3), Y + 8, 3, 1, sh(-0.14));
+        }
+        if (y % (PH * 3) === 0) px(X, Y, T, 1, sh(-0.35));           // weld line every 3rd plate row
       } else if (mat === 'tile' && pn % 7 === 0) {
-        px(X + T - 5, Y + 2, 2, 1, sh(0.28));                        // specular tick on a gloss tile
+        px(X + T - 5, Y + 2, 2, 1, sh(0.20));                        // specular tick on a gloss tile
       } else if (mat === 'soft' && pn % 3 === 0) {
-        px(X + 1, Y + 1, T - 2, T - 2, sh(0.05));                    // warm matted lift on some plates
+        px(X + 1, Y + 1, T - 2, T - 2, sh(0.035));                   // warm matted lift on some plates
       }
       // sparse one-off features (v1 survivors, now material-aware: labs/bridge stay clean)
       if (mat === 'plate' || mat === 'tread' || mat === 'soft') {
@@ -218,16 +222,16 @@ const StationBake = (() => {
       // Painted LAST so it re-tones the whole tile over the plate work above.
       const wN = wallTo(x, y, x, y - 1), wS = wallTo(x, y, x, y + 1), wW = wallTo(x, y, x - 1, y), wE = wallTo(x, y, x + 1, y);
       if (wN || wS || wW || wE) {
-        px(X, Y, T, T, 'rgba(6,7,10,' + (0.10 * fd).toFixed(3) + ')');
-        if (wN && !wS) px(X, Y + T - 1, T, 1, sh(0.10));
-        if (wS && !wN) px(X, Y, T, 1, sh(0.10));
-        if (wW && !wE) px(X + T - 1, Y, 1, T, sh(0.10));
-        if (wE && !wW) px(X, Y, 1, T, sh(0.10));
+        px(X, Y, T, T, 'rgba(6,7,10,' + (0.06 * fd).toFixed(3) + ')');
+        if (wN && !wS) px(X, Y + T - 1, T, 1, sh(0.06));
+        if (wS && !wN) px(X, Y, T, 1, sh(0.06));
+        if (wW && !wE) px(X + T - 1, Y, 1, T, sh(0.06));
+        if (wE && !wW) px(X, Y, 1, T, sh(0.06));
       }
       const dN = doorTo(x, y, x, y - 1), dS = doorTo(x, y, x, y + 1), dW = doorTo(x, y, x - 1, y), dE = doorTo(x, y, x + 1, y);
       if (dN || dS || dW || dE) {
-        b.fillStyle = sh(0.20);
-        for (let i = 2; i < T - 2; i += 4) {
+        b.fillStyle = sh(0.13);
+        for (let i = 2; i < T - 2; i += 5) {
           if (dN) b.fillRect(X + i, Y + 1, 2, 1);
           if (dS) b.fillRect(X + i, Y + T - 2, 2, 1);
           if (dW) b.fillRect(X + 1, Y + i, 1, 2);
@@ -246,7 +250,7 @@ const StationBake = (() => {
       const X = x * T, Y = y * T, n = h2(x, y, 'cor');
       const sh = d => U.shade(base, d * fd);
       px(X, Y, T, T, base);
-      px(X, Y, T, T, sh(((n % 4) - 1.5) * 0.02));   // per-tile tread-plate tone (hard, one of 4)
+      px(X, Y, T, T, sh(((n % 4) - 1.5) * 0.013));   // per-tile tread-plate tone (hard, one of 4)
       px(X, Y, T, 1, sh(-0.34));
       if (n % 23 === 5) { px(X + 2, Y + 2, T - 4, T - 4, sh(-0.16)); b.strokeStyle = sh(-0.4); b.lineWidth = 1; b.strokeRect(X + 2.5, Y + 2.5, T - 5, T - 5); }
       // corridor wear ticks (see the room-floor wear block for the idiom)
@@ -263,9 +267,9 @@ const StationBake = (() => {
     // V2: chevron stamps between the ribs (staggered direction ticks along the walk axis)
     // + side GUTTERS — a dark drainage channel with a faint lit lip hugging each long wall
     if (fd > 0.001) {
-      const tick = 'rgba(0,0,0,' + (0.18 * fd).toFixed(3) + ')';
-      const chan = 'rgba(0,0,0,' + (0.28 * fd).toFixed(3) + ')';
-      const lip = 'rgba(255,244,220,' + (0.045 * fd).toFixed(3) + ')';
+      const tick = 'rgba(0,0,0,' + (0.10 * fd).toFixed(3) + ')';
+      const chan = 'rgba(0,0,0,' + (0.18 * fd).toFixed(3) + ')';
+      const lip = 'rgba(255,244,220,' + (0.03 * fd).toFixed(3) + ')';
       if (vertical) {
         const cxp = Math.round(x1 + rw / 2);
         b.fillStyle = tick;
