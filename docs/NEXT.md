@@ -1,5 +1,24 @@
 # NEXT.md — current priorities & task queue
 
+## BUILT 2026-07-13 — QUEST V3 STANDING REFRESH (branch `claude/starnet-quest-system-25fae6`, `fd8823d8`)
+
+Andrew's report: a live save sat 3 days with an unchanged quest slate and a NEVER-created
+`_station.quests.json` — V2 made completion honest but generation passive (agents mint only mid-run,
+doctrine bar rarely met). The fix is a standing harness refresh (the scout mint-cycle mold):
+- `sidecar/questrefresh.js` (pure) + index.js ambient half: 24h cadence + caught-up fast path (zero
+  open ledger quests → refresh after 1h cooldown), 5-min tick + boot catch-up look (desktop sessions
+  are short — the 24h mark usually passes while the app is closed).
+- Each cycle names the NORTH STAR (Commander's active goal ALWAYS outranks the model's inference),
+  then ONE aux model call proposes ≤3 step-quests toward it; parse enforces the contract rule at the
+  seam (no `run`, prop keys clamp to placeables, fact keys sweepable, WHY must cite shown evidence,
+  dedup vs open slate + denylist); mints ride `questStore.mint` (station-wide `kind:generated`).
+- Every outcome in a visible ledger; `GET /api/quests/refresh` = north star + due state + ledger.
+  Opt-out `SKYNET_QUEST_REFRESH=0`. Gates green: test:fast, test:http full, new pure suite (45
+  assertions) + true e2e (boot→due→mock model→real mints on disk; ungrounded reply rejected, 0 mints).
+- W0 claims surface checked: byte-identical (surface locks frontend/docs only; no sidecar paths).
+- OPEN: merge to trunk (merge ritual), first real-provider cycle on Andrew's save, frontend surface
+  for the north star (the API already serves it).
+
 ## MERGED 2026-07-12 — PER-RUN PHYSICAL-INPUT ISOLATION (`cf7984ba`)
 
 Transcript-first forensics changed the diagnosis. FPS stream `ws_mrhb6bm3cpz4` made zero
