@@ -97,6 +97,33 @@ const rejects = async (p, label) => { try { await p; A.ok(false, label + ' (did 
     A.eq(t.list().find(w => w.id === 'w0').value, 'updated', 'the update landed');
   }
 
+  /* ============================ 6b. EXPRESSIVE DRESSING (tone / spark / progress) ============================ */
+  {
+    const { t } = make();
+    await run(t, { id: 'mrr', value: '$1,240', tone: 'ok', spark: [3, 5, 4, 9], progress: 62.5 });
+    const w = t.list()[0];
+    A.eq(w.tone, 'ok', 'a whitelisted tone persists');
+    A.eq(w.spark.join(','), '3,5,4,9', 'a spark series persists');
+    A.eq(w.progress, 62.5, 'progress persists');
+
+    await run(t, { id: 'junk', value: 'x', tone: 'sparkly', spark: [1], progress: 'nope' });
+    const j = t.list().find(x => x.id === 'junk');
+    A.eq(j.tone, null, 'an unknown tone drops to null (never trusted through)');
+    A.eq(j.spark, null, 'a 1-point spark cannot draw a line → null');
+    A.eq(j.progress, null, 'a non-numeric progress drops to null');
+
+    await run(t, { id: 'clamp', value: 'x', spark: [1, 'x', 2, Infinity, 3], progress: 250 });
+    const c = t.list().find(x => x.id === 'clamp');
+    A.eq(c.spark.join(','), '1,2,3', 'non-finite spark points are dropped');
+    A.eq(c.progress, 100, 'progress clamps into 0-100');
+
+    const big = []; for (let i = 0; i < 40; i++) big.push(i);
+    await run(t, { id: 'cap', value: 'x', spark: big, progress: -9 });
+    const k = t.list().find(x => x.id === 'cap');
+    A.eq(k.spark.length, 24, 'a spark series caps at 24 points');
+    A.eq(k.progress, 0, 'negative progress clamps to 0');
+  }
+
   /* ============================ 7. CLEAR ============================ */
   {
     const { t } = make();

@@ -76,6 +76,33 @@ r = Widgets._sanitizeFeedRecord({ id: 'noname', value: '1' });
 A.eq(r.label, 'NONAME', 'a missing label falls back to the slug');
 A.eq(r.agentId, 'agent', 'a missing agentId falls back honestly');
 
+/* ============ 6b. sanitizeFeedRecord — expressive dressing (tone/spark/progress) ============ */
+
+r = Widgets._sanitizeFeedRecord({ id: 'mrr', value: '$1,240', tone: 'ok', spark: [3, 5, 4, 9], progress: 62.5 });
+A.eq(r.tone, 'ok', 'a whitelisted tone survives');
+A.eq(r.spark.join(','), '3,5,4,9', 'a spark series survives');
+A.eq(r.progress, 62.5, 'progress survives');
+
+r = Widgets._sanitizeFeedRecord({ id: 'junk', value: 'x', tone: '<i>', spark: [1], progress: 'nope' });
+A.eq(r.tone, null, 'an unknown tone → null (whitelist, never trusted)');
+A.eq(r.spark, null, 'a 1-point spark → null (cannot draw a line)');
+A.eq(r.progress, null, 'non-numeric progress → null');
+
+r = Widgets._sanitizeFeedRecord({ id: 'clamp', value: 'x', spark: [1, 'x', 2, Infinity, 3], progress: 250 });
+A.eq(r.spark.join(','), '1,2,3', 'non-finite spark points are dropped');
+A.eq(r.progress, 100, 'progress clamps into 0-100');
+A.eq(Widgets._sanitizeFeedRecord({ id: 'neg', value: 'x', progress: -4 }).progress, 0, 'negative progress clamps to 0');
+
+/* ============ 6c. sparkSvg — range-normalized, safe on flat series ============ */
+
+let svg = Widgets._sparkSvg([1200, 1210, 1240]);
+A.ok(svg.indexOf('<polyline') >= 0 && svg.indexOf('<polygon') >= 0 && svg.indexOf('<circle') >= 0,
+  'a spark renders line + area + endpoint dot');
+A.ok(svg.indexOf('NaN') < 0, 'no NaN coordinates');
+svg = Widgets._sparkSvg([5, 5, 5]);
+A.ok(svg.indexOf('NaN') < 0, 'a flat series never divides to NaN');
+A.eq(Widgets._sparkSvg([7]), '', 'a 1-point series draws nothing');
+
 /* ============================ 7. fmtAge (a trust cue, coarse on purpose) ============================ */
 
 A.eq(Widgets._fmtAge(10000, 0), 'now', 'under 45s reads "now"');
