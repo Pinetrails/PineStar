@@ -223,5 +223,89 @@ const CRED = { SKYNET_OPENROUTER_KEY: 'sk-or-v1-questrefresh-fake', SKYNET_DEFAU
     }
   }
 
+  /* ================= BOOT 4 — the SLATE-FULL fast path (cost + honesty, QUEST V3 slice 2) ================= */
+  {
+    // the model must NEVER be called: if it were, this reply would mint. The skip happens before the call.
+    const mock = await startMock(['NORTH_STAR: should never be requested', 'QUEST: Should never mint', 'CONTRACT: attest', 'WHY: grow the youtube channel'].join('\n'));
+    const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-qrefresh-e2e-'));
+    seedEvidence(ws);   // full evidence — proving the skip is the SLATE-FULL guard, not the cold-save guard
+    // seed the store already at the cap: 3 OPEN station-wide (agentId:null) generated quests.
+    fs.writeFileSync(path.join(ws, '_station.quests.json'), JSON.stringify({ v: 1, seq: 3, quests: [1, 2, 3].map(i => ({
+      id: 'q:' + i, title: 'Seeded generated ' + i, kind: 'generated', agentId: null, createdBy: 'system:quest-refresh',
+      contract: { type: 'attest', key: '' }, status: 'open', createdAt: 1
+    })) }));
+    const { child, port } = await boot(9015 + (process.pid % 10), Object.assign({ SKYNET_WORKSPACES: ws, SKYNET_OPENROUTER_BASE: mock.base }, CRED, QUIET), 20);
+    const B = 'http://' + HOST + ':' + port;
+    try {
+      const token = await bootToken(B, B);
+      const st = await pollRefresh(B, token,
+        p => (p.ledger || []).some(e => e.outcome === 'skipped' && /slate full/i.test(e.reason)),
+        "the slate-full 'skipped' ledger note");
+      A.ok(true, 'SLATE FULL: a cycle at the open-generated cap skipped honestly instead of paying for foredoomed mints');
+      A.ok(!(st.ledger || []).some(e => e.outcome === 'minted' || e.outcome === 'rejected'), 'no model round-trip happened at the cap (no minted/rejected trail)');
+      A.eq(st.openCount, 3, 'the three seeded generated quests are the open slate');
+    } finally {
+      try { child.kill(); } catch (_) {}
+      try { mock.server.close(); } catch (_) {}
+      await sleep(150);
+      try { fs.rmSync(ws, { recursive: true, force: true }); } catch (_) {}
+    }
+  }
+
+  /* ============ BOOT 5 — north-star PROPOSE-AND-CONFIRM from inference (QUEST V3 slice 3) ============ */
+  {
+    const STAR = 'Become a full-time independent creator';
+    const mock = await startMock([
+      'NORTH_STAR: ' + STAR,
+      'QUEST: Storyboard the next series',
+      'DESC: Plan the arc of the next three episodes.',
+      'REWARD: a clear production runway',
+      'CONTRACT: attest',
+      'WHY: growing the youtube channel needs a planned series'
+    ].join('\n'));
+    const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-qrefresh-e2e-'));
+    // dossier ONLY — NO goal file, so the north star comes from INFERENCE (the propose-and-confirm path).
+    fs.mkdirSync(ws, { recursive: true });
+    fs.writeFileSync(path.join(ws, '_commander.dossier.json'), JSON.stringify({
+      block: 'COMMANDER DOSSIER\n- Goals: grow the youtube channel to sustainable income\n- Stack: davinci resolve, notion'
+    }));
+    const { child, port } = await boot(9025 + (process.pid % 10), Object.assign({ SKYNET_WORKSPACES: ws, SKYNET_OPENROUTER_BASE: mock.base }, CRED, QUIET), 20);
+    const B = 'http://' + HOST + ':' + port;
+    const post = (body) => fetch(B + '/api/quests/refresh/northstar', { method: 'POST', headers: { 'X-StarNet-Token': token, Origin: B, 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(r => r.json());
+    let token;
+    try {
+      token = await bootToken(B, B);
+      const st = await pollRefresh(B, token,
+        p => p.northStar && p.northStar.text === STAR,
+        'the inferred north star surfacing as a proposal');
+      // NOT silently adopted: it's a PROPOSAL awaiting the Commander's verdict (truthful telemetry).
+      A.eq(st.northStar.source, 'model', 'the inferred star carries source:model');
+      A.eq(st.northStar.status, 'proposed', 'an inference is labelled unconfirmed, never silently adopted');
+      A.eq(st.northStarProposed, true, 'the status route flags a pending north-star proposal');
+      // the proposal does NOT block minting — the cycle still grounds on it and mints the grounded quest.
+      A.ok((st.ledger || []).some(e => e.outcome === 'minted'), 'a proposed star still grounds the cycle (the quest minted)');
+      // on-disk: the proposal is durable, the adopted star is still empty (nothing silently persisted as adopted).
+      const disk = JSON.parse(fs.readFileSync(path.join(ws, '_station.questrefresh.json'), 'utf8')).state;
+      A.ok(disk.proposedNorthStar && disk.proposedNorthStar.text === STAR, 'the proposal persisted to disk');
+      A.ok(!disk.northStar, 'nothing was silently adopted');
+
+      // CONFIRM → the proposal becomes the adopted star.
+      const cRes = await post({ decision: 'confirm' });
+      A.ok(cRes.ok && cRes.applied, 'the confirm verdict applied');
+      A.eq(cRes.northStarProposed, false, 'after confirm no proposal is pending');
+      const after = await (await fetch(B + '/api/quests/refresh', { headers: { 'X-StarNet-Token': token, Origin: B } })).json();
+      A.eq(after.northStar.status, 'adopted', 'the confirmed star reads adopted');
+      A.eq(after.northStar.text, STAR, 'the adopted star is the one the Commander confirmed');
+      A.eq(after.northStarProposed, false, 'no proposal pending after confirm');
+      const disk2 = JSON.parse(fs.readFileSync(path.join(ws, '_station.questrefresh.json'), 'utf8')).state;
+      A.ok(disk2.northStar && disk2.northStar.text === STAR && !disk2.proposedNorthStar, 'confirm persisted the adoption + cleared the proposal');
+    } finally {
+      try { child.kill(); } catch (_) {}
+      try { mock.server.close(); } catch (_) {}
+      await sleep(150);
+      try { fs.rmSync(ws, { recursive: true, force: true }); } catch (_) {}
+    }
+  }
+
   A.report('questrefresh.e2e.test');
 })().catch(e => { console.log('FAIL: questrefresh.e2e.test threw - ' + (e && e.stack || e)); process.exit(1); });

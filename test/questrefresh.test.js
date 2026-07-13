@@ -56,6 +56,17 @@ A.ok(dirProg.indexOf('RECENTLY COMPLETED') >= 0 && dirProg.indexOf('Publish epis
 A.ok(dirProg.indexOf('NEXT step along the same path') >= 0, 'the directive commands progression, not a reshuffle');
 A.ok(R.buildDirective({ goalNote: 'g', propKeys: PROPS }).indexOf('RECENTLY COMPLETED') < 0, 'no completed quests -> no empty progression block');
 
+/* ---------- slateFull: the cap-full fast path (cost + honesty) ---------- */
+// mirrors quest-store OPEN_GENERATED_CAP (3). At/over the ceiling a refresh can mint nothing new, so the
+// ambient half must SKIP the paid model call — this pure predicate is that gate (no model call downstream of it).
+A.eq(R.OPEN_GENERATED_CAP, 3, 'the refresh mirrors the store open-generated cap');
+A.eq(R.slateFull(0), false, 'an empty slate is not full — a cycle may run');
+A.eq(R.slateFull(2), false, 'below the cap the model call is still worth paying for');
+A.eq(R.slateFull(R.OPEN_GENERATED_CAP), true, 'AT the cap the slate is full — skip the (foregone-rejected) model call');
+A.eq(R.slateFull(R.OPEN_GENERATED_CAP + 1), true, 'over the cap stays full');
+A.eq(R.slateFull(-5), false, 'a junk negative count is not full');
+A.eq(R.slateFull('x'), false, 'a junk non-numeric count is not full');
+
 /* ---------- hasEvidence: the cold-save guard ---------- */
 A.eq(R.hasEvidence({}), false, 'a fully cold save has no evidence');
 A.eq(R.hasEvidence({ goalNote: '', dossierBlock: '  ', activityBlock: '' }), false, 'whitespace is not evidence');
@@ -132,6 +143,43 @@ st = R.setNorthStar(st, { text: '', source: 'goal' }, { now: T0 + 1 });
 A.eq(st.northStar.text, 'Ship the product', 'an empty star never blanks an existing one');
 st = R.setNorthStar(st, { text: 'The Commander goal', source: 'goal' }, { now: T0 + 2 });
 A.eq(st.northStar.source, 'goal', 'a Commander-goal star carries source goal');
+/* ---------- north star PROPOSE-AND-CONFIRM (QUEST V3 slice 3): inferences are proposed, never silently adopted ---------- */
+let n = R.fresh();
+// a first inference is PROPOSED, not adopted — the effective star is it, labelled proposed; nothing adopted yet.
+n = R.proposeNorthStar(n, { text: 'Grow the channel to a living', groundedIn: 'inferred', source: 'model' }, { now: T0 });
+A.eq(n.northStar, null, 'an inference is NOT silently adopted');
+A.eq(n.proposedNorthStar.text, 'Grow the channel to a living', 'the inference is stashed as a pending proposal');
+A.eq(R.effectiveNorthStar(n).status, 'proposed', 'the effective star is labelled unconfirmed');
+A.eq(R.effectiveNorthStar(n).text, 'Grow the channel to a living', 'the proposal grounds the cycle while pending');
+// an identical proposal already pending is a no-op (asked once, not every cycle — no stamp reset)
+const n2 = R.proposeNorthStar(n, { text: 'grow the CHANNEL to a living', source: 'model' }, { now: T0 + 5 });
+A.eq(n2.proposedNorthStar.at, T0, 'an identical pending proposal is not re-stamped (anti-nag)');
+// CONFIRM → adopted; the proposal clears; the effective star is now adopted.
+let nc = R.confirmNorthStar(n, { now: T0 + 10 });
+A.eq(nc.proposedNorthStar, null, 'confirm clears the proposal');
+A.eq(nc.northStar.text, 'Grow the channel to a living', 'confirm adopts the star');
+A.eq(R.effectiveNorthStar(nc).status, 'adopted', 'a confirmed star reads adopted');
+// re-proposing the SAME text once adopted is a no-op (a re-affirmation needs no confirm)
+A.eq(R.proposeNorthStar(nc, { text: 'Grow the channel to a living', source: 'model' }, { now: T0 + 20 }).proposedNorthStar, null, 'the adopted star is never re-proposed to itself');
+// DECLINE → denylisted forever; the same inference never re-proposes; a DIFFERENT one still can.
+let nd = R.declineNorthStar(n, { now: T0 + 30 });
+A.eq(nd.proposedNorthStar, null, 'decline drops the proposal');
+A.ok(nd.declinedNorthStars.indexOf('grow the channel to a living') >= 0, 'the declined inference is denylisted');
+A.eq(R.proposeNorthStar(nd, { text: 'Grow the channel to a living', source: 'model' }, { now: T0 + 40 }).proposedNorthStar, null, 'a declined inference is never re-proposed');
+A.eq(R.proposeNorthStar(nd, { text: 'Ship a SaaS product', source: 'model' }, { now: T0 + 50 }).proposedNorthStar.text, 'Ship a SaaS product', 'a different inference still proposes after a decline');
+// a Commander GOAL always outranks + SUPERSEDES a pending proposal (adopted silently, proposal dropped)
+let ng = R.setNorthStar(R.proposeNorthStar(R.fresh(), { text: 'a guess', source: 'model' }, { now: T0 }), { text: 'Launch the app', source: 'goal' }, { now: T0 + 1 });
+A.eq(ng.proposedNorthStar, null, 'a Commander goal supersedes a pending inference proposal');
+A.eq(ng.northStar.source, 'goal', 'the goal is the adopted star');
+A.eq(ng.northStar.status, 'adopted', 'a goal star is adopted, never proposed');
+// no-op verdicts when nothing pends
+A.eq(R.confirmNorthStar(R.fresh(), { now: T0 }).northStar, null, 'confirm with no pending proposal is a no-op');
+A.eq(R.declineNorthStar(R.fresh(), { now: T0 }).declinedNorthStars, [], 'decline with no pending proposal denylists nothing');
+// durability: propose/decline state survives a JSON round-trip
+const ndRT = R.normalize(JSON.parse(JSON.stringify(nd)));
+A.ok(ndRT.declinedNorthStars.indexOf('grow the channel to a living') >= 0, 'the decline denylist survives a round-trip');
+A.eq(R.effectiveNorthStar(R.fresh()), null, 'a cold state has no effective star');
+
 A.eq(R.normalize(null).ledger, [], 'normalize(null) is a fresh state');
 A.eq(R.normalize({ northStar: { text: '' }, ledger: 'junk', lastCycleAt: 'x' }).northStar, null, 'junk hydrates safely');
 const roundTrip = R.normalize(JSON.parse(JSON.stringify(st)));

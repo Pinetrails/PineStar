@@ -1912,6 +1912,7 @@ const App = (() => {
     if (typeof ThreadStore !== 'undefined') ThreadStore.reset();   // …and a fresh THREAD turn-in gate — a new Commander never inherits the prior hero's resolved/ignored mined ideas (the ledger itself is server-side, station-wide)
     if (typeof QuestStateStore !== 'undefined') QuestStateStore.reset();   // …and a fresh quest memory — a new Commander never inherits dismissed/completed quest history (own key)
     if (typeof QuestLedgerStore !== 'undefined') QuestLedgerStore.reset();  // …and a clean ledger cache — the sidecar ledger is station-wide, but the session cache/notify set starts empty
+    if (typeof QuestRefreshStore !== 'undefined') QuestRefreshStore.reset();  // …and a clean refresh-status cache — the engine state is station-wide/server-side, but the session cache starts empty
     if (typeof StationQuestStore !== 'undefined') StationQuestStore.reset();   // …and no inherited station-gap fix-it quests — a new Commander never sees the prior hero's capdenied backlog / dismissals (own key)
     if (typeof WorkQuestStore !== 'undefined') WorkQuestStore.reset();   // …and no inherited accepted-build work quests — a new Commander never inherits the prior hero's in-flight builds (own key)
     if (typeof GoalStore !== 'undefined') GoalStore.reset();   // …and a fresh goal tree — a new Commander never inherits the prior hero's goals/milestones/progress (own key)
@@ -2111,6 +2112,9 @@ const App = (() => {
     // tick), merges the sidecar ledger into the QUEST LOG projection, and owns the attest confirm/dismiss writes.
     // Init AFTER QuestStateStore so the ledger's already-done quests fold in as a quiet baseline on a resume.
     if (typeof QuestLedgerStore !== 'undefined') QuestLedgerStore.init();
+    // QUEST V3 — the standing quest-REFRESH engine's frontend citizen: polls /api/quests/refresh (throttled on
+    // the tick) for the north star + attempt ledger + due state, and owns the manual REFRESH QUESTS write.
+    if (typeof QuestRefreshStore !== 'undefined') QuestRefreshStore.init();
     // G1b STATION-QUEST GENERATOR: subscribe to agent.tool_call and mint a fix-it quest when an agent reaches
     // for a tool its room can't grant (capdenied → playable direction). Init AFTER World.loadStation (its gap
     // check + resolution read World.heroCaps / the live floor) and after QuestStateStore so a resumed save's

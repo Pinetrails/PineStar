@@ -3659,6 +3659,7 @@ const StationUI = (() => {
   // so running it the instant a prop lands makes each close flourish on its own. The 1s tick stays the fallback.
   function pokeQuests() {
     if (typeof QuestLedgerStore !== 'undefined' && QuestLedgerStore.sync) { try { QuestLedgerStore.sync(); } catch (_) {} }   // §C: throttled ledger poll (no-ops network unless the window elapsed)
+    if (typeof QuestRefreshStore !== 'undefined' && QuestRefreshStore.sync) { try { QuestRefreshStore.sync(); } catch (_) {} }   // QUEST V3: throttled refresh-status poll (north star + attempt ledger)
     if (typeof StationQuestStore !== 'undefined' && StationQuestStore.sync) { try { StationQuestStore.sync(); } catch (_) {} }
     if (typeof WorkQuestStore !== 'undefined' && WorkQuestStore.sync) { try { WorkQuestStore.sync(); } catch (_) {} }
     if (typeof MaintQuestStore !== 'undefined' && MaintQuestStore.sync) { try { MaintQuestStore.sync(); } catch (_) {} }
@@ -3675,6 +3676,7 @@ const StationUI = (() => {
     // §C: the harness LEDGER polls here too (throttled inside QuestLedgerStore) so an away-completed / just-
     // confirmed ledger quest folds into the celebration on the 1s tick even with the QUEST LOG closed.
     if (typeof QuestLedgerStore !== 'undefined' && QuestLedgerStore.sync) { try { QuestLedgerStore.sync(); } catch (_) {} }
+    if (typeof QuestRefreshStore !== 'undefined' && QuestRefreshStore.sync) { try { QuestRefreshStore.sync(); } catch (_) {} }   // QUEST V3: refresh status polls here too (throttled) so the north-star beat can surface with the QUEST LOG closed
     if (typeof StationQuestStore !== 'undefined' && StationQuestStore.sync) { try { StationQuestStore.sync(); } catch (_) {} }
     if (typeof WorkQuestStore !== 'undefined' && WorkQuestStore.sync) { try { WorkQuestStore.sync(); } catch (_) {} }
     if (typeof MaintQuestStore !== 'undefined' && MaintQuestStore.sync) { try { MaintQuestStore.sync(); } catch (_) {} }
@@ -5439,6 +5441,69 @@ const StationUI = (() => {
     return null;
   }
 
+  // QUEST V3 — relative-time from an epoch-ms stamp (the fmtRel idiom, but for ms not ISO). 0/junk -> '—'.
+  function qrRel(ms) {
+    const t = Number(ms) || 0; if (!t) return '—';
+    const d = t - Date.now(), a = Math.abs(d);
+    if (a < 60000) return 'now';
+    const span = a < 3600000 ? (Math.round(a / 60000) + 'm') : a < 86400000 ? (Math.round(a / 3600000) + 'h') : (Math.round(a / 86400000) + 'd');
+    return d >= 0 ? ('in ' + span) : (span + ' ago');
+  }
+  // QUEST V3 — the NORTH STAR + standing-refresh surface. Reads the last-good status off QuestRefreshStore
+  // (the throttled /api/quests/refresh poll). Every line is real engine state: the long-term goal the station
+  // believes the Commander is chasing (with its provenance — a Commander-set goal vs an inference), the manual
+  // REFRESH QUESTS action, the most recent honest attempt outcome (minted / rejected: why / skipped: why), and
+  // when the next cycle is due. Absent store / no fetch yet -> a quiet, honest placeholder (never a fake value).
+  function questRefreshHtml() {
+    const QRS = (typeof QuestRefreshStore !== 'undefined') ? QuestRefreshStore : null;
+    if (QRS && QRS.sync) { try { QRS.sync(); } catch (_) {} }   // throttled — no-ops the network unless the poll window elapsed
+    const s = QRS && QRS.status ? QRS.status() : null;
+    const running = QRS && QRS.isRunning ? QRS.isRunning() : false;
+    // NORTH STAR line — the goal the station is steering quests toward, with honest provenance + confirm state.
+    let starHtml;
+    if (s && s.northStar && s.northStar.text) {
+      const ns = s.northStar;
+      const srcTag = ns.source === 'goal' ? 'your goal' : 'inferred';
+      const proposed = ns.status === 'proposed';
+      const unconf = proposed ? ' <span class="q-nstag q-unconf" title="the station inferred this — confirm or correct it">unconfirmed</span>' : '';
+      // propose-and-confirm: an inferred star is never silently adopted — the Commander confirms (adopt) or
+      // corrects (decline → denylisted, re-inferred next cycle). A Commander-set goal needs no verdict.
+      const verdictRow = proposed
+        ? '<div class="consent-btns q-mt q-ns-verdict">'
+          + '<button class="consent-btn q-ns-yes">That’s it ✓</button>'
+          + '<button class="consent-btn deny q-ns-no">Not quite</button>'
+          + '</div>'
+        : '';
+      starHtml = '<div class="q-northstar"><span class="q-ns-eyebrow">NORTH STAR &middot; <span class="q-ns-src">' + esc(srcTag) + '</span>' + unconf + '</span>'
+        + '<div class="q-ns-text">&#9670; ' + esc(ns.text) + '</div>'
+        + (ns.groundedIn ? '<div class="sub q-ns-why">' + esc(ns.groundedIn) + '</div>' : '')
+        + verdictRow + '</div>';
+    } else {
+      starHtml = '<div class="q-northstar"><span class="q-ns-eyebrow">NORTH STAR</span>'
+        + '<div class="sub q-ns-text dim">not set yet &mdash; the station learns your long-term goal from your goal arc, dossier, and real activity.</div></div>';
+    }
+    // LAST OUTCOME — the most recent honest attempt (minted/none/rejected/skipped/error) the refresher recorded.
+    const last = s && s.ledger && s.ledger.length ? s.ledger[s.ledger.length - 1] : null;
+    const OUTCOME_LABEL = { minted: 'minted a quest', none: 'no new step needed', rejected: 'rejected', skipped: 'skipped', error: 'error' };
+    const lastHtml = last
+      ? '<div class="sub q-refresh-last"><span class="q-outcome q-oc-' + esc(last.outcome || 'skipped') + '">' + esc(OUTCOME_LABEL[last.outcome] || last.outcome || '—') + '</span> '
+          + esc(last.reason || '') + (last.title ? ' &mdash; &ldquo;' + esc(last.title) + '&rdquo;' : '')
+          + ' <span class="dim">&middot; ' + esc(qrRel(last.at)) + '</span></div>'
+      : '<div class="sub q-refresh-last dim">no refresh has run yet.</div>';
+    // DUE — when the next standing cycle lands (or that one is due now). Honest read of the engine's own clock.
+    const dueHtml = s
+      ? '<div class="sub q-refresh-due dim">' + (s.due ? 'a refresh is due now' : ('next refresh ' + esc(qrRel(s.dueAt)))) + '</div>'
+      : '';
+    const disabled = (s && !s.enabled);
+    const btnLabel = running ? 'REFRESHING&hellip;' : 'REFRESH QUESTS';
+    const btn = '<button class="consent-btn q-refresh-btn" ' + (running || disabled ? 'disabled' : '') + '>' + btnLabel + '</button>';
+    const disabledNote = disabled ? '<div class="sub dim">the standing refresh is turned off (SKYNET_QUEST_REFRESH=0).</div>' : '';
+    return '<div class="gx-sec q-refresh-sec"><span class="gx-title">DIRECTION</span></div>'
+      + '<div class="q-refresh-card">' + starHtml
+      + '<div class="q-refresh-row">' + btn + dueHtml + '</div>'
+      + lastHtml + disabledNote + '</div>';
+  }
+
   function buildQuests(body) {
     const QSS = (typeof QuestStateStore !== 'undefined') ? QuestStateStore : null;
     const SQS = (typeof StationQuestStore !== 'undefined') ? StationQuestStore : null;
@@ -5555,6 +5620,7 @@ const StationUI = (() => {
       : '';
     body.innerHTML = '<div class="gx gx-quests">'
       + meterHtml
+      + questRefreshHtml()
       + '<div class="dim" style="margin:4px 0 10px;">every quest pays out in real capability or work &mdash; never points. nothing here is locked; the order just shows what tends to come next.</div>'
       + proposalsHtml
       + '<div class="gx-sec"><span class="gx-title">OPEN</span> <span class="gx-tag">' + open.length + '</span></div>'
@@ -5661,6 +5727,38 @@ const StationUI = (() => {
       if (r && r.ok) sfx('click'); else b.disabled = false;
       rerender('quests');
     }));
+    // QUEST V3 — REFRESH QUESTS: force a standing-refresh cycle NOW (POST /api/quests/refresh/run). Honest
+    // feedback: the button reports whether a cycle actually launched, or the reason it didn't (already running
+    // / disabled). The outcome (minted N / rejected: why / skipped: why) lands in the ledger the panel shows —
+    // a re-render on completion surfaces it. Never claims a mint the engine didn't make (truthful telemetry).
+    const refreshBtn = body.querySelector('.q-refresh-btn');
+    if (refreshBtn) refreshBtn.addEventListener('click', async ev => {
+      ev.stopPropagation();
+      if (typeof QuestRefreshStore === 'undefined' || !QuestRefreshStore.run) return;
+      refreshBtn.disabled = true; refreshBtn.innerHTML = 'REFRESHING&hellip;';
+      const r = await QuestRefreshStore.run();
+      if (r && r.started) { sfx('click'); notify('◆ refreshing quests — the station is re-deriving your direction', 'gold'); }
+      else { notify('refresh not started: ' + ((r && r.error) || 'unavailable'), 'warn'); }
+      // the cycle is async on the server; re-render now (shows inFlight + the launch), then again shortly so the
+      // recorded outcome (mint/reject/skip reason) lands in the panel without the Commander re-opening it.
+      rerender('quests');   // no-op if the panel was closed meanwhile (rerender guards on open[key])
+      if (r && r.started) setTimeout(() => { try { rerender('quests'); } catch (_) {} }, 3500);
+    });
+    // QUEST V3 — NORTH STAR verdict: confirm (adopt the inferred star) or correct (decline → denylisted, the
+    // station re-infers next cycle). Both route through QuestRefreshStore.verdict → POST /northstar, then re-render
+    // so the "unconfirmed" tag clears (confirm) or the star reverts (decline). Truthful: only a real proposal shows these.
+    const nsYes = body.querySelector('.q-ns-yes'), nsNo = body.querySelector('.q-ns-no');
+    const wireVerdict = (btn, decision, tone) => { if (!btn) return; btn.addEventListener('click', async ev => {
+      ev.stopPropagation();
+      if (typeof QuestRefreshStore === 'undefined' || !QuestRefreshStore.verdict) return;
+      btn.disabled = true;
+      const r = await QuestRefreshStore.verdict(decision);
+      if (r && r.ok) { sfx('click'); notify(decision === 'confirm' ? '◆ north star confirmed — quests will steer by it' : '↩ got it — the station will re-read your direction', tone); }
+      else { btn.disabled = false; notify('could not record that', 'bad'); }
+      rerender('quests');
+    }); };
+    wireVerdict(nsYes, 'confirm', 'gold');
+    wireVerdict(nsNo, 'decline', 'warn');
   }
 
   /* ============== lifecycle ============== */
