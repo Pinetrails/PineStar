@@ -47,8 +47,16 @@ const StationBake = (() => {
                     the floor at its base (0 = off, matches the pre-depth look), and the extra
                     e/w wall-base shade so every wall foot sits in a little shadow.
        sheen      = strength of the faint vertical reflection streak baked on the floor under
-                    each ceiling-light pool (polished deck read; 0 = off). */
-  const DEPTH = { wallShadow: 0.5, sheen: 0.14 };
+                    each ceiling-light pool (polished deck read; 0 = off).
+       cornerAO   = pooled darkening where two wall feet MEET (concave floor corners). The
+                    linear wallShadow bands merely overlap there; this adds the radial-ish
+                    corner pool that sells the room as a 3D box (0 = off).
+       dither     = ordered-dither quantization of the light map's smooth alpha falloff into
+                    hard stepped levels broken by a 4x4 Bayer pattern, so LIGHT reads in the
+                    same chunky pixel idiom as the geometry (0 = off = smooth gradients).
+       floorWear  = density/strength of hash-keyed wear on the deck — scuffs, worn patches,
+                    drag marks, corridor traffic lanes (0 = off = the pristine floor). */
+  const DEPTH = { wallShadow: 0.5, sheen: 0.14, cornerAO: 0.55, dither: 0.8, floorWear: 0.55 };
 
   const CORNER = {
     tl: { cx: 1, cy: 1, a0: Math.PI, a1: 1.5 * Math.PI },
@@ -175,6 +183,49 @@ const StationBake = (() => {
       else b.fillRect(X + T - ds, Y, ds, T);
     }
     bakeWallCastShadow(b);
+    bakeCornerAO(b);
+  }
+
+  /* CORNER AO — where two wall feet MEET, the linear bands above only overlap in a square;
+     real light pools extra darkness INTO a concave corner. Painted as 3 nested opaque-alpha
+     squares anchored at the corner point (hard 1px transitions — the station's pixel idiom,
+     same reasoning as bakeWallCastShadow), largest faintest → smallest darkest, so the corner
+     reads as a pooled radial-ish falloff at any zoom. Cool-black to sit with the edge AO tone.
+     Only same-tile side pairs (a room's corner tile carries both edges); door seams never
+     count as walls. DEPTH.cornerAO scales the whole pass; 0 = off = the pre-AO look. */
+  function bakeCornerAO(b) {
+    const s = Math.max(0, DEPTH.cornerAO);
+    if (s <= 0.001) return;
+    const cool = a => 'rgba(6,7,10,' + a.toFixed(3) + ')';
+    const sides = new Map();   // 'x,y' -> which sides of this tile carry a solid (non-door) wall
+    for (const e of edges) {
+      if (e.door) continue;
+      const k = e.x + ',' + e.y;
+      let sd = sides.get(k);
+      if (!sd) sides.set(k, sd = { n: false, s: false, w: false, e: false, room: e.room });
+      sd[e.side] = true;
+    }
+    const R = [Math.round(T * 0.6), Math.round(T * 0.42), Math.round(T * 0.24)];
+    const A = [0.26, 0.34, 0.42];
+    for (const [k, sd] of sides) {
+      const both = (sd.n || sd.s) && (sd.w || sd.e);
+      if (!both) continue;
+      const cx = k.indexOf(','), x = +k.slice(0, cx), y = +k.slice(cx + 1);
+      const X = x * T, Y = y * T;
+      const topY = Y + (sd.room ? NFACE : 5);   // floor starts below the north face (matches bakeWallCastShadow's seam)
+      const put = (ax, ay, right, down) => {    // corner point + which way the squares grow
+        for (let i = 0; i < R.length; i++) {
+          const r = R[i], a = s * A[i];
+          if (a < 0.004 || r < 2) continue;
+          b.fillStyle = cool(a);
+          b.fillRect(right ? ax - r : ax, down ? ay - r : ay, r, r);
+        }
+      };
+      if (sd.n && sd.w) put(X, topY, false, false);
+      if (sd.n && sd.e) put(X + T, topY, true, false);
+      if (sd.s && sd.w) put(X, Y + T, false, true);
+      if (sd.s && sd.e) put(X + T, Y + T, true, true);
+    }
   }
 
   /* the big 3D cue: the STANDING north wall shades the floor at its base, as if the ceiling light
