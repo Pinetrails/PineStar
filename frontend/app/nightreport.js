@@ -247,6 +247,35 @@
     return 'still learning you — knows ' + dims + '/' + dimsBar + ' areas · ' + runs + '/' + runsBar + ' recent runs (either bar unlocks acting)';
   }
 
+  // THE DIAL-RAISE OUTLOOK (NS visibility 2026-07-13): the one honest sentence shown the INSTANT the Commander raises
+  // the autonomy dial (the awakening cadence beat / the station panel) — what a beat will ACTUALLY do while they're
+  // away (build vs draft) and how far the station still is from being allowed to act (cold-start readiness). Composed
+  // straight from a /api/nightshift/status payload via the SAME modeText/readinessText the panel uses — so the dial
+  // feedback and the panel can never disagree (truthful telemetry). Returns '' when there is nothing honest to add:
+  // an unreachable/absent status, OR a fully-hot build-capable station whose only truthful line ('beats BUILD…') the
+  // caller may still choose to show. NEVER invents — every clause maps to a status field. Pure + node-testable.
+  function postureOutlook(status) {
+    if (!status || typeof status !== 'object') return '';
+    const mode = modeText(status);                       // build-vs-draft, straight from status.buildMode/draftReason
+    const ready = readinessText(status && status.readiness);   // '' once a hot bar is cleared (nothing to caveat)
+    const parts = [];
+    if (mode) parts.push(mode);
+    if (ready) parts.push(ready);
+    if (!parts.length) return '';
+    return 'here’s what that means while you’re away: ' + parts.join('; ') + '.';
+  }
+
+  // THE UNSEEN-DRAFTS PREDICATE (NS live-session nudge 2026-07-13): the drafts a night-shift beat left on the desk
+  // that the Commander has NOT yet been shown — i.e. those stamped AFTER the durable lastSeenDraftAt mark (set when
+  // the morning report or the NIGHT SHIFT panel surfaces them). Newest-first order is preserved from the drafts route.
+  // Pure: no Date.now — "unseen" is purely (draft.at > lastSeenAt). A missing/invalid stamp (0) → every real draft is
+  // unseen (honest: nothing has been surfaced yet). Guards each row so a malformed entry never throws.
+  function unseenDrafts(drafts, lastSeenAt) {
+    const seen = Number(lastSeenAt) || 0;
+    const list = Array.isArray(drafts) ? drafts : [];
+    return list.filter(d => d && Number(d.at) > seen && d.title);
+  }
+
   // one decision-trail row for the panel's scrollable ledger: "1:10 AM · declined · leash spent". Pure; a bad row
   // still renders its time + kind (never throws). kindLabel keeps the vocabulary honest (act/decline/note → words).
   function trailLine(entry, tzOffsetMin) {
@@ -260,5 +289,5 @@
     return when + ' · ' + kind + (tail ? ' · ' + tail : '');
   }
 
-  return { compose, panelModel, trailLine, fmtLocalTime, bindingPhrase, plural, modeText, readinessText, BINDING_PHRASE };
+  return { compose, panelModel, trailLine, fmtLocalTime, bindingPhrase, plural, modeText, readinessText, postureOutlook, unseenDrafts, BINDING_PHRASE };
 });
