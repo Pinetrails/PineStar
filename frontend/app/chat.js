@@ -4005,7 +4005,7 @@ const Chat = (() => {
     localLine('Undid ' + removed + ' message' + (removed === 1 ? '' : 's') + '.');
   }
   function compressCommand() {
-    const cs = (typeof Harness !== 'undefined' && Harness.contextState) ? Harness.contextState() : null;
+    const cs = (typeof Harness !== 'undefined' && Harness.contextState) ? Harness.contextState((activeWs && activeWs.agentId) || 'agent') : null;
     // The run host is STATELESS — the conversation lives in the browser and is sent per call — so there is no
     // persistent server-side context to fold on demand between runs. Auto-compaction runs INSIDE a run when the
     // live prompt crosses the threshold. This is the honest status; see the slash-parity report for the rationale.
@@ -4124,7 +4124,7 @@ const Chat = (() => {
   }
   function reasoningCommand(args) {
     const raw = String(args || '').trim();
-    const cs = (typeof Harness !== 'undefined' && Harness.contextState) ? Harness.contextState() : null;
+    const cs = (typeof Harness !== 'undefined' && Harness.contextState) ? Harness.contextState((activeWs && activeWs.agentId) || 'agent') : null;
     const model = (typeof Harness !== 'undefined' && Harness.getModel) ? Harness.getModel() : '';
     if (raw && raw.toLowerCase() !== 'status') return localLine('Reasoning effort is not a separate StarNet toggle yet. Pick a reasoning-capable model with /model; usage events still track reasoning tokens when the provider reports them.');
     localLine('Reasoning: controlled by the selected model' + (model ? ' (' + model + ')' : '') + '. '

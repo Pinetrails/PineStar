@@ -17,6 +17,22 @@ const Harness = (() => {
   // Distinct from totals.tokens (lifetime in+out), and not persisted across resumes.
   let contextByAgent = {};   // agentId -> { used, model, runId }
   let runModels = {};        // runId -> model from agent.run.start, for events that omit model
+  // Runs launched with internal:true (retitle / goal-judge / pitch / autopilot self-talk) are tiny
+  // side prompts on the SAME agentId — their prompt_tokens must never overwrite the agent's real
+  // context occupancy (they made the gauge snap back to ~1% right after every real turn).
+  const internalRuns = new Set();   // runIds whose cost events are gauge-invisible
+
+  // Fold ONE token-bearing agent.cost payload into the per-agent context occupancy. Called from the
+  // U.bus subscription below, which sees BOTH transports: chat-stream events (re-emitted by chat()'s
+  // reader) and routed/scheduled/channel runs arriving over the world SSE bridge — previously only
+  // the chat path updated the gauge, so background runs never moved it.
+  function foldContextCost(payload) {
+    if (!payload || !(payload.tokensIn > 0)) return;               // summarizer/compaction emits omit token fields on purpose
+    if (payload.runId && internalRuns.has(payload.runId)) return;  // gauge-invisible side prompt
+    const aid = payload.agentId || 'agent';
+    const m = payload.model || runModels[payload.runId] || getModel();
+    contextByAgent[aid] = { used: payload.tokensIn, model: m, runId: payload.runId || '' };
+  }
 
   // Desktop (Tauri) build: the BYOK key lives in the OS keychain — never in localStorage and
   // never returned to this WebView. Rust stores it and injects it into the sidecar's env at spawn
@@ -202,7 +218,13 @@ const Harness = (() => {
       .catch(e => { console.warn('[harness] channel-token store failed:', (e && e.message) || e); return false; });
   }
   const getModel = () => localStorage.getItem(LS.model) || '';
-  const setModel = m => localStorage.setItem(LS.model, m || '');
+  const setModel = m => {
+    const prev = localStorage.getItem(LS.model) || '';
+    localStorage.setItem(LS.model, m || '');
+    // A deliberate model switch invalidates every context-occupancy reading (a different window,
+    // and the next prompt re-measures): blank the gauge honestly rather than show a stale fill.
+    if ((m || '') !== prev) contextByAgent = {};
+  };
   const getProv = () => normalizeProviderId(localStorage.getItem(LS.prov) || 'openrouter');
   const setProv = p => localStorage.setItem(LS.prov, normalizeProviderId(p || 'openrouter'));
   const getBaseUrl = provider => readScoped(LS.baseUrl, provider);
@@ -253,14 +275,16 @@ const Harness = (() => {
     return (m && m.context_length) || 0;
   }
 
-  /* Last measured context-window occupancy for an agent/model. If the selected model changed or no
-     provider prompt_tokens reading exists yet, measured:false prevents a stale percentage. */
+  /* Last measured context-window occupancy for an agent. The reading is trusted for the model that
+     PRODUCED it (rec.model — the provider stamped it on the reconciled agent.cost), so a mid-run
+     provider failover or a crew agent on an aux model still shows its real occupancy against that
+     model's real limit. A USER model switch wipes the readings (setModel) — the gauge then honestly
+     reports measured:false ("waiting for a measured prompt") until the new model's first real turn. */
   function contextState(agentId) {
     const aid = agentId || 'agent';
-    const selectedModel = getModel();
     const rec = contextByAgent[aid] || null;
-    const model = selectedModel || (rec && rec.model) || '';
-    const measured = !!(rec && rec.model === model && rec.used > 0);
+    const measured = !!(rec && rec.used > 0 && rec.model);
+    const model = (measured && rec.model) || getModel() || '';
     return { agentId: aid, model, used: measured ? rec.used : 0, limit: contextLimitOf(model), measured };
   }
 
@@ -409,6 +433,7 @@ const Harness = (() => {
           // must NOT hijack the lead's runId / endReason / errMsg (keyed below to the lead's runId).
           case 'agent.run.start':
             if (payload.runId && payload.model) runModels[payload.runId] = payload.model;
+            if (internal && payload.runId) internalRuns.add(payload.runId);   // this run's cost events must not move the context gauge
             if (!runId) { runId = payload.runId; onRunId && onRunId(runId); }
             break;
           case 'agent.token': full += payload.delta; onToken && onToken(payload.delta); break;
@@ -424,18 +449,16 @@ const Harness = (() => {
           case 'agent.cost':
             totals.tokens += (payload.tokensIn || 0) + (payload.tokensOut || 0);
             totals.cost += payload.usd || 0;
-            // The newest prompt_tokens is the live context reading for this event's agent/model.
-            if (payload.tokensIn > 0) {
-              const aid = payload.agentId || 'agent';
-              const m = payload.model || runModels[payload.runId] || getModel();
-              contextByAgent[aid] = { used: payload.tokensIn, model: m, runId: payload.runId || '' };
-            }
+            // The newest prompt_tokens is the live context reading for this event's agent/model. The
+            // U.bus subscription (foldContextCost) already saw this payload via the re-emit above;
+            // fold directly only when the bus is unavailable (headless/test embeds).
+            if (typeof U === 'undefined' || !U.bus) foldContextCost(payload);
             lastUsage = { total_tokens: (payload.tokensIn || 0) + (payload.tokensOut || 0), cost: payload.usd };
             onUsage && onUsage(lastUsage); break;
           case 'capdenied': errMsg = errMsg || ('no ' + (payload.need || 'capability') + ' — ' + (payload.reason || '')); break;
           case 'agent.run.error': if (!payload.runId || payload.runId === runId) errMsg = payload.message; break;   // the lead's own error (a worker's rides the tool result)
           case 'agent.run.end':
-            if (payload.runId) delete runModels[payload.runId];
+            if (payload.runId) { delete runModels[payload.runId]; internalRuns.delete(payload.runId); }
             // latch the lead's stop reason AND (Lane 5, additive) WHY it stopped when the provider truncated/
             // filtered it — the caller renders a "cut short" recap instead of a delivered crate for those.
             if (!payload.runId || payload.runId === runId) { endReason = payload.reason; finishReason = payload.finishReason || null; }
@@ -620,6 +643,11 @@ const Harness = (() => {
     } catch (e) { return []; }
   }
   const memoryRestore = o => memoryMutate('declined/restore', o);   // undo a discard — remove one entry from the reject-list
+
+  // ONE fold point for context occupancy: every agent.cost on the bus — chat-stream re-emits AND
+  // routed/scheduled/channel runs arriving over the world SSE bridge — updates the gauge. util.js
+  // (U.bus) loads before this file; the chat reader keeps a direct-fold fallback for busless embeds.
+  if (typeof U !== 'undefined' && U.bus) { try { U.bus.on('agent.cost', foldContextCost); } catch (_) {} }
 
   return {
     isDesktop: () => DESKTOP,   // lets the UI tell a desktop keychain-store failure (token saved locally) from a browser no-op
