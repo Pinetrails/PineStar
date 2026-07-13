@@ -14,6 +14,15 @@ const N = W.CALIBRATING_N;
 // a helper: fold k tool fires in a lane with an interest tag.
 function sigOf(lane, tag, k) { const s = W.fresh(); for (let i = 0; i < k; i++) W.observe(s, { lane, tag }, 0); return s; }
 
+/* ---------- warm floor consistency: the matcher reads the SHARED CALIBRATING_N, never a stale literal ----------
+   The recruiter's effective sample floor MUST equal WorkSignal.CALIBRATING_N (the single source of truth). A
+   duplicated `|| 5` fallback + ">=5" comment had drifted from the real 3 — this pins them together so a future
+   retune of the constant can never silently desync the matcher. */
+A.eq(R.CAL_N, N, 'recruiter effective floor === WorkSignal.CALIBRATING_N (read, not a duplicated literal)');
+// behavioral boundary: EXACTLY N samples is warm; N-1 is not (the floor is inclusive at N, matching the constant).
+A.eq(R.recommend({ worksignal: sigOf('dish', 'research', N), catalog: CATALOG, roster: ['chief'], now: 0 }).warm, true, 'exactly CALIBRATING_N samples clears the warm floor');
+A.eq(R.recommend({ worksignal: sigOf('dish', 'research', N - 1), catalog: CATALOG, now: 0 }).warm, false, 'one sample below the floor is not warm');
+
 /* ---------- cold start: below the sample floor → empty (honest fallback) ---------- */
 A.eq(R.recommend({ worksignal: W.fresh(), catalog: CATALOG, now: 0 }).warm, false, 'a cold (empty) signal is not warm');
 A.eq(R.recommend({ worksignal: W.fresh(), catalog: CATALOG, now: 0 }).items.length, 0, 'a cold signal recommends nobody (empty list)');

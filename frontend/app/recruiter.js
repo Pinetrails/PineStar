@@ -30,7 +30,11 @@
   const W_DOSSIER = 2;    // keyword match of blurb/tags against goals+pain+ambition belief texts
   const W_PROFILE = 1;    // profile interest affinity — a mild prior
 
-  const CAL_N = (WorkSignal && WorkSignal.CALIBRATING_N) || 5;   // the shared warm threshold (>=5 tool samples)
+  // the shared warm sample floor — READ from WorkSignal.CALIBRATING_N (the single source of truth, currently 3),
+  // never a duplicated literal that can drift stale. The `: 0` arm is inert: it's only reached when WorkSignal is
+  // absent, in which case recommend()'s `!WorkSignal` guard short-circuits to the cold-start lineup before CAL_N
+  // is ever compared, so no magic number is duplicated here.
+  const CAL_N = (WorkSignal && Number.isFinite(WorkSignal.CALIBRATING_N)) ? WorkSignal.CALIBRATING_N : 0;
   const LANES = (WorkSignal && WorkSignal.LANES) || [];
 
   // the plain-English power word for a capability lane — for the honest "your work used the WEB" reason. Mirrors
@@ -149,5 +153,5 @@
   function clamp01(n) { return n < 0 ? 0 : n > 1 ? 1 : n; }
   function round(n) { return Math.round((Number(n) || 0) * 1000) / 1000; }
 
-  return { recommend, _keywordHits: keywordHits, _classDominantTag: classDominantTag, W_KIT, W_GAP, W_DOSSIER, W_PROFILE };
+  return { recommend, _keywordHits: keywordHits, _classDominantTag: classDominantTag, CAL_N, W_KIT, W_GAP, W_DOSSIER, W_PROFILE };
 });
