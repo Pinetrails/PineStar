@@ -2875,6 +2875,23 @@ function scoutExistingClasses() {
   return out.filter(c => c.name);
 }
 
+// FLAGSHIP CROSS-WIRE: a compact block of the Commander's live DIRECTION — the effective north star (a pending
+// proposal is labelled unconfirmed, truthful telemetry) + the open quest slate — so a scout draft SERVES what the
+// user is chasing instead of ignoring it. Bounded + fail-open. Folded into the drafting directive AND (for recipes)
+// the grounding corpus, so a WHY that cites a quest/star is genuinely grounded, never an invented pitch.
+function scoutDirectionBlock() {
+  const lines = [];
+  try {
+    const eff = QuestRefresh.effectiveNorthStar(QuestRefresh.normalize(questRefreshState));
+    if (eff && eff.text) lines.push('NORTH STAR' + (eff.status === 'proposed' ? ' (proposed — unconfirmed)' : '') + ': ' + String(eff.text).slice(0, 200));
+  } catch (_) {}
+  try {
+    const open = (questStore.list() || []).filter(q => q && q.status === 'open').slice(0, 8).map(q => '• ' + String(q.title || '')).filter(t => t.length > 2);
+    if (open.length) { lines.push('OPEN QUESTS (the Commander\'s committed next steps — advance one, never duplicate one):'); for (const o of open) lines.push(o); }
+  } catch (_) {}
+  return lines.join('\n');
+}
+
 /* runScoutCycle — ONE post-run cycle (fire-and-forget; never throws to the caller). Mirrors runReflection's
    aux plumbing: its OWN abort+timeout, ONE streamed completion per pass, spend reconciled + booked. */
 async function runScoutCycle(o) {
@@ -2923,16 +2940,19 @@ async function runScoutCycle(o) {
       const existing = scoutExistingRecipes();
       const interestsBlock = Interests.topicsBlock(interestsState, { now: Date.now(), limit: 8 });
       const activityBlock = activity.slice(0, 8).map(a => '• ' + a).join('\n');
+      const directionBlock = scoutDirectionBlock();   // the Commander's open quests + north star (flagship cross-wire)
       const directive = Scout.buildRecipeDirective({
         interestsBlock: interestsBlock,
         dossierBlock: commanderDossier.get(),
         activityBlock: activityBlock,
+        directionBlock: directionBlock,
         existingRecipes: existing, gearKeys: SCOUT_CAP_KEYS,
         launchedOften: Scout.topLaunched(scoutState, 5)
       });
       const reply = await propose('You are the station\'s recipe author. Follow the format exactly; ground every claim in the provided evidence.', directive);
-      // grounding = the same evidence the directive showed the model — the WHY must cite it (parseRecipe guard).
-      const parsed = Scout.parseRecipe(reply, { existingRecipes: existing, denylist: scoutState.denylist, gearKeys: SCOUT_CAP_KEYS, grounding: interestsBlock + '\n' + activityBlock });
+      // grounding = the same evidence the directive showed the model — the WHY must cite it (parseRecipe guard). The
+      // direction block is part of that evidence, so a WHY that cites an open quest / the north star is grounded.
+      const parsed = Scout.parseRecipe(reply, { existingRecipes: existing, denylist: scoutState.denylist, gearKeys: SCOUT_CAP_KEYS, grounding: [interestsBlock, activityBlock, directionBlock].filter(Boolean).join('\n') });
       scoutState = Scout.stampAttempt(scoutState, 'recipe', { now: Date.now() });
       if (parsed && parsed.none) scoutNote({ kind: 'recipe', outcome: 'none', reason: 'model judged the library already serves the observed interests' });
       else if (!parsed) scoutNote({ kind: 'recipe', outcome: 'rejected', reason: 'draft failed hard validation (malformed / broken template / near-duplicate / denylisted)' });
@@ -2947,7 +2967,9 @@ async function runScoutCycle(o) {
       const cx = scoutState.context || {};
       const directive = ProspectGen.buildDirective({
         dossierBlock: commanderDossier.get(),
-        worksignalSummary: [cx.worksignalSummary, Interests.topicsBlock(interestsState, { now: Date.now(), limit: 6 })].filter(Boolean).join('\n'),
+        // fold the Commander's direction (open quests + north star) into the observed-workflow signal, so a drafted
+        // specialist SERVES what they're chasing (flagship cross-wire) — same additive shape as the interests block.
+        worksignalSummary: [cx.worksignalSummary, Interests.topicsBlock(interestsState, { now: Date.now(), limit: 6 }), scoutDirectionBlock()].filter(Boolean).join('\n'),
         rosterClasses: [...agentRoster].map(([, a]) => ({ name: (a && a.name) || '' })).filter(c => c.name),
         catalogSummary: existing.map(c => ({ id: c.name, tagline: c.tagline })),
         capabilityKeys: SCOUT_CAP_KEYS, skillSlugs: skillSlugs,

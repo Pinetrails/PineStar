@@ -137,8 +137,9 @@
   }
 
   /* ---- the RECIPE drafting directive (mirrors prospect.js discipline: constrained, evidence-grounded,
-     NONE-capable). ctx = { interestsBlock, dossierBlock, activityBlock, existingRecipes:[{name,tagline}],
-     gearKeys:[..], launchedOften:[name..] (lane-5 signal, optional) } ---- */
+     NONE-capable). ctx = { interestsBlock, dossierBlock, activityBlock, directionBlock (open quests + north
+     star, optional — the flagship cross-wire), existingRecipes:[{name,tagline}], gearKeys:[..],
+     launchedOften:[name..] (lane-5 signal, optional) } ---- */
   function buildRecipeDirective(ctx) {
     ctx = ctx || {};
     const lines = [];
@@ -148,6 +149,9 @@
     lines.push(str(ctx.interestsBlock).trim() || '(nothing yet)');
     if (ctx.dossierBlock) { lines.push(''); lines.push('COMMANDER DOSSIER:'); lines.push(str(ctx.dossierBlock).trim()); }
     if (ctx.activityBlock) { lines.push(''); lines.push('RECENT ACTIVITY:'); lines.push(str(ctx.activityBlock).trim()); }
+    // FLAGSHIP CROSS-WIRE: the Commander's live quest slate + north star, so a draft SERVES their current direction
+    // instead of ignoring it. Part of "the evidence above" — a WHY may cite it (the caller folds it into grounding).
+    if (str(ctx.directionBlock).trim()) { lines.push(''); lines.push('THE COMMANDER\'S CURRENT DIRECTION (their open quests + north star — a recipe that ADVANCES one of these is especially valuable):'); lines.push(str(ctx.directionBlock).trim()); }
     const existing = (ctx.existingRecipes || []).map(r => '• ' + str(r.name) + ' — ' + str(r.tagline)).join('\n');
     lines.push('');
     lines.push('EXISTING RECIPE LIBRARY (do NOT propose anything an entry here already serves):');
@@ -163,6 +167,7 @@
     lines.push('- TAGS weights use only these lanes: ' + TAG_LANES.join(', ') + '. CATEGORY is one of: ' + CATEGORIES.join(', ') + '.');
     if (Array.isArray(ctx.gearKeys) && ctx.gearKeys.length) lines.push('- GEAR (optional, advisory) only from: ' + ctx.gearKeys.join(', ') + '.');
     lines.push('- WHY must cite the REAL evidence above — the interest and its quote — never a generic pitch.');
+    lines.push('- If this recipe would ADVANCE an open quest or the north star above, name that in WHY — but NEVER propose a recipe that merely duplicates an open quest (those are already tracked).');
     lines.push('- If the library above already serves every observed interest, reply with exactly: NONE');
     lines.push('');
     lines.push('REPLY IN EXACTLY THIS FORMAT (one field per line, PARAM may repeat):');

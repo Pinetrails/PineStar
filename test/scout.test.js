@@ -63,6 +63,19 @@ A.ok(dir.indexOf('Deep-Dive Research') >= 0, 'the directive lists the existing l
 A.ok(/NONE/.test(dir), 'the directive offers NONE');
 A.ok(dir.indexOf('Morning Brief') >= 0, 'the launch-history hint is embedded');
 
+/* ---------- FLAGSHIP CROSS-WIRE: the direction block (open quests + north star) rides the directive ---------- */
+const dirWithDirection = S.buildRecipeDirective({
+  interestsBlock: '• stock research (seen 4×) — e.g. "NVDA earnings"',
+  directionBlock: 'NORTH STAR: automate my weekly stock brief\nOPEN QUESTS (the Commander\'s committed next steps — advance one, never duplicate one):\n• ship the earnings-day digest',
+  existingRecipes: EXISTING, gearKeys: GEAR
+});
+A.ok(dirWithDirection.indexOf('automate my weekly stock brief') >= 0, 'the directive embeds the north star');
+A.ok(dirWithDirection.indexOf('ship the earnings-day digest') >= 0, 'the directive embeds the open quest slate');
+A.ok(/never .*duplicates an open quest/i.test(dirWithDirection), 'the directive forbids duplicating an open quest');
+A.ok(/advance an open quest or the north star/i.test(dirWithDirection), 'the directive invites advancing a quest/star in WHY');
+// a directive with no direction (empty block) stays byte-clean — no dangling header (back-compat / cold station).
+A.ok(S.buildRecipeDirective({ interestsBlock: 'x', existingRecipes: [], gearKeys: GEAR }).indexOf('CURRENT DIRECTION') < 0, 'no direction block -> no direction header');
+
 /* ---------- parseRecipe: round-trip ---------- */
 const good = S.parseRecipe(GOOD, { existingRecipes: EXISTING, gearKeys: GEAR });
 A.ok(good && !good.none && good.draft, 'a well-formed reply parses to a draft');
@@ -98,6 +111,16 @@ const invented = S.parseRecipe(GOOD, { existingRecipes: [], gearKeys: GEAR, grou
 A.eq(invented, null, 'a WHY citing NOTHING in the grounding corpus is rejected (invented pitch dies here)');
 const ungated = S.parseRecipe(GOOD, { existingRecipes: [], gearKeys: GEAR });
 A.ok(ungated && ungated.draft, 'no grounding corpus provided -> the guard stays off (back-compat)');
+
+// FLAGSHIP CROSS-WIRE grounding: a WHY that cites the north star / an open quest is grounded ONLY when the
+// direction block is folded into the corpus (as the index.js call site does) — proving the guard still bites.
+// WHY tokens (advances/shipping/digest/quest/toward/weekly/brief/north/star) are all ABSENT from CORPUS, so the
+// guard rejects it under interests/activity grounding — then passes once the direction block supplies those tokens.
+const QUEST_WHY = GOOD.replace(/^WHY:.*$/m, 'WHY: this advances the shipping digest quest toward the weekly brief north star');
+A.eq(S.parseRecipe(QUEST_WHY, { existingRecipes: [], gearKeys: GEAR, grounding: CORPUS }), null, 'a WHY citing a quest/star is REJECTED when only interests/activity ground it (invented-pitch guard holds)');
+const DIRECTION_CORPUS = CORPUS + '\nNORTH STAR: automate my weekly stock brief\n• ship the shipping digest';
+const questGrounded = S.parseRecipe(QUEST_WHY, { existingRecipes: [], gearKeys: GEAR, grounding: DIRECTION_CORPUS });
+A.ok(questGrounded && questGrounded.draft, 'the same WHY passes once the direction block is in the grounding corpus');
 
 /* ---------- reducers ---------- */
 let r = S.fresh(T0);
