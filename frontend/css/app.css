@@ -2172,6 +2172,28 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
   100% { box-shadow:none; }
 }
 
+/* QUEST V3 — the DIRECTION card: north star + standing-refresh status + the REFRESH QUESTS action.
+   Reuses the CRT card language (phosphor border, gold accent for the goal); nothing bespoke that would
+   drift from the panel's vocabulary. Every value here maps to real engine state (truthful telemetry). */
+.q-refresh-card { border:1px solid var(--ph-glow2); border-radius:2px; background:rgba(0,0,0,.18); padding:9px 11px; margin-bottom:12px; }
+.q-northstar { border-left:2px solid var(--gold); padding-left:9px; margin-bottom:9px; }
+.q-ns-eyebrow { display:block; font-family:inherit; font-size:9px; letter-spacing:.16em; text-transform:uppercase; color:var(--ph-dim); opacity:.8; }
+.q-ns-src { color:var(--ph); opacity:.95; }
+.q-ns-tag, .q-nstag { display:inline-block; font-size:8px; letter-spacing:.08em; text-transform:uppercase; padding:0 4px; margin-left:5px; border-radius:2px; }
+.q-unconf { color:var(--ink); background:var(--gold); opacity:.9; }
+.q-ns-text { font-family:inherit; font-size:13px; letter-spacing:.02em; color:var(--gold); text-shadow:0 0 8px rgba(var(--gold-rgb),.35); margin-top:4px; }
+.q-ns-text.dim { color:var(--ph-dim); text-shadow:none; }
+.q-ns-why { opacity:.7; margin-top:2px; }
+.q-refresh-row { display:flex; align-items:center; gap:10px; margin:8px 0 6px; }
+.q-refresh-btn { flex:0 0 auto; }
+.q-refresh-due { margin:0; }
+.q-refresh-last { margin-top:4px; opacity:.85; }
+.q-outcome { display:inline-block; font-size:9px; letter-spacing:.06em; text-transform:uppercase; padding:0 5px; border-radius:2px; border:1px solid var(--ph-glow2); color:var(--ph-dim); }
+.q-oc-minted { color:var(--gold); border-color:var(--gold); }
+.q-oc-none   { color:var(--ph); border-color:var(--ph-glow2); }
+.q-oc-skipped, .q-oc-rejected { color:var(--ph-dim); }
+.q-oc-error  { color:#e88; border-color:#e88; }
+
 .gx-station { border:1px solid var(--gold); border-radius:2px; background:var(--ph-faint); padding:12px 14px; margin-top:6px; }
 .gx-station .hd { display:flex; align-items:center; gap:8px; margin-bottom:11px; }
 .gx-station .badge { font-family:inherit; font-size:11px; letter-spacing:.1em; color:var(--ink); background:var(--gold); padding:1px 6px; border-radius:2px; }
