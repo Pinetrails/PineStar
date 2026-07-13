@@ -531,35 +531,36 @@ body.no-scan .crt-scan { display: none; }
    model limit shows an empty groove + "—" (calibrating), never a fabricated fill. */
 .ctx-gauge { display: flex; align-items: center; gap: 7px; font-size: 12px; letter-spacing: 1px; color: var(--ph-dim); user-select: none; }
 .ctx-gauge .ctx-lbl { letter-spacing: 2px; }
-.ctx-gauge .ctx-track {
-  position: relative; width: 84px; height: 9px; border-radius: 2px; overflow: hidden;
-  background: rgba(0,0,0,0.55);
-  /* the engraving: a dark groove with a top inner-shadow + a faint lower lip */
-  box-shadow: inset 0 1px 2px rgba(0,0,0,0.9), inset 0 -1px 0 rgba(255,255,255,0.05), 0 1px 0 rgba(255,255,255,0.04);
+/* ASCII cell bar — ▮ lit / ▯ hollow, written by ctxTick in whole cells (deliberate, chunky ticks
+   instead of a sliding fill). Same green→amber→red escalation (the desk core's proven palette),
+   kept theme-independent so the warn/crit step is always visible — even on amber chrome. */
+.ctx-gauge .ctx-cells {
+  font-size: 13px; line-height: 1; letter-spacing: 1px; user-select: none;
+  color: #3fd07c; text-shadow: 0 0 6px rgba(63,208,124,0.45);
+  transition: color 0.3s, text-shadow 0.3s;
 }
-.ctx-gauge .ctx-fill {
-  display: block; height: 100%; width: 0%;
-  /* green→amber→red escalation (the desk core's proven palette), kept theme-independent so
-     the warn/crit step is always visible — even when the chrome itself is amber. */
-  background: #3fd07c; box-shadow: 0 0 8px rgba(63,208,124,0.5);
-  transition: width 0.45s ease, background 0.3s;
-}
+/* one-shot brightness tick when a new cell lights (class re-armed by ctxTick) */
+.ctx-gauge .ctx-cells.ctx-tick { animation: ctx-cell-tick 0.35s ease-out; }
+@keyframes ctx-cell-tick { 0% { filter: brightness(2.1); } 100% { filter: brightness(1); } }
 .ctx-gauge .ctx-num { color: #3fd07c; font-weight: normal; min-width: 30px; text-shadow: 0 0 6px rgba(63,208,124,0.45); }
 .ctx-gauge .ctx-cap { color: var(--ph-dim); font-size: 11px; }
 /* calibrating / idle: groove sits dark, readout dimmed — no glow it can't justify */
-.ctx-gauge[data-level="unknown"] .ctx-fill,
-.ctx-gauge[data-level="idle"] .ctx-fill { box-shadow: none; }
+.ctx-gauge[data-level="unknown"] .ctx-cells,
+.ctx-gauge[data-level="idle"] .ctx-cells { color: var(--ph-dim); text-shadow: none; }
 .ctx-gauge[data-level="unknown"] .ctx-num,
 .ctx-gauge[data-level="idle"] .ctx-num { color: var(--ph-dim); text-shadow: none; }
-.ctx-gauge[data-level="warn"] .ctx-fill { background: #ffb24a; box-shadow: 0 0 8px rgba(255,178,74,0.55); }
+.ctx-gauge[data-level="warn"] .ctx-cells { color: #ffb24a; text-shadow: 0 0 6px rgba(255,178,74,0.5); }
 .ctx-gauge[data-level="warn"] .ctx-num { color: #ffb24a; text-shadow: 0 0 6px rgba(255,178,74,0.5); }
-.ctx-gauge[data-level="crit"] .ctx-fill { background: #ff5a4a; box-shadow: 0 0 9px rgba(255,90,74,0.65); animation: ctx-crit 1.1s ease-in-out infinite; }
+.ctx-gauge[data-level="crit"] .ctx-cells { color: #ff5a4a; text-shadow: 0 0 6px rgba(255,90,74,0.55); animation: ctx-crit 1.1s ease-in-out infinite; }
 .ctx-gauge[data-level="crit"] .ctx-num { color: #ff5a4a; text-shadow: 0 0 6px rgba(255,90,74,0.55); }
 @keyframes ctx-crit { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
-/* COMPACTION beat: a brief mint flash on the groove when the loop folded old context away */
-.ctx-gauge.compact .ctx-track { box-shadow: inset 0 0 0 1px rgba(158,255,196,0.85), inset 0 1px 2px rgba(0,0,0,0.9), 0 0 9px rgba(158,255,196,0.4); }
+/* COMPACTION beat: a brief mint flash on the cells when the loop folded old context away */
+.ctx-gauge.compact .ctx-cells { color: #9effc4; text-shadow: 0 0 9px rgba(158,255,196,0.6); }
 .ctx-gauge.compact .ctx-cap { color: #9effc4; }
-@media (prefers-reduced-motion: reduce) { .ctx-gauge[data-level="crit"] .ctx-fill { animation: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .ctx-gauge[data-level="crit"] .ctx-cells { animation: none; }
+  .ctx-gauge .ctx-cells.ctx-tick { animation: none; }
+}
 /* narrow windows: drop the wordy bits, keep the bar + percent */
 @media (max-width: 1180px) { .ctx-gauge .ctx-cap, .ctx-gauge .ctx-lbl { display: none; } }
 

@@ -577,16 +577,6 @@ const StationUI = (() => {
     // minimize (–) button and read as a jarring first stop. Esc/Tab work from here; Tab advances into the body.
     // A builder that opened an inline editor (rename / CONFIG file) focuses its own field after this and wins.
     try { w.focus(); } catch (_) {}
-    // ASCII-motion entrance (asciifx.js): the title DECODES out of glyph-static while the CRT power-on
-    // snaps the shell open, and the body content MATERIALIZES from a ▓▒░ static field. Structure-safe
-    // (scramble rewrites only the title's text node) and self-cleaning; both no-op under reduced-motion.
-    try {
-      if (typeof AsciiFX !== 'undefined') {
-        const tt = head.querySelector('.term-title');
-        if (tt) AsciiFX.scramble(tt, { duration: 520 });
-        AsciiFX.dissolveIn(body, { duration: 460 });
-      }
-    } catch (_) {}
     syncBB(); syncScrim();
   }
   function rerender(key) { if (open[key]) open[key]._render(true); }
@@ -702,9 +692,6 @@ const StationUI = (() => {
       if (viaClick) {
         host.classList.remove('swap-in'); void host.offsetWidth; host.classList.add('swap-in');
         host.scrollTop = 0;
-        // ASCII-motion (asciifx.js): the freshly-shown section rematerializes out of ▓▒░ static — a bolder
-        // sibling to the .swap-in crossfade. Overlay is pointer-events:none + self-cleaning; reduced-motion no-op.
-        try { if (typeof AsciiFX !== 'undefined') AsciiFX.dissolveIn(panes[id], { duration: 420 }); } catch (_) {}
       }
       if (viaClick) { try { railItems[id].focus(); } catch (_) {} }
     }
@@ -3573,7 +3560,24 @@ const StationUI = (() => {
     if (!cs) return;
     const s = CtxGauge.compute(cs.used, cs.limit, { measured: cs.measured !== false });
     g.dataset.level = s.level;
-    const fill = g.querySelector('.ctx-fill'); if (fill) fill.style.width = (s.known ? s.pct : 0) + '%';
+    // ASCII cell bar (asciifx.js): the gauge ticks in whole ▮/▯ cells instead of sliding — deliberate,
+    // chunky, CRT-honest. Same real numbers (CtxGauge.compute), only the presentation is quantized;
+    // unknown/calibrating renders all-hollow (the num already reads "—"). When a NEW cell lights, a
+    // one-shot brightness tick makes the step visible without any looping animation.
+    const cells = g.querySelector('.ctx-cells');
+    if (cells) {
+      const N = 10;
+      const txt = (typeof AsciiFX !== 'undefined' && AsciiFX.bar)
+        ? AsciiFX.bar(s.known ? s.pct / 100 : 0, N)
+        : '▯'.repeat(N);
+      if (cells.textContent !== txt) {
+        const prev = parseInt(cells.dataset.on || '0', 10);
+        const on = (txt.split('▮').length - 1);
+        cells.textContent = txt;
+        cells.dataset.on = String(on);
+        if (on > prev) { cells.classList.remove('ctx-tick'); void cells.offsetWidth; cells.classList.add('ctx-tick'); }
+      }
+    }
     const num = g.querySelector('.ctx-num'); if (num) num.textContent = s.pctLabel;
     const cap = g.querySelector('.ctx-cap'); if (cap) cap.textContent = s.label;
     g.title = 'CONTEXT - ' + (s.known ? s.label + ' - ' + s.pctLabel + ' of the model max context'

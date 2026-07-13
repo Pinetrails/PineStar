@@ -185,5 +185,22 @@ const AsciiFX = (() => {
     return [B.tl + bar + B.tr, ...body, B.bl + bar + B.br].join('\n');
   }
 
-  return { reduced, scramble, dissolveIn, typewriter, frame };
+  /* ── BAR : a text-cell progress bar — '▮▮▮▯▯▯▯▯▯▯' for frac 0..1 ───────────────────────────────
+     Pure string helper (the "animation" is the caller re-rendering as the value ticks — deliberate,
+     chunky, CRT-honest cells rather than a sliding fill). Honesty rounding: any nonzero fraction
+     lights at least one cell (4% never reads as empty next to a "4%" numeral), and only a truly
+     full fraction lights them all (96% never reads as full). opts.on / opts.off override glyphs. */
+  function bar(frac, cells, opts) {
+    opts = opts || {};
+    const N = Math.max(1, (cells | 0) || 10);
+    frac = Number(frac); if (!isFinite(frac)) frac = 0;
+    if (frac < 0) frac = 0; if (frac > 1) frac = 1;
+    let on = Math.round(frac * N);
+    if (frac > 0 && on < 1) on = 1;
+    if (frac < 1 && on > N - 1) on = N - 1;
+    const ON = opts.on || '▮', OFF = opts.off || '▯';
+    return ON.repeat(on) + OFF.repeat(N - on);
+  }
+
+  return { reduced, scramble, dissolveIn, typewriter, frame, bar };
 })();
