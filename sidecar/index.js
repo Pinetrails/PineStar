@@ -3112,6 +3112,25 @@ function nightshiftPrecheck() {
   } catch (_) { return { ok: true }; }   // fail open → NS-1 behavior (spend + let the pipeline decide)
 }
 
+// the READINESS view for the status route — the SAME computation nightshiftPrecheck gates on, exposed as provable
+// telemetry (which dossier dims are usable, how many recent user runs counted, and the hot bars) so the UI can
+// explain a 'readiness' stand-down concretely instead of leaving the station silently inert. Read-only; null on
+// any hiccup (the status route renders "unknown", never an invented value).
+function nightshiftReadinessView() {
+  try {
+    const snap = commanderPosture.beliefs() || {};
+    const summary = { known: Array.isArray(snap.known) ? snap.known : Object.keys((snap.beliefs) || {}) };
+    const beliefsByDim = (dim) => (snap.beliefs && snap.beliefs[dim]) || [];
+    let activityCount = 0;
+    try { activityCount = nightshiftContextPack().userRunCount || 0; } catch (_) { activityCount = 0; }
+    const rd = Autopilot.readiness(summary, beliefsByDim, Date.now(), { activityCount });
+    return {
+      tier: rd.tier, goalsUsable: !!rd.goalsUsable, usableDims: rd.usableDims || [],
+      activityCount: rd.activityCount || 0, hotDimsMin: Autopilot.HOT_MIN, hotRunsMin: Autopilot.ACTIVITY_HOT_MIN
+    };
+  } catch (_) { return null; }
+}
+
 /* runNightshiftBeat — ONE autonomous beat. Returns { delivered, reason, title?, archetype? }. Stands down
    honestly (delivered:false, no draft) when nothing grounds out or nothing clears the confidence gate —
    idle-doing-nothing beats slop (the anti-slop heart, preserved from the frontend). */
@@ -3128,6 +3147,13 @@ async function runNightshiftBeat(opts) {
   const posture = (commanderPosture.summary() || {});
   if (posture.buildsUnattended && workshopOf(agentId)) {
     return runNightshiftActShift(Object.assign({}, opts, { agentId }));
+  }
+  // HONEST DEGRADE (2026-07-13): the dial permits real building but the away-workshop grant is missing, so this
+  // beat runs as a reason-only draft. Record that in the decision ledger — the old silent fall-through is exactly
+  // how "dial at max, station never builds" went unnoticed for days. (The posture route now auto-grants, so this
+  // fires only for a non-default agent or an explicitly revoked grant.)
+  if (posture.buildsUnattended && !workshopOf(agentId)) {
+    try { recordAutonomy({ source: 'nightshift', kind: 'note', agentId: agentId, reason: 'no-workshop-grant', detail: { phase: 'mode', note: 'dial permits building but the away-workshop grant is missing — this beat ran as a reason-only draft' } }); } catch (_) {}
   }
   // NS-2: assemble the CONTEXT PACK (recent runs/chats/goal/landed work) — the real-activity grounding that makes
   // the propose step aim at what the Commander is ACTUALLY doing, not six static dossier strings.
@@ -7302,7 +7328,24 @@ async function handleAutonomyPosture(req, res) {
   // below acting, we LEAVE the timer armed — its own gate returns binding:'posture' and no beat fires, which is
   // cheaper + simpler than tearing the timer down and matches how the driver already no-ops when not permitted.
   try { if (nightshiftShouldArm() && !nightshiftTimer) armNightshift(); } catch (_) {}
-  return json(200, { ok: true, summary: commanderPosture.summary(), nightshiftArmed: !!nightshiftTimer });
+  // THE DIAL IS THE UNATTENDED-BUILD CONSENT. buildsUnattended (initiative≥leash AND reach≥sandbox) records the
+  // night-shift agent's away-workshop grant through the SAME store authority as POST /api/workshop/grant — without
+  // it every beat silently degraded to a reason-only draft (the "dial at max, station never builds" trap,
+  // 2026-07-13). grantIfUndecided never overrides an explicit per-agent toggle decision (an explicit OFF stands),
+  // and we deliberately do NOT arm the standalone workshop-shift cron here — that separate spend lane stays opt-in
+  // via the toggle; this grant unlocks the leash-capped night-shift build path only.
+  let workshopGranted = null;
+  try {
+    const sum = commanderPosture.summary() || {};
+    if (sum.buildsUnattended) {
+      const g = await workshopStore.grantIfUndecided(NIGHTSHIFT_AGENT);
+      workshopGranted = !!(g && g.granted);
+      if (g && g.changed) recordAutonomy({ source: 'nightshift', kind: 'note', agentId: NIGHTSHIFT_AGENT, reason: 'workshop-grant:auto', detail: { phase: 'grant', note: 'the dial reached build-capable — recorded the away-workshop grant (never explicitly decided before)' } });
+    } else {
+      workshopGranted = workshopOf(NIGHTSHIFT_AGENT);
+    }
+  } catch (_) { workshopGranted = null; }   // a grant hiccup must never fail the posture write; null = unknown (honest)
+  return json(200, { ok: true, summary: commanderPosture.summary(), nightshiftArmed: !!nightshiftTimer, workshopGranted: workshopGranted });
 }
 // GET /api/autonomy/posture — the server copy (posture summary + whether a beliefs snapshot is present). Never
 // echoes the raw beliefs texts back to the browser (it already has them); just reports presence + freshness.
@@ -7349,6 +7392,15 @@ function handleNightshiftStatus(req, res) {
     // "priority: <focus> — because <evidence>". Null when no focus has been declared (nothing to cite → improv).
     focus: nightFocusView()
   };
+  // BUILD-vs-DRAFT honesty (2026-07-13): a beat is a REAL jailed tool-run only at reach≥sandbox WITH the
+  // away-workshop grant; otherwise it degrades to a reason-only draft. Name which mode the next beat would run
+  // in and exactly why — the silent degrade read as "the station never does anything". All provable state.
+  const wsGranted = (() => { try { return workshopOf(NIGHTSHIFT_AGENT); } catch (_) { return false; } })();
+  out.workshopGranted = wsGranted;
+  out.buildMode = (summary.buildsUnattended && wsGranted) ? 'build' : 'draft';
+  out.draftReason = out.buildMode === 'build' ? null : (summary.buildsUnattended ? 'no-workshop-grant' : 'reach');
+  // the readiness detail behind a binding:'readiness' stand-down (dims usable / recent runs vs the hot bars).
+  out.readiness = nightshiftReadinessView();
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
   res.end(JSON.stringify(out));
 }
