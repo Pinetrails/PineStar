@@ -17,6 +17,32 @@ readiness gate declined every beat for hours with nothing in the UI saying why. 
 OPEN follow-ups: consider surfacing the readiness bars during onboarding (the first idle hours
 are still gated cold by design), and a COMMS nudge when drafts pile up unseen.
 
+## BUILT 2026-07-13 — QUEST V3 STANDING REFRESH (branch `claude/starnet-quest-system-25fae6`, `fd8823d8`)
+
+Andrew's report: a live save sat 3 days with an unchanged quest slate and a NEVER-created
+`_station.quests.json` — V2 made completion honest but generation passive (agents mint only mid-run,
+doctrine bar rarely met). The fix is a standing harness refresh (the scout mint-cycle mold):
+- `sidecar/questrefresh.js` (pure) + index.js ambient half: 24h cadence + caught-up fast path (zero
+  open ledger quests → refresh after 1h cooldown), 5-min tick + boot catch-up look (desktop sessions
+  are short — the 24h mark usually passes while the app is closed).
+- Each cycle names the NORTH STAR (Commander's active goal ALWAYS outranks the model's inference),
+  then ONE aux model call proposes ≤3 step-quests toward it; parse enforces the contract rule at the
+  seam (no `run`, prop keys clamp to placeables, fact keys sweepable, WHY must cite shown evidence,
+  dedup vs open slate + denylist); mints ride `questStore.mint` (station-wide `kind:generated`).
+- Every outcome in a visible ledger; `GET /api/quests/refresh` = north star + due state + ledger.
+  Opt-out `SKYNET_QUEST_REFRESH=0`. Gates green: test:fast, test:http full, new pure suite (45
+  assertions) + true e2e (boot→due→mock model→real mints on disk; ungrounded reply rejected, 0 mints).
+- W0 claims surface checked: byte-identical (surface locks frontend/docs only; no sidecar paths).
+- POLISH PASS (`71d08515`, same branch): progression anchor (directive shows recently COMPLETED
+  quests + "propose the natural NEXT step"; done titles join dedup), interests-histogram grounding,
+  `POST /api/quests/refresh/run` manual force-fire, cold-save guard (no evidence → skip the model
+  call with an honest ledger note; provider/codex-token construction moved after the evidence gate).
+  Suites now 55 pure + 22 e2e (3 boots); both gates re-run green.
+- OPEN: merge to trunk (merge ritual), first real-provider cycle on Andrew's save, frontend surface
+  for the north star + a "refresh quests" button (both APIs already serve them), north-star
+  CONFIRM beat (propose-and-confirm instead of silent adoption — flagged as the right next polish),
+  cold-state → targeted awakening question instead of inference.
+
 ## MERGED 2026-07-12 — PER-RUN PHYSICAL-INPUT ISOLATION (`cf7984ba`)
 
 Transcript-first forensics changed the diagnosis. FPS stream `ws_mrhb6bm3cpz4` made zero

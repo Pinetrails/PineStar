@@ -1,0 +1,286 @@
+/* sidecar/questrefresh.js — the PURE quest-refresh engine (QUEST V3: the standing 24h refresh).
+
+   WHY THIS EXISTS — the V2 ledger made quests honest (contract-owned completion, agent minting) but left
+   generation PASSIVE: agents mint only mid-run, only when the doctrine's high bar is met, so in practice a
+   real save can sit for days with the same quest slate and an empty ledger. The Commander's ambitions are
+   supposed to DRIVE the station: quests are the concrete next steps toward the long-term goal they're
+   actually chasing. This engine makes that a standing harness behavior:
+
+     · every REFRESH_EVERY_MS (24h) a refresh cycle is due, unconditionally — the slate never goes stale; and
+     · when the Commander CATCHES UP (zero open ledger quests) a refresh is due after a short cooldown —
+       finishing your quests is rewarded with fresh direction, not a day of silence.
+
+   THE NORTH STAR — each cycle's first job is to name the Commander's LONG-TERM GOAL: confirmed from the
+   active goal arc when one exists (user-set always outranks inferred), else inferred from the dossier +
+   real activity, grounded in that evidence. It persists in this engine's state, is re-shown to the model
+   next cycle (revise only on real evidence), and every proposed quest must be a step TOWARD it.
+
+   PROPOSE-AND-VALIDATE, NEVER TRUST: the model's reply is parsed HARD — contract rule enforced (a quest
+   without a valid completion contract is dropped; 'run' is not in this engine's vocabulary because a
+   refresh has no run to bind), prop keys clamp to the real placeable vocabulary, titles dedup against the
+   open slate and the dismissed-forever denylist, groundedIn must cite the evidence corpus shown. What
+   survives goes through questStore.mint — so the store's own dedup/denylist/caps hold a second time.
+
+   DETERMINISM SPLIT (mirrors scout.js / nightshift.js): pure transforms over (state, args) with `now`
+   injected — no Date.now / Math.random / fs / network (lint-determinism-clean, headless-testable). The
+   ambient half (the aux model call, the durable file, the tick timer, the route) lives ONLY in
+   sidecar/index.js.
+
+   THE STATE (one workspaces JSON, persisted by the host):
+     { v, northStar: null|{ text, groundedIn, at, source:'goal'|'model' },
+       lastCycleAt, lastMintAt, ledger: [ { at, outcome, reason, title? } ] } */
+'use strict';
+(function (root, factory) {
+  const api = factory();
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  else { (root.SK = root.SK || {}).questRefresh = api; }
+})(typeof globalThis !== 'undefined' ? globalThis : this, function () {
+  'use strict';
+
+  const STATE_VERSION = 1;
+  const REFRESH_EVERY_MS = 24 * 3600000;      // the standing daily cadence — a slate is never older than this
+  const CAUGHT_UP_GAP_MS = 60 * 60000;        // caught-up fast path: zero open quests re-earns a cycle after 1h
+  const MAX_MINTS_PER_CYCLE = 3;              // a refresh proposes AT MOST 3 step-quests (the store's own
+                                              //   ≤3-open-generated cap for the station scope matches this)
+  const LEDGER_CAP = 50;                      // the visible "what the refresher tried and why" trail
+  const NORTH_STAR_MAX = 280;                 // same bound as the goal-arc text (commanderGoals)
+  const TITLE_MAX = 80, DESC_MAX = 300, REWARD_MAX = 120, WHY_MAX = 200, KEY_MAX = 200;
+  const MIN_FACT_KEY = 4;                     // mirrors questsweeps.MIN_FACT_KEY — a shorter fact key can never sweep
+  const MAX_STEPS = 4;
+
+  // contract vocabulary this engine may mint. 'run' is deliberately absent (nothing to bind), and 'attest'
+  // is the fallback for outcomes only the Commander can verify.
+  const CONTRACT_TYPES = ['prop', 'artifact', 'fact', 'attest'];
+
+  const str = (v) => (v == null ? '' : String(v));
+  // normalized title key (the quest-store normTitle idiom) — dedup vs open slate + denylist.
+  const norm = (s) => str(s).toLowerCase().replace(/\s+/g, ' ').trim();
+
+  function fresh() {
+    return { v: STATE_VERSION, northStar: null, lastCycleAt: 0, lastMintAt: 0, ledger: [] };
+  }
+
+  // tolerant hydrate: clamp everything; a corrupt/partial save degrades per-field, never throws.
+  function normalize(raw) {
+    const s = fresh();
+    if (raw && typeof raw === 'object') {
+      if (raw.northStar && typeof raw.northStar === 'object' && str(raw.northStar.text).trim()) {
+        s.northStar = {
+          text: str(raw.northStar.text).slice(0, NORTH_STAR_MAX),
+          groundedIn: str(raw.northStar.groundedIn).slice(0, WHY_MAX),
+          at: Number.isFinite(raw.northStar.at) ? Math.floor(raw.northStar.at) : 0,
+          source: raw.northStar.source === 'goal' ? 'goal' : 'model'
+        };
+      }
+      if (Number.isFinite(raw.lastCycleAt) && raw.lastCycleAt >= 0) s.lastCycleAt = Math.floor(raw.lastCycleAt);
+      if (Number.isFinite(raw.lastMintAt) && raw.lastMintAt >= 0) s.lastMintAt = Math.floor(raw.lastMintAt);
+      if (Array.isArray(raw.ledger)) {
+        s.ledger = raw.ledger.filter(e => e && typeof e === 'object')
+          .slice(-LEDGER_CAP)
+          .map(e => ({ at: Number.isFinite(e.at) ? Math.floor(e.at) : 0, outcome: str(e.outcome), reason: str(e.reason).slice(0, 200), title: str(e.title).slice(0, 60) }));
+      }
+    }
+    return s;
+  }
+
+  /* decide — is a refresh cycle due NOW? Named bindings for the ledger/status read (most "not yet" first).
+     inp = { now, openCount } — openCount is the number of OPEN quests in the harness ledger (station-wide
+     view: the caught-up signal is "the Commander finished everything", not one agent's slice). */
+  function decide(state, inp) {
+    const now = Number(inp && inp.now) || 0;
+    const s = normalize(state);
+    const openCount = Math.max(0, Number(inp && inp.openCount) || 0);
+    if (now - s.lastCycleAt >= REFRESH_EVERY_MS) return { fire: true, why: 'daily', binding: null };
+    if (openCount === 0 && now - s.lastCycleAt >= CAUGHT_UP_GAP_MS) return { fire: true, why: 'caught-up', binding: null };
+    return { fire: false, why: null, binding: openCount === 0 ? 'gap' : 'cooldown' };
+  }
+
+  // does the station know ANYTHING worth grounding a refresh on? A cold save (no goal, no star, empty
+  // dossier, no activity, no interests) should SKIP the model call and say so — never pay to guess.
+  function hasEvidence(ctx) {
+    ctx = ctx || {};
+    return !!(str(ctx.goalNote).trim() || (ctx.northStar && str(ctx.northStar.text).trim())
+      || str(ctx.dossierBlock).trim() || str(ctx.activityBlock).trim() || str(ctx.interestsBlock).trim());
+  }
+
+  /* ---- the refresh directive. ctx = { goalNote, northStar:{text,groundedIn}|null, dossierBlock,
+     activityBlock, interestsBlock, openQuests:[{title,contract:{type}}], completedQuests:[{title}],
+     deniedTitles:[..], propKeys:[..] } ---- */
+  function buildDirective(ctx) {
+    ctx = ctx || {};
+    const lines = [];
+    lines.push('You are the station\'s quest master. Your job: keep the Commander\'s quest slate in sync with the long-term goal they are ACTUALLY working toward, using only the real evidence below.');
+    lines.push('');
+    if (str(ctx.goalNote).trim()) {
+      lines.push('ACTIVE GOAL (set by the Commander — this IS the north star; never override it):');
+      lines.push(str(ctx.goalNote).trim());
+    } else if (ctx.northStar && str(ctx.northStar.text).trim()) {
+      lines.push('CURRENT NORTH STAR (inferred previously — keep it unless the evidence below clearly shifted):');
+      lines.push(str(ctx.northStar.text).trim());
+    } else {
+      lines.push('NO NORTH STAR IS KNOWN YET. Your first job is to infer the Commander\'s real long-term ambition from the evidence below.');
+    }
+    if (str(ctx.dossierBlock).trim()) { lines.push(''); lines.push('COMMANDER DOSSIER:'); lines.push(str(ctx.dossierBlock).trim()); }
+    if (str(ctx.activityBlock).trim()) { lines.push(''); lines.push('RECENT REAL ACTIVITY:'); lines.push(str(ctx.activityBlock).trim()); }
+    if (str(ctx.interestsBlock).trim()) { lines.push(''); lines.push('RECURRING INTERESTS THE STATION OBSERVED (with evidence):'); lines.push(str(ctx.interestsBlock).trim()); }
+    const open = (Array.isArray(ctx.openQuests) ? ctx.openQuests : []).map(q => '• ' + str(q && q.title)).filter(t => t.length > 2).join('\n');
+    lines.push('');
+    lines.push('QUESTS ALREADY OPEN (never propose these or trivial variants):');
+    lines.push(open || '(none)');
+    // PROGRESSION: the just-finished work is the strongest signal for what comes NEXT — the slate should
+    // read as a path toward the north star, each refresh building on the last, never a reshuffle.
+    const doneQ = (Array.isArray(ctx.completedQuests) ? ctx.completedQuests : []).map(q => '• ' + str(q && q.title)).filter(t => t.length > 2).join('\n');
+    if (doneQ) {
+      lines.push('');
+      lines.push('RECENTLY COMPLETED (build on these — propose the natural NEXT step along the same path; never re-propose them):');
+      lines.push(doneQ);
+    }
+    const denied = (Array.isArray(ctx.deniedTitles) ? ctx.deniedTitles : []).map(str).filter(Boolean);
+    if (denied.length) {
+      lines.push('');
+      lines.push('QUESTS THE COMMANDER DISMISSED FOREVER (never re-propose): ' + denied.slice(-20).join('; '));
+    }
+    lines.push('');
+    lines.push('HARD CONSTRAINTS:');
+    lines.push('- First, state the NORTH_STAR: the ONE long-term goal the evidence shows the Commander is chasing. With an active goal above, restate it. Otherwise infer it — and ground it in the evidence.');
+    lines.push('- Then propose 1-' + MAX_MINTS_PER_CYCLE + ' quests, each a CONCRETE NEXT STEP toward the north star that no open quest already covers. Fewer is better; never pad with busywork or generic chores.');
+    lines.push('- Every quest MUST declare exactly one completion CONTRACT the harness can honestly verify:');
+    lines.push('    prop <key>        — a station capability goes live. Keys allowed: ' + (Array.isArray(ctx.propKeys) && ctx.propKeys.length ? ctx.propKeys.join(', ') : 'compute') + '.');
+    lines.push('    artifact <path>   — a named deliverable file exists in the workspace (workspace-relative path).');
+    lines.push('    fact <phrase>     — the harness learns this concrete fact about the Commander (a short phrase that would appear verbatim in a saved memory).');
+    lines.push('    attest            — for real-world outcomes only the Commander can verify; an agent proposes, the Commander confirms.');
+    lines.push('- WHY must cite the REAL evidence above (the dossier line, activity, or goal that motivates the quest) — never a generic pitch.');
+    lines.push('- If the open slate above already covers every sensible next step, reply with exactly: NONE');
+    lines.push('');
+    lines.push('REPLY IN EXACTLY THIS FORMAT (the QUEST block may repeat up to ' + MAX_MINTS_PER_CYCLE + ' times; STEPS is optional):');
+    lines.push('NORTH_STAR: <one line — the long-term goal>');
+    lines.push('QUEST: <imperative title, 2-8 words>');
+    lines.push('DESC: <one sentence — what doing it looks like>');
+    lines.push('REWARD: <the real outcome it unlocks — never points>');
+    lines.push('CONTRACT: <prop <key> | artifact <path> | fact <phrase> | attest>');
+    lines.push('STEPS: <2-' + MAX_STEPS + ' short steps, separated by ; >');
+    lines.push('WHY: <one sentence citing the evidence above>');
+    return lines.join('\n');
+  }
+
+  // parse ONE "CONTRACT:" value into a store-valid {type,key} or null. "prop dish" / "artifact out/plan.md"
+  // / "fact ships video weekly" / "attest". Prop keys clamp to the allowed vocabulary (case-insensitive).
+  function parseContract(value, propKeys) {
+    const v = str(value).trim();
+    const m = /^([a-z]+)\s*(.*)$/i.exec(v);
+    if (!m) return null;
+    const type = m[1].toLowerCase();
+    let key = str(m[2]).trim().slice(0, KEY_MAX);
+    if (CONTRACT_TYPES.indexOf(type) < 0) return null;
+    if (type === 'attest') return { type: 'attest', key: '' };
+    if (!key) return null;
+    if (type === 'prop') {
+      const allowed = (Array.isArray(propKeys) ? propKeys : []).map(k => norm(k)).filter(Boolean);
+      if (allowed.indexOf(norm(key)) < 0) return null;   // an unplaceable prop key is an UNCOMPLETABLE quest — reject
+      key = norm(key);
+    }
+    if (type === 'fact' && norm(key).length < MIN_FACT_KEY) return null;   // could never sweep — uncompletable
+    return { type: type, key: key };
+  }
+
+  /* parse — parse + VALIDATE HARD. opts = { openTitles:[..], deniedTitles:[..], propKeys:[..], grounding? }.
+     Returns { none:true } (explicit NONE), or { northStar: {text}|null, quests: [validated…] } — quests may
+     legitimately be empty when every proposed block failed validation (the caller ledgers that honestly).
+     `grounding`: the evidence corpus shown to the model — each quest's WHY must share a token with it
+     (the scout's invented-pitch guard), so an ungrounded quest dies here, never on the slate. */
+  function parse(text, opts) {
+    opts = opts || {};
+    const raw = str(text);
+    if (/^\s*NONE\s*$/im.test(raw) && !/^\s*QUEST\s*:/im.test(raw)) {
+      const nsOnly = grabFrom(raw, 'NORTH_STAR');
+      return { none: true, northStar: nsOnly ? { text: nsOnly.slice(0, NORTH_STAR_MAX) } : null };
+    }
+
+    const northRaw = grabFrom(raw, 'NORTH_STAR');
+    const northStar = northRaw ? { text: northRaw.slice(0, NORTH_STAR_MAX) } : null;
+
+    // split into QUEST blocks: everything from one "QUEST:" line to the next.
+    const blocks = [];
+    const re = /^[^\S\r\n]*QUEST[^\S\r\n]*:/gim;
+    const starts = [];
+    let m;
+    while ((m = re.exec(raw)) !== null) starts.push(m.index);
+    for (let i = 0; i < starts.length; i++) blocks.push(raw.slice(starts[i], i + 1 < starts.length ? starts[i + 1] : raw.length));
+
+    const grounding = str(opts.grounding).toLowerCase();
+    const seenTitles = (Array.isArray(opts.openTitles) ? opts.openTitles : []).map(norm).filter(Boolean);
+    const denied = (Array.isArray(opts.deniedTitles) ? opts.deniedTitles : []).map(norm).filter(Boolean);
+    const quests = [];
+    for (const block of blocks) {
+      if (quests.length >= MAX_MINTS_PER_CYCLE) break;
+      const title = grabFrom(block, 'QUEST').slice(0, TITLE_MAX);
+      const desc = grabFrom(block, 'DESC').slice(0, DESC_MAX);
+      const reward = grabFrom(block, 'REWARD').slice(0, REWARD_MAX);
+      const why = grabFrom(block, 'WHY').slice(0, WHY_MAX);
+      const contract = parseContract(grabFrom(block, 'CONTRACT'), opts.propKeys);
+      if (!title || !why || !contract) continue;              // load-bearing fields — a partial block is malformed
+      const nt = norm(title);
+      if (!nt || seenTitles.indexOf(nt) >= 0 || denied.indexOf(nt) >= 0) continue;   // dup / dismissed-forever
+      if (grounding) {                                        // WHY grounding (the invented-pitch guard)
+        const toks = why.toLowerCase().split(/[^a-z0-9]+/).filter(t => t.length >= 4);
+        if (toks.length && !toks.some(t => grounding.indexOf(t) !== -1)) continue;
+      }
+      const steps = grabFrom(block, 'STEPS').split(';').map(s => s.trim()).filter(Boolean).slice(0, MAX_STEPS)
+        .map((label, i) => ({ key: 's' + (i + 1), label: label.slice(0, 80) }));
+      seenTitles.push(nt);                                    // an earlier block in THIS reply counts as open too
+      quests.push({ title: title, desc: desc, reward: reward, contract: contract, steps: steps, groundedIn: why });
+    }
+    return { none: false, northStar: northStar, quests: quests };
+  }
+
+  // same-line field grab (the prospect.js/scout.js idiom — horizontal-whitespace classes so an EMPTY field
+  // never swallows the next line).
+  function grabFrom(block, label) {
+    const m = new RegExp('^[^\\S\\r\\n]*' + label + '[^\\S\\r\\n]*:[^\\S\\r\\n]*([^\\r\\n]*?)[^\\S\\r\\n]*$', 'im').exec(str(block));
+    return m ? m[1].trim() : '';
+  }
+
+  /* ---- reducers (pure: input never mutated; each returns a NEW state) ---- */
+
+  // ledger append, capped. Every cycle outcome — minted, rejected, none, error, no-credential — is recorded,
+  // so the refresher's activity is INSPECTABLE (the anti-silent-no-mint law, inherited from the scout lane).
+  function note(state, entry, opts) {
+    const now = Number(opts && opts.now) || 0;
+    const s = normalize(state);
+    const e = { at: now, outcome: str(entry && entry.outcome), reason: str(entry && entry.reason).slice(0, 200), title: str(entry && entry.title).slice(0, 60) };
+    return Object.assign({}, s, { ledger: s.ledger.concat([e]).slice(-LEDGER_CAP) });
+  }
+
+  // a cycle ATTEMPT spends the cadence whatever its outcome — the refresher tried; it must not hammer the
+  // model every tick. (Both the daily clock and the caught-up cooldown key off lastCycleAt.)
+  function stampCycle(state, opts) {
+    const now = Number(opts && opts.now) || 0;
+    const s = normalize(state);
+    return Object.assign({}, s, { lastCycleAt: now });
+  }
+
+  function stampMint(state, opts) {
+    const now = Number(opts && opts.now) || 0;
+    const s = normalize(state);
+    return Object.assign({}, s, { lastMintAt: now });
+  }
+
+  // adopt/refresh the north star. source 'goal' = restated from the Commander's own active goal arc (always
+  // wins); 'model' = inferred from evidence. Empty text is a no-op (never blank an existing star).
+  function setNorthStar(state, ns, opts) {
+    const now = Number(opts && opts.now) || 0;
+    const s = normalize(state);
+    const text = str(ns && ns.text).trim().slice(0, NORTH_STAR_MAX);
+    if (!text) return s;
+    return Object.assign({}, s, {
+      northStar: { text: text, groundedIn: str(ns && ns.groundedIn).slice(0, WHY_MAX), at: now, source: (ns && ns.source) === 'goal' ? 'goal' : 'model' }
+    });
+  }
+
+  return {
+    fresh, normalize, decide, buildDirective, parse, parseContract, hasEvidence,
+    note, stampCycle, stampMint, setNorthStar,
+    REFRESH_EVERY_MS, CAUGHT_UP_GAP_MS, MAX_MINTS_PER_CYCLE, LEDGER_CAP, CONTRACT_TYPES,
+    _internals: { norm: norm, grabFrom: grabFrom, MIN_FACT_KEY: MIN_FACT_KEY, MAX_STEPS: MAX_STEPS }
+  };
+});
