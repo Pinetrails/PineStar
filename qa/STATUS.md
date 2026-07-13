@@ -1,5 +1,7 @@
 # QA STATION — dashboard
 
+**2026-07-13 merge digest:** `claude/ui-polish-premium-styling-a6228e` (round 3) → `feat/harness-backend` at `dc15ee53` (composer on the ROBCO INVERT register — FNV terminal selection blocks, [ SEND ] command, terminal icon set + CPU-chip model sigil, voice.js runtime icon table synced; W0 claims re-stamped). Gate: source content proven green 315/315 in the synced worktree; the INTEGRATION-TREE gate is currently red at `lint-evidence-secrets` on the product-perfect lane's `.dogfood/w0-candidate-*` source snapshots (fake key-shaped fixtures; candidate commits are on THEIR unmerged branch — failure exists independent of this merge and blocks all lanes; fix task filed).
+
 **2026-07-12 merge digest:** `claude/ui-polish-premium-styling-a6228e` (round 2) → `feat/harness-backend` at `99cba729` (COMMS agent selector: full name always visible via flex-basis-0 pin readout + molded premium chip); `test:fast` green on trunk tip `38a9292c` (314/314 after postcard/clip lane removed its tests); NOVA name + chip verified live via DOM round-trip.
 
 **2026-07-12 merge digest:** `claude/ui-polish-premium-styling-a6228e` → `feat/harness-backend` at `77feb77b` (premium molded UI register: composer/pill/send/control-cluster + global buttons/inputs/chips/cards, W0 claims re-stamped post-merge); `test:fast` 316/316 green; registers verified live in dev seed via DOM round-trips.
