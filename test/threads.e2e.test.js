@@ -153,7 +153,11 @@ function seedLogs(ws, now) {
   const mock = await startMockOpenRouter();
   const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-threads-e2e-'));
   seedLogs(ws, Date.now());
-  const env = { SKYNET_WORKSPACES: ws, SKYNET_DEV: '1', SKYNET_OPENROUTER_BASE: mock.base, SKYNET_OPENROUTER_KEY: 'sk-or-v1-threads-fake', SKYNET_DEFAULT_MODEL: 'test/model' };
+  // SKYNET_AUX_BUDGET='0' disables the aux-spend joint ceiling for this suite: it exercises the thread-mining
+  // pass IN ISOLATION alongside reflection+study on ONE tool-heavy run, so all three must fire. Under the default
+  // budget (2) the governor would (correctly) defer thread-mine behind higher-priority reflection+study — the
+  // aggregate bound itself is proven separately in test/auxbudget.e2e.test.js.
+  const env = { SKYNET_WORKSPACES: ws, SKYNET_DEV: '1', SKYNET_OPENROUTER_BASE: mock.base, SKYNET_OPENROUTER_KEY: 'sk-or-v1-threads-fake', SKYNET_DEFAULT_MODEL: 'test/model', SKYNET_AUX_BUDGET: '0' };
   const { child, port } = await boot(8930 + (process.pid % 25), env, 20);
   const B = 'http://' + HOST + ':' + port;
   try {

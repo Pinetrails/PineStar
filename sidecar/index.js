@@ -130,6 +130,7 @@ const QuestSweeps = require('./questsweeps.js');
 const QuestRefresh = require('./questrefresh.js'); // QUEST V3: the standing 24h + caught-up quest-refresh engine (pure gates/directive/parse) // QUEST V2 §A: pure seam-matchers for the mechanical contract sweeps (run-bind / prop-live / fact-learned / artifact-exists)
 const { makeThreadsStore } = require('./threads-store.js');   // NS-6: durable THREAD LEDGER (ideas raised but never acted on)
 const threadmine = require('./threadmine.js');                // NS-6: pure post-run thread-mining producer (reflect/study mold)
+const AuxGovernor = require('./auxgovernor.js');              // aux-budget lane: PURE joint ceiling over the post-run aux passes (priority + budget)
 const { tailLines, loadBounded, rotateIfLarge } = require('./logbound.js'); // P3: bounded boot-load + size rotation for the append-only JSONL logs
 const { makeCronLock } = require('./cron-lock.js');         // G4.3: cross-process exactly-once advisory lock (O_EXCL+pid:nonce+stale-break)
 const { withDossier } = require('./dossierinject.js');     // Phase C: fold the Commander dossier into server-composed (cron) personas
@@ -1677,6 +1678,15 @@ async function runBackgroundSkillReview(o) {
       try { ledger.record({ runId: reviewRunId, agentId, turns: result.turns || 0, usd: result.usd || 0, tokens: result.tokens || 0, unmetered }); } catch (_) {}
     }
   }
+}
+
+// auxCuratorDue — is the skill curator's 24h interval elapsed for this agent? Hoisted for the aux governor so
+// the call site can treat the curator as a budget CANDIDATE only when it would actually run (the internal check
+// below stays as the backstop, so this never breaks the curator's own gating). Matches the interval check inside
+// runSkillCurator EXACTLY: due iff the interval is disabled (<=0) or the gap since the last run has elapsed.
+function auxCuratorDue(agentId, nowMs) {
+  if (!(SKILL_CURATOR_INTERVAL_MS > 0)) return true;
+  return (nowMs - (skillCuratorLastRun.get(agentId) || 0)) >= SKILL_CURATOR_INTERVAL_MS;
 }
 
 async function runSkillCurator(o) {
@@ -7288,68 +7298,101 @@ async function runOnce(o) {
     budget.clearLive(runId);
   }
 
-  // Cortex M-mem.5b: post-run reflection — fire on SALIENCE, not after every run (the "beat too often" fix). Only a
-  // real TASK run (isTask — never conversational chatter) that COMPLETED, with a substantive exchange, and OUTSIDE
-  // the per-agent cooldown, earns a Keep/Edit/Discard beat. Fire-and-forget so the reply has no added latency;
-  // reflect() then applies a value floor + dedups vs the notebook AND the permanent declined list, so a one-off or
-  // low-value run yields nothing and raises no beat (§5.6). REFLECT_MODEL optionally points reflection at a cheaper
-  // aux model; it defaults to the run's own model (no behaviour change unless configured).
+  // ---- AUX GOVERNOR: bound the AGGREGATE post-run model spend (aux-budget lane) ----------------------------------
+  // Up to SIX aux passes can fire after one hot run — reflection · study · thread-mine · scout-cycle · skill-review
+  // · skill-curator. Each still owns its full gate (salience + cooldown + cost cap), UNCHANGED below. What was
+  // missing is a JOINT ceiling: one substantive run could touch off five or six billable calls back-to-back. The
+  // governor caps how many may SPEND this run-end (SKYNET_AUX_BUDGET, default 2; a literal 0 = unlimited/off), in
+  // the LOCKED beat priority (reflection > study > threadmine > scout > skill-review > skill-curator). DEFERRED ≠
+  // SUPPRESSED: a deferred pass fires NOTHING and arms NO cooldown here, so its own gate re-qualifies and it retries
+  // on the next run. REFLECT_MODEL optionally points the aux passes at a cheaper model; it defaults to the run's own.
   const reflectModel = String(ENV('REFLECT_MODEL') || '').trim();
   // finishReason gate (Lane A plumbs result.finishReason from loop.js): a run TRUNCATED by the provider ('length'
   // = hit max_tokens mid-thought; 'content_filter' = the model's output was cut) produced INCOMPLETE work — its
-  // dialogue shouldn't seed memory/study/skills as if it were a clean finish. Excluded from the reason==='done'
-  // reflection/study/skill gates below. Guarded so it's a NO-OP when the field is absent (their branch may merge
-  // before or after this one) — only a KNOWN-truncated reason disqualifies.
+  // dialogue shouldn't seed memory/study/skills as if it were a clean finish. Guarded so it's a NO-OP when the
+  // field is absent — only a KNOWN-truncated reason disqualifies.
   const _fr = result && result.finishReason;
   const _truncated = _fr === 'length' || _fr === 'content_filter';
   const _qualifies = !_truncated;   // true when finishReason is absent or a clean value
-  if (o.reflect && memoryConfig.reflectEnabled && isTask && result && result.reason === 'done' && _qualifies && !signal.aborted && reflectSalient(result.messages, o.recurring)
-      && !reflectingNow.has(agentId) && (Date.now() - (lastReflectAt.get(agentId) || 0) >= memoryConfig.reflectCooldownMs)) {
-    // NB: the cooldown is ARMED inside runReflection only when proposals actually survive (a beat fires), not here —
-    // so a run that yields nothing never blocks the next substantive run's turn-in. reflectingNow closes the window
-    // BETWEEN this gate and that arming: two same-agent runs finishing inside one reflection's round-trip would both
-    // read the un-armed timestamp and both fire — the in-flight guard makes the second cede instead.
-    reflectingNow.add(agentId);
-    runReflection({ agentId, runId, messages: result.messages.slice(), provider, model: reflectModel || resolveEffectiveModel({ result, requestedModel: o.model, usingCodex, codexDefaultModel: CODEX_DEFAULT_MODEL, defaultModel: CRON_DEFAULT_MODEL }), cost, unmetered: providerUnmetered }).catch(() => {}).finally(() => { reflectingNow.delete(agentId); });
+  const _auxDone = !!(result && result.reason === 'done' && _qualifies && !signal.aborted);   // the shared run-end gate
+  const _auxNow = Date.now();       // one clock read for the scout cadence fold + curator-due check below
+  const _auxModel = _auxDone ? (reflectModel || resolveEffectiveModel({ result, requestedModel: o.model, usingCodex, codexDefaultModel: CODEX_DEFAULT_MODEL, defaultModel: CRON_DEFAULT_MODEL })) : '';
+
+  // Each pass's OWN gate, computed WITHOUT firing (the EXACT predicates from before — the reflect/study/threadmine
+  // cooldown comparisons are byte-for-byte the originals, so the settings-P1 source-locks still hold). A pass
+  // becomes a budget CANDIDATE iff it would actually SPEND a model call this run-end — so an already-blocked pass
+  // never eats a slot. Cortex M-mem.5b reflection · GROWTH Tier 1 study · NS-6 thread-mine — all ride isTask/done/salience.
+  const _gateReflect = !!(o.reflect && memoryConfig.reflectEnabled && isTask && _auxDone && reflectSalient(result.messages, o.recurring)
+      && !reflectingNow.has(agentId) && (Date.now() - (lastReflectAt.get(agentId) || 0) >= memoryConfig.reflectCooldownMs));
+  const _gateStudy = !!(Study && o.reflect && memoryConfig.studyEnabled && isTask && _auxDone && Study.studySalient(result.messages, o.recurring)
+      && !studyingNow.has(agentId) && (Date.now() - (lastStudyAt.get(agentId) || 0) >= memoryConfig.studyCooldownMs));
+  const _gateThreadmine = !!(process.env.SKYNET_THREAD_MINE !== '0' && o.reflect && isTask && _auxDone && threadmine.mineSalient(result.messages)
+      && !threadMiningNow.has(agentId) && (Date.now() - (lastThreadMineAt.get(agentId) || 0) >= THREAD_MINE_COOLDOWN_MS));
+  const _gateSkillReview = !!(process.env.SKYNET_SKILL_REVIEW !== '0' && _auxDone && skillReview.shouldReviewRun(result));
+  // curator: candidate only when its 24h interval is DUE (else runSkillCurator early-returns anyway — no spend, no slot).
+  const _gateCurator = !!(process.env.SKYNET_SKILL_CURATOR !== '0' && _auxDone && auxCuratorDue(agentId, _auxNow));
+  // scout: the CADENCE COUNTERS fold ALWAYS (below, synchronous bookkeeping — never a model call); the CYCLE is the
+  // budgeted candidate, and only when no cycle is already in flight.
+  const _scoutQualifies = !!(process.env.SKYNET_SCOUT !== '0' && isTask && _auxDone);
+  const _gateScout = !!(_scoutQualifies && !scoutingNow);
+
+  // The JOINT decision: rank the candidates by locked priority and grant up to SKYNET_AUX_BUDGET this run-end.
+  const _auxCandidates = [];
+  if (_gateReflect) _auxCandidates.push('reflection');
+  if (_gateStudy) _auxCandidates.push('study');
+  if (_gateThreadmine) _auxCandidates.push('threadmine');
+  if (_gateScout) _auxCandidates.push('scout');
+  if (_gateSkillReview) _auxCandidates.push('skill-review');
+  if (_gateCurator) _auxCandidates.push('skill-curator');
+  const _auxBudget = AuxGovernor.parseBudget(process.env.SKYNET_AUX_BUDGET);
+  const _auxPlan = AuxGovernor.decide({ candidates: _auxCandidates, budget: _auxBudget });
+  const _auxSpend = new Set(_auxPlan.spend);
+
+  // SCOUT cadence counters ALWAYS fold when the run qualifies — synchronous bookkeeping, NOT a model call, and a
+  // concurrent (or deferred) cycle must never eat the count. This is deliberately OUTSIDE the budget.
+  if (_scoutQualifies) {
+    try {
+      interestsState = Interests.noteRun(interestsState, _auxNow);
+      scoutState = Scout.noteRun(scoutState, _auxNow);
+      persistInterests(); persistScout();
+    } catch (_) {}
   }
-  // GROWTH Tier 1: the STUDY pass (dossier Phase B) rides the SAME salience gate as reflection but on its OWN,
-  // longer cooldown (studyCooldownMs) — so the station proposes belief updates RARELY, never every few minutes.
-  // Same fire-and-forget / in-flight-guard discipline as reflection. Fail-open: if Study didn't load, this no-ops.
-  if (Study && o.reflect && memoryConfig.studyEnabled && isTask && result && result.reason === 'done' && _qualifies && !signal.aborted && Study.studySalient(result.messages, o.recurring)
-      && !studyingNow.has(agentId) && (Date.now() - (lastStudyAt.get(agentId) || 0) >= memoryConfig.studyCooldownMs)) {
+
+  // Fire ONLY the granted passes — each keeps its exact prior spend semantics + in-flight guard. A deferred pass
+  // is simply skipped: nothing fires, no cooldown is armed (the arming lives INSIDE run* only on a surviving beat),
+  // so it re-qualifies next run.
+  if (_auxSpend.has('reflection')) {
+    reflectingNow.add(agentId);
+    runReflection({ agentId, runId, messages: result.messages.slice(), provider, model: _auxModel, cost, unmetered: providerUnmetered }).catch(() => {}).finally(() => { reflectingNow.delete(agentId); });
+  }
+  if (_auxSpend.has('study')) {
     studyingNow.add(agentId);
     let studyDirective = '';
     for (let i = result.messages.length - 1; i >= 0; i--) { const m = result.messages[i]; if (m && m.role === 'user' && typeof m.content === 'string') { studyDirective = m.content; break; } }
-    runStudy({ agentId, runId, messages: result.messages.slice(), directive: studyDirective, provider, model: reflectModel || resolveEffectiveModel({ result, requestedModel: o.model, usingCodex, codexDefaultModel: CODEX_DEFAULT_MODEL, defaultModel: CRON_DEFAULT_MODEL }), cost, unmetered: providerUnmetered }).catch(() => {}).finally(() => { studyingNow.delete(agentId); });
+    runStudy({ agentId, runId, messages: result.messages.slice(), directive: studyDirective, provider, model: _auxModel, cost, unmetered: providerUnmetered }).catch(() => {}).finally(() => { studyingNow.delete(agentId); });
   }
-  // NS-6: the THREAD-MINING pass rides the SAME isTask/done/salience gate (its OWN, longer cooldown) — it surfaces
-  // ideas the Commander floated but never acted on and STASHES them for turn-in (never auto-committed). Same
-  // fire-and-forget / in-flight-guard discipline. Opt-out via SKYNET_THREAD_MINE=0.
-  if (process.env.SKYNET_THREAD_MINE !== '0' && o.reflect && isTask && result && result.reason === 'done' && _qualifies && !signal.aborted && threadmine.mineSalient(result.messages)
-      && !threadMiningNow.has(agentId) && (Date.now() - (lastThreadMineAt.get(agentId) || 0) >= THREAD_MINE_COOLDOWN_MS)) {
+  if (_auxSpend.has('threadmine')) {
     threadMiningNow.add(agentId);
-    runThreadMine({ agentId, runId, streamId: o.streamId || '', messages: result.messages.slice(), provider, model: reflectModel || resolveEffectiveModel({ result, requestedModel: o.model, usingCodex, codexDefaultModel: CODEX_DEFAULT_MODEL, defaultModel: CRON_DEFAULT_MODEL }), cost, unmetered: providerUnmetered }).catch(() => {}).finally(() => { threadMiningNow.delete(agentId); });
+    runThreadMine({ agentId, runId, streamId: o.streamId || '', messages: result.messages.slice(), provider, model: _auxModel, cost, unmetered: providerUnmetered }).catch(() => {}).finally(() => { threadMiningNow.delete(agentId); });
   }
-  if (process.env.SKYNET_SKILL_REVIEW !== '0' && result && result.reason === 'done' && _qualifies && !signal.aborted && skillReview.shouldReviewRun(result)) {
+  if (_auxSpend.has('scout')) {
+    scoutingNow = true;
+    runScoutCycle({ runId, agentId, provider, model: _auxModel, cost, unmetered: providerUnmetered }).catch(() => {}).finally(() => { scoutingNow = false; });
+  }
+  if (_auxSpend.has('skill-review')) {
     runBackgroundSkillReview({ agentId, runId, messages: result.messages.slice(), provider, model, cost, loadedSkills, managedSkills, unmetered: providerUnmetered }).catch(() => {});
   }
-  if (process.env.SKYNET_SKILL_CURATOR !== '0' && result && result.reason === 'done' && _qualifies && !signal.aborted) {
+  if (_auxSpend.has('skill-curator')) {
     runSkillCurator({ agentId, runId, provider, model, cost, unmetered: providerUnmetered }).catch(() => {});
   }
-  // SCOUT: the interests + drafted-options cycle rides the same post-run seam. EVERY qualifying task run
-  // feeds the cadence counters synchronously (a concurrent cycle must not eat the count); the cycle itself
-  // is fire-and-forget + in-flight-guarded and gates its own spend (extraction cadence, mint gates).
-  if (process.env.SKYNET_SCOUT !== '0' && isTask && result && result.reason === 'done' && _qualifies && !signal.aborted) {
-    try {
-      const _snow = Date.now();
-      interestsState = Interests.noteRun(interestsState, _snow);
-      scoutState = Scout.noteRun(scoutState, _snow);
-      persistInterests(); persistScout();
-    } catch (_) {}
-    if (!scoutingNow) {
-      scoutingNow = true;
-      runScoutCycle({ runId, agentId, provider, model: reflectModel || resolveEffectiveModel({ result, requestedModel: o.model, usingCodex, codexDefaultModel: CODEX_DEFAULT_MODEL, defaultModel: CRON_DEFAULT_MODEL }), cost, unmetered: providerUnmetered }).catch(() => {}).finally(() => { scoutingNow = false; });
-    }
+
+  // TRUTHFUL TELEMETRY: when the governor holds the ceiling, record WHICH passes yielded. A deferral is NOT an
+  // error, so it stays out of the diag error ring — a single stdout line is the lightest inspectable sink (this is
+  // exactly what the aux-budget live-smoke reads). Emitted only when there were candidates, so quiet runs stay quiet.
+  if (_auxCandidates.length) {
+    console.log('[aux-governor] run=' + runId + ' agent=' + agentId + ' budget=' + (_auxPlan.unlimited ? 'off' : _auxBudget)
+      + ' spent=' + _auxPlan.spend.length + '[' + _auxPlan.spend.join(',') + ']'
+      + (_auxPlan.deferred.length ? ' DEFERRED[' + _auxPlan.deferred.join(',') + ']' : ''));
   }
   // WORK VISIBILITY: hand the caller this run's PROVEN outputs (the same ledger runStore just recorded).
   // team.dispatch/team.spawn stamp these with the worker's agentId so the LEAD knows what its workers
