@@ -447,6 +447,31 @@ body.no-scan .mkt-scrim::after { display: none; }
 .mkt-prospect-open { color: var(--ink) !important; background: var(--gold) !important; border-color: var(--gold) !important; text-shadow: none !important; flex: 1 1 auto; }
 .mkt-prospect-dismiss { flex: 0 0 auto; }
 
+/* ---- SCOUT LOG — the scout's visible ATTEMPT LEDGER (what the station tried + the honest reason each time).
+   Collapsible strip modelled on the SUMMON CONFIG (.mkt-cfg) idiom: a caret head + a phosphor-dim body list, so a
+   dismissed draft is never the whole story. Every row is a real GET /api/scout ledger entry (truthful telemetry). */
+.mkt-scoutlog { margin: 4px 0 12px; border: 1px solid var(--ph-dim); border-radius: 8px; overflow: hidden; background: var(--panel2); }
+.mkt-scoutlog-head { display: flex; align-items: center; gap: 9px; width: 100%; font-family: inherit; text-align: left;
+  background: transparent; border: 0; color: var(--ph); padding: 9px 12px; cursor: pointer; }
+.mkt-scoutlog-head:hover { background: var(--ph-faint); }
+.mkt-scoutlog-caret { color: var(--ph); font-size: 12px; flex: 0 0 auto; }
+.mkt-scoutlog-ttl { color: var(--ph-bright); font-size: 11.5px; letter-spacing: 2px; flex: 0 0 auto; }
+.mkt-scoutlog-sum { color: var(--ph-dim); font-size: 11px; letter-spacing: .3px; flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mkt-scoutlog-body { padding: 2px 10px 10px; display: flex; flex-direction: column; gap: 7px; max-height: 260px; overflow-y: auto; }
+.mkt-slog-row { display: flex; align-items: flex-start; gap: 9px; padding: 6px 4px; border-top: 1px solid var(--ph-faint); }
+.mkt-slog-row:first-child { border-top: 0; }
+.mkt-slog-out { flex: 0 0 auto; font-size: 9.5px; letter-spacing: 1px; padding: 2px 6px; border-radius: 3px; border: 1px solid var(--ph-dim); color: var(--ph); margin-top: 1px; min-width: 62px; text-align: center; }
+.mkt-slog-out.ok { color: var(--ink); background: var(--gold); border-color: var(--gold); text-shadow: none; }
+.mkt-slog-out.no { color: var(--ph-bright); border-color: var(--ph); }
+.mkt-slog-out.mut { color: var(--ph-dim); border-style: dashed; }
+.mkt-slog-out.err { color: #ff9a7a; border-color: rgba(255,120,80,.5); }
+.mkt-slog-main { min-width: 0; flex: 1 1 auto; }
+.mkt-slog-line { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.mkt-slog-kind { color: var(--ph-dim); font-size: 9.5px; letter-spacing: 1px; text-transform: uppercase; }
+.mkt-slog-ttl { color: var(--ph-bright); font-size: 12px; letter-spacing: .3px; }
+.mkt-slog-time { color: var(--ph-dim); font-size: 10.5px; margin-left: auto; flex: 0 0 auto; }
+.mkt-slog-reason { color: var(--text, var(--ph)); opacity: .8; font-size: 11px; line-height: 1.4; margin-top: 2px; }
+
 /* ---- R6: the "FOR YOU" discovery row (dossier-interest + goal-text ranked; honest category-spread fallback) ----
    Phosphor-headed (not gold) so it reads as distinct from the affinity SUGGESTED/RECOMMENDED shelves. Each card's
    WHY chip shows the recipe's browse CATEGORY — a truthful label, never a fabricated "popular" number. */

@@ -37,6 +37,7 @@ const Marketplace = (() => {
   let tab = 'agents';                            // 'agents' | 'recipes'
   let glassOpen = false;
   let summonConfigOpen = false;                  // the collapsible APPEARANCE+MODEL strip (summon mode) — collapsed by default
+  let scoutLogOpen = false;                       // the collapsible SCOUT LOG (attempt ledger) — collapsed by default
   let pendingCardAnim = false;                   // play the staggered card-entrance ONCE per open/tab-switch, not on every filter/search rebuild
   let pickedSummonSkin = null;
   let pickedSummonModel = null;   // SUMMON-only per-agent model choice: { model, provider, effort } or null = inherit the orchestrator's
@@ -181,6 +182,7 @@ const Marketplace = (() => {
     tab = (ctx.mode !== 'pick' && ctx.tab === 'recipes' && hasRecipes()) ? 'recipes' : 'agents';
     glassOpen = !acked();
     summonConfigOpen = false;
+    scoutLogOpen = false;
     pickedSummonSkin = null;
     pickedSummonModel = null;
     const builtins = Specialties.builtins();
@@ -460,6 +462,7 @@ const Marketplace = (() => {
       html += glassHTML();          // '' in pick mode; STATION FAMILIARITY glass box in deploy mode
       html += recShelfHTML();
       html += prospectShelfHTML();
+      html += scoutLogHTML();   // the attempt ledger (both kinds) — clean top-level view only (filtering is false here)
     }
 
     const buildTile = '<button class="mkt-build" type="button" aria-label="build a custom class">' +
@@ -540,6 +543,7 @@ const Marketplace = (() => {
     html += glassHTML();
     html += suggestedShelfHTML();
     html += forYouShelfHTML();
+    if (catFilter === 'all' && !query) html += scoutLogHTML();   // the attempt ledger, in the clean top-level view only
     const builtins = filtRecipes(Recipes.builtins());
     const customs = filtRecipes(Recipes.customs());
     // MINE view: a single "YOUR RECIPES" section (the builtins are all filtered out anyway).
@@ -1158,6 +1162,67 @@ const Marketplace = (() => {
   function scoutRecipeDrafts() {
     try { return (typeof ProspectStore !== 'undefined' && ProspectStore.recipeDrafts) ? (ProspectStore.recipeDrafts() || []) : []; } catch (_) { return []; }
   }
+
+  /* ---------- SCOUT LOG: the attempt ledger (truthful telemetry) ----------
+     Every scout mint attempt writes ONE outcome to a server-side ledger (sidecar/scout.js note()) — staged
+     (a draft landed), rejected, none (the model judged the library already covers it), expired (a stale draft
+     aged out), accepted/dismissed (your own verdict), or error. GET /api/scout returns the tail; the bay reads
+     it via ProspectStore.ledger(). Rendering it here makes the engine VISIBLE: a dismissed draft is no longer
+     the whole story — the Commander can see what the station tried and the honest reason each time. Collapsed by
+     default; EVERY line comes straight from the payload — nothing invented (no fabricated "trying…" filler). */
+  const SCOUT_OUT = {
+    staged:    { label: 'MINTED',    cls: 'ok' },
+    accepted:  { label: 'SAVED',     cls: 'ok' },
+    rejected:  { label: 'REJECTED',  cls: 'no' },
+    dismissed: { label: 'DISMISSED', cls: 'no' },
+    none:      { label: 'NONE',      cls: 'mut' },
+    expired:   { label: 'EXPIRED',   cls: 'mut' },
+    error:     { label: 'ERROR',     cls: 'err' }
+  };
+  // relative "Nx ago" for a past epoch-ms stamp (local, tiny — mirrors projects.js relTime). '' when absent.
+  function scoutRelTime(ms) {
+    const t = Number(ms) || 0; if (!t) return '';
+    const d = Date.now() - t; if (d < 60000) return 'now';
+    const m = Math.floor(d / 60000); if (m < 60) return m + 'm ago';
+    const h = Math.floor(m / 60); if (h < 24) return h + 'h ago';
+    return Math.floor(h / 24) + 'd ago';
+  }
+  function scoutLogHTML() {
+    if (typeof ProspectStore === 'undefined' || !ProspectStore.ledger) return '';
+    let entries = [];
+    try { entries = ProspectStore.ledger() || []; } catch (_) { return ''; }
+    if (!entries.length) return '';   // no attempts recorded yet — assert nothing (never a fake/empty log)
+    const rows = entries.slice().reverse();   // ledger is appended oldest→newest; show newest first
+    const n = rows.length;
+    const head =
+      '<button type="button" class="mkt-scoutlog-head" aria-expanded="' + (scoutLogOpen ? 'true' : 'false') + '">' +
+        '<span class="mkt-scoutlog-caret" aria-hidden="true">' + (scoutLogOpen ? '▾' : '▸') + '</span>' +
+        '<span class="mkt-scoutlog-ttl">SCOUT LOG</span>' +
+        '<span class="mkt-scoutlog-sum">' + n + ' attempt' + (n === 1 ? '' : 's') + ' the station recorded</span>' +
+      '</button>';
+    if (!scoutLogOpen) return '<div class="mkt-scoutlog">' + head + '</div>';
+    return '<div class="mkt-scoutlog open">' + head +
+      '<div class="mkt-scoutlog-body">' + rows.map(scoutLogRowHTML).join('') + '</div></div>';
+  }
+  function scoutLogRowHTML(e) {
+    e = e || {};
+    const meta = SCOUT_OUT[e.outcome] || { label: String(e.outcome || '·').toUpperCase().slice(0, 12), cls: 'mut' };
+    const kind = String(e.kind || '');
+    const kindLbl = kind === 'prospect' ? 'class' : kind === 'recipe' ? 'recipe' : kind;   // honest kind, never invented
+    const when = scoutRelTime(e.at);
+    const title = String(e.title || '');
+    const reason = String(e.reason || '');
+    return '<div class="mkt-slog-row">' +
+      '<span class="mkt-slog-out ' + meta.cls + '">' + esc(meta.label) + '</span>' +
+      '<div class="mkt-slog-main">' +
+        '<div class="mkt-slog-line">' +
+          (kindLbl ? '<span class="mkt-slog-kind">' + esc(kindLbl) + '</span>' : '') +
+          (title ? '<span class="mkt-slog-ttl">' + esc(title) + '</span>' : '') +
+          (when ? '<span class="mkt-slog-time">' + esc(when) + '</span>' : '') +
+        '</div>' +
+        (reason ? '<div class="mkt-slog-reason">' + esc(reason) + '</div>' : '') +
+      '</div></div>';
+  }
   // a station-drafted recipe card — same card family as the prospect shelf (glyph + WHY + provenance + arm-confirmed
   // dismiss), because it makes the same promise: drafted from YOUR observed work, never saved without your review.
   function scoutRecipeCardHTML(p) {
@@ -1483,6 +1548,9 @@ const Marketplace = (() => {
   /* ---------- wiring: suggested (mint) ---------- */
   function wireSuggest(scope) {
     const sc = scope || root;
+    // SCOUT LOG collapsible: toggle expands/collapses the attempt ledger (re-render, like the SUMMON CONFIG strip).
+    const slogHead = sc.querySelector('.mkt-scoutlog-head');
+    if (slogHead) slogHead.addEventListener('click', () => { scoutLogOpen = !scoutLogOpen; sfx('click'); renderStage(); });
     sc.querySelectorAll('.mkt-suggest-review').forEach(b => b.addEventListener('click', () => {
       const c = suggestedMissions().find(x => x.key === b.dataset.key);
       if (!c) { renderStage(); return; }
