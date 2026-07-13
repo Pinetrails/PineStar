@@ -11,11 +11,15 @@
   const game = document.getElementById('screen-game');
   if (!handle || !game) return;
 
-  const LEFT_COL = 232, PAD = 11, GAP = 9, MIN = 300, MIN_CENTER = 96;
-  // COMMS may grow as far left as the Commander drags it — the only ceiling is keeping a
-  // sliver of centre stage alive so the world canvas never collapses to zero width
+  const LEFT_COL = 232, PAD = 11, GAP = 9, MIN = 300;
+  const stageWrap = document.getElementById('stage-wrap');
+  // COMMS may swallow the centre stage ENTIRELY (stage width → 0) — Commanders who don't want
+  // to see the station while they work drag the seam all the way to the crew rail. The stage's
+  // left edge is fixed by the grid, so the ceiling is everything right of it minus one gap;
+  // world.js's resize() floors the canvas at 1px, so a zero-width stage is safe.
   function maxWidth() {
-    return Math.max(MIN, window.innerWidth - LEFT_COL - GAP * 2 - PAD * 2 - MIN_CENTER);
+    const stageLeft = stageWrap ? stageWrap.getBoundingClientRect().left : LEFT_COL + PAD + GAP;
+    return Math.max(MIN, window.innerWidth - PAD - GAP - stageLeft);
   }
   const clamp = w => Math.max(MIN, Math.min(maxWidth(), w));
   function apply(w) { game.style.setProperty('--chat-w', clamp(w) + 'px'); }
