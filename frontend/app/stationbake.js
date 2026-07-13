@@ -55,8 +55,11 @@ const StationBake = (() => {
                     hard stepped levels broken by a 4x4 Bayer pattern, so LIGHT reads in the
                     same chunky pixel idiom as the geometry (0 = off = smooth gradients).
        floorWear  = density/strength of hash-keyed wear on the deck — scuffs, worn patches,
-                    drag marks, corridor traffic lanes (0 = off = the pristine floor). */
-  const DEPTH = { wallShadow: 0.5, sheen: 0.14, cornerAO: 0.55, dither: 0.8, floorWear: 0.55 };
+                    drag marks, corridor traffic lanes (0 = off = the pristine floor).
+       floorDetail= amplitude of the V2 floor-material pass (deck plates, seams, rivets,
+                    per-kind recipes, perimeter trim). Scales every U.shade delta the floor
+                    draws, so 0 = a flat unadorned deck, 1 = shipped, >1 = overdriven. */
+  const DEPTH = { wallShadow: 0.5, sheen: 0.14, cornerAO: 0.55, dither: 0.8, floorWear: 0.55, floorDetail: 1 };
 
   const CORNER = {
     tl: { cx: 1, cy: 1, a0: Math.PI, a1: 1.5 * Math.PI },
@@ -121,37 +124,86 @@ const StationBake = (() => {
     }
   }
 
-  /* ---------- floor passes (per-tile base colour → paint tool just works) ---------- */
+  /* ---------- floor passes (per-tile base colour → paint tool just works) ----------
+
+     V2 FLOOR MATERIALS. The deck is the biggest surface on screen, so it carries a real
+     material vocabulary instead of the old uniform 1-tile grid. The two axes are separate
+     by contract: room KIND picks the material RECIPE, the per-tile base colour (floor style
+     + deck paint overrides) stays the HUE — every mark below derives from THIS tile's own
+     base via U.shade, so a painted tile renders its material in its painted colour. All
+     marks are keyed on world tile coords (chunk↔monolithic parity) and painted as opaque
+     hard-stepped pixels (the station idiom; headless-mock safe). Recipes:
+       plate (HAB/default)     — 2×2 deck plates: shared per-plate tone, dark seam + catch-
+                                 light, corner rivets, brushed hairline grain.
+       panel (BRIDGE)          — long 4×1 panel strips with longitudinal grain, no rivets:
+                                 a finished command-deck read.
+       tile  (LAB)             — clean 2×2 gloss checker on dark grout, sparse specular
+                                 ticks, no grime/stains.
+       tread (FOUNDRY/STORAGE) — heavy plate + stamped tread ticks, weld lines, rivets.
+       soft  (QUARTERS)        — wide 3×2 low-contrast plates with warm matted lifts.
+     Every room also gets a PERIMETER TRIM COURSE (a darker border course where floor meets
+     wall, catch-lit on its room-facing edge) and pale guide ticks across door thresholds.
+     DEPTH.floorDetail scales every delta the material draws; DEPTH.floorWear rides on top. */
+  const MAT_BY_KIND = { hab: 'plate', bridge: 'panel', lab: 'tile', factory: 'tread', storage: 'tread', quarters: 'soft' };
+  const MAT_PITCH = { plate: [2, 2], panel: [4, 1], tile: [2, 2], tread: [2, 2], soft: [3, 2] };
+
   function bakeRoomFloor(b, r) {
     const px = (x, y, w, h, c) => { b.fillStyle = c; b.fillRect(x, y, w, h); };
-    const off = U.hash(r.z) % 2;
+    const fd = Math.max(0, DEPTH.floorDetail);
+    const mat = MAT_BY_KIND[(G.kindOf && G.kindOf(r.z)) || 'hab'] || 'plate';
+    const PW = MAT_PITCH[mat][0], PH = MAT_PITCH[mat][1];
+    const zg = G.zoneGrid, idx = G.idx, COLS = G.COLS, ROWS = G.ROWS;
+    const zAt = (x, y) => (x < 0 || y < 0 || x >= COLS || y >= ROWS) ? null : zg[idx(x, y)];
+    const doorTo = (x, y, nx, ny) => { const nz = zAt(nx, ny); return nz != null && nz !== r.z && (G.canStep(x, y, nx, ny) || G.canStep(nx, ny, x, y)); };
+    const wallTo = (x, y, nx, ny) => zAt(nx, ny) !== r.z && !doorTo(x, y, nx, ny);
     for (let y = r.y1; y <= r.y2; y++) for (let x = r.x1; x <= r.x2; x++) {
       const base = G.baseColorOf(r.z, x, y);
       const X = x * T, Y = y * T, n = h2(x, y, r.z);
+      const sh = d => U.shade(base, d * fd);
       px(X, Y, T, T, base);
-      if (n % 5 === 0) px(X, Y, T, T, 'rgba(0,0,0,0.06)');
-      else if (n % 7 === 0) px(X, Y, T, T, 'rgba(255,255,255,0.025)');
-      if ((x + off) % 2 === 0) px(X, Y, 1, T, U.shade(base, -0.30));
-      if ((y + off) % 2 === 0) px(X, Y, T, 1, U.shade(base, -0.30));
-      if ((x + off) % 2 === 0 && (y + off) % 2 === 0) px(X + 1, Y + 1, 1, 1, U.shade(base, 0.22));
-      if (n % 19 === 3) {
-        px(X + 2, Y + 2, T - 4, T - 4, U.shade(base, -0.25));
-        for (let i = 0; i < 3; i++) px(X + 3, Y + 4 + i * 3, T - 6, 1, U.shade(base, -0.5));
-      } else if (n % 23 === 5) {
-        px(X + 2, Y + 2, T - 4, T - 4, U.shade(base, -0.12));
-        b.strokeStyle = U.shade(base, -0.4); b.lineWidth = 1; b.strokeRect(X + 2.5, Y + 2.5, T - 5, T - 5);
-        px(X + T / 2 - 2, Y + T / 2, 4, 1, U.shade(base, -0.5));
-      } else if (n % 31 === 7) {
-        b.fillStyle = 'rgba(0,0,0,0.13)'; b.beginPath(); b.ellipse(X + (n % 8), Y + (n % 6) + 3, 5, 3, 0, 0, 7); b.fill();
-      } else if (n % 13 === 2) {
-        px(X + (n % 5), Y + (n % 7) + 2, 4, 1, 'rgba(0,0,0,0.12)');
-        px(X + (n % 7) + 1, Y + (n % 4) + 6, 3, 1, 'rgba(255,255,255,0.05)');
+      // per-PLATE tone: every tile of a plate shares one of 5 hard tones (world-anchored),
+      // so the deck reads as engineered multi-tile plates instead of a 1-tile checker
+      const pn = h2(Math.floor(x / PW), Math.floor(y / PH), r.z + ':pl');
+      const checker = mat === 'tile' ? ((Math.floor(x / PW) + Math.floor(y / PH)) % 2 ? 0.035 : -0.025) : 0;
+      px(X, Y, T, T, sh(((pn % 5) - 2) * 0.022 + checker));
+      // brushed grain: faint hairlines (panels comb straight; labs stay clean-machined)
+      if (mat === 'panel') { px(X, Y + 4, T, 1, sh(0.035)); px(X, Y + 9, T, 1, sh(-0.045)); }
+      else if (mat !== 'tile') { px(X, Y + 3 + (n % 4), T, 1, sh(0.035)); px(X, Y + 7 + (n % 4), T, 1, sh(-0.045)); }
+      // plate seams on the plate grid: dark cut + a 1px catch-light beside it
+      if (x % PW === 0) { px(X, Y, 1, T, sh(-0.34)); px(X + 1, Y, 1, T, sh(0.09)); }
+      if (y % PH === 0) { px(X, Y, T, 1, sh(-0.34)); px(X, Y + 1, T, 1, sh(0.09)); }
+      // material dressing
+      if ((mat === 'plate' || mat === 'tread') && x % PW === 0 && y % PH === 0) {   // corner rivet at the plate joint
+        px(X + 2, Y + 2, 2, 2, sh(0.22)); px(X + 3, Y + 3, 1, 1, sh(-0.30));
+      }
+      if (mat === 'tread') {
+        px(X + 2 + (n % 3), Y + 4, 3, 1, sh(-0.20));                 // stamped tread ticks
+        px(X + 5 + (n % 3), Y + 8, 3, 1, sh(-0.20));
+        if (y % (PH * 3) === 0) px(X, Y, T, 1, sh(-0.50));           // weld line every 3rd plate row
+      } else if (mat === 'tile' && pn % 7 === 0) {
+        px(X + T - 5, Y + 2, 2, 1, sh(0.28));                        // specular tick on a gloss tile
+      } else if (mat === 'soft' && pn % 3 === 0) {
+        px(X + 1, Y + 1, T - 2, T - 2, sh(0.05));                    // warm matted lift on some plates
+      }
+      // sparse one-off features (v1 survivors, now material-aware: labs/bridge stay clean)
+      if (mat === 'plate' || mat === 'tread' || mat === 'soft') {
+        if (n % 19 === 3 && mat !== 'soft') {
+          px(X + 2, Y + 2, T - 4, T - 4, sh(-0.25));                 // recessed vent hatch
+          for (let i = 0; i < 3; i++) px(X + 3, Y + 4 + i * 3, T - 6, 1, sh(-0.5));
+        } else if (n % 23 === 5) {
+          px(X + 2, Y + 2, T - 4, T - 4, sh(-0.12));                 // access panel
+          b.strokeStyle = sh(-0.4); b.lineWidth = 1; b.strokeRect(X + 2.5, Y + 2.5, T - 5, T - 5);
+          px(X + T / 2 - 2, Y + T / 2, 4, 1, sh(-0.5));
+        } else if (n % 31 === 7) {
+          b.fillStyle = 'rgba(0,0,0,' + (0.13 * fd).toFixed(3) + ')';                // old oil stain
+          b.beginPath(); b.ellipse(X + (n % 8), Y + (n % 6) + 3, 5, 3, 0, 0, 7); b.fill();
+        }
       }
       // FLOOR WEAR — a lived-in deck: hash-keyed scuffs, drag marks, worn-pale patches and
       // grime films over the plates above. Same idiom (opaque-ish 1px marks, deterministic on
       // the tile hash); DEPTH.floorWear scales alpha, 0 = the pristine pre-wear floor exactly.
       const wear = Math.max(0, DEPTH.floorWear);
-      if (wear > 0.001) {
+      if (wear > 0.001 && mat !== 'tile') {
         const wa = a => (a * wear).toFixed(3);
         if (n % 9 === 1) px(X + (n % 6), Y + 3 + (n % 8), 4 + (n % 3), 1, 'rgba(0,0,0,' + wa(0.18) + ')');          // boot scuff streak
         else if (n % 11 === 6) px(X + 3 + (n % 8), Y + (n % 5), 1, 3 + (n % 3), 'rgba(0,0,0,' + wa(0.15) + ')');    // vertical scrape
@@ -161,30 +213,73 @@ const StationBake = (() => {
         } else if (n % 27 === 4) px(X + 2, Y + 2, T - 4, T - 4, 'rgba(255,244,220,' + wa(0.05) + ')');               // worn-pale patch (foot polish)
         if (n % 13 === 9) px(X, Y, T, T, 'rgba(0,0,0,' + wa(0.06) + ')');                                            // grime film over the whole plate
       }
+      // PERIMETER TRIM COURSE — the border course where floor meets wall reads as a distinct
+      // laid material band, catch-lit on its room-facing edge; doors get pale guide ticks.
+      // Painted LAST so it re-tones the whole tile over the plate work above.
+      const wN = wallTo(x, y, x, y - 1), wS = wallTo(x, y, x, y + 1), wW = wallTo(x, y, x - 1, y), wE = wallTo(x, y, x + 1, y);
+      if (wN || wS || wW || wE) {
+        px(X, Y, T, T, 'rgba(6,7,10,' + (0.10 * fd).toFixed(3) + ')');
+        if (wN && !wS) px(X, Y + T - 1, T, 1, sh(0.10));
+        if (wS && !wN) px(X, Y, T, 1, sh(0.10));
+        if (wW && !wE) px(X + T - 1, Y, 1, T, sh(0.10));
+        if (wE && !wW) px(X, Y, 1, T, sh(0.10));
+      }
+      const dN = doorTo(x, y, x, y - 1), dS = doorTo(x, y, x, y + 1), dW = doorTo(x, y, x - 1, y), dE = doorTo(x, y, x + 1, y);
+      if (dN || dS || dW || dE) {
+        b.fillStyle = sh(0.20);
+        for (let i = 2; i < T - 2; i += 4) {
+          if (dN) b.fillRect(X + i, Y + 1, 2, 1);
+          if (dS) b.fillRect(X + i, Y + T - 2, 2, 1);
+          if (dW) b.fillRect(X + 1, Y + i, 1, 2);
+          if (dE) b.fillRect(X + T - 2, Y + i, 1, 2);
+        }
+      }
     }
   }
 
   function bakeCorridorFloor(b, r) {
     const px = (x, y, w, h, c) => { b.fillStyle = c; b.fillRect(x, y, w, h); };
+    const fd = Math.max(0, DEPTH.floorDetail);
     const vertical = (r.y2 - r.y1) > (r.x2 - r.x1);
     for (let y = r.y1; y <= r.y2; y++) for (let x = r.x1; x <= r.x2; x++) {
       const base = G.baseColorOf(r.z, x, y);
       const X = x * T, Y = y * T, n = h2(x, y, 'cor');
+      const sh = d => U.shade(base, d * fd);
       px(X, Y, T, T, base);
-      if (n % 6 === 0) px(X, Y, T, T, 'rgba(0,0,0,0.07)');
-      px(X, Y, T, 1, U.shade(base, -0.34));
-      if (n % 23 === 5) { px(X + 2, Y + 2, T - 4, T - 4, U.shade(base, -0.16)); b.strokeStyle = U.shade(base, -0.4); b.lineWidth = 1; b.strokeRect(X + 2.5, Y + 2.5, T - 5, T - 5); }
+      px(X, Y, T, T, sh(((n % 4) - 1.5) * 0.02));   // per-tile tread-plate tone (hard, one of 4)
+      px(X, Y, T, 1, sh(-0.34));
+      if (n % 23 === 5) { px(X + 2, Y + 2, T - 4, T - 4, sh(-0.16)); b.strokeStyle = sh(-0.4); b.lineWidth = 1; b.strokeRect(X + 2.5, Y + 2.5, T - 5, T - 5); }
       // corridor wear ticks (see the room-floor wear block for the idiom)
       if (DEPTH.floorWear > 0.001 && n % 7 === 2) px(X + (n % 6), Y + 2 + (n % 7), 3 + (n % 3), 1, 'rgba(0,0,0,' + (0.16 * DEPTH.floorWear).toFixed(3) + ')');
     }
     // long-axis rib bands + edge air-grilles
-    b.fillStyle = 'rgba(0,0,0,0.12)';
+    b.fillStyle = 'rgba(0,0,0,' + (0.12 * fd).toFixed(3) + ')';
     const x1 = r.x1 * T, y1 = r.y1 * T, rw = (r.x2 - r.x1 + 1) * T, rh = (r.y2 - r.y1 + 1) * T;
     if (vertical) for (let yy = y1 + 4; yy < y1 + rh; yy += 7) b.fillRect(x1 + 2, yy, rw - 4, 1);
     else for (let xx = x1 + 4; xx < x1 + rw; xx += 7) b.fillRect(xx, y1 + 2, 1, rh - 4);
     b.fillStyle = U.shade('#2c2924', -0.5);
     if (vertical) { for (let yy = y1 + 3; yy < y1 + rh; yy += 5) { b.fillRect(x1 + 1, yy, 1, 2); b.fillRect(x1 + rw - 2, yy, 1, 2); } }
     else { for (let xx = x1 + 3; xx < x1 + rw; xx += 5) { b.fillRect(xx, y1 + 1, 2, 1); b.fillRect(xx, y1 + rh - 2, 2, 1); } }
+    // V2: chevron stamps between the ribs (staggered direction ticks along the walk axis)
+    // + side GUTTERS — a dark drainage channel with a faint lit lip hugging each long wall
+    if (fd > 0.001) {
+      const tick = 'rgba(0,0,0,' + (0.18 * fd).toFixed(3) + ')';
+      const chan = 'rgba(0,0,0,' + (0.28 * fd).toFixed(3) + ')';
+      const lip = 'rgba(255,244,220,' + (0.045 * fd).toFixed(3) + ')';
+      if (vertical) {
+        const cxp = Math.round(x1 + rw / 2);
+        b.fillStyle = tick;
+        for (let yy = y1 + 8; yy < y1 + rh - 3; yy += 14) { b.fillRect(cxp - 4, yy, 3, 1); b.fillRect(cxp + 1, yy + 2, 3, 1); }
+        b.fillStyle = chan; b.fillRect(x1 + 3, y1 + 2, 1, rh - 4); b.fillRect(x1 + rw - 4, y1 + 2, 1, rh - 4);
+        b.fillStyle = lip; b.fillRect(x1 + 4, y1 + 2, 1, rh - 4); b.fillRect(x1 + rw - 5, y1 + 2, 1, rh - 4);
+      } else {
+        const cyp = Math.round(y1 + rh / 2);
+        b.fillStyle = tick;
+        for (let xx = x1 + 8; xx < x1 + rw - 3; xx += 14) { b.fillRect(xx, cyp - 4, 1, 3); b.fillRect(xx + 2, cyp + 1, 1, 3); }
+        b.fillStyle = chan; b.fillRect(x1 + 2, y1 + 3, rw - 4, 1); b.fillRect(x1 + 2, y1 + rh - 4, rw - 4, 1);
+        b.fillStyle = lip; b.fillRect(x1 + 2, y1 + 4, rw - 4, 1); b.fillRect(x1 + 2, y1 + rh - 5, rw - 4, 1);
+      }
+    }
     // TRAFFIC LANES (floor wear) — two foot-polished tracks down the corridor's long axis where
     // the crew actually walks: a pale sheen lane with a faint grime line hugging its outside.
     // Rides DEPTH.floorWear like the per-tile wear marks; 0 = off.
