@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "934b15ea8a11cb7b3544211a4c450be7d75099e8",
+    "sourceCommit": "81a516a09b92249859fa373aaad3d77d66780b32",
     "pathSetSha256": "852da3f413ea706b32aba7e975ddd2ebd7664d8e8a9ac7f4c3c11e4559488b85",
     "files": [
       {
@@ -358,8 +358,8 @@
       },
       {
         "path": "frontend/app/onboarding.js",
-        "bytes": 41477,
-        "sha256": "8292474e2c5648b825067d3fb50057d69f95c375053cca5ee379cf3ba6ec3d0a"
+        "bytes": 43666,
+        "sha256": "e965d01a6e66f6c547f60462840646f55fbb7da4c1a23f102337a05526cc12a2"
       },
       {
         "path": "frontend/app/permissions.js",
@@ -688,8 +688,8 @@
       },
       {
         "path": "frontend/app/wakemind.js",
-        "bytes": 12016,
-        "sha256": "f8f44aa09aaa60263f350499f66b0a9162a66695161a280fff54e36791e96795"
+        "bytes": 14855,
+        "sha256": "46a96baaef0422ff3af3cab20ac0d85952946dbd95e6495d3f2466172fa2c987"
       },
       {
         "path": "frontend/app/warroom.js",
