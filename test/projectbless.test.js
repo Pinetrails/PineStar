@@ -5,7 +5,7 @@
 // blesses the PROPOSED git-repo root through the injected bless() (the SAME blessProjectRoot the chat prompt calls).
 const assert = require('assert');
 const path = require('path');
-const { makeProjectBless } = require('../sidecar/projectbless.js');
+const { makeProjectBless, projectScopeLine } = require('../sidecar/projectbless.js');
 // reuse the REAL pathtrust core so detectRoot/normalizeRoot/hardlineReason are the exact code the sidecar wires —
 // the whole point is that a typed folder produces the byte-identical grant key a chat mention would.
 const { makePathTrust } = require('../sidecar/pathtrust.js');
@@ -117,6 +117,17 @@ function coreOver(tree, blessSink) {
     const core = coreOver(baseTree(), async () => false);
     const r = await core.blessPath({ path: R, surface: 'interactive' });
     ok(r.ok === false && r.code === 'persist', 'a failed durable write denies the bless (fail-closed)');
+  }
+
+  // --- projectScopeLine: the project-anchored run context line (blessed-only, truthful) ---
+  {
+    const line = projectScopeLine('C:\\proj\\repo', true);
+    ok(line.indexOf('C:\\proj\\repo') >= 0, 'blessed root composes the folder context line');
+    ok(line.indexOf('PROJECT FOLDER') >= 0, 'line is labelled as the project-folder anchor');
+    ok(projectScopeLine('C:\\proj\\repo', false) === '', 'an UN-blessed root injects NOTHING (no unprovable folder claim)');
+    ok(projectScopeLine('', true) === '', 'empty root injects nothing');
+    ok(projectScopeLine(null, true) === '', 'null root injects nothing');
+    ok(projectScopeLine('x'.repeat(5000), true).length < 1300, 'root is bounded in the composed line');
   }
 
   console.log('projectbless.test: ' + n + ' assertions passed');

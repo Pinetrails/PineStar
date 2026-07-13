@@ -83,7 +83,7 @@ const { makeConsentBroker } = require('./permissions.js');
 const { makeGrantManager } = require('./permgrants.js');
 const { makeProjectsStore } = require('./projects-store.js');   // NS-5: known-projects (blessed roots) durable store
 const { makePathTrust } = require('./pathtrust.js');            // NS-5: conversational path-trust guard
-const { makeProjectBless } = require('./projectbless.js');      // NS-5c: ADD-a-project bless core (second doorway, same grant machinery)
+const { makeProjectBless, projectScopeLine } = require('./projectbless.js');      // NS-5c: ADD-a-project bless core (second doorway, same grant machinery) + project-scoped run context line
 const { makeFolderPick } = require('./folderpick.js');          // Projects rail "browse": native OS folder chooser (convenience only — bless stays the consent)
 const { makeTelegramAdapter } = require('./channels/telegram.js');
 const { makeChannelStore } = require('./channels/store.js');
@@ -6075,6 +6075,12 @@ async function handleRun(req, res) {
   const reasoningEffort = resolveReasoningEffort(runProvider, body && (body.reasoningEffort || body.reasoning_effort || (body.reasoning && body.reasoning.effort)));
   const preloadSkills = Array.isArray(body && body.preloadSkills) ? body.preloadSkills.map(s => String(s || '').trim()).filter(Boolean).slice(0, 8) : [];
   const streamId = (body && body.streamId && /^[A-Za-z0-9_-]{1,64}$/.test(String(body.streamId))) ? String(body.streamId) : null;   // M-mem.2b: the active workstream (bounded; bad → global)
+  // PROJECT-SCOPED SESSION (Hermes-parity): an anchored session sends its projectRoot; the folder context line
+  // is injected ONLY when that root is STILL a standing blessed path grant (isBlessedRoot — the same live check
+  // the scanner uses). An un-blessed/revoked/garbage root injects NOTHING: the run must never assert folder
+  // access the grant layer can't prove. The line rides `system` so it reaches every provider identically.
+  const projectRootRaw = (body && typeof body.projectRoot === 'string') ? body.projectRoot.trim().slice(0, 4096) : '';
+  const projectLine = projectScopeLine(projectRootRaw, !!(projectRootRaw && isBlessedRoot(projectRootRaw)));
   // THE MOAT (FLOOR-REAL): the browser sends the agent's REAL placed capability objects (World.heroCaps) so this
   // interactive run grants exactly what's ON THE FLOOR — additive on top of the compute-only interactive office
   // (see runOnce). dish→web · cabinet→files · workbench→terminal · notebook→memory · studio→image · jukebox→spotify
@@ -6198,7 +6204,7 @@ async function handleRun(req, res) {
     // The browser is WATCHED, so an ungranted mutation asks live (interactive surface + promptConsent) instead
     // of default-denying. The SAME run host (runOnce) is reused by the messaging hub with surface:'autonomous'.
     await runOnce({
-      key, model, system, messages: runMessages, agentId, isTask, provider: runProvider, baseUrl, reasoningEffort, fallbackModels, fallbackProviders,
+      key, model, system: projectLine ? (String(system || '') + projectLine) : system, messages: runMessages, agentId, isTask, provider: runProvider, baseUrl, reasoningEffort, fallbackModels, fallbackProviders,
       emit, signal: ac.signal, runId, trigger: 'directive',
       surface: 'interactive', prompt: promptConsent, pathPrompt: promptPathTrust, summon: summonRequest,   // team.summon → live summonAgent() round-trip; pathPrompt → NS-5 "work in <root>?" bless
 
