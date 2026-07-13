@@ -3274,7 +3274,6 @@ const World = (() => {
     if (agent && !agent.unplaced) drawBubble(now);
     for (const b of crew) drawBubble(now, b);   // crew speech bubbles (e.g. "received: …" when work routes to them)
     if (hoverAgent && !hoverAgent.unplaced) drawNameplate(now, hoverAgent);
-    drawQueueDepth();   // screen-space backpressure gauge (resets transform; drawn last)
     // FLOOR-STATS OVERLAY REMOVED (2026-07-09 decision): the YIELD/RUNS/CACHE/SLAG/THRU/DWELL box no
     // longer floats over the world sim. The FloorStats engine stays live (event-fed) so any panel or
     // widget consumer keeps honest numbers — only the floating canvas readout is gone.
@@ -5547,22 +5546,10 @@ const World = (() => {
     if (floor) return floor.snapshot().queueDepth | 0;
     let d = 0; for (const v of chanQueues.values()) d += v; return d;
   }
-  // bottom-right INTAKE queue-depth gauge — backpressure made visible (screen-space overlay)
-  function drawQueueDepth() {
-    const depth = queueDepthNow();
-    if (depth <= 0) return;
-    const dpr = window.devicePixelRatio || 1;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.imageSmoothingEnabled = false;
-    ctx.save();
-    if (linkStaleDim) ctx.globalAlpha = 0.3;   // E1: link down → this depth is last-known, not live; dim it
-    const W = cv.width / dpr, H = cv.height / dpr, pad = 8, bw = 88, bh = 16;
-    const x = W - bw - pad, y = H - bh - pad;
-    ctx.fillStyle = 'rgba(8,10,9,0.85)'; ctx.fillRect(x, y, bw, bh);
-    ctx.strokeStyle = '#caa84a'; ctx.lineWidth = 1; ctx.strokeRect(x + 0.5, y + 0.5, bw - 1, bh - 1);
-    ctx.fillStyle = '#e8c860'; ctx.font = '10px monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-    ctx.fillText('INBOX ' + '▮'.repeat(Math.min(6, depth)) + ' ' + depth, x + 6, y + bh / 2 + 0.5);
-    ctx.restore();
-  }
+  // (the bottom-right screen-space "INBOX n" queue-depth gauge was REMOVED 2026-07-12 — the CRT
+  //  barrel warp skewed it into a "glitched panel" floating in the void at the canvas corner. The
+  //  backlog stays visible through the physical crate jam at the INTAKE (drawQueueJam), which
+  //  reads the same queueDepthNow() truth.)
 
   /* LINK DOWN marker (E1) — the honest "the live station telemetry has gone dark" chrome tag. Screen-space,
      top-center in the canvas chrome (never over a desk), VT323 + red phosphor bloom + a slow breathing blink so
