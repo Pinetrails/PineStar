@@ -715,7 +715,14 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
 
     // ---- voice: /api/tts + /api/stt graceful degradation (no key in this boot → no network) ----
     // Both routes must ALWAYS answer 200 with a degrade envelope rather than a hard error, so the client's
-    // voice path never wedges. With the OpenRouter key cleared above, we exercise exactly that path.
+    // voice path never wedges. With the env keys cleared at spawn, we exercise exactly that path — but
+    // /api/tts resolves a credential CHAIN (openrouter → gemini → openai), so first clear the fake OpenAI
+    // runtime key the /api/key tests pushed above, or the chain would pick it up and hit the network.
+    await fetch(B + '/api/key', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Skynet-Token': IPC_TOKEN },
+      body: JSON.stringify({ provider: 'openai', key: '' })
+    });
     const ttsNoKey = await j('POST', '/api/tts', { text: 'station check', voice: 'Umbriel', style: 'a low, detached transmission' });
     A.eq(ttsNoKey.status, 200, 'POST /api/tts with no key -> 200 (never a hard error)');
     A.eq(ttsNoKey.body.fallback, true, 'no-key TTS returns the {fallback:true} envelope so the client uses speechSynthesis');
