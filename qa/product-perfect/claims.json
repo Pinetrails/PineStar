@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "b6babb06ae272ebba0c0cda047531c4dbf340fb6",
+    "sourceCommit": "c2b790955be88c33cdcb9185fff608aba5795d25",
     "pathSetSha256": "7eb7a83f508ffd0ef6fd8058ddf15370a953b404d9555462119fb730712a9876",
     "files": [
       {
@@ -683,8 +683,8 @@
       },
       {
         "path": "frontend/app/voice.js",
-        "bytes": 76790,
-        "sha256": "b26dbfbbb9dc7fbe7e403d899112cfbc74416a5d3f4e0094567472146e316e78"
+        "bytes": 76784,
+        "sha256": "26a3bbab73b24a75d3d711f34c1ab6970512186e8e5b98d8071df49b266f2dfc"
       },
       {
         "path": "frontend/app/waitanchor.js",
@@ -763,13 +763,13 @@
       },
       {
         "path": "frontend/css/app.css",
-        "bytes": 187892,
-        "sha256": "81a04a1fa604a2f35ccf9cdb84c2be6630b75a401e0143ef97a6534773c6ae47"
+        "bytes": 187763,
+        "sha256": "b01fa81efcbac947345828bfe801cbd40d66937bac49d25ab97fb4c5fcb65dd5"
       },
       {
         "path": "frontend/css/comms.css",
-        "bytes": 35728,
-        "sha256": "b6620207cdfd460a53e32ae851e842886512dafeb165fcd6c7bcfd46e6b51ed4"
+        "bytes": 35386,
+        "sha256": "3c154999c8103505e47e7fa2e0fb6d39447aebca9d2c2e768f7c2ec95568b171"
       },
       {
         "path": "frontend/css/marketplace.css",
@@ -823,8 +823,8 @@
       },
       {
         "path": "frontend/index.html",
-        "bytes": 57115,
-        "sha256": "f8e2169278d92ccc3e2d8711a6b6fd5c1caf8894d6d5b8723035865e55c2df06"
+        "bytes": 57170,
+        "sha256": "5236dcf9d43a554849ff07dfe02593529c4b4f600071314bfe7c5460ad9727f0"
       },
       {
         "path": "frontend/js/arcade.js",
