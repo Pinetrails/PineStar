@@ -555,38 +555,50 @@
    and the transcript. Amber phosphor / VT323, themed tokens only.
    ============================================================ */
 .comms-idbar {
-  display: flex; align-items: baseline; gap: 8px; min-width: 0;
+  display: flex; align-items: center; gap: 8px; min-width: 0;
   margin: 2px 0 6px; padding-bottom: 6px;
   border-bottom: 1px solid var(--ph-faint);
 }
 .comms-idbar[hidden] { display: none; }
+/* the wrapper owns the chevron; capped so a long name ellipsizes instead of eating the model readout */
 .comms-agent-wrap {
-  display: inline-flex; align-items: baseline; gap: 5px; min-width: 0; cursor: pointer;
+  position: relative; display: inline-flex; align-items: center; gap: 6px;
+  flex: 0 1 auto; min-width: 0; max-width: 68%; cursor: pointer;
 }
 .comms-agent-wrap .comms-agent-sigil { flex: 0 0 auto; color: var(--ph-dim); font-size: 12px; }
-/* the selector reads as a title chip, not a form control: no browser chrome, phosphor text, VT323 inherited */
+/* the selector is a molded phosphor chip (the premium control register): the full agent NAME is the
+   identity and gets layout priority — the pin readout beside it shrinks first, never the name. */
 .comms-agent-select {
-  flex: 0 1 auto; min-width: 0; max-width: 60%;
-  font-family: inherit; font-size: 14px; letter-spacing: .5px; text-transform: uppercase;
-  color: var(--ph-bright); background: transparent;
-  border: 1px solid transparent; border-radius: 3px;
-  padding: 1px 18px 1px 5px; margin: 0; cursor: pointer;
+  flex: 0 1 auto; min-width: 0;
+  font-family: inherit; font-size: 14px; letter-spacing: 1px; text-transform: uppercase;
+  color: var(--ph-bright);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--ph) 8%, var(--panel2)), var(--panel2));
+  border: 1px solid var(--ph-dim); border-radius: 4px;
+  padding: 3px 24px 3px 9px; margin: 0; cursor: pointer;
   -webkit-appearance: none; appearance: none;
-  /* a small phosphor chevron drawn as a themed background caret (SVG data-uri would hardcode a colour, so
-     we use a text triangle via ::after on the wrapper instead) */
   text-overflow: ellipsis; white-space: nowrap; overflow: hidden;
   text-shadow: 0 0 5px var(--ph-glow);
+  box-shadow: inset 0 1px 0 rgba(var(--ph-rgb), .12), 0 1px 0 rgba(0,0,0,.4);
+  transition: color .12s, border-color .12s, background-color .12s, box-shadow .12s;
 }
+/* the ▾ chevron rides inside the chip's right padding (themed text glyph — an SVG data-uri would hardcode a colour) */
 .comms-agent-wrap::after {
-  content: '▾'; flex: 0 0 auto; margin-left: -14px; color: var(--ph-dim); font-size: 10px; pointer-events: none;
+  content: '▾'; position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+  color: var(--ph-dim); font-size: 11px; pointer-events: none;
+  transition: color .12s;
 }
-.comms-agent-select:hover { border-color: var(--ph-faint); background: var(--ph-faint); }
-.comms-agent-select:focus-visible { outline: none; border-color: var(--ph-dim); }
+.comms-agent-select:hover {
+  border-color: var(--ph); background: var(--ph-faint); color: var(--ph-bright);
+  box-shadow: inset 0 1px 0 rgba(var(--ph-rgb), .18), 0 0 9px var(--ph-glow2), 0 1px 0 rgba(0,0,0,.4);
+}
+.comms-agent-wrap:hover::after { color: var(--ph); }
+.comms-agent-select:focus-visible { outline: 2px solid var(--ph-bright); outline-offset: 2px; }
 /* the native option list can't inherit phosphor everywhere, but set what browsers honour */
 .comms-agent-select option { color: var(--text); background: var(--panel2, var(--panel)); text-transform: none; }
-/* the model readout: dim, quiet, tabular — a fact, not a control */
+/* the model readout: dim, quiet, tabular — a fact, not a control. flex-basis 0 so it only ever claims
+   LEFTOVER space: the agent name renders in full first, the pin readout ellipsizes. */
 .comms-agent-model {
-  flex: 1 1 auto; min-width: 0;
+  flex: 1 1 0; min-width: 0;
   font-size: 11px; letter-spacing: .8px; color: var(--ph-dim); opacity: .82;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: right;
 }
