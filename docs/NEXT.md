@@ -16,8 +16,15 @@ doctrine bar rarely met). The fix is a standing harness refresh (the scout mint-
   Opt-out `SKYNET_QUEST_REFRESH=0`. Gates green: test:fast, test:http full, new pure suite (45
   assertions) + true e2e (boot→due→mock model→real mints on disk; ungrounded reply rejected, 0 mints).
 - W0 claims surface checked: byte-identical (surface locks frontend/docs only; no sidecar paths).
+- POLISH PASS (`71d08515`, same branch): progression anchor (directive shows recently COMPLETED
+  quests + "propose the natural NEXT step"; done titles join dedup), interests-histogram grounding,
+  `POST /api/quests/refresh/run` manual force-fire, cold-save guard (no evidence → skip the model
+  call with an honest ledger note; provider/codex-token construction moved after the evidence gate).
+  Suites now 55 pure + 22 e2e (3 boots); both gates re-run green.
 - OPEN: merge to trunk (merge ritual), first real-provider cycle on Andrew's save, frontend surface
-  for the north star (the API already serves it).
+  for the north star + a "refresh quests" button (both APIs already serve them), north-star
+  CONFIRM beat (propose-and-confirm instead of silent adoption — flagged as the right next polish),
+  cold-state → targeted awakening question instead of inference.
 
 ## MERGED 2026-07-12 — PER-RUN PHYSICAL-INPUT ISOLATION (`cf7984ba`)
 
