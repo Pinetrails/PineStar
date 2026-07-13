@@ -161,21 +161,24 @@ const StationBake = (() => {
       const X = x * T, Y = y * T, n = h2(x, y, r.z);
       const sh = d => U.shade(base, d * fd);
       px(X, Y, T, T, base);
-      // per-PLATE tone: every tile of a plate shares one of 5 hard tones (world-anchored),
-      // so the deck reads as engineered multi-tile plates instead of a 1-tile checker.
-      // RESTRAINT PASS: the floor is a BACKGROUND surface — structure stays, every contrast
-      // sits low enough that agents/props pop over it instead of competing with it.
-      const pn = h2(Math.floor(x / PW), Math.floor(y / PH), r.z + ':pl');
-      const checker = mat === 'tile' ? ((Math.floor(x / PW) + Math.floor(y / PH)) % 2 ? 0.022 : -0.016) : 0;
-      px(X, Y, T, T, sh(((pn % 5) - 2) * 0.014 + checker));
-      // brushed grain: sparse faint hairlines — a third of tiles, not every tile
-      if (mat === 'panel' && n % 3 === 0) { px(X, Y + 4, T, 1, sh(0.025)); px(X, Y + 9, T, 1, sh(-0.03)); }
-      else if (mat !== 'tile' && mat !== 'panel' && n % 3 === 0) { px(X, Y + 3 + (n % 4), T, 1, sh(0.025)); px(X, Y + 7 + (n % 4), T, 1, sh(-0.03)); }
-      // plate seams on the plate grid: a quiet dark cut, catch-light only on room trim
-      if (x % PW === 0) px(X, Y, 1, T, sh(-0.26));
-      if (y % PH === 0) px(X, Y, T, 1, sh(-0.26));
+      // V3 SLAB TILES — the tile texture itself is dimensional now, not a flat fill with
+      // lines drawn on it: each plate renders as a slab — dark GROUT at the plate boundary,
+      // a lit BEVEL along the slab's top/left, a shaded bevel along its bottom/right, and a
+      // 2-step body shade down the slab (upper course a hair lighter). The dimension comes
+      // from edge placement, not contrast, so the deck stays a quiet background surface.
+      const pxc = Math.floor(x / PW), pyc = Math.floor(y / PH);
+      const pn = h2(pxc, pyc, r.z + ':pl');
+      const lx = x % PW, ly = y % PH;
+      const checker = mat === 'tile' ? ((pxc + pyc) % 2 ? 0.022 : -0.016) : 0;
+      const body = ((pn % 5) - 2) * 0.014 + checker;
+      const step = PH > 1 ? (ly === 0 ? 0.016 : -0.012) : 0;   // slab body: light upper course → dark lower
+      px(X, Y, T, T, sh(body + step));
+      if (lx === 0) { px(X, Y, 1, T, sh(-0.30)); px(X + 1, Y, 1, T, sh(body + 0.07)); }   // grout + lit west bevel
+      if (ly === 0) { px(X, Y, T, 1, sh(-0.30)); px(X, Y + 1, T, 1, sh(body + 0.07)); }   // grout + lit north bevel
+      if (lx === PW - 1) px(X + T - 1, Y, 1, T, sh(body - 0.14));                          // shaded east bevel
+      if (ly === PH - 1) px(X, Y + T - 1, T, 1, sh(body - 0.14));                          // shaded south bevel
       // material dressing — rivets on alternating plate joints only
-      if ((mat === 'plate' || mat === 'tread') && x % PW === 0 && y % PH === 0 && (Math.floor(x / PW) + Math.floor(y / PH)) % 2 === 0) {
+      if ((mat === 'plate' || mat === 'tread') && lx === 0 && ly === 0 && (pxc + pyc) % 2 === 0) {
         px(X + 2, Y + 2, 2, 2, sh(0.16)); px(X + 3, Y + 3, 1, 1, sh(-0.22));
       }
       if (mat === 'tread') {
@@ -251,7 +254,10 @@ const StationBake = (() => {
       const sh = d => U.shade(base, d * fd);
       px(X, Y, T, T, base);
       px(X, Y, T, T, sh(((n % 4) - 1.5) * 0.013));   // per-tile tread-plate tone (hard, one of 4)
+      // slab tread: seam, lit lip under it, shaded base — each corridor row reads as a step
       px(X, Y, T, 1, sh(-0.34));
+      px(X, Y + 1, T, 1, sh(0.05));
+      px(X, Y + T - 1, T, 1, sh(-0.12));
       if (n % 23 === 5) { px(X + 2, Y + 2, T - 4, T - 4, sh(-0.16)); b.strokeStyle = sh(-0.4); b.lineWidth = 1; b.strokeRect(X + 2.5, Y + 2.5, T - 5, T - 5); }
       // corridor wear ticks (see the room-floor wear block for the idiom)
       if (DEPTH.floorWear > 0.001 && n % 7 === 2) px(X + (n % 6), Y + 2 + (n % 7), 3 + (n % 3), 1, 'rgba(0,0,0,' + (0.16 * DEPTH.floorWear).toFixed(3) + ')');
