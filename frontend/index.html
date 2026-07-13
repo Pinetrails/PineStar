@@ -409,16 +409,16 @@
         <span class="prompt">&gt;</span>
         <textarea id="chat-input" rows="1" maxlength="4000" placeholder="speak to your agent… ( / for commands )" autocomplete="off" aria-label="Message your agent" aria-controls="chat-slash" aria-expanded="false" aria-autocomplete="list"></textarea>
         <!-- SEND: an explicit send affordance beside Enter (Enter sends · Shift+Enter = newline). chat.js wires it to submitComposer(). -->
-        <button id="chat-send" class="chat-send" type="button" title="Enter sends · Shift+Enter = newline" aria-label="Send message"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 13.5V9.2l6-1.2-6-1.2V2.5L14 8z" fill="currentColor"/></svg><span class="cs-label">SEND</span></button>
+        <button id="chat-send" class="chat-send" type="button" title="Enter sends · Shift+Enter = newline" aria-label="Send message"><svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M14.4 1.6 7.4 8.6"/><path d="M14.4 1.6 9.9 14.4 7.4 8.6 1.6 6.1z"/></svg><span class="cs-label">SEND</span></button>
       </div>
       <!-- CHAR COUNTER: dim, appears only as the message nears the 4000-char cap; turns --warn at the edge (chat.js) -->
       <div id="chat-charcount" class="chat-charcount" aria-hidden="true" hidden></div>
       <!-- CONTROL CLUSTER: interrupt · model dock · voice · mic — a second row so they never steal the input's width -->
       <div class="chat-tools">
       <!-- INTERRUPT: cancel just the active stream's run (also bound to Esc while COMMS is focused); hidden unless busy -->
-      <button id="chat-stop" class="chat-stop" type="button" title="Stop the running turn (Esc)" aria-label="Stop the running turn" hidden><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="4" y="4" width="8" height="8" rx="1.5" fill="currentColor"/></svg></button>
+      <button id="chat-stop" class="chat-stop" type="button" title="Stop the running turn (Esc)" aria-label="Stop the running turn" hidden><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.1" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="5.4" y="5.4" width="5.2" height="5.2" rx="1" fill="currentColor"/></svg></button>
       <!-- ATTACH: open the file picker; also served by paste + drag-drop onto the composer (chat.js) -->
-      <button id="chat-attach" class="chat-attach-btn" type="button" title="Attach a photo or file" aria-label="Attach a photo or file"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M11.5 5.2 6.7 10a1.6 1.6 0 0 0 2.3 2.3l4.8-4.8a3 3 0 0 0-4.3-4.3L4.4 8.4a4.4 4.4 0 0 0 6.3 6.3l4.1-4.1" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+      <button id="chat-attach" class="chat-attach-btn" type="button" title="Attach a photo or file" aria-label="Attach a photo or file"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m14.3 7.4-6.1 6.1a4 4 0 0 1-5.7-5.7l5.7-5.7a2.67 2.67 0 1 1 3.8 3.8L6.3 11.6a1.33 1.33 0 0 1-1.9-1.9l5.7-5.6" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
       <button id="model-dock-toggle" class="model-dock-toggle" type="button" title="Model selector" aria-label="Model selector" aria-haspopup="dialog" aria-expanded="false">
         <span class="model-dock-sigil" aria-hidden="true">M</span><span id="model-dock-effort-chip" class="model-dock-effort-chip">MED</span>
       </button>
@@ -435,9 +435,9 @@
           <button id="model-dock-settings" type="button">SETTINGS</button>
         </div>
       </div>
-      <button id="voice-toggle" class="voice-toggle" title="agent voice" aria-label="Agent voice" aria-pressed="true"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 6h2L8 3.2v9.6L4.5 10h-2z" fill="currentColor"/><g fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M10.4 6.3a2.7 2.7 0 0 1 0 3.4"/><path d="M12.1 4.7a5 5 0 0 1 0 6.6"/></g></svg></button>
-      <button id="voice-mode" class="voice-toggle voice-mode" title="voice mode" aria-label="Voice mode (hands-free)" aria-pressed="false"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.6 3.4H13.4V10H7L4 12.6V10H2.6Z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><g fill="currentColor"><circle cx="5.5" cy="6.7" r=".85"/><circle cx="8" cy="6.7" r=".85"/><circle cx="10.5" cy="6.7" r=".85"/></g></svg></button>
-      <button id="chat-mic" class="mic-btn" title="push to talk" aria-label="Push to talk" aria-pressed="false"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5.6" y="1.6" width="4.8" height="8" rx="2.4" fill="currentColor"/><g fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M3.6 7.4a4.4 4.4 0 0 0 8.8 0"/><path d="M8 11.8v2.6"/><path d="M5.5 14.4h5"/></g></svg></button>
+      <button id="voice-toggle" class="voice-toggle" title="agent voice" aria-label="Agent voice" aria-pressed="true"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M7.2 3.6 4.4 5.9H2.2a.5.5 0 0 0-.5.5v3.2a.5.5 0 0 0 .5.5h2.2l2.8 2.3a.5.5 0 0 0 .8-.4V4a.5.5 0 0 0-.8-.4z" fill="currentColor" stroke="currentColor" stroke-width=".8" stroke-linejoin="round"/><g fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M10.5 6.1a3.1 3.1 0 0 1 0 3.8"/><path d="M12.5 4.2a6 6 0 0 1 0 7.6"/></g></svg></button>
+      <button id="voice-mode" class="voice-toggle voice-mode" title="voice mode" aria-label="Voice mode (hands-free)" aria-pressed="false"><svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.6c3.6 0 6.4 2.4 6.4 5.3 0 2.9-2.8 5.2-6.4 5.2-.8 0-1.6-.1-2.3-.3l-3 1.2.9-2.6C2.6 10.4 1.6 9.2 1.6 7.9 1.6 5 4.4 2.6 8 2.6z" stroke-width="1.3"/><g stroke-width="1.2"><path d="M5.6 7.2v1.4"/><path d="M8 6.2v3.4"/><path d="M10.4 7.2v1.4"/></g></svg></button>
+      <button id="chat-mic" class="mic-btn" title="push to talk" aria-label="Push to talk" aria-pressed="false"><svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><rect x="5.9" y="1.6" width="4.2" height="7.4" rx="2.1"/><path d="M12.8 7.2v.8a4.8 4.8 0 0 1-9.6 0v-.8"/><path d="M8 12.8v1.9"/></svg></button>
       </div>
     </div>
   </aside>
