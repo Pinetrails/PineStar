@@ -1,5 +1,7 @@
 # QA STATION — dashboard
 
+**2026-07-12 merge digest:** `claude/starnet-context-window-animation-a98546` → `feat/harness-backend` at `c4ccb2db` (ctx-gauge occupancy fix 99a32aba + W0 claims re-stamp); `test:fast` 316/316 green; verified live in dev seed (real turns fill the gauge, internal runs ignored).
+
 **2026-07-12 merge digest:** `agent/codex-input-isolation` → `feat/harness-backend` at `cf7984ba`;
 `test:fast` 315/315, full `test:http`, and Rust all-target checks are green; the 0.4.2 bundle was
 built, while signing, reinstall, and installed-app proof remain pending.
