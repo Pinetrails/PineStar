@@ -135,7 +135,7 @@ const Chat = (() => {
     }
     if (hasNew) pill.classList.add('hasnew');
     const isNew = pill.classList.contains('hasnew');
-    pill.textContent = isNew ? 'new messages ↓' : '↓ latest';
+    pill.textContent = isNew ? 'new messages' : 'latest';   // the ▾ chevron is drawn by CSS (::after), not a font glyph
     pill.setAttribute('aria-label', isNew ? 'Jump to newest messages' : 'Scroll to latest');
     positionNewPill(pill);
     pill.classList.add('show');

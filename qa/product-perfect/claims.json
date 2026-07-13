@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "589936201807a7d633481bff406ba05e417ffca5",
+    "sourceCommit": "f4031b2d587af366ef3cb33f344917e4404263d6",
     "pathSetSha256": "7eb7a83f508ffd0ef6fd8058ddf15370a953b404d9555462119fb730712a9876",
     "files": [
       {
@@ -63,8 +63,8 @@
       },
       {
         "path": "frontend/app/app.js",
-        "bytes": 245512,
-        "sha256": "8673c1f6f58b611fa89f701818ff1a57c47d7efd64c4134624dcdf30a48d801b"
+        "bytes": 240627,
+        "sha256": "0aac3a4e92320d9432f34b57bee240e2d2529d5af415111be5c2e349688a02d2"
       },
       {
         "path": "frontend/app/armconfirm.js",
@@ -128,8 +128,8 @@
       },
       {
         "path": "frontend/app/chat.js",
-        "bytes": 370591,
-        "sha256": "90ac707efb2c2486d37a0f8ade9d8ad78fbd13e14903a17e4afc2dbbcfd750bb"
+        "bytes": 370466,
+        "sha256": "4a5c049d706e3a9d24635fdbcf3557134451e64c7d1d2718b74448ffa063fe38"
       },
       {
         "path": "frontend/app/chatresize.js",
@@ -268,8 +268,8 @@
       },
       {
         "path": "frontend/app/harness.js",
-        "bytes": 40604,
-        "sha256": "910e8765d4384d63f5490aca9906e38a61c4fef7390b490bd73a37a8b3d92861"
+        "bytes": 40307,
+        "sha256": "29549afad58f5c4459693e9a223460f5ceffc6d4abd72dab25d8807d25a0cbcd"
       },
       {
         "path": "frontend/app/hint.js",
@@ -763,18 +763,18 @@
       },
       {
         "path": "frontend/css/app.css",
-        "bytes": 181643,
-        "sha256": "87693c86f7c127ae899be896ff2d01f474324513df8822237448801949fc5221"
+        "bytes": 187168,
+        "sha256": "59eb5b8ff1d9f40949d5d47bdc516db4a81fee1382cdd93a51c86732f9b18c3c"
       },
       {
         "path": "frontend/css/comms.css",
-        "bytes": 32791,
-        "sha256": "de7aa906f4cc8da84ffacfd71ed92af8411edbe67a01a1cded6ca9ea7fb8cdc9"
+        "bytes": 34934,
+        "sha256": "716e931067fe2ccd87ea24c0d0235141868dcf96c2d1411b4b1ba68f39fee92f"
       },
       {
         "path": "frontend/css/marketplace.css",
-        "bytes": 47678,
-        "sha256": "75991d47ea833ed6bdd0527897b4ad0d3213490c4885843081b3a1b4ebc24055"
+        "bytes": 47876,
+        "sha256": "61af8b9126363ef0d5d484f9e9d9b3c69e36e58081620592bca46edb23496378"
       },
       {
         "path": "frontend/css/motion.css",
@@ -793,8 +793,8 @@
       },
       {
         "path": "frontend/css/style.css",
-        "bytes": 77254,
-        "sha256": "33e94c0d2e5421fa0004b261d33dfdd7902a74a9bf8110debd18e03e6e4ae75d"
+        "bytes": 78023,
+        "sha256": "c24d8135a6f5ae01ff1085da2debcfb5016f9af4f93e0662c3c528e6d4c8ae38"
       },
       {
         "path": "frontend/css/titlebar.css",
