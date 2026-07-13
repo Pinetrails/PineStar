@@ -1,5 +1,7 @@
 # QA STATION — dashboard
 
+**2026-07-12 merge digest:** `claude/ui-polish-premium-styling-a6228e` (round 2) → `feat/harness-backend` at `99cba729` (COMMS agent selector: full name always visible via flex-basis-0 pin readout + molded premium chip); `test:fast` green on trunk tip `38a9292c` (314/314 after postcard/clip lane removed its tests); NOVA name + chip verified live via DOM round-trip.
+
 **2026-07-12 merge digest:** `claude/ui-polish-premium-styling-a6228e` → `feat/harness-backend` at `77feb77b` (premium molded UI register: composer/pill/send/control-cluster + global buttons/inputs/chips/cards, W0 claims re-stamped post-merge); `test:fast` 316/316 green; registers verified live in dev seed via DOM round-trips.
 
 **2026-07-12 merge digest:** `claude/starnet-context-window-animation-a98546` → `feat/harness-backend` at `c4ccb2db` (ctx-gauge occupancy fix 99a32aba + W0 claims re-stamp); `test:fast` 316/316 green; verified live in dev seed (real turns fill the gauge, internal runs ignored).
