@@ -108,6 +108,52 @@ const goal = { text: 'launch the beta', done: 1, total: 4, next: 'wire the signu
   A.eq(F.loadEnvelope('garbage', T0).focus, null, 'a corrupt envelope degrades to no-focus floor');
 })();
 
+// ---- FLAGSHIP CROSS-WIRE: open ledger QUESTS rank as evidence (a fresh explicit quest beats a stale project) ----
+(function questsRank() {
+  const quests = [{ id: 'q:1', title: 'ship the CSV export', contractType: 'artifact', createdAt: T0 - 1 * 3600000 }];   // 1h-old work quest
+  // only a 20d-stale project on the board (no fresh project, no thread, no goal) — the fresh work quest must win.
+  const f = F.resolveFocus({ projects: [{ root: 'C:/repo/old', displayPath: 'C:/repo/old', lastTouchedAt: T0 - 20 * DAY }], threads: [], goal: null, quests }, { now: T0 });
+  A.eq(f.kind, 'quest', 'a fresh work quest outranks a 20d-stale project');
+  A.eq(f.ref, 'q:1', 'the quest ref is the ledger id');
+  A.ok(f.why.length > 0 && /work quest/i.test(f.why.join(' ')), 'the quest focus cites the open work quest');
+})();
+
+// ---- a WORK quest (run/artifact) outranks a weaker prop/fact/attest quest of the same age ----
+(function workQuestBeatsWeakQuest() {
+  const now = T0;
+  const quests = [
+    { id: 'q:work', title: 'build the deploy script', contractType: 'artifact', createdAt: now - 2 * 3600000 },
+    { id: 'q:weak', title: 'confirm the launch date', contractType: 'attest', createdAt: now - 1 * 3600000 }   // fresher but weaker
+  ];
+  const f = F.resolveFocus({ projects: [], threads: [], goal: null, quests }, { now });
+  A.eq(f.ref, 'q:work', 'the work quest outranks the fresher-but-weaker attest quest');
+})();
+
+// ---- CONFIRMED north star is ranked + cited; northStarEvidence gates confirmed/goal/proposal correctly ----
+(function northStarEvidenceGate() {
+  const adopted = { text: 'become a full-time AI-content creator', groundedIn: 'dossier + recent activity', source: 'model', status: 'adopted' };
+  const ev = F.northStarEvidence(adopted, null);
+  A.ok(ev && ev.text, 'a confirmed model-sourced star yields evidence');
+  const f = F.resolveFocus({ projects: [], threads: [], goal: null, northStar: ev }, { now: T0 });
+  A.eq(f.kind, 'northstar', 'the confirmed north star can be the focus when nothing else is on the board');
+  A.ok(/north star/i.test(f.why.join(' ')), 'the north-star focus cites the star');
+  // UNCONFIRMED proposal is ignored (consent law — a guess never steers autonomous work).
+  const proposal = { text: 'pivot to enterprise SaaS', source: 'model', status: 'proposed' };
+  A.eq(F.northStarEvidence(proposal, null), null, 'an unconfirmed proposal yields no evidence');
+})();
+
+// ---- NO DOUBLE-COUNT: a goal-sourced star, or a star equal to the active goal, is suppressed (goal already ranks it) ----
+(function northStarNoDoubleCount() {
+  const goal = { text: 'launch the beta', done: 1, total: 4, next: 'wire the signup' };
+  const goalStar = { text: 'launch the beta', groundedIn: "the Commander's active goal arc", source: 'goal', status: 'adopted' };
+  A.eq(F.northStarEvidence(goalStar, goal), null, 'a goal-sourced star is not re-counted (the goal input covers it)');
+  const echoStar = { text: 'launch the beta', source: 'model', status: 'adopted' };   // model text == goal text
+  A.eq(F.northStarEvidence(echoStar, goal), null, 'a model star echoing the goal text is not double-counted');
+  // and end-to-end: with a goal AND a goal-sourced star, the focus is the goal — exactly one goal-direction candidate.
+  const f = F.resolveFocus({ projects: [], threads: [], goal, northStar: F.northStarEvidence(goalStar, goal) }, { now: T0 });
+  A.eq(f.kind, 'goal', 'the goal wins its own direction; the star did not add a second candidate');
+})();
+
 // ---- focusLine renders a cited, human-legible directive header ----
 (function focusLineCited() {
   const f = F.resolveFocus({ projects: projects(), threads, goal }, { now: T0 });

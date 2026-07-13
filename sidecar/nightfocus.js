@@ -49,6 +49,11 @@
     return days + 'd ago';
   }
 
+  // the focus KINDS this resolver may declare. project/thread/goal are the NS-5b originals; 'quest' (an open
+  // ledger quest) and 'northstar' (the confirmed inferred long-term direction) are the flagship cross-wire (a
+  // night beat can actually ADVANCE a work quest / serve the star). Steering is still project/thread/goal only.
+  const FOCUS_KINDS = ['project', 'thread', 'goal', 'quest', 'northstar'];
+
   // linear recency score in [0,1]: today = 1, decaying to 0 at RECENCY_DECAY_DAYS. Unknown/future ts → 0.
   function recency(ts, now) {
     const t = num(ts), n = num(now);
@@ -73,15 +78,36 @@
     return (num(now) - set) < STEER_STALE_MS;
   }
 
+  /* northStarEvidence — the PURE gate deciding whether the quest engine's north star may steer the night, applying
+     the consent + no-double-count rules so the ambient half never has to. `star` is the ADOPTED-slot north star
+     ({ text, groundedIn, source, status }) — pass the adopted star, NOT effectiveNorthStar (which surfaces an
+     UNCONFIRMED proposal). `goal` is the active commander goal arc (or null). Returns the evidence { text,
+     groundedIn } the resolver may rank, or null when the star must NOT steer:
+       · an UNCONFIRMED proposal (status !== 'adopted') — consent law: a guess never drives autonomous work;
+       · a GOAL-sourced star (source === 'goal') — that IS the commander goal, already the `goal` input (no double count);
+       · an inferred star whose text equals the active goal — the same direction, already ranked as `goal`. */
+  function northStarEvidence(star, goal) {
+    if (!star || typeof star !== 'object') return null;
+    const text = str(star.text).replace(/\s+/g, ' ').trim();
+    if (!text) return null;
+    if (str(star.status) && str(star.status) !== 'adopted') return null;   // unconfirmed proposal — never steers
+    if (star.source === 'goal') return null;                               // the commander goal — the `goal` input covers it
+    const gtext = (goal && goal.text) ? str(goal.text).replace(/\s+/g, ' ').trim().toLowerCase() : '';
+    if (gtext && gtext === text.toLowerCase()) return null;                // same direction as the goal — no double count
+    return { text: text.slice(0, 140), groundedIn: str(star.groundedIn) };
+  }
+
   /* resolveFocus — THE pure ranker. Given already-fetched evidence + `now`, returns ONE focus or null.
        inputs: {
-         projects: [{ root, displayPath, lastTouchedAt, isGitRepo, mentionCount? }],   // blessed roots + light meta
-         threads:  [{ id, title, spec, updatedAt }],                                   // open threads (recency-ranked)
-         goal:     { text, done, total, next } | null,                                 // the active goal arc
-         steer:    { ref, kind, setAt } | null                                         // a durable user directive
+         projects:  [{ root, displayPath, lastTouchedAt, isGitRepo, mentionCount? }],  // blessed roots + light meta
+         threads:   [{ id, title, spec, updatedAt }],                                  // open threads (recency-ranked)
+         goal:      { text, done, total, next } | null,                                // the active goal arc
+         quests:    [{ id, title, contractType, createdAt }],                          // OPEN ledger quests (flagship cross-wire)
+         northStar: { text, groundedIn } | null,                                       // CONFIRMED inferred star (via northStarEvidence)
+         steer:     { ref, kind, setAt } | null                                        // a durable user directive
        }
-     A fresh steer short-circuits to itself (source:'steer'). Otherwise every project/thread/goal is scored by
-     recency and the best wins (ties break project > thread > goal). A returned focus ALWAYS has a non-empty `why`. */
+     A fresh steer short-circuits to itself (source:'steer'). Otherwise every candidate is scored by recency and the
+     best wins (ties break project > quest/thread > goal > northstar). A returned focus ALWAYS has a non-empty `why`. */
   function resolveFocus(inputs, opts) {
     inputs = inputs || {}; opts = opts || {};
     const now = num(opts.now);
@@ -130,6 +156,24 @@
       cands.push({ order: 1, score, focus: { kind: 'thread', ref: str(t.id), label: title, why, source: 'evidence', threadId: str(t.id), resolvedAt: now } });
     }
 
+    // open ledger QUESTS — the Commander's committed next steps (flagship cross-wire). A WORK quest (run/artifact
+    // contract) is the strongest kind here: a night beat can actually ADVANCE it (do the run / build the artifact).
+    // A prop/fact/attest quest is weaker evidence — its completion needs a capability/fact/Commander-verdict a beat
+    // can't force. Scored in the THREAD neighbourhood (comparable evidence) so a fresh explicit quest beats a stale
+    // project but a work quest can be chased over a bare thread.
+    for (const q of (Array.isArray(inputs.quests) ? inputs.quests : [])) {
+      if (!q || !str(q.title)) continue;
+      const r = recency(q.createdAt, now);
+      const tag = dayTag(q.createdAt, now);
+      const title = str(q.title).replace(/\s+/g, ' ').trim().slice(0, 120);
+      const ctype = str(q.contractType).toLowerCase();
+      const isWork = (ctype === 'run' || ctype === 'artifact');
+      const why = [(isWork ? 'an open work quest a beat can advance: "' : 'an open quest on your slate: "') + title + '"'
+        + (ctype ? ' [' + ctype + ']' : '') + (tag ? ' (' + tag + ')' : '')];
+      const score = isWork ? (0.85 * r + 0.28) : (0.7 * r + 0.15);
+      cands.push({ order: 1, score, focus: { kind: 'quest', ref: str(q.id) || ('quest:' + title), label: title, why, source: 'evidence', resolvedAt: now } });
+    }
+
     const g = inputs.goal;
     if (g && str(g.text)) {
       const text = str(g.text).replace(/\s+/g, ' ').trim().slice(0, 140);
@@ -137,6 +181,18 @@
       if (str(g.next)) why.push('next step: ' + str(g.next).replace(/\s+/g, ' ').trim().slice(0, 100));
       const score = 0.55 + (str(g.next) ? 0.1 : 0);
       cands.push({ order: 2, score, focus: { kind: 'goal', ref: 'goal', label: text, why, source: 'evidence', resolvedAt: now } });
+    }
+
+    // the CONFIRMED inferred NORTH STAR — the station's long-term direction, evidence-cited. Only a confirmed
+    // (adopted, model-sourced, not-already-the-goal) star reaches here: the ambient half runs northStarEvidence()
+    // first, so an unconfirmed proposal (consent law) or a goal-sourced star (no double count) is already null.
+    const ns = inputs.northStar;
+    if (ns && str(ns.text)) {
+      const text = str(ns.text).replace(/\s+/g, ' ').trim().slice(0, 140);
+      const gi = str(ns.groundedIn).replace(/\s+/g, ' ').trim().slice(0, 100);
+      const why = ['your confirmed north star: "' + text + '"' + (gi ? ' — ' + gi : '')];
+      const score = 0.55;
+      cands.push({ order: 3, score, focus: { kind: 'northstar', ref: 'northstar', label: text, why, source: 'evidence', resolvedAt: now } });
     }
 
     if (!cands.length) return null;
@@ -156,7 +212,7 @@
 
   function normFocus(f) {
     if (!f || typeof f !== 'object' || !str(f.ref)) return null;
-    const kind = (f.kind === 'thread' || f.kind === 'goal') ? f.kind : 'project';
+    const kind = FOCUS_KINDS.indexOf(f.kind) >= 0 ? f.kind : 'project';
     return {
       kind, ref: str(f.ref), label: str(f.label || f.ref),
       why: Array.isArray(f.why) ? f.why.map(str).filter(Boolean).slice(0, 6) : [],
@@ -223,8 +279,8 @@
   }
 
   return {
-    resolveFocus, focusLine, ensureFocus, steerActive, applySteer, clearSteer,
+    resolveFocus, focusLine, ensureFocus, steerActive, applySteer, clearSteer, northStarEvidence,
     fresh, normalize, loadEnvelope, toEnvelope, dayOf, recency, dayTag, baseName,
-    STATE_VERSION, STEER_STALE_MS, DAY_MS, PROJECT_WINDOW_DAYS
+    STATE_VERSION, STEER_STALE_MS, DAY_MS, PROJECT_WINDOW_DAYS, FOCUS_KINDS
   };
 });

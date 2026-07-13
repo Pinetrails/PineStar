@@ -2658,7 +2658,22 @@ function nightFocusInputs() {
   try { threads = threadsStore.list({ state: 'open', limit: 8 }).map(t => ({ id: t.id, title: t.title, spec: t.spec, updatedAt: t.updatedAt })); } catch (_) { threads = []; }
   let goal = null;
   try { goal = commanderGoals.get() || null; } catch (_) { goal = null; }
-  return { projects, threads, goal, now };
+  // FLAGSHIP CROSS-WIRE: the Commander's open ledger quests + the quest engine's CONFIRMED north star are evidence
+  // the resolver ranks alongside projects/threads/goal, so a night beat serves the direction the user is actually
+  // chasing instead of a project the quests already superseded. Bounded + fail-open like every field above.
+  let quests = [];
+  try {
+    quests = (questStore.list() || [])
+      .filter(q => q && q.status === 'open')
+      .map(q => ({ id: q.id, title: q.title, contractType: (q.contract && q.contract.type) || '', createdAt: q.createdAt || 0 }))
+      .slice(0, 12);
+  } catch (_) { quests = []; }
+  // northStarEvidence is the PURE consent + no-double-count gate: it returns null for an UNCONFIRMED proposal
+  // (never steer autonomous work) and for a goal-sourced/goal-matching star (the `goal` input already ranks it).
+  // Pass the ADOPTED slot, NOT effectiveNorthStar (which would surface the pending proposal).
+  let northStar = null;
+  try { northStar = nightfocus.northStarEvidence(QuestRefresh.normalize(questRefreshState).northStar, goal); } catch (_) { northStar = null; }
+  return { projects, threads, goal, quests, northStar, now };
 }
 
 // ensure a day-keyed focus for the current night; persist iff it changed; return the focus (or null → improv). When
