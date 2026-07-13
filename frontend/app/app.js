@@ -2415,7 +2415,9 @@ const App = (() => {
     // NS-5c SESSIONS ↔ PROJECTS toggle + ADD-a-project wiring
     { const ts = el('ws-tab-sessions'); if (ts) ts.onclick = () => setRailView('sessions'); }
     { const tp = el('ws-tab-projects'); if (tp) tp.onclick = () => setRailView('projects'); }
-    { const ap = el('ws-addproject'); if (ap) ap.onclick = beginAddProject; }
+    // the projects head action is contextual (see updateProjHeadAction): overview = bless a folder,
+    // entered project = start a session anchored to it.
+    { const ap = el('ws-addproject'); if (ap) ap.onclick = () => { if (projScope) newSessionInProject(projScope); else beginAddProject(); }; }
     if (opts.awaitingPurpose && typeof Onboarding !== 'undefined') {
       // THE AWAKENING — a guided first meeting that authors identity/purpose/context/operating-manual.md
       // while the room rises from dark to first light. Replaces the old single "what is my purpose?" beat.
@@ -2564,6 +2566,7 @@ const App = (() => {
     SFX.click();
     focusAgent(ws.agentId || 'agent');   // the focused agent follows the stream's binding (multi-agent COMMS)
     Chat.load(ws); refreshUsage(); renderRail(); persist();
+    if (railView === 'projects') renderProjects();   // keep the entered-project selection truthful
   }
   function openWorkstream(id) { switchWorkstream(id); }
   function newWorkstream() {
@@ -2748,14 +2751,34 @@ const App = (() => {
   }
   function toggleArchived() { railShowArchived = !railShowArchived; SFX.click(); renderRail(); }
 
-  /* ---------- PROJECTS rail view (NS-5c): SESSIONS ↔ PROJECTS toggle ----------
-     The same rail, a second face. PROJECTS lists GET /api/projects — every folder blessed as a trusted project
-     root (NS-5 known-projects store, joined against the live path:<root> grant). Rows reuse the .ws-row vocabulary
-     verbatim (dot = git badge, title = basename, meta = last-touched). A blessed:false row renders as REVOKED, never
-     hidden (truthful telemetry: the list mirrors exactly what the grant layer believes). ADD blesses a typed/-picked
-     folder through the SAME machinery as conversational trust (POST /api/projects/bless); a row click jumps into a
-     session anchored to that root; Remove revokes the path grant via the existing /api/permissions/revoke surface. */
+  /* ---------- PROJECTS rail view (NS-5c → Hermes-parity drill-in): SESSIONS ↔ PROJECTS toggle ----------
+     The same rail, a second face — and its OWN organizational space, never a launcher that bounces you back to
+     SESSIONS. Two levels, mirroring Hermes' project scope:
+       · OVERVIEW (projScope null): every blessed project root (GET /api/projects joined against the live grant),
+         each with a session-count chip + compact preview sub-rows. Clicking a project ENTERS it — no session
+         opens, no tab flips.
+       · ENTERED (projScope = root): a breadcrumb back-row, then the project's sessions as FULL rail rows (same
+         dot/busy/unread vocabulary as the sessions rail — they are real workstreams). + NEW starts a session
+         ANCHORED to this project (projectRoot rides every run as the working folder); opening a session keeps
+         the rail right here. A blessed:false row still renders as REVOKED, never hidden (truthful telemetry).
+     ADD (overview) blesses a typed/picked folder through the SAME machinery as conversational trust. */
   let railView = 'sessions';   // 'sessions' | 'projects'
+  // the entered-project scope (null = overview). Persisted like Hermes' projectScope, so a reload lands back
+  // inside the project you were organizing — pure view state, deliberately outside the world save.
+  let projScope = null;
+  try { projScope = localStorage.getItem('starnet.projscope') || null; } catch (_) {}
+  function setProjScope(root) {
+    projScope = root || null;
+    try { if (root) localStorage.setItem('starnet.projscope', root); else localStorage.removeItem('starnet.projscope'); } catch (_) {}
+    updateProjHeadAction();
+  }
+  // the projects-view head action is contextual: overview blesses a folder (+ ADD), an entered project starts
+  // a session in it (+ NEW) — one slot, two labelled truths, same as Hermes' scoped "+".
+  function updateProjHeadAction() {
+    const b = el('ws-addproject'); if (!b) return;
+    if (projScope) { b.textContent = '+ NEW'; b.title = 'start a new session in this project'; }
+    else { b.textContent = '+ ADD'; b.title = 'bless a folder as a trusted project'; }
+  }
   function setRailView(view) {
     view = (view === 'projects') ? 'projects' : 'sessions';
     if (view === railView) return;
@@ -2771,9 +2794,11 @@ const App = (() => {
       if (ts) { ts.classList.toggle('on', view === 'sessions'); ts.setAttribute('aria-selected', view === 'sessions'); }
       if (tp) { tp.classList.toggle('on', view === 'projects'); tp.setAttribute('aria-selected', view === 'projects'); } }
     closeProjectMenu();
-    if (view === 'projects') renderProjects();
+    if (view === 'projects') { updateProjHeadAction(); renderProjects(); }
     else { updateArchivedToggle(); }   // sessions view: ARCHIVED button re-asserts its own "≥1 archived" gate
   }
+  function enterProject(root) { setProjScope(root); SFX.click(); renderProjects(); }
+  function exitProjectScope() { setProjScope(null); SFX.click(); renderProjects(); }
   // the live dot class + git badge for one project row (pure read of the shaped row)
   function projDot(r) { return 'ws-dot ' + (!r.blessed ? 'proj-plain' : (r.isGitRepo ? 'proj-git' : 'proj-plain')); }
   function renderProjects() {
@@ -2784,68 +2809,120 @@ const App = (() => {
       .then(j => {
         if (railView !== 'projects') return;   // toggled away while the fetch was in flight
         const rows = (typeof Projects !== 'undefined') ? Projects.toRows(j && j.projects, Date.now()) : [];
-        if (!rows.length) {
-          ul.innerHTML = '<li class="proj-empty">No trusted projects yet. Tell an agent to “work in C:\\path\\to\\project”, or use <b>+ ADD</b> to bless a folder now.</li>';
-          return;
+        if (projScope) {
+          // entered scope: the project may have been forgotten/renamed under us — fall back to the overview
+          // honestly instead of rendering a ghost.
+          const row = rows.filter(r => Projects.sameRoot && Projects.sameRoot(r.root, projScope))[0] || null;
+          if (!row) { setProjScope(null); return renderProjectsOverview(ul, rows); }
+          return renderProjectEntered(ul, row);
         }
-        // sessions attached to each project — the REAL stored w.projectRoot link (stamped by "Work here"),
-        // rendered as indented sub-rows right under their project. A project with none shows none (no fake list).
-        const sessFor = (root) => {
-          try { return (Projects.sessionsFor ? Projects.sessionsFor(root, Workstreams.all(), Date.now()) : []); } catch (_) { return []; }
-        };
-        ul.innerHTML = rows.map(r => {
-          const tip = r.path + (r.blessed ? (r.isGitRepo ? ' · git repo' : '') : ' · REVOKED (trust withdrawn)') + ' — click to work here · right-click for actions';
-          const sess = sessFor(r.root);
-          return '<li class="ws-row proj-row' + (r.blessed ? '' : ' proj-revoked') + '" data-root="' + U.esc(r.root) + '" title="' + U.esc(tip) + '">' +
-            '<span class="' + projDot(r) + '"></span>' +
-            '<span class="ws-title">' + U.esc(r.name) + '</span>' +
-            (r.blessed && r.isGitRepo ? '<span class="proj-git-badge" aria-hidden="true">git</span>' : '') +
-            (sess.length ? '<span class="proj-sess-n" title="' + sess.length + ' session' + (sess.length === 1 ? '' : 's') + ' in this project">' + sess.length + '</span>' : '') +
-            (r.blessed ? '<span class="ws-meta">' + U.esc(r.rel) + '</span>' : '<span class="proj-tag">REVOKED</span>') +
-            '<button class="ws-kebab" tabindex="-1" aria-label="project actions" title="project actions">⋯</button>' +
-            '</li>' +
-            sess.map(s =>
-              '<li class="proj-sess" data-ws="' + U.esc(s.id) + '" title="open this session">' +
-                '<span class="proj-sess-glyph" aria-hidden="true">└</span>' +
-                '<span class="ws-title">' + U.esc(s.title) + '</span>' +
-                '<span class="ws-meta">' + U.esc(s.rel) + '</span>' +
-              '</li>').join('');
-        }).join('');
-        ul.querySelectorAll('.proj-sess').forEach(li => {
-          li.onclick = (e) => { e.stopPropagation(); const id = li.dataset.ws; setRailView('sessions'); if (id !== Workstreams.activeId()) switchWorkstream(id); SFX.open(); };
-        });
-        ul.querySelectorAll('.proj-row').forEach(li => {
-          const root = li.dataset.root;
-          const row = rows.find(x => x.root === root);
-          li.onclick = () => jumpIntoProject(row);
-          li.oncontextmenu = (e) => { e.preventDefault(); openProjectMenu(row, e.clientX, e.clientY); };
-          const keb = li.querySelector('.ws-kebab');
-          if (keb) keb.onclick = (e) => { e.preventDefault(); e.stopPropagation(); const b = keb.getBoundingClientRect(); openProjectMenu(row, b.left, b.bottom + 2); };
-        });
+        renderProjectsOverview(ul, rows);
       })
       .catch(() => { if (railView === 'projects') ul.innerHTML = '<li class="proj-empty">Could not load projects.</li>'; });
   }
-  // JUMP IN: open/create a session anchored to the project root and prime the composer with "work in <path>".
-  // Smallest honest mechanism (the path is already blessed → the agent's fs tools reach it with no re-prompt);
-  // no new context channel — it reuses Chat.prefill exactly like a slash-recipe seeds the composer.
-  function jumpIntoProject(r) {
-    if (!r) return;
-    setRailView('sessions');
-    let ws = null;
-    // prefer the REAL stored anchor (w.projectRoot); fall back to the legacy title match once, then stamp it
-    // so the session shows up under its project from here on.
-    try {
-      const open = (Workstreams.list() || []).filter(w => !w.archived);
-      const same = (a, b) => (typeof Projects !== 'undefined' && Projects.sameRoot) ? Projects.sameRoot(a, b) : a === b;
-      ws = open.filter(w => same(w.projectRoot, r.root))[0] || open.filter(w => !w.projectRoot && (w.title || '') === r.name)[0] || null;
-    } catch (_) {}
-    if (!ws) ws = Workstreams.create(r.name, { activate: false, projectRoot: r.root });
+  // sessions attached to one project — the REAL stored w.projectRoot link, never a title guess.
+  function projSessionsOf(root) {
+    try { return (Projects.sessionsFor ? Projects.sessionsFor(root, Workstreams.all(), Date.now()) : []); } catch (_) { return []; }
+  }
+  /* OVERVIEW: one row per blessed root (+ count chip + compact preview sub-rows). Click = ENTER the project. */
+  function renderProjectsOverview(ul, rows) {
+    if (!rows.length) {
+      ul.innerHTML = '<li class="proj-empty">No trusted projects yet. Use <b>+ ADD</b> to pick a folder, or tell an agent to “work in C:\\path\\to\\project”.</li>';
+      return;
+    }
+    const activeId = Workstreams.activeId();
+    ul.innerHTML = rows.map(r => {
+      const tip = r.path + (r.blessed ? (r.isGitRepo ? ' · git repo' : '') : ' · REVOKED (trust withdrawn)') + ' — click to open this project · right-click for actions';
+      const sess = projSessionsOf(r.root);
+      return '<li class="ws-row proj-row' + (r.blessed ? '' : ' proj-revoked') + '" data-root="' + U.esc(r.root) + '" title="' + U.esc(tip) + '">' +
+        '<span class="' + projDot(r) + '"></span>' +
+        '<span class="ws-title">' + U.esc(r.name) + '</span>' +
+        (r.blessed && r.isGitRepo ? '<span class="proj-git-badge" aria-hidden="true">git</span>' : '') +
+        (sess.length ? '<span class="proj-sess-n" title="' + sess.length + ' session' + (sess.length === 1 ? '' : 's') + ' in this project">' + sess.length + '</span>' : '') +
+        (r.blessed ? '<span class="ws-meta">' + U.esc(r.rel) + '</span>' : '<span class="proj-tag">REVOKED</span>') +
+        '<button class="ws-kebab" tabindex="-1" aria-label="project actions" title="project actions">⋯</button>' +
+        '</li>' +
+        sess.slice(0, 3).map(s =>
+          '<li class="proj-sess' + (s.id === activeId ? ' on' : '') + '" data-ws="' + U.esc(s.id) + '" data-root="' + U.esc(r.root) + '" title="open this session">' +
+            '<span class="proj-sess-glyph" aria-hidden="true">└</span>' +
+            '<span class="ws-title">' + U.esc(s.title) + '</span>' +
+            '<span class="ws-meta">' + U.esc(s.rel) + '</span>' +
+          '</li>').join('');
+    }).join('');
+    // preview sub-row click: open the session AND follow it into its project scope — the rail stays in PROJECTS.
+    ul.querySelectorAll('.proj-sess').forEach(li => {
+      li.onclick = (e) => {
+        e.stopPropagation();
+        const id = li.dataset.ws;
+        if (id !== Workstreams.activeId()) switchWorkstream(id);
+        SFX.open();
+        enterProject(li.dataset.root);
+      };
+    });
+    ul.querySelectorAll('.proj-row').forEach(li => {
+      const row = rows.find(x => x.root === li.dataset.root);
+      li.onclick = () => enterProject(row.root);
+      li.oncontextmenu = (e) => { e.preventDefault(); openProjectMenu(row, e.clientX, e.clientY); };
+      const keb = li.querySelector('.ws-kebab');
+      if (keb) keb.onclick = (e) => { e.preventDefault(); e.stopPropagation(); const b = keb.getBoundingClientRect(); openProjectMenu(row, b.left, b.bottom + 2); };
+    });
+  }
+  /* ENTERED: breadcrumb back-row + project header + this project's sessions as FULL rail rows (they are real
+     workstreams — dot/busy/attn/unread reuse the sessions rail's own state readers, truthful by construction).
+     Opening a session keeps the rail here; + NEW (head action) starts a session anchored to this folder. */
+  function renderProjectEntered(ul, row) {
+    const activeId = Workstreams.activeId();
+    const sess = projSessionsOf(row.root);
+    const byId = {}; try { for (const w of Workstreams.all()) byId[w.id] = w; } catch (_) {}
+    let html =
+      '<li class="proj-crumb"><button class="proj-back" title="back to all projects">◂ PROJECTS</button></li>' +
+      '<li class="ws-row proj-row proj-head' + (row.blessed ? '' : ' proj-revoked') + '" data-root="' + U.esc(row.root) + '" title="' + U.esc(row.path) + '">' +
+        '<span class="' + projDot(row) + '"></span>' +
+        '<span class="ws-title">' + U.esc(row.name) + '</span>' +
+        (row.blessed && row.isGitRepo ? '<span class="proj-git-badge" aria-hidden="true">git</span>' : '') +
+        (row.blessed ? '' : '<span class="proj-tag">REVOKED</span>') +
+        '<button class="ws-kebab" tabindex="-1" aria-label="project actions" title="project actions">⋯</button>' +
+      '</li>';
+    if (!sess.length) {
+      html += '<li class="proj-empty">No sessions in this project yet — <b>+ NEW</b> starts one working in this folder.</li>';
+    } else {
+      html += sess.map(s => {
+        const w = byId[s.id];
+        const st = w ? railRowState(w) : { dot: 'ws-dot', meta: s.rel, busy: false, attn: false };
+        const cls = w ? rowClass(w, st, activeId) : ('ws-row' + (s.id === activeId ? ' sel' : ''));
+        return '<li class="' + cls + ' proj-sess-full" data-ws="' + U.esc(s.id) + '" title="' + U.esc(s.title + ' — open this session') + '">' +
+          '<span class="' + st.dot + '"></span>' +
+          '<span class="ws-title">' + U.esc(s.title) + '</span>' +
+          '<span class="ws-meta">' + U.esc(st.meta || s.rel) + '</span>' +
+          '</li>';
+      }).join('');
+    }
+    ul.innerHTML = html;
+    { const back = ul.querySelector('.proj-back'); if (back) back.onclick = exitProjectScope; }
+    { const head = ul.querySelector('.proj-head');
+      if (head) {
+        head.oncontextmenu = (e) => { e.preventDefault(); openProjectMenu(row, e.clientX, e.clientY); };
+        const keb = head.querySelector('.ws-kebab');
+        if (keb) keb.onclick = (e) => { e.preventDefault(); e.stopPropagation(); const b = keb.getBoundingClientRect(); openProjectMenu(row, b.left, b.bottom + 2); };
+      } }
+    ul.querySelectorAll('.proj-sess-full').forEach(li => {
+      li.onclick = () => {
+        const id = li.dataset.ws;
+        if (id !== Workstreams.activeId()) switchWorkstream(id);
+        SFX.open();
+        renderProjects();   // stay HERE — the rail keeps the project scope, only the selection moves
+      };
+    });
+  }
+  // + NEW inside an entered project: a fresh untitled session ANCHORED to the project (projectRoot rides every
+  // run as the working folder; the title auto-mints from the first message, same as the sessions rail's + NEW).
+  function newSessionInProject(root) {
+    if (!root) return;
+    const ws = Workstreams.create(null, { activate: false, projectRoot: root });
     if (!ws) return;
-    if (!ws.projectRoot && Workstreams.setProjectRoot) Workstreams.setProjectRoot(ws.id, r.root);
-    if (ws.id !== Workstreams.activeId()) switchWorkstream(ws.id);
-    else { focusAgent(ws.agentId || 'agent'); Chat.load(ws); refreshUsage(); }
-    if (typeof Chat !== 'undefined' && Chat.prefill) Chat.prefill('work in ' + r.path + ' — ');
+    switchWorkstream(ws.id);
     SFX.open();
+    renderProjects();   // the new row appears under its project; the rail stays in the entered scope
   }
   // the project row actions menu (reuses the .ws-menu phosphor chrome): Jump in · Remove (revoke trust, arm/confirm).
   let projMenuEl = null;
@@ -2868,7 +2945,10 @@ const App = (() => {
       '<button class="ws-menu-item' + (cls ? ' ' + cls : '') + '" role="menuitem" data-act="' + act + '">' +
       '<span class="ws-menu-glyph" aria-hidden="true">' + glyph + '</span>' + U.esc(label) + '</button>';
     let html = '';
-    if (r.blessed) html += item('open', 'Work here', '▸');
+    if (r.blessed) {
+      if (!projScope || !(Projects.sameRoot && Projects.sameRoot(r.root, projScope))) html += item('open', 'Open project', '▸');
+      html += item('newsess', 'New session here', '+');
+    }
     html += (r.blessed ? '<div class="ws-menu-sep"></div>' : '') + item('remove', r.blessed ? 'Remove (revoke trust)' : 'Forget (already revoked)', '✕', 'danger');
     menu.innerHTML = html;
     document.body.appendChild(menu);
@@ -2888,8 +2968,10 @@ const App = (() => {
           SFX.bad();
           setTimeout(() => { if (btn.isConnected) { delete btn.dataset.armed; btn.classList.remove('armed'); btn.innerHTML = '<span class="ws-menu-glyph" aria-hidden="true">✕</span>' + (r.blessed ? 'Remove (revoke trust)' : 'Forget (already revoked)'); } }, 4000);
         });
+      } else if (act === 'newsess') {
+        btn.addEventListener('click', () => { closeProjectMenu(); setProjScope(r.root); newSessionInProject(r.root); });
       } else {
-        btn.addEventListener('click', () => { closeProjectMenu(); jumpIntoProject(r); });
+        btn.addEventListener('click', () => { closeProjectMenu(); enterProject(r.root); });
       }
     });
     document.addEventListener('pointerdown', onProjMenuOutside, true);

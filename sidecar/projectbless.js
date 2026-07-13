@@ -83,5 +83,17 @@
     return { blessPath };
   }
 
-  return { makeProjectBless };
+  // The PROJECT-SCOPED SESSION context line (Hermes-parity working folder). A session anchored to a project
+  // sends its root with each /api/run; this composes the ONE line that rides the system prompt — and ONLY when
+  // the caller proved the root is still a standing blessed grant (truthful telemetry: injecting a folder claim
+  // for an un-blessed root would assert access the harness can't prove, so `blessed:false` returns '').
+  // Pure + bounded; the root is display-trusted (it came from the grant store, not the user message).
+  function projectScopeLine(root, blessed) {
+    const r = String(root == null ? '' : root).trim();
+    if (!r || !blessed) return '';
+    return '\n\nPROJECT FOLDER: this session is anchored to the trusted project folder ' + r.slice(0, 1024) +
+      ' — unless the user names a different location, file work in this conversation happens there.';
+  }
+
+  return { makeProjectBless, projectScopeLine };
 });
