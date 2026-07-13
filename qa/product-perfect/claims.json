@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "aa1eaeb23cd1328a818529ff6864979fede58b98",
+    "sourceCommit": "92c196a2a53bf29e415defc3bdba6bc6d3f72b1f",
     "pathSetSha256": "7eb7a83f508ffd0ef6fd8058ddf15370a953b404d9555462119fb730712a9876",
     "files": [
       {
@@ -63,8 +63,8 @@
       },
       {
         "path": "frontend/app/app.js",
-        "bytes": 237885,
-        "sha256": "249129b23a79953c9aa80776ddb0534acb6a0318c56ee22946c1e1a14bb9d42c"
+        "bytes": 241451,
+        "sha256": "a1a479e8ff857d261f09cba94f112fa7a4f4732345b7b1f58eafadec04305b8c"
       },
       {
         "path": "frontend/app/armconfirm.js",
@@ -128,8 +128,8 @@
       },
       {
         "path": "frontend/app/chat.js",
-        "bytes": 368885,
-        "sha256": "3a34cd1c191979934c6b3b03773bc7386a4318d2f88ebe5a6408d49fb56e5bcc"
+        "bytes": 370327,
+        "sha256": "6fd3fac367523bbc8350275dd1ab2f0864140b62c807ed4e85acef38642c07ac"
       },
       {
         "path": "frontend/app/chatresize.js",
@@ -418,8 +418,8 @@
       },
       {
         "path": "frontend/app/projects.js",
-        "bytes": 3780,
-        "sha256": "9fc037993d42ad857de3378daa76315d5b01621100165c26db6809da816428dc"
+        "bytes": 5632,
+        "sha256": "020cc272aafb603406526a9bea9dd53633aa24dd700d02b20ba267832c5e97bf"
       },
       {
         "path": "frontend/app/propanchor.js",
@@ -733,8 +733,8 @@
       },
       {
         "path": "frontend/app/workstreams.js",
-        "bytes": 17222,
-        "sha256": "df64fb615e5d6326f4ed8025d9832a2b0284b92608f1221f055e6c2b82928f13"
+        "bytes": 18117,
+        "sha256": "813707cb9bd5e9b3ea59612ee6f15856711720e2827ac4eeb58e701124c0c3bd"
       },
       {
         "path": "frontend/app/world.js",
@@ -763,8 +763,8 @@
       },
       {
         "path": "frontend/css/app.css",
-        "bytes": 180108,
-        "sha256": "657d8f7d74066c517daa167ac9f5914215f659699696fbe119f448fb80cbfad0"
+        "bytes": 180919,
+        "sha256": "a1c7c7a25b483e38a1369ac728ad754109dcfc111d08e9a4e3860cdb6a440d45"
       },
       {
         "path": "frontend/css/comms.css",

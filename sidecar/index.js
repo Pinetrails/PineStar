@@ -84,6 +84,7 @@ const { makeGrantManager } = require('./permgrants.js');
 const { makeProjectsStore } = require('./projects-store.js');   // NS-5: known-projects (blessed roots) durable store
 const { makePathTrust } = require('./pathtrust.js');            // NS-5: conversational path-trust guard
 const { makeProjectBless } = require('./projectbless.js');      // NS-5c: ADD-a-project bless core (second doorway, same grant machinery)
+const { makeFolderPick } = require('./folderpick.js');          // Projects rail "browse": native OS folder chooser (convenience only — bless stays the consent)
 const { makeTelegramAdapter } = require('./channels/telegram.js');
 const { makeChannelStore } = require('./channels/store.js');
 const { makeChannelHub } = require('./channels/hub.js');
@@ -1846,6 +1847,11 @@ const projectBless = makeProjectBless({
   isGitRepoOf: projectIsGitRepo,
   now: () => Date.now()
 });
+
+// The Projects rail's "browse" helper — pops the OS folder chooser on THIS machine (local-first: the sidecar
+// runs where the user sits). Grants nothing; the picked path still goes through projectBless. Single-flight,
+// interactive-only, honest 'unavailable' on platforms with no picker (headless server, linux without zenity).
+const folderPick = makeFolderPick({ platform: process.platform, spawn: childSpawn });
 
 // NS-5b: the bounded PROJECT SNAPSHOT scanner — reads a blessed project root (git status/log/diff + TODO grep) so a
 // project-focus night-shift beat proposes against the REAL repo state, not a guess. `isBlessed` consults the SAME
@@ -3911,6 +3917,7 @@ function dispatchRoute(req, res) {
   if (req.method === 'POST' && req.url === '/api/permissions/revoke') return handlePermissionsRevoke(req, res);
   if (req.method === 'GET' && req.url === '/api/projects') return handleProjectsList(req, res);   // NS-5: the known blessed-project roots (autonomy surface)
   if (req.method === 'POST' && req.url === '/api/projects/bless') return handleProjectBless(req, res);   // NS-5c: ADD a project (interactive-only, blesses through the same path-grant machinery)
+  if (req.method === 'POST' && req.url === '/api/projects/pickfolder') return handleProjectPickFolder(req, res);   // Projects rail "browse": native OS folder chooser (grants nothing)
   if (req.method === 'POST' && req.url === '/api/autonomy/write') return handleAutonomyWrite(req, res);
   // NS-1: the SERVER copy of the dial + a read-only beliefs snapshot (the driver reads ONLY this); the throttled
   // activity beacon (away detection); and the truthful night-shift status telemetry.
@@ -7220,6 +7227,18 @@ async function handleProjectBless(req, res) {
   let r; try { r = await projectBless.blessPath({ path: body && body.path, surface: 'interactive' }); }
   catch (e) { return sendJson(400, { ok: false, reason: 'bless failed: ' + (e && e.message || e) }); }
   sendJson(r && r.ok ? 200 : 400, r || { ok: false, reason: 'bless failed' });
+}
+
+// POST /api/projects/pickfolder — the Projects rail's "browse" button. Opens the native OS folder chooser on
+// this machine (local-first: the sidecar IS the user's machine) and returns { ok, path } / { ok, cancelled } /
+// { ok:false, reason }. GRANTS NOTHING — the picked path goes back to the UI, and only the user's explicit Add
+// click reaches /api/projects/bless (the consent stays where it was). Interactive-only + single-flight inside
+// the folderpick core; token-gated like every /api route. The response may take minutes (a human is browsing).
+async function handleProjectPickFolder(req, res) {
+  const sendJson = (code, obj) => { if (res.headersSent) return; res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let r; try { r = await folderPick.pick({ surface: 'interactive' }); }
+  catch (e) { return sendJson(400, { ok: false, reason: 'folder picker failed: ' + (e && e.message || e) }); }
+  sendJson(r && r.ok ? 200 : 400, r || { ok: false, reason: 'folder picker failed' });
 }
 
 // POST /api/autonomy/write { agentId?, path, content } — autonomy Stage B / B2. Deterministically write a PRE-VETTED

@@ -61,6 +61,11 @@
       kind: (opts.kind === 'task' || opts.kind === 'chat')
         ? opts.kind
         : ((lane === 'todo' || lane === 'shipped') ? 'task' : 'chat'),
+      // the blessed project root this session works in (set by the Projects rail's "Work here" jump, or
+      // setProjectRoot when a session joins a project later). null = not anchored to a project. Additive:
+      // records saved before this field existed simply read null. The PROJECTS rail uses it to list the
+      // sessions attached to each project — a REAL stored link, never a guessed title match.
+      projectRoot: opts.projectRoot != null ? String(opts.projectRoot) : null,
       history: Array.isArray(opts.history) ? opts.history.slice() : [],
       runIds: Array.isArray(opts.runIds) ? opts.runIds.slice() : [],
       deliverables: Array.isArray(opts.deliverables) ? opts.deliverables.slice() : [],
@@ -140,7 +145,7 @@
     opts = opts || {};
     // create() always mints a 'todo' record, so make()'s lane-inference would read it as a task — pass an
     // EXPLICIT kind so a freshly-created stream is 'chat' UNLESS the caller is a board directive (kind:'task').
-    const w = make({ title: title || null, lane: 'todo', agentId: opts.agentId, kind: opts.kind === 'task' ? 'task' : 'chat' });   // summon binds a stream to its NEW agent
+    const w = make({ title: title || null, lane: 'todo', agentId: opts.agentId, kind: opts.kind === 'task' ? 'task' : 'chat', projectRoot: opts.projectRoot });   // summon binds a stream to its NEW agent
     ws.push(w);
     if (opts.activate !== false) activeId = w.id;   // board "add" passes {activate:false} so it won't hijack the active chat
     return w;
@@ -169,6 +174,9 @@
     w.agentId = agentId; return true;
   }
   function setLane(id, lane) { const w = find(id); if (!w || LANES.indexOf(lane) < 0) return false; w.lane = lane; return true; }
+  // anchor (or re-anchor) a session to a blessed project root — the Projects rail's "Work here" stamps the
+  // session it jumps into so the project row can truthfully list its sessions. null/'' clears the anchor.
+  function setProjectRoot(id, root) { const w = find(id); if (!w) return false; w.projectRoot = root ? String(root) : null; return true; }
   function pin(id, val) { const w = find(id); if (!w) return false; w.pinned = val !== false; return true; }
   function touch(id) { const w = find(id); if (w) { w.lastActiveAt = now(); if (id === activeId) w.lastReadAt = w.lastActiveAt; } return !!w; }
 
@@ -306,7 +314,7 @@
   return {
     init, reset, serialize, all, list, search,
     create, adopt, get, active, activeId: getActiveId, generalId: getGeneralId,
-    switch: switchTo, rename, setAgent, setLane, pin, archive, del, removeByAgent, touch, markRead, unread: isUnread,
+    switch: switchTo, rename, setAgent, setLane, setProjectRoot, pin, archive, del, removeByAgent, touch, markRead, unread: isUnread,
     autoTitle, retitle, deriveTitle,
     appendRun, recordDeliverable, addCost, costOf,
     migrateV1, importTasks,

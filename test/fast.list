@@ -215,6 +215,7 @@ test/autonotify.test.js
 test/permgrants.test.js
 test/projects-store.test.js
 test/projectbless.test.js
+test/folderpick.test.js
 test/pathtrust.test.js
 test/nightfocus.test.js
 test/nightpatch.test.js

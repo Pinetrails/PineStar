@@ -1577,6 +1577,14 @@ const Chat = (() => {
       // surface the decision on the bus (schema: permission.response) so listeners — e.g. the first-run tutorial —
       // can tell an approve from a deny and narrate the consent loop honestly. Additive; the run resumes via Harness.consent.
       try { if (typeof U !== 'undefined' && U.bus) U.bus.emit('permission.response', { promptId: p.promptId, decision: decision }); } catch (_) {}
+      // NS conversational anchor: "Always" on a path.trust card IS the project bless (a standing path grant +
+      // known-projects row land on the sidecar). Stamp the origin session's projectRoot with the SAME proposed
+      // root so the PROJECTS rail lists this session under its project — the identical anchor "Work here" stamps.
+      // Only "Always" (once/full grant nothing standing, so there is no project row to attach to), and never
+      // overwrite an anchor the session already has.
+      if (p.tool === 'path.trust' && decision === 'always' && ws && typeof Workstreams !== 'undefined' && Workstreams.setProjectRoot) {
+        try { if (p.argsSummary && !(Workstreams.get(ws.id) || {}).projectRoot) Workstreams.setProjectRoot(ws.id, p.argsSummary); } catch (_) {}
+      }
       if (ws && typeof Channels !== 'undefined') Channels.clearPending(ws.id, Date.now());   // closes the paused span — approval wait never counts as run time
       if (isActiveWs(ws)) renderPresence();   // drop the paused styling the instant the run resumes
       btns.remove();
@@ -2133,17 +2141,25 @@ const Chat = (() => {
       }
       path.addEventListener('input', () => { if (validateTimer) clearTimeout(validateTimer); validateTimer = setTimeout(validatePath, 400); });
 
+      // 📁 browse — the REAL OS folder chooser: Tauri command first if the shell ships one, else the sidecar's
+      // native dialog (POST /api/projects/pickfolder — local-first, works in the browser too). Cancel/unavailable
+      // just falls back to the typed path; picking fills the input only (Keep stays the consent).
       const core = tauriCore();
-      let pickBtn = null;
-      if (core && core.invoke) {
-        pickBtn = document.createElement('button'); pickBtn.className = 'consent-btn ws-pick'; pickBtn.textContent = '📁 choose…';
-        pickBtn.title = 'pick a folder';
-        pickBtn.onclick = () => {
-          Promise.resolve(core.invoke('starnet_pick_folder', {})).then(dir => {
-            if (dir) { path.value = String(dir); validatePath(); }
-          }).catch(() => { /* shell has no picker yet — the typed path is the fallback */ path.focus(); });
-        };
-      }
+      const pickBtn = document.createElement('button'); pickBtn.className = 'consent-btn ws-pick'; pickBtn.textContent = '📁 choose…';
+      pickBtn.title = 'browse for a folder';
+      pickBtn.onclick = () => {
+        if (pickBtn.disabled) return;
+        pickBtn.disabled = true;
+        const viaSidecar = () =>
+          fetch('/api/projects/pickfolder', { method: 'POST' })
+            .then(r => r.json()).then(j => (j && j.ok && j.path) ? String(j.path) : null)
+            .catch(() => null);
+        const picked = (core && core.invoke)
+          ? Promise.resolve(core.invoke('starnet_pick_folder', {})).then(dir => (dir ? String(dir) : null)).catch(viaSidecar)
+          : viaSidecar();
+        picked.then(dir => { if (dir) { path.value = dir; validatePath(); } })
+          .finally(() => { pickBtn.disabled = false; path.focus(); });
+      };
 
       // W7 (f): "Keep & open folder" — one click copies the files out AND shell-opens the destination folder
       // (Explorer/Finder) so the kept files are immediately in hand. On the desktop shell this reveals the real
