@@ -1922,6 +1922,7 @@ const App = (() => {
     if (typeof AutoJobStore !== 'undefined') AutoJobStore.reset();   // …and re-arm the one-time standing-jobs proposal (own key; server-side routines are separate)
     if (typeof AutopilotStore !== 'undefined') AutopilotStore.reset();   // …and a fresh idle autopilot (no inherited idle/armed state — its decision is re-earned by the new Commander's posture + dossier)
     if (typeof ReturnStore !== 'undefined') ReturnStore.reset();   // …and no inherited return-ritual trail — a fresh Commander gets no prior hero's pending OUTBOX crates or attendance stamp (own key)
+    if (typeof NightDraftNudge !== 'undefined') NightDraftNudge.reset();   // …and no inherited night-shift seen-stamp / spent nudge — a fresh Commander re-earns the unseen-drafts nudge (own key)
     if (typeof WorkshopStore !== 'undefined') WorkshopStore.reset();   // W3: no inherited "later" list or seen-ledger for a fresh Commander (own key)
     if (typeof PrideStore !== 'undefined') PrideStore.reset();   // …and a brand-new station record — a fresh Commander founds their OWN colony, inheriting no prior hero's lifetime tasks/deliverables/routines/founding-date (own key)
     if (typeof SeedReuseStore !== 'undefined') SeedReuseStore.reset();   // …and no inherited seed-usage tally — a fresh Commander's living-tools shelf starts empty; the 5×/week callout is re-earned (own key)
@@ -2283,6 +2284,11 @@ const App = (() => {
     // (which gate held them back), or the one plain "did nothing and why" sentence. Own durable away-stamp so it and
     // ReturnStore never race one value; rides Chat.nudge (one-beat-at-a-time + vanish()). Init AFTER Chat.init.
     if (typeof NightReportStore !== 'undefined') NightReportStore.init({ enabled: !opts.awaitingPurpose, agentId: agent.id });
+    // NS VISIBILITY (live-session unseen-drafts nudge): the morning report only fires on app-CLOSURE absence; an app
+    // left OPEN while away accumulates reason-only drafts the Commander never sees. This polls the drafts while the
+    // app is open and, when N+ are unseen, surfaces ONE gentle "review?" nudge that opens the NIGHT SHIFT panel. Rides
+    // Chat.nudge (one-beat-at-a-time) + a shared durable seen-stamp with the morning report. Init AFTER Chat.init.
+    if (typeof NightDraftNudge !== 'undefined') NightDraftNudge.init({ enabled: !opts.awaitingPurpose, agentId: agent.id });
     // W3 AWAY-WORKSHOP RETURN CARD: on attach (once per session, never during the awakening) poll
     // /api/workshop/pending and hand the oldest undecided manifest to Chat.workshopReturn — the same
     // one-post-run-beat slot the digest rides. Keep/Later/Discard route back through WorkshopStore.decide.

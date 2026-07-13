@@ -193,6 +193,36 @@ A.eq(NR.trailLine({ ts: T0610Z, kind: 'decline', binding: 'leash' }, -300), '1:1
 A.eq(NR.trailLine({ ts: T0610Z, kind: 'act', detail: { title: 'Wrote X' } }, -300), '1:10 AM · acted · Wrote X', 'an act row names the title from detail');
 A.ok(/noted/.test(NR.trailLine({ ts: T0610Z, kind: 'note', reason: 'delivered' }, -300)), 'a note row renders its reason');
 
+/* ---------- postureOutlook(): the honest dial-raise feedback (NS visibility 2026-07-13) ----------
+   The instant the Commander raises the autonomy dial (awakening cadence beat / station panel), one honest line
+   from the LIVE status says what a beat will actually do while they're away + how far the station is from acting. */
+A.eq(NR.postureOutlook(null), '', 'unreachable status → no outlook (never a fabricated promise)');
+A.eq(NR.postureOutlook({}), '', 'a status with no buildMode/readiness detail → no outlook');
+// cold-start build pick with no away-workshop grant: it will only DRAFT, and it's still learning — say BOTH.
+const outCold = NR.postureOutlook(Object.assign({}, stBase, { buildMode: 'draft', draftReason: 'no-workshop-grant', readiness: rdWarm }));
+A.ok(/while you.re away/i.test(outCold), 'the outlook is framed as what happens WHILE AWAY');
+A.ok(/drafts only/i.test(outCold) && /grant/i.test(outCold), 'a build pick that can only draft says so + names the missing grant');
+A.ok(/still learning you/i.test(outCold) && /3\/4 areas/.test(outCold), 'the cold-start readiness caveat rides the same line');
+// a fully-hot, granted build station: the outlook is the plain "beats BUILD…" truth, no readiness caveat.
+const outBuild = NR.postureOutlook(Object.assign({}, stBase, { buildMode: 'build', draftReason: null, workshopGranted: true, readiness: { tier: 'hot' } }));
+A.ok(/beats BUILD real deliverables/i.test(outBuild), 'a granted, hot station promises real building');
+A.ok(!/still learning/i.test(outBuild), 'a hot station adds no still-learning caveat');
+A.eq(NR.postureOutlook(outBuild) === outBuild, false, 'postureOutlook takes a status object, not its own string (sanity)');
+
+/* ---------- unseenDrafts(): the live-session nudge predicate (NS visibility 2026-07-13) ----------
+   "unseen" = a draft stamped strictly AFTER the durable lastSeenDraftAt mark; pure (no now), guards bad rows. */
+const draftsFix = [
+  { title: 'B', at: 3000, body: '' },
+  { title: 'A', at: 2000, body: '' },
+  { title: 'old', at: 1000, body: '' }
+];
+A.eq(NR.unseenDrafts(draftsFix, 1500).length, 2, 'drafts stamped after lastSeen are unseen; the older one is seen');
+A.eq(NR.unseenDrafts(draftsFix, 1500)[0].title, 'B', 'unseen preserves the drafts route order (newest-first)');
+A.eq(NR.unseenDrafts(draftsFix, 0).length, 3, 'a 0/absent stamp → every real draft is unseen (nothing surfaced yet)');
+A.eq(NR.unseenDrafts(draftsFix, 3000).length, 0, 'a stamp at/after the newest draft → nothing unseen (strictly greater-than)');
+A.eq(NR.unseenDrafts([{ at: 9000 }, { title: '', at: 9000 }, null], 0).length, 0, 'rows without a title (or null) are never counted as an unseen draft');
+A.eq(NR.unseenDrafts(null, 0).length, 0, 'a non-array drafts payload → [] (fail-open, never throws)');
+
 /* ---------- purity / determinism ---------- */
 const args = { status: { active: true, binding: 'leash' }, awaySince: 1000, nowMs: 5, tzOffsetMin: 0, ledger: [{ source: 'nightshift', kind: 'decline', binding: 'leash', ts: 2000 }], drafts: [] };
 A.eq(NR.compose(args), NR.compose(args), 'compose() is deterministic for the same input');

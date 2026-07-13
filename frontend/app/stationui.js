@@ -3049,7 +3049,12 @@ const StationUI = (() => {
       '<div class="set-row"><span class="dim">LAST BEAT</span> <span id="ns-last" class="dim">…</span></div>' +
       '<div class="set-row"><span class="dim">NEXT ELIGIBLE</span> <span id="ns-next" class="dim">…</span></div>' +
       '<div class="set-row"><span class="dim">RECENT DECISIONS</span></div>' +
-      '<div class="key-list" id="ns-trail"><p class="set-about">reading the decision trail…</p></div>';
+      '<div class="key-list" id="ns-trail"><p class="set-about">reading the decision trail…</p></div>' +
+      // LAST REPORT (NS visibility 2026-07-13) — the morning-report beat is one-shot (fired=true spends it even on
+      // dismiss, and vanish() loses the digest). This re-composes the most recent night's digest ON DEMAND from the
+      // SAME routes (status + ledger + drafts) via the pure engine — server truth, never a cached frontend copy.
+      '<div class="set-row"><button class="bb sm" id="ns-report-btn">▤ LAST REPORT</button></div>' +
+      '<div id="ns-report"></div>';
     const secPermissions =
       // PERMISSIONS — the OS-style standing-grant panel (permissions.js / permissionsstore.js). The LEVEL row is
       // the simple "never → fully autonomous" chooser (sets the posture preset AND the write grant together); the
@@ -3332,6 +3337,47 @@ const StationUI = (() => {
           .then(j => { if (j && Array.isArray(j.entries)) paintTrail(j.entries); else if (nsTrail) nsTrail.innerHTML = '<p class="set-about">the decision trail is unreachable right now.</p>'; });
       };
       refreshPanel();
+      // LAST REPORT — re-render the most recent night's digest on demand. Fetches the SAME three truthful-telemetry
+      // surfaces the morning-report beat uses and composes them through NightReport.compose (server truth, not a
+      // cached frontend copy), scoped to the last 24h so it reflects "the last night". Every line maps to a route
+      // field. Also marks those drafts SEEN (the panel surfaced them) so the live nudge won't re-announce the set.
+      const nsReport = host.querySelector('#ns-report'), nsReportBtn = host.querySelector('#ns-report-btn');
+      const tzMin = () => { try { return -new Date().getTimezoneOffset(); } catch (_) { return 0; } };
+      const renderLastReport = () => {
+        if (!nsReport) return;
+        nsReport.innerHTML = '<p class="set-about">composing the last report…</p>';
+        const now = Date.now();
+        const awaySince = now - 24 * 3600 * 1000;   // the last day's night-shift window
+        const getJSON = (u) => fetch(u, { cache: 'no-store' }).then(r => r.ok ? r.json() : null).catch(() => null);
+        Promise.all([
+          getJSON('/api/nightshift/status'),
+          getJSON('/api/autonomy/ledger?source=nightshift&limit=200'),
+          getJSON('/api/nightshift/drafts?since=' + encodeURIComponent(awaySince) + '&limit=20')
+        ]).then(([status, ledgerRes, draftsRes]) => {
+          const ledger = (ledgerRes && Array.isArray(ledgerRes.entries)) ? ledgerRes.entries : [];
+          const drafts = (draftsRes && Array.isArray(draftsRes.drafts)) ? draftsRes.drafts : [];
+          let rep; try { rep = NightReport.compose({ status, ledger, drafts, awaySince, nowMs: now, tzOffsetMin: tzMin() }); } catch (_) { rep = null; }
+          if (!rep || !rep.hasReport) {
+            nsReport.innerHTML = '<p class="set-about">no report to show — the night shift recorded no acts or declines in the last 24h.</p>';
+            return;
+          }
+          const lines = [];
+          if (rep.priorityLine) lines.push(rep.priorityLine);
+          lines.push('while you were away: ' + rep.headline);
+          for (const l of (rep.actLines || [])) lines.push(l);
+          for (const l of (rep.declineLines || [])) lines.push(l);
+          if (rep.idleReason) lines.push(rep.idleReason);
+          nsReport.innerHTML = lines.map(l => '<div class="set-row"><span class="dim">' + esc(l) + '</span></div>').join('');
+          // surfaced → mark the drafts seen so the live unseen-drafts nudge won't re-announce them.
+          try {
+            if (typeof NightDraftNudge !== 'undefined' && NightDraftNudge.markSeen) {
+              let newest = 0; for (const d of drafts) { const a = Number(d && d.at) || 0; if (a > newest) newest = a; }
+              if (newest) NightDraftNudge.markSeen(newest);
+            }
+          } catch (_) {}
+        });
+      };
+      if (nsReportBtn) nsReportBtn.addEventListener('click', () => { renderLastReport(); sfx('click'); });
       // Re-setting the dial / a LEVEL click is the (silent) act that LIFTS a durable E-STOP halt
       // (handleAutonomyPosture → clearHalt) — re-read the status shortly after so the ⛔ HALTED card clears
       // (or appears) from the ROUTE's truth, never from an optimistic guess.

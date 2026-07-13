@@ -436,6 +436,28 @@ const Onboarding = (() => {
     AU.steady(p);                                      // the heartbeat steadies + the room warms
   }
 
+  // NS VISIBILITY (2026-07-13) — the honest dial-raise line for the AWAKENING cadence beat. The moment the Commander
+  // picks a run-on-my-own posture, a build-capable pick ('build'/'free') SILENTLY degrades to reason-only drafts on a
+  // cold-start station (no away-workshop grant + a dossier too thin to act) — the exact "it never does anything"
+  // invisibility the Settings NIGHT SHIFT panel already fixes but onboarding never did. We push the just-set posture to
+  // the server and AWAIT it (AutonomyStore.applyPreset's own sync is fire-and-forget, so a bare status read could see
+  // the stale/floor posture), then read /api/nightshift/status back and speak ONE line composed by the pure engine —
+  // never a hardcoded claim (truthful telemetry: only what the status route returned). 'wait'/skip promises nothing
+  // unattended, so it gets no line. Fail-open: an unreachable route (or missing engine) → '' → the ack stands alone.
+  async function nightshiftPostureLine(preset) {
+    if (preset === 'wait' || preset === '' || typeof NightReport === 'undefined' || typeof fetch !== 'function') return '';
+    // mirror the just-set posture to the server and wait, so the status route reflects THIS pick (not the last one).
+    try {
+      if (typeof AutonomyStore !== 'undefined' && AutonomyStore.summary) {
+        const p = AutonomyStore.summary() || {};
+        await fetch('/api/autonomy/posture', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ posture: { initiative: p.initiative, reach: p.reach, leashPerDay: p.leashPerDay } }) });
+      }
+    } catch (_) { /* posture sync best-effort — read whatever the server has */ }
+    let status = null;
+    try { const r = await fetch('/api/nightshift/status', { cache: 'no-store' }); if (r && r.ok) status = await r.json(); } catch (_) { return ''; }
+    try { return NightReport.postureOutlook(status) || ''; } catch (_) { return ''; }
+  }
+
   // ONE scripted beat: ask → commit → effects + ack. Returns { text } ('' when skipped). o.quietAck defers
   // the effects/ack to the caller (used when a GENERATED reaction replaces the canned one).
   async function askStep(s, o) {
@@ -471,6 +493,12 @@ const Onboarding = (() => {
         bumpTruth();
         const ack = typeof s.ack === 'function' ? s.ack(text) : s.ack;
         await Dialogue.say([seg(ack, 44, 360)]);
+        // NS visibility: after the cadence beat RAISED the dial, tell the Commander what that actually means tonight
+        // (build vs draft + cold-start readiness), live from the status route. Only for a run-on-my-own pick; skips
+        // are silent. Fail-open — a '' line (unreachable route / not build-capable) simply adds nothing.
+        if (!isSkip && s.posturePreset) {
+          try { const nl = await nightshiftPostureLine(text); if (nl && running) await Dialogue.say([seg(nl, 44, 360)]); } catch (_) {}
+        }
       }
       return { text };
     }
