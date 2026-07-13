@@ -295,23 +295,48 @@
 .comms-newpill {
   position: absolute; left: 50%; bottom: 74px; z-index: 6;   /* bottom is overwritten inline by chat.js */
   transform: translate(-50%, 6px);
-  font: inherit; font-size: 12px; letter-spacing: .6px; cursor: pointer;
-  color: var(--ph); background: var(--panel2);
-  border: 1px solid var(--ph-dim); border-radius: 12px;
-  padding: 3px 13px; line-height: 1.4;
-  box-shadow: 0 3px 10px rgba(0,0,0,.5);
+  display: inline-flex; align-items: center; gap: 7px;
+  font: inherit; font-size: 11px; letter-spacing: 1.6px; text-transform: uppercase; cursor: pointer;
+  color: var(--ph); background: linear-gradient(180deg, color-mix(in srgb, var(--ph) 9%, var(--panel2)), var(--panel2));
+  border: 1px solid var(--ph-dim); border-radius: 999px;
+  padding: 5px 15px; line-height: 1.3;
+  box-shadow: inset 0 1px 0 rgba(var(--ph-rgb), .18), 0 4px 14px rgba(0,0,0,.55);
   opacity: 0; pointer-events: none;
   transition: opacity var(--t-med) var(--ease-out), transform var(--t-med) var(--ease-out),
-    background-color var(--t-fast) var(--ease-soft), color var(--t-fast) var(--ease-soft), border-color var(--t-fast) var(--ease-soft);
+    background-color var(--t-fast) var(--ease-soft), color var(--t-fast) var(--ease-soft),
+    border-color var(--t-fast) var(--ease-soft), box-shadow var(--t-fast) var(--ease-soft);
 }
-.comms-newpill.show { opacity: .82; transform: translate(-50%, 0); pointer-events: auto; }
-/* fresh content while unstuck → the lit, inverted-phosphor alert variant */
+/* the drawn ▾ chevron — a glyph the pill owns (crisper than a font arrow, nudges on hover) */
+.comms-newpill::after {
+  content: ""; flex: 0 0 auto; width: 7px; height: 7px; margin-top: -3px;
+  border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor;
+  transform: rotate(45deg);
+  transition: transform var(--t-fast) var(--ease-out);
+}
+.comms-newpill.show { opacity: .85; transform: translate(-50%, 0); pointer-events: auto; }
+/* fresh content while unstuck → the lit, inverted-phosphor alert variant with a beacon dot */
 .comms-newpill.hasnew {
-  color: var(--ink); background: var(--ph); border-color: var(--ph-bright);
-  box-shadow: 0 0 14px var(--ph-glow2), 0 4px 12px rgba(0,0,0,.55);
+  color: var(--ink);
+  background: linear-gradient(180deg, var(--ph-bright), var(--ph));
+  border-color: var(--ph-bright);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.28), 0 0 16px var(--ph-glow2), 0 4px 14px rgba(0,0,0,.55);
+  text-shadow: none;
+}
+.comms-newpill.hasnew::before {
+  content: ""; flex: 0 0 auto; width: 5px; height: 5px; border-radius: 50%;
+  background: var(--ink); opacity: .85;
+  animation: newpill-beat 1.4s var(--ease-soft) infinite;
 }
 .comms-newpill.hasnew.show { opacity: 1; }
-.comms-newpill:hover { color: var(--ink); background: var(--ph-bright); border-color: var(--ph-bright); box-shadow: 0 0 18px var(--ph-glow), 0 4px 12px rgba(0,0,0,.55); opacity: 1; }
+.comms-newpill:hover {
+  color: var(--ink); background: var(--ph-bright); border-color: var(--ph-bright);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.3), 0 0 20px var(--ph-glow), 0 4px 14px rgba(0,0,0,.55);
+  opacity: 1;
+}
+.comms-newpill:hover::after { transform: rotate(45deg) translate(2px, 2px); }
+.comms-newpill:active { transform: translate(-50%, 1px); }
+.comms-newpill:focus-visible { outline: 2px solid var(--ph-bright); outline-offset: 2px; }
+@keyframes newpill-beat { 0%, 100% { opacity: .85; } 50% { opacity: .35; } }
 
 /* ============================================================
    5 · REDUCED MOTION — collapse the added COMMS motion (extends
@@ -331,6 +356,7 @@
     animation: none !important; opacity: .85;
   }
   .comms-newpill { transition-duration: 0.01ms !important; }
+  .comms-newpill.hasnew::before { animation: none !important; opacity: .85; }
 }
 
 /* ============================================================
@@ -430,15 +456,21 @@
    window title-chip register (inked-on-phosphor) so it reads as the primary action, not chrome. */
 .chat-send {
   flex: 0 0 auto; align-self: flex-end;
-  display: inline-flex; align-items: center; gap: 5px;
-  font-family: inherit; font-size: 12px; letter-spacing: 1px; text-transform: uppercase; color: var(--ink); background: var(--ph); border: 1px solid var(--ph-bright); border-radius: 4px;
-  padding: 5px 9px 5px 8px; cursor: pointer; user-select: none; line-height: 1.1;
-  box-shadow: 0 1px 0 rgba(0,0,0,.4);
-  transition: background-color var(--t-fast) var(--ease-soft), box-shadow var(--t-fast) var(--ease-soft);
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: inherit; font-size: 12px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--ink);
+  background: linear-gradient(180deg, var(--ph-bright) -40%, var(--ph) 60%);
+  border: 1px solid var(--ph-bright); border-radius: 5px;
+  padding: 6px 11px 6px 9px; cursor: pointer; user-select: none; line-height: 1.1;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.25), 0 1px 0 rgba(0,0,0,.45);
+  transition: background-color var(--t-fast) var(--ease-soft), box-shadow var(--t-fast) var(--ease-soft),
+    filter var(--t-fast) var(--ease-soft);
 }
-.chat-send svg { width: 13px; height: 13px; display: block; flex: 0 0 auto; }
-.chat-send:hover { background: var(--ph-bright); box-shadow: 0 0 10px var(--ph-glow2), 0 1px 0 rgba(0,0,0,.4); }
-.chat-send:active { transform: translateY(1px); }
+.chat-send svg { width: 13px; height: 13px; display: block; flex: 0 0 auto; filter: drop-shadow(0 1px 0 rgba(255,255,255,.18)); }
+.chat-send:hover {
+  background: var(--ph-bright);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.3), 0 0 14px var(--ph-glow), 0 1px 0 rgba(0,0,0,.45);
+}
+.chat-send:active { transform: translateY(1px); box-shadow: inset 0 1px 3px rgba(0,0,0,.3); }
 .chat-send:focus-visible { outline: 2px solid var(--ph-bright); outline-offset: 2px; }
 /* on a tight panel the label folds away, leaving the glyph — the arrow alone still reads as "send" */
 @media (max-width: 360px) { .chat-send .cs-label { display: none; } }
@@ -465,14 +497,21 @@
    matches the mic/voice register (app.css .mic-btn family).
    ============================================================ */
 .chat-attach-btn {
-  flex: 0 0 auto; font-size: 17px; line-height: 0; color: var(--ph);
-  background: var(--panel2); border: 2px solid var(--ph-dim);
-  padding: 6px; cursor: pointer; border-radius: 4px; user-select: none;
+  flex: 0 0 auto; font-size: 16px; line-height: 0; color: var(--ph);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--ph) 8%, var(--panel2)), var(--panel2));
+  border: 1px solid var(--ph-dim); border-radius: 5px;
+  width: 33px; height: 33px; padding: 0; cursor: pointer; user-select: none;
   display: inline-flex; align-items: center; justify-content: center;
-  transition: color .12s, border-color .12s, background .12s, box-shadow .12s;
+  box-shadow: inset 0 1px 0 rgba(var(--ph-rgb), .14), 0 1px 0 rgba(0,0,0,.4);
+  transition: color .12s, border-color .12s, background-color .12s, box-shadow .12s, transform .12s;
 }
-.chat-attach-btn svg { width: 1em; height: 1em; display: block; pointer-events: none; }
-.chat-attach-btn:hover { border-color: var(--ph); background: var(--ph-faint); color: var(--ph-bright); }
+.chat-attach-btn svg { width: 1em; height: 1em; display: block; pointer-events: none; filter: drop-shadow(0 0 3px var(--ph-glow2)); }
+.chat-attach-btn:hover {
+  border-color: var(--ph); background: var(--ph-faint); color: var(--ph-bright);
+  box-shadow: inset 0 1px 0 rgba(var(--ph-rgb), .2), 0 0 9px var(--ph-glow2), 0 1px 0 rgba(0,0,0,.4);
+}
+.chat-attach-btn:active { transform: translateY(1px); }
+.chat-attach-btn:focus-visible { outline: 2px solid var(--ph-bright); outline-offset: 2px; }
 
 /* the preview strip sits above the edit line; hidden (via [hidden]) until at least one chip exists */
 .chat-attach-strip { display: flex; flex-wrap: wrap; gap: 6px; }

@@ -37,23 +37,39 @@
 
 /* ---------- shared inputs / buttons ---------- */
 .btn, .btn-xl, .btn-sm, .prov {
-  font-family: inherit; color: var(--ph); background: var(--panel2);
-  border: 2px solid var(--ph-dim); padding: 6px 14px; cursor: pointer;
+  font-family: inherit; color: var(--ph);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--ph) 8%, var(--panel2)), var(--panel2));
+  border: 1px solid var(--ph-dim); border-radius: 5px; padding: 7px 15px; cursor: pointer;
   text-transform: uppercase; letter-spacing: 1px; line-height: 1;
-  text-shadow: 0 0 6px var(--ph-glow2); transition: none;
+  text-shadow: 0 0 6px var(--ph-glow2);
+  box-shadow: inset 0 1px 0 rgba(var(--ph-rgb), .12), 0 1px 0 rgba(0,0,0,.4);
+  transition: color .12s, border-color .12s, background-color .12s, box-shadow .12s, transform .12s;
 }
-.btn:hover, .btn-xl:hover, .btn-sm:hover, .prov:hover { border-color: var(--ph); background: var(--ph-faint); color: var(--ph-bright); }
-.btn:active, .btn-xl:active { transform: translateY(1px); }
-.btn-xl { font-size: 26px; padding: 12px 26px; border-color: var(--ph); box-shadow: 0 0 0 2px rgba(0,0,0,.85), 0 0 18px var(--ph-glow2); }
-.btn-sm { font-size: 15px; padding: 4px 9px; }
-.prov.sel { background: var(--ph); color: var(--ink); border-color: var(--ph); text-shadow: none; }
+.btn:hover, .btn-xl:hover, .btn-sm:hover, .prov:hover {
+  border-color: var(--ph); background: var(--ph-faint); color: var(--ph-bright);
+  box-shadow: inset 0 1px 0 rgba(var(--ph-rgb), .18), 0 0 10px var(--ph-glow2), 0 1px 0 rgba(0,0,0,.4);
+}
+.btn:active, .btn-xl:active, .btn-sm:active, .prov:active { transform: translateY(1px); box-shadow: inset 0 1px 3px rgba(0,0,0,.35); }
+.btn:focus-visible, .btn-xl:focus-visible, .btn-sm:focus-visible, .prov:focus-visible { outline: 2px solid var(--ph-bright); outline-offset: 2px; }
+.btn-xl { font-size: 26px; padding: 13px 27px; border-color: var(--ph); box-shadow: inset 0 1px 0 rgba(var(--ph-rgb), .16), 0 0 0 2px rgba(0,0,0,.85), 0 0 18px var(--ph-glow2); }
+.btn-sm { font-size: 15px; padding: 5px 10px; }
+.prov.sel {
+  background: linear-gradient(180deg, var(--ph-bright) -40%, var(--ph) 60%); color: var(--ink); border-color: var(--ph);
+  text-shadow: none; box-shadow: inset 0 1px 0 rgba(255,255,255,.25), 0 0 10px var(--ph-glow2);
+}
 
 input[type=text], input[type=password], input:not([type]), textarea.key-input {
   width: 100%; font-family: inherit; font-size: 19px; color: var(--ph-bright);
-  background: #000; border: 2px solid var(--ph-dim); padding: 7px 10px; outline: none;
-  text-shadow: 0 0 5px var(--ph-glow2); box-shadow: inset 0 2px 5px rgba(0,0,0,.65);
+  background: linear-gradient(180deg, #000, color-mix(in srgb, var(--ph) 3%, #000));
+  border: 1px solid var(--ph-dim); border-radius: 4px; padding: 8px 11px; outline: none;
+  text-shadow: 0 0 5px var(--ph-glow2);
+  box-shadow: inset 0 2px 6px rgba(0,0,0,.7), inset 0 -1px 0 rgba(var(--ph-rgb),.06);
+  transition: border-color .12s, box-shadow .12s;
 }
-input:focus, textarea.key-input:focus { border-color: var(--ph); box-shadow: inset 0 0 18px rgba(0,0,0,.7), 0 0 12px var(--ph-glow2); }
+input:focus, textarea.key-input:focus {
+  border-color: var(--ph);
+  box-shadow: inset 0 2px 6px rgba(0,0,0,.7), inset 0 -1px 0 rgba(var(--ph-rgb),.08), 0 0 12px var(--ph-glow2);
+}
 /* solid --ph-dim (no opacity multiplier) keeps placeholder hint text >=4.5:1 (WCAG AA) on --bg across every theme; .7 opacity dropped it to ~3.2:1 */
 input::placeholder, textarea.key-input::placeholder { color: var(--ph-dim); opacity: 1; }
 
@@ -149,9 +165,10 @@ input::placeholder, textarea.key-input::placeholder { color: var(--ph-dim); opac
    (declared AFTER .prov / .prov.sel so equal-specificity ties resolve to these on the hero + grid) ===== */
 .ov-prov { flex-direction: column; align-items: stretch; gap: 9px; }
 .ov-prov .prov-hero {
-  display: block; width: 100%; text-align: left; padding: 11px 14px 12px;
-  border: 2px solid var(--ph-dim); border-radius: 7px; text-transform: none; letter-spacing: normal;
+  display: block; width: 100%; text-align: left; padding: 12px 15px 13px;
+  border: 1px solid var(--ph-dim); border-radius: 7px; text-transform: none; letter-spacing: normal;
   background: linear-gradient(180deg, rgba(var(--ph-rgb),.10), rgba(var(--ph-rgb),.03)); line-height: 1.2;
+  box-shadow: inset 0 1px 0 rgba(var(--ph-rgb),.12), 0 1px 0 rgba(0,0,0,.4);
 }
 .ov-prov .prov-hero:hover { border-color: var(--ph); color: var(--ph); background: linear-gradient(180deg, rgba(var(--ph-rgb),.16), rgba(var(--ph-rgb),.05)); }
 .ov-prov .prov-hero.sel {
@@ -226,8 +243,10 @@ input::placeholder, textarea.key-input::placeholder { color: var(--ph-dim); opac
 
 /* ChatGPT-subscription (Codex OAuth) sign-in block on the connect screen */
 .codex-signin {
-  border: 2px solid var(--ph-dim); border-radius: 6px; padding: 12px;
-  background: rgba(0,0,0,.35); display: flex; flex-direction: column; gap: 10px;
+  border: 1px solid var(--ph-dim); border-radius: 6px; padding: 13px;
+  background: linear-gradient(180deg, rgba(var(--ph-rgb),.04), rgba(0,0,0,.35));
+  box-shadow: inset 0 1px 0 rgba(var(--ph-rgb),.08);
+  display: flex; flex-direction: column; gap: 10px;
 }
 .codex-status { color: var(--ph-bright); font-size: 16px; min-height: 20px; }
 .codex-status.ok { color: var(--gold); }
@@ -498,10 +517,12 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 .consent-btns { display: inline-flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .consent-btn {
   font: inherit; font-size: 13px; letter-spacing: 0.5px; cursor: pointer;
-  color: var(--ph); background: transparent; border: 2px solid var(--ph-dim);
-  padding: 4px 10px; border-radius: 3px; text-shadow: 0 0 5px var(--ph-glow2);
-  transition: background .1s, color .1s, border-color .1s;
+  color: var(--ph); background: linear-gradient(180deg, rgba(var(--ph-rgb),.07), rgba(var(--ph-rgb),.02));
+  border: 1px solid var(--ph-dim); padding: 5px 11px; border-radius: 4px; text-shadow: 0 0 5px var(--ph-glow2);
+  box-shadow: inset 0 1px 0 rgba(var(--ph-rgb),.1), 0 1px 0 rgba(0,0,0,.35);
+  transition: background-color .1s, color .1s, border-color .1s, box-shadow .1s, transform .1s;
 }
+.consent-btn:active { transform: translateY(1px); }
 .consent-btn:hover { color: var(--ph-bright); border-color: var(--ph); background: var(--ph-faint); }
 .consent-btn:focus-visible { outline: none; color: var(--ph-bright); border-color: var(--ph); background: var(--ph-faint); box-shadow: 0 0 8px var(--ph-glow2); }
 .consent-btn.danger { color: var(--gold); border-color: var(--gold); }
@@ -765,14 +786,19 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 }
 .choice {
   font: inherit; font-size: 14px; letter-spacing: 0.5px; cursor: pointer;
-  color: var(--ph); background: transparent; border: 2px solid var(--ph-dim);
-  padding: 4px 10px; border-radius: 3px; text-shadow: 0 0 5px var(--ph-glow2);
-  transition: background .1s, color .1s, border-color .1s;
+  color: var(--ph); background: linear-gradient(180deg, rgba(var(--ph-rgb),.07), rgba(var(--ph-rgb),.02));
+  border: 1px solid var(--ph-dim); padding: 5px 11px; border-radius: 4px; text-shadow: 0 0 5px var(--ph-glow2);
+  box-shadow: inset 0 1px 0 rgba(var(--ph-rgb),.1), 0 1px 0 rgba(0,0,0,.35);
+  transition: background-color .1s, color .1s, border-color .1s, box-shadow .1s, transform .1s;
 }
-.choice:hover, .choice:focus-visible { color: var(--ph-bright); border-color: var(--ph); background: var(--ph-faint); outline: none; }
+.choice:hover, .choice:focus-visible {
+  color: var(--ph-bright); border-color: var(--ph); background: var(--ph-faint); outline: none;
+  box-shadow: inset 0 1px 0 rgba(var(--ph-rgb),.15), 0 0 9px var(--ph-glow2), 0 1px 0 rgba(0,0,0,.35);
+}
+.choice:active { transform: translateY(1px); }
 /* T3.9 — the SECONDARY bug-report affordance under a failed turn: subdued so it never competes with the primary
    recovery chip (dashed, dimmer, smaller). Brightens to a normal chip on hover so it stays discoverable. */
-.choice.quiet { font-size: 12px; letter-spacing: 0.3px; border-style: dashed; border-color: var(--ph-faint); color: var(--ph-dim); text-shadow: none; padding: 3px 8px; }
+.choice.quiet { font-size: 12px; letter-spacing: 0.3px; border-style: dashed; border-color: var(--ph-faint); color: var(--ph-dim); text-shadow: none; padding: 3px 8px; background: transparent; box-shadow: none; }
 .choice.quiet:hover, .choice.quiet:focus-visible { color: var(--ph-bright); border-color: var(--ph-dim); border-style: solid; }
 .choice.quiet:disabled { cursor: default; opacity: 0.7; }
 
@@ -805,11 +831,15 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 .fnv-opt {
   display: flex; align-items: baseline; gap: 9px; width: 100%; text-align: left;
   font: inherit; font-size: 16px; letter-spacing: 0.4px; cursor: pointer;
-  color: var(--ph); background: transparent; border: 2px solid var(--ph-dim);
-  padding: 8px 12px; border-radius: 3px; text-shadow: 0 0 5px var(--ph-glow2);
-  transition: background .1s, color .1s, border-color .1s;
+  color: var(--ph); background: linear-gradient(180deg, rgba(var(--ph-rgb),.06), rgba(var(--ph-rgb),.015));
+  border: 1px solid var(--ph-dim); padding: 9px 13px; border-radius: 5px; text-shadow: 0 0 5px var(--ph-glow2);
+  box-shadow: inset 0 1px 0 rgba(var(--ph-rgb),.09), 0 1px 0 rgba(0,0,0,.35);
+  transition: background-color .1s, color .1s, border-color .1s, box-shadow .1s;
 }
-.fnv-opt:hover, .fnv-opt:focus-visible { color: var(--ph-bright); border-color: var(--ph); background: var(--ph-faint); outline: none; }
+.fnv-opt:hover, .fnv-opt:focus-visible {
+  color: var(--ph-bright); border-color: var(--ph); background: var(--ph-faint); outline: none;
+  box-shadow: inset 0 1px 0 rgba(var(--ph-rgb),.14), 0 0 10px var(--ph-glow2), 0 1px 0 rgba(0,0,0,.35);
+}
 .fnv-opt .fnv-num { color: var(--ph-dim); font-size: 14px; flex: 0 0 auto; min-width: 16px; }
 .fnv-opt:hover .fnv-num { color: var(--ph); }
 .fnv-opt.custom { border-style: dashed; }
@@ -817,9 +847,15 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 .fnv-opt.skip:hover { color: var(--ph); }
 .fnv-custom { display: flex; align-items: center; gap: 6px; }
 .fnv-custom-in { flex: 1 1 auto; width: auto; min-width: 0; font-size: 16px; }
-.fnv-custom-send { font-family: inherit; font-size: 18px; color: var(--ink); background: var(--ph); border: 2px solid var(--ph); padding: 6px 12px; cursor: pointer; }
-.fnv-custom-send:hover { background: var(--ph-bright); border-color: var(--ph-bright); }
-.fnv-custom-back { font-family: inherit; font-size: 14px; color: var(--ph-dim); background: transparent; border: 2px solid var(--ph-dim); padding: 6px 10px; cursor: pointer; }
+.fnv-custom-send {
+  font-family: inherit; font-size: 18px; color: var(--ink);
+  background: linear-gradient(180deg, var(--ph-bright) -40%, var(--ph) 60%);
+  border: 1px solid var(--ph-bright); border-radius: 5px; padding: 7px 13px; cursor: pointer;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.25), 0 1px 0 rgba(0,0,0,.45);
+  transition: background-color .12s, box-shadow .12s;
+}
+.fnv-custom-send:hover { background: var(--ph-bright); border-color: var(--ph-bright); box-shadow: inset 0 1px 0 rgba(255,255,255,.3), 0 0 12px var(--ph-glow); }
+.fnv-custom-back { font-family: inherit; font-size: 14px; color: var(--ph-dim); background: transparent; border: 1px solid var(--ph-dim); border-radius: 5px; padding: 7px 11px; cursor: pointer; transition: color .12s, border-color .12s; }
 .fnv-custom-back:hover { color: var(--ph); border-color: var(--ph); }
 
 #chat-inputrow {
@@ -862,11 +898,13 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 /* INTERRUPT — the ⏹ Stop chip: matched to the voice chips but red, with a soft pulse so the live-stop reads
    at a glance. Shown only while the displayed stream is running (chat.js toggles [hidden] via updateControls). */
 .chat-stop {
-  flex: 0 0 auto; font-size: 17px; line-height: 0; color: var(--bad);
-  background: var(--panel2); border: 2px solid var(--bad);
-  padding: 6px; cursor: pointer; border-radius: 4px; user-select: none;
+  flex: 0 0 auto; font-size: 16px; line-height: 0; color: var(--bad);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--bad) 14%, var(--panel2)), var(--panel2));
+  border: 1px solid var(--bad); border-radius: 5px;
+  width: 33px; height: 33px; padding: 0; cursor: pointer; user-select: none;
   display: inline-flex; align-items: center; justify-content: center;
-  transition: color .12s, border-color .12s, background .12s, box-shadow .12s;
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--bad) 22%, transparent), 0 1px 0 rgba(0,0,0,.4);
+  transition: color .12s, border-color .12s, background-color .12s, box-shadow .12s;
   animation: stop-pulse 1.2s ease-in-out infinite;
 }
 .chat-stop[hidden] { display: none; }
@@ -879,42 +917,53 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
    Defined dark boxes (not bare glyphs) so they punctuate the amber UI and read as real controls;
    active states invert/recolor so the live one stands out at a glance. ---------- */
 .mic-btn, .voice-toggle, .model-dock-toggle {
-  flex: 0 0 auto; font-size: 17px; line-height: 0; color: var(--ph);
-  background: var(--panel2); border: 2px solid var(--ph-dim);
-  padding: 6px; cursor: pointer; border-radius: 4px; user-select: none;
+  flex: 0 0 auto; font-size: 16px; line-height: 0; color: var(--ph);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--ph) 8%, var(--panel2)), var(--panel2));
+  border: 1px solid var(--ph-dim); border-radius: 5px;
+  width: 33px; height: 33px; padding: 0; cursor: pointer; user-select: none;
   display: inline-flex; align-items: center; justify-content: center;
-  transition: color .12s, border-color .12s, background .12s, box-shadow .12s;
+  box-shadow: inset 0 1px 0 rgba(var(--ph-rgb), .14), 0 1px 0 rgba(0,0,0,.4);
+  transition: color .12s, border-color .12s, background-color .12s, box-shadow .12s, transform .12s;
 }
-.mic-btn svg, .voice-toggle svg { width: 1em; height: 1em; display: block; pointer-events: none; }
-.mic-btn:hover, .voice-toggle:hover, .model-dock-toggle:hover { border-color: var(--ph); background: var(--ph-faint); color: var(--ph-bright); }
+.mic-btn svg, .voice-toggle svg { width: 1em; height: 1em; display: block; pointer-events: none; filter: drop-shadow(0 0 3px var(--ph-glow2)); }
+.mic-btn:hover, .voice-toggle:hover, .model-dock-toggle:hover {
+  border-color: var(--ph); background: var(--ph-faint); color: var(--ph-bright);
+  box-shadow: inset 0 1px 0 rgba(var(--ph-rgb), .2), 0 0 9px var(--ph-glow2), 0 1px 0 rgba(0,0,0,.4);
+}
+.mic-btn:active, .voice-toggle:active, .model-dock-toggle:active { transform: translateY(1px); }
+.mic-btn:focus-visible, .voice-toggle:focus-visible, .model-dock-toggle:focus-visible { outline: 2px solid var(--ph-bright); outline-offset: 2px; }
 
 .model-dock-toggle {
-  width: auto; min-width: 54px; max-width: 148px; height: 33px; padding: 0 7px; gap: 4px;
+  width: auto; min-width: 54px; max-width: 148px; height: 33px; padding: 0 9px; gap: 5px;
   font-size: 13px; line-height: 1; letter-spacing: 0; text-shadow: 0 0 5px var(--ph-glow2);
   position: relative; overflow: visible;
 }
 .model-dock-toggle.on {
-  color: var(--ink); background: var(--ph); border-color: var(--ph);
-  box-shadow: 0 0 11px var(--ph-glow);
+  color: var(--ink); background: linear-gradient(180deg, var(--ph-bright) -40%, var(--ph) 60%); border-color: var(--ph);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.25), 0 0 11px var(--ph-glow);
+  text-shadow: none;
 }
 .model-dock-sigil {
   display: inline-grid; place-items: center; width: 16px; height: 16px;
-  border: 1px solid currentColor; font-size: 11px;}
+  border: 1px solid currentColor; border-radius: 3px; font-size: 11px; opacity: .9;}
 .model-dock-effort-chip {
   display: inline-block; max-width: 40px; overflow: hidden; text-overflow: clip;
-  white-space: nowrap; font-size: 10px; color: var(--ph-bright);
+  white-space: nowrap; font-size: 10px; letter-spacing: 0.6px; color: var(--ph-bright);
 }
-/* resting-state model short-name: a dim MODEL label so the chip reads "MODEL · TIER" and its
-   purpose is legible without a click. Capped + truncated so the composer never grows. */
+/* resting-state model short-name: legible at rest (full phosphor, not dimmed) so the chip reads
+   "MODEL · TIER" without a click. Capped + truncated so the composer never grows. */
 .model-dock-model-name {
   display: inline-block; max-width: 62px; overflow: hidden; text-overflow: ellipsis;
-  white-space: nowrap; font-size: 10px; letter-spacing: 0.3px;
-  color: var(--ph-dim); line-height: 1;
+  white-space: nowrap; font-size: 10px; letter-spacing: 0.5px;
+  color: var(--ph); line-height: 1;
 }
 .model-dock-model-name.empty { color: var(--ph-dim); opacity: 0.7; }
+.model-dock-toggle.on .model-dock-model-name,
+.model-dock-toggle.on .model-dock-effort-chip { color: var(--ink); }
 .model-dock-toggle .model-dock-effort-chip::before {
   content: '·'; color: var(--ph-dim); margin: 0 3px 0 1px; font-weight: 400;
 }
+.model-dock-toggle.on .model-dock-effort-chip::before { color: var(--ink); opacity: .6; }
 /* CRT tooltip — a molded phosphor card above the chip. pointer-events:none so it never eats
    the click that opens the dock; shown on hover AND keyboard focus (a11y); killed on open. */
 .model-dock-tip {
@@ -962,11 +1011,13 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
   color: var(--ph-bright); font-size: 13px; text-align: right;
 }
 .model-dock-search {
-  width: 100%; min-width: 0; box-sizing: border-box; padding: 6px 8px;
-  color: var(--ph-bright); background: var(--ink); border: 2px solid var(--ph-dim);
-  border-radius: 3px; outline: none; font: inherit;
+  width: 100%; min-width: 0; box-sizing: border-box; padding: 7px 9px;
+  color: var(--ph-bright); background: var(--ink); border: 1px solid var(--ph-dim);
+  border-radius: 4px; outline: none; font: inherit;
+  box-shadow: inset 0 2px 5px rgba(0,0,0,.5);
+  transition: border-color .12s, box-shadow .12s;
 }
-.model-dock-search:focus { border-color: var(--ph); box-shadow: 0 0 9px var(--ph-glow2); }
+.model-dock-search:focus { border-color: var(--ph); box-shadow: inset 0 2px 5px rgba(0,0,0,.5), 0 0 9px var(--ph-glow2); }
 .model-dock-search::placeholder { color: var(--ph-dim); opacity: 1; }
 .model-dock-efforts {
   display: grid; grid-template-columns: repeat(auto-fit, minmax(42px, 1fr)); gap: 4px;
@@ -1024,9 +1075,11 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
   display: grid; grid-template-columns: 1fr 1fr; gap: 6px;
 }
 .model-dock-foot button {
-  min-width: 0; padding: 6px 4px; cursor: pointer;
-  color: var(--ph); background: var(--panel2); border: 2px solid var(--ph-dim);
-  border-radius: 3px; font: inherit; font-size: 11px;}
+  min-width: 0; padding: 7px 5px; cursor: pointer;
+  color: var(--ph); background: linear-gradient(180deg, color-mix(in srgb, var(--ph) 7%, var(--panel2)), var(--panel2));
+  border: 1px solid var(--ph-dim);
+  box-shadow: inset 0 1px 0 rgba(var(--ph-rgb),.1), 0 1px 0 rgba(0,0,0,.35);
+  border-radius: 4px; font: inherit; font-size: 11px;}
 .model-dock-foot button:hover { color: var(--ph-bright); border-color: var(--ph); background: var(--ph-faint); }
 
 @media (max-width: 780px) {
@@ -1042,18 +1095,34 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 }
 
 /* mic listening: red border + glow pulse so it's unmistakable the mic is hot */
-.mic-btn.rec { color: var(--bad); border-color: var(--bad); animation: mic-pulse 1s infinite; }
+.mic-btn.rec {
+  color: var(--bad); border-color: var(--bad);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--bad) 16%, var(--panel2)), var(--panel2));
+  animation: mic-pulse 1s infinite;
+}
 @keyframes mic-pulse { 0%,100% { box-shadow: 0 0 2px var(--bad); } 50% { box-shadow: 0 0 12px var(--bad); } }
 
-/* agent-voice MUTED: red so "the agent is silenced" is impossible to miss */
-.voice-toggle.off { color: var(--bad); border-color: var(--bad); }
-.voice-toggle.off:hover { background: var(--ph-faint); }
+/* agent-voice MUTED: red so "the agent is silenced" is impossible to miss — a molded red-tinted
+   chip (same bevel register as the rest of the cluster), not a bare red outline */
+.voice-toggle.off {
+  color: var(--bad); border-color: color-mix(in srgb, var(--bad) 65%, var(--panel2));
+  background: linear-gradient(180deg, color-mix(in srgb, var(--bad) 14%, var(--panel2)), var(--panel2));
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--bad) 22%, transparent), 0 1px 0 rgba(0,0,0,.4);
+}
+.voice-toggle.off svg { filter: drop-shadow(0 0 3px color-mix(in srgb, var(--bad) 35%, transparent)); }
+.voice-toggle.off:hover {
+  border-color: var(--bad); background: color-mix(in srgb, var(--bad) 20%, var(--panel2)); color: var(--bad);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--bad) 25%, transparent), 0 0 9px color-mix(in srgb, var(--bad) 35%, transparent);
+}
 /* agent-voice speaking: amber glow pulse on the chip */
 .voice-toggle.speaking { animation: chip-spk .8s infinite; }
 @keyframes chip-spk { 0%,100% { box-shadow: 0 0 2px var(--ph-glow2); } 50% { box-shadow: 0 0 12px var(--ph-glow); } }
 
 /* hands-free LIVE: filled phosphor (inverted) so the active mode clearly pops out of the row */
-.voice-mode.on { color: var(--ink); background: var(--ph); border-color: var(--ph); box-shadow: 0 0 11px var(--ph-glow); }
+.voice-mode.on {
+  color: var(--ink); background: linear-gradient(180deg, var(--ph-bright) -40%, var(--ph) 60%); border-color: var(--ph);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.25), 0 0 11px var(--ph-glow);
+}
 .voice-mode.on:hover { color: var(--ink); background: var(--ph-bright); border-color: var(--ph-bright); }
 /* hands-free was on last session but a refresh dropped it → pulse the chip to invite a one-tap resume */
 .voice-mode.resume { animation: chip-resume 1.3s ease-in-out infinite; }
@@ -1164,9 +1233,15 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 .ov-cards.ov-approve { grid-template-columns: 1fr 1fr; }
 .ov-approve .ov-card { padding: 11px 13px 10px; }
 .ov-approve .ov-card-ds { font-size: 12.5px; margin-top: 3px; }
-.ov-card { font: inherit; position: relative; border: 2px solid var(--ph-faint); border-radius: 6px; background: var(--panel2); padding: 9px 10px 8px; cursor: pointer; text-align: left; transition: border-color .12s, background .12s; }
-.ov-card:hover { border-color: var(--ph-dim); background: var(--ph-faint); }
-.ov-card.sel { border-color: var(--ph); background: rgba(var(--ph-rgb),.07); box-shadow: 0 0 16px var(--ph-glow2); }
+.ov-card {
+  font: inherit; position: relative; border: 1px solid var(--ph-faint); border-radius: 6px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--ph) 6%, var(--panel2)), var(--panel2));
+  box-shadow: inset 0 1px 0 rgba(var(--ph-rgb),.08), 0 1px 0 rgba(0,0,0,.35);
+  padding: 10px 11px 9px; cursor: pointer; text-align: left;
+  transition: border-color .12s, background-color .12s, box-shadow .12s;
+}
+.ov-card:hover { border-color: var(--ph-dim); background: var(--ph-faint); box-shadow: inset 0 1px 0 rgba(var(--ph-rgb),.12), 0 0 10px var(--ph-glow2), 0 1px 0 rgba(0,0,0,.35); }
+.ov-card.sel { border-color: var(--ph); background: rgba(var(--ph-rgb),.07); box-shadow: inset 0 1px 0 rgba(var(--ph-rgb),.14), 0 0 16px var(--ph-glow2); }
 .ov-card-ic { color: var(--ph); font-size: 19px; line-height: 1; text-shadow: 0 0 8px var(--ph-glow); }
 .ov-card.sel .ov-card-ic { color: var(--ph-bright); }
 .ov-card-nm { color: var(--ph-bright); font-size: 15px; letter-spacing: 1px; margin-top: 5px; }
@@ -1177,13 +1252,23 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 .ov-crewnote b { color: var(--ph); }
 
 .ov-vchips { display: flex; flex-wrap: wrap; gap: 7px; }
-.ov-vchip { font-family: inherit; font-size: 14px; color: var(--ph); background: var(--panel2); border: 2px solid var(--ph-faint); border-radius: 20px; padding: 4px 14px; cursor: pointer; letter-spacing: .6px; text-shadow: 0 0 5px var(--ph-glow2); transition: background .1s, color .1s, border-color .1s; }
-.ov-vchip:hover { border-color: var(--ph-dim); color: var(--ph-bright); }
-.ov-vchip.sel { background: var(--ph); color: var(--ink); border-color: var(--ph); text-shadow: none; }
+.ov-vchip {
+  font-family: inherit; font-size: 14px; color: var(--ph);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--ph) 7%, var(--panel2)), var(--panel2));
+  border: 1px solid var(--ph-faint); border-radius: 999px; padding: 5px 15px; cursor: pointer;
+  letter-spacing: .6px; text-shadow: 0 0 5px var(--ph-glow2);
+  box-shadow: inset 0 1px 0 rgba(var(--ph-rgb),.1), 0 1px 0 rgba(0,0,0,.35);
+  transition: background-color .1s, color .1s, border-color .1s, box-shadow .1s;
+}
+.ov-vchip:hover { border-color: var(--ph-dim); color: var(--ph-bright); box-shadow: inset 0 1px 0 rgba(var(--ph-rgb),.14), 0 0 9px var(--ph-glow2), 0 1px 0 rgba(0,0,0,.35); }
+.ov-vchip.sel {
+  background: linear-gradient(180deg, var(--ph-bright) -40%, var(--ph) 60%); color: var(--ink); border-color: var(--ph);
+  text-shadow: none; box-shadow: inset 0 1px 0 rgba(255,255,255,.25), 0 0 9px var(--ph-glow2);
+}
 .ov-vpreview { margin-top: 8px; }
 
 .ov-field-brain { margin-bottom: 0; }
-.ov-brain { border: 2px solid var(--ph-dim); border-radius: 7px; background: rgba(var(--ph-rgb),.04); padding: 10px 12px; }
+.ov-brain { border: 1px solid var(--ph-dim); border-radius: 7px; background: linear-gradient(180deg, rgba(var(--ph-rgb),.06), rgba(var(--ph-rgb),.025)); box-shadow: inset 0 1px 0 rgba(var(--ph-rgb),.08); padding: 11px 13px; }
 /* (deleted: .ov-vtune + .ov-brain-lead — the voice fine-tune well and the brain lead-in paragraph are both
    gone; the hero ChatGPT card now carries the beginner message, so the lead-in was redundant.) */
 .ov-brain .provider-row { margin: 0 0 8px; }
@@ -1295,8 +1380,10 @@ input.field-locked { opacity: .55; filter: none; cursor: not-allowed; background
   align-content: flex-start; max-height: 156px; overflow-y: auto; padding-right: 2px;
 }
 .skin-thumb {
-  width: 44px; height: 44px; padding: 2px; cursor: pointer; background: var(--panel2);
-  border: 2px solid var(--ph-dim); display: flex; align-items: center; justify-content: center;
+  width: 44px; height: 44px; padding: 2px; cursor: pointer; border-radius: 5px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--ph) 6%, var(--panel2)), var(--panel2));
+  box-shadow: inset 0 1px 0 rgba(var(--ph-rgb),.08), 0 1px 0 rgba(0,0,0,.35);
+  border: 1px solid var(--ph-dim); display: flex; align-items: center; justify-content: center;
 }
 .skin-thumb img {
   width: 100%; height: 100%; object-fit: contain;
@@ -1403,9 +1490,10 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 
 /* bottom-bar right cluster status pill (honest activity light, not a number) */
 #status-pill {
-  background: rgba(0,0,0,0.5); color: var(--ph); font-size: 14px; letter-spacing: 2px;
-  padding: 1px 12px; border: 2px solid var(--ph); text-shadow: 0 0 5px var(--ph-glow2);
-  box-shadow: 0 0 12px var(--ph-glow2), inset 0 0 10px rgba(0,0,0,0.6);
+  background: linear-gradient(180deg, rgba(var(--ph-rgb),.07), rgba(0,0,0,.5));
+  color: var(--ph); font-size: 14px; letter-spacing: 2px;
+  padding: 2px 13px; border: 1px solid var(--ph); border-radius: 999px; text-shadow: 0 0 5px var(--ph-glow2);
+  box-shadow: inset 0 1px 0 rgba(var(--ph-rgb),.14), 0 0 12px var(--ph-glow2), inset 0 0 10px rgba(0,0,0,0.6);
 }
 #status-pill.working { color: var(--gold); border-color: var(--gold); box-shadow: 0 0 12px rgba(var(--gold-rgb),0.35); }
 #status-pill.thinking { color: var(--ph-bright); }
@@ -2470,7 +2558,8 @@ body.crew-rail-off #screen-game.active {
    Additive: new selectors only, on-theme via the same vars. */
 input[type=number].key-input {
   font-family: inherit; font-size: 19px; color: var(--ph-bright);
-  background: #000; border: 2px solid var(--ph-dim); padding: 7px 10px; outline: none;
+  background: linear-gradient(180deg, #000, color-mix(in srgb, var(--ph) 3%, #000));
+  border: 1px solid var(--ph-dim); border-radius: 4px; padding: 8px 11px; outline: none;
   text-shadow: 0 0 5px var(--ph-glow2); box-shadow: inset 0 2px 5px rgba(0,0,0,.65);
 }
 input[type=number].key-input:focus { border-color: var(--ph); box-shadow: inset 0 0 18px rgba(0,0,0,.7), 0 0 12px var(--ph-glow2); }
@@ -2487,15 +2576,20 @@ input[type=number].key-input:focus { border-color: var(--ph); box-shadow: inset 
 .fbc-row .bb[disabled] { opacity: .35; cursor: default; }
 select.fbc-sel {
   flex: 1; font-family: inherit; font-size: 13px; color: var(--ph);
-  background: #000; border: 2px solid var(--ph-dim); padding: 5px 8px; outline: none;
+  background: linear-gradient(180deg, #000, color-mix(in srgb, var(--ph) 3%, #000));
+  border: 1px solid var(--ph-dim); border-radius: 4px; padding: 6px 9px; outline: none;
+  box-shadow: inset 0 2px 5px rgba(0,0,0,.6);
+  transition: border-color .12s, box-shadow .12s;
 }
-select.fbc-sel:focus { border-color: var(--ph); box-shadow: 0 0 12px var(--ph-glow2); }
+select.fbc-sel:focus { border-color: var(--ph); box-shadow: inset 0 2px 5px rgba(0,0,0,.6), 0 0 12px var(--ph-glow2); }
 .mc-seg { display: flex; gap: 0; margin: 2px 0 4px; }
 .mc-seg-btn {
   flex: 1; cursor: pointer; font-family: inherit; font-size: 12px; letter-spacing: .5px;
   color: var(--ph-dim); background: rgba(0,0,0,.32); border: 1px solid var(--ph-dim); padding: 4px 8px;
 }
 .mc-seg-btn + .mc-seg-btn { border-left: none; }
+.mc-seg-btn:first-child { border-radius: 4px 0 0 4px; }
+.mc-seg-btn:last-child { border-radius: 0 4px 4px 0; }
 .mc-seg-btn:hover { color: var(--ph); }
 .mc-seg-btn.active { color: var(--ph-bright); background: var(--ph-faint); box-shadow: inset 0 0 0 1px var(--ph); }
 .mc-tp-fields { display: flex; flex-direction: column; gap: 6px; }
