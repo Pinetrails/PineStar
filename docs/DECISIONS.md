@@ -44,9 +44,14 @@ many of these — they win on any wording conflict.
 - **CRT look is BOLD not subtle**; iterate via `?crtlab=1` and copy values out.
 - **COMMS beats:** decided cards must `vanish()`; ONE post-run beat at a time; gold-inset
   beat family (no `.reply` for asides).
-- **Voice v2 final character set** (2026-07-05, 9b666fee): VENOM default = Algenib@0.88deep,
-  SURFER = Zubenelgenubi, ULTRON = Algenib@1.0 + machine-shell FX. Style pace words are a
-  literal drag — PACE-WORD LAW, never regress. TTS /api/tts is 200-always contract.
+- **Voice v3: ONE station voice — ULTRON** (2026-07-13, Andrew). Supersedes the v2 character
+  set: every agent, every persona speaks the locked Ultron recipe (Algenib@1.0 + machine-shell
+  FX, `Personas.STATION_VOICE`). Personality changes the WORDS (promptInjection/ambient lines),
+  NEVER the sound — do not add per-persona voice fields back. `/api/tts` synthesizes from any
+  credential the station holds (OpenRouter → Gemini native → OpenAI nearest-voice); Codex
+  (ChatGPT OAuth) has no audio endpoint, so a Codex-only station degrades honestly to the
+  browser voice. Still standing from v2: PACE-WORD LAW (style pace words are a literal drag)
+  and the /api/tts 200-always contract.
 
 ## Engineering / process
 

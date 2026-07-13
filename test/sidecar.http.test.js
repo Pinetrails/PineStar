@@ -39,7 +39,13 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
         // clear the OpenRouter key so the voice routes' no-key fallback path is deterministic (a dev machine
         // with the key in its ambient env would otherwise hit the network and flip the {text:''} assertions).
         OPENROUTER_KEY: '', STARNET_OPENROUTER_KEY: '', SKYNET_OPENROUTER_KEY: '',
+        OPENROUTER_API_KEY: '', STARNET_OPENROUTER_API_KEY: '', SKYNET_OPENROUTER_API_KEY: '',
         ELEVENLABS_API_KEY: '',   // same determinism for the ElevenLabs TTS branch's no-key degrade
+        // /api/tts now resolves a CHAIN of credentials (openrouter → gemini → openai) — clear the Gemini
+        // keys too, or an ambient dev key would hit the network and flip the no-key degrade assertions.
+        GEMINI_API_KEY: '', STARNET_GEMINI_API_KEY: '', SKYNET_GEMINI_API_KEY: '',
+        GOOGLE_API_KEY: '', STARNET_GOOGLE_API_KEY: '', SKYNET_GOOGLE_API_KEY: '',
+        GOOGLE_AI_API_KEY: '', STARNET_GOOGLE_AI_API_KEY: '', SKYNET_GOOGLE_AI_API_KEY: '',
         OPENAI_API_KEY: '',
         STARNET_OPENAI_API_KEY: '',
         SKYNET_OPENAI_API_KEY: '',

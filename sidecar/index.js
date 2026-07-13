@@ -8063,11 +8063,22 @@ function consentSummary(call) {
   try { const s = JSON.stringify(a); return s.length > 80 ? s.slice(0, 77) + '…' : s; } catch (_) { return ''; }
 }
 
-/* POST /api/tts — neural text-to-speech via OpenRouter's /audio/speech (same BYOK key the browser
-   already sends to /api/run; no extra secret). Returns mp3 bytes, or a small {fallback:true} JSON so
+/* POST /api/tts — neural text-to-speech from WHATEVER AI credential the station already holds (no
+   voice-specific secret): OpenRouter /audio/speech, native Gemini TTS (same prebuilt voices), or
+   OpenAI /audio/speech as an approximation. Returns audio bytes, or a small {fallback:true} JSON so
    the browser drops back to its built-in speechSynthesis. Results are cached on disk by
-   (model,voice,speed,text) so repeated lines (acks, catchphrases) cost nothing and play instantly. */
+   (model,voice,style,text) so repeated lines (acks, catchphrases) cost nothing and play instantly. */
 const TTS_DEFAULT_MODEL = 'google/gemini-3.1-flash-tts-preview';
+// Credential preference order for TTS. OpenRouter first (the historical path), then Gemini natively
+// (identical model + prebuilt voices — Algenib IS a Gemini voice, so the clip is the same), then OpenAI
+// (different vendor: nearest-voice approximation via gpt-4o-mini-tts + its `instructions` steer).
+// Codex (ChatGPT OAuth) is deliberately absent: that token only reaches the Codex responses endpoint —
+// there is no audio API it can call, so it can never speak. TRUTHFUL degrade: such a station gets the
+// honest 'no key' fallback, never a fake voice.
+const TTS_KEY_PROVIDERS = ['openrouter', 'gemini', 'openai'];
+const OPENAI_TTS_MODEL = 'gpt-4o-mini-tts';
+// nearest OpenAI voice for the station's locked Ultron identity (Algenib = low gravelly male → onyx).
+const OPENAI_TTS_VOICE = 'onyx';
 // prepend a 44-byte WAV header so the browser can play raw PCM (Gemini TTS only outputs pcm).
 function pcmToWav(pcm, sampleRate, channels) {
   const bits = 16, blockAlign = channels * bits / 8, byteRate = sampleRate * blockAlign;
@@ -8111,8 +8122,6 @@ async function handleTts(req, res) {
   let body;
   try { body = JSON.parse(await readBody(req, 1 << 16)); }   // text only — 64KB cap
   catch (e) { return fallback('bad json'); }
-  // browser sends body.key; desktop build falls back to the live keychain key (runtimeKey)
-  const key = String((body && body.key) || '').trim() || runtimeKey;
   let text = String((body && body.text) || '').replace(/\s+/g, ' ').trim();
   // backstop cap (the client already segments to <1000): if it ever overruns, cut back to the last
   // sentence boundary within the window rather than chopping mid-word.
@@ -8127,18 +8136,36 @@ async function handleTts(req, res) {
   const style = String((body && body.style) || '').replace(/\s+/g, ' ').trim().slice(0, 500);
   if (!text) return fallback('no text');
   // ElevenLabs branch — user-trained voices (e.g. the Commander's own Ultron clone). Its own key + cache
-  // namespace; the OpenRouter key is irrelevant there, so dispatch BEFORE the no-key gate.
+  // namespace; the provider chain below is irrelevant there, so dispatch BEFORE the no-key gate.
   if (String((body && body.provider) || '').trim().toLowerCase() === 'elevenlabs') return ttsElevenLabs(res, body, text, fallback);
-  if (!key) return fallback('no key');
+
+  // WHICH credential speaks: an explicit key from the page (tagged with its provider) wins; otherwise
+  // the first provider in TTS_KEY_PROVIDERS the sidecar itself holds a credential for (runtime push /
+  // keychain env / provider env) — so any station that can run an agent on OpenRouter, Gemini, or OpenAI
+  // gets the neural voice out of the box, no separate voice key.
+  let ttsProvider = '', ttsKey = '';
+  const explicitKey = String((body && body.key) || '').trim();
+  if (explicitKey) {
+    ttsProvider = normalizeProviderId(String((body && body.keyProvider) || '')) || 'openrouter';
+    if (TTS_KEY_PROVIDERS.indexOf(ttsProvider) < 0) ttsProvider = 'openrouter';
+    ttsKey = explicitKey;
+  } else {
+    for (const p of TTS_KEY_PROVIDERS) { const k = providerRuntimeKey(p, ''); if (k) { ttsProvider = p; ttsKey = k; break; } }
+  }
+  if (!ttsKey) return fallback('no key');
 
   // fold the style into the spoken input the way Gemini TTS documents (a leading directive it obeys but
   // does not read aloud). Kept separate from `text` so the cache key can include the style (below).
   const input = style ? ('Say the following in ' + style + ': ' + text) : text;
 
-  // cache the synthesized (speed-independent) audio by model+voice+STYLE+text; per-personality pacing is
-  // applied client-side via Audio.playbackRate, so it stays out of the key for better cache hits. Style
-  // MUST be in the key — same words in a different delivery are a different clip.
-  const ck = crypto.createHash('sha1').update(model + '|' + voice + '|' + style + '|' + text).digest('hex');
+  // cache the synthesized (speed-independent) audio by model+voice+STYLE+text; pacing is applied
+  // client-side via Audio.playbackRate, so it stays out of the key for better cache hits. Style MUST be
+  // in the key — same words in a different delivery are a different clip. OpenRouter and native Gemini
+  // SHARE a key on purpose (same model + same prebuilt voice ⇒ the same clip); OpenAI is a different
+  // vendor voice, so it gets its own namespace (like elevenlabs/) and can never collide.
+  const ck = (ttsProvider === 'openai')
+    ? crypto.createHash('sha1').update('openai/' + OPENAI_TTS_MODEL + '|' + OPENAI_TTS_VOICE + '|' + style + '|' + text).digest('hex')
+    : crypto.createHash('sha1').update(model + '|' + voice + '|' + style + '|' + text).digest('hex');
   const serveCached = async () => {
     for (const ext of ['wav', 'mp3']) {
       try {
@@ -8151,37 +8178,91 @@ async function handleTts(req, res) {
   };
   if (await serveCached()) return;
 
-  // pcm is the only format Gemini TTS supports (and is widely available); we wrap it to WAV below.
-  const payload = { model, input, voice, response_format: 'pcm' };
-  let or;
-  try {
-    or = await fetch('https://openrouter.ai/api/v1/audio/speech', voiceFetchOpts({
-      method: 'POST',
-      headers: { 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json', 'HTTP-Referer': 'https://localhost', 'X-Title': 'STARNET' },
-      body: JSON.stringify(payload)
-    }, 60000));
-  } catch (e) { return fallback('network: ' + ((e && e.message) || e)); }
-  if (!or.ok) {
-    let detail = ''; try { detail = (await or.text()).slice(0, 300); } catch (_) {}
-    return fallback('openrouter ' + or.status + (detail ? ' — ' + detail : ''));
-  }
-  const ct = (or.headers.get('content-type') || '').toLowerCase();
-  let buf;
-  try { buf = Buffer.from(await or.arrayBuffer()); } catch (e) { return fallback('read: ' + ((e && e.message) || e)); }
-  if (!buf || !buf.length) return fallback('empty audio');
+  let buf, outType, ext;
+  if (ttsProvider === 'gemini') {
+    // Native Gemini TTS — the SAME model + prebuilt voice as the OpenRouter path, spoken straight from
+    // the user's Gemini key. generateContent with AUDIO modality returns base64 PCM we wrap to WAV.
+    const base = (providerRuntimeBaseUrl('gemini', '') || 'https://generativelanguage.googleapis.com/v1beta').replace(/\/+$/, '');
+    const nativeModel = model.replace(/^google\//, '');
+    let gr;
+    try {
+      gr = await fetch(base + '/models/' + encodeURIComponent(nativeModel) + ':generateContent', voiceFetchOpts({
+        method: 'POST',
+        headers: { 'x-goog-api-key': ttsKey, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: input }] }],
+          generationConfig: { responseModalities: ['AUDIO'], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } } } }
+        })
+      }, 60000));
+    } catch (e) { return fallback('network: ' + ((e && e.message) || e)); }
+    if (!gr.ok) {
+      let detail = ''; try { detail = (await gr.text()).slice(0, 300); } catch (_) {}
+      return fallback('gemini ' + gr.status + (detail ? ' — ' + detail : ''));
+    }
+    let j; try { j = await gr.json(); } catch (e) { return fallback('gemini: bad json'); }
+    const part = j && j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts
+      && j.candidates[0].content.parts.find(p => p && p.inlineData && p.inlineData.data);
+    if (!part) return fallback('gemini: no audio in response');
+    try { buf = Buffer.from(part.inlineData.data, 'base64'); } catch (e) { return fallback('gemini: bad audio data'); }
+    if (!buf || !buf.length) return fallback('empty audio');
+    const mt = String(part.inlineData.mimeType || '').toLowerCase();
+    const rate = parseInt((mt.match(/rate=(\d+)/) || [])[1], 10) || 24000;
+    buf = pcmToWav(buf, rate, 1);
+    outType = 'audio/wav'; ext = 'wav';
+  } else if (ttsProvider === 'openai') {
+    // OpenAI /audio/speech — a different vendor, so the nearest voice (onyx) steered by the same style
+    // text via `instructions`. Honest approximation: it will not be byte-identical to the Gemini voice.
+    const base = (providerRuntimeBaseUrl('openai', '') || 'https://api.openai.com/v1').replace(/\/+$/, '');
+    const payload = { model: OPENAI_TTS_MODEL, input: text, voice: OPENAI_TTS_VOICE, response_format: 'mp3' };
+    if (style) payload.instructions = style;
+    let oa;
+    try {
+      oa = await fetch(base + '/audio/speech', voiceFetchOpts({
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + ttsKey, 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      }, 60000));
+    } catch (e) { return fallback('network: ' + ((e && e.message) || e)); }
+    if (!oa.ok) {
+      let detail = ''; try { detail = (await oa.text()).slice(0, 300); } catch (_) {}
+      return fallback('openai ' + oa.status + (detail ? ' — ' + detail : ''));
+    }
+    try { buf = Buffer.from(await oa.arrayBuffer()); } catch (e) { return fallback('read: ' + ((e && e.message) || e)); }
+    if (!buf || !buf.length) return fallback('empty audio');
+    outType = 'audio/mpeg'; ext = 'mp3';
+  } else {
+    // OpenRouter /audio/speech (the historical path). pcm is the only format Gemini TTS supports (and is
+    // widely available); we wrap it to WAV below.
+    const payload = { model, input, voice, response_format: 'pcm' };
+    let or;
+    try {
+      or = await fetch('https://openrouter.ai/api/v1/audio/speech', voiceFetchOpts({
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + ttsKey, 'Content-Type': 'application/json', 'HTTP-Referer': 'https://localhost', 'X-Title': 'STARNET' },
+        body: JSON.stringify(payload)
+      }, 60000));
+    } catch (e) { return fallback('network: ' + ((e && e.message) || e)); }
+    if (!or.ok) {
+      let detail = ''; try { detail = (await or.text()).slice(0, 300); } catch (_) {}
+      return fallback('openrouter ' + or.status + (detail ? ' — ' + detail : ''));
+    }
+    const ct = (or.headers.get('content-type') || '').toLowerCase();
+    try { buf = Buffer.from(await or.arrayBuffer()); } catch (e) { return fallback('read: ' + ((e && e.message) || e)); }
+    if (!buf || !buf.length) return fallback('empty audio');
 
-  // raw PCM (e.g. "audio/pcm;rate=24000;channels=1") → wrap into a playable WAV; otherwise pass through.
-  let outType = 'audio/wav', ext = 'wav';
-  if (/pcm|octet-stream/.test(ct) || /rate=|channels=/.test(ct)) {
-    const rate = parseInt((ct.match(/rate=(\d+)/) || [])[1], 10) || 24000;
-    const channels = parseInt((ct.match(/channels=(\d+)/) || [])[1], 10) || 1;
-    buf = pcmToWav(buf, rate, channels);
-  } else if (/mpeg|mp3/.test(ct)) { outType = 'audio/mpeg'; ext = 'mp3'; }
-  else if (/wav/.test(ct)) { outType = 'audio/wav'; ext = 'wav'; }
-  else if (/ogg/.test(ct)) { outType = 'audio/ogg'; ext = 'ogg'; }
-  // anything else (e.g. a 200 with a JSON error body, or an unexpected codec) is NOT silently wrapped as
-  // WAV — that would ship a corrupt blob the browser fails to decode into silence. Fall back cleanly.
-  else { return fallback('unexpected content-type: ' + ct); }
+    // raw PCM (e.g. "audio/pcm;rate=24000;channels=1") → wrap into a playable WAV; otherwise pass through.
+    outType = 'audio/wav'; ext = 'wav';
+    if (/pcm|octet-stream/.test(ct) || /rate=|channels=/.test(ct)) {
+      const rate = parseInt((ct.match(/rate=(\d+)/) || [])[1], 10) || 24000;
+      const channels = parseInt((ct.match(/channels=(\d+)/) || [])[1], 10) || 1;
+      buf = pcmToWav(buf, rate, channels);
+    } else if (/mpeg|mp3/.test(ct)) { outType = 'audio/mpeg'; ext = 'mp3'; }
+    else if (/wav/.test(ct)) { outType = 'audio/wav'; ext = 'wav'; }
+    else if (/ogg/.test(ct)) { outType = 'audio/ogg'; ext = 'ogg'; }
+    // anything else (e.g. a 200 with a JSON error body, or an unexpected codec) is NOT silently wrapped as
+    // WAV — that would ship a corrupt blob the browser fails to decode into silence. Fall back cleanly.
+    else { return fallback('unexpected content-type: ' + ct); }
+  }
 
   try { const tmp = path.join(VOICE_CACHE_DIR, ck + '.' + ext + '.' + crypto.randomUUID() + '.tmp'); await fsp.writeFile(tmp, buf); await fsp.rename(tmp, path.join(VOICE_CACHE_DIR, ck + '.' + ext)); } catch (_) {}
   res.writeHead(200, { 'Content-Type': outType, 'Cache-Control': 'no-store', 'X-Voice-Cache': 'miss' });

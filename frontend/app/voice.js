@@ -9,11 +9,12 @@
           name, so every crew member sounds like itself.
 
    STT is the browser-native SpeechRecognition (push-to-talk + the hands-free loop).
-   TTS goes through output(): it first tries NEURAL voices via the sidecar /api/tts
-   (OpenRouter /audio/speech, using the same OpenRouter key the browser already sends to
-   /api/run — a distinct Gemini voice per personality), and falls back to the browser's
-   speechSynthesis on no-key / error / offline — so the worst case is the old robotic voice,
-   never silence. Per-personality voice + speed live on the persona (personas.js: ttsVoice/ttsSpeed).
+   TTS goes through output(): it first tries NEURAL voices via the sidecar /api/tts, which
+   synthesizes with whichever AI credential the station already holds (OpenRouter, Gemini, or
+   OpenAI — no voice-specific key needed), and falls back to the browser's speechSynthesis on
+   no-key / error / offline — so the worst case is the old robotic voice, never silence.
+   THE VOICE IS ONE LOCKED IDENTITY (Personas.STATION_VOICE — Ultron, all agents, all personas):
+   personality changes what the agent SAYS, never how it sounds.
 
    Graceful degradation: no SpeechRecognition → the mic button hides; no neural key AND no
    speechSynthesis → speak() is a no-op (the reply still shows as text + a room bubble). */
@@ -202,32 +203,55 @@ const Voice = (() => {
     if (fbNotified === cls || (cls === 'error' && fbStreak < 3)) return;
     fbNotified = cls;
     fbMsg = cls === 'credits' ? '🔇 real voice offline — voice provider out of credits · backup voice active'
-      : cls === 'nokey' ? '🔇 real voice needs a provider key · backup voice active'
+      : cls === 'nokey' ? '🔇 real voice needs an OpenRouter, Gemini, or OpenAI credential · backup voice active'
       : '🔇 real voice unreachable · backup voice active';
     setStatus(fbMsg);
     if (toggleBtn) toggleBtn.title = fbMsg;
   }
   function noteNeuralOk() { fbStreak = 0; if (fbNotified) { fbNotified = ''; fbMsg = ''; reflectToggle(); } }
   function apiKey() { return (typeof Harness !== 'undefined' && Harness.getKey) ? (Harness.getKey() || '') : ''; }
-  function ttsConfig() {
-    const p = (typeof Personas !== 'undefined' && Personas.get) ? Personas.get(activePersonaId) : null;
-    // ttsStyle is the natural-language delivery instruction the sidecar folds into the input (and the
-    // cache key) — the station's eerie register, distinct per persona. Empty → plain synthesis.
-    // ttsDeep: disable pitch-preservation on playback, so ttsSpeed<1 genuinely LOWERS the pitch (the
-    // character-voice lever: Venom/Ultron get their sub-bass register from Algenib resampled down).
-    // ttsShell: an optional per-persona "machine shell" FX chain ({metal,digitize,reverb} in 0..1) applied on
-    // playback — Ultron's cold-metal body. A persona WITH a shell bypasses the transmission color (below).
-    return { model: TTS_MODEL, voice: (p && p.ttsVoice) || 'Umbriel', speed: (p && p.ttsSpeed) || 1.0, style: (p && p.ttsStyle) || '', deep: !!(p && p.ttsDeep), shell: (p && p.ttsShell) || null };
+  // Providers whose credential can synthesize the neural voice, in preference order. The sidecar mirrors
+  // this list — Codex (ChatGPT OAuth) is NOT on it because that token has no audio endpoint to call.
+  const TTS_PROVIDERS = ['openrouter', 'gemini', 'openai'];
+  // the best TTS-capable credential the PAGE holds → {key, provider}. Empty key is fine (desktop / dev:
+  // the sidecar resolves its own keychain/env credential); provider then rides along as '' too.
+  function ttsCred() {
+    if (typeof Harness !== 'undefined' && Harness.getKey) {
+      for (const p of TTS_PROVIDERS) { const k = Harness.getKey(p) || ''; if (k) return { key: k, provider: p }; }
+    }
+    return { key: '', provider: '' };
   }
-  // Can neural TTS possibly work? Browser: yes iff the page holds a key / reports configured. DESKTOP: the
-  // key lives in the SIDECAR (keychain->env), and the page-side configured() flag has proven unreliable there
-  // (a false negative silently forced the robotic speechSynthesis voice for WEEKS while the server could
-  // synthesize fine — the "voices never changed" desktop bug). On the desktop shell, don't guess: always let
-  // the request go — the sidecar is the source of truth, its 'no key' degrade comes back on the FIRST call
-  // and latches ttsDisabled, so a truly key-less install pays exactly one cheap round-trip per session.
+  function ttsConfig() {
+    // ONE LOCKED VOICE (Andrew, 2026-07-12): every agent, every persona, speaks as ULTRON —
+    // Personas.STATION_VOICE (Algenib + machine shell). Personality changes the WORDS only; the
+    // literal fallback below keeps the same identity if personas.js isn't loaded (tests, tools).
+    // ttsStyle is the natural-language delivery instruction the sidecar folds into the input (and the
+    // cache key). ttsShell is the "machine shell" FX chain ({metal,digitize,reverb} in 0..1) applied on
+    // playback — Ultron's cold-metal body; a shell bypasses the transmission color (below).
+    const v = (typeof Personas !== 'undefined' && Personas.STATION_VOICE) || null;
+    return {
+      model: TTS_MODEL,
+      voice: (v && v.ttsVoice) || 'Algenib',
+      speed: (v && v.ttsSpeed) || 1.0,
+      style: (v && v.ttsStyle) || '',
+      deep: !!(v && v.ttsDeep),
+      shell: (v && v.ttsShell) || { metal: 1.0, digitize: 0.4, reverb: 0.6 }
+    };
+  }
+  // Can neural TTS possibly work? Browser: yes iff the page holds ANY TTS-capable credential / reports one
+  // configured. DESKTOP: the key lives in the SIDECAR (keychain->env), and the page-side configured() flag
+  // has proven unreliable there (a false negative silently forced the robotic speechSynthesis voice for
+  // WEEKS while the server could synthesize fine — the "voices never changed" desktop bug). On the desktop
+  // shell, don't guess: always let the request go — the sidecar is the source of truth, its 'no key'
+  // degrade comes back on the FIRST call and latches ttsDisabled, so a truly key-less install pays exactly
+  // one cheap round-trip per session.
   function haveKey() {
     if (typeof window !== 'undefined' && (window.__TAURI__ || window.__TAURI_INTERNALS__)) return true;
-    return !!apiKey() || (typeof Harness !== 'undefined' && Harness.configured && Harness.configured());
+    if (ttsCred().key) return true;
+    if (typeof Harness !== 'undefined' && Harness.configured) {
+      for (const p of TTS_PROVIDERS) { if (Harness.configured(p)) return true; }
+    }
+    return false;
   }
 
   /* PRE-WARM the voice cache: when the speaker turns on, quietly synthesize the active persona's stock lines
@@ -242,7 +266,7 @@ const Voice = (() => {
     prewarmedFor = activePersonaId;
     const p = (typeof Personas !== 'undefined' && Personas.get) ? Personas.get(activePersonaId) : null;
     if (!p) return;
-    const cfg = ttsConfig(), key = apiKey();
+    const cfg = ttsConfig(), cred = ttsCred();
     const lines = [];
     if (Array.isArray(p.ambientLines)) for (const l of p.ambientLines) lines.push(l);
     if (p.sampleVoiceReply) lines.push(p.sampleVoiceReply);
@@ -254,7 +278,7 @@ const Voice = (() => {
         // sidecar to synthesize + cache it; we discard the audio. A failure is silent (best-effort).
         const r = await fetch('/api/tts', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ key, text, model: cfg.model, voice: cfg.voice, style: cfg.style })
+          body: JSON.stringify({ key: cred.key, keyProvider: cred.provider, text, model: cfg.model, voice: cfg.voice, style: cfg.style })
         });
         try { await r.arrayBuffer(); } catch (_) {}
       } catch (_) { break; }   // network gone → stop warming, don't hammer
@@ -531,14 +555,14 @@ const Voice = (() => {
   // begin synthesizing one job → resolves to {kind:'neural',blob} | {kind:'browser'} | {kind:'skip'}.
   function startSynth(job) {
     if (job.result) return;
-    const key = apiKey(), cfg = ttsConfig();
-    // desktop: the key lives in the sidecar's env (keychain), so apiKey() is '' — gate on "configured?"
-    // and send no key; the sidecar /api/tts falls back to its env key.
+    const cred = ttsCred(), cfg = ttsConfig();
+    // desktop: the key lives in the sidecar's env (keychain), so the page holds none — gate on "configured?"
+    // and send no key; the sidecar /api/tts resolves its own credential (keychain/env, any TTS provider).
     if (!haveKey() || ttsDisabled || Date.now() < neuralColdUntil) { job.result = Promise.resolve({ kind: 'browser' }); return; }
     const ac = new AbortController(); job.ac = ac; ttsAbort = ac;
     job.result = fetch('/api/tts', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: ac.signal,
-      body: JSON.stringify({ key, text: job.text, model: cfg.model, voice: cfg.voice, style: cfg.style })
+      body: JSON.stringify({ key: cred.key, keyProvider: cred.provider, text: job.text, model: cfg.model, voice: cfg.voice, style: cfg.style })
     }).then(async r => {
       const ct = r.headers.get('Content-Type') || '';
       if (r.ok && ct.indexOf('audio') === 0) { const blob = await r.blob(); if (blob && blob.size) { noteNeuralOk(); return { kind: 'neural', blob }; } }
