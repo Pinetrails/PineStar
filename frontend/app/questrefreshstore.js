@@ -23,6 +23,8 @@ const QuestRefreshStore = (() => {
   let lastFetch = 0;            // ms of the last SUCCESSFUL fetch (0 = force next sync to fetch)
   let inflight = false;         // one fetch at a time — a slow response never stacks
   let running = false;          // a manual run POST is in flight (button guard, distinct from the engine's own inFlight)
+  const beaten = new Set();     // normalized proposed-star texts we've already surfaced a confirm beat for (anti-nag, session-local)
+  const nrm = t => String(t == null ? '' : t).toLowerCase().replace(/\s+/g, ' ').trim();
 
   // shape the status JSON into a stable read shape, guarding every field so a junk/partial payload degrades
   // to a safe view rather than throwing (fail-soft, like the sibling stores' normalizers).
@@ -65,11 +67,37 @@ const QuestRefreshStore = (() => {
       if (res.ok) {
         const j = await res.json().catch(() => null);
         const s = shape(j);
-        if (s) { cache = s; lastFetch = Date.now(); }
+        if (s) { cache = s; lastFetch = Date.now(); maybeBeat(); }
       }
     } catch (_) { /* fail-soft: keep the last-good cache, never blank the panel */ }
     finally { inflight = false; }
   }
+
+  // surface a PROPOSED (inferred, unconfirmed) north star as ONE COMMS turn-in beat — "your north star looks
+  // like: X — confirm or correct?" (the NS-6 turn-in idiom). One beat per distinct proposal for the session
+  // (anti-nag); guarded so a live post-run beat is never interrupted (falls back to an ambient broadcast line).
+  // The inline confirm/decline in the DIRECTION card is the primary surface; this beat is the glance to it.
+  function maybeBeat() {
+    if (typeof Chat === 'undefined') return;
+    const ns = cache && cache.northStar;
+    if (!ns || ns.status !== 'proposed' || !ns.text) return;
+    const key = nrm(ns.text);
+    if (!key || beaten.has(key)) return;
+    beaten.add(key);
+    const busy = (typeof Chat.isBusy === 'function') ? Chat.isBusy() : false;
+    if (!busy && typeof Chat.nudge === 'function') {
+      if (typeof SFX !== 'undefined' && SFX.idea) { try { SFX.idea(); } catch (_) {} }
+      const line = '◆ your north star looks like: “' + ns.text + '”. is that the direction to steer your quests by?';
+      Chat.nudge(line, [{ label: 'Confirm ✓', value: 'yes' }, { label: 'Not quite', value: 'no' }, { label: 'Open QUEST LOG', value: 'log', skip: true }], choice => {
+        if (choice && choice.value === 'yes') { verdict('confirm').then(afterVerdict); }
+        else if (choice && choice.value === 'no') { verdict('decline').then(afterVerdict); }
+        else if (typeof StationUI !== 'undefined' && StationUI.openTerm) StationUI.openTerm('quests');
+      });
+    } else if (typeof Chat.broadcast === 'function') {
+      try { Chat.broadcast('NORTH STAR TO CONFIRM · ' + String(ns.text).toUpperCase()); } catch (_) {}
+    }
+  }
+  function afterVerdict() { if (typeof StationUI !== 'undefined' && StationUI.rerender) { try { StationUI.rerender('quests'); } catch (_) {} } }
 
   // THROTTLED poll — safe to call every tick + every quest-log render. Only actually hits the network once the
   // POLL_MS window has elapsed since the last good fetch (or on the very first call / after a run reset it).
@@ -96,12 +124,27 @@ const QuestRefreshStore = (() => {
     return out;
   }
 
-  // init on enter-game: a clean fetch so the first quest-log render already has the status (the tick keeps it fresh).
-  function init() { cache = null; lastFetch = 0; running = false; refetch(); }
-  // a fresh Commander inherits no cached status (mirrors the sibling stores' reset).
-  function reset() { cache = null; lastFetch = 0; running = false; }
+  // ---- write: the Commander's verdict on a PROPOSED (inferred) north star (POST /api/quests/refresh/northstar).
+  // confirm → it becomes the adopted star; decline → denylisted + dropped. Immediate refetch so the card/label
+  // reflect the verdict now. Returns { ok, applied, northStar, northStarProposed }.
+  async function verdict(decision) {
+    const dec = decision === 'confirm' ? 'confirm' : 'decline';
+    let out = { ok: false };
+    try {
+      const res = await fetch('/api/quests/refresh/northstar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ decision: dec }) });
+      const j = await res.json().catch(() => null);
+      out = j && typeof j === 'object' ? j : out;
+    } catch (_) { out = { ok: false }; }
+    lastFetch = 0; await refetch();   // immediate: the "unconfirmed" tag clears (confirm) or the star reverts (decline)
+    return out;
+  }
 
-  return { init, sync, status, isRunning, run, reset, _shape: shape };
+  // init on enter-game: a clean fetch so the first quest-log render already has the status (the tick keeps it fresh).
+  function init() { cache = null; lastFetch = 0; running = false; beaten.clear(); refetch(); }
+  // a fresh Commander inherits no cached status (mirrors the sibling stores' reset).
+  function reset() { cache = null; lastFetch = 0; running = false; beaten.clear(); }
+
+  return { init, sync, status, isRunning, run, verdict, reset, _shape: shape };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = { QuestRefreshStore };

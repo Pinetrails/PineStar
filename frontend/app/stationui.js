@@ -5418,10 +5418,20 @@ const StationUI = (() => {
     if (s && s.northStar && s.northStar.text) {
       const ns = s.northStar;
       const srcTag = ns.source === 'goal' ? 'your goal' : 'inferred';
-      const unconf = ns.status === 'proposed' ? ' <span class="q-nstag q-unconf" title="the station inferred this — confirm or correct it below">unconfirmed</span>' : '';
+      const proposed = ns.status === 'proposed';
+      const unconf = proposed ? ' <span class="q-nstag q-unconf" title="the station inferred this — confirm or correct it">unconfirmed</span>' : '';
+      // propose-and-confirm: an inferred star is never silently adopted — the Commander confirms (adopt) or
+      // corrects (decline → denylisted, re-inferred next cycle). A Commander-set goal needs no verdict.
+      const verdictRow = proposed
+        ? '<div class="consent-btns q-mt q-ns-verdict">'
+          + '<button class="consent-btn q-ns-yes">That’s it ✓</button>'
+          + '<button class="consent-btn deny q-ns-no">Not quite</button>'
+          + '</div>'
+        : '';
       starHtml = '<div class="q-northstar"><span class="q-ns-eyebrow">NORTH STAR &middot; <span class="q-ns-src">' + esc(srcTag) + '</span>' + unconf + '</span>'
         + '<div class="q-ns-text">&#9670; ' + esc(ns.text) + '</div>'
-        + (ns.groundedIn ? '<div class="sub q-ns-why">' + esc(ns.groundedIn) + '</div>' : '') + '</div>';
+        + (ns.groundedIn ? '<div class="sub q-ns-why">' + esc(ns.groundedIn) + '</div>' : '')
+        + verdictRow + '</div>';
     } else {
       starHtml = '<div class="q-northstar"><span class="q-ns-eyebrow">NORTH STAR</span>'
         + '<div class="sub q-ns-text dim">not set yet &mdash; the station learns your long-term goal from your goal arc, dossier, and real activity.</div></div>';
@@ -5688,6 +5698,21 @@ const StationUI = (() => {
       rerender('quests');   // no-op if the panel was closed meanwhile (rerender guards on open[key])
       if (r && r.started) setTimeout(() => { try { rerender('quests'); } catch (_) {} }, 3500);
     });
+    // QUEST V3 — NORTH STAR verdict: confirm (adopt the inferred star) or correct (decline → denylisted, the
+    // station re-infers next cycle). Both route through QuestRefreshStore.verdict → POST /northstar, then re-render
+    // so the "unconfirmed" tag clears (confirm) or the star reverts (decline). Truthful: only a real proposal shows these.
+    const nsYes = body.querySelector('.q-ns-yes'), nsNo = body.querySelector('.q-ns-no');
+    const wireVerdict = (btn, decision, tone) => { if (!btn) return; btn.addEventListener('click', async ev => {
+      ev.stopPropagation();
+      if (typeof QuestRefreshStore === 'undefined' || !QuestRefreshStore.verdict) return;
+      btn.disabled = true;
+      const r = await QuestRefreshStore.verdict(decision);
+      if (r && r.ok) { sfx('click'); notify(decision === 'confirm' ? '◆ north star confirmed — quests will steer by it' : '↩ got it — the station will re-read your direction', tone); }
+      else { btn.disabled = false; notify('could not record that', 'bad'); }
+      rerender('quests');
+    }); };
+    wireVerdict(nsYes, 'confirm', 'gold');
+    wireVerdict(nsNo, 'decline', 'warn');
   }
 
   /* ============== lifecycle ============== */

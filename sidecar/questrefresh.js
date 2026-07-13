@@ -61,21 +61,35 @@
   // normalized title key (the quest-store normTitle idiom) — dedup vs open slate + denylist.
   const norm = (s) => str(s).toLowerCase().replace(/\s+/g, ' ').trim();
 
+  const DECLINED_NS_CAP = 20;                // FIFO cap on the declined-inference denylist (never re-propose these)
+
   function fresh() {
-    return { v: STATE_VERSION, northStar: null, lastCycleAt: 0, lastMintAt: 0, ledger: [] };
+    return { v: STATE_VERSION, northStar: null, proposedNorthStar: null, declinedNorthStars: [], lastCycleAt: 0, lastMintAt: 0, ledger: [] };
+  }
+
+  // clamp one raw north-star-ish object into the stored shape (or null). `defStatus` is what an unstamped
+  // record hydrates as: the ADOPTED star defaults to 'adopted', a proposal to 'proposed'.
+  function normStar(raw, defStatus) {
+    if (!(raw && typeof raw === 'object' && str(raw.text).trim())) return null;
+    return {
+      text: str(raw.text).slice(0, NORTH_STAR_MAX),
+      groundedIn: str(raw.groundedIn).slice(0, WHY_MAX),
+      at: Number.isFinite(raw.at) ? Math.floor(raw.at) : 0,
+      source: raw.source === 'goal' ? 'goal' : 'model',
+      status: raw.status === 'proposed' ? 'proposed' : (defStatus || 'adopted')
+    };
   }
 
   // tolerant hydrate: clamp everything; a corrupt/partial save degrades per-field, never throws.
   function normalize(raw) {
     const s = fresh();
     if (raw && typeof raw === 'object') {
-      if (raw.northStar && typeof raw.northStar === 'object' && str(raw.northStar.text).trim()) {
-        s.northStar = {
-          text: str(raw.northStar.text).slice(0, NORTH_STAR_MAX),
-          groundedIn: str(raw.northStar.groundedIn).slice(0, WHY_MAX),
-          at: Number.isFinite(raw.northStar.at) ? Math.floor(raw.northStar.at) : 0,
-          source: raw.northStar.source === 'goal' ? 'goal' : 'model'
-        };
+      s.northStar = normStar(raw.northStar, 'adopted');
+      if (s.northStar) s.northStar.status = 'adopted';                 // the adopted slot is always adopted
+      const prop = normStar(raw.proposedNorthStar, 'proposed');
+      s.proposedNorthStar = prop ? Object.assign(prop, { status: 'proposed', source: 'model' }) : null;
+      if (Array.isArray(raw.declinedNorthStars)) {
+        s.declinedNorthStars = raw.declinedNorthStars.map(t => norm(t)).filter(Boolean).slice(-DECLINED_NS_CAP);
       }
       if (Number.isFinite(raw.lastCycleAt) && raw.lastCycleAt >= 0) s.lastCycleAt = Math.floor(raw.lastCycleAt);
       if (Number.isFinite(raw.lastMintAt) && raw.lastMintAt >= 0) s.lastMintAt = Math.floor(raw.lastMintAt);
@@ -277,22 +291,74 @@
     return Object.assign({}, s, { lastMintAt: now });
   }
 
-  // adopt/refresh the north star. source 'goal' = restated from the Commander's own active goal arc (always
-  // wins); 'model' = inferred from evidence. Empty text is a no-op (never blank an existing star).
+  // ADOPT the north star (status 'adopted'): a Commander-goal restatement (source 'goal', always wins) or a
+  // CONFIRMED inference. Empty text is a no-op (never blank an existing star). A goal adoption also SUPERSEDES
+  // any pending inference proposal — the Commander's own goal outranks a guess, so the guess is dropped.
   function setNorthStar(state, ns, opts) {
     const now = Number(opts && opts.now) || 0;
     const s = normalize(state);
     const text = str(ns && ns.text).trim().slice(0, NORTH_STAR_MAX);
     if (!text) return s;
-    return Object.assign({}, s, {
-      northStar: { text: text, groundedIn: str(ns && ns.groundedIn).slice(0, WHY_MAX), at: now, source: (ns && ns.source) === 'goal' ? 'goal' : 'model' }
+    const source = (ns && ns.source) === 'goal' ? 'goal' : 'model';
+    const next = Object.assign({}, s, {
+      northStar: { text: text, groundedIn: str(ns && ns.groundedIn).slice(0, WHY_MAX), at: now, source: source, status: 'adopted' }
     });
+    if (source === 'goal') next.proposedNorthStar = null;   // a real goal supersedes a pending inference
+    return next;
+  }
+
+  // the EFFECTIVE north star the panel shows + the directive grounds on: a pending PROPOSAL (labelled
+  // 'proposed'/unconfirmed) takes visual precedence over the last adopted one, else the adopted star, else null.
+  // Truthful telemetry: the status flag is what lets the UI say "unconfirmed" instead of asserting adoption.
+  function effectiveNorthStar(state) {
+    const s = normalize(state);
+    return s.proposedNorthStar || s.northStar || null;
+  }
+
+  // PROPOSE an inferred north star (propose-and-confirm, never silent adoption). No-ops when: text is empty; it
+  // matches the already-ADOPTED star (a re-affirmation needs no confirm); it was DECLINED before (never
+  // re-propose); or an identical proposal is already pending (don't reset its stamp / re-beat). Otherwise stashes
+  // it as the pending proposal — the cycle may still ground on it, but the UI labels it unconfirmed until a verdict.
+  function proposeNorthStar(state, ns, opts) {
+    const now = Number(opts && opts.now) || 0;
+    const s = normalize(state);
+    const text = str(ns && ns.text).trim().slice(0, NORTH_STAR_MAX);
+    if (!text) return s;
+    const nt = norm(text);
+    if (s.northStar && norm(s.northStar.text) === nt) return s;                 // already the adopted star — no proposal
+    if (s.declinedNorthStars.indexOf(nt) >= 0) return s;                        // declined forever — never re-propose
+    if (s.proposedNorthStar && norm(s.proposedNorthStar.text) === nt) return s; // same proposal already pending — keep it
+    return Object.assign({}, s, {
+      proposedNorthStar: { text: text, groundedIn: str(ns && ns.groundedIn).slice(0, WHY_MAX), at: now, source: 'model', status: 'proposed' }
+    });
+  }
+
+  // CONFIRM the pending proposal → it becomes the adopted star (Commander said "yes, that's my direction").
+  // No pending proposal = no-op.
+  function confirmNorthStar(state, opts) {
+    const now = Number(opts && opts.now) || 0;
+    const s = normalize(state);
+    if (!s.proposedNorthStar) return s;
+    return Object.assign({}, s, {
+      northStar: { text: s.proposedNorthStar.text, groundedIn: s.proposedNorthStar.groundedIn, at: now, source: 'model', status: 'adopted' },
+      proposedNorthStar: null
+    });
+  }
+
+  // DECLINE the pending proposal → durably denylist it (so it's never re-proposed) and drop it; the previously
+  // adopted star (if any) stands. Next cycle re-infers — a DIFFERENT inference may propose, the same one won't.
+  function declineNorthStar(state, opts) {
+    const s = normalize(state);
+    if (!s.proposedNorthStar) return s;
+    const nt = norm(s.proposedNorthStar.text);
+    const denied = s.declinedNorthStars.filter(t => t !== nt).concat([nt]).slice(-DECLINED_NS_CAP);
+    return Object.assign({}, s, { proposedNorthStar: null, declinedNorthStars: denied });
   }
 
   return {
     fresh, normalize, decide, buildDirective, parse, parseContract, hasEvidence, slateFull,
-    note, stampCycle, stampMint, setNorthStar,
-    REFRESH_EVERY_MS, CAUGHT_UP_GAP_MS, MAX_MINTS_PER_CYCLE, OPEN_GENERATED_CAP, LEDGER_CAP, CONTRACT_TYPES,
+    note, stampCycle, stampMint, setNorthStar, effectiveNorthStar, proposeNorthStar, confirmNorthStar, declineNorthStar,
+    REFRESH_EVERY_MS, CAUGHT_UP_GAP_MS, MAX_MINTS_PER_CYCLE, OPEN_GENERATED_CAP, LEDGER_CAP, DECLINED_NS_CAP, CONTRACT_TYPES,
     _internals: { norm: norm, grabFrom: grabFrom, MIN_FACT_KEY: MIN_FACT_KEY, MAX_STEPS: MAX_STEPS }
   };
 });

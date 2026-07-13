@@ -3461,7 +3461,9 @@ async function runQuestRefreshCycle(why) {
     const dossierBlock = commanderDossier.get();
     const evidenceCtx = {
       goalNote: goalNote,
-      northStar: questRefreshState.northStar,
+      // ground on the EFFECTIVE star: a pending (unconfirmed) inference still steers the directive so the cycle
+      // isn't rudderless while awaiting the Commander's verdict — the UI is what labels it unconfirmed, not here.
+      northStar: QuestRefresh.effectiveNorthStar(questRefreshState),
       dossierBlock: dossierBlock,
       activityBlock: activityBlock,
       interestsBlock: interestsBlock,
@@ -3501,11 +3503,14 @@ async function runQuestRefreshCycle(why) {
       deniedTitles: rec.deniedTitles, propKeys: QUESTREFRESH_PROP_KEYS, grounding: grounding
     });
 
-    // NORTH STAR: the Commander's own active goal ALWAYS outranks an inference; the model's line only lands
-    // when no goal arc is set. Persisted so the next cycle re-shows it (revise-on-evidence, not re-derive).
+    // NORTH STAR: the Commander's own active goal ALWAYS outranks an inference and is adopted silently (a goal
+    // arc is the Commander's own declaration — nothing to confirm). An INFERRED star is never silently adopted:
+    // it's stashed as a PROPOSAL and surfaced for confirm/correct (propose-and-confirm). proposeNorthStar no-ops
+    // when the inference matches the adopted star, was declined before, or is already pending — so the Commander
+    // is asked once, not every cycle. Persisted so the next cycle re-shows it (revise-on-evidence, not re-derive).
     const goal = commanderGoals.get();
     if (goal && goal.text) questRefreshState = QuestRefresh.setNorthStar(questRefreshState, { text: goal.text, groundedIn: 'the Commander\'s active goal arc', source: 'goal' }, { now: Date.now() });
-    else if (parsed.northStar && parsed.northStar.text) questRefreshState = QuestRefresh.setNorthStar(questRefreshState, { text: parsed.northStar.text, groundedIn: 'inferred from the dossier + recent activity', source: 'model' }, { now: Date.now() });
+    else if (parsed.northStar && parsed.northStar.text) questRefreshState = QuestRefresh.proposeNorthStar(questRefreshState, { text: parsed.northStar.text, groundedIn: 'inferred from the dossier + recent activity', source: 'model' }, { now: Date.now() });
     persistQuestRefresh();
 
     if (parsed.none) { questRefreshNote({ outcome: 'none', reason: 'model judged the open slate already covers the next steps (' + why + ' pass)' }); return; }
@@ -4205,6 +4210,7 @@ function dispatchRoute(req, res) {
   if (req.method === 'POST' && req.url === '/api/quests/dismiss') return handleQuestsDismiss(req, res);
   if (req.method === 'GET' && req.url.split('?')[0] === '/api/quests/refresh') return handleQuestsRefreshStatus(req, res);   // QUEST V3: north star + refresh ledger + due state
   if (req.method === 'POST' && req.url === '/api/quests/refresh/run') return handleQuestsRefreshRun(req, res);               // QUEST V3: force a refresh cycle NOW (manual override)
+  if (req.method === 'POST' && req.url === '/api/quests/refresh/northstar') return handleQuestsRefreshNorthStar(req, res);  // QUEST V3: confirm/decline a proposed (inferred) north star
   // W7 — OPEN the deliverable, don't display its code. Two routes let the Commander RUN/OPEN what an agent built:
   //   POST /api/workshop/open  — shell-open a REAL jailed file with the OS default app (interactive user-click only).
   if (req.method === 'POST' && req.url === '/api/workshop/open') return handleWorkshopOpen(req, res);
@@ -5738,11 +5744,15 @@ async function handleQuestsRefreshRun(req, res) {
 function handleQuestsRefreshStatus(req, res) {
   const s = QuestRefresh.normalize(questRefreshState);
   const d = QuestRefresh.decide(s, { now: Date.now(), openCount: questRefreshOpenCount() });
+  // the EFFECTIVE star the panel shows: a pending inference (status 'proposed') takes precedence over the last
+  // adopted one so the UI can label it "unconfirmed" and offer confirm/correct — never asserting silent adoption.
+  const eff = QuestRefresh.effectiveNorthStar(s);
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
   res.end(JSON.stringify({
     ok: true,
     enabled: process.env.SKYNET_QUEST_REFRESH !== '0',
-    northStar: s.northStar,
+    northStar: eff,
+    northStarProposed: !!s.proposedNorthStar,
     lastCycleAt: s.lastCycleAt,
     dueAt: s.lastCycleAt + QuestRefresh.REFRESH_EVERY_MS,
     due: d.fire, why: d.why, binding: d.binding,
@@ -5750,6 +5760,24 @@ function handleQuestsRefreshStatus(req, res) {
     openCount: questRefreshOpenCount(),
     ledger: s.ledger.slice(-20)
   }));
+}
+
+// POST /api/quests/refresh/northstar { decision:'confirm'|'decline' } — the Commander's verdict on a PROPOSED
+// (inferred, unconfirmed) north star. confirm → it becomes the adopted star; decline → it's denylisted (never
+// re-proposed) and dropped, the previously adopted star (if any) stands and next cycle re-infers. Honest reply:
+// the resulting effective star + whether a proposal is still pending. No-op verdict when nothing is pending.
+async function handleQuestsRefreshNorthStar(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 4096)) || {}; } catch (e) { return json(400, { ok: false, error: 'bad request' }); }
+  const decision = String(body.decision || '');
+  if (decision !== 'confirm' && decision !== 'decline') return json(400, { ok: false, error: 'decision must be confirm or decline' });
+  const had = !!QuestRefresh.normalize(questRefreshState).proposedNorthStar;
+  questRefreshState = (decision === 'confirm')
+    ? QuestRefresh.confirmNorthStar(questRefreshState, { now: Date.now() })
+    : QuestRefresh.declineNorthStar(questRefreshState, { now: Date.now() });
+  persistQuestRefresh();
+  const s = QuestRefresh.normalize(questRefreshState);
+  json(200, { ok: true, applied: had, decision: decision, northStar: QuestRefresh.effectiveNorthStar(s), northStarProposed: !!s.proposedNorthStar });
 }
 
 // POST /api/workshop/grant { agentId, on } — record/clear the Commander's "Build things while I'm away" consent
