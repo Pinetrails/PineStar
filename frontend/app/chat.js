@@ -1110,6 +1110,10 @@ const Chat = (() => {
     d.appendChild(line);
     log.appendChild(d);
     autoscroll();
+    // ASCII-motion (asciifx.js): the station line DECODES out of glyph-static — the eerie register the
+    // broadcast asks for (a signal resolving, never a party). scramble walks leaf text nodes only, so the
+    // tinted agent-name span keeps its colour; it restores the exact text on completion; reduced-motion no-op.
+    try { if (typeof AsciiFX !== 'undefined') AsciiFX.scramble(line, { duration: 700 }); } catch (_) {}
     return true;
   }
   // a compact tool-activity line in COMMS (▶ call / ◀ result) — the agent's real work, visible. Kept for

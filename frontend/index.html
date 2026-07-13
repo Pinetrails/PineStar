@@ -20,6 +20,7 @@
 <link rel="stylesheet" href="css/refit.css"><!-- REFIT build-modal form polish: rides the .refit-guide card, before motion.css so its focus ring layers on top -->
 <!-- motion.css last: the Phase-1 premium motion + feedback layer builds ON TOP of every screen's styles -->
 <link rel="stylesheet" href="css/motion.css">
+<link rel="stylesheet" href="css/asciifx.css"><!-- ASCII-motion kit: decode/dissolve/typewriter vocabulary (asciifx.js); rides motion.css's token layer -->
 <link rel="stylesheet" href="css/topbar.css"><!-- topbar instrument cluster: builds on motion.css's premium component vocabulary -->
 <link rel="stylesheet" href="css/widgets.css"><!-- widget rails: pinnable telemetry instruments in the chrome's dead space (widgets.js) -->
 <link rel="stylesheet" href="css/titlebar.css"><!-- custom window chrome (Windows desktop shell): themed titlebar + MIN/MAX/CLOSE; inert unless body.sn-chrome (titlebar.js) -->
@@ -505,7 +506,7 @@
            the model's catalog max context length. Painted by StationUI.tick via CtxGauge. -->
       <span id="ctx-gauge" class="ctx-gauge" data-level="unknown" title="CONTEXT — the current agent's context window">
         <span class="ctx-lbl">CTX</span>
-        <span class="ctx-track"><i class="ctx-fill"></i></span>
+        <span class="ctx-cells" aria-hidden="true">▯▯▯▯▯▯▯▯▯▯</span>
         <b class="ctx-num">—</b>
         <span class="ctx-cap"></span>
       </span>
@@ -527,6 +528,7 @@
 
 <script src="app/legacymigrate.js"></script><!-- FIRST: migrate starnet.* localStorage keys -> starnet.* before any store reads -->
 <script src="js/util.js"></script>
+<script src="app/asciifx.js"></script><!-- ASCII-motion kit (AsciiFX): decode/dissolve/typewriter primitives; must load before its consumers (chat.js, stationui.js) -->
 <script src="js/audio.js"></script>
 <script src="js/arcade.js"></script>
 <script src="app/propsprites.js"></script>
