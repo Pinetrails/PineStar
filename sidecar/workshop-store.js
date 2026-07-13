@@ -43,6 +43,12 @@ function normalize(stored) {
   const s = (stored && typeof stored === 'object') ? stored : {};
   return {
     grant: s.grant === true,
+    // provenance of the grant decision. grantExplicit=true means the Commander decided via the per-agent
+    // "Build things while I'm away" toggle (setGrant) — an explicit yes OR no. grantAuto=true means the grant
+    // was recorded as part of raising the autonomy dial to build-capable (grantIfUndecided). An explicit
+    // decision is never overridden by the dial path; legacy records (neither flag) count as undecided.
+    grantExplicit: s.grantExplicit === true,
+    grantAuto: s.grantAuto === true,
     backlog: Array.isArray(s.backlog) ? s.backlog.filter(it => it && typeof it === 'object' && it.id) : [],
     denylist: Array.isArray(s.denylist) ? s.denylist.filter(x => x != null).map(String).filter(Boolean) : [],
     // normalized titles of DISCARDED items — a discarded piece of work can't be re-queued under a fresh id either
@@ -81,12 +87,30 @@ function makeWorkshopStore(deps) {
   function isDenied(agentId, backlogId) { return read(agentId).denylist.indexOf(String(backlogId)) >= 0; }
 
   // ---- writes (serialized per agent via the durable mutex) ----
+  // the Commander's EXPLICIT per-agent decision (the "Build things while I'm away" toggle). Marks the record
+  // explicitly decided, so the dial's grantIfUndecided path below never overrides it (an explicit OFF stays off).
   function setGrant(agentId, on) {
     return durable.update(keyOf(agentId), (cur) => {
       const rec = normalize(cur);
       rec.grant = on === true;
+      rec.grantExplicit = true;
+      rec.grantAuto = false;
       return rec;
     });
+  }
+
+  // the AUTONOMY-DIAL path: raising the dial to build-capable (initiative≥leash AND reach≥sandbox) IS the
+  // Commander's unattended-build consent, so record the grant — but ONLY when they never explicitly decided
+  // (grantExplicit wins, both ways). Idempotent. Resolves { granted, changed } so the caller can ledger an
+  // auto-grant honestly (changed=true exactly when this call recorded a new grant).
+  function grantIfUndecided(agentId) {
+    let changed = false, granted = false;
+    return durable.update(keyOf(agentId), (cur) => {
+      const rec = normalize(cur);
+      if (!rec.grant && !rec.grantExplicit) { rec.grant = true; rec.grantAuto = true; changed = true; }
+      granted = rec.grant === true;
+      return rec;
+    }).then(() => ({ granted, changed }));
   }
 
   // add a build request to the queue. item: { id, title, detail?, source? }. now = injected ms. Dedup doctrine —
@@ -241,7 +265,7 @@ function makeWorkshopStore(deps) {
   }
 
   return {
-    read, hasGrant, setGrant, backlogOf, isDenied,
+    read, hasGrant, setGrant, grantIfUndecided, backlogOf, isDenied,
     queue, claimNext, sweepStaleClaims, markBuilt, releaseClaim, discard, complete, itemForRun,
     _durable: durable
   };

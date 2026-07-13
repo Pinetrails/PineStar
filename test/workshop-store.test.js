@@ -44,6 +44,32 @@ function freshStore() {
     A.ok(s2.hasGrant('hero') === false, 'grant flips back to false');
   }
 
+  // ---- 1b. grantIfUndecided (autonomy-dial path): grants when undecided, NEVER overrides an explicit decision ----
+  {
+    const fs = memFs();
+    const s = makeWorkshopStore({ fs, path, workspaces: '/ws', writeDurable });
+    // undecided (no record at all) → the dial records the grant
+    const g1 = await s.grantIfUndecided('hero');
+    A.ok(g1.granted === true && g1.changed === true, 'dial path grants a never-decided agent (changed:true)');
+    A.ok(s.hasGrant('hero') === true, 'the auto-grant reads back true');
+    A.ok(s.read('hero').grantAuto === true && s.read('hero').grantExplicit === false, 'the grant is marked auto, not explicit');
+    // idempotent: a second dial write changes nothing
+    const g2 = await s.grantIfUndecided('hero');
+    A.ok(g2.granted === true && g2.changed === false, 'a repeat dial write is a no-op (changed:false)');
+    // survives a fresh store over the same disk (restart-safe)
+    const s2 = makeWorkshopStore({ fs, path, workspaces: '/ws', writeDurable });
+    A.ok(s2.hasGrant('hero') === true && s2.read('hero').grantAuto === true, 'auto-grant + provenance SURVIVE a fresh store');
+    // an EXPLICIT revoke wins over the dial, permanently
+    await s2.setGrant('hero', false);
+    const g3 = await s2.grantIfUndecided('hero');
+    A.ok(g3.granted === false && g3.changed === false, 'the dial NEVER overrides an explicit OFF');
+    A.ok(s2.hasGrant('hero') === false, 'the explicit revoke stands after a dial write');
+    // an explicit ON also stays explicit (dial no-ops over it)
+    await s2.setGrant('hero', true);
+    const g4 = await s2.grantIfUndecided('hero');
+    A.ok(g4.granted === true && g4.changed === false && s2.read('hero').grantExplicit === true, 'an explicit ON is untouched by the dial');
+  }
+
   // ---- 2. queue: idempotent by id, denylisted ids refused, FIFO order preserved, returns { item, reason } ----
   {
     const s = freshStore();
@@ -194,7 +220,7 @@ function freshStore() {
 
   // ---- 7. normalize is defensive: partial/legacy/absent records load to a full safe shape ----
   {
-    A.eq(normalize(null), { grant: false, backlog: [], denylist: [], deniedTitles: [] }, 'null -> empty safe record');
+    A.eq(normalize(null), { grant: false, grantExplicit: false, grantAuto: false, backlog: [], denylist: [], deniedTitles: [] }, 'null -> empty safe record');
     A.eq(normalize({ grant: true }).grant, true, 'partial record keeps its grant');
     A.eq(normalize({ backlog: [{ id: 'ok' }, { nope: 1 }, 'junk'] }).backlog.length, 1, 'backlog drops entries without an id');
     A.eq(normalize({ denylist: ['a', 1, null, 'b'] }).denylist, ['a', '1', 'b'], 'denylist coerces to non-empty strings');
