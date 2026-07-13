@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "92c196a2a53bf29e415defc3bdba6bc6d3f72b1f",
+    "sourceCommit": "0ae8293b51b073179fd6dcc406023cb57d5e6520",
     "pathSetSha256": "7eb7a83f508ffd0ef6fd8058ddf15370a953b404d9555462119fb730712a9876",
     "files": [
       {
@@ -63,8 +63,8 @@
       },
       {
         "path": "frontend/app/app.js",
-        "bytes": 241451,
-        "sha256": "a1a479e8ff857d261f09cba94f112fa7a4f4732345b7b1f58eafadec04305b8c"
+        "bytes": 246336,
+        "sha256": "d27f7e7385ca0ed959464a66f871045ec6584bc7bda526fe37c8dcc55c8d2281"
       },
       {
         "path": "frontend/app/armconfirm.js",
@@ -128,8 +128,8 @@
       },
       {
         "path": "frontend/app/chat.js",
-        "bytes": 370327,
-        "sha256": "6fd3fac367523bbc8350275dd1ab2f0864140b62c807ed4e85acef38642c07ac"
+        "bytes": 370509,
+        "sha256": "e1bdcbc21501249e95b809ff0776627df6bcb4712584e9ce6cde21047cf9cda7"
       },
       {
         "path": "frontend/app/chatresize.js",
@@ -268,8 +268,8 @@
       },
       {
         "path": "frontend/app/harness.js",
-        "bytes": 37940,
-        "sha256": "e04a64a9ec26080025dd4f47cffb6144a2d1fd846f2fc30ef09393ad9d60e926"
+        "bytes": 38237,
+        "sha256": "f3ca89bb80461d7ac078f30427a8485a7e4a8b850704d149c694e4481ce3a066"
       },
       {
         "path": "frontend/app/hint.js",
@@ -763,8 +763,8 @@
       },
       {
         "path": "frontend/css/app.css",
-        "bytes": 180919,
-        "sha256": "a1c7c7a25b483e38a1369ac728ad754109dcfc111d08e9a4e3860cdb6a440d45"
+        "bytes": 181643,
+        "sha256": "87693c86f7c127ae899be896ff2d01f474324513df8822237448801949fc5221"
       },
       {
         "path": "frontend/css/comms.css",
