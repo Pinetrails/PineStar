@@ -1,5 +1,30 @@
 # NEXT.md — current priorities & task queue
 
+## 2026-07-13 — FLAGSHIP WAVE: last-hop surfaces + cross-wiring (branch `claude/flagship-features-audit-d0e1a1`)
+
+Three-agent code audit of the flagship trio (autonomy / quests / recommendations) found the engines
+solid and test-locked but the value trapped server-side (the recurring last-hop pattern). Five lanes
+shipped and merged to the audit branch (trunk-synced, gates green, in-lane live-DOM proofs; digest in
+qa/STATUS.md):
+- QUEST V3 surface: DIRECTION card (north star + provenance + confirm/correct), REFRESH QUESTS button,
+  visible refresh-outcome ledger. CLOSES the V3 OPEN items "frontend surface" + "north-star CONFIRM
+  beat". Slate-full fast path: at OPEN_GENERATED_CAP the cycle skips the model call with an honest note.
+- NIGHT SHIFT visibility: dial-raise now speaks an honest outlook (mode + readiness from status);
+  unseen-drafts COMMS nudge during live sessions (closes the "drafts pile up unseen" follow-up);
+  LAST REPORT re-open. The onboarding-readiness follow-up is addressed at the dial, not the ceremony.
+- SCOUT LOG: the attempt ledger finally renders in the recruitment bay (closes "scout-ledger UI" OPEN).
+- AUX GOVERNOR: joint budget over the 6 post-run extraction passes (SKYNET_AUX_BUDGET, default 2,
+  priority reflection>study>threadmine>scout>skill-review>curator; deferrals visible, cooldowns unarmed).
+  Closes the unbudgeted run-end cost risk; the NS-8 full composer remains open (this is the cost half).
+- CROSS-WIRE: nightfocus ranks open WORK quests + confirmed north star as focus evidence (consent law:
+  unconfirmed proposals never steer autonomy); scout directives cite the quest slate + star (grounded);
+  shared declined index (read-side NS-8 lite) — explicit declines suppress re-proposals across ALL
+  engines; expiries never suppress.
+STILL OPEN after this wave: first real-provider quest-refresh + scout cycles on Andrew's save (runtime
+proof, not code); NS-8 full unified composer (extraction consolidation — the declined/cost halves are
+done); cold-state → targeted awakening question; thread/trust beat starvation fallback; reflection
+auto-save consent posture (deliberate design, revisit on user feedback).
+
 ## 2026-07-13 — NIGHT-SHIFT "never does anything" fix (dial-is-the-consent + honesty)
 
 Root cause of "idle for hours, zero autonomous work": at dial free/sandbox every beat silently
