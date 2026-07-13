@@ -70,6 +70,15 @@ const NightReportStore = (() => {
 
     fired = true;   // spend the session's single report even if the beat is later dismissed (anti-nag)
 
+    // NS visibility: the morning report is SURFACING these drafts — mark them seen so the live-session unseen-drafts
+    // nudge (nightnudge.js) won't re-announce the same set. Shared durable stamp; fail-open (no store → no-op).
+    try {
+      if (typeof NightDraftNudge !== 'undefined' && NightDraftNudge.markSeen) {
+        let newest = 0; for (const d of drafts) { const a = Number(d && d.at) || 0; if (a > newest) newest = a; }
+        NightDraftNudge.markSeen(newest || now);
+      }
+    } catch (_) {}
+
     // the BEAT body: headline + the act lines + the honest declined half (+ the "did nothing and why" sentence when
     // it stood down entirely). Composed ENTIRELY from the report view-model — no invented text.
     const lines = [];
