@@ -454,26 +454,27 @@
 /* SEND — an inverted-phosphor chip riding the bottom of the edit line beside Enter. A ⏎-arrow glyph +
    a SEND label; it collapses to just the glyph on a narrow panel. Themed tokens only, matches the
    window title-chip register (inked-on-phosphor) so it reads as the primary action, not chrome. */
+/* SEND — ROBCO command: [ SEND ] in dim terminal brackets; hover slams the solid invert block.
+   The arrow glyph is retired — on a RobCo terminal the command IS text. transition:none = snap. */
 .chat-send {
   flex: 0 0 auto; align-self: flex-end;
-  display: inline-flex; align-items: center; gap: 6px;
-  font-family: inherit; font-size: 12px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--ink);
-  background: linear-gradient(180deg, var(--ph-bright) -40%, var(--ph) 60%);
-  border: 1px solid var(--ph-bright); border-radius: 5px;
-  padding: 6px 11px 6px 9px; cursor: pointer; user-select: none; line-height: 1.1;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.25), 0 1px 0 rgba(0,0,0,.45);
-  transition: background-color var(--t-fast) var(--ease-soft), box-shadow var(--t-fast) var(--ease-soft),
-    filter var(--t-fast) var(--ease-soft);
+  display: inline-flex; align-items: center; gap: 4px;
+  font-family: inherit; font-size: 14px; letter-spacing: 2px; text-transform: uppercase; color: var(--ph);
+  background: transparent; border: none; border-radius: 0;
+  padding: 6px 8px; cursor: pointer; user-select: none; line-height: 1.1;
+  text-shadow: 0 0 6px var(--ph-glow2);
+  transition: none;
 }
-.chat-send svg { width: 13px; height: 13px; display: block; flex: 0 0 auto; filter: drop-shadow(0 1px 0 rgba(255,255,255,.18)); }
+.chat-send svg { display: none; }
+.chat-send::before { content: '['; color: var(--ph-dim); }
+.chat-send::after { content: ']'; color: var(--ph-dim); }
 .chat-send:hover {
-  background: var(--ph-bright);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.3), 0 0 14px var(--ph-glow), 0 1px 0 rgba(0,0,0,.45);
+  color: var(--ink); background: var(--ph);
+  box-shadow: 0 0 18px var(--ph-glow); text-shadow: none;
 }
-.chat-send:active { transform: translateY(1px); box-shadow: inset 0 1px 3px rgba(0,0,0,.3); }
-.chat-send:focus-visible { outline: 2px solid var(--ph-bright); outline-offset: 2px; }
-/* on a tight panel the label folds away, leaving the glyph — the arrow alone still reads as "send" */
-@media (max-width: 360px) { .chat-send .cs-label { display: none; } }
+.chat-send:hover::before, .chat-send:hover::after { color: var(--ink); }
+.chat-send:active { background: var(--ph-bright); }
+.chat-send:focus-visible { outline: 1px solid var(--ph-bright); outline-offset: 2px; }
 
 /* CHAR COUNTER — dim, right-aligned, appears only as the message nears the 4000-char cap so it never
    competes for attention on a normal message. --warn tint at the edge. [hidden] until chat.js shows it. */
@@ -487,7 +488,7 @@
 /* CONTROL CLUSTER — the model dock hugs the left; voice/voice-mode/mic are pushed to the right edge.
    The model-dock popover stays absolutely positioned against #chat-inputrow (still position:relative),
    so it keeps floating above the whole composer — this wrapper is a static parent and doesn't reparent it. */
-.chat-tools { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.chat-tools { display: flex; align-items: center; gap: 7px; min-width: 0; padding: 1px 0; }
 .chat-tools #voice-toggle { margin-left: auto; }
 
 /* ============================================================
@@ -496,22 +497,23 @@
    and the drop-target glow. Phosphor tokens only; the button
    matches the mic/voice register (app.css .mic-btn family).
    ============================================================ */
+/* the attach control — ROBCO INVERT register, same as the .mic-btn family (app.css):
+   a bare phosphor glyph; hover = the instant solid selection block */
 .chat-attach-btn {
   flex: 0 0 auto; font-size: 16px; line-height: 0; color: var(--ph);
-  background: linear-gradient(180deg, color-mix(in srgb, var(--ph) 8%, var(--panel2)), var(--panel2));
-  border: 1px solid var(--ph-dim); border-radius: 5px;
-  width: 33px; height: 33px; padding: 0; cursor: pointer; user-select: none;
+  background: transparent; border: none; border-radius: 0;
+  width: 38px; height: 34px; padding: 0; cursor: pointer; user-select: none;
   display: inline-flex; align-items: center; justify-content: center;
-  box-shadow: inset 0 1px 0 rgba(var(--ph-rgb), .14), 0 1px 0 rgba(0,0,0,.4);
-  transition: color .12s, border-color .12s, background-color .12s, box-shadow .12s, transform .12s;
+  transition: none;
 }
 .chat-attach-btn svg { width: 1em; height: 1em; display: block; pointer-events: none; filter: drop-shadow(0 0 3px var(--ph-glow2)); }
 .chat-attach-btn:hover {
-  border-color: var(--ph); background: var(--ph-faint); color: var(--ph-bright);
-  box-shadow: inset 0 1px 0 rgba(var(--ph-rgb), .2), 0 0 9px var(--ph-glow2), 0 1px 0 rgba(0,0,0,.4);
+  color: var(--ink); background: var(--ph);
+  box-shadow: 0 0 16px var(--ph-glow);
 }
-.chat-attach-btn:active { transform: translateY(1px); }
-.chat-attach-btn:focus-visible { outline: 2px solid var(--ph-bright); outline-offset: 2px; }
+.chat-attach-btn:hover svg { filter: none; }
+.chat-attach-btn:active { background: var(--ph-bright); }
+.chat-attach-btn:focus-visible { outline: 1px solid var(--ph-bright); outline-offset: 2px; }
 
 /* the preview strip sits above the edit line; hidden (via [hidden]) until at least one chip exists */
 .chat-attach-strip { display: flex; flex-wrap: wrap; gap: 6px; }
