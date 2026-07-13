@@ -871,12 +871,10 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
    at a glance. Shown only while the displayed stream is running (chat.js toggles [hidden] via updateControls). */
 .chat-stop {
   flex: 0 0 auto; font-size: 16px; line-height: 0; color: var(--bad);
-  background: linear-gradient(180deg, color-mix(in srgb, var(--bad) 14%, var(--panel2)), var(--panel2));
-  border: 1px solid var(--bad); border-radius: 5px;
-  width: 33px; height: 33px; padding: 0; cursor: pointer; user-select: none;
+  background: transparent; border: none; border-radius: 0;
+  width: 38px; height: 34px; padding: 0; cursor: pointer; user-select: none;
   display: inline-flex; align-items: center; justify-content: center;
-  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--bad) 22%, transparent), 0 1px 0 rgba(0,0,0,.4);
-  transition: color .12s, border-color .12s, background-color .12s, box-shadow .12s;
+  transition: none;
   animation: stop-pulse 1.2s ease-in-out infinite;
 }
 .chat-stop[hidden] { display: none; }
@@ -888,36 +886,44 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 /* ---------- voice controls: a matched set of bordered phosphor chips in the COMMS input row.
    Defined dark boxes (not bare glyphs) so they punctuate the amber UI and read as real controls;
    active states invert/recolor so the live one stands out at a glance. ---------- */
+/* ROBCO INVERT register (FNV terminal) — the controls are bare phosphor glyphs drawn ON the
+   console glass, not widgets. "Selected" is the terminal selection block: an INSTANT solid
+   phosphor invert (ink glyph on lit phosphor) with bloom. No borders, no rounding, no easing —
+   RobCo terminals snap. Persistent active states (voice-mode live, dock open) hold the block. */
 .mic-btn, .voice-toggle, .model-dock-toggle {
   flex: 0 0 auto; font-size: 16px; line-height: 0; color: var(--ph);
-  background: linear-gradient(180deg, color-mix(in srgb, var(--ph) 8%, var(--panel2)), var(--panel2));
-  border: 1px solid var(--ph-dim); border-radius: 5px;
-  width: 33px; height: 33px; padding: 0; cursor: pointer; user-select: none;
+  background: transparent; border: none; border-radius: 0;
+  width: 38px; height: 34px; padding: 0; cursor: pointer; user-select: none;
   display: inline-flex; align-items: center; justify-content: center;
-  box-shadow: inset 0 1px 0 rgba(var(--ph-rgb), .14), 0 1px 0 rgba(0,0,0,.4);
-  transition: color .12s, border-color .12s, background-color .12s, box-shadow .12s, transform .12s;
+  transition: none;
 }
 .mic-btn svg, .voice-toggle svg { width: 1em; height: 1em; display: block; pointer-events: none; filter: drop-shadow(0 0 3px var(--ph-glow2)); }
 .mic-btn:hover, .voice-toggle:hover, .model-dock-toggle:hover {
-  border-color: var(--ph); background: var(--ph-faint); color: var(--ph-bright);
-  box-shadow: inset 0 1px 0 rgba(var(--ph-rgb), .2), 0 0 9px var(--ph-glow2), 0 1px 0 rgba(0,0,0,.4);
+  color: var(--ink); background: var(--ph);
+  box-shadow: 0 0 16px var(--ph-glow);
+  text-shadow: none;
 }
-.mic-btn:active, .voice-toggle:active, .model-dock-toggle:active { transform: translateY(1px); }
-.mic-btn:focus-visible, .voice-toggle:focus-visible, .model-dock-toggle:focus-visible { outline: 2px solid var(--ph-bright); outline-offset: 2px; }
+.mic-btn:hover svg, .voice-toggle:hover svg { filter: none; }
+.mic-btn:active, .voice-toggle:active, .model-dock-toggle:active { background: var(--ph-bright); }
+.mic-btn:focus-visible, .voice-toggle:focus-visible, .model-dock-toggle:focus-visible { outline: 1px solid var(--ph-bright); outline-offset: 2px; }
 
 .model-dock-toggle {
-  width: auto; min-width: 54px; max-width: 148px; height: 33px; padding: 0 9px; gap: 5px;
+  width: auto; min-width: 54px; max-width: 148px; height: 34px; padding: 0 9px; gap: 6px;
   font-size: 13px; line-height: 1; letter-spacing: 0; text-shadow: 0 0 5px var(--ph-glow2);
   position: relative; overflow: visible;
 }
+/* hover invert swallows the chip's inner readouts too — everything goes ink on the block */
+.model-dock-toggle:hover .model-dock-model-name,
+.model-dock-toggle:hover .model-dock-effort-chip,
+.model-dock-toggle:hover .model-dock-effort-chip::before { color: var(--ink); text-shadow: none; }
 .model-dock-toggle.on {
-  color: var(--ink); background: linear-gradient(180deg, var(--ph-bright) -40%, var(--ph) 60%); border-color: var(--ph);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.25), 0 0 11px var(--ph-glow);
+  color: var(--ink); background: var(--ph);
+  box-shadow: 0 0 16px var(--ph-glow);
   text-shadow: none;
 }
 .model-dock-sigil {
-  display: inline-grid; place-items: center; width: 16px; height: 16px;
-  border: 1px solid currentColor; border-radius: 3px; font-size: 11px; opacity: .9;}
+  display: inline-grid; place-items: center; width: 16px; height: 16px; opacity: .9;}
+.model-dock-sigil svg { width: 100%; height: 100%; display: block; }
 .model-dock-effort-chip {
   display: inline-block; max-width: 40px; overflow: hidden; text-overflow: clip;
   white-space: nowrap; font-size: 10px; letter-spacing: 0.6px; color: var(--ph-bright);
@@ -1041,8 +1047,9 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 .model-dock-keywarn:hover { background: color-mix(in srgb, var(--warn) 22%, transparent); }
 .model-dock-keywarn .mdw-glyph { flex: 0 0 auto; }
 .model-dock-keywarn .mdw-txt { min-width: 0; }
-/* resting chip flags a missing key with a warm hairline so it's noticeable before the dock is even opened */
-.model-dock-toggle.needs-key { border-color: var(--warn); box-shadow: 0 0 6px color-mix(in srgb, var(--warn) 40%, transparent); }
+/* resting chip flags a missing key by burning warn-amber so it's noticeable before the dock is even opened */
+.model-dock-toggle.needs-key { color: var(--warn); text-shadow: 0 0 6px color-mix(in srgb, var(--warn) 50%, transparent); }
+.model-dock-toggle.needs-key .model-dock-model-name { color: var(--warn); }
 .model-dock-foot {
   display: grid; grid-template-columns: 1fr 1fr; gap: 6px;
 }
@@ -1067,34 +1074,35 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 }
 
 /* mic listening: red border + glow pulse so it's unmistakable the mic is hot */
+/* mic HOT = the held selection block in red: solid inverted --bad with a breathing bloom */
 .mic-btn.rec {
-  color: var(--bad); border-color: var(--bad);
-  background: linear-gradient(180deg, color-mix(in srgb, var(--bad) 16%, var(--panel2)), var(--panel2));
+  color: var(--ink); background: var(--bad);
   animation: mic-pulse 1s infinite;
 }
-@keyframes mic-pulse { 0%,100% { box-shadow: 0 0 2px var(--bad); } 50% { box-shadow: 0 0 12px var(--bad); } }
+.mic-btn.rec svg { filter: none; }
+@keyframes mic-pulse { 0%,100% { box-shadow: 0 0 4px var(--bad); } 50% { box-shadow: 0 0 16px var(--bad); } }
 
 /* agent-voice MUTED: red so "the agent is silenced" is impossible to miss — a molded red-tinted
    chip (same bevel register as the rest of the cluster), not a bare red outline */
-.voice-toggle.off {
-  color: var(--bad); border-color: color-mix(in srgb, var(--bad) 65%, var(--panel2));
-  background: linear-gradient(180deg, color-mix(in srgb, var(--bad) 14%, var(--panel2)), var(--panel2));
-  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--bad) 22%, transparent), 0 1px 0 rgba(0,0,0,.4);
-}
+/* agent-voice MUTED: the glyph itself burns red on the glass; hover = red selection block */
+.voice-toggle.off { color: var(--bad); }
 .voice-toggle.off svg { filter: drop-shadow(0 0 3px color-mix(in srgb, var(--bad) 35%, transparent)); }
 .voice-toggle.off:hover {
-  border-color: var(--bad); background: color-mix(in srgb, var(--bad) 20%, var(--panel2)); color: var(--bad);
-  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--bad) 25%, transparent), 0 0 9px color-mix(in srgb, var(--bad) 35%, transparent);
+  color: var(--ink); background: var(--bad);
+  box-shadow: 0 0 14px color-mix(in srgb, var(--bad) 55%, transparent);
 }
+.voice-toggle.off:hover svg { filter: none; }
 /* agent-voice speaking: amber glow pulse on the chip */
 .voice-toggle.speaking { animation: chip-spk .8s infinite; }
 @keyframes chip-spk { 0%,100% { box-shadow: 0 0 2px var(--ph-glow2); } 50% { box-shadow: 0 0 12px var(--ph-glow); } }
 
 /* hands-free LIVE: filled phosphor (inverted) so the active mode clearly pops out of the row */
+/* hands-free LIVE = the held selection block: this control IS selected until toggled off */
 .voice-mode.on {
-  color: var(--ink); background: linear-gradient(180deg, var(--ph-bright) -40%, var(--ph) 60%); border-color: var(--ph);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.25), 0 0 11px var(--ph-glow);
+  color: var(--ink); background: var(--ph);
+  box-shadow: 0 0 16px var(--ph-glow);
 }
+.voice-mode.on svg { filter: none; }
 .voice-mode.on:hover { color: var(--ink); background: var(--ph-bright); border-color: var(--ph-bright); }
 /* hands-free was on last session but a refresh dropped it → pulse the chip to invite a one-tap resume */
 .voice-mode.resume { animation: chip-resume 1.3s ease-in-out infinite; }

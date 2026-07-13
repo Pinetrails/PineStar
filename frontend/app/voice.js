@@ -40,11 +40,11 @@ const Voice = (() => {
   // theme's phosphor tint + glow, matching the terminal UI instead of the off-brand OS color emoji.
   // Swapped by reflect*()/init below.
   const ICON = {
-    mic: '<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5.6" y="1.6" width="4.8" height="8" rx="2.4" fill="currentColor"/><g fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M3.6 7.4a4.4 4.4 0 0 0 8.8 0"/><path d="M8 11.8v2.6"/><path d="M5.5 14.4h5"/></g></svg>',
-    spkOn: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 6h2L8 3.2v9.6L4.5 10h-2z" fill="currentColor"/><g fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M10.4 6.3a2.7 2.7 0 0 1 0 3.4"/><path d="M12.1 4.7a5 5 0 0 1 0 6.6"/></g></svg>',
-    spkOff: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 6h2L8 3.2v9.6L4.5 10h-2z" fill="currentColor"/><g fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M10.9 6.3 13.5 8.9"/><path d="M13.5 6.3 10.9 8.9"/></g></svg>',
-    modePtt: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.6 3.4H13.4V10H7L4 12.6V10H2.6Z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><g fill="currentColor"><circle cx="5.5" cy="6.7" r=".85"/><circle cx="8" cy="6.7" r=".85"/><circle cx="10.5" cy="6.7" r=".85"/></g></svg>',
-    modeLive: '<svg viewBox="0 0 16 16" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M3 6.5v3"/><path d="M6.33 4v8"/><path d="M9.67 5.5v5"/><path d="M13 6.8v2.4"/></g></svg>'
+    mic: '<svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="5.8" y="1.7" width="4.4" height="7.2" rx="2.2"/><path d="M3.7 7.5a4.3 4.3 0 0 0 8.6 0"/><path d="M8 11.8v2.4"/><path d="M5.4 14.2h5.2"/></svg>',
+    spkOn: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.2 6.1h2.1L7.7 3.3v9.4L4.3 9.9H2.2z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="miter"/><g fill="none" stroke="currentColor" stroke-width="1.4"><path d="M10.3 6a3.2 3.2 0 0 1 0 4"/><path d="M12.4 4a6.2 6.2 0 0 1 0 8"/></g></svg>',
+    spkOff: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.2 6.1h2.1L7.7 3.3v9.4L4.3 9.9H2.2z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="miter"/><g fill="none" stroke="currentColor" stroke-width="1.4"><path d="M10.6 6.4 13.4 9.2"/><path d="M13.4 6.4 10.6 9.2"/></g></svg>',
+    modePtt: '<svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor"><path d="M2.2 3.2h11.6v7.2H7.4L4.6 12.9v-2.5H2.2z" stroke-width="1.4" stroke-linejoin="miter"/><g stroke-width="1.4"><path d="M5.5 5.9v1.8"/><path d="M8 5v3.6"/><path d="M10.5 5.9v1.8"/></g></svg>',
+    modeLive: '<svg viewBox="0 0 16 16" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2.8 6.4v3.2"/><path d="M6.27 3.8v8.4"/><path d="M9.73 5.2v5.6"/><path d="M13.2 6.7v2.6"/></g></svg>'
   };
 
   // STT works if EITHER provider is usable: browser-native SpeechRecognition, or mic recording → /api/stt.
