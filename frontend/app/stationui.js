@@ -577,6 +577,16 @@ const StationUI = (() => {
     // minimize (–) button and read as a jarring first stop. Esc/Tab work from here; Tab advances into the body.
     // A builder that opened an inline editor (rename / CONFIG file) focuses its own field after this and wins.
     try { w.focus(); } catch (_) {}
+    // ASCII-motion entrance (asciifx.js): the title DECODES out of glyph-static while the CRT power-on
+    // snaps the shell open, and the body content MATERIALIZES from a ▓▒░ static field. Structure-safe
+    // (scramble rewrites only the title's text node) and self-cleaning; both no-op under reduced-motion.
+    try {
+      if (typeof AsciiFX !== 'undefined') {
+        const tt = head.querySelector('.term-title');
+        if (tt) AsciiFX.scramble(tt, { duration: 520 });
+        AsciiFX.dissolveIn(body, { duration: 460 });
+      }
+    } catch (_) {}
     syncBB(); syncScrim();
   }
   function rerender(key) { if (open[key]) open[key]._render(true); }
@@ -692,6 +702,9 @@ const StationUI = (() => {
       if (viaClick) {
         host.classList.remove('swap-in'); void host.offsetWidth; host.classList.add('swap-in');
         host.scrollTop = 0;
+        // ASCII-motion (asciifx.js): the freshly-shown section rematerializes out of ▓▒░ static — a bolder
+        // sibling to the .swap-in crossfade. Overlay is pointer-events:none + self-cleaning; reduced-motion no-op.
+        try { if (typeof AsciiFX !== 'undefined') AsciiFX.dissolveIn(panes[id], { duration: 420 }); } catch (_) {}
       }
       if (viaClick) { try { railItems[id].focus(); } catch (_) {} }
     }
@@ -3480,9 +3493,14 @@ const StationUI = (() => {
     // keep the caller's raw cls (good/gold/warn/bad already have edge styling) AND add a normalized
     // sev-* class so 'error'/'info' also get an edge + the lead glyph.
     const t = el('div', 'toast' + (cls ? ' ' + cls : '') + ' sev-' + sev);
+    // message text rides its own span so the ASCII decode below can target JUST the message —
+    // the severity glyph and timestamp stay stable (a scrambling clock would read as broken).
     t.innerHTML = '<span class="toast-sev" aria-hidden="true">' + esc(SEV_GLYPH[sev]) + '</span>' +
-      '<span class="toast-ts">' + clock(Date.now()) + '</span>' + esc(text);
+      '<span class="toast-ts">' + clock(Date.now()) + '</span><span class="toast-txt">' + esc(text) + '</span>';
     stack.appendChild(t);
+    // ASCII-motion (asciifx.js): the toast message DECODES out of glyph-static as it slides in — the same
+    // signal-resolving language as the window titles. Short (toasts are frequent); reduced-motion no-op.
+    try { if (typeof AsciiFX !== 'undefined') AsciiFX.scramble(t.querySelector('.toast-txt'), { duration: 420 }); } catch (_) {}
     // cap the visible stack so a burst can't cover the screen
     while (stack.children.length > 4) stack.removeChild(stack.firstChild);
     const kill = () => {
