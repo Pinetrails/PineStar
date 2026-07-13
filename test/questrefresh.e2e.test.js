@@ -307,5 +307,54 @@ const CRED = { SKYNET_OPENROUTER_KEY: 'sk-or-v1-questrefresh-fake', SKYNET_DEFAU
     }
   }
 
+  /* ===== BOOT 6 — the SHARED DECLINED INDEX cross-wire: a decline in ANOTHER engine suppresses a quest re-propose ===== */
+  {
+    // the mock proposes TWO grounded quests. One title ("Publish episode 3") was DECLINED as a thread in a DIFFERENT
+    // engine (seeded threads.json below); the shared declined index must suppress ONLY it, letting the other mint.
+    const mock = await startMock([
+      'NORTH_STAR: Grow the channel to sustainable income',
+      'QUEST: Publish episode 3',
+      'DESC: Finish the edit and get episode 3 live.',
+      'REWARD: a published episode moving the channel forward',
+      'CONTRACT: attest',
+      'WHY: your active goal names publish episode 3 as the next step',
+      'QUEST: Put guest research on tap',
+      'DESC: Bring the web dish online so an agent compiles guest research for every episode.',
+      'REWARD: research on tap for every episode',
+      'CONTRACT: prop dish',
+      'WHY: growing the youtube channel needs recurring guest research'
+    ].join('\n'));
+    const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-qrefresh-e2e-'));
+    seedEvidence(ws);
+    // the CROSS-ENGINE decline: "Publish episode 3" is a DECLINED thread (a different engine's store). The quest
+    // refresher never consults threads for dedup on its own — only the shared declined index bridges them.
+    fs.writeFileSync(path.join(ws, 'threads.json'), JSON.stringify({
+      threads: [{ id: 't:1', title: 'Publish episode 3', spec: '', state: 'declined', declineReason: 'not now', createdAt: 1, updatedAt: 1 }],
+      declined: []
+    }));
+    const { child, port } = await boot(9035 + (process.pid % 10), Object.assign({ SKYNET_WORKSPACES: ws, SKYNET_OPENROUTER_BASE: mock.base }, CRED, QUIET), 20);
+    const B = 'http://' + HOST + ':' + port;
+    try {
+      const token = await bootToken(B, B);
+      // wait for the cycle to settle: at least one mint landed (the non-declined quest).
+      const st = await pollRefresh(B, token,
+        p => (p.ledger || []).some(e => e.outcome === 'minted'),
+        'the cross-wire cycle minting the non-declined quest');
+      A.ok((st.ledger || []).some(e => e.outcome === 'rejected' && /declined elsewhere/i.test(e.reason) && e.title === 'Publish episode 3'),
+        "CROSS-WIRE: the quest whose title was declined as a thread is rejected 'declined elsewhere'");
+      A.eq(st.ledger.filter(e => e.outcome === 'minted').length, 1, 'exactly one quest minted (the cross-engine decline suppressed the other)');
+      const q = await (await fetch(B + '/api/quests', { headers: { 'X-StarNet-Token': token, Origin: B } })).json();
+      const minted = (q.quests || []).filter(x => x.createdBy === 'system:quest-refresh');
+      A.eq(minted.length, 1, 'GET /api/quests serves only the non-declined quest');
+      A.ok(minted.some(x => x.title === 'Put guest research on tap'), 'the non-declined quest minted');
+      A.ok(!minted.some(x => x.title === 'Publish episode 3'), 'the thread-declined quest was never minted');
+    } finally {
+      try { child.kill(); } catch (_) {}
+      try { mock.server.close(); } catch (_) {}
+      await sleep(150);
+      try { fs.rmSync(ws, { recursive: true, force: true }); } catch (_) {}
+    }
+  }
+
   A.report('questrefresh.e2e.test');
 })().catch(e => { console.log('FAIL: questrefresh.e2e.test threw - ' + (e && e.stack || e)); process.exit(1); });

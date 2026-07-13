@@ -131,6 +131,7 @@ const QuestRefresh = require('./questrefresh.js'); // QUEST V3: the standing 24h
 const { makeThreadsStore } = require('./threads-store.js');   // NS-6: durable THREAD LEDGER (ideas raised but never acted on)
 const threadmine = require('./threadmine.js');                // NS-6: pure post-run thread-mining producer (reflect/study mold)
 const AuxGovernor = require('./auxgovernor.js');              // aux-budget lane: PURE joint ceiling over the post-run aux passes (priority + budget)
+const DeclinedIndex = require('./declinedindex.js');         // flagship cross-wire (NS-8 lite): read-side shared declined index — a decline ANYWHERE suppresses a re-propose EVERYWHERE
 const { tailLines, loadBounded, rotateIfLarge } = require('./logbound.js'); // P3: bounded boot-load + size rotation for the append-only JSONL logs
 const { makeCronLock } = require('./cron-lock.js');         // G4.3: cross-process exactly-once advisory lock (O_EXCL+pid:nonce+stale-break)
 const { withDossier } = require('./dossierinject.js');     // Phase C: fold the Commander dossier into server-composed (cron) personas
@@ -1396,6 +1397,22 @@ function stashProposals(agentId, runId, proposals) {
   latestProposalRun.set(agentId, runId);
   while (proposalsByRun.size > PROPOSALS_CAP) { const k = proposalsByRun.keys().next().value; proposalsByRun.delete(k); }
 }
+/* FLAGSHIP CROSS-WIRE (NS-8 lite): assemble the read-side SHARED DECLINED INDEX from every engine's EXPLICIT-decline
+   store, so an idea the Commander declined ANYWHERE is suppressed at propose-time EVERYWHERE. Per-agent stores
+   (notebook declined:, studyDeclined) + station-wide stores (declined thread titles, quest deniedTitles, declined
+   north stars). Each source is fail-open (a store hiccup degrades that ONE list to empty). IMPORTANT: only EXPLICIT
+   user declines feed this — never TTL expiries (scout drafts expire WITHOUT denylisting; that non-suppression is
+   preserved because an expiry is never handed here). The pure engine (declinedindex.js) owns normalization + match. */
+function buildDeclinedIndex(agentId) {
+  const lists = [];
+  try { const d = notebookStore.get('declined:' + agentId); if (Array.isArray(d)) lists.push(d.map(String)); } catch (_) {}
+  try { const s = studyDeclinedByAgent.get(agentId); if (Array.isArray(s)) lists.push(s.map(String)); } catch (_) {}
+  try { lists.push((threadsStore.read().threads || []).filter(t => t && t.state === 'declined').map(t => String(t.title || ''))); } catch (_) {}
+  try { lists.push((questStore.read().deniedTitles || []).map(String)); } catch (_) {}
+  try { lists.push((QuestRefresh.normalize(questRefreshState).declinedNorthStars || []).map(String)); } catch (_) {}
+  return DeclinedIndex.build(lists);
+}
+
 // fire-and-forget; never throws. Uses its OWN abort signal (+ timeout) so the closing run stream can't kill it.
 async function runReflection(o) {
   const { agentId, runId, messages, provider, model, cost } = o;
@@ -1427,7 +1444,10 @@ async function runReflection(o) {
     const declined = notebookStore.get('declined:' + agentId);
     const declinedRecs = Array.isArray(declined) ? declined.map(t => ({ content: String(t) })) : [];
     const out = await reflect({ agentId, runId, messages }, { propose, redact, existing: existing.concat(declinedRecs), clock: { now: () => Date.now() }, max: 5 });
-    const proposals = (out && out.proposals) || [];
+    let proposals = (out && out.proposals) || [];
+    // CROSS-WIRE: reflect() already deduped THIS agent's own notebook declines; drop anything the Commander declined
+    // in ANOTHER surface (a mined thread / a quest title / a study belief / a north star) so it isn't re-remembered.
+    if (proposals.length) { const dIdx = buildDeclinedIndex(agentId); proposals = proposals.filter(p => p && !dIdx.has(p.content)); }
     if (proposals.length) {
       // arm the cooldown ONLY when a beat actually fires — so a trivial/floored/all-deduped run (zero proposals)
       // never spends the window and blocks a following substantive run's turn-in (honours "always confirm").
@@ -1532,7 +1552,10 @@ async function runStudy(o) {
       // so a belief the Commander discarded is deduped AT THE SOURCE and never even stashed again.
       dossierBlock: block, beliefs: beliefsFromBlock(block), declined: studyDeclinedByAgent.get(agentId) || [], max: Study.DEFAULT_MAX
     });
-    const proposals = (out && out.proposals) || [];
+    let proposals = (out && out.proposals) || [];
+    // CROSS-WIRE: study() already deduped THIS agent's own studyDeclined list; drop anything the Commander declined
+    // in ANOTHER surface (a mined thread / a quest title / a reflected belief / a north star) before it is stashed.
+    if (proposals.length) { const dIdx = buildDeclinedIndex(agentId); proposals = proposals.filter(p => p && !dIdx.has(p.text)); }
     if (proposals.length) {
       // arm the cooldown ONLY when proposals actually survive — a floored/all-dedup run never blocks the next study.
       lastStudyAt.set(agentId, Date.now());
@@ -1594,7 +1617,10 @@ async function runThreadMine(o) {
     const out = await threadmine.mine({ agentId, runId, streamId, messages }, {
       propose, redact, clock: { now: () => Date.now() }, known, max: threadmine.DEFAULT_MAX
     });
-    const proposals = (out && out.proposals) || [];
+    let proposals = (out && out.proposals) || [];
+    // CROSS-WIRE: mine() already deduped vs the thread ledger's own fingerprints; drop anything the Commander
+    // declined in ANOTHER surface (a reflected belief / a study belief / a quest title / a north star) before stash.
+    if (proposals.length) { const dIdx = buildDeclinedIndex(agentId); proposals = proposals.filter(p => p && !dIdx.has(p.title)); }
     if (proposals.length) {
       lastThreadMineAt.set(agentId, Date.now());   // arm the cooldown ONLY when proposals survive (a floored/all-dedup run never blocks the next mine)
       stashThreads(agentId, runId, proposals);
@@ -2935,6 +2961,9 @@ async function runScoutCycle(o) {
     scoutSweep();   // age out stale drafts first — an undecided-draft backlog must not wedge the gate at 'full'
     const d = Scout.decide(scoutState, { now: Date.now(), warm: warm });
     if (!d.fire) return;
+    // CROSS-WIRE: the shared declined index — a recipe/class shape the Commander declined in ANOTHER surface is
+    // suppressed here too (in addition to the scout's own fingerprint denylist), with an honest ledger note.
+    const declinedIdx = buildDeclinedIndex(agentId);
 
     if (d.kind === 'recipe') {
       const existing = scoutExistingRecipes();
@@ -2956,6 +2985,7 @@ async function runScoutCycle(o) {
       scoutState = Scout.stampAttempt(scoutState, 'recipe', { now: Date.now() });
       if (parsed && parsed.none) scoutNote({ kind: 'recipe', outcome: 'none', reason: 'model judged the library already serves the observed interests' });
       else if (!parsed) scoutNote({ kind: 'recipe', outcome: 'rejected', reason: 'draft failed hard validation (malformed / broken template / near-duplicate / denylisted)' });
+      else if (declinedIdx.has(parsed.draft.name) || declinedIdx.has(parsed.draft.name + ' ' + parsed.draft.tagline)) scoutNote({ kind: 'recipe', outcome: 'rejected', reason: 'declined elsewhere', title: parsed.draft.name });
       else {
         scoutState = Scout.stage(scoutState, { id: crypto.randomUUID(), kind: 'recipe', draft: parsed.draft, why: parsed.why, fingerprint: parsed.fingerprint }, { now: Date.now() });
         scoutNote({ kind: 'recipe', outcome: 'staged', reason: parsed.why, title: parsed.draft.name });
@@ -2982,6 +3012,7 @@ async function runScoutCycle(o) {
       const denied = parsed && parsed.draft && scoutState.denylist.some(fp => Scout.overlap(parsed.fingerprint, fp) >= 0.6);
       if (parsed && parsed.none) scoutNote({ kind: 'prospect', outcome: 'none', reason: 'model judged an existing class already serves the gap' });
       else if (!parsed || denied) scoutNote({ kind: 'prospect', outcome: 'rejected', reason: denied ? 'dismissed-shape denylist' : 'draft failed hard validation (bad kit/skills, near-duplicate, or malformed)' });
+      else if (declinedIdx.has(parsed.draft.name) || declinedIdx.has(parsed.draft.name + ' ' + parsed.draft.tagline)) scoutNote({ kind: 'prospect', outcome: 'rejected', reason: 'declined elsewhere', title: parsed.draft.name });
       else {
         scoutState = Scout.stage(scoutState, { id: crypto.randomUUID(), kind: 'prospect', draft: parsed.draft, why: parsed.why, fingerprint: parsed.fingerprint }, { now: Date.now() });
         scoutNote({ kind: 'prospect', outcome: 'staged', reason: parsed.why, title: parsed.draft.name });
@@ -3562,8 +3593,12 @@ async function runQuestRefreshCycle(why) {
 
     if (parsed.none) { questRefreshNote({ outcome: 'none', reason: 'model judged the open slate already covers the next steps (' + why + ' pass)' }); return; }
     if (!parsed.quests.length) { questRefreshNote({ outcome: 'rejected', reason: 'every proposed quest failed hard validation (contract / dedup / grounding)' }); return; }
+    // CROSS-WIRE: parse already deduped vs this engine's own deniedTitles; drop a quest whose title the Commander
+    // declined in ANOTHER surface (a declined thread / a declined north star) so it isn't re-proposed here.
+    const declinedIdx = buildDeclinedIndex(null);   // station-scoped: no single agent owns the refresh slate
     let minted = 0;
     for (const q of parsed.quests) {
+      if (declinedIdx.has(q.title)) { questRefreshNote({ outcome: 'rejected', reason: 'declined elsewhere', title: q.title }); continue; }
       const r = await questStore.mint({
         title: q.title, desc: q.desc, reward: q.reward, kind: 'generated', createdBy: 'system:quest-refresh',
         agentId: null, contract: q.contract, steps: q.steps, groundedIn: q.groundedIn
