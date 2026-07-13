@@ -39,7 +39,13 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
         // clear the OpenRouter key so the voice routes' no-key fallback path is deterministic (a dev machine
         // with the key in its ambient env would otherwise hit the network and flip the {text:''} assertions).
         OPENROUTER_KEY: '', STARNET_OPENROUTER_KEY: '', SKYNET_OPENROUTER_KEY: '',
+        OPENROUTER_API_KEY: '', STARNET_OPENROUTER_API_KEY: '', SKYNET_OPENROUTER_API_KEY: '',
         ELEVENLABS_API_KEY: '',   // same determinism for the ElevenLabs TTS branch's no-key degrade
+        // /api/tts now resolves a CHAIN of credentials (openrouter → gemini → openai) — clear the Gemini
+        // keys too, or an ambient dev key would hit the network and flip the no-key degrade assertions.
+        GEMINI_API_KEY: '', STARNET_GEMINI_API_KEY: '', SKYNET_GEMINI_API_KEY: '',
+        GOOGLE_API_KEY: '', STARNET_GOOGLE_API_KEY: '', SKYNET_GOOGLE_API_KEY: '',
+        GOOGLE_AI_API_KEY: '', STARNET_GOOGLE_AI_API_KEY: '', SKYNET_GOOGLE_AI_API_KEY: '',
         OPENAI_API_KEY: '',
         STARNET_OPENAI_API_KEY: '',
         SKYNET_OPENAI_API_KEY: '',
@@ -709,7 +715,14 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
 
     // ---- voice: /api/tts + /api/stt graceful degradation (no key in this boot → no network) ----
     // Both routes must ALWAYS answer 200 with a degrade envelope rather than a hard error, so the client's
-    // voice path never wedges. With the OpenRouter key cleared above, we exercise exactly that path.
+    // voice path never wedges. With the env keys cleared at spawn, we exercise exactly that path — but
+    // /api/tts resolves a credential CHAIN (openrouter → gemini → openai), so first clear the fake OpenAI
+    // runtime key the /api/key tests pushed above, or the chain would pick it up and hit the network.
+    await fetch(B + '/api/key', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Skynet-Token': IPC_TOKEN },
+      body: JSON.stringify({ provider: 'openai', key: '' })
+    });
     const ttsNoKey = await j('POST', '/api/tts', { text: 'station check', voice: 'Umbriel', style: 'a low, detached transmission' });
     A.eq(ttsNoKey.status, 200, 'POST /api/tts with no key -> 200 (never a hard error)');
     A.eq(ttsNoKey.body.fallback, true, 'no-key TTS returns the {fallback:true} envelope so the client uses speechSynthesis');
