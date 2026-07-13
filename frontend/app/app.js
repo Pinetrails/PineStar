@@ -45,17 +45,9 @@ const App = (() => {
   // the hoisted brand mark (#logo — fixed above the CRT glass, see style.css) tracks the seat
   // #logo-anchor reserves in the topbar: the anchor takes the logo's natural width so the gauge
   // cluster never slides under it, and the logo takes the anchor's on-screen spot.
-  let logoBarObserved = false;
   function positionLogo() {
     const logo = el('logo'), anchor = el('logo-anchor'), bar = el('topbar');
     if (!logo || !anchor || !bar) return;
-    // the bar's layout keeps settling after show() — the wordmark image finishes loading, the
-    // widget rail populates — and each reflow strands the fixed #logo a few px off its anchor.
-    // Watch the bar itself so the mark re-seats on every settle, not just show/resize.
-    if (!logoBarObserved && typeof ResizeObserver !== 'undefined') {
-      logoBarObserved = true;
-      new ResizeObserver(positionLogo).observe(bar);
-    }
     const game = el('screen-game');
     if (!game || !game.classList.contains('active')) return;   // hidden screens have no geometry
     anchor.style.width = logo.offsetWidth + 'px';
@@ -63,13 +55,7 @@ const App = (() => {
     logo.style.left = a.left + 'px';
     logo.style.top = (b.top + (b.height - logo.offsetHeight) / 2) + 'px';
   }
-  if (typeof window !== 'undefined') {
-    window.addEventListener('resize', positionLogo);
-    // #logo is position:fixed, so the wordmark image finishing its load widens the logo
-    // WITHOUT reflowing the topbar — no resize fires; re-seat the anchor explicitly.
-    const logoImg = document.querySelector('#logo .logo-img');
-    if (logoImg && !logoImg.complete) logoImg.addEventListener('load', positionLogo, { once: true });
-  }
+  if (typeof window !== 'undefined') window.addEventListener('resize', positionLogo);
 
   function refreshUsage() {
     // Broad lifetime token totals are intentionally not surfaced in the chrome.
