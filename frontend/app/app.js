@@ -623,6 +623,27 @@ const App = (() => {
       onLaunch: launchRecipe   // the RECIPES tab hands a filled mission back here to run
     });
   }
+  // lane D deep-link: open the bay's RECIPES tab straight INTO one recipe's launch form (optionally in routine
+  // mode) — the routine-nudge accept lands here, so scheduling stays PROPOSE-AND-CONFIRM: the Commander sees the
+  // filled form (LaunchMemory prefills the params), the cadence preview, and the outbound warning before anything
+  // is scheduled. Same ctx as openDeployBay so onLaunch/agentId wire identically; the bay consumes ctx.launchSeed
+  // one-shot (maybeConsumeLaunchSeed).
+  function openRecipeLaunch(recipeId, mode) {
+    if (typeof Marketplace === 'undefined' || !agent || !recipeId) return;
+    SFX.click();
+    Marketplace.open({
+      mode: 'deploy',
+      tab: 'recipes',
+      agentName: agent.name,
+      agentId: ((typeof Workstreams !== 'undefined' && Workstreams.active && Workstreams.active()) || {}).agentId || 'agent',
+      currentSpecialtyId: agent.specialtyId || null,
+      notify: (typeof StationUI !== 'undefined') ? StationUI.notify : null,
+      draftFromAgent: () => (typeof Specialties !== 'undefined') ? Specialties.fromAgent(agent) : null,
+      onDeploy: deploySpecialty,
+      onLaunch: launchRecipe,
+      launchSeed: { id: String(recipeId), mode: mode === 'routine' ? 'routine' : 'run' }
+    });
+  }
   function deploySpecialty(spec, opts) {
     if (!agent || typeof Specialties === 'undefined') return;
     opts = opts || {};
@@ -2209,6 +2230,10 @@ const App = (() => {
         getTopRecommendation: () => { try { const t = (typeof RecruiterStore !== 'undefined' && RecruiterStore.topPick) ? RecruiterStore.topPick() : null; return t ? t.classId : ''; } catch (_) { return ''; } }
       });
     }
+    // lane D ROUTINE NUDGE: "you keep launching this recipe — schedule it?" — reads the scout launch counters +
+    // the cron jobs list (read-only), shares the one post-run beat slot in chat.js, deep-links into the SCHEDULE IT
+    // form on accept (openRecipeLaunch below). init warms its cron cache; unknown cache = the nudge stands down.
+    if (typeof RoutineNudgeStore !== 'undefined') RoutineNudgeStore.init();
     // G3a CONFIDENCE NARRATIVE: two fire-once spoken moments in the hero's reliability arc (calibration
     // complete + TRUSTED). Init AFTER XpStore so its memory.feedback hook sees an already-folded meter.
     if (typeof ConfBeats !== 'undefined') ConfBeats.init({ getStats: () => { const a = agents.get('agent'); return a ? a.stats : null; } });
@@ -3343,5 +3368,6 @@ const App = (() => {
     agents: () => liveAgents().map(serializeAgentLite),
     selectAgent: selectAgent,   // COMMS top-bar agent selector: switch to (or mint) a workstream bound to agentId
     openSummonBay: openSummonBay,   // adaptive-recruitment beat: accepting the recruit nudge deep-links into the bay's summon flow
+    openRecipeLaunch: openRecipeLaunch,   // routine-nudge beat (lane D): accepting deep-links into the recipe's SCHEDULE IT form
     applyConfig: applyAgentConfig };
 })();

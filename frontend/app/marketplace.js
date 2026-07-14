@@ -219,6 +219,7 @@ const Marketplace = (() => {
     renderStage();
     const panel = root.querySelector('.mkt'); if (panel) panel.focus();
     maybeConsumeRecipeMint();   // R5: if opened to bottle a run, drop straight into the editor pre-filled from it
+    maybeConsumeLaunchSeed();   // lane D: if opened by the routine nudge, drop straight into the launch/SCHEDULE IT form
   }
   // R5 "BOTTLE A RUN" consume: app.js seeds ctx.recipeMint (a Recipes.mintFromRun proposal — a DRAFT custom recipe
   // pre-filled from a 👍-rated run's directive, carrying sourceRunId) before opening the bay on the RECIPES tab.
@@ -235,6 +236,27 @@ const Marketplace = (() => {
     // 'create' entry (a brand-new custom, not a fork of an existing recipe) — the proposal is the pre-fill.
     // enterRecipeEditor lifts seed.sourceRunId into editSourceRunId so it survives save.
     enterRecipeEditor(seed, 'create');
+  }
+  // lane D launch-seed consume (the recipeMint pattern): app.js seeds ctx.launchSeed = { id, mode:'run'|'routine' }
+  // before opening the bay on the RECIPES tab (App.openRecipeLaunch — the routine-nudge accept). Drop straight into
+  // that recipe's launch form, in routine mode when asked (cadence preset to the recipe's suggestion, cron armed-state
+  // warmed) — the same PROPOSE-AND-CONFIRM form every manual schedule goes through. One-shot: the seed is cleared
+  // before any render so a tab-switch / re-render never re-triggers it. Graceful no-op on an unknown recipe.
+  function maybeConsumeLaunchSeed() {
+    const seed = ctx && ctx.launchSeed;
+    if (!seed || typeof seed !== 'object') return;
+    if (ctx) ctx.launchSeed = null;   // one-shot: consume before doing anything that could re-render
+    if (!hasRecipes() || tab !== 'recipes') return;
+    const r = Recipes.get(String(seed.id || '')); if (!r) return;
+    focusRecipe = r.id;
+    launchId = r.id;
+    launchMode = (seed.mode === 'routine') ? 'routine' : 'run';
+    if (launchMode === 'routine') {
+      launchCadence = (r.cadence && cadenceOpt(r.cadence)) ? r.cadence : 'morning';
+      loadCronJobs().then(() => { if (view === 'launch') renderStage(); });   // refresh the armed-state note
+    }
+    view = 'launch';
+    renderBar(); renderStage();
   }
   function close() {
     if (!root) return;

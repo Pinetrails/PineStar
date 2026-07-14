@@ -3324,6 +3324,11 @@ const Chat = (() => {
         // SELF-GROWING SEED (Slice 5): if a recurring pattern is ripe, the agent offers to author it as a one-tap
         // seed — takes this one beat (after a suggestion, before curiosity) so it never stacks two asks on a task.
         if (typeof SeedStore !== 'undefined' && SeedStore.willPropose && SeedStore.propose && SeedStore.willPropose()) { SeedStore.propose(); return; }
+        // ROUTINE NUDGE (recipe lane D): a naturally-recurring recipe the Commander keeps hand-launching earns ONE
+        // offer to put it on a schedule — after suggestion/seed (rarer, more specific asks), before recruitment.
+        // Accepting deep-links into the SCHEDULE IT form (propose-and-confirm; never a silent cron write).
+        if (typeof RoutineNudgeStore !== 'undefined' && RoutineNudgeStore.onRunEnd) { try { RoutineNudgeStore.onRunEnd(); } catch (_) {} }
+        if (typeof RoutineNudgeStore !== 'undefined' && RoutineNudgeStore.willPropose && RoutineNudgeStore.propose && RoutineNudgeStore.willPropose()) { RoutineNudgeStore.propose(); return; }
         // ADAPTIVE RECRUITMENT: once the station has a WARM read of the Commander's real workflow and it points to a
         // NEW teammate the crew doesn't have, offer ONCE — through THIS single post-run beat, sharing every guard
         // above (work-earned floor, busy/interview/turn-in, one-beat-at-a-time). Never a parallel nag channel: it
