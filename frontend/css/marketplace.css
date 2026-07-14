@@ -140,6 +140,18 @@ body.no-scan .mkt-scrim::after { display: none; }
   display: flex; align-items: center; justify-content: center; }
 .mkt-coin-ico svg { width: 100%; height: 100%; display: block; }
 .mkt-coin-emoji { position: relative; z-index: 2; font-size: calc(var(--coin, 64px) * .42); line-height: 1; color: var(--accent, var(--ph-bright)); }
+/* ---- the TYPED ASCII MARK (settings-console pass): the emblem is typed on the terminal, not drawn ----
+   Rendered in the class accent with a phosphor bloom. Its socket squares off into a recessed READOUT
+   window (the settings-console material) — the coin circle + engraving stay for vector seals (missions). */
+.mkt-amark { position: relative; z-index: 2; margin: 0; font-family: inherit; white-space: pre; text-align: left;
+  font-size: 15px; line-height: 1.0; color: var(--accent, var(--ph));
+  text-shadow: 0 0 8px color-mix(in srgb, var(--accent, var(--ph)) 65%, transparent), 0 1px 0 rgba(0,0,0,.7); }
+.mkt-coin:has(.mkt-amark) { border-radius: 3px; width: var(--coin, 64px); height: calc(var(--coin, 64px) * .8);
+  background: linear-gradient(180deg, #000, color-mix(in srgb, var(--accent, var(--ph)) 4%, var(--panel2)));
+  border: 1px solid color-mix(in srgb, var(--accent, var(--ph)) 36%, #241a0d);
+  box-shadow: inset 0 2px 6px rgba(0,0,0,.7), inset 0 0 14px rgba(0,0,0,.5), 0 0 0 2px rgba(0,0,0,.6); }
+.mkt-coin:has(.mkt-amark)::before, .mkt-coin:has(.mkt-amark)::after { display: none; }
+.mkt-dos-hero .mkt-amark { font-size: 23px; }
 .mkt-seal { display: flex; flex-direction: column; align-items: center; gap: 5px; flex: 0 0 auto; }
 .mkt-seal-code { font-size: 10px; letter-spacing: 2.5px; color: var(--ph-dim); }
 .mkt-pips { display: inline-flex; gap: 2px; align-items: center; color: var(--ph-dim); font-size: 10px; }
@@ -194,6 +206,38 @@ body.no-scan .mkt-scrim::after { display: none; }
 .mkt-card.sel .mkt-coin { border-color: color-mix(in srgb, var(--accent, var(--ph)) 68%, #241a0d);
   box-shadow: inset 0 1px 0 rgba(var(--ph-bright-rgb),.1), inset 0 -3px 8px rgba(0,0,0,.72), 0 0 0 1px color-mix(in srgb, var(--accent, var(--ph)) 32%, transparent); }
 .mkt-card.sel .mkt-coin-ico { filter: drop-shadow(0 1px 0 rgba(0,0,0,.55)) brightness(1.12); }
+
+/* ===== SETTINGS-CONSOLE ROWS (AGENTS tab): the class list reads like the SETTINGS provider list =====
+   The premium reference (Andrew, 2026-07-14) is the SETTINGS window: uniform amber rows, one per item,
+   left glyph socket, name + sub stacked, the status cluster RIGHT-ALIGNED, selection = the lit plate.
+   Class accents retreat to the typed mark + the code stamp — the row chrome itself is mono-amber. */
+.mkt-grid.mkt-rows { grid-template-columns: 1fr; gap: 7px; }
+.mkt-rows .mkt-card { grid-template-columns: auto 1fr auto; align-items: center; gap: 14px;
+  padding: 9px 14px 9px 12px; }
+.mkt-rows .mkt-card::before { width: 4px; background: var(--ph); opacity: 0; box-shadow: none; }
+.mkt-rows .mkt-card:hover { transform: none; border-color: var(--ph);
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,.65), 0 0 12px var(--ph-glow2); }
+.mkt-rows .mkt-card.sel { border-color: var(--ph);
+  background:
+    linear-gradient(90deg, var(--ph-faint), transparent 55%),
+    repeating-linear-gradient(0deg, rgba(255,255,255,.014) 0 1px, transparent 1px 3px),
+    var(--panel2);
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,.65), 0 0 14px var(--ph-glow2); }
+.mkt-rows .mkt-card.sel::before { opacity: 1; }
+.mkt-rows .mkt-card .mkt-name { font-size: 16px; letter-spacing: 1.6px; text-transform: uppercase; }
+.mkt-rows .mkt-card .mkt-tag { color: var(--ph-dim); }
+.mkt-rows .mkt-card.sel .mkt-tag { color: var(--text); opacity: .9; }
+.mkt-card-side { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex: 0 0 auto;
+  position: relative; z-index: 1; }
+.mkt-card-side .mkt-meta { margin: 0; padding: 0; }
+.mkt-card-code { color: var(--ph-dim); font-size: 10px; letter-spacing: 3px; opacity: .8; }
+.mkt-rows .mkt-coin { --coin: 58px; }
+/* the rows' socket is uniform console material — the accent lives in the typed mark itself */
+.mkt-rows .mkt-coin:has(.mkt-amark) { border-color: var(--ph-dim);
+  background: linear-gradient(180deg, #000, var(--panel2)); }
+/* the build tile reads as one dashed row in the list, not a tall grid cell */
+.mkt-rows .mkt-build { min-height: 52px; flex-direction: row; gap: 10px; }
+.mkt-rows .mkt-build .mkt-build-plus { font-size: 20px; }
 .mkt-card-id { min-width: 0; display: flex; flex-direction: column; gap: 4px; position: relative; z-index: 1; }
 .mkt-name { color: var(--ph-bright); font-size: 16.5px; letter-spacing: 1.4px; display: flex; align-items: center; gap: 7px;
   text-shadow: 0 0 9px var(--ph-glow2); }
@@ -329,27 +373,22 @@ body.no-scan .mkt-scrim::after { display: none; }
 .mkt-adopt input { accent-color: var(--ph); cursor: pointer; }
 
 /* ---- section headers + empty state ----
-   the station's .sec divider language (v2 mockup .sect): an inverted amber label chip trailed by a hairline
-   that fades to the right. The chip is the element itself (struck-metal inverted label, as before); the fading
-   rule is layered into the element's own background to the RIGHT of the padded label via a right-anchored
-   gradient, so no markup restructure is needed (JS still emits a plain .mkt-sect-h text node). To make the
-   rule reach across the row the header spans full width and the label sits in an inset inverted plate. */
-.mkt-sect-h { display: block; position: relative; color: var(--ink); text-shadow: none;
-  font-size: 11px; letter-spacing: 3px; margin: 18px 0 11px; padding: 3px 10px;
-  background:
-    var(--ph) 0 0 / auto no-repeat;   /* the inverted label plate sizes to the text (inline padding) */
-  width: max-content; max-width: 100%; }
-/* the fading rule: a full-row hairline drawn on a wrapper-free header via an ::after that extends past the
-   plate. Positioned to start at the plate's right edge and fade out across the remaining width. */
-.mkt-sect-h::after { content: ""; position: absolute; left: 100%; top: 50%; width: 60vw; max-width: 640px; height: 4px;
-  transform: translateY(-50%); margin-left: 10px; pointer-events: none;
-  background:
-    linear-gradient(90deg, var(--ph-dim), transparent 92%) top / 100% 1px no-repeat,
-    linear-gradient(90deg, var(--ph-faint), transparent 70%) bottom / 100% 1px no-repeat; }
+   SETTINGS-console divider language (the premium reference): the label in plain glowing phosphor, a
+   hairline rule running the rest of the row, and a lone terminal diamond closing it — no inverted plate
+   (plates are for the window TITLE and ON states only). Pseudo-elements ride the flex row via `order`:
+   text (0) → rule (1, ::after) → diamond (2, ::before). */
+.mkt-sect-h { display: flex; align-items: center; gap: 12px; position: relative; color: var(--ph);
+  background: none; padding: 0; width: auto; max-width: none; text-shadow: 0 0 9px var(--ph-glow2);
+  font-size: 11.5px; letter-spacing: 3px; margin: 20px 0 10px; }
+.mkt-sect-h::after { content: ""; order: 1; flex: 1 1 auto; height: 1px; position: static;
+  width: auto; max-width: none; margin: 0; transform: none; pointer-events: none;
+  background: linear-gradient(90deg, var(--ph-dim), var(--ph-faint) 88%); }
+.mkt-sect-h::before { content: "◆"; order: 2; flex: 0 0 auto; color: var(--ph-dim); font-size: 9px; }
 .mkt-sect-h:first-child { margin-top: 2px; }
-/* the SPECIALIST ARCHIVE header doubles as its expand/collapse toggle — same inverted plate, button reset */
-button.mkt-archive-head { font-family: inherit; font-size: 11px; letter-spacing: 3px; border: 0; cursor: pointer; text-align: left; }
-button.mkt-archive-head:hover { filter: brightness(1.12); }
+/* the SPECIALIST ARCHIVE header doubles as its expand/collapse toggle — same divider, button reset */
+button.mkt-archive-head { font-family: inherit; font-size: 11.5px; letter-spacing: 3px; border: 0;
+  cursor: pointer; text-align: left; width: 100%; }
+button.mkt-archive-head:hover { color: var(--ph-bright); }
 button.mkt-archive-head:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
 /* ARCHIVE plates read MOTHBALLED — dimmed + dusty until touched (deep cuts in storage, not the working
    roster). Scoped to the grid that follows the archive toggle; hover/selection wakes the plate up. */
@@ -471,13 +510,14 @@ button.mkt-archive-head:focus-visible { outline: 2px solid var(--gold); outline-
 .mkt-fam-acts { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .mkt-fam-priv { color: var(--ph-dim); font-size: 11px; letter-spacing: .3px; flex: 1 1 auto; }
 
-/* ---- "RECOMMENDED FOR YOU" / "SUGGESTED" shelves (affinity-ranked, pinned above the catalog) ---- */
-.mkt-sect-h.mkt-rec-sect { color: var(--ink); background: var(--gold); }
-.mkt-sect-h.mkt-suggest-sect { color: var(--ink); background: var(--gold); }
-/* CURATED FOR YOUR WORKFLOW — the earned adaptive-recruitment shelf. The strongest gold read on the surface (it
-   only ever appears once the station has a warm read of real work), lifted by a phosphor-gold glow so it stands
-   apart from the affinity RECOMMENDED shelf. Accent uses the --gold-rgb triplet, never a literal amber. */
-.mkt-sect-h.mkt-curated-sect { box-shadow: 0 0 12px rgba(var(--gold-rgb), .45); }
+/* ---- "RECOMMENDED FOR YOU" / "SUGGESTED" shelves (affinity-ranked, pinned above the catalog) ----
+   gold TEXT dividers in the settings language (earned/personalized rank), never inverted plates. */
+.mkt-sect-h.mkt-rec-sect, .mkt-sect-h.mkt-suggest-sect { color: var(--gold); text-shadow: 0 0 9px rgba(var(--gold-rgb), .3); }
+.mkt-sect-h.mkt-rec-sect::after, .mkt-sect-h.mkt-suggest-sect::after { background: linear-gradient(90deg, rgba(var(--gold-rgb), .5), var(--ph-faint) 88%); }
+.mkt-sect-h.mkt-rec-sect::before, .mkt-sect-h.mkt-suggest-sect::before { color: var(--gold); }
+/* CURATED FOR YOUR WORKFLOW — the earned adaptive-recruitment shelf: the strongest gold read (it only
+   appears once the station has a warm read of real work). Accent via --gold-rgb, never a literal amber. */
+.mkt-sect-h.mkt-curated-sect { text-shadow: 0 0 14px rgba(var(--gold-rgb), .55); }
 .mkt-curated-sect + .mkt-rec-rail .mkt-rec { border-color: rgba(var(--gold-rgb), .55); }
 .mkt-curated-sect + .mkt-rec-rail .mkt-rec::before { background: linear-gradient(180deg, var(--gold) 0 62%, transparent); opacity: .9; }
 .mkt-curated-sect + .mkt-rec-rail .mkt-rec:hover { border-color: var(--gold); box-shadow: 0 0 15px rgba(var(--gold-rgb), .5); }
@@ -491,7 +531,8 @@ button.mkt-archive-head:focus-visible { outline: 2px solid var(--gold); outline-
   background: linear-gradient(180deg, var(--accent, var(--ph)) 0 62%, color-mix(in srgb, var(--accent, var(--ph)) 28%, transparent)); opacity: .8; }
 .mkt-rec:hover { border-color: var(--ph); box-shadow: inset 0 0 0 1px rgba(0,0,0,.6), 0 0 14px var(--ph-glow2); transform: translateY(-1px); }
 .mkt-rec-top { display: flex; align-items: center; gap: 9px; }
-.mkt-rec-top .mkt-seal { --coin: 40px; gap: 0; }
+.mkt-rec-top .mkt-seal { --coin: 44px; gap: 0; }
+.mkt-rec-top .mkt-amark { font-size: 9.5px; }
 .mkt-rec-id { min-width: 0; }
 .mkt-rec-name { color: var(--ph-bright); font-size: 14px; letter-spacing: .6px; }
 .mkt-rec-tag { color: var(--accent, var(--ph)); font-size: 11.5px; letter-spacing: .3px; margin-top: 1px; }
@@ -507,7 +548,9 @@ button.mkt-archive-head:focus-visible { outline: 2px solid var(--gold); outline-
 
 /* PROSPECTS — bespoke roles the station DRAFTED from real work (Slice 4). Honest draft treatment: a dashed gold
    border (it's not a finished catalog card) + a provenance note. Accent via the --gold-rgb triplet, never amber. */
-.mkt-sect-h.mkt-prospect-sect { color: var(--ink); background: var(--gold); }
+.mkt-sect-h.mkt-prospect-sect { color: var(--gold); text-shadow: 0 0 9px rgba(var(--gold-rgb), .3); }
+.mkt-sect-h.mkt-prospect-sect::after { background: linear-gradient(90deg, rgba(var(--gold-rgb), .5), var(--ph-faint) 88%); }
+.mkt-sect-h.mkt-prospect-sect::before { color: var(--gold); }
 .mkt-prospect { border: 1px dashed rgba(var(--gold-rgb), .6); }
 .mkt-prospect::before { background: linear-gradient(180deg, var(--gold) 0 62%, transparent); opacity: .7; }
 .mkt-prospect:hover { border-color: var(--gold); box-shadow: 0 0 13px rgba(var(--gold-rgb), .4); }
@@ -545,7 +588,7 @@ button.mkt-archive-head:focus-visible { outline: 2px solid var(--gold); outline-
 /* ---- R6: the "FOR YOU" discovery row (dossier-interest + goal-text ranked; honest category-spread fallback) ----
    Phosphor-headed (not gold) so it reads as distinct from the affinity SUGGESTED/RECOMMENDED shelves. Each card's
    WHY chip shows the recipe's browse CATEGORY — a truthful label, never a fabricated "popular" number. */
-.mkt-sect-h.mkt-foryou-sect { color: var(--ink); background: var(--ph); }
+.mkt-sect-h.mkt-foryou-sect { color: var(--ph-bright); }
 .mkt-foryou .mkt-rec-why-k { color: var(--ph-bright); border-color: var(--ph-dim); }
 
 /* ---- R6: IMPORT button in the recipes bar (file → validate → save as custom) ---- */
