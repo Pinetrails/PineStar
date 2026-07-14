@@ -33,6 +33,13 @@
     archivist: '<svg viewBox="0 0 24 24"><rect x="4" y="3.5" width="16" height="17" rx="2" fill="currentColor"/><g fill="' + D + '"><rect x="6" y="5.6" width="12" height="3.1" rx=".6"/><rect x="6" y="10.4" width="12" height="3.1" rx=".6"/><rect x="6" y="15.3" width="12" height="3.1" rx=".6"/></g><g fill="currentColor"><rect x="10.5" y="6.6" width="3" height="1.1" rx=".5"/><rect x="10.5" y="11.4" width="3" height="1.1" rx=".5"/><rect x="10.5" y="16.3" width="3" height="1.1" rx=".5"/></g></svg>',
     designer: '<svg viewBox="0 0 24 24"><rect x="3" y="3" width="11" height="11" rx="1.6" fill="currentColor"/><circle cx="15.5" cy="15.5" r="5.7" fill="none" stroke="currentColor" stroke-width="3"/></svg>',
     liaison: '<svg viewBox="0 0 24 24"><rect x="2.5" y="5" width="19" height="14" rx="2.2" fill="currentColor"/><path fill="' + D + '" d="M4.6 7.4 L12 12.9 L19.4 7.4 L19.4 8.9 L12 14.4 L4.6 8.9 Z"/></svg>',
+    // ---- recuration new class seals (2026-07-14, same engraved-coin style) ----
+    // navigator: a compass rose carved into a coin — plotting the route.
+    navigator: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.8" fill="currentColor"/><path fill="' + D + '" d="M12 3.8 L13.8 10.2 L20.2 12 L13.8 13.8 L12 20.2 L10.2 13.8 L3.8 12 L10.2 10.2 Z"/><circle cx="12" cy="12" r="1.7" fill="currentColor"/></svg>',
+    // curator: a folder with sorted (descending) rules — order imposed on the pile.
+    curator: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M2.6 4.6 h6.4 l1.8 2.4 h10.6 v12.4 a1.6 1.6 0 0 1 -1.6 1.6 H4.2 a1.6 1.6 0 0 1 -1.6 -1.6 Z"/><g fill="' + D + '"><rect x="6" y="10.6" width="12" height="1.8" rx=".5"/><rect x="6" y="13.8" width="9" height="1.8" rx=".5"/><rect x="6" y="17" width="6" height="1.8" rx=".5"/></g></svg>',
+    // muse: a lightbulb with a carved filament spark — the idea landing.
+    muse: '<svg viewBox="0 0 24 24"><circle cx="12" cy="9.4" r="6.6" fill="currentColor"/><path fill="currentColor" d="M9.2 14.6 h5.6 v3.6 a1.4 1.4 0 0 1 -1.4 1.4 h-2.8 a1.4 1.4 0 0 1 -1.4 -1.4 Z"/><g fill="none" stroke="' + D + '" stroke-width="1.5" stroke-linecap="round"><path d="M9.6 16.8 H14.4"/><path d="M9.9 8.6 L12 10.8 L14.1 8.6"/><path d="M12 10.8 V13.2"/></g></svg>',
     // ---- S2 new class seals (same matte/debossed engraved-coin style, currentColor) ----
     // broker: a scale/balance — weighing the deal.
     broker: '<svg viewBox="0 0 24 24"><g fill="currentColor"><rect x="11" y="3.4" width="2" height="15.4" rx=".5"/><rect x="6" y="18.6" width="12" height="2" rx=".8"/><path d="M4 6.6 H20 V8 H4 Z"/></g><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M4 7.3 L1.8 12.4"/><path d="M4 7.3 L6.2 12.4"/><path d="M20 7.3 L17.8 12.4"/><path d="M20 7.3 L22.2 12.4"/></g><path fill="' + D + '" d="M1.8 12.4 A2.6 2.6 0 0 0 6.2 12.4 Z"/><path fill="' + D + '" d="M17.8 12.4 A2.6 2.6 0 0 0 22.2 12.4 Z"/></svg>',
@@ -55,7 +62,8 @@
   const CODE = {
     chief: 'CHF', engineer: 'ENG', researcher: 'RES', reviewer: 'REV', operator: 'OPR',
     scribe: 'SCR', analyst: 'ANL', scout: 'SCT', archivist: 'ARV', designer: 'DSN', liaison: 'LIA',
-    broker: 'BRK', publicist: 'PUB', tutor: 'TUT', auditor: 'AUD', bookkeeper: 'LDG', translator: 'XLT', herald: 'HLD'
+    broker: 'BRK', publicist: 'PUB', tutor: 'TUT', auditor: 'AUD', bookkeeper: 'LDG', translator: 'XLT', herald: 'HLD',
+    navigator: 'NAV', curator: 'CUR', muse: 'MUS'
   };
 
   // bespoke emblems for the built-in RECIPES (missions) — same matte/debossed style, keyed by recipe id.
