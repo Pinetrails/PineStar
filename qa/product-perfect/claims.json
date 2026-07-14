@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "9fd22415d41cccf16aee521a8dfbc600c5cc2051",
+    "sourceCommit": "3bcd4ad8b903505cbe81d60650ec3549e9deee87",
     "pathSetSha256": "c6f58b9074e94223ecf3202f0604f0fbe0ce628978503a414e9dd2908481a049",
     "files": [
       {
@@ -63,8 +63,8 @@
       },
       {
         "path": "frontend/app/app.js",
-        "bytes": 246808,
-        "sha256": "fda2ad50c404aefdddad1ba31533f2e5a05ed6fb3d4c6a746ad74e52eaeb6b83"
+        "bytes": 247219,
+        "sha256": "dd6e66eb7637c10850d32418ddb7e883c6e355591f9e41461da7d13436c84615"
       },
       {
         "path": "frontend/app/armconfirm.js",
@@ -703,8 +703,8 @@
       },
       {
         "path": "frontend/app/warroom.js",
-        "bytes": 5979,
-        "sha256": "a7de4fac348313f6eddeb6cc216b89ece1ff2c94736ac1fc85310db653f5a90c"
+        "bytes": 7389,
+        "sha256": "7d858227b58eff720a8e40eeaf29d4b18aec3605a209bbb9719f7bfbfaf1d251"
       },
       {
         "path": "frontend/app/widgets.js",
@@ -743,8 +743,8 @@
       },
       {
         "path": "frontend/app/world.js",
-        "bytes": 440365,
-        "sha256": "a5251d1c5af6940412764d0285906ede712775511860ee69beec0a8d582723c1"
+        "bytes": 447542,
+        "sha256": "0c72e9f57fdd4bab67d0079ac4c41b58ad60dcfc18669986b0e2945a2375a634"
       },
       {
         "path": "frontend/app/worldmodel.js",
@@ -823,8 +823,8 @@
       },
       {
         "path": "frontend/css/warroom.css",
-        "bytes": 3885,
-        "sha256": "db95a4ccb76f8c6a241f6c3c7aa6930717cd9545136cb4f6e9c0ef3eb2f368dd"
+        "bytes": 4283,
+        "sha256": "a2716f650f27fa7cfd44548bd8243dfb8315c4cedb0d4e01171c348a5f1d5adc"
       },
       {
         "path": "frontend/css/widgets.css",
