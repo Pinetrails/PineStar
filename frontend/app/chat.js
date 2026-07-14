@@ -1699,6 +1699,10 @@ const Chat = (() => {
         if (!bottleWillOffer) ResummonStore.onVerdict(runId, verdict, agentId || 'agent');
       } catch (_) {}
     }
+    // OUTCOME LOOP (recipe lane B): if THIS run was launched from a recipe (RUN_META provenance spine), fold the
+    // verdict onto that recipe's own counters — what actually HELPED ranks the FOR-YOU shelf, not just what was
+    // clicked. Missing meta (ledger evicted / page reloaded) → no rating recorded, never guessed. Fail-open.
+    try { const rmp = runMeta(runId); if (rmp && rmp.recipeId && typeof ProspectStore !== 'undefined' && ProspectStore.noteRated) ProspectStore.noteRated(rmp.recipeId, verdict); } catch (_) {}
   }
   // render the rate-the-work control into `host` (a span/div). onSettle fires after the verdict flashes.
   const WORKRATE_COACH_KEY = 'starnet.workrate.seen';

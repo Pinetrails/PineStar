@@ -2976,7 +2976,7 @@ async function runScoutCycle(o) {
         activityBlock: activityBlock,
         directionBlock: directionBlock,
         existingRecipes: existing, gearKeys: SCOUT_CAP_KEYS,
-        launchedOften: Scout.topLaunched(scoutState, 5)
+        launchedOften: Scout.launchHints(scoutState, 5)   // lane B: names annotated "(rated well)" when the Commander's own verdicts earn it
       });
       const reply = await propose('You are the station\'s recipe author. Follow the format exactly; ground every claim in the provided evidence.', directive);
       // grounding = the same evidence the directive showed the model — the WHY must cite it (parseRecipe guard). The
@@ -3043,13 +3043,23 @@ function handleScoutGet(req, res) {
     usage: scoutState.usage
   }));
 }
-// POST /api/scout/telemetry { kind:'recipe.launch', id, name } — the engagement loop's one write: count a real
-// recipe launch (counters only, no content). Feeds the FOR-YOU rank + the drafting directive's launch hint.
+// POST /api/scout/telemetry — the engagement loop's writes (counters only, no content):
+//   { kind:'recipe.launch', id, name }              — count a real recipe launch
+//   { kind:'recipe.rated',  id, verdict:great|ok|miss } — fold a rate-the-work verdict onto the launching recipe
+// Both feed the FOR-YOU rank + the drafting directive's launch hints. Verdict is clamped to the known enum.
 async function handleScoutTelemetry(req, res) {
   let body; try { body = JSON.parse(await readBody(req, 1 << 14)) || {}; } catch (e) { res.writeHead(400); return res.end('bad json'); }
   const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
-  if (body.kind !== 'recipe.launch' || !String(body.id || '')) return json(400, { ok: false, error: 'kind must be recipe.launch with an id' });
-  scoutState = Scout.noteLaunch(scoutState, { id: body.id, name: body.name }, { now: Date.now() });
+  const id = String(body.id || '').slice(0, 60);
+  if (body.kind === 'recipe.launch' && id) {
+    scoutState = Scout.noteLaunch(scoutState, { id: id, name: body.name }, { now: Date.now() });
+  } else if (body.kind === 'recipe.rated' && id) {
+    const verdict = String(body.verdict || '');
+    if (['great', 'ok', 'miss'].indexOf(verdict) === -1) return json(400, { ok: false, error: 'verdict must be great|ok|miss' });
+    scoutState = Scout.noteRated(scoutState, { id: id, verdict: verdict }, { now: Date.now() });
+  } else {
+    return json(400, { ok: false, error: 'kind must be recipe.launch or recipe.rated with an id' });
+  }
   persistScout();
   json(200, { ok: true });
 }

@@ -177,6 +177,38 @@ A.ok(!!uc.usage.launches['heavy'] && uc.usage.launches['heavy'].n === 2, 'the re
 const ur = S.normalize(JSON.parse(JSON.stringify(u)), T0);
 A.eq(ur.usage.launches['fix-bug'].n, 1, 'usage round-trips normalize');
 
+/* ---------- outcome telemetry (lane B): rate-the-work verdicts folded per recipe ---------- */
+let rt = S.fresh(T0);
+rt = S.noteLaunch(rt, { id: 'morning-brief', name: 'Morning Brief' }, { now: T0 });
+rt = S.noteRated(rt, { id: 'morning-brief', verdict: 'great' }, { now: T0 + 1 });
+rt = S.noteRated(rt, { id: 'morning-brief', verdict: 'great' }, { now: T0 + 2 });
+rt = S.noteRated(rt, { id: 'morning-brief', verdict: 'miss' }, { now: T0 + 3 });
+A.eq(rt.usage.launches['morning-brief'].rated.great, 2, 'great verdicts count up');
+A.eq(rt.usage.launches['morning-brief'].rated.miss, 1, 'miss verdicts count up');
+A.eq(rt.usage.launches['morning-brief'].n, 1, 'a rating never inflates the launch count');
+A.eq(S.noteRated(rt, { id: 'morning-brief', verdict: 'amazing' }, { now: T0 }).usage.launches['morning-brief'].rated.great, 2, 'an unknown verdict is a no-op (clamped enum)');
+A.eq(S.noteRated(rt, { id: '' }, { now: T0 }).usage.launches['morning-brief'].rated.great, 2, 'an idless rating is a no-op');
+// a rating on an id the launch ping missed still creates its entry (a real verdict is never dropped)
+const rOnly = S.noteRated(S.fresh(T0), { id: 'ghost', verdict: 'ok' }, { now: T0 });
+A.eq(rOnly.usage.launches['ghost'].rated.ok, 1, 'a rating on an unseen id creates the entry');
+A.eq(rOnly.usage.launches['ghost'].n, 0, 'the created entry does not fake a launch count');
+// a later launch never erases the outcome counters
+const rKeep = S.noteLaunch(rt, { id: 'morning-brief', name: 'Morning Brief' }, { now: T0 + 4 });
+A.eq(rKeep.usage.launches['morning-brief'].rated.great, 2, 'a launch preserves the rated counters');
+// old persisted state (no rated field) hydrates to zero counters, never a crash
+const legacy = S.normalize({ v: 1, usage: { launches: { 'fix-bug': { name: 'Fix a Bug', n: 3, lastAt: T0 } } } }, T0);
+A.eq(legacy.usage.launches['fix-bug'].rated.great, 0, 'an old save without rated hydrates to zeros (back-compat)');
+// rated counters survive a hydrate round-trip
+const rr = S.normalize(JSON.parse(JSON.stringify(rt)), T0);
+A.eq(rr.usage.launches['morning-brief'].rated.miss, 1, 'rated counters round-trip normalize');
+// launchHints: the directive hint annotates "(rated well)" only when the Commander's verdicts earn it
+A.eq(S.launchHints(rt, 5), ['Morning Brief (rated well)'], 'launchHints annotates >=2 great and great>miss');
+A.eq(S.launchHints(u, 5), ['Morning Brief', 'Fix a Bug'], 'launchHints without ratings matches topLaunched (no invented praise)');
+let rMiss = S.noteLaunch(S.fresh(T0), { id: 'x', name: 'X' }, { now: T0 });
+rMiss = S.noteRated(rMiss, { id: 'x', verdict: 'great' }, { now: T0 });
+A.eq(S.launchHints(rMiss, 5), ['X'], 'one great alone does not earn the annotation (needs >=2)');
+A.eq(S.topLaunched(rt, 5), ['Morning Brief'], 'topLaunched stays names-only (locked contract untouched)');
+
 /* ---------- sweep: an undecided draft expires on the interests horizon, un-wedging the mint pipeline ---------- */
 A.eq(S.DRAFT_TTL_MS, 14 * 86400000, 'the draft TTL is the same 14-day horizon interests decay over');
 let sw = S.fresh(T0);
