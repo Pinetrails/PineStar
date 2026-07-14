@@ -84,12 +84,13 @@ function boot(opts) {
     setTimeout: st, clearTimeout, setInterval, clearInterval,
     console: { log() {}, warn() {}, error() {} },
     URL: { createObjectURL: () => 'blob:x', revokeObjectURL() {} },
+    AbortController,   // neural-TTS synth uses one per request to allow barge-in cancel
     Blob: class { constructor(parts, o) { this.size = (parts && parts.length) ? 1 : 0; this.type = (o && o.type) || ''; } },
-    fetch: () => Promise.resolve({ ok: true, headers: { get: () => 'application/json' }, json: () => Promise.resolve({ text: 'words' }), blob: () => Promise.resolve({ size: 1 }) }),
+    fetch: opts.fetch || (() => Promise.resolve({ ok: true, headers: { get: () => 'application/json' }, json: () => Promise.resolve({ text: 'words' }), blob: () => Promise.resolve({ size: 1 }) })),
     Chat: { isBusy: () => sandbox.__busy, status: s => { statusLog.push(s); nodes['chat-status'].textContent = s; }, send: t => sandbox.__sent.push(t), autoGrowInput() {} },
     SFX: { open() {}, click() {}, think() {}, boot() {} },
     Personas: { DEFAULT_ID: 'professional', get: () => ({ ttsVoice: 'Umbriel', ttsSpeed: 1 }) },
-    Harness: { getKey: () => '', configured: () => false },
+    Harness: { getKey: () => (opts.ttsKey ? 'k' : ''), configured: () => false },
     __busy: false, __sent: []
   };
   sandbox.globalThis = sandbox; win.SpeechRecognition = MockSR; win.speechSynthesis = undefined;
@@ -98,6 +99,14 @@ function boot(opts) {
   const Voice = sandbox.__Voice;
   Voice.init({ name: 'Tester' });
   return { Voice, nodes, statusLog, sandbox, micRec: () => nodes['chat-mic'].classList.contains('rec') };
+}
+
+// a /api/tts endpoint that always FAILS with a given reason (→ neural voice degrades to the browser
+// voice). Any non-TTS call (e.g. STT transcribe) keeps the normal success shape.
+function ttsFailFetch(reason) {
+  return (url) => (String(url).indexOf('/api/tts') >= 0)
+    ? Promise.resolve({ ok: false, status: 402, headers: { get: () => 'application/json' }, json: () => Promise.resolve({ reason }) })
+    : Promise.resolve({ ok: true, headers: { get: () => 'application/json' }, json: () => Promise.resolve({ text: 'words' }), blob: () => Promise.resolve({ size: 1 }) });
 }
 
 const tick = (n = 12) => new Promise(r => setTimeout(r, n));
@@ -152,6 +161,21 @@ const tick = (n = 12) => new Promise(r => setTimeout(r, n));
     gumMode = 'ok';
     t.Voice.startListening(); await tick();
     A.ok(t.Voice.isListening() === true, 'recorder: mic works after re-grant');
+  }
+
+  // --- voice degrade NEVER writes to the COMMS status bar (#chat-status) ------------------------
+  // When neural TTS fails, the honest "backup voice active" reason must ride the speaker toggle's
+  // TOOLTIP only — never the run-state header bar (Andrew 2026-07-13: "there should never be text on
+  // the comms panel on that bar"). Truthful telemetry is preserved (the reason stays inspectable on
+  // hover); the header stays clean of voice-outage banners.
+  {
+    const t = boot({ ttsKey: true, fetch: ttsFailFetch('insufficient credits') });
+    t.Voice.setSpeakReplies(true);
+    t.Voice.speak('hello commander, systems are nominal', 'agent'); await tick(40);
+    const title = String(t.nodes['voice-toggle'].title || '');
+    A.ok(/real voice|backup voice/i.test(title), 'voice degrade: honest reason pinned on the speaker-toggle tooltip (telemetry preserved)');
+    A.ok(!t.statusLog.some(s => /real voice|backup voice|voice provider/i.test(String(s))), 'voice degrade: outage banner is NEVER pushed to the COMMS status bar');
+    A.ok(!/real voice|backup voice/i.test(String(t.nodes['chat-status'].textContent || '')), 'voice degrade: #chat-status text carries no voice-outage banner');
   }
 
   A.report('voice.button.test');
