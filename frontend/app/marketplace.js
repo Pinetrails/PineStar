@@ -643,6 +643,21 @@ const Marketplace = (() => {
       '</div>' +
     '</button>';
   }
+  // lane F: the honest-life chip — the Commander's OWN launch count for this recipe (never anyone else's, never
+  // a fake "popular"), plus a rated arrow once their own verdicts point somewhere (great>miss ▲ / miss>great ▽).
+  // Every number derives from the scout usage read (ProspectStore.launches — real persisted telemetry).
+  function recipeLifeChip(r) {
+    try {
+      if (typeof ProspectStore === 'undefined' || !ProspectStore.launches) return '';
+      const u = (ProspectStore.launches() || {})[r.id];
+      const n = (u && typeof u === 'object') ? u.n : u;
+      if (!Number.isFinite(n) || n <= 0) return '';
+      const rated = (u && typeof u === 'object' && u.rated && typeof u.rated === 'object') ? u.rated : null;
+      const g = rated ? (Number(rated.great) || 0) : 0, m = rated ? (Number(rated.miss) || 0) : 0;
+      const arrow = (g > m && g > 0) ? ' · rated ▲' : (m > g && m > 0) ? ' · rated ▽' : '';
+      return '<span class="mkt-chip mkt-life" title="your own launches' + (arrow ? ' + your ratings' : '') + '">↻ ran ' + Math.floor(n) + '×' + esc(arrow) + '</span>';
+    } catch (_) { return ''; }
+  }
   function recipeCardHTML(r, i) {
     const sel = (focusRecipe === r.id);
     const n = (r.params || []).length;
@@ -653,7 +668,7 @@ const Marketplace = (() => {
         '<div class="mkt-name">' + esc(r.name) + (r.custom ? ' <span class="mkt-badge">CUSTOM</span>' : '') + '</div>' +
         '<div class="mkt-tag">' + esc(r.tagline) + '</div>' +
         '<div class="mkt-meta"><span class="mkt-chip lane">' + esc(laneLabelOf(r)) + '</span>' +
-          '<span class="mkt-chip">' + setup + '</span></div>' +
+          '<span class="mkt-chip">' + setup + '</span>' + recipeLifeChip(r) + '</div>' +
       '</div>' +
     '</button>';
   }
@@ -919,7 +934,7 @@ const Marketplace = (() => {
       '<div class="mkt-dos-hero">' + sealHTML(r, true) +
         '<div class="mkt-dos-hi"><div class="mkt-dos-name">' + esc(r.name) + (r.custom ? ' <span class="mkt-badge">CUSTOM</span>' : '') + '</div>' +
           '<div class="mkt-dos-tag">' + esc(r.tagline) + '</div>' +
-          '<div class="mkt-meta"><span class="mkt-chip lane">' + esc(CAT_LABEL[railBucket(r)] || 'GENERAL') + '</span></div></div></div>' +
+          '<div class="mkt-meta"><span class="mkt-chip lane">' + esc(CAT_LABEL[railBucket(r)] || 'GENERAL') + '</span>' + recipeLifeChip(r) + '</div></div></div>' +
       liveRoutineBadgeHTML(r) + forkLine + cadHint +
       '<div class="mkt-block"><div class="bh">WHAT IT SENDS</div><pre>' + esc(r.task) + '</pre></div>' +
       inputs +

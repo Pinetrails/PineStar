@@ -109,5 +109,9 @@ A.ok(/launchSeed:\s*\{\s*id:\s*String\(recipeId\)/.test(appSrc), 'openRecipeLaun
 const mkt = fs.readFileSync(path.join(__dirname, '../frontend/app/marketplace.js'), 'utf8');
 A.ok(/function maybeConsumeLaunchSeed/.test(mkt), 'the bay defines the one-shot launch-seed consume');
 A.ok(/ctx\.launchSeed = null/.test(mkt), 'the launch seed is consumed one-shot (cleared before any render)');
+// lane F (same telemetry read): the card life chip is the Commander's OWN counts, honestly framed — never "popular".
+A.ok(/function recipeLifeChip/.test(mkt), 'the bay defines the recipe life chip (lane F)');
+A.ok(/ProspectStore\.launches\(\)/.test(mkt.slice(mkt.indexOf('function recipeLifeChip'), mkt.indexOf('function recipeLifeChip') + 900)), 'the life chip reads the real scout launch counters');
+A.ok(!/popular/i.test(mkt.slice(mkt.indexOf('function recipeLifeChip'), mkt.indexOf('function recipeCardHTML'))), 'the life chip never claims popularity (own counts only — truthful telemetry)');
 
 A.report('routinenudgestore');
