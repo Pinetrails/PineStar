@@ -274,6 +274,7 @@ test/station-authority.test.js
 test/zones.test.js
 test/social-border.test.js
 test/crew-containment.test.js
+test/prop-awareness.test.js
 test/chat-stare-throttle.test.js
 test/g1bprops.test.js
 test/g3btrophy.test.js

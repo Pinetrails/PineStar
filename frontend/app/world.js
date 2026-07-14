@@ -975,7 +975,10 @@ const World = (() => {
     const cur = tileOf(self.px, self.py);
     const blockers = movementBlockers(self, blocked);
     if (tileBlockedFor(blockers, dest.x, dest.y)) return false;
-    const p = geo.path(cur.x, cur.y, dest.x, dest.y, blockers);
+    // prop awareness: prefer a route that steps around walkable machinery/decor (soft no-tread set),
+    // fall back to the plain route when the soft set is the only way through (or the dest sits on it)
+    const p = geo.path(cur.x, cur.y, dest.x, dest.y, movementBlockers(self, beltUnion()))
+      || geo.path(cur.x, cur.y, dest.x, dest.y, blockers);
     if (!p) return false;
     self.pathPts = p; self.pathIdx = 0; self.state = 'walk';
     nextWaypoint();
@@ -1127,11 +1130,20 @@ const World = (() => {
     self.idleUntil = now + 800;
   }
 
-  /* desk footprint ∪ all belt tiles — the soft no-tread set for casual wandering */
+  /* desk footprint ∪ all belt tiles ∪ non-blocking prop footprints — the soft no-tread set.
+     Non-blocking props (bays, inbox/outbox chutes, filters, dropped decor) stay WALKABLE — bodies
+     dock on bay tiles, airlocks are doors — but a body with prop awareness steps AROUND the
+     machinery when any other route exists. Rugs and airlocks are meant to be crossed; skip them. */
+  const SOFT_CROSS = new Set(['rug', 'airlock']);
   function beltUnion() {
     const s = new Set(blocked);
     const belts = (geo && geo.belts) || [];
     for (const b of belts) s.add(b.x + ',' + b.y);
+    const props = (geo && geo.props) || [];
+    for (const p of props) {
+      if (p.block !== false || SOFT_CROSS.has(p.t)) continue;   // blocking props are already hard-blocked in geo.walkable
+      for (let dy = 0; dy < (p.h || 1); dy++) for (let dx = 0; dx < (p.w || 1); dx++) s.add((p.x + dx) + ',' + (p.y + dy));
+    }
     return s;
   }
 
@@ -1232,7 +1244,9 @@ const World = (() => {
       const cur = tileOf(b.px, b.py);
       const blockers = movementBlockers(b, blocked);
       if (tileBlockedFor(blockers, s.tx, s.ty)) { b.state = 'idle'; b.sitting = false; return; }
-      const p = geo.path(cur.x, cur.y, s.tx, s.ty, blockers);
+      // prop awareness: prefer the machinery-avoiding route to the chair; fall back when it's the only way
+      const p = geo.path(cur.x, cur.y, s.tx, s.ty, movementBlockers(b, beltUnion()))
+        || geo.path(cur.x, cur.y, s.tx, s.ty, blockers);
       if (p && p.length) { b.pathPts = p; b.pathIdx = 0; crewNextWaypoint(b); }
       else { b.px = foot.x; b.py = foot.y; b.sitting = true; b.dir = 'north'; b.state = 'idle'; return; }   // unreachable → snap into the seat
     }
