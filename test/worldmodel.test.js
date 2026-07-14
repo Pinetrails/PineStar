@@ -264,7 +264,7 @@ A.notThrows(() => {
 /* ---- Phase B: BAY agent-binding (additive prop.agentId — who runs at this belt endpoint) ---- */
 const sb = WM.create();
 const bz = sb.roomById(sb.spawnRoomId()).rects[0];
-const bayA = sb.addProp({ t: 'bay', x: bz.x1 + 2, y: bz.y1 + 2, w: 2, h: 2, block: false, agentId: 'coder' });
+const bayA = sb.addProp({ t: 'bay', x: bz.x1 + 2, y: bz.y1 + 2, w: 2, h: 2, agentId: 'coder' });
 A.ok(bayA.ok, 'a BAY prop places');
 A.eq(sb.propById(bayA.id).agentId, 'coder', 'addProp carries opts.agentId onto the prop');
 const deskP = sb.addProp({ t: 'desk', x: bz.x1 + 6, y: bz.y1 + 2, w: 2, h: 1 });
@@ -282,6 +282,14 @@ const legacy = WM.deserialize({ schema: 'starnet.station', version: 1,
   rooms: { rH: { id: 'rH', kind: 'hab', name: 'H', rects: [{ x1: 0, y1: 0, x2: 8, y2: 8 }] } }, order: ['rH'],
   props: [{ id: 'p9', t: 'bay', x: 2, y: 2, w: 2, h: 2 }] });
 A.eq(legacy.propById('p9').agentId, undefined, 'a legacy bay (no agentId) loads unbound');
+// legacy walkable-dock repair: docks (intake/bay/outbox) shipped block:false for a while — migrate
+// strips the stale flag so old stations heal on load (docks are SOLID; agents route around them).
+const legacyDock = WM.deserialize({ schema: 'starnet.station', version: 1,
+  rooms: { rH: { id: 'rH', kind: 'hab', name: 'H', rects: [{ x1: 0, y1: 0, x2: 8, y2: 8 }] } }, order: ['rH'],
+  props: [{ id: 'pB', t: 'bay', x: 2, y: 2, w: 2, h: 2, block: false }] });
+A.eq(legacyDock.propById('pB').block, undefined, 'migrate strips block:false from a legacy dock (bay is solid)');
+const gld = legacyDock.projectGeometry();
+A.ok(!gld.walkable(2 - gld.origin.tx, 2 - gld.origin.ty), 'a healed legacy bay footprint tile is NOT walkable');
 // assignPropAgent: validate, bind, unbind
 A.ok(!sb.assignPropAgent('nope', 'x').ok, 'assignPropAgent on a missing prop fails');
 A.eq(sb.assignPropAgent(deskP.id, 'bad agent!').error, 'BAD_AGENT', 'assignPropAgent rejects a malformed agentId');

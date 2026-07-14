@@ -55,6 +55,14 @@ is `blocks:false`, so agents walk over/along it. The builder passes the flag to 
 the model stores `block:false` (omitted when true) and `projectGeometry()` skips those footprints
 when filling `blockedTiles`.
 
+The 2×2 workflow docks (`intake`/INBOX, `bay`, `outbox`) are **solid** (`blocks:true`): belts hook
+to their ring tiles (the auto-router never paths under a prop footprint), so nothing needs to stand
+on them and agents route around. They shipped as `blocks:false` for a while — `migrate()` strips
+that stale flag from saved docs so old stations heal on load. The 1×1 junctions (`filter`,
+`splitter`, `merger`) stay `blocks:false`: they sit ON a belt line (a belt tile underneath), and
+belts are walkable floor machinery by contract. `airlock` (a door) and `missionboard`
+(wall-mounted) are also intentionally non-blocking.
+
 ## Status
 
 - **Stage 1 (done):** model + module + first props; place/move/reclaim/undo/persist + blocking.
