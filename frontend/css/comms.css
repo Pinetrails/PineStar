@@ -550,6 +550,49 @@
 }
 .chat-attach-view a.filechip:hover { border-color: var(--ph-bright); color: var(--ph-bright); }
 
+/* the staged composer thumbnail is also a click-to-enlarge target */
+.chat-attach-chip .thumb { cursor: pointer; }
+.chat-attach-chip .thumb:hover { border-color: var(--ph-bright); box-shadow: 0 0 6px var(--ph-glow); }
+
+/* ============================================================
+   IMAGE LIGHTBOX — any COMMS image (sent attachment, staged
+   composer attachment, agent image deliverable) enlarged over
+   the whole app. Backdrop click / × / Esc dismisses. Sits above
+   every window (max app chrome is ~995) but under notify(2000)
+   and the tutorial layers. Theme tokens only.
+   ============================================================ */
+.comms-lightbox {
+  position: fixed; inset: 0; z-index: 1200;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(0, 0, 0, .82); cursor: zoom-out;
+  animation: lb-in var(--t-med, 180ms) var(--ease-out, ease-out);
+}
+@keyframes lb-in { from { opacity: 0; } to { opacity: 1; } }
+.comms-lightbox .lb-frame {
+  margin: 0; cursor: default; max-width: min(92vw, 1400px); max-height: 88vh;
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+}
+.comms-lightbox .lb-frame img {
+  display: block; max-width: 100%; max-height: calc(88vh - 28px);
+  object-fit: contain; background: #000;
+  border: 1px solid var(--ph-dim); border-radius: 4px;
+  box-shadow: 0 0 28px var(--ph-glow), 0 12px 40px rgba(0, 0, 0, .6);
+}
+.comms-lightbox .lb-frame.loading img { min-width: 120px; min-height: 90px; }
+.comms-lightbox .lb-frame.loading::after { content: 'loading…'; color: var(--ph-dim); font-size: 12px; letter-spacing: .12em; }
+.comms-lightbox .lb-name {
+  max-width: 92vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--ph-dim); font-size: 12px; letter-spacing: .06em;
+}
+.comms-lightbox .lb-close {
+  position: absolute; top: 14px; right: 18px;
+  border: 1px solid var(--ph-dim); border-radius: 5px; background: var(--panel2, rgba(0,0,0,.5));
+  color: var(--ph); font-size: 20px; line-height: 1; padding: 4px 10px; cursor: pointer;
+  transition: color var(--t-fast, 120ms) var(--ease-soft, ease), border-color var(--t-fast, 120ms) var(--ease-soft, ease), box-shadow var(--t-fast, 120ms) var(--ease-soft, ease);
+}
+.comms-lightbox .lb-close:hover,
+.comms-lightbox .lb-close:focus-visible { color: var(--ph-bright); border-color: var(--ph-bright); box-shadow: 0 0 6px var(--ph-glow); }
+
 /* ============================================================
    AGENT LINE — the top-of-panel identity row: who's on the line
    (a native <select> dressed as a phosphor plate) + a truthful

@@ -653,6 +653,9 @@ const Chat = (() => {
       chip.className = 'chat-attach-chip' + (entry.status === 'uploading' ? ' uploading' : '') + (entry.status === 'error' ? ' err' : '');
       if (entry.kind === 'image' && entry.localUrl) {
         const img = document.createElement('img'); img.className = 'thumb'; img.src = entry.localUrl; img.alt = entry.name;
+        img.title = 'click to enlarge';
+        // enlarge the STAGED image before sending it — the strip still owns entry.localUrl, so no revoke here
+        img.addEventListener('click', () => openLightbox(() => entry.localUrl, entry.name, { revoke: false }));
         chip.appendChild(img);
       } else {
         const g = document.createElement('span'); g.className = 'glyph'; g.setAttribute('aria-hidden', 'true');
@@ -970,7 +973,7 @@ const Chat = (() => {
       if (!rel) continue;
       if (a.kind === 'image') {
         const link = document.createElement('a'); link.className = 'thumb'; link.title = name;
-        wireBlobOpen(link, rel, aid);   // click opens the full image in a new tab (reuses the deliverable opener)
+        wireLightbox(link, rel, aid, name);   // click enlarges in-app (Esc / click-out / × to leave)
         const img = document.createElement('img'); img.loading = 'lazy'; img.alt = name;
         link.appendChild(img); view.appendChild(link);
         // fetch->blob->objectURL (NOT a direct <img src=/api/file>): a native image GET sends no Origin header,
@@ -1253,6 +1256,65 @@ const Chat = (() => {
     });
   }
 
+  /* ── IMAGE LIGHTBOX ─ clicking any COMMS image (sent attachment, staged composer attachment, agent image
+     deliverable) enlarges it IN-APP over everything else; click the backdrop, the ×, or Esc to leave. One
+     instance at a time. Esc is caught on document CAPTURE with stopPropagation so it dismisses the lightbox
+     only — it must never fall through to the window-level Esc handler and close COMMS underneath the viewer. */
+  let lightbox = null;   // { root, onKey, revokeUrl } while open
+  function closeLightbox() {
+    if (!lightbox) return;
+    const lb = lightbox; lightbox = null;
+    document.removeEventListener('keydown', lb.onKey, true);
+    // blob URLs fetched FOR the lightbox are freed with it (the decoded thumbnail elsewhere keeps its own)
+    if (lb.revokeUrl) { try { URL.revokeObjectURL(lb.revokeUrl); } catch (_) {} }
+    lb.root.remove();
+    if (typeof SFX !== 'undefined' && SFX.click) SFX.click();
+  }
+  // `load` -> Promise<objectURL>; opts.revoke says the URL is ours to free on close (false for a staged
+  // attachment's localUrl, which renderAttachStrip still owns and revokes on remove/clear).
+  function openLightbox(load, name, opts) {
+    closeLightbox();
+    const root = document.createElement('div'); root.className = 'comms-lightbox';
+    root.setAttribute('role', 'dialog'); root.setAttribute('aria-modal', 'true');
+    root.setAttribute('aria-label', 'Enlarged image: ' + name);
+    const fig = document.createElement('figure'); fig.className = 'lb-frame loading';
+    const img = document.createElement('img'); img.alt = name; img.decoding = 'async';
+    const cap = document.createElement('figcaption'); cap.className = 'lb-name'; cap.textContent = name; cap.title = name;
+    fig.appendChild(img); fig.appendChild(cap);
+    const x = document.createElement('button'); x.type = 'button'; x.className = 'lb-close';
+    x.textContent = '×'; x.title = 'close'; x.setAttribute('aria-label', 'Close enlarged image');
+    root.appendChild(fig); root.appendChild(x);
+    // click-OUT closes; clicks on the image/caption/frame do not (so a viewer can't lose it by mis-clicking)
+    root.addEventListener('click', ev => { if (ev.target === root) closeLightbox(); });
+    x.onclick = closeLightbox;
+    const onKey = ev => { if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); closeLightbox(); } };
+    document.addEventListener('keydown', onKey, true);
+    document.body.appendChild(root);
+    x.focus();
+    lightbox = { root, onKey, revokeUrl: '' };
+    const mine = lightbox;
+    if (typeof SFX !== 'undefined' && SFX.click) SFX.click();
+    Promise.resolve().then(load).then(u => {
+      if (lightbox !== mine) {   // closed (or replaced) before the bytes arrived — free a URL we now own
+        if (opts && opts.revoke) { try { URL.revokeObjectURL(u); } catch (_) {} }
+        return;
+      }
+      if (opts && opts.revoke) mine.revokeUrl = u;
+      img.addEventListener('load', () => fig.classList.remove('loading'), { once: true });
+      img.addEventListener('error', () => { if (lightbox === mine) closeLightbox(); }, { once: true });
+      img.src = u;
+    }).catch(() => {
+      if (lightbox === mine) closeLightbox();
+      if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('could not load that image — the sidecar may be unreachable', 'warn');
+    });
+  }
+  // wire an image thumb in the transcript: click enlarges via the jailed /api/file route (fresh blob each
+  // view — the thumbnail's own object URL was already revoked after its bitmap decoded).
+  function wireLightbox(a, rel, aid, name) {
+    a.href = '#';
+    a.addEventListener('click', ev => { ev.preventDefault(); openLightbox(() => fileBlobUrl(rel, aid), name, { revoke: true }); });
+  }
+
   // ── "OPEN FOLDER" AFFORDANCE (Theme 4: outputs are findable) ──────────────────────────────────
   // A deliverable landed on disk in the agent's workspace; a beginner needs to be able to FIND it.
   // The absolute per-agent dir comes from the additive /api/workspace/dir route (the frontend otherwise
@@ -1326,16 +1388,17 @@ const Chat = (() => {
     const r = row('agent'); r.d.classList.add('tool'); r.d.classList.add('deliverable'); r.d.classList.add('image');
     r.body.appendChild(document.createTextNode('▤ made '));
     const a = document.createElement('a');
-    wireBlobOpen(a, title, agentId);
+    const shortName = String(title).split(/[\\/]/).pop() || title;
+    wireLightbox(a, title, agentId, shortName);   // click enlarges in-app (Esc / click-out / × to leave)
     a.className = 'deliverable-thumb';
     a.title = title;                                               // full path on hover
     const img = document.createElement('img');
     img.loading = 'lazy';
-    img.alt = String(title).split(/[\\/]/).pop() || title;
+    img.alt = shortName;
     a.appendChild(img);
     r.body.appendChild(a);
     fileBlobUrl(title, agentId).then(u => {
-      img.src = u; a.href = u;
+      img.src = u;
       // once the <img> has decoded (or failed) it no longer needs the object URL — the decoded bitmap
       // survives revocation, so the thumbnail keeps rendering. Revoke to avoid leaking one URL per image
       // deliverable on a long-running station (mirrors voice.js freeing its audio blob after use).
