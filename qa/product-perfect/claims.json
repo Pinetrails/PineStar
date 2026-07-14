@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "339512263ffa13e7a736a7dd1da302f89407f50a",
+    "sourceCommit": "af2468bf19941ae51f9e2fe22707cb9ec906b9b6",
     "pathSetSha256": "6b51c9db409c48d8c878735b7e1cc31b021cfe4a48c0bc2c01891bc0a90859ee",
     "files": [
       {
@@ -793,8 +793,8 @@
       },
       {
         "path": "frontend/css/marketplace.css",
-        "bytes": 50747,
-        "sha256": "6e2afe55e5fcc5b7d60763c11ea2549aba2f388b4b6e15ecb03a37ea2939f0bb"
+        "bytes": 56501,
+        "sha256": "a8565c76ea9d3693720fe4a9e4df9c55b6e202efd6cd3c0ffca8139f87e6c8cc"
       },
       {
         "path": "frontend/css/motion.css",
