@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "af2468bf19941ae51f9e2fe22707cb9ec906b9b6",
+    "sourceCommit": "346e238f7a5a3896026017c858391712a5edb222",
     "pathSetSha256": "6b51c9db409c48d8c878735b7e1cc31b021cfe4a48c0bc2c01891bc0a90859ee",
     "files": [
       {
@@ -473,8 +473,8 @@
       },
       {
         "path": "frontend/app/quitguard.js",
-        "bytes": 5517,
-        "sha256": "16108fa65b401bb860247b4bb47c6d00cf0c69859c23aba311cc02d103249492"
+        "bytes": 6182,
+        "sha256": "782c518fa3e2923451ca9de686595593036181d52b6c6cc34e760b0f836e1866"
       },
       {
         "path": "frontend/app/recipe-catalog/core.js",
@@ -693,8 +693,8 @@
       },
       {
         "path": "frontend/app/updates.js",
-        "bytes": 16875,
-        "sha256": "d95d6b03791fa7be76717046b6a46d2efbf15aecfcd9af338db460c2a248b4ff"
+        "bytes": 17824,
+        "sha256": "b1b9a0e061076074367b71fca4963c995bc966a89e84dc04981934f12aca5e10"
       },
       {
         "path": "frontend/app/voice.js",
