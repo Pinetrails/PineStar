@@ -25,7 +25,14 @@ const SpaceBG = (() => {
   const SEED = 0x57A2BE7;                            // fixed: the sky is a place, not a dice roll
 
   let nebCv = null, dustCv = null, sizeKey = '';     // pre-rendered layers + the w×h key that built them
+  let pendKey = '', pendAt = 0;                      // resize settling: a seam-drag streams sizes — rebuild ONCE when stable, not per tick
   let mid = [], near = [];                           // live twinkle bands
+  let meteor = null, nextMeteorAt = 0;               // the rare silent shooting star (one at a time, runtime-only)
+
+  /* reduced-motion: never ADD dramatic motion (the meteor) when the OS asks for less; the gentle
+     twinkle/scroll predates this module and stays. Live-read, same idiom as world.js. */
+  const _rmq = (typeof window !== 'undefined' && window.matchMedia) ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
+  const reduceMotion = () => !!(_rmq && _rmq.matches);
 
   // star tints: mostly pale blue-white, some warm white, rare violet/teal — weights cumulative
   const TINTS = [
@@ -122,14 +129,21 @@ const SpaceBG = (() => {
   function draw(ctx, w, h, now) {
     ctx.fillStyle = '#040302'; ctx.fillRect(0, 0, w, h);
     if (!w || !h) return;
-    if (sizeKey !== w + 'x' + h) rebuild(w, h);
+    const key = w + 'x' + h;
+    if (sizeKey !== key) {
+      // a seam-drag streams ResizeObserver sizes — rebuilding the tiles per tick (8k specks +
+      // gradients) would jank the drag. Draw the OLD tiles stretched until the size holds ~250ms.
+      if (!nebCv) rebuild(w, h);
+      else if (pendKey !== key) { pendKey = key; pendAt = now; }
+      else if (now - pendAt > 250) rebuild(w, h);
+    } else pendKey = '';
 
     const nx = (now / 1000 * NEB_SPD) % w;           // two-copy wrap scroll, same idiom per layer
     ctx.globalAlpha = 0.9 + 0.1 * Math.sin(now / 7000);   // the gas breathes, slowly
-    ctx.drawImage(nebCv, nx - w, 0); ctx.drawImage(nebCv, nx, 0);
+    ctx.drawImage(nebCv, nx - w, 0, w, h); ctx.drawImage(nebCv, nx, 0, w, h);
     const dx = (now / 1000 * DUST_SPD) % w;
     ctx.globalAlpha = 0.92 + 0.08 * Math.sin(now / 4100);
-    ctx.drawImage(dustCv, dx - w, 0); ctx.drawImage(dustCv, dx, 0);
+    ctx.drawImage(dustCv, dx - w, 0, w, h); ctx.drawImage(dustCv, dx, 0, w, h);
     ctx.globalAlpha = 1;
 
     for (const s of mid) {
@@ -147,6 +161,36 @@ const SpaceBG = (() => {
         ctx.fillRect(x - s.r * 2, y + (s.r >> 1), s.r * 5, 1);
         ctx.fillRect(x + (s.r >> 1), y - s.r * 2, 1, s.r * 5);
       }
+    }
+
+    drawMeteor(ctx, w, h, now);
+  }
+
+  /* THE METEOR — a rare, silent shooting star (one live at a time, ~1-2 per minute). Spawn params
+     are runtime Math.random on purpose: the SKY is a stable seeded place, a meteor is weather.
+     Skipped entirely under prefers-reduced-motion (never ADD dramatic motion the OS asked us not to). */
+  function drawMeteor(ctx, w, h, now) {
+    if (!nextMeteorAt) { nextMeteorAt = now + 20000 + Math.random() * 40000; return; }   // first one 20-60s in
+    if (!meteor) {
+      if (reduceMotion() || now < nextMeteorAt) return;
+      const dirx = Math.random() < 0.5 ? -1 : 1;
+      const ang = (0.30 + Math.random() * 0.35) * Math.PI / 2;   // shallow-to-mid diagonal, always downward
+      const spd = w * (0.28 + Math.random() * 0.22);             // px/s — crosses ~a third of the sky in its life
+      meteor = {
+        x: (0.15 + Math.random() * 0.7) * w, y: (0.05 + Math.random() * 0.4) * h,
+        vx: Math.cos(ang) * spd * dirx, vy: Math.sin(ang) * spd,
+        born: now, life: 900 + Math.random() * 500,
+      };
+    }
+    const t = (now - meteor.born) / meteor.life;
+    if (t >= 1) { meteor = null; nextMeteorAt = now + 45000 + Math.random() * 60000; return; }
+    const a = Math.sin(Math.PI * t);                             // fade in → streak → fade out
+    const el = (now - meteor.born) / 1000;
+    const hx = meteor.x + meteor.vx * el, hy = meteor.y + meteor.vy * el;
+    for (let k = 0; k < 9; k++) {                                // trail: dimming embers back along the path
+      const tx = hx - meteor.vx * k * 0.011, ty = hy - meteor.vy * k * 0.011;
+      ctx.fillStyle = 'rgba(220,230,255,' + (a * (1 - k / 9) * 0.85).toFixed(3) + ')';
+      ctx.fillRect(tx, ty, k < 2 ? 2 : 1, k < 2 ? 2 : 1);
     }
   }
 
