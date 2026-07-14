@@ -81,7 +81,7 @@
   }
 
   function fresh(now) {
-    return { v: STATE_VERSION, staged: [], denylist: [], ledger: [], runsSinceMint: 0, lastMintAt: 0, lastKind: '', context: null, usage: { launches: {} } };
+    return { v: STATE_VERSION, staged: [], denylist: [], ledger: [], runsSinceMint: 0, lastMintAt: 0, lastKind: '', context: null, usage: { launches: {} }, coldStartDone: false };
   }
 
   // tolerant hydrate: clamp everything; a corrupt/partial save degrades per-field, never throws.
@@ -99,6 +99,7 @@
           .slice(-LEDGER_CAP)
           .map(e => ({ at: Number.isFinite(e.at) ? Math.floor(e.at) : 0, kind: str(e.kind), outcome: str(e.outcome), reason: str(e.reason).slice(0, 200), title: str(e.title).slice(0, 60) }));
       }
+      if (raw.coldStartDone === true) s.coldStartDone = true;   // lane E: the one-shot day-one mint, spent forever (old saves default false)
       if (Number.isFinite(raw.runsSinceMint) && raw.runsSinceMint >= 0) s.runsSinceMint = Math.floor(raw.runsSinceMint);
       if (Number.isFinite(raw.lastMintAt) && raw.lastMintAt >= 0) s.lastMintAt = Math.floor(raw.lastMintAt);
       if (KINDS.indexOf(raw.lastKind) !== -1) s.lastKind = raw.lastKind;
@@ -128,11 +129,24 @@
 
   /* decide — should a mint attempt fire NOW, and for which kind? Named bindings for the ledger
      (cold → cooldown → gap → full), most "not earned yet" first. warm comes from interests.warm().
-     kind selection: the kind with FEWER live drafts wins; tie → alternate away from lastKind. */
+     kind selection: the kind with FEWER live drafts wins; tie → alternate away from lastKind.
+
+     COLD-START (lane E): interests take days of use to warm, but a pushed Commander dossier (the awakening's
+     pain/ambition extraction) is real evidence on DAY ONE. When interests are cold, a non-empty dossier buys
+     exactly ONE recipe attempt — forced kind:'recipe' (the personalized recipe is the wow moment) — after at
+     least one qualifying run. The one-shot is spent by the ATTEMPT (stampAttempt {coldStart:true}: staged,
+     rejected, and NONE alike all spend it), so a crash BEFORE the attempt honestly re-arms and a weak draft
+     never earns a retry loop. After that, the normal interests-warmth floor rules again. */
   function decide(state, inp) {
     const now = Number(inp && inp.now) || 0;
     const s = normalize(state, now);
-    if (!(inp && inp.warm)) return { fire: false, binding: 'cold', kind: null };
+    if (!(inp && inp.warm)) {
+      if (inp && inp.dossierWarm && !s.coldStartDone && s.runsSinceMint >= 1) {
+        if (liveCount(s, 'recipe') >= MAX_LIVE) return { fire: false, binding: 'full', kind: null };
+        return { fire: true, binding: null, kind: 'recipe', coldStart: true };
+      }
+      return { fire: false, binding: 'cold', kind: null };
+    }
     if (s.runsSinceMint < MINT_EVERY_RUNS) return { fire: false, binding: 'cooldown', kind: null };
     if (now - s.lastMintAt < MINT_MIN_GAP_MS) return { fire: false, binding: 'gap', kind: null };
     const open = KINDS.filter(k => liveCount(s, k) < MAX_LIVE);
@@ -323,10 +337,14 @@
 
   // a mint ATTEMPT that produced nothing still spends the cadence (counter + stamp) — the scout tried;
   // it must not hammer the model on every following run. The ledger records why via note().
+  // opts.coldStart (lane E): a cold-start attempt also spends the one-shot dossier unlock, whatever its outcome.
   function stampAttempt(state, kind, opts) {
     const now = Number(opts && opts.now) || 0;
     const s = normalize(state, now);
-    return Object.assign({}, s, { runsSinceMint: 0, lastMintAt: now, lastKind: KINDS.indexOf(kind) !== -1 ? kind : s.lastKind });
+    return Object.assign({}, s, {
+      runsSinceMint: 0, lastMintAt: now, lastKind: KINDS.indexOf(kind) !== -1 ? kind : s.lastKind,
+      coldStartDone: s.coldStartDone || !!(opts && opts.coldStart)
+    });
   }
 
   // dismiss: remove the item AND denylist its fingerprint — an equivalent draft never re-mints.

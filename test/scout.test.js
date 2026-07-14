@@ -53,6 +53,33 @@ for (let i = 0; i < S.MAX_LIVE; i++) full = S.stage(full, { id: 'r' + i, kind: '
 for (let i = 0; i < S.MINT_EVERY_RUNS; i++) full = S.noteRun(full, T0);
 A.eq(S.decide(full, { now: T0 + 2 * GAP + 2, warm: true }).binding, 'full', 'both shelves full -> full binds');
 
+/* ---------- lane E: COLD-START — a pushed dossier buys exactly ONE day-one recipe attempt ---------- */
+let cs = S.fresh(T0);
+A.eq(S.decide(cs, { now: T0, warm: false, dossierWarm: true }).binding, 'cold', 'cold-start needs at least one qualifying run (runsSinceMint 0 stays cold)');
+cs = S.noteRun(cs, T0);
+const csFire = S.decide(cs, { now: T0, warm: false, dossierWarm: true });
+A.ok(csFire.fire, 'cold interests + a pushed dossier + one run fires the cold-start attempt');
+A.eq(csFire.kind, 'recipe', 'the cold-start is forced to kind:recipe (the personalized-recipe wow moment)');
+A.eq(csFire.coldStart, true, 'the decision is flagged coldStart so the ambient half can ledger + spend it');
+A.eq(S.decide(cs, { now: T0, warm: false }).binding, 'cold', 'no dossier -> cold as before (back-compat)');
+A.eq(S.decide(cs, { now: T0, warm: false, dossierWarm: false }).binding, 'cold', 'an empty dossier does not unlock');
+// the ATTEMPT spends the one-shot — staged, rejected, and NONE alike (stampAttempt {coldStart:true})
+const csSpent = S.stampAttempt(cs, 'recipe', { now: T0, coldStart: true });
+A.eq(csSpent.coldStartDone, true, 'the cold-start attempt spends the one-shot');
+let csAgain = S.noteRun(csSpent, T0 + 1);
+A.eq(S.decide(csAgain, { now: T0 + GAP + 1, warm: false, dossierWarm: true }).binding, 'cold', 'a spent cold-start never re-fires — the normal warmth floor rules again');
+// a normal (warm) attempt does NOT spend the cold-start unlock
+const warmStamp = S.stampAttempt(S.fresh(T0), 'recipe', { now: T0 });
+A.eq(warmStamp.coldStartDone, false, 'a normal attempt leaves the cold-start unlock intact');
+// the flag survives persistence; an old save without it defaults false
+A.eq(S.normalize(JSON.parse(JSON.stringify(csSpent)), T0).coldStartDone, true, 'coldStartDone round-trips normalize');
+A.eq(S.normalize({ v: 1 }, T0).coldStartDone, false, 'an old save without the flag hydrates to false (back-compat)');
+// a full recipe shelf blocks even the cold-start (never a 4th undecided draft)
+let csFull = S.noteRun(S.fresh(T0), T0);
+for (let i = 0; i < S.MAX_LIVE; i++) csFull = S.stage(csFull, { id: 'cr' + i, kind: 'recipe', draft: { name: 'z' + i }, why: 'w', fingerprint: 'fp-z' + i }, { now: T0 });
+csFull = S.noteRun(csFull, T0);
+A.eq(S.decide(csFull, { now: T0 + GAP + 1, warm: false, dossierWarm: true }).binding, 'full', 'a full recipe shelf binds the cold-start at full');
+
 /* ---------- buildRecipeDirective ---------- */
 const dir = S.buildRecipeDirective({
   interestsBlock: '• stock research (seen 4×) — e.g. "NVDA earnings"',

@@ -2958,9 +2958,13 @@ async function runScoutCycle(o) {
     // 2) MINT ATTEMPT — at most one per cycle; the pure gates decide if and which kind. A non-firing gate is
     //    NOT ledger-noise (it binds most runs by design); GET /api/scout reports the live binding instead.
     const warm = Interests.warm(interestsState, Date.now());
+    // lane E cold-start: a pushed Commander dossier is day-one evidence — it unlocks exactly ONE recipe attempt
+    // while interests are still cold (Scout.decide owns the one-shot; the attempt spends it whatever the outcome).
+    const dossierWarm = !!String(commanderDossier.get() || '').trim();
     scoutSweep();   // age out stale drafts first — an undecided-draft backlog must not wedge the gate at 'full'
-    const d = Scout.decide(scoutState, { now: Date.now(), warm: warm });
+    const d = Scout.decide(scoutState, { now: Date.now(), warm: warm, dossierWarm: dossierWarm });
     if (!d.fire) return;
+    if (d.coldStart) scoutNote({ kind: 'cycle', outcome: 'coldstart', reason: 'day-one mint unlocked by the commander dossier (interests not warm yet)' });
     // CROSS-WIRE: the shared declined index — a recipe/class shape the Commander declined in ANOTHER surface is
     // suppressed here too (in addition to the scout's own fingerprint denylist), with an honest ledger note.
     const declinedIdx = buildDeclinedIndex(agentId);
@@ -2980,9 +2984,11 @@ async function runScoutCycle(o) {
       });
       const reply = await propose('You are the station\'s recipe author. Follow the format exactly; ground every claim in the provided evidence.', directive);
       // grounding = the same evidence the directive showed the model — the WHY must cite it (parseRecipe guard). The
-      // direction block is part of that evidence, so a WHY that cites an open quest / the north star is grounded.
-      const parsed = Scout.parseRecipe(reply, { existingRecipes: existing, denylist: scoutState.denylist, gearKeys: SCOUT_CAP_KEYS, grounding: [interestsBlock, activityBlock, directionBlock].filter(Boolean).join('\n') });
-      scoutState = Scout.stampAttempt(scoutState, 'recipe', { now: Date.now() });
+      // direction block is part of that evidence, so a WHY that cites an open quest / the north star is grounded —
+      // and so is the DOSSIER (it rides the directive at dossierBlock; excluding it here silently killed any WHY
+      // that honestly cited the Commander's own stated pain/ambition — the exact grounding a cold-start mint has).
+      const parsed = Scout.parseRecipe(reply, { existingRecipes: existing, denylist: scoutState.denylist, gearKeys: SCOUT_CAP_KEYS, grounding: [interestsBlock, activityBlock, directionBlock, commanderDossier.get()].filter(Boolean).join('\n') });
+      scoutState = Scout.stampAttempt(scoutState, 'recipe', { now: Date.now(), coldStart: !!d.coldStart });
       if (parsed && parsed.none) scoutNote({ kind: 'recipe', outcome: 'none', reason: 'model judged the library already serves the observed interests' });
       else if (!parsed) scoutNote({ kind: 'recipe', outcome: 'rejected', reason: 'draft failed hard validation (malformed / broken template / near-duplicate / denylisted)' });
       else if (declinedIdx.has(parsed.draft.name) || declinedIdx.has(parsed.draft.name + ' ' + parsed.draft.tagline)) scoutNote({ kind: 'recipe', outcome: 'rejected', reason: 'declined elsewhere', title: parsed.draft.name });
@@ -3032,7 +3038,8 @@ async function runScoutCycle(o) {
 function handleScoutGet(req, res) {
   scoutSweep();   // purge aged-out drafts even on an idle station (no runs) so the status read is truthful
   const now = Date.now();
-  const gate = Scout.decide(scoutState, { now: now, warm: Interests.warm(interestsState, now) });
+  // the SAME dossierWarm the cycle uses (lane E) — the bay's gate display must never disagree with the mint path.
+  const gate = Scout.decide(scoutState, { now: now, warm: Interests.warm(interestsState, now), dossierWarm: !!String(commanderDossier.get() || '').trim() });
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
   res.end(JSON.stringify({
     warm: Interests.warm(interestsState, now),
