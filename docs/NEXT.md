@@ -811,10 +811,12 @@ E-STOP visibility + get-a-key link already chipped by Atlas — not re-listed.**
   no archive view, no re-open old runs).
 - GB-3 RECORDING MODE: one toggle hiding keys/spend/PII for screen capture (zero code; GTM —
   spectacle is the growth engine and Andrew records constantly).
-- GB-4 Quit/update-while-running guards: UPDATE half FIXED 2026-07-14 (update-blockers lane:
-  Updates.install() checks Channels.busyCount(), amber guard card WAIT/INSTALL ANYWAY,
-  UpdateCore.installBlockReason unit-locked). STILL OPEN: quit/close half — no "N agents
-  still working" on window close (beforeunload saves only).
+- GB-4 Quit/update-while-running guards: BOTH halves FIXED 2026-07-14 (update-blockers lane).
+  Update: Updates.install() checks Channels.busyCount(), amber guard card WAIT/INSTALL ANYWAY.
+  Quit: quitguard.js intercepts close-requested (titlebar X, Alt+F4, taskbar), modal STAY /
+  CLOSE ANYWAY when agents live, bounded state drain before EVERY allowed close (destroy()
+  skips beforeunload), fail-open so a broken Channels never wedges the window shut. Needs
+  the next desktop rebuild (capabilities +core:window:allow-destroy) to be live in the exe.
 - GB-5 Crew bodies: pointer cursor but click falls through (world.js:720 hero-only) — click →
   quick actions (talk/dossier/locate); plus click-roster-name → camera jump to agent.
 - GB-6 Prop hover tooltips (name + grants) — belts have tags (world.js:4080), props silent.

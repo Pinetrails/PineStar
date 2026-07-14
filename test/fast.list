@@ -53,6 +53,7 @@ test/loopguard.test.js
 test/loopguard.dispatch.test.js
 test/iteration-budget.test.js
 test/updatecore.test.js
+test/quitguard.test.js
 test/cloudsavecore.test.js
 test/cloudsave-refusal.test.js
 test/fullscreen.test.js

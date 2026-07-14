@@ -1076,6 +1076,10 @@ body.no-scan .crt-scan { display: none; }
 /* GB-4 install guard: live agents would be killed by the restart — amber, not error-red,
    because nothing is broken; the station is asking for an explicit call. */
 .up-guard { color: var(--warn); border: 1px solid rgba(255, 182, 65, 0.45); background: rgba(70, 45, 5, 0.18); padding: 7px; margin-top: 9px; font-size: 12px; letter-spacing: 0.6px; }
+/* GB-4 quit guard: same amber vocabulary, but modal — window close is an app-level act. */
+.quit-guard-backdrop { position: fixed; inset: 0; z-index: 3000; background: rgba(3, 2, 1, 0.72); display: flex; align-items: center; justify-content: center; }
+.quit-guard-card { max-width: 420px; border: 1px solid var(--ph-dim); background: var(--panel2); box-shadow: var(--raise); border-radius: var(--r-sm); padding: 12px; }
+.quit-guard-card .up-guard { margin-top: 0; }
 
 /* ================= BOOT ================= */
 #boot {
