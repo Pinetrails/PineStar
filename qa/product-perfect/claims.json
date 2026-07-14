@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "66034ecf8af46c493bcb1d5cb3600581ebbd4060",
+    "sourceCommit": "7e18cd8f4b1873e30b95364427777b5639091b68",
     "pathSetSha256": "c6f58b9074e94223ecf3202f0604f0fbe0ce628978503a414e9dd2908481a049",
     "files": [
       {
@@ -143,8 +143,8 @@
       },
       {
         "path": "frontend/app/classicons.js",
-        "bytes": 15015,
-        "sha256": "30ebfe9b4c6bf789b55d54beab574be3e008c7776a2e466b729db71e75e0a1a3"
+        "bytes": 16383,
+        "sha256": "0ace27af59d516155f6a3392817c9de771e2b4e51dcd8de9990967507e3a020b"
       },
       {
         "path": "frontend/app/classify.js",
@@ -318,8 +318,8 @@
       },
       {
         "path": "frontend/app/marketplace.js",
-        "bytes": 156990,
-        "sha256": "c345452a9041e952b0ed91a3e0bd0cb90c9d926cd2fe6bf518da279fa224cd44"
+        "bytes": 159150,
+        "sha256": "11e2b71f4360894985d404be6f541a8f05476f3b3c874a2f7cdbfcc88ee74fbd"
       },
       {
         "path": "frontend/app/mint.js",
@@ -433,8 +433,8 @@
       },
       {
         "path": "frontend/app/prospect.js",
-        "bytes": 9508,
-        "sha256": "a6d86fb04c6b54dda12068c0d18ed2be36db0392164ea10ced01d9f5e4bc4d0a"
+        "bytes": 9524,
+        "sha256": "34b27967b2660658d5c4472ed7d9deb95a60440930d4c369da67ade6623f2c06"
       },
       {
         "path": "frontend/app/prospectstore.js",
@@ -578,8 +578,8 @@
       },
       {
         "path": "frontend/app/specialties.js",
-        "bytes": 10860,
-        "sha256": "adfbf91552b20673180a5ac3d4cd721eb6c4ecba0ae1c13ea27c5eae5fd64269"
+        "bytes": 11468,
+        "sha256": "ef00e20f33937e4fc3012953079cdad682dfae2f84f59b2bfbdd1aa2b710738a"
       },
       {
         "path": "frontend/app/stationbake.js",
@@ -783,8 +783,8 @@
       },
       {
         "path": "frontend/css/marketplace.css",
-        "bytes": 50346,
-        "sha256": "952c8192701d8988d4a515f680aacf4e1c60edf19eb41d0824b22363bcb99752"
+        "bytes": 50747,
+        "sha256": "6e2afe55e5fcc5b7d60763c11ea2549aba2f388b4b6e15ecb03a37ea2939f0bb"
       },
       {
         "path": "frontend/css/motion.css",

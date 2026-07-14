@@ -2894,11 +2894,25 @@ function scoutExistingRecipes() {
 function scoutExistingClasses() {
   const out = [];
   for (const c of (SharedSpecialties.BUILTINS || [])) out.push({ name: c.name, tagline: c.tagline, tags: c.tags || {} });
+  // the ARCHETYPE pool counts as existing too: the LLM must never re-author an archetype-shaped class —
+  // surfacing a dormant archetype is the deterministic matcher's job (Scout.matchArchetype), not the model's.
+  for (const c of (SharedSpecialties.ARCHETYPES || [])) out.push({ name: c.name, tagline: c.tagline, tags: c.tags || {} });
   const cx = scoutState.context;
   if (cx && Array.isArray(cx.customClasses)) for (const c of cx.customClasses) out.push({ name: String(c.name || ''), tagline: String(c.tagline || ''), tags: {} });
   for (const [, a] of agentRoster) if (a && a.name) out.push({ name: String(a.name), tagline: String(a.role || ''), tags: {} });
   for (const it of scoutState.staged) if (it.kind === 'prospect' && it.draft) out.push({ name: String(it.draft.name || ''), tagline: String(it.draft.tagline || ''), tags: {} });
   return out.filter(c => c.name);
+}
+// the names the Commander already HAS (roster agents + their custom classes + already-staged drafts) — the
+// archetype matcher's dedup set. Deliberately NOT the full scoutExistingClasses(): the archetypes themselves
+// (and the builtins) live in that list, and an archetype must not be blocked by its own catalog entry.
+function scoutTakenNames() {
+  const out = [];
+  const cx = scoutState.context;
+  if (cx && Array.isArray(cx.customClasses)) for (const c of cx.customClasses) out.push(String(c.name || ''));
+  for (const [, a] of agentRoster) if (a && a.name) out.push(String(a.name));
+  for (const it of scoutState.staged) if (it.kind === 'prospect' && it.draft) out.push(String(it.draft.name || ''));
+  return out.filter(Boolean);
 }
 
 // FLAGSHIP CROSS-WIRE: a compact block of the Commander's live DIRECTION — the effective north star (a pending
@@ -2991,6 +3005,25 @@ async function runScoutCycle(o) {
         scoutNote({ kind: 'recipe', outcome: 'staged', reason: parsed.why, title: parsed.draft.name });
       }
     } else if (d.kind === 'prospect') {
+      // ARCHETYPE MATCH FIRST (recuration 2026-07-14): when the learned interests point at a dormant curated
+      // archetype, stage ITS full spec as the prospect — deterministic, zero model spend, why from real
+      // counters. The LLM authorship pass below stays the path for a genuinely novel role.
+      const archMatch = Scout.matchArchetype(SharedSpecialties.ARCHETYPES || [], {
+        topics: Interests.summary(interestsState, { now: Date.now(), limit: 12 }),
+        existingNames: scoutTakenNames(),
+        denylist: scoutState.denylist
+      });
+      if (archMatch) {
+        const draft = Scout.archetypeDraft(archMatch.archetype);
+        if (declinedIdx.has(draft.name) || declinedIdx.has(draft.name + ' ' + draft.tagline)) {
+          scoutState = Scout.stampAttempt(scoutState, 'prospect', { now: Date.now() });
+          scoutNote({ kind: 'prospect', outcome: 'rejected', reason: 'archetype match declined elsewhere', title: draft.name });
+        } else {
+          scoutState = Scout.stage(scoutState, { id: crypto.randomUUID(), kind: 'prospect', draft: draft, why: archMatch.why, fingerprint: archMatch.fingerprint }, { now: Date.now() });
+          scoutNote({ kind: 'prospect', outcome: 'staged', reason: archMatch.why, title: draft.name });
+        }
+        return;
+      }
       const existing = scoutExistingClasses();
       let skillSlugs = [];
       try { skillSlugs = skillsCatalog.catalog(SKILL_LIBRARY, { overrides: skillPrefs.overrides(), placedTypes: SCOUT_CAP_KEYS }).map(s => s.slug).filter(Boolean); } catch (_) { skillSlugs = []; }

@@ -138,6 +138,29 @@ Ship blockers:
       absence of shell browser / `computer.use` / `desktop.open`.
 - [ ] Phase-5 computer evidence deliberately remains `blocked` until that installed receipt exists.
 
+## LANDED 2026-07-14 — RECRUIT RECURATION: 12 majority-use classes + archetype-seeded minting
+
+Andrew's read: most of the 18 preconfigured recruit listings were redundant — beginners picked none.
+The catalog now has TWO shelves (`shared/specialties.js`):
+- **BUILTINS (12)** — one class per distinct majority-use job: chief / researcher / engineer / scribe /
+  analyst / operator / scout / designer / tutor + 3 NEW practical classes: **navigator** (trips &
+  logistics; verifies every price/hour live, never claims a booking), **curator** (local file tidying;
+  move-never-delete + quarantine — the local-first differentiator), **muse** (diverge-then-converge
+  ideation). 2 new kit-grounded skill recipes: `itinerary-planning`, `file-curation`.
+- **ARCHETYPES (9)** — the demoted deep cuts (reviewer/auditor/liaison/publicist/herald/broker/
+  bookkeeper/translator/archivist), full specs, NEVER gated: `Specialties.get()` resolves them (old
+  saves + summon-by-id still work), and the bay lists them in a collapsible **SPECIALIST ARCHIVE**
+  that search/lane filters auto-expand.
+- **Archetype-seeded minting** (`Scout.matchArchetype`, wired in `runScoutCycle`): on a prospect turn
+  the cycle first checks — deterministically, ZERO model spend — whether a dormant archetype covers a
+  WARM learned interest; a match stages its FULL spec on the DRAFTED-FOR-YOU shelf with a WHY from the
+  real topic counters. Dedup: held names never re-pitch, dismissed shapes stay denylisted, LLM near-dup
+  guard now counts archetypes (the model never re-authors one). No match → LLM authorship unchanged.
+- Proof: class-loadouts re-pinned (all laws over BOTH shelves), scout.test matcher coverage,
+  scout.e2e BOOT 3 (real sidecar stages the Broker archetype off a warm interest, zero model calls,
+  persisted), live bay round-trips (12-card roster, archive expand/search, builder prefill with full
+  loadout). Gate 318 green; W0 release surface re-stamped in-branch.
+
 ## LANDED 2026-07-12 — BOOT/SHUTDOWN MOUSE-CONFINEMENT GUARDRAILS (merged as `c069cba3`)
 
 Incident: an agent-built pointer-lock FPS left a smoke browser + dev server alive after StarNet

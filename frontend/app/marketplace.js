@@ -43,6 +43,7 @@ const Marketplace = (() => {
   let pickedSummonModel = null;   // SUMMON-only per-agent model choice: { model, provider, effort } or null = inherit the orchestrator's
   let focusAgent = null, focusRecipe = null;     // the spec/recipe id shown in the dossier (per tab)
   let laneFilter = 'all';                        // 'all' | 'code' | 'research' | 'general'  (AGENTS tab)
+  let archiveOpen = false;                       // SPECIALIST ARCHIVE (deep-cut archetypes) — collapsed by default
   let catFilter = 'all';                         // 'all' | 'mine' | <rail bucket>          (RECIPES tab, R6)
   let query = '';
   let buildAccent = '#ffaa33', buildModel = 'balanced';   // the custom-class builder's picked accent + tier
@@ -498,6 +499,8 @@ const Marketplace = (() => {
     else html += builtins.length ? '<div class="mkt-grid">' + builtins.map(cardHTML).join('') + '</div>'
       : '<div class="mkt-empty">no classes match your ' + (query ? 'search' : 'filter') + '.</div>';
 
+    html += archiveSectionHTML(filtering);
+
     if (!pinCustoms) {
       html += sectH('▮ YOUR SPECIALISTS');
       if (!customs.length) html += '<p class="mkt-hint mkt-yours-hint">' +
@@ -506,6 +509,28 @@ const Marketplace = (() => {
       html += '<div class="mkt-grid">' + customs.map(cardHTML).join('') + buildTile + '</div>';
     }
     return html;
+  }
+  /* ---------- SPECIALIST ARCHIVE: the deep-cut archetype pool (never gated, never in the way) ----------
+     The default roster is the curated 12; the demoted deep cuts stay one click away here — full specs,
+     summonable as-is. Collapsed by default in the clean view; a search or lane filter that matches an
+     archetype auto-expands it (search must FIND a class, never hide it — the no-gating law). These same
+     archetypes are what the scout drafts onto the DRAFTED-FOR-YOU shelf when the learned interests point
+     at one, so this section is the manual door to the pool the station recommends from. */
+  function archiveSectionHTML(filtering) {
+    const all = (Specialties.archetypes ? Specialties.archetypes() : []);
+    if (!all.length) return '';
+    const archs = filt(all);
+    if (filtering) {
+      // searching / lane-filtering: archetypes participate like any class — matches render expanded, no toggle.
+      if (!archs.length) return '';
+      return sectH('▮ SPECIALIST ARCHIVE — deep cuts') + '<div class="mkt-grid">' + archs.map(cardHTML).join('') + '</div>';
+    }
+    const head = '<button type="button" class="mkt-sect-h mkt-archive-head" aria-expanded="' + (archiveOpen ? 'true' : 'false') + '">' +
+      '<span aria-hidden="true">' + (archiveOpen ? '▾' : '▸') + '</span> SPECIALIST ARCHIVE (' + all.length + ')</button>';
+    if (!archiveOpen) return head;
+    return head +
+      '<p class="mkt-hint">niche classes held off the main roster — fully specified, summon any time. When your real work points at one, the station drafts it onto the shelf above for you.</p>' +
+      '<div class="mkt-grid">' + archs.map(cardHTML).join('') + '</div>';
   }
   // SUMMON CONFIG (audit item 3): a compact collapsible strip for APPEARANCE + MODEL. Both carry good defaults
   // (Cadet skin, inherit the orchestrator's model), so it's COLLAPSED by default with a one-line summary of the
@@ -1306,6 +1331,10 @@ const Marketplace = (() => {
     // live skin stage + model picker on expand).
     const cfgHead = stage.querySelector('.mkt-cfg-head');
     if (cfgHead) cfgHead.addEventListener('click', () => { summonConfigOpen = !summonConfigOpen; sfx('click'); renderStage(); });
+
+    // SPECIALIST ARCHIVE: the deep-cut pool expands/collapses (state survives re-renders within one open bay).
+    const archHead = stage.querySelector('.mkt-archive-head');
+    if (archHead) archHead.addEventListener('click', () => { archiveOpen = !archiveOpen; sfx('click'); renderStage(); });
 
     wireGridNav(stage);
     wireGlass(stage);
