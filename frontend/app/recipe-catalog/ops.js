@@ -1,14 +1,15 @@
-/* STARNET — recipe-catalog/ops.js : OPS / PERSONAL persona recipes (R4 catalog content).
+/* STARNET — recipe-catalog/ops.js : OPS / LIFE-ADMIN persona recipes (R4 catalog content).
 
    Registered in index.js by the aggregator — this file only EXPORTS the array. Same UMD-light
    module pattern as recipes.js: a `RecipeCatalogOps` global in the browser, module.exports under
    node. NO logic here — pure data.
 
-   Voice contract (match the 10 builtins in recipes.js exactly): imperative DIRECTIVE, answer-first,
-   {token} params (0–2 each). Gear is honest — most planning/decision work is pure text (no gear);
-   dish only where it must pull live info off the web (prices, travel, stock); cabinet only where it
-   writes an artifact to a file. cadence on the recurring reviews/watches/briefs; else null.
-   Schema v2: { id, name, emoji, tagline, blurb, accent, tags, params, task, category, gear, skills, cadence, source, forkedFrom } */
+   Content contract: every record must clear THE RECIPE BAR documented in core.js (earns its tap /
+   drives the station / lands somewhere / compounds when recurring). Ops recipes reach for the
+   station's own reach first — connected channels for the inbox, memory for the recurring reviews
+   and watches — and fall back to paste only for material that genuinely lives outside (private
+   statements, personal notes). Voice matches the core builtins. Schema v2:
+   { id, name, emoji, tagline, blurb, accent, tags, params, task, category, gear, skills, cadence, source, forkedFrom } */
 'use strict';
 (function (root, factory) {
   const api = factory();
@@ -21,113 +22,113 @@
     {
       id: 'inbox-triage-brief', name: 'Inbox Triage', emoji: '⊟', tagline: 'What in your inbox actually needs you',
       accent: '#6fa8bf',
-      blurb: 'Reads a batch of messages and sorts them into reply-now, later, and ignore — with a one-line why.',
+      blurb: 'Reads your connected channels (or a paste), sorts by what needs you, and pre-drafts the core of each reply.',
       tags: { general: 1 },
-      params: [{ key: 'messages', label: 'Messages', placeholder: 'paste the emails / threads' }],
-      task: 'Triage these messages:\n\n{messages}\n\nSort them into Reply now / Reply later / FYI-only / Ignore, each with a one-line reason. Lead with anything time-sensitive or from someone important. For the reply-now ones, note in a few words what the reply needs to say. Do not send anything.',
-      category: 'ops', gear: [], skills: ['digest-composer'], cadence: 'morning',
+      params: [{ key: 'messages', label: 'Messages', placeholder: 'leave blank to read your connected channels — or paste emails / threads', required: false, default: 'the recent unread messages on my connected channels — read them directly; if no channel is connected, ask me to paste instead' }],
+      task: 'Triage these messages: {messages}\n\nSort them into Reply now / Reply later / FYI-only / Ignore, each with a one-line reason. Lead with anything time-sensitive or from someone who matters. For each reply-now, draft the one-sentence core of what the reply should say — so answering takes seconds, not re-reading. Flag anything that smells like a scam or phish. Do not send, archive, or delete anything; I act, you sort.',
+      category: 'ops', gear: ['connector'], skills: ['digest-composer'], cadence: 'morning',
       source: 'builtin', forkedFrom: null
     },
     {
       id: 'meeting-prep', name: 'Meeting Prep', emoji: '◱', tagline: 'Walk in ready, not cold',
       accent: '#6fa8bf',
-      blurb: 'Pulls together a tight prep brief for a meeting — context, likely topics, and your talking points.',
+      blurb: 'Situation brief, likely topics, your talking points — with a live background pass on who is in the room.',
       tags: { general: 0.7, research: 0.3 },
       params: [
         { key: 'meeting', label: 'The meeting', placeholder: 'who / what it is about' },
         { key: 'context', label: 'Context', placeholder: 'paste agenda / prior notes', required: false, default: 'what you already know about it' }
       ],
-      task: 'Prep me for {meeting}, using {context}. Give me a one-paragraph situation brief, the three topics most likely to come up, the questions I should be ready to answer, and two or three points I should make. If anything needs a quick fact-check first, flag it. Keep it to a single skim.',
-      category: 'ops', gear: [], skills: ['plan'], cadence: null,
+      task: 'Prep me for {meeting}, using {context}. Give me the situation in one paragraph, then: the three topics most likely to come up, the questions I should expect with suggested answers, and the two or three points I should land. If the other side is a public person or company, run a quick background pass on where they stand right now — recent moves change the conversation. Flag anything worth fact-checking before I walk in. One skim, not a dossier.',
+      category: 'ops', gear: ['dish'], skills: ['plan'], cadence: null,
       source: 'builtin', forkedFrom: null
     },
     {
       id: 'weekly-review', name: 'Weekly Review', emoji: '▤', tagline: 'Close the week, aim the next',
       accent: '#7bc88a',
-      blurb: 'Walks your week — what got done, what slipped, what matters next — into a short honest review.',
+      blurb: 'Compares against last week\'s review from memory — the pattern across weeks is the real signal.',
       tags: { general: 1 },
       params: [{ key: 'notes', label: 'This week', placeholder: 'paste your notes / done list / calendar', required: false, default: 'what you tell me about this week' }],
-      task: 'Run my weekly review from {notes}. Lead with an honest read of the week: what actually moved, what slipped and why, and what I am avoiding. Then give me the three things that most deserve next week, in priority order. Be a straight mirror, not a cheerleader.',
-      category: 'ops', gear: [], skills: ['decision-1-3-1'], cadence: 'weekly',
+      task: 'Run my weekly review from {notes}. Compare against last week\'s review in your memory — the pattern across weeks is the real signal. Give me the honest read: what actually moved; what slipped and the REASON it slipped (overcommitted, avoided, blocked — each needs a different fix); and what I keep carrying forward without touching, because that item wants doing or dropping, not re-listing. Then the three things that most deserve next week, in order. Store this review for next week\'s comparison. Straight mirror, no cheerleading.',
+      category: 'ops', gear: ['notebook'], skills: ['decision-1-3-1'], cadence: 'weekly',
       source: 'builtin', forkedFrom: null
     },
     {
       id: 'travel-plan', name: 'Travel Plan', emoji: '◈', tagline: 'A trip mapped end to end',
       accent: '#d9a85a',
-      blurb: 'Researches a trip and drafts a realistic plan — route, timing, and the bookings that need you.',
+      blurb: 'Researches real options into a walkable day-by-day — with what to book early and what to leave loose.',
       tags: { general: 0.6, research: 0.4 },
       params: [
         { key: 'trip', label: 'The trip', placeholder: 'e.g. 4 days in Lisbon in October' },
         { key: 'priorities', label: 'What matters', placeholder: 'e.g. food, walkable, budget-conscious', required: false, default: 'a good balance of highlights and downtime' }
       ],
-      task: 'Plan {trip} around {priorities}. Research the real options, then give me a day-by-day plan that is actually walkable in the time — where to stay, the route, timing, and the few bookings I should lock early. Lead with a quick summary, then the detail. Flag prices and anything time-sensitive; do not book anything.',
+      task: 'Plan {trip} around {priorities}. Research the real options — current opening days, actual distances, honest reviews — then give me a day-by-day plan that is genuinely walkable in the time, not a fantasy checklist. Include where to stay and why that neighborhood, the few bookings to lock early versus what to leave loose, and rough costs. Lead with a quick summary, then the detail. Flag anything time-sensitive. Do not book anything — the plan is mine to act on.',
       category: 'ops', gear: ['dish', 'cabinet'], skills: ['web-research', 'plan'], cadence: null,
       source: 'builtin', forkedFrom: null
     },
     {
       id: 'price-watch', name: 'Price Watch', emoji: '◉', tagline: 'Tell me when it moves',
       accent: '#6fa8bf',
-      blurb: 'Watches the price of something and pings you on a meaningful move — a drop, a spike, back in stock.',
+      blurb: 'Records real price history in memory — so a "deal" is judged against the truth, not the crossed-out fiction.',
       tags: { general: 0.7, research: 0.3 },
       params: [
         { key: 'item', label: 'What to watch', placeholder: 'a product, ticker, or "flights to Tokyo"' },
         { key: 'trigger', label: 'Tell me when', placeholder: 'it moves meaningfully', required: false, default: 'it moves meaningfully or comes back in stock' }
       ],
-      task: 'Watch the price of {item} and tell me when {trigger}. Check the current price, compare to recent levels, and surface it ONLY when there is a real move worth acting on — with the number and the source. If nothing changed, say so in one line rather than reporting a non-event.',
-      category: 'ops', gear: ['dish'], skills: ['price-watch'], cadence: 'sixhourly',
+      task: 'Watch the price of {item} and tell me when {trigger}. Check the current price across a couple of reliable sources, record it in your memory with the date, and judge any move against YOUR recorded history — a "deal" only counts against real prior prices, never the seller\'s crossed-out fiction. Surface it only on a move worth acting on, with the number, the delta from history, and the link. Nothing moved? One line. And never tell me to hurry — urgency is their trick, not yours.',
+      category: 'ops', gear: ['dish', 'notebook'], skills: ['price-watch'], cadence: 'sixhourly',
       source: 'builtin', forkedFrom: null
     },
     {
       id: 'subscription-audit', name: 'Subscription Audit', emoji: '⊡', tagline: 'What you are paying for and forgot',
       accent: '#cf8a7d',
-      blurb: 'Reviews your recurring charges and flags the ones to cancel, downgrade, or actually use.',
+      blurb: 'Keep / downgrade / cancel with the yearly cost of each — and the total the cancel pile would save.',
       tags: { general: 1 },
       params: [{ key: 'charges', label: 'Subscriptions / statement', placeholder: 'paste your recurring charges' }],
-      task: 'Audit these subscriptions:\n\n{charges}\n\nFor each: keep, downgrade, or cancel — with a one-line reason and the monthly/yearly cost. Lead with the biggest easy savings, flag any duplicates or things I likely forgot I pay for, and total up what cancelling the "cancel" pile would save. I decide; you just make it obvious.',
+      task: 'Audit these subscriptions:\n\n{charges}\n\nFor each: keep, downgrade, or cancel — with a one-line reason and the cost stated per month AND per year, because the yearly number is the one that stings. Lead with the biggest easy savings. Flag duplicates, overlapping services doing the same job, and anything that looks like a forgotten free-trial rollover. Total what the cancel pile saves per year, and note which cancellations are known to be deliberately annoying so I budget the patience. I decide; you make it obvious.',
       category: 'ops', gear: [], skills: ['ledger-upkeep'], cadence: null,
       source: 'builtin', forkedFrom: null
     },
     {
       id: 'decision-memo', name: 'Decision Memo', emoji: '◇', tagline: 'One page to make the call',
       accent: '#b790c0',
-      blurb: 'Turns a hard choice into a clean one-page memo — the options, the trade-offs, a recommendation.',
+      blurb: 'Options with honest trade-offs — "do nothing" included — then a real position, not a hedge.',
       tags: { general: 1 },
       params: [{ key: 'decision', label: 'The decision', placeholder: 'the choice you are weighing' }],
-      task: 'Write a one-page decision memo for: {decision}. State the real question, lay out the viable options with honest trade-offs, name what you would need to know to be sure, then give a clear recommendation and the reasoning. Mark your confidence. Do not hedge into uselessness — take a position.',
+      task: 'Write a one-page decision memo for: {decision}. State the actual question — often not the one asked — then the viable options with honest trade-offs, including "do nothing", which is always an option and usually the incumbent. Name the few facts that would change the answer and the cheapest way to get them. Then decide: a clear recommendation, the reasoning, your confidence, and the early signal that would tell us we chose wrong. Take a position — hedged memos decide nothing.',
       category: 'ops', gear: [], skills: ['decision-1-3-1'], cadence: null,
       source: 'builtin', forkedFrom: null
     },
     {
       id: 'learning-plan', name: 'Learning Plan', emoji: '◫', tagline: 'A path from zero to competent',
       accent: '#7bc88a',
-      blurb: 'Designs a realistic study path for a skill — sequenced, sourced, sized to the time you have.',
+      blurb: 'A project at every stage, ONE resource per stage, testable milestones — and progress tracked in memory.',
       tags: { general: 0.6, research: 0.4 },
       params: [
         { key: 'skill', label: 'What to learn', placeholder: 'e.g. SQL, sourdough, Rust' },
         { key: 'budget', label: 'Time budget', placeholder: 'e.g. 3 hours a week', required: false, default: 'a few hours a week' }
       ],
-      task: 'Design a learning plan for {skill} on {budget}. Sequence it from foundations to competent, with concrete milestones and a good resource for each stage — no bloated reading list. Include how I will know I actually learned each part. Be honest about how long real progress takes.',
-      category: 'ops', gear: ['dish', 'cabinet'], skills: ['study-plan'], cadence: null,
+      task: 'Design a learning plan for {skill} on {budget}. Sequence from foundations to competent with a small PROJECT at every stage — you learn by making, not by finishing courses — and exactly ONE good resource per stage, chosen from the research over the ten alternatives. Define what "I can actually do this now" looks like at each milestone, so progress is testable rather than felt. Be honest about the total timeline. Offer to store the plan in your memory and check my progress against it when I come back.',
+      category: 'ops', gear: ['dish', 'notebook'], skills: ['study-plan'], cadence: null,
       source: 'builtin', forkedFrom: null
     },
     {
       id: 'daily-standup', name: 'Daily Standup', emoji: '☀', tagline: 'Your day, focused before it starts',
       accent: '#d9a85a',
-      blurb: 'A short morning brief — what is on today, what matters most, and the one thing to protect.',
+      blurb: 'Reads your connected calendar or tasks when it can, remembers yesterday — the one thing to protect, first.',
       tags: { general: 1 },
-      params: [{ key: 'context', label: 'Today', placeholder: 'paste your calendar / tasks', required: false, default: 'today\'s calendar and tasks' }],
-      task: 'Give me a focused standup for {context}. Lead with the single most important thing to get done today and protect time for it. Then the rest, ordered — meetings, deadlines, follow-ups. Flag any conflict or over-packed stretch. Keep it to a ten-second read.',
-      category: 'ops', gear: [], skills: ['plan'], cadence: 'morning',
+      params: [{ key: 'context', label: 'Today', placeholder: 'paste your calendar / tasks — or leave blank to read connected channels', required: false, default: 'today\'s calendar and tasks — read them from my connected channels if any are wired, otherwise ask me' }],
+      task: 'Give me a focused standup for {context}. Lead with the ONE thing that matters most today and where the protected time for it lives. Then the rest in order — meetings with a prep note where one is needed, deadlines, follow-ups. Flag conflicts and over-packed stretches. Check your memory for yesterday\'s standup and call out anything I said I would do that is not on today\'s list — follow-through should be visible. Save today\'s for tomorrow. Ten-second read.',
+      category: 'ops', gear: ['connector', 'notebook'], skills: ['plan'], cadence: 'morning',
       source: 'builtin', forkedFrom: null
     },
     {
       id: 'stock-watch', name: 'Market Watch', emoji: '◐', tagline: 'A pulse on what you hold or track',
       accent: '#6fa8bf',
-      blurb: 'Checks the names you follow and reports moves that matter — with the why, not just the number.',
+      blurb: 'Reports only real moves with the likely driver, against your last pulse from memory — trend, not snapshot.',
       tags: { general: 0.5, research: 0.5 },
       params: [{ key: 'watchlist', label: 'Watchlist', placeholder: 'e.g. tickers or assets you follow' }],
-      task: 'Give me a market pulse on {watchlist}. Report only the names that moved meaningfully, each with the number and the likely reason — news, earnings, sector move — sourced. Lead with the biggest mover. Skip the flat ones. This is a briefing, not advice; do not tell me to buy or sell.',
-      category: 'ops', gear: ['dish'], skills: ['web-research'], cadence: 'morning',
+      task: 'Give me a market pulse on {watchlist}. Report only the names that moved meaningfully — each with the number and the likely driver (earnings, news, sector move), sourced from the coverage, never guessed. Compare against your last pulse in memory so I see the trend, not a snapshot, and update it after. Lead with the biggest mover; skip everything flat. Whole list quiet? One line. This is a briefing, not advice — never tell me to buy or sell anything.',
+      category: 'ops', gear: ['dish', 'notebook'], skills: ['web-research'], cadence: 'morning',
       source: 'builtin', forkedFrom: null
     }
   ];

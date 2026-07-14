@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "5cabc287c994a150d92024382258e7912cdd40f4",
+    "sourceCommit": "66034ecf8af46c493bcb1d5cb3600581ebbd4060",
     "pathSetSha256": "c6f58b9074e94223ecf3202f0604f0fbe0ce628978503a414e9dd2908481a049",
     "files": [
       {
@@ -143,8 +143,8 @@
       },
       {
         "path": "frontend/app/classicons.js",
-        "bytes": 16383,
-        "sha256": "0ace27af59d516155f6a3392817c9de771e2b4e51dcd8de9990967507e3a020b"
+        "bytes": 15015,
+        "sha256": "30ebfe9b4c6bf789b55d54beab574be3e008c7776a2e466b729db71e75e0a1a3"
       },
       {
         "path": "frontend/app/classify.js",
@@ -318,8 +318,8 @@
       },
       {
         "path": "frontend/app/marketplace.js",
-        "bytes": 159150,
-        "sha256": "11e2b71f4360894985d404be6f541a8f05476f3b3c874a2f7cdbfcc88ee74fbd"
+        "bytes": 156990,
+        "sha256": "c345452a9041e952b0ed91a3e0bd0cb90c9d926cd2fe6bf518da279fa224cd44"
       },
       {
         "path": "frontend/app/mint.js",
@@ -433,8 +433,8 @@
       },
       {
         "path": "frontend/app/prospect.js",
-        "bytes": 9524,
-        "sha256": "34b27967b2660658d5c4472ed7d9deb95a60440930d4c369da67ade6623f2c06"
+        "bytes": 9508,
+        "sha256": "a6d86fb04c6b54dda12068c0d18ed2be36db0392164ea10ced01d9f5e4bc4d0a"
       },
       {
         "path": "frontend/app/prospectstore.js",
@@ -473,18 +473,18 @@
       },
       {
         "path": "frontend/app/recipe-catalog/core.js",
-        "bytes": 9057,
-        "sha256": "e518bb8b1c170ab6a7afe27871192a5ec58678dc777062417c0aca36b393c46b"
+        "bytes": 13783,
+        "sha256": "1ec2b5766f9ee7c1e206bd90c010ad1306ddbaa6ad0e78a273c494175da2e65b"
       },
       {
         "path": "frontend/app/recipe-catalog/creator.js",
-        "bytes": 9998,
-        "sha256": "a2957f4a6b428ea1409b3ba120909a87c41a2a6b16c767a227b9bee0f6852734"
+        "bytes": 12223,
+        "sha256": "f52843805092ccc11d4bb7592bfd3f6ea30b7ffd019b07f55ead985ba28cba36"
       },
       {
         "path": "frontend/app/recipe-catalog/dev.js",
-        "bytes": 9950,
-        "sha256": "902148e54f9d3341425680a2482791ffb2b45cec7cacfe218c4c61f0b5b65f7c"
+        "bytes": 12177,
+        "sha256": "fae33d861f23bec816d8d73522c6adda86aa315bd1b7306bb34f63dd148f1f1e"
       },
       {
         "path": "frontend/app/recipe-catalog/index.js",
@@ -493,13 +493,13 @@
       },
       {
         "path": "frontend/app/recipe-catalog/ops.js",
-        "bytes": 10208,
-        "sha256": "bf48b8290155ecec9b908e55fcd749cd0639178d1063a0f0ac0e6957ae6fdfca"
+        "bytes": 12694,
+        "sha256": "905ced7b27eb54bbdfcd77baf996e49e0007dfb83971aea732a087cb9bbe0449"
       },
       {
         "path": "frontend/app/recipe-catalog/research.js",
-        "bytes": 9838,
-        "sha256": "3481eb045352db38d21abf7fdc528443a424f3c342dbe21febcf341d4e28fdfe"
+        "bytes": 11942,
+        "sha256": "9a747719479549744483dce5235661a8b20d771ff0e719e828d519ca97dbc4e1"
       },
       {
         "path": "frontend/app/recipes.js",
@@ -578,8 +578,8 @@
       },
       {
         "path": "frontend/app/specialties.js",
-        "bytes": 11468,
-        "sha256": "ef00e20f33937e4fc3012953079cdad682dfae2f84f59b2bfbdd1aa2b710738a"
+        "bytes": 10860,
+        "sha256": "adfbf91552b20673180a5ac3d4cd721eb6c4ecba0ae1c13ea27c5eae5fd64269"
       },
       {
         "path": "frontend/app/stationbake.js",
@@ -678,13 +678,13 @@
       },
       {
         "path": "frontend/app/updatecore.js",
-        "bytes": 4735,
-        "sha256": "c57aa716ba2760748409ed0355f148fb099637fc9352b0817513aba7952194ee"
+        "bytes": 5443,
+        "sha256": "acdd46b8c84b66c1ea3f3a39b7b3950967b602878188eb018918aeaacc693f5b"
       },
       {
         "path": "frontend/app/updates.js",
-        "bytes": 14615,
-        "sha256": "3178e5084e97ee060434e60e36ece3a4eb12efd2f60b1b6e3fd250213ea908df"
+        "bytes": 16875,
+        "sha256": "d95d6b03791fa7be76717046b6a46d2efbf15aecfcd9af338db460c2a248b4ff"
       },
       {
         "path": "frontend/app/voice.js",
@@ -783,8 +783,8 @@
       },
       {
         "path": "frontend/css/marketplace.css",
-        "bytes": 50747,
-        "sha256": "6e2afe55e5fcc5b7d60763c11ea2549aba2f388b4b6e15ecb03a37ea2939f0bb"
+        "bytes": 50346,
+        "sha256": "952c8192701d8988d4a515f680aacf4e1c60edf19eb41d0824b22363bcb99752"
       },
       {
         "path": "frontend/css/motion.css",
@@ -803,8 +803,8 @@
       },
       {
         "path": "frontend/css/style.css",
-        "bytes": 78279,
-        "sha256": "53b9094c9b846b6c2329c0c8faf6b0f3d380cfd4fb65f2bdb939a857dae00cf4"
+        "bytes": 78632,
+        "sha256": "ed4e86f5b2da0043e1230c3f11bbd1f6f2082356a560d1537c1ec41dfea4bdfb"
       },
       {
         "path": "frontend/css/titlebar.css",

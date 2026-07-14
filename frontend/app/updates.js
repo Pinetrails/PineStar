@@ -23,7 +23,8 @@ const Updates = (() => {
     error: '',
     downloaded: 0,
     contentLength: 0,
-    lastCheckedAt: prefs.lastCheckAt || 0
+    lastCheckedAt: prefs.lastCheckAt || 0,
+    confirmRuns: 0
   };
 
   function loadPrefs() {
@@ -127,6 +128,7 @@ const Updates = (() => {
     busy = true;
     state.phase = 'checking';
     state.error = '';
+    state.confirmRuns = 0;
     emit();
     try {
       const r = await invoke('starnet_update_check');
@@ -186,7 +188,18 @@ const Updates = (() => {
     try { await Promise.all(jobs); } catch (_) {}
   }
 
-  async function install() {
+  // Count of sidecar-CONFIRMED live runs (Channels.busy flips on real agent.run.start/end,
+  // never on hope) — the truthful input to the GB-4 install guard. 0 when Channels is absent
+  // (browser preview), which is also the only context where installing is impossible anyway.
+  function liveRunCount() {
+    try {
+      return (typeof Channels !== 'undefined' && Channels && typeof Channels.busyCount === 'function')
+        ? Channels.busyCount() : 0;
+    } catch (_) { return 0; }
+  }
+
+  async function install(opts) {
+    opts = opts || {};
     if (!TAURI || !CORE || busy || !state.update) {
       notify('No StarNet update is ready to install', 'warn');
       return snapshot();
@@ -196,6 +209,18 @@ const Updates = (() => {
       notify('Update progress channel is unavailable in this build', 'warn');
       return snapshot();
     }
+    // GB-4: the installer restarts (NSIS: kills) the app, terminating every live provider
+    // stream mid-run. Never do that as a click side effect — pause and make it an explicit
+    // choice. `force` is set only by the INSTALL ANYWAY button on the guard card.
+    const running = liveRunCount();
+    const blockReason = CORE.installBlockReason ? CORE.installBlockReason(running, !!opts.force) : null;
+    if (blockReason) {
+      state.confirmRuns = running;
+      notify('Update paused - ' + blockReason, 'warn');
+      emit();
+      return snapshot();
+    }
+    state.confirmRuns = 0;
     busy = true;
     state.phase = 'downloading';
     state.downloaded = 0;
@@ -315,13 +340,26 @@ const Updates = (() => {
       '<button class="bb sm" id="up-check" ' + (busy ? 'disabled' : '') + '>CHECK NOW</button></div>' +
       '<label class="set-row up-auto"><input type="checkbox" id="up-auto" ' + (auto ? 'checked' : '') + '> CHECK AUTOMATICALLY</label>';
     if (update) {
+      const guardN = state.confirmRuns | 0;
       out += '<div class="up-card ' + (update.critical ? 'critical' : '') + '">' +
         '<div class="up-version"><span>AVAILABLE</span><b>v' + esc(update.version) + '</b></div>' +
         (update.date ? '<div class="up-meta">published ' + esc(update.date) + '</div>' : '') +
-        (notes ? '<pre class="up-notes">' + esc(notes) + '</pre>' : '<div class="up-meta">No release notes were provided.</div>') +
-        '<div class="up-actions"><button class="bb sm" id="up-install" ' + (busy ? 'disabled' : '') + '>INSTALL UPDATE</button>' +
-        '<button class="bb sm" id="up-remind">REMIND TOMORROW</button>' +
-        (update.critical ? '' : '<button class="bb sm danger" id="up-ignore">SKIP VERSION</button>') + '</div></div>';
+        (notes ? '<pre class="up-notes">' + esc(notes) + '</pre>' : '<div class="up-meta">No release notes were provided.</div>');
+      if (guardN > 0) {
+        // GB-4 guard card: install was clicked while agents are live. The count is
+        // Channels-confirmed, and the choice is the Commander's, not a side effect.
+        out += '<div class="up-guard">' +
+          esc(guardN === 1 ? '1 AGENT IS STILL WORKING' : guardN + ' AGENTS ARE STILL WORKING') +
+          ' - INSTALLING RESTARTS STARNET AND KILLS ' + (guardN === 1 ? 'ITS RUN' : 'THEIR RUNS') + '.</div>' +
+          '<div class="up-actions">' +
+          '<button class="bb sm" id="up-guard-wait">WAIT FOR AGENTS</button>' +
+          '<button class="bb sm danger" id="up-install-force" ' + (busy ? 'disabled' : '') + '>INSTALL ANYWAY</button>' +
+          '</div></div>';
+      } else {
+        out += '<div class="up-actions"><button class="bb sm" id="up-install" ' + (busy ? 'disabled' : '') + '>INSTALL UPDATE</button>' +
+          '<button class="bb sm" id="up-remind">REMIND TOMORROW</button>' +
+          (update.critical ? '' : '<button class="bb sm danger" id="up-ignore">SKIP VERSION</button>') + '</div></div>';
+      }
     } else {
       out += '<div class="up-empty">No update is pending. StarNet will keep checking in the background while automatic checks are on.</div>';
     }
@@ -340,7 +378,11 @@ const Updates = (() => {
     const checkBtn = body.querySelector('#up-check');
     if (checkBtn) checkBtn.addEventListener('click', () => check(true, 'manual'));
     const installBtn = body.querySelector('#up-install');
-    if (installBtn) installBtn.addEventListener('click', install);
+    if (installBtn) installBtn.addEventListener('click', () => install());
+    const forceBtn = body.querySelector('#up-install-force');
+    if (forceBtn) forceBtn.addEventListener('click', () => install({ force: true }));
+    const waitBtn = body.querySelector('#up-guard-wait');
+    if (waitBtn) waitBtn.addEventListener('click', () => { state.confirmRuns = 0; emit(); });
     const remindBtn = body.querySelector('#up-remind');
     if (remindBtn) remindBtn.addEventListener('click', remindLater);
     const ignoreBtn = body.querySelector('#up-ignore');

@@ -411,6 +411,12 @@ leak (0cccce2d), VT323 shipped locally (01570f17).
 ## P0 — Andrew only (nothing above matters to the public until these)
 
 - Publish `starnet-releases` repo (public updater currently 404s) + rescope RELEASES_TOKEN.
+  Pipeline hardening landed 2026-07-14 (update-blockers lane): signed `linux-x86_64-deb`
+  manifest key (was: every .deb self-update failed on the AppImage fallback), real minisign
+  crypto verification of every artifact/.sig in assemble (`npm run release:verify-sig`),
+  published releases immutable to train re-runs. Next release train run exercises all three.
+  Then run the older-install → publish → restart update canary per platform (Win NSIS, both
+  mac arches, AppImage, .deb) — still ZERO public end-to-end update proofs.
 - Back up `~/.tauri/starnet-updater.key` to ≥2 offline locations (single point of total loss).
 - Rotate the dev OpenRouter key; support email swap.
 - **Attended 15-min playtest** (`docs/PLAYTEST_SCRIPT_GATE5.md`) — dodged since 7/02.
@@ -828,8 +834,10 @@ E-STOP visibility + get-a-key link already chipped by Atlas — not re-listed.**
   no archive view, no re-open old runs).
 - GB-3 RECORDING MODE: one toggle hiding keys/spend/PII for screen capture (zero code; GTM —
   spectacle is the growth engine and Andrew records constantly).
-- GB-4 Quit/update-while-running guards: no "N agents still working" on close (beforeunload
-  saves only); updater installs over live runs (main.rs:1418).
+- GB-4 Quit/update-while-running guards: UPDATE half FIXED 2026-07-14 (update-blockers lane:
+  Updates.install() checks Channels.busyCount(), amber guard card WAIT/INSTALL ANYWAY,
+  UpdateCore.installBlockReason unit-locked). STILL OPEN: quit/close half — no "N agents
+  still working" on window close (beforeunload saves only).
 - GB-5 Crew bodies: pointer cursor but click falls through (world.js:720 hero-only) — click →
   quick actions (talk/dossier/locate); plus click-roster-name → camera jump to agent.
 - GB-6 Prop hover tooltips (name + grants) — belts have tags (world.js:4080), props silent.
