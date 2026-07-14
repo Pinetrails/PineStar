@@ -418,3 +418,28 @@ being built by parallel lanes when the runbook was first written:
   the verified path *inside* Settings is `UPDATES` section → `UPDATE CENTER` button → then
   `CHECK NOW` / `INSTALL UPDATE` (`frontend/app/updates.js`). Confirm the Settings entry point
   on the live desktop build during the canary.
+
+## Local update canary — offline end-to-end proof (no public exposure)
+
+`npm run release:canary` (`scripts/update-canary.mjs`) proves the FULL update cycle on one
+Windows machine with nothing published anywhere: check loop → manifest fetch → version
+compare → download → minisign verification against the baked pubkey → NSIS passive install →
+restart as the new version. The manifest comes from the REAL `release-assemble-manifest.mjs`
+(crypto verification included) with only the asset base swapped to `127.0.0.1`.
+
+Canary builds are `StarNet Canary` / `ai.skynet.harness.canary` — side-by-side install,
+separate `%APPDATA%` workspace; your real StarNet install and data are untouched. Uninstall
+"StarNet Canary" from Windows afterwards.
+
+```powershell
+node scripts/update-canary.mjs build-old   # installer @ current version, endpoint = localhost
+node scripts/update-canary.mjs build-new   # installer @ patch+1 + signed feed (latest.json)
+node scripts/update-canary.mjs serve       # leave running; logs every request the app makes
+# install .canary\old\*.exe → open StarNet Canary → Settings → UPDATES → UPDATE CENTER →
+# CHECK NOW → INSTALL UPDATE → app restarts as the bumped version. The serve log is the receipt.
+```
+
+Each build is a full Rust release build (10–30 min; rustc ctor-race crash = re-run, the cache
+resumes). Requires `~/.tauri/starnet-updater.key` (same key as production — deliberately).
+This canary does NOT replace the public-path proof (older install → published release →
+restart); it de-risks everything except the literal production URL before anything goes public.

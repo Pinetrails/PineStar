@@ -28,7 +28,12 @@
  *   node scripts/release-assemble-manifest.mjs \
  *     --dist <dir> --version <X.Y.Z> --repo <owner/repo> --tag v<X.Y.Z> \
  *     [--notes-file RELEASE_NOTES.md] [--out release/latest.json] \
- *     [--allow-missing <plat,plat>] [--pubkey <base64-or-path>] [--skip-sig-verify]
+ *     [--allow-missing <plat,plat>] [--pubkey <base64-or-path>] [--skip-sig-verify] \
+ *     [--asset-base <url>]   # override the per-platform url base (default: the GitHub
+ *                            # Releases /download/<tag>/ URL). The local update canary
+ *                            # (scripts/update-canary.mjs) points this at 127.0.0.1 so the
+ *                            # EXACT production manifest builder — including the crypto
+ *                            # verification — is what feeds the offline proof.
  *
  * Artifact → platform mapping (recursive scan of --dist):
  *   *-setup.exe   + .sig                                  → windows-x86_64
@@ -178,7 +183,9 @@ function main() {
     : (notesFile ? '' : 'StarNet desktop ' + version + '. See the release page for details.');
 
   const platforms = {};
-  const assetBase = 'https://github.com/' + repo + '/releases/download/' + tag + '/';
+  let assetBase = argVal('--asset-base') || ('https://github.com/' + repo + '/releases/download/' + tag + '/');
+  if (!/^https?:\/\//i.test(assetBase)) fail('--asset-base must be an http(s) URL (got "' + assetBase + '")');
+  if (!assetBase.endsWith('/')) assetBase += '/';
   for (const plat of ALL_PLATFORMS) {
     const hit = found[plat];
     if (!hit) continue; // waived-missing

@@ -97,7 +97,8 @@
     "release:cut": "node scripts/release-cut.mjs",
     "release:cut:dry": "node scripts/release-cut.mjs --dry-run",
     "release:verify-host": "node scripts/verify-update-host.mjs",
-    "release:verify-sig": "node scripts/minisign-verify.mjs"
+    "release:verify-sig": "node scripts/minisign-verify.mjs",
+    "release:canary": "node scripts/update-canary.mjs"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2"

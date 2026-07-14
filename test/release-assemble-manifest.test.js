@@ -210,6 +210,24 @@ try {
     ok(/key id mismatch/.test(res.stderr), 'wrong-key message: ' + res.stderr);
   }
 
+  // 10b. --asset-base override (the local update canary's seam): urls re-root to the
+  // given base, everything else — including crypto verification — is untouched.
+  {
+    const dist = path.join(tmp, 'assetbase');
+    fs.mkdirSync(dist);
+    fullDist(dist);
+    const out = path.join(tmp, 'assetbase-latest.json');
+    const res = run(['--dist', dist, ...COMMON, '--out', out, '--asset-base', 'http://127.0.0.1:8799']);
+    eq(res.status, 0, res.stderr || res.stdout);
+    const m = JSON.parse(fs.readFileSync(out, 'utf8'));
+    eq(m.platforms['windows-x86_64'].url, 'http://127.0.0.1:8799/StarNet_0.2.0_x64-setup.exe',
+      'asset-base re-roots the url (slash appended)');
+    ok(/sig VERIFIED against baked pubkey/.test(res.stdout), 'crypto verification still runs under asset-base');
+    const bad = run(['--dist', dist, ...COMMON, '--out', out, '--asset-base', 'ftp://nope']);
+    eq(bad.status, 1, 'non-http asset-base fails');
+    ok(/--asset-base must be an http/.test(bad.stderr), 'asset-base error message');
+  }
+
   // 11. --skip-sig-verify (tests-only escape hatch) accepts bogus sigs but says so loudly.
   {
     const dist = path.join(tmp, 'skipverify');
