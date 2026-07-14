@@ -4556,6 +4556,9 @@ const Chat = (() => {
     // R5 "Bottle a run": did THIS directive come from a recipe launch? launchRecipe() passes fromRecipe:true. A
     // recipe-launched run must NEVER be offered for bottling (it already IS a recipe) — recorded in RUN_META below.
     const fromRecipe = !!(opts && opts.fromRecipe);
+    // provenance SPINE: WHICH recipe launched this run (null for everything else). Rides RUN_META (so rateWork can
+    // attribute the verdict to the recipe) and the /api/run body (so the durable run row carries it).
+    const recipeId = (opts && opts.recipeId != null && String(opts.recipeId).trim()) ? String(opts.recipeId).slice(0, 60) : null;
     // GOAL LOOP: is THIS turn a loop-driven continuation (kickGoal) rather than a real user message? A real user
     // message mid-loop PREEMPTS the loop; a continuation is judged and may fire the next one. Captured here so the
     // teardown routes correctly even if the active loop is paused/cleared mid-run.
@@ -4697,10 +4700,11 @@ const Chat = (() => {
     try {
       const { text: reply, error, endReason, finishReason } = await Harness.chat({
         system: sys, messages: historyWindow(ws), agentId: ws.agentId || 'agent', isTask, recurring, signal: ac.signal, streamId: ws.id,
+        recipeId: recipeId || undefined,   // provenance spine: the launching recipe rides to the durable run row (undefined for non-recipe runs)
         projectRoot: ws.projectRoot || undefined,   // project-anchored session: the sidecar injects the folder context ONLY if the root is still a standing blessed grant (truthful)
         placed: (typeof World !== 'undefined' && World.heroCaps) ? World.heroCaps(ws.agentId || 'agent') : [],   // THE MOAT: this run's TOOL reach = the agent's REAL placed props (dish→web · cabinet→files · workbench→terminal · …); compute is the freebie
         stationPlaced: (typeof World !== 'undefined' && World.stationCaps) ? World.stationCaps() : [],   // Class Loadouts (shared-gear): station-wide gear for SKILL availability — a desk-only specialist still gets its class skills when the STATION has the gear (tools stay room-scoped via `placed`)
-        onRunId: id => { thisRunId = id; runStartedAt = Date.now(); try { RUN_META.set(id, { isTask: !!isTask, title: (ws && ws.title) || '', directive: String(text || ''), fromRecipe: fromRecipe, agentId: ws.agentId || 'agent' }); if (RUN_META.size > 60) RUN_META.delete(RUN_META.keys().next().value); } catch (_) {} Channels.setRunId(ws.id, id, Date.now()); if (walkedToDesk && Channels.setStatus) Channels.setStatus(ws.id, 'working…'); if (isActiveWs(ws)) { syncStatus(); renderPresence(); } if (typeof Workstreams !== 'undefined') { Workstreams.appendRun(ws.id, id); if (typeof App !== 'undefined' && App.refreshRail) App.refreshRail(); } },
+        onRunId: id => { thisRunId = id; runStartedAt = Date.now(); try { RUN_META.set(id, { isTask: !!isTask, title: (ws && ws.title) || '', directive: String(text || ''), fromRecipe: fromRecipe, recipeId: recipeId, agentId: ws.agentId || 'agent' }); if (RUN_META.size > 60) RUN_META.delete(RUN_META.keys().next().value); } catch (_) {} Channels.setRunId(ws.id, id, Date.now()); if (walkedToDesk && Channels.setStatus) Channels.setStatus(ws.id, 'working…'); if (isActiveWs(ws)) { syncStatus(); renderPresence(); } if (typeof Workstreams !== 'undefined') { Workstreams.appendRun(ws.id, id); if (typeof App !== 'undefined' && App.refreshRail) App.refreshRail(); } },
         onToken: d => { acc += d; Channels.appendToken(ws.id, d); if (isActiveWs(ws)) { if (activeLiveRow) activeLiveRow.append(d); if (!isTask) World.say(acc); } if (willSpeak) pushSpeech(false); App.refreshUsage(); },
         onUsage: () => App.refreshUsage(),
         // COMMS-PREMIUM: the Channels store still records the pre-formatted STRING (replay/switch-survival is

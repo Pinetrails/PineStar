@@ -7381,7 +7381,7 @@ async function runOnce(o) {
     try {
       let title = '';
       for (let i = msgs.length - 1; i >= 0; i--) { if (msgs[i] && msgs[i].role === 'user' && typeof msgs[i].content === 'string') { title = msgs[i].content; break; } }
-      runStore.record({ runId, agentId, reason: (result && result.reason) || 'done', turns: finalTurns, tokens: finalTokens, usd: finalUsd, title: title, streamId: o.streamId || '', model: finalModel, unmetered: providerUnmetered, artifacts: artifactLedger.list(), toolsOk, identityFallback });   // H3.2/H3.3/G6 + work-visibility + crate-honesty + P1.2 identity-honesty: transcript join + honest model/spend/deliverables/worked/named-agent
+      runStore.record({ runId, agentId, reason: (result && result.reason) || 'done', turns: finalTurns, tokens: finalTokens, usd: finalUsd, title: title, streamId: o.streamId || '', recipeId: o.recipeId || '', model: finalModel, unmetered: providerUnmetered, artifacts: artifactLedger.list(), toolsOk, identityFallback });   // H3.2/H3.3/G6 + work-visibility + crate-honesty + P1.2 identity-honesty: transcript join + honest model/spend/deliverables/worked/named-agent + recipe provenance
 
       // P0.1/H1.1: persist the full DIALOGUE (not just the outcome) — a durable server-side transcript for EVERY
       // run, incl. headless ones (cron/Telegram/delegated). Append the triggering user directive, then EVERY new

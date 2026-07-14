@@ -867,7 +867,9 @@ const App = (() => {
     try { if (typeof ProspectStore !== 'undefined' && ProspectStore.noteLaunch) ProspectStore.noteLaunch(recipe); } catch (_) {}
     // fromRecipe marks this run as recipe-launched so R5 "Bottle a run" never offers to re-bottle a recipe (it
     // already IS one). chat.js records it into RUN_META at onRunId; BottleStore reads it via runBottleInfo below.
-    if (typeof Chat !== 'undefined' && Chat.send && !Chat.isBusy()) Chat.send(text, { fromRecipe: true });   // kicks off the run on the fresh stream
+    // recipeId is the provenance SPINE: it rides RUN_META → the /api/run body → the durable run row, so the
+    // outcome loop (rate-the-work → recipe rank) can attribute a rating to the recipe that launched the run.
+    if (typeof Chat !== 'undefined' && Chat.send && !Chat.isBusy()) Chat.send(text, { fromRecipe: true, recipeId: recipe.id });   // kicks off the run on the fresh stream
     persist();
     return true;
   }

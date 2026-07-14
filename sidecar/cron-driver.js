@@ -225,6 +225,9 @@
           // reconstructs a stream when messages<=1), so cron behavior is byte-identical — the frontend
           // autosessions module reads GET /api/transcript?stream=cron-<runId> to surface the output as a session.
           runId: runId, streamId: 'cron-' + runId, surface: 'autonomous', trigger: 'schedule', provider: provider,
+          // provenance spine (R3 meta bag → durable run row): a routine minted from a recipe carries its recipeId,
+          // so scheduled recipe runs are attributable exactly like hand-launched ones. undefined for plain routines.
+          recipeId: (job.meta && job.meta.recipeId) || undefined,
           // per-bay capability isolation (B5): a bay-docked agent's routine runs with ITS room's objects,
           // never the default office — same contract as a routed channel message. undefined -> office.
           station: (resolveStation ? resolveStation(job.agentId) : null) || undefined

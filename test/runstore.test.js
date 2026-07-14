@@ -85,6 +85,16 @@ const clock = { now: () => clk };
   A.eq(s.record({ runId: 'r10', agentId: 'a' }).streamId, '', 'a streamless run -> empty streamId (no crash)');
 }
 
+// ---- G2. recipe provenance spine: a recipe-launched run records WHICH recipe fired it (additive) ----
+{
+  const s = makeRunStore({ io: memIo(), clock });
+  const e = s.record({ runId: 'rp1', agentId: 'a', reason: 'done', recipeId: 'morning-brief' });
+  A.eq(e.recipeId, 'morning-brief', 'record stores the launching recipeId');
+  A.eq(s.list('a')[0].recipeId, 'morning-brief', 'list surfaces recipeId (the outcome-loop join key)');
+  A.eq(s.record({ runId: 'rp2', agentId: 'a' }).recipeId, '', 'a non-recipe run -> empty recipeId (old rows fail-open)');
+  A.eq(s.record({ runId: 'rp3', agentId: 'a', recipeId: 'x'.repeat(200) }).recipeId.length, 60, 'recipeId is clamped to 60 chars');
+}
+
 // ---- H. model identity is durable; subscription runs are explicitly unmetered ----
 {
   const s = makeRunStore({ io: memIo(), clock });
