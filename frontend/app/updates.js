@@ -14,6 +14,12 @@ const Updates = (() => {
   let rerender = () => {};
   let timer = 0;
   let busy = false;
+  // True once an update install has COMMITTED (past the GB-4 guard, invoke fired). On macOS/Linux
+  // the install ends with app.restart(), which can emit a window close-requested event — the GB-4
+  // quit guard (quitguard.js) MUST NOT block that close, or the files swap but the app never
+  // relaunches (stuck update). Windows can't hit this: its updater process::exit()s before restart.
+  // Set right before the install invoke; only cleared if the install throws (app still alive).
+  let installing = false;
   let state = {
     desktop: !!TAURI,
     phase: TAURI ? 'idle' : 'unsupported',
@@ -234,11 +240,13 @@ const Updates = (() => {
     // with a timeout) so a dead/slow sidecar can NEVER hang the update — a lost drain is strictly better than a
     // frozen updater. Best-effort throughout: any failure just proceeds to install (localStorage is intact).
     await preInstallDrain();
+    installing = true;   // from here a close-requested is the update restart — quit guard must allow it
     try {
       await invoke('starnet_update_install', { onEvent });
       state.phase = 'restarting';
       notify('StarNet update installed - restarting', 'good');
     } catch (e) {
+      installing = false;   // install failed; the app lives on, so the quit guard resumes normally
       state.phase = 'available';
       state.error = cleanError(e);
       notify('Update install failed - ' + state.error, 'warn');
@@ -392,6 +400,9 @@ const Updates = (() => {
   return {
     init, refreshStatus, check, install, preInstallDrain, snapshot, settingsHtml, wireSettings, render,
     phase: () => state.phase,
+    // True once an update install has committed — quitguard.js reads this so it never blocks the
+    // macOS/Linux app.restart() close (Windows exits before restart, so it never asks).
+    isInstalling: () => installing,
     prefs: () => Object.assign({}, prefs)
   };
 })();
