@@ -56,3 +56,11 @@
   position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 60; display: none;
   color: var(--ph-bright); letter-spacing: 2px; background: rgba(0, 0, 0, .5); padding: 3px 14px; border: 1px solid var(--ph-dim);
 }
+
+/* ---------- CAMERA MODE chip: the feed's honest "who drives the camera" readout (world.js cameraMode) ---------- */
+.cam-mode {
+  position: absolute; top: 9px; right: 90px; z-index: 4; pointer-events: none;
+  font-size: 13px; letter-spacing: 1px; color: var(--ph); opacity: .75;
+  animation: wr-cam-mode 2.4s infinite;
+}
+@keyframes wr-cam-mode { 0%, 100% { opacity: .8; } 50% { opacity: .4; } }

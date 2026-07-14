@@ -2575,6 +2575,7 @@ const App = (() => {
     const ws = Workstreams.switch(id); if (!ws) return;
     SFX.click();
     focusAgent(ws.agentId || 'agent');   // the focused agent follows the stream's binding (multi-agent COMMS)
+    if (typeof World !== 'undefined' && World.lockBody) World.lockBody(ws.agentId || 'agent');   // Commander PICKED this session → the camera follow-locks its agent (any wheel/drag releases it)
     Chat.load(ws); refreshUsage(); renderRail(); persist();
     if (railView === 'projects') renderProjects();   // keep the entered-project selection truthful
   }
@@ -2601,7 +2602,8 @@ const App = (() => {
         && !(cur.history && cur.history.length) && !(cur.runIds && cur.runIds.length)
         && !(typeof Channels !== 'undefined' && Channels.isBusy(cur.id))
         && Workstreams.setAgent(cur.id, id)) {
-      focusAgent(id); Chat.load(cur); refreshUsage(); renderRail(); persist();
+      focusAgent(id); if (typeof World !== 'undefined' && World.lockBody) World.lockBody(id);   // explicit agent pick → camera follow-lock
+      Chat.load(cur); refreshUsage(); renderRail(); persist();
       return cur.id;
     }
     // prefer this agent's existing streams (most-recently-active first — Workstreams.list() is already sorted
@@ -2611,7 +2613,7 @@ const App = (() => {
     let ws = mine[0] || null;
     if (!ws) ws = Workstreams.create(a.name, { agentId: id, activate: false });
     if (!ws) return null;
-    if (ws.id === Workstreams.activeId()) { focusAgent(id); Chat.load(ws); }   // already here: just re-affirm focus/labels
+    if (ws.id === Workstreams.activeId()) { focusAgent(id); if (typeof World !== 'undefined' && World.lockBody) World.lockBody(id); Chat.load(ws); }   // already here: re-affirm focus/labels + camera follow-lock
     else switchWorkstream(ws.id);
     return ws.id;
   }
