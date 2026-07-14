@@ -19,6 +19,7 @@ const Build = (() => {
     { id: 'reclaim', key: '5', label: '⌫ RECLAIM', hint: 'click a room, prop, or belt to tear it down · drag across a belt to clear the whole run (UNDO restores it)', cursor: 'not-allowed' },
     { id: 'prop', key: '6', label: '⚇ PROP', hint: 'click to place furniture · agents walk around it', cursor: 'crosshair' },
     { id: 'belt', key: '7', label: '⇶ BELT', hint: 'CLICK one machine, then another — the belt lays itself · (or drag to lay tiles by hand)', cursor: 'crosshair' },
+    { id: 'dupe', key: '8', label: '⧉ DUPE', hint: 'click a room or prop to copy it · then every click stamps a copy — mirror your build fast', cursor: 'copy' },
   ];
   const SEEN_KEY = 'starnet.refit.seen';
   // machines the BELT tool connects with two clicks (mirrors worldmodel CONNECTABLE)
@@ -46,6 +47,7 @@ const Build = (() => {
   // interaction state
   let tool = 'room', kind = 'hab', style = 'cobalt', hallWidth = 2, propType = 'desk', propCat = 'workstation', propTier = 'functional';
   let drag = null, hoverRoomId = null, hoverPropId = null, hoverTile = null, lastClient = { x: 0, y: 0 }, spaceHeld = false;
+  let dupe = null;   // DUPE tool clipboard: {type:'prop'|'room', rects (rel to top-left), …} — armed = ghost follows cursor, click stamps
   let stars = [];
   let convey = null, lastFrameTs = 0;   // editor conveyor sim (boxes flow live as you build)
   let propThumbs = [], lastThumbTs = 0; // visual prop palette: live animated preview tiles + redraw throttle
@@ -60,7 +62,7 @@ const Build = (() => {
     if (running) return;
     station = opts.getStation();
     if (!station) return;
-    spaceHeld = false; drag = null; flashes.length = 0;   // never inherit latched state from a prior session
+    spaceHeld = false; drag = null; dupe = null; flashes.length = 0;   // never inherit latched state from a prior session
     buildDOM();
     if (opts.world && opts.world.stop) opts.world.stop();       // freeze the live sim
     document.body.classList.add('refit-on');
@@ -382,7 +384,7 @@ const Build = (() => {
   }
 
   function selectTool(id) {
-    tool = id; drag = null; connectFrom = null; hideTip(); hidePropCard();
+    tool = id; drag = null; connectFrom = null; dupe = null; hideTip(); hidePropCard();
     root.querySelectorAll('.refit-tool').forEach(b => {
       const active = b.dataset.tool === id;
       b.classList.toggle('active', active);
@@ -878,7 +880,7 @@ const Build = (() => {
     lastClient = { x: ev.clientX, y: ev.clientY };
     hidePropCard();
     // right-button cancels an in-progress edit (and never starts one) — including a half-made connection
-    if (ev.button === 2) { if (drag) { drag = null; hideTip(); } if (connectFrom) { connectFrom = null; hideTip(); } return; }
+    if (ev.button === 2) { if (drag) { drag = null; hideTip(); } if (connectFrom) { connectFrom = null; hideTip(); } if (dupe) { dupe = null; hideTip(); setHint(); } return; }
     try { cv.setPointerCapture(ev.pointerId); } catch (e) {}
     if (panTrigger(ev)) { drag = { mode: 'pan', sx: toCanvas(ev).x, sy: toCanvas(ev).y }; cv.style.cursor = 'grabbing'; return; }
     if (ev.button !== 0) return;
@@ -905,6 +907,10 @@ const Build = (() => {
       drag = { mode: 'beltrun', start: w, cur: w, moved: false };
     } else if (tool === 'prop') {
       drag = { mode: 'propstamp', start: w, cur: w, moved: false };
+    } else if (tool === 'dupe') {
+      // click-only tool: first click COPIES what's under the cursor, every later click STAMPS a copy
+      if (dupe) stampDupe(w, ev); else pickupDupe(w, ev);
+      return;
     } else if (tool === 'move') {
       const pid = station.propAt(w.tx, w.ty);   // props sit on top of rooms — move them first
       if (pid) { drag = { mode: 'propmove', propId: pid, start: w, cur: w, moved: false }; return; }
@@ -1089,6 +1095,62 @@ const Build = (() => {
     else if (res && res.error === 'SPAWN_ROOM') { flashTip(ev, 'spawn room — can’t reclaim (try MOVE)'); sfx('bad'); }
     else { flashTip(ev, (res && res.msg) || 'blocked'); sfx('bad'); }
   }
+  /* ---------- DUPE tool: copy a room or prop, then stamp repeats — the symmetry workflow.
+     Props copy their type/footprint + carried config (filter routes, merger K, airlock seal) but NEVER an
+     agent/connector binding: two bays on one agent is a routing error (DUP_AGENT) and a portal bind is a
+     live server relationship, not geometry. Rooms copy their full multi-rect shape + kind + deck style. */
+  function pickupDupe(w, ev) {
+    const pid = station.propAt(w.tx, w.ty);
+    if (pid) {
+      const p = station.propById(pid);
+      const s = propSpec(p.t);
+      dupe = { type: 'prop', t: p.t, w: p.w || 1, h: p.h || 1, block: s.blocks !== false, cfg: {},
+               rects: [{ x1: 0, y1: 0, x2: (p.w || 1) - 1, y2: (p.h || 1) - 1 }], label: (s.label || p.t).toUpperCase() };
+      if (p.routes && typeof p.routes === 'object') dupe.cfg.routes = Object.assign({}, p.routes);
+      if (p.def) dupe.cfg.def = p.def;
+      if (p.bufferSize) dupe.cfg.bufferSize = p.bufferSize;
+      if (p.door) dupe.cfg.door = p.door;
+    } else {
+      const rid = station.roomAt(w.tx, w.ty);
+      const rm = rid && station.roomById(rid);
+      if (!rm) { flashTip(ev, 'nothing to copy here — click a room or prop', false); sfx('bad'); return; }
+      let mx = Infinity, my = Infinity;
+      for (const r of rm.rects) { if (r.x1 < mx) mx = r.x1; if (r.y1 < my) my = r.y1; }
+      dupe = { type: 'room', roomKind: rm.kind, floorStyle: rm.floorStyle, label: (rm.name || rm.kind).toUpperCase(),
+               rects: rm.rects.map(r => ({ x1: r.x1 - mx, y1: r.y1 - my, x2: r.x2 - mx, y2: r.y2 - my })) };
+    }
+    sfx('click');
+    flashTip(ev, 'COPIED ' + dupe.label + ' — click to stamp · right-click to drop', true);
+    setHint('holding ' + dupe.label + ' — click to stamp copies · right-click / Esc to drop');
+  }
+  function dupeRectsAt(tx, ty) { return dupe.rects.map(r => ({ x1: r.x1 + tx, y1: r.y1 + ty, x2: r.x2 + tx, y2: r.y2 + ty })); }
+  function stampDupe(w, ev) {
+    if (dupe.type === 'prop') {
+      const placement = Object.assign({ t: dupe.t, x: w.tx, y: w.ty, w: dupe.w, h: dupe.h, block: dupe.block }, dupe.cfg);
+      const res = station.addProp(placement);
+      if (res && res.ok) {
+        pushFlash(dupeRectsAt(w.tx, w.ty), false);
+        if (typeof StationUI !== 'undefined' && StationUI.pokeQuests) { try { StationUI.pokeQuests(); } catch (_) {} }
+        const grant = (typeof WorldModel !== 'undefined' && WorldModel.grantLabelForProp) ? WorldModel.grantLabelForProp(dupe.t) : null;
+        if (grant) sfx('chime');
+        if (typeof Tutorial !== 'undefined' && Tutorial.onPropPlaced) Tutorial.onPropPlaced(dupe.t);
+      }
+      feedback(res, ev, 'copy placed — click again for another');
+    } else {
+      const res = station.addRoom({ kind: dupe.roomKind, rects: dupeRectsAt(w.tx, w.ty), floorStyle: dupe.floorStyle });
+      if (res && res.ok) pushFlash(dupeRectsAt(w.tx, w.ty), false);
+      feedback(res, ev, 'copy placed — click again for another');
+    }
+  }
+  // validate the armed copy at a tile (the ghost's green/red) — same checks a hand placement runs
+  function dupeGhost(tx, ty) {
+    const rects = dupeRectsAt(tx, ty);
+    const v = dupe.type === 'prop'
+      ? station.canPlaceProp(dupe.t, tx, ty, dupe.w, dupe.h)
+      : (dupe.roomKind === 'corridor' ? station.canPlaceHallway(rects) : station.canPlaceRoom(rects, dupe.roomKind));
+    return { rects, v, kind: 'dupe' };
+  }
+
   function feedback(res, ev, okMsg) {
     if (res && res.ok) { sfx('click'); flashTip(ev, okMsg, true); }
     else { sfx('bad'); flashTip(ev, (res && res.msg) || 'blocked'); }
@@ -1113,6 +1175,7 @@ const Build = (() => {
       const card = root && root.querySelector('.refit-guide');
       if (card) { markSeen(); card.parentNode.removeChild(card); return; }
       if (drag) { drag = null; hideTip(); setCursor(); return; }   // cancel an in-progress edit first
+      if (dupe) { dupe = null; hideTip(); setHint(); return; }     // drop the armed copy before leaving REFIT
       return close();
     }
     if ((ev.ctrlKey || ev.metaKey) && (ev.key === 'z' || ev.key === 'Z')) {
@@ -1122,7 +1185,7 @@ const Build = (() => {
     }
     if ((ev.ctrlKey || ev.metaKey) && (ev.key === 'y' || ev.key === 'Y')) { ev.preventDefault(); sfx(station.redo().ok ? 'click' : 'bad'); return; }
     if (ev.key === 'f' || ev.key === 'F') { fitCamera(); return; }
-    const map = { '1': 'room', '2': 'hall', '3': 'paint', '4': 'move', '5': 'reclaim', '6': 'prop', '7': 'belt' };
+    const map = { '1': 'room', '2': 'hall', '3': 'paint', '4': 'move', '5': 'reclaim', '6': 'prop', '7': 'belt', '8': 'dupe' };
     if (map[ev.key]) selectTool(map[ev.key]);
   }
   function onKeyUp(ev) { if (ev.key === ' ') { spaceHeld = false; setCursor(); } }
@@ -1151,7 +1214,11 @@ const Build = (() => {
   function beltRunBox(a, b) { return beltRun(a, b).rect; }
 
   function ghostInfo() {
-    if (!drag) return null;
+    if (!drag) {
+      // DUPE armed: the copy ghosts under the cursor with no drag — every click stamps
+      if (tool === 'dupe' && dupe && hoverTile) return dupeGhost(hoverTile.tx, hoverTile.ty);
+      return null;
+    }
     if (drag.mode === 'draw') {
       const rect = (tool === 'hall') ? laneRect(drag.start, drag.cur) : norm(drag.start, drag.cur);
       const v = (tool === 'hall') ? station.canPlaceHallway([rect]) : station.canPlaceRoom([rect], kind);
@@ -1454,7 +1521,7 @@ const Build = (() => {
   function drawHover(t) {
     if (drag) return;
     // a hovered prop (move/reclaim) outlines on top of any room outline
-    if ((tool === 'move' || tool === 'reclaim') && hoverPropId) {
+    if ((tool === 'move' || tool === 'reclaim' || (tool === 'dupe' && !dupe)) && hoverPropId) {
       const p = station.propById(hoverPropId);
       if (p) {
         ctx.lineWidth = 1.5 / zoom;
@@ -1471,7 +1538,7 @@ const Build = (() => {
       ctx.strokeRect(hoverTile.tx * t + 1, hoverTile.ty * t + 1, t - 2, t - 2);
       return;
     }
-    if (tool !== 'move' && tool !== 'reclaim' && tool !== 'paint') return;
+    if (tool !== 'move' && tool !== 'reclaim' && tool !== 'paint' && !(tool === 'dupe' && !dupe)) return;
     if (!hoverRoomId) return;
     const rm = station.roomById(hoverRoomId); if (!rm) return;
     const protectedSpawn = tool === 'reclaim' && hoverRoomId === station.spawnRoomId();
