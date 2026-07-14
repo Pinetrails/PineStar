@@ -4,12 +4,14 @@
    build mode never jumps the stars. Replaces the old ~90/110-star fixed sprinkles with a
    real deep field, back to front:
 
-     1. NEBULAS  — 3-4 distant gas clouds (phosphor violet/magenta/teal), pre-rendered once
-                   per canvas size onto an offscreen tile, drifting slowest of all.
+     1. NEBULAS  — 3-4 distant gas clouds (phosphor violet/magenta/teal) + ONE spiral galaxy
+                   (log-spiral arms, warm core), pre-rendered once per canvas size onto an
+                   offscreen tile, drifting slowest of all.
      2. DUST     — a dense area-scaled field of faint 1px stars (hundreds to thousands),
-                   thickened along a sine-wrapped galactic band, pre-rendered + scrolled.
+                   thickened along a sine-wrapped galactic band, + ONE small ringed planet;
+                   pre-rendered + scrolled (the planet parallaxes apart from the galaxy).
      3. MID/NEAR — the live twinkling bands (per-star phase, tinted), the near band bright
-                   and fast with a few 4-point glint stars.
+                   and fast with a few 4-point glint stars, + the rare silent meteor.
 
    Everything is seeded (mulberry32, fixed seed) so the same canvas size always grows the
    same sky — a resize re-lays the field deterministically instead of reshuffling it.
@@ -103,6 +105,26 @@ const SpaceBG = (() => {
       const bx = (i / 26) * w + (rnd() - 0.5) * w * 0.03;
       puff(nc, w, bx, bandAt(bx) + (rnd() - 0.5) * bandHalf * 0.8, bandHalf * (1.1 + 0.7 * rnd()), bandHue, 0.028 + 0.022 * rnd());
     }
+    /* THE GALAXY — one distant spiral: disk haze + two log-spiral arms + a warm core. Placed
+       clear of the tile edges so it never straddles the wrap seam (no triple-stamp needed). */
+    const gx = w * (0.22 + 0.56 * rnd()), gy = h * (0.14 + 0.5 * rnd());
+    const Rg = (0.11 + 0.06 * rnd()) * Math.min(w, h);
+    nc.save(); nc.translate(gx, gy); nc.rotate(rnd() * Math.PI); nc.scale(1, 0.34);   // tilt + flatten → everything below draws as an inclined disk
+    const dg = nc.createRadialGradient(0, 0, 0, 0, 0, Rg);
+    dg.addColorStop(0, 'rgba(210,190,255,0.10)'); dg.addColorStop(0.55, 'rgba(150,120,255,0.05)'); dg.addColorStop(1, 'rgba(150,120,255,0)');
+    nc.fillStyle = dg; nc.fillRect(-Rg, -Rg, Rg * 2, Rg * 2);
+    for (let arm = 0; arm < 2; arm++) for (let i = 0; i < 26; i++) {
+      const phi = (i / 26) * 2.4 * Math.PI, r = Rg * 0.16 * Math.exp(0.24 * phi);
+      const ax = r * Math.cos(phi + arm * Math.PI), ay = r * Math.sin(phi + arm * Math.PI);
+      const ag = nc.createRadialGradient(ax, ay, 0, ax, ay, Rg * 0.14);
+      ag.addColorStop(0, 'rgba(190,170,255,' + (0.055 * (1 - i / 26) + 0.02).toFixed(3) + ')'); ag.addColorStop(1, 'rgba(190,170,255,0)');
+      nc.fillStyle = ag; nc.fillRect(ax - Rg * 0.14, ay - Rg * 0.14, Rg * 0.28, Rg * 0.28);
+      if (i % 2) { nc.fillStyle = 'rgba(230,220,255,' + (0.35 * (1 - i / 26)).toFixed(3) + ')'; nc.fillRect(ax + (rnd() - 0.5) * Rg * 0.1, ay + (rnd() - 0.5) * Rg * 0.1, 1.5, 1.5); }   // arm speckle stars
+    }
+    const cg = nc.createRadialGradient(0, 0, 0, 0, 0, Rg * 0.22);
+    cg.addColorStop(0, 'rgba(255,240,220,0.35)'); cg.addColorStop(0.4, 'rgba(255,220,190,0.12)'); cg.addColorStop(1, 'rgba(255,220,190,0)');
+    nc.fillStyle = cg; nc.fillRect(-Rg * 0.22, -Rg * 0.22, Rg * 0.44, Rg * 0.44);
+    nc.restore();
 
     /* ---- layer 2: DUST (dense static far field) ---- */
     dustCv = document.createElement('canvas'); dustCv.width = w; dustCv.height = h;
@@ -117,6 +139,27 @@ const SpaceBG = (() => {
       dc.fillStyle = pickTint(rnd()) + (0.25 + 0.5 * rnd()).toFixed(3) + ')';   // bold enough to survive the CRT pass (scanlines+warp eat ~half)
       dc.fillRect(x, ((y % h) + h) % h, rnd() < 0.88 ? 1 : 2, 1);
     }
+    /* THE PLANET — one small ringed world, drawn AFTER the dust so stars sit behind it. It rides
+       the dust layer, so it parallaxes apart from the galaxy. Ring order: full ring → body over it
+       (hides the far half) → front arc re-stroked. Placed clear of the tile edges (no wrap clip). */
+    const pR = h * (0.030 + 0.018 * rnd());
+    const px0 = w * (0.15 + 0.7 * rnd()), py0 = h * (0.12 + 0.6 * rnd());
+    const ringTilt = -0.35, ringFlat = 0.32;
+    dc.save(); dc.translate(px0, py0); dc.rotate(ringTilt); dc.scale(1, ringFlat);
+    dc.strokeStyle = 'rgba(180,190,210,0.28)'; dc.lineWidth = Math.max(1, pR * 0.10);
+    dc.beginPath(); dc.arc(0, 0, pR * 1.75, 0, Math.PI * 2); dc.stroke();
+    dc.strokeStyle = 'rgba(180,190,210,0.13)'; dc.lineWidth = Math.max(1, pR * 0.22);
+    dc.beginPath(); dc.arc(0, 0, pR * 1.45, 0, Math.PI * 2); dc.stroke();
+    dc.restore();
+    const bg = dc.createRadialGradient(px0 - pR * 0.45, py0 - pR * 0.45, pR * 0.1, px0, py0, pR);
+    bg.addColorStop(0, 'rgba(120,150,180,0.60)');   // muted slate-blue day side
+    bg.addColorStop(0.6, 'rgba(70,90,120,0.50)');
+    bg.addColorStop(1, 'rgba(14,18,28,0.95)');      // night limb
+    dc.beginPath(); dc.arc(px0, py0, pR, 0, Math.PI * 2); dc.fillStyle = bg; dc.fill();
+    dc.save(); dc.translate(px0, py0); dc.rotate(ringTilt); dc.scale(1, ringFlat);   // the near half of the ring passes in FRONT of the disk
+    dc.strokeStyle = 'rgba(180,190,210,0.28)'; dc.lineWidth = Math.max(1, pR * 0.10);
+    dc.beginPath(); dc.arc(0, 0, pR * 1.75, 0, Math.PI); dc.stroke();
+    dc.restore();
 
     /* ---- layers 3+4: the live twinkle bands (area-scaled, capped for per-frame cost) ---- */
     mid = []; near = [];
