@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "0a815cb823fd0cc563a32e03a20919a9653631f6",
+    "sourceCommit": "9fd22415d41cccf16aee521a8dfbc600c5cc2051",
     "pathSetSha256": "c6f58b9074e94223ecf3202f0604f0fbe0ce628978503a414e9dd2908481a049",
     "files": [
       {
@@ -598,8 +598,8 @@
       },
       {
         "path": "frontend/app/stationui.js",
-        "bytes": 418788,
-        "sha256": "6473b3e4e73f06d85c546b8864013a4666965caa0014d882006451f5c09cf227"
+        "bytes": 419389,
+        "sha256": "2e3799147f5ed16032f2c372777d312c9edd0c2ed25d94eca43c66d40f56fc91"
       },
       {
         "path": "frontend/app/study.js",
@@ -723,8 +723,8 @@
       },
       {
         "path": "frontend/app/workshopstore.js",
-        "bytes": 16231,
-        "sha256": "cc259c1ddc0416e0830c75b7a59b723f36b99cf27389ee57d50fa83abbf3c377"
+        "bytes": 18483,
+        "sha256": "e3fe333c45eef4b67429e1fbd1588aa37d3cc3c066824c2d433d2ccb6e5143fb"
       },
       {
         "path": "frontend/app/worksignal.js",
