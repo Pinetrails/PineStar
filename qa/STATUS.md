@@ -37,12 +37,12 @@ own runner (Q1 Guardian, Q2 Beginner Run, Q4 Janitor) or the Overseer digest; th
 | Crew member | Question it answers | Last run | Result | Open findings |
 | --- | --- | --- | --- | --- |
 | Green Guardian | Is trunk green and does the app still boot + look right? | 2026-07-12 04:04Z @ ef16fa08 | GREEN | 3 |
-| Beginner Run | Can a brand-new user reach first value, unassisted? | 2026-07-11T13:00:42.799Z · ui-only · 38349ms | STUCK@title | 0 |
+| Beginner Run | Can a brand-new user reach first value, unassisted? | 2026-07-14T20:33:23.323Z · ui-only · 88585ms | PASS | 0 |
 | Truth Auditor | Does the UI show what actually happened? | 2026-07-01 23:28Z (in Guardian cycle) | GREEN | 0 |
 | Visual Auditor | Is the rendered game coherent? (needs eyes) | — (local /loop; not headless) | — | 0 |
 | Overseer | What broke today, what needs Andrew? | 2026-07-01 (digest rendered) | 0 P0 · 106 P2 | — |
 | Janitor | What's rotting in the workshop? | 2026-07-01 | 106 findings | 106 |
-| Cartographer | Is every surface element mapped and perfected? | 2026-07-10 18:17Z @ ef16fa08 | PERFECTED-fresh 0 / total 1410 (0%) | 123 |
+| Cartographer | Is every surface element mapped and perfected? | 2026-07-14 20:12Z @ 3feadbfb | PERFECTED-fresh 0 / total 1410 (0%) | 123 |
 | Dogfood | Does StarNet survive being USED like a real user uses it? | 2026-07-07 (proof shift · mock) @ e01831ab | SURVIVED — 0 anomalies (mock seam shift) | 0 |
 
 _The rows above are the Q5 **movie test** (2026-07-01): one real cycle of every headless
