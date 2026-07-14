@@ -77,6 +77,7 @@ test/t2-state-safety.test.js
 test/t3-release-smoke.test.js
 test/t4-update-delivery.test.js
 test/t5-public-distribution.test.js
+test/minisign-verify.test.js
 test/release-assemble-manifest.test.js
 test/verify-update-host.test.js
 test/replacement-sweep.test.js

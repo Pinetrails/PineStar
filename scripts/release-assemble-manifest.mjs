@@ -10,29 +10,38 @@
  * permanently stranded because nothing assembled their artifacts into the feed.
  *
  * This scans a --dist tree, maps each updater artifact to its Tauri platform
- * key, pairs it with the sibling .sig, and emits a single manifest whose per-
- * platform url points at the versioned GitHub Releases asset. It HARD-FAILS if
- * any of the four platforms is missing (unless explicitly waived), on a signed
- * artifact whose .sig is absent or empty, on two artifacts fighting for the same
- * platform, or on a non-SemVer version — so a broken/partial feed can never be
- * assembled silently.
+ * key, pairs it with the sibling .sig, CRYPTOGRAPHICALLY verifies each signature
+ * against the pubkey baked into src-tauri/tauri.conf.json (the exact check every
+ * installed app runs), and emits a single manifest whose per-platform url points
+ * at the versioned GitHub Releases asset. It HARD-FAILS if any of the five
+ * platforms is missing (unless explicitly waived), on a signed artifact whose
+ * .sig is absent/empty/INVALID, on two artifacts fighting for the same platform,
+ * or on a non-SemVer version — so a broken/partial feed can never be assembled
+ * silently.
  *
  * Migrated validations from starnet-release-manifest.mjs:
  *   - --version must be SemVer.
  *   - every emitted url is https:// (guaranteed by the fixed github.com base).
- *   - every signature is non-empty.
+ *   - every signature is non-empty AND verifies against the baked public key.
  *
  * USAGE:
  *   node scripts/release-assemble-manifest.mjs \
  *     --dist <dir> --version <X.Y.Z> --repo <owner/repo> --tag v<X.Y.Z> \
  *     [--notes-file RELEASE_NOTES.md] [--out release/latest.json] \
- *     [--allow-missing <plat,plat>]
+ *     [--allow-missing <plat,plat>] [--pubkey <base64-or-path>] [--skip-sig-verify]
  *
  * Artifact → platform mapping (recursive scan of --dist):
  *   *-setup.exe   + .sig                                  → windows-x86_64
  *   *.app.tar.gz  + .sig, path/name has aarch64|arm64     → darwin-aarch64
  *   *.app.tar.gz  + .sig, path/name has x64|x86_64        → darwin-x86_64
  *   *.AppImage    + .sig                                  → linux-x86_64
+ *   *.deb         + .sig                                  → linux-x86_64-deb
+ *
+ * linux-x86_64-deb exists because tauri-plugin-updater resolves the target
+ * {os}-{arch}-{installer} FIRST and falls back to {os}-{arch}: a .deb-installed
+ * app that only finds the generic linux-x86_64 key downloads the AppImage and
+ * then hard-fails `infer::archive::is_deb` at install time. Publishing .deb
+ * downloads without this manifest key breaks self-update for every .deb user.
  */
 
 import {
@@ -40,8 +49,11 @@ import {
 } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { dirname, join, relative } from 'node:path';
+import { resolvePubkeyText, verifySignature } from './minisign-verify.mjs';
+import { fileURLToPath } from 'node:url';
 
-const ALL_PLATFORMS = ['windows-x86_64', 'darwin-aarch64', 'darwin-x86_64', 'linux-x86_64'];
+const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
+const ALL_PLATFORMS = ['windows-x86_64', 'darwin-aarch64', 'darwin-x86_64', 'linux-x86_64', 'linux-x86_64-deb'];
 
 const args = process.argv.slice(2);
 const argSet = new Set(args);
@@ -71,12 +83,13 @@ function walk(dir, out) {
 }
 
 // Classify one artifact file path to a Tauri updater platform key, or null if
-// it is not an updater artifact (e.g. a .sig, .deb, .dmg, .msi, or stray file).
+// it is not an updater artifact (e.g. a .sig, .dmg, .msi, or stray file).
 function classify(file) {
   const name = file.split(/[\\/]/).pop();
   const lowerPath = file.toLowerCase();
   if (/-setup\.exe$/i.test(name)) return 'windows-x86_64';
   if (/\.AppImage$/i.test(name)) return 'linux-x86_64';
+  if (/\.deb$/i.test(name)) return 'linux-x86_64-deb';
   if (/\.app\.tar\.gz$/i.test(name)) {
     if (/aarch64|arm64/.test(lowerPath)) return 'darwin-aarch64';
     if (/x64|x86_64/.test(lowerPath)) return 'darwin-x86_64';
@@ -94,6 +107,7 @@ function main() {
   const outFile = argVal('--out', 'release/latest.json');
   const allowMissing = (argVal('--allow-missing', '') || '')
     .split(',').map(s => s.trim()).filter(Boolean);
+  const skipSigVerify = argSet.has('--skip-sig-verify');
 
   if (!dist) fail('--dist <dir> is required');
   if (!version) fail('--version <X.Y.Z> is required');
@@ -107,6 +121,17 @@ function main() {
     if (!ALL_PLATFORMS.includes(p)) fail('--allow-missing has unknown platform "' + p + '" (valid: ' + ALL_PLATFORMS.join(', ') + ')');
   }
   if (!existsSync(dist)) fail('--dist directory does not exist: ' + dist);
+
+  // Resolve the public key we verify against — by default the one BAKED into
+  // src-tauri/tauri.conf.json, i.e. the key every installed app trusts. If CI signed
+  // with a different key, verification fails HERE instead of on every user's machine.
+  let pubkeyText = null;
+  if (!skipSigVerify) {
+    try { pubkeyText = resolvePubkeyText(argVal('--pubkey'), ROOT); }
+    catch (e) { fail('cannot resolve updater public key: ' + e.message + '\n  Pass --pubkey <base64-or-path> or (dangerous, tests only) --skip-sig-verify.'); }
+  } else {
+    log('WARNING: --skip-sig-verify — signatures are NOT cryptographically checked (tests only; never in a release path).');
+  }
 
   const files = walk(dist, []);
 
@@ -127,10 +152,19 @@ function main() {
     }
     const signature = readText(sigFile).trim();
     if (!signature) fail('signature file is empty: ' + sigFile);
-    found[plat] = { artifact: file, sig: sigFile, signature, sha256: sha256(file) };
+    if (pubkeyText) {
+      let res;
+      try { res = verifySignature(readFileSync(file), signature, pubkeyText); }
+      catch (e) { fail('signature verification errored for ' + file + ': ' + e.message); }
+      if (!res.ok) {
+        fail('SIGNATURE INVALID for ' + file + '\n  ' + res.reason +
+          '\n  This release would pass shape checks and then fail the update on EVERY installed app. Refusing to assemble.');
+      }
+    }
+    found[plat] = { artifact: file, sig: sigFile, signature, sha256: sha256(file), sigVerified: !!pubkeyText };
   }
 
-  // Enforce the four-platform contract.
+  // Enforce the five-platform contract.
   const missing = ALL_PLATFORMS.filter(p => !found[p]);
   const unwaived = missing.filter(p => !allowMissing.includes(p));
   if (unwaived.length) {
@@ -180,10 +214,11 @@ function main() {
   log('');
   for (const plat of ALL_PLATFORMS) {
     const hit = found[plat];
-    if (!hit) { log('  ' + plat.padEnd(16) + ' MISSING (waived via --allow-missing)'); continue; }
+    if (!hit) { log('  ' + plat.padEnd(18) + ' MISSING (waived via --allow-missing)'); continue; }
     const basename = hit.artifact.split(/[\\/]/).pop();
-    log('  ' + plat.padEnd(16) + basename);
-    log('  ' + ' '.repeat(16) + 'sha256 ' + hit.sha256.slice(0, 16) + '...  sig ' + Buffer.byteLength(hit.signature) + ' bytes');
+    log('  ' + plat.padEnd(18) + basename);
+    log('  ' + ' '.repeat(18) + 'sha256 ' + hit.sha256.slice(0, 16) + '...  sig ' +
+      (hit.sigVerified ? 'VERIFIED against baked pubkey' : Buffer.byteLength(hit.signature) + ' bytes (NOT verified)'));
   }
   log('============================================================');
   log(' Wrote ' + Object.keys(platforms).length + ' platform(s). Nothing is live until this is attached to a published release.');

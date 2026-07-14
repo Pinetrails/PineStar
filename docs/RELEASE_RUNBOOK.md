@@ -384,10 +384,11 @@ right answer is: **don't lose the key** (4.1).
 3. **The robocopy in-place hot-patch is DEV-ONLY.** It's a developer convenience for patching a
    local install; it is **never** a user-facing update path. Users update only through the
    signed updater feed.
-4. **Verify green on all four platforms before you Publish.** The draft must have
-   windows-x86_64, darwin-aarch64, darwin-x86_64, and linux-x86_64 all present and signed, and
-   `verify-update-host` (run against the manifest) must pass for all of them. A missing platform
-   strands every user on that OS.
+4. **Verify green on all five platform keys before you Publish.** The draft must have
+   windows-x86_64, darwin-aarch64, darwin-x86_64, linux-x86_64, and linux-x86_64-deb (the key
+   .deb installs resolve — without it every .deb user downloads the AppImage and fails at
+   install) all present and signed, and `verify-update-host` (run against the manifest) must
+   pass for all of them. A missing platform strands every user on that OS.
 5. **`release.yml` is emergency-fallback only.** It's the old Windows-only, publish-immediately
    path (carries a deprecation header). Do **not** run it with `publish=true` unless the release
    train itself is broken and you must ship. The normal path is always the train.
