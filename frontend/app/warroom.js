@@ -93,14 +93,39 @@
     if (e.key === 'c' || e.key === 'C') toggleCinema();
   });
 
+  /* ---------------- CAMERA MODE chip (honest cinecam / follow-lock readout) ---------------- */
+  // The idle cinecam + session follow-lock live in world.js (World.cameraMode). This chip is the diegetic
+  // security-feed readout: "● AUTO CAM" while the idle director drives, "● TRACKING" while a session lock
+  // trails the picked agent, hidden while the Commander owns the camera. Pure read on the 300ms tick —
+  // it asserts only real client camera state, and only when that state is live.
+  function buildCamMode() {
+    const hud = $('#stage-wrap .cam-hud');
+    if (hud && !hud.querySelector('.cam-mode')) {
+      const s = document.createElement('span');
+      s.className = 'cam-mode'; s.style.display = 'none';
+      s.title = 'idle camera: auto-follows the crew after 2 min hands-off — grab the camera (drag/zoom) to take it back';
+      hud.appendChild(s);
+    }
+  }
+  function tickCamMode() {
+    const s = $('#stage-wrap .cam-mode'); if (!s) return;
+    let mode = 'manual';
+    try { if (typeof World !== 'undefined' && World.cameraMode) mode = World.cameraMode(); } catch (_) {}
+    const txt = mode === 'auto' ? '● AUTO CAM' : (mode === 'lock' ? '● TRACKING' : '');
+    const disp = txt ? 'block' : 'none';
+    if (s.textContent !== txt) s.textContent = txt;
+    if (s.style.display !== disp) s.style.display = disp;
+  }
+
   /* ---------------- boot + tick ---------------- */
   function boot() {
     // NOTE: the old top APPROVALS hotspot is gone — approvals now render INLINE at the bottom of COMMS
     // (chat.js permissionRow), classic-harness style, in the conversation flow where the agent paused.
     buildCinema();
+    buildCamMode();
     tick(); setInterval(tick, 300);
   }
-  function tick() { try { tickCrew(); } catch (_) {} }
+  function tick() { try { tickCrew(); } catch (_) {} try { tickCamMode(); } catch (_) {} }
   if (document.readyState !== 'loading') boot();
   else document.addEventListener('DOMContentLoaded', boot);
 })();

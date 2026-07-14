@@ -49,6 +49,17 @@ const World = (() => {
   let camLerp = null;   // {scale,panX,panY} target — a gentle one-on-one framing for voice conversations
   let wakeDark = 0, wakeDarkTarget = 0, awakeFrozen = false;   // the AWAKENING: a darkness veil that lifts to first light, + a freeze so the newborn holds still during its first meeting
   let camAnim = null;                                          // {fromS,toS,fromX,toX,fromY,toY,t,dur,ease,onEnd} — a scripted awakening camera move
+  /* FOLLOW-LOCK + IDLE CINECAM (the GTA-style idle camera). camLock is a CONTINUOUS follow of one body —
+     source 'session' = the Commander selected that agent's session (explicit intent, engages immediately);
+     source 'cine'    = the idle auto-director cast the shot itself after a hands-off spell.
+     Either way ANY user camera input (wheel zoom / drag pan / canvas click) releases the lock instantly and
+     re-stamps camUserAt; the director may only take the camera back after cineIdleMs of true hands-off. */
+  let camLock = null;                  // {id, sc, source:'session'|'cine'} — the followed body + its target zoom
+  let camUserAt = 0;                   // last USER camera act (performance.now clock) — the cinecam idle clock
+  const CINE_IDLE_MS = 120000;         // hands-off threshold before the auto-director may take the camera (2 min)
+  let cineIdleMs = CINE_IDLE_MS;       // live threshold (setCinecamIdle lets DEV/verify shrink it — never shipped-UI-tunable)
+  let cineHoldUntil = 0;               // director: when the current shot may be re-cast
+  let cineWalkAt = 0;                  // last time the director's subject was actually WALKING (movement grace before a cut)
   let sparkAt = 0, bornAt = 0, dawnAt = 0, truthPulseAt = 0;   // ignition spark / color-into-being / dawn-bloom / per-truth-flare timestamps
   let floodAt = 0, floodEndAt = 0, floodStreams = null;        // THE FLOOD: screen-space data-cascade — start / collapse-trigger / seeded streams
   let firstWakeDone = false;                                   // FIRST LIGHT: once-per-page-life latch — the wake ritual fires at most once (a re-bake/refit never resets it)
@@ -695,6 +706,7 @@ const World = (() => {
       stars.push({ x: Math.random(), y: Math.random(), r, ph: Math.random() * 10, band });
     }
     resize();
+    camUserAt = performance.now();   // boot / a new agent re-arms the cinecam idle clock — the director never fires into a fresh floor
     try { if (ro) ro.disconnect(); ro = new ResizeObserver(() => { resize(); fitNeeded = true; redrawNow(); }); ro.observe(cv.parentElement || cv); } catch (e) {}
     // bind the input/visibility handlers + SSE bridge ONCE — init() re-runs on every NEW AGENT (same canvas
     // element), so without this guard each new agent stacked another full set of listeners and SSE streams.
@@ -707,9 +719,9 @@ const World = (() => {
       const c = toCanvas(ev), wx = (c.x - panX) / scale, wy = (c.y - panY) / scale;
       scale = clampz(scale * Math.exp(-ev.deltaY * 0.0015), MINZ, MAXZ);
       panX = c.x - wx * scale; panY = c.y - wy * scale;
-      camLerp = null;   // the user is driving the camera — stop any in-progress focus ease
+      camLerp = null; camLock = null; camUserAt = performance.now();   // the user is driving the camera — stop any focus ease, release any follow-lock, reset the cinecam idle clock
     }, { passive: false });
-    cv.addEventListener('mousedown', ev => { if (kindleArmed) { kindleHolding = true; return; } camLerp = null; const c = toCanvas(ev); drag = { sx: c.x, sy: c.y, moved: false }; });
+    cv.addEventListener('mousedown', ev => { if (kindleArmed) { kindleHolding = true; return; } camLerp = null; camLock = null; camUserAt = performance.now(); const c = toCanvas(ev); drag = { sx: c.x, sy: c.y, moved: false }; });
     cv.addEventListener('mousemove', ev => {
       if (drag) {
         const c = toCanvas(ev);
@@ -942,6 +954,57 @@ const World = (() => {
     const target = clampz(Math.max(scale, 3), MINZ, MAXZ);
     camLerp = { scale: target, panX: cv.width / 2 - bx * target, panY: cv.height * 0.56 - by * target };
   }
+  // FOLLOW-LOCK the camera on one agent's body — the SESSION-SELECT camera contract: picking a session with an
+  // agent locks the feed onto that agent immediately (no idle wait) and TRAILS it as it moves, until the
+  // Commander grabs the camera (wheel/drag/click → the input handlers release the lock). One-shot focusBody
+  // stays for programmatic reframes (boot restore, delete-fallback) — lockBody is only armed by a USER selection.
+  function lockBody(id) {
+    const b = bodyForAgent(id) || agent;
+    if (!b || b.unplaced || !cache || camAnim || awakeFrozen) return;   // nothing to frame yet / the scripted awakening camera owns the transform
+    camLerp = null;
+    camLock = { id: (b.agentId || b.id), sc: clampz(Math.max(scale, 3), MINZ, MAXZ), source: 'session' };
+  }
+  /* ---------- IDLE CINECAM — the security-feed auto-director ----------
+     After cineIdleMs of true hands-off the camera starts hunting the floor's own life: it follow-locks a
+     WALKING body and trails it; if its subject settles and someone ELSE is moving it cuts there; when nothing
+     moves it drifts between the crew in calmer, wider shots. Strictly subordinate: a 'session' lock owns the
+     camera outright, any user camera input kills the shot instantly (the input handlers null camLock and
+     re-stamp camUserAt), the scripted awakening camera always wins, and reduced-motion users never get a
+     self-panning camera. Runs once per frame from the camera block — every branch below is O(bodies). */
+  function cinecamTick(now) {
+    if (camLock && camLock.source !== 'cine') return;                             // an explicit session lock owns the camera
+    // NOTE: no document.hidden gate — the rAF loop already pauses in hidden tabs, and embedded webviews
+    // (the preview harness, some Tauri states) report hidden while still rendering, which would dead-gate this.
+    if (camAnim || awakeFrozen || !cache || reduceMotion() || now - camUserAt < cineIdleMs) {
+      if (camLock) camLock = null;                                                // conditions lapsed mid-shot → release; the manual camera resumes untouched
+      return;
+    }
+    const cands = [];
+    if (agent && !agent.unplaced) cands.push(agent);
+    for (const b of crew) if (b && !b.unplaced) cands.push(b);
+    if (!cands.length) { if (camLock) camLock = null; return; }
+    const walkers = cands.filter(b => b.state === 'walk');
+    const cur = camLock ? bodyForAgent(camLock.id) : null;
+    if (cur && cur.state === 'walk') cineWalkAt = now;
+    // hold the shot while it's alive: the subject exists, its hold window is open, and it hasn't gone still
+    // for >3s while someone ELSE moves (movement is the whole point — cut to it)
+    const recast = !cur || now >= cineHoldUntil || (cur.state !== 'walk' && now - cineWalkAt > 3000 && walkers.length > 0);
+    if (!recast) return;
+    // cast the next shot: movement first — prefer a DIFFERENT walker (variety), and the COMMS-focused agent's
+    // movement wins the tie. Nothing moving anywhere → a calmer, wider drift onto someone idle.
+    const others = walkers.filter(b => b !== cur);
+    const pool = others.length ? others : walkers;
+    let next = null, moving = false;
+    if (pool.length) { next = (chatFocusId && pool.find(b => (b.agentId || b.id) === chatFocusId)) || pool[U.irnd(0, pool.length - 1)]; moving = true; }
+    else { const rest = cands.filter(b => b !== cur); const p2 = rest.length ? rest : cands; next = p2[U.irnd(0, p2.length - 1)]; }
+    if (!next) return;
+    camLerp = null;
+    camLock = { id: (next.agentId || next.id), sc: clampz(moving ? U.irnd(26, 30) / 10 : U.irnd(20, 24) / 10, MINZ, MAXZ), source: 'cine' };
+    cineWalkAt = now;
+    cineHoldUntil = now + (moving ? U.irnd(9000, 16000) : U.irnd(6000, 11000));
+  }
+  const cameraMode = () => camLock ? (camLock.source === 'cine' ? 'auto' : 'lock') : 'manual';   // HUD/verify truth: what drives the camera RIGHT NOW
+  function setCinecamIdle(ms) { cineIdleMs = Math.max(1000, +ms || CINE_IDLE_MS); }               // DEV knob (console/verify only): shrink the hands-off threshold; floor 1s
   function fitCamera() {
     if (!cache) return;
     const W = cache.W, H = cache.H;
@@ -3159,7 +3222,17 @@ const World = (() => {
 
     if (!cache) return;   // wrapper frame() already scheduled the next rAF — never double-schedule here
     if (fitNeeded && !camAnim) { fitCamera(); fitNeeded = false; }   // the scripted awakening camera owns the transform while it runs
-    if (camLerp && !camAnim) {   // gently ease toward a conversation framing (set by focusAgent); the awakening camera wins
+    cinecamTick(now);   // the idle auto-director: may cast/re-cast a 'cine' follow-lock (never touches a 'session' lock; inert while the Commander is active)
+    if (camLock && !camAnim) {   // FOLLOW-LOCK: continuously trail the locked body (session select or the idle cinecam)
+      const lb = bodyForAgent(camLock.id);
+      if (!lb || lb.unplaced) camLock = null;   // subject despawned / off-floor → release (the director re-casts next frame if it owns the camera)
+      else {
+        const ts = camLock.sc, lx = cv.width / 2 - bodyPosX(lb) * ts, ly = cv.height * 0.56 - bodyPosY(lb) * ts;
+        const k = 0.08;   // softer than the one-shot focus ease (0.16): a trailing, cinematic follow of a moving body
+        scale += (ts - scale) * k; panX += (lx - panX) * k; panY += (ly - panY) * k;
+      }
+    }
+    if (camLerp && !camAnim && !camLock) {   // gently ease toward a conversation framing (set by focusAgent); the awakening camera + a follow-lock win
       const k = 0.16;
       scale += (camLerp.scale - scale) * k; panX += (camLerp.panX - panX) * k; panY += (camLerp.panY - panY) * k;
       if (Math.abs(camLerp.scale - scale) < 0.01 && Math.abs(camLerp.panX - panX) < 1 && Math.abs(camLerp.panY - panY) < 1) {
@@ -5694,7 +5767,7 @@ const World = (() => {
     pollFeed: () => pollFeedState(),
     pollShip: () => pollShipStats()
   });
-  return { init, rebake, crt: CRT, slagLog: () => (slaglog ? slaglog.recent() : []), loadStation, spawn, spawnAgent, despawnAgent, setSkin, relabel, setActivityFor, agentRunsLive, dropRun: noteRunEnd, focusBody, setChatFocus, chatFocusPing, start, stop, setActivity, wakeIn, beginAwakening, setWakeProgress, igniteSpark, armKindle, kindleHold, camPushIn, camCreep, camPunch, camPullBack, awakenTurn, truthPulse, beginFlood, collapseFlood, endAwakening, releaseAwakening, say, focusAgent, getActivity: () => activity, getUse: () => (agent ? agent.usingProp : null), setOnClick, setOnArcade, setOnOutbox, setOnMissionBoard, setOnTrophyCase, setOnBayAssign, setOnIntakeFeed, refit, pauseBridge, resumeBridge, linkState, _dbgSeedRun, _dbgAgeRun, _dbgReconcile, _dbgSweep, _dbgLinkState, _dbgDropBridge, _dbgBeltLegibility,
+  return { init, rebake, crt: CRT, slagLog: () => (slaglog ? slaglog.recent() : []), loadStation, spawn, spawnAgent, despawnAgent, setSkin, relabel, setActivityFor, agentRunsLive, dropRun: noteRunEnd, focusBody, lockBody, cameraMode, setCinecamIdle, setChatFocus, chatFocusPing, start, stop, setActivity, wakeIn, beginAwakening, setWakeProgress, igniteSpark, armKindle, kindleHold, camPushIn, camCreep, camPunch, camPullBack, awakenTurn, truthPulse, beginFlood, collapseFlood, endAwakening, releaseAwakening, say, focusAgent, getActivity: () => activity, getUse: () => (agent ? agent.usingProp : null), setOnClick, setOnArcade, setOnOutbox, setOnMissionBoard, setOnTrophyCase, setOnBayAssign, setOnIntakeFeed, refit, pauseBridge, resumeBridge, linkState, _dbgSeedRun, _dbgAgeRun, _dbgReconcile, _dbgSweep, _dbgLinkState, _dbgDropBridge, _dbgBeltLegibility,
     // AGENT GROWTH: XpStore pushes pre-computed Xp.compute() snapshots here; pulseLevelUp fires
     // the addressed body's gold ring. The colony headline is the top-bar STATION chip.
     setXp: (agentId, a) => {
@@ -5715,6 +5788,10 @@ const World = (() => {
     },
     // read-only introspection for live verification of idle behavior (no side effects)
     dbg: () => agent && { goal: agent.goal, quirkKind: agent.quirkKind, sitting: agent.sitting, state: agent.state, stilling: !!agent.stilling, firstWakeDone, wakePhase: agent.wakePhase, moving: !!agent.target, paused: fnow < (agent.pauseUntil || 0), pauseLook: agent.pauseLook, dir: agent.dir, tile: tileOf(agent.px, agent.py), idleUntil: Math.round((agent.idleUntil || 0) - fnow), quirkCd: Math.round(Math.max(0, (agent.quirkCd || 0) - fnow)), offbeatCd: Math.round(Math.max(0, (agent.offbeatCd || 0) - fnow)), fond: [...agent.fond.entries()], pendingMourn: pendingMourn && { tx: pendingMourn.tx, ty: pendingMourn.ty, fond: pendingMourn.fond }, decor: agentDecor.length, crew: crew.length, spendUsd: floor ? (floor.snapshot().spendUsd || 0) : 0, boxes: convey ? convey.boxCount() : 0, queueDepth: queueDepthNow(), bridge: { paused: bridgePaused, es: !!chanES, poll: !!connPollTimer, readyState: (chanES ? chanES.readyState : -1), lastEventMsAgo: (lastSseEventAt ? Math.round((typeof performance !== 'undefined' ? performance.now() : fnow) - lastSseEventAt) : null), linkDown: linkDown((typeof performance !== 'undefined') ? performance.now() : fnow) }, ttl: { runClocks: runStartByAgent.size, glyphs: glyphByAgent.size, serverLit: serverLit.size, runTtlMs: RUN_TTL_MS, awaitTtlMs: AWAIT_TTL_MS }, await: awaitPrompt ? { promptId: awaitPrompt.promptId, arrived: awaitArrived, source: awaitAnchor ? awaitAnchor.source : null, anchor: awaitAnchor ? { tx: awaitAnchor.tx, ty: awaitAnchor.ty } : null } : null, helpers: subLedger ? subLedger.count() : 0, proposalsPinned: pinnedCount, social: socialBeat && { kind: socialBeat.kind, aId: socialBeat.aId, bId: socialBeat.bId }, chase: chaseId != null && { id: chaseId, phase: (bodyForAgent(chaseId) && bodyForAgent(chaseId).chase && bodyForAgent(chaseId).chase.phase) || null }, chaseGateIn: Math.round(Math.max(0, chaseGateUntil - fnow)), cursorFresh: (fnow - lastCursor.t) < CURSOR_FRESH_MS, cursorMoving: (fnow - cursorMoveT) < CURSOR_MOVING_MS },
+    // read-only camera truth for the DEV verify harness (+ the war-room HUD chip): who drives the camera
+    // ('manual' | 'lock' = session follow | 'auto' = idle cinecam), which body is locked, and how long the
+    // Commander has been hands-off. Pure read, no side effects — the testapi idiom.
+    cameraDbg: () => ({ mode: cameraMode(), lockId: camLock ? camLock.id : null, source: camLock ? camLock.source : null, idleMs: Math.round(performance.now() - camUserAt), thresholdMs: cineIdleMs, scale: +scale.toFixed(3), panX: Math.round(panX), panY: Math.round(panY), gates: { anim: !!camAnim, frozen: awakeFrozen, cache: !!cache, reduceMotion: reduceMotion() } }),
     // TEST/DEBUG ONLY — the D3 border-meeting pure geometry (sharedEdge/borderTileFor), exposed read-only for the
     // DEV harness. No world state touched (both are pure; borderTileFor takes an injected walkable predicate).
     // The headless coverage lives in test/social-border.test.js (extracts the D3-PURE-GEOMETRY block from source).
