@@ -30,6 +30,8 @@ const WorkshopStore = (() => {
   let state = null;               // { v:1, later:{runId:true}, seen:[runId] } — session-scoped anti-nag
   let fired = false;              // one auto-poll per page session
   let deps = {};                  // { desktopDefault() } injected by app.js (a sensible Keep destination)
+  let enabled = true;             // false during the awakening (init enabled:false) — live pushes stay silent
+  let wired = false;              // the workshop.built live listener is installed once
 
   function load() { try { const raw = localStorage.getItem(KEY); return raw ? JSON.parse(raw) : null; } catch (_) { return null; } }
   function save() { try { if (state) localStorage.setItem(KEY, JSON.stringify(state)); } catch (_) {} }
@@ -228,18 +230,52 @@ const WorkshopStore = (() => {
     });
   }
 
+  /* LIVE PUSH — the attach-time poll above only covers session OPEN, so a deliverable that landed while the
+     app sat open (a night-shift act or an away-workshop shift) was invisible until the next restart
+     (2026-07-14: "it doesn't notify me anywhere"). The sidecar emits workshop.built the moment a manifest is
+     disk-validated; this presents the SAME return card immediately — Chat.workshopReturn already defers
+     behind live runs/interviews, so the one-beat-at-a-time law holds — plus a persistent StationUI toast
+     (category 'cronDigest', the Commander-mutable autonomous-run class). Anti-nag: the seen/later ledger
+     still guards, so a card already shown or deferred never re-fires here. */
+  function onBuilt(p) {
+    if (!enabled || !p || !p.runId || !p.manifest || typeof p.manifest !== 'object') return;
+    if (typeof Chat === 'undefined' || !Chat.workshopReturn) return;
+    if (!ready()) state = hydrate(load());
+    const runId = String(p.runId);
+    if (state.later[runId] || state.seen.indexOf(runId) !== -1) return;
+    state.seen.push(runId); if (state.seen.length > 200) state.seen = state.seen.slice(-200);
+    save();
+    const aid = String(p.agentId || 'agent');
+    const m = Object.assign({}, p.manifest, { agentId: aid, runId: runId });
+    try {
+      if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('✦ built while you were away: ' + String(m.title || 'a deliverable') + ' — the return card is in COMMS', 'gold', 'cronDigest');
+    } catch (_) {}
+    Chat.workshopReturn(m, {
+      readFile: readFile,
+      desktopDefault: desktopDefault(),
+      runUrl: (relPath) => runUrl(aid, runId, relPath),
+      openFile: (relPath) => openFile(aid, runId, relPath),
+      onDecide: (decision, destPath, extra) => decide(aid, runId, decision, destPath, extra)
+    });
+  }
+
   // init({ enabled, desktopDefault }) — called from enterGame. enabled:false (the awakening) skips the beat.
   function init(opts) {
     opts = opts || {};
     deps = { desktopDefault: opts.desktopDefault, agentIds: opts.agentIds };
     state = hydrate(load());
+    enabled = opts.enabled !== false;
+    if (!wired && typeof U !== 'undefined' && U.bus) {
+      wired = true;
+      U.bus.on('workshop.built', p => { try { onBuilt(p); } catch (_) {} });
+    }
     if (opts.enabled !== false) setTimeout(() => { maybePresent().catch(() => {}); }, ATTACH_DELAY_MS);
   }
 
   // S2/new-hero: a fresh Commander inherits no prior "later" list.
   function reset() { state = hydrate(null); fired = false; try { localStorage.removeItem(KEY); } catch (_) {} }
 
-  return { init, queue, decide, readFile, runUrl, openFile, desktopDefault, fetchPending, reset, queueConfirmLine, grantOf, openGrant, _hydrate: hydrate };
+  return { init, queue, decide, readFile, runUrl, openFile, desktopDefault, fetchPending, reset, queueConfirmLine, grantOf, openGrant, onBuilt, _hydrate: hydrate };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = { WorkshopStore };

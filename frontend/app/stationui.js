@@ -5803,6 +5803,16 @@ const StationUI = (() => {
     toggleTerm(key, def[0], def[1], def[2]);
   }
 
+  // the sidecar's bare-string 'notify' bus event (shared/events.js; rides the SSE bridge → U.bus) → one
+  // persistent HUD notification. Sole emitter today is the night shift's draft-delivery (immediate
+  // while-you-were-away visibility). Category 'cronDigest' so the autonomous-run mute toggle is honored.
+  let notifyLiveWired = false;
+  function wireNotifyLive() {
+    if (notifyLiveWired || typeof U === 'undefined' || !U.bus) return;
+    notifyLiveWired = true;
+    U.bus.on('notify', s => { if (typeof s === 'string' && s) notify(s, 'gold', 'cronDigest'); });
+  }
+
   // called when entering the game room with the live agent(s)
   // one-shot: fold any legacy starnet.station.v1 kanban cards into real workstreams, then retire tasks[].
   // Guarded by a persisted flag so a refresh never re-imports / duplicates the cards. Runs from enter(),
@@ -5826,6 +5836,7 @@ const StationUI = (() => {
     importLegacyTasks();
     crewRender();
     wireCompactBeat();
+    wireNotifyLive();
     tick();
     if (!started) { started = true; tickTimer = setInterval(tick, 1000); }
   }

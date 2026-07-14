@@ -3287,6 +3287,11 @@ async function runNightshiftBeat(opts) {
   //    is sent/published/spent; in THIS lane the deliverable is a desk draft (NS-3 upgrades acts to jailed writes).
   const entry = { title: deliverable.title, archetype: sel.selected.archetype, at: Date.now(), body: String(deliverable.body || '').slice(0, 4000), note: crit.note || '' };
   recordNightshiftDraft(entry);
+  // immediate visibility (2026-07-14): a draft landing while the app sits OPEN had no live surface — the
+  // morning report needs an app-closure absence and the drafts nudge waits for N unseen. 'notify' is a
+  // registered bare-string bus event with no other emitter; the station HUD toasts it on arrival. (The
+  // built-artifact path needs no twin: workshop.built already fires there and the HUD presents that card.)
+  try { chanEmit('notify', '✦ night shift — drafted “' + entry.title + '” while you were away · review it in the NIGHT SHIFT panel'); } catch (_) {}
   try { placeCronWorkitem(agentId, '✦ night-shift: ' + deliverable.title, crypto.randomUUID()); } catch (_) {}
   return { delivered: true, reason: 'delivered', title: deliverable.title, archetype: sel.selected.archetype, verdict: crit.verdict };
 }
@@ -3425,7 +3430,11 @@ const nightshiftDriver = makeNightshiftDriver({
   // activity) stands down here, BEFORE the leash is spent, because no model call could have salvaged it. Anything
   // that clears this still spends at accept-time (a beat that reached a model call and stood down cost the budget).
   precheck: () => nightshiftPrecheck(),
-  beat: (o) => runNightshiftBeat(o),
+  // broadcast: tee the beat's run lifecycle + name-only tool calls to the station floor over SSE (the
+  // unit-tested runTeeView policy — args never leave the sidecar), the same opt-in the force-fire route and
+  // manual cron use. Without it a scheduled beat ran with a no-op emit and the station sat visibly dead
+  // while the harness worked (2026-07-14: "it doesn't notify me anywhere").
+  beat: (o) => runNightshiftBeat(Object.assign({ broadcast: true }, o || {})),
   newAbort: () => new AbortController(),
   now: () => Date.now(),
   ledger: (entry) => autonomyLedgerAppend(entry),
