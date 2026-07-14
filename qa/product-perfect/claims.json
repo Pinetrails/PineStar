@@ -18,8 +18,8 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "66034ecf8af46c493bcb1d5cb3600581ebbd4060",
-    "pathSetSha256": "c6f58b9074e94223ecf3202f0604f0fbe0ce628978503a414e9dd2908481a049",
+    "sourceCommit": "8f8b21e6f74bb46cf84f8f47d7a2c65cf41d7788",
+    "pathSetSha256": "bbbd3e76e63e019b7f695880379bd596bb73bec8d072e6a38652cd79a90c5639",
     "files": [
       {
         "path": "INSTALL.md",
@@ -472,6 +472,11 @@
         "sha256": "3e488e80d11608f15e89111b16482f991695cb6758b512eb95ff3498635c4295"
       },
       {
+        "path": "frontend/app/quitguard.js",
+        "bytes": 5517,
+        "sha256": "16108fa65b401bb860247b4bb47c6d00cf0c69859c23aba311cc02d103249492"
+      },
+      {
         "path": "frontend/app/recipe-catalog/core.js",
         "bytes": 13783,
         "sha256": "1ec2b5766f9ee7c1e206bd90c010ad1306ddbaa6ad0e78a273c494175da2e65b"
@@ -803,8 +808,8 @@
       },
       {
         "path": "frontend/css/style.css",
-        "bytes": 78632,
-        "sha256": "ed4e86f5b2da0043e1230c3f11bbd1f6f2082356a560d1537c1ec41dfea4bdfb"
+        "bytes": 79101,
+        "sha256": "5fdd6f6ef2068add8549ddeea8145f77baba07009acebc49a1a653495de15ed4"
       },
       {
         "path": "frontend/css/titlebar.css",
@@ -833,8 +838,8 @@
       },
       {
         "path": "frontend/index.html",
-        "bytes": 57636,
-        "sha256": "3f3b20be403c41553c2209589e925db2fbd05abb9bede5135e9b38c3d51676a3"
+        "bytes": 57772,
+        "sha256": "1c4f9d1ca3444e1582061c557ce49b505f60089a98a9bdbc550560febea3e269"
       },
       {
         "path": "frontend/js/arcade.js",
