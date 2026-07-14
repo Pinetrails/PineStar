@@ -48,7 +48,6 @@ const Build = (() => {
   let tool = 'room', kind = 'hab', style = 'cobalt', hallWidth = 2, propType = 'desk', propCat = 'workstation', propTier = 'functional';
   let drag = null, hoverRoomId = null, hoverPropId = null, hoverTile = null, lastClient = { x: 0, y: 0 }, spaceHeld = false;
   let dupe = null;   // DUPE tool clipboard: {type:'prop'|'room', rects (rel to top-left), …} — armed = ghost follows cursor, click stamps
-  let stars = [];
   let convey = null, lastFrameTs = 0;   // editor conveyor sim (boxes flow live as you build)
   let propThumbs = [], lastThumbTs = 0; // visual prop palette: live animated preview tiles + redraw throttle
 
@@ -77,7 +76,6 @@ const Build = (() => {
     convey = (typeof Conveyor !== 'undefined') ? Conveyor.create({ onDeliver: onBuildDeliver, onAdvance: onBuildAdvance }) : null;
     testNotes.length = 0;   // never carry a prior session's ride captions into a fresh REFIT
     lastFrameTs = 0;
-    if (!stars.length) seedStars();
     resize();
     fitCamera();
     updateUndoRedo();
@@ -820,10 +818,6 @@ const Build = (() => {
     cv.height = Math.max(1, Math.round(cv.clientHeight * dpr));
     updateSafetyClearance();
   }
-  function seedStars() {
-    stars = [];
-    for (let i = 0; i < 110; i++) stars.push({ x: Math.random(), y: Math.random(), r: Math.random() < 0.85 ? 1 : 2, ph: Math.random() * 10 });
-  }
   // the chrome-occluded margins of the canvas (device px): the build panel (left sidebar on
   // desktop, bottom sheet on narrow screens) + the top bar — so FIT frames the station in the
   // VISIBLE viewport instead of centering half of it behind the panel.
@@ -1280,12 +1274,9 @@ const Build = (() => {
     const t = T();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.imageSmoothingEnabled = false;
-    ctx.fillStyle = '#040302'; ctx.fillRect(0, 0, cv.width, cv.height);
-    for (const s of stars) {   // starfield matched to the live world so entering/exiting REFIT doesn't jump
-      const tw = 0.35 + 0.65 * Math.abs(Math.sin(now / (900 + s.ph * 300) + s.ph));
-      ctx.fillStyle = 'rgba(180,200,230,' + tw + ')';
-      ctx.fillRect((s.x * cv.width + now / 1000 * 8) % cv.width, s.y * cv.height, s.r, s.r);
-    }
+    // THE VOID backdrop, shared with the live world (SpaceBG) so entering/exiting REFIT doesn't jump the sky
+    if (typeof SpaceBG !== 'undefined') SpaceBG.draw(ctx, cv.width, cv.height, now);
+    else { ctx.fillStyle = '#040302'; ctx.fillRect(0, 0, cv.width, cv.height); }
 
     ctx.setTransform(zoom, 0, 0, zoom, panX, panY);
     ctx.imageSmoothingEnabled = false;
