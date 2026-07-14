@@ -1656,10 +1656,19 @@ const Marketplace = (() => {
     const r = launchId && hasRecipes() ? Recipes.get(launchId) : null;
     if (!r) { view = 'grid'; return '<div class="mkt-roster">' + rosterHTML() + '</div>'; }
     const who = (ctx && ctx.agentName) || 'your agent';
-    const fields = (r.params || []).map(p =>
-      '<label class="mkt-lbl">' + esc(p.label) +
+    // lane C: prefill each field with the value this recipe launched with LAST time (LaunchMemory, own local key).
+    // Confirm-by-sight safety: the values sit visibly in the form and nothing runs until the button — plus the
+    // hint below names the mechanism. esc() covers the content (U.esc escapes & < > " ', so </textarea> can't break out).
+    const lastVals = (typeof LaunchMemory !== 'undefined' && LaunchMemory.get) ? (LaunchMemory.get(r.id) || {}) : {};
+    let prefilled = false;
+    const fields = (r.params || []).map(p => {
+      const val = (typeof lastVals[p.key] === 'string' && lastVals[p.key].trim()) ? lastVals[p.key] : '';
+      if (val) prefilled = true;
+      return '<label class="mkt-lbl">' + esc(p.label) +
         (p.required ? ' <span class="mkt-req" title="required">*</span>' : ' <span class="mkt-opt">(optional)</span>') +
-        '<textarea class="mkt-in mkt-p-in" data-key="' + esc(p.key) + '" rows="2" placeholder="' + esc(p.placeholder || '') + '"></textarea></label>').join('');
+        '<textarea class="mkt-in mkt-p-in" data-key="' + esc(p.key) + '" rows="2" placeholder="' + esc(p.placeholder || '') + '">' + esc(val) + '</textarea></label>';
+    }).join('');
+    const prefillHint = prefilled ? '<p class="mkt-hint mkt-prefill-hint">↺ using your last inputs — edit anything before you run</p>' : '';
     // MAKE ROUTINE panel — revealed when launchMode==='routine'. Cadence defaults to the recipe's suggested one.
     const outbound = hasRecipes() && Recipes.impliesOutbound(r);
     const warnLine = outbound
@@ -1691,6 +1700,7 @@ const Marketplace = (() => {
       '<div class="mkt-save-h">' + esc((launchMode === 'routine' ? '◷ MAKE ROUTINE — ' : '▸ LAUNCH — ') + r.name) + '</div>' +
       '<p class="mkt-hint">' + esc(r.blurb || r.tagline) + '</p>' +
       (fields || '<p class="mkt-hint">this recipe needs no setup — just launch it.</p>') +
+      prefillHint +
       routinePanel +
       '<p class="mkt-launch-note">' + modeNote + '</p>' +
       acts + '</div>';
@@ -1720,6 +1730,7 @@ const Marketplace = (() => {
       const r = launchId && hasRecipes() ? Recipes.get(launchId) : null;
       if (!r) { view = 'grid'; launchId = null; renderStage(); return; }
       const values = collectLaunchValues(stage, r); if (!values) return;
+      try { if (typeof LaunchMemory !== 'undefined' && LaunchMemory.save) LaunchMemory.save(r.id, values); } catch (_) {}   // lane C: remember what launched
       launchId = null; launchMode = 'run'; launchRecipeNow(r, values);
     });
     // MAKE ROUTINE — reveal the cadence panel (default to the recipe's suggested cadence, else morning).
@@ -1738,6 +1749,7 @@ const Marketplace = (() => {
     if (runAlt) runAlt.addEventListener('click', () => {
       const r = launchId && hasRecipes() ? Recipes.get(launchId) : null; if (!r) return;
       const values = collectLaunchValues(stage, r); if (!values) return;
+      try { if (typeof LaunchMemory !== 'undefined' && LaunchMemory.save) LaunchMemory.save(r.id, values); } catch (_) {}   // lane C: remember what launched
       launchId = null; launchMode = 'run'; launchRecipeNow(r, values);
     });
 
@@ -1772,6 +1784,7 @@ const Marketplace = (() => {
     if (doRoutine) doRoutine.addEventListener('click', () => {
       const r = launchId && hasRecipes() ? Recipes.get(launchId) : null; if (!r) return;
       const values = collectLaunchValues(stage, r); if (!values) return;
+      try { if (typeof LaunchMemory !== 'undefined' && LaunchMemory.save) LaunchMemory.save(r.id, values); } catch (_) {}   // lane C: remember what scheduled
       const schedule = scheduleForLaunchCadence(customIn && customIn.value);
       if (!schedule) { sfx('bad'); note('pick a cadence (or type a custom schedule)', 'bad'); if (customIn) customIn.focus(); return; }
       makeRoutine(r, values, schedule);
