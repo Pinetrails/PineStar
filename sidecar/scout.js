@@ -162,6 +162,9 @@
     lines.push('');
     lines.push('HARD CONSTRAINTS:');
     lines.push('- Propose EXACTLY ONE recipe, serving a SPECIFIC observed interest above — never a generic productivity template.');
+    lines.push('- The recipe must EARN ITS TAP: the TASK encodes method and judgment (steps, quality criteria, output shape) the Commander would never bother typing. A one-line paraphrase of the recipe\'s own name is worthless — do not propose it.');
+    lines.push('- Prefer a recipe that DRIVES THE STATION — reads the web or files, checks connected channels, or runs on a cadence — over one that asks the Commander to paste text in.');
+    lines.push('- The TASK must LAND somewhere: it ends in a deliverable or a decision (a draft, a ranked call, a delta report), and if the use case naturally recurs it should keep notes in memory and report what CHANGED since last run, not restate the world.');
     lines.push('- TASK is one imperative directive line the agent will execute, containing a {token} for every PARAM you declare.');
     lines.push('- 1-' + MAX_PARAMS + ' PARAM lines; each is: key | Label | placeholder example. Keys are short lowercase identifiers.');
     lines.push('- TAGS weights use only these lanes: ' + TAG_LANES.join(', ') + '. CATEGORY is one of: ' + CATEGORIES.join(', ') + '.');
