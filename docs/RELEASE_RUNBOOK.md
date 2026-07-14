@@ -384,10 +384,11 @@ right answer is: **don't lose the key** (4.1).
 3. **The robocopy in-place hot-patch is DEV-ONLY.** It's a developer convenience for patching a
    local install; it is **never** a user-facing update path. Users update only through the
    signed updater feed.
-4. **Verify green on all four platforms before you Publish.** The draft must have
-   windows-x86_64, darwin-aarch64, darwin-x86_64, and linux-x86_64 all present and signed, and
-   `verify-update-host` (run against the manifest) must pass for all of them. A missing platform
-   strands every user on that OS.
+4. **Verify green on all five platform keys before you Publish.** The draft must have
+   windows-x86_64, darwin-aarch64, darwin-x86_64, linux-x86_64, and linux-x86_64-deb (the key
+   .deb installs resolve — without it every .deb user downloads the AppImage and fails at
+   install) all present and signed, and `verify-update-host` (run against the manifest) must
+   pass for all of them. A missing platform strands every user on that OS.
 5. **`release.yml` is emergency-fallback only.** It's the old Windows-only, publish-immediately
    path (carries a deprecation header). Do **not** run it with `publish=true` unless the release
    train itself is broken and you must ship. The normal path is always the train.
@@ -417,3 +418,28 @@ being built by parallel lanes when the runbook was first written:
   the verified path *inside* Settings is `UPDATES` section → `UPDATE CENTER` button → then
   `CHECK NOW` / `INSTALL UPDATE` (`frontend/app/updates.js`). Confirm the Settings entry point
   on the live desktop build during the canary.
+
+## Local update canary — offline end-to-end proof (no public exposure)
+
+`npm run release:canary` (`scripts/update-canary.mjs`) proves the FULL update cycle on one
+Windows machine with nothing published anywhere: check loop → manifest fetch → version
+compare → download → minisign verification against the baked pubkey → NSIS passive install →
+restart as the new version. The manifest comes from the REAL `release-assemble-manifest.mjs`
+(crypto verification included) with only the asset base swapped to `127.0.0.1`.
+
+Canary builds are `StarNet Canary` / `ai.skynet.harness.canary` — side-by-side install,
+separate `%APPDATA%` workspace; your real StarNet install and data are untouched. Uninstall
+"StarNet Canary" from Windows afterwards.
+
+```powershell
+node scripts/update-canary.mjs build-old   # installer @ current version, endpoint = localhost
+node scripts/update-canary.mjs build-new   # installer @ patch+1 + signed feed (latest.json)
+node scripts/update-canary.mjs serve       # leave running; logs every request the app makes
+# install .canary\old\*.exe → open StarNet Canary → Settings → UPDATES → UPDATE CENTER →
+# CHECK NOW → INSTALL UPDATE → app restarts as the bumped version. The serve log is the receipt.
+```
+
+Each build is a full Rust release build (10–30 min; rustc ctor-race crash = re-run, the cache
+resumes). Requires `~/.tauri/starnet-updater.key` (same key as production — deliberately).
+This canary does NOT replace the public-path proof (older install → published release →
+restart); it de-risks everything except the literal production URL before anything goes public.

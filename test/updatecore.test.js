@@ -75,4 +75,14 @@ const now = 1_000_000;
   A.eq(U.progress(250, 200), 100, 'progress clamps at 100');
 }
 
+// ---- GB-4 install guard: never kill live runs as a click side effect ----
+{
+  A.eq(U.installBlockReason(0, false), null, 'no live runs installs freely');
+  A.ok(/1 agent is still working/.test(U.installBlockReason(1, false)), 'one live run blocks with the singular reason');
+  A.ok(/3 agents are still working/.test(U.installBlockReason(3, false)), 'many live runs block with the count');
+  A.eq(U.installBlockReason(3, true), null, 'force (the explicit INSTALL ANYWAY click) bypasses the guard');
+  A.eq(U.installBlockReason(-2, false), null, 'negative/garbage count never blocks');
+  A.ok(/2 agents/.test(U.installBlockReason('2', false) || ''), 'numeric-string count still guards');
+}
+
 A.report('updatecore');

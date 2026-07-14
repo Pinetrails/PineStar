@@ -1,14 +1,15 @@
-/* STARNET — recipe-catalog/research.js : RESEARCHER persona recipes (R4 catalog content).
+/* STARNET — recipe-catalog/research.js : RESEARCH persona recipes (R4 catalog content).
 
    Registered in index.js by the aggregator — this file only EXPORTS the array. Same UMD-light
    module pattern as recipes.js: a `RecipeCatalogResearch` global in the browser, module.exports
    under node. NO logic here — pure data.
 
-   Voice contract (match the 10 builtins in recipes.js exactly): imperative DIRECTIVE, answer-first,
-   {token} params (0–2 each). Gear is honest (dish=web/browser is the researcher's core tool;
-   cabinet=writing findings to files; workbench only when running/extracting locally). cadence on
-   the naturally-recurring watches/digests; else null. skills only where a bundled skill pairs.
-   Schema v2: { id, name, emoji, tagline, blurb, accent, tags, params, task, category, gear, skills, cadence, source, forkedFrom } */
+   Content contract: every record must clear THE RECIPE BAR documented in core.js (earns its tap /
+   drives the station / lands somewhere / compounds when recurring). The watch/monitor recipes in
+   this pack are the flagship COMPOUNDING recipes: each keeps notes in the agent's memory and
+   reports true deltas, so a standing routine gets sharper the longer it runs. Voice matches the
+   core builtins. Schema v2:
+   { id, name, emoji, tagline, blurb, accent, tags, params, task, category, gear, skills, cadence, source, forkedFrom } */
 'use strict';
 (function (root, factory) {
   const api = factory();
@@ -21,107 +22,107 @@
     {
       id: 'feed-watch', name: 'Feed Watch', emoji: '◉', tagline: 'Keep an eye on a source for me',
       accent: '#6fa8bf',
-      blurb: 'Watches a site, feed, or topic and pings you only when something genuinely new lands.',
+      blurb: 'Watches a source and remembers what it already told you — so it only ever pings on the genuinely new.',
       tags: { research: 1 },
       params: [
         { key: 'source', label: 'Source / topic', placeholder: 'e.g. a blog, subreddit, or "OpenAI releases"' },
         { key: 'lens', label: 'What matters', placeholder: 'anything material', required: false, default: 'anything materially new' }
       ],
-      task: 'Watch {source} and surface {lens}. Browse what changed since last time, and tell me ONLY what is genuinely new and worth knowing — lead with the single most important item, sourced. If nothing material happened, say so in one line rather than padding.',
-      category: 'research', gear: ['dish'], skills: ['feed-watch'], cadence: 'sixhourly',
+      task: 'Watch {source} and surface {lens}. Browse what changed since your last pass, and keep a note in your memory of what you have already reported so you NEVER repeat yourself. Report only what is genuinely new and worth my time — the single most important item first, with links. If nothing material landed, say exactly that in one line; a quiet day is a valid report and padding it is not.',
+      category: 'research', gear: ['dish', 'notebook'], skills: ['feed-watch'], cadence: 'sixhourly',
       source: 'builtin', forkedFrom: null
     },
     {
       id: 'literature-review', name: 'Literature Review', emoji: '◫', tagline: 'Map what is known on a question',
       accent: '#88b6c4',
-      blurb: 'Surveys the serious sources on a topic and synthesizes the state of the art — agreements and open gaps.',
+      blurb: 'Surveys the credible sources, weights by evidence quality — ten posts citing one study count once.',
       tags: { research: 1 },
       params: [{ key: 'topic', label: 'Question / field', placeholder: 'e.g. RAG vs long-context for retrieval' }],
-      task: 'Do a literature review on {topic}. Survey the credible sources, then synthesize: what is well-established, where sources disagree, and what is still open. Lead with the state-of-the-art in a paragraph, then the evidence with citations. Separate consensus from one loud paper.',
+      task: 'Do a literature review on {topic}. Survey the credible sources — papers, serious practitioners, primary data — and synthesize the actual state of knowledge: what is well-established, where credible sources genuinely disagree, and what nobody has answered yet. Weight by evidence quality, not volume: ten posts citing the same study are ONE source. Lead with the state of the art in a paragraph, then the evidence with citations, then the open questions. Offer to save the full review as a file I can keep.',
       category: 'research', gear: ['dish', 'cabinet'], skills: ['web-research', 'source-triangulation'], cadence: null,
       source: 'builtin', forkedFrom: null
     },
     {
       id: 'competitor-tracking', name: 'Competitor Tracking', emoji: '◎', tagline: 'What a rival shipped or announced',
       accent: '#6fa8bf',
-      blurb: 'Tracks a competitor and reports moves that matter — launches, pricing, positioning — not press-release fluff.',
+      blurb: 'Tracks a rival against its own history — pricing pages and job posts, not press-release adjectives.',
       tags: { research: 0.8, general: 0.2 },
       params: [{ key: 'competitor', label: 'Competitor', placeholder: 'e.g. a company or product name' }],
-      task: 'Track {competitor} and brief me on what actually changed: product launches, pricing moves, positioning shifts, notable hires or funding. Lead with the one move that matters most and why it matters to us. Cite sources; skip the press-release adjectives.',
-      category: 'research', gear: ['dish', 'cabinet'], skills: ['domain-intel', 'web-research'], cadence: 'weekly',
+      task: 'Track {competitor} and brief me on what actually CHANGED: launches, pricing moves, positioning shifts, key hires, funding. Compare against your notes from the last check so you report movement, not the standing state — a changed pricing page and three new job posts tell you more than any press release. Lead with the one move that matters most and what it implies for us. Cite sources; skip the announcement adjectives. Update your notes for next time.',
+      category: 'research', gear: ['dish', 'notebook'], skills: ['domain-intel', 'web-research'], cadence: 'weekly',
       source: 'builtin', forkedFrom: null
     },
     {
       id: 'claim-fact-check', name: 'Deep Fact-Check', emoji: '⊜', tagline: 'Verify a claim across the record',
       accent: '#88b6c4',
-      blurb: 'Takes a contested claim and triangulates it across independent sources before ruling.',
+      blurb: 'Maps who is saying it and traces every version to its origin — repetition never launders into confirmation.',
       tags: { research: 0.9, general: 0.1 },
       params: [{ key: 'claim', label: 'The claim', placeholder: 'paste the statement to verify' }],
-      task: 'Fact-check this claim by triangulating independent sources: "{claim}". Verdict first (true / false / misleading / unverifiable), then the evidence trail — who says what, and which sources actually corroborate versus just repeat each other. Never launder a single source into fact.',
+      task: 'Fact-check this claim by triangulating truly independent sources: "{claim}". First map who is saying it and trace every version back to its origin — most "many sources" collapse into one origin, repeated. Verdict first (true / false / misleading / unverifiable), then the evidence trail showing which sources independently corroborate versus merely echo. If the honest answer is "it depends", say exactly what it depends on. Never launder repetition into confirmation.',
       category: 'research', gear: ['dish', 'cabinet'], skills: ['source-triangulation'], cadence: null,
       source: 'builtin', forkedFrom: null
     },
     {
       id: 'topic-monitor', name: 'Topic Monitor', emoji: '◐', tagline: 'Standing watch on a subject',
       accent: '#6fa8bf',
-      blurb: 'Keeps a running pulse on a subject and reports the shifts — new developments, shifting sentiment.',
+      blurb: 'Keeps a running memory of where a subject stands, so every report is a true delta — never a rerun.',
       tags: { research: 1 },
       params: [{ key: 'topic', label: 'Topic', placeholder: 'e.g. EU AI regulation' }],
-      task: 'Monitor {topic} and report the shifts since last check: new developments, changing sentiment, notable new sources. Lead with the single most consequential change, sourced. If the picture is unchanged, say so plainly — do not manufacture movement.',
-      category: 'research', gear: ['dish'], skills: ['feed-watch', 'web-research'], cadence: 'morning',
+      task: 'Monitor {topic} and report what shifted since your last check. Keep a running note in your memory of where things stood, so every report is a true delta: new developments, changed sentiment, notable new sources entering the conversation. Lead with the single most consequential change, sourced. Distinguish signal from churn — three outlets recycling one press release is ONE event. If the picture is unchanged, say so plainly in two lines; never manufacture movement.',
+      category: 'research', gear: ['dish', 'notebook'], skills: ['feed-watch', 'web-research'], cadence: 'morning',
       source: 'builtin', forkedFrom: null
     },
     {
       id: 'paper-summarize', name: 'Summarize a Paper', emoji: '◫', tagline: 'The paper, minus the jargon',
       accent: '#9fc0c4',
-      blurb: 'Reads a paper or long document and gives you the claim, the method, and whether it holds up.',
+      blurb: 'Reads the results, not just the abstract — the gap between them is usually the story.',
       tags: { research: 0.7, general: 0.3 },
       params: [{ key: 'paper', label: 'Paper / link / text', placeholder: 'paste a link, DOI, or the text' }],
-      task: 'Summarize {paper} for a smart non-specialist. Lead with the one-sentence claim, then: what they actually did, what they found, and how much I should trust it — sample size, caveats, conflicts. Flag any gap between what the abstract claims and what the results show.',
+      task: 'Summarize {paper} for a smart non-specialist. Go read the real thing, not a thread about it. Lead with the claim in one sentence, then what they actually did, what they found, and — the part abstracts hide — how much to trust it: sample size, effect size, who funded the study, what the limitations section quietly admits. Flag any gap between what the abstract claims and what the results show; that gap is usually the story. End with whether this changes anything I should do or believe.',
       category: 'research', gear: ['dish'], skills: ['arxiv-research', 'pdf-document-extraction'], cadence: null,
       source: 'builtin', forkedFrom: null
     },
     {
       id: 'source-compare', name: 'Source Compare', emoji: '⊞', tagline: 'Where the sources actually disagree',
       accent: '#88b6c4',
-      blurb: 'Puts several sources side by side on one question and isolates exactly where they diverge and why.',
+      blurb: 'Diagnoses WHY sources diverge — different data, definitions, or incentives — and what would settle it.',
       tags: { research: 1 },
       params: [{ key: 'question', label: 'The question', placeholder: 'e.g. did X cause Y?' }],
-      task: 'Compare how the main sources answer: {question}. Lay them side by side, then isolate exactly where they agree, where they diverge, and the likeliest reason for the divergence — different data, framing, or bias. Give me your best synthesis at the end, clearly marked as your read.',
+      task: 'Compare how the main sources answer: {question}. Lay them side by side and isolate exactly where they diverge — then diagnose WHY: different data, different definitions, different incentives, or someone simply being wrong. The divergence diagnosis is the deliverable; agreement is background. End with your best synthesis, clearly marked as your read with a confidence level, and name the single piece of evidence that would settle the question.',
       category: 'research', gear: ['dish', 'cabinet'], skills: ['source-triangulation', 'web-research'], cadence: null,
       source: 'builtin', forkedFrom: null
     },
     {
       id: 'trend-scan', name: 'Trend Scan', emoji: '◇', tagline: 'What is rising in a space',
       accent: '#d9a85a',
-      blurb: 'Scans a field for what is genuinely gaining momentum versus what is just loud this week.',
+      blurb: 'Applies the three-signal rule — money, adoption, organic demand — to split real trends from loud weeks.',
       tags: { research: 0.9, general: 0.1 },
       params: [{ key: 'space', label: 'Space / field', placeholder: 'e.g. developer tooling' }],
-      task: 'Scan {space} for real trends. Distinguish what is genuinely gaining traction — funding, adoption, repeated independent signals — from what is just this week\'s noise. Lead with the two or three that matter, each with the evidence for why it is real, not hype.',
+      task: 'Scan {space} for what is genuinely rising. Apply the three-signal rule — a real trend shows up in independent places: money moving (funding, hiring, pricing), practitioners adopting (not just discussing), and repeated organic demand. One loud week on social media is zero of those three. Report the two or three real trends with the evidence for each, the one overhyped thing to ignore, and — if you spot it — the trend still early enough to act on.',
       category: 'research', gear: ['dish'], skills: ['web-research', 'domain-intel'], cadence: 'weekly',
       source: 'builtin', forkedFrom: null
     },
     {
       id: 'background-check', name: 'Background Brief', emoji: '◈', tagline: 'What is on the public record',
       accent: '#9fc0c4',
-      blurb: 'Pulls together the public record on a person, company, or product from open sources only.',
+      blurb: 'Builds the verified spine first, then the texture — shipped-versus-claimed, patterns, independent coverage.',
       tags: { research: 0.8, general: 0.2 },
       params: [{ key: 'subject', label: 'Subject', placeholder: 'a person, company, or product' }],
-      task: 'Build a background brief on {subject} from public sources only. Lead with a two-sentence "who/what this is", then the verified facts — history, track record, notable events — each sourced. Clearly separate confirmed from rumored, and note anything you could not verify.',
+      task: 'Build a background brief on {subject} from public sources only. Establish the verified spine first — roles, dates, track record — then the texture: what they have actually shipped or done versus merely claimed, patterns across their history, and how independent coverage differs from their own telling. Separate confirmed / reported-but-single-source / rumor explicitly, and note what you could not verify. End with the two or three things most worth knowing before dealing with them.',
       category: 'research', gear: ['dish', 'cabinet'], skills: ['osint-public-records', 'source-triangulation'], cadence: null,
       source: 'builtin', forkedFrom: null
     },
     {
       id: 'research-digest', name: 'Research Digest', emoji: '▤', tagline: 'A themed roundup on your topics',
       accent: '#6fa8bf',
-      blurb: 'Gathers the week on your chosen topics into one tight digest — themed, sourced, skimmable.',
+      blurb: 'A weekly roundup that checks what past digests covered — all fresh, themed, with a what-it-means read.',
       tags: { research: 1 },
       params: [
         { key: 'topics', label: 'Topics', placeholder: 'e.g. AI agents, robotics, chip supply' },
         { key: 'window', label: 'Window', placeholder: 'the past week', required: false, default: 'the past week' }
       ],
-      task: 'Put together a research digest on {topics} covering {window}. Group findings by theme, lead each theme with its single most important item, and keep it skimmable — sourced bullets, no filler. End with a two-line "what this means" read. Skip anything stale or trivial.',
-      category: 'research', gear: ['dish', 'cabinet'], skills: ['digest-composer', 'web-research'], cadence: 'weekly',
+      task: 'Put together a research digest on {topics} covering {window}. Check your memory for what previous digests already covered, so this one is all fresh. Group findings by theme; lead each theme with its most consequential item, sourced, plus one line on why it matters — not just what happened. End with a two-line "what this means" synthesis. If a theme has gone quiet, say so — a dying thread is information too. Keep it skimmable, and log what you covered for next time.',
+      category: 'research', gear: ['dish', 'notebook'], skills: ['digest-composer', 'web-research'], cadence: 'weekly',
       source: 'builtin', forkedFrom: null
     }
   ];
