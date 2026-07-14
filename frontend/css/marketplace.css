@@ -289,6 +289,10 @@ body.no-scan .mkt-scrim::after { display: none; }
     linear-gradient(90deg, var(--ph-dim), transparent 92%) top / 100% 1px no-repeat,
     linear-gradient(90deg, var(--ph-faint), transparent 70%) bottom / 100% 1px no-repeat; }
 .mkt-sect-h:first-child { margin-top: 2px; }
+/* the SPECIALIST ARCHIVE header doubles as its expand/collapse toggle — same inverted plate, button reset */
+button.mkt-archive-head { font-family: inherit; font-size: 11px; letter-spacing: 3px; border: 0; cursor: pointer; text-align: left; }
+button.mkt-archive-head:hover { filter: brightness(1.12); }
+button.mkt-archive-head:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
 .mkt-empty { color: var(--text, var(--ph)); opacity: .7; font-size: 12.5px; line-height: 1.5; font-style: italic;
   padding: 14px; border: 1px dashed var(--ph-dim); border-radius: 7px; text-align: center; }
 

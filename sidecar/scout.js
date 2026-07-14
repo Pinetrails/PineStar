@@ -271,6 +271,81 @@
     };
   }
 
+  /* ---- ARCHETYPE MATCHING (recuration 2026-07-14): the curated deep-cut pool seeds prospects ----
+     The bay's default roster was trimmed to 12 majority-use classes; the demoted deep cuts live on as
+     fully-specified ARCHETYPES (shared/specialties.js). On a prospect turn the cycle checks — BEFORE
+     paying for an LLM authorship pass — whether a dormant archetype already covers what the station has
+     LEARNED the Commander keeps doing. Deterministic + truthful telemetry: an archetype only matches on
+     the real persisted interest-topic counters, and the WHY names the actual topic + its observed count.
+     A match stages the archetype's FULL spec as a normal prospect (propose-and-confirm, same shelf, same
+     accept/dismiss); no match falls through to the LLM path unchanged. */
+  const ARCH_MIN_TOPIC_WEIGHT = 0.8;   // ≈ interests WARM_WEIGHT — the anchoring topic must be a real habit, not a one-off
+  // generic words that would match every archetype (or nothing about the JOB) — never count as a topic hit.
+  const ARCH_STOP = new Set(['the', 'and', 'for', 'with', 'that', 'this', 'from', 'your', 'their', 'about', 'into',
+    'over', 'what', 'when', 'work', 'working', 'works', 'task', 'tasks', 'project', 'projects', 'daily', 'weekly',
+    'general', 'station', 'commander', 'agent', 'agents', 'using', 'help', 'helping', 'stuff', 'things', 'keep',
+    'keeps', 'other', 'some', 'more', 'most', 'like', 'time', 'times', 'every', 'each', 'never', 'always']);
+  // crude stem so "translation" hits "translates", "pricing" hits "prices" (substring match on the corpus).
+  function archStem(tok) { return str(tok).replace(/(ings?|ions?|ed|es|s)$/, ''); }
+  function archTokens(text) {
+    return str(text).toLowerCase().split(/[^a-z0-9]+/)
+      .filter(t => t.length >= 4 && !ARCH_STOP.has(t))
+      .map(archStem)
+      .filter(t => t.length >= 4);
+  }
+  function archCorpus(a) {
+    return (str(a.name) + ' ' + str(a.tagline) + ' ' + str(a.blurb) + ' ' + str(a.purpose)).toLowerCase();
+  }
+
+  /* matchArchetype — pick the dormant archetype the learned interests point at, or null.
+     inp = { topics: interests.summary() rows [{label, weight, count, ...}], existingNames: [name..]
+     (roster agents + custom classes + staged prospect drafts — an archetype the Commander already has is
+     never re-pitched), denylist: [fp] (dismissed shapes never re-mint) }.
+     Returns { archetype, why, fingerprint, topic } — why is derived ONLY from the real topic counters. */
+  function matchArchetype(archetypes, inp) {
+    inp = inp || {};
+    const topics = (Array.isArray(inp.topics) ? inp.topics : []).filter(t => t && str(t.label) && (Number(t.weight) || 0) > 0);
+    if (!topics.length) return null;
+    const taken = new Set((Array.isArray(inp.existingNames) ? inp.existingNames : []).map(n => str(n).toLowerCase().trim()).filter(Boolean));
+    const denylist = Array.isArray(inp.denylist) ? inp.denylist : [];
+    let best = null;
+    for (const a of (Array.isArray(archetypes) ? archetypes : [])) {
+      if (!a || !str(a.name)) continue;
+      if (taken.has(str(a.name).toLowerCase().trim())) continue;                       // already on the crew / already saved
+      const fp = fingerprint(str(a.name) + ' ' + str(a.tagline));
+      if (denylist.some(d => d && overlap(fp, d) >= 0.6)) continue;                    // dismissed-shape memory holds
+      const corpus = archCorpus(a);
+      let score = 0; const hits = [];
+      for (const t of topics) {
+        const toks = archTokens(t.label);
+        if (toks.length && toks.some(tok => corpus.indexOf(tok) !== -1)) { score += Number(t.weight) || 0; hits.push(t); }
+      }
+      // the anchoring hit must be a WARM habit — one stray mention never summons the long tail.
+      if (!hits.length || !hits.some(h => (Number(h.weight) || 0) >= ARCH_MIN_TOPIC_WEIGHT)) continue;
+      if (!best || score > best.score) best = { archetype: a, score: score, hits: hits, fp: fp };
+    }
+    if (!best) return null;
+    const top = best.hits.slice().sort((x, y) => ((Number(y.weight) || 0) - (Number(x.weight) || 0)))[0];
+    const why = ('your station keeps working on ' + str(top.label) + ' (seen ' + (Number(top.count) || 0) + '×) — the ' +
+      str(best.archetype.name) + ' archetype covers exactly that').slice(0, WHY_MAX);
+    return { archetype: best.archetype, why: why, fingerprint: best.fp, topic: top };
+  }
+
+  // the staged-prospect draft for a matched archetype: the FULL spec (loadout + presentation), so accepting
+  // it mints a complete custom class with nothing half-authored. Marked with its provenance.
+  function archetypeDraft(a) {
+    return {
+      name: str(a.name).slice(0, 28), emoji: str(a.emoji) || '✦', tagline: str(a.tagline).slice(0, 60),
+      blurb: str(a.blurb), purpose: str(a.purpose), manual: str(a.manual),
+      kit: Array.isArray(a.kit) ? a.kit.slice() : [], skills: Array.isArray(a.skills) ? a.skills.slice() : [],
+      reasoningEffort: a.reasoningEffort || null, persona: str(a.persona) || 'friendly',
+      model: str(a.model) || 'balanced', accent: str(a.accent) || '#ffaa33',
+      tags: (a.tags && typeof a.tags === 'object') ? Object.assign({}, a.tags) : { general: 1 },
+      starters: Array.isArray(a.starters) ? a.starters.slice() : [],
+      custom: true, archetypeId: str(a.id), source: 'archetype'
+    };
+  }
+
   /* ---- reducers (pure: input never mutated; each returns a NEW state) ---- */
 
   // ledger append, capped. Every outcome — staged, rejected, none, error, skipped — is recorded, so the
@@ -385,8 +460,10 @@
 
   return {
     fresh, normalize, noteRun, decide, buildRecipeDirective, parseRecipe,
+    matchArchetype, archetypeDraft,
     note, sweep, stage, stampAttempt, dismiss, accept, setContext, noteLaunch, topLaunched,
     fingerprint, overlap,
-    KINDS, MINT_EVERY_RUNS, MINT_MIN_GAP_MS, MAX_LIVE, DRAFT_TTL_MS, LEDGER_CAP, TAG_LANES, CATEGORIES, USAGE_CAP
+    KINDS, MINT_EVERY_RUNS, MINT_MIN_GAP_MS, MAX_LIVE, DRAFT_TTL_MS, LEDGER_CAP, TAG_LANES, CATEGORIES, USAGE_CAP,
+    ARCH_MIN_TOPIC_WEIGHT
   };
 });
