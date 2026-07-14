@@ -192,10 +192,13 @@ const Voice = (() => {
     if (/\b402\b|insufficient credit|payment|billing|quota/i.test(reason)) return 'credits';
     return 'error';
   }
-  // TRUTHFUL TELEMETRY: the voice swap must never be silent. Surface the honest reason in the status
-  // line once per outage (transient blips only after they prove persistent, so a one-off hiccup doesn't
-  // nag), and pin it on the speaker toggle's tooltip so it stays inspectable after the status churns.
-  let fbMsg = '';          // the surfaced message — re-asserted when the reply ends ('speaking…' overwrites it mid-reply)
+  // TRUTHFUL TELEMETRY, off the header. The voice swap must never be silent, but the COMMS status bar
+  // (#chat-status) is for RUN-STATE only — never voice-outage banners (Andrew 2026-07-13: "there should
+  // never be text on the comms panel on that bar"). So pin the honest reason on the speaker toggle's
+  // TOOLTIP once per outage (transient blips only after they prove persistent, so a one-off hiccup doesn't
+  // nag); it stays inspectable on hover and the recovery path (noteNeuralOk→reflectToggle) clears it once
+  // the neural voice is back. We never call setStatus() with it.
+  let fbMsg = '';          // the honest degrade reason — shown ONLY on the toggle tooltip, cleared on neural recovery
   function noteFallback(reason) {
     fbStreak++;
     const cls = classifyFallback(reason);
@@ -205,7 +208,6 @@ const Voice = (() => {
     fbMsg = cls === 'credits' ? '🔇 real voice offline — voice provider out of credits · backup voice active'
       : cls === 'nokey' ? '🔇 real voice needs an OpenRouter, Gemini, or OpenAI credential · backup voice active'
       : '🔇 real voice unreachable · backup voice active';
-    setStatus(fbMsg);
     if (toggleBtn) toggleBtn.title = fbMsg;
   }
   function noteNeuralOk() { fbStreak = 0; if (fbNotified) { fbNotified = ''; fbMsg = ''; reflectToggle(); } }
@@ -624,9 +626,6 @@ const Voice = (() => {
     resetQueue();
     duckSfx(false);
     if (wasDraining) { const cb = onReplyDone; onReplyDone = null; if (cb) cb(); }
-    // the degrade notice set mid-reply is clobbered by 'speaking…' — re-assert it once the reply is over
-    // so the user actually SEES why the agent just spoke in the backup voice.
-    if (fbMsg) setStatus(fbMsg);
   }
 
   // FIRST-WORD fast path: the time-to-first-audio is dominated by how long the FIRST TTS call takes, which
