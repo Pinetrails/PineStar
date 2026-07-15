@@ -86,6 +86,39 @@ class FakeWS {
     A.eq(rn.retryable, true, 'network send failure is retryable');
   }
 
+  // ---- C2. reconnect truth: a DROPPED socket whose reopen fails must NOT poll as "up" ----
+  {
+    let openOk = true;   // flip to simulate apps.connections.open failing transiently after the drop
+    const fakeFetch = async (url) => {
+      if (/connections\.open/.test(url)) return openOk ? jres(200, { ok: true, url: 'wss://slack.test/socket' }) : jres(500, { ok: false });
+      return jres(200, { ok: true });
+    };
+    const t = makeSlackTransport({ fetch: fakeFetch, botToken: 'xoxb-1', appToken: 'xapp-2', WebSocketImpl: FakeWS, parkMs: 1 });
+    A.eq(await t.getUpdates({}), [], 'first poll opens the socket');
+    const sock = FakeWS.last;
+
+    // buffer an event, then kill the socket AND make reopen fail — the buffered event must still drain…
+    sock.emit({ envelope_id: 'e1', type: 'events_api', payload: { event: { type: 'message', channel: 'D1', channel_type: 'im', user: 'U1', text: 'buffered', ts: '1.1' } } });
+    sock.close();
+    openOk = false;
+    const drained = await t.getUpdates({});
+    A.eq(drained.length, 1, 'events buffered before the drop still drain (never stranded)');
+    A.eq(drained[0].text, 'buffered', 'the buffered event passes through');
+
+    // …but the NEXT empty poll with no live socket must throw a TRANSIENT error, not "succeed" as [].
+    let err = null; try { await t.getUpdates({}); } catch (e) { err = e; }
+    A.ok(err, 'a dead socket + failed reopen surfaces an error (adapter reports down, not CONNECTED)');
+    A.ok(err && !err.fatal, 'the lost-socket error is transient (backoff + retry, never kill the channel)');
+
+    // reopen recovers: once connections.open works again, the poll succeeds and events flow.
+    openOk = true;
+    A.eq(await t.getUpdates({}), [], 'a later poll reopens the socket and succeeds again');
+    A.ok(FakeWS.last !== sock, 'a fresh socket was opened');
+    FakeWS.last.emit({ envelope_id: 'e2', type: 'events_api', payload: { event: { type: 'message', channel: 'D1', channel_type: 'im', user: 'U1', text: 'after', ts: '2.2' } } });
+    A.eq((await t.getUpdates({}))[0].text, 'after', 'events flow again after the reconnect');
+    t.disconnect();
+  }
+
   // ---- D. binding end-to-end: adapter + fake transport honors normalize + owner trust-on-first-use ----
   {
     const seq = [[

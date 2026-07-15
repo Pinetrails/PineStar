@@ -102,11 +102,15 @@
         if (fatalError) throw fatalError;
         await openGateway();
         if (fatalError) throw fatalError;
-        // HONEST CONNECT: a poll that returns [] does NOT prove the channel is up — the socket may simply have
-        // failed to open (a transient blip on apps.connections.open leaves it null without a fatal error). Until the
-        // gateway has actually opened once, surface a transient (non-fatal) error so the adapter reports 'connecting'
-        // and retries, instead of the poll silently "succeeding" and the panel claiming CONNECTED before any proof.
-        if (!everOpened) throw new Error('slack socket not open yet — retrying');
+        // Events the socket buffered before dropping still get delivered — never stranded behind a reconnect.
+        if (buffer.length) return buffer.splice(0, buffer.length);
+        // HONEST CONNECT + HONEST RECONNECT: an empty poll does NOT prove the channel is up — there may simply be
+        // no live socket right now, either because apps.connections.open has never succeeded (bad first open) or
+        // because the socket DROPPED and the reopen above failed transiently. Both used to fall through to a
+        // "successful" [] return, so the adapter kept the panel CONNECTED on a dead socket forever. Surface a
+        // transient (non-fatal) error instead: the adapter reports down/connecting and backs off, and the next
+        // poll's openGateway() keeps retrying until the socket is genuinely back.
+        if (!ws) throw new Error(everOpened ? 'slack socket lost — reconnecting' : 'slack socket not open yet — retrying');
         if (!buffer.length) { await sleep(parkMs); }
         if (signal && signal.aborted) { stopped = true; closeSocket(); return []; }
         return buffer.splice(0, buffer.length);
