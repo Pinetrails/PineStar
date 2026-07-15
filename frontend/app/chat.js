@@ -3991,7 +3991,10 @@ const Chat = (() => {
       }
       return steerQueueFallback(note);
     }
-    send(note);
+    // F3 (2026-07-14 adversarial sweep): with NOTHING running there is nothing to steer — refuse honestly.
+    // The old fallthrough send(note) silently minted a FULL model run out of a steering note (real-provider
+    // spend for a no-op; the sidecar's own /api/run/steer honestly 404s in this state and was never asked).
+    localLine('Nothing is running to steer. Start a task first, or /queue <text> to stage it for the next run.');
   }
   function steerQueueFallback(note) {
     if (!activeWs) return;
