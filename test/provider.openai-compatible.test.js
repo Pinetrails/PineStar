@@ -99,5 +99,119 @@ module.exports = (async () => {
     A.eq(JSON.parse(offCalls[0].init.body).stream_options, undefined, 'usage include opts out with explicit false');
   }
 
+  // reasoning_effort wiring: profile hint sends it (clamped to the wire scale), no hint omits it,
+  // and effort 'none' always omits it
+  {
+    const mkFetch = (calls) => async (url, init) => {
+      calls.push({ url, init });
+      return new Response('data: [DONE]\n\n', { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
+    };
+    const hinted = [];
+    const pHint = makeOpenAICompatibleProvider({ fetch: mkFetch(hinted), baseUrl: 'http://local/v1', reasoningEffort: 'max', sendReasoningEffort: true });
+    await collect(pHint, { model: 'm', messages: [] });
+    A.eq(JSON.parse(hinted[0].init.body).reasoning_effort, 'high', 'profile-hinted reasoning effort is sent, clamped to the wire scale');
+
+    const perReq = [];
+    const pReq = makeOpenAICompatibleProvider({ fetch: mkFetch(perReq), baseUrl: 'http://local/v1', reasoningEffort: 'medium', sendReasoningEffort: true });
+    await collect(pReq, { model: 'm', messages: [], reasoningEffort: 'low' });
+    A.eq(JSON.parse(perReq[0].init.body).reasoning_effort, 'low', 'per-request effort overrides the instance default');
+
+    const unhinted = [];
+    const pNo = makeOpenAICompatibleProvider({ fetch: mkFetch(unhinted), baseUrl: 'http://local/v1', reasoningEffort: 'medium' });
+    await collect(pNo, { model: 'm', messages: [] });
+    A.eq(JSON.parse(unhinted[0].init.body).reasoning_effort, undefined, 'no hint and no catalog proof -> reasoning_effort stays off the wire');
+
+    const offCalls = [];
+    const pOff = makeOpenAICompatibleProvider({ fetch: mkFetch(offCalls), baseUrl: 'http://local/v1', reasoningEffort: 'none', sendReasoningEffort: true });
+    await collect(pOff, { model: 'm', messages: [] });
+    A.eq(JSON.parse(offCalls[0].init.body).reasoning_effort, undefined, 'effort none omits the param entirely');
+  }
+
+  // catalog-proven reasoning model sends the effort even without a profile hint
+  {
+    const calls = [];
+    const fetchImpl = async (url, init) => {
+      calls.push({ url, init });
+      if (init && init.method === 'POST') return new Response('data: [DONE]\n\n', { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
+      return new Response(JSON.stringify({ data: [{ id: 'thinky', supportsReasoning: true }] }), { status: 200 });
+    };
+    const p = makeOpenAICompatibleProvider({ fetch: fetchImpl, baseUrl: 'http://local/v1', reasoningEffort: 'medium' });
+    await p.listModels();
+    await collect(p, { model: 'thinky', messages: [] });
+    const post = calls.find(c => c.init && c.init.method === 'POST');
+    A.eq(JSON.parse(post.init.body).reasoning_effort, 'medium', 'catalog-declared reasoning model gets the effort param');
+    A.eq(p.reasoningEfforts('thinky').indexOf('high') >= 0, true, 'reasoningEfforts(id) exposes the wire scale for a reasoning model');
+    A.eq(p.reasoningEfforts('unknown'), ['none'], 'unknown model exposes only reasoning off');
+  }
+
+  // unsupported-param self-heal: a 400 naming an optional param retries without it and is remembered per model
+  {
+    const calls = [];
+    const fetchImpl = async (url, init) => {
+      calls.push({ url, init });
+      const body = JSON.parse(init.body);
+      if (body.stream_options !== undefined) {
+        return new Response(JSON.stringify({ error: { message: 'Unknown parameter: stream_options' } }), { status: 400 });
+      }
+      return new Response('data: [DONE]\n\n', { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
+    };
+    const p = makeOpenAICompatibleProvider({ fetch: fetchImpl, baseUrl: 'http://local/v1' });
+    await collect(p, { model: 'm', messages: [] });
+    const posts = () => calls.filter(c => c.init && c.init.method === 'POST');   // catalog re-warm GETs interleave
+    A.eq(posts().length, 2, 'rejected optional param retries once without it');
+    A.eq(JSON.parse(posts()[1].init.body).stream_options, undefined, 'retry body dropped the rejected param');
+    await collect(p, { model: 'm', messages: [] });
+    A.eq(posts().length, 3, 'drop is remembered per model - later calls skip the param up front');
+    A.eq(JSON.parse(posts()[2].init.body).stream_options, undefined, 'remembered drop keeps the param off the wire');
+  }
+
+  // tools are NEVER silently dropped - a provider that rejects tools must fail the run honestly
+  {
+    const calls = [];
+    const fetchImpl = async (url, init) => {
+      calls.push({ url, init });
+      return new Response(JSON.stringify({ error: { message: 'tools is not supported' } }), { status: 400 });
+    };
+    const p = makeOpenAICompatibleProvider({ fetch: fetchImpl, baseUrl: 'http://local/v1' });
+    let err = null;
+    try { await collect(p, { model: 'm', messages: [], tools: [{ type: 'function', function: { name: 'x' } }] }); }
+    catch (e) { err = e; }
+    A.eq(!!err, true, 'tools rejection surfaces as an error, never a silent degrade');
+    const toolPosts = calls.filter(c => c.init && c.init.method === 'POST');
+    A.eq(toolPosts.every(c => JSON.parse(c.init.body).tools !== undefined), true, 'no retry ever removed the tools payload');
+  }
+
+  // profile-level tool capability is the fallback when the catalog is silent; catalog booleans win
+  {
+    const fetchImpl = async (url, init) => {
+      if (init && init.method === 'POST') return new Response('data: [DONE]\n\n', { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
+      return new Response(JSON.stringify({ data: [{ id: 'tooly', supported_parameters: ['tools'] }, { id: 'bare' }] }), { status: 200 });
+    };
+    const pDeny = makeOpenAICompatibleProvider({ fetch: fetchImpl, baseUrl: 'http://local/v1', supportsTools: false });
+    A.eq(pDeny.supportsTools('anything'), false, 'cold catalog falls back to the profile assertion');
+    await pDeny.listModels();
+    A.eq(pDeny.supportsTools('tooly'), true, 'catalog-declared tool support beats the profile fallback');
+    A.eq(pDeny.supportsTools('bare'), false, 'catalog silence falls back to the profile assertion');
+    const pNull = makeOpenAICompatibleProvider({ fetch: fetchImpl, baseUrl: 'http://local/v1' });
+    A.eq(pNull.supportsTools('anything'), null, 'no profile assertion stays honestly unknown');
+  }
+
+  // static catalog fallback: fills in only when the live endpoint yields nothing; a real catalog wins
+  {
+    const statics = [{ id: 'sonar', context_length: 128000, supportsTools: false, supportsReasoning: false }];
+    const emptyFetch = async () => new Response(JSON.stringify({ data: [] }), { status: 200 });
+    const pEmpty = makeOpenAICompatibleProvider({ fetch: emptyFetch, baseUrl: 'http://api/v1', staticModels: statics });
+    const fromStatic = await pEmpty.listModels();
+    A.eq(fromStatic.length, 1, 'empty live catalog falls back to the static roster');
+    A.eq(pEmpty.contextLimit('sonar'), 128000, 'static roster carries context limits (compaction works)');
+    A.eq(pEmpty.supportsTools('sonar'), false, 'static roster carries capability facts');
+    A.eq(pEmpty.priceOf('sonar'), null, 'static roster stays honestly unpriced');
+
+    const liveFetch = async () => new Response(JSON.stringify({ data: [{ id: 'real-model' }] }), { status: 200 });
+    const pLive = makeOpenAICompatibleProvider({ fetch: liveFetch, baseUrl: 'http://api/v1', staticModels: statics });
+    const fromLive = await pLive.listModels();
+    A.eq(fromLive.map(m => m.id).join(','), 'real-model', 'a live catalog always wins over the static roster');
+  }
+
   A.report('provider.openai-compatible.test');
 })();

@@ -113,6 +113,18 @@
     return next;
   }
 
+  // GB-4: installing restarts the app (NSIS even kills it), which terminates every live
+  // provider stream mid-run. Killing N working agents must be an EXPLICIT choice, never a
+  // side effect of clicking INSTALL. Returns null when installing is fine, else the
+  // human-readable reason to pause. `force` = the user already confirmed "install anyway".
+  function installBlockReason(busyCount, force) {
+    busyCount = Math.max(0, busyCount | 0);
+    if (force || !busyCount) return null;
+    return busyCount === 1
+      ? '1 agent is still working - installing now would kill its run'
+      : busyCount + ' agents are still working - installing now would kill their runs';
+  }
+
   function progress(downloaded, contentLength) {
     downloaded = finite(downloaded, 0);
     contentLength = finite(contentLength, 0);
@@ -123,6 +135,7 @@
   return {
     CHECK_INTERVAL_MS, RETRY_BASE_MS, RETRY_MAX_MS, REMIND_LATER_MS,
     hydrateSettings, due, nextAction, recordCheckResult, recordCheckError,
-    shouldNotify, recordNotified, remindLater, ignoreVersion, setAutoCheck, progress
+    shouldNotify, recordNotified, remindLater, ignoreVersion, setAutoCheck, progress,
+    installBlockReason
   };
 });

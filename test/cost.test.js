@@ -32,6 +32,14 @@ A.eq(pc.usd, 0.042, 'provider cost wins in reconcile');
 A.eq(pc.costSource, 'provider', 'provider-priced reconcile is labeled');
 A.eq(ce.reconcile({ prompt_tokens: 1, completion_tokens: 1, cost: '0.125' }, 'm').usd, 0.125, 'numeric string provider cost is preserved');
 
+// xAI reports cost as USD ticks (1 USD = 1e10 ticks) — normalized into real dollars
+const ticks = ce.reconcile({ prompt_tokens: 1000, completion_tokens: 500, cost_in_usd_ticks: 420000000 }, 'm');
+A.ok(Math.abs(ticks.usd - 0.042) < 1e-12, 'xAI cost_in_usd_ticks normalizes to USD');
+A.eq(ticks.costSource, 'provider', 'ticks-priced reconcile is labeled provider');
+A.ok(Math.abs(ce.estimate({ prompt_tokens: 1, cost_in_usd_ticks: 420000000 }, 'unknown').usd - 0.042) < 1e-12, 'ticks cost wins in estimate too');
+A.eq(ce.reconcile({ prompt_tokens: 1000, completion_tokens: 500, cost: 0.05, cost_in_usd_ticks: 420000000 }, 'm').usd, 0.05, 'dollar cost field wins over ticks when both present');
+A.eq(ce.reconcile({ prompt_tokens: 100, completion_tokens: 20, cost_in_usd_ticks: 'junk' }, 'unknown').costSource, 'unpriced', 'non-numeric ticks are ignored, not billed');
+
 // reasoning via completion_tokens_details fallback
 A.eq(ce.reconcile({ prompt_tokens: 1, completion_tokens: 1, completion_tokens_details: { reasoning_tokens: 7 } }, 'm').reasoningTokens, 7, 'reasoning via completion_tokens_details');
 

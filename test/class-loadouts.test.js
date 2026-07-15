@@ -31,9 +31,13 @@ const SLUGS = new Map(LIB.map(s => [s.slug, s]));
 A.ok(LIB.length >= 5, 'the bundled skill library loaded (' + LIB.length + ' recipes)');
 
 const builtins = S.builtins();
-A.ok(builtins.length >= 11, 'the class catalog ships every class (>= 11), got ' + builtins.length);
+const archetypes = S.archetypes();
+// EVERY law below holds for the full catalog — the curated roster AND the deep-cut archetype pool (an
+// archetype is a real, summonable class; demoting it off the default roster demotes nothing about its rigor).
+const CATALOG = builtins.concat(archetypes);
+A.ok(CATALOG.length >= 11, 'the class catalog ships every class (>= 11), got ' + CATALOG.length);
 
-for (const b of builtins) {
+for (const b of CATALOG) {
   // every class has a loadout, and the loadout fields have the right shapes
   A.ok(Array.isArray(b.kit), b.id + ' has a kit array');
   A.ok(Array.isArray(b.skills), b.id + ' has a skills array');
@@ -56,12 +60,21 @@ for (const b of builtins) {
   }
 }
 
-/* ---------- 1b. S2 CONTENT: the full 18-class roster, seals/codes, prompt-size sanity ---------- */
+/* ---------- 1b. RECURATED CONTENT: 12 curated + 9 archetypes, seals/codes, prompt-size sanity ----------
+   Recuration 2026-07-14: the default roster was trimmed from 18 to 12 distinct majority-use jobs; the 9
+   demoted deep cuts became the ARCHETYPE pool (off the roster, never gated, seeds for the scout's
+   personalized prospect minting). Three genuinely new practical classes joined the curated 12. */
 const classicons = require('../frontend/app/classicons.js');
-// the roster grew from 11 to 18 in S2 (7 new: broker/publicist/tutor/auditor/bookkeeper/translator/herald)
-A.eq(builtins.length, 18, 'the S2 catalog ships all 18 classes');
-const NEW_CLASSES = ['broker', 'publicist', 'tutor', 'auditor', 'bookkeeper', 'translator', 'herald'];
-const byId = new Map(builtins.map(b => [b.id, b]));
+A.eq(builtins.length, 12, 'the curated roster ships exactly 12 classes');
+A.eq(archetypes.length, 9, 'the archetype pool holds the 9 deep cuts');
+const CURATED = ['researcher', 'engineer', 'operator', 'scribe', 'analyst', 'scout', 'designer', 'chief', 'tutor', 'navigator', 'curator', 'muse'];
+A.eq(builtins.map(b => b.id).sort().join(','), CURATED.slice().sort().join(','), 'the curated roster is exactly the 12 majority-use classes');
+const ARCH_IDS = ['reviewer', 'archivist', 'liaison', 'broker', 'publicist', 'auditor', 'bookkeeper', 'translator', 'herald'];
+A.eq(archetypes.map(a => a.id).sort().join(','), ARCH_IDS.slice().sort().join(','), 'the archetype pool is exactly the 9 demoted deep cuts');
+for (const id of ARCH_IDS) A.ok(!builtins.some(b => b.id === id), 'archetype is OFF the default roster: ' + id);
+// no id/name collision across the two shelves (an archetype must never shadow a curated class)
+const NEW_CLASSES = ['navigator', 'curator', 'muse'];
+const byId = new Map(CATALOG.map(b => [b.id, b]));
 for (const id of NEW_CLASSES) {
   const b = byId.get(id);
   A.ok(!!b, 'new class present in catalog: ' + id);
@@ -75,18 +88,18 @@ for (const id of NEW_CLASSES) {
   A.ok(Array.isArray(b.kit) && b.kit.length > 0, id + ' has a non-empty kit (grounded class)');
   A.ok(Array.isArray(b.skills) && b.skills.length > 0, id + ' ships at least one skill');
 }
-// unique ids + unique 3-letter class codes (a code collision would mis-stamp a coin)
-const ids = builtins.map(b => b.id);
-A.eq(new Set(ids).size, ids.length, 'every class id is unique');
-const codes = builtins.map(b => classicons.code(b.id));
+// unique ids + unique 3-letter class codes across BOTH shelves (a code collision would mis-stamp a coin)
+const ids = CATALOG.map(b => b.id);
+A.eq(new Set(ids).size, ids.length, 'every class id is unique (curated + archetypes)');
+const codes = CATALOG.map(b => classicons.code(b.id));
 for (const c of codes) A.ok(/^[A-Z0-9]{3}$/.test(c), 'class code is a real 3-letter stamp: ' + c);
 A.eq(new Set(codes).size, codes.length, 'every class code is unique (no coin collision): ' + codes.join(','));
 // EVERY catalog id has a bespoke seal, and EVERY seal maps to a catalog id (no orphans either way)
-for (const b of builtins) A.ok(!!classicons.svg(b.id), 'class has a bespoke seal icon: ' + b.id);
+for (const b of CATALOG) A.ok(!!classicons.svg(b.id), 'class has a bespoke seal icon: ' + b.id);
 const iconIds = Object.keys(classicons.ICONS);
 const catIds = new Set(ids);
 for (const iid of iconIds) A.ok(catIds.has(iid), 'seal icon maps to a real catalog class (no orphan seal): ' + iid);
-A.eq(iconIds.length, builtins.length, 'exactly one seal per class (' + iconIds.length + ' seals, ' + builtins.length + ' classes)');
+A.eq(iconIds.length, CATALOG.length, 'exactly one seal per class (' + iconIds.length + ' seals, ' + CATALOG.length + ' classes)');
 // every seal is currentColor-themed SVG (rides the class accent, matches the engraved-coin style) — and no
 // seal hardcodes a themed colour (only currentColor / none / the deboss floor #0c0704), so it themes to the accent.
 for (const iid of iconIds) {
@@ -101,11 +114,36 @@ for (const iid of iconIds) {
     'seal ' + iid + ' uses only currentColor/none/deboss (no theme-breaking hardcoded colour): ' + c);
 }
 
+/* ---------- 1b''. TYPED ASCII MARKS (premium bay pass): the bay's rendered emblem is TYPED, not drawn ----
+   The bay renders ClassIcons.ascii() for every class (the SVG seals stay as the mission art + vector
+   fallback). Laws: every catalog class has a bespoke mark; every mark maps back to a catalog class (no
+   orphans); a mark is exactly 5 rows of <=9 columns drawn ONLY from printable ASCII (0x20-0x7E) plus the
+   terminal shade/half-block set ░▒▓█▄▀ (the AsciiFX decode alphabet — VT323 provably renders it), so every
+   machine types it identically; and no two classes share a mark (identity, not decoration). */
+const MARK_CHARSET = /^[\x20-\x7E░▒▓█▄▀]*$/;   // ASCII + ░ ▒ ▓ █ ▄ ▀
+for (const b of CATALOG) {
+  const m = classicons.ascii(b.id);
+  A.ok(Array.isArray(m) && m.length === 5, b.id + ' has a 5-row typed ASCII mark');
+  if (m) for (const row of m) {
+    A.ok(typeof row === 'string' && row.length >= 1 && row.length <= 9, b.id + ' mark row is 1-9 columns: "' + row + '"');
+    A.ok(MARK_CHARSET.test(row), b.id + ' mark row is ASCII + the ░▒▓█▄▀ shade set only: "' + row + '"');
+  }
+}
+const asciiIds = Object.keys(classicons.ASCII);
+for (const aid of asciiIds) A.ok(catIds.has(aid), 'ASCII mark maps to a real catalog class (no orphan mark): ' + aid);
+A.eq(asciiIds.length, CATALOG.length, 'exactly one typed mark per class (' + asciiIds.length + ' marks, ' + CATALOG.length + ' classes)');
+const markKeys = CATALOG.map(b => classicons.ascii(b.id).join('\n'));
+A.eq(new Set(markKeys).size, markKeys.length, 'every typed mark is unique (no two classes share an emblem)');
+// the bay actually renders the typed mark (never silently regresses to the coin for classes)
+const mktSrc = fs.readFileSync(path.join(__dirname, '../frontend/app/marketplace.js'), 'utf8');
+A.ok(/ClassIcons\.ascii\s*\(/.test(mktSrc) && /mkt-amark/.test(mktSrc),
+  'the bay renders ClassIcons.ascii() as the class emblem (.mkt-amark)');
+
 /* ---------- 1b'. DISTINCTNESS: a beginner must be able to tell the classes apart at pick-time ---------- */
-// taglines + blurbs are unique (no two classes present as the same thing in the bay).
-const taglines = builtins.map(b => b.tagline.trim().toLowerCase());
+// taglines + blurbs are unique across BOTH shelves (no two classes present as the same thing in the bay).
+const taglines = CATALOG.map(b => b.tagline.trim().toLowerCase());
 A.eq(new Set(taglines).size, taglines.length, 'every class tagline is unique');
-const blurbs = builtins.map(b => b.blurb.trim().toLowerCase());
+const blurbs = CATALOG.map(b => b.blurb.trim().toLowerCase());
 A.eq(new Set(blurbs).size, blurbs.length, 'every class blurb is unique');
 // the confusable pair broker/scout both touch prices — the broker blurb must DRAW the boundary (decide vs watch)
 // so a beginner can predict which to pick. (Adversarial-review fix: broker retuned off the word "scout".)
@@ -116,7 +154,7 @@ A.ok(!/scout/.test(byId.get('broker').tagline.toLowerCase()),
   'the broker tagline no longer overloads the word "scout" (collided with the scout class)');
 
 /* ---------- 1c. PROMPT-SIZE SANITY: manuals/purposes are injected every run — keep them tight ---------- */
-for (const b of builtins) {
+for (const b of CATALOG) {
   A.ok(b.manual.length <= 1000, b.id + ' manual is prompt-tight (<=1000 chars): ' + b.manual.length);
   A.ok(b.purpose.length <= 450, b.id + ' purpose is prompt-tight (<=450 chars): ' + b.purpose.length);
   A.ok(b.manual.length > 200, b.id + ' manual is a real playbook, not a stub: ' + b.manual.length);
@@ -143,7 +181,7 @@ const TOOL_OWNER = {
 const TOOL_TO_TYPE = {};
 for (const [type, grants] of Object.entries(CAP_REGISTRY)) for (const g of grants) TOOL_TO_TYPE[g.tool] = type;
 for (const [tool, owner] of Object.entries(TOOL_OWNER)) A.eq(TOOL_TO_TYPE[tool], owner, 'test map matches registry: ' + tool + ' -> ' + owner);
-for (const b of builtins) {
+for (const b of CATALOG) {
   const kit = new Set(b.kit);
   const text = b.manual + ' ' + b.purpose;
   for (const [tool, owner] of Object.entries(TOOL_OWNER)) {
@@ -158,7 +196,7 @@ for (const b of builtins) {
 // not tools an agent invokes. So no manual/purpose may name a send-tool, and the comms classes (which imply
 // outward reach) MUST frame it as draft-for-the-Commander, never auto-send. (Capability-honesty rewrite lock.)
 const SEND_TOOL_RE = /\b(channel[._]send|discord[._]send|telegram[._]send|message[._]send|send[._]message|broadcast[._]send)\b/i;
-for (const b of builtins) {
+for (const b of CATALOG) {
   const text = (b.manual + ' ' + b.purpose).toLowerCase();
   A.ok(!SEND_TOOL_RE.test(text), b.id + ' names no phantom channel-send tool (none exists in the registry)');
 }
@@ -174,7 +212,7 @@ for (const id of ['liaison', 'publicist', 'herald']) {
 
 /* ---------- 1e. every skill a class ships exists + its frontmatter parses ---------- */
 const referenced = new Set();
-for (const b of builtins) for (const s of b.skills) referenced.add(s);
+for (const b of CATALOG) for (const s of b.skills) referenced.add(s);
 for (const slug of referenced) {
   const sk = SLUGS.get(slug);
   A.ok(!!sk, 'class-referenced skill exists in the library: ' + slug);
@@ -185,9 +223,10 @@ for (const slug of referenced) {
     A.ok(sk.body && sk.body.length > 100, slug + ' has a real procedural body');
   }
 }
-// the S2 signature skills are all present + honestly grounded (requires are real CAP types)
+// the S2 + recuration signature skills are all present + honestly grounded (requires are real CAP types)
 const NEW_SKILLS = ['source-triangulation', 'feed-watch', 'adversarial-review-pass', 'price-watch',
-  'announcement-kit', 'study-plan', 'security-sweep', 'ledger-upkeep', 'translation-pass', 'digest-composer'];
+  'announcement-kit', 'study-plan', 'security-sweep', 'ledger-upkeep', 'translation-pass', 'digest-composer',
+  'itinerary-planning', 'file-curation'];
 for (const slug of NEW_SKILLS) {
   const sk = SLUGS.get(slug);
   A.ok(!!sk, 'S2 new skill authored: ' + slug);
@@ -195,6 +234,22 @@ for (const slug of NEW_SKILLS) {
     A.eq(sk.default, false, slug + ' is default:false (arrives via a class package, not globally on)');
     for (const r of (sk.requires || [])) A.ok(CAP_TYPES.has(r), slug + ' requires a real CAP_REGISTRY type: ' + r);
   }
+}
+
+/* ---------- 1f. ARCHETYPE SEAM: off the default roster, never gated ---------- */
+// get() resolves an archetype id — an old save, a scout draft, or a summon-by-id keeps working after the trim.
+const arch = S.get('translator');
+A.ok(arch && arch.id === 'translator' && arch.custom === false, 'Specialties.get resolves an archetype id');
+A.ok(!S.builtins().some(b => b.id === 'translator'), 'builtins() (the default roster) excludes archetypes');
+A.ok(!S.list().some(b => b.id === 'translator'), 'list() (roster + customs) excludes archetypes — they are asked for explicitly');
+A.eq(S.archetypes().length, 9, 'archetypes() exposes the pool');
+const archCompose = S.compose('reviewer');
+A.ok(archCompose && archCompose.purpose.length > 0 && archCompose.manual.length > 0, 'compose() works on an archetype (summonable as-is, same deploy path)');
+// a custom can never shadow an archetype id (uniqueId consults get(), which now spans both shelves)
+{
+  const clash = S.saveCustom({ name: 'Broker', purpose: 'x' });
+  A.ok(clash.id !== 'broker', 'a saved custom never collides with an archetype id: ' + clash.id);
+  S.removeCustom(clash.id);
 }
 
 /* ---------- 2a. compose(agentSkills): ADD-only union, budget-ordered ---------- */
@@ -351,6 +406,13 @@ for (const c of [{ name: 'Legacy', purpose: 'x' }]) {
    ============================================================================================ */
 const mkt = fs.readFileSync(path.join(__dirname, '../frontend/app/marketplace.js'), 'utf8');
 const sui = fs.readFileSync(path.join(__dirname, '../frontend/app/stationui.js'), 'utf8');
+
+/* ---------- S3a'. SPECIALIST ARCHIVE: the bay keeps the deep cuts one click away (never gated) ---------- */
+A.ok(/function archiveSectionHTML\(/.test(mkt), 'the bay has a SPECIALIST ARCHIVE section');
+A.ok(/Specialties\.archetypes/.test(mkt), 'the archive renders from the live archetype pool (never hardcoded)');
+A.ok(/archiveOpen = !archiveOpen/.test(mkt), 'the archive header toggles open/closed');
+A.ok(/archs\.map\(cardHTML\)/.test(mkt), 'archive classes render as REAL class cards (focusable + summonable)');
+A.ok(/archiveSectionHTML\(filtering\)/.test(mkt), 'search/lane filters include the archive — search must FIND a class, never hide one');
 
 /* ---------- S3a. DOSSIER: kit + skill package render from LIVE sources (no hardcoded prop labels) ---------- */
 // the kit block resolves each objectType's prop label from the LIVE catalog (PropSprites.CATALOG via

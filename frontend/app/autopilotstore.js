@@ -240,6 +240,14 @@ const AutopilotStore = (() => {
     lastActivity = now();
     armed = false;
     beacon();   // NS-1: tell the sidecar the Commander is PRESENT (throttled) so the server-owned away-clock is truthful
+    // GENUINE-RETURN HOOK (2026-07-14): fires on the first interaction after a real absence REGARDLESS of
+    // the local draft log — the server-owned night-shift act path leaves NO local draft, so the digest
+    // below is structurally blind to it. app.js uses this to re-offer undecided workshop deliverables
+    // that landed (and were announced to an empty room) while the Commander was away.
+    const thr = Number.isFinite(deps.digestAwayMs) ? deps.digestAwayMs : 300000;
+    if (Number.isFinite(prev) && (lastActivity - prev) >= thr) {
+      try { if (typeof deps.onReturn === 'function') deps.onReturn({ awaySince: prev, backAt: lastActivity, awayMs: lastActivity - prev }); } catch (_) {}
+    }
     maybeDigest(prev, lastActivity);
   }
   // WELCOME-BACK DIGEST: on the first interaction after a real absence, recap the drafts the autopilot left while
@@ -271,7 +279,7 @@ const AutopilotStore = (() => {
   }
 
   // opts: { now(), getPosture(), getDossier(), getBeliefs(dim), getSystem(), getName(), offerCuriosity(), chat(opts),
-  //         present(draft), idleMs, tickMs, install:bool }
+  //         present(draft), digest(info), onReturn(info), digestAwayMs, idleMs, tickMs, install:bool }
   function init(opts) {
     deps = opts || {};
     state = hydrate(load());

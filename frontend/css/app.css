@@ -1970,6 +1970,9 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 #chat-status.status-connecting { color: var(--ph); opacity: .8; }
 #chat-status.status-working, #chat-status.status-approval { color: var(--gold); text-shadow: 0 0 7px rgba(var(--gold-rgb),.4); }
 #chat-status.status-stopping { color: var(--bad); text-shadow: 0 0 7px rgba(255,74,61,.35); }
+/* F2: bridge provably dead (World.linkState E1 — same predicate as the topbar LINK DOWN / canvas marker):
+   the idle label can't honestly read 'online', so it reads 'station unreachable' in the fault palette. */
+#chat-status.status-down { color: #ff6a4c; text-shadow: 0 0 7px rgba(255,106,76,.35); }
 
 /* COMMS PROCESSING TIMER — a small engraved readout in the amber header that counts a turn's REAL
    wall-clock (thinking → working → done). Monospace with a fixed min-width so the ticking seconds
@@ -2582,6 +2585,11 @@ input[type=number].key-input:focus { border-color: var(--ph); box-shadow: inset 
 #budget-form .set-row .bg-cap { flex: 1; font-size: 16px; padding: 5px 9px; text-align: right; }
 #budget-spend { font-size: 13px; margin: 2px 0 8px; }
 #budget-spend b { color: var(--ph-bright); }
+/* soft-pool CAP-HIT row + one-click RESUME — rendered ONLY when the governor is actually refusing new runs
+   (truthful telemetry: no pool hit, no row). Warn vocabulary, same as the readiness chips. */
+#budget-pools .bg-pool-hit { display: flex; align-items: center; gap: 10px; border: 1px solid var(--warn); background: rgba(0,0,0,.32); padding: 6px 9px; margin: 2px 0 8px; font-size: 12.5px; color: var(--warn); }
+#budget-pools .bg-pool-hit b { color: var(--ph-bright); }
+#budget-pools .bg-pool-hit .bb { flex: 0 0 auto; margin-left: auto; }
 /* MODELS panel — the ordered fallback chain (P0-3). Additive: new selectors only, on-theme via the same vars. */
 .mc-list-fb { display: flex; flex-direction: column; gap: 4px; margin: 2px 0 4px; }
 .fbc-row { display: flex; align-items: center; gap: 6px; border: 1px solid var(--ph-dim); background: rgba(0,0,0,.32); padding: 4px 8px; }

@@ -50,15 +50,17 @@ function startMock(replies) {
             res.write('data: ' + JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop' }], usage: { prompt_tokens: 6, completion_tokens: 4, total_tokens: 10 } }) + '\n\n');
             res.write('data: [DONE]\n\n'); res.end();
           };
-          if (body.indexOf('intake analyst') >= 0) text(replies.extraction);          // interests.buildDirective's system marker
-          else if (body.indexOf('recipe author') >= 0) text(replies.recipe);          // scout.buildRecipeDirective's system marker
-          else text('ok, done.');                                                     // the main task run itself
+          if (body.indexOf('intake analyst') >= 0) { calls.push('extraction'); text(replies.extraction); }        // interests.buildDirective's system marker
+          else if (body.indexOf('recipe author') >= 0) { calls.push('recipe'); text(replies.recipe); }            // scout.buildRecipeDirective's system marker
+          else if (body.indexOf("station's recruiter") >= 0) { calls.push('recruiter'); text(replies.prospect || 'NONE'); }   // the LLM prospect authorship pass
+          else { calls.push('run'); text('ok, done.'); }                                                          // the main task run itself
         });
         return;
       }
       res.writeHead(404); res.end();
     });
-    server.listen(0, HOST, () => resolve({ server, base: 'http://' + HOST + ':' + server.address().port + '/api/v1' }));
+    const calls = [];   // which model passes actually fired — lets a boot assert a pass did NOT run (zero-spend paths)
+    server.listen(0, HOST, () => resolve({ server, base: 'http://' + HOST + ':' + server.address().port + '/api/v1', calls }));
   });
 }
 
@@ -224,6 +226,63 @@ const QUIET = { SKYNET_THREAD_MINE: '0', SKYNET_SKILL_REVIEW: '0', SKYNET_SKILL_
         p => (p.ledger || []).some(e => e.kind === 'interests' && e.outcome === 'none'),
         "an honest 'none' ledger note for the invented-evidence extraction");
       A.ok(!(s2.interests || []).some(t => /quantum/.test(t.topic)), 'the invented topic never entered the histogram');
+    } finally {
+      try { child.kill(); } catch (_) {}
+      try { mock.server.close(); } catch (_) {}
+      await sleep(150);
+      try { fs.rmSync(ws, { recursive: true, force: true }); } catch (_) {}
+    }
+  }
+
+  /* ================= BOOT 3 — the ARCHETYPE-SEEDED prospect mint (recuration 2026-07-14) =================
+     A WARM learned interest that points at a dormant curated archetype must stage that archetype's FULL
+     spec as a prospect — deterministically, with ZERO model spend (the recruiter authorship pass never
+     fires), and a WHY naming the real topic + count. Recipe shelf pre-filled so decide() routes the one
+     attempt to kind:'prospect'; the interests pass is gap-suppressed so no extraction call fires either. */
+  {
+    const mock = await startMock({
+      extraction: 'TOPIC: unused | EVIDENCE: unused',
+      recipe: 'NONE',
+      prospect: 'NAME: Should Never Be Asked\nEMOJI: ✦\nTAGLINE: the llm pass must not fire\nPURPOSE: n/a\nMANUAL: n/a\nKIT: dish\nSKILLS:\nWHY: n/a'
+    });
+    const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-scout-e2e-'));
+    // recipe shelf FULL + cadence earned -> the attempt routes to 'prospect'; prospect shelf empty.
+    const stagedRecipes = [0, 1, 2].map(i => ({
+      id: 'seed-r' + i, kind: 'recipe', why: 'seed', fingerprint: 'seed recipe fp ' + i, at: Date.now() - 3600000,
+      draft: { name: 'Seed Recipe ' + i, tagline: 'occupies a recipe slot ' + i }
+    }));
+    fs.writeFileSync(path.join(ws, 'scout.state.json'), JSON.stringify({
+      v: 1, state: { v: 1, staged: stagedRecipes, denylist: [], ledger: [], runsSinceMint: 5, lastMintAt: 0, lastKind: '', context: null }
+    }));
+    // a WARM topic whose words hit the broker archetype's own text; lastPassAt now -> extraction gap-suppressed.
+    fs.writeFileSync(path.join(ws, 'scout.interests.json'), JSON.stringify({
+      v: 1, state: { v: 1, topics: { 'gpu-price-tracking': { label: 'gpu price tracking', w: 5, n: 5, lastAt: Date.now(), ev: [{ q: 'gpu price tracking', at: Date.now() }] } }, lastPassAt: Date.now(), runsSincePass: 0 }
+    }));
+    const { child, port } = await boot(8890 + (process.pid % 25), Object.assign({ SKYNET_WORKSPACES: ws, SKYNET_OPENROUTER_BASE: mock.base }, QUIET), 20);
+    const B = 'http://' + HOST + ':' + port;
+    try {
+      const token = await bootToken(B, B);
+      await driveRun(B, token, 'scout-e2e', 'check gpu prices for the build');
+
+      const s = await pollScout(B, token,
+        p => (p.staged || []).some(it => it.kind === 'prospect'),
+        'an archetype prospect staged by the live scout cycle');
+      const draft = s.staged.find(it => it.kind === 'prospect');
+      A.eq(draft.draft.archetypeId, 'broker', 'ARCHETYPE MINT: the warm price-hunting interest staged the Broker archetype');
+      A.eq(draft.draft.name, 'Broker', 'the staged draft is the archetype itself, not an LLM invention');
+      A.ok(Array.isArray(draft.draft.kit) && draft.draft.kit.length > 0 && Array.isArray(draft.draft.skills) && draft.draft.skills.length > 0,
+        'the staged archetype carries its FULL loadout (kit + skills)');
+      A.ok(draft.draft.purpose.length > 0 && draft.draft.manual.length > 0, 'the staged archetype carries its purpose + manual (nothing half-authored)');
+      A.ok(draft.why.indexOf('gpu price tracking') >= 0 && draft.why.indexOf('5×') >= 0,
+        'the WHY names the real topic and its real count (truthful telemetry): ' + draft.why);
+      A.ok((s.ledger || []).some(e => e.kind === 'prospect' && e.outcome === 'staged' && e.title === 'Broker'), 'the ledger recorded the archetype mint');
+      A.eq(mock.calls.indexOf('recruiter'), -1, 'ZERO SPEND: the LLM prospect authorship pass never fired for an archetype mint');
+      A.eq(mock.calls.indexOf('extraction'), -1, 'the gap-suppressed extraction pass never fired (the mint was pure state)');
+
+      // restart-safety: the staged archetype landed on disk.
+      const onDisk = JSON.parse(fs.readFileSync(path.join(ws, 'scout.state.json'), 'utf8'));
+      A.ok((onDisk.state.staged || []).some(it => it.kind === 'prospect' && it.draft && it.draft.archetypeId === 'broker'),
+        'scout.state.json persisted the staged archetype draft');
     } finally {
       try { child.kill(); } catch (_) {}
       try { mock.server.close(); } catch (_) {}

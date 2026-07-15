@@ -1,5 +1,5 @@
 /* STARNET — prospect.js : the PURE prospect generator (the station AUTHORS bespoke new agent specs beyond the
-   17-class catalog).
+   curated catalog + archetype pool).
 
    Where recruiter.js (Slice 2) ranks EXISTING classes against the Commander's real workflow, this covers the gap
    the catalog CAN'T fill: as the station learns, it drafts a brand-new specialist tailored to the observed work —

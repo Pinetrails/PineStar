@@ -86,6 +86,7 @@
     "qa:product-perfect": "node scripts/qa/product-perfect.mjs --run",
     "qa:smoke:installed": "node scripts/qa/installed-smoke.mjs",
     "qa:input-isolation": "node scripts/qa/input-isolation-smoke.mjs",
+    "certify:providers": "node scripts/provider-certify.mjs",
     "serve": "node scripts/serve-ui-only.js",
     "serve:ui-only": "node scripts/serve-ui-only.js",
     "tauri": "tauri",
@@ -96,7 +97,9 @@
     "release:bump": "node scripts/release-bump.mjs",
     "release:cut": "node scripts/release-cut.mjs",
     "release:cut:dry": "node scripts/release-cut.mjs --dry-run",
-    "release:verify-host": "node scripts/verify-update-host.mjs"
+    "release:verify-host": "node scripts/verify-update-host.mjs",
+    "release:verify-sig": "node scripts/minisign-verify.mjs",
+    "release:canary": "node scripts/update-canary.mjs"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2"

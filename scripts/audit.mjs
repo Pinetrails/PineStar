@@ -88,7 +88,9 @@ function startMockOpenRouter(model) {
 // completion requests, which is the ground truth for "the run is blocked" (exactly 1 until approval arrives).
 function startToolMock(model) {
   return new Promise((resolve) => {
-    let calls = 0;
+    let calls = 0;           // every completion the mock served (background engines included — forensics only)
+    let directiveCalls = 0;  // completions belonging to THE AUDIT DIRECTIVE's run — the assertion currency
+    const DIRECTIVE_MARK = 'write a short note to a file';   // must match the sendChat text in runApprovalScenario
     const server = createServer((req, res) => {
       if (req.url && req.url.indexOf('/models') >= 0) {
         res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -100,8 +102,26 @@ function startToolMock(model) {
         req.on('data', d => { body += d; });
         req.on('end', () => {
           calls++;
+          // CONTENT-AWARE ROUTING (2026-07-15 truth-regression triage, finding 6a3a04cf): the station now runs
+          // autonomous background model passes (quest-refresh boot look, interests/scout, skill review, the First
+          // Pitch) that share this mock. The old `calls === 1` script assumed the FIRST completion was the audit
+          // directive — a background pass landing first consumed the scripted tool_call, so the directive run
+          // never hit the consent gate and the assertion misread instrument noise as an app lie. Route by the
+          // request's own user text instead: only the audit directive's run gets the fs.write ask; everything
+          // else gets inert prose. Belt-and-braces: the dedicated sidecar also boots with the server-side
+          // background minters opted out (SKYNET_QUEST_REFRESH=0 / SKYNET_SCOUT=0), but frontend-initiated
+          // internal calls can't be env'd off, so the mock must stay content-aware regardless.
+          let isDirective = false, lastUserTxt = '';
+          try {
+            const b = JSON.parse(body);
+            const lastUser = [...(b.messages || [])].reverse().find(m => m.role === 'user');
+            lastUserTxt = String((lastUser && lastUser.content) || '');
+            isDirective = lastUserTxt.toLowerCase().indexOf(DIRECTIVE_MARK) >= 0;
+          } catch (_) { /* unparseable → treated as background */ }
+          if (isDirective) directiveCalls++;
+          else console.log(`[tool-mock] background completion #${calls} (not the directive): "${lastUserTxt.slice(0, 80)}"`);
           res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' });
-          if (calls === 1) {
+          if (isDirective && directiveCalls === 1) {
             const tc = { index: 0, id: 'call_0', type: 'function', function: { name: 'fs.write', arguments: JSON.stringify({ path: 'audit-note.txt', content: 'written by the approval audit' }) } };
             res.write('data: ' + JSON.stringify({ choices: [{ delta: { tool_calls: [tc] } }] }) + '\n\n');
             setTimeout(() => {
@@ -109,7 +129,7 @@ function startToolMock(model) {
               res.write('data: [DONE]\n\n'); res.end();
             }, 150);
           } else {
-            res.write('data: ' + JSON.stringify({ choices: [{ delta: { content: 'wrote the note as requested.' } }] }) + '\n\n');
+            res.write('data: ' + JSON.stringify({ choices: [{ delta: { content: isDirective ? 'wrote the note as requested.' : 'acknowledged.' } }] }) + '\n\n');
             setTimeout(() => {
               res.write('data: ' + JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop' }], usage: { prompt_tokens: 12, completion_tokens: 4, total_tokens: 16 } }) + '\n\n');
               res.write('data: [DONE]\n\n'); res.end();
@@ -120,7 +140,7 @@ function startToolMock(model) {
       }
       res.writeHead(404); res.end();
     });
-    server.listen(0, '127.0.0.1', () => resolve({ server, base: 'http://127.0.0.1:' + server.address().port + '/api/v1', callCount: () => calls }));
+    server.listen(0, '127.0.0.1', () => resolve({ server, base: 'http://127.0.0.1:' + server.address().port + '/api/v1', callCount: () => calls, directiveCalls: () => directiveCalls }));
   });
 }
 
@@ -450,7 +470,10 @@ async function runApprovalScenario() {
     process.env.STARNET_OPENROUTER_BASE = mock.base;
     console.log(`\nscenario: tool-run-with-approval (dedicated NON-full-access sidecar on :${APORT})`);
     materializeSeedWorkspace(ASCRATCH);
-    side = bootSeededSidecar({ port: APORT, scratchDir: ASCRATCH, fullAccess: false });   // KEY: interactive consent surface
+    // KEY: interactive consent surface. Background minters opted out (deterministic instrument — the quest-refresh
+    // boot look / scout would otherwise race the directive for the mock; frontend internal calls are additionally
+    // defused by the content-aware mock above).
+    side = bootSeededSidecar({ port: APORT, scratchDir: ASCRATCH, fullAccess: false, env: { SKYNET_QUEST_REFRESH: '0', SKYNET_SCOUT: '0' } });
     if (!(await waitUp(AURL))) throw new Error('approval sidecar failed to come up on :' + APORT);
     ({ proc } = launchChrome({ cdpPort: ACDP, win: WIN, profileDir: APROFILE }));
     cdp = await connectCDP(ACDP);
@@ -488,9 +511,10 @@ async function runApprovalScenario() {
     }
     A.ok('approval/prompt-emitted', promptEvt, promptEvt ? 'permission.prompt fired on the run stream' : 'no permission.prompt — run never hit a gate');
     A.ok('approval/consent-row-rendered', consentRow, consentRow ? '.consent control rendered in COMMS' : 'consent control never appeared');
-    // BLOCKED: the run must not have terminated, and the mock must have been called exactly once (paused pre-tool-result).
-    const callsBeforeApprove = mock.callCount();
-    A.ok('approval/run-blocked-while-waiting', !endedEarly && callsBeforeApprove === 1, `agent.run.end seen=${endedEarly}; mock completions so far=${callsBeforeApprove} (expect 1 while paused)`);
+    // BLOCKED: the run must not have terminated, and the DIRECTIVE's run must have made exactly one completion
+    // (paused pre-tool-result). Background engine calls are counted separately by the content-aware mock.
+    const callsBeforeApprove = mock.directiveCalls();
+    A.ok('approval/run-blocked-while-waiting', !endedEarly && callsBeforeApprove === 1, `agent.run.end seen=${endedEarly}; directive completions so far=${callsBeforeApprove} (expect 1 while paused; ${mock.callCount()} total incl. background)`);
     await capture(cdp, OUT_DIR, 'tool-run-with-approval_awaiting');
 
     // APPROVE ONCE → the paused dispatch resolves, the tool runs, the result flows back, the run resumes.
@@ -498,7 +522,7 @@ async function runApprovalScenario() {
     A.ok('approval/approve-clicked', approved === 'approved', approved);
     let resumed = false;
     for (let i = 0; i < 60; i++) { await sleep(250); const ends = await evalJS(cdp, "window.__SKYNET_TEST__.events('agent.run.end').length").catch(() => 0); if ((ends || 0) > 0) { resumed = true; break; } }
-    A.ok('approval/run-resumes-on-approve', resumed && mock.callCount() >= 2, `agent.run.end after approve=${resumed}; mock completions now=${mock.callCount()} (≥2 ⇒ tool result round-tripped)`);
+    A.ok('approval/run-resumes-on-approve', resumed && mock.directiveCalls() >= 2, `agent.run.end after approve=${resumed}; directive completions now=${mock.directiveCalls()} (≥2 ⇒ tool result round-tripped)`);
 
     const hardFail = A.results.some((r) => !r.pass && !r.soft);
     await capture(cdp, OUT_DIR, hardFail ? '_FAIL-tool-run-with-approval' : 'tool-run-with-approval');

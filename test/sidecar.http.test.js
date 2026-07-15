@@ -15,6 +15,9 @@ const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const http = require('http');
+const crypto = require('crypto');
+const edge = require('../sidecar/edgetts.js');   // V-EDGE: exported WS codec + secMsGec for offline unit + loopback tests
 const { bootToken } = require('./_httpToken.js');
 
 const HOST = '127.0.0.1';
@@ -41,6 +44,10 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
         OPENROUTER_KEY: '', STARNET_OPENROUTER_KEY: '', SKYNET_OPENROUTER_KEY: '',
         OPENROUTER_API_KEY: '', STARNET_OPENROUTER_API_KEY: '', SKYNET_OPENROUTER_API_KEY: '',
         ELEVENLABS_API_KEY: '',   // same determinism for the ElevenLabs TTS branch's no-key degrade
+        // V-EDGE: disable the free Edge neural floor in the DEFAULT boot so the no-key TTS test degrades to
+        // {fallback:true} deterministically without any network attempt. The dedicated edge-loopback boot below
+        // re-enables it (SKYNET_EDGE_TTS + host/port overrides) to prove the round-trip offline.
+        SKYNET_EDGE_TTS: '0', STARNET_EDGE_TTS: '0',
         // /api/tts now resolves a CHAIN of credentials (openrouter → gemini → openai) — clear the Gemini
         // keys too, or an ambient dev key would hit the network and flip the no-key degrade assertions.
         GEMINI_API_KEY: '', STARNET_GEMINI_API_KEY: '', SKYNET_GEMINI_API_KEY: '',
@@ -864,6 +871,134 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     // an idle boot has no live runs — the endpoint must report EMPTY, not a fabricated placeholder (truthful telemetry).
     A.eq(snap.body.runs.length, 0, 'an idle boot reports zero live runs (honest, not fabricated)');
     A.eq(JSON.stringify(snap.body).indexOf(apiToken), -1, 'the snapshot never echoes the API token');
+
+    // ---- V-EDGE unit: secMsGec shape + the exported WS codec round-trips (fragmentation + ping) offline ----
+    // fixed injected clock (determinism law: secMsGec takes nowMs), aligned to a 300s-window START so the
+    // +stable/+roll offsets below are unambiguous. (windows are on (unix+11644473600) seconds boundaries)
+    const gecT = (1784000000 - ((1784000000 + 11644473600) % 300)) * 1000;
+    const gec = edge.secMsGec(gecT);
+    A.ok(/^[0-9A-F]{64}$/.test(gec), 'secMsGec(nowMs) returns 64 uppercase hex chars');
+    A.eq(edge.secMsGec(gecT + 299000), gec, 'secMsGec is stable within the same 300s window');
+    A.ok(edge.secMsGec(gecT + 300000) !== gec, 'secMsGec rolls to a new token in the next 300s window');
+    {
+      // simple masked (client-style) round-trip: one text frame encodes and parses back unchanged
+      const frames = [];
+      const parse = edge.makeWsParser((op, payload) => frames.push({ op, text: payload.toString('utf8') }), () => {});
+      parse(edge.wsEncode(0x1, Buffer.from('hello station', 'utf8')));
+      A.eq(frames.length, 1, 'one full masked frame parsed');
+      A.eq(frames[0].op, 0x1, 'opcode preserved (text)');
+      A.eq(frames[0].text, 'hello station', 'masked payload decodes back to the original bytes');
+    }
+    {
+      // a fragmented message (fin=0 first frame + final continuation) with an interleaved ping, fed ONE byte at
+      // a time to exercise the parser's incremental buffering. Server-style unmasked frames (mask:false).
+      const got = [], pings = [];
+      const parse = edge.makeWsParser((op, payload) => { if (op === 0x9) pings.push(payload.toString('utf8')); else got.push({ op, text: payload.toString('utf8') }); }, () => {});
+      const first = edge.wsEncode(0x1, Buffer.from('frag-', 'utf8'), { mask: false }); first[0] &= 0x7f;   // clear FIN → not final
+      const cont = edge.wsEncode(0x0, Buffer.from('part2', 'utf8'), { mask: false });                       // final continuation
+      const ping = edge.wsEncode(0x9, Buffer.from('png', 'utf8'), { mask: false });
+      const stream = Buffer.concat([ping, first, cont]);
+      for (const byte of stream) parse(Buffer.from([byte]));
+      A.eq(pings.length, 1, 'the ping frame surfaced to the caller (so it can pong)');
+      A.eq(got.length, 1, 'the fragmented message reassembles into exactly one delivered frame');
+      A.eq(got[0].op, 0x1, 'reassembled opcode is the initiating text opcode, not the continuation');
+      A.eq(got[0].text, 'frag-part2', 'fragmented payload halves are concatenated in order');
+    }
+
+    // ---- V-EDGE loopback: the free Edge TTS floor round-trips OUR chosen bytes through a local WS server that
+    //      speaks the same hand-rolled protocol (exported codec), proving handleTts serves neural audio no-key ----
+    {
+      const audioPayload = Buffer.from([0xff, 0xf3, 0x64, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07]);   // fake mp3 bytes we choose
+      const wsServer = http.createServer((rq, rs) => { rs.writeHead(426); rs.end(); });
+      wsServer.on('upgrade', (rq, socket) => {
+        const wskey = rq.headers['sec-websocket-key'] || '';
+        const accept = crypto.createHash('sha1').update(wskey + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11').digest('base64');
+        socket.write('HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ' + accept + '\r\n\r\n');
+        let sent = false;
+        const respond = () => {
+          if (sent) return; sent = true;
+          socket.write(edge.wsEncode(0x1, Buffer.from('X-RequestId:mock\r\nPath:turn.start\r\n\r\n{}', 'utf8'), { mask: false }));
+          const hdr = Buffer.from('X-RequestId:mock\r\nContent-Type:audio/mpeg\r\nPath:audio\r\n', 'utf8');
+          const hl = Buffer.alloc(2); hl.writeUInt16BE(hdr.length, 0);
+          socket.write(edge.wsEncode(0x2, Buffer.concat([hl, hdr, audioPayload]), { mask: false }));
+          socket.write(edge.wsEncode(0x1, Buffer.from('X-RequestId:mock\r\nPath:turn.end\r\n\r\n{}', 'utf8'), { mask: false }));
+        };
+        const parse = edge.makeWsParser((op, payload) => { if (op === 0x1 && payload.toString('utf8').includes('Path:ssml')) respond(); }, () => {});
+        socket.on('data', parse);
+        socket.on('error', () => {});
+      });
+      await new Promise(r => wsServer.listen(0, '127.0.0.1', r));
+      const wsPort = wsServer.address().port;
+      const edgeWs = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-edge-'));
+      const eb = await boot(port + 300, edgeWs, 20, {
+        // re-enable the Edge floor (the base env disabled it) and aim it at our loopback WS server over plain http
+        SKYNET_EDGE_TTS: '1', STARNET_EDGE_TTS: '1',
+        SKYNET_EDGE_TTS_HOST: '127.0.0.1', SKYNET_EDGE_TTS_PORT: String(wsPort), SKYNET_EDGE_TTS_INSECURE: '1'
+      });
+      const EB = 'http://' + HOST + ':' + eb.port;
+      try {
+        const etok = await bootToken(EB, EB);
+        const post = (t) => fetch(EB + '/api/tts', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-StarNet-Token': etok, Origin: EB }, body: JSON.stringify({ text: t }) });
+        const r1 = await post('edge floor round trip');
+        A.eq(r1.status, 200, 'edge-floor /api/tts (no key) -> 200');
+        A.eq(r1.headers.get('x-voice-cache'), 'miss', 'first edge synth is a cache miss');
+        A.ok(/audio\/mpeg/.test(r1.headers.get('content-type') || ''), 'edge audio is served as audio/mpeg');
+        const b1 = Buffer.from(await r1.arrayBuffer());
+        A.eq(b1.equals(audioPayload), true, 'the sidecar returned exactly the audio bytes our loopback WS server sent');
+        const r2 = await post('edge floor round trip');
+        A.eq(r2.status, 200, 'the identical second edge /api/tts -> 200');
+        A.eq(r2.headers.get('x-voice-cache'), 'hit', 'an identical second edge request is served from the disk cache');
+        const b2 = Buffer.from(await r2.arrayBuffer());
+        A.eq(b2.equals(audioPayload), true, 'the cached edge clip is byte-identical');
+      } finally {
+        try { eb.child.kill(); } catch (_) {}
+        // bounded teardown: force any lingering (keep-alive/upgrade) sockets shut so close() can't stall the test.
+        try { if (wsServer.closeAllConnections) wsServer.closeAllConnections(); } catch (_) {}
+        await new Promise(r => { let done = false; const fin = () => { if (!done) { done = true; r(); } }; try { wsServer.close(fin); } catch (_) { fin(); } setTimeout(fin, 1000); });
+        await sleep(150);
+        try { fs.rmSync(edgeWs, { recursive: true, force: true }); } catch (_) {}
+      }
+    }
+
+    // ---- V-STT: the dedicated Groq Whisper ASR branch. A local mock stands in for api.groq.com; the sidecar
+    //      must POST a multipart body carrying OUR audio bytes + model=whisper-large-v3-turbo, return the text ----
+    {
+      let seenBody = null, seenCt = '';
+      const groqMock = http.createServer((rq, rs) => {
+        const chunks = [];
+        rq.on('data', c => chunks.push(c));
+        rq.on('end', () => {
+          seenBody = Buffer.concat(chunks); seenCt = String(rq.headers['content-type'] || '');
+          rs.writeHead(200, { 'Content-Type': 'application/json' });
+          rs.end(JSON.stringify({ text: 'station systems nominal' }));
+        });
+      });
+      await new Promise(r => groqMock.listen(0, '127.0.0.1', r));
+      const groqPort = groqMock.address().port;
+      const gWs = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-groq-'));
+      const gb = await boot(port + 400, gWs, 20, { GROQ_API_KEY: 'test', SKYNET_GROQ_BASE: 'http://127.0.0.1:' + groqPort });
+      const GB = 'http://' + HOST + ':' + gb.port;
+      try {
+        const gtok = await bootToken(GB, GB);
+        const audioBytes = Buffer.from('OPUSFAKEAUDIO-abc123');
+        const r = await fetch(GB + '/api/stt', { method: 'POST', headers: { 'Content-Type': 'audio/webm', 'X-StarNet-Token': gtok, Origin: GB }, body: audioBytes });
+        A.eq(r.status, 200, 'groq-keyed /api/stt -> 200');
+        const body = await r.json();
+        A.eq(body.text, 'station systems nominal', 'the transcript comes from the dedicated Groq Whisper branch');
+        A.ok(/multipart\/form-data/.test(seenCt), 'the sidecar sent a multipart/form-data body to Groq');
+        A.ok(seenBody && seenBody.includes('whisper-large-v3-turbo'), 'the multipart body carries model=whisper-large-v3-turbo');
+        A.ok(seenBody && seenBody.includes('name="file"'), 'the multipart body has a file part named "file"');
+        A.ok(seenBody && seenBody.indexOf(audioBytes) >= 0, 'the multipart body contains our raw audio bytes verbatim');
+      } finally {
+        try { gb.child.kill(); } catch (_) {}
+        // bounded teardown: the sidecar's keep-alive pool may hold the mock socket open — force it shut so
+        // close() returns promptly instead of waiting out the keep-alive timeout.
+        try { if (groqMock.closeAllConnections) groqMock.closeAllConnections(); } catch (_) {}
+        await new Promise(r => { let done = false; const fin = () => { if (!done) { done = true; r(); } }; try { groqMock.close(fin); } catch (_) { fin(); } setTimeout(fin, 1000); });
+        await sleep(150);
+        try { fs.rmSync(gWs, { recursive: true, force: true }); } catch (_) {}
+      }
+    }
 
   } finally {
     try { child.kill(); } catch (_) {}

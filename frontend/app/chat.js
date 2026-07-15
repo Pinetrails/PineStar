@@ -439,6 +439,11 @@ const Chat = (() => {
     threadRunsSeen.clear(); threadPending.length = 0; activeThreadCard = null;   // NS-6: the thread turn-in side starts clean per session (same law)
     beatSlot = (typeof Study !== 'undefined' && Study.makeBeatSlot) ? Study.makeBeatSlot() : null;
     log = el('chat-log'); input = el('chat-input'); statusEl = el('chat-status');
+    // F2: re-derive the idle status on the same cadence the topbar repaints #sig (3s) so a link that dies with
+    // NO run in flight still downgrades 'online' → 'station unreachable'. Once-armed (init re-runs per session).
+    if (typeof window !== 'undefined' && !window.__chatLinkStatusTimer) {
+      window.__chatLinkStatusTimer = setInterval(() => { try { if (!isBusy()) syncStatus(); } catch (_) {} }, 3000);
+    }
     attachInput = el('chat-attach-input'); attachStrip = el('chat-attach-strip');
     clearAttachments();   // a fresh agent session starts with no staged attachments (matches the clean-slate init above)
     if (log) log.addEventListener('scroll', () => { stick = nearBottom(); if (stick) hideNewPill(); else showNewPill(false); });   // at the bottom → retire the pill; scrolled up → a persistent "↓ latest" affordance
@@ -862,12 +867,13 @@ const Chat = (() => {
     if (!statusEl) return;
     statusEl.textContent = s;
     const low = String(s || '').toLowerCase();
-    statusEl.classList.remove('status-thinking', 'status-working', 'status-approval', 'status-stopping', 'status-connecting', 'status-online');
+    statusEl.classList.remove('status-thinking', 'status-working', 'status-approval', 'status-stopping', 'status-connecting', 'status-online', 'status-down');
     statusEl.classList.add(low.indexOf('approval') >= 0 ? 'status-approval'
       : low.indexOf('stopping') >= 0 ? 'status-stopping'
       : low.indexOf('working') >= 0 ? 'status-working'
       : low.indexOf('thinking') >= 0 ? 'status-thinking'
       : low.indexOf('connecting') >= 0 ? 'status-connecting'
+      : low.indexOf('unreachable') >= 0 ? 'status-down'
       : 'status-online');
   }
   // derive the DISPLAYED stream's status from real state, so a low-priority write (a finishing turn) can't
@@ -876,7 +882,13 @@ const Chat = (() => {
     if (interview) { status('waking…'); stopElapsedTimer(); return; }
     const p = (activeWs && typeof Channels !== 'undefined') ? Channels.pendingOf(activeWs.id) : null;
     const channelStatus = (activeWs && typeof Channels !== 'undefined' && Channels.statusOf) ? Channels.statusOf(activeWs.id) : '';
-    status(p ? 'awaiting your approval…' : (isBusy() ? (channelStatus || 'thinking…') : 'online'));
+    // F2 (2026-07-14 adversarial sweep): the idle claim folds the REAL bridge health (World.linkState — the
+    // same E1 predicate the topbar #sig / canvas LINK DOWN already read). A dead sidecar kept this label
+    // asserting 'online' indefinitely — connectivity the harness (being gone) provably couldn't back. Only a
+    // genuinely bridged-but-dead link downgrades; pre-entry and a deliberate pause still read as before.
+    let down = false;
+    try { const ls = (typeof World !== 'undefined' && World.linkState) ? World.linkState() : null; down = !!(ls && ls.bridged && !ls.paused && ls.down); } catch (_) {}
+    status(p ? 'awaiting your approval…' : (isBusy() ? (channelStatus || 'thinking…') : (down ? 'station unreachable' : 'online')));
     // keep the elapsed readout matched to the DISPLAYED stream — switching to a busy stream picks up its
     // live count, switching to an idle one clears it. (send() also starts it the instant a run begins.)
     if (isBusy()) ensureElapsedTimer(); else stopElapsedTimer();
@@ -1699,6 +1711,10 @@ const Chat = (() => {
         if (!bottleWillOffer) ResummonStore.onVerdict(runId, verdict, agentId || 'agent');
       } catch (_) {}
     }
+    // OUTCOME LOOP (recipe lane B): if THIS run was launched from a recipe (RUN_META provenance spine), fold the
+    // verdict onto that recipe's own counters — what actually HELPED ranks the FOR-YOU shelf, not just what was
+    // clicked. Missing meta (ledger evicted / page reloaded) → no rating recorded, never guessed. Fail-open.
+    try { const rmp = runMeta(runId); if (rmp && rmp.recipeId && typeof ProspectStore !== 'undefined' && ProspectStore.noteRated) ProspectStore.noteRated(rmp.recipeId, verdict); } catch (_) {}
   }
   // render the rate-the-work control into `host` (a span/div). onSettle fires after the verdict flashes.
   const WORKRATE_COACH_KEY = 'starnet.workrate.seen';
@@ -1917,6 +1933,10 @@ const Chat = (() => {
       setTimeout(() => workshopReturn(m, opts, t + 1), t < 25 ? 7000 : 60000);
       return;
     }
+    // ONE LIVE CARD PER DELIVERABLE (2026-07-14): an undecided card may be RE-offered (return-from-away,
+    // next-session attach) until decided — drop the stale instance first so the feed never holds two live
+    // cards for the same runId (deciding one would strand a dead twin whose decide can only fail).
+    try { const stale = log.querySelector('.workshop-return[data-wsrun="' + String(m.runId).replace(/["\\]/g, '') + '"]'); if (stale) stale.remove(); } catch (_) {}
     const agentId = m.agentId || 'agent';
     const who = (agentId === 'agent') ? name : agentId;
     // W7 — the Commander receives a TOOL, not a repo. If the deliverable has a web entry point (index.html
@@ -1944,6 +1964,7 @@ const Chat = (() => {
       if (!win) warn('your browser blocked the new tab — allow popups for the station, then try again');
     };
     const r = row('agent'); r.d.classList.add('tool'); r.d.classList.add('turnin'); r.d.classList.add('workshop-return');
+    try { r.d.setAttribute('data-wsrun', String(m.runId)); } catch (_) {}   // the re-present dedupe key (above)
 
     // ── collapsed headline (one glance) ──
     const title = document.createElement('span'); title.className = 'turnin-title';
@@ -3320,6 +3341,11 @@ const Chat = (() => {
         // SELF-GROWING SEED (Slice 5): if a recurring pattern is ripe, the agent offers to author it as a one-tap
         // seed — takes this one beat (after a suggestion, before curiosity) so it never stacks two asks on a task.
         if (typeof SeedStore !== 'undefined' && SeedStore.willPropose && SeedStore.propose && SeedStore.willPropose()) { SeedStore.propose(); return; }
+        // ROUTINE NUDGE (recipe lane D): a naturally-recurring recipe the Commander keeps hand-launching earns ONE
+        // offer to put it on a schedule — after suggestion/seed (rarer, more specific asks), before recruitment.
+        // Accepting deep-links into the SCHEDULE IT form (propose-and-confirm; never a silent cron write).
+        if (typeof RoutineNudgeStore !== 'undefined' && RoutineNudgeStore.onRunEnd) { try { RoutineNudgeStore.onRunEnd(); } catch (_) {} }
+        if (typeof RoutineNudgeStore !== 'undefined' && RoutineNudgeStore.willPropose && RoutineNudgeStore.propose && RoutineNudgeStore.willPropose()) { RoutineNudgeStore.propose(); return; }
         // ADAPTIVE RECRUITMENT: once the station has a WARM read of the Commander's real workflow and it points to a
         // NEW teammate the crew doesn't have, offer ONCE — through THIS single post-run beat, sharing every guard
         // above (work-earned floor, busy/interview/turn-in, one-beat-at-a-time). Never a parallel nag channel: it
@@ -3970,7 +3996,10 @@ const Chat = (() => {
       }
       return steerQueueFallback(note);
     }
-    send(note);
+    // F3 (2026-07-14 adversarial sweep): with NOTHING running there is nothing to steer — refuse honestly.
+    // The old fallthrough send(note) silently minted a FULL model run out of a steering note (real-provider
+    // spend for a no-op; the sidecar's own /api/run/steer honestly 404s in this state and was never asked).
+    localLine('Nothing is running to steer. Start a task first, or /queue <text> to stage it for the next run.');
   }
   function steerQueueFallback(note) {
     if (!activeWs) return;
@@ -4556,6 +4585,9 @@ const Chat = (() => {
     // R5 "Bottle a run": did THIS directive come from a recipe launch? launchRecipe() passes fromRecipe:true. A
     // recipe-launched run must NEVER be offered for bottling (it already IS a recipe) — recorded in RUN_META below.
     const fromRecipe = !!(opts && opts.fromRecipe);
+    // provenance SPINE: WHICH recipe launched this run (null for everything else). Rides RUN_META (so rateWork can
+    // attribute the verdict to the recipe) and the /api/run body (so the durable run row carries it).
+    const recipeId = (opts && opts.recipeId != null && String(opts.recipeId).trim()) ? String(opts.recipeId).slice(0, 60) : null;
     // GOAL LOOP: is THIS turn a loop-driven continuation (kickGoal) rather than a real user message? A real user
     // message mid-loop PREEMPTS the loop; a continuation is judged and may fire the next one. Captured here so the
     // teardown routes correctly even if the active loop is paused/cleared mid-run.
@@ -4697,10 +4729,11 @@ const Chat = (() => {
     try {
       const { text: reply, error, endReason, finishReason } = await Harness.chat({
         system: sys, messages: historyWindow(ws), agentId: ws.agentId || 'agent', isTask, recurring, signal: ac.signal, streamId: ws.id,
+        recipeId: recipeId || undefined,   // provenance spine: the launching recipe rides to the durable run row (undefined for non-recipe runs)
         projectRoot: ws.projectRoot || undefined,   // project-anchored session: the sidecar injects the folder context ONLY if the root is still a standing blessed grant (truthful)
         placed: (typeof World !== 'undefined' && World.heroCaps) ? World.heroCaps(ws.agentId || 'agent') : [],   // THE MOAT: this run's TOOL reach = the agent's REAL placed props (dish→web · cabinet→files · workbench→terminal · …); compute is the freebie
         stationPlaced: (typeof World !== 'undefined' && World.stationCaps) ? World.stationCaps() : [],   // Class Loadouts (shared-gear): station-wide gear for SKILL availability — a desk-only specialist still gets its class skills when the STATION has the gear (tools stay room-scoped via `placed`)
-        onRunId: id => { thisRunId = id; runStartedAt = Date.now(); try { RUN_META.set(id, { isTask: !!isTask, title: (ws && ws.title) || '', directive: String(text || ''), fromRecipe: fromRecipe, agentId: ws.agentId || 'agent' }); if (RUN_META.size > 60) RUN_META.delete(RUN_META.keys().next().value); } catch (_) {} Channels.setRunId(ws.id, id, Date.now()); if (walkedToDesk && Channels.setStatus) Channels.setStatus(ws.id, 'working…'); if (isActiveWs(ws)) { syncStatus(); renderPresence(); } if (typeof Workstreams !== 'undefined') { Workstreams.appendRun(ws.id, id); if (typeof App !== 'undefined' && App.refreshRail) App.refreshRail(); } },
+        onRunId: id => { thisRunId = id; runStartedAt = Date.now(); try { RUN_META.set(id, { isTask: !!isTask, title: (ws && ws.title) || '', directive: String(text || ''), fromRecipe: fromRecipe, recipeId: recipeId, agentId: ws.agentId || 'agent' }); if (RUN_META.size > 60) RUN_META.delete(RUN_META.keys().next().value); } catch (_) {} Channels.setRunId(ws.id, id, Date.now()); if (walkedToDesk && Channels.setStatus) Channels.setStatus(ws.id, 'working…'); if (isActiveWs(ws)) { syncStatus(); renderPresence(); } if (typeof Workstreams !== 'undefined') { Workstreams.appendRun(ws.id, id); if (typeof App !== 'undefined' && App.refreshRail) App.refreshRail(); } },
         onToken: d => { acc += d; Channels.appendToken(ws.id, d); if (isActiveWs(ws)) { if (activeLiveRow) activeLiveRow.append(d); if (!isTask) World.say(acc); } if (willSpeak) pushSpeech(false); App.refreshUsage(); },
         onUsage: () => App.refreshUsage(),
         // COMMS-PREMIUM: the Channels store still records the pre-formatted STRING (replay/switch-survival is

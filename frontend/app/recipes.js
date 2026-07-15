@@ -578,11 +578,15 @@
   // RANK the "FOR YOU" row deterministically. `opts`:
   //   score(itemTags) -> number  — the profile affinity scorer (ProfileStore.score), or null when learning is off/thin.
   //   goalText        -> string  — the user's goals belief text (keyword-matched into the ranking as a small nudge).
-  //   launches        -> {id: {n}} or {id: n} — REAL per-recipe launch counts (the scout usage read). The strongest
-  //                      engagement signal there is: what the Commander actually launches ranks up (capped nudge).
+  //   launches        -> {id: {n, rated?}} or {id: n} — REAL per-recipe launch counts (the scout usage read), each
+  //                      optionally carrying rate-the-work outcome counters {great, ok, miss}. Launching ranks a
+  //                      recipe up (capped nudge); the Commander's own verdicts rank what actually HELPED.
   //   exclude         -> id      — a recipe to omit (e.g. the one already in the dossier).
   //   limit           -> N       — how many to return (default 4).
-  // Signal blend: (profile affinity × 4) + (goal-keyword hits × 2) + min(launches, 5), tie-broken by original
+  // Signal blend: (profile affinity × 4) + (goal-keyword hits × 2) + min(launches, 5) + OUTCOME, where OUTCOME =
+  // min(great, 3) − 2·min(miss, 3) — asymmetric on purpose: a recipe the Commander keeps rating 👎 sinks fast and
+  // can drop out of the row entirely (score ≤ 0 is filtered — the honest sink), while 👍 lifts it gently. Ratings
+  // never count as a signal on their own (a rating implies a launch, which already signals). Tie-broken by original
   // catalog order so the result is STABLE for a fixed input (test-friendly). If EVERY signal is silent (no profile
   // + no goal match + never launched), we fall back to an HONEST category spread — one recipe per distinct category
   // in catalog order — so a cold-start user still sees a varied, non-arbitrary row (never a fake "popular"
@@ -601,14 +605,25 @@
       const n = (u && typeof u === 'object') ? u.n : u;
       return (Number.isFinite(n) && n > 0) ? Math.min(5, Math.floor(n)) : 0;
     };
+    // the outcome term (lane B): the Commander's OWN rate-the-work verdicts on this recipe's runs. Capped both
+    // ways and miss-heavy on purpose (a 👎 is rarer and better-informed than a 👍); bad counters read as zeros.
+    const outcomeScore = (id) => {
+      if (!launches || !id) return 0;
+      const u = launches[id];
+      const r = (u && typeof u === 'object') ? u.rated : null;
+      if (!r || typeof r !== 'object') return 0;
+      const g = (Number.isFinite(r.great) && r.great > 0) ? Math.min(3, Math.floor(r.great)) : 0;
+      const m = (Number.isFinite(r.miss) && r.miss > 0) ? Math.min(3, Math.floor(r.miss)) : 0;
+      return g - 2 * m;
+    };
     const pool = list0.filter(r => r && r.id !== exclude);
     let anySignal = false;
     const scored = pool.map((r, idx) => {
       const aff = scoreFn ? (Number(scoreFn(r.tags || {})) || 0) : 0;
       const goal = goalKeywordScore(r, goalText);
       const use = launchCount(r.id);
-      if (aff > 0 || goal > 0 || use > 0) anySignal = true;
-      return { r, idx, s: aff * 4 + goal * 2 + use };
+      if (aff > 0 || goal > 0 || use > 0) anySignal = true;   // ratings never signal alone: a rating implies a launch
+      return { r, idx, s: aff * 4 + goal * 2 + use + outcomeScore(r.id) };
     });
     if (anySignal) {
       return scored

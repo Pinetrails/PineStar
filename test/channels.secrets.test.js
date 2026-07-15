@@ -301,4 +301,75 @@ const root = path.resolve(__dirname, '..');
   A.ok(/token saved locally, not the OS keychain/.test(ui), 'the connect handler notes a local (non-keychain) save honestly');
 }
 
+// ---- G. makeVerifiedPersist: the saveJsonVerified law applied to channel secrets (EL-5 class) ----
+// The regression this locks: channel bot tokens were the ONE credential class persisted fire-and-forget —
+// a swallowed write error lost the token's last surviving copy while every route kept returning ok:true.
+{
+  const { saveJsonVerified } = require('../sidecar/durable-store.js');
+
+  // 1) healthy round-trip: write lands, read-back matches -> ok:true, first attempt
+  {
+    let disk;
+    const persist = S.makeVerifiedPersist({ saveJsonVerified, save: (v) => { disk = JSON.stringify(v); }, load: () => JSON.parse(disk) });
+    const r = persist({ telegram: { token: 'BOT:123', enabled: true }, notifyAutonomous: true });
+    A.ok(r.ok, 'healthy write is proven ok');
+    A.eq(r.attempts, 1, 'healthy write proves on the first attempt');
+  }
+
+  // 2) THE ESCAPE SCENARIO (disk full / file locked): save throws, disk keeps the STALE value.
+  //    Pre-fix this was catch{warn} -> callers reported "saved". Now it must be ok:false, after a retry.
+  {
+    const stale = JSON.stringify({ telegram: { enabled: false } });
+    const persist = S.makeVerifiedPersist({ saveJsonVerified, save: () => { throw new Error('ENOSPC: no space left'); }, load: () => JSON.parse(stale) });
+    const r = persist({ telegram: { token: 'BOT:new-last-copy', enabled: true } });
+    A.ok(!r.ok, 'a swallowed write error can no longer be reported as saved (the EL-5 Telegram-token escape)');
+    A.eq(r.attempts, 2, 'the failed write was retried once before reporting honestly');
+    A.ok(String(r.error).length > 0, 'the failure carries the real cause');
+  }
+
+  // 3) silent corruption: save "succeeds" but the read-back is NOT the intended value -> proof refuses it
+  {
+    const persist = S.makeVerifiedPersist({ saveJsonVerified, save: () => {}, load: () => ({ telegram: { token: 'SOMETHING-ELSE' } }) });
+    const r = persist({ telegram: { token: 'BOT:123' } });
+    A.ok(!r.ok, 'a read-back that does not byte-match the intended value is never called proven');
+  }
+
+  // 4) transient first failure: attempt 1 throws, attempt 2 lands -> ok:true on the retry
+  {
+    let disk, n = 0;
+    const persist = S.makeVerifiedPersist({ saveJsonVerified, save: (v) => { if (++n === 1) throw new Error('EBUSY'); disk = JSON.stringify(v); }, load: () => (disk === undefined ? undefined : JSON.parse(disk)) });
+    const r = persist({ discord: { token: 'BOT:d', enabled: true } });
+    A.ok(r.ok, 'a transient first-attempt failure recovers on the retry');
+    A.eq(r.attempts, 2, 'recovery is reported as attempt 2');
+  }
+
+  // 5) the strip policy runs BEFORE the write and the proof compares the STRIPPED value (desktop posture:
+  //    a durable token never touches the plaintext file; the proof must demand exactly what was intended on disk)
+  {
+    let disk;
+    const persist = S.makeVerifiedPersist({
+      saveJsonVerified,
+      strip: (obj) => S.stripTokens(obj, () => true),   // every token durable elsewhere -> all stripped
+      save: (v) => { disk = JSON.stringify(v); },
+      load: () => JSON.parse(disk)
+    });
+    const r = persist({ telegram: { token: 'BOT:123', key: 'sk-live', model: 'm', enabled: true } });
+    A.ok(r.ok, 'stripped persist is proven ok');
+    const onDisk = JSON.parse(disk);
+    A.ok(!('token' in onDisk.telegram) && !('key' in onDisk.telegram), 'the durable token + key never reach the plaintext file');
+    A.eq(onDisk.telegram.model, 'm', 'non-secret config survives the strip');
+  }
+
+  // 6) host wiring static guards: index.js persists through the verified factory, RETURNS the ok bit, and the
+  //    routes surface it (notify 500s, disconnect never claims `purged` on an unproven write).
+  {
+    const idx = fs.readFileSync(path.join(root, 'sidecar', 'index.js'), 'utf8');
+    A.ok(/persistChannelSecretsVerified = channelSecretsMod\.makeVerifiedPersist\(\{/.test(idx), 'saveChannelSecrets rides makeVerifiedPersist (read-back-proven)');
+    A.ok(/const r = persistChannelSecretsVerified\(obj\);[\s\S]{0,400}?return r\.ok;/.test(idx), 'saveChannelSecrets returns the proven ok bit');
+    A.ok(/if \(!saveChannelSecrets\(channelSecrets\)\) \{ res\.writeHead\(500/.test(idx), 'the notify route surfaces a failed persist as 500 (the old guard was unreachable)');
+    A.ok((idx.match(/purged: purge && persisted/g) || []).length >= 2, 'a FORGET/purge never claims `purged` without read-back proof (telegram + generic)');
+    A.ok((idx.match(/persisted: !!\(started && started\.secretsPersisted\)/g) || []).length >= 3, 'all three connect routes report the persist truth bit');
+  }
+}
+
 A.report('channels.secrets.test');

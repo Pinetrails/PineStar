@@ -53,6 +53,7 @@ test/loopguard.test.js
 test/loopguard.dispatch.test.js
 test/iteration-budget.test.js
 test/updatecore.test.js
+test/quitguard.test.js
 test/cloudsavecore.test.js
 test/cloudsave-refusal.test.js
 test/fullscreen.test.js
@@ -77,6 +78,7 @@ test/t2-state-safety.test.js
 test/t3-release-smoke.test.js
 test/t4-update-delivery.test.js
 test/t5-public-distribution.test.js
+test/minisign-verify.test.js
 test/release-assemble-manifest.test.js
 test/verify-update-host.test.js
 test/replacement-sweep.test.js
@@ -94,6 +96,7 @@ test/manual.test.js
 test/permissions.test.js
 test/workshop-permissions.test.js
 test/workshop-store.test.js
+test/workshop-visibility.test.js
 test/quest-store.test.js
 test/questinject.test.js
 test/quests-tool.test.js
@@ -179,6 +182,8 @@ test/wakemind.test.js
 test/curiosity.test.js
 test/dossierinject.test.js
 test/recipes.test.js
+test/launchmemory.test.js
+test/routinenudgestore.test.js
 test/bottlestore.test.js
 test/bottle-wiring.test.js
 test/resummonstore.test.js
@@ -268,6 +273,8 @@ test/subagentsprites.test.js
 test/orchestration.test.js
 test/channels.test.js
 test/comms-presence.test.js
+test/comms-link-honesty.test.js
+test/steer-idle-honesty.test.js
 test/toolprops.test.js
 test/worldmodel.test.js
 test/station-authority.test.js

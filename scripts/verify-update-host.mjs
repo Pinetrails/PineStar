@@ -18,7 +18,7 @@
  *
  * USAGE:
  *   node scripts/verify-update-host.mjs [--endpoint URL] [--expect-version X.Y.Z]
- *       [--require-platforms windows-x86_64,darwin-aarch64,darwin-x86_64,linux-x86_64]
+ *       [--require-platforms windows-x86_64,darwin-aarch64,darwin-x86_64,linux-x86_64,linux-x86_64-deb]
  *   node scripts/verify-update-host.mjs --manifest release/latest.json [--check-urls]
  *       [--expect-version X.Y.Z] [--require-platforms ...]
  */
@@ -40,7 +40,10 @@ function argFlag(name) { return args.includes(name); }
 function readText(f) { return readFileSync(f, 'utf8').replace(/^﻿/, ''); }
 function readJson(f) { return JSON.parse(readText(f)); }
 
-const DEFAULT_REQUIRE = 'windows-x86_64,darwin-aarch64,darwin-x86_64,linux-x86_64';
+// linux-x86_64-deb: tauri-plugin-updater resolves {os}-{arch}-{installer} first for
+// .deb-installed apps; without this key they fall back to the AppImage and hard-fail
+// at install. Ship .deb downloads ⇒ ship this manifest key.
+const DEFAULT_REQUIRE = 'windows-x86_64,darwin-aarch64,darwin-x86_64,linux-x86_64,linux-x86_64-deb';
 const REQUIRE_PLATFORMS = argVal('--require-platforms', DEFAULT_REQUIRE)
   .split(',').map(s => s.trim()).filter(Boolean);
 const EXPECT_VERSION = argVal('--expect-version', '');

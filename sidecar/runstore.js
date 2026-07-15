@@ -88,6 +88,7 @@
         turns: num(e.turns), tokens: num(e.tokens), usd: num(e.usd),
         title: str(e.title).slice(0, TITLE_MAX),
         streamId: str(e.streamId),     // H3.2: the run's workstream — joins this outcome row to its transcript (GET /api/transcript?stream=)
+        recipeId: str(e.recipeId).slice(0, 60),   // provenance spine (additive): WHICH recipe launched this run ('' for non-recipe runs; old rows lack it and default '')
         model: modelName(e.model),   // H3.3/G6: actual model used, or explicit (unknown) as a last resort
         unmetered: !!e.unmetered,    // G6.2: subscription usage is counted, not summed as $0 spend
         artifacts: artifactList(e.artifacts),   // work-visibility: what the run PRODUCED (additive; [] default)

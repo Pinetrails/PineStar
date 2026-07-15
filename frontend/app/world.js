@@ -64,10 +64,8 @@ const World = (() => {
   let floodAt = 0, floodEndAt = 0, floodStreams = null;        // THE FLOOD: screen-space data-cascade — start / collapse-trigger / seeded streams
   let firstWakeDone = false;                                   // FIRST LIGHT: once-per-page-life latch — the wake ritual fires at most once (a re-bake/refit never resets it)
   let kindleArmed = false, kindleP = 0, kindleHolding = false, kindlePeak = 0, kindleDone = null;   // THE KINDLING: the user HOLDS to wake the dormant mind; their attention fills kindleP (0..1) → ignition
-  const stars = [];
-  // Slice 4 — parallax starfield bands [far, mid, near]: px/sec scroll rate + brightness scale.
-  // Far is slow + dim (distant void), near drifts + reads brighter. Original single layer was 8px/s.
-  const STAR_SPD = [3, 8, 15], STAR_DIM = [0.55, 0.8, 1.0];
+  // THE VOID backdrop (dense parallax starfield + nebulas) lives in spacebg.js (SpaceBG.draw),
+  // shared with REFIT (build.js) so entering/exiting build mode never jumps the sky.
 
   /* reduced-motion (the warroom honesty floor): heavy motion — pulses/blinks — goes steady when the OS
      asks for less motion. Live-read so a runtime setting change is honored without a reload. */
@@ -697,14 +695,6 @@ const World = (() => {
 
   function init(canvas) {
     cv = canvas; ctx = cv.getContext('2d');
-    // Slice 4 — PARALLAX STARFIELD: 3 depth bands give the void real depth. `band` 0=far (dim,
-    // slow, tiny), 1=mid, 2=near (brighter, faster, occasionally 2px). Density kept ~the same
-    // overall (90 stars split ~40/32/18). Per-band scroll rate + brightness read in frame().
-    if (!stars.length) for (let i = 0; i < 90; i++) {
-      const band = i < 40 ? 0 : (i < 72 ? 1 : 2);
-      const r = band === 2 ? (Math.random() < 0.6 ? 1 : 2) : 1;
-      stars.push({ x: Math.random(), y: Math.random(), r, ph: Math.random() * 10, band });
-    }
     resize();
     camUserAt = performance.now();   // boot / a new agent re-arms the cinecam idle clock — the director never fires into a fresh floor
     try { if (ro) ro.disconnect(); ro = new ResizeObserver(() => { resize(); fitNeeded = true; redrawNow(); }); ro.observe(cv.parentElement || cv); } catch (e) {}
@@ -3223,16 +3213,9 @@ const World = (() => {
     tick(dt, now);
 
     ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.imageSmoothingEnabled = false;
-    ctx.fillStyle = '#040302'; ctx.fillRect(0, 0, cv.width, cv.height);
-    // Slice 4 — parallax: each depth band scrolls at its own rate and sits at its own brightness,
-    // so the void reads with real depth (far band barely creeps + dim, near band drifts + brighter).
-    const SPD = STAR_SPD, DIM = STAR_DIM;
-    for (const s of stars) {
-      const band = s.band || 0;
-      const tw = (0.35 + 0.65 * Math.abs(Math.sin(now / (900 + s.ph * 300) + s.ph))) * DIM[band];
-      ctx.fillStyle = 'rgba(180,200,230,' + tw.toFixed(3) + ')';
-      ctx.fillRect((s.x * cv.width + now / 1000 * SPD[band]) % cv.width, s.y * cv.height, s.r, s.r);
-    }
+    // THE VOID: deep-space backdrop (nebulas → dust field → twinkle bands), base fill included.
+    if (typeof SpaceBG !== 'undefined') SpaceBG.draw(ctx, cv.width, cv.height, now);
+    else { ctx.fillStyle = '#040302'; ctx.fillRect(0, 0, cv.width, cv.height); }
 
     if (!cache) return;   // wrapper frame() already scheduled the next rAF — never double-schedule here
     if (fitNeeded && !camAnim) { fitCamera(); fitNeeded = false; }   // the scripted awakening camera owns the transform while it runs
@@ -4226,15 +4209,17 @@ const World = (() => {
     }
     return out;
   }
-  /* FEED TRUTH: is anything actually wired to drop work onto this floor? A channel (Telegram/Discord)
-     configured, or the cron scheduler armed with at least one enabled routine. Server-proven only —
-     `fed` stays true until a real response says otherwise, so a fetch hiccup can never fire the nag. */
+  /* FEED TRUTH: is anything actually wired to drop work onto this floor? ANY registry channel configured
+     (the bulk /api/channels/status covers telegram/discord/slack/matrix/signal — polling only the first two
+     falsely nagged a slack/matrix/signal-only floor), or the cron scheduler armed with at least one enabled
+     routine. Server-proven only — `fed` stays true until a real response says otherwise, so a fetch hiccup
+     can never fire the nag. */
   function pollFeedState() {
     if (typeof fetch === 'undefined') return;
     const get = u => { try { return fetch(apiUrl(u)).then(r => (r.ok ? r.json() : null)).catch(() => null); } catch (_) { return Promise.resolve(null); } };
-    Promise.all([get('/api/channels/telegram/status'), get('/api/channels/discord/status'), get('/api/cron')]).then(([tg, dc, cron]) => {
-      if (!tg && !dc && !cron) return;   // nothing answered — keep the last known truth
-      const chan = !!((tg && tg.configured) || (dc && dc.configured));
+    Promise.all([get('/api/channels/status'), get('/api/cron')]).then(([chans, cron]) => {
+      if (!chans && !cron) return;   // nothing answered — keep the last known truth
+      const chan = !!(chans && typeof chans === 'object' && Object.keys(chans).some(id => chans[id] && chans[id].configured));
       const jobs = (cron && Array.isArray(cron.jobs)) ? cron.jobs : [];
       const cronFeeds = !!(cron && cron.enabled && jobs.some(j => j && j.enabled !== false));
       const next = { known: true, fed: chan || cronFeeds };

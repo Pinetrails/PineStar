@@ -2,6 +2,36 @@
   "version": "0.0.1",
   "configurations": [
     {
+      "name": "idle-visibility-seed",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "dev/seed.js",
+        "--keep"
+      ],
+      "port": 8905,
+      "autoPort": false,
+      "env": {
+        "SKYNET_PORT": "8905",
+        "SKYNET_DEFAULT_MODEL": "anthropic/claude-haiku-4.5"
+      }
+    },
+    {
+      "name": "recipe-mock-seed",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "dev/seed.js",
+        "--keep"
+      ],
+      "port": 8825,
+      "autoPort": false,
+      "env": {
+        "SKYNET_PORT": "8825",
+        "SKYNET_OPENROUTER_BASE": "http://127.0.0.1:9482/api/v1",
+        "SKYNET_OPENROUTER_KEY": "sk-or-v1-recipe-lanes-mock",
+        "SKYNET_DEFAULT_MODEL": "test/model"
+      }
+    },
+    {
       "name": "onboard-fresh",
       "runtimeExecutable": "node",
       "runtimeArgs": [
@@ -751,6 +781,20 @@
       "autoPort": false,
       "env": {
         "SKYNET_PORT": "8979",
+        "SKYNET_DEFAULT_MODEL": "anthropic/claude-haiku-4.5"
+      }
+    },
+    {
+      "name": "spacebg-seed",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "dev/seed.js",
+        "--keep"
+      ],
+      "port": 8995,
+      "autoPort": false,
+      "env": {
+        "SKYNET_PORT": "8995",
         "SKYNET_DEFAULT_MODEL": "anthropic/claude-haiku-4.5"
       }
     },

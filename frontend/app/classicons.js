@@ -33,6 +33,13 @@
     archivist: '<svg viewBox="0 0 24 24"><rect x="4" y="3.5" width="16" height="17" rx="2" fill="currentColor"/><g fill="' + D + '"><rect x="6" y="5.6" width="12" height="3.1" rx=".6"/><rect x="6" y="10.4" width="12" height="3.1" rx=".6"/><rect x="6" y="15.3" width="12" height="3.1" rx=".6"/></g><g fill="currentColor"><rect x="10.5" y="6.6" width="3" height="1.1" rx=".5"/><rect x="10.5" y="11.4" width="3" height="1.1" rx=".5"/><rect x="10.5" y="16.3" width="3" height="1.1" rx=".5"/></g></svg>',
     designer: '<svg viewBox="0 0 24 24"><rect x="3" y="3" width="11" height="11" rx="1.6" fill="currentColor"/><circle cx="15.5" cy="15.5" r="5.7" fill="none" stroke="currentColor" stroke-width="3"/></svg>',
     liaison: '<svg viewBox="0 0 24 24"><rect x="2.5" y="5" width="19" height="14" rx="2.2" fill="currentColor"/><path fill="' + D + '" d="M4.6 7.4 L12 12.9 L19.4 7.4 L19.4 8.9 L12 14.4 L4.6 8.9 Z"/></svg>',
+    // ---- recuration new class seals (2026-07-14, same engraved-coin style) ----
+    // navigator: a compass rose carved into a coin — plotting the route.
+    navigator: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.8" fill="currentColor"/><path fill="' + D + '" d="M12 3.8 L13.8 10.2 L20.2 12 L13.8 13.8 L12 20.2 L10.2 13.8 L3.8 12 L10.2 10.2 Z"/><circle cx="12" cy="12" r="1.7" fill="currentColor"/></svg>',
+    // curator: a folder with sorted (descending) rules — order imposed on the pile.
+    curator: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M2.6 4.6 h6.4 l1.8 2.4 h10.6 v12.4 a1.6 1.6 0 0 1 -1.6 1.6 H4.2 a1.6 1.6 0 0 1 -1.6 -1.6 Z"/><g fill="' + D + '"><rect x="6" y="10.6" width="12" height="1.8" rx=".5"/><rect x="6" y="13.8" width="9" height="1.8" rx=".5"/><rect x="6" y="17" width="6" height="1.8" rx=".5"/></g></svg>',
+    // muse: a lightbulb with a carved filament spark — the idea landing.
+    muse: '<svg viewBox="0 0 24 24"><circle cx="12" cy="9.4" r="6.6" fill="currentColor"/><path fill="currentColor" d="M9.2 14.6 h5.6 v3.6 a1.4 1.4 0 0 1 -1.4 1.4 h-2.8 a1.4 1.4 0 0 1 -1.4 -1.4 Z"/><g fill="none" stroke="' + D + '" stroke-width="1.5" stroke-linecap="round"><path d="M9.6 16.8 H14.4"/><path d="M9.9 8.6 L12 10.8 L14.1 8.6"/><path d="M12 10.8 V13.2"/></g></svg>',
     // ---- S2 new class seals (same matte/debossed engraved-coin style, currentColor) ----
     // broker: a scale/balance — weighing the deal.
     broker: '<svg viewBox="0 0 24 24"><g fill="currentColor"><rect x="11" y="3.4" width="2" height="15.4" rx=".5"/><rect x="6" y="18.6" width="12" height="2" rx=".8"/><path d="M4 6.6 H20 V8 H4 Z"/></g><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M4 7.3 L1.8 12.4"/><path d="M4 7.3 L6.2 12.4"/><path d="M20 7.3 L17.8 12.4"/><path d="M20 7.3 L22.2 12.4"/></g><path fill="' + D + '" d="M1.8 12.4 A2.6 2.6 0 0 0 6.2 12.4 Z"/><path fill="' + D + '" d="M17.8 12.4 A2.6 2.6 0 0 0 22.2 12.4 Z"/></svg>',
@@ -52,10 +59,48 @@
     herald: '<svg viewBox="0 0 24 24"><rect x="5" y="2.6" width="2" height="18.8" rx=".6" fill="currentColor"/><path fill="currentColor" d="M7 3.4 H20 L16.8 7.6 L20 11.8 H7 Z"/><g fill="none" stroke="' + D + '" stroke-width="1.4" stroke-linecap="round"><path d="M9.6 6 H16"/><path d="M9.6 9 H14"/></g></svg>',
   };
 
+  /* ---- ASCII MARKS (premium bay pass, 2026-07-14; upsized same day): terminal-native class emblems ----
+     The bay renders THESE (in the class accent, VT323) instead of the SVG coins — the station is an ASCII
+     terminal, its insignia are typed, not drawn. Exactly 5 rows each, <=9 columns, printable ASCII plus the
+     terminal SHADE/HALF-BLOCK set (░ ▒ ▓ █ ▄ ▀ — the AsciiFX decode alphabet, so VT323 provably renders
+     them): strokes draw the structure, blocks carry lit MASS, which is what makes the emblems read as
+     glowing pictograms instead of line art. Authored + reviewed in the icon-lab loop at both the row scale
+     (~10px) and the dossier scale (~19px) — every mark must read at BOTH. The SVG ICONS above stay as the
+     mission-seal art + vector fallback; custom classes fall back to their emoji glyph. */
+  const ASCII = {
+    researcher: ['  .--.   ', ' /░░  \\  ', '| (+)  | ', ' \\    /█▄', '  \'--\' ▀█'],      // hand lens, glint + solid grip
+    engineer:   ['.-------.', '| $ </> |', '|░░░░░░░|', '\'---,-,-\'', '   ▄█▄   '],        // lit terminal on its stand
+    operator:   ['  \\ | /  ', ' .-----. ', '-| ▓█▓ |-', ' \'-----\' ', '  / | \\  '],      // the gear, core glowing
+    scribe:     ['    ,--\\ ', '   /▒▒) ', '  /▒▒/   ', ' |_,-`   ', ' ▀▀▀▀▀▀▀ '],           // shaded quill over the ink line
+    analyst:    ['|      ██', '|      ██', '|   ██ ██', '| ▄ ██ ██', '\'--------'],          // solid bars rising on the axis
+    scout:      ['  .---.  ', ' / .-. \\ ', '| (o---->', ' \\ `-\' / ', '  \'---\'  '],     // radar rings + the sweep
+    designer:   [' .-----. ', ' | ░ o | ', ' |▄▀▀▄▄| ', ' \'-----\' ', '  /   \\  '],        // the picture on its easel
+    chief:      [' ▀▀▀▀▀▀▀ ', '   .^.   ', '  <(*)>  ', '   \'v\'   ', ' ▄▄▄▄▄▄▄ '],        // command star between solid bars
+    tutor:      [' ▄▄▄ ▄▄▄ ', '/░░░V░░░\\', '|░░░|░░░|', '\\▄▄▄|▄▄▄/', '   ▀▀▀   '],         // the open book, pages lit
+    navigator:  ['    N    ', '  ▄▀|▀▄  ', ' (--+--) ', '  ▀▄|▄▀  ', '    S    '],            // compass rose in its ring
+    curator:    [' .-----. ', ' | [█] | ', ' |-----| ', ' | [█] | ', ' \'-----\' '],          // drawers, solid handles
+    muse:       ['   .-.   ', '  /░░░\\  ', ' |░░!░░| ', '  \\░▄░/  ', '   |=|   '],          // the bulb, glowing
+    reviewer:   [' \\,   ,/ ', '  \\o-o/  ', '  (▒▒▒)  ', '  (▒▒▒)  ', '  /| |\\  '],         // the bug, shell banded
+    archivist:  [' .-----. ', ' ||||||| ', ' ||||||| ', ' |░░░░░| ', ' \'-----\' '],          // the card index
+    liaison:    [' .-----. ', ' |\\▒▒▒/| ', ' | \\ / | ', ' |  v  | ', ' \'-----\' '],        // envelope, flap shaded
+    broker:     ['   ▄|▄   ', '  / | \\  ', ' o  |  o ', '    |    ', '  ▄▄█▄▄  '],           // the balance on its base
+    publicist:  ['  .---.  ', ' |▓▓▓▓▓| ', ' |▒▒▒▒▒| ', '  \'-.-\'  ', '  ▄▄█▄▄  '],         // the mic, grille shaded
+    auditor:    [' ,-----. ', ' |░░!░░| ', ' \\░░░░░/ ', '  \\░░░/  ', '   \'-\'   '],        // the warded shield
+    bookkeeper: [' .-----. ', ' | $ = | ', ' |--+--| ', ' | = $ | ', ' \'-----\' '],          // the ruled ledger
+    translator: [' A .---> ', '   |     ', '  <=>    ', '     |   ', ' <---. B '],            // A to B and back
+    herald:     [' |▀▄▄▄▄▄ ', ' |░░░░░░\\', ' |▄▄▄▄▄▄/', ' |       ', ' |       ']            // the banner, cloth catching light
+  };
+  // the typed emblem for a class id — an array of 5 ASCII rows, or null (custom → caller draws its emoji).
+  function ascii(idOrSpec) {
+    const id = typeof idOrSpec === 'string' ? idOrSpec : (idOrSpec && idOrSpec.id);
+    return ASCII[id] || null;
+  }
+
   const CODE = {
     chief: 'CHF', engineer: 'ENG', researcher: 'RES', reviewer: 'REV', operator: 'OPR',
     scribe: 'SCR', analyst: 'ANL', scout: 'SCT', archivist: 'ARV', designer: 'DSN', liaison: 'LIA',
-    broker: 'BRK', publicist: 'PUB', tutor: 'TUT', auditor: 'AUD', bookkeeper: 'LDG', translator: 'XLT', herald: 'HLD'
+    broker: 'BRK', publicist: 'PUB', tutor: 'TUT', auditor: 'AUD', bookkeeper: 'LDG', translator: 'XLT', herald: 'HLD',
+    navigator: 'NAV', curator: 'CUR', muse: 'MUS'
   };
 
   // bespoke emblems for the built-in RECIPES (missions) — same matte/debossed style, keyed by recipe id.
@@ -115,5 +160,5 @@
     return '<span class="mkt-pips">' + '<b>◆</b>'.repeat(n) + '◇'.repeat(3 - n) + '</span>';
   }
 
-  return { ICONS, CODE, LANE_LABEL, svg, code, lane, laneLabel, clearance, pipsHTML };
+  return { ICONS, ASCII, CODE, LANE_LABEL, svg, ascii, code, lane, laneLabel, clearance, pipsHTML };
 });

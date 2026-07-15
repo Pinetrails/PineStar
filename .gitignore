@@ -28,6 +28,7 @@ dev/.scratch-workspace/
 dev/.scratch-mock-cron/
 # mock-comms dev sidecar runtime state (same shape; never committed)
 dev/.scratch-mock-comms/
+dev/.scratch-adversarial/
 
 # rust / tauri desktop shell build output
 src-tauri/target/
@@ -109,3 +110,4 @@ qa/installed/smoke-*/
 .qa_g3b/
 # G4 lane visual-proof screenshots (approval walk-and-wait + autojob pin + Meeseeks; same pattern)
 .qa_g4/
+.canary/

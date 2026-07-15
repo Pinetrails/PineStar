@@ -53,6 +53,7 @@ const { composeOffice } = require('./capability/office.js');   // THE MOAT: inte
 const { summarizeCapabilities } = require('./capability/capsummary.js');   // truthful "what you can/can't do" so the agent stops over-promising
 const { starnetManual } = require('./manual.js');   // truthful "how StarNet works" so the agent can guide a stuck Commander (interactive only)
 const { makeOpenRouterProvider } = require('./providers/openrouter.js');
+const edgetts = require('./edgetts.js');   // V-EDGE: free keyless neural TTS floor (decoupled from the LLM provider)
 const {
   selectProvider,
   listProviderProfiles,
@@ -2025,16 +2026,23 @@ function loadChannelSecrets() {
   try { const raw = loadResilient(CHANNEL_SECRETS_FILE, 'channels'); return (raw && typeof raw === 'object') ? raw : {}; }
   catch (e) { return {}; }   // unrecoverable -> nothing configured
 }
+// Verified persist (saveJsonVerified law): a non-durable bot token in this file is its LAST surviving copy, so a
+// swallowed write here is silent credential loss — the write must be read back and PROVEN before anyone says ok.
+const persistChannelSecretsVerified = channelSecretsMod.makeVerifiedPersist({
+  saveJsonVerified,
+  mkdir: () => fs.mkdirSync(CHANNELS_DIR, { recursive: true }),
+  save: (toPersist) => saveResilient(CHANNEL_SECRETS_FILE, toPersist),   // fsync-durable + .bak last-known-good
+  load: () => loadResilient(CHANNEL_SECRETS_FILE, 'channels'),
+  // Desktop: the provider API key never touches the file (it lives in the keychain). The bot token is stripped
+  // ONLY when it is DURABLE elsewhere (keychain/spawn-env) — a non-durable token (keychain store failed / stale
+  // cached frontend sent it inline) has no other home, so its plaintext copy is the honest last-known-good
+  // fallback and MUST survive, exactly like the bare sidecar. (see sidecar/channels/secrets.js stripTokens.)
+  strip: (obj) => DESKTOP_SHELL ? channelSecretsMod.stripTokens(obj, isChannelTokenDurable) : obj
+});
 function saveChannelSecrets(obj) {   // protected sibling of the fs jail; the agent's own fs.* tools can't read/write it
-  try {
-    fs.mkdirSync(CHANNELS_DIR, { recursive: true });
-    // Desktop: the provider API key never touches the file (it lives in the keychain). The bot token is stripped
-    // ONLY when it is DURABLE elsewhere (keychain/spawn-env) — a non-durable token (keychain store failed / stale
-    // cached frontend sent it inline) has no other home, so its plaintext copy is the honest last-known-good
-    // fallback and MUST survive, exactly like the bare sidecar. (see sidecar/channels/secrets.js stripTokens.)
-    const toPersist = DESKTOP_SHELL ? channelSecretsMod.stripTokens(obj, isChannelTokenDurable) : obj;
-    saveResilient(CHANNEL_SECRETS_FILE, toPersist);   // fsync-durable + .bak last-known-good (config survives power loss)
-  } catch (e) { console.warn('[channels] secrets persist failed:', (e && e.message) || e); }
+  const r = persistChannelSecretsVerified(obj);
+  if (!r.ok) console.warn('[channels] secrets persist UNVERIFIED after retry (' + r.error + ') — channel config/token may not survive a restart');
+  return r.ok;   // callers with a response channel surface this honestly (never a false "saved")
 }
 // Scrub the .bak last-known-good of any plaintext channel secret (P1 key hygiene). saveResilient snapshots the
 // CURRENT main into <file>.bak BEFORE overwriting it, so a legacy main that still carried a `key`/`token` leaves a
@@ -2894,11 +2902,25 @@ function scoutExistingRecipes() {
 function scoutExistingClasses() {
   const out = [];
   for (const c of (SharedSpecialties.BUILTINS || [])) out.push({ name: c.name, tagline: c.tagline, tags: c.tags || {} });
+  // the ARCHETYPE pool counts as existing too: the LLM must never re-author an archetype-shaped class —
+  // surfacing a dormant archetype is the deterministic matcher's job (Scout.matchArchetype), not the model's.
+  for (const c of (SharedSpecialties.ARCHETYPES || [])) out.push({ name: c.name, tagline: c.tagline, tags: c.tags || {} });
   const cx = scoutState.context;
   if (cx && Array.isArray(cx.customClasses)) for (const c of cx.customClasses) out.push({ name: String(c.name || ''), tagline: String(c.tagline || ''), tags: {} });
   for (const [, a] of agentRoster) if (a && a.name) out.push({ name: String(a.name), tagline: String(a.role || ''), tags: {} });
   for (const it of scoutState.staged) if (it.kind === 'prospect' && it.draft) out.push({ name: String(it.draft.name || ''), tagline: String(it.draft.tagline || ''), tags: {} });
   return out.filter(c => c.name);
+}
+// the names the Commander already HAS (roster agents + their custom classes + already-staged drafts) — the
+// archetype matcher's dedup set. Deliberately NOT the full scoutExistingClasses(): the archetypes themselves
+// (and the builtins) live in that list, and an archetype must not be blocked by its own catalog entry.
+function scoutTakenNames() {
+  const out = [];
+  const cx = scoutState.context;
+  if (cx && Array.isArray(cx.customClasses)) for (const c of cx.customClasses) out.push(String(c.name || ''));
+  for (const [, a] of agentRoster) if (a && a.name) out.push(String(a.name));
+  for (const it of scoutState.staged) if (it.kind === 'prospect' && it.draft) out.push(String(it.draft.name || ''));
+  return out.filter(Boolean);
 }
 
 // FLAGSHIP CROSS-WIRE: a compact block of the Commander's live DIRECTION — the effective north star (a pending
@@ -2958,9 +2980,13 @@ async function runScoutCycle(o) {
     // 2) MINT ATTEMPT — at most one per cycle; the pure gates decide if and which kind. A non-firing gate is
     //    NOT ledger-noise (it binds most runs by design); GET /api/scout reports the live binding instead.
     const warm = Interests.warm(interestsState, Date.now());
+    // lane E cold-start: a pushed Commander dossier is day-one evidence — it unlocks exactly ONE recipe attempt
+    // while interests are still cold (Scout.decide owns the one-shot; the attempt spends it whatever the outcome).
+    const dossierWarm = !!String(commanderDossier.get() || '').trim();
     scoutSweep();   // age out stale drafts first — an undecided-draft backlog must not wedge the gate at 'full'
-    const d = Scout.decide(scoutState, { now: Date.now(), warm: warm });
+    const d = Scout.decide(scoutState, { now: Date.now(), warm: warm, dossierWarm: dossierWarm });
     if (!d.fire) return;
+    if (d.coldStart) scoutNote({ kind: 'cycle', outcome: 'coldstart', reason: 'day-one mint unlocked by the commander dossier (interests not warm yet)' });
     // CROSS-WIRE: the shared declined index — a recipe/class shape the Commander declined in ANOTHER surface is
     // suppressed here too (in addition to the scout's own fingerprint denylist), with an honest ledger note.
     const declinedIdx = buildDeclinedIndex(agentId);
@@ -2976,13 +3002,15 @@ async function runScoutCycle(o) {
         activityBlock: activityBlock,
         directionBlock: directionBlock,
         existingRecipes: existing, gearKeys: SCOUT_CAP_KEYS,
-        launchedOften: Scout.topLaunched(scoutState, 5)
+        launchedOften: Scout.launchHints(scoutState, 5)   // lane B: names annotated "(rated well)" when the Commander's own verdicts earn it
       });
       const reply = await propose('You are the station\'s recipe author. Follow the format exactly; ground every claim in the provided evidence.', directive);
       // grounding = the same evidence the directive showed the model — the WHY must cite it (parseRecipe guard). The
-      // direction block is part of that evidence, so a WHY that cites an open quest / the north star is grounded.
-      const parsed = Scout.parseRecipe(reply, { existingRecipes: existing, denylist: scoutState.denylist, gearKeys: SCOUT_CAP_KEYS, grounding: [interestsBlock, activityBlock, directionBlock].filter(Boolean).join('\n') });
-      scoutState = Scout.stampAttempt(scoutState, 'recipe', { now: Date.now() });
+      // direction block is part of that evidence, so a WHY that cites an open quest / the north star is grounded —
+      // and so is the DOSSIER (it rides the directive at dossierBlock; excluding it here silently killed any WHY
+      // that honestly cited the Commander's own stated pain/ambition — the exact grounding a cold-start mint has).
+      const parsed = Scout.parseRecipe(reply, { existingRecipes: existing, denylist: scoutState.denylist, gearKeys: SCOUT_CAP_KEYS, grounding: [interestsBlock, activityBlock, directionBlock, commanderDossier.get()].filter(Boolean).join('\n') });
+      scoutState = Scout.stampAttempt(scoutState, 'recipe', { now: Date.now(), coldStart: !!d.coldStart });
       if (parsed && parsed.none) scoutNote({ kind: 'recipe', outcome: 'none', reason: 'model judged the library already serves the observed interests' });
       else if (!parsed) scoutNote({ kind: 'recipe', outcome: 'rejected', reason: 'draft failed hard validation (malformed / broken template / near-duplicate / denylisted)' });
       else if (declinedIdx.has(parsed.draft.name) || declinedIdx.has(parsed.draft.name + ' ' + parsed.draft.tagline)) scoutNote({ kind: 'recipe', outcome: 'rejected', reason: 'declined elsewhere', title: parsed.draft.name });
@@ -2991,6 +3019,25 @@ async function runScoutCycle(o) {
         scoutNote({ kind: 'recipe', outcome: 'staged', reason: parsed.why, title: parsed.draft.name });
       }
     } else if (d.kind === 'prospect') {
+      // ARCHETYPE MATCH FIRST (recuration 2026-07-14): when the learned interests point at a dormant curated
+      // archetype, stage ITS full spec as the prospect — deterministic, zero model spend, why from real
+      // counters. The LLM authorship pass below stays the path for a genuinely novel role.
+      const archMatch = Scout.matchArchetype(SharedSpecialties.ARCHETYPES || [], {
+        topics: Interests.summary(interestsState, { now: Date.now(), limit: 12 }),
+        existingNames: scoutTakenNames(),
+        denylist: scoutState.denylist
+      });
+      if (archMatch) {
+        const draft = Scout.archetypeDraft(archMatch.archetype);
+        if (declinedIdx.has(draft.name) || declinedIdx.has(draft.name + ' ' + draft.tagline)) {
+          scoutState = Scout.stampAttempt(scoutState, 'prospect', { now: Date.now() });
+          scoutNote({ kind: 'prospect', outcome: 'rejected', reason: 'archetype match declined elsewhere', title: draft.name });
+        } else {
+          scoutState = Scout.stage(scoutState, { id: crypto.randomUUID(), kind: 'prospect', draft: draft, why: archMatch.why, fingerprint: archMatch.fingerprint }, { now: Date.now() });
+          scoutNote({ kind: 'prospect', outcome: 'staged', reason: archMatch.why, title: draft.name });
+        }
+        return;
+      }
       const existing = scoutExistingClasses();
       let skillSlugs = [];
       try { skillSlugs = skillsCatalog.catalog(SKILL_LIBRARY, { overrides: skillPrefs.overrides(), placedTypes: SCOUT_CAP_KEYS }).map(s => s.slug).filter(Boolean); } catch (_) { skillSlugs = []; }
@@ -3032,7 +3079,8 @@ async function runScoutCycle(o) {
 function handleScoutGet(req, res) {
   scoutSweep();   // purge aged-out drafts even on an idle station (no runs) so the status read is truthful
   const now = Date.now();
-  const gate = Scout.decide(scoutState, { now: now, warm: Interests.warm(interestsState, now) });
+  // the SAME dossierWarm the cycle uses (lane E) — the bay's gate display must never disagree with the mint path.
+  const gate = Scout.decide(scoutState, { now: now, warm: Interests.warm(interestsState, now), dossierWarm: !!String(commanderDossier.get() || '').trim() });
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
   res.end(JSON.stringify({
     warm: Interests.warm(interestsState, now),
@@ -3043,13 +3091,23 @@ function handleScoutGet(req, res) {
     usage: scoutState.usage
   }));
 }
-// POST /api/scout/telemetry { kind:'recipe.launch', id, name } — the engagement loop's one write: count a real
-// recipe launch (counters only, no content). Feeds the FOR-YOU rank + the drafting directive's launch hint.
+// POST /api/scout/telemetry — the engagement loop's writes (counters only, no content):
+//   { kind:'recipe.launch', id, name }              — count a real recipe launch
+//   { kind:'recipe.rated',  id, verdict:great|ok|miss } — fold a rate-the-work verdict onto the launching recipe
+// Both feed the FOR-YOU rank + the drafting directive's launch hints. Verdict is clamped to the known enum.
 async function handleScoutTelemetry(req, res) {
   let body; try { body = JSON.parse(await readBody(req, 1 << 14)) || {}; } catch (e) { res.writeHead(400); return res.end('bad json'); }
   const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
-  if (body.kind !== 'recipe.launch' || !String(body.id || '')) return json(400, { ok: false, error: 'kind must be recipe.launch with an id' });
-  scoutState = Scout.noteLaunch(scoutState, { id: body.id, name: body.name }, { now: Date.now() });
+  const id = String(body.id || '').slice(0, 60);
+  if (body.kind === 'recipe.launch' && id) {
+    scoutState = Scout.noteLaunch(scoutState, { id: id, name: body.name }, { now: Date.now() });
+  } else if (body.kind === 'recipe.rated' && id) {
+    const verdict = String(body.verdict || '');
+    if (['great', 'ok', 'miss'].indexOf(verdict) === -1) return json(400, { ok: false, error: 'verdict must be great|ok|miss' });
+    scoutState = Scout.noteRated(scoutState, { id: id, verdict: verdict }, { now: Date.now() });
+  } else {
+    return json(400, { ok: false, error: 'kind must be recipe.launch or recipe.rated with an id' });
+  }
   persistScout();
   json(200, { ok: true });
 }
@@ -3729,7 +3787,7 @@ function startTelegram(token, key, model, agentCfg) {
     agentId: cfg.agentId || undefined, system: cfg.system || undefined, name: cfg.name || undefined,
     ownerId: cfg.ownerId || prev.ownerId || undefined
   } });
-  saveChannelSecrets(channelSecrets);
+  const secretsPersisted = saveChannelSecrets(channelSecrets);   // read-back-proven; surfaced by the connect route
   let adapterRef = null;
   const hub = makeChannelHub({
     channel: 'telegram', runOnce: runOnce, store: channelStore,
@@ -3839,6 +3897,7 @@ function startTelegram(token, key, model, agentCfg) {
   telegramStatus = { connected: false, state: 'connecting', detail: '' };
   adapter.connect();
   console.log('  · telegram channel connecting…');
+  return { secretsPersisted };
 }
 function stopTelegram() {
   if (telegram && telegram.adapter) { try { telegram.adapter.disconnect(); } catch (_) {} }
@@ -3865,7 +3924,7 @@ function startDiscord(token, key, model, agentCfg) {
     agentId: cfg.agentId || undefined, system: cfg.system || undefined, name: cfg.name || undefined,
     ownerId: cfg.ownerId || prev.ownerId || undefined
   } });
-  saveChannelSecrets(channelSecrets);
+  const secretsPersisted = saveChannelSecrets(channelSecrets);   // read-back-proven; surfaced by the connect route
   const wired = wireChannel(channelRegistry.get('discord'), {
     hub: {
       runOnce: runOnce, store: channelStore,
@@ -3939,6 +3998,7 @@ function startDiscord(token, key, model, agentCfg) {
   discordStatus = { connected: false, state: 'connecting', detail: '' };
   wired.adapter.connect();
   console.log('  · discord channel connecting (gateway)');
+  return { secretsPersisted };
 }
 function stopDiscord() {
   if (discord && discord.adapter) { try { discord.adapter.disconnect(); } catch (_) {} }
@@ -4062,7 +4122,7 @@ function startGenericChannel(id, token, key, model, agentCfg) {
   };
   const patch = {}; patch[id] = record;
   channelSecrets = Object.assign({}, channelSecrets, patch);
-  saveChannelSecrets(channelSecrets);
+  const secretsPersisted = saveChannelSecrets(channelSecrets);   // read-back-proven; surfaced by the connect route
   const adapterOpts = {
     fetch: globalThis.fetch, clock: { now: () => Date.now() },
     ownerUserId: record.ownerId || '',
@@ -4124,6 +4184,7 @@ function startGenericChannel(id, token, key, model, agentCfg) {
   genericStatus[id] = { connected: false, state: 'connecting', detail: '' };
   wired.adapter.connect();
   console.log('  · ' + id + ' channel connecting…');
+  return { secretsPersisted };
 }
 function stopGenericChannel(id) {
   const w = genericChannels[id];
@@ -4530,6 +4591,7 @@ function handleChannelEvents(req, res) {
   // but sees no product-event name to forward onto U.bus.
   const ka = setInterval(() => { if (!sse.keepalive(res)) done(); }, 25000);
   req.on('close', done); req.on('aborted', done); res.on('error', done);
+  res.on('close', done);   // the reliable disconnect seam (req 'close' semantics moved under Node ≥15 — see /api/run F1 note); done() is idempotent
 }
 
 /* ---- POST /api/routing: the app posts its compiled RoutingPlan on every floor change; the router stores
@@ -5516,7 +5578,9 @@ async function handleCronRun(req, res) {
   const runId = crypto.randomUUID();
   runs.set(runId, ac);
   runsMeta.set(runId, { agentId: job.agentId, startedAt: Date.now(), source: 'cron' });
-  req.on('close', () => { ac.abort(); runs.delete(runId); runsMeta.delete(runId); });
+  // res 'close', not req 'close' — same disconnect-detection law as handleRun: readBody() already consumed the
+  // request, so req 'close' has fired before this listener attaches and a dead watcher was never noticed (F1).
+  res.on('close', () => { ac.abort(); runs.delete(runId); runsMeta.delete(runId); });
   const bus = { emit: (name, payload) => { try { res.write(JSON.stringify({ name, payload: redact(payload) }) + '\n'); } catch (_) {} } };
   const emit = wrapEmitDiag(makeEmitter(bus, e => { if (e && e.event !== 'tool.web') console.warn('[event]', e.kind, e.event, (e.errors || []).join(';')); }));
   // tee: stream every event to the watching browser AND capture the outcome so the last-run record is honest.
@@ -6418,6 +6482,7 @@ async function handleRun(req, res) {
   const reasoningEffort = resolveReasoningEffort(runProvider, body && (body.reasoningEffort || body.reasoning_effort || (body.reasoning && body.reasoning.effort)));
   const preloadSkills = Array.isArray(body && body.preloadSkills) ? body.preloadSkills.map(s => String(s || '').trim()).filter(Boolean).slice(0, 8) : [];
   const streamId = (body && body.streamId && /^[A-Za-z0-9_-]{1,64}$/.test(String(body.streamId))) ? String(body.streamId) : null;   // M-mem.2b: the active workstream (bounded; bad → global)
+  const recipeId = (body && body.recipeId && /^[A-Za-z0-9_-]{1,60}$/.test(String(body.recipeId))) ? String(body.recipeId) : null;   // provenance spine (lane A): the launching recipe (bounded; bad → none, never a crash)
   // PROJECT-SCOPED SESSION (Hermes-parity): an anchored session sends its projectRoot; the folder context line
   // is injected ONLY when that root is STILL a standing blessed path grant (isBlessedRoot — the same live check
   // the scanner uses). An un-blessed/revoked/garbage root injects NOTHING: the run must never assert folder
@@ -6477,7 +6542,14 @@ async function handleRun(req, res) {
   pendingByRun.set(runId, pending);
   const pendingSummon = new Map();    // requestId -> finish(newAgentId|null); the team.summon requests awaiting the browser
   pendingSummonByRun.set(runId, pendingSummon);
-  req.on('close', () => { ac.abort(); runs.delete(runId); runsMeta.delete(runId); });   // tab closed / DISCONNECT → stop spend
+  // tab closed / DISCONNECT → stop spend. MUST be res 'close', not req 'close': readBody() above consumed the
+  // request stream, and Node (≥15) emits req 'close' at MESSAGE COMPLETION — i.e. before this line even runs —
+  // so a req listener here never fires and a vanished client (reload/tab-close) left the run streaming into a
+  // void: spend continued unwatched, the same-agent mutex stayed held for minutes, and the reloaded COMMS
+  // claimed "something went wrong" about a run the harness was still driving (2026-07-14 adversarial sweep F1).
+  // res 'close' fires when the response stream ends — premature on a dead client — and on normal end it's inert
+  // here (runOnce's finally has already settled + deleted; the abort hits a spent controller).
+  res.on('close', () => { ac.abort(); runs.delete(runId); runsMeta.delete(runId); });
 
   // the "bus" writes one validated, REDACTED NDJSON line per event (key-shaped secrets are scrubbed even
   // if a tool ever echoes one back); makeEmitter validates against the frozen registry first.
@@ -6552,6 +6624,7 @@ async function handleRun(req, res) {
       surface: 'interactive', prompt: promptConsent, pathPrompt: promptPathTrust, summon: summonRequest,   // team.summon → live summonAgent() round-trip; pathPrompt → NS-5 "work in <root>?" bless
 
       streamId,        // M-mem.2b: scope this run's working memory + recall boost to the active workstream
+      recipeId,        // provenance spine (lane A): rides to the durable run row so a rating can be attributed
       preloadSkills,
       extraObjects,    // a placed WORKBENCH -> shell.exec + verify.run, additive on the default office
       stationObjects,  // Class Loadouts (shared-gear): station-wide gear for SKILL availability (tools stay room-scoped)
@@ -7381,7 +7454,7 @@ async function runOnce(o) {
     try {
       let title = '';
       for (let i = msgs.length - 1; i >= 0; i--) { if (msgs[i] && msgs[i].role === 'user' && typeof msgs[i].content === 'string') { title = msgs[i].content; break; } }
-      runStore.record({ runId, agentId, reason: (result && result.reason) || 'done', turns: finalTurns, tokens: finalTokens, usd: finalUsd, title: title, streamId: o.streamId || '', model: finalModel, unmetered: providerUnmetered, artifacts: artifactLedger.list(), toolsOk, identityFallback });   // H3.2/H3.3/G6 + work-visibility + crate-honesty + P1.2 identity-honesty: transcript join + honest model/spend/deliverables/worked/named-agent
+      runStore.record({ runId, agentId, reason: (result && result.reason) || 'done', turns: finalTurns, tokens: finalTokens, usd: finalUsd, title: title, streamId: o.streamId || '', recipeId: o.recipeId || '', model: finalModel, unmetered: providerUnmetered, artifacts: artifactLedger.list(), toolsOk, identityFallback });   // H3.2/H3.3/G6 + work-visibility + crate-honesty + P1.2 identity-honesty: transcript join + honest model/spend/deliverables/worked/named-agent + recipe provenance
 
       // P0.1/H1.1: persist the full DIALOGUE (not just the outcome) — a durable server-side transcript for EVERY
       // run, incl. headless ones (cron/Telegram/delegated). Append the triggering user directive, then EVERY new
@@ -7785,10 +7858,13 @@ async function handleNightshiftBeatNow(req, res) {
   runs.set(beatRunId, ac);
   runsMeta.set(beatRunId, { agentId, startedAt: Date.now(), source: 'nightshift' });
   const onClose = () => { try { ac.abort(); } catch (_) {} };
-  req.on('close', onClose);
+  // res 'close', not req 'close' — readBody() above consumed the request, so req 'close' already fired and a
+  // req listener here never runs (the EL-11 note above was right about the intent but attached to the dead seam;
+  // 2026-07-14 adversarial sweep F1). res 'close' is premature-disconnect-aware and inert after the finally below.
+  res.on('close', onClose);
   try { result = await runNightshiftBeat({ agentId, emit, broadcast: true, signal: ac.signal }); }
   catch (e) { result = { delivered: false, reason: 'error: ' + ((e && e.message) || e) }; }
-  finally { runs.delete(beatRunId); runsMeta.delete(beatRunId); try { req.removeListener('close', onClose); } catch (_) {} }
+  finally { runs.delete(beatRunId); runsMeta.delete(beatRunId); try { res.removeListener('close', onClose); } catch (_) {} }
   if (ac.signal.aborted && !(result && result.delivered)) result = { delivered: false, reason: 'aborted' };   // halted/disconnected mid-beat — name it honestly
   try { res.write(JSON.stringify({ name: 'nightshift.beat.result', payload: result }) + '\n'); } catch (_) {}
   try { res.end(); } catch (_) {}
@@ -8048,10 +8124,11 @@ async function handleChannelConnect(req, res) {
   if (!token) return json(400, { error: 'missing bot token — create one with @BotFather and paste it here' });
   if (!model) return json(400, { error: 'connect your agent first — choose a model in Settings → Providers' });
   if (!providerHasCredential(provider, key, baseUrl)) return json(400, { error: providerCredentialError(provider) });
-  try { startTelegram(token, providerUsesCodex(provider) ? '' : key, model, { agentId, system, name, provider, reasoningEffort, baseUrl }); } catch (e) { return json(500, { error: (e && e.message) || 'failed to start' }); }
+  let started; try { started = startTelegram(token, providerUsesCodex(provider) ? '' : key, model, { agentId, system, name, provider, reasoningEffort, baseUrl }); } catch (e) { return json(500, { error: (e && e.message) || 'failed to start' }); }
   // report the REAL post-start status (now 'connecting', not an assumed 'up') — the panel repaints from /status once
-  // the transport proves the round-trip. Never assert connected here.
-  json(200, { connected: !!telegramStatus.connected, state: telegramStatus.state });
+  // the transport proves the round-trip. Never assert connected here. `persisted` is the read-back-proven
+  // config-write bit: false = live this session but may not survive a restart (never a false "saved").
+  json(200, { connected: !!telegramStatus.connected, state: telegramStatus.state, persisted: !!(started && started.secretsPersisted) });
 }
 
 // POST /api/channels/telegram/sync { agentId?, system?, model?, key?, provider?, agentName? } — refresh the agent identity
@@ -8071,8 +8148,8 @@ async function handleChannelSync(req, res) {
   if (typeof body.key === 'string' && body.key.trim()) patch.key = body.key.trim();
   if (typeof body.agentName === 'string') patch.name = body.agentName;
   channelSecrets = Object.assign({}, channelSecrets, { telegram: Object.assign({}, t, patch) });
-  saveChannelSecrets(channelSecrets);
-  json(200, { synced: true });
+  const persisted = saveChannelSecrets(channelSecrets);
+  json(200, { synced: true, persisted });
 }
 
 // POST /api/channels/telegram/disconnect { purge? } — stop the bot and mark it disabled (kept in config so the
@@ -8083,14 +8160,16 @@ async function handleChannelDisconnect(req, res) {
   let purge = false;
   try { const b = JSON.parse((await readBody(req, 4096)) || '{}'); purge = !!(b && b.purge); } catch (_) {}
   stopTelegram();
+  let persisted = true;
   if (channelSecrets && channelSecrets.telegram) {
     const next = Object.assign({}, channelSecrets.telegram, { enabled: false });
     if (purge) { next.token = undefined; delete channelTokenRuntime.telegram; delete channelTokenDurable.telegram; }
     channelSecrets = Object.assign({}, channelSecrets, { telegram: next });
-    saveChannelSecrets(channelSecrets);
+    persisted = saveChannelSecrets(channelSecrets);
     if (purge) { try { scrubChannelSecretsBak(); } catch (_) {} }
   }
-  res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ connected: false, purged: purge }));
+  // `purged` is a DESTRUCTION claim — only assert it when the read-back proved the token left the disk.
+  res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ connected: false, purged: purge && persisted, persisted }));
 }
 
 // GET /api/channels/telegram/status — booleans + poll state ONLY; never the token/key (those stay server-side).
@@ -8126,9 +8205,9 @@ async function handleDiscordConnect(req, res) {
   if (!token) return json(400, { error: 'missing bot token — create a bot in the Discord Developer Portal and paste its token here' });
   if (!model) return json(400, { error: 'connect your agent first — choose a model in Settings → Providers' });
   if (!providerHasCredential(provider, key, baseUrl)) return json(400, { error: providerCredentialError(provider) });
-  try { startDiscord(token, providerUsesCodex(provider) ? '' : key, model, { agentId, system, name, provider, reasoningEffort, baseUrl }); } catch (e) { return json(500, { error: (e && e.message) || 'failed to start' }); }
+  let started; try { started = startDiscord(token, providerUsesCodex(provider) ? '' : key, model, { agentId, system, name, provider, reasoningEffort, baseUrl }); } catch (e) { return json(500, { error: (e && e.message) || 'failed to start' }); }
   // report the REAL post-start status ('connecting' until the gateway reaches READY) — the panel repaints from /status.
-  json(200, { connected: !!discordStatus.connected, state: discordStatus.state });
+  json(200, { connected: !!discordStatus.connected, state: discordStatus.state, persisted: !!(started && started.secretsPersisted) });
 }
 
 // POST /api/channels/discord/sync — refresh the agent identity the Discord bot runs as (mirrors handleChannelSync).
@@ -8146,19 +8225,20 @@ async function handleDiscordSync(req, res) {
   if (typeof body.key === 'string' && body.key.trim()) patch.key = body.key.trim();
   if (typeof body.agentName === 'string') patch.name = body.agentName;
   channelSecrets = Object.assign({}, channelSecrets, { discord: Object.assign({}, d, patch) });
-  saveChannelSecrets(channelSecrets);
-  json(200, { synced: true });
+  const persisted = saveChannelSecrets(channelSecrets);
+  json(200, { synced: true, persisted });
 }
 
 // POST /api/channels/discord/disconnect — stop the bot and mark it disabled (kept in config so the token can be
 // re-enabled without re-entry). Mirrors handleChannelDisconnect (Telegram).
 async function handleDiscordDisconnect(req, res) {
   stopDiscord();
+  let persisted = true;
   if (channelSecrets && channelSecrets.discord) {
     channelSecrets = Object.assign({}, channelSecrets, { discord: Object.assign({}, channelSecrets.discord, { enabled: false }) });
-    saveChannelSecrets(channelSecrets);
+    persisted = saveChannelSecrets(channelSecrets);
   }
-  res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ connected: false }));
+  res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ connected: false, persisted }));
 }
 
 // GET /api/channels/discord/status — booleans + gateway state ONLY; never the token/key. Mirrors handleChannelStatus.
@@ -8178,7 +8258,9 @@ async function handleChannelNotify(req, res) {
   let body; try { body = JSON.parse(await readBody(req, 4096)) || {}; } catch (e) { res.writeHead(400); return res.end('bad json'); }
   const on = !!body.on;
   channelSecrets = Object.assign({}, channelSecrets, { notifyAutonomous: on });
-  try { saveChannelSecrets(channelSecrets); } catch (e) { res.writeHead(500, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ ok: false, error: 'persist failed' })); }
+  // saveChannelSecrets never throws — it returns the READ-BACK-PROVEN ok bit (the old try/catch here was
+  // unreachable and this route always claimed ok:true even when the write silently failed).
+  if (!saveChannelSecrets(channelSecrets)) { res.writeHead(500, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ ok: false, error: 'persist failed' })); }
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
   res.end(JSON.stringify({ ok: true, notifyAutonomous: on }));
 }
@@ -8258,10 +8340,10 @@ async function handleGenericChannelConnect(req, res, id) {
   }
   if (!model) return json(400, { error: 'connect your agent first — choose a model in Settings → Providers' });
   if (!providerHasCredential(provider, key, baseUrl)) return json(400, { error: providerCredentialError(provider) });
-  try { startGenericChannel(id, token, providerUsesCodex(provider) ? '' : key, model, { agentId, system, name, provider, reasoningEffort, baseUrl, endpoint, account }); }
+  let started; try { started = startGenericChannel(id, token, providerUsesCodex(provider) ? '' : key, model, { agentId, system, name, provider, reasoningEffort, baseUrl, endpoint, account }); }
   catch (e) { return json(500, { error: (e && e.message) || 'failed to start' }); }
   // report the REAL post-start status (now 'connecting', not an assumed 'up') — the panel repaints from /status.
-  json(200, { connected: !!(genericStatus[id] && genericStatus[id].connected), state: (genericStatus[id] && genericStatus[id].state) || 'connecting' });
+  json(200, { connected: !!(genericStatus[id] && genericStatus[id].connected), state: (genericStatus[id] && genericStatus[id].state) || 'connecting', persisted: !!(started && started.secretsPersisted) });
 }
 
 // POST /api/channels/<id>/sync — refresh the agent identity the channel runs as (mirrors handleChannelSync).
@@ -8281,8 +8363,8 @@ async function handleGenericChannelSync(req, res, id) {
   if (typeof body.agentName === 'string') patch.name = body.agentName;
   const p = {}; p[id] = Object.assign({}, rec, patch);
   channelSecrets = Object.assign({}, channelSecrets, p);
-  saveChannelSecrets(channelSecrets);
-  json(200, { synced: true });
+  const persisted = saveChannelSecrets(channelSecrets);
+  json(200, { synced: true, persisted });
 }
 
 // POST /api/channels/<id>/disconnect { purge? } — stop the adapter and mark it disabled (config kept for one-click
@@ -8292,15 +8374,17 @@ async function handleGenericChannelDisconnect(req, res, id) {
   let purge = false;
   try { const b = JSON.parse((await readBody(req, 4096)) || '{}'); purge = !!(b && b.purge); } catch (_) {}
   stopGenericChannel(id);
+  let persisted = true;
   if (channelSecrets && channelSecrets[id]) {
     const next = Object.assign({}, channelSecrets[id], { enabled: false });
     if (purge) { next.token = undefined; delete channelTokenRuntime[id]; delete channelTokenDurable[id]; }
     const p = {}; p[id] = next;
     channelSecrets = Object.assign({}, channelSecrets, p);
-    saveChannelSecrets(channelSecrets);
+    persisted = saveChannelSecrets(channelSecrets);
     if (purge) { try { scrubChannelSecretsBak(); } catch (_) {} }
   }
-  res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ connected: false, purged: purge }));
+  // `purged` is a DESTRUCTION claim — only assert it when the read-back proved the token left the disk.
+  res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ connected: false, purged: purge && persisted, persisted }));
 }
 
 /* ----------------------- Codex (ChatGPT subscription) OAuth ----------------------- */
@@ -8519,6 +8603,92 @@ async function maybeEvictVoiceCache() {
   } catch (_) { /* eviction must never throw into the request path */ }
   finally { evictingVoiceCache = false; }
 }
+/* One keyed-provider synthesis attempt (gemini native / openai / openrouter). Returns the audio on success
+   or { ok:false, reason } on ANY failure — it NEVER touches `res`, so handleTts can fall through to the free
+   Edge floor instead of committing a hard degrade. The provider was chosen upstream (TTS_KEY_PROVIDERS chain). */
+async function ttsSynthKeyed(ttsProvider, o) {
+  const { model, voice, input, text, style, key } = o;
+  if (ttsProvider === 'gemini') {
+    // Native Gemini TTS — the SAME model + prebuilt voice as the OpenRouter path, spoken straight from the
+    // user's Gemini key. generateContent with AUDIO modality returns base64 PCM we wrap to WAV.
+    const base = (providerRuntimeBaseUrl('gemini', '') || 'https://generativelanguage.googleapis.com/v1beta').replace(/\/+$/, '');
+    const nativeModel = model.replace(/^google\//, '');
+    let gr;
+    try {
+      gr = await fetch(base + '/models/' + encodeURIComponent(nativeModel) + ':generateContent', voiceFetchOpts({
+        method: 'POST',
+        headers: { 'x-goog-api-key': key, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: input }] }],
+          generationConfig: { responseModalities: ['AUDIO'], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } } } }
+        })
+      }, 60000));
+    } catch (e) { return { ok: false, reason: 'network: ' + ((e && e.message) || e) }; }
+    if (!gr.ok) {
+      let detail = ''; try { detail = (await gr.text()).slice(0, 300); } catch (_) {}
+      return { ok: false, reason: 'gemini ' + gr.status + (detail ? ' — ' + detail : '') };
+    }
+    let j; try { j = await gr.json(); } catch (e) { return { ok: false, reason: 'gemini: bad json' }; }
+    const part = j && j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts
+      && j.candidates[0].content.parts.find(p => p && p.inlineData && p.inlineData.data);
+    if (!part) return { ok: false, reason: 'gemini: no audio in response' };
+    let buf; try { buf = Buffer.from(part.inlineData.data, 'base64'); } catch (e) { return { ok: false, reason: 'gemini: bad audio data' }; }
+    if (!buf || !buf.length) return { ok: false, reason: 'empty audio' };
+    const mt = String(part.inlineData.mimeType || '').toLowerCase();
+    const rate = parseInt((mt.match(/rate=(\d+)/) || [])[1], 10) || 24000;
+    return { ok: true, buf: pcmToWav(buf, rate, 1), outType: 'audio/wav', ext: 'wav' };
+  } else if (ttsProvider === 'openai') {
+    // OpenAI /audio/speech — a different vendor, so the nearest voice (onyx) steered by the same style text
+    // via `instructions`. Honest approximation: it will not be byte-identical to the Gemini voice.
+    const base = (providerRuntimeBaseUrl('openai', '') || 'https://api.openai.com/v1').replace(/\/+$/, '');
+    const payload = { model: OPENAI_TTS_MODEL, input: text, voice: OPENAI_TTS_VOICE, response_format: 'mp3' };
+    if (style) payload.instructions = style;
+    let oa;
+    try {
+      oa = await fetch(base + '/audio/speech', voiceFetchOpts({
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      }, 60000));
+    } catch (e) { return { ok: false, reason: 'network: ' + ((e && e.message) || e) }; }
+    if (!oa.ok) {
+      let detail = ''; try { detail = (await oa.text()).slice(0, 300); } catch (_) {}
+      return { ok: false, reason: 'openai ' + oa.status + (detail ? ' — ' + detail : '') };
+    }
+    let buf; try { buf = Buffer.from(await oa.arrayBuffer()); } catch (e) { return { ok: false, reason: 'read: ' + ((e && e.message) || e) }; }
+    if (!buf || !buf.length) return { ok: false, reason: 'empty audio' };
+    return { ok: true, buf, outType: 'audio/mpeg', ext: 'mp3' };
+  }
+  // OpenRouter /audio/speech (the historical path). pcm is the only format Gemini TTS supports (and is widely
+  // available); we wrap it to WAV below.
+  const payload = { model, input, voice, response_format: 'pcm' };
+  let or;
+  try {
+    or = await fetch('https://openrouter.ai/api/v1/audio/speech', voiceFetchOpts({
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json', 'HTTP-Referer': 'https://localhost', 'X-Title': 'STARNET' },
+      body: JSON.stringify(payload)
+    }, 60000));
+  } catch (e) { return { ok: false, reason: 'network: ' + ((e && e.message) || e) }; }
+  if (!or.ok) {
+    let detail = ''; try { detail = (await or.text()).slice(0, 300); } catch (_) {}
+    return { ok: false, reason: 'openrouter ' + or.status + (detail ? ' — ' + detail : '') };
+  }
+  const ct = (or.headers.get('content-type') || '').toLowerCase();
+  let buf; try { buf = Buffer.from(await or.arrayBuffer()); } catch (e) { return { ok: false, reason: 'read: ' + ((e && e.message) || e) }; }
+  if (!buf || !buf.length) return { ok: false, reason: 'empty audio' };
+  // raw PCM (e.g. "audio/pcm;rate=24000;channels=1") → wrap into a playable WAV; otherwise pass through.
+  if (/pcm|octet-stream/.test(ct) || /rate=|channels=/.test(ct)) {
+    const rate = parseInt((ct.match(/rate=(\d+)/) || [])[1], 10) || 24000;
+    const channels = parseInt((ct.match(/channels=(\d+)/) || [])[1], 10) || 1;
+    return { ok: true, buf: pcmToWav(buf, rate, channels), outType: 'audio/wav', ext: 'wav' };
+  }
+  if (/mpeg|mp3/.test(ct)) return { ok: true, buf, outType: 'audio/mpeg', ext: 'mp3' };
+  if (/wav/.test(ct)) return { ok: true, buf, outType: 'audio/wav', ext: 'wav' };
+  if (/ogg/.test(ct)) return { ok: true, buf, outType: 'audio/ogg', ext: 'ogg' };
+  // anything else (e.g. a 200 with a JSON error body) is NOT silently wrapped as WAV — that ships a corrupt blob.
+  return { ok: false, reason: 'unexpected content-type: ' + ct };
+}
 async function handleTts(req, res) {
   const fallback = (reason) => { console.error('[tts] fallback →', reason); res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify({ fallback: true, reason })); };
   let body;
@@ -8561,123 +8731,63 @@ async function handleTts(req, res) {
   } else {
     for (const p of ttsChain) { const k = providerRuntimeKey(p, ''); if (k) { ttsProvider = p; ttsKey = k; break; } }
   }
-  if (!ttsKey) return fallback('no key');
 
   // fold the style into the spoken input the way Gemini TTS documents (a leading directive it obeys but
   // does not read aloud). Kept separate from `text` so the cache key can include the style (below).
   const input = style ? ('Say the following in ' + style + ': ' + text) : text;
+  // one 32nd-miss cache sweep helper, shared by both tiers (runs AFTER the response, never blocking it).
+  const sweepMaybe = () => { if (++ttsMissCount % 32 === 0) setImmediate(() => { maybeEvictVoiceCache().catch(() => {}); }); };
 
-  // cache the synthesized (speed-independent) audio by model+voice+STYLE+text; pacing is applied
-  // client-side via Audio.playbackRate, so it stays out of the key for better cache hits. Style MUST be
-  // in the key — same words in a different delivery are a different clip. OpenRouter and native Gemini
-  // SHARE a key on purpose (same model + same prebuilt voice ⇒ the same clip); OpenAI is a different
+  // TIER 1 — a keyed provider (the station's own AI credential). Attempt only if a key resolved; on ANY
+  // failure (4xx/402 billing, network, bad body) record the reason and FALL THROUGH to the free Edge floor
+  // rather than returning a hard degrade — voice must not depend on which brain/credential the station picked.
+  // Cache key: model+voice+STYLE+text (pacing is client-side, so it stays out of the key for better hits).
+  // OpenRouter and native Gemini SHARE a key (same model + prebuilt voice ⇒ same clip); OpenAI is a different
   // vendor voice, so it gets its own namespace (like elevenlabs/) and can never collide.
-  const ck = (ttsProvider === 'openai')
-    ? crypto.createHash('sha1').update('openai/' + OPENAI_TTS_MODEL + '|' + OPENAI_TTS_VOICE + '|' + style + '|' + text).digest('hex')
-    : crypto.createHash('sha1').update(model + '|' + voice + '|' + style + '|' + text).digest('hex');
-  const serveCached = async () => {
+  let keyedReason = ttsKey ? '' : 'no key';
+  if (ttsKey) {
+    const ck = (ttsProvider === 'openai')
+      ? crypto.createHash('sha1').update('openai/' + OPENAI_TTS_MODEL + '|' + OPENAI_TTS_VOICE + '|' + style + '|' + text).digest('hex')
+      : crypto.createHash('sha1').update(model + '|' + voice + '|' + style + '|' + text).digest('hex');
     for (const ext of ['wav', 'mp3']) {
       try {
-        const buf = await fsp.readFile(path.join(VOICE_CACHE_DIR, ck + '.' + ext));
+        const cached = await fsp.readFile(path.join(VOICE_CACHE_DIR, ck + '.' + ext));
         res.writeHead(200, { 'Content-Type': ext === 'mp3' ? 'audio/mpeg' : 'audio/wav', 'Cache-Control': 'no-store', 'X-Voice-Cache': 'hit' });
-        res.end(buf); return true;
+        return res.end(cached);
       } catch (_) { /* try next ext */ }
     }
-    return false;
-  };
-  if (await serveCached()) return;
-
-  let buf, outType, ext;
-  if (ttsProvider === 'gemini') {
-    // Native Gemini TTS — the SAME model + prebuilt voice as the OpenRouter path, spoken straight from
-    // the user's Gemini key. generateContent with AUDIO modality returns base64 PCM we wrap to WAV.
-    const base = (providerRuntimeBaseUrl('gemini', '') || 'https://generativelanguage.googleapis.com/v1beta').replace(/\/+$/, '');
-    const nativeModel = model.replace(/^google\//, '');
-    let gr;
-    try {
-      gr = await fetch(base + '/models/' + encodeURIComponent(nativeModel) + ':generateContent', voiceFetchOpts({
-        method: 'POST',
-        headers: { 'x-goog-api-key': ttsKey, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: input }] }],
-          generationConfig: { responseModalities: ['AUDIO'], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } } } }
-        })
-      }, 60000));
-    } catch (e) { return fallback('network: ' + ((e && e.message) || e)); }
-    if (!gr.ok) {
-      let detail = ''; try { detail = (await gr.text()).slice(0, 300); } catch (_) {}
-      return fallback('gemini ' + gr.status + (detail ? ' — ' + detail : ''));
+    const keyed = await ttsSynthKeyed(ttsProvider, { model, voice, input, text, style, key: ttsKey });
+    if (keyed.ok) {
+      try { const tmp = path.join(VOICE_CACHE_DIR, ck + '.' + keyed.ext + '.' + crypto.randomUUID() + '.tmp'); await fsp.writeFile(tmp, keyed.buf); await fsp.rename(tmp, path.join(VOICE_CACHE_DIR, ck + '.' + keyed.ext)); } catch (_) {}
+      res.writeHead(200, { 'Content-Type': keyed.outType, 'Cache-Control': 'no-store', 'X-Voice-Cache': 'miss' });
+      res.end(keyed.buf); sweepMaybe(); return;
     }
-    let j; try { j = await gr.json(); } catch (e) { return fallback('gemini: bad json'); }
-    const part = j && j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts
-      && j.candidates[0].content.parts.find(p => p && p.inlineData && p.inlineData.data);
-    if (!part) return fallback('gemini: no audio in response');
-    try { buf = Buffer.from(part.inlineData.data, 'base64'); } catch (e) { return fallback('gemini: bad audio data'); }
-    if (!buf || !buf.length) return fallback('empty audio');
-    const mt = String(part.inlineData.mimeType || '').toLowerCase();
-    const rate = parseInt((mt.match(/rate=(\d+)/) || [])[1], 10) || 24000;
-    buf = pcmToWav(buf, rate, 1);
-    outType = 'audio/wav'; ext = 'wav';
-  } else if (ttsProvider === 'openai') {
-    // OpenAI /audio/speech — a different vendor, so the nearest voice (onyx) steered by the same style
-    // text via `instructions`. Honest approximation: it will not be byte-identical to the Gemini voice.
-    const base = (providerRuntimeBaseUrl('openai', '') || 'https://api.openai.com/v1').replace(/\/+$/, '');
-    const payload = { model: OPENAI_TTS_MODEL, input: text, voice: OPENAI_TTS_VOICE, response_format: 'mp3' };
-    if (style) payload.instructions = style;
-    let oa;
-    try {
-      oa = await fetch(base + '/audio/speech', voiceFetchOpts({
-        method: 'POST',
-        headers: { 'Authorization': 'Bearer ' + ttsKey, 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      }, 60000));
-    } catch (e) { return fallback('network: ' + ((e && e.message) || e)); }
-    if (!oa.ok) {
-      let detail = ''; try { detail = (await oa.text()).slice(0, 300); } catch (_) {}
-      return fallback('openai ' + oa.status + (detail ? ' — ' + detail : ''));
-    }
-    try { buf = Buffer.from(await oa.arrayBuffer()); } catch (e) { return fallback('read: ' + ((e && e.message) || e)); }
-    if (!buf || !buf.length) return fallback('empty audio');
-    outType = 'audio/mpeg'; ext = 'mp3';
-  } else {
-    // OpenRouter /audio/speech (the historical path). pcm is the only format Gemini TTS supports (and is
-    // widely available); we wrap it to WAV below.
-    const payload = { model, input, voice, response_format: 'pcm' };
-    let or;
-    try {
-      or = await fetch('https://openrouter.ai/api/v1/audio/speech', voiceFetchOpts({
-        method: 'POST',
-        headers: { 'Authorization': 'Bearer ' + ttsKey, 'Content-Type': 'application/json', 'HTTP-Referer': 'https://localhost', 'X-Title': 'STARNET' },
-        body: JSON.stringify(payload)
-      }, 60000));
-    } catch (e) { return fallback('network: ' + ((e && e.message) || e)); }
-    if (!or.ok) {
-      let detail = ''; try { detail = (await or.text()).slice(0, 300); } catch (_) {}
-      return fallback('openrouter ' + or.status + (detail ? ' — ' + detail : ''));
-    }
-    const ct = (or.headers.get('content-type') || '').toLowerCase();
-    try { buf = Buffer.from(await or.arrayBuffer()); } catch (e) { return fallback('read: ' + ((e && e.message) || e)); }
-    if (!buf || !buf.length) return fallback('empty audio');
-
-    // raw PCM (e.g. "audio/pcm;rate=24000;channels=1") → wrap into a playable WAV; otherwise pass through.
-    outType = 'audio/wav'; ext = 'wav';
-    if (/pcm|octet-stream/.test(ct) || /rate=|channels=/.test(ct)) {
-      const rate = parseInt((ct.match(/rate=(\d+)/) || [])[1], 10) || 24000;
-      const channels = parseInt((ct.match(/channels=(\d+)/) || [])[1], 10) || 1;
-      buf = pcmToWav(buf, rate, channels);
-    } else if (/mpeg|mp3/.test(ct)) { outType = 'audio/mpeg'; ext = 'mp3'; }
-    else if (/wav/.test(ct)) { outType = 'audio/wav'; ext = 'wav'; }
-    else if (/ogg/.test(ct)) { outType = 'audio/ogg'; ext = 'ogg'; }
-    // anything else (e.g. a 200 with a JSON error body, or an unexpected codec) is NOT silently wrapped as
-    // WAV — that would ship a corrupt blob the browser fails to decode into silence. Fall back cleanly.
-    else { return fallback('unexpected content-type: ' + ct); }
+    keyedReason = keyed.reason;
   }
 
-  try { const tmp = path.join(VOICE_CACHE_DIR, ck + '.' + ext + '.' + crypto.randomUUID() + '.tmp'); await fsp.writeFile(tmp, buf); await fsp.rename(tmp, path.join(VOICE_CACHE_DIR, ck + '.' + ext)); } catch (_) {}
-  res.writeHead(200, { 'Content-Type': outType, 'Cache-Control': 'no-store', 'X-Voice-Cache': 'miss' });
-  res.end(buf);
-  // every 32nd miss, sweep the cache AFTER the response so it never adds latency to a spoken reply.
-  if (++ttsMissCount % 32 === 0) setImmediate(() => { maybeEvictVoiceCache().catch(() => {}); });
+  // TIER 2 — the FREE, KEYLESS Edge neural floor. Reached when the station has no voice-capable key OR every
+  // keyed attempt failed (billing/network/etc.). Own cache namespace + mp3; NO style (Edge has no style-prompt
+  // support, so ttsStyle is neither sent nor part of the key). Skippable via SKYNET_EDGE_TTS=0 (test determinism).
+  // If Edge ALSO fails we return the terminal 200 {fallback} — the 200-always contract holds; the client drops
+  // to text + an honest speaker tooltip, never a hard error.
+  if (edgetts.enabled()) {
+    const edgeVoice = edgetts.resolveVoice();
+    const eck = crypto.createHash('sha1').update('edge|' + edgeVoice + '|' + text).digest('hex');
+    try {
+      const cached = await fsp.readFile(path.join(VOICE_CACHE_DIR, eck + '.mp3'));
+      res.writeHead(200, { 'Content-Type': 'audio/mpeg', 'Cache-Control': 'no-store', 'X-Voice-Cache': 'hit' });
+      return res.end(cached);
+    } catch (_) { /* miss → synthesize */ }
+    let ebuf;
+    try { ebuf = await edgetts.synth(text, { voice: edgeVoice, nowMs: Date.now() }); }   // clock injected here (index.js = ambient composition root)
+    catch (e) { return fallback(keyedReason ? (keyedReason + '; edge: ' + ((e && e.message) || e)) : ('edge: ' + ((e && e.message) || e))); }
+    if (!ebuf || !ebuf.length) return fallback(keyedReason || 'edge: empty audio');
+    try { const tmp = path.join(VOICE_CACHE_DIR, eck + '.mp3.' + crypto.randomUUID() + '.tmp'); await fsp.writeFile(tmp, ebuf); await fsp.rename(tmp, path.join(VOICE_CACHE_DIR, eck + '.mp3')); } catch (_) {}
+    res.writeHead(200, { 'Content-Type': 'audio/mpeg', 'Cache-Control': 'no-store', 'X-Voice-Cache': 'miss' });
+    res.end(ebuf); sweepMaybe(); return;
+  }
+
+  return fallback(keyedReason || 'no key');
 }
 
 /* ElevenLabs TTS — speak with a user-trained ElevenLabs voice (e.g. the Commander's own Ultron clone).
@@ -8756,6 +8866,45 @@ function readBodyBuffer(req, max, res) {
    would wedge the hands-free loop) — the caller surfaces `reason` in a console.warn + status line. */
 const STT_MAX_BYTES = 10 * 1024 * 1024;   // ~10MB — a ~30s opus clip is well under this; a JSON base64 body is ~1.33x
 const STT_PROMPT = 'Transcribe this audio verbatim. Output ONLY the transcribed words, nothing else. If there is no speech, output nothing.';
+// Dedicated ASR models for the OpenAI-compatible /audio/transcriptions endpoints (Groq + OpenAI). These are
+// PURPOSE-BUILT speech models (Whisper family) — far faster + more accurate than routing a clip through a
+// generic chat model, and they close the STT half of the voice-decoupling bar (a station transcribes from a
+// Groq/OpenAI key even with no OpenRouter chat credential).
+const STT_GROQ_MODEL = 'whisper-large-v3-turbo';
+const STT_OPENAI_MODEL = 'whisper-1';
+// Base-URL overrides for the dedicated ASR hosts, mirroring the SKYNET_OPENROUTER_BASE pattern (real hosts by
+// default; a test points these at a loopback mock). The provider profile's own base is the middle fallback.
+const STT_GROQ_BASE = String(ENV('GROQ_BASE') || '').trim();
+const STT_OPENAI_BASE = String(ENV('OPENAI_BASE') || '').trim();
+// Build a multipart/form-data body by hand (zero-dep): the file part named `file` + any scalar fields. The audio
+// container (webm/opus, wav, …) is passed through from the request's derived format so the ASR server tags it right.
+function sttMultipartBody(audioBuf, filename, contentType, fields) {
+  const boundary = '----StarNetSTT' + crypto.randomBytes(16).toString('hex');
+  const parts = [];
+  for (const k of Object.keys(fields || {})) {
+    parts.push(Buffer.from('--' + boundary + '\r\nContent-Disposition: form-data; name="' + k + '"\r\n\r\n' + String(fields[k]) + '\r\n', 'utf8'));
+  }
+  parts.push(Buffer.from('--' + boundary + '\r\nContent-Disposition: form-data; name="file"; filename="' + filename + '"\r\nContent-Type: ' + contentType + '\r\n\r\n', 'utf8'));
+  parts.push(audioBuf);
+  parts.push(Buffer.from('\r\n--' + boundary + '--\r\n', 'utf8'));
+  return { body: Buffer.concat(parts), contentType: 'multipart/form-data; boundary=' + boundary };
+}
+// One dedicated-ASR transcription attempt against an OpenAI-compatible /audio/transcriptions endpoint. Returns
+// { ok:true, text } or { ok:false, reason } — NEVER touches res, so a failure falls through to the next tier.
+async function sttTranscribe(baseUrl, apiKey, whisperModel, audioBuf, filename, contentType) {
+  const mp = sttMultipartBody(audioBuf, filename, contentType, { model: whisperModel });
+  let r;
+  try {
+    r = await fetch(baseUrl.replace(/\/+$/, '') + '/audio/transcriptions', voiceFetchOpts({
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + apiKey, 'Content-Type': mp.contentType },
+      body: mp.body
+    }, 120000));
+  } catch (e) { return { ok: false, reason: 'network: ' + ((e && e.message) || e) }; }
+  if (!r.ok) { let d = ''; try { d = (await r.text()).slice(0, 200); } catch (_) {} return { ok: false, reason: whisperModel + ' ' + r.status + (d ? ' — ' + d : '') }; }
+  let j; try { j = await r.json(); } catch (e) { return { ok: false, reason: 'bad json from ' + whisperModel }; }
+  return { ok: true, text: String((j && j.text) || '').trim() };
+}
 async function handleStt(req, res) {
   const ok = (text) => { res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify({ text: String(text || '') })); };
   const degrade = (reason) => { console.warn('[stt] →', reason); res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify({ text: '', reason })); };
@@ -8781,41 +8930,71 @@ async function handleStt(req, res) {
     }
   } catch (e) { return degrade('body: ' + ((e && e.message) || e)); }
 
-  key = key || runtimeKey;   // desktop: key lives in the keychain-seeded env, not the request
-  if (!key) return degrade('no key');
+  key = key || runtimeKey;   // desktop: the OpenRouter chat-chain key lives in the keychain-seeded env, not the request
+  // Dedicated ASR credentials, resolved the same way handleTts resolves its provider keys (env / runtime push).
+  // Groq is env-only for now (GROQ_API_KEY); OpenAI reuses providerRuntimeKey so a page-supplied or sidecar
+  // runtime OpenAI key is honored — exactly like the openai TTS branch.
+  const groqKey = providerRuntimeKey('groq', '');
+  const openaiKey = providerRuntimeKey('openai', '');
+  // No-key ONLY when NONE of the three transcription paths has a credential — a Groq/OpenAI-only station must
+  // still transcribe (that's the whole decoupling point), so the old "no OpenRouter key ⇒ no key" gate is gone.
+  if (!groqKey && !openaiKey && !key) return degrade('no key');
   if (!audioB64) return degrade('no audio');
-  // OpenRouter's input_audio format field wants a codec name; normalize the common WebView2/browser containers.
-  // 'webm' (opus) and 'wav' are the two we produce; ogg/opus map to their documented names.
+  // Normalize the container name: 'webm' (opus) and 'wav' are what we produce; x-wav/wave → wav.
   format = (format === 'x-wav' || format === 'wave') ? 'wav' : (format || 'webm');
+  const audioBuf = Buffer.from(audioB64, 'base64');
+  const sttFilename = 'audio.' + format;
+  const sttContentType = 'audio/' + format;
 
-  const payload = (model) => ({
-    model,
-    messages: [{ role: 'user', content: [
-      { type: 'input_audio', input_audio: { data: audioB64, format } },
-      { type: 'text', text: STT_PROMPT }
-    ] }]
-  });
+  let lastReason = 'no transcription';
 
-  let lastReason = 'no model';
-  for (const model of STT_MODELS) {
-    let r;
-    try {
-      r = await fetch('https://openrouter.ai/api/v1/chat/completions', voiceFetchOpts({
-        method: 'POST',
-        headers: { 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json', 'HTTP-Referer': 'https://localhost', 'X-Title': 'STARNET' },
-        body: JSON.stringify(payload(model))
-      }, 120000));
-    } catch (e) { lastReason = 'network: ' + ((e && e.message) || e); continue; }
-    if (!r.ok) {
-      let detail = ''; try { detail = (await r.text()).slice(0, 200); } catch (_) {}
-      lastReason = model + ' → openrouter ' + r.status + (detail ? ' — ' + detail : '');
-      // a 4xx that names the model/modality is "this model can't do audio" — try the next candidate. Other
-      // errors (auth, rate) will repeat on every model, but the loop is short so it's cheap either way.
-      continue;
+  // TIER 1 — Groq whisper-large-v3-turbo (very fast + cheap). Dedicated speech model over the OpenAI-compatible
+  // multipart /audio/transcriptions endpoint. A non-2xx/timeout/parse failure falls through silently to the next tier.
+  if (groqKey) {
+    const base = STT_GROQ_BASE || providerRuntimeBaseUrl('groq', '') || 'https://api.groq.com/openai/v1';
+    const g = await sttTranscribe(base, groqKey, STT_GROQ_MODEL, audioBuf, sttFilename, sttContentType);
+    if (g.ok) return ok(g.text);   // empty string is a valid "no speech heard" result — deliver it
+    lastReason = 'groq: ' + g.reason;
+  }
+
+  // TIER 2 — OpenAI whisper-1. Same dedicated-ASR shape; key resolved via providerRuntimeKey (page/runtime/env).
+  if (openaiKey) {
+    const base = STT_OPENAI_BASE || providerRuntimeBaseUrl('openai', '') || 'https://api.openai.com/v1';
+    const o = await sttTranscribe(base, openaiKey, STT_OPENAI_MODEL, audioBuf, sttFilename, sttContentType);
+    if (o.ok) return ok(o.text);
+    lastReason = 'openai: ' + o.reason;
+  }
+
+  // TIER 3 — the EXISTING chat-model chain (OpenRouter/Gemini), unchanged, as the final fallback. Only worth
+  // trying when an OpenRouter chat key is present (otherwise it's a guaranteed 401).
+  if (key) {
+    const payload = (model) => ({
+      model,
+      messages: [{ role: 'user', content: [
+        { type: 'input_audio', input_audio: { data: audioB64, format } },
+        { type: 'text', text: STT_PROMPT }
+      ] }]
+    });
+    for (const model of STT_MODELS) {
+      let r;
+      try {
+        r = await fetch('https://openrouter.ai/api/v1/chat/completions', voiceFetchOpts({
+          method: 'POST',
+          headers: { 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json', 'HTTP-Referer': 'https://localhost', 'X-Title': 'STARNET' },
+          body: JSON.stringify(payload(model))
+        }, 120000));
+      } catch (e) { lastReason = 'network: ' + ((e && e.message) || e); continue; }
+      if (!r.ok) {
+        let detail = ''; try { detail = (await r.text()).slice(0, 200); } catch (_) {}
+        lastReason = model + ' → openrouter ' + r.status + (detail ? ' — ' + detail : '');
+        // a 4xx that names the model/modality is "this model can't do audio" — try the next candidate. Other
+        // errors (auth, rate) will repeat on every model, but the loop is short so it's cheap either way.
+        continue;
+      }
+      let j; try { j = await r.json(); } catch (e) { lastReason = 'bad json from ' + model; continue; }
+      const text = String(((j && j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content) || '')).trim();
+      return ok(text);   // empty string is a valid "no speech heard" result — deliver it, don't fall through
     }
-    let j; try { j = await r.json(); } catch (e) { lastReason = 'bad json from ' + model; continue; }
-    const text = String(((j && j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content) || '')).trim();
-    return ok(text);   // empty string is a valid "no speech heard" result — deliver it, don't fall through
   }
   return degrade(lastReason);
 }

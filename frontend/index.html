@@ -324,7 +324,11 @@
      being tinted by the themed top-glow and striped by the scanlines. A .screen is a z-index:10
      stacking context, so nothing inside one can ever out-stack the glass. #logo-anchor below
      reserves its seat in the topbar; app.js positionLogo() keeps the two aligned. -->
-<div id="logo"><img class="logo-img" src="assets/brand/starnet-logo.png" alt="STARNET"><span class="logo-sub">AI-AGENT HARNESS</span></div>
+<!-- The img is the pre-baked SMALL variant (dev/bake-logo-small.mjs): the 1100px ASCII-mosaic
+     master collapses to gray speckle when the browser minifies it 6.6× to topbar size, so the
+     bake downscales the same art in linear light and re-solidifies the strokes. The title
+     screen keeps the full-size master. -->
+<div id="logo"><img class="logo-img" src="assets/brand/starnet-logo-small.png" alt="STARNET"><span class="logo-sub">AI-AGENT HARNESS</span></div>
 
 <section id="screen-game" class="screen">
 
@@ -531,6 +535,7 @@
 <script src="app/asciifx.js"></script><!-- ASCII-motion kit (AsciiFX): decode/dissolve/typewriter primitives; must load before its consumers (chat.js, stationui.js) -->
 <script src="js/audio.js"></script>
 <script src="js/arcade.js"></script>
+<script src="app/spacebg.js"></script><!-- THE VOID: shared deep-space backdrop (dense starfield + nebulas) — one sky for world.js AND build.js so REFIT never jumps the stars -->
 <script src="app/propsprites.js"></script>
 <script src="app/conveyor.js"></script>
 <script src="app/pipeline.js"></script>
@@ -543,6 +548,7 @@
 <script src="app/harness.js"></script>
 <script src="app/updatecore.js"></script>
 <script src="app/updates.js"></script>
+<script src="app/quitguard.js"></script><!-- GB-4 quit half: close-requested guard when agents are live (Tauri only; preview no-op) -->
 <script src="app/fullscreen.js"></script>
 <script src="app/titlebar.js"></script><!-- custom window chrome: renders the themed titlebar ONLY when the desktop shell sets __STARNET_CUSTOM_CHROME__ (Windows, decorations off) -->
 <script src="app/ctxgauge.js"></script>
@@ -643,6 +649,8 @@ document.write('<script src="' + ((window.__STARNET_API__ || '') + '/shared/spec
 <script src="app/worksignalstore.js"></script><!-- adaptive-recruitment wiring: agent.tool_call → capability lane (ToolProps/CAP_REGISTRY) → decayed histogram; rides the save envelope, never emits -->
 <script src="app/recruiterstore.js"></script><!-- adaptive-recruitment read surface: joins worksignal+profile+dossier+live roster → the bay's CURATED shelf + the recruit beat -->
 <script src="app/prospectstore.js"></script><!-- prospect generator wiring: growth-gated async mint (reason-only), denylist, staging → the bay's DRAFTED FOR YOU row; never emits -->
+<script src="app/launchmemory.js"></script><!-- lane C: last-used recipe inputs (own key) — the launch form prefills what you filled last time; confirm-by-sight, localStorage only, never emits -->
+<script src="app/routinenudgestore.js"></script><!-- lane D: "you keep launching this — schedule it?" nudge (own key) — reads scout launch counters + /api/cron (read-only), shares the one post-run beat slot, deep-links into SCHEDULE IT; never emits -->
 <script src="app/dossierstore.js"></script>
 <script src="app/studystore.js"></script><!-- GROWTH Tier 1: STUDY wiring (dossier Phase B) — fetch belief-update proposals, session cap + denylist, ratings→taste; self-persists (own key), never emits -->
 <script src="app/threadstore.js"></script><!-- NS-6: THREAD turn-in wiring — fetch mined idea candidates, session cap + resolved/ignore gate, Keep/Edit/Discard → /api/threads/turnin (the click IS the consent); self-persists (own key), never emits -->

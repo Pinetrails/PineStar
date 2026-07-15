@@ -1,5 +1,121 @@
 # NEXT.md — current priorities & task queue
 
+## MERGED 2026-07-15 — VOICE DECOUPLED FROM THE LLM (lane `claude/hermes-voice-system-analysis-910f29`, trunk `dc2c8809` + W0 `e5e60914`)
+
+Voice is now a STATION subsystem (analysis + acceptance bar: docs/HERMES_VOICE_ANALYSIS_2026-07-14.md).
+Shipped: sidecar/edgetts.js zero-dep FREE KEYLESS Edge neural floor in /api/tts (keyed chain →
+edge → 200 {fallback}); /api/stt dedicated ASR (Groq whisper-large-v3-turbo → whisper-1 →
+chat-model); frontend neural-only (robotic speechSynthesis path DELETED — degrade = silence +
+speaker tooltip; 'no key' latch → 60s cold-off). Live-proven keyless end-to-end (real Edge MP3
+through the real page, play() resolved). Installed exe picks this up at the next build cut.
+
+- [ ] OPEN: local-ASR floor for desktop Anthropic-only stations (sherpa-onnx-node / whisper.cpp
+      spike; the last acceptance-bar gap — browser stations have webSpeech, desktop keyless STT doesn't).
+- [ ] OPEN: Edge-voice audition vs Algenib (en-US-ChristopherNeural chosen as nearest bass;
+      Andrew's ear decides; swap via SKYNET_EDGE_TTS_VOICE).
+- [ ] OPEN: V-ACK (spoken ack on first tool call from the prewarmed cache + ducking), V-HYGIENE
+      (VAD confirm stage, quiet-take discard, hallucination filter, single chunker), V-PROSODY
+      (taste-gated) — ranked in the analysis doc.
+
+## 2026-07-15 — PROVIDER COMPATIBILITY (lane `claude/starnet-provider-compatibility-24131e`, MERGED `29fa54e2`)
+
+The "all providers properly compatible?" audit's four concrete wire risks are FIXED on the shared
+openai-compatible seam (digest in qa/STATUS.md): reasoning_effort reaches the wire (was silently
+dropped); unsupported-param self-heal (400/422 naming an optional param → strip + retry, per-model
+memo; `tools` NEVER silently dropped); Perplexity `supportsTools:false` from the profile → task runs
+refuse up front; xAI `usage.cost_in_usd_ticks` normalized in cost.js (REAL field, 1 USD = 1e10 ticks).
+Capability facts sourced from official provider docs 2026-07 (registry.js wire hints carry citations).
+- [x] **Certification HARNESS shipped + first real-key PASS** (2026-07-15, same lane):
+      `npm run certify:providers` (scripts/provider-certify.mjs) proves the wire seam live per
+      provider — models → streamed chat → tool round-trip → mid-stream cancel → cost reconcile.
+      Keys ONLY from the registry-documented env names; no credential = honest SKIP env-blocked;
+      receipts land in gitignored `.dogfood/provider-certify/`. **OpenRouter: PASS all five steps
+      against the live endpoint** (343 models, streamed "OK" w/ usage, starnet_ping tool call
+      finish=tool_calls, clean abort, provider-reported cost reconciled).
+- [ ] **REAL-KEY runs for the other 12 keyed providers** — needs Andrew to export the documented
+      env keys (or drop them where the app stores creds) and run `npm run certify:providers`;
+      the harness does the rest. Codex certifies via the live app (OAuth), Ollama when a local
+      daemon is up. Restart/auth persistence + one autonomous cycle remain APP-level proofs
+      (live app + real save), not wire-script scope.
+- [x] Perplexity static Sonar roster shipped (same lane): 4 docs-sourced models (2026-07;
+      sonar-reasoning removed 2025-12-15) fill the empty-catalog seam — context limits flow to
+      compaction, connect screen not empty; deliberately UNPRICED (per-request search fees make
+      token-only pricing dishonest).
+
+## 2026-07-14 — COMPREHENSIVE AUDIT ATTACK-ORDER (lane `claude/starnet-audit-80a98c`, Andrew-approved sequence)
+
+Five-agent audit + the approved fix sequence, all lane-committed (digest lands in qa/STATUS.md at merge):
+- **QA watch RE-ARMED on the new PC**: `schtasks` had ZERO StarNet tasks (the EL-0 registrations died with
+  the old machine). Re-registered via `scripts/qa/register-watch.ps1 -Apply` against the integration tree
+  (Guardian-Hourly / Beginner-Daily / Janitor-Weekly, verified in the scheduler) + a fresh manual cycle:
+  **GREEN all 6 gates** @ trunk `38818fbc` (guardian-20260715-023723) — replaces the unreproducible
+  21-commit-stale RED snapshot whose evidence was gitignored and absent.
+- **Stranded-work rescue commits**: meeseeks sprite layer (`7091cabd` on agent/meeseeks-subagents) and
+  growth-t4 anti-nag iteration (`d4a75a6f` on agent/growth-t4) — both existed ONLY as uncommitted diffs;
+  `archive/*-rescue-2026-07-14` tags pinned. Their PORT queue items below remain open.
+- **Channel-secrets verified persist** (the audit's P1): saveChannelSecrets rides saveJsonVerified
+  (read-back proof); connect/sync routes surface `persisted`; disconnect never claims `purged` unproven;
+  notify's 500 guard now reachable. EL-3 failing scenario locked in channels.secrets.test.
+- **Last-hop surfaces**: BUDGET pool-cap RESUME (/api/budget/resume) · NIGHT SHIFT FOCUS + STEER
+  (live-DOM round-trips proven: steer set/clear, marker rides the LIVE steered bit) · AUTONOMY LIVE
+  HELPERS + STOP (/api/subagents/interrupt) · world.js pollFeedState reads bulk /api/channels/status
+  (slack/matrix/signal-only floors no longer falsely nagged NO FEED).
+- **team.dispatch/team.spawn now consent-gated** (closes the parked P1 prompt-injection fork; Andrew
+  approved via the audit attack-order): APPROVAL beat in 'ask' mode, Full Access bypasses — summon parity;
+  registry + tool defs flipped together, test-locked (orchestration 116).
+- **W0/pp branch-mass verdict (NON-destructive)**: the ~65-branch W0/pp complex is a LIVE lane, not
+  abandonware (`agent/w0-*`/`w1-*` all sit in checked-out worktrees; `agent/pp-*` W2 work = preserved refs
+  per the W0 checkpoint below) — left to the w0-claims-verdict lane owner. The 11 self-labeled
+  `codex/snapshot-w0-*` / `codex/rejected-w0-*` insurance branches ARE inert: tips pinned under
+  `archive/codex/...` tags — safe to delete those branches whenever Andrew signs off (tags keep the SHAs).
+
+STILL OPEN from the audit (unclaimed): codex OAuth refresh token keychain home (the one plaintext-only
+credential) · web_fetch/channel-content untrusted-content fence (recall/MCP have one; the highest-volume
+input doesn't) · IPC_TOKEN constant-time compare · index.js channel-route dedup (~9× repeated persist
+shape) · nightshiftPrecheck fails OPEN on exception (budget gate off on throw) · Cartographer re-sweep +
+re-bless (187 perfected all stale; props/events/routes areas never mapped) · fresh installed-exe smoke
+stamp for qa:ready · remaining orphaned routes (workshop/shift, nightshift/beat force-fire, config/reset,
+execution view, threads-ledger browse).
+
+RE-ARMED-WATCH FALLOUT (found by the watch itself, 2026-07-15 — both are INSTRUMENT-environment, not
+product; the same commit passes all suites in interactive shells):
+- [ ] **Hourly Guardian RED @ every cycle until fixed**: `test/shell-machine-state.test.js` fails ONLY
+      under the Task-Scheduler context ("host accepts safe inline Start-Process -FilePath:cmd.exe form —
+      expected 0, got 9"; guardian-20260715-040003, test-fast step 66/325; http-e2e/shoot/golden/audit/
+      journeys all green same cycle). Fix = make the suite (or the guardian task's execution context)
+      interactive-agnostic; until then the hourly row RED means THIS, not a product regression.
+- [ ] **Integration-tree test:fast stalls at the 600s wrapper** right after lint-evidence-secrets
+      (reproduced 2× at 70cdc178; the known `.dogfood` bloat). Gate trunk commits in a clean worktree
+      FF'd to the same SHA (receipt pattern used for this merge). Real fix = product-perfect lane makes
+      the claims step skip-honestly when `.dogfood` is absent + the scanner step bounded.
+
+## 2026-07-14 — ADVERSARIAL SWEEP: interrupt/disconnect seams (branch `agent/adversarial-sweep`)
+
+Fresh-eyes skeptical sweep of the seams happy-path QA is blind to (full ledger with repro steps:
+`.bugloops/adversarial-sweep-2026-07-14/LEDGER.md` in the lane worktree; digest in qa/STATUS.md;
+P0/P1s in the qa findings ledger, crew `Adversarial`). FIXED in-lane with EL-3 escape tests:
+- F1 P0 client disconnect never detected on /api/run (dead `req.on('close')` after readBody —
+  Node ≥15 emits it at message completion): ghost runs spent unwatched, mutex held, reloaded UI
+  contradicted the harness. All three run routes now use `res.on('close')` (`6923ed05`).
+- F2 P0 COMMS `online` asserted forever over a dead sidecar — now folds `World.linkState` →
+  `station unreachable` (`73f376fa`).
+- F3 P1 idle `/steer` minted a paid run from a steering note — now refuses honestly (`f488ed11`).
+OPEN (routed, repros in the ledger):
+- F4 P1 `/model` accepts garbage ids with a confident ack — warn-not-block against the warmed
+  catalog at the ack seam (slash lane).
+- F5 P1 canvas buffers never re-derive on viewport resize; `object-fit:fill` distorts the pixel
+  world; `#ag-portrait` renders 88×1 (canvas lane; cheap DOM oracle: css aspect ≈ buffer aspect).
+- F6 P2 hero body stays `idle` + stale say while its run streams (crew latch rides run phase,
+  hero latch is desk-trip-only — world.js:5060/5077 vs :3027); F7 P2 first summon spawns ON the
+  hero tile (3/3); F8 P2 cancelled runs persist `content:""` assistant turns (partial streamed
+  text lost from the durable transcript); F9 P2-suspect NIGHT SHIFT trophy minted with zero
+  night-shift activity (trophy condition needs reading).
+- KNOWN pre-existing: `test/qa-product-perfect-claims.test.js` is ENVIRONMENT-DEPENDENT — red
+  (9 fails) in ANY fresh worktree because it needs the integration tree's gitignored `.dogfood`
+  candidate state; green in the integration tree (64 assertions). Every lane gating in a clean
+  worktree loses the fast-gate tail behind step ~133 — product-perfect lane should make it
+  skip-honestly (with a visible SKIPPED note) when `.dogfood` is absent.
+
 ## 2026-07-13 — FLAGSHIP WAVE: last-hop surfaces + cross-wiring (branch `claude/flagship-features-audit-d0e1a1`)
 
 Three-agent code audit of the flagship trio (autonomy / quests / recommendations) found the engines
@@ -138,6 +254,29 @@ Ship blockers:
       absence of shell browser / `computer.use` / `desktop.open`.
 - [ ] Phase-5 computer evidence deliberately remains `blocked` until that installed receipt exists.
 
+## LANDED 2026-07-14 — RECRUIT RECURATION: 12 majority-use classes + archetype-seeded minting
+
+Andrew's read: most of the 18 preconfigured recruit listings were redundant — beginners picked none.
+The catalog now has TWO shelves (`shared/specialties.js`):
+- **BUILTINS (12)** — one class per distinct majority-use job: chief / researcher / engineer / scribe /
+  analyst / operator / scout / designer / tutor + 3 NEW practical classes: **navigator** (trips &
+  logistics; verifies every price/hour live, never claims a booking), **curator** (local file tidying;
+  move-never-delete + quarantine — the local-first differentiator), **muse** (diverge-then-converge
+  ideation). 2 new kit-grounded skill recipes: `itinerary-planning`, `file-curation`.
+- **ARCHETYPES (9)** — the demoted deep cuts (reviewer/auditor/liaison/publicist/herald/broker/
+  bookkeeper/translator/archivist), full specs, NEVER gated: `Specialties.get()` resolves them (old
+  saves + summon-by-id still work), and the bay lists them in a collapsible **SPECIALIST ARCHIVE**
+  that search/lane filters auto-expand.
+- **Archetype-seeded minting** (`Scout.matchArchetype`, wired in `runScoutCycle`): on a prospect turn
+  the cycle first checks — deterministically, ZERO model spend — whether a dormant archetype covers a
+  WARM learned interest; a match stages its FULL spec on the DRAFTED-FOR-YOU shelf with a WHY from the
+  real topic counters. Dedup: held names never re-pitch, dismissed shapes stay denylisted, LLM near-dup
+  guard now counts archetypes (the model never re-authors one). No match → LLM authorship unchanged.
+- Proof: class-loadouts re-pinned (all laws over BOTH shelves), scout.test matcher coverage,
+  scout.e2e BOOT 3 (real sidecar stages the Broker archetype off a warm interest, zero model calls,
+  persisted), live bay round-trips (12-card roster, archive expand/search, builder prefill with full
+  loadout). Gate 318 green; W0 release surface re-stamped in-branch.
+
 ## LANDED 2026-07-12 — BOOT/SHUTDOWN MOUSE-CONFINEMENT GUARDRAILS (merged as `c069cba3`)
 
 Incident: an agent-built pointer-lock FPS left a smoke browser + dev server alive after StarNet
@@ -241,14 +380,25 @@ as EL-11 FIX 1; 200 {ok:false,degraded:true} is a LOCKED test-asserted design, d
       MERGED to trunk, trees clean).
 
 **QUEUE — audited unmerged gems, NOT yet restored (claim here before building):**
-- [ ] **connector-spine rescue** — UNCOMMITTED in `C:/Users/andro/gen-trees/connector-spine`
-      (8.7d stale, base 1171 commits behind): email/sms/webhook/whatsapp adapters + tests
-      (new-file clean) + managed-credits billing seam. Its slack = superseded by trunk's; its
-      org/derive = orphaned (orgvalidator.js deleted). FIRST: commit the tree to a branch so it
-      stops being one `git clean` away from gone. Port = manual re-wire of index.js/stationui.js.
-- [ ] **Settings V2 control-plane** — UNCOMMITTED in `gen-trees/hermes-settings-audit` (14.5d):
-      schema-driven settings panel + /api/settings threaded into runOnce (max_turns, budgets,
-      timeouts, approvals). Biggest genuinely-missing feature; heavy reconcile. Same: commit first.
+- [ ] **connector-spine PORT** — rescue ✅ DONE (committed `9d2e2d93` on `agent/connector-spine`
+      + tag `archive/connector-spine-rescue-2026-07-09`; tree verified CLEAN 2026-07-14): email/
+      sms/webhook/whatsapp adapters + tests (new-file clean) + managed-credits billing seam. Its
+      slack = superseded by trunk's; its org/derive = orphaned (orgvalidator.js deleted).
+      Remaining = the port: manual re-wire of index.js/stationui.js in a fresh lane.
+- [ ] **Settings V2 control-plane PORT** — rescue ✅ DONE 2026-07-14 (committed verbatim as
+      `02d872f9` on `agent/hermes-settings-audit` + tag `archive/hermes-settings-audit-rescue-2026-07-14`;
+      tree CLEAN; its own settings-store test 21/21 green at its base). Contents: schema-driven
+      settings-store.js (schema/defaults/current triple, ~50 fields) + GET/POST `/api/settings`
+      + `/defaults` + `/schema` + schema-rendered panel (stationui.js +378). Port assessment
+      (2026-07-14, base 1867 behind): trunk STILL has no `/api/settings` — backend half genuinely
+      missing. But port must be SELECTIVE, not a merge: (a) reconcile with trunk's newer
+      `/api/runtime/knobs` (P1-9 — same protected-sibling persistence; don't ship two knob
+      stores); (b) drop fields refuted by locked decisions (appearance.music — music DELETED;
+      appearance.scanlines — toggle removed, always-on) and every `status:'planned'` no-op field
+      (tool surface must never exceed wired reality); (c) render new sections INTO the existing
+      premium SETTINGS window, don't replace it; (d) index.js/stationui.js hunks won't merge at
+      1867-commit drift — hand re-port using the rescue as reference; settings-store.js + test
+      port nearly clean after field re-curation.
 - [ ] **growth-t4 anti-nag budget** — global one-interactive-ask-per-task-end + starvation
       fairness. Do NOT merge the branch (chat.js +1386 drift, new thread/autopilot lanes it's
       blind to) — fresh re-port of the design.
@@ -363,6 +513,20 @@ dossier-agent-mgmt (DELETE AGENT + CHANGE SKIN); update-safety P0.1 wv-cache-pur
 P0.2 mirror-truth, P1.1+P1.2 roster-honesty; voice-desktop-key; comms-fresh-session;
 multiplatform install docs. ✅ (all in git log)
 
+## P0 — Windows update sidecar-lock hang (canary-caught 2026-07-14)
+
+The local update canary (`npm run release:canary`) caught a UNIVERSAL Windows in-app-update
+failure the whole test suite could never see: the updater plugin launches the NSIS installer
+then hard-exits via `std::process::exit(0)`, which does NOT fire Tauri's `ExitRequested`
+handler — so `kill_sidecar()` never runs, the old `node.exe` sidecar stays alive holding a
+write lock, and NSIS FREEZES on "error opening file for writing: node.exe" (Retry/Abort/Ignore)
+forever. Every Windows user, every in-app update. FIX: wire the plugin's `on_before_exit` hook
+in `starnet_update_check` (main.rs) to set `shutting_down` + `kill_sidecar()` before the exit;
+the hook rides the pending Update into the install path. Compiles; being re-proven through the
+canary (rebuild old-with-fix → reinstall → drive to clean completion). The canary's `drive`
+was also hardened — it now requires installer-exited + app-relaunched, not just the version
+resource (which flips BEFORE the hang, so version-only was a false green).
+
 ## P0 — code: ALL LANDED 2026-07-06 night ✅ (do not rebuild — verify in log/code)
 
 The entire P0-code list from the evening reconcile merged during the update-safety /
@@ -388,6 +552,12 @@ leak (0cccce2d), VT323 shipped locally (01570f17).
 ## P0 — Andrew only (nothing above matters to the public until these)
 
 - Publish `starnet-releases` repo (public updater currently 404s) + rescope RELEASES_TOKEN.
+  Pipeline hardening landed 2026-07-14 (update-blockers lane): signed `linux-x86_64-deb`
+  manifest key (was: every .deb self-update failed on the AppImage fallback), real minisign
+  crypto verification of every artifact/.sig in assemble (`npm run release:verify-sig`),
+  published releases immutable to train re-runs. Next release train run exercises all three.
+  Then run the older-install → publish → restart update canary per platform (Win NSIS, both
+  mac arches, AppImage, .deb) — still ZERO public end-to-end update proofs.
 - Back up `~/.tauri/starnet-updater.key` to ≥2 offline locations (single point of total loss).
 - Rotate the dev OpenRouter key; support email swap.
 - **Attended 15-min playtest** (`docs/PLAYTEST_SCRIPT_GATE5.md`) — dodged since 7/02.
@@ -805,8 +975,12 @@ E-STOP visibility + get-a-key link already chipped by Atlas — not re-listed.**
   no archive view, no re-open old runs).
 - GB-3 RECORDING MODE: one toggle hiding keys/spend/PII for screen capture (zero code; GTM —
   spectacle is the growth engine and Andrew records constantly).
-- GB-4 Quit/update-while-running guards: no "N agents still working" on close (beforeunload
-  saves only); updater installs over live runs (main.rs:1418).
+- GB-4 Quit/update-while-running guards: BOTH halves FIXED 2026-07-14 (update-blockers lane).
+  Update: Updates.install() checks Channels.busyCount(), amber guard card WAIT/INSTALL ANYWAY.
+  Quit: quitguard.js intercepts close-requested (titlebar X, Alt+F4, taskbar), modal STAY /
+  CLOSE ANYWAY when agents live, bounded state drain before EVERY allowed close (destroy()
+  skips beforeunload), fail-open so a broken Channels never wedges the window shut. Needs
+  the next desktop rebuild (capabilities +core:window:allow-destroy) to be live in the exe.
 - GB-5 Crew bodies: pointer cursor but click falls through (world.js:720 hero-only) — click →
   quick actions (talk/dossier/locate); plus click-roster-name → camera jump to agent.
 - GB-6 Prop hover tooltips (name + grants) — belts have tags (world.js:4080), props silent.

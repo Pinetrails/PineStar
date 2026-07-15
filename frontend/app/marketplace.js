@@ -43,6 +43,7 @@ const Marketplace = (() => {
   let pickedSummonModel = null;   // SUMMON-only per-agent model choice: { model, provider, effort } or null = inherit the orchestrator's
   let focusAgent = null, focusRecipe = null;     // the spec/recipe id shown in the dossier (per tab)
   let laneFilter = 'all';                        // 'all' | 'code' | 'research' | 'general'  (AGENTS tab)
+  let archiveOpen = false;                       // SPECIALIST ARCHIVE (deep-cut archetypes) — collapsed by default
   let catFilter = 'all';                         // 'all' | 'mine' | <rail bucket>          (RECIPES tab, R6)
   let query = '';
   let buildAccent = '#ffaa33', buildModel = 'balanced';   // the custom-class builder's picked accent + tier
@@ -98,8 +99,31 @@ const Marketplace = (() => {
   function el(tag, cls, html) { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; }
   function voiceName(personaId) { return (typeof Personas !== 'undefined' && Personas.get(personaId) && Personas.get(personaId).name) || personaId; }
 
-  /* ---------- the class seal (engraved coin) ---------- */
+  /* ---------- the class seal — a TYPED ASCII mark (premium pass; SVG stays the mission-seal path) ----------
+     TWO-TONE ENGRAVING: the mark's PAYLOAD glyphs (letters, digits, $ # ! * + < > = …) render bright while
+     the structural strokes (.-'|/\(),_~) recede — one flat colour reads as a sticker; two tones read as
+     depth cut into the readout. Runs of same-tone chars share one span so AsciiFX.scramble (leaf-text
+     walking) can decode the emblem without disturbing the markup. */
+  const MARK_BRIGHT = /[A-Za-z0-9!$#*+<>=\[\]{}@%&?░▒▓█▄▀]/;   // + the ░▒▓█▄▀ shade set: blocks are lit MASS
+  function markHTML(mark) {
+    const rows = [];
+    for (const row of mark) {
+      let html = '', i = 0;
+      while (i < row.length) {
+        if (row[i] === ' ') { let j = i; while (j < row.length && row[j] === ' ') j++; html += row.slice(i, j); i = j; continue; }
+        const bright = MARK_BRIGHT.test(row[i]);
+        let j = i;
+        while (j < row.length && row[j] !== ' ' && MARK_BRIGHT.test(row[j]) === bright) j++;
+        html += '<span class="' + (bright ? 'mb' : 'md') + '">' + esc(row.slice(i, j)) + '</span>';
+        i = j;
+      }
+      rows.push(html);
+    }
+    return rows.join('\n');
+  }
   function coinInner(item) {
+    const mark = (hasIcons() && ClassIcons.ascii) ? ClassIcons.ascii(item) : null;
+    if (mark) return '<pre class="mkt-amark" aria-hidden="true">' + markHTML(mark) + '</pre>';
     const svg = hasIcons() ? ClassIcons.svg(item) : null;
     return svg ? '<span class="mkt-coin-ico">' + svg + '</span>' : '<span class="mkt-coin-emoji">' + esc(item.emoji || '◆') + '</span>';
   }
@@ -177,6 +201,7 @@ const Marketplace = (() => {
     view = 'grid'; editingId = null; editingRecipeId = null; launchId = null; pendingMintKey = null; pendingMintTemplate = null; pendingScoutRecipeId = null; scoutSeedDraft = null;
     editForkedFrom = null; editSourceRunId = null;
     laneFilter = 'all'; catFilter = 'all'; query = '';
+    lastDecodedHero = null;   // a fresh bay open replays the hero decode beat once
     // SCOUT: re-read server truth on open (fresh drafts/interests land) and push the browser-only dedup context.
     try { if (typeof ProspectStore !== 'undefined' && ProspectStore.refresh) { ProspectStore.pushContext(); ProspectStore.refresh(); } } catch (_) {}
     tab = (ctx.mode !== 'pick' && ctx.tab === 'recipes' && hasRecipes()) ? 'recipes' : 'agents';
@@ -219,6 +244,7 @@ const Marketplace = (() => {
     renderStage();
     const panel = root.querySelector('.mkt'); if (panel) panel.focus();
     maybeConsumeRecipeMint();   // R5: if opened to bottle a run, drop straight into the editor pre-filled from it
+    maybeConsumeLaunchSeed();   // lane D: if opened by the routine nudge, drop straight into the launch/SCHEDULE IT form
   }
   // R5 "BOTTLE A RUN" consume: app.js seeds ctx.recipeMint (a Recipes.mintFromRun proposal — a DRAFT custom recipe
   // pre-filled from a 👍-rated run's directive, carrying sourceRunId) before opening the bay on the RECIPES tab.
@@ -235,6 +261,27 @@ const Marketplace = (() => {
     // 'create' entry (a brand-new custom, not a fork of an existing recipe) — the proposal is the pre-fill.
     // enterRecipeEditor lifts seed.sourceRunId into editSourceRunId so it survives save.
     enterRecipeEditor(seed, 'create');
+  }
+  // lane D launch-seed consume (the recipeMint pattern): app.js seeds ctx.launchSeed = { id, mode:'run'|'routine' }
+  // before opening the bay on the RECIPES tab (App.openRecipeLaunch — the routine-nudge accept). Drop straight into
+  // that recipe's launch form, in routine mode when asked (cadence preset to the recipe's suggestion, cron armed-state
+  // warmed) — the same PROPOSE-AND-CONFIRM form every manual schedule goes through. One-shot: the seed is cleared
+  // before any render so a tab-switch / re-render never re-triggers it. Graceful no-op on an unknown recipe.
+  function maybeConsumeLaunchSeed() {
+    const seed = ctx && ctx.launchSeed;
+    if (!seed || typeof seed !== 'object') return;
+    if (ctx) ctx.launchSeed = null;   // one-shot: consume before doing anything that could re-render
+    if (!hasRecipes() || tab !== 'recipes') return;
+    const r = Recipes.get(String(seed.id || '')); if (!r) return;
+    focusRecipe = r.id;
+    launchId = r.id;
+    launchMode = (seed.mode === 'routine') ? 'routine' : 'run';
+    if (launchMode === 'routine') {
+      launchCadence = (r.cadence && cadenceOpt(r.cadence)) ? r.cadence : 'morning';
+      loadCronJobs().then(() => { if (view === 'launch') renderStage(); });   // refresh the armed-state note
+    }
+    view = 'launch';
+    renderBar(); renderStage();
   }
   function close() {
     if (!root) return;
@@ -400,6 +447,7 @@ const Marketplace = (() => {
     wireRoster(stage);
     wireDossier(stage);
     paintDossierAccent();
+    decodeHero();
     hydrateSkillRows();                          // fill real skill names once the catalog loads (agent + recipe dossiers)
     if (tab === 'recipes') hydrateLiveRoutines();   // fill the "● live as a routine" indicator once /api/cron loads
     if (!root.contains(document.activeElement)) { const p = root.querySelector('.mkt'); if (p) p.focus(); }
@@ -409,6 +457,7 @@ const Marketplace = (() => {
     d.innerHTML = dossierHTML();
     wireDossier(root);
     paintDossierAccent();
+    decodeHero();
     hydrateSkillRows();                          // fill real skill names once the catalog loads (agent + recipe dossiers)
     if (tab === 'recipes') hydrateLiveRoutines();   // refresh the live-routine indicator for the focused recipe
     const fid = tab === 'recipes' ? focusRecipe : focusAgent;
@@ -476,9 +525,9 @@ const Marketplace = (() => {
     if (laneFilter === 'mine') {
       html += sectH('▮ YOUR SPECIALISTS');
       html += customs.length
-        ? '<div class="mkt-grid">' + customs.map(cardHTML).join('') + buildTile + '</div>'
+        ? '<div class="mkt-grid mkt-rows">' + customs.map(cardHTML).join('') + buildTile + '</div>'
         : '<p class="mkt-hint mkt-yours-hint">' + (query ? 'none of your specialists match your search — '
-            : 'none yet — ') + 'build one from scratch below.</p><div class="mkt-grid">' + buildTile + '</div>';
+            : 'none yet — ') + 'build one from scratch below.</p><div class="mkt-grid mkt-rows">' + buildTile + '</div>';
       return html;
     }
 
@@ -488,24 +537,48 @@ const Marketplace = (() => {
     const pinCustoms = hasAnyCustoms && !query;
     if (pinCustoms) {
       html += sectH('▮ YOUR SPECIALISTS');
-      html += '<div class="mkt-grid">' + customs.map(cardHTML).join('') + buildTile + '</div>';
+      html += '<div class="mkt-grid mkt-rows">' + customs.map(cardHTML).join('') + buildTile + '</div>';
     }
 
     html += sectH('▮ CLASS ROSTER');
     // truthful telemetry: an EMPTY catalog means the shared catalog script failed to load (a wiring
     // fault), not "no matches" — say so loudly instead of rendering a quietly blank roster.
     if (!allBuiltins.length) html += '<div class="mkt-empty">⚠ the class catalog failed to load (shared/specialties.js unreachable) — the built-in roster is unavailable. Restart the app; if it persists, this build is mis-wired.</div>';
-    else html += builtins.length ? '<div class="mkt-grid">' + builtins.map(cardHTML).join('') + '</div>'
+    else html += builtins.length ? '<div class="mkt-grid mkt-rows">' + builtins.map(cardHTML).join('') + '</div>'
       : '<div class="mkt-empty">no classes match your ' + (query ? 'search' : 'filter') + '.</div>';
+
+    html += archiveSectionHTML(filtering);
 
     if (!pinCustoms) {
       html += sectH('▮ YOUR SPECIALISTS');
       if (!customs.length) html += '<p class="mkt-hint mkt-yours-hint">' +
         (query ? 'none of your specialists match your search — ' : 'none yet — ') +
         'build one from scratch below' + (deploy && !query ? ', or save the live agent as a specialty above' : '') + '.</p>';
-      html += '<div class="mkt-grid">' + customs.map(cardHTML).join('') + buildTile + '</div>';
+      html += '<div class="mkt-grid mkt-rows">' + customs.map(cardHTML).join('') + buildTile + '</div>';
     }
     return html;
+  }
+  /* ---------- SPECIALIST ARCHIVE: the deep-cut archetype pool (never gated, never in the way) ----------
+     The default roster is the curated 12; the demoted deep cuts stay one click away here — full specs,
+     summonable as-is. Collapsed by default in the clean view; a search or lane filter that matches an
+     archetype auto-expands it (search must FIND a class, never hide it — the no-gating law). These same
+     archetypes are what the scout drafts onto the DRAFTED-FOR-YOU shelf when the learned interests point
+     at one, so this section is the manual door to the pool the station recommends from. */
+  function archiveSectionHTML(filtering) {
+    const all = (Specialties.archetypes ? Specialties.archetypes() : []);
+    if (!all.length) return '';
+    const archs = filt(all);
+    if (filtering) {
+      // searching / lane-filtering: archetypes participate like any class — matches render expanded, no toggle.
+      if (!archs.length) return '';
+      return sectH('▮ SPECIALIST ARCHIVE — deep cuts') + '<div class="mkt-grid mkt-rows">' + archs.map(cardHTML).join('') + '</div>';
+    }
+    const head = '<button type="button" class="mkt-sect-h mkt-archive-head" aria-expanded="' + (archiveOpen ? 'true' : 'false') + '">' +
+      '<span aria-hidden="true">' + (archiveOpen ? '▾' : '▸') + '</span> SPECIALIST ARCHIVE (' + all.length + ')</button>';
+    if (!archiveOpen) return head;
+    return head +
+      '<p class="mkt-hint">niche classes held off the main roster — fully specified, summon any time. When your real work points at one, the station drafts it onto the shelf above for you.</p>' +
+      '<div class="mkt-grid mkt-rows">' + archs.map(cardHTML).join('') + '</div>';
   }
   // SUMMON CONFIG (audit item 3): a compact collapsible strip for APPEARANCE + MODEL. Both carry good defaults
   // (Cadet skin, inherit the orchestrator's model), so it's COLLAPSED by default with a one-line summary of the
@@ -549,17 +622,17 @@ const Marketplace = (() => {
     // MINE view: a single "YOUR RECIPES" section (the builtins are all filtered out anyway).
     if (catFilter === 'mine') {
       html += '<div class="mkt-sect-h">▮ YOUR RECIPES</div>';
-      html += customs.length ? '<div class="mkt-grid">' + customs.map(recipeCardHTML).join('') + '</div>'
+      html += customs.length ? '<div class="mkt-grid mkt-rows">' + customs.map(recipeCardHTML).join('') + '</div>'
         : '<div class="mkt-empty">' + (query ? 'none of your recipes match your search.'
             : 'no saved recipes yet — hit “＋ save a recipe” above, TWEAK any recipe into your own, or ⇪ IMPORT one from a file.') + '</div>';
       return html;
     }
     const libLabel = catFilter === 'all' ? '▮ RECIPE LIBRARY' : ('▮ ' + (CAT_LABEL[catFilter] || catFilter) + ' RECIPES');
     html += '<div class="mkt-sect-h">' + libLabel + '</div>';
-    html += builtins.length ? '<div class="mkt-grid">' + builtins.map(recipeCardHTML).join('') + '</div>'
+    html += builtins.length ? '<div class="mkt-grid mkt-rows">' + builtins.map(recipeCardHTML).join('') + '</div>'
       : '<div class="mkt-empty">no recipes match your ' + (query ? 'search' : 'filter') + '.</div>';
     html += '<div class="mkt-sect-h">▮ YOUR RECIPES</div>';
-    html += customs.length ? '<div class="mkt-grid">' + customs.map(recipeCardHTML).join('') + '</div>'
+    html += customs.length ? '<div class="mkt-grid mkt-rows">' + customs.map(recipeCardHTML).join('') + '</div>'
       : '<div class="mkt-empty">no saved recipes here yet — ＋ save one, TWEAK any recipe, or ⇪ IMPORT from a file.</div>';
     return html;
   }
@@ -609,29 +682,54 @@ const Marketplace = (() => {
     // pick mode too, so the card the current agent already runs as stays honestly marked.
     const here = !!(ctx && ctx.currentSpecialtyId && ctx.currentSpecialtyId === s.id);
     const sel = (focusAgent === s.id);
+    // settings-console row shape: [typed mark socket] [name + tagline] ……… [lane · pips · tier / code]
+    // — the right cluster is its own column so it right-aligns like the provider rows' status column.
     return '<button class="mkt-card' + (sel ? ' sel' : '') + '" type="button" data-id="' + esc(s.id) + '" style="--accent:' + esc(s.accent) + ';--ci:' + (i || 0) + '">' +
-      sealHTML(s, true) +
+      sealHTML(s, false) +
       '<div class="mkt-card-id">' +
         '<div class="mkt-name">' + esc(s.name) +
           (here ? ' <span class="mkt-badge mkt-here">DEPLOYED</span>' : '') +
           (s.custom ? ' <span class="mkt-badge">CUSTOM</span>' : '') + '</div>' +
         '<div class="mkt-tag">' + esc(s.tagline) + '</div>' +
+      '</div>' +
+      '<div class="mkt-card-side">' +
         '<div class="mkt-meta"><span class="mkt-chip lane">' + esc(laneLabelOf(s)) + '</span>' +
           pipsOf(s.model) + ' <span class="mkt-tier">' + esc(clearanceLabel(s.model)) + '</span></div>' +
+        '<span class="mkt-card-code">' + esc(codeOf(s)) + '</span>' +
       '</div>' +
     '</button>';
   }
+  // lane F: the honest-life chip — the Commander's OWN launch count for this recipe (never anyone else's, never
+  // a fake "popular"), plus a rated arrow once their own verdicts point somewhere (great>miss ▲ / miss>great ▽).
+  // Every number derives from the scout usage read (ProspectStore.launches — real persisted telemetry).
+  function recipeLifeChip(r) {
+    try {
+      if (typeof ProspectStore === 'undefined' || !ProspectStore.launches) return '';
+      const u = (ProspectStore.launches() || {})[r.id];
+      const n = (u && typeof u === 'object') ? u.n : u;
+      if (!Number.isFinite(n) || n <= 0) return '';
+      const rated = (u && typeof u === 'object' && u.rated && typeof u.rated === 'object') ? u.rated : null;
+      const g = rated ? (Number(rated.great) || 0) : 0, m = rated ? (Number(rated.miss) || 0) : 0;
+      const arrow = (g > m && g > 0) ? ' · rated ▲' : (m > g && m > 0) ? ' · rated ▽' : '';
+      return '<span class="mkt-chip mkt-life" title="your own launches' + (arrow ? ' + your ratings' : '') + '">↻ ran ' + Math.floor(n) + '×' + esc(arrow) + '</span>';
+    } catch (_) { return ''; }
+  }
   function recipeCardHTML(r, i) {
+    // the SAME settings-console row shape as the class list (the two tabs share one UI language):
+    // [seal socket] [name + tagline] ……… [lane · setup / code stamp]
     const sel = (focusRecipe === r.id);
     const n = (r.params || []).length;
     const setup = n ? ('▤ ' + n + ' input' + (n === 1 ? '' : 's')) : '◷ no setup';
     return '<button class="mkt-card' + (sel ? ' sel' : '') + '" type="button" data-id="' + esc(r.id) + '" style="--accent:' + esc(r.accent) + ';--ci:' + (i || 0) + '">' +
-      sealHTML(r, true) +
+      sealHTML(r, false) +
       '<div class="mkt-card-id">' +
         '<div class="mkt-name">' + esc(r.name) + (r.custom ? ' <span class="mkt-badge">CUSTOM</span>' : '') + '</div>' +
         '<div class="mkt-tag">' + esc(r.tagline) + '</div>' +
+      '</div>' +
+      '<div class="mkt-card-side">' +
         '<div class="mkt-meta"><span class="mkt-chip lane">' + esc(laneLabelOf(r)) + '</span>' +
-          '<span class="mkt-chip">' + setup + '</span></div>' +
+          '<span class="mkt-chip">' + setup + '</span>' + recipeLifeChip(r) + '</div>' +
+        '<span class="mkt-card-code">' + esc(codeOf(r)) + '</span>' +
       '</div>' +
     '</button>';
   }
@@ -645,6 +743,18 @@ const Marketplace = (() => {
   function paintDossierAccent() {
     const d = root && root.querySelector('#mkt-dossier'); const it = focusedItem();
     if (d && it && it.accent) d.style.setProperty('--accent', it.accent);
+  }
+  // the DECODE beat: focusing a NEW class resolves its hero (emblem + name) out of glyph static — the
+  // station's own AsciiFX register (eerie signal-lock, never confetti). Once per focused id, instant
+  // under reduced-motion (the kit handles it), and null-safe when the kit isn't loaded.
+  let lastDecodedHero = null;
+  function decodeHero() {
+    if (typeof AsciiFX === 'undefined' || !AsciiFX.scramble) return;
+    const hero = root && root.querySelector('.mkt-dos-hero'); if (!hero) return;
+    const it = focusedItem(); const id = (it && it.id) || null;
+    if (!id || id === lastDecodedHero) return;
+    lastDecodedHero = id;
+    try { AsciiFX.scramble(hero, { duration: 460 }); } catch (_) {}
   }
   // narrow-viewport escape hatch: at <=820px the dossier is a full-width sheet OVER the roster, so it needs a
   // visible way back (the stranded-state fix). Hidden at wide widths by CSS (both panes show side by side).
@@ -897,7 +1007,7 @@ const Marketplace = (() => {
       '<div class="mkt-dos-hero">' + sealHTML(r, true) +
         '<div class="mkt-dos-hi"><div class="mkt-dos-name">' + esc(r.name) + (r.custom ? ' <span class="mkt-badge">CUSTOM</span>' : '') + '</div>' +
           '<div class="mkt-dos-tag">' + esc(r.tagline) + '</div>' +
-          '<div class="mkt-meta"><span class="mkt-chip lane">' + esc(CAT_LABEL[railBucket(r)] || 'GENERAL') + '</span></div></div></div>' +
+          '<div class="mkt-meta"><span class="mkt-chip lane">' + esc(CAT_LABEL[railBucket(r)] || 'GENERAL') + '</span>' + recipeLifeChip(r) + '</div></div></div>' +
       liveRoutineBadgeHTML(r) + forkLine + cadHint +
       '<div class="mkt-block"><div class="bh">WHAT IT SENDS</div><pre>' + esc(r.task) + '</pre></div>' +
       inputs +
@@ -1307,6 +1417,10 @@ const Marketplace = (() => {
     const cfgHead = stage.querySelector('.mkt-cfg-head');
     if (cfgHead) cfgHead.addEventListener('click', () => { summonConfigOpen = !summonConfigOpen; sfx('click'); renderStage(); });
 
+    // SPECIALIST ARCHIVE: the deep-cut pool expands/collapses (state survives re-renders within one open bay).
+    const archHead = stage.querySelector('.mkt-archive-head');
+    if (archHead) archHead.addEventListener('click', () => { archiveOpen = !archiveOpen; sfx('click'); renderStage(); });
+
     wireGridNav(stage);
     wireGlass(stage);
     wireSuggest(stage);
@@ -1639,7 +1753,7 @@ const Marketplace = (() => {
   function launchRecipeNow(r, values) {
     const ok = !ctx || !ctx.onLaunch || ctx.onLaunch(r, values) !== false;
     if (ok) { note('recipe launched: ' + r.name + ' — ' + ((ctx && ctx.agentName) || 'your agent') + ' is on it', 'good'); close(); }
-    else { sfx('bad'); note('could not launch ' + r.name + ' — nothing to send', 'bad'); }
+    else { sfx('bad'); note('could not launch ' + r.name + ' — the agent is mid-run (or there was nothing to send). try again when it settles.', 'bad'); }
   }
   // the schedule string a launchCadence id maps to, plus a 'custom' free-text entry the user types (every Nh or
   // a 5-field cron). The sidecar re-validates via cron.parseSchedule, so a bad custom string is caught server-side.
@@ -1656,10 +1770,19 @@ const Marketplace = (() => {
     const r = launchId && hasRecipes() ? Recipes.get(launchId) : null;
     if (!r) { view = 'grid'; return '<div class="mkt-roster">' + rosterHTML() + '</div>'; }
     const who = (ctx && ctx.agentName) || 'your agent';
-    const fields = (r.params || []).map(p =>
-      '<label class="mkt-lbl">' + esc(p.label) +
+    // lane C: prefill each field with the value this recipe launched with LAST time (LaunchMemory, own local key).
+    // Confirm-by-sight safety: the values sit visibly in the form and nothing runs until the button — plus the
+    // hint below names the mechanism. esc() covers the content (U.esc escapes & < > " ', so </textarea> can't break out).
+    const lastVals = (typeof LaunchMemory !== 'undefined' && LaunchMemory.get) ? (LaunchMemory.get(r.id) || {}) : {};
+    let prefilled = false;
+    const fields = (r.params || []).map(p => {
+      const val = (typeof lastVals[p.key] === 'string' && lastVals[p.key].trim()) ? lastVals[p.key] : '';
+      if (val) prefilled = true;
+      return '<label class="mkt-lbl">' + esc(p.label) +
         (p.required ? ' <span class="mkt-req" title="required">*</span>' : ' <span class="mkt-opt">(optional)</span>') +
-        '<textarea class="mkt-in mkt-p-in" data-key="' + esc(p.key) + '" rows="2" placeholder="' + esc(p.placeholder || '') + '"></textarea></label>').join('');
+        '<textarea class="mkt-in mkt-p-in" data-key="' + esc(p.key) + '" rows="2" placeholder="' + esc(p.placeholder || '') + '">' + esc(val) + '</textarea></label>';
+    }).join('');
+    const prefillHint = prefilled ? '<p class="mkt-hint mkt-prefill-hint">↺ using your last inputs — edit anything before you run</p>' : '';
     // MAKE ROUTINE panel — revealed when launchMode==='routine'. Cadence defaults to the recipe's suggested one.
     const outbound = hasRecipes() && Recipes.impliesOutbound(r);
     const warnLine = outbound
@@ -1691,6 +1814,7 @@ const Marketplace = (() => {
       '<div class="mkt-save-h">' + esc((launchMode === 'routine' ? '◷ MAKE ROUTINE — ' : '▸ LAUNCH — ') + r.name) + '</div>' +
       '<p class="mkt-hint">' + esc(r.blurb || r.tagline) + '</p>' +
       (fields || '<p class="mkt-hint">this recipe needs no setup — just launch it.</p>') +
+      prefillHint +
       routinePanel +
       '<p class="mkt-launch-note">' + modeNote + '</p>' +
       acts + '</div>';
@@ -1720,6 +1844,7 @@ const Marketplace = (() => {
       const r = launchId && hasRecipes() ? Recipes.get(launchId) : null;
       if (!r) { view = 'grid'; launchId = null; renderStage(); return; }
       const values = collectLaunchValues(stage, r); if (!values) return;
+      try { if (typeof LaunchMemory !== 'undefined' && LaunchMemory.save) LaunchMemory.save(r.id, values); } catch (_) {}   // lane C: remember what launched
       launchId = null; launchMode = 'run'; launchRecipeNow(r, values);
     });
     // MAKE ROUTINE — reveal the cadence panel (default to the recipe's suggested cadence, else morning).
@@ -1738,6 +1863,7 @@ const Marketplace = (() => {
     if (runAlt) runAlt.addEventListener('click', () => {
       const r = launchId && hasRecipes() ? Recipes.get(launchId) : null; if (!r) return;
       const values = collectLaunchValues(stage, r); if (!values) return;
+      try { if (typeof LaunchMemory !== 'undefined' && LaunchMemory.save) LaunchMemory.save(r.id, values); } catch (_) {}   // lane C: remember what launched
       launchId = null; launchMode = 'run'; launchRecipeNow(r, values);
     });
 
@@ -1772,6 +1898,7 @@ const Marketplace = (() => {
     if (doRoutine) doRoutine.addEventListener('click', () => {
       const r = launchId && hasRecipes() ? Recipes.get(launchId) : null; if (!r) return;
       const values = collectLaunchValues(stage, r); if (!values) return;
+      try { if (typeof LaunchMemory !== 'undefined' && LaunchMemory.save) LaunchMemory.save(r.id, values); } catch (_) {}   // lane C: remember what scheduled
       const schedule = scheduleForLaunchCadence(customIn && customIn.value);
       if (!schedule) { sfx('bad'); note('pick a cadence (or type a custom schedule)', 'bad'); if (customIn) customIn.focus(); return; }
       makeRoutine(r, values, schedule);

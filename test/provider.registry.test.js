@@ -55,6 +55,39 @@ module.exports = (async () => {
     A.ok(hosted && typeof hosted.stream === 'function' && typeof hosted.listModels === 'function', 'factory returns OpenAI-compatible adapter for ' + id);
   }
 
+  // provider compatibility facts (sourced from official docs 2026-07)
+  const rawPerplexity = factory.getProviderProfile('perplexity');
+  A.eq(rawPerplexity.supportsTools, false, 'Perplexity chat completions has no function calling - asserted, not guessed');
+  A.eq(rawPerplexity.wireStreamOptions, false, 'Perplexity profile opts out of stream_options');
+  A.eq(factory.getProviderProfile('mistral').wireStreamOptions, false, 'Mistral profile opts out of stream_options (strict 422 on extra inputs)');
+  ['openai', 'xai', 'groq', 'mistral', 'deepseek', 'together', 'fireworks', 'perplexity', 'cerebras', 'ollama'].forEach(id => {
+    A.eq(factory.getProviderProfile(id).wireReasoningEffort, true, id + ' documents the reasoning_effort wire param');
+  });
+  A.ok(!factory.getProviderProfile('custom').wireReasoningEffort, 'custom endpoints never assume reasoning_effort support');
+
+  // profile hints reach the adapter: Perplexity refuses tools up front and sends no stream_options
+  {
+    const calls = [];
+    const fetchImpl = async (url, init) => {
+      calls.push({ url, init });
+      if (init && init.method === 'POST') return new Response('data: [DONE]\n\n', { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
+      return new Response(JSON.stringify({ data: [] }), { status: 200 });
+    };
+    const pplx = factory.selectProvider({ provider: 'perplexity', fetch: fetchImpl, key: 'K', reasoningEffort: 'medium' });
+    A.eq(pplx.supportsTools('sonar-pro'), false, 'Perplexity adapter reports tools unsupported from the profile');
+    for await (const _ of pplx.stream({ model: 'sonar-pro', messages: [] })) { /* drain */ }
+    const post = calls.find(c => c.init && c.init.method === 'POST');
+    const body = JSON.parse(post.init.body);
+    A.eq(body.stream_options, undefined, 'Perplexity request carries no stream_options');
+    A.eq(body.reasoning_effort, 'medium', 'Perplexity request carries its documented reasoning_effort');
+
+    // Perplexity has no usable /models -> the static Sonar roster (docs-sourced 2026-07) fills the seam
+    const roster = await pplx.listModels();
+    A.eq(roster.map(m => m.id).join(','), 'sonar,sonar-pro,sonar-reasoning-pro,sonar-deep-research', 'static Sonar roster serves the empty catalog');
+    A.eq(pplx.contextLimit('sonar-pro'), 200000, 'Sonar Pro context limit rides the static roster');
+    A.eq(roster.every(m => !m.pricing), true, 'Sonar roster is unpriced (search fees make token-only pricing dishonest)');
+  }
+
   const anthropic = factory.selectProvider({ provider: 'anthropic', fetch: async () => new Response('', { status: 200 }) });
   A.ok(anthropic && typeof anthropic.stream === 'function', 'factory returns Anthropic adapter');
   const gemini = factory.selectProvider({ provider: 'gemini', fetch: async () => new Response('', { status: 200 }) });

@@ -180,7 +180,10 @@ async function waitUntil(fn, ms, label) {
     SKYNET_OPENROUTER_BASE: mock.base,
     STARNET_OPENROUTER_BASE: mock.base,
     SKYNET_DEFAULT_MODEL: 'test/model',
-    STARNET_DEFAULT_MODEL: 'test/model'
+    STARNET_DEFAULT_MODEL: 'test/model',
+    // team.spawn is consent-gated (2026-07-14, same as team.summon) and this e2e is headless — bypass via the
+    // full-auto posture exactly like e2e.summon.test; the APPROVAL prompt path is covered by the consent suites.
+    SKYNET_FULL_ACCESS: '1'
   };
   const { child, port } = await boot(8990 + (process.pid % 50), env, 20);
   const B = 'http://' + HOST + ':' + port;
