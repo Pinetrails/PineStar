@@ -1338,8 +1338,10 @@ function cronKeyFor(provider) {
 function cronHasCredential(provider, key) {
   return providerHasCredential(provider, key, providerRuntimeBaseUrl(provider, ''));
 }
-function cronCredentialError(provider) {
-  return providerCredentialError(provider) + ' to run this routine';
+// `what` names the job the credential is for — the string surfaces verbatim in user-facing panels
+// (the QUEST LOG refresh row is NOT a routine; calling it one confused the vocabulary — audit 2026-07-15).
+function cronCredentialError(provider, what) {
+  return providerCredentialError(provider) + ' to run ' + (what || 'this routine');
 }
 
 // PERSISTENT agent save (M-save) — a durable mirror of the browser's localStorage save envelope, written to
@@ -3635,7 +3637,7 @@ async function runQuestRefreshCycle(why) {
   const usingCodex = providerUsesCodex(providerId);
   const baseUrl = providerRuntimeBaseUrl(providerId, '');
   const key = cronKeyFor(providerId);
-  if (!cronHasCredential(providerId, key)) { questRefreshNote({ outcome: 'skipped', reason: 'no provider credential — ' + cronCredentialError(providerId) }); return; }
+  if (!cronHasCredential(providerId, key)) { questRefreshNote({ outcome: 'skipped', reason: 'no provider credential — ' + cronCredentialError(providerId, 'the quest refresh') }); return; }
   const model = String(ENV('REFLECT_MODEL') || '').trim() || (usingCodex ? CODEX_DEFAULT_MODEL : CRON_DEFAULT_MODEL);
   if (!model) { questRefreshNote({ outcome: 'skipped', reason: 'no default model configured (set DEFAULT_MODEL)' }); return; }
   const ac = new AbortController();

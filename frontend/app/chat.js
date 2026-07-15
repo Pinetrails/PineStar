@@ -4026,7 +4026,7 @@ const Chat = (() => {
     // live prompt crosses the threshold. This is the honest status; see the slash-parity report for the rationale.
     if (cs && cs.limit) {
       const pct = Math.round(((cs.used || 0) / cs.limit) * 100);
-      localLine('Context: ' + (cs.used || 0) + ' / ' + cs.limit + ' tokens (' + pct + '%). Auto-compaction folds older turns into a summary automatically during a run once the prompt nears the window; because the run host is stateless there is no idle prompt to compact on demand between runs.');
+      localLine('Context: ' + (cs.used || 0) + ' / ' + cs.limit + ' tokens (' + pct + '%) — how full this agent’s working memory of the conversation is. When it nears full during a run, older turns fold into a summary automatically; there is nothing to compact by hand between runs (the conversation is re-sent per call).');
     } else {
       localLine('Context compaction is automatic: during a run, once the live prompt nears the model window, older turns are folded into a running summary. There is no idle context to compact between runs (the run host is stateless — the conversation is sent per call).');
     }

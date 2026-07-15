@@ -1412,7 +1412,7 @@ const App = (() => {
       const fmt = (typeof CtxGauge !== 'undefined' && CtxGauge.fmtTokens) ? CtxGauge.fmtTokens : (n => String(n || 0));
       const bits = [];
       if (limit) bits.push('context window: ' + fmt(limit) + ' tokens');
-      if (price) bits.push(usdPerM(price.in) + ' in · ' + usdPerM(price.out) + ' out / M tokens');
+      if (price) bits.push('price per 1M tokens: ' + usdPerM(price.in) + ' in · ' + usdPerM(price.out) + ' out');
       hint.textContent = bits.join('  ·  ');
       return;
     }
