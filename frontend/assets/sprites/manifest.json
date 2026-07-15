@@ -1163,6 +1163,266 @@
     "blank_amber.talk.west": [
       "blank_amber/talk_west_0.png",
       "blank_amber/talk_west_1.png"
+    ],
+    "crthead.rot.south": [
+      "crthead/rot_south.png"
+    ],
+    "crthead.walk.south": [
+      "crthead/walk_south_0.png",
+      "crthead/walk_south_1.png",
+      "crthead/walk_south_2.png",
+      "crthead/walk_south_3.png",
+      "crthead/walk_south_4.png",
+      "crthead/walk_south_5.png"
+    ],
+    "crthead.sit.south": [
+      "crthead/sit_south.png"
+    ],
+    "crthead.blink.south": [
+      "crthead/blink_south.png"
+    ],
+    "crthead.rot.north": [
+      "crthead/rot_north.png"
+    ],
+    "crthead.walk.north": [
+      "crthead/walk_north_0.png",
+      "crthead/walk_north_1.png",
+      "crthead/walk_north_2.png",
+      "crthead/walk_north_3.png",
+      "crthead/walk_north_4.png",
+      "crthead/walk_north_5.png"
+    ],
+    "crthead.sit.north": [
+      "crthead/sit_north.png"
+    ],
+    "crthead.blink.north": [
+      "crthead/blink_north.png"
+    ],
+    "crthead.rot.east": [
+      "crthead/rot_east.png"
+    ],
+    "crthead.walk.east": [
+      "crthead/walk_east_0.png",
+      "crthead/walk_east_1.png",
+      "crthead/walk_east_2.png",
+      "crthead/walk_east_3.png",
+      "crthead/walk_east_4.png",
+      "crthead/walk_east_5.png"
+    ],
+    "crthead.sit.east": [
+      "crthead/sit_east.png"
+    ],
+    "crthead.blink.east": [
+      "crthead/blink_east.png"
+    ],
+    "crthead.rot.west": [
+      "crthead/rot_west.png"
+    ],
+    "crthead.walk.west": [
+      "crthead/walk_west_0.png",
+      "crthead/walk_west_1.png",
+      "crthead/walk_west_2.png",
+      "crthead/walk_west_3.png",
+      "crthead/walk_west_4.png",
+      "crthead/walk_west_5.png"
+    ],
+    "crthead.sit.west": [
+      "crthead/sit_west.png"
+    ],
+    "crthead.blink.west": [
+      "crthead/blink_west.png"
+    ],
+    "astronaut.rot.south": [
+      "astronaut/rot_south.png"
+    ],
+    "astronaut.walk.south": [
+      "astronaut/walk_south_0.png",
+      "astronaut/walk_south_1.png",
+      "astronaut/walk_south_2.png",
+      "astronaut/walk_south_3.png",
+      "astronaut/walk_south_4.png",
+      "astronaut/walk_south_5.png"
+    ],
+    "astronaut.sit.south": [
+      "astronaut/sit_south.png"
+    ],
+    "astronaut.blink.south": [
+      "astronaut/blink_south.png"
+    ],
+    "astronaut.rot.north": [
+      "astronaut/rot_north.png"
+    ],
+    "astronaut.walk.north": [
+      "astronaut/walk_north_0.png",
+      "astronaut/walk_north_1.png",
+      "astronaut/walk_north_2.png",
+      "astronaut/walk_north_3.png",
+      "astronaut/walk_north_4.png",
+      "astronaut/walk_north_5.png"
+    ],
+    "astronaut.sit.north": [
+      "astronaut/sit_north.png"
+    ],
+    "astronaut.blink.north": [
+      "astronaut/blink_north.png"
+    ],
+    "astronaut.rot.east": [
+      "astronaut/rot_east.png"
+    ],
+    "astronaut.walk.east": [
+      "astronaut/walk_east_0.png",
+      "astronaut/walk_east_1.png",
+      "astronaut/walk_east_2.png",
+      "astronaut/walk_east_3.png",
+      "astronaut/walk_east_4.png",
+      "astronaut/walk_east_5.png"
+    ],
+    "astronaut.sit.east": [
+      "astronaut/sit_east.png"
+    ],
+    "astronaut.blink.east": [
+      "astronaut/blink_east.png"
+    ],
+    "astronaut.rot.west": [
+      "astronaut/rot_west.png"
+    ],
+    "astronaut.walk.west": [
+      "astronaut/walk_west_0.png",
+      "astronaut/walk_west_1.png",
+      "astronaut/walk_west_2.png",
+      "astronaut/walk_west_3.png",
+      "astronaut/walk_west_4.png",
+      "astronaut/walk_west_5.png"
+    ],
+    "astronaut.sit.west": [
+      "astronaut/sit_west.png"
+    ],
+    "astronaut.blink.west": [
+      "astronaut/blink_west.png"
+    ],
+    "endoskeleton.rot.south": [
+      "endoskeleton/rot_south.png"
+    ],
+    "endoskeleton.walk.south": [
+      "endoskeleton/walk_south_0.png",
+      "endoskeleton/walk_south_1.png",
+      "endoskeleton/walk_south_2.png",
+      "endoskeleton/walk_south_3.png",
+      "endoskeleton/walk_south_4.png",
+      "endoskeleton/walk_south_5.png"
+    ],
+    "endoskeleton.sit.south": [
+      "endoskeleton/sit_south.png"
+    ],
+    "endoskeleton.blink.south": [
+      "endoskeleton/blink_south.png"
+    ],
+    "endoskeleton.rot.north": [
+      "endoskeleton/rot_north.png"
+    ],
+    "endoskeleton.walk.north": [
+      "endoskeleton/walk_north_0.png",
+      "endoskeleton/walk_north_1.png",
+      "endoskeleton/walk_north_2.png",
+      "endoskeleton/walk_north_3.png",
+      "endoskeleton/walk_north_4.png",
+      "endoskeleton/walk_north_5.png"
+    ],
+    "endoskeleton.sit.north": [
+      "endoskeleton/sit_north.png"
+    ],
+    "endoskeleton.blink.north": [
+      "endoskeleton/blink_north.png"
+    ],
+    "endoskeleton.rot.east": [
+      "endoskeleton/rot_east.png"
+    ],
+    "endoskeleton.walk.east": [
+      "endoskeleton/walk_east_0.png",
+      "endoskeleton/walk_east_1.png",
+      "endoskeleton/walk_east_2.png",
+      "endoskeleton/walk_east_3.png",
+      "endoskeleton/walk_east_4.png",
+      "endoskeleton/walk_east_5.png"
+    ],
+    "endoskeleton.sit.east": [
+      "endoskeleton/sit_east.png"
+    ],
+    "endoskeleton.blink.east": [
+      "endoskeleton/blink_east.png"
+    ],
+    "endoskeleton.rot.west": [
+      "endoskeleton/rot_west.png"
+    ],
+    "endoskeleton.walk.west": [
+      "endoskeleton/walk_west_0.png",
+      "endoskeleton/walk_west_1.png",
+      "endoskeleton/walk_west_2.png",
+      "endoskeleton/walk_west_3.png",
+      "endoskeleton/walk_west_4.png",
+      "endoskeleton/walk_west_5.png"
+    ],
+    "endoskeleton.sit.west": [
+      "endoskeleton/sit_west.png"
+    ],
+    "endoskeleton.blink.west": [
+      "endoskeleton/blink_west.png"
+    ],
+    "ultrondroid.rot.south": [
+      "ultrondroid/rot_south.png"
+    ],
+    "ultrondroid.walk.south": [
+      "ultrondroid/walk_south_0.png",
+      "ultrondroid/walk_south_1.png",
+      "ultrondroid/walk_south_2.png",
+      "ultrondroid/walk_south_3.png",
+      "ultrondroid/walk_south_4.png",
+      "ultrondroid/walk_south_5.png"
+    ],
+    "ultrondroid.sit.south": [
+      "ultrondroid/sit_south.png"
+    ],
+    "ultrondroid.rot.north": [
+      "ultrondroid/rot_north.png"
+    ],
+    "ultrondroid.walk.north": [
+      "ultrondroid/walk_north_0.png",
+      "ultrondroid/walk_north_1.png",
+      "ultrondroid/walk_north_2.png",
+      "ultrondroid/walk_north_3.png",
+      "ultrondroid/walk_north_4.png",
+      "ultrondroid/walk_north_5.png"
+    ],
+    "ultrondroid.sit.north": [
+      "ultrondroid/sit_north.png"
+    ],
+    "ultrondroid.rot.east": [
+      "ultrondroid/rot_east.png"
+    ],
+    "ultrondroid.walk.east": [
+      "ultrondroid/walk_east_0.png",
+      "ultrondroid/walk_east_1.png",
+      "ultrondroid/walk_east_2.png",
+      "ultrondroid/walk_east_3.png",
+      "ultrondroid/walk_east_4.png",
+      "ultrondroid/walk_east_5.png"
+    ],
+    "ultrondroid.sit.east": [
+      "ultrondroid/sit_east.png"
+    ],
+    "ultrondroid.rot.west": [
+      "ultrondroid/rot_west.png"
+    ],
+    "ultrondroid.walk.west": [
+      "ultrondroid/walk_west_0.png",
+      "ultrondroid/walk_west_1.png",
+      "ultrondroid/walk_west_2.png",
+      "ultrondroid/walk_west_3.png",
+      "ultrondroid/walk_west_4.png",
+      "ultrondroid/walk_west_5.png"
+    ],
+    "ultrondroid.sit.west": [
+      "ultrondroid/sit_west.png"
     ]
   }
 }
