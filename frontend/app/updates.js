@@ -4,6 +4,13 @@
 
 const Updates = (() => {
   const KEY = 'starnet.updates.v1';
+  // Human-browsable releases page — the GUARANTEED manual-update fallback when the in-app
+  // updater can't complete (Gatekeeper on an unsigned mac build, a network/permission/disk
+  // failure, an unsupported install layout). Reinstalling the latest build over the top keeps
+  // ALL user data (workspaces live in Application Support; localStorage/IndexedDB in the WebView
+  // store keyed by the unchanged bundle id — both OUTSIDE the app bundle the installer replaces).
+  // Kept in sync with tauri.conf.json plugins.updater.endpoints[0] (same repo, /releases/latest).
+  const RELEASES_PAGE = 'https://github.com/nonfungiblefunyuns-ship-it/starnet-releases/releases/latest';
   const CORE = (typeof UpdateCore !== 'undefined') ? UpdateCore : null;
   const TAURI = (typeof window !== 'undefined' && window.__TAURI__ && window.__TAURI__.core) ? window.__TAURI__.core : null;
   const invoke = (cmd, args) => TAURI.invoke(cmd, args || {});
@@ -375,9 +382,29 @@ const Updates = (() => {
       out += '<div class="up-progress"><div style="width:' + pct + '%"></div></div>' +
         '<div class="up-meta">' + (state.contentLength ? (pct + '% downloaded') : phaseLabel()) + '</div>';
     }
-    if (state.error) out += '<div class="up-error">' + esc(state.error) + '</div>';
-    out += '<div class="up-foot">Last checked: ' + esc(fmtTime(state.lastCheckedAt)) + '</div></div>';
+    if (state.error) {
+      // Auto-update failed — never leave the user stuck. Surface the manual path explicitly:
+      // reinstalling the latest build keeps all data (see RELEASES_PAGE note).
+      out += '<div class="up-error">' + esc(state.error) +
+        '<br><button class="bb sm up-manual" id="up-manual-err">DOWNLOAD LATEST MANUALLY</button>' +
+        '<span class="up-meta up-manual-note">Reinstalling over the top keeps your station and settings.</span></div>';
+    }
+    out += '<div class="up-foot">Last checked: ' + esc(fmtTime(state.lastCheckedAt)) +
+      ' · <a href="#" id="up-manual-foot" class="up-manual-link">download manually</a></div></div>';
     return out;
+  }
+
+  // Open the releases page in the system browser — same invoke-with-fallback pattern app.js uses.
+  function openReleasesPage() {
+    try {
+      if (TAURI && typeof TAURI.invoke === 'function') {
+        TAURI.invoke('open_external_url', { url: RELEASES_PAGE }).catch(() => {
+          try { window.open(RELEASES_PAGE, '_blank', 'noopener'); } catch (_) {}
+        });
+        return;
+      }
+    } catch (_) {}
+    try { window.open(RELEASES_PAGE, '_blank', 'noopener'); } catch (_) {}
   }
 
   function wire(body) {
@@ -395,6 +422,10 @@ const Updates = (() => {
     if (remindBtn) remindBtn.addEventListener('click', remindLater);
     const ignoreBtn = body.querySelector('#up-ignore');
     if (ignoreBtn) ignoreBtn.addEventListener('click', ignoreVersion);
+    const manualErr = body.querySelector('#up-manual-err');
+    if (manualErr) manualErr.addEventListener('click', openReleasesPage);
+    const manualFoot = body.querySelector('#up-manual-foot');
+    if (manualFoot) manualFoot.addEventListener('click', ev => { ev.preventDefault(); openReleasesPage(); });
   }
 
   return {
