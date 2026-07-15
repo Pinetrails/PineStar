@@ -66,7 +66,7 @@ own runner (Q1 Guardian, Q2 Beginner Run, Q4 Janitor) or the Overseer digest; th
 
 | Crew member | Question it answers | Last run | Result | Open findings |
 | --- | --- | --- | --- | --- |
-| Green Guardian | Is trunk green and does the app still boot + look right? | 2026-07-15 22:11Z @ 0955fb16 | GREEN | 0 |
+| Green Guardian | Is trunk green and does the app still boot + look right? | 2026-07-15 23:20Z @ 35c5920f | RED | 1 |
 | Beginner Run | Can a brand-new user reach first value, unassisted? | 2026-07-15T22:52:00.328Z · ui-only · 131794ms | PASS | 0 |
 | Truth Auditor | Does the UI show what actually happened? | 2026-07-01 23:28Z (in Guardian cycle) | GREEN | 0 |
 | Visual Auditor | Is the rendered game coherent? (needs eyes) | — (local /loop; not headless) | — | 0 |
@@ -408,3 +408,5 @@ node scripts/qa/ledger.mjs --status
 ## 2026-07-15 — crew-panel run-truth merge (claude/starnet-agent-sync-bug-c5b24a → bde550e0)
 - fix(crew): 'working at the terminal' could outlive the run — stationui's event-only runningAgents now defers to World.agentRunsLive (E2 TTL sweep + snapshot reconcile) via one agentLive() predicate; inverse (snapshot-only run) lights too. Live-verified on dev seed (stale run self-heals ~1s; normal + reconnect paths true).
 - gate: test:fast 327 green on the merged bytes (clean worktree) + claims test 64 OK in integration tree; W0 re-stamped in-branch (sourceCommit 1b74a95f).
+
+- 2026-07-15: UX confusion-audit lane merged (85bd3ed2) — channel first-step (proven round-trip tick), quest-refresh no longer called a routine, round-3 reconcile; gates: test:fast 328 green + test:http green on identical tree; W0 stamp verified matching at merge head.
