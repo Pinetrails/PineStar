@@ -542,8 +542,12 @@ const Tutorial = (() => {
       // model hiccup) — the tour never stalls on it, and the un-fired pitch stays armed for a later real task.
       const classicClose = () => {
         if (!active) return;
-        say([seg('you’ve already kitted me out and seen me work. your next moves stay pinned under ⚑ QUESTS in the ▤ WORK dock — recruit a specialist, lay a belt, bind a portal. go on. i’m yours to point.', 44, 0)],
-          () => Chat.choices([{ label: '▸ START COMMANDING', value: 'done' }], () => finishUp(false)));
+        // the WORK-dock orientation beat (UX confusion audit 2026-07-15, finding 6): recipes/tasks/routines/
+        // channels used to just appear in the dock menus, never introduced. One breath each, right here.
+        say([
+          seg('you’ve already kitted me out and seen me work. your next moves stay pinned under ⚑ QUESTS in the ▤ WORK dock — recruit a specialist, lay a belt, bind a portal.', 44, 380),
+          seg('  same dock, three more doors: ❒ RECIPES are ready-made jobs you launch, whatever’s running lands on the ☑ TASKS board, and ⏱ ROUTINES is any job put on a schedule. and if you want me in your pocket, ✉ CHANNELS (⚒ BUILD dock) wires me to your telegram or slack. go on. i’m yours to point.', 44, 0)
+        ], () => Chat.choices([{ label: '▸ START COMMANDING', value: 'done' }], () => finishUp(false)));
       };
       const offered = (cleanRunId && typeof PitchStore !== 'undefined' && PitchStore.offerAtHandoff)
         ? PitchStore.offerAtHandoff(cleanRunId) : Promise.resolve(false);
@@ -584,7 +588,7 @@ const Tutorial = (() => {
     setTimeout(() => {
       if (typeof PitchStore !== 'undefined' && PitchStore.offerStarter) PitchStore.offerStarter();
       showCoach('quests', '.bb-group[data-group="work"] .bb-grp',
-        'your next moves are pinned under ▤ WORK ▸ ⚑ QUESTS — real progress, tracked as quests. nothing in there is ever gated.');
+        'your next moves are pinned under ▤ WORK ▸ ⚑ QUESTS — real progress, tracked as quests. the same dock holds ❒ RECIPES (ready-made jobs), ☑ TASKS (where running work lives) and ⏱ ROUTINES (any job on a schedule). nothing in there is ever gated.');
     }, skipped ? 900 : 1400);
   }
 
@@ -734,6 +738,7 @@ const Tutorial = (() => {
     { k: 'build',     label: 'Place a piece of gear in REFIT' },
     { k: 'belt',      label: 'Lay a conveyor belt' },
     { k: 'connector', label: 'Bind a connector portal' },
+    { k: 'channel',   label: 'Connect a messaging channel (✉ CHANNELS)' },
     { k: 'level',     label: 'Reach Level 2' }
   ];
   const briefDone = k => !!state.brief[k];
