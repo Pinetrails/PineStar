@@ -4055,6 +4055,9 @@ const StationUI = (() => {
         : state === 'error' ? ('✕ error' + (st.detail ? ' — ' + st.detail : '') + (c.errHint || ''))
         : configured ? ('○ saved but offline — RESUME to reconnect' + (st.detail ? ' — ' + st.detail : ''))
         : '○ not connected';
+      // a standing backend warning (e.g. the owner binding failed to persist) rides EVERY state — real risk
+      // the Commander must see, straight from channelStatusPayload (self-heals server-side once the disk agrees).
+      if (st && st.warning) el.textContent += ' ⚠ ' + st.warning;
       if (c.prefill) { try { c.prefill(body, st); } catch (_) {} }
       const card = body.querySelector('#ch-card-' + c.id);
       if (card) card.classList.toggle('on', conn);

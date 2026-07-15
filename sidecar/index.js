@@ -2008,6 +2008,27 @@ for (const id of channelSecretsMod.CHANNEL_IDS) {
 // Is this channel's token durable elsewhere (keychain/spawn-env)? Used by saveChannelSecrets to decide whether the
 // plaintext token may be stripped. Defaults false — a token with no proven durable home keeps its plaintext copy.
 function isChannelTokenDurable(id) { return !!channelTokenDurable[id]; }
+// Per-channel durable WARNING line (truthful telemetry for a state the panel must not hide): today's only writer
+// is a failed owner-binding persist (see persistOwnerClaim). Surfaced by channelStatusPayload as `warning` and
+// self-heals — the status poll re-attempts the save while the warning stands and clears it once the disk agrees.
+const channelWarn = Object.create(null);
+// Persist a claimed owner binding (trust-on-first-use) with a retry + an HONEST failure surface. The in-memory
+// adapter keeps serving the claimed owner either way — service never stalls on a disk hiccup — but a binding
+// that is NOT on disk silently re-opens first-DM-claims-the-bot to ANYONE after a restart. So a failed persist
+// is retried immediately, and if it still fails we log loudly + raise the panel warning instead of pretending.
+function persistOwnerClaim(id, uid) {
+  const cur = (channelSecrets && channelSecrets[id]) || {};
+  const patch = {}; patch[id] = Object.assign({}, cur, { ownerId: String(uid) });
+  channelSecrets = Object.assign({}, channelSecrets, patch);
+  const persisted = saveChannelSecrets(channelSecrets) || saveChannelSecrets(channelSecrets);   // one immediate retry
+  if (persisted) {
+    channelWarn[id] = '';
+    console.log('  · ' + id + ' owner claimed (userId ' + String(uid) + ') — other DMs are now refused');
+  } else {
+    channelWarn[id] = 'owner binding not saved to disk — it will reset on restart (the next first DM re-claims the bot)';
+    console.error('  ! ' + id + ' owner claimed (userId ' + String(uid) + ') but the binding could NOT be persisted — it resets on restart');
+  }
+}
 // Resolve the effective bot token for a channel: an explicit value (a fresh paste) wins; else the keychain-
 // injected/live-pushed runtime token; else — bare sidecar only — the token saved in the plaintext record.
 function channelToken(id, explicit, savedRecord) {
@@ -3822,14 +3843,7 @@ function startTelegram(token, key, model, agentCfg) {
     fetch: globalThis.fetch, token: token, apiBase: TELEGRAM_API_BASE, clock: { now: () => Date.now() },
     // owner-only admission: the first DM claims the bot; persist that userId so it survives restarts.
     ownerUserId: (channelSecrets.telegram && channelSecrets.telegram.ownerId) || '',
-    onOwnerClaim: (uid) => {
-      try {
-        const t = (channelSecrets && channelSecrets.telegram) || {};
-        channelSecrets = Object.assign({}, channelSecrets, { telegram: Object.assign({}, t, { ownerId: String(uid) }) });
-        saveChannelSecrets(channelSecrets);
-        console.log('  · telegram owner claimed (userId ' + String(uid) + ') — other DMs are now refused');
-      } catch (_) {}
-    },
+    onOwnerClaim: (uid) => { try { persistOwnerClaim('telegram', uid); } catch (_) {} },
     onInbound: (m) => {
       // WORK-ITEM INTERCEPT: an admitted message becomes a box that rides the player-laid belts to the
       // agent. Pure VISUALIZATION telemetry — hub.onInbound still runs the real work regardless of belts.
@@ -3976,14 +3990,7 @@ function startDiscord(token, key, model, agentCfg) {
         }
       }),
       ownerUserId: (channelSecrets.discord && channelSecrets.discord.ownerId) || '',
-      onOwnerClaim: (uid) => {
-        try {
-          const d = (channelSecrets && channelSecrets.discord) || {};
-          channelSecrets = Object.assign({}, channelSecrets, { discord: Object.assign({}, d, { ownerId: String(uid) }) });
-          saveChannelSecrets(channelSecrets);
-          console.log('  · discord owner claimed (userId ' + String(uid) + ') — other DMs are now refused');
-        } catch (_) {}
-      },
+      onOwnerClaim: (uid) => { try { persistOwnerClaim('discord', uid); } catch (_) {} },
       onStatus: (s) => {
         // The gateway's onState (above) is authoritative for CONNECTION truth (connecting/up/reconnecting/down/error),
         // since the transport's getUpdates just drains a buffer and never surfaces the real WS health. Here we only
@@ -4126,15 +4133,7 @@ function startGenericChannel(id, token, key, model, agentCfg) {
   const adapterOpts = {
     fetch: globalThis.fetch, clock: { now: () => Date.now() },
     ownerUserId: record.ownerId || '',
-    onOwnerClaim: (uid) => {
-      try {
-        const cur = (channelSecrets && channelSecrets[id]) || {};
-        const p2 = {}; p2[id] = Object.assign({}, cur, { ownerId: String(uid) });
-        channelSecrets = Object.assign({}, channelSecrets, p2);
-        saveChannelSecrets(channelSecrets);
-        console.log('  · ' + id + ' owner claimed (userId ' + String(uid) + ') — other DMs are now refused');
-      } catch (_) {}
-    },
+    onOwnerClaim: (uid) => { try { persistOwnerClaim(id, uid); } catch (_) {} },
     onStatus: (s) => {
       const state = (s && s.state) || 'down';
       // Truthful telemetry: CONNECTED only when the transport actually proved 'up' AND the adapter is still live.
@@ -8189,7 +8188,7 @@ function handleChannelStatus(req, res) {
   // disk, not in the keychain) — which the durability fix prevents, but truthful telemetry must be able to say it.
   const durable = configured && (isChannelTokenDurable('telegram') || !!t.token);
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-  res.end(JSON.stringify({ connected: telegramStatus.connected, configured: configured, durable: durable, state: telegramStatus.state, detail: telegramStatus.detail || '', notifyAutonomous: !!(channelSecrets && channelSecrets.notifyAutonomous) }));
+  res.end(JSON.stringify({ connected: telegramStatus.connected, configured: configured, durable: durable, state: telegramStatus.state, detail: telegramStatus.detail || '', warning: String(channelWarn.telegram || ''), notifyAutonomous: !!(channelSecrets && channelSecrets.notifyAutonomous) }));
 }
 
 // POST /api/channels/discord/connect { token, key?, model, provider? } — the Messaging tab's Discord card hands over
@@ -8289,9 +8288,12 @@ function channelStatusPayload(id) {
     : id === 'matrix' ? !!(rec.endpoint && channelToken(id, '', rec))
     : !!channelToken(id, '', rec);
   const durable = configured && (id === 'signal' ? true : (isChannelTokenDurable(id) || !!rec.token));
+  // A standing warning (e.g. a failed owner-binding persist) SELF-HEALS here: while it stands, each status poll
+  // re-attempts the save and clears the warning the moment the disk agrees — so the line is never stale-pessimistic.
+  if (channelWarn[id]) { try { if (saveChannelSecrets(channelSecrets)) channelWarn[id] = ''; } catch (_) {} }
   const out = {
     id: id, connected: !!st.connected, configured: configured, durable: durable,
-    state: st.state || 'down', detail: st.detail || '',
+    state: st.state || 'down', detail: st.detail || '', warning: String(channelWarn[id] || ''),
     notifyAutonomous: !!(channelSecrets && channelSecrets.notifyAutonomous), ownerLocked: !!rec.ownerId,
     // the agent NAME the channel answers as (never a secret) — the panel renders "ANSWERS AS: <name>" so the
     // Commander can see which agent a DM will reach. Empty until a config is saved.
