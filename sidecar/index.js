@@ -4580,6 +4580,7 @@ function handleChannelEvents(req, res) {
   // but sees no product-event name to forward onto U.bus.
   const ka = setInterval(() => { if (!sse.keepalive(res)) done(); }, 25000);
   req.on('close', done); req.on('aborted', done); res.on('error', done);
+  res.on('close', done);   // the reliable disconnect seam (req 'close' semantics moved under Node ≥15 — see /api/run F1 note); done() is idempotent
 }
 
 /* ---- POST /api/routing: the app posts its compiled RoutingPlan on every floor change; the router stores
@@ -5566,7 +5567,9 @@ async function handleCronRun(req, res) {
   const runId = crypto.randomUUID();
   runs.set(runId, ac);
   runsMeta.set(runId, { agentId: job.agentId, startedAt: Date.now(), source: 'cron' });
-  req.on('close', () => { ac.abort(); runs.delete(runId); runsMeta.delete(runId); });
+  // res 'close', not req 'close' — same disconnect-detection law as handleRun: readBody() already consumed the
+  // request, so req 'close' has fired before this listener attaches and a dead watcher was never noticed (F1).
+  res.on('close', () => { ac.abort(); runs.delete(runId); runsMeta.delete(runId); });
   const bus = { emit: (name, payload) => { try { res.write(JSON.stringify({ name, payload: redact(payload) }) + '\n'); } catch (_) {} } };
   const emit = wrapEmitDiag(makeEmitter(bus, e => { if (e && e.event !== 'tool.web') console.warn('[event]', e.kind, e.event, (e.errors || []).join(';')); }));
   // tee: stream every event to the watching browser AND capture the outcome so the last-run record is honest.
@@ -6528,7 +6531,14 @@ async function handleRun(req, res) {
   pendingByRun.set(runId, pending);
   const pendingSummon = new Map();    // requestId -> finish(newAgentId|null); the team.summon requests awaiting the browser
   pendingSummonByRun.set(runId, pendingSummon);
-  req.on('close', () => { ac.abort(); runs.delete(runId); runsMeta.delete(runId); });   // tab closed / DISCONNECT → stop spend
+  // tab closed / DISCONNECT → stop spend. MUST be res 'close', not req 'close': readBody() above consumed the
+  // request stream, and Node (≥15) emits req 'close' at MESSAGE COMPLETION — i.e. before this line even runs —
+  // so a req listener here never fires and a vanished client (reload/tab-close) left the run streaming into a
+  // void: spend continued unwatched, the same-agent mutex stayed held for minutes, and the reloaded COMMS
+  // claimed "something went wrong" about a run the harness was still driving (2026-07-14 adversarial sweep F1).
+  // res 'close' fires when the response stream ends — premature on a dead client — and on normal end it's inert
+  // here (runOnce's finally has already settled + deleted; the abort hits a spent controller).
+  res.on('close', () => { ac.abort(); runs.delete(runId); runsMeta.delete(runId); });
 
   // the "bus" writes one validated, REDACTED NDJSON line per event (key-shaped secrets are scrubbed even
   // if a tool ever echoes one back); makeEmitter validates against the frozen registry first.
@@ -7837,10 +7847,13 @@ async function handleNightshiftBeatNow(req, res) {
   runs.set(beatRunId, ac);
   runsMeta.set(beatRunId, { agentId, startedAt: Date.now(), source: 'nightshift' });
   const onClose = () => { try { ac.abort(); } catch (_) {} };
-  req.on('close', onClose);
+  // res 'close', not req 'close' — readBody() above consumed the request, so req 'close' already fired and a
+  // req listener here never runs (the EL-11 note above was right about the intent but attached to the dead seam;
+  // 2026-07-14 adversarial sweep F1). res 'close' is premature-disconnect-aware and inert after the finally below.
+  res.on('close', onClose);
   try { result = await runNightshiftBeat({ agentId, emit, broadcast: true, signal: ac.signal }); }
   catch (e) { result = { delivered: false, reason: 'error: ' + ((e && e.message) || e) }; }
-  finally { runs.delete(beatRunId); runsMeta.delete(beatRunId); try { req.removeListener('close', onClose); } catch (_) {} }
+  finally { runs.delete(beatRunId); runsMeta.delete(beatRunId); try { res.removeListener('close', onClose); } catch (_) {} }
   if (ac.signal.aborted && !(result && result.delivered)) result = { delivered: false, reason: 'aborted' };   // halted/disconnected mid-beat — name it honestly
   try { res.write(JSON.stringify({ name: 'nightshift.beat.result', payload: result }) + '\n'); } catch (_) {}
   try { res.end(); } catch (_) {}
