@@ -63,6 +63,35 @@
       order: 10
     },
     {
+      id: 'starnet',
+      aliases: ['starnet-cloud', 'managed'],
+      name: 'StarNet Managed',
+      label: 'STARNET',
+      endpoint: 'managed inference (credits)',
+      blurb: 'run on credits, no API key — link a station',
+      live: true,
+      adapter: 'openai-compatible',
+      apiMode: 'chat_completions',
+      // Auth is the linked device token (bearer). It is resolved from the credits-link store at request time
+      // (index.js providerRuntimeKey), NOT from an env key the user pastes — a linked station needs zero env.
+      authType: 'api_key',
+      keyRequired: true,
+      // baseUrl is DYNAMIC: the linked cloud URL + '/v1' (index.js providerRuntimeBaseUrl). Static default empty;
+      // requiresBaseUrl stays false because the link flow supplies it, not the user (unlike 'custom').
+      baseUrl: '',
+      modelsRequireAuth: true,
+      modelsPath: '/models',
+      defaultReasoningEffort: 'medium',
+      // METERED: the proxy debits the ledger per request AND the app's own billing admission applies (no
+      // unmetered flag — a managed run must reserve/settle like any paid provider).
+      unmetered: false,
+      credentialPool: false,
+      supportsTools: null,
+      supportsReasoning: null,
+      wireReasoningEffort: true,
+      order: 15
+    },
+    {
       id: 'openai',
       aliases: ['openai-api'],
       name: 'OpenAI API',
