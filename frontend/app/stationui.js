@@ -1006,6 +1006,9 @@ const StationUI = (() => {
       '<div class="gx-trk" style="margin-bottom:5px;"><div class="gx-fill" style="width:' + g.pct + '%;"></div><div class="gx-mark" style="left:' + g.pct + '%;"></div></div>' +
       '<div class="gx-row"><span class="gx-val gx-dim" style="font-size:12px;">' + g.toNext + ' XP TO LV ' + (g.level + 1) + '</span><span class="gx-val" style="color:var(--ph);font-size:13px;">' + g.pct + '%</span></div>' +
       '<div class="gx-well"><span class="gx-lbl">Positive feedback</span><span class="v">' + g.positiveFeedback + '</span></div>' +
+      // what a level actually MEANS (UX sweep 2026-07-15): honest — levels gate nothing (sandbox law);
+      // they are the agent's proven track record from work you rated well.
+      '<div class="gx-row gx-dim" style="font-size:11px;margin-top:4px;">levels unlock nothing — they’re this agent’s track record, earned from work you rated well</div>' +
       '</div>';
 
     const confnum = g.known ? (g.confidence + '<span style="font-size:18px;color:var(--ph-dim);">%</span>') : '—';
@@ -3088,7 +3091,7 @@ const StationUI = (() => {
       '<div class="set-themes" id="auto-reach">' +
         '<button class="set-theme" data-reach="observe" title="read / research only — writes nothing">OBSERVE</button>' +
         '<button class="set-theme" data-reach="sandbox" title="build &amp; write locally — nothing leaves the machine">SANDBOX</button>' +
-        '<button class="set-theme" data-reach="reach" title="can send, publish, or contact external services">SEND &amp; PUBLISH</button>' +
+        '<button class="set-theme" data-reach="reach" title="the highest rung: unattended actions may leave the machine — send, publish, or contact external services">SEND &amp; PUBLISH</button>' +
       '</div>' +
       '<div class="set-row"><span class="dim">PACE — how many unattended jobs per day</span></div>' +
       '<div class="set-themes" id="auto-pace">' +
@@ -3140,15 +3143,16 @@ const StationUI = (() => {
       // grant list shows + revokes every standing capability. #perm-desc spells out the COMBINED truth, live.
       '<h4 class="ms-h">PERMISSIONS <span class="dim">— what it’s actually allowed to do on its own</span></h4>' +
       '<p class="set-about" id="perm-desc"></p>' +
-      // ONE ladder, ONE vocabulary (UX confusion audit 2026-07-15): these are the SAME four rungs as the
-      // AUTONOMY dial (WAIT/SUGGEST/BUILD/FREE) — this chooser just also manages the standing write grant.
-      // The stored data-level values (never/suggest/draft/full) are the persisted enum; display-only relabel.
-      '<div class="set-row"><span class="dim">LEVEL — the same WAIT → FREE ladder as the AUTONOMY dial, plus its standing approvals</span></div>' +
+      // ONE ladder, one vocabulary (UX sweep 2026-07-15): these four rungs ARE the AUTONOMY dial's rungs
+      // (Permissions.PLANS maps 1:1 onto the dial presets) — so they carry the SAME primary words the dial uses.
+      // Stored data-level values are unchanged; only the labels unify. FULLY AUTONOMOUS stays in the label
+      // (test-pinned, and it says the stakes plainly).
+      '<div class="set-row"><span class="dim">LEVEL — the same WAIT / SUGGEST / BUILD / FREE ladder as AUTONOMY</span></div>' +
       '<div class="set-themes" id="perm-level">' +
         '<button class="set-theme" data-level="never" title="does nothing on its own — you drive everything">WAIT</button>' +
         '<button class="set-theme" data-level="suggest" title="lines up ideas you approve — never acts on its own">SUGGEST</button>' +
-        '<button class="set-theme" data-level="draft" title="acts on its own and leaves drafts — writes no files">BUILD</button>' +
-        '<button class="set-theme" data-level="full" title="acts AND writes real files on its own — logged &amp; reversible">FREE</button>' +
+        '<button class="set-theme" data-level="draft" title="acts on its own and leaves drafts — writes no files">BUILD (DRAFTS)</button>' +
+        '<button class="set-theme" data-level="full" title="acts AND writes real files on its own — logged &amp; reversible">FREE (FULLY AUTONOMOUS)</button>' +
       '</div>' +
       '<div class="set-row"><span class="dim">STANDING APPROVALS — every capability it may use unattended, when you granted it, and a REVOKE for each (revocable any time)</span></div>' +
       '<div class="key-list" id="perm-grants"></div>';
@@ -5248,7 +5252,7 @@ const StationUI = (() => {
     mountConsole(body, 'logbook', [
       { id: 'runs', label: 'RUNS', glyph: '▦', desc: 'Every finished run by ' + nm + ', newest first — what it produced and why it ended.',
         build: frag('<div id="lb-list" class="mc-list"><span class="loading pulse">loading…</span></div>') },
-      { id: 'slag', label: 'SLAG', glyph: '⚠', desc: 'Post-mortems for ' + nm + ' runs that ended without a deliverable, diagnosed into a real, fixable cause.',
+      { id: 'slag', label: 'SLAG — DEAD RUNS', glyph: '⚠', desc: 'Post-mortems for ' + nm + ' runs that ended without a deliverable, diagnosed into a real, fixable cause.',
         build: frag('<div id="lb-slag" class="mc-list"><span class="loading pulse">loading…</span></div>') },
       { id: 'insights', label: 'INSIGHTS', glyph: '◨', desc: 'Run totals, success rate, and model distribution for ' + nm + '.',
         build: frag('<div id="lb-insights" class="mc-list"><span class="loading pulse">loading…</span></div>') }

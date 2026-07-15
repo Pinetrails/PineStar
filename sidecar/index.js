@@ -1338,10 +1338,12 @@ function cronKeyFor(provider) {
 function cronHasCredential(provider, key) {
   return providerHasCredential(provider, key, providerRuntimeBaseUrl(provider, ''));
 }
-// `what` names the job the credential is for — the string surfaces verbatim in user-facing panels
-// (the QUEST LOG refresh row is NOT a routine; calling it one confused the vocabulary — audit 2026-07-15).
 function cronCredentialError(provider, what) {
-  return providerCredentialError(provider) + ' to run ' + (what || 'this routine');
+  // "scheduled routine" so the line explains itself even when it surfaces outside the ROUTINES panel
+  // (e.g. the quest log shows a skipped scheduled job) — UX sweep 2026-07-15.
+  // `what` names the job the credential is for — it surfaces verbatim in user-facing panels
+  // (the QUEST LOG's refresh is NOT a routine; calling it one crossed the vocabularies).
+  return providerCredentialError(provider) + ' to run ' + (what || 'this scheduled routine');
 }
 
 // PERSISTENT agent save (M-save) — a durable mirror of the browser's localStorage save envelope, written to

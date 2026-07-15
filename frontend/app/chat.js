@@ -3933,8 +3933,8 @@ const Chat = (() => {
   function usageCommand() {
     const t = (typeof Harness !== 'undefined' && Harness.totals) ? Harness.totals() : { tokens: 0, cost: 0, calls: 0 };
     const c = (activeWs && typeof Workstreams !== 'undefined' && Workstreams.costOf) ? Workstreams.costOf(activeWs.id) : { tokens: 0, usd: 0, calls: 0 };
-    localLine('Usage: lifetime ' + (t.tokens || 0) + ' tokens, ' + U.usd(t.cost || 0) + ', ' + (t.calls || 0)
-      + ' calls. This stream: ' + (c.tokens || 0) + ' tokens, ' + U.usd(c.usd || 0) + ', ' + (c.calls || 0) + ' calls.');
+    localLine('Usage: lifetime ' + (t.tokens || 0) + ' tokens (≈¾ word each), ' + U.usd(t.cost || 0) + ' spent, ' + (t.calls || 0)
+      + ' model calls. This stream: ' + (c.tokens || 0) + ' tokens, ' + U.usd(c.usd || 0) + ', ' + (c.calls || 0) + ' calls.');
   }
   function queueCommand(args) {
     if (!activeWs) return localLine('No active workstream.');
@@ -4026,9 +4026,9 @@ const Chat = (() => {
     // live prompt crosses the threshold. This is the honest status; see the slash-parity report for the rationale.
     if (cs && cs.limit) {
       const pct = Math.round(((cs.used || 0) / cs.limit) * 100);
-      localLine('Context: ' + (cs.used || 0) + ' / ' + cs.limit + ' tokens (' + pct + '%) — how full this agent’s working memory of the conversation is. When it nears full during a run, older turns fold into a summary automatically; there is nothing to compact by hand between runs (the conversation is re-sent per call).');
+      localLine('Chat memory: ' + (cs.used || 0) + ' / ' + cs.limit + ' tokens used (' + pct + '% — a token is roughly ¾ of a word). When it nears full, older turns are folded into a summary automatically during the next run; there is nothing you need to do.');
     } else {
-      localLine('Context compaction is automatic: during a run, once the live prompt nears the model window, older turns are folded into a running summary. There is no idle context to compact between runs (the run host is stateless — the conversation is sent per call).');
+      localLine('Chat memory is managed automatically: when a conversation grows past what the model can hold, older turns are folded into a summary during the next run. There is nothing you need to do.');
     }
   }
   // /clear — wipe the rendered COMMS panel and start a fresh workstream. Shares newWorkstreamCommand's create+load

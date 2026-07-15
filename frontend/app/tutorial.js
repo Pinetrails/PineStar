@@ -527,7 +527,17 @@ const Tutorial = (() => {
     say([
       seg('one honest thing, because i won’t lie to you: right now it’s just me.', 42, 360),
       seg('  the others in that crew list are echoes — minds you haven’t recruited yet. recruit one and it takes a station of its own — and i start handing it the pieces. that’s the real job: i grow the crew, then i point it.', 42, 0)
-    ], () => { clearSpot(); beatHandoff(); });
+    ], () => { clearSpot(); beatWork(); });
+  }
+  // UX audit finding 6 (2026-07-15): the tour taught capabilities/consent/crew/quests but never the WORK
+  // vocabulary — recipes, tasks, routines, channels just sat in the dock unexplained. ONE beat, both paths
+  // (it runs before the pitch/classic fork so a delivered pitch can't skip it).
+  function beatWork() {
+    if (!active) return;
+    say([
+      seg('four doors you’ll actually use, all in the bottom bar: ❒ RECIPES is ready-made work — launch one and it lands on ☑ TASKS, where everything i’m doing lives.', 42, 360),
+      seg('  put any job on a schedule and it becomes a ⏱ ROUTINE. and ✉ CHANNELS puts me in your pocket — message me from telegram or slack like anyone else.', 42, 0)
+    ], beatHandoff);
   }
   function beatHandoff() {
     if (!active) return;
@@ -542,12 +552,9 @@ const Tutorial = (() => {
       // model hiccup) — the tour never stalls on it, and the un-fired pitch stays armed for a later real task.
       const classicClose = () => {
         if (!active) return;
-        // the WORK-dock orientation beat (UX confusion audit 2026-07-15, finding 6): recipes/tasks/routines/
-        // channels used to just appear in the dock menus, never introduced. One breath each, right here.
-        say([
-          seg('you’ve already kitted me out and seen me work. your next moves stay pinned under ⚑ QUESTS in the ▤ WORK dock — recruit a specialist, lay a belt, bind a portal.', 44, 380),
-          seg('  same dock, three more doors: ❒ RECIPES are ready-made jobs you launch, whatever’s running lands on the ☑ TASKS board, and ⏱ ROUTINES is any job put on a schedule. and if you want me in your pocket, ✉ CHANNELS (⚒ BUILD dock) wires me to your telegram or slack. go on. i’m yours to point.', 44, 0)
-        ], () => Chat.choices([{ label: '▸ START COMMANDING', value: 'done' }], () => finishUp(false)));
+        // (the WORK-dock orientation lives in beatWork() just before this — don't repeat it here.)
+        say([seg('you’ve already kitted me out and seen me work. your next moves stay pinned under ⚑ QUESTS in the ▤ WORK dock — recruit a specialist, lay a belt, bind a portal. go on. i’m yours to point.', 44, 0)],
+          () => Chat.choices([{ label: '▸ START COMMANDING', value: 'done' }], () => finishUp(false)));
       };
       const offered = (cleanRunId && typeof PitchStore !== 'undefined' && PitchStore.offerAtHandoff)
         ? PitchStore.offerAtHandoff(cleanRunId) : Promise.resolve(false);
