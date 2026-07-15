@@ -1516,7 +1516,7 @@
         {
           "kind": "contains",
           "path": "frontend/app/autonomy.js",
-          "needle": "run free toward my goals while i\u00e2\u20ac\u2122m away"
+          "needle": "run free toward my goals while i\u2019m away"
         },
         {
           "kind": "contains",
