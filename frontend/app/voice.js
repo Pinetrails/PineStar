@@ -4,26 +4,26 @@
           straight through Chat.send — identical to typing — so all of chat.js's
           busy / purpose / task-vs-talk logic is reused with zero duplication.
    OUTPUT (agent voice): when an agent speaks a conversational reply (the same moment
-          it shows a speech bubble via World.say), it is spoken ALOUD with a per-agent
-          voice identity — distinct, stable pitch/rate/voice derived from the agent's
-          name, so every crew member sounds like itself.
+          it shows a speech bubble via World.say), it is spoken ALOUD in the ONE locked
+          station voice (Personas.STATION_VOICE — Ultron); personality changes what the
+          agent SAYS, never how it sounds.
 
    STT is the browser-native SpeechRecognition (push-to-talk + the hands-free loop).
-   TTS goes through output(): it first tries NEURAL voices via the sidecar /api/tts, which
-   synthesizes with whichever AI credential the station already holds (OpenRouter, Gemini, or
-   OpenAI — no voice-specific key needed), and falls back to the browser's speechSynthesis on
-   no-key / error / offline — so the worst case is the old robotic voice, never silence.
-   THE VOICE IS ONE LOCKED IDENTITY (Personas.STATION_VOICE — Ultron, all agents, all personas):
-   personality changes what the agent SAYS, never how it sounds.
+   TTS is NEURAL-ONLY via the sidecar /api/tts. The client always asks the sidecar when the
+   speaker is on — the sidecar owns the tier ladder (run-provider native voice → OpenRouter/
+   Gemini/OpenAI → a free keyless neural floor) and decides what it can serve. There is NO
+   robotic browser-speechSynthesis fallback: if every neural tier fails (total network loss),
+   the chunk is simply SKIPPED (silence) and the honest degrade reason is pinned on the
+   speaker-toggle tooltip. The reply text is always visible in COMMS — silence over cringe.
 
-   Graceful degradation: no SpeechRecognition → the mic button hides; no neural key AND no
-   speechSynthesis → speak() is a no-op (the reply still shows as text + a room bubble). */
+   Graceful degradation: no SpeechRecognition → the mic button hides; the speaker toggle needs
+   only Audio + fetch (never speechSynthesis). A failed neural chunk plays nothing (the reply
+   still shows as text + a room bubble); no permanent latch — the next reply re-probes. */
 'use strict';
 
 const Voice = (() => {
   const el = id => document.getElementById(id);
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition || null;
-  const synth = ('speechSynthesis' in window) ? window.speechSynthesis : null;
   // does this environment let us RECORD the mic (MediaRecorder → /api/stt)? This is the desktop path:
   // WebView2 ships getUserMedia/MediaRecorder but NOT SpeechRecognition, so browser-native STT is dead
   // there and voice mode was completely broken. `?stt=recorder` forces this path in a normal browser so
@@ -33,7 +33,8 @@ const Voice = (() => {
   try { forceRecorder = /(?:^|[?&])stt=recorder(?:&|$)/.test(location.search); } catch (_) {}
   const LS_SPEAK = 'starnet.voice.speak';
   const LS_CONVO = 'starnet.voice.convo';   // remembers the user WAS hands-free, so a refresh can offer one-tap resume
-  const REARM_DELAY = 350;                 // ms after the agent stops talking before the mic re-opens (echo guard)
+  const REARM_DELAY = 150;                 // ms after the agent stops talking before the mic re-opens (echo guard).
+                                           // Neural <audio> stops synchronously on teardown, so a short guard is enough.
   const MAX_EMPTY = 3;                      // consecutive silent listens before the loop goes passive
 
   // Phosphor line-icons for the voice controls — single-color (currentColor) so they inherit the active
@@ -50,7 +51,10 @@ const Voice = (() => {
   // STT works if EITHER provider is usable: browser-native SpeechRecognition, or mic recording → /api/stt.
   // `?stt=recorder` forces the recorder even when SR exists (so the desktop path is testable in a browser).
   const canListen = () => (!forceRecorder && !!SR) || canRecordMic;
-  const canSpeak = () => !!synth;
+  // can we produce the agent's (neural) voice at all? Neural playback needs only an <audio> element and
+  // fetch — NOT speechSynthesis. The sidecar owns the tier ladder incl. a free keyless floor, so any
+  // browser that can play audio can speak. (Used to gate the speaker toggle's visibility.)
+  const canSpeak = () => (typeof Audio !== 'undefined') && (typeof fetch !== 'undefined');
 
   // ---- prefs --------------------------------------------------------------
   // do agents speak their replies aloud? (persisted). DEFAULT OFF — and keep it off: when the speaker is
@@ -87,105 +91,27 @@ const Voice = (() => {
      OUTPUT — the agent's voice (TTS)
      ====================================================================== */
 
-  // speechSynthesis.getVoices() populates asynchronously; cache it and refresh on voiceschanged.
-  let voiceCache = [];
-  function refreshVoices() { if (synth) { try { voiceCache = synth.getVoices() || []; } catch (_) { voiceCache = []; } } }
-  if (synth) { refreshVoices(); try { synth.onvoiceschanged = refreshVoices; } catch (_) {} }
-
-  // --- Chrome speechSynthesis self-healing -------------------------------------------------
-  // Chrome has two long-standing TTS bugs this app trips over:
-  //  (a) after SpeechRecognition (the mic) has run, the synth engine is left paused/idle and
-  //      synth.speak() silently does nothing until synth.resume() is called. startListening()
-  //      also calls synth.cancel(), which on some builds wedges the queue the same way. This is
-  //      why voice works on turn 1 (no mic yet) but goes silent on every later mic-driven turn.
-  //  (b) the engine auto-pauses on utterances longer than ~15s; resume() un-sticks it.
-  // Fix: kick resume() right before/after speak, and run a low-frequency watchdog that resumes
-  // the engine whenever it reports paused while something is pending. Cheap, idempotent, no-op
-  // in Firefox/Safari (resume() there is harmless).
-  function kickResume() { if (synth) { try { synth.resume(); } catch (_) {} } }
-  let watchdog = null;
-  function startWatchdog() {
-    if (watchdog || !synth) return;
-    watchdog = setInterval(() => {
-      try {
-        if (synth.paused && (synth.speaking || synth.pending)) synth.resume();
-        else if (!synth.speaking && !synth.pending) { clearInterval(watchdog); watchdog = null; }
-      } catch (_) { clearInterval(watchdog); watchdog = null; }
-    }, 4000);
-  }
-
-  // FNV-1a — a stable, dependency-free string hash so an agent's voice never changes between sessions.
-  function hash(s) { let h = 2166136261 >>> 0; s = String(s || 'agent'); for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
-
-  // derive a distinct-but-stable voice for an identity: pick from the installed voices and
-  // spread pitch/rate deterministically so even agents sharing a base voice sound different.
-  function voiceFor(id) {
-    const h = hash(id);
-    const all = voiceCache.length ? voiceCache : (refreshVoices(), voiceCache);
-    const en = all.filter(v => /^en[-_]/i.test(v.lang || ''));
-    const pool = en.length ? en : all;
-    const voice = pool.length ? pool[h % pool.length] : null;
-    const pitch = 0.8 + ((h >>> 3) % 9) * 0.05;    // 0.80 .. 1.20
-    const rate = 0.9 + ((h >>> 7) % 7) * 0.05;     // 0.90 .. 1.20
-    return { voice, pitch, rate };
-  }
-
   function onSpeakStart() { speaking = true; setSpeaking(true); duckSfx(true); }
   function onSpeakEnd() { if (!speaking) return; speaking = false; setSpeaking(false); }
 
-  /* ---- web-speech (browser) FALLBACK -----------------------------------------------------------
-     The built-in speechSynthesis voices, used when neural TTS has no key / errors / is offline.
-     opts: { volume, speedMul }. */
-  function doSpeak(text, id, onEnd, opts) {
-    opts = opts || {};
-    if (!synth) { onSpeakEnd(); onEnd && onEnd(); return; }
-    kickResume();
-    try { if (synth.speaking || synth.pending) synth.cancel(); } catch (_) {}
-    const u = new SpeechSynthesisUtterance(text);
-    const v = voiceFor(id);
-    if (v.voice) u.voice = v.voice;
-    u.pitch = v.pitch;
-    u.rate = Math.max(0.6, Math.min(1.6, v.rate * (opts.speedMul || 1)));
-    u.volume = (opts.volume == null ? 1 : opts.volume);
-    u.onstart = () => onSpeakStart();
-    u.onend = () => { onSpeakEnd(); onEnd && onEnd(); };
-    u.onerror = () => { onSpeakEnd(); onEnd && onEnd(); };
-    try { synth.speak(u); kickResume(); startWatchdog(); }
-    catch (_) { onSpeakEnd(); onEnd && onEnd(); }
-  }
-  function webSpeechSpeak(text, id, onEnd, opts) {
-    if (!synth) { onSpeakEnd(); onEnd && onEnd(); return; }
-    if (!voiceCache.length) {
-      refreshVoices();
-      if (!voiceCache.length) {
-        let fired = false;
-        const go = () => { if (fired) return; fired = true; refreshVoices(); doSpeak(text, id, onEnd, opts); };
-        try { synth.addEventListener('voiceschanged', go, { once: true }); } catch (_) {}
-        setTimeout(go, 250);   // hard fallback if voiceschanged never fires
-        return;
-      }
-    }
-    doSpeak(text, id, onEnd, opts);
-  }
-
-  /* ---- neural TTS via OpenRouter — the agent's real per-personality voice ----------------------
-     Hits the sidecar /api/tts (which calls OpenRouter /audio/speech with the SAME OpenRouter key the
-     browser already uses) and plays the returned mp3. Any failure (no key / error / offline) falls
-     straight back to the browser voice, so the worst case is exactly the Phase-1 behavior. */
+  /* ---- neural TTS — the agent's ONLY voice -----------------------------------------------------
+     Hits the sidecar /api/tts and plays the returned audio. The sidecar owns the whole tier ladder
+     (run-provider native voice → OpenRouter/Gemini/OpenAI → a free keyless neural floor), so the client
+     always asks whenever the speaker is on and the sidecar decides what it can serve. There is NO robotic
+     speechSynthesis fallback: any failure just SKIPS that chunk (silence) and pins the honest reason on the
+     speaker-toggle tooltip. No permanent latch — a 'no key'/error only cools the neural path off briefly. */
   const TTS_MODEL = 'google/gemini-3.1-flash-tts-preview';
-  let ttsDisabled = false;        // latched once we learn there's no usable key — skip the round-trip after that
-  let neuralColdUntil = 0;        // after a transient neural error, prefer the browser voice until this time (ms)
-  // how long to prefer the browser voice after a transient neural error. The robotic fallback is the thing
-  // users hate most, so keep this SHORT: one transient blip shouldn't rob several replies of the real voice —
-  // we retry neural on essentially the next reply. (Was 8s.)
+  let neuralColdUntil = 0;        // after a neural error, skip the round-trip (stay silent) until this time (ms)
+  // how long to cool off after a TRANSIENT neural error. Keep this SHORT: one blip shouldn't rob several
+  // replies of the real voice — we retry neural on essentially the next reply.
   const NEURAL_COLD_MS = 4000;
-  // Billing failures (OpenRouter 402 / "insufficient credits") are NOT transient — retrying on every reply
-  // just burns a round-trip per sentence. Back off much longer between attempts, and above all TELL the
-  // user: the browser fallback is a DIFFERENT voice, and swapping it in silently reads as "the app
-  // regressed to the removed robotic voice" (2026-07-07 escape: OpenRouter credits ran dry and the whole
-  // station went robotic with zero explanation — the degrade itself was fine, the silence about it wasn't).
+  // 'no key' and billing failures (402 / "insufficient credits") are NOT transient — retrying on every reply
+  // just burns a round-trip per sentence. Back off much longer, and above all TELL the user (2026-07-07
+  // escape: OpenRouter credits ran dry and the whole station went silent with zero explanation — the degrade
+  // itself was fine, the silence ABOUT it wasn't). NB: NO permanent latch — this is a 60s cold-off that ANY
+  // speaker-toggle clears, so a spurious startup 'no key' never disables voice for the whole session.
   const BILLING_COLD_MS = 60000;
-  let fbStreak = 0;        // consecutive neural→browser fallbacks (reset by the next neural success)
+  let fbStreak = 0;        // consecutive neural failures (reset by the next neural success)
   let fbNotified = '';     // reason class already surfaced this outage — notify once, not once per sentence
   function classifyFallback(reason) {
     if (/no key/i.test(reason)) return 'nokey';
@@ -202,15 +128,20 @@ const Voice = (() => {
   function noteFallback(reason) {
     fbStreak++;
     const cls = classifyFallback(reason);
-    if (cls === 'credits') neuralColdUntil = Date.now() + BILLING_COLD_MS;
+    // 'no key' and 'credits' are non-transient → a longer 60s cold-off (any speaker-toggle clears it).
+    if (cls === 'credits' || cls === 'nokey') neuralColdUntil = Date.now() + BILLING_COLD_MS;
     if (fbNotified === cls || (cls === 'error' && fbStreak < 3)) return;
     fbNotified = cls;
-    fbMsg = cls === 'credits' ? '🔇 real voice offline — voice provider out of credits · backup voice active'
-      : cls === 'nokey' ? '🔇 real voice needs an OpenRouter, Gemini, or OpenAI credential · backup voice active'
-      : '🔇 real voice unreachable · backup voice active';
+    // Truthful: there is no "backup voice" anymore — a failed chunk plays nothing and the reply stays
+    // visible as text in COMMS. Say exactly that. Pinned on the toggle tooltip only, never #chat-status.
+    fbMsg = cls === 'credits' ? '🔇 real voice offline — voice provider out of credits · reply shown as text'
+      : cls === 'nokey' ? '🔇 real voice needs an OpenRouter, Gemini, or OpenAI credential · reply shown as text'
+      : '🔇 real voice unreachable · reply shown as text';
     if (toggleBtn) toggleBtn.title = fbMsg;
   }
   function noteNeuralOk() { fbStreak = 0; if (fbNotified) { fbNotified = ''; fbMsg = ''; reflectToggle(); } }
+  // ANY toggle of the speaker button clears all cold-offs and re-probes the neural path fresh (no latch).
+  function clearNeuralCold() { neuralColdUntil = 0; fbStreak = 0; if (fbNotified) { fbNotified = ''; fbMsg = ''; } }
   function apiKey() { return (typeof Harness !== 'undefined' && Harness.getKey) ? (Harness.getKey() || '') : ''; }
   // Providers whose credential can synthesize the neural voice, in default preference order. The sidecar
   // mirrors this list — Codex (ChatGPT OAuth) is NOT on it because that token has no audio endpoint to call.
@@ -251,30 +182,16 @@ const Voice = (() => {
       shell: (v && v.ttsShell) || { metal: 1.0, digitize: 0.4, reverb: 0.6 }
     };
   }
-  // Can neural TTS possibly work? Browser: yes iff the page holds ANY TTS-capable credential / reports one
-  // configured. DESKTOP: the key lives in the SIDECAR (keychain->env), and the page-side configured() flag
-  // has proven unreliable there (a false negative silently forced the robotic speechSynthesis voice for
-  // WEEKS while the server could synthesize fine — the "voices never changed" desktop bug). On the desktop
-  // shell, don't guess: always let the request go — the sidecar is the source of truth, its 'no key'
-  // degrade comes back on the FIRST call and latches ttsDisabled, so a truly key-less install pays exactly
-  // one cheap round-trip per session.
-  function haveKey() {
-    if (typeof window !== 'undefined' && (window.__TAURI__ || window.__TAURI_INTERNALS__)) return true;
-    if (ttsCred().key) return true;
-    if (typeof Harness !== 'undefined' && Harness.configured) {
-      for (const p of TTS_PROVIDERS) { if (Harness.configured(p)) return true; }
-    }
-    return false;
-  }
-
   /* PRE-WARM the voice cache: when the speaker turns on, quietly synthesize the active persona's stock lines
      (ambient mutters + the sample reply) so those exact lines later play INSTANTLY from the sidecar's disk
      cache instead of paying a synth round-trip mid-conversation. Sequential + fire-and-forget + low urgency:
-     never blocks the UI, never fights a live reply for bandwidth. Guarded so it NEVER runs without a key
-     (that would just spam 'no key' fallbacks). Idempotent per persona so toggling doesn't re-warm needlessly. */
+     never blocks the UI, never fights a live reply for bandwidth. Always asks the sidecar (it owns the tier
+     ladder incl. a free keyless floor); skips only while the neural path is cooling off after a failure.
+     Idempotent per persona so toggling doesn't re-warm needlessly. */
   let prewarmedFor = null;
   async function prewarmVoice() {
-    if (!speakReplies || !haveKey()) return;
+    if (!speakReplies) return;
+    if (Date.now() < neuralColdUntil) return;        // neural path cooling off after a failure → don't hammer
     if (prewarmedFor === activePersonaId) return;   // already warmed this persona's shelf
     prewarmedFor = activePersonaId;
     const p = (typeof Personas !== 'undefined' && Personas.get) ? Personas.get(activePersonaId) : null;
@@ -559,19 +476,21 @@ const Voice = (() => {
   let speakSeq = 0;       // monotonic token; bump to invalidate all in-flight speak work
   let ttsAbort = null;    // controller of the most-recent in-flight fetch
   let onReplyDone = null; // heartbeat fired ONCE when the whole reply finishes (→ maybeRearm)
-  let lastAudioPath = 'neural';  // 'neural' (stops synchronously) | 'synth' (messier cancel tail)
   const MAX_INFLIGHT = 2;        // synth at most this many chunks ahead of playback
   const TTS_CHUNK_MAX = 1000;    // keep each synth call under the sidecar's 1200-char cap
 
   function resetQueue() { jobs = []; playIdx = 0; synthIdx = 0; draining = false; playing = false; replyClosed = true; }
 
-  // begin synthesizing one job → resolves to {kind:'neural',blob} | {kind:'browser'} | {kind:'skip'}.
+  // begin synthesizing one job → resolves to {kind:'neural',blob} | {kind:'silent'} | {kind:'skip'}.
+  // 'neural' plays; 'silent' means "no neural audio for this chunk — advance the queue, stay quiet" (there
+  // is NO robotic fallback); 'skip' is an intentional barge-in/teardown cancel. The page holds no key on
+  // desktop — the sidecar /api/tts resolves its own credential (keychain/env) or the free keyless floor.
   function startSynth(job) {
     if (job.result) return;
     const cred = ttsCred(), cfg = ttsConfig();
-    // desktop: the key lives in the sidecar's env (keychain), so the page holds none — gate on "configured?"
-    // and send no key; the sidecar /api/tts resolves its own credential (keychain/env, any TTS provider).
-    if (!haveKey() || ttsDisabled || Date.now() < neuralColdUntil) { job.result = Promise.resolve({ kind: 'browser' }); return; }
+    // always ask the sidecar — it owns the tier ladder and decides what it can serve. Only skip the
+    // round-trip while the neural path is cooling off after a recent failure (no permanent latch).
+    if (Date.now() < neuralColdUntil) { job.result = Promise.resolve({ kind: 'silent' }); return; }
     const ac = new AbortController(); job.ac = ac; ttsAbort = ac;
     job.result = fetch('/api/tts', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: ac.signal,
@@ -581,16 +500,17 @@ const Voice = (() => {
       if (r.ok && ct.indexOf('audio') === 0) { const blob = await r.blob(); if (blob && blob.size) { noteNeuralOk(); return { kind: 'neural', blob }; } }
       let reason = 'http ' + r.status;
       try { const j = await r.json(); if (j && j.reason) reason = j.reason; } catch (_) {}
-      if (/no key/i.test(reason)) ttsDisabled = true; else neuralColdUntil = Date.now() + NEURAL_COLD_MS;
-      console.warn('[voice] neural TTS → browser fallback:', reason);
+      // cool the neural path off briefly (noteFallback lengthens this for 'no key'/'credits'); never latch.
+      neuralColdUntil = Date.now() + NEURAL_COLD_MS;
+      console.warn('[voice] neural TTS unavailable → chunk silent:', reason);
       noteFallback(reason);
-      return { kind: 'browser' };
+      return { kind: 'silent' };
     }).catch(e => {
       if (e && e.name === 'AbortError') return { kind: 'skip' };   // intentionally cancelled — stay silent
       console.warn('[voice] neural TTS error:', (e && e.message) || e);
       neuralColdUntil = Date.now() + NEURAL_COLD_MS;
       noteFallback('network: ' + ((e && e.message) || e));
-      return { kind: 'browser' };
+      return { kind: 'silent' };
     });
   }
   function pumpSynth() { while (synthIdx < jobs.length && (synthIdx - playIdx) < MAX_INFLIGHT) startSynth(jobs[synthIdx++]); }
@@ -606,20 +526,12 @@ const Voice = (() => {
       if (job.seq !== speakSeq) { playing = false; return; }   // torn down → stop the loop
       const advance = () => { playing = false; playIdx++; pumpPlay(); };
       if (res.kind === 'neural') {
-        lastAudioPath = 'neural';
         const cfg = ttsConfig();
         const rate = cfg.speed * (job.opts.speedMul || 1);
-        playBlob(res.blob, advance, job.opts.volume, () => browserPlay(job, advance), rate, cfg.deep, cfg.shell);
-      } else if (res.kind === 'browser') {
-        browserPlay(job, advance);
-      } else { advance(); }   // 'skip' (aborted)
+        // a decode/playback failure on the neural blob → advance (skip this chunk silently). No robotic fallback.
+        playBlob(res.blob, advance, job.opts.volume, advance, rate, cfg.deep, cfg.shell);
+      } else { advance(); }   // 'silent' (no neural audio) or 'skip' (aborted) → play nothing, keep the queue moving
     });
-  }
-  // browser-synth fallback — fold the persona's pace into the rate so even the OS voice tracks the personality.
-  function browserPlay(job, advance) {
-    lastAudioPath = 'synth';
-    const opts = Object.assign({}, job.opts, { speedMul: (job.opts.speedMul || 1) * ttsConfig().speed });
-    webSpeechSpeak(job.text, activeVoiceId, advance, opts);
   }
   function finishReply() {
     const wasDraining = draining;
@@ -684,15 +596,13 @@ const Voice = (() => {
   // public one-shot (non-streaming callers): speak a whole finished reply.
   function speak(text, voiceId) { speakChunk(text, voiceId); endReply(onReplyEnded); }
 
-  // tear everything down NOW: invalidate in-flight work, abort fetches, cut audio, kill the watchdog.
+  // tear everything down NOW: invalidate in-flight work, abort fetches, cut audio.
   // Used by barge-in, mute, voice-mode-off, and DISCONNECT — the agent must go silent immediately.
   function stopSpeaking() {
     speakSeq++;
     for (const j of jobs) { if (j.ac) { try { j.ac.abort(); } catch (_) {} } }
     if (ttsAbort) { try { ttsAbort.abort(); } catch (_) {} ttsAbort = null; }
     stopAudio();
-    if (synth) { try { if (synth.speaking || synth.pending) synth.cancel(); } catch (_) {} kickResume(); }
-    if (watchdog) { clearInterval(watchdog); watchdog = null; }
     onReplyDone = null;
     resetQueue();
     duckSfx(false);
@@ -734,20 +644,19 @@ const Voice = (() => {
 
   // re-open the mic once the turn is genuinely done: not in a run, not still speaking, not already
   // listening. Whichever finishing event (TTS end / run end) lands last is the one that arms it.
-  // NB: a reply is enqueued via synth.speak() before its `onstart` fires, so chat.js's run-end hook
-  // can land while `speaking` is still false but the utterance is queued. We must also treat a
-  // pending/speaking synth queue as "not done" — otherwise the mic would re-open into the agent's
-  // own voice (echo) or cancel the not-yet-started reply (swallow). onReplyEnded then arms it.
-  // "is the agent making (or about to make) sound?" — covers the browser synth queue, a playing neural
-  // audio element, AND the gap while a neural request is in flight (pendingSpeech). The loop must wait
-  // through all of it, or the re-opened mic would capture the agent's own voice (echo).
+  // NB: a reply enqueues its chunks (draining=true) before the first <audio> starts, so chat.js's
+  // run-end hook can land while `speaking` is still false but audio is imminent. We must treat that
+  // enqueued/in-flight state as "not done" — otherwise the mic would re-open into the agent's own
+  // voice (echo) or clip the not-yet-started reply (swallow). onReplyEnded then arms it.
   // "is the agent making (or about to make) sound?" — `draining` covers the whole streamed reply incl.
-  // every inter-chunk fetch gap, so the loop waits through all of it (no echo, no swallowed chunk).
-  function talking() { return draining || playing || !!currentAudio || !!(synth && (synth.speaking || synth.pending)); }
+  // every inter-chunk fetch gap, `playing`/`currentAudio` cover the live neural <audio>. The loop waits
+  // through all of it, or the re-opened mic would capture the agent's own voice (echo). (No synth queue
+  // to consider — neural is the only voice path now.)
+  function talking() { return draining || playing || !!currentAudio; }
   function maybeRearm() {
     if (!convoMode || !canListen() || rearmTimer) return;
     if (busyNow() || listening || talking()) return;   // not ready — a finishing event re-calls this
-    const delay = (lastAudioPath === 'synth') ? REARM_DELAY : 150;   // neural <audio> stops cleanly → shorter guard
+    const delay = REARM_DELAY;   // neural <audio> stops cleanly → a short echo guard is enough
     rearmTimer = setTimeout(() => {
       rearmTimer = null;
       if (convoMode && !busyNow() && !listening && !talking()) startListening();
@@ -1165,6 +1074,7 @@ const Voice = (() => {
   function toggleSpeakReplies() {
     speakReplies = !speakReplies; savePref(LS_SPEAK, speakReplies);
     forcedSpeak = false;   // a manual speaker change is the user's own choice — keep it (don't restore on voice-mode exit)
+    clearNeuralCold();     // ANY toggle re-probes the neural path fresh — no cold-off survives a deliberate flip
     if (!speakReplies) stopSpeaking();
     else prewarmVoice();   // turning ON → quietly warm the stock lines so mutters/samples play instantly
     reflectToggle();
@@ -1172,6 +1082,7 @@ const Voice = (() => {
   }
   function setSpeakReplies(on) {
     const want = on !== false;
+    clearNeuralCold();     // ANY toggle re-probes the neural path fresh — no cold-off survives a deliberate flip
     if (speakReplies === want) { reflectToggle(); return speakReplies; }
     speakReplies = want; savePref(LS_SPEAK, speakReplies);
     forcedSpeak = false;
@@ -1188,7 +1099,7 @@ const Voice = (() => {
     if (opts.personaId) activePersonaId = opts.personaId;
     convoMode = false;   // a fresh game session starts in push-to-talk; the toggle opts into hands-free
     clearTimeout(rearmTimer); rearmTimer = null; emptyStreak = 0;
-    stopSpeaking();      // C4: cut any in-flight speech + the Chrome watchdog interval left by a PRIOR agent before this one takes the mic
+    stopSpeaking();      // C4: cut any in-flight speech left by a PRIOR agent before this one takes the mic
     forcedSpeak = false; // C3: clear the "we force-enabled the speaker, restore on exit" bookkeeping so it never carries across agents
     inputEl = el('chat-input'); statusEl = el('chat-status');
     micBtn = el('chat-mic'); toggleBtn = el('voice-toggle'); modeBtn = el('voice-mode');
@@ -1198,6 +1109,8 @@ const Voice = (() => {
       else { micBtn.onclick = () => onMicClick(); micBtn.innerHTML = ICON.mic; }
     }
     if (toggleBtn) {
+      // The speaker toggle needs only Audio + fetch (neural playback) — it is NO LONGER hidden when
+      // speechSynthesis is missing (the desktop WebView2 case, which has neural audio but no synth).
       if (!canSpeak()) toggleBtn.style.display = 'none';
       else { toggleBtn.onclick = () => toggleSpeakReplies(); reflectToggle(); }
     }
@@ -1223,10 +1136,10 @@ const Voice = (() => {
   // let other code (or a future hotkey) retarget the active voice when the workstream's agent changes.
   function setAgent(name) { if (name) activeVoiceId = name; }
 
-  // is the agent going to SPEAK this reply? true when synth is available and the speaker toggle is on.
-  // chat.js uses this to decide whether a conversational turn is "voice mode" (short/casual spoken
-  // reply) vs "type mode" (detailed written reply). Stage 4's hands-free toggle will fold in here too.
-  function isOn() { return !!(synth && speakReplies); }
+  // is the agent going to SPEAK this reply? true when the speaker toggle is on and this environment can
+  // play neural audio (Audio + fetch) — NOT gated on speechSynthesis anymore. chat.js uses this to decide
+  // whether a conversational turn is "voice mode" (short/casual spoken reply) vs "type mode" (written).
+  function isOn() { return !!(speakReplies && canSpeak()); }
 
   return {
     init, speak, speakChunk, endReply, mutter, ambientLine, setAgent, isOn, setSpeakReplies,

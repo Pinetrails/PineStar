@@ -93,7 +93,8 @@ function boot(opts) {
     Harness: { getKey: () => (opts.ttsKey ? 'k' : ''), configured: () => false },
     __busy: false, __sent: []
   };
-  sandbox.globalThis = sandbox; win.SpeechRecognition = MockSR; win.speechSynthesis = undefined;
+  // speechSynthesis is DELETED from the speak path; a test may inject a spy to prove it's never invoked.
+  sandbox.globalThis = sandbox; win.SpeechRecognition = MockSR; win.speechSynthesis = opts.speechSynthesis || undefined;
   vm.createContext(sandbox);
   vm.runInContext(SRC + '\nthis.__Voice = Voice;', sandbox, { filename: 'voice.js' });
   const Voice = sandbox.__Voice;
@@ -107,6 +108,18 @@ function ttsFailFetch(reason) {
   return (url) => (String(url).indexOf('/api/tts') >= 0)
     ? Promise.resolve({ ok: false, status: 402, headers: { get: () => 'application/json' }, json: () => Promise.resolve({ reason }) })
     : Promise.resolve({ ok: true, headers: { get: () => 'application/json' }, json: () => Promise.resolve({ text: 'words' }), blob: () => Promise.resolve({ size: 1 }) });
+}
+
+// a /api/tts endpoint that always returns a {fallback,reason} (NON-audio) response and COUNTS how many
+// times it was actually hit — so a test can prove the client re-probes (fetches) vs. stays latched off.
+function countingFetch(state, reason) {
+  return (url) => {
+    if (String(url).indexOf('/api/tts') >= 0) {
+      state.tts++;
+      return Promise.resolve({ ok: false, status: 401, headers: { get: () => 'application/json' }, json: () => Promise.resolve({ fallback: true, reason }) });
+    }
+    return Promise.resolve({ ok: true, headers: { get: () => 'application/json' }, json: () => Promise.resolve({ text: 'words' }), blob: () => Promise.resolve({ size: 1 }) });
+  };
 }
 
 const tick = (n = 12) => new Promise(r => setTimeout(r, n));
@@ -176,6 +189,37 @@ const tick = (n = 12) => new Promise(r => setTimeout(r, n));
     A.ok(/real voice|backup voice/i.test(title), 'voice degrade: honest reason pinned on the speaker-toggle tooltip (telemetry preserved)');
     A.ok(!t.statusLog.some(s => /real voice|backup voice|voice provider/i.test(String(s))), 'voice degrade: outage banner is NEVER pushed to the COMMS status bar');
     A.ok(!/real voice|backup voice/i.test(String(t.nodes['chat-status'].textContent || '')), 'voice degrade: #chat-status text carries no voice-outage banner');
+  }
+
+  // --- a 'no key' TTS response does NOT permanently disable neural (un-latched cold-off) --------
+  // Previously a single {fallback,reason:'no key'} latched ttsDisabled for the whole session — robotic
+  // (now silent) until reload. New contract: 'no key' is a 60s cold-off that ANY speaker toggle clears,
+  // after which the very next speak attempts the sidecar fetch again.
+  {
+    const state = { tts: 0 };
+    const t = boot({ ttsKey: true, fetch: countingFetch(state, 'no key') });
+    t.Voice.setSpeakReplies(true);
+    t.Voice.speak('first line to the commander', 'agent'); await tick(40);
+    const afterFirst = state.tts;
+    A.ok(afterFirst >= 1, 'no-key: the first speak actually hits /api/tts (always asks the sidecar)');
+    t.Voice.speak('second line while still cold', 'agent'); await tick(40);
+    A.ok(state.tts === afterFirst, 'no-key: while the cold-off is active the neural path is skipped, not re-fetched');
+    // toggle the speaker (off, then on) — this must clear the cold-off and re-probe fresh.
+    t.Voice.setSpeakReplies(false);
+    t.Voice.setSpeakReplies(true);
+    t.Voice.speak('third line after re-toggle', 'agent'); await tick(40);
+    A.ok(state.tts > afterFirst, 'no-key: a speaker toggle clears the cold-off → the next speak fetches again (NOT permanently disabled)');
+  }
+
+  // --- a FAILED neural chunk NEVER invokes speechSynthesis.speak (robotic path deleted) ---------
+  // The browser speechSynthesis speak path is gone: a neural failure degrades to SILENCE (skip the chunk)
+  // + the tooltip reason, never the robotic voice. Inject a speechSynthesis spy and prove it stays untouched.
+  {
+    const synthSpy = { speakCalls: 0, speak() { this.speakCalls++; }, cancel() {}, resume() {}, getVoices: () => [], speaking: false, pending: false, paused: false };
+    const t = boot({ ttsKey: true, fetch: ttsFailFetch('insufficient credits'), speechSynthesis: synthSpy });
+    t.Voice.setSpeakReplies(true);
+    t.Voice.speak('this reply cannot be synthesized', 'agent'); await tick(40);
+    A.ok(synthSpy.speakCalls === 0, 'failed neural chunk NEVER calls speechSynthesis.speak (no robotic fallback)');
   }
 
   A.report('voice.button.test');
