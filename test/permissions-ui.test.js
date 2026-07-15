@@ -15,8 +15,10 @@ ok(/id="perm-desc"/.test(src), '#perm-desc combined-level blurb element present'
 // the level spectrum: never → suggest → draft → full
 ok(/id="perm-level"/.test(src), '#perm-level chooser present');
 for (const lvl of ['never', 'suggest', 'draft', 'full']) ok(new RegExp('data-level="' + lvl + '"').test(src), 'level button present: ' + lvl);
-ok(/FULLY AUTONOMOUS/.test(src), 'the "fully autonomous" extreme is offered');
-ok(/>NEVER</.test(src), 'the "never" extreme is offered');
+// display labels are the SAME ladder as the autonomy dial (one vocabulary — UX confusion audit 2026-07-15);
+// the persisted enum stays never/suggest/draft/full (the data-level loop above locks it).
+ok(/data-level="full"[^>]*>FREE</.test(src), 'the "full" extreme displays as FREE (dial vocabulary)');
+ok(/data-level="never"[^>]*>WAIT</.test(src), 'the "never" extreme displays as WAIT (dial vocabulary)');
 
 // the standing-grant list + grant/revoke wiring
 ok(/id="perm-grants"/.test(src), '#perm-grants standing-grant list present');

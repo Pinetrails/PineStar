@@ -3088,7 +3088,7 @@ const StationUI = (() => {
       '<div class="set-themes" id="auto-reach">' +
         '<button class="set-theme" data-reach="observe" title="read / research only — writes nothing">OBSERVE</button>' +
         '<button class="set-theme" data-reach="sandbox" title="build &amp; write locally — nothing leaves the machine">SANDBOX</button>' +
-        '<button class="set-theme" data-reach="reach" title="can send, publish, or contact external services">REACH-OUT</button>' +
+        '<button class="set-theme" data-reach="reach" title="can send, publish, or contact external services">SEND &amp; PUBLISH</button>' +
       '</div>' +
       '<div class="set-row"><span class="dim">PACE — how many unattended jobs per day</span></div>' +
       '<div class="set-themes" id="auto-pace">' +
@@ -3140,12 +3140,15 @@ const StationUI = (() => {
       // grant list shows + revokes every standing capability. #perm-desc spells out the COMBINED truth, live.
       '<h4 class="ms-h">PERMISSIONS <span class="dim">— what it’s actually allowed to do on its own</span></h4>' +
       '<p class="set-about" id="perm-desc"></p>' +
-      '<div class="set-row"><span class="dim">LEVEL — from fully hands-off to fully autonomous</span></div>' +
+      // ONE ladder, ONE vocabulary (UX confusion audit 2026-07-15): these are the SAME four rungs as the
+      // AUTONOMY dial (WAIT/SUGGEST/BUILD/FREE) — this chooser just also manages the standing write grant.
+      // The stored data-level values (never/suggest/draft/full) are the persisted enum; display-only relabel.
+      '<div class="set-row"><span class="dim">LEVEL — the same WAIT → FREE ladder as the AUTONOMY dial, plus its standing approvals</span></div>' +
       '<div class="set-themes" id="perm-level">' +
-        '<button class="set-theme" data-level="never" title="does nothing on its own — you drive everything">NEVER</button>' +
+        '<button class="set-theme" data-level="never" title="does nothing on its own — you drive everything">WAIT</button>' +
         '<button class="set-theme" data-level="suggest" title="lines up ideas you approve — never acts on its own">SUGGEST</button>' +
-        '<button class="set-theme" data-level="draft" title="acts on its own and leaves drafts — writes no files">DRAFT FOR ME</button>' +
-        '<button class="set-theme" data-level="full" title="acts AND writes real files on its own — logged &amp; reversible">FULLY AUTONOMOUS</button>' +
+        '<button class="set-theme" data-level="draft" title="acts on its own and leaves drafts — writes no files">BUILD</button>' +
+        '<button class="set-theme" data-level="full" title="acts AND writes real files on its own — logged &amp; reversible">FREE</button>' +
       '</div>' +
       '<div class="set-row"><span class="dim">STANDING APPROVALS — every capability it may use unattended, when you granted it, and a REVOKE for each (revocable any time)</span></div>' +
       '<div class="key-list" id="perm-grants"></div>';
@@ -4141,7 +4144,11 @@ const StationUI = (() => {
       // finalize a pending connect's MESSAGE from the proven status (not the optimistic POST body).
       if (pendingConnect[c.id]) {
         const msgEl = body.querySelector('#' + c.pre + '-msg');
-        if (conn) { setMsg(msgEl, c.okMsg, 'ok'); delete pendingConnect[c.id]; }
+        if (conn) {
+          setMsg(msgEl, c.okMsg, 'ok'); delete pendingConnect[c.id];
+          // first-steps: only ticked on the PROVEN round-trip (this branch), never on the optimistic POST.
+          try { if (typeof Tutorial !== 'undefined' && Tutorial.tickBrief) Tutorial.tickBrief('channel'); } catch (_) {}
+        }
         else if (state === 'error') { setMsg(msgEl, '✕ ' + ((st && st.detail) || 'connection failed') + (c.errHint || ''), ''); delete pendingConnect[c.id]; }
         // else still 'connecting' — leave the neutral connecting… line until the transport proves one way or the other.
       }
