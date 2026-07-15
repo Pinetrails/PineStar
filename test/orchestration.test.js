@@ -282,6 +282,21 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
   A.eq(ro.calls.length, 1, 'a granted dispatch reaches runOnce');
 }
 
+// ---- CONSENT GATE (2026-07-14, the parked P1 prompt-injection fork closed): dispatch/spawn fan out REAL
+//      autonomous budget-spending loops off text in the lead's context, so like team.summon they carry
+//      requiresConsent — 'ask' mode gets the APPROVAL beat (session grants stop fatigue), Full Access bypasses.
+//      This block FAILS if either tool ever silently reverts to consent-free. ----
+{
+  const t = makeOrchestrationTools({ runOnce: fakeRunOnce(), roster: () => new Map(), key: 'k', model: 'm', newId: counter() });
+  A.eq(t.dispatchTool.requiresConsent, true, 'team.dispatch IS consent-gated (injected "dispatch a worker" needs a human moment)');
+  A.eq(t.spawnTool.requiresConsent, true, 'team.spawn IS consent-gated (same fork — clones spend budget too)');
+  // the capability registry mirror must agree (resolve.js builds approvalRules from it)
+  const CAP_REGISTRY = require('../sidecar/capability/registry.js').CAP_REGISTRY;
+  const orch = CAP_REGISTRY.orchestrator;
+  A.eq(orch.find(g => g.tool === 'team.dispatch').requiresConsent, true, 'registry mirror: team.dispatch consent-gated');
+  A.eq(orch.find(g => g.tool === 'team.spawn').requiresConsent, true, 'registry mirror: team.spawn consent-gated');
+}
+
 // ---- dispatch carries its OWN long timeout, never the 30s fast-tool default (regression: a real worker loop
 //      runs for minutes; inheriting ctx.timeoutMs=30000 made team.dispatch always time out before returning) ----
 {
@@ -305,7 +320,7 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
   A.eq(summonTool.name, 'team.summon', 'tool is team.summon');
   A.eq(summonTool.capability, 'orchestrator', 'gated by the orchestrator object (lead-only, like team.dispatch)');
   A.eq(summonTool.scope, 'write', 'summon is a write-scope mutation');
-  A.eq(summonTool.requiresConsent, true, 'summon IS consent-gated (the APPROVAL beat) — unlike team.dispatch');
+  A.eq(summonTool.requiresConsent, true, 'summon IS consent-gated (the APPROVAL beat) — like dispatch/spawn since 2026-07-14');
   A.ok(typeof summonTool.timeoutMs === 'number' && summonTool.timeoutMs > 120000, 'tool wall-clock outlasts the 120s summon ack backstop (clean null, not a tool timeout)');
 }
 

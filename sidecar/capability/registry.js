@@ -96,13 +96,14 @@
       { capId: 'workbench', tool: 'shell.bg.kill', scope: 'write', requiresConsent: false, network: false }      // H2.2: stop a background process you started
     ],
     // ORCHESTRATOR (Stage 2): grants team.dispatch — the LEAD delegates subtasks to summoned worker agents,
-    // each of which runs its OWN real agent loop. NO consent gate (internal orchestration of the user's own crew,
-    // not an outward mutation): the safety is the LEAD-ONLY conferral (the host adds this object ONLY to the
-    // watched browser-commanded run, so a delegated worker — autonomous — never receives the tool and cannot
-    // re-delegate, capping depth at one), plus the per-worker/day/global budget caps and the concurrency ceiling.
+    // each of which runs its OWN real agent loop. dispatch/spawn are CONSENT-GATED (2026-07-14, closes the parked
+    // P1 prompt-injection fork): fanning out autonomous budget-spending loops off text in the lead's context needs
+    // a human moment in 'ask' mode (session grants stop per-call fatigue; Full Access bypasses) — same semantics
+    // as team.summon. The LEAD-ONLY conferral still caps depth at one (the host adds this object ONLY to the
+    // watched browser-commanded run), plus the per-worker/day/global budget caps and the concurrency ceiling.
     orchestrator: [
-      { capId: 'orchestrator', tool: 'team.dispatch', scope: 'execute', requiresConsent: false, network: true },
-      { capId: 'orchestrator', tool: 'team.spawn', scope: 'execute', requiresConsent: false, network: true },
+      { capId: 'orchestrator', tool: 'team.dispatch', scope: 'execute', requiresConsent: true, network: true },
+      { capId: 'orchestrator', tool: 'team.spawn', scope: 'execute', requiresConsent: true, network: true },
       // team.summon CREATES a new crew member — a stronger, outward-visible mutation than delegating to existing
       // crew, so unlike team.dispatch it IS consent-gated (the APPROVAL-mode confirm beat). Lead-only by the same
       // orchestrator conferral; a delegated worker never gets the orchestrator object and so can never summon.
