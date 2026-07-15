@@ -982,6 +982,171 @@ const PropSprites = (() => {
     px(x + 8, y - 4, 1, 1, blink(1400, x) ? ACC.work : '#16302a'); // lid seal lamp
   };
 
+  /* ---- DECOR EXPANSION wave 2 (2026-07-15): grime + machinery + glow ---- */
+
+  F.graffiti = (x, y) => {   // phosphor spray stencil on the deck — pure paint, walk-over
+    const G = '#2a7a4e', H = '#41ff8a';
+    // overspray haze first (it is the floor)
+    ctx.globalAlpha = 0.14; px(x + 1, y + 2, 10, 8, G); ctx.globalAlpha = 1;
+    // stencil glyph: a crude rising-arrow tag, double-pass paint
+    px(x + 5, y + 2, 2, 1, G); px(x + 4, y + 3, 4, 1, G); px(x + 3, y + 4, 6, 1, G);
+    px(x + 5, y + 5, 2, 5, G);
+    px(x + 5, y + 3, 1, 1, H); px(x + 5, y + 5, 1, 3, H);       // heavier second coat
+    px(x + 2, y + 9, 3, 1, G); px(x + 8, y + 9, 2, 1, G);       // tag underline dashes
+    // drips running south off the glyph
+    px(x + 4, y + 5, 1, 2, G); px(x + 8, y + 5, 1, 3, G); px(x + 8, y + 8, 1, 1, '#1d5236');
+    wear(x + 3, y + 2, 7, 8, 4, '#242c30');                     // deck scuff eating the paint
+    if (blink(2200, x)) glow(x + 3, y + 2, 6, 8, H, 0.06);      // faint phosphor shimmer
+  };
+
+  F.drain = (x, y) => {   // recessed deck drain — grate, ring stain, slow drip sheen; walk-over
+    // recess ring
+    px(x + 2, y + 2, 8, 8, '#0c1013');
+    px(x + 2, y + 2, 8, 1, '#060a0d');                          // recess top shadow
+    px(x + 2, y + 9, 8, 1, '#242c30');                          // lip catch, south
+    // grate bars
+    for (let i = 0; i < 3; i++) px(x + 3, y + 3 + i * 2, 6, 1, '#232d33');
+    px(x + 3, y + 3, 1, 6, '#1a2126'); px(x + 8, y + 3, 1, 6, '#1a2126'); // side rails
+    px(x + 4, y + 3, 1, 1, '#39454d');                          // one lit bar end
+    // grime ring + old moisture stain reaching out
+    px(x + 1, y + 5, 1, 3, '#3a4440'); px(x + 10, y + 4, 1, 2, '#3a4440');
+    px(x + 4, y + 1, 3, 1, '#3a4440'); px(x + 5, y + 10, 2, 1, '#343c3a');
+    // slow drip sheen crossing the grate
+    const dp = Math.floor(((now / 1600) + x) % 6);
+    if (dp < 3) glow(x + 4 + dp, y + 3 + dp, 2, 1, '#4ad9ff', 0.18);
+  };
+
+  F.zapper = (x, y) => {   // standing bug-zapper lamp — violet coil in a cage, random zap flash
+    const r = RAMP.steel;
+    const zap = flick(60, x) > 0.93;                            // rare, sharp discharge
+    shadow2(x + 3, y + 10, 6);
+    // tripod base + pole
+    px(x + 3, y + 9, 2, 2, LINE); px(x + 7, y + 9, 2, 2, LINE);
+    px(x + 3, y + 9, 1, 1, r.lit); px(x + 7, y + 9, 1, 1, r.lit);
+    px(x + 5, y + 2, 2, 8, LINE); px(x + 5, y + 2, 1, 8, r.face);
+    // caged lantern head above
+    rr(x + 2, y - 8, 8, 10, LINE);
+    px(x + 3, y - 7, 6, 8, '#12101c');
+    px(x + 3, y - 8, 6, 1, r.top);                              // hood
+    px(x + 3, y, 6, 1, r.dk);                                   // catch tray
+    for (let i = 0; i < 3; i++) px(x + 3 + i * 2, y - 7, 1, 8, '#1e1a2c'); // cage bars
+    // the coil: violet standing glow, white-hot when it zaps
+    px(x + 6, y - 6, 1, 6, zap ? '#f2e6ff' : '#8a4ae0');
+    px(x + 6, y - 4, 1, 1, zap ? '#ffffff' : '#b47aff');
+    glow(x + 2, y - 8, 8, 10, '#8a4ae0', zap ? 0.45 : 0.14);
+    if (zap) { px(x + 4, y - 3, 1, 1, '#f2e6ff'); glow(x + 1, y - 9, 10, 12, '#b47aff', 0.20); } // arc jump
+    px(x + 3, y + 1, 2, 1, '#1a1420');                          // ash under the tray
+  };
+
+  F.floorfan = (x, y) => {   // caged shop fan on a heavy base — blades spin, head oscillates
+    const r = RAMP.gun;
+    const turn = Math.floor(now / 90) % 2;                      // blade strobe
+    const osc = Math.floor(((now / 2600) + x) % 3) - 1;         // -1..1 slow sweep
+    shadow2(x + 3, y + 10, 6);
+    rr(x + 3, y + 8, 6, 3, LINE);                               // base shoe
+    px(x + 4, y + 9, 4, 1, r.face); px(x + 4, y + 10, 4, 1, r.dk);
+    px(x + 5, y + 4, 2, 5, LINE); px(x + 5, y + 4, 1, 5, r.face); // neck
+    // round cage head, offset by the sweep
+    const hx = x + osc;
+    rr(hx + 2, y - 5, 8, 9, LINE);
+    px(hx + 3, y - 4, 6, 7, '#141a1e');
+    px(hx + 3, y - 4, 6, 1, r.lit);                             // rim catch
+    px(hx + 3, y - 1, 6, 1, '#232d33');                         // cage cross-strut
+    px(hx + 6, y - 4, 1, 7, '#232d33');
+    // blades: two-phase strobe behind the cage
+    const B = '#39454d';
+    if (turn) { px(hx + 4, y - 3, 2, 2, B); px(hx + 6, y, 2, 2, B); }
+    else { px(hx + 6, y - 3, 2, 2, B); px(hx + 4, y, 2, 2, B); }
+    px(hx + 6, y - 1, 1, 1, '#5f6f7a');                         // hub
+    px(x + 4, y + 8, 1, 1, blink(900, x) ? ACC.flow : '#2a2418'); // motor lamp
+  };
+
+  F.wirespool = (x, y) => {   // industrial cable spool on its side — coil spilling off; solid
+    const r = RAMP.gun;
+    shadow2(x + 1, y + 10, 10);
+    // spool flanges (two discs) + wound drum between
+    rr(x + 1, y + 1, 4, 10, LINE); px(x + 2, y + 2, 2, 8, '#4a3a28');
+    px(x + 2, y + 2, 2, 1, '#5e4a34'); px(x + 2, y + 9, 2, 1, '#332818');
+    rr(x + 7, y + 1, 4, 10, LINE); px(x + 8, y + 2, 2, 8, '#4a3a28');
+    px(x + 8, y + 2, 2, 1, '#5e4a34'); px(x + 8, y + 9, 2, 1, '#332818');
+    px(x + 5, y + 3, 2, 6, LINE); px(x + 5, y + 4, 2, 4, '#10161a');   // wound cable drum
+    px(x + 5, y + 4, 2, 1, '#232d33');                          // top wrap catch
+    px(x + 5, y + 6, 2, 1, '#0a0e11');                          // wrap seam
+    px(x + 2, y + 5, 1, 1, '#8a7434'); px(x + 9, y + 5, 1, 1, '#8a7434'); // axle bolts
+    wear(x + 2, y + 2, 8, 8, 3, '#2a2014');
+    // loose coil spilling east onto the deck
+    px(x + 10, y + 8, 2, 1, '#10161a'); px(x + 11, y + 9, 1, 2, '#10161a');
+    px(x + 9, y + 10, 2, 1, '#10161a');
+    px(x + 11, y + 9, 1, 1, blink(3000, x) ? ACC.data : '#10161a'); // live end winks, rarely
+  };
+
+  F.mopbucket = (x, y) => {   // janitor's rig — yellow bucket, leaning mop, wet sheen trail
+    shadow2(x + 3, y + 10, 6);
+    // wet trail first (it is the floor)
+    ctx.globalAlpha = 0.16; px(x, y + 8, 4, 2, '#4ad9ff'); px(x + 1, y + 10, 2, 1, '#4ad9ff'); ctx.globalAlpha = 1;
+    // bucket
+    rr(x + 3, y + 4, 6, 7, LINE);
+    px(x + 4, y + 5, 4, 5, '#8a7434');
+    px(x + 4, y + 5, 1, 5, '#a68c40');                          // lit stave
+    px(x + 7, y + 5, 1, 5, '#5e4c22');
+    px(x + 4, y + 5, 4, 1, '#141a1e');                          // grey water surface
+    px(x + 5, y + 5, 1, 1, '#39454d');                          // water glint
+    px(x + 4, y + 7, 4, 1, '#5e4c22');                          // wringer band
+    px(x + 3, y + 10, 6, 1, '#3a3010');                         // bucket foot
+    px(x + 4, y + 6, 1, 1, '#141414');                          // stencil mark
+    // mop leaning against it, head down
+    px(x + 8, y - 5, 1, 11, '#3a2c20');                         // handle
+    px(x + 8, y - 6, 1, 1, '#5e4a34');                          // handle cap
+    px(x + 7, y + 6, 3, 2, '#6a7888');                          // mop head strings
+    px(x + 7, y + 8, 1, 1, '#8a98a8'); px(x + 9, y + 8, 1, 1, '#8a98a8');
+    if (blink(2000, x)) px(x + 2, y + 9, 1, 1, '#4ad9ff');      // stray drip
+  };
+
+  F.starchart = (x, y) => {   // deck projector casting a wheeling holo constellation — flat, walk-over
+    // low emitter puck bolted to the deck
+    rr(x + 4, y + 7, 4, 3, LINE);
+    px(x + 5, y + 8, 2, 1, '#232d33'); px(x + 5, y + 9, 2, 1, '#141a1e');
+    px(x + 5, y + 8, 1, 1, ACC.data);                           // emitter eye
+    // projection cone
+    glow(x + 3, y + 2, 6, 6, ACC.data, 0.08);
+    glow(x + 4, y + 4, 4, 4, ACC.data, 0.08);
+    // five stars wheeling around the cone's axis on slow, offset clocks
+    for (let i = 0; i < 5; i++) {
+      const a = now / 3400 + i * 1.257 + x;                     // ~17s revolution
+      const sx = x + 5 + Math.round(Math.cos(a) * (2 + (i % 2)));
+      const sy = y + 3 + Math.round(Math.sin(a) * 1.6);
+      px(sx, sy, 1, 1, (i === 2) ? '#bfeaff' : ACC.data);       // one brighter primary
+      if (i === 2) glow(sx - 1, sy - 1, 3, 3, ACC.data, 0.25);
+    }
+    // a connecting line of the constellation, flickering like weak signal
+    if (blink(160, x)) px(x + 4, y + 3, 3, 1, '#1c4a5e');
+  };
+
+  F.steampipe = (x, y) => {   // deck pipe elbow venting periodic steam — bolted machinery; solid
+    const r = RAMP.steel;
+    const vent = ((now / 2800) + x * 0.13) % 1 < 0.28;          // periodic release
+    shadow2(x + 2, y + 10, 8);
+    deckPlate(x + 2, y + 8, 8, 3);
+    // riser + elbow turning east
+    px(x + 3, y - 2, 4, 10, LINE);
+    px(x + 4, y - 1, 2, 9, r.face);
+    px(x + 4, y - 1, 1, 9, r.lit);
+    px(x + 4, y - 2, 5, 3, LINE); px(x + 5, y - 1, 4, 1, r.face); // elbow arm
+    px(x + 4, y + 2, 2, 1, '#0a0e11'); px(x + 4, y + 5, 2, 1, '#0a0e11'); // pipe joints
+    px(x + 3, y + 2, 1, 1, '#8a7434'); px(x + 6, y + 5, 1, 1, '#8a7434'); // flange bolts
+    px(x + 8, y - 1, 1, 1, '#0a0e11');                          // open vent mouth
+    px(x + 4, y + 6, 2, 1, '#5e3a1a');                          // rust bleed at the base
+    // pressure needle gauge
+    px(x + 2, y, 2, 2, '#141a1e'); px(x + 2, y, 1, 1, vent ? ACC.alert : ACC.work);
+    // steam puffs drifting up-east while venting
+    if (vent) {
+      const ph = Math.floor(now / 220) % 3;
+      glow(x + 9, y - 2 - ph, 2, 2, '#c8d4e0', 0.30);
+      glow(x + 10, y - 4 - ph, 2, 2, '#c8d4e0', 0.18);
+      glow(x + 10, y - 7 - ph, 3, 2, '#c8d4e0', 0.10);
+    }
+  };
+
   F.commswall = (x, y, w, h) => {   // v2 freestanding: long comms rack ROW on stub feet (was a wall mural)
     const r = RAMP.steel;
     shadow2(x + 2, y + h - 1, w - 4);
@@ -4920,6 +5085,15 @@ const PropSprites = (() => {
     { id: "tallplant", label: "TALL PLANT", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: true },
     { id: "banner", label: "BANNER", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false },
     { id: "terrarium", label: "TERRARIUM", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: true },
+    // DECOR EXPANSION wave 2 (2026-07-15) — grime + machinery + glow. Flat paint walk-over; solid bodies block.
+    { id: "graffiti", label: "GRAFFITI", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false },
+    { id: "drain", label: "DECK DRAIN", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false },
+    { id: "zapper", label: "ZAPPER", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false },
+    { id: "floorfan", label: "FLOOR FAN", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: true },
+    { id: "wirespool", label: "WIRE SPOOL", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: true },
+    { id: "mopbucket", label: "MOP BUCKET", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: true },
+    { id: "starchart", label: "STAR CHART", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false },
+    { id: "steampipe", label: "STEAM PIPE", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: true },
   ];
   const BY_ID = {};
   for (const c of CATALOG) BY_ID[c.id] = c;
