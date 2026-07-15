@@ -1,5 +1,40 @@
 # NEXT.md — current priorities & task queue
 
+## 2026-07-14 — COMPREHENSIVE AUDIT ATTACK-ORDER (lane `claude/starnet-audit-80a98c`, Andrew-approved sequence)
+
+Five-agent audit + the approved fix sequence, all lane-committed (digest lands in qa/STATUS.md at merge):
+- **QA watch RE-ARMED on the new PC**: `schtasks` had ZERO StarNet tasks (the EL-0 registrations died with
+  the old machine). Re-registered via `scripts/qa/register-watch.ps1 -Apply` against the integration tree
+  (Guardian-Hourly / Beginner-Daily / Janitor-Weekly, verified in the scheduler) + a fresh manual cycle:
+  **GREEN all 6 gates** @ trunk `38818fbc` (guardian-20260715-023723) — replaces the unreproducible
+  21-commit-stale RED snapshot whose evidence was gitignored and absent.
+- **Stranded-work rescue commits**: meeseeks sprite layer (`7091cabd` on agent/meeseeks-subagents) and
+  growth-t4 anti-nag iteration (`d4a75a6f` on agent/growth-t4) — both existed ONLY as uncommitted diffs;
+  `archive/*-rescue-2026-07-14` tags pinned. Their PORT queue items below remain open.
+- **Channel-secrets verified persist** (the audit's P1): saveChannelSecrets rides saveJsonVerified
+  (read-back proof); connect/sync routes surface `persisted`; disconnect never claims `purged` unproven;
+  notify's 500 guard now reachable. EL-3 failing scenario locked in channels.secrets.test.
+- **Last-hop surfaces**: BUDGET pool-cap RESUME (/api/budget/resume) · NIGHT SHIFT FOCUS + STEER
+  (live-DOM round-trips proven: steer set/clear, marker rides the LIVE steered bit) · AUTONOMY LIVE
+  HELPERS + STOP (/api/subagents/interrupt) · world.js pollFeedState reads bulk /api/channels/status
+  (slack/matrix/signal-only floors no longer falsely nagged NO FEED).
+- **team.dispatch/team.spawn now consent-gated** (closes the parked P1 prompt-injection fork; Andrew
+  approved via the audit attack-order): APPROVAL beat in 'ask' mode, Full Access bypasses — summon parity;
+  registry + tool defs flipped together, test-locked (orchestration 116).
+- **W0/pp branch-mass verdict (NON-destructive)**: the ~65-branch W0/pp complex is a LIVE lane, not
+  abandonware (`agent/w0-*`/`w1-*` all sit in checked-out worktrees; `agent/pp-*` W2 work = preserved refs
+  per the W0 checkpoint below) — left to the w0-claims-verdict lane owner. The 11 self-labeled
+  `codex/snapshot-w0-*` / `codex/rejected-w0-*` insurance branches ARE inert: tips pinned under
+  `archive/codex/...` tags — safe to delete those branches whenever Andrew signs off (tags keep the SHAs).
+
+STILL OPEN from the audit (unclaimed): codex OAuth refresh token keychain home (the one plaintext-only
+credential) · web_fetch/channel-content untrusted-content fence (recall/MCP have one; the highest-volume
+input doesn't) · IPC_TOKEN constant-time compare · index.js channel-route dedup (~9× repeated persist
+shape) · nightshiftPrecheck fails OPEN on exception (budget gate off on throw) · Cartographer re-sweep +
+re-bless (187 perfected all stale; props/events/routes areas never mapped) · fresh installed-exe smoke
+stamp for qa:ready · remaining orphaned routes (workshop/shift, nightshift/beat force-fire, config/reset,
+execution view, threads-ledger browse).
+
 ## 2026-07-13 — FLAGSHIP WAVE: last-hop surfaces + cross-wiring (branch `claude/flagship-features-audit-d0e1a1`)
 
 Three-agent code audit of the flagship trio (autonomy / quests / recommendations) found the engines
