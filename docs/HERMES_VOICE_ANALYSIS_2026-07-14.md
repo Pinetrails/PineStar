@@ -25,6 +25,40 @@ stub; `api_server.py` hardcodes `"realtime_voice": false`).
 **So "Hermes sounds decent, ours is terrible" is not the pipeline. It's four feel factors
 plus two self-inflicted degrade traps on our side.**
 
+## The defining principle: voice is a STATION subsystem, never a model property
+
+Andrew's observation (2026-07-14): Hermes works fluidly with any model. Correct — and the
+reason is structural: Hermes' voice stack is **fully decoupled from the LLM**. TTS provider
+is config (default = free keyless Edge), STT provider is config (default = local Whisper);
+the agent brain can be anything. StarNet v3 did the opposite on purpose: the `/api/tts`
+chain prefers the RUN provider's native voice API (`preferProvider`), and `/api/stt` rides
+OpenRouter/Gemini chat models. Consequence: an Anthropic-only or Codex station has **no
+audio API at all** → robotic browser voice + no desktop STT. Voice quality varies with
+which brain you picked. That coupling is the root defect, not any single provider branch.
+
+**The replication bar (Andrew: "we get it right or we remove voice mode entirely"):**
+1. Voice works IDENTICALLY on every station regardless of roster model or credential mix —
+   including an Anthropic-only station and a zero-key fresh install.
+2. The robotic speechSynthesis voice becomes unreachable. Once a free neural floor exists,
+   "get it right or remove it" applies to the robotic fallback: if every neural tier fails
+   (total network loss), degrade to TEXT + honest speaker-tooltip reason — silence over
+   cringe. Delete the speechSynthesis speak path (keep the synth object only for feature
+   detection).
+3. ONE station voice identity survives every tier. Bit-identical timbre across providers is
+   impossible (OpenAI branch already approximates Algenib with onyx); identity is carried by
+   (a) nearest-voice mapping per tier and (b) the machine-shell DSP, which is client-side
+   and applies to ALL tiers including Edge. Same character, occasionally a different actor —
+   never a different species.
+4. Acceptance matrix, live-proven per starnet-verify (not existence-audited): stations with
+   {gemini key, openai key, openrouter key, anthropic-only, zero-key} × {speak reply,
+   hands-free round-trip} — 10 cells, all neural, all transcribing.
+
+**Feasibility (verified on npm 2026-07-14):** Edge floor = `msedge-tts` 2.0.7 (maintained,
+2026-07-09; free MS Read-Aloud endpoint, no key/no Edge install). Local STT floor =
+`sherpa-onnx-node` 1.13.4 (2026-07-07, offline ASR, prebuilt per-platform) or
+`nodejs-whisper` (whisper.cpp). Local model ≈75–150MB — download on first voice-mode use
+with a progress line, never bundled in the installer.
+
 ## What Hermes actually does better (the copy list, ranked)
 
 ### 1. Real ASR endpoints for STT — our single biggest latency+accuracy gap
@@ -118,10 +152,13 @@ melodic. This needs Andrew's taste call on the bed itself; the acks don't.
 Python-local models as a hard dependency. Off-moat breadth; we want the feel, not the fleet.
 
 ## Suggested lane order (each independently shippable, test-gated)
-1. **V-STT** — dedicated ASR chain in `/api/stt` (Groq/OpenAI Whisper first, chat-model
-   fallback). Backend-only. Biggest perceived-latency win.
-2. **V-EDGE** — free neural fallback tier in `/api/tts` (spike msedge-tts first). Kills the
-   robotic voice for no-key/billing/transient states. Un-latch `ttsDisabled` as part of it.
+1. **V-STT** — dedicated ASR chain in `/api/stt`: Groq/OpenAI Whisper when those keys
+   exist → current chat-model path (OpenRouter/Gemini creds) → **local sherpa-onnx/whisper
+   floor** (on-demand model download) so zero-key/Anthropic-only stations still transcribe.
+   Backend-only. Biggest perceived-latency win + closes the STT half of the decoupling bar.
+2. **V-EDGE** — free neural floor in `/api/tts` via msedge-tts, nearest-Algenib Edge voice
+   + client-side shell DSP; un-latch `ttsDisabled`; **delete the robotic speechSynthesis
+   speak path** (text + tooltip is the terminal degrade). Closes the TTS half of the bar.
 3. **V-ACK** — spoken ack on first tool call from prewarmed cache + ducking. Frontend.
 4. **V-HYGIENE** — VAD confirm stage, quiet-take discard, hallucination filter, sentence
    de-dupe, single chunker.
