@@ -1,5 +1,21 @@
 # NEXT.md — current priorities & task queue
 
+## 2026-07-15 — PROVIDER COMPATIBILITY (lane `claude/starnet-provider-compatibility-24131e`, MERGED `29fa54e2`)
+
+The "all providers properly compatible?" audit's four concrete wire risks are FIXED on the shared
+openai-compatible seam (digest in qa/STATUS.md): reasoning_effort reaches the wire (was silently
+dropped); unsupported-param self-heal (400/422 naming an optional param → strip + retry, per-model
+memo; `tools` NEVER silently dropped); Perplexity `supportsTools:false` from the profile → task runs
+refuse up front; xAI `usage.cost_in_usd_ticks` normalized in cost.js (REAL field, 1 USD = 1e10 ticks).
+Capability facts sourced from official provider docs 2026-07 (registry.js wire hints carry citations).
+- [ ] **REAL-KEY certification matrix per advertised provider** (the audit's honest ask, still
+      env-blocked — no live credentials in dev): model list → streamed chat → tool task → cancel →
+      usage/cost reconcile → restart/auth persistence → one autonomous cycle. Needs Andrew's keys;
+      folds the older scattered "first real-provider cycle" items into one gate.
+- [ ] Perplexity has no usable /models catalog on its chat endpoint (its /v1/models lists Agent-API
+      models) — consider a small static Sonar model table (codex.js precedent) so the connect screen
+      isn't empty; facts go stale, so keep it minimal + dated.
+
 ## 2026-07-14 — COMPREHENSIVE AUDIT ATTACK-ORDER (lane `claude/starnet-audit-80a98c`, Andrew-approved sequence)
 
 Five-agent audit + the approved fix sequence, all lane-committed (digest lands in qa/STATUS.md at merge):
