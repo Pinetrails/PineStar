@@ -66,7 +66,7 @@ belts are walkable floor machinery by contract. `airlock` (a door) and `missionb
 ## Status
 
 - **Stage 1 (done):** model + module + first props; place/move/reclaim/undo/persist + blocking.
-- **Stage 2+3 (done):** all **103** currently placeable procedural props are registered in the
+- **Stage 2+3 (done):** all **111** currently placeable procedural props are registered in the
   authoritative `CATALOG`, with v7-authentic footprints and a category-grouped palette
   (work/ops/lab/storage/comms/lounge/decor), `blocks:false` decor. The catalog-to-renderer contract
   and all 95 entries are checked headlessly; the original 84-prop browser pass remains historical
