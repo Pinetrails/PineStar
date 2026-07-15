@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "b3fb6c13dc60b3bbc45b95b85e93b27112c21841",
+    "sourceCommit": "20d2a7f52521cb6c8d279857d4671002479bb2cf",
     "pathSetSha256": "11a2ff1e8ccd7ca7503a7d3a57bf51e4d0c7f5aeebda7d500a3c3bb7b174ea6e",
     "files": [
       {
@@ -63,8 +63,8 @@
       },
       {
         "path": "frontend/app/app.js",
-        "bytes": 250892,
-        "sha256": "d03b2cdb7c42b0abaa1d1847cdf76093a13cbfef2227dd39f19561c8b26acad0"
+        "bytes": 250946,
+        "sha256": "6e838b41048b905d88c23d3211aa464c101d4ad2f583326ccceea2227335bb3a"
       },
       {
         "path": "frontend/app/armconfirm.js",
@@ -133,8 +133,8 @@
       },
       {
         "path": "frontend/app/chat.js",
-        "bytes": 372424,
-        "sha256": "cf0351e21b52d0fe91154e6fa249155c1efd33443898854c50611c178ef3d7e1"
+        "bytes": 372353,
+        "sha256": "f0e7d9a5faf51127cfcd061b13c65cca8473c337787db8762f3cf789cfc75888"
       },
       {
         "path": "frontend/app/chatresize.js",
@@ -618,8 +618,8 @@
       },
       {
         "path": "frontend/app/stationui.js",
-        "bytes": 436199,
-        "sha256": "b152bed86831c692507f617b601fc59d946a1a97c0614e5e5efdc4d91bf47ff8"
+        "bytes": 437053,
+        "sha256": "856faf278aeea5c136e648e844c6c37598da8c87b9163feb3ab186822880b680"
       },
       {
         "path": "frontend/app/study.js",
@@ -663,8 +663,8 @@
       },
       {
         "path": "frontend/app/topbar.js",
-        "bytes": 5699,
-        "sha256": "17195e375ab54bd433f4137f42065d4df2efd87613367446d95d9ef7bd891b5c"
+        "bytes": 5995,
+        "sha256": "fd7cc485ef01eb62c403db9bbee0cf5925c3efec65f734d813b5b2ff4ba43130"
       },
       {
         "path": "frontend/app/trophies.js",
@@ -683,8 +683,8 @@
       },
       {
         "path": "frontend/app/tutorial.js",
-        "bytes": 64557,
-        "sha256": "bf6f5bc78028323e623f3029d086590a531f3cfce18e65fd1464d2aae2c98efb"
+        "bytes": 65298,
+        "sha256": "c1efdc3cc68f479a549a45af2e5cfddd862993307917ad494db7e26e1b7d3786"
       },
       {
         "path": "frontend/app/understanding.js",
