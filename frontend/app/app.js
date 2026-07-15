@@ -2447,7 +2447,13 @@ const App = (() => {
         // Posting the nudge synchronously would clearNudge()/clearChoices() an in-flight answer on a live beat
         // (e.g. the per-draft "show me" chip) mid-press — the very tap that woke the digest would be eaten.
         setTimeout(showBeat, 400);
-      }
+      },
+      // RETURN RE-PRESENT (2026-07-14): the digest above composes from the LOCAL draft log, which the
+      // server-owned night-shift act path never writes — so a build that landed while away was announced
+      // to an empty room and never re-offered ("I sat here for hours and it never told me what it did").
+      // On a genuine return, re-offer the oldest still-UNDECIDED workshop deliverable as the return card
+      // (Chat.workshopReturn defers behind the digest nudge/live beats, so the one-beat law holds).
+      onReturn: () => { try { if (typeof WorkshopStore !== 'undefined' && WorkshopStore.presentOnReturn) WorkshopStore.presentOnReturn(); } catch (_) {} }
     });
     if (typeof Voice !== 'undefined') Voice.init({ name: agent.name, personaId: agent.personaId, resumeCue: !opts.awaitingPurpose });   // mic + this agent's per-persona voice; offer hands-free resume except during the awakening
     if (typeof ModelDock !== 'undefined') ModelDock.init({ apply: applyQuickModel });

@@ -1921,6 +1921,10 @@ const Chat = (() => {
       setTimeout(() => workshopReturn(m, opts, t + 1), t < 25 ? 7000 : 60000);
       return;
     }
+    // ONE LIVE CARD PER DELIVERABLE (2026-07-14): an undecided card may be RE-offered (return-from-away,
+    // next-session attach) until decided — drop the stale instance first so the feed never holds two live
+    // cards for the same runId (deciding one would strand a dead twin whose decide can only fail).
+    try { const stale = log.querySelector('.workshop-return[data-wsrun="' + String(m.runId).replace(/["\\]/g, '') + '"]'); if (stale) stale.remove(); } catch (_) {}
     const agentId = m.agentId || 'agent';
     const who = (agentId === 'agent') ? name : agentId;
     // W7 — the Commander receives a TOOL, not a repo. If the deliverable has a web entry point (index.html
@@ -1948,6 +1952,7 @@ const Chat = (() => {
       if (!win) warn('your browser blocked the new tab — allow popups for the station, then try again');
     };
     const r = row('agent'); r.d.classList.add('tool'); r.d.classList.add('turnin'); r.d.classList.add('workshop-return');
+    try { r.d.setAttribute('data-wsrun', String(m.runId)); } catch (_) {}   // the re-present dedupe key (above)
 
     // ── collapsed headline (one glance) ──
     const title = document.createElement('span'); title.className = 'turnin-title';
