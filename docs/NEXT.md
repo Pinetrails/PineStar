@@ -35,6 +35,18 @@ re-bless (187 perfected all stale; props/events/routes areas never mapped) · fr
 stamp for qa:ready · remaining orphaned routes (workshop/shift, nightshift/beat force-fire, config/reset,
 execution view, threads-ledger browse).
 
+RE-ARMED-WATCH FALLOUT (found by the watch itself, 2026-07-15 — both are INSTRUMENT-environment, not
+product; the same commit passes all suites in interactive shells):
+- [ ] **Hourly Guardian RED @ every cycle until fixed**: `test/shell-machine-state.test.js` fails ONLY
+      under the Task-Scheduler context ("host accepts safe inline Start-Process -FilePath:cmd.exe form —
+      expected 0, got 9"; guardian-20260715-040003, test-fast step 66/325; http-e2e/shoot/golden/audit/
+      journeys all green same cycle). Fix = make the suite (or the guardian task's execution context)
+      interactive-agnostic; until then the hourly row RED means THIS, not a product regression.
+- [ ] **Integration-tree test:fast stalls at the 600s wrapper** right after lint-evidence-secrets
+      (reproduced 2× at 70cdc178; the known `.dogfood` bloat). Gate trunk commits in a clean worktree
+      FF'd to the same SHA (receipt pattern used for this merge). Real fix = product-perfect lane makes
+      the claims step skip-honestly when `.dogfood` is absent + the scanner step bounded.
+
 ## 2026-07-14 — ADVERSARIAL SWEEP: interrupt/disconnect seams (branch `agent/adversarial-sweep`)
 
 Fresh-eyes skeptical sweep of the seams happy-path QA is blind to (full ledger with repro steps:
