@@ -1548,7 +1548,7 @@
       "surfaceLocators": [
         {
           "path": "frontend/app/stationui.js",
-          "needle": "even with this window (and the app) closed"
+          "needle": "even with this window closed, as long as the station app is running"
         }
       ],
       "authorityChecks": [
@@ -1565,7 +1565,7 @@
       "verdict": "REFUTED",
       "disposition": "NARROW",
       "ownerWave": "W5",
-      "qualification": "The product is one sidecar owned by the app; closing the app ends it.",
+      "qualification": "The product is one sidecar owned by the app; closing the app ends it. Surface copy narrowed to the honest promise (trunk acfd82b5, 2026-07-15).",
       "liveProofRequired": true,
       "liveProof": "PENDING",
       "refsChecked": [
@@ -2553,12 +2553,12 @@
       "verdict": "REFUTED",
       "disposition": "NARROW",
       "ownerWave": "W5",
-      "qualification": "Single-process desktop ownership means close stops the sidecar; this is a copy-honesty fix.",
+      "qualification": "Single-process desktop ownership means close stops the sidecar; this is a copy-honesty fix. Landed: trunk acfd82b5 (2026-07-15).",
       "authorityChecks": [
         {
           "kind": "contains",
           "path": "frontend/app/stationui.js",
-          "needle": "even with this window (and the app) closed"
+          "needle": "even with this window closed, as long as the station app is running"
         },
         {
           "kind": "absent",
