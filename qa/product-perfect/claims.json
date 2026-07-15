@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "64f58da43a459ccad78d56195456183a8f49e2f1",
+    "sourceCommit": "73b186a17451034972126a356477d854209b6572",
     "pathSetSha256": "11a2ff1e8ccd7ca7503a7d3a57bf51e4d0c7f5aeebda7d500a3c3bb7b174ea6e",
     "files": [
       {
@@ -198,8 +198,8 @@
       },
       {
         "path": "frontend/app/data-shim.js",
-        "bytes": 2421,
-        "sha256": "c73ccc1c57cdc867e455f89041cdee3abb0a5f3c2821535c72cedfa4c52748a6"
+        "bytes": 2579,
+        "sha256": "f7425d1602353ad8237151333c756915e866bb596469badddbd0bde8433fc32a"
       },
       {
         "path": "frontend/app/diagnostics.js",
