@@ -41,6 +41,7 @@ const Marketplace = (() => {
   let pendingCardAnim = false;                   // play the staggered card-entrance ONCE per open/tab-switch, not on every filter/search rebuild
   let pickedSummonSkin = null;
   let pickedSummonModel = null;   // SUMMON-only per-agent model choice: { model, provider, effort } or null = inherit the orchestrator's
+  let pickedSummonName = '';      // SUMMON-only agent NAME typed in the config strip ('' = default to the class name)
   let focusAgent = null, focusRecipe = null;     // the spec/recipe id shown in the dossier (per tab)
   let laneFilter = 'all';                        // 'all' | 'code' | 'research' | 'general'  (AGENTS tab)
   let archiveOpen = false;                       // SPECIALIST ARCHIVE (deep-cut archetypes) — collapsed by default
@@ -210,6 +211,7 @@ const Marketplace = (() => {
     scoutLogOpen = false;
     pickedSummonSkin = null;
     pickedSummonModel = null;
+    pickedSummonName = '';
     const builtins = Specialties.builtins();
     focusAgent = (ctx.currentSpecialtyId && Specialties.get(ctx.currentSpecialtyId)) ? ctx.currentSpecialtyId : (builtins[0] && builtins[0].id) || null;
     focusRecipe = hasRecipes() ? ((Recipes.builtins()[0] && Recipes.builtins()[0].id) || null) : null;
@@ -593,12 +595,13 @@ const Marketplace = (() => {
       '<button type="button" class="mkt-cfg-head" aria-expanded="' + (summonConfigOpen ? 'true' : 'false') + '">' +
         '<span class="mkt-cfg-caret" aria-hidden="true">' + (summonConfigOpen ? '▾' : '▸') + '</span>' +
         '<span class="mkt-cfg-ttl">SUMMON CONFIG</span>' +
-        '<span class="mkt-cfg-sum"><span class="mkt-cfg-k">SKIN</span> ' + esc(summonSkinName()) +
+        '<span class="mkt-cfg-sum"><span class="mkt-cfg-k">NAME</span> ' + (pickedSummonName ? esc(pickedSummonName) : 'class name') +
+          ' <span class="mkt-cfg-k">SKIN</span> ' + esc(summonSkinName()) +
           ' <span class="mkt-cfg-k">MODEL</span> ' + modelSummary + '</span>' +
       '</button>';
     if (!summonConfigOpen) return '<div class="mkt-cfg">' + head + '</div>';
     return '<div class="mkt-cfg open">' + head +
-      '<div class="mkt-cfg-body">' + summonSkinBarHTML() + summonModelBarHTML() + '</div></div>';
+      '<div class="mkt-cfg-body">' + summonNameBarHTML() + summonSkinBarHTML() + summonModelBarHTML() + '</div></div>';
   }
   function summonSkinName() {
     const id = (pickedSummonSkin && typeof DATA !== 'undefined' && DATA.SKINS && DATA.SKINS[pickedSummonSkin]) ? pickedSummonSkin : (typeof DATA !== 'undefined' ? DATA.DEFAULT_SKIN : '');
@@ -635,6 +638,15 @@ const Marketplace = (() => {
     html += customs.length ? '<div class="mkt-grid mkt-rows">' + customs.map(recipeCardHTML).join('') + '</div>'
       : '<div class="mkt-empty">no saved recipes here yet — ＋ save one, TWEAK any recipe, or ⇪ IMPORT from a file.</div>';
     return html;
+  }
+
+  // SUMMON-only: type the new agent's NAME (optional — blank inherits the class name, the pre-existing default).
+  // Normalized exactly like the dossier rename (single-spaced, UPPER, ≤18) so a named-at-summon agent is
+  // indistinguishable from a renamed one; the maxlength mirrors the ≤18 design cap.
+  function summonNameBarHTML() {
+    if (!(ctx && ctx.mode === 'pick' && ctx.summon)) return '';
+    return '<div class="mkt-skinbar mkt-namebar"><label class="mkt-skinlabel" for="mkt-summon-name">NAME <span class="mkt-hint">— what this agent answers to (blank = the class name)</span></label>' +
+      '<input class="mkt-in" id="mkt-summon-name" type="text" maxlength="18" autocomplete="off" spellcheck="false" placeholder="class name" value="' + esc(pickedSummonName) + '"></div>';
   }
 
   // SUMMON-only: pick the new agent's APPEARANCE (its own choice — independent of class). A LIVE preview
@@ -1377,6 +1389,11 @@ const Marketplace = (() => {
     const recipeSaveas = stage.querySelector('.mkt-recipe-saveas');
     if (recipeSaveas) recipeSaveas.addEventListener('click', () => { sfx('click'); pendingMintKey = null; pendingMintTemplate = null; pendingScoutRecipeId = null; scoutSeedDraft = null; enterRecipeEditor(null, 'create'); });
 
+    // SUMMON name field: track keystrokes into pickedSummonName (survives the strip's collapse/expand re-renders).
+    // No renderStage on input — a re-render would blow away the focused field mid-typing.
+    const nameIn = stage.querySelector('#mkt-summon-name');
+    if (nameIn) nameIn.addEventListener('input', () => { pickedSummonName = nameIn.value; });
+
     const skinWrap = stage.querySelector('#mkt-skin-picker');
     if (skinWrap) {
       skinWrap.querySelectorAll('.skin-thumb').forEach(b => {
@@ -1519,7 +1536,7 @@ const Marketplace = (() => {
           const s = Specialties.get(deployBtn.dataset.id); if (!s) return;
           sfx('click');
           if (ctx.onPick) {
-            if (ctx.summon) ctx.onPick(Object.assign({}, s, { skin: pickedSummonSkin || (typeof DATA !== 'undefined' && DATA.DEFAULT_SKIN), modelPin: pickedSummonModel || null }), { activate: true });
+            if (ctx.summon) ctx.onPick(Object.assign({}, s, { skin: pickedSummonSkin || (typeof DATA !== 'undefined' && DATA.DEFAULT_SKIN), modelPin: pickedSummonModel || null, agentName: (pickedSummonName || '').trim() || null }), { activate: true });
             else ctx.onPick(s);
           }
           close();

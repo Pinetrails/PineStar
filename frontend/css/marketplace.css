@@ -682,6 +682,9 @@ button.mkt-archive-head:focus-visible { outline: 2px solid var(--gold); outline-
 /* inside the config body the bars lose their own frames — the strip already IS the frame */
 .mkt-cfg-body .mkt-skinbar { margin: 0 0 10px; padding: 0; border: 0; background: none; box-shadow: none; }
 .mkt-cfg-body .mkt-skinbar:last-child { margin-bottom: 0; }
+/* SUMMON NAME field: uppercase echo matches the ≤18 UPPER normalization the summon actually applies */
+.mkt-namebar .mkt-in { max-width: 320px; margin-top: 6px; text-transform: uppercase; letter-spacing: 1px; }
+.mkt-namebar .mkt-in::placeholder { text-transform: none; letter-spacing: .3px; color: var(--ph-dim); }
 
 /* ---- SUMMON commit summary: the confirm row above the CTA (skin thumb + model/effort + class code) ---- */
 .mkt-commit { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; padding: 8px 11px; margin-bottom: 9px;

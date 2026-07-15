@@ -730,8 +730,12 @@ const App = (() => {
     // TIER hint (reasoning/balanced/fast) shown on the class card. Setting provider+effort alongside the model also
     // fixes the prior gap where a summoned agent inherited only the hero's model, leaving provider/effort unset.
     const pin = (spec && spec.modelPin) || null;
+    // NAME: an explicit creation-time pick (bay spec.agentName — a DISTINCT key so the class name spec.name keeps
+    // driving specialty/id derivation) beats the class-name default. Normalized to the exact shape setAgentName
+    // mints (single-spaced, UPPER, ≤18) so a named-at-summon agent is indistinguishable from a renamed one.
+    const nm = String((spec && (spec.agentName || spec.name)) || 'AGENT').replace(/\s+/g, ' ').trim().toUpperCase().slice(0, 18) || 'AGENT';
     const a = {
-      id, name: ((spec && spec.name) || 'AGENT').toUpperCase().slice(0, 18), role: 'specialist',   // summoned crew are specialists under the Orchestrator
+      id, name: nm, role: 'specialist',   // summoned crew are specialists under the Orchestrator
       color: SUITS[agents.size % SUITS.length], skin: (spec && spec.skin) || DATA.DEFAULT_SKIN,
       model: (pin && pin.model) || agent.model,
       provider: (pin && pin.provider) || agent.provider || null,
