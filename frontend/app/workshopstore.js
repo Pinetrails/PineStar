@@ -16,10 +16,16 @@
      • Decided-once: a Keep or Discard drops the manifest from pending server-side; a Later just dismisses
        the card for this session (it may return next session). A locally-seen ledger keeps a single page
        session from re-showing the same card if a poll races. Dismissed = gone, the anti-nag law.
+     • UNDECIDED = still owed (2026-07-14): the seen/later ledger is SESSION-scoped, in-memory only. It
+       used to persist to localStorage, so a deliverable whose card rendered once — usually to an empty
+       room, since night-shift builds land while the Commander is away BY DEFINITION — was filtered out
+       of every future attach poll: pending server-side, invisible forever ("it never tells me what it
+       did"). Now an undecided deliverable re-presents every session until the Commander DECIDES; only
+       Keep/Discard (server-side) or Later (this session) silence it.
      • Fail-open: any fetch error → no beat (never a fabricated card, never a thrown error at attach).
 
-   NO U.bus emits. Self-persists a tiny "shown this session / declined-later" ledger to its own key
-   (rides the backup prefix like returnstore/mintstore) — no save.js change. node-exportable for its test.
+   NO U.bus emits. The ledger is deliberately NOT persisted (see above); reset() still clears the legacy
+   key a pre-fix session may have left behind. node-exportable for its test.
 
    The W1/W2 backend is LIVE on trunk (routes /api/workshop/grant|queue|pending|decide|shift|backlog), so
    this store talks to the real sidecar only — no dev stub. */
@@ -33,8 +39,10 @@ const WorkshopStore = (() => {
   let enabled = true;             // false during the awakening (init enabled:false) — live pushes stay silent
   let wired = false;              // the workshop.built live listener is installed once
 
-  function load() { try { const raw = localStorage.getItem(KEY); return raw ? JSON.parse(raw) : null; } catch (_) { return null; } }
-  function save() { try { if (state) localStorage.setItem(KEY, JSON.stringify(state)); } catch (_) {} }
+  // SESSION-SCOPED by design (2026-07-14): load() never reads a prior session's ledger and save() writes
+  // nothing — persisting seen/later was the bug that made undecided deliverables permanently invisible.
+  function load() { return null; }
+  function save() {}
   function hydrate(raw) {
     const s = (raw && typeof raw === 'object' && !Array.isArray(raw)) ? raw : {};
     return {
@@ -52,7 +60,8 @@ const WorkshopStore = (() => {
   // is injected by app.js; absent → just the hero.
   function agentIds() { try { const a = deps.agentIds ? deps.agentIds() : null; return (Array.isArray(a) && a.length) ? a : ['agent']; } catch (_) { return ['agent']; } }
 
-  async function fetchPending() {
+  // every agent's undecided manifests, unfiltered — the shared read under fetchPending/presentOnReturn.
+  async function fetchRaw() {
     let list = [];
     for (const id of agentIds()) {
       try {
@@ -64,6 +73,11 @@ const WorkshopStore = (() => {
       } catch (_) { /* fail-open: this agent just contributes nothing */ }
     }
     if (!ready()) state = hydrate(load());
+    return list;
+  }
+
+  async function fetchPending() {
+    const list = await fetchRaw();
     return list.filter(m => m && m.runId && !state.later[m.runId] && state.seen.indexOf(m.runId) === -1);
   }
 
@@ -211,6 +225,22 @@ const WorkshopStore = (() => {
   // the sensible default Keep destination (the Commander's Desktop, when the desktop shell knows it).
   function desktopDefault() { try { return deps.desktopDefault ? (deps.desktopDefault() || '') : ''; } catch (_) { return ''; } }
 
+  // hand ONE manifest to the return-card beat (the single shared presenter under the attach poll, the
+  // live workshop.built push, and the return-from-away re-present). Marks the runId seen (session-scoped).
+  function presentCard(m) {
+    if (!m || !m.runId) return;
+    const runId = String(m.runId);
+    if (state.seen.indexOf(runId) === -1) { state.seen.push(runId); if (state.seen.length > 200) state.seen = state.seen.slice(-200); save(); }
+    const aid = m.agentId || 'agent';
+    Chat.workshopReturn(m, {
+      readFile: readFile,
+      desktopDefault: desktopDefault(),
+      runUrl: (relPath) => runUrl(aid, runId, relPath),          // W7: URL that RUNS a web file in a tab
+      openFile: (relPath) => openFile(aid, runId, relPath),      // W7: manual-open guidance; never OS-launch
+      onDecide: (decision, destPath, extra) => decide(aid, runId, decision, destPath, extra)
+    });
+  }
+
   // auto-poll on attach: show the OLDEST undecided manifest as one return-card beat. Once per page session.
   async function maybePresent() {
     if (fired || !ready()) return;
@@ -218,16 +248,21 @@ const WorkshopStore = (() => {
     const pending = await fetchPending();
     if (!pending.length) return;
     fired = true;
-    const m = pending[0];
-    if (state.seen.indexOf(m.runId) === -1) { state.seen.push(m.runId); save(); }   // shown once this session
-    const aid = m.agentId || 'agent';
-    Chat.workshopReturn(m, {
-      readFile: readFile,
-      desktopDefault: desktopDefault(),
-      runUrl: (relPath) => runUrl(aid, m.runId, relPath),          // W7: URL that RUNS a web file in a tab
-      openFile: (relPath) => openFile(aid, m.runId, relPath),      // W7: manual-open guidance; never OS-launch
-      onDecide: (decision, destPath, extra) => decide(aid, m.runId, decision, destPath, extra)
-    });
+    presentCard(pending[0]);
+  }
+
+  /* RETURN RE-PRESENT (2026-07-14): a night-shift build lands while the Commander is away BY DEFINITION,
+     so its live card + toast (onBuilt below) play to an empty room. On the Commander's first interaction
+     after a real absence (AutopilotStore's onReturn hook, wired in app.js), re-offer the oldest still-
+     UNDECIDED deliverable — even if its card already rendered this session. Respects 'later' (an explicit
+     dismissal stays dismissed); ignores 'seen' (shown-to-nobody must not count as told). chat.js keeps
+     the feed clean by dropping the stale duplicate row (data-wsrun) before rendering the fresh card. */
+  async function presentOnReturn() {
+    if (!enabled) return;
+    if (typeof Chat === 'undefined' || !Chat.workshopReturn) return;
+    const list = (await fetchRaw()).filter(m => m && m.runId && !state.later[m.runId]);
+    if (!list.length) return;
+    presentCard(list[0]);
   }
 
   /* LIVE PUSH — the attach-time poll above only covers session OPEN, so a deliverable that landed while the
@@ -250,13 +285,8 @@ const WorkshopStore = (() => {
     try {
       if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('✦ built while you were away: ' + String(m.title || 'a deliverable') + ' — the return card is in COMMS', 'gold', 'cronDigest');
     } catch (_) {}
-    Chat.workshopReturn(m, {
-      readFile: readFile,
-      desktopDefault: desktopDefault(),
-      runUrl: (relPath) => runUrl(aid, runId, relPath),
-      openFile: (relPath) => openFile(aid, runId, relPath),
-      onDecide: (decision, destPath, extra) => decide(aid, runId, decision, destPath, extra)
-    });
+    try { if (typeof World !== 'undefined' && World.say) World.say('✦ finished a build — the result is in COMMS'); } catch (_) {}   // ambient in-world cue, same family as the desk-draft delivery
+    presentCard(m);
   }
 
   // init({ enabled, desktopDefault }) — called from enterGame. enabled:false (the awakening) skips the beat.
@@ -275,7 +305,7 @@ const WorkshopStore = (() => {
   // S2/new-hero: a fresh Commander inherits no prior "later" list.
   function reset() { state = hydrate(null); fired = false; try { localStorage.removeItem(KEY); } catch (_) {} }
 
-  return { init, queue, decide, readFile, runUrl, openFile, desktopDefault, fetchPending, reset, queueConfirmLine, grantOf, openGrant, onBuilt, _hydrate: hydrate };
+  return { init, queue, decide, readFile, runUrl, openFile, desktopDefault, fetchPending, presentOnReturn, reset, queueConfirmLine, grantOf, openGrant, onBuilt, _hydrate: hydrate };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = { WorkshopStore };

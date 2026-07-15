@@ -212,6 +212,18 @@ A.ok(/value:\s*'undo'/.test(appSrc), 'B3: the undo action is wired into the welc
   AutopilotStore.noteActivity();   // near-zero gap now
   A.eq(digested, null, 'a return with no real absence shows no digest (anti-nag)');
 
+  /* ---------- the GENUINE-RETURN hook (2026-07-14): the digest reads the LOCAL draft log, which the
+     server-owned night-shift act path never writes — onReturn fires on a real absence REGARDLESS of local
+     drafts so app.js can re-offer undecided server-built work (the "it never told me" blind spot). ---------- */
+  let returned = null;
+  AutopilotStore.init(Object.assign(baseDeps(goodChat), { onReturn: (info) => { returned = info; }, digestAwayMs: 300000 }));
+  nowMs += 400000;                 // a real absence with ZERO local drafts (no act ran this init)
+  AutopilotStore.noteActivity();
+  A.ok(returned && returned.awayMs >= 300000, 'a genuine return fires onReturn even when the local draft log is EMPTY');
+  returned = null;
+  AutopilotStore.noteActivity();   // near-zero gap
+  A.eq(returned, null, 'a brief glance away never fires onReturn (anti-nag)');
+
   /* ---------- A3: the learn hook re-weights selection ---------- */
   const tieChat = async ({ messages }) => {
     const c = messages[0].content;
