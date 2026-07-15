@@ -1169,6 +1169,173 @@ const PropSprites = (() => {
     if (blink(160, x)) px(x + 4, y + 3, 3, 1, '#1c4a5e');
   };
 
+  /* ---- DECOR EXPANSION wave 3 (2026-07-15): greenery + lounge ---- */
+
+  F.bonsai = (x, y) => {   // sculpted bonsai on a pedestal — gnarled trunk, layered pads, a leaf drops
+    const r = RAMP.steel;
+    shadow2(x + 3, y + 10, 6);
+    // pedestal column + cap
+    rr(x + 3, y + 6, 6, 5, LINE);
+    px(x + 4, y + 7, 4, 3, r.face);
+    px(x + 4, y + 7, 1, 3, r.lit); px(x + 7, y + 7, 1, 3, r.dk);
+    px(x + 3, y + 6, 6, 1, r.top);
+    px(x + 4, y + 10, 4, 1, r.ao);
+    // shallow ceramic tray
+    rr(x + 2, y + 4, 8, 3, LINE);
+    px(x + 3, y + 5, 6, 1, '#7a2434');                          // glazed rim
+    px(x + 3, y + 4, 6, 1, '#1d1812');                          // soil + moss caps
+    px(x + 4, y + 4, 1, 1, '#1d5c34'); px(x + 7, y + 4, 1, 1, '#1d5c34');
+    // gnarled trunk: S-curve with a jin (deadwood) stub
+    px(x + 5, y + 2, 1, 2, '#3a2c20'); px(x + 6, y, 1, 2, '#3a2c20');
+    px(x + 5, y - 2, 1, 2, '#3a2c20'); px(x + 4, y - 1, 1, 1, '#4e3a28');
+    px(x + 7, y - 1, 1, 1, '#8a8070');                          // bleached jin stub
+    // cloud pads, layered, wind-tick on the top pad
+    const tick = blink(2400, x) ? 1 : 0;
+    px(x + 2, y, 3, 2, '#2e7a3e'); px(x + 2, y, 1, 1, '#5ec46e');
+    px(x + 6, y - 3, 4, 2, '#256032'); px(x + 9, y - 3, 1, 1, '#4aa45a');
+    px(x + 3 + tick, y - 5, 4, 2, '#3a9a4e'); px(x + 4 + tick, y - 5, 1, 1, '#5ec46e');
+    // a leaf detaches and drifts down on a long clock
+    const lt = ((now / 5200) + x * 0.3) % 1;
+    if (lt < 0.30) px(x + 3 + Math.floor(lt * 10), y - 3 + Math.floor(lt * 26), 1, 1, '#4aa45a');
+  };
+
+  F.monstera = (x, y) => {   // big split-leaf plant — broad fenestrated leaves, taller than PLANT
+    const r = RAMP.fabric;
+    shadow2(x + 2, y + 10, 8);
+    // woven basket pot
+    rr(x + 3, y + 6, 6, 5, LINE);
+    px(x + 4, y + 7, 4, 3, '#5e4a34');
+    px(x + 4, y + 7, 1, 3, '#7a6044'); px(x + 7, y + 7, 1, 3, '#443422');
+    px(x + 4, y + 8, 4, 1, '#443422');                          // weave band
+    px(x + 4, y + 10, 4, 1, U.shade('#443422', -0.3));
+    px(x + 4, y + 6, 4, 1, '#1d1812');                          // soil
+    // stems fanning out
+    px(x + 5, y + 2, 1, 4, '#256032'); px(x + 6, y, 1, 6, '#256032'); px(x + 4, y + 1, 1, 5, '#1f5228');
+    // three broad leaves with slit fenestrations (the gaps ARE the identity)
+    const nod = blink(2000, x) ? 1 : 0;
+    // west leaf, drooping
+    px(x, y - 1, 4, 3, '#2e7a3e'); px(x + 1, y, 1, 2, '#12301e');       // slit
+    px(x, y - 1, 1, 1, '#5ec46e');
+    // east leaf
+    px(x + 7, y - 2, 5, 3, '#256032'); px(x + 9, y - 1, 1, 2, '#12301e'); // slit
+    px(x + 11, y - 2, 1, 1, '#4aa45a');
+    // crown leaf, big, nods
+    px(x + 3, y - 6 + nod, 6, 3, '#3a9a4e');
+    px(x + 5, y - 5 + nod, 1, 2, '#12301e'); px(x + 7, y - 6 + nod, 1, 2, '#12301e'); // two slits
+    px(x + 3, y - 6 + nod, 1, 1, '#5ec46e');
+    px(x + 5, y - 3 + nod, 1, 1, '#256032');                    // stem shadow into the crown
+    px(x + 8, y + 7, 1, 1, blink(2600, x) ? '#2ee6c8' : '#1a3a34'); // moisture probe wink
+  };
+
+  F.flytrap = (x, y) => {   // venus flytrap — three heads on curling stalks; one snaps shut
+    shadow2(x + 3, y + 10, 6);
+    // ribbed pot
+    rr(x + 3, y + 6, 6, 5, LINE);
+    px(x + 4, y + 7, 4, 3, '#4e5c3a');
+    px(x + 4, y + 7, 1, 3, '#66784c'); px(x + 7, y + 7, 1, 3, '#38422a');
+    px(x + 5, y + 7, 1, 3, '#38422a');                          // rib
+    px(x + 4, y + 10, 4, 1, '#242c1c');
+    px(x + 4, y + 6, 4, 1, '#141a10');                          // boggy soil
+    // stalks curling outward
+    px(x + 4, y + 3, 1, 3, '#3a9a4e'); px(x + 3, y + 1, 1, 2, '#3a9a4e');
+    px(x + 6, y + 2, 1, 4, '#256032');
+    px(x + 8, y + 3, 1, 3, '#3a9a4e'); px(x + 9, y + 1, 1, 2, '#3a9a4e');
+    // the snap: head 2 alternates open jaw <-> clamped shut on a long clock
+    const shut = ((now / 3800) + x * 0.41) % 1 < 0.34;
+    // head 1 (west): open jaw, red mouth, teeth
+    px(x + 1, y - 2, 3, 2, '#2e7a3e'); px(x + 2, y - 1, 1, 1, '#a03448');
+    px(x + 1, y - 3, 1, 1, '#5ec46e'); px(x + 3, y - 3, 1, 1, '#5ec46e'); // teeth cilia
+    // head 2 (center, the snapper)
+    if (shut) {
+      px(x + 5, y - 1, 3, 2, '#256032');                        // clamped pod
+      px(x + 5, y - 1, 3, 1, '#3a9a4e');
+      if (blink(300, x)) px(x + 6, y, 1, 1, '#5ec46e');         // struggling bulge
+    } else {
+      px(x + 5, y - 2, 3, 2, '#2e7a3e'); px(x + 6, y - 1, 1, 1, '#a03448');
+      px(x + 5, y - 3, 1, 1, '#5ec46e'); px(x + 7, y - 3, 1, 1, '#5ec46e');
+    }
+    // head 3 (east): open jaw
+    px(x + 8, y - 2, 3, 2, '#2e7a3e'); px(x + 9, y - 1, 1, 1, '#a03448');
+    px(x + 8, y - 3, 1, 1, '#5ec46e'); px(x + 10, y - 3, 1, 1, '#5ec46e');
+    // a fly orbiting the pot, gone while the trap is shut (it got got)
+    if (!shut) {
+      const fa = now / 500 + x;
+      px(x + 5 + Math.round(Math.cos(fa) * 4), y - 4 + Math.round(Math.sin(fa) * 2), 1, 1, '#8a8a8a');
+    }
+  };
+
+  F.fishtank = (x, y, w) => {   // lounge aquarium on a cabinet — swimming fish, bubbler, castle
+    const r = RAMP.steel;
+    shadow2(x + 2, y + 10, w - 4);
+    // cabinet base
+    rr(x + 1, y + 7, w - 2, 4, LINE);
+    px(x + 2, y + 8, w - 4, 2, r.face);
+    px(x + 2, y + 8, 1, 2, r.lit); px(x + w - 3, y + 8, 1, 2, r.dk);
+    px(x + 2, y + 10, w - 4, 1, r.ao);
+    px(x + (w >> 1) - 1, y + 8, 2, 1, '#141a1e');               // cabinet door seam
+    // tank: glass box riding the cabinet, rises above the tile
+    rr(x, y - 8, w, 15, LINE);
+    px(x + 1, y - 7, w - 2, 13, '#0d2430');                     // water
+    px(x + 1, y - 8, w - 2, 1, r.top);                          // hood strip
+    px(x + 2, y - 8, 1, 1, blink(1200, x) ? '#e8f0f8' : '#6a7888'); // hood lamp
+    px(x + 1, y - 6, w - 2, 1, '#1a4a5e');                      // waterline shimmer
+    px(x + 1, y - 7, 1, 12, '#2a4a58');                         // glass glint W
+    glow(x + 1, y - 6, w - 2, 11, '#4ad9ff', 0.06);
+    // gravel + castle + plant
+    px(x + 1, y + 4, w - 2, 2, '#3a3426');
+    px(x + 2, y + 4, 2, 1, '#4c4430'); px(x + w - 5, y + 5, 2, 1, '#2a2418');
+    px(x + w - 6, y, 3, 4, '#4e5c6c'); px(x + w - 5, y - 2, 1, 2, '#4e5c6c'); // castle + turret
+    px(x + w - 5, y + 1, 1, 1, '#141a1e');                      // castle door
+    px(x + 3, y + 1, 1, 3, '#1d5c34'); px(x + 2, y, 1, 2, '#2e7a3e'); // waterweed
+    // two fish patrolling on offset clocks, flipping at the glass
+    for (const [ph, spd, fy, c] of [[0, 2600, y - 3, '#ffd34a'], [3, 3400, y + 1, '#ff6ad5']]) {
+      const t = ((now / spd) + ph + x) % 2;
+      const fx = x + 2 + Math.round((t < 1 ? t : 2 - t) * (w - 7));
+      const flip = t < 1;
+      px(fx, fy, 2, 1, c);
+      px(fx + (flip ? -1 : 2), fy, 1, 1, U.shade(c, -0.35));    // tail behind
+      px(fx + (flip ? 1 : 0), fy, 1, 1, '#101418');             // eye... 1px glint
+    }
+    // bubbler column drifting up from the castle
+    const bh = Math.floor(now / 260) % 9;
+    px(x + w - 4, y + 3 - bh, 1, 1, '#7ad9ff');
+    if (bh > 3) px(x + w - 5, y + 6 - bh, 1, 1, '#4ad9ff');
+  };
+
+  F.pokertable = (x, y, w, h) => {   // oval felt poker table — chips, dealt cards, a hand mid-game
+    const r = RAMP.fabric;
+    shadow2(x + 3, y + h - 1, w - 6);
+    // squat legs at the corners
+    leg(x + 4, y + h - 4, 3, r); leg(x + w - 6, y + h - 4, 3, r);
+    underAO(x + 5, y + h - 4, w - 10, 2);
+    // padded rail: oval silhouette (corner-cut rounded rect, doubled)
+    px(x + 3, y - 2, w - 6, h - 3, LINE);
+    px(x + 1, y, w - 2, h - 7, LINE);
+    px(x + 4, y - 1, w - 8, h - 5, '#3a2c20');                  // leather rail
+    px(x + 2, y, w - 4, h - 7, '#3a2c20');
+    px(x + 4, y - 1, w - 8, 1, '#4e3a28');                      // rail catch
+    // felt inset
+    px(x + 4, y + 1, w - 8, h - 9, '#14442a');
+    px(x + 4, y + 1, w - 8, 1, '#1d5c38');                      // lit felt edge
+    px(x + 4, y + h - 9, w - 8, 1, '#0c2e1c');
+    px(x + 6, y + 2, 4, 1, '#1d5c38');                          // worn dealer spot
+    // community cards, one flips on a long clock
+    const c3 = ((now / 3000) + x * 0.2) % 1 < 0.5;
+    px(x + (w >> 1) - 4, y + 2, 2, 3, '#e8e8e0'); px(x + (w >> 1) - 4, y + 2, 1, 1, '#a03448');
+    px(x + (w >> 1) - 1, y + 2, 2, 3, '#e8e8e0'); px(x + (w >> 1), y + 3, 1, 1, '#141a1e');
+    if (c3) { px(x + (w >> 1) + 2, y + 2, 2, 3, '#e8e8e0'); px(x + (w >> 1) + 2, y + 2, 1, 1, '#a03448'); }
+    else px(x + (w >> 1) + 2, y + 2, 2, 3, '#33507a');          // face-down back
+    // chip stacks around the rail
+    px(x + 6, y + h - 11, 2, 2, '#a03448'); px(x + 6, y + h - 11, 2, 1, '#c05468');
+    px(x + w - 9, y + h - 11, 2, 2, '#33507a'); px(x + w - 9, y + h - 11, 2, 1, '#4a6a9a');
+    px(x + w - 13, y + 2, 2, 2, '#caa84a'); px(x + w - 13, y + 2, 2, 1, '#e8d070');
+    // the pot in the middle + a chip tossed in, blinking mid-air
+    px(x + (w >> 1) - 2, y + h - 12, 3, 1, '#caa84a');
+    if (blink(1600, x)) px(x + (w >> 1) - 4, y + h - 13, 1, 1, '#e8d070');
+    // folded hand, face down by the west rail
+    px(x + 8, y + h - 12, 2, 2, '#33507a'); px(x + 9, y + h - 13, 2, 2, '#33507a');
+  };
+
   F.commswall = (x, y, w, h) => {   // v2 freestanding: long comms rack ROW on stub feet (was a wall mural)
     const r = RAMP.steel;
     shadow2(x + 2, y + h - 1, w - 4);
@@ -5116,6 +5283,12 @@ const PropSprites = (() => {
     { id: "gachapon", label: "GACHAPON", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: true },
     { id: "dartboard", label: "DART BOARD", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false },
     { id: "rocketmodel", label: "ROCKET MODEL", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false },
+    // DECOR EXPANSION wave 3 (2026-07-15) — greenery + lounge picks.
+    { id: "bonsai", label: "BONSAI", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false },
+    { id: "monstera", label: "MONSTERA", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false },
+    { id: "flytrap", label: "FLYTRAP", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false },
+    { id: "fishtank", label: "FISH TANK", cat: "lounge", tier: "cosmetic", w: 2, h: 1, animated: true, blocks: true },
+    { id: "pokertable", label: "POKER TABLE", cat: "lounge", tier: "cosmetic", w: 4, h: 2, animated: true, blocks: true },
   ];
   const BY_ID = {};
   for (const c of CATALOG) BY_ID[c.id] = c;
