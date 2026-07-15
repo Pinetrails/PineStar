@@ -12,6 +12,11 @@
 
   const DEFAULT_PROVIDER_ID = 'openrouter';
 
+  // Wire-hint fields on openai-compatible profiles (all sourced from the provider's official API docs,
+  // verified 2026-07; the adapter also self-heals by dropping any optional param a provider 400s on):
+  //   wireReasoningEffort — endpoint documents the `reasoning_effort` chat-completions param.
+  //   wireStreamOptions: false — endpoint does not accept `stream_options` (usage still arrives:
+  //     these providers report usage in the stream by default).
   const PROFILES = [
     {
       id: 'openrouter',
@@ -78,6 +83,7 @@
       credentialPool: true,
       supportsTools: null,
       supportsReasoning: null,
+      wireReasoningEffort: true,
       order: 30
     },
     {
@@ -150,6 +156,7 @@
       credentialPool: true,
       supportsTools: null,
       supportsReasoning: null,
+      wireReasoningEffort: true,
       order: 37
     },
     {
@@ -174,6 +181,7 @@
       credentialPool: true,
       supportsTools: null,
       supportsReasoning: null,
+      wireReasoningEffort: true,
       order: 38
     },
     {
@@ -198,6 +206,10 @@
       credentialPool: true,
       supportsTools: null,
       supportsReasoning: null,
+      wireReasoningEffort: true,
+      // Mistral strictly validates request bodies (422 "Extra inputs are not permitted") and its spec
+      // has no stream_options; its stream reports usage in the final chunk without it.
+      wireStreamOptions: false,
       order: 39
     },
     {
@@ -222,6 +234,7 @@
       credentialPool: true,
       supportsTools: null,
       supportsReasoning: null,
+      wireReasoningEffort: true,
       order: 40
     },
     {
@@ -246,6 +259,7 @@
       credentialPool: true,
       supportsTools: null,
       supportsReasoning: null,
+      wireReasoningEffort: true,
       order: 41
     },
     {
@@ -270,6 +284,7 @@
       credentialPool: true,
       supportsTools: null,
       supportsReasoning: null,
+      wireReasoningEffort: true,
       order: 42
     },
     {
@@ -292,8 +307,12 @@
       defaultReasoningEffort: 'medium',
       unmetered: false,
       credentialPool: true,
-      supportsTools: null,
+      // Perplexity's /chat/completions schema has no tools/tool_choice — function calling lives on its
+      // separate Agent API. It DOES document its own reasoning_effort, and streams usage by default.
+      supportsTools: false,
       supportsReasoning: null,
+      wireReasoningEffort: true,
+      wireStreamOptions: false,
       order: 43
     },
     {
@@ -318,6 +337,7 @@
       credentialPool: true,
       supportsTools: null,
       supportsReasoning: null,
+      wireReasoningEffort: true,
       order: 44
     },
     {
@@ -341,6 +361,7 @@
       credentialPool: false,
       supportsTools: null,
       supportsReasoning: false,
+      wireReasoningEffort: true,
       order: 60
     },
     {
