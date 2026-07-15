@@ -826,6 +826,12 @@ const Chat = (() => {
     // cursor); it yields instantly to a reply run and resumes after. This is the ONLY chat.js change for D1 (G7).
     if (typeof World !== 'undefined' && World.setChatFocus) World.setChatFocus(activeWs ? (activeWs.agentId || 'agent') : null);
     renderIdBar();   // the agent selector + model readout follow the displayed stream's agent
+    // SESSION DELIVERY (2026-07-15): opening a deliverable's own session ('workshop-<runId>') is what renders
+    // its return card — never a pop-up into whichever stream happened to be selected. presentFor no-ops fast on
+    // every other id, re-checks the server (undecided only), and the card itself is pinned to this session.
+    if (activeWs && typeof WorkshopStore !== 'undefined' && WorkshopStore.presentFor) {
+      try { WorkshopStore.presentFor(activeWs.id).catch(() => {}); } catch (_) {}
+    }
   }
 
   function setSystem(s) { system = s; }
@@ -1909,26 +1915,34 @@ const Chat = (() => {
     autoscroll();
   }
 
-  /* W3 — THE AWAY-WORKSHOP RETURN CARD. On attach, WorkshopStore polls /api/workshop/pending and hands ONE
-     undecided manifest here. Same gold-inset family + the ONE post-run beat slot every return beat rides:
-     it DEFERS (bounded, never starved — awayDigest cadence) behind a live run / the awakening / a focused
-     panel / a live turn-in or nudge, then renders exactly once. Collapsed = a one-glance headline with an
-     "open" affordance; expanded = a two-pane viewer (manifest summary + jailed file browser) and EXACTLY
-     three one-click actions: Keep (default-Desktop path input → decide keep), Later (dismiss, may return
-     next session), Discard (single confirm → decide discard). Decided cards vanish().
+  /* W3 — THE DELIVERY CARD (reshaped 2026-07-15). WorkshopStore adopts one SESSION per idle-work
+     deliverable ('workshop-<runId>', unread in the rail) and calls this ONLY when the Commander opens that
+     session — opts.sessionId pins the card to it, so a delivery can never paint into an unrelated stream.
+     Simple by design: the headline, the honest verification line, WHAT it did, a link that RUNS it (when a
+     web entry exists), the files, and ONE action row — an optional message to the agent plus three one-click
+     decisions: Implement (decide keep — the sidecar applies a patch deliverable to a new branch, or lands
+     files in the default deliverables folder), Later (dismiss; the session stays), Discard (single confirm →
+     wipe + denylist). A typed message rides the decision as a REAL user turn in this same session — the
+     session id IS the shift's durable streamId, so the agent replies with the build's actual transcript
+     behind it. Decided cards vanish(); the outcome persists as a sys marker (opts.noteDecision).
      TRUTHFUL TELEMETRY: the verification line renders "tested — N passed" ONLY from a real manifest.verified
-     block; absent → "built, not yet tested". The card never asserts status the manifest doesn't prove.
-     opts: { onDecide(decision, destPath) -> Promise<{ok,destPath?,error?}>, readFile(agentId,runId,path)
-             -> Promise<string>, desktopDefault: string }. */
+     block; absent → honest not-tested copy. The card never asserts status the manifest doesn't prove.
+     opts: { sessionId, onDecide(decision, destPath?, extra?) -> Promise<{ok,destPath?,applied?,branch?,root?,error?}>,
+             readFile(agentId,runId,path) -> Promise<string>, runUrl(relPath), openFile(relPath),
+             noteDecision(text) }. */
   function workshopReturn(m, opts, _try) {
     if (!log || !m || !m.runId) return;
     opts = opts || {};
     const onDecide = opts.onDecide || (() => Promise.resolve({ ok: true }));
+    // SESSION PIN: render only while the card's OWN delivery session is on screen. Switched away → just
+    // stop (no retry) — chat.js load() re-fires WorkshopStore.presentFor when the Commander comes back.
+    const inOwnSession = () => !opts.sessionId || !!(activeWs && activeWs.id === opts.sessionId);
+    if (!inOwnSession()) return;
     const blocked = isBusy() || interview || activeTurnin || activeNudge
       || (typeof Onboarding !== 'undefined' && Onboarding.isRunning && Onboarding.isRunning())
       || (typeof Intake !== 'undefined' && Intake.isRunning && Intake.isRunning())
       || (typeof Dialogue !== 'undefined' && Dialogue.isOpen && Dialogue.isOpen());
-    if (blocked) {   // defer — DELAY but never STARVE (same law as awayDigest): fast retry, then slow, never gives up.
+    if (blocked) {   // defer — DELAY but never STARVE (same law as awayDigest): fast retry, then slow; the session pin above retires a stale retry chain.
       const t = (_try || 0);
       setTimeout(() => workshopReturn(m, opts, t + 1), t < 25 ? 7000 : 60000);
       return;
@@ -1966,7 +1980,7 @@ const Chat = (() => {
     const r = row('agent'); r.d.classList.add('tool'); r.d.classList.add('turnin'); r.d.classList.add('workshop-return');
     try { r.d.setAttribute('data-wsrun', String(m.runId)); } catch (_) {}   // the re-present dedupe key (above)
 
-    // ── collapsed headline (one glance) ──
+    // ── headline ──
     const title = document.createElement('span'); title.className = 'turnin-title';
     title.textContent = '◈ while you were away — ' + who + ' built: ' + String(m.title || 'a deliverable');
     r.body.appendChild(title);
@@ -1994,14 +2008,45 @@ const Chat = (() => {
     }
     r.body.appendChild(ver);
 
-    const slot = document.createElement('div'); slot.className = 'ws-slot';
-    r.body.appendChild(slot);
+    // ── WHAT it did — the one paragraph the agent wrote, plain ──
+    if (m.summary) {
+      const what = document.createElement('div'); what.className = 'ws-line ws-what';
+      what.textContent = String(m.summary);
+      r.body.appendChild(what);
+    }
+    // ── how to use — ONE short line. The workshop prompt now caps this to a sentence; a verbose legacy
+    // manifest is clamped here rather than dumped as a wall of instructions (the old confusing card).
+    if (m.howToUse) {
+      const one = String(m.howToUse).replace(/\s+/g, ' ').trim();
+      if (one) {
+        const how = document.createElement('div'); how.className = 'ws-line ws-how';
+        how.textContent = 'how to use — ' + (one.length > 200 ? one.slice(0, 200) + '…' : one);
+        r.body.appendChild(how);
+      }
+    }
+    // what a human still needs to check — honest, compact (never implied failure, never hidden).
+    if (Array.isArray(m.notVerified) && m.notVerified.length) {
+      const nv = document.createElement('div'); nv.className = 'ws-line ws-notver';
+      nv.textContent = 'check yourself — ' + m.notVerified.join('; ');
+      r.body.appendChild(nv);
+    }
+    // per-command verification detail: the ACTUAL commands run + each one's pass/fail from the manifest
+    // (renders only when the manifest actually recorded them — never invents a command or a result).
+    if (vcmds && vcmds.length) {
+      const vd = document.createElement('div'); vd.className = 'ws-verdetail';
+      vcmds.forEach(c => {
+        const ok = Number(c.exit) === 0;
+        const line = document.createElement('div'); line.className = 'ws-vcmd ' + (ok ? 'ok' : 'bad');
+        const mark = document.createElement('span'); mark.className = 'ws-vmark'; mark.textContent = ok ? '✓' : '✕';
+        const cmd = document.createElement('code'); cmd.className = 'ws-vcmdtext'; cmd.textContent = String(c.cmd);
+        line.appendChild(mark); line.appendChild(cmd);
+        if (!ok && c.exit != null) { const ex = document.createElement('span'); ex.className = 'ws-vexit'; ex.textContent = 'exit ' + c.exit; line.appendChild(ex); }
+        vd.appendChild(line);
+      });
+      r.body.appendChild(vd);
+    }
 
-    const foot = document.createElement('div'); foot.className = 'turnin-rate';
-    // PRIMARY = "Open it" when there's a runnable web entry — one glance, one click, the tool runs in a tab.
-    // Otherwise the primary is "review" (expand to the file list / Keep). "review" is always present as the
-    // secondary path to the details + Keep/Discard actions.
-    let openItBtn = null;
+    // ── TRY IT — the link that RUNS the deliverable (jailed /workshop-run/ route), when a web entry exists ──
     if (htmlEntry) {
       // disk-proven by validateWorkshopManifest (never the model's claim): this deliverable requests pointer
       // lock / fullscreen, i.e. opening it will capture the Commander's REAL mouse. Say so BEFORE the click.
@@ -2015,192 +2060,122 @@ const Chat = (() => {
         warn.textContent = '⚠ may ask to use your camera, microphone, or screen when opened';
         r.body.appendChild(warn);
       }
-      openItBtn = document.createElement('button'); openItBtn.className = 'consent-btn'; openItBtn.textContent = 'Open it';
+      const tryRow = document.createElement('div'); tryRow.className = 'turnin-rate ws-try';
+      const openItBtn = document.createElement('button'); openItBtn.className = 'consent-btn'; openItBtn.textContent = '▶ Open it — try it in a tab';
       openItBtn.title = m.capturesInput
         ? 'run this tool in a new browser tab — it will capture your mouse; Esc releases it'
         : 'run this tool in a new browser tab';
       openItBtn.onclick = () => openRunTab(htmlEntry);
-      foot.appendChild(openItBtn);
+      tryRow.appendChild(openItBtn);
+      r.body.appendChild(tryRow);
     }
-    const openBtn = document.createElement('button'); openBtn.className = 'consent-btn'; openBtn.textContent = 'review';
-    foot.appendChild(openBtn);
-    r.body.appendChild(foot);
-    autoscroll();
 
-    let expanded = false, settled = false;
+    // ── the files — clicking a file OPENS it (W7), it does not dump source; "view source" stays opt-in ──
+    const fb = document.createElement('div'); fb.className = 'ws-pane ws-files';
+    const fhead = document.createElement('div'); fhead.className = 'ws-fhead'; fhead.textContent = 'files';
+    fb.appendChild(fhead);
+    const list = document.createElement('div'); list.className = 'ws-flist';
+    const view = document.createElement('pre'); view.className = 'ws-fview'; view.hidden = true;   // hidden until "view source"
+    if (!files.length) { const e = document.createElement('div'); e.className = 'dim'; e.textContent = '(no files listed)'; list.appendChild(e); }
+    files.forEach(f => {
+      if (!f || !f.path) return;
+      const isHtml = /\.html?$/i.test(f.path);
+      const rowEl = document.createElement('div'); rowEl.className = 'ws-filerow';
+      // the file itself = the OPEN affordance (primary). Label says plainly what a click does.
+      const b = document.createElement('button'); b.className = 'ws-file'; b.type = 'button';
+      b.textContent = f.path + (f.bytes != null ? '  ·  ' + f.bytes + 'B' : '');
+      b.title = isHtml ? 'run this file in a new tab' : 'open this file in your default app';
+      b.onclick = async () => {
+        if (isHtml) { openRunTab(f.path); return; }
+        b.disabled = true; const was = b.textContent; b.textContent = 'opening…';
+        let res = null; try { res = opts.openFile ? await opts.openFile(f.path) : { ok: false }; } catch (_) { res = { ok: false }; }
+        b.disabled = false; b.textContent = was;
+        if (!res || !res.ok) localLine('Could not open that file: ' + ((res && res.error) || 'the station refused') + '.');
+      };
+      rowEl.appendChild(b);
+      // demoted "view source" — the inline code reader, opt-in.
+      const src = document.createElement('button'); src.className = 'ws-viewsrc'; src.type = 'button'; src.textContent = 'view source';
+      src.title = 'show this file’s code inline';
+      src.onclick = async () => {
+        list.querySelectorAll('.ws-file.sel').forEach(x => x.classList.remove('sel'));
+        b.classList.add('sel');
+        view.hidden = false; view.textContent = 'loading…';
+        let content = '';
+        try { content = opts.readFile ? await opts.readFile(agentId, m.runId, f.path) : ''; } catch (_) { content = ''; }
+        view.textContent = content || '(no preview available)';
+        autoscroll();
+      };
+      rowEl.appendChild(src);
+      list.appendChild(rowEl);
+    });
+    fb.appendChild(list); fb.appendChild(view);
+    r.body.appendChild(fb);
+
+    // ── decide: an optional message + Implement / Later / Discard ──
+    const acts = document.createElement('div'); acts.className = 'turnin-rate ws-acts';
+    // the message rides the decision as a REAL user turn in THIS session — its id is the shift's durable
+    // streamId, so the agent replies with the build's actual transcript behind it (server-side resume seed).
+    const msgInput = document.createElement('input'); msgInput.className = 'turnin-edit ws-msg'; msgInput.type = 'text';
+    msgInput.placeholder = 'tell ' + who + ' anything about this (optional)';
+    msgInput.setAttribute('aria-label', 'Optional message to the agent, sent with your decision');
+    acts.appendChild(msgInput);
+
+    let settled = false;
     const settle = (label, isDeny) => {
       if (settled) return; settled = true;
-      slot.innerHTML = ''; foot.remove();
+      acts.remove();
       const tag = document.createElement('span'); tag.className = 'consent-result' + (isDeny ? ' err' : ''); tag.textContent = label;
       r.body.appendChild(tag);
-      setTimeout(() => vanish(r.d), 900);   // flash the outcome, then the decided card leaves
+      // flash the outcome, then the decided card leaves; ONE honest line stays in the session feed
+      setTimeout(() => { vanish(r.d); if (inOwnSession()) localLine(label); }, 900);
     };
-
-    openBtn.onclick = () => {
-      if (expanded) return; expanded = true;
-      foot.remove();
-      renderExpanded();
-      autoscroll();
+    const sendNote = () => {   // the optional typed message → a REAL user turn in this session
+      const msg = String(msgInput.value || '').trim();
+      if (!msg || !inOwnSession()) return;
+      send('About the “' + String(m.title || 'away build') + '” build you delivered: ' + msg);
     };
+    const decideNote = (label) => { try { if (opts.noteDecision) opts.noteDecision(label); } catch (_) {} };
 
-    function renderExpanded() {
-      slot.innerHTML = '';
-      const pane = document.createElement('div'); pane.className = 'ws-panes';
-
-      // ── pane 1: manifest summary ──
-      const sum = document.createElement('div'); sum.className = 'ws-pane ws-summary';
-      const mkLine = (k, v) => { if (!v) return; const d = document.createElement('div'); d.className = 'ws-line';
-        const kk = document.createElement('span'); kk.className = 'ws-k'; kk.textContent = k;
-        const vv = document.createElement('span'); vv.className = 'ws-v'; vv.textContent = v;
-        d.appendChild(kk); d.appendChild(vv); sum.appendChild(d); };
-      mkLine('kind', m.kind || 'other');
-      mkLine('what', m.summary || '');
-      mkLine('how to use', m.howToUse || '');
-      if (Array.isArray(m.notVerified) && m.notVerified.length) mkLine('not verified', m.notVerified.join('; '));
-      // per-command verification detail: the ACTUAL commands run + each one's pass/fail from the manifest
-      // (renders only when the manifest actually recorded them — never invents a command or a result).
-      if (vcmds && vcmds.length) {
-        const vd = document.createElement('div'); vd.className = 'ws-verdetail';
-        const vh = document.createElement('div'); vh.className = 'ws-k'; vh.textContent = 'verification'; vd.appendChild(vh);
-        vcmds.forEach(c => {
-          const ok = Number(c.exit) === 0;
-          const line = document.createElement('div'); line.className = 'ws-vcmd ' + (ok ? 'ok' : 'bad');
-          const mark = document.createElement('span'); mark.className = 'ws-vmark'; mark.textContent = ok ? '✓' : '✕';
-          const cmd = document.createElement('code'); cmd.className = 'ws-vcmdtext'; cmd.textContent = String(c.cmd);
-          line.appendChild(mark); line.appendChild(cmd);
-          if (!ok && c.exit != null) { const ex = document.createElement('span'); ex.className = 'ws-vexit'; ex.textContent = 'exit ' + c.exit; line.appendChild(ex); }
-          vd.appendChild(line);
-        });
-        sum.appendChild(vd);
+    // IMPLEMENT — decide keep. The sidecar does the real thing for the deliverable's kind: a patch deliverable
+    // applies to a NEW branch in the blessed repo; anything else lands in the default deliverables folder.
+    // No folder picking — the result line reports exactly where it went (server truth, never a guess).
+    const implBtn = document.createElement('button'); implBtn.className = 'consent-btn'; implBtn.textContent = 'Implement';
+    implBtn.title = 'accept this work — apply it (patch → new branch; files → your deliverables folder)';
+    implBtn.onclick = async () => {
+      if (implBtn.disabled) return;
+      implBtn.disabled = true; implBtn.textContent = 'implementing…';
+      let res = null; try { res = await onDecide('keep'); } catch (_) { res = { ok: false }; }
+      if (res && res.ok) {
+        const done = res.applied
+          ? ('✓ implemented — applied to branch ' + (res.branch || '?') + (res.root ? (' in ' + res.root) : ''))
+          : ('✓ implemented — files saved to ' + (res.destPath || 'your StarNet deliverables folder'));
+        decideNote(done); sendNote(); settle(done, false);
+      } else {
+        implBtn.disabled = false; implBtn.textContent = 'Implement';
+        localLine('Could not implement this: ' + ((res && res.error) || 'the station refused') + '.');
       }
-      pane.appendChild(sum);
+    };
+    acts.appendChild(implBtn);
 
-      // ── pane 2: the files — clicking a file OPENS it (W7), it does not dump source ──
-      // .html → runs in a new tab (jailed /workshop-run/ static route); anything else → opens in the OS
-      // default app (POST /api/workshop/open). A small demoted "view source" per row keeps the old inline
-      // reader for anyone who wants the code — default is OPEN, source is opt-in.
-      const fb = document.createElement('div'); fb.className = 'ws-pane ws-files';
-      const fhead = document.createElement('div'); fhead.className = 'ws-fhead'; fhead.textContent = 'files';
-      fb.appendChild(fhead);
-      const list = document.createElement('div'); list.className = 'ws-flist';
-      const view = document.createElement('pre'); view.className = 'ws-fview'; view.hidden = true;   // hidden until "view source"
-      if (!files.length) { const e = document.createElement('div'); e.className = 'dim'; e.textContent = '(no files listed)'; list.appendChild(e); }
-      files.forEach(f => {
-        if (!f || !f.path) return;
-        const isHtml = /\.html?$/i.test(f.path);
-        const rowEl = document.createElement('div'); rowEl.className = 'ws-filerow';
-        // the file itself = the OPEN affordance (primary). Label says plainly what a click does.
-        const b = document.createElement('button'); b.className = 'ws-file'; b.type = 'button';
-        b.textContent = f.path + (f.bytes != null ? '  ·  ' + f.bytes + 'B' : '');
-        b.title = isHtml ? 'run this file in a new tab' : 'open this file in your default app';
-        b.onclick = async () => {
-          if (isHtml) { openRunTab(f.path); return; }
-          b.disabled = true; const was = b.textContent; b.textContent = 'opening…';
-          let res = null; try { res = opts.openFile ? await opts.openFile(f.path) : { ok: false }; } catch (_) { res = { ok: false }; }
-          b.disabled = false; b.textContent = was;
-          if (!res || !res.ok) localLine('Could not open that file: ' + ((res && res.error) || 'the station refused') + '.');
-        };
-        rowEl.appendChild(b);
-        // demoted "view source" — the old inline code reader, opt-in.
-        const src = document.createElement('button'); src.className = 'ws-viewsrc'; src.type = 'button'; src.textContent = 'view source';
-        src.title = 'show this file’s code inline';
-        src.onclick = async () => {
-          list.querySelectorAll('.ws-file.sel').forEach(x => x.classList.remove('sel'));
-          b.classList.add('sel');
-          view.hidden = false; view.textContent = 'loading…';
-          let content = '';
-          try { content = opts.readFile ? await opts.readFile(agentId, m.runId, f.path) : ''; } catch (_) { content = ''; }
-          view.textContent = content || '(no preview available)';
-          autoscroll();
-        };
-        rowEl.appendChild(src);
-        list.appendChild(rowEl);
-      });
-      fb.appendChild(list); fb.appendChild(view);
-      pane.appendChild(fb);
-      slot.appendChild(pane);
+    // LATER — dismiss; the session stays in the rail and the card returns next time this session opens.
+    const laterBtn = document.createElement('button'); laterBtn.className = 'consent-btn'; laterBtn.textContent = 'Later';
+    laterBtn.onclick = async () => { try { await onDecide('later'); } catch (_) {} sendNote(); settle('↩ left in the workshop — reopen this session any time to decide', false); };
+    acts.appendChild(laterBtn);
 
-      // ── three actions, one row ──
-      const acts = document.createElement('div'); acts.className = 'turnin-rate ws-acts';
-      // KEEP — pick a destination folder. On desktop we offer a native folder picker (Tauri) IF the shell
-      // exposes one, and ALWAYS keep the typed path as a fallback with INLINE validation (does the folder
-      // exist? — asked of the sidecar) so a bad path is caught before Keep instead of failing silently.
-      const keepWrap = document.createElement('span'); keepWrap.className = 'ws-keep';
-      const path = document.createElement('input'); path.className = 'turnin-edit ws-path'; path.type = 'text';
-      path.placeholder = 'folder to copy into'; path.value = opts.desktopDefault || '';
-      path.setAttribute('aria-label', 'Destination folder to keep the deliverable in');
-      const hint = document.createElement('span'); hint.className = 'ws-pathhint'; hint.hidden = true;
-      const keepBtn = document.createElement('button'); keepBtn.className = 'consent-btn'; keepBtn.textContent = 'Keep';
+    // DISCARD — the ONE confirm (single click to arm, second to confirm). decide discard → wipe + denylist.
+    const discardBtn = document.createElement('button'); discardBtn.className = 'consent-btn deny'; discardBtn.textContent = 'Discard';
+    let armed = false;
+    discardBtn.onclick = async () => {
+      if (!armed) { armed = true; discardBtn.textContent = 'Discard — sure?'; setTimeout(() => { if (!settled) { armed = false; discardBtn.textContent = 'Discard'; } }, 4000); return; }
+      discardBtn.disabled = true;
+      let res = null; try { res = await onDecide('discard'); } catch (_) { res = { ok: false }; }
+      if (res && res.ok) { const done = '✕ discarded'; decideNote(done); sendNote(); settle(done, true); }
+      else { discardBtn.disabled = false; armed = false; discardBtn.textContent = 'Discard'; localLine('Could not discard this: ' + ((res && res.error) || 'the station kept it') + '.'); }
+    };
+    acts.appendChild(discardBtn);
 
-      // inline validation: debounced dirstat; a nonexistent/typo'd folder shows a quiet warning (never blocks —
-      // keep still creates the folder, but the Commander sees the truth about their path first).
-      let validateTimer = null;
-      function validatePath() {
-        const dest = String(path.value || '').trim();
-        if (!dest) { hint.hidden = true; return; }
-        fetch('/api/fs/dirstat?path=' + encodeURIComponent(dest), { cache: 'no-store' })
-          .then(r => r.ok ? r.json() : null).then(j => {
-            if (!j) { hint.hidden = true; return; }
-            if (j.exists && j.isDir) { hint.hidden = true; }
-            else if (j.exists && !j.isDir) { hint.hidden = false; hint.textContent = '⚠ that path is a file, not a folder'; }
-            else { hint.hidden = false; hint.textContent = '⚠ that folder doesn’t exist yet — it will be created'; }
-          }).catch(() => { hint.hidden = true; });
-      }
-      path.addEventListener('input', () => { if (validateTimer) clearTimeout(validateTimer); validateTimer = setTimeout(validatePath, 400); });
-
-      // 📁 browse — the REAL OS folder chooser: Tauri command first if the shell ships one, else the sidecar's
-      // native dialog (POST /api/projects/pickfolder — local-first, works in the browser too). Cancel/unavailable
-      // just falls back to the typed path; picking fills the input only (Keep stays the consent).
-      const core = tauriCore();
-      const pickBtn = document.createElement('button'); pickBtn.className = 'consent-btn ws-pick'; pickBtn.textContent = '📁 choose…';
-      pickBtn.title = 'browse for a folder';
-      pickBtn.onclick = () => {
-        if (pickBtn.disabled) return;
-        pickBtn.disabled = true;
-        const viaSidecar = () =>
-          fetch('/api/projects/pickfolder', { method: 'POST' })
-            .then(r => r.json()).then(j => (j && j.ok && j.path) ? String(j.path) : null)
-            .catch(() => null);
-        const picked = (core && core.invoke)
-          ? Promise.resolve(core.invoke('starnet_pick_folder', {})).then(dir => (dir ? String(dir) : null)).catch(viaSidecar)
-          : viaSidecar();
-        picked.then(dir => { if (dir) { path.value = dir; validatePath(); } })
-          .finally(() => { pickBtn.disabled = false; path.focus(); });
-      };
-
-      // W7 (f): "Keep & open folder" — one click copies the files out AND shell-opens the destination folder
-      // (Explorer/Finder) so the kept files are immediately in hand. On the desktop shell this reveals the real
-      // folder; the success line states honestly whether the folder actually opened.
-      keepBtn.textContent = 'Keep & open folder';
-      keepBtn.onclick = async () => {
-        const dest = String(path.value || '').trim();
-        if (!dest) { path.focus(); return; }
-        keepBtn.disabled = true; keepBtn.textContent = 'keeping…';
-        let res = null; try { res = await onDecide('keep', dest, { open: true }); } catch (_) { res = { ok: false }; }
-        if (res && res.ok) settle('✓ kept — files copied to ' + (res.destPath || dest) + (res.opened ? ' (folder opened)' : ''), false);
-        else { keepBtn.disabled = false; keepBtn.textContent = 'Keep & open folder'; localLine('Could not keep this: ' + ((res && res.error) || 'the station refused the copy') + '.'); }
-      };
-      keepWrap.appendChild(path); if (pickBtn) keepWrap.appendChild(pickBtn); keepWrap.appendChild(keepBtn); keepWrap.appendChild(hint);
-      acts.appendChild(keepWrap);
-
-      // LATER — dismiss; the card may return next session (no confirm).
-      const laterBtn = document.createElement('button'); laterBtn.className = 'consent-btn'; laterBtn.textContent = 'Later';
-      laterBtn.onclick = async () => { try { await onDecide('later'); } catch (_) {} settle('↩ left in the workshop', false); };
-      acts.appendChild(laterBtn);
-
-      // DISCARD — the ONE confirm (single click to arm, second to confirm). decide discard → wipe + denylist.
-      const discardBtn = document.createElement('button'); discardBtn.className = 'consent-btn deny'; discardBtn.textContent = 'Discard';
-      let armed = false;
-      discardBtn.onclick = async () => {
-        if (!armed) { armed = true; discardBtn.textContent = 'Discard — sure?'; setTimeout(() => { if (!settled) { armed = false; discardBtn.textContent = 'Discard'; } }, 4000); return; }
-        discardBtn.disabled = true;
-        let res = null; try { res = await onDecide('discard'); } catch (_) { res = { ok: false }; }
-        if (res && res.ok) settle('✕ discarded', true);
-        else { discardBtn.disabled = false; armed = false; discardBtn.textContent = 'Discard'; localLine('Could not discard this: ' + ((res && res.error) || 'the station kept it') + '.'); }
-      };
-      acts.appendChild(discardBtn);
-      slot.appendChild(acts);
-    }
+    r.body.appendChild(acts);
+    autoscroll();
   }
 
   // Cortex (M-mem.5b) — THE TURN-IN BEAT. After a run, reflection proposes durable memories; the Commander

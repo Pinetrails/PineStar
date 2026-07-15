@@ -5654,7 +5654,8 @@ function workshopPrompt(runId, item) {
     + '  { "v": 1, "runId": "' + runId + '", "agentId": "<your id>", "backlogId": "' + ((item && item.id) || '') + '",\n'
     + '    "title": "<short name>", "kind": "tool|fix|draft|doc|other", "summary": "<one paragraph, plain language>",\n'
     + '    "files": [{ "path": "<relative to ' + dir + '>", "bytes": <number> }],\n'
-    + '    "howToUse": "<how the Commander uses it>", "notVerified": ["<what you could not check>"] }\n'
+    + '    "howToUse": "<ONE short sentence — at most the single run command. The station already gives the Commander an Open link and one-click actions, so NEVER write multi-step setup or git instructions here>",\n'
+    + '    "notVerified": ["<what you could not check>"] }\n'
     + '- The manifest MUST list the real files you wrote (paths relative to "' + dir + '/"). This is required — a shift with no manifest is discarded.';
 }
 
@@ -6095,16 +6096,30 @@ async function handleWorkshopDecide(req, res) {
     return json(200, { ok: false, decision: 'keep', applied: false, error: applied.error || 'could not apply the patch', branch: applied.branch || null });
   }
 
-  // ordinary file deliverable: copy the real files out to destPath. destPath is an ABSOLUTE, user-chosen folder —
-  // an interactive, user-initiated action (they clicked Keep and picked a folder), so it writes OUTSIDE the jail by
-  // design. We only copy proven files and never touch anything but destPath.
-  const destPath = String(body.destPath || '');
-  if (!destPath) return json(400, { error: 'choose where to keep it' });
+  // ordinary file deliverable: copy the real files out to destPath — an interactive, user-initiated action
+  // (they clicked Implement/Keep), so it writes OUTSIDE the jail by design. We only copy proven files and never
+  // touch anything but destPath.
+  // NO destPath (the simplified card has no folder picker, 2026-07-15) → a DEFAULT per-deliverable folder the
+  // Commander can actually find: <Desktop or home>/StarNet deliverables/<title-slug>-<runId8>. The response
+  // reports the real destPath so the card states exactly where the files landed (server truth, never a guess).
+  let destPath = String(body.destPath || '');
+  let defaulted = false;
+  if (!destPath) {
+    const home = os.homedir();
+    let base = path.join(home, 'Desktop');
+    try { if (!fs.existsSync(base)) base = home; } catch (_) { base = home; }
+    const slug = String(man.title || 'deliverable').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'deliverable';
+    const runTag = String(runId).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 8) || 'run';
+    destPath = path.join(base, 'StarNet deliverables', slug + '-' + runTag);
+    defaulted = true;
+  }
   // SAFE-BY-DEFAULT: copy with COPYFILE_EXCL so Keep never silently clobbers a file the user already has at
   // destPath. An explicit body.overwrite:true opts into the old replace behavior. The common happy path (a
   // fresh folder, or filenames that don't collide) is unaffected — EXCL only fires on a real pre-existing file,
   // which we surface as a clear "already exists" refusal instead of an opaque 500 or a silent overwrite.
-  const overwrite = body.overwrite === true;
+  // The DEFAULTED folder is this deliverable's own (slug+runId-unique) — re-implementing may overwrite only
+  // its own earlier copy, never a user-chosen folder's contents.
+  const overwrite = body.overwrite === true || defaulted;
   const copyFlags = overwrite ? 0 : fs.constants.COPYFILE_EXCL;
   let copied = 0;
   try {

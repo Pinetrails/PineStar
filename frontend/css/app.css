@@ -572,22 +572,23 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 }
 .turnin-edit:focus { outline: none; border-color: var(--ph); }
 
-/* W3 — THE AWAY-WORKSHOP RETURN CARD. Rides the gold-inset turn-in family (.cmsg.turnin.workshop-return);
-   these styles are only the expanded two-pane viewer + the honest verification line. Collapsed, it's just a
-   title + one review button (inherited). */
+/* W3 — THE DELIVERY CARD (rendered inside the deliverable's OWN session, 2026-07-15). Rides the gold-inset
+   turn-in family (.cmsg.turnin.workshop-return); a flat stack — headline, verify line, what/how lines, the
+   Open-it action, the files pane, and one action row (optional message + Implement / Later / Discard). */
 .ws-verline { display:block; font-size:12px; letter-spacing:.3px; margin-top:-2px; }
 .ws-verline.ok { color:var(--gold); }
 .ws-verline.dim { color:var(--ph-dim); }
-.ws-slot { display:block; min-width:0; }
-.ws-panes { display:flex; gap:9px; margin-top:6px; flex-wrap:wrap; }
-.ws-pane { flex:1 1 220px; min-width:0; background:var(--ph-faint); border:1px solid var(--ph-glow2);
-  border-radius:3px; padding:7px 8px; box-sizing:border-box; }
-.ws-summary .ws-line { display:block; margin-bottom:5px; font-size:13px; line-height:1.35; overflow-wrap:anywhere; }
+/* the flat delivery card (2026-07-15): what it did / how to use / check-yourself lines, stacked plainly */
+.workshop-return .ws-line { display:block; margin-top:6px; font-size:13px; line-height:1.35; overflow-wrap:anywhere; }
+.workshop-return .ws-what { color:var(--ph-bright); }
+.workshop-return .ws-how { color:var(--ph-dim); font-size:12px; }
+.workshop-return .ws-notver { color:var(--ph-dim); font-size:12px; }
+.ws-pane { min-width:0; background:var(--ph-faint); border:1px solid var(--ph-glow2);
+  border-radius:3px; padding:7px 8px; box-sizing:border-box; margin-top:7px; }
 /* disk-proven input-capture notice (validateWorkshopManifest.capturesInput) — shown above the Open-it action */
 .ws-capture-warn { display:block; margin-top:6px; font-size:12px; line-height:1.35; color:var(--gold);
   background:rgba(var(--gold-rgb),.07); border:1px solid rgba(var(--gold-rgb),.35); border-radius:3px; padding:4px 7px; }
-.ws-summary .ws-k { display:block; color:var(--gold); font-size:10px; letter-spacing:1px; text-transform:uppercase; }
-.ws-summary .ws-v { display:block; color:var(--ph-bright); }
+.ws-try { margin-top:7px; }
 .ws-fhead { color:var(--gold); font-size:10px; letter-spacing:1px; text-transform:uppercase; margin-bottom:4px; }
 .ws-flist { display:flex; flex-direction:column; gap:2px; margin-bottom:6px; }
 .ws-filerow { display:flex; align-items:center; gap:6px; }
@@ -602,11 +603,9 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 .ws-fview { margin:0; max-height:180px; overflow:auto; background:var(--ink); border:1px solid var(--ph-glow2);
   border-radius:2px; padding:6px 7px; color:var(--ph-bright); font-size:12px; line-height:1.4; white-space:pre-wrap;
   overflow-wrap:anywhere; }
-.ws-acts { margin-top:8px; gap:6px 8px; }
-.ws-keep { display:inline-flex; align-items:center; gap:5px; flex-wrap:wrap; }
-.ws-path { width:220px; max-width:100%; }
-.ws-pathhint { flex-basis:100%; font-size:11px; color:var(--ph-dim); letter-spacing:.2px; }
-.ws-pick { white-space:nowrap; }
+.ws-acts { margin-top:8px; gap:6px 8px; align-items:center; flex-wrap:wrap; }
+/* the optional tell-the-agent message — rides the decision as a real user turn in the delivery session */
+.ws-msg { width:260px; max-width:100%; }
 /* per-command verification detail: the actual commands run + each one's pass/fail from the manifest */
 .ws-verdetail { margin-top:6px; }
 .ws-verdetail > .ws-k { display:block; color:var(--gold); font-size:10px; letter-spacing:1px; text-transform:uppercase; margin-bottom:3px; }
