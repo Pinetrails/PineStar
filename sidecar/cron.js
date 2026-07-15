@@ -459,6 +459,22 @@
     return 5 * MIN;                            // unused for once-jobs (they fire whenever first noticed)
   }
 
+  /* misfirePolicy(job) — what to do with a recurring fire noticed PAST its grace window (2026-07-15
+     reliability audit). 'fire_once' collapses the whole missed backlog into ONE catch-up run (a 9:00 daily
+     noticed at 12:01 still does the day's work, exactly once); 'skip' fast-forwards without running (the
+     pre-policy behavior). job.misfire is the explicit per-job setting; when absent the DEFAULT is derived
+     from the schedule: cron schedules and SLOW intervals (period >= 1h — daily-ish work whose output is
+     still wanted late) fire_once, FAST intervals skip (a missed 5-minute poll is worthless by the next one).
+     Either way the fast-forward to the next FUTURE occurrence still happens — never a backlog burst. */
+  function misfirePolicy(job) {
+    const m = job && job.misfire;
+    if (m === 'skip' || m === 'fire_once') return m;
+    const sched = job && job.schedule;
+    if (sched && sched.kind === 'cron') return 'fire_once';
+    if (sched && sched.kind === 'interval') return periodMs(sched) >= HOUR ? 'fire_once' : 'skip';
+    return 'skip';
+  }
+
   // current due time for a job: the persisted nextRunAt if present, else freshly computed. ms | null.
   function dueAtOf(job, now, defaultTz) {
     if (job && job.nextRunAt) { const t = Date.parse(job.nextRunAt); return isNaN(t) ? null : t; }
@@ -534,8 +550,9 @@
         fire.push({ jobId: job.id, scheduledFor: dueAt });
         next.push({ jobId: job.id, nextAt: nextAt, prevAt: dueAt });
       } else {
-        // stale missed run: fast-forward to the next FUTURE occurrence and SKIP (at-most-one catch-up,
-        // never a backlog burst). Intervals use O(1) arithmetic; cron uses the bounded next-fire search.
+        // stale missed run: fast-forward to the next FUTURE occurrence (at-most-one catch-up, never a
+        // backlog burst) — then the job's MISFIRE POLICY decides whether the missed occurrence still runs
+        // ONCE (fire_once) or is dropped (skip). Intervals use O(1) arithmetic; cron the bounded search.
         let nextAt = null;
         if (sched.kind === 'interval') {
           const p = periodMs(sched);
@@ -547,7 +564,13 @@
         }
         if (nextAt == null) continue;
         next.push({ jobId: job.id, nextAt: nextAt, prevAt: dueAt });
-        skipped.push({ jobId: job.id, reason: 'caught-up', scheduledFor: dueAt });
+        if (misfirePolicy(job) === 'fire_once') {
+          // the backlog collapses to ONE catch-up run: advance-before-run still persists the FUTURE
+          // nextRunAt above, so a crash mid-catch-up never re-fires and there is never a burst.
+          fire.push({ jobId: job.id, scheduledFor: dueAt });
+        } else {
+          skipped.push({ jobId: job.id, reason: 'caught-up', scheduledFor: dueAt });
+        }
       }
     }
     return { fire: fire, skipped: skipped, next: next };
@@ -566,6 +589,7 @@
     planTick: planTick,
     dueJobs: dueJobs,
     computeGraceMs: computeGraceMs,
+    misfirePolicy: misfirePolicy,
     periodMs: periodMs,
     isValidTz: isValidTz,
     _internals: {

@@ -106,18 +106,47 @@ const job = (o) => Object.assign({ id: 'j1', enabled: true, schedule: null, next
   A.eq(r2.fire.length, 0, 'after advance-before-run, a restart at the same instant does NOT double-fire');
 }
 
-// ---- 8. NO-BACKLOG: a recurring job stale beyond grace fast-forwards + skips (one catch-up, not a burst) ----
+// ---- 8. NO-BACKLOG + MISFIRE POLICY: a recurring job stale beyond grace fast-forwards, then the policy
+//         decides whether the missed occurrence still runs ONCE (fire_once) or is dropped (skip) ----
 {
   // every 60m -> grace = clamp(30m, 2m, 2h) = 30m. Make it late by 3h (way past grace).
+  // A 60m interval is a SLOW interval (>= 1h), so its DEFAULT misfire is fire_once: one catch-up run.
   const now = T0 + 10 * 3600000;
   const jobs = [job({ schedule: { kind: 'interval', minutes: 60 }, nextRunAt: cron._internals.iso(now - 3 * 3600000) })];
   const r = cron.planTick(jobs, now);
-  A.eq(r.fire.length, 0, 'stale-beyond-grace does NOT fire (no backlog burst)');
-  A.eq(r.skipped.length, 1, 'stale job is skipped...');
-  A.eq(r.skipped[0].reason, 'caught-up', '...with reason caught-up');
+  A.eq(r.fire.length, 1, 'stale slow interval fires ONE catch-up (fire_once default), never a backlog burst');
+  A.eq(r.skipped.length, 0, 'the catch-up run is not also a skip');
   A.eq(r.next.length, 1, 'stale job is fast-forwarded');
   A.ok(r.next[0].nextAt > now, 'fast-forwarded to a FUTURE occurrence');
   A.ok(r.next[0].nextAt - now <= 3600000, 'fast-forwarded to the NEXT future occurrence (within one period)');
+
+  // explicit misfire:'skip' opts out of the catch-up (the pre-policy behavior).
+  const jSkip = job({ schedule: { kind: 'interval', minutes: 60 }, misfire: 'skip', nextRunAt: cron._internals.iso(now - 3 * 3600000) });
+  const rSkip = cron.planTick([jSkip], now);
+  A.eq(rSkip.fire.length, 0, 'misfire:skip -> stale-beyond-grace does NOT fire');
+  A.eq(rSkip.skipped.length, 1, 'misfire:skip -> stale job is skipped...');
+  A.eq(rSkip.skipped[0].reason, 'caught-up', '...with reason caught-up');
+
+  // a FAST interval (< 1h) defaults to skip: a stale poll is worthless by the next one.
+  const jFast = job({ schedule: { kind: 'interval', minutes: 5 }, nextRunAt: cron._internals.iso(now - 3600000) });
+  const rFast = cron.planTick([jFast], now);
+  A.eq(rFast.fire.length, 0, 'fast interval defaults to misfire:skip (no stale poll catch-up)');
+  A.eq(rFast.skipped.length, 1, 'fast interval stale occurrence is skipped');
+
+  // explicit misfire:'fire_once' on a FAST interval overrides the skip default.
+  const jFastOnce = job({ schedule: { kind: 'interval', minutes: 5 }, misfire: 'fire_once', nextRunAt: cron._internals.iso(now - 3600000) });
+  const rFastOnce = cron.planTick([jFastOnce], now);
+  A.eq(rFastOnce.fire.length, 1, 'misfire:fire_once on a fast interval fires ONE catch-up');
+
+  // a CRON schedule (daily work) defaults to fire_once: opening the app at 12:01 still runs the 9:00 routine.
+  const dueAt = Date.parse('2026-06-19T09:00:00Z');
+  const late = dueAt + 3 * 3600000 + 60000;                         // checked at 12:01 — way past grace
+  const jDaily = job({ schedule: cron.parseSchedule('0 9 * * *', T0), nextRunAt: cron._internals.iso(dueAt) });
+  const rDaily = cron.planTick([jDaily], late);
+  A.eq(rDaily.fire.length, 1, 'missed daily cron fires ONE catch-up by default (fire_once)');
+  A.eq(rDaily.fire[0].scheduledFor, dueAt, 'the catch-up is attributed to the missed occurrence');
+  A.eq(rDaily.next.length, 1, 'and the schedule is still fast-forwarded to a future occurrence');
+  A.ok(rDaily.next[0].nextAt > late, 'fast-forwarded past now (no backlog burst)');
 }
 
 // ---- 9. WITHIN-GRACE catch-up: late but inside grace fires exactly once ----
@@ -144,11 +173,16 @@ const job = (o) => Object.assign({ id: 'j1', enabled: true, schedule: null, next
   const due = Date.parse('2026-06-19T09:00:00Z');
   const now = Date.parse('2026-06-19T13:30:00Z');              // 4.5h late > daily cron grace (2h clamp)
   const sched = cron.parseSchedule('0 9 * * *', due - 60000);
+  // MISFIRE POLICY: a cron schedule defaults to fire_once — the stale occurrence still runs EXACTLY once
+  // (never a backlog burst: one fire, fast-forwarded next). misfire:'skip' restores the drop behavior.
   const jobs = [job({ schedule: sched, nextRunAt: cron._internals.iso(due) })];
   const r = cron.planTick(jobs, now);
-  A.eq(r.fire.length, 0, 'stale cron job does not fire a backlog');
-  A.eq(r.skipped.length, 1, 'stale cron job is skipped');
+  A.eq(r.fire.length, 1, 'stale cron job fires ONE catch-up (fire_once default), not a backlog');
+  A.eq(r.skipped.length, 0, 'the catch-up is not also a skip');
   A.eq(r.next[0].nextAt, Date.parse('2026-06-20T09:00:00Z'), 'stale cron job fast-forwards to the next future run');
+  const rSkip = cron.planTick([job({ schedule: sched, misfire: 'skip', nextRunAt: cron._internals.iso(due) })], now);
+  A.eq(rSkip.fire.length, 0, 'misfire:skip -> stale cron job does not fire');
+  A.eq(rSkip.skipped.length, 1, 'misfire:skip -> stale cron job is skipped');
 }
 
 // ---- 10. one-shots: fire once when due, then permanently ineligible; disabled jobs ignored ----

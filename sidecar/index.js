@@ -5466,6 +5466,9 @@ function handleCronCreate(req, res) {
         id: id, name: body.name, prompt: body.prompt, schedule: schedule,
         agentId: agentId, model: body.model, provider: provider, deliver: body.deliver,
         enabled: body.enabled, repeat: body.repeat,
+        // MISFIRE POLICY (2026-07-15 audit): optional 'fire_once'|'skip'; the store normalizes anything
+        // else to null (schedule-derived default: daily/cron -> fire_once, fast intervals -> skip).
+        misfire: body.misfire,
         // R3: pass through the caller-supplied provenance bag ({ recipeId } from MAKE ROUTINE). cron-store normMeta
         // keeps only a plain object; absent → null. Additive — no existing caller sends it and old jobs load fine.
         meta: body.meta

@@ -57,7 +57,13 @@
   const iso = cron._internals.iso;            // ms(arg) -> ISO; deterministic (no zero-arg new Date)
 
   // fields a user may edit via updateJob. `id`, timestamps, run-state and counters are NOT editable here.
-  const EDITABLE = ['name', 'prompt', 'agentId', 'model', 'provider', 'deliver', 'skills', 'script', 'workdir', 'contextFrom'];
+  const EDITABLE = ['name', 'prompt', 'agentId', 'model', 'provider', 'deliver', 'skills', 'script', 'workdir', 'contextFrom', 'misfire'];
+
+  // MISFIRE POLICY (2026-07-15 reliability audit): what planTick does with a recurring fire noticed past its
+  // grace window — 'fire_once' (run the missed occurrence exactly once) or 'skip' (fast-forward, drop it).
+  // null = derive the default from the schedule (cron/slow-interval -> fire_once, fast interval -> skip;
+  // see cron.misfirePolicy). Normalized here so a bogus patch value can never persist an unknown policy.
+  function normMisfire(v) { return (v === 'skip' || v === 'fire_once') ? v : null; }
 
   function isValidId(id) { return typeof id === 'string' && ID_RE.test(id); }
 
@@ -110,6 +116,8 @@
       nextRunAt: (enabled && fireable) ? armAt(schedule, null, now) : null,
       lastRunAt: null, lastRunId: null, lastStatus: null, lastError: null, lastReason: null,
       retryCount: 0,
+      // misfire policy for a recurring job (see normMisfire above). null -> schedule-derived default.
+      misfire: normMisfire(spec.misfire),
       // G4.5 one-shot fire-claim: stamped at fire time (claimOnceFire), cleared on settlement (markRun).
       // null on a fresh job; only ever non-null while a one-shot run is in flight (or a zombie past maxRunMs).
       fireClaim: null, lastFireAttemptAt: null,
@@ -157,6 +165,7 @@
     return mapJob(jobs, id, (job) => {
       const next = Object.assign({}, job);
       for (const k of EDITABLE) if (Object.prototype.hasOwnProperty.call(patch, k)) next[k] = patch[k];
+      if (Object.prototype.hasOwnProperty.call(patch, 'misfire')) next.misfire = normMisfire(patch.misfire);
       if (patch.repeat && patch.repeat.times !== undefined) {
         const t = patch.repeat.times;
         next.repeat = Object.assign({}, job.repeat, { times: t == null ? null : Math.max(1, parseInt(t, 10) || 1) });
