@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "6f1ed9e33f035b7af1089afaf47aef6d3a3a72b4",
+    "sourceCommit": "0882dc0a9a4b4480dcd8214645f78640fd5fd969",
     "pathSetSha256": "11a2ff1e8ccd7ca7503a7d3a57bf51e4d0c7f5aeebda7d500a3c3bb7b174ea6e",
     "files": [
       {
@@ -248,8 +248,8 @@
       },
       {
         "path": "frontend/app/glossary.js",
-        "bytes": 5880,
-        "sha256": "010792df291f18c02c9a4aff766ba6a30dc276e6fec889a7e71698c0f979a2b0"
+        "bytes": 5953,
+        "sha256": "1cec38aa05441d2104f7b38c1fb7b5eb3985b1e5770714c057afa6df812b3dfc"
       },
       {
         "path": "frontend/app/goalloop.js",
@@ -618,8 +618,8 @@
       },
       {
         "path": "frontend/app/stationui.js",
-        "bytes": 437053,
-        "sha256": "856faf278aeea5c136e648e844c6c37598da8c87b9163feb3ab186822880b680"
+        "bytes": 437300,
+        "sha256": "3cab6130f1b8049b9d21b2f53770e02cd933b049ef800e523acb5828baeea014"
       },
       {
         "path": "frontend/app/study.js",
@@ -683,8 +683,8 @@
       },
       {
         "path": "frontend/app/tutorial.js",
-        "bytes": 65298,
-        "sha256": "c1efdc3cc68f479a549a45af2e5cfddd862993307917ad494db7e26e1b7d3786"
+        "bytes": 65607,
+        "sha256": "2b7171636f3e70282c56e5a93be2a1fa67f4169a2ddca14289ff00603eead3f5"
       },
       {
         "path": "frontend/app/understanding.js",
@@ -763,8 +763,8 @@
       },
       {
         "path": "frontend/app/world.js",
-        "bytes": 446875,
-        "sha256": "c843a00a7dc6cd2ecd71236fa04758a1b341a719d2c0c40afc5a615407ad6462"
+        "bytes": 446909,
+        "sha256": "2346e967f45958c40626e9b0be5822d4b0297e60cfadc7c3697ac892d7bbf227"
       },
       {
         "path": "frontend/app/worldmodel.js",
@@ -853,8 +853,8 @@
       },
       {
         "path": "frontend/index.html",
-        "bytes": 59376,
-        "sha256": "7435c35425d4ce762d3d404585e7b55df8be798d0d4012ff1056fd9dab9c7b44"
+        "bytes": 59448,
+        "sha256": "d9b8e844daccccd21f3dd6165be6455df4e24bf004402f831baa83b1021977a9"
       },
       {
         "path": "frontend/js/arcade.js",
