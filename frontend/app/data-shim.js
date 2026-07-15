@@ -37,7 +37,7 @@ DATA.SKINS = {
   crthead:      { name: 'CRT Head',       set: 'crthead',      scale: 0.404 },
   astronaut:    { name: 'Retro Astronaut', set: 'astronaut',    scale: 0.404 },
   endoskeleton: { name: 'Endoskeleton',   set: 'endoskeleton', scale: 0.404 },
-  ultrondroid:  { name: 'Droid',          set: 'ultrondroid',  scale: 0.414 },
+  ultrondroid:  { name: 'Ultron',         set: 'ultrondroid',  scale: 0.404 },
   xenomorph:    { name: 'Xenomorph',      set: 'xenomorph',    scale: 0.385 },
   voidwizard:   { name: 'Void Wizard',    set: 'voidwizard',   scale: 0.368 },
 };
