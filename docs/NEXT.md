@@ -1,5 +1,29 @@
 # NEXT.md — current priorities & task queue
 
+## 2026-07-14 — ADVERSARIAL SWEEP: interrupt/disconnect seams (branch `agent/adversarial-sweep`)
+
+Fresh-eyes skeptical sweep of the seams happy-path QA is blind to (full ledger with repro steps:
+`.bugloops/adversarial-sweep-2026-07-14/LEDGER.md` in the lane worktree; digest in qa/STATUS.md;
+P0/P1s in the qa findings ledger, crew `Adversarial`). FIXED in-lane with EL-3 escape tests:
+- F1 P0 client disconnect never detected on /api/run (dead `req.on('close')` after readBody —
+  Node ≥15 emits it at message completion): ghost runs spent unwatched, mutex held, reloaded UI
+  contradicted the harness. All three run routes now use `res.on('close')` (`6923ed05`).
+- F2 P0 COMMS `online` asserted forever over a dead sidecar — now folds `World.linkState` →
+  `station unreachable` (`73f376fa`).
+- F3 P1 idle `/steer` minted a paid run from a steering note — now refuses honestly (`f488ed11`).
+OPEN (routed, repros in the ledger):
+- F4 P1 `/model` accepts garbage ids with a confident ack — warn-not-block against the warmed
+  catalog at the ack seam (slash lane).
+- F5 P1 canvas buffers never re-derive on viewport resize; `object-fit:fill` distorts the pixel
+  world; `#ag-portrait` renders 88×1 (canvas lane; cheap DOM oracle: css aspect ≈ buffer aspect).
+- F6 P2 hero body stays `idle` + stale say while its run streams (crew latch rides run phase,
+  hero latch is desk-trip-only — world.js:5060/5077 vs :3027); F7 P2 first summon spawns ON the
+  hero tile (3/3); F8 P2 cancelled runs persist `content:""` assistant turns (partial streamed
+  text lost from the durable transcript); F9 P2-suspect NIGHT SHIFT trophy minted with zero
+  night-shift activity (trophy condition needs reading).
+- KNOWN pre-existing: `test/qa-product-perfect-claims.test.js` is red at trunk `def45e97` on a
+  clean tree (9 fails) — product-perfect lane's; it masks the tail of the fast gate for everyone.
+
 ## 2026-07-13 — FLAGSHIP WAVE: last-hop surfaces + cross-wiring (branch `claude/flagship-features-audit-d0e1a1`)
 
 Three-agent code audit of the flagship trio (autonomy / quests / recommendations) found the engines
