@@ -1570,8 +1570,24 @@ async fn starnet_update_check(
     app: AppHandle,
     pending_update: State<'_, PendingUpdate>,
 ) -> Result<UpdateCheck, String> {
+    // WINDOWS UPDATE-HANG FIX (canary-proven 2026-07-14): the NSIS installer the updater
+    // launches must overwrite the bundled node.exe — but our sidecar is STILL RUNNING from
+    // that same node runtime, so it holds a write lock and NSIS freezes on an "error opening
+    // file for writing" dialog forever. The plugin exits via std::process::exit(0), which
+    // does NOT fire Tauri's ExitRequested handler where kill_sidecar() normally runs — so
+    // without this hook the sidecar is never reaped before the installer touches node.exe.
+    // on_before_exit runs immediately before that process exit: stop the guardian respawn and
+    // kill the child so node.exe is unlocked when NSIS arrives. The Update object built here
+    // carries this hook into the install path (the plugin clones it onto the pending update).
+    let app_for_exit = app.clone();
     let update = app
         .updater_builder()
+        .on_before_exit(move || {
+            if let Some(state) = app_for_exit.try_state::<AppState>() {
+                state.shutting_down.store(true, Ordering::SeqCst);
+                state.kill_sidecar();
+            }
+        })
         .timeout(Duration::from_secs(30))
         .build()
         .map_err(|e| e.to_string())?

@@ -100,6 +100,10 @@
      always follow these"; both are written in the harness voice (real tools, the Commander, do the
      work). Several tie into the station's real subsystems (messaging+cron, Cortex memory, PixelLab). */
   const BUILTINS = Object.freeze((shared.BUILTINS || []).map(freezeSpec));
+  // the ARCHETYPE pool (deep cuts): full specs held OFF the default roster. Never gated — get() resolves
+  // them (so an old save / a scout draft / a summon by id keeps working), the bay lists them only in the
+  // SPECIALIST ARCHIVE, and the scout stages one as a prospect when the learned interests point at it.
+  const ARCHETYPES = Object.freeze((shared.ARCHETYPES || []).map(freezeSpec));
 
   /* ---------- custom (save-your-own) specialties ---------- */
   let customs = [];   // plain (mutable) records with custom:true
@@ -143,9 +147,11 @@
 
   /* ---------- public API ---------- */
   function builtins() { return BUILTINS.slice(); }
+  function archetypes() { return ARCHETYPES.slice(); }
   function customList() { return customs.map(c => Object.assign({}, c)); }   // copies — callers never hold a live ref
+  // list() stays builtins+customs (the default roster surface); archive classes are asked for explicitly.
   function list() { return BUILTINS.concat(customList()); }
-  function get(id) { return BUILTINS.find(b => b.id === id) || customs.find(c => c.id === id) || null; }
+  function get(id) { return BUILTINS.find(b => b.id === id) || ARCHETYPES.find(a => a.id === id) || customs.find(c => c.id === id) || null; }
   function exists(id) { return !!get(id); }
 
   // the EXACT patch App.applyAgentConfig consumes — the single deploy path (dossier edits use the same).
@@ -201,7 +207,7 @@
 
   return {
     TIERS, DEFAULT_ID,
-    list, builtins, customs: customList, get, exists,
+    list, builtins, archetypes, customs: customList, get, exists,
     compose, fromAgent, saveCustom, removeCustom, tierNote
   };
 });

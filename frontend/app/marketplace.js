@@ -43,6 +43,7 @@ const Marketplace = (() => {
   let pickedSummonModel = null;   // SUMMON-only per-agent model choice: { model, provider, effort } or null = inherit the orchestrator's
   let focusAgent = null, focusRecipe = null;     // the spec/recipe id shown in the dossier (per tab)
   let laneFilter = 'all';                        // 'all' | 'code' | 'research' | 'general'  (AGENTS tab)
+  let archiveOpen = false;                       // SPECIALIST ARCHIVE (deep-cut archetypes) — collapsed by default
   let catFilter = 'all';                         // 'all' | 'mine' | <rail bucket>          (RECIPES tab, R6)
   let query = '';
   let buildAccent = '#ffaa33', buildModel = 'balanced';   // the custom-class builder's picked accent + tier
@@ -98,8 +99,10 @@ const Marketplace = (() => {
   function el(tag, cls, html) { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; }
   function voiceName(personaId) { return (typeof Personas !== 'undefined' && Personas.get(personaId) && Personas.get(personaId).name) || personaId; }
 
-  /* ---------- the class seal (engraved coin) ---------- */
+  /* ---------- the class seal — a TYPED ASCII mark (premium pass; SVG stays the mission-seal path) ---------- */
   function coinInner(item) {
+    const mark = (hasIcons() && ClassIcons.ascii) ? ClassIcons.ascii(item) : null;
+    if (mark) return '<pre class="mkt-amark" aria-hidden="true">' + mark.map(esc).join('\n') + '</pre>';
     const svg = hasIcons() ? ClassIcons.svg(item) : null;
     return svg ? '<span class="mkt-coin-ico">' + svg + '</span>' : '<span class="mkt-coin-emoji">' + esc(item.emoji || '◆') + '</span>';
   }
@@ -498,9 +501,9 @@ const Marketplace = (() => {
     if (laneFilter === 'mine') {
       html += sectH('▮ YOUR SPECIALISTS');
       html += customs.length
-        ? '<div class="mkt-grid">' + customs.map(cardHTML).join('') + buildTile + '</div>'
+        ? '<div class="mkt-grid mkt-rows">' + customs.map(cardHTML).join('') + buildTile + '</div>'
         : '<p class="mkt-hint mkt-yours-hint">' + (query ? 'none of your specialists match your search — '
-            : 'none yet — ') + 'build one from scratch below.</p><div class="mkt-grid">' + buildTile + '</div>';
+            : 'none yet — ') + 'build one from scratch below.</p><div class="mkt-grid mkt-rows">' + buildTile + '</div>';
       return html;
     }
 
@@ -510,24 +513,48 @@ const Marketplace = (() => {
     const pinCustoms = hasAnyCustoms && !query;
     if (pinCustoms) {
       html += sectH('▮ YOUR SPECIALISTS');
-      html += '<div class="mkt-grid">' + customs.map(cardHTML).join('') + buildTile + '</div>';
+      html += '<div class="mkt-grid mkt-rows">' + customs.map(cardHTML).join('') + buildTile + '</div>';
     }
 
     html += sectH('▮ CLASS ROSTER');
     // truthful telemetry: an EMPTY catalog means the shared catalog script failed to load (a wiring
     // fault), not "no matches" — say so loudly instead of rendering a quietly blank roster.
     if (!allBuiltins.length) html += '<div class="mkt-empty">⚠ the class catalog failed to load (shared/specialties.js unreachable) — the built-in roster is unavailable. Restart the app; if it persists, this build is mis-wired.</div>';
-    else html += builtins.length ? '<div class="mkt-grid">' + builtins.map(cardHTML).join('') + '</div>'
+    else html += builtins.length ? '<div class="mkt-grid mkt-rows">' + builtins.map(cardHTML).join('') + '</div>'
       : '<div class="mkt-empty">no classes match your ' + (query ? 'search' : 'filter') + '.</div>';
+
+    html += archiveSectionHTML(filtering);
 
     if (!pinCustoms) {
       html += sectH('▮ YOUR SPECIALISTS');
       if (!customs.length) html += '<p class="mkt-hint mkt-yours-hint">' +
         (query ? 'none of your specialists match your search — ' : 'none yet — ') +
         'build one from scratch below' + (deploy && !query ? ', or save the live agent as a specialty above' : '') + '.</p>';
-      html += '<div class="mkt-grid">' + customs.map(cardHTML).join('') + buildTile + '</div>';
+      html += '<div class="mkt-grid mkt-rows">' + customs.map(cardHTML).join('') + buildTile + '</div>';
     }
     return html;
+  }
+  /* ---------- SPECIALIST ARCHIVE: the deep-cut archetype pool (never gated, never in the way) ----------
+     The default roster is the curated 12; the demoted deep cuts stay one click away here — full specs,
+     summonable as-is. Collapsed by default in the clean view; a search or lane filter that matches an
+     archetype auto-expands it (search must FIND a class, never hide it — the no-gating law). These same
+     archetypes are what the scout drafts onto the DRAFTED-FOR-YOU shelf when the learned interests point
+     at one, so this section is the manual door to the pool the station recommends from. */
+  function archiveSectionHTML(filtering) {
+    const all = (Specialties.archetypes ? Specialties.archetypes() : []);
+    if (!all.length) return '';
+    const archs = filt(all);
+    if (filtering) {
+      // searching / lane-filtering: archetypes participate like any class — matches render expanded, no toggle.
+      if (!archs.length) return '';
+      return sectH('▮ SPECIALIST ARCHIVE — deep cuts') + '<div class="mkt-grid mkt-rows">' + archs.map(cardHTML).join('') + '</div>';
+    }
+    const head = '<button type="button" class="mkt-sect-h mkt-archive-head" aria-expanded="' + (archiveOpen ? 'true' : 'false') + '">' +
+      '<span aria-hidden="true">' + (archiveOpen ? '▾' : '▸') + '</span> SPECIALIST ARCHIVE (' + all.length + ')</button>';
+    if (!archiveOpen) return head;
+    return head +
+      '<p class="mkt-hint">niche classes held off the main roster — fully specified, summon any time. When your real work points at one, the station drafts it onto the shelf above for you.</p>' +
+      '<div class="mkt-grid mkt-rows">' + archs.map(cardHTML).join('') + '</div>';
   }
   // SUMMON CONFIG (audit item 3): a compact collapsible strip for APPEARANCE + MODEL. Both carry good defaults
   // (Cadet skin, inherit the orchestrator's model), so it's COLLAPSED by default with a one-line summary of the
@@ -631,15 +658,20 @@ const Marketplace = (() => {
     // pick mode too, so the card the current agent already runs as stays honestly marked.
     const here = !!(ctx && ctx.currentSpecialtyId && ctx.currentSpecialtyId === s.id);
     const sel = (focusAgent === s.id);
+    // settings-console row shape: [typed mark socket] [name + tagline] ……… [lane · pips · tier / code]
+    // — the right cluster is its own column so it right-aligns like the provider rows' status column.
     return '<button class="mkt-card' + (sel ? ' sel' : '') + '" type="button" data-id="' + esc(s.id) + '" style="--accent:' + esc(s.accent) + ';--ci:' + (i || 0) + '">' +
-      sealHTML(s, true) +
+      sealHTML(s, false) +
       '<div class="mkt-card-id">' +
         '<div class="mkt-name">' + esc(s.name) +
           (here ? ' <span class="mkt-badge mkt-here">DEPLOYED</span>' : '') +
           (s.custom ? ' <span class="mkt-badge">CUSTOM</span>' : '') + '</div>' +
         '<div class="mkt-tag">' + esc(s.tagline) + '</div>' +
+      '</div>' +
+      '<div class="mkt-card-side">' +
         '<div class="mkt-meta"><span class="mkt-chip lane">' + esc(laneLabelOf(s)) + '</span>' +
           pipsOf(s.model) + ' <span class="mkt-tier">' + esc(clearanceLabel(s.model)) + '</span></div>' +
+        '<span class="mkt-card-code">' + esc(codeOf(s)) + '</span>' +
       '</div>' +
     '</button>';
   }
@@ -1343,6 +1375,10 @@ const Marketplace = (() => {
     // live skin stage + model picker on expand).
     const cfgHead = stage.querySelector('.mkt-cfg-head');
     if (cfgHead) cfgHead.addEventListener('click', () => { summonConfigOpen = !summonConfigOpen; sfx('click'); renderStage(); });
+
+    // SPECIALIST ARCHIVE: the deep-cut pool expands/collapses (state survives re-renders within one open bay).
+    const archHead = stage.querySelector('.mkt-archive-head');
+    if (archHead) archHead.addEventListener('click', () => { archiveOpen = !archiveOpen; sfx('click'); renderStage(); });
 
     wireGridNav(stage);
     wireGlass(stage);

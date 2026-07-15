@@ -138,6 +138,29 @@ Ship blockers:
       absence of shell browser / `computer.use` / `desktop.open`.
 - [ ] Phase-5 computer evidence deliberately remains `blocked` until that installed receipt exists.
 
+## LANDED 2026-07-14 — RECRUIT RECURATION: 12 majority-use classes + archetype-seeded minting
+
+Andrew's read: most of the 18 preconfigured recruit listings were redundant — beginners picked none.
+The catalog now has TWO shelves (`shared/specialties.js`):
+- **BUILTINS (12)** — one class per distinct majority-use job: chief / researcher / engineer / scribe /
+  analyst / operator / scout / designer / tutor + 3 NEW practical classes: **navigator** (trips &
+  logistics; verifies every price/hour live, never claims a booking), **curator** (local file tidying;
+  move-never-delete + quarantine — the local-first differentiator), **muse** (diverge-then-converge
+  ideation). 2 new kit-grounded skill recipes: `itinerary-planning`, `file-curation`.
+- **ARCHETYPES (9)** — the demoted deep cuts (reviewer/auditor/liaison/publicist/herald/broker/
+  bookkeeper/translator/archivist), full specs, NEVER gated: `Specialties.get()` resolves them (old
+  saves + summon-by-id still work), and the bay lists them in a collapsible **SPECIALIST ARCHIVE**
+  that search/lane filters auto-expand.
+- **Archetype-seeded minting** (`Scout.matchArchetype`, wired in `runScoutCycle`): on a prospect turn
+  the cycle first checks — deterministically, ZERO model spend — whether a dormant archetype covers a
+  WARM learned interest; a match stages its FULL spec on the DRAFTED-FOR-YOU shelf with a WHY from the
+  real topic counters. Dedup: held names never re-pitch, dismissed shapes stay denylisted, LLM near-dup
+  guard now counts archetypes (the model never re-authors one). No match → LLM authorship unchanged.
+- Proof: class-loadouts re-pinned (all laws over BOTH shelves), scout.test matcher coverage,
+  scout.e2e BOOT 3 (real sidecar stages the Broker archetype off a warm interest, zero model calls,
+  persisted), live bay round-trips (12-card roster, archive expand/search, builder prefill with full
+  loadout). Gate 318 green; W0 release surface re-stamped in-branch.
+
 ## LANDED 2026-07-12 — BOOT/SHUTDOWN MOUSE-CONFINEMENT GUARDRAILS (merged as `c069cba3`)
 
 Incident: an agent-built pointer-lock FPS left a smoke browser + dev server alive after StarNet
@@ -363,6 +386,20 @@ dossier-agent-mgmt (DELETE AGENT + CHANGE SKIN); update-safety P0.1 wv-cache-pur
 P0.2 mirror-truth, P1.1+P1.2 roster-honesty; voice-desktop-key; comms-fresh-session;
 multiplatform install docs. ✅ (all in git log)
 
+## P0 — Windows update sidecar-lock hang (canary-caught 2026-07-14)
+
+The local update canary (`npm run release:canary`) caught a UNIVERSAL Windows in-app-update
+failure the whole test suite could never see: the updater plugin launches the NSIS installer
+then hard-exits via `std::process::exit(0)`, which does NOT fire Tauri's `ExitRequested`
+handler — so `kill_sidecar()` never runs, the old `node.exe` sidecar stays alive holding a
+write lock, and NSIS FREEZES on "error opening file for writing: node.exe" (Retry/Abort/Ignore)
+forever. Every Windows user, every in-app update. FIX: wire the plugin's `on_before_exit` hook
+in `starnet_update_check` (main.rs) to set `shutting_down` + `kill_sidecar()` before the exit;
+the hook rides the pending Update into the install path. Compiles; being re-proven through the
+canary (rebuild old-with-fix → reinstall → drive to clean completion). The canary's `drive`
+was also hardened — it now requires installer-exited + app-relaunched, not just the version
+resource (which flips BEFORE the hang, so version-only was a false green).
+
 ## P0 — code: ALL LANDED 2026-07-06 night ✅ (do not rebuild — verify in log/code)
 
 The entire P0-code list from the evening reconcile merged during the update-safety /
@@ -388,6 +425,12 @@ leak (0cccce2d), VT323 shipped locally (01570f17).
 ## P0 — Andrew only (nothing above matters to the public until these)
 
 - Publish `starnet-releases` repo (public updater currently 404s) + rescope RELEASES_TOKEN.
+  Pipeline hardening landed 2026-07-14 (update-blockers lane): signed `linux-x86_64-deb`
+  manifest key (was: every .deb self-update failed on the AppImage fallback), real minisign
+  crypto verification of every artifact/.sig in assemble (`npm run release:verify-sig`),
+  published releases immutable to train re-runs. Next release train run exercises all three.
+  Then run the older-install → publish → restart update canary per platform (Win NSIS, both
+  mac arches, AppImage, .deb) — still ZERO public end-to-end update proofs.
 - Back up `~/.tauri/starnet-updater.key` to ≥2 offline locations (single point of total loss).
 - Rotate the dev OpenRouter key; support email swap.
 - **Attended 15-min playtest** (`docs/PLAYTEST_SCRIPT_GATE5.md`) — dodged since 7/02.
@@ -805,8 +848,12 @@ E-STOP visibility + get-a-key link already chipped by Atlas — not re-listed.**
   no archive view, no re-open old runs).
 - GB-3 RECORDING MODE: one toggle hiding keys/spend/PII for screen capture (zero code; GTM —
   spectacle is the growth engine and Andrew records constantly).
-- GB-4 Quit/update-while-running guards: no "N agents still working" on close (beforeunload
-  saves only); updater installs over live runs (main.rs:1418).
+- GB-4 Quit/update-while-running guards: BOTH halves FIXED 2026-07-14 (update-blockers lane).
+  Update: Updates.install() checks Channels.busyCount(), amber guard card WAIT/INSTALL ANYWAY.
+  Quit: quitguard.js intercepts close-requested (titlebar X, Alt+F4, taskbar), modal STAY /
+  CLOSE ANYWAY when agents live, bounded state drain before EVERY allowed close (destroy()
+  skips beforeunload), fail-open so a broken Channels never wedges the window shut. Needs
+  the next desktop rebuild (capabilities +core:window:allow-destroy) to be live in the exe.
 - GB-5 Crew bodies: pointer cursor but click falls through (world.js:720 hero-only) — click →
   quick actions (talk/dossier/locate); plus click-roster-name → camera jump to agent.
 - GB-6 Prop hover tooltips (name + grants) — belts have tags (world.js:4080), props silent.

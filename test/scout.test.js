@@ -272,6 +272,45 @@ A.ok(S.decide(unwedged, { now: wedgeAt, warm: true }).fire, 'decide() fires agai
 const remint = S.parseRecipe(GOOD, { existingRecipes: [], gearKeys: GEAR, denylist: swept.denylist });
 A.ok(remint && remint.draft, 'an equivalent of an expired draft re-mints (expiry did not denylist it)');
 
+/* ---------- ARCHETYPE MATCHING: the deep-cut pool seeds prospects when the LEARNED interests point at one ---------- */
+const SHARED = require('../shared/specialties.js');
+const ARCH = SHARED.ARCHETYPES;
+A.ok(Array.isArray(ARCH) && ARCH.length >= 5, 'the shared catalog exposes the archetype pool');
+// a WARM topic whose words hit an archetype's own text matches it — deterministically, no model.
+const priceTopics = [{ label: 'gpu price tracking', weight: 1.2, count: 5 }];
+const m1 = S.matchArchetype(ARCH, { topics: priceTopics, existingNames: [], denylist: [] });
+A.ok(m1 && m1.archetype && m1.archetype.id === 'broker', 'a warm price-hunting habit matches the broker archetype');
+A.ok(m1.why.indexOf('gpu price tracking') >= 0 && m1.why.indexOf('5×') >= 0,
+  'the WHY names the real topic and its real observed count (truthful telemetry): ' + m1.why);
+// stemming: "translation" (topic) must hit "translates/translate" (archetype text)
+const m2 = S.matchArchetype(ARCH, { topics: [{ label: 'japanese document translation', weight: 1.0, count: 3 }], existingNames: [], denylist: [] });
+A.ok(m2 && m2.archetype.id === 'translator', 'a translation habit matches the translator archetype (crude stem)');
+// gates: a sub-warm topic never summons the long tail; no topics -> null; generic words never match.
+A.eq(S.matchArchetype(ARCH, { topics: [{ label: 'gpu price tracking', weight: 0.3, count: 1 }] }), null, 'a one-off mention (below the warm floor) matches nothing');
+A.eq(S.matchArchetype(ARCH, { topics: [] }), null, 'no learned topics -> no archetype match');
+A.eq(S.matchArchetype(ARCH, { topics: [{ label: 'daily general work', weight: 2, count: 9 }] }), null, 'generic-word topics are stopworded, never a match');
+// dedup: an archetype the Commander already HAS (roster/custom/staged name) is never re-pitched…
+A.eq(S.matchArchetype(ARCH, { topics: priceTopics, existingNames: ['Broker'] }), null, 'an already-held archetype is never re-pitched (name dedup, case-insensitive)');
+// …and a dismissed shape stays dead (fingerprint denylist, same 0.6 overlap rule as the LLM path).
+const deadFp = S.fingerprint('Broker Compare deals & call the buy');
+A.eq(S.matchArchetype(ARCH, { topics: priceTopics, denylist: [deadFp] }), null, 'a dismissed archetype shape never re-mints');
+// the staged draft is the FULL spec — accepting it mints a complete custom class, nothing half-authored.
+const ad = S.archetypeDraft(m1.archetype);
+for (const f of ['name', 'emoji', 'tagline', 'blurb', 'purpose', 'manual', 'persona', 'model', 'accent']) {
+  A.ok(ad[f] && String(ad[f]).length > 0, 'archetype draft carries a non-empty ' + f);
+}
+A.ok(Array.isArray(ad.kit) && ad.kit.length > 0 && Array.isArray(ad.skills) && ad.skills.length > 0, 'archetype draft carries the full loadout (kit + skills)');
+A.eq(ad.custom, true, 'archetype draft is marked custom (the accept flow saves it as a custom class)');
+A.eq(ad.archetypeId, 'broker', 'archetype draft records its provenance (archetypeId)');
+A.eq(ad.source, 'archetype', 'archetype draft records its source');
+// the sidecar cycle wires the matcher BEFORE the LLM authorship pass (source-lock, mirrors the suite's style).
+const fs2 = require('fs'); const path2 = require('path');
+const idxSrc = fs2.readFileSync(path2.join(__dirname, '../sidecar/index.js'), 'utf8');
+A.ok(/Scout\.matchArchetype\(SharedSpecialties\.ARCHETYPES/.test(idxSrc), 'runScoutCycle consults the archetype matcher on a prospect turn');
+A.ok(idxSrc.indexOf('Scout.matchArchetype') < idxSrc.indexOf('ProspectGen.buildDirective'), 'the archetype match runs BEFORE the LLM authorship pass');
+A.ok(/for \(const c of \(SharedSpecialties\.ARCHETYPES \|\| \[\]\)\)/.test(idxSrc), 'the LLM near-duplicate guard counts archetypes as existing classes (the model never re-authors one)');
+A.ok(/function scoutTakenNames\(\)/.test(idxSrc), 'the matcher dedups against the names the Commander actually HAS (not the catalog itself)');
+
 /* ---------- normalize: corrupt saves degrade, never throw ---------- */
 const n = S.normalize({ staged: [{ id: 'ok', kind: 'recipe', draft: { name: 'x' } }, { id: '', kind: 'recipe', draft: {} }, { id: 'bad-kind', kind: 'zork', draft: {} }], denylist: [1, 'fp', ''], ledger: 'nope', runsSinceMint: 'NaN', lastMintAt: -5 }, T0);
 A.eq(n.staged.length, 1, 'malformed staged items are dropped on hydrate');
