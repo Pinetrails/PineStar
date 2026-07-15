@@ -44,7 +44,7 @@
     channel:      'your way IN from a messaging app — connect Telegram/Slack/Discord and talk to your agents from your pocket.',
     autonomy:     'how far an agent may act on its own between your messages — you set the ceiling.',
     initiative:   'whether an agent starts work on its own — the same four rungs everywhere: WAIT, SUGGEST, BUILD, FREE.',
-    reach:        'the farthest a single unattended action may go: observe only, write locally, or reach outside.',
+    reach:        'the farthest a single unattended action may go — the same three rungs everywhere: OBSERVE (read only), SANDBOX (write locally), SEND & PUBLISH (contact the outside).',
     pace:         'how many small unattended jobs an agent may do per day at most.',
     xp:           'experience an agent earns from work you rate well — it levels up as it proves itself.',
     workspace:    'the folder on your machine where an agent’s files land (workspaces/<agent>/).',

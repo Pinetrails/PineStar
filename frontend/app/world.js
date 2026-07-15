@@ -5360,7 +5360,7 @@ const World = (() => {
       const diag = slaglog.record(r, { cacheFrac: lastCacheFrac, turns: p && p.turns, usd: p && p.usd });
       if (typeof StationUI !== 'undefined' && StationUI.notify) {
         const clean = s => String(s || '').replace(/\bspend\b/ig, 'run resources').replace(/\bdollars?\b/ig, 'limits');
-        StationUI.notify('⚠ SLAG · ' + clean(SlagLog.line(diag)), 'warn');
+        StationUI.notify('⚠ SLAG (a run died with nothing to show) · ' + clean(SlagLog.line(diag)), 'warn');
       }
       enqueueSlag(diag, p && p.agentId);
     });

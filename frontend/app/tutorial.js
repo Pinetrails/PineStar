@@ -552,6 +552,7 @@ const Tutorial = (() => {
       // model hiccup) — the tour never stalls on it, and the un-fired pitch stays armed for a later real task.
       const classicClose = () => {
         if (!active) return;
+        // (the WORK-dock orientation lives in beatWork() just before this — don't repeat it here.)
         say([seg('you’ve already kitted me out and seen me work. your next moves stay pinned under ⚑ QUESTS in the ▤ WORK dock — recruit a specialist, lay a belt, bind a portal. go on. i’m yours to point.', 44, 0)],
           () => Chat.choices([{ label: '▸ START COMMANDING', value: 'done' }], () => finishUp(false)));
       };
@@ -594,7 +595,7 @@ const Tutorial = (() => {
     setTimeout(() => {
       if (typeof PitchStore !== 'undefined' && PitchStore.offerStarter) PitchStore.offerStarter();
       showCoach('quests', '.bb-group[data-group="work"] .bb-grp',
-        'your next moves are pinned under ▤ WORK ▸ ⚑ QUESTS — real progress, tracked as quests. nothing in there is ever gated.');
+        'your next moves are pinned under ▤ WORK ▸ ⚑ QUESTS — real progress, tracked as quests. the same dock holds ❒ RECIPES (ready-made jobs), ☑ TASKS (where running work lives) and ⏱ ROUTINES (any job on a schedule). nothing in there is ever gated.');
     }, skipped ? 900 : 1400);
   }
 
@@ -744,6 +745,7 @@ const Tutorial = (() => {
     { k: 'build',     label: 'Place a piece of gear in REFIT' },
     { k: 'belt',      label: 'Lay a conveyor belt' },
     { k: 'connector', label: 'Bind a connector portal' },
+    { k: 'channel',   label: 'Connect a messaging channel (✉ CHANNELS)' },
     { k: 'level',     label: 'Reach Level 2' }
   ];
   const briefDone = k => !!state.brief[k];

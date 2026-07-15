@@ -4148,7 +4148,11 @@ const StationUI = (() => {
       // finalize a pending connect's MESSAGE from the proven status (not the optimistic POST body).
       if (pendingConnect[c.id]) {
         const msgEl = body.querySelector('#' + c.pre + '-msg');
-        if (conn) { setMsg(msgEl, c.okMsg, 'ok'); delete pendingConnect[c.id]; }
+        if (conn) {
+          setMsg(msgEl, c.okMsg, 'ok'); delete pendingConnect[c.id];
+          // first-steps: only ticked on the PROVEN round-trip (this branch), never on the optimistic POST.
+          try { if (typeof Tutorial !== 'undefined' && Tutorial.tickBrief) Tutorial.tickBrief('channel'); } catch (_) {}
+        }
         else if (state === 'error') { setMsg(msgEl, '✕ ' + ((st && st.detail) || 'connection failed') + (c.errHint || ''), ''); delete pendingConnect[c.id]; }
         // else still 'connecting' — leave the neutral connecting… line until the transport proves one way or the other.
       }

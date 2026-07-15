@@ -1338,10 +1338,12 @@ function cronKeyFor(provider) {
 function cronHasCredential(provider, key) {
   return providerHasCredential(provider, key, providerRuntimeBaseUrl(provider, ''));
 }
-function cronCredentialError(provider) {
+function cronCredentialError(provider, what) {
   // "scheduled routine" so the line explains itself even when it surfaces outside the ROUTINES panel
   // (e.g. the quest log shows a skipped scheduled job) — UX sweep 2026-07-15.
-  return providerCredentialError(provider) + ' to run this scheduled routine';
+  // `what` names the job the credential is for — it surfaces verbatim in user-facing panels
+  // (the QUEST LOG's refresh is NOT a routine; calling it one crossed the vocabularies).
+  return providerCredentialError(provider) + ' to run ' + (what || 'this scheduled routine');
 }
 
 // PERSISTENT agent save (M-save) — a durable mirror of the browser's localStorage save envelope, written to
@@ -3637,7 +3639,7 @@ async function runQuestRefreshCycle(why) {
   const usingCodex = providerUsesCodex(providerId);
   const baseUrl = providerRuntimeBaseUrl(providerId, '');
   const key = cronKeyFor(providerId);
-  if (!cronHasCredential(providerId, key)) { questRefreshNote({ outcome: 'skipped', reason: 'no provider credential — ' + cronCredentialError(providerId) }); return; }
+  if (!cronHasCredential(providerId, key)) { questRefreshNote({ outcome: 'skipped', reason: 'no provider credential — ' + cronCredentialError(providerId, 'the quest refresh') }); return; }
   const model = String(ENV('REFLECT_MODEL') || '').trim() || (usingCodex ? CODEX_DEFAULT_MODEL : CRON_DEFAULT_MODEL);
   if (!model) { questRefreshNote({ outcome: 'skipped', reason: 'no default model configured (set DEFAULT_MODEL)' }); return; }
   const ac = new AbortController();
