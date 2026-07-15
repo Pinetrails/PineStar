@@ -94,11 +94,13 @@
     const dispatchTool = {
       // own wall-clock (minutes, not the 30s fast-tool default) — see dispatchTimeoutMs above.
       timeoutMs: dispatchTimeoutMs,
-      // NO consent gate: delegating to your OWN summoned crew is internal orchestration, not an outward mutation
-      // (cf. notebook). The real safety is the LEAD-ONLY gate (only the watched browser run gets this tool) + the
-      // per-worker/day/global budget caps + the concurrency ceiling + workers running autonomous (default-deny
-      // their own mutations). Prompting on every delegation would be pure consent-fatigue.
-      name: 'team.dispatch', capability: 'orchestrator', scope: 'execute', requiresConsent: false,
+      // CONSENT-GATED (2026-07-14, closes the parked P1): delegation fans out REAL autonomous agent loops that
+      // spend budget — if untrusted content in the lead's context (a fetched page, a channel message) injects
+      // "dispatch a worker to do X", the human must get a say first. Same semantics as team.summon: the APPROVAL
+      // beat in 'ask' mode (a session grant stops per-call fatigue), bypassed by Full Access — so a trusting
+      // user keeps the frictionless flow by choosing it. Lead-only conferral + budget caps + the concurrency
+      // ceiling + autonomous workers (default-deny) all still stand underneath.
+      name: 'team.dispatch', capability: 'orchestrator', scope: 'execute', requiresConsent: true,
       description: 'Delegate subtasks to your specialist crew. Each worker runs its OWN real agent loop (live web search/read, files, memory) and returns its result for you to synthesize into the final answer. Address workers by the agentId listed under YOUR TEAM. Runs sequentially by default; pass parallel:true to run them at once. Pass background:true to start watchable workers and keep working. FILES: each worker saves into its OWN private workspace — you cannot fs.read another agent\'s files, so never "verify" a worker\'s file with your own file tools (absence in YOUR workspace proves nothing). The result\'s artifacts list is the proof of what each worker saved, and the Commander is shown those files as cards automatically — reference them as "<workerId>\'s workspace: <path>".',
       schema: {
         type: 'object', required: ['workers'], properties: {
@@ -212,7 +214,9 @@
     // → it cannot spawn its own sub-agents. The SAME gating that already stops a delegated worker re-delegating.
     const spawnTool = {
       timeoutMs: dispatchTimeoutMs,
-      name: 'team.spawn', capability: 'orchestrator', scope: 'execute', requiresConsent: false,
+      // CONSENT-GATED like team.dispatch (see its note): spawning clones fans out autonomous budget-spending
+      // loops off text in the lead's context — 'ask' mode gets the APPROVAL beat, Full Access bypasses.
+      name: 'team.spawn', capability: 'orchestrator', scope: 'execute', requiresConsent: true,
       description: 'Spawn EPHEMERAL sub-agents — clones of yourself — to work subtasks in parallel. Each runs its OWN agent loop on the one subtask you give it, returns its result, then vanishes (it is NOT added to your roster, and it cannot spawn its own sub-agents). Use this to decompose a task or fan out parallel work without summoning named crew first. Each task takes a prompt (the focused subtask) and an optional label. Pass background:true to spawn watchable workers and keep working while they run.',
       schema: {
         type: 'object', required: ['tasks'], properties: {

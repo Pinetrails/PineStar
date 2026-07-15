@@ -4209,15 +4209,17 @@ const World = (() => {
     }
     return out;
   }
-  /* FEED TRUTH: is anything actually wired to drop work onto this floor? A channel (Telegram/Discord)
-     configured, or the cron scheduler armed with at least one enabled routine. Server-proven only —
-     `fed` stays true until a real response says otherwise, so a fetch hiccup can never fire the nag. */
+  /* FEED TRUTH: is anything actually wired to drop work onto this floor? ANY registry channel configured
+     (the bulk /api/channels/status covers telegram/discord/slack/matrix/signal — polling only the first two
+     falsely nagged a slack/matrix/signal-only floor), or the cron scheduler armed with at least one enabled
+     routine. Server-proven only — `fed` stays true until a real response says otherwise, so a fetch hiccup
+     can never fire the nag. */
   function pollFeedState() {
     if (typeof fetch === 'undefined') return;
     const get = u => { try { return fetch(apiUrl(u)).then(r => (r.ok ? r.json() : null)).catch(() => null); } catch (_) { return Promise.resolve(null); } };
-    Promise.all([get('/api/channels/telegram/status'), get('/api/channels/discord/status'), get('/api/cron')]).then(([tg, dc, cron]) => {
-      if (!tg && !dc && !cron) return;   // nothing answered — keep the last known truth
-      const chan = !!((tg && tg.configured) || (dc && dc.configured));
+    Promise.all([get('/api/channels/status'), get('/api/cron')]).then(([chans, cron]) => {
+      if (!chans && !cron) return;   // nothing answered — keep the last known truth
+      const chan = !!(chans && typeof chans === 'object' && Object.keys(chans).some(id => chans[id] && chans[id].configured));
       const jobs = (cron && Array.isArray(cron.jobs)) ? cron.jobs : [];
       const cronFeeds = !!(cron && cron.enabled && jobs.some(j => j && j.enabled !== false));
       const next = { known: true, fed: chan || cronFeeds };

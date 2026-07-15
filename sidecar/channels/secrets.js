@@ -159,5 +159,36 @@
     return { config, imports, changed };
   }
 
-  return { CHANNEL_IDS, TOKEN_FIELDS, STRIP_FIELDS, splitSecret, splitKeyOnly, stripTokens, hasStrippableSecret, migratePlaintext };
+  /* Verified channel-secrets persist (the saveJsonVerified law applied to THIS store). Channel bot tokens were the
+     one credential class still persisted fire-and-forget: a swallowed write error loses what is by construction the
+     token's LAST surviving copy (see the fallback comment in index.js channelToken) while every route keeps saying
+     ok:true — the exact EL-5 Telegram-token regression. This factory is pure/injected so the failure scenario is
+     unit-testable without fs: the host supplies the durable writer, the resilient loader, and the desktop
+     strip policy; the proof predicate demands the read-back byte-equal the intended persisted value.
+
+       makeVerifiedPersist({ saveJsonVerified, save(toPersist), load()->raw, mkdir?(), strip?(obj)->toPersist })
+         -> persist(obj) -> { ok, attempts, error }
+
+     ok is true ONLY when the read-back proves the write reached disk; on ok:false the caller keeps the value in
+     memory but MUST surface the failure (never a false "saved"). */
+  function makeVerifiedPersist(deps) {
+    deps = deps || {};
+    const sjv = deps.saveJsonVerified;
+    if (typeof sjv !== 'function' || typeof deps.save !== 'function' || typeof deps.load !== 'function') {
+      throw new Error('makeVerifiedPersist requires saveJsonVerified + save + load');
+    }
+    return function persist(obj) {
+      const toPersist = (typeof deps.strip === 'function') ? deps.strip(obj) : obj;
+      let intended = '';
+      try { intended = JSON.stringify(toPersist); } catch (e) { return { ok: false, attempts: 0, error: 'unserializable secrets object: ' + ((e && e.message) || e) }; }
+      return sjv({
+        mkdir: deps.mkdir,
+        save: () => deps.save(toPersist),
+        load: deps.load,
+        proof: (raw) => { try { return JSON.stringify(raw) === intended; } catch (_) { return false; } }
+      });
+    };
+  }
+
+  return { CHANNEL_IDS, TOKEN_FIELDS, STRIP_FIELDS, splitSecret, splitKeyOnly, stripTokens, hasStrippableSecret, migratePlaintext, makeVerifiedPersist };
 });

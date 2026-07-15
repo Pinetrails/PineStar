@@ -2640,6 +2640,43 @@ const StationUI = (() => {
         const runs = (st && typeof st.runs === 'number') ? st.runs : 0;
         spendEl.innerHTML = 'SPENT TODAY <b>' + today + '</b> &nbsp;·&nbsp; LIFETIME <b>' + life + '</b> <span class="dim">(' + runs + ' run' + (runs === 1 ? '' : 's') + ')</span>';
       }
+      paintPools(st);
+    };
+    // Soft-pool truth + the one-click RESUME. /api/budget/status carries the governor's live pool reads
+    // (day/global: {usd, cap, base} — null when ungoverned). A pool is HIT when spend reached its session cap;
+    // before this surface a hit pool silently refused every new run and the station just read as dead.
+    // POST /api/budget/resume grants one more base-cap of headroom for the rest of the session (server-enforced).
+    const poolsEl = body.querySelector('#budget-pools');
+    const paintPools = (st) => {
+      if (!poolsEl) return;
+      poolsEl.textContent = '';
+      for (const scope of ['day', 'global']) {
+        const p = st && st[scope];
+        if (!p || typeof p.usd !== 'number' || typeof p.cap !== 'number' || !(p.cap > 0)) continue;   // ungoverned — nothing to claim
+        if (p.usd < p.cap) continue;   // headroom left — the inputs above already tell the story
+        const row = document.createElement('div');
+        row.className = 'set-row bg-pool-hit';
+        const label = scope === 'day' ? 'DAY POOL' : 'GLOBAL POOL';
+        const txt = document.createElement('span');
+        txt.innerHTML = label + ' CAP HIT — <b>' + fmtUsd(p.usd) + '</b> of <b>' + fmtUsd(p.cap) + '</b>. New runs are paused by the governor.';
+        const btn = document.createElement('button');
+        btn.className = 'bb sm';
+        btn.textContent = 'RESUME (+' + fmtUsd(p.base) + ' headroom)';
+        btn.title = 'grant one more base-cap of ' + scope + ' headroom for the rest of this session';
+        btn.addEventListener('click', () => {
+          btn.disabled = true; setMsg('resuming…');
+          fetch('/api/budget/resume', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scope }) })
+            .then(r => r.json().then(j => ({ ok: r.ok, j })))
+            .then(({ ok, j }) => {
+              if (!ok) { setMsg((j && j.error) || 'could not resume'); sfx('bad'); btn.disabled = false; return; }
+              setMsg('✓ ' + scope + ' pool resumed — runs may continue this session', true); sfx('click');
+              refresh();   // repaint pools + spend from the server truth (the hit row clears only when the governor says so)
+            })
+            .catch(() => { setMsg('could not reach the sidecar'); sfx('bad'); btn.disabled = false; });
+        });
+        row.appendChild(txt); row.appendChild(btn);
+        poolsEl.appendChild(row);
+      }
     };
     const refresh = () => fetch('/api/budget/status', { cache: 'no-store' }).then(r => { if (!r.ok) throw new Error('http ' + r.status); return r.json(); }).then(paint)
       .catch(() => { if (spendEl) spendEl.textContent = 'spend unavailable'; });   // never paint an error body as $0 spend
@@ -3033,7 +3070,12 @@ const StationUI = (() => {
         '<button class="set-theme" data-pace="3" title="a few small jobs a day — the default">STANDARD</button>' +
         '<button class="set-theme" data-pace="6" title="a busier station — up to 6 jobs a day">BUSY</button>' +
         '<button class="set-theme" data-pace="12" title="as much as it&#39;s allowed — up to 12 jobs a day">MAX</button>' +
-      '</div>';
+      '</div>' +
+      // LIVE HELPERS — the real background sub-agents (team.spawn) running RIGHT NOW, from GET /api/subagents
+      // (server truth; the floor's ghost sprites are the same ledger). STOP rides POST /api/subagents/interrupt —
+      // before this row a runaway helper could not be stopped from anywhere in the UI.
+      '<div class="set-row"><span class="dim">LIVE HELPERS — background sub-agents running now</span></div>' +
+      '<div class="key-list" id="auto-helpers"><p class="set-about">reading helpers…</p></div>';
     const secNightShift =
       // NIGHT SHIFT — the honest live status of the server-owned night shift (NS-4). Every line maps to a field of
       // GET /api/nightshift/status + /api/autonomy/ledger; painted live from the routes (never invented). The
@@ -3045,6 +3087,12 @@ const StationUI = (() => {
       // that is running but degraded (drafts only / still learning) SAYS so instead of silently doing less.
       '<div class="set-row"><span class="dim">MODE</span> <span id="ns-mode" class="dim">…</span></div>' +
       '<p class="set-about" id="ns-readiness"></p>' +
+      // FOCUS (NS-5b) — what the night will chase, and the STEER that lets the Commander redirect it. The readout
+      // maps to status.focus (server truth); the steer rides GET/POST/DELETE /api/nightshift/focus. A steer only
+      // re-ranks the night's ONE priority — it grants nothing and reaches nothing new (route-enforced).
+      '<div class="set-row"><span class="dim">FOCUS</span> <span id="ns-focus" class="dim">…</span></div>' +
+      '<div class="set-row"><input id="ns-steer" class="key-input" type="text" autocomplete="off" placeholder="steer it: a blessed project path · thread:&lt;id&gt; · goal"><button class="bb xs" id="ns-steer-set">STEER</button><button class="bb xs" id="ns-steer-clear" style="display:none">CLEAR</button></div>' +
+      '<div class="mc-hint">a steer outranks learned evidence (~7 days, or until cleared). It only redirects the night’s one priority — no new access.</div>' +
       '<div class="set-row"><span class="dim">LEASH</span> <span id="ns-leash" class="dim">…</span></div>' +
       '<div class="set-row"><span class="dim">LAST BEAT</span> <span id="ns-last" class="dim">…</span></div>' +
       '<div class="set-row"><span class="dim">NEXT ELIGIBLE</span> <span id="ns-next" class="dim">…</span></div>' +
@@ -3076,6 +3124,7 @@ const StationUI = (() => {
       '<h4 class="ms-h">BUDGET <span class="dim">— real USD spend limits</span></h4>' +
       '<p class="set-about">Hard money limits your agents cannot exceed. Enforced by the sidecar against the real spend ledger. <b>Leave blank or 0 for no cap.</b> Saved here on this machine; until you save, each limit follows its environment default.</p>' +
       '<div id="budget-spend" class="set-row dim">reading spend…</div>' +
+      '<div id="budget-pools"></div>' +   // soft-pool cap state + the one-click RESUME (only rendered when a pool is actually hit)
       '<div class="mc-form" id="budget-form">' +
         '<div class="set-row"><label for="bg-perRun">PER RUN <span class="src-badge" id="bg-src-perRun" hidden></span></label><input id="bg-perRun" class="key-input bg-cap" type="number" min="0" step="0.01" inputmode="decimal" autocomplete="off" placeholder="blank or 0 = no cap"></div>' +
         '<div class="mc-hint">Hard ceiling for a single agent run. The run stops the moment it would exceed this.</div>' +
@@ -3289,13 +3338,58 @@ const StationUI = (() => {
       repaintAutonomyDial = paintAuto;   // GROWTH Tier 3: let an accepted trust offer repaint the open panel's EARNED badge live
       paintAuto();
     }
+    // LIVE HELPERS — the running team.spawn sub-agents, straight from GET /api/subagents?status=running (server
+    // truth: the same ledger the floor's ghost sprites fold). One row per live worker + STOP → POST
+    // /api/subagents/interrupt; the list repaints from the ROUTE after every action (never an optimistic flip).
+    {
+      const list = host.querySelector('#auto-helpers');
+      const paintHelpers = (rows) => {
+        if (!list) return;
+        if (!Array.isArray(rows)) { list.innerHTML = '<p class="set-about">helpers unreachable right now.</p>'; return; }
+        if (!rows.length) { list.innerHTML = '<p class="set-about">no background helpers running.</p>'; return; }
+        list.textContent = '';
+        for (const r of rows) {
+          const row = document.createElement('div');
+          row.className = 'set-row';
+          const label = document.createElement('span');
+          label.className = 'dim';
+          const title = String(r.prompt || '').slice(0, 72) || r.id;
+          label.textContent = title + (r.usd ? ' · ' + fmtUsd(r.usd) : '');
+          label.title = 'lead: ' + (r.leadId || '—') + ' · started ' + (r.startedAt ? new Date(r.startedAt).toLocaleTimeString() : '—');
+          const stop = document.createElement('button');
+          stop.className = 'bb xs';
+          stop.textContent = 'STOP';
+          stop.title = 'interrupt this background helper (its work so far is kept; it can be resumed)';
+          stop.addEventListener('click', () => {
+            stop.disabled = true;
+            fetch('/api/subagents/interrupt', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: r.id }) })
+              .then(x => x.json().then(j => ({ ok: x.ok, j })))
+              .then(({ ok, j }) => {
+                if (!ok || !j || j.ok === false) { label.textContent = title + ' — could not stop: ' + ((j && j.error) || 'error'); sfx('bad'); stop.disabled = false; return; }
+                sfx('click'); refreshHelpers();   // repaint from the ledger (the row leaves only when the server says interrupted)
+              })
+              .catch(() => { label.textContent = title + ' — could not reach the sidecar'; sfx('bad'); stop.disabled = false; });
+          });
+          row.appendChild(label); row.appendChild(stop);
+          list.appendChild(row);
+        }
+      };
+      const refreshHelpers = () => {
+        fetch('/api/subagents?status=running', { cache: 'no-store' })
+          .then(r => r.ok ? r.json() : null).catch(() => null)
+          .then(j => paintHelpers(j && Array.isArray(j.records) ? j.records : null));
+      };
+      if (list) refreshHelpers();
+    }
     // NIGHT SHIFT status surface (NS-4) — the honest live telemetry for the server-owned night shift. Paints from
     // GET /api/nightshift/status + /api/autonomy/ledger through the PURE nightreport engine (panelModel/trailLine),
     // so every rendered value maps to a route field (truthful telemetry). Fail-open, honest loading/error states.
     if (typeof NightReport !== 'undefined') {
       const nsState = host.querySelector('#ns-state'), nsWhy = host.querySelector('#ns-why'), nsLeash = host.querySelector('#ns-leash'),
             nsLast = host.querySelector('#ns-last'), nsNext = host.querySelector('#ns-next'), nsTrail = host.querySelector('#ns-trail'),
-            nsMode = host.querySelector('#ns-mode'), nsReadiness = host.querySelector('#ns-readiness');
+            nsMode = host.querySelector('#ns-mode'), nsReadiness = host.querySelector('#ns-readiness'),
+            nsFocus = host.querySelector('#ns-focus'), nsSteer = host.querySelector('#ns-steer'),
+            nsSteerSet = host.querySelector('#ns-steer-set'), nsSteerClear = host.querySelector('#ns-steer-clear');
       const tz = () => { try { return -new Date().getTimezoneOffset(); } catch (_) { return 0; } };
       const setDim = (el, txt) => { if (el) el.textContent = txt; };
       const paintPanel = (status) => {
@@ -3307,7 +3401,7 @@ const StationUI = (() => {
         if (!m.reachable) {
           setDim(nsState, m.stateText);        // "station telemetry unreachable" — never a fake 0/3
           setDim(nsWhy, ''); setDim(nsLeash, '—'); setDim(nsLast, '—'); setDim(nsNext, '—');
-          setDim(nsMode, '—'); setDim(nsReadiness, '');
+          setDim(nsMode, '—'); setDim(nsReadiness, ''); setDim(nsFocus, '—');
           return;
         }
         setDim(nsState, m.stateText);
@@ -3320,7 +3414,53 @@ const StationUI = (() => {
         setDim(nsLeash, m.leashText + ' · ' + m.presence);
         setDim(nsLast, m.lastBeatText);
         setDim(nsNext, m.nextEligibleText);
+        paintFocus(status);
       };
+      // FOCUS readout + steer visibility — every claim maps to status.focus (nightFocusView: {ref,label,why,source,
+      // steered} or null). Null renders the honest cold state, never an invented priority.
+      const paintFocus = (status) => {
+        if (!nsFocus) return;
+        const f = status && status.focus;
+        // f.steered is the LIVE steer bit (a durable steer is currently set); f.source is only the focus's
+        // provenance — after a CLEAR the focus record lingers with source:'steer' until the next re-resolve,
+        // so claiming "you steered this" (or offering CLEAR) off source alone overstates the live state.
+        if (f && (f.label || f.ref)) {
+          const why = Array.isArray(f.why) ? f.why.filter(Boolean).join('; ') : '';
+          nsFocus.textContent = String(f.label || f.ref) + (f.steered ? ' · you steered this' : '') + (why ? ' — ' + why : '');
+        } else {
+          nsFocus.textContent = 'none declared — the night improvises from evidence';
+        }
+        if (nsSteerClear) nsSteerClear.style.display = (f && f.steered) ? '' : 'none';
+      };
+      // STEER — POST/DELETE /api/nightshift/focus; the readout repaints from the ROUTE's response (server truth,
+      // never an optimistic local flip). "thread:<id>" and the literal "goal" select their kinds; else project.
+      const steerMsg = (t) => { if (nsFocus) nsFocus.textContent = t; };
+      if (nsSteerSet) nsSteerSet.addEventListener('click', () => {
+        const raw = nsSteer ? String(nsSteer.value).trim() : '';
+        if (!raw) { steerMsg('enter a blessed project path, thread:<id>, or goal'); sfx('bad'); return; }
+        let ref = raw, kind;
+        if (raw.toLowerCase() === 'goal') { kind = 'goal'; }
+        else if (/^thread:/i.test(raw)) { kind = 'thread'; ref = raw.slice(7).trim(); }
+        steerMsg('steering…');
+        fetch('/api/nightshift/focus', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(kind ? { ref, kind } : { ref }) })
+          .then(r => r.json().then(j => ({ ok: r.ok, j })))
+          .then(({ ok, j }) => {
+            if (!ok || !j || j.ok === false) { steerMsg((j && j.error) || 'could not steer'); sfx('bad'); return; }
+            if (nsSteer) nsSteer.value = '';
+            sfx('click'); refreshPanel();   // repaint FOCUS from the status route's truth
+          })
+          .catch(() => { steerMsg('could not reach the sidecar'); sfx('bad'); });
+      });
+      if (nsSteerClear) nsSteerClear.addEventListener('click', () => {
+        steerMsg('clearing…');
+        fetch('/api/nightshift/focus', { method: 'DELETE' })
+          .then(r => r.json().then(j => ({ ok: r.ok, j })))
+          .then(({ ok, j }) => {
+            if (!ok || !j || j.ok === false) { steerMsg((j && j.error) || 'could not clear the steer'); sfx('bad'); return; }
+            sfx('click'); refreshPanel();
+          })
+          .catch(() => { steerMsg('could not reach the sidecar'); sfx('bad'); });
+      });
       const paintTrail = (entries) => {
         if (!nsTrail) return;
         const rows = (Array.isArray(entries) ? entries : []).slice(0, 12);
