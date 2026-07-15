@@ -1,5 +1,24 @@
 # NEXT.md — current priorities & task queue
 
+## MERGED 2026-07-15 — SCHEDULER RELIABILITY (lane `claude/starnet-scheduler-audit-1b33c2`, trunk `5dcd3868`)
+
+Four of the six 2026-07-15 scheduler-audit gaps closed in sidecar cron (digest in qa/STATUS.md):
+misfire policy (missed daily/cron work fires ONCE by default instead of being discarded —
+job.misfire additive/editable), transactional dispatch (launch conditional on a verified durable
+advance/claim; failed persist ⇒ defer + retry, never fire-over-unpersisted), generation-fenced
+settlement (a zombie-swept run can no longer overwrite its replacement's record), ticker health on
+GET /api/cron (lastTickAt/lastSuccessAt/lastTickError/healthy) + durable notification delivery
+outcomes (markDelivery; {ok:false} SendResults are real failures). test/cron.dispatch.test.js locks
+the launch-integrity guarantees. Live-proven on a real booted sidecar, zero spend.
+
+- [ ] OPEN (audit gap 1, CRITICAL, product-level): routines are not 24/7 — the sidecar dies with
+      the desktop process. Needs a supervised background lifecycle (launch-at-login / detached
+      sidecar / tray supervisor — Tauri + product decision, Andrew's call on UX).
+- [ ] OPEN (audit gap 6b): transient delivery-failure RETRY (outcomes are now recorded; a bounded
+      resend on retryable channel errors is the remaining half).
+- [ ] OPEN: ROUTINES panel could surface the new health + lastDelivery fields (GA-9 adjacent).
+
+
 ## MERGED 2026-07-15 — VOICE DECOUPLED FROM THE LLM (lane `claude/hermes-voice-system-analysis-910f29`, trunk `dc2c8809` + W0 `e5e60914`)
 
 Voice is now a STATION subsystem (analysis + acceptance bar: docs/HERMES_VOICE_ANALYSIS_2026-07-14.md).
