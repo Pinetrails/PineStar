@@ -4099,12 +4099,32 @@ const Chat = (() => {
     try { if (typeof App !== 'undefined' && App.applyConfig) { App.applyConfig(patch); return true; } } catch (_) {}
     return false;
   }
+  // F4 (adversarial sweep 2026-07-14): /model used to ack ANY id with a confident success line —
+  // a garbage id then 404s every real-provider run while /whoami reports it as live. Warn-not-block
+  // at the ack seam (sandbox law: the id stays set — custom endpoints can serve ids the catalog
+  // doesn't know); an EMPTY catalog is honest uncertainty (offline / cold warm-up), never an alarm.
+  function modelAckWarning(id, list) {
+    const models = Array.isArray(list) ? list.filter(m => m && m.id) : [];
+    if (!models.length) return '';
+    if (models.some(m => m.id === id)) return '';
+    return 'Warning: "' + id + '" is not in the current model catalog (' + models.length
+      + ' known ids) — runs may fail with model-not-found. It stays set; /model <id> to change, /model to inspect.';
+  }
+  async function warnUnknownModel(id) {
+    try {
+      if (typeof Harness === 'undefined' || !Harness.listModels) return;
+      const warn = modelAckWarning(id, await Harness.listModels());
+      if (warn) localLine(warn);
+    } catch (_) {}
+  }
   function modelCommand(args) {
     const next = String(args || '').trim();
     if (next) {
-      if (applyAgentPatch({ model: next })) localLine('Model set to ' + next + ' for future runs.');
-      else if (typeof Harness !== 'undefined' && Harness.setModel) { Harness.setModel(next); localLine('Model set to ' + next + ' for this harness session.'); }
+      let set = false;
+      if (applyAgentPatch({ model: next })) { localLine('Model set to ' + next + ' for future runs.'); set = true; }
+      else if (typeof Harness !== 'undefined' && Harness.setModel) { Harness.setModel(next); localLine('Model set to ' + next + ' for this harness session.'); set = true; }
       else localLine('Model setting is not available yet.');
+      if (set) warnUnknownModel(next);
       refreshWorkflowViews();
       return;
     }

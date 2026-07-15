@@ -187,10 +187,15 @@ if (process.platform === 'win32') {
     A.ok(/STARNET_SAFE/.test(safe.stdout || ''), 'safe PowerShell ' + flag + ' encoded payload executed as expected');
   }
   for (const fileFlag of ['-FilePath:cmd.exe', '-F:cmd.exe']) {
-    const script = "$p=Start-Process " + fileFlag + " -ArgumentList '/d /c exit 0' -NoNewWindow -Wait -PassThru; if ($p.ExitCode -ne 0) { exit 9 }; Write-Output STARNET_SAFE";
+    // The claim under test is PARSER SEMANTICS: the colon form binds FilePath and LAUNCHES the named
+    // exe (which is why the blocker upstream must catch it). The child's exit code is NOT part of that
+    // claim — under a Task-Scheduler batch-logon token (the hourly Guardian) $p.ExitCode reads
+    // unreliably for -NoNewWindow children and turned this probe RED in every scheduled cycle while
+    // interactive runs stayed green (2026-07-15). Assert launch, not child exit hygiene.
+    const script = "$p=Start-Process " + fileFlag + " -ArgumentList '/d /c exit 0' -NoNewWindow -Wait -PassThru; if (-not $p -or $p.Id -le 0) { exit 9 }; Write-Output STARNET_SAFE; Write-Output (\"STARNET_CHILD_EXIT=[\" + $p.ExitCode + \"]\")";
     const safe = spawnSync(psExe, ['-NoProfile', '-NonInteractive', '-Command', script], { encoding: 'utf8', timeout: 10000, windowsHide: true });
-    A.eq(safe.status, 0, 'host accepts safe inline Start-Process ' + fileFlag + ' form');
-    A.ok(/STARNET_SAFE/.test(safe.stdout || '') && !/ParameterBindingException/.test(safe.stderr || ''), 'safe inline ' + fileFlag + ' target executed hidden and exited cleanly');
+    A.eq(safe.status, 0, 'host accepts safe inline Start-Process ' + fileFlag + ' form (process launched)');
+    A.ok(/STARNET_SAFE/.test(safe.stdout || '') && !/ParameterBindingException/.test(safe.stderr || ''), 'safe inline ' + fileFlag + ' target launched hidden with the flag bound as FilePath');
   }
   // Query metadata only (no process is launched): for every value-taking Start-Process parameter this host
   // actually exposes, derive its shortest unambiguous abbreviation and prove the parser consumes that value
