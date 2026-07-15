@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "dc2c88097ce694b113bc7cb70c11f583585b2a3f",
+    "sourceCommit": "ca1139044c5b9de7f18f8c5c8e0b5d8764ebd31d",
     "pathSetSha256": "11a2ff1e8ccd7ca7503a7d3a57bf51e4d0c7f5aeebda7d500a3c3bb7b174ea6e",
     "files": [
       {
@@ -653,8 +653,8 @@
       },
       {
         "path": "frontend/app/titlebar.js",
-        "bytes": 6896,
-        "sha256": "9f8c502a4a90a73f2ade5279b7222a5d4cea62701d3d7dc4968707a52c3e7600"
+        "bytes": 6888,
+        "sha256": "031c567631909548e113e0c601e9feb4292f78c673d0d5b09196bc5805dce405"
       },
       {
         "path": "frontend/app/toolprops.js",
