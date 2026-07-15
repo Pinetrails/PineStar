@@ -11,7 +11,9 @@ const { friendlyError, actionButton, KINDS, CAP_INFO } = require('../frontend/ap
   A.eq(v.kind, 'managed_credit', 'a managed-credit-out message classifies as managed_credit');
   A.eq(v.action, 'store', 'managed_credit routes the CTA to the STORE, not a blind retry');
   A.eq(v.retryable, false, 'an exhausted managed balance is not retryable as-is');
-  A.ok(/credit/i.test(v.userMessage) && /store/i.test(v.userMessage), 'the message names the credit problem and the STORE plainly');
+  // 2026-07-15 UX sweep: the copy now names the SAME door the CTA button opens (SETTINGS → PROVIDERS) —
+  // "the STORE" was a surface that exists nowhere as a button (the old copy/button mismatch).
+  A.ok(/credit/i.test(v.userMessage) && /providers/i.test(v.userMessage), 'the message names the credit problem and the PROVIDERS door (the same one the button opens)');
 }
 
 // ---- the "credits unavailable" (service didn't answer) admission message also reads as managed_credit ----

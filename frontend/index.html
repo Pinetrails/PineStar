@@ -473,10 +473,12 @@
       <button class="bb-grp" aria-haspopup="menu" aria-expanded="false" title="The station's work — tasks, recipes, routines, quests"><span class="bb-gi">▤</span>WORK</button>
       <div class="bb-menu" role="menu">
         <div class="bb-menu-h" aria-hidden="true">▤ WORK — what the crew is doing</div>
-        <button class="bb" data-term="tasks"><span class="bb-i">☑</span><span class="bb-tx"><b>TASKS</b><small>queued, running &amp; done work</small></span></button>
-        <button class="bb" id="bb-missions" data-hint="recipe"><span class="bb-i">❒</span><span class="bb-tx"><b>RECIPES</b><small>ready-made missions to launch</small></span></button>
-        <button class="bb" data-term="routines" data-hint="routine"><span class="bb-i">⏱</span><span class="bb-tx"><b>ROUTINES</b><small>work that runs on a schedule</small></span></button>
-        <button class="bb" data-term="quests"><span class="bb-i">⚑</span><span class="bb-tx"><b>QUESTS</b><small>your progress &amp; next moves</small></span></button>
+        <!-- WORK menu, one axis per entry (UX confusion audit 2026-07-15): RECIPES = WHAT to run,
+             ROUTINES = WHEN it runs, TASKS = WHERE live work sits, QUESTS = progress only. -->
+        <button class="bb" data-term="tasks" data-hint="task"><span class="bb-i">☑</span><span class="bb-tx"><b>TASKS</b><small>where all work lives — queued, running &amp; done</small></span></button>
+        <button class="bb" id="bb-missions" data-hint="recipe"><span class="bb-i">❒</span><span class="bb-tx"><b>RECIPES</b><small>ready-made jobs to launch — they land on TASKS</small></span></button>
+        <button class="bb" data-term="routines" data-hint="routine"><span class="bb-i">⏱</span><span class="bb-tx"><b>ROUTINES</b><small>any job, put on a schedule</small></span></button>
+        <button class="bb" data-term="quests" data-hint="quest"><span class="bb-i">⚑</span><span class="bb-tx"><b>QUESTS</b><small>progress &amp; suggestions — not a second to-do list</small></span></button>
       </div>
     </div>
     <div class="bb-group" data-group="build">
@@ -484,9 +486,11 @@
       <div class="bb-menu" role="menu">
         <div class="bb-menu-h" aria-hidden="true">⚒ BUILD — equip &amp; wire the station</div>
         <button class="bb" id="bb-build"><span class="bb-i">⌂</span><span class="bb-tx"><b>REFIT STATION</b><small>place rooms, corridors &amp; gear</small></span></button>
-        <button class="bb" data-term="skills" data-hint="skill"><span class="bb-i">✦</span><span class="bb-tx"><b>SKILLS</b><small>what agents are equipped to do</small></span></button>
-        <button class="bb" data-term="connectors"><span class="bb-i">⇄</span><span class="bb-tx"><b>TOOLSETS</b><small>wire external tools in</small></span></button>
-        <button class="bb" data-term="messaging"><span class="bb-i">✉</span><span class="bb-tx"><b>CHANNELS</b><small>reach your agents from your messaging apps</small></span></button>
+        <!-- direction-honest subtitles (audit finding 5): TOOLSETS = the agent's tools OUT (switches + MCP);
+             CHANNELS = YOUR way in. SKILLS = the read-only "what can it do" view (switches live in TOOLSETS). -->
+        <button class="bb" data-term="skills" data-hint="skill"><span class="bb-i">✦</span><span class="bb-tx"><b>SKILLS</b><small>what agents can do right now (switches: TOOLSETS)</small></span></button>
+        <button class="bb" data-term="connectors" data-hint="toolset"><span class="bb-i">⇄</span><span class="bb-tx"><b>TOOLSETS</b><small>the agent’s tools — switch families on/off, plug in services</small></span></button>
+        <button class="bb" data-term="messaging" data-hint="channel"><span class="bb-i">✉</span><span class="bb-tx"><b>CHANNELS</b><small>your way in — talk to agents from Telegram, Slack, Discord</small></span></button>
       </div>
     </div>
     <div class="bb-group" data-group="system">
