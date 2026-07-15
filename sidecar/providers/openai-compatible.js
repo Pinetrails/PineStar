@@ -91,6 +91,10 @@
     const sendReasoningEffort = opts.sendReasoningEffort === true;
     const profileSupportsTools = (typeof opts.supportsTools === 'boolean') ? opts.supportsTools : null;
     const defaultEffort = String(opts.reasoningEffort || '');
+    // Static catalog fallback for endpoints with no usable /models (e.g. Perplexity, whose
+    // /v1/models lists Agent-API models, not its chat-completions roster). Used only when the
+    // live endpoint yields nothing — a real catalog always wins.
+    const staticModels = Array.isArray(opts.staticModels) ? opts.staticModels.map(normalizeModel).filter(Boolean) : [];
     const droppedParams = new Map();   // model -> Set(param) learned from unsupported-param 400s
     let catalog = null;
     let catalogPromise = null;
@@ -267,7 +271,10 @@
         })();
       }
       catalog = await catalogPromise;
-      if (!catalog.length) catalogPromise = null;
+      if (!catalog.length) {
+        catalogPromise = null;
+        if (staticModels.length) catalog = staticModels.slice();
+      }
       return catalog;
     }
     async function listModels() { return (await loadCatalog()).map(m => Object.assign({}, m)); }

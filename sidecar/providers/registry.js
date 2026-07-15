@@ -313,6 +313,18 @@
       supportsReasoning: null,
       wireReasoningEffort: true,
       wireStreamOptions: false,
+      // Perplexity has NO usable /models for chat completions (its /v1/models lists Agent-API ids),
+      // so the connect screen would be empty and contextLimit 0 (compaction off). Static Sonar roster
+      // from docs.perplexity.ai/docs/sonar/models, verified 2026-07 (sonar-reasoning was removed
+      // 2025-12-15). Deliberately NO pricing: Perplexity bills per-request search fees on top of
+      // tokens, so token-only catalog pricing would under-report real cost — 'unpriced' is the
+      // honest label until the provider reports cost on the wire.
+      staticModels: [
+        { id: 'sonar', name: 'Sonar', context_length: 128000, supportsTools: false, supportsReasoning: false },
+        { id: 'sonar-pro', name: 'Sonar Pro', context_length: 200000, supportsTools: false, supportsReasoning: false },
+        { id: 'sonar-reasoning-pro', name: 'Sonar Reasoning Pro', context_length: 128000, supportsTools: false, supportsReasoning: true },
+        { id: 'sonar-deep-research', name: 'Sonar Deep Research', context_length: 128000, supportsTools: false, supportsReasoning: true }
+      ],
       order: 43
     },
     {

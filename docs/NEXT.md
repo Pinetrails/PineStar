@@ -25,13 +25,22 @@ dropped); unsupported-param self-heal (400/422 naming an optional param → stri
 memo; `tools` NEVER silently dropped); Perplexity `supportsTools:false` from the profile → task runs
 refuse up front; xAI `usage.cost_in_usd_ticks` normalized in cost.js (REAL field, 1 USD = 1e10 ticks).
 Capability facts sourced from official provider docs 2026-07 (registry.js wire hints carry citations).
-- [ ] **REAL-KEY certification matrix per advertised provider** (the audit's honest ask, still
-      env-blocked — no live credentials in dev): model list → streamed chat → tool task → cancel →
-      usage/cost reconcile → restart/auth persistence → one autonomous cycle. Needs Andrew's keys;
-      folds the older scattered "first real-provider cycle" items into one gate.
-- [ ] Perplexity has no usable /models catalog on its chat endpoint (its /v1/models lists Agent-API
-      models) — consider a small static Sonar model table (codex.js precedent) so the connect screen
-      isn't empty; facts go stale, so keep it minimal + dated.
+- [x] **Certification HARNESS shipped + first real-key PASS** (2026-07-15, same lane):
+      `npm run certify:providers` (scripts/provider-certify.mjs) proves the wire seam live per
+      provider — models → streamed chat → tool round-trip → mid-stream cancel → cost reconcile.
+      Keys ONLY from the registry-documented env names; no credential = honest SKIP env-blocked;
+      receipts land in gitignored `.dogfood/provider-certify/`. **OpenRouter: PASS all five steps
+      against the live endpoint** (343 models, streamed "OK" w/ usage, starnet_ping tool call
+      finish=tool_calls, clean abort, provider-reported cost reconciled).
+- [ ] **REAL-KEY runs for the other 12 keyed providers** — needs Andrew to export the documented
+      env keys (or drop them where the app stores creds) and run `npm run certify:providers`;
+      the harness does the rest. Codex certifies via the live app (OAuth), Ollama when a local
+      daemon is up. Restart/auth persistence + one autonomous cycle remain APP-level proofs
+      (live app + real save), not wire-script scope.
+- [x] Perplexity static Sonar roster shipped (same lane): 4 docs-sourced models (2026-07;
+      sonar-reasoning removed 2025-12-15) fill the empty-catalog seam — context limits flow to
+      compaction, connect screen not empty; deliberately UNPRICED (per-request search fees make
+      token-only pricing dishonest).
 
 ## 2026-07-14 — COMPREHENSIVE AUDIT ATTACK-ORDER (lane `claude/starnet-audit-80a98c`, Andrew-approved sequence)
 

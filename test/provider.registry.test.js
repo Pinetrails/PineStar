@@ -80,6 +80,12 @@ module.exports = (async () => {
     const body = JSON.parse(post.init.body);
     A.eq(body.stream_options, undefined, 'Perplexity request carries no stream_options');
     A.eq(body.reasoning_effort, 'medium', 'Perplexity request carries its documented reasoning_effort');
+
+    // Perplexity has no usable /models -> the static Sonar roster (docs-sourced 2026-07) fills the seam
+    const roster = await pplx.listModels();
+    A.eq(roster.map(m => m.id).join(','), 'sonar,sonar-pro,sonar-reasoning-pro,sonar-deep-research', 'static Sonar roster serves the empty catalog');
+    A.eq(pplx.contextLimit('sonar-pro'), 200000, 'Sonar Pro context limit rides the static roster');
+    A.eq(roster.every(m => !m.pricing), true, 'Sonar roster is unpriced (search fees make token-only pricing dishonest)');
   }
 
   const anthropic = factory.selectProvider({ provider: 'anthropic', fetch: async () => new Response('', { status: 200 }) });
