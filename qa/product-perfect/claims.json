@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "c964da4033bba283863990b1187505cbce2a0110",
+    "sourceCommit": "4ef4571387969c535ba1768fe660c45c5f0c4690",
     "pathSetSha256": "11a2ff1e8ccd7ca7503a7d3a57bf51e4d0c7f5aeebda7d500a3c3bb7b174ea6e",
     "files": [
       {
@@ -88,8 +88,8 @@
       },
       {
         "path": "frontend/app/autonomy.js",
-        "bytes": 9761,
-        "sha256": "6c9098f70c79f9ce8cfd80236dc2aa65623ce69e51d5cbe438c71d57cee1b962"
+        "bytes": 9768,
+        "sha256": "9196a159aac45f83228ac0665ca53e5fb2aedd21412a7acec91ce0b785fb6749"
       },
       {
         "path": "frontend/app/autonomystore.js",
@@ -123,8 +123,8 @@
       },
       {
         "path": "frontend/app/build.js",
-        "bytes": 106889,
-        "sha256": "af0ada97a52ac26616285b29498e307ab76df8de88cf5c71452cb5f22b5edb8e"
+        "bytes": 106894,
+        "sha256": "d24ebc3d07260788e4fa3fe50442d49f4bfb6ca914a744050b0e13075389f7e5"
       },
       {
         "path": "frontend/app/channels.js",
@@ -238,8 +238,8 @@
       },
       {
         "path": "frontend/app/friendlyerror.js",
-        "bytes": 24463,
-        "sha256": "c21dc7ed48e18a11921ad76a4269288a8a9ccad0301ba38e704d661fe36150a3"
+        "bytes": 24600,
+        "sha256": "fbaecd7799193db06b1b0f0e7aae86fea1131a72e8eec49a6f28f463e2e03153"
       },
       {
         "path": "frontend/app/fullscreen.js",
@@ -248,8 +248,8 @@
       },
       {
         "path": "frontend/app/glossary.js",
-        "bytes": 4711,
-        "sha256": "f6dd01e03709963978f71841fcc526581c2b1acfc0983fdcd2fb432b18adfde1"
+        "bytes": 5880,
+        "sha256": "010792df291f18c02c9a4aff766ba6a30dc276e6fec889a7e71698c0f979a2b0"
       },
       {
         "path": "frontend/app/goalloop.js",
@@ -323,8 +323,8 @@
       },
       {
         "path": "frontend/app/marketplace.js",
-        "bytes": 167604,
-        "sha256": "ae4675f98df5a4daacc71df75e8ababb643ae0fde0162fa8618d7fc0bd64db51"
+        "bytes": 167769,
+        "sha256": "beadba3093e375c695a33d49c3554d736d23c6766f27014a7ec615a088b1945e"
       },
       {
         "path": "frontend/app/mint.js",
@@ -358,8 +358,8 @@
       },
       {
         "path": "frontend/app/nightreport.js",
-        "bytes": 18428,
-        "sha256": "2ef000d24d8b4ee1d090380a9f9983bfb71ad8a41b7cbe75f502771d77080714"
+        "bytes": 22015,
+        "sha256": "c7aa76091ee307f8ff2e12c1cd0bf4ab082712940e11fbd2e9a0771c48651556"
       },
       {
         "path": "frontend/app/nightreportstore.js",
@@ -618,8 +618,8 @@
       },
       {
         "path": "frontend/app/stationui.js",
-        "bytes": 433388,
-        "sha256": "30e06dcf09c0dc518de9fa9301f1415851f57e38d72cd8973e8dfa55fd43ecdf"
+        "bytes": 436199,
+        "sha256": "b152bed86831c692507f617b601fc59d946a1a97c0614e5e5efdc4d91bf47ff8"
       },
       {
         "path": "frontend/app/study.js",
@@ -853,8 +853,8 @@
       },
       {
         "path": "frontend/index.html",
-        "bytes": 58741,
-        "sha256": "9a2fd56b095079a3ed0efac8fa4438bccc4a71acaeb7271c396d2dcdb2b45a63"
+        "bytes": 59376,
+        "sha256": "7435c35425d4ce762d3d404585e7b55df8be798d0d4012ff1056fd9dab9c7b44"
       },
       {
         "path": "frontend/js/arcade.js",
@@ -1516,7 +1516,7 @@
         {
           "kind": "contains",
           "path": "frontend/app/autonomy.js",
-          "needle": "run free toward my goals while i\u2019m away"
+          "needle": "run free toward my goals while i’m away"
         },
         {
           "kind": "contains",

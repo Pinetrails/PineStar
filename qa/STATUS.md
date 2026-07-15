@@ -64,8 +64,8 @@ own runner (Q1 Guardian, Q2 Beginner Run, Q4 Janitor) or the Overseer digest; th
 
 | Crew member | Question it answers | Last run | Result | Open findings |
 | --- | --- | --- | --- | --- |
-| Green Guardian | Is trunk green and does the app still boot + look right? | 2026-07-15 21:47Z @ c1e9ce73 | RED | 0 |
-| Beginner Run | Can a brand-new user reach first value, unassisted? | 2026-07-15T21:31:44.371Z · ui-only · 129501ms | PASS | 0 |
+| Green Guardian | Is trunk green and does the app still boot + look right? | 2026-07-15 22:11Z @ 0955fb16 | GREEN | 0 |
+| Beginner Run | Can a brand-new user reach first value, unassisted? | 2026-07-15T22:14:07.562Z · ui-only · 130364ms | PASS | 0 |
 | Truth Auditor | Does the UI show what actually happened? | 2026-07-01 23:28Z (in Guardian cycle) | GREEN | 0 |
 | Visual Auditor | Is the rendered game coherent? (needs eyes) | — (local /loop; not headless) | — | 0 |
 | Overseer | What broke today, what needs Andrew? | 2026-07-01 (digest rendered) | 0 P0 · 106 P2 | — |
