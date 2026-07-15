@@ -1,6 +1,6 @@
 // dev/bake-logo-small.mjs — bake the topbar-size STARNET wordmark from the master art.
 //
-// WHY this exists: the brand master (frontend/assets/brand/starnet-logo.png, 1100×199) is an
+// WHY this exists: the brand master (frontend/assets/brand/starnet-logo.png, 2041×384) is an
 // ASCII-digit mosaic — thin glowing strokes on transparency. The topbar shows it 30px tall, a
 // ~6.6× minification, and the browser's sRGB-space filtering averages those thin strokes into
 // dim gray speckle (the "placed PNG" look). A redrawn vector mark was tried and REVERTED
