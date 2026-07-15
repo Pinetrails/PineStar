@@ -9,7 +9,8 @@
      2. DUST     — a dense area-scaled field of faint 1px stars (hundreds to thousands),
                    thickened along a sine-wrapped galactic band, pre-rendered + scrolled.
      3. MID/NEAR — the live twinkling bands (per-star phase, tinted), the near band bright
-                   and fast with a few 4-point glint stars, + the rare silent meteor.
+                   and fast with a few 4-point glint stars, + the rare silent meteor and an
+                   EXTREMELY rare brilliant bolide (hours apart).
 
    Everything is seeded (mulberry32, fixed seed) so the same canvas size always grows the
    same sky — a resize re-lays the field deterministically instead of reshuffling it.
@@ -28,6 +29,7 @@ const SpaceBG = (() => {
   let pendKey = '', pendAt = 0;                      // resize settling: a seam-drag streams sizes — rebuild ONCE when stable, not per tick
   let mid = [], near = [];                           // live twinkle bands
   let meteor = null, nextMeteorAt = 0;               // the rare silent shooting star (one at a time, runtime-only)
+  let bolide = null, nextBolideAt = 0;               // THE GREAT ONE — an extremely rare brilliant bolide (hours apart; most sessions never see it)
 
   /* reduced-motion: never ADD dramatic motion (the meteor) when the OS asks for less; the gentle
      twinkle/scroll predates this module and stays. Live-read, same idiom as world.js. */
@@ -164,6 +166,7 @@ const SpaceBG = (() => {
     }
 
     drawMeteor(ctx, w, h, now);
+    drawBolide(ctx, w, h, now);
   }
 
   /* THE METEOR — a rare, silent shooting star (one live at a time, ~1-2 per minute). Spawn params
@@ -191,6 +194,41 @@ const SpaceBG = (() => {
       const tx = hx - meteor.vx * k * 0.011, ty = hy - meteor.vy * k * 0.011;
       ctx.fillStyle = 'rgba(220,230,255,' + (a * (1 - k / 9) * 0.85).toFixed(3) + ')';
       ctx.fillRect(tx, ty, k < 2 ? 2 : 1, k < 2 ? 2 : 1);
+    }
+  }
+
+  /* THE GREAT ONE — an extremely rare bolide: brighter, slower, longer than the common meteor,
+     with a glowing head and a long ember trail. First window 30min-3h after boot, then 1-5h
+     between sightings — most sessions never see it; the ones that do, remember it. Same rules
+     as the meteor: one live at a time, runtime-random spawn, skipped under reduced-motion. */
+  function drawBolide(ctx, w, h, now) {
+    if (!nextBolideAt) { nextBolideAt = now + (30 + Math.random() * 150) * 60000; return; }
+    if (!bolide) {
+      if (reduceMotion() || now < nextBolideAt) return;
+      const dirx = Math.random() < 0.5 ? -1 : 1;
+      const ang = (0.20 + Math.random() * 0.30) * Math.PI / 2;   // shallow, majestic descent
+      const spd = w * (0.16 + Math.random() * 0.08);             // slower than the meteor — it lingers
+      bolide = {
+        x: (0.2 + Math.random() * 0.6) * w, y: (0.05 + Math.random() * 0.30) * h,
+        vx: Math.cos(ang) * spd * dirx, vy: Math.sin(ang) * spd,
+        born: now, life: 2400 + Math.random() * 900,
+      };
+    }
+    const t = (now - bolide.born) / bolide.life;
+    if (t >= 1) { bolide = null; nextBolideAt = now + (60 + Math.random() * 240) * 60000; return; }
+    const a = Math.sin(Math.PI * t);
+    const el = (now - bolide.born) / 1000;
+    const hx = bolide.x + bolide.vx * el, hy = bolide.y + bolide.vy * el;
+    const g = ctx.createRadialGradient(hx, hy, 0, hx, hy, 10);   // the glowing head
+    g.addColorStop(0, 'rgba(210,255,240,' + (a * 0.9).toFixed(3) + ')');
+    g.addColorStop(0.35, 'rgba(150,240,220,' + (a * 0.35).toFixed(3) + ')');
+    g.addColorStop(1, 'rgba(150,240,220,0)');
+    ctx.fillStyle = g; ctx.fillRect(hx - 10, hy - 10, 20, 20);
+    ctx.fillStyle = 'rgba(240,255,250,' + (a * 0.95).toFixed(3) + ')'; ctx.fillRect(hx - 1, hy - 1, 3, 3);
+    for (let k = 1; k < 20; k++) {                               // the long ember trail
+      const tx = hx - bolide.vx * k * 0.016, ty = hy - bolide.vy * k * 0.016;
+      ctx.fillStyle = 'rgba(190,245,230,' + (a * (1 - k / 20) * 0.7).toFixed(3) + ')';
+      ctx.fillRect(tx, ty, k < 5 ? 2 : 1, k < 5 ? 2 : 1);
     }
   }
 
