@@ -43,6 +43,7 @@ test/sanitize.test.js
 test/errorclass.test.js
 test/billing.test.js
 test/credits.test.js
+test/credits-link.test.js
 test/friendlyerror.test.js
 test/codexsignin.test.js
 test/loop.replay.test.js

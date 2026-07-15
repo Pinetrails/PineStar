@@ -1,0 +1,124 @@
+/* node test/credits-link.test.js — the device-pairing client + durable link store (sidecar/credits-link.js):
+   config-gating (no STARNET_CLOUD_URL => zero surface), the start/poll happy path against a STUBBED cloud
+   (fake fetch, no real network), the pollSecret-stays-server-side invariant, the credits.json persistence
+   round-trip (proxy for boot-from-file construction), and unlink. No real IO beyond a temp dir. */
+'use strict';
+const A = require('./_assert.js');
+const fs = require('node:fs');
+const fsp = require('node:fs/promises');
+const path = require('node:path');
+const os = require('node:os');
+const { makeCreditsLink } = require('../sidecar/credits-link.js');
+
+const flush = () => new Promise(r => setTimeout(r, 0));
+
+// a fake StarNet Cloud: link/start mints a code+pollSecret; link/poll flips to confirmed once `confirm()` is called.
+function fakeCloud(opts) {
+  opts = opts || {};
+  const state = { code: opts.code || 'STAR-7F3K', pollSecret: 'ps_secret_' + Math.random().toString(36).slice(2), confirmed: false, released: false };
+  const calls = [];
+  const json = (obj, ok) => Promise.resolve({ ok: ok !== false, status: ok === false ? 500 : 200, json: () => Promise.resolve(obj) });
+  const cloud = {
+    state, calls,
+    confirm() { state.confirmed = true; },
+    fetch(url, init) {
+      const u = String(url);
+      let body = {}; try { body = init && init.body ? JSON.parse(init.body) : {}; } catch (_) {}
+      calls.push({ url: u, method: (init && init.method) || 'GET', body });
+      if (u.indexOf('/v1/link/start') >= 0) {
+        return json({ code: state.code, pollSecret: state.pollSecret, verifyUrl: 'https://cloud.example/link?code=' + state.code, expiresAt: 9999 });
+      }
+      if (u.indexOf('/v1/link/poll') >= 0) {
+        if (body.pollSecret !== state.pollSecret) return json({ status: 'pending' });   // wrong secret never confirms
+        if (!state.confirmed) return json({ status: 'pending' });
+        if (state.released) return json({ status: 'consumed' });
+        state.released = true;
+        return json({ status: 'confirmed', deviceToken: 'snd_devtoken_abc', accountId: 'acct_42' });
+      }
+      return json({}, false);
+    }
+  };
+  return cloud;
+}
+
+(async () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'starnet-link-'));
+  const dir = path.join(tmp, '.secrets');
+  const file = path.join(dir, 'credits.json');
+
+  // ---- NOT CONFIGURED: no cloud URL => inert; start refuses; nothing persisted (routes would 404) ----
+  {
+    const cloud = fakeCloud();
+    const link = makeCreditsLink({ cloudUrl: '', fetch: cloud.fetch, fsp, fs, pathMod: path, dir, now: () => 1000 });
+    A.eq(link.configured(), false, 'no STARNET_CLOUD_URL => configured() false (link routes 404, no LINK card)');
+    const s = await link.start('X');
+    A.eq(s.ok, false, 'start() refuses when unconfigured');
+    A.eq(cloud.calls.length, 0, 'unconfigured client makes NO network calls');
+    A.eq(link.hasSaved(), false, 'nothing persisted when unconfigured');
+  }
+
+  // ---- HAPPY PATH: start -> code returned, pollSecret WITHHELD -> poll pending -> confirm -> poll confirmed,
+  //      persists credits.json; loadSavedSync round-trips the record (this is the boot-from-file construction) ----
+  {
+    const cloud = fakeCloud();
+    const link = makeCreditsLink({ cloudUrl: 'https://cloud.example/', fetch: cloud.fetch, fsp, fs, pathMod: path, dir, now: () => 2000 });
+    A.eq(link.configured(), true, 'a STARNET_CLOUD_URL makes linking available');
+
+    const s = await link.start('My Station');
+    A.eq(s.ok, true, 'start() ok');
+    A.eq(s.code, 'STAR-7F3K', 'start returns the pairing code');
+    A.ok(String(s.verifyUrl).indexOf('STAR-7F3K') >= 0, 'verifyUrl embeds the code');
+    A.eq(s.pollSecret, undefined, 'start result NEVER exposes the pollSecret (server-side only)');
+
+    const p1 = await link.poll('STAR-7F3K');
+    A.eq(p1.status, 'pending', 'poll is pending before confirmation');
+    A.eq(link.hasSaved(), false, 'no token persisted while pending');
+
+    cloud.confirm();
+    const p2 = await link.poll('STAR-7F3K');
+    A.eq(p2.status, 'confirmed', 'poll flips to confirmed after the site confirm');
+    A.eq(p2.accountId, 'acct_42', 'confirmed poll carries the accountId');
+
+    // the poll body carried the pollSecret to the cloud (proving it was held + used server-side)
+    const pollCall = cloud.calls.find(c => c.url.indexOf('/v1/link/poll') >= 0 && c.body.pollSecret);
+    A.eq(pollCall.body.pollSecret, cloud.state.pollSecret, 'the sidecar polls the cloud WITH the stored pollSecret');
+
+    // persistence round-trip == boot-from-file construction
+    A.eq(link.hasSaved(), true, 'a confirmed link persists credits.json');
+    A.ok(fs.existsSync(file), 'credits.json exists on disk');
+    const saved = link.loadSavedSync();
+    A.eq(saved.url, 'https://cloud.example', 'saved url = the cloud base (trailing slash trimmed)');
+    A.eq(saved.deviceToken, 'snd_devtoken_abc', 'saved deviceToken round-trips');
+    A.eq(saved.accountId, 'acct_42', 'saved accountId round-trips');
+    // the persisted file must NOT contain the pollSecret (only the durable device token)
+    const raw = fs.readFileSync(file, 'utf8');
+    A.eq(raw.indexOf(cloud.state.pollSecret), -1, 'the pollSecret is never written to disk');
+
+    // a fresh client over the SAME dir reads the record (a sidecar restart would come up configured)
+    const link2 = makeCreditsLink({ cloudUrl: 'https://cloud.example', fetch: cloud.fetch, fsp, fs, pathMod: path, dir, now: () => 3000 });
+    const rehydrated = link2.loadSavedSync();
+    A.eq(rehydrated.deviceToken, 'snd_devtoken_abc', 'a new client (restart) rehydrates the linked token from disk');
+
+    // ---- UNLINK: deletes the file, reverts to inert ----
+    const u = await link.clearSaved();
+    A.eq(u.ok, true, 'clearSaved ok');
+    A.eq(u.removed, true, 'clearSaved reports the file removed');
+    A.eq(link.hasSaved(), false, 'after unlink nothing is persisted');
+    A.eq(fs.existsSync(file), false, 'credits.json is gone after unlink');
+    const u2 = await link.clearSaved();
+    A.eq(u2.ok, true, 'unlink is idempotent (ENOENT is a success)');
+  }
+
+  // ---- UNKNOWN CODE: polling a code we never started here yields 'unknown' (frontend restarts the flow) ----
+  {
+    const cloud = fakeCloud();
+    const link = makeCreditsLink({ cloudUrl: 'https://cloud.example', fetch: cloud.fetch, fsp, fs, pathMod: path, dir, now: () => 4000 });
+    const p = await link.poll('STAR-NOPE');
+    A.eq(p.status, 'unknown', 'polling an unknown code (no stored secret) reports unknown, makes no cloud call');
+    A.eq(cloud.calls.filter(c => c.url.indexOf('/v1/link/poll') >= 0).length, 0, 'no poll network call for an unknown code');
+  }
+
+  await flush();
+  try { fs.rmSync(tmp, { recursive: true, force: true }); } catch (_) {}
+  A.report('credits-link.test');
+})();
