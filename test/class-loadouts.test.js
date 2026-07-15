@@ -117,14 +117,16 @@ for (const iid of iconIds) {
 /* ---------- 1b''. TYPED ASCII MARKS (premium bay pass): the bay's rendered emblem is TYPED, not drawn ----
    The bay renders ClassIcons.ascii() for every class (the SVG seals stay as the mission art + vector
    fallback). Laws: every catalog class has a bespoke mark; every mark maps back to a catalog class (no
-   orphans); a mark is exactly 5 rows of <=9 columns of PRINTABLE PURE ASCII (0x20-0x7E) so every font on
-   every machine types it identically; and no two classes share a mark (identity, not decoration). */
+   orphans); a mark is exactly 5 rows of <=9 columns drawn ONLY from printable ASCII (0x20-0x7E) plus the
+   terminal shade/half-block set ░▒▓█▄▀ (the AsciiFX decode alphabet — VT323 provably renders it), so every
+   machine types it identically; and no two classes share a mark (identity, not decoration). */
+const MARK_CHARSET = /^[\x20-\x7E░▒▓█▄▀]*$/;   // ASCII + ░ ▒ ▓ █ ▄ ▀
 for (const b of CATALOG) {
   const m = classicons.ascii(b.id);
   A.ok(Array.isArray(m) && m.length === 5, b.id + ' has a 5-row typed ASCII mark');
   if (m) for (const row of m) {
     A.ok(typeof row === 'string' && row.length >= 1 && row.length <= 9, b.id + ' mark row is 1-9 columns: "' + row + '"');
-    A.ok(/^[\x20-\x7E]*$/.test(row), b.id + ' mark row is pure printable ASCII: "' + row + '"');
+    A.ok(MARK_CHARSET.test(row), b.id + ' mark row is ASCII + the ░▒▓█▄▀ shade set only: "' + row + '"');
   }
 }
 const asciiIds = Object.keys(classicons.ASCII);
