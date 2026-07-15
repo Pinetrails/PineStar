@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "91e3495674ed12829a386bb4ad0dcb760cc16be5",
+    "sourceCommit": "750638b938eeff2d90ced3e7827c53a8e528b22a",
     "pathSetSha256": "11a2ff1e8ccd7ca7503a7d3a57bf51e4d0c7f5aeebda7d500a3c3bb7b174ea6e",
     "files": [
       {
@@ -98,8 +98,8 @@
       },
       {
         "path": "frontend/app/autopilot.js",
-        "bytes": 47720,
-        "sha256": "4dd3ae09d739a44127f5bbbb90e41142cc01782bdc175fe70c0670cd912f8108"
+        "bytes": 47938,
+        "sha256": "9854122b344a1a3d5ae88ad1f157094874cf7d28922958c3d2504914f725f0ce"
       },
       {
         "path": "frontend/app/autopilotstore.js",
@@ -133,8 +133,8 @@
       },
       {
         "path": "frontend/app/chat.js",
-        "bytes": 372424,
-        "sha256": "cf0351e21b52d0fe91154e6fa249155c1efd33443898854c50611c178ef3d7e1"
+        "bytes": 370971,
+        "sha256": "d9d2be5ba50e0ebfb770cd1deaed4898296e3ea6f72b15a82619226fcd4dbe4a"
       },
       {
         "path": "frontend/app/chatresize.js",
@@ -743,8 +743,8 @@
       },
       {
         "path": "frontend/app/workshopstore.js",
-        "bytes": 20457,
-        "sha256": "eb37bcafffc9603ee14707be1d8f817244cb67134edf7f144e5072e2e32268fd"
+        "bytes": 24759,
+        "sha256": "31a7422869d09eb9da0210614e4996a2372a7ca9cab0d2c388c5b5587f8a078a"
       },
       {
         "path": "frontend/app/worksignal.js",
@@ -788,8 +788,8 @@
       },
       {
         "path": "frontend/css/app.css",
-        "bytes": 188908,
-        "sha256": "2f96e96208599c41135e276933971a8d6dad79ea2379a1aa49e0acf1fcc111bc"
+        "bytes": 188950,
+        "sha256": "33b0887855ba2432f764d74dcfa5deeceb928b684dcc3e3a62beceb32ce00fd8"
       },
       {
         "path": "frontend/css/asciifx.css",
@@ -1414,7 +1414,7 @@
         {
           "kind": "contains",
           "path": "frontend/app/chat.js",
-          "needle": "openItBtn.textContent = 'Open it'"
+          "needle": "openItBtn.textContent = '▶ Open it — try it in a tab'"
         },
         {
           "kind": "contains",
