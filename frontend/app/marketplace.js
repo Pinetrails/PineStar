@@ -1823,9 +1823,9 @@ const Marketplace = (() => {
           '<button class="bb sm mkt-do-routine">◷ SCHEDULE IT</button></div>'
       : '<div class="mkt-save-acts"><button class="bb sm mkt-cancel">‹ BACK</button>' +
           '<button class="bb sm mkt-do-launch">▸ RUN NOW</button>' +
-          '<button class="bb sm mkt-do-makeroutine">◷ MAKE ROUTINE</button></div>';
+          '<button class="bb sm mkt-do-makeroutine" title="puts this recipe on a schedule — it becomes a ROUTINE you can manage in ⏱ ROUTINES">◷ MAKE ROUTINE</button></div>';
     const modeNote = (launchMode === 'routine')
-      ? '◷ fills the blanks ONCE, then runs the same directive on your chosen cadence as <b>' + esc(who) + '</b>.'
+      ? '◷ fills the blanks ONCE, then runs the same directive on your chosen cadence as <b>' + esc(who) + '</b> — it becomes a ROUTINE (manage or stop it any time in ⏱ ROUTINES).'
       : '▸ opens a fresh workstream and sets <b>' + esc(who) + '</b> to work on it — or put it on a schedule.';
     return '<div class="mkt-save mkt-launch-form">' +
       '<div class="mkt-save-h">' + esc((launchMode === 'routine' ? '◷ MAKE ROUTINE — ' : '▸ LAUNCH — ') + r.name) + '</div>' +

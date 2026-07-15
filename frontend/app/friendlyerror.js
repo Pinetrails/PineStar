@@ -80,7 +80,8 @@
     billing:       { retryable: false, action: 'settings', msg: "Your provider account is out of credit — top it up, then try again." },
     // managed StarNet credits ran out (only reachable when a managed-credit backend is wired). Point at the STORE
     // to top up; a BYOK station never hits this kind (it gets `billing`/`auth` instead).
-    managed_credit:{ retryable: false, action: 'store',    msg: "You're out of StarNet credits — add more in the STORE, or connect your own provider key." },
+    // copy names the SAME door the button opens (PROVIDERS) — "the STORE" was a surface that doesn't exist as a button.
+    managed_credit:{ retryable: false, action: 'store',    msg: "You're out of StarNet credits — top up under SETTINGS → PROVIDERS, or connect your own provider key." },
     // capdenied copy is REBUILT per-error in friendlyError() to name the exact power + gear; this is the fallback
     // when the capability can't be parsed. The door is REFIT (place the gear), NOT the SKILLS list.
     capdenied:     { retryable: false, action: 'refit',    msg: "This task needed a tool this agent doesn't have on station yet — open REFIT to place the gear it's missing." },

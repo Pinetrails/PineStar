@@ -1,5 +1,26 @@
 # NEXT.md — current priorities & task queue
 
+## 2026-07-15 — RELEASE PREP (lane `claude/release-prep-d04205`): qa:ready burn-down
+
+`qa:ready` said NOT READY (4 reasons). This lane's disposition of each:
+1. **Ledger P0/P1 → 0 P0 · 1 P1**: F1/F2/F3 flipped `fixed` (all trunk-verified: 6923ed05/73f376fa/
+   f488ed11 via eaf36032). **F4 FIXED in this lane** — `/model` now warns against the warmed catalog
+   on unknown ids (warn-not-block, empty catalog never warns; test/model-ack-honesty.test.js, 15
+   assertions; live-proven: garbage id → warning naming the id + 342-catalog, real id → clean ack;
+   receipt `.bugloops/release-prep-2026-07-15/f4-model-warn-live-proof.txt`). Flip F4 `fixed` at merge.
+   **F5 REFUTED as a product bug** — in REAL headless Chrome, stage / refit-canvas / #ag-portrait all
+   track css across 1280x720→375x812→1280x800→900x1000 (aspectDelta ≤ 0.009). The sweep's distortion
+   was the rAF-frozen CDP preview pane, where resize events AND ResizeObserver deliveries never fire
+   (proven: freshly-armed RO logged zero on a real viewport change there). Finding dismissed with
+   receipts `.bugloops/release-prep-2026-07-15/f5-*.json`.
+2. **Guardian RED root cause fixed**: shell-machine-state's Start-Process probe asserted the CHILD's
+   exit code, which reads unreliably under the Task-Scheduler batch-logon token — the probe now
+   asserts the actual claim (colon form binds FilePath + launches). Next hourly cycle should be green.
+3. **Beginner Run stale** — re-run on post-merge trunk (below).
+4. **Installed-exe v3 proof** — requires a desktop build whose buildCommit/sourceTree pin the exact
+   final trunk head: build + install + `qa:smoke:installed` AFTER this lane merges.
+
+
 ## MERGED 2026-07-15 — SCHEDULER RELIABILITY (lane `claude/starnet-scheduler-audit-1b33c2`, trunk `5dcd3868`)
 
 Four of the six 2026-07-15 scheduler-audit gaps closed in sidecar cron (digest in qa/STATUS.md):

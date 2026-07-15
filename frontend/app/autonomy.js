@@ -140,7 +140,7 @@
       : s.reach === 'sandbox' ? 'builds locally, nothing leaves the machine'
       : 'can send, publish, or contact external services';
     const how = s.initiative === 'leash' ? ('up to ' + s.leashPerDay + ' small jobs a day') : ('freely toward your goals (up to ' + s.leashPerDay + ' jobs a day)');
-    return 'While you’re away it works on its own ' + how + ' — a beat about every 45 min — ' + reachWord + ', leaving each one on your desk to review. You see everything it did.';
+    return 'While you’re away it works on its own ' + how + ' — one small job about every 45 min — ' + reachWord + ', leaving each one on your desk to review. You see everything it did.';
   }
 
   return {

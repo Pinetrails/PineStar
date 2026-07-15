@@ -276,6 +276,7 @@ test/channels.test.js
 test/comms-presence.test.js
 test/comms-link-honesty.test.js
 test/steer-idle-honesty.test.js
+test/model-ack-honesty.test.js
 test/toolprops.test.js
 test/worldmodel.test.js
 test/station-authority.test.js

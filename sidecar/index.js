@@ -7859,6 +7859,9 @@ function handleNightshiftStatus(req, res) {
     halted: (rolled.haltedAt || 0) > 0,   // NS E-STOP durable halt — true until the Commander re-writes the dial
     away: decision ? !!decision.away : false,
     awaySince: awaySince,
+    // the REAL "away" rule, so the UI can say "no input for N min" instead of the ambiguous "while you're away"
+    // (users read that as "app closed" — it isn't; the app stays open, away = idle). Provable: the exact knob used.
+    awayAfterMs: NIGHTSHIFT_AWAY_MS,
     beatsUsedToday: rolled.beatsUsedToday || 0,
     leashPerDay: Number.isFinite(summary.leashPerDay) ? summary.leashPerDay : null,
     lastBeatAt: rolled.lastBeatAt || 0,
