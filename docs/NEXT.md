@@ -1,5 +1,22 @@
 # NEXT.md — current priorities & task queue
 
+## MERGED 2026-07-15 — VOICE DECOUPLED FROM THE LLM (lane `claude/hermes-voice-system-analysis-910f29`, trunk `dc2c8809` + W0 `e5e60914`)
+
+Voice is now a STATION subsystem (analysis + acceptance bar: docs/HERMES_VOICE_ANALYSIS_2026-07-14.md).
+Shipped: sidecar/edgetts.js zero-dep FREE KEYLESS Edge neural floor in /api/tts (keyed chain →
+edge → 200 {fallback}); /api/stt dedicated ASR (Groq whisper-large-v3-turbo → whisper-1 →
+chat-model); frontend neural-only (robotic speechSynthesis path DELETED — degrade = silence +
+speaker tooltip; 'no key' latch → 60s cold-off). Live-proven keyless end-to-end (real Edge MP3
+through the real page, play() resolved). Installed exe picks this up at the next build cut.
+
+- [ ] OPEN: local-ASR floor for desktop Anthropic-only stations (sherpa-onnx-node / whisper.cpp
+      spike; the last acceptance-bar gap — browser stations have webSpeech, desktop keyless STT doesn't).
+- [ ] OPEN: Edge-voice audition vs Algenib (en-US-ChristopherNeural chosen as nearest bass;
+      Andrew's ear decides; swap via SKYNET_EDGE_TTS_VOICE).
+- [ ] OPEN: V-ACK (spoken ack on first tool call from the prewarmed cache + ducking), V-HYGIENE
+      (VAD confirm stage, quiet-take discard, hallucination filter, single chunker), V-PROSODY
+      (taste-gated) — ranked in the analysis doc.
+
 ## 2026-07-15 — PROVIDER COMPATIBILITY (lane `claude/starnet-provider-compatibility-24131e`, MERGED `29fa54e2`)
 
 The "all providers properly compatible?" audit's four concrete wire risks are FIXED on the shared
