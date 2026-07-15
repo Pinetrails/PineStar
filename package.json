@@ -86,6 +86,7 @@
     "qa:product-perfect": "node scripts/qa/product-perfect.mjs --run",
     "qa:smoke:installed": "node scripts/qa/installed-smoke.mjs",
     "qa:input-isolation": "node scripts/qa/input-isolation-smoke.mjs",
+    "certify:providers": "node scripts/provider-certify.mjs",
     "serve": "node scripts/serve-ui-only.js",
     "serve:ui-only": "node scripts/serve-ui-only.js",
     "tauri": "tauri",

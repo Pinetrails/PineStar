@@ -62,6 +62,7 @@
         supportsTools: typeof profile.supportsTools === 'boolean' ? profile.supportsTools : null,
         // wireStreamOptions:false = endpoint rejects/lacks stream_options (usage streams by default there)
         includeUsage: profile.wireStreamOptions === false ? false : opts.includeUsage,
+        staticModels: profile.staticModels,
         defaultContext: opts.defaultContext,
         headers: opts.headers
       });

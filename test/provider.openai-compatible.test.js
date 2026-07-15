@@ -196,5 +196,22 @@ module.exports = (async () => {
     A.eq(pNull.supportsTools('anything'), null, 'no profile assertion stays honestly unknown');
   }
 
+  // static catalog fallback: fills in only when the live endpoint yields nothing; a real catalog wins
+  {
+    const statics = [{ id: 'sonar', context_length: 128000, supportsTools: false, supportsReasoning: false }];
+    const emptyFetch = async () => new Response(JSON.stringify({ data: [] }), { status: 200 });
+    const pEmpty = makeOpenAICompatibleProvider({ fetch: emptyFetch, baseUrl: 'http://api/v1', staticModels: statics });
+    const fromStatic = await pEmpty.listModels();
+    A.eq(fromStatic.length, 1, 'empty live catalog falls back to the static roster');
+    A.eq(pEmpty.contextLimit('sonar'), 128000, 'static roster carries context limits (compaction works)');
+    A.eq(pEmpty.supportsTools('sonar'), false, 'static roster carries capability facts');
+    A.eq(pEmpty.priceOf('sonar'), null, 'static roster stays honestly unpriced');
+
+    const liveFetch = async () => new Response(JSON.stringify({ data: [{ id: 'real-model' }] }), { status: 200 });
+    const pLive = makeOpenAICompatibleProvider({ fetch: liveFetch, baseUrl: 'http://api/v1', staticModels: statics });
+    const fromLive = await pLive.listModels();
+    A.eq(fromLive.map(m => m.id).join(','), 'real-model', 'a live catalog always wins over the static roster');
+  }
+
   A.report('provider.openai-compatible.test');
 })();
