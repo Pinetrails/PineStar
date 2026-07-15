@@ -189,16 +189,68 @@
     // replies (/agents, /model…) omit it — no agent "produced" them, so the floor should not attribute a dish.
     async function deliver(chatId, text, runId, reason, agentId) {
       const chunks = chunkText(text, maxMessageLength);
-      let ok = true;
-      for (const c of chunks) {
+      let ok = true, failedAt = -1;
+      for (let i = 0; i < chunks.length; i++) {
         let r;
-        try { r = await send(chatId, c); } catch (e) { r = { ok: false, error: (e && e.message) || 'send threw' }; }
-        if (!r || r.ok === false) { ok = false; break; }
+        try { r = await send(chatId, chunks[i]); } catch (e) { r = { ok: false, error: (e && e.message) || 'send threw' }; }
+        if (!r || r.ok === false) { ok = false; failedAt = i; break; }
+      }
+      // DURABLE OUTBOX: a reply that failed to send used to be recorded (channel.delivery ok:false) and then
+      // LOST — the agent did the work and the Commander never saw the result. Queue the undelivered remainder
+      // (only the chunks that did NOT go out) in the store's bounded outbox; flushOutbox redelivers it when the
+      // transport is proven healthy again (next successful delivery, or the adapter's next 'up' status). Command
+      // replies (/help, /agents…) are ephemeral and stay fire-and-forget — a stale command menu hours later is
+      // noise, not a lost result. Guarded on pushOutbox so hubs built over older/test stores behave as before.
+      if (!ok && reason !== 'command' && typeof store.pushOutbox === 'function') {
+        try {
+          const remainder = '⌛ delayed reply — the channel was unreachable when this was first sent:\n' + chunks.slice(failedAt).join('');
+          store.pushOutbox({ channel: channel, chatId: String(chatId), text: remainder, runId: runId || '', agentId: agentId ? String(agentId) : '', reason: reason || '' });
+        } catch (_) {}
       }
       const ev = { channel, chatId: String(chatId), runId: runId || '', ok, chunks: chunks.length, reason: reason || '' };
       if (agentId) ev.agentId = String(agentId);   // additive/optional — attribute the dish to the acting agent
       try { emit('channel.delivery', ev); } catch (_) {}
+      if (ok) { try { const p = flushOutbox(); if (p && typeof p.catch === 'function') p.catch(function () {}); } catch (_) {} }   // a proven-healthy send is the cue to drain any backlog
       return ok;
+    }
+
+    // ---- durable-outbox flush: redeliver queued replies once the transport is healthy ----------------------
+    // Triggered by (a) the adapter reporting 'up' (reconnect/restart recovery) and (b) any successful deliver
+    // (covers a mid-session send failure while the poll status never dropped). One pass at a time; a failed
+    // redelivery bumps the item's try-count and STOPS the pass (transport clearly still shaky) — the item is
+    // dropped with an honest event only after MAX_OUTBOX_TRIES failed attempts, never silently.
+    const MAX_OUTBOX_TRIES = 5;
+    let flushing = false;
+    async function flushOutbox() {
+      if (flushing || typeof store.loadOutbox !== 'function') return;
+      flushing = true;
+      try {
+        const items = store.loadOutbox(channel);
+        for (const it of items) {
+          const chunks = chunkText(it.text, maxMessageLength);
+          let ok = true;
+          for (const c of chunks) {
+            let r;
+            try { r = await send(it.chatId, c); } catch (e) { r = { ok: false }; }
+            if (!r || r.ok === false) { ok = false; break; }
+          }
+          if (ok) {
+            try { store.removeOutbox(it.id); } catch (_) {}
+            const ev = { channel, chatId: String(it.chatId), runId: it.runId || '', ok: true, chunks: chunks.length, reason: 'redelivered' };
+            if (it.agentId) ev.agentId = String(it.agentId);
+            try { emit('channel.delivery', ev); } catch (_) {}
+            continue;
+          }
+          let bumped = null;
+          try { bumped = (typeof store.bumpOutboxTry === 'function') ? store.bumpOutboxTry(it.id) : null; } catch (_) {}
+          if (bumped && bumped.tries >= MAX_OUTBOX_TRIES) {
+            try { store.removeOutbox(it.id); } catch (_) {}
+            try { emit('channel.delivery', { channel, chatId: String(it.chatId), runId: it.runId || '', ok: false, chunks: 0, reason: 'redelivery-gave-up' }); } catch (_) {}
+            try { console.error('[' + channel + '] outbox item for chat ' + it.chatId + ' dropped after ' + MAX_OUTBOX_TRIES + ' failed redeliveries'); } catch (_) {}
+          }
+          break;   // transport still unhealthy — end this pass; the next healthy cue retries
+        }
+      } finally { flushing = false; }
     }
 
     // Resolve which agent a chat is currently bound to, from the SAME precedence run resolution uses (minus the
@@ -457,13 +509,16 @@
     function onCallback(_cb) { /* C6: route { chatId, data, callbackId } to the pending consent finisher */ }
 
     // adapter transport health -> channel.connect telemetry (poll up / network down / fatal token error).
+    // An 'up' is also the durable-outbox recovery cue: the transport just PROVED a round-trip, so any reply
+    // queued while it was down (or while the sidecar was off — the outbox survives restarts) redelivers now.
     function onStatus(s) {
       try { emit('channel.connect', { channel, state: (s && s.state) || 'down', detail: (s && s.detail) || '' }); } catch (_) {}
+      if (s && s.state === 'up') { try { const p = flushOutbox(); if (p && typeof p.catch === 'function') p.catch(function () {}); } catch (_) {} }
     }
 
     return {
       onInbound, onCallback, onStatus,
-      _internals: { agentIdFor, chunkText, endNote, deliver, inflight, handleCommand, currentBoundAgent, isSupersedeRaceRefusal, TASK_SUFFIX, DEFAULT_PERSONA }
+      _internals: { agentIdFor, chunkText, endNote, deliver, inflight, handleCommand, currentBoundAgent, isSupersedeRaceRefusal, flushOutbox, MAX_OUTBOX_TRIES, TASK_SUFFIX, DEFAULT_PERSONA }
     };
   }
 

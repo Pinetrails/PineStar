@@ -308,6 +308,7 @@ test/channels.store.test.js
 test/channels.durability.test.js
 test/channels.secrets.test.js
 test/channels.hub.test.js
+test/channels.outbox.test.js
 test/channels.commands.test.js
 test/channels.sse.test.js
 test/mcp.client.test.js

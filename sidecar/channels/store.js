@@ -10,6 +10,10 @@
        loadChatMap()                   -> { version, chats }
        getChatRecord(chatId)           -> record | undefined
        saveChatRecord(chatId, patch)   -> record                 // merge-and-persist one chat's mapping/config
+       loadOutbox(channel?)            -> [{id,channel,chatId,text,runId,agentId,reason,ts,tries}]
+       pushOutbox(entry)               -> item                   // queue an UNDELIVERED reply (bounded, oldest drops)
+       removeOutbox(id)                -> bool                   // delivered (or given up) — drop it
+       bumpOutboxTry(id)               -> item | undefined       // count one failed redelivery attempt
      }
 
    Files live under WORKSPACES/channels/ — SIBLINGS of the notebook store, OUTSIDE the agent's fs jail
@@ -31,6 +35,9 @@
 
   const AID_RE = /^[A-Za-z0-9_-]{1,40}$/;            // same agentId grammar as the notebook/fs jail
   const DEFAULTS = { maxTurns: 40, maxChars: 24000 };  // bound the on-disk + replayed transcript
+  // outbox bounds: a small, bounded queue of UNDELIVERED replies (durable send-retry, not a message archive).
+  // Oldest drops first past maxOutbox; a single reply's stored text is capped so the file can't balloon.
+  const OUTBOX_DEFAULTS = { maxOutbox: 50, maxOutboxChars: 16000 };
 
   const ROLES = { user: 1, assistant: 1, system: 1 };
 
@@ -71,6 +78,9 @@
       return pathMod.join(root, agentId + '.history.json');
     }
     const chatMapFile = () => pathMod.join(root, 'chatmap.json');
+    const outboxFile = () => pathMod.join(root, 'outbox.json');
+    const outboxLimits = Object.assign({}, OUTBOX_DEFAULTS, d.outboxLimits || {});
+    let outboxSeq = 0;   // deterministic per-process id tail (clock.now() alone can collide within one ms)
 
     function readRaw(file) {   // parse-or-undefined for ONE file (missing / zero-length / corrupt -> undefined)
       try { const raw = fs.readFileSync(file, 'utf8'); if (raw == null || String(raw).length === 0) return undefined; return JSON.parse(raw); }
@@ -139,7 +149,51 @@
         return merged;
       },
 
-      _internals: { trimTail, historyFile, chatMapFile, AID_RE, limits }
+      // ---- durable outbox: replies that FAILED to send, kept for redelivery when the transport is back ----
+      // Same save-safety as everything here (versioned, atomic, .bak-recovered, fail-closed on corrupt). One
+      // file for ALL channels — each item carries its channel; hubs flush only their own.
+      loadOutbox(channel) {
+        const raw = readJson(outboxFile());
+        const items = raw && Array.isArray(raw.items) ? raw.items : [];
+        const good = items.filter(it => it && typeof it.id === 'string' && typeof it.chatId === 'string' && typeof it.text === 'string');
+        return channel ? good.filter(it => it.channel === String(channel)) : good;
+      },
+
+      pushOutbox(entry) {
+        const e = entry || {};
+        let text = String(e.text == null ? '' : e.text);
+        if (text.length > outboxLimits.maxOutboxChars) text = text.slice(0, outboxLimits.maxOutboxChars) + '\n… (reply truncated for redelivery)';
+        const item = {
+          id: String(clock.now()) + '-' + (++outboxSeq),
+          channel: String(e.channel || ''), chatId: String(e.chatId || ''), text: text,
+          runId: String(e.runId || ''), agentId: String(e.agentId || ''), reason: String(e.reason || ''),
+          ts: clock.now(), tries: 0
+        };
+        const items = this.loadOutbox();
+        items.push(item);
+        while (items.length > outboxLimits.maxOutbox) items.shift();   // bounded: oldest undelivered drops first
+        writeJsonAtomic(outboxFile(), { version: 1, items: items });
+        return item;
+      },
+
+      removeOutbox(id) {
+        const items = this.loadOutbox();
+        const next = items.filter(it => it.id !== String(id));
+        if (next.length === items.length) return false;
+        writeJsonAtomic(outboxFile(), { version: 1, items: next });
+        return true;
+      },
+
+      bumpOutboxTry(id) {
+        const items = this.loadOutbox();
+        const it = items.find(x => x.id === String(id));
+        if (!it) return undefined;
+        it.tries = (it.tries | 0) + 1;
+        writeJsonAtomic(outboxFile(), { version: 1, items: items });
+        return it;
+      },
+
+      _internals: { trimTail, historyFile, chatMapFile, outboxFile, AID_RE, limits, outboxLimits }
     };
   }
 
