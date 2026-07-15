@@ -114,6 +114,29 @@ for (const iid of iconIds) {
     'seal ' + iid + ' uses only currentColor/none/deboss (no theme-breaking hardcoded colour): ' + c);
 }
 
+/* ---------- 1b''. TYPED ASCII MARKS (premium bay pass): the bay's rendered emblem is TYPED, not drawn ----
+   The bay renders ClassIcons.ascii() for every class (the SVG seals stay as the mission art + vector
+   fallback). Laws: every catalog class has a bespoke mark; every mark maps back to a catalog class (no
+   orphans); a mark is exactly 3 rows of <=6 columns of PRINTABLE PURE ASCII (0x20-0x7E) so every font on
+   every machine types it identically; and no two classes share a mark (identity, not decoration). */
+for (const b of CATALOG) {
+  const m = classicons.ascii(b.id);
+  A.ok(Array.isArray(m) && m.length === 3, b.id + ' has a 3-row typed ASCII mark');
+  if (m) for (const row of m) {
+    A.ok(typeof row === 'string' && row.length >= 1 && row.length <= 6, b.id + ' mark row is 1-6 columns: "' + row + '"');
+    A.ok(/^[\x20-\x7E]*$/.test(row), b.id + ' mark row is pure printable ASCII: "' + row + '"');
+  }
+}
+const asciiIds = Object.keys(classicons.ASCII);
+for (const aid of asciiIds) A.ok(catIds.has(aid), 'ASCII mark maps to a real catalog class (no orphan mark): ' + aid);
+A.eq(asciiIds.length, CATALOG.length, 'exactly one typed mark per class (' + asciiIds.length + ' marks, ' + CATALOG.length + ' classes)');
+const markKeys = CATALOG.map(b => classicons.ascii(b.id).join('\n'));
+A.eq(new Set(markKeys).size, markKeys.length, 'every typed mark is unique (no two classes share an emblem)');
+// the bay actually renders the typed mark (never silently regresses to the coin for classes)
+const mktSrc = fs.readFileSync(path.join(__dirname, '../frontend/app/marketplace.js'), 'utf8');
+A.ok(/ClassIcons\.ascii\s*\(/.test(mktSrc) && /mkt-amark/.test(mktSrc),
+  'the bay renders ClassIcons.ascii() as the class emblem (.mkt-amark)');
+
 /* ---------- 1b'. DISTINCTNESS: a beginner must be able to tell the classes apart at pick-time ---------- */
 // taglines + blurbs are unique across BOTH shelves (no two classes present as the same thing in the bay).
 const taglines = CATALOG.map(b => b.tagline.trim().toLowerCase());

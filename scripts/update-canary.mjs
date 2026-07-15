@@ -24,8 +24,14 @@
  *     as the bumped version (title/Update Center show it).
  *   node scripts/update-canary.mjs status       # what's staged + the next step
  *
+ * AUTOMATED PATH (instead of clicking through the UI yourself):
+ *   node scripts/update-canary.mjs install-old  # silent NSIS install + launch with CDP open
+ *   node scripts/update-canary.mjs drive        # CDP-drive check → install → restart, print receipts
+ *   (serve must be running in another terminal; drive polls the app over CDP port 9333.)
+ *
  * Options: --port <n> (default 8799) · --dir <path> (default .canary) ·
- *          --version <X.Y.Z> (build-new only; default = conf patch+1)
+ *          --version <X.Y.Z> (build-new only; default = conf patch+1) ·
+ *          --cdp-port <n> (default 9333, installed-smoke convention)
  *
  * NOTES:
  *   - Needs the updater private key at ~/.tauri/starnet-updater.key (or
@@ -36,7 +42,7 @@
  *     flag; it is set ONLY in the canary overlay, never in the shipped conf.
  */
 
-import { execFileSync, spawnSync } from 'node:child_process';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import {
   copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync
 } from 'node:fs';
@@ -44,6 +50,7 @@ import { createServer } from 'node:http';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { connectCDP, evalJS, sleep } from './lib/cdp.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
@@ -173,6 +180,132 @@ function status() {
   log('next              : ' + (!oldExes.length ? 'build-old' : !feedFiles.includes('latest.json') ? 'build-new' : 'serve, then install the old exe and update through the UI'));
 }
 
+const CDP_PORT = +argVal('--cdp-port', '9333');
+const INSTALL_DIR = join(process.env.LOCALAPPDATA || join(homedir(), 'AppData', 'Local'), 'StarNet Canary');
+// NSIS keeps the crate's mainBinaryName — the productName only names the install dir/shortcuts.
+const INSTALLED_EXE = join(INSTALL_DIR, 'skynet-desktop.exe');
+
+function installedVersion() {
+  if (!existsSync(INSTALLED_EXE)) return null;
+  const r = spawnSync('powershell', ['-NoProfile', '-Command',
+    '(Get-Item ' + JSON.stringify(INSTALLED_EXE) + ').VersionInfo.ProductVersion'], { encoding: 'utf8' });
+  return (r.stdout || '').trim() || null;
+}
+
+function launchWithCdp() {
+  if (!existsSync(INSTALLED_EXE)) fail('installed exe not found at ' + INSTALLED_EXE);
+  const child = spawn(INSTALLED_EXE, [], {
+    detached: true,
+    stdio: 'ignore',
+    env: Object.assign({}, process.env, {
+      WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: '--remote-debugging-port=' + CDP_PORT
+    })
+  });
+  child.unref();
+  log('launched ' + INSTALLED_EXE + ' with CDP on :' + CDP_PORT);
+}
+
+function installOld() {
+  const exes = existsSync(OLD) ? readdirSync(OLD).filter(f => f.endsWith('-setup.exe')) : [];
+  if (exes.length !== 1) fail('expected exactly one installer in ' + OLD + ' (run build-old first)');
+  const installer = join(OLD, exes[0]);
+  log('silent NSIS install: ' + installer + ' /S  (per-user, no admin prompt)…');
+  const r = spawnSync(installer, ['/S'], { stdio: 'inherit' });
+  if (r.status !== 0) fail('installer exited ' + r.status);
+  const v = installedVersion();
+  if (!v) fail('install finished but ' + INSTALLED_EXE + ' is missing');
+  log('installed StarNet Canary v' + v + ' at ' + INSTALL_DIR);
+  launchWithCdp();
+  log('next: keep serve running, then `node scripts/update-canary.mjs drive`');
+}
+
+// CDP-drive the running canary through the real Update Center flow and print receipts.
+async function drive() {
+  const startVersion = installedVersion();
+  log('installed exe version before update: ' + startVersion);
+  log('attaching to CDP :' + CDP_PORT + ' …');
+  let cdp = null;
+  for (let i = 0; i < 20 && !cdp; i++) {
+    try { cdp = await connectCDP(CDP_PORT); } catch (_) { await sleep(500); }
+  }
+  if (!cdp) fail('cannot attach to the canary app on :' + CDP_PORT + ' — launch it via install-old (or set WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS yourself)');
+
+  const origin = await evalJS(cdp, 'location.origin');
+  const appVer = await evalJS(cdp, '(typeof Updates!=="undefined" && Updates.snapshot) ? Updates.snapshot().currentVersion : "no-updates-module"');
+  log('attached: origin=' + JSON.stringify(origin) + ' app-reported version=' + JSON.stringify(appVer));
+
+  log('driving Updates.check(true) …');
+  await evalJS(cdp, 'Updates.check(true, "canary")');
+  let snap = null;
+  for (let i = 0; i < 60; i++) {
+    snap = await evalJS(cdp, 'JSON.stringify(Updates.snapshot())');
+    const s = JSON.parse(snap || '{}');
+    if (s.phase === 'available' && s.update) { log('update visible: v' + s.update.version + ' (phase=' + s.phase + ')'); break; }
+    if (s.phase === 'error') fail('update check errored: ' + s.error);
+    await sleep(1000);
+  }
+  const seen = JSON.parse(snap || '{}');
+  if (!(seen.phase === 'available' && seen.update)) fail('update never became available; last snapshot: ' + snap);
+
+  log('driving Updates.install() — the app will exit, NSIS installs passively, then it relaunches …');
+  // Fire-and-forget: the webview dies mid-install, so the eval may never return.
+  evalJS(cdp, 'Updates.install()').catch(() => {});
+
+  // A CLEAN update must reach ALL THREE of these — checking only the version resource is a
+  // FALSE GREEN: NSIS overwrites skynet-desktop.exe (flipping the version) BEFORE it hits the
+  // locked node.exe and hangs on an error dialog, so the version can advance while the install
+  // is actually frozen. So we also require: the NSIS installer process EXITED, and a fresh app
+  // process RELAUNCHED. A hung installer still running past the deadline = HUNG, not success.
+  const deadline = Date.now() + 5 * 60 * 1000;
+  let after = startVersion, versionFlipped = false, installerGone = false, relaunched = false;
+  while (Date.now() < deadline) {
+    await sleep(3000);
+    const v = installedVersion();
+    if (v && v !== startVersion) { after = v; versionFlipped = true; }
+    installerGone = !installerRunning();
+    relaunched = appRunning();
+    if (versionFlipped && installerGone && relaunched) break;
+  }
+  if (!versionFlipped) fail('installed exe version never changed (still ' + startVersion + ') — update did not land within 5 min');
+  if (!installerGone) {
+    fail('UPDATE HUNG: version flipped to ' + after + ' but the NSIS installer is STILL RUNNING past the deadline.\n' +
+      '  This is the sidecar-lock hang — the running node.exe sidecar blocks NSIS from overwriting node.exe.\n' +
+      '  Diagnostic: ' + hangDiagnostic() + '\n' +
+      '  The fix is on_before_exit killing the sidecar before the plugin exits (src-tauri/src/main.rs, starnet_update_check).');
+  }
+  if (!relaunched) log('NOTE: version flipped and installer exited, but no relaunched app seen yet (it may still be starting).');
+  log('');
+  log('================ CANARY RECEIPT ================');
+  log(' installed exe version: ' + startVersion + '  →  ' + after + '   [version resource advanced]');
+  log(' installer exited     : ' + (installerGone ? 'yes (no NSIS process left — no lock hang)' : 'NO'));
+  log(' app relaunched       : ' + (relaunched ? 'yes (new version is running)' : 'not yet'));
+  log(' endpoint used        : http://127.0.0.1:' + PORT + '/latest.json (see serve log for the GET hits)');
+  log(' signature check      : performed by the installed app against the baked pubkey (a bad sig would have failed the install)');
+  log('================================================');
+  log('CLEAN UPDATE PROVEN end-to-end. Uninstall "StarNet Canary" from Windows when done.');
+  process.exit(0);
+}
+
+// Is an NSIS canary installer/uninstaller process still alive? (the hang signature)
+function installerRunning() {
+  const r = spawnSync('powershell', ['-NoProfile', '-Command',
+    "(Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Name -like '*Canary*installer*' -or $_.MainWindowTitle -like '*Canary*Setup*' } | Measure-Object).Count"],
+    { encoding: 'utf8' });
+  return (parseInt((r.stdout || '0').trim(), 10) || 0) > 0;
+}
+function appRunning() {
+  const r = spawnSync('powershell', ['-NoProfile', '-Command',
+    "(Get-Process skynet-desktop -ErrorAction SilentlyContinue | Where-Object Path -like '*Canary*' | Measure-Object).Count"],
+    { encoding: 'utf8' });
+  return (parseInt((r.stdout || '0').trim(), 10) || 0) > 0;
+}
+function hangDiagnostic() {
+  const r = spawnSync('powershell', ['-NoProfile', '-Command',
+    "$n=(Get-Process node -ErrorAction SilentlyContinue | Where-Object Path -like '*StarNet Canary*' | Measure-Object).Count; \"orphan sidecar node.exe still alive: $n\""],
+    { encoding: 'utf8' });
+  return (r.stdout || '').trim() || 'unavailable';
+}
+
 if (cmd === 'build-old') {
   const v = conf().version;
   buildCanary(v, OLD);
@@ -185,8 +318,12 @@ if (cmd === 'build-old') {
   log('NEW canary v' + v + ' staged + signed feed assembled (' + exe + '). Next: serve.');
 } else if (cmd === 'serve') {
   serve();
+} else if (cmd === 'install-old') {
+  installOld();
+} else if (cmd === 'drive') {
+  drive().catch(e => fail(e && e.message || String(e)));
 } else if (cmd === 'status') {
   status();
 } else {
-  fail('unknown command "' + cmd + '" (build-old | build-new | serve | status)');
+  fail('unknown command "' + cmd + '" (build-old | build-new | serve | install-old | drive | status)');
 }

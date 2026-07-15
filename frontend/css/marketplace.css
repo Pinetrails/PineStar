@@ -79,11 +79,14 @@ body.no-scan .mkt-scrim::after { display: none; }
   box-shadow: 0 0 12px var(--ph-glow2), inset 0 -2px 0 rgba(0,0,0,.25); }
 .mkt-sub { color: var(--ph-dim); font-size: 12.5px; letter-spacing: .5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mkt-search { display: flex; align-items: center; gap: 7px; padding: 5px 11px; min-width: 170px;
-  background: var(--panel2); border-radius: 6px; box-shadow: var(--well); color: var(--ph-dim); }
+  background: linear-gradient(180deg, #000, var(--panel2)); border-radius: 2px; border: 1px solid var(--ph-dim);
+  box-shadow: inset 0 2px 6px rgba(0,0,0,.6); color: var(--ph-dim);
+  transition: border-color var(--t-fast, 120ms) var(--ease-soft, ease), box-shadow var(--t-fast, 120ms) var(--ease-soft, ease); }
+.mkt-search:focus-within { border-color: var(--ph); box-shadow: inset 0 2px 6px rgba(0,0,0,.6), 0 0 11px var(--ph-glow2); }
 .mkt-search input { background: transparent; border: 0; outline: none; width: 100%; font-family: inherit; font-size: 15px; color: var(--ph-bright); letter-spacing: .5px; }
 .mkt-search input::placeholder { color: var(--ph-dim); opacity: 1; }   /* solid --ph-dim >=4.5:1 (WCAG AA); .7 was ~3.2:1 — matches the other placeholder rules */
 /* .mkt-x composes .x-btn (bright hover) — big/raised delta only */
-.mkt-x { font-size: 16px; border-width: 2px; border-radius: 5px; padding: 6px 10px; box-shadow: var(--raise); }
+.mkt-x { font-size: 16px; border-width: 2px; border-radius: 2px; padding: 6px 10px; box-shadow: var(--raise); }
 .mkt-x:hover { box-shadow: var(--raise), 0 0 12px var(--ph-glow2); }
 
 /* ---- bar: tabs + lane filter ---- */
@@ -91,16 +94,16 @@ body.no-scan .mkt-scrim::after { display: none; }
   padding: 9px 20px; border-bottom: 1px solid var(--ph-faint); }
 .mkt-tabs { display: flex; gap: 6px; margin-right: 6px; }
 .mkt-tab { font-family: inherit; font-size: 12.5px; letter-spacing: 1.5px; cursor: pointer;
-  color: var(--ph); background: var(--panel2); border: 1px solid var(--ph-dim); border-radius: 5px; padding: 5px 13px; box-shadow: var(--raise); }
+  color: var(--ph); background: var(--panel2); border: 1px solid var(--ph-dim); border-radius: 2px; padding: 5px 13px; box-shadow: var(--raise); }
 .mkt-tab:hover { color: var(--ph-bright); border-color: var(--ph); }
 .mkt-tab.on { color: var(--ink); background: var(--ph); border-color: var(--ph); text-shadow: none; box-shadow: 0 0 12px var(--ph-glow2); }
 .mkt-tab:focus-visible { outline: 2px solid var(--ph); outline-offset: 2px; }
 .mkt-lanes { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
 .mkt-lanes-lbl { color: var(--ph-dim); font-size: 11.5px; letter-spacing: 2px; margin: 0 2px 0 4px; }
 .mkt-lane { font-family: inherit; font-size: 12px; letter-spacing: 1.2px; cursor: pointer; text-transform: uppercase;
-  color: var(--ph); background: var(--panel2); border: 1px solid var(--ph-dim); border-radius: 5px; padding: 4px 12px; box-shadow: var(--raise); }
+  color: var(--ph); background: var(--panel2); border: 1px solid var(--ph-dim); border-radius: 2px; padding: 4px 12px; box-shadow: var(--raise); }
 .mkt-lane:hover { color: var(--ph-bright); border-color: var(--ph); }
-.mkt-lane.on { color: var(--ink); background: var(--ph); border-color: var(--ph); text-shadow: none; }
+.mkt-lane.on { color: var(--ink); background: var(--ph); border-color: var(--ph); text-shadow: none; box-shadow: 0 0 10px var(--ph-glow2); }
 .mkt-lane .ct { opacity: .6; margin-left: 4px; font-size: 10.5px; }
 .mkt-lane:focus-visible { outline: 2px solid var(--ph); outline-offset: 2px; }
 
@@ -114,32 +117,61 @@ body.no-scan .mkt-scrim::after { display: none; }
 .mkt-roster::-webkit-scrollbar, .mkt-dossier::-webkit-scrollbar { width: 9px; }
 .mkt-roster::-webkit-scrollbar-thumb, .mkt-dossier::-webkit-scrollbar-thumb { background: var(--ph-dim); border-radius: 9px; }
 
-/* ---- the engraved class SEAL (challenge-coin) — emblem only, never a skin ---- */
+/* ---- the engraved class SEAL (challenge-coin) — emblem only, never a skin ----
+   Premium pass: a real struck coin — machined accent rim ring, recessed floor, engraved inner groove,
+   and the emblem lit with a soft accent bloom so each class's colour actually registers. */
 .mkt-coin { position: relative; width: var(--coin, 64px); height: var(--coin, 64px); border-radius: 50%; flex: 0 0 auto;
-  background: radial-gradient(circle at 50% 33%, #1d150d, #0a0604 78%);
-  border: 1px solid color-mix(in srgb, var(--accent, var(--ph)) 40%, #241a0d);
-  box-shadow: inset 0 1px 0 rgba(var(--ph-bright-rgb),.08), inset 0 -3px 8px rgba(0,0,0,.72), 0 1px 2px rgba(0,0,0,.6);
+  background:
+    radial-gradient(circle at 50% 108%, color-mix(in srgb, var(--accent, var(--ph)) 12%, transparent), transparent 58%),
+    radial-gradient(circle at 50% 30%, #1f1710, #090503 80%);
+  border: 1px solid color-mix(in srgb, var(--accent, var(--ph)) 52%, #241a0d);
+  box-shadow:
+    inset 0 1px 0 rgba(var(--ph-bright-rgb),.1), inset 0 -4px 9px rgba(0,0,0,.78),
+    0 0 0 2px rgba(0,0,0,.7), 0 0 9px color-mix(in srgb, var(--accent, var(--ph)) 14%, transparent), 0 1px 2px rgba(0,0,0,.6);
   display: flex; align-items: center; justify-content: center; }
+/* engraved inner groove ring — the coin's milled channel */
 .mkt-coin::before { content: ""; position: absolute; inset: 4px; border-radius: 50%; z-index: 1;
-  border: 1px solid color-mix(in srgb, var(--accent, var(--ph)) 22%, transparent); opacity: .55; }
+  border: 1px solid color-mix(in srgb, var(--accent, var(--ph)) 30%, transparent); opacity: .7;
+  box-shadow: inset 0 1px 2px rgba(0,0,0,.7), 0 1px 0 rgba(var(--ph-bright-rgb),.05); }
 .mkt-coin::after { content: ""; position: absolute; inset: 0; border-radius: 50%; z-index: 1; pointer-events: none;
-  background: radial-gradient(ellipse 54% 40% at 33% 24%, rgba(255,242,222,.08), transparent 62%); }
-.mkt-coin-ico { position: relative; z-index: 2; width: 54%; height: 54%; color: var(--accent, var(--ph));
-  filter: drop-shadow(0 1px 0 rgba(0,0,0,.55)); display: flex; align-items: center; justify-content: center; }
+  background: radial-gradient(ellipse 54% 40% at 33% 24%, rgba(255,242,222,.09), transparent 62%); }
+.mkt-coin-ico { position: relative; z-index: 2; width: 56%; height: 56%; color: var(--accent, var(--ph));
+  filter: drop-shadow(0 1px 0 rgba(0,0,0,.6)) drop-shadow(0 0 5px color-mix(in srgb, var(--accent, var(--ph)) 38%, transparent));
+  display: flex; align-items: center; justify-content: center; }
 .mkt-coin-ico svg { width: 100%; height: 100%; display: block; }
 .mkt-coin-emoji { position: relative; z-index: 2; font-size: calc(var(--coin, 64px) * .42); line-height: 1; color: var(--accent, var(--ph-bright)); }
+/* ---- the TYPED ASCII MARK (settings-console pass): the emblem is typed on the terminal, not drawn ----
+   Rendered in the class accent with a phosphor bloom. Its socket squares off into a recessed READOUT
+   window (the settings-console material) — the coin circle + engraving stay for vector seals (missions). */
+.mkt-amark { position: relative; z-index: 2; margin: 0; font-family: inherit; white-space: pre; text-align: left;
+  font-size: 15px; line-height: 1.0; color: var(--accent, var(--ph));
+  text-shadow: 0 0 8px color-mix(in srgb, var(--accent, var(--ph)) 65%, transparent), 0 1px 0 rgba(0,0,0,.7); }
+.mkt-coin:has(.mkt-amark) { border-radius: 3px; width: var(--coin, 64px); height: calc(var(--coin, 64px) * .8);
+  background: linear-gradient(180deg, #000, color-mix(in srgb, var(--accent, var(--ph)) 4%, var(--panel2)));
+  border: 1px solid color-mix(in srgb, var(--accent, var(--ph)) 36%, #241a0d);
+  box-shadow: inset 0 2px 6px rgba(0,0,0,.7), inset 0 0 14px rgba(0,0,0,.5), 0 0 0 2px rgba(0,0,0,.6); }
+.mkt-coin:has(.mkt-amark)::before, .mkt-coin:has(.mkt-amark)::after { display: none; }
+.mkt-dos-hero .mkt-amark { font-size: 23px; }
 .mkt-seal { display: flex; flex-direction: column; align-items: center; gap: 5px; flex: 0 0 auto; }
 .mkt-seal-code { font-size: 10px; letter-spacing: 2.5px; color: var(--ph-dim); }
 .mkt-pips { display: inline-flex; gap: 2px; align-items: center; color: var(--ph-dim); font-size: 10px; }
-.mkt-pips b { color: var(--gold); }
+.mkt-pips b { color: var(--gold); filter: drop-shadow(0 0 3px rgba(var(--gold-rgb), .55)); }
 
-/* ---- the coin CARD (a class in the roster grid) ---- */
-.mkt-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 12px; }
+/* ---- the coin CARD (a class in the roster grid) — a stamped PERSONNEL DATA-PLATE ----
+   Premium terminal language (recruit-UI premium pass): hard corners, a full-height accent RAIL on the
+   left edge, hairline double border (outer line + recessed inner), micro-scanline plate texture, and the
+   class code as a huge debossed STENCIL watermark bleeding off the corner. Hover = phosphor bloom;
+   selected = accent frame + lit rail. No rounded web-card anywhere (the FNV plate reads square). */
+.mkt-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(238px, 1fr)); gap: 10px; }
 .mkt-card {
   position: relative; display: grid; grid-template-columns: auto 1fr; gap: 12px; overflow: hidden;
-  padding: 12px; border-radius: 9px; cursor: pointer; text-align: left; width: 100%;
-  background: linear-gradient(180deg, rgba(255,255,255,.012), transparent 40%), var(--panel2);
-  border: 1px solid var(--ph-dim); box-shadow: var(--raise); font-family: inherit;
+  padding: 12px 12px 11px 15px; border-radius: 2px; cursor: pointer; text-align: left; width: 100%;
+  background:
+    repeating-linear-gradient(0deg, rgba(255,255,255,.014) 0 1px, transparent 1px 3px),
+    linear-gradient(180deg, rgba(255,255,255,.02), transparent 34%),
+    var(--panel2);
+  border: 1px solid var(--ph-dim); font-family: inherit;
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,.65), inset 0 0 26px rgba(0,0,0,.38), 0 1px 3px rgba(0,0,0,.55);
   transition:
     transform var(--t-fast, 120ms) var(--ease-out, ease),
     box-shadow var(--t-fast, 120ms) var(--ease-soft, ease),
@@ -149,25 +181,79 @@ body.no-scan .mkt-scrim::after { display: none; }
    so it plays ONCE on bay-open / tab-switch, never on every filter/search rebuild (audit item 8). */
 .mkt-roster.mkt-anim .mkt-card { animation: cardIn 0.34s var(--ease-out, ease) backwards;
   animation-delay: calc(min(var(--ci, 0), 8) * 25ms); }
-.mkt-card::before { content: ""; position: absolute; left: 0; top: 0; right: 0; height: 3px;
-  background: linear-gradient(90deg, var(--accent, var(--ph)), transparent 80%); opacity: .85; }
-.mkt-card:hover { transform: translateY(-2px); border-color: var(--ph); box-shadow: 0 0 0 1px var(--accent, var(--ph)), 0 6px 22px rgba(0,0,0,.6); }
-.mkt-card.sel { border-color: var(--accent, var(--ph)); box-shadow: 0 0 0 1.5px var(--accent, var(--ph)), inset 0 0 30px rgba(0,0,0,.5); }
-.mkt-card.sel::before { opacity: 1; }
+/* the accent RAIL: full-height class-colour bar on the left edge (was a soft top strip) */
+.mkt-card::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+  background: linear-gradient(180deg, var(--accent, var(--ph)) 0 62%, color-mix(in srgb, var(--accent, var(--ph)) 28%, transparent));
+  opacity: .8; box-shadow: 1px 0 6px color-mix(in srgb, var(--accent, var(--ph)) 22%, transparent); }
+/* top-edge machined highlight — the plate catches the light along its milled edge */
+.mkt-card::after { content: ""; position: absolute; left: 0; top: 0; right: 0; height: 1px; pointer-events: none;
+  background: linear-gradient(90deg, rgba(var(--ph-bright-rgb), .14), transparent 70%); }
+.mkt-card:hover { transform: translateY(-2px); border-color: var(--ph);
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,.65), 0 0 0 1px color-mix(in srgb, var(--accent, var(--ph)) 55%, transparent),
+    0 0 18px color-mix(in srgb, var(--accent, var(--ph)) 16%, transparent), 0 7px 20px rgba(0,0,0,.6); }
+.mkt-card:hover::before { opacity: 1; }
+.mkt-card.sel { border-color: var(--accent, var(--ph));
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,.65), 0 0 0 1px var(--accent, var(--ph)),
+    0 0 16px color-mix(in srgb, var(--accent, var(--ph)) 26%, transparent), inset 0 0 30px rgba(0,0,0,.5); }
+.mkt-card.sel::before { opacity: 1; box-shadow: 1px 0 9px color-mix(in srgb, var(--accent, var(--ph)) 45%, transparent); }
+/* the class code as a debossed STENCIL watermark bleeding off the plate's corner (military-crate stamp).
+   The element is the same .mkt-seal-code span — inside a CARD it leaves the seal column and becomes the mark. */
+.mkt-card .mkt-seal { gap: 0; }
+.mkt-card .mkt-seal-code { position: absolute; right: -4px; bottom: -14px; z-index: 0; pointer-events: none;
+  font-size: 46px; letter-spacing: 3px; line-height: 1; color: var(--accent, var(--ph)); opacity: .09;
+  text-shadow: 0 1px 0 rgba(0,0,0,.8); }
+.mkt-card.sel .mkt-seal-code, .mkt-card:hover .mkt-seal-code { opacity: .14; }
 .mkt-card.sel .mkt-coin { border-color: color-mix(in srgb, var(--accent, var(--ph)) 68%, #241a0d);
   box-shadow: inset 0 1px 0 rgba(var(--ph-bright-rgb),.1), inset 0 -3px 8px rgba(0,0,0,.72), 0 0 0 1px color-mix(in srgb, var(--accent, var(--ph)) 32%, transparent); }
 .mkt-card.sel .mkt-coin-ico { filter: drop-shadow(0 1px 0 rgba(0,0,0,.55)) brightness(1.12); }
-.mkt-card-id { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
-.mkt-name { color: var(--ph-bright); font-size: 16px; letter-spacing: 1px; display: flex; align-items: center; gap: 7px; }
-.mkt-tag { color: var(--accent, var(--ph)); font-size: 12px; letter-spacing: .3px; opacity: .92; }
-.mkt-meta { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; margin-top: 1px; }
+
+/* ===== SETTINGS-CONSOLE ROWS (AGENTS tab): the class list reads like the SETTINGS provider list =====
+   The premium reference (Andrew, 2026-07-14) is the SETTINGS window: uniform amber rows, one per item,
+   left glyph socket, name + sub stacked, the status cluster RIGHT-ALIGNED, selection = the lit plate.
+   Class accents retreat to the typed mark + the code stamp — the row chrome itself is mono-amber. */
+.mkt-grid.mkt-rows { grid-template-columns: 1fr; gap: 7px; }
+.mkt-rows .mkt-card { grid-template-columns: auto 1fr auto; align-items: center; gap: 14px;
+  padding: 9px 14px 9px 12px; }
+.mkt-rows .mkt-card::before { width: 4px; background: var(--ph); opacity: 0; box-shadow: none; }
+.mkt-rows .mkt-card:hover { transform: none; border-color: var(--ph);
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,.65), 0 0 12px var(--ph-glow2); }
+.mkt-rows .mkt-card.sel { border-color: var(--ph);
+  background:
+    linear-gradient(90deg, var(--ph-faint), transparent 55%),
+    repeating-linear-gradient(0deg, rgba(255,255,255,.014) 0 1px, transparent 1px 3px),
+    var(--panel2);
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,.65), 0 0 14px var(--ph-glow2); }
+.mkt-rows .mkt-card.sel::before { opacity: 1; }
+.mkt-rows .mkt-card .mkt-name { font-size: 16px; letter-spacing: 1.6px; text-transform: uppercase; }
+.mkt-rows .mkt-card .mkt-tag { color: var(--ph-dim); }
+.mkt-rows .mkt-card.sel .mkt-tag { color: var(--text); opacity: .9; }
+.mkt-card-side { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex: 0 0 auto;
+  position: relative; z-index: 1; }
+.mkt-card-side .mkt-meta { margin: 0; padding: 0; }
+.mkt-card-code { color: var(--ph-dim); font-size: 10px; letter-spacing: 3px; opacity: .8; }
+.mkt-rows .mkt-coin { --coin: 58px; }
+/* the rows' socket is uniform console material — the accent lives in the typed mark itself */
+.mkt-rows .mkt-coin:has(.mkt-amark) { border-color: var(--ph-dim);
+  background: linear-gradient(180deg, #000, var(--panel2)); }
+/* the build tile reads as one dashed row in the list, not a tall grid cell */
+.mkt-rows .mkt-build { min-height: 52px; flex-direction: row; gap: 10px; }
+.mkt-rows .mkt-build .mkt-build-plus { font-size: 20px; }
+.mkt-card-id { min-width: 0; display: flex; flex-direction: column; gap: 4px; position: relative; z-index: 1; }
+.mkt-name { color: var(--ph-bright); font-size: 16.5px; letter-spacing: 1.4px; display: flex; align-items: center; gap: 7px;
+  text-shadow: 0 0 9px var(--ph-glow2); }
+.mkt-tag { color: color-mix(in srgb, var(--accent, var(--ph)) 78%, var(--text)); font-size: 12px; letter-spacing: .3px; opacity: .95; }
+.mkt-meta { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; margin-top: auto; padding-top: 5px; }
 .mkt-meta .mkt-tier { color: var(--ph-dim); font-size: 10px; letter-spacing: 1px; }
 .mkt-badge { font-size: 10px; letter-spacing: 1px; color: var(--ink); background: var(--gold); padding: 1px 5px; text-shadow: none; }
 .mkt-badge.mkt-here { background: var(--accent, var(--ph)); color: var(--ink); }
-.mkt-chip { display: inline-flex; align-items: center; gap: 5px; font-size: 10.5px; letter-spacing: 1px;
-  color: var(--text); background: var(--ph-faint); border: 1px solid var(--ph-dim); border-radius: 3px; padding: 2px 8px; }
-.mkt-chip.lane { color: var(--ink); background: var(--accent, var(--ph)); border-color: var(--accent, var(--ph));
-  text-shadow: none; box-shadow: inset 0 1px 0 rgba(255,255,255,.12); }
+/* chips = TERMINAL TAGS: debossed bracketed stamps, never pastel web pills. The lane tag reads in the
+   class's own colour on the bare plate — ink-on-fill is reserved for the ON filter / inverted plates. */
+.mkt-chip { display: inline-flex; align-items: center; gap: 5px; font-size: 10.5px; letter-spacing: 1.5px;
+  color: var(--text); background: rgba(0,0,0,.32); border: 1px solid var(--ph-dim); border-radius: 0; padding: 2px 8px;
+  box-shadow: inset 0 1px 3px rgba(0,0,0,.55); }
+.mkt-chip.lane { color: color-mix(in srgb, var(--accent, var(--ph)) 82%, var(--ph-bright));
+  background: color-mix(in srgb, var(--accent, var(--ph)) 9%, rgba(0,0,0,.3));
+  border-color: color-mix(in srgb, var(--accent, var(--ph)) 55%, transparent); text-shadow: none; }
 /* ---- toggleable picker chips (Class Loadouts S3 custom-class builder: kit + skill package) ---- */
 .mkt-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 4px; }
 .mkt-chip.pick { cursor: pointer; font-family: inherit; padding: 5px 10px; letter-spacing: .8px; text-transform: uppercase;
@@ -187,15 +273,20 @@ body.no-scan .mkt-scrim::after { display: none; }
 .mkt-dossier { position: relative; border-left: 1px solid var(--ph-dim); overflow-y: auto;
   background: linear-gradient(180deg, var(--ph-faint), transparent 30%), #070402; padding: 16px 16px 20px; }
 .mkt-dos-label { color: var(--ph-dim); font-size: 11px; letter-spacing: 3px; margin-bottom: 10px; }
-.mkt-dos-hero { display: flex; gap: 14px; align-items: center; margin-bottom: 13px; }
+.mkt-dos-hero { position: relative; display: flex; gap: 14px; align-items: center; margin-bottom: 13px;
+  padding: 10px 10px 12px; border-bottom: 1px solid var(--ph-faint);
+  background: radial-gradient(ellipse 70% 90% at 18% 50%, color-mix(in srgb, var(--accent, var(--ph)) 8%, transparent), transparent 70%); }
 .mkt-dos-hero .mkt-seal { --coin: 96px; }
 .mkt-dos-hero .mkt-seal-code { font-size: 10px; letter-spacing: 3px; }
 .mkt-dos-hi { min-width: 0; }
-.mkt-dos-name { color: var(--ph-bright); font-size: 24px; letter-spacing: 1.2px; line-height: 1.05; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.mkt-dos-name { color: var(--ph-bright); font-size: 25px; letter-spacing: 1.4px; line-height: 1.05; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  text-shadow: 0 0 12px var(--ph-glow2); }
 .mkt-dos-tag { color: var(--accent, var(--ph)); font-size: 13.5px; margin-top: 6px; letter-spacing: .3px; }
 .mkt-dos-class { color: var(--ph-dim); font-size: 11px; letter-spacing: 2px; margin-top: 6px; }
 .mkt-spec { display: grid; grid-template-columns: auto 1fr; gap: 7px 12px; align-items: center;
-  padding: 10px 12px; margin-bottom: 12px; border-radius: 8px; background: var(--panel2); box-shadow: var(--well); }
+  padding: 10px 12px; margin-bottom: 12px; border-radius: 2px; background: var(--panel2);
+  border-left: 3px solid var(--accent, var(--ph)); border-top: 1px solid var(--ph-faint);
+  box-shadow: inset 0 1px 4px rgba(0,0,0,.55), inset 0 0 0 1px rgba(0,0,0,.5); }
 .mkt-spec .k { color: var(--ph-dim); font-size: 11px; letter-spacing: 1.5px; }
 .mkt-spec .v { color: var(--ph-bright); font-size: 13px; letter-spacing: .4px; display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
 .mkt-bars { display: flex; flex-direction: column; gap: 6px; margin-bottom: 13px; }
@@ -216,15 +307,17 @@ body.no-scan .mkt-scrim::after { display: none; }
 .mkt-orders > summary:hover { color: var(--ph-bright); }
 .mkt-orders[open] > pre { margin-top: 5px; }
 .mkt-block ul.mkt-starters { list-style: none; display: flex; flex-direction: column; gap: 5px; margin: 0; padding: 0; }
-.mkt-starters li { color: var(--ph-bright); font-size: 12.5px; padding: 6px 10px; border-radius: 5px;
-  background: var(--panel2); border: 1px solid var(--ph-faint); box-shadow: var(--raise); }
+.mkt-starters li { color: var(--ph-bright); font-size: 12.5px; padding: 6px 10px; border-radius: 0;
+  background: rgba(0,0,0,.26); border: 1px solid var(--ph-faint); border-left: 2px solid var(--ph-dim);
+  box-shadow: inset 0 1px 3px rgba(0,0,0,.45); }
 .mkt-starters li::before { content: "▸ "; color: var(--accent, var(--ph)); }
 
 /* ---- LOADOUT: DRAWS ON STATION GEAR + SKILL PACKAGE dossier rows (shared-gear model) ---- */
 .mkt-clr-note { color: var(--ph-dim); font-size: 10.5px; letter-spacing: .5px; opacity: .85; }
 .mkt-kit, .mkt-skills { display: flex; flex-direction: column; gap: 4px; }
-.mkt-kit-row, .mkt-skill-row { display: flex; align-items: baseline; gap: 9px; padding: 6px 10px; border-radius: 5px;
-  background: var(--panel2); border: 1px solid var(--ph-faint); box-shadow: var(--raise); }
+.mkt-kit-row, .mkt-skill-row { display: flex; align-items: baseline; gap: 9px; padding: 6px 10px; border-radius: 0;
+  background: rgba(0,0,0,.26); border: 1px solid var(--ph-faint); border-left: 2px solid var(--ph-dim);
+  box-shadow: inset 0 1px 3px rgba(0,0,0,.45); }
 .mkt-kit-obj, .mkt-skill-name { flex: 0 0 auto; color: var(--ph-bright); font-size: 11px; letter-spacing: 1px;
   min-width: 92px; text-transform: uppercase; }
 .mkt-kit-grant, .mkt-skill-desc { flex: 1 1 auto; color: var(--text); font-size: 12px; line-height: 1.4; opacity: .85; }
@@ -241,12 +334,21 @@ body.no-scan .mkt-scrim::after { display: none; }
      through under the button, audit item 8); the color matches the dossier's own #070402 floor. */
   background: linear-gradient(180deg, transparent, #070402 20px); }
 .mkt-cta-row { display: flex; align-items: center; gap: 7px; }
-.mkt-cta-main { flex: 1 1 auto; cursor: pointer; font-family: inherit; font-size: 16px; letter-spacing: 1.5px; padding: 12px; border-radius: 8px;
-  color: var(--ink); background: var(--accent, var(--ph)); border: 0; text-shadow: none;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.16), inset 0 -2px 0 rgba(0,0,0,.25), 0 2px 6px rgba(0,0,0,.5); }
-.mkt-cta-main:hover { filter: brightness(1.08); }
+/* SUMMON = the STRUCK-METAL commit: the nameplate's stamped phosphor plate scaled to a bar, with the
+   class accent riding a machined edge-rail. One action language for every class — never a flat accent
+   fill (the old per-class fill read as an off-palette web button on cool accents). */
+.mkt-cta-main { position: relative; flex: 1 1 auto; cursor: pointer; font-family: inherit; font-size: 16px; letter-spacing: 2px; padding: 12px; border-radius: 2px;
+  color: var(--ink); border: 0; text-shadow: none; overflow: hidden;
+  background: linear-gradient(180deg, var(--ph-bright), var(--ph) 55%, color-mix(in srgb, var(--ph) 80%, #000));
+  border-left: 4px solid var(--accent, var(--ph));
+  box-shadow: 0 0 0 1px rgba(0,0,0,.85), 0 0 16px var(--ph-glow2),
+    inset 0 1px 0 rgba(255,255,255,.3), inset 0 -3px 0 rgba(0,0,0,.28), 0 2px 6px rgba(0,0,0,.5);
+  transition: box-shadow var(--t-fast, 120ms) var(--ease-soft, ease), filter var(--t-fast, 120ms) var(--ease-soft, ease); }
+.mkt-cta-main:hover { filter: brightness(1.07);
+  box-shadow: 0 0 0 1px rgba(0,0,0,.85), 0 0 24px var(--ph-glow),
+    inset 0 1px 0 rgba(255,255,255,.34), inset 0 -3px 0 rgba(0,0,0,.28), 0 2px 8px rgba(0,0,0,.55); }
 /* the merged recruit door's SECOND verb (deploy to current) — quieter, outlined, never competes with SUMMON */
-.mkt-cta-alt { flex: 1 1 auto; cursor: pointer; font-family: inherit; font-size: 13.5px; letter-spacing: 1.2px; padding: 8px 12px; margin-top: 6px; border-radius: 8px;
+.mkt-cta-alt { flex: 1 1 auto; cursor: pointer; font-family: inherit; font-size: 13.5px; letter-spacing: 1.2px; padding: 8px 12px; margin-top: 6px; border-radius: 2px;
   color: var(--ph); background: transparent; border: 1px solid var(--ph-dim); text-shadow: inherit; }
 .mkt-cta-alt:hover { color: var(--ph-bright); border-color: var(--ph); background: var(--ph-faint); }
 .mkt-cta-sub { color: var(--ph-dim); font-size: 11.5px; text-align: center; letter-spacing: .4px; }
@@ -257,7 +359,7 @@ body.no-scan .mkt-scrim::after { display: none; }
   border-color: var(--gold) !important; text-shadow: none !important; box-shadow: 0 0 12px rgba(var(--gold-rgb), .5); }
 /* the narrow-viewport "‹ ROSTER" back control — hidden while both panes show, revealed with the dossier sheet */
 .mkt-dos-back { display: none; font-family: inherit; font-size: 12px; letter-spacing: 1.5px; cursor: pointer;
-  color: var(--ph); background: transparent; border: 1px solid var(--ph-dim); border-radius: 5px; padding: 5px 12px;
+  color: var(--ph); background: transparent; border: 1px solid var(--ph-dim); border-radius: 2px; padding: 5px 12px;
   margin-bottom: 12px; align-self: flex-start; }
 .mkt-dos-back:hover { color: var(--ph-bright); border-color: var(--ph); background: var(--ph-faint); }
 .mkt-dos-back:focus-visible { outline: 2px solid var(--ph); outline-offset: 2px; }
@@ -271,28 +373,28 @@ body.no-scan .mkt-scrim::after { display: none; }
 .mkt-adopt input { accent-color: var(--ph); cursor: pointer; }
 
 /* ---- section headers + empty state ----
-   the station's .sec divider language (v2 mockup .sect): an inverted amber label chip trailed by a hairline
-   that fades to the right. The chip is the element itself (struck-metal inverted label, as before); the fading
-   rule is layered into the element's own background to the RIGHT of the padded label via a right-anchored
-   gradient, so no markup restructure is needed (JS still emits a plain .mkt-sect-h text node). To make the
-   rule reach across the row the header spans full width and the label sits in an inset inverted plate. */
-.mkt-sect-h { display: block; position: relative; color: var(--ink); text-shadow: none;
-  font-size: 11px; letter-spacing: 3px; margin: 18px 0 11px; padding: 3px 10px;
-  background:
-    var(--ph) 0 0 / auto no-repeat;   /* the inverted label plate sizes to the text (inline padding) */
-  width: max-content; max-width: 100%; }
-/* the fading rule: a full-row hairline drawn on a wrapper-free header via an ::after that extends past the
-   plate. Positioned to start at the plate's right edge and fade out across the remaining width. */
-.mkt-sect-h::after { content: ""; position: absolute; left: 100%; top: 50%; width: 60vw; max-width: 640px; height: 4px;
-  transform: translateY(-50%); margin-left: 10px; pointer-events: none;
-  background:
-    linear-gradient(90deg, var(--ph-dim), transparent 92%) top / 100% 1px no-repeat,
-    linear-gradient(90deg, var(--ph-faint), transparent 70%) bottom / 100% 1px no-repeat; }
+   SETTINGS-console divider language (the premium reference): the label in plain glowing phosphor, a
+   hairline rule running the rest of the row, and a lone terminal diamond closing it — no inverted plate
+   (plates are for the window TITLE and ON states only). Pseudo-elements ride the flex row via `order`:
+   text (0) → rule (1, ::after) → diamond (2, ::before). */
+.mkt-sect-h { display: flex; align-items: center; gap: 12px; position: relative; color: var(--ph);
+  background: none; padding: 0; width: auto; max-width: none; text-shadow: 0 0 9px var(--ph-glow2);
+  font-size: 11.5px; letter-spacing: 3px; margin: 20px 0 10px; }
+.mkt-sect-h::after { content: ""; order: 1; flex: 1 1 auto; height: 1px; position: static;
+  width: auto; max-width: none; margin: 0; transform: none; pointer-events: none;
+  background: linear-gradient(90deg, var(--ph-dim), var(--ph-faint) 88%); }
+.mkt-sect-h::before { content: "◆"; order: 2; flex: 0 0 auto; color: var(--ph-dim); font-size: 9px; }
 .mkt-sect-h:first-child { margin-top: 2px; }
-/* the SPECIALIST ARCHIVE header doubles as its expand/collapse toggle — same inverted plate, button reset */
-button.mkt-archive-head { font-family: inherit; font-size: 11px; letter-spacing: 3px; border: 0; cursor: pointer; text-align: left; }
-button.mkt-archive-head:hover { filter: brightness(1.12); }
+/* the SPECIALIST ARCHIVE header doubles as its expand/collapse toggle — same divider, button reset */
+button.mkt-archive-head { font-family: inherit; font-size: 11.5px; letter-spacing: 3px; border: 0;
+  cursor: pointer; text-align: left; width: 100%; }
+button.mkt-archive-head:hover { color: var(--ph-bright); }
 button.mkt-archive-head:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+/* ARCHIVE plates read MOTHBALLED — dimmed + dusty until touched (deep cuts in storage, not the working
+   roster). Scoped to the grid that follows the archive toggle; hover/selection wakes the plate up. */
+.mkt-archive-head + .mkt-hint + .mkt-grid .mkt-card { filter: saturate(.72) brightness(.86); border-style: dashed; }
+.mkt-archive-head + .mkt-hint + .mkt-grid .mkt-card:hover,
+.mkt-archive-head + .mkt-hint + .mkt-grid .mkt-card.sel { filter: none; border-style: solid; }
 .mkt-empty { color: var(--text, var(--ph)); opacity: .7; font-size: 12.5px; line-height: 1.5; font-style: italic;
   padding: 14px; border: 1px dashed var(--ph-dim); border-radius: 7px; text-align: center; }
 
@@ -305,7 +407,7 @@ button.mkt-archive-head:focus-visible { outline: 2px solid var(--gold); outline-
 
 /* the bay reuses the global .bb button; .sm is a compact variant local to the bay */
 .mkt .bb.sm { font-family: inherit; font-size: 11.5px; padding: 5px 10px; letter-spacing: .5px; cursor: pointer;
-  color: var(--ph); background: var(--panel2); border: 1px solid var(--ph-dim); border-radius: 5px; }
+  color: var(--ph); background: var(--panel2); border: 1px solid var(--ph-dim); border-radius: 2px; }
 .mkt .bb.sm:hover { color: var(--ph-bright); border-color: var(--ph); }
 .mkt .bb.sm.danger:hover { color: var(--bad); border-color: var(--bad); }
 .mkt-do-save, .mkt-do-recipe-save, .mkt-do-launch { color: var(--ink) !important; background: var(--ph) !important; border-color: var(--ph) !important; text-shadow: none !important; }
@@ -313,14 +415,14 @@ button.mkt-archive-head:focus-visible { outline: 2px solid var(--gold); outline-
 
 /* ---- forms (save specialty / save mission / launch) reuse the .mkt-save shell ---- */
 .mkt-save { max-width: 600px; margin: 6px auto; display: flex; flex-direction: column; gap: 10px;
-  background: var(--panel2); border: 1px solid var(--ph-dim); border-radius: 8px; padding: 16px 18px; }
+  background: var(--panel2); border: 1px solid var(--ph-dim); border-radius: 2px; padding: 16px 18px; }
 .mkt-save-h { color: var(--ink); background: var(--ph); align-self: flex-start; padding: 3px 12px; letter-spacing: 2px; font-size: 14px; border-radius: 2px; text-shadow: none; }
 .mkt-save-row { display: flex; gap: 10px; }
 .mkt-lbl { display: flex; flex-direction: column; gap: 4px; color: var(--ph); font-size: 12px; letter-spacing: 1px; }
 .mkt-lbl.mkt-grow { flex: 1 1 auto; }
 .mkt-in { font-family: inherit; font-size: 15px; color: var(--ph-bright);
   background: linear-gradient(180deg, #000, color-mix(in srgb, var(--ph) 3%, var(--panel2)));
-  border: 1px solid var(--ph-dim); border-radius: 5px; padding: 8px 10px; width: 100%;
+  border: 1px solid var(--ph-dim); border-radius: 2px; padding: 8px 10px; width: 100%;
   box-shadow: inset 0 2px 5px rgba(0,0,0,.55);
   transition: border-color .12s, box-shadow .12s; }
 .mkt-in:focus { outline: none; border-color: var(--ph); box-shadow: inset 0 2px 5px rgba(0,0,0,.55), 0 0 9px var(--ph-glow2); }
@@ -381,7 +483,7 @@ button.mkt-archive-head:focus-visible { outline: 2px solid var(--gold); outline-
   outline: 2px solid var(--ph); outline-offset: 2px; box-shadow: 0 0 9px var(--ph-glow2); }
 
 /* ===================== personalization: the glass box + the recommended shelf ===================== */
-.mkt-fam { margin: 2px 0 14px; border: 1px solid var(--ph-dim); border-radius: 8px; overflow: hidden;
+.mkt-fam { margin: 2px 0 14px; border: 1px solid var(--ph-dim); border-radius: 2px; overflow: hidden;
   background: linear-gradient(180deg, var(--ph-faint), transparent 60%), var(--panel2); }
 .mkt-fam.paused { opacity: .82; }
 .mkt-fam-head { display: flex; align-items: center; gap: 10px; width: 100%; font-family: inherit; text-align: left; cursor: pointer;
@@ -408,24 +510,29 @@ button.mkt-archive-head:focus-visible { outline: 2px solid var(--gold); outline-
 .mkt-fam-acts { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .mkt-fam-priv { color: var(--ph-dim); font-size: 11px; letter-spacing: .3px; flex: 1 1 auto; }
 
-/* ---- "RECOMMENDED FOR YOU" / "SUGGESTED" shelves (affinity-ranked, pinned above the catalog) ---- */
-.mkt-sect-h.mkt-rec-sect { color: var(--ink); background: var(--gold); }
-.mkt-sect-h.mkt-suggest-sect { color: var(--ink); background: var(--gold); }
-/* CURATED FOR YOUR WORKFLOW — the earned adaptive-recruitment shelf. The strongest gold read on the surface (it
-   only ever appears once the station has a warm read of real work), lifted by a phosphor-gold glow so it stands
-   apart from the affinity RECOMMENDED shelf. Accent uses the --gold-rgb triplet, never a literal amber. */
-.mkt-sect-h.mkt-curated-sect { box-shadow: 0 0 12px rgba(var(--gold-rgb), .45); }
+/* ---- "RECOMMENDED FOR YOU" / "SUGGESTED" shelves (affinity-ranked, pinned above the catalog) ----
+   gold TEXT dividers in the settings language (earned/personalized rank), never inverted plates. */
+.mkt-sect-h.mkt-rec-sect, .mkt-sect-h.mkt-suggest-sect { color: var(--gold); text-shadow: 0 0 9px rgba(var(--gold-rgb), .3); }
+.mkt-sect-h.mkt-rec-sect::after, .mkt-sect-h.mkt-suggest-sect::after { background: linear-gradient(90deg, rgba(var(--gold-rgb), .5), var(--ph-faint) 88%); }
+.mkt-sect-h.mkt-rec-sect::before, .mkt-sect-h.mkt-suggest-sect::before { color: var(--gold); }
+/* CURATED FOR YOUR WORKFLOW — the earned adaptive-recruitment shelf: the strongest gold read (it only
+   appears once the station has a warm read of real work). Accent via --gold-rgb, never a literal amber. */
+.mkt-sect-h.mkt-curated-sect { text-shadow: 0 0 14px rgba(var(--gold-rgb), .55); }
 .mkt-curated-sect + .mkt-rec-rail .mkt-rec { border-color: rgba(var(--gold-rgb), .55); }
-.mkt-curated-sect + .mkt-rec-rail .mkt-rec::before { background: linear-gradient(90deg, var(--gold), transparent 80%); opacity: .9; }
+.mkt-curated-sect + .mkt-rec-rail .mkt-rec::before { background: linear-gradient(180deg, var(--gold) 0 62%, transparent); opacity: .9; }
 .mkt-curated-sect + .mkt-rec-rail .mkt-rec:hover { border-color: var(--gold); box-shadow: 0 0 15px rgba(var(--gold-rgb), .5); }
 .mkt-rec-rail { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px; margin-bottom: 4px; }
-.mkt-rec { position: relative; display: flex; flex-direction: column; gap: 7px; padding: 10px; border-radius: 8px; background: var(--panel2);
-  border: 1px solid var(--ph-dim); cursor: pointer; text-align: left; font-family: inherit;
-  box-shadow: var(--raise); transition: border-color .12s, box-shadow .12s, transform .12s; }
-.mkt-rec::before { content: ""; position: absolute; left: 0; top: 0; right: 0; height: 3px; background: linear-gradient(90deg, var(--accent, var(--ph)), transparent 80%); opacity: .8; }
-.mkt-rec:hover { border-color: var(--ph); box-shadow: 0 0 14px var(--ph-glow2); transform: translateY(-1px); }
+.mkt-rec { position: relative; display: flex; flex-direction: column; gap: 7px; padding: 10px 10px 10px 13px; border-radius: 2px;
+  background: repeating-linear-gradient(0deg, rgba(255,255,255,.012) 0 1px, transparent 1px 3px), var(--panel2);
+  border: 1px solid var(--ph-dim); cursor: pointer; text-align: left; font-family: inherit; overflow: hidden;
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,.6), 0 1px 3px rgba(0,0,0,.5);
+  transition: border-color .12s, box-shadow .12s, transform .12s; }
+.mkt-rec::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+  background: linear-gradient(180deg, var(--accent, var(--ph)) 0 62%, color-mix(in srgb, var(--accent, var(--ph)) 28%, transparent)); opacity: .8; }
+.mkt-rec:hover { border-color: var(--ph); box-shadow: inset 0 0 0 1px rgba(0,0,0,.6), 0 0 14px var(--ph-glow2); transform: translateY(-1px); }
 .mkt-rec-top { display: flex; align-items: center; gap: 9px; }
-.mkt-rec-top .mkt-seal { --coin: 40px; gap: 0; }
+.mkt-rec-top .mkt-seal { --coin: 44px; gap: 0; }
+.mkt-rec-top .mkt-amark { font-size: 9.5px; }
 .mkt-rec-id { min-width: 0; }
 .mkt-rec-name { color: var(--ph-bright); font-size: 14px; letter-spacing: .6px; }
 .mkt-rec-tag { color: var(--accent, var(--ph)); font-size: 11.5px; letter-spacing: .3px; margin-top: 1px; }
@@ -441,9 +548,11 @@ button.mkt-archive-head:focus-visible { outline: 2px solid var(--gold); outline-
 
 /* PROSPECTS — bespoke roles the station DRAFTED from real work (Slice 4). Honest draft treatment: a dashed gold
    border (it's not a finished catalog card) + a provenance note. Accent via the --gold-rgb triplet, never amber. */
-.mkt-sect-h.mkt-prospect-sect { color: var(--ink); background: var(--gold); }
+.mkt-sect-h.mkt-prospect-sect { color: var(--gold); text-shadow: 0 0 9px rgba(var(--gold-rgb), .3); }
+.mkt-sect-h.mkt-prospect-sect::after { background: linear-gradient(90deg, rgba(var(--gold-rgb), .5), var(--ph-faint) 88%); }
+.mkt-sect-h.mkt-prospect-sect::before { color: var(--gold); }
 .mkt-prospect { border: 1px dashed rgba(var(--gold-rgb), .6); }
-.mkt-prospect::before { background: linear-gradient(90deg, var(--gold), transparent 80%); opacity: .7; }
+.mkt-prospect::before { background: linear-gradient(180deg, var(--gold) 0 62%, transparent); opacity: .7; }
 .mkt-prospect:hover { border-color: var(--gold); box-shadow: 0 0 13px rgba(var(--gold-rgb), .4); }
 .mkt-prospect-glyph { color: var(--gold); font-size: 18px; flex: 0 0 auto; filter: drop-shadow(0 0 7px rgba(var(--gold-rgb), .55)); }
 .mkt-prospect-prov { font-size: 10px; letter-spacing: .3px; color: var(--ph-dim); opacity: .9; }
@@ -454,7 +563,7 @@ button.mkt-archive-head:focus-visible { outline: 2px solid var(--gold); outline-
 /* ---- SCOUT LOG — the scout's visible ATTEMPT LEDGER (what the station tried + the honest reason each time).
    Collapsible strip modelled on the SUMMON CONFIG (.mkt-cfg) idiom: a caret head + a phosphor-dim body list, so a
    dismissed draft is never the whole story. Every row is a real GET /api/scout ledger entry (truthful telemetry). */
-.mkt-scoutlog { margin: 4px 0 12px; border: 1px solid var(--ph-dim); border-radius: 8px; overflow: hidden; background: var(--panel2); }
+.mkt-scoutlog { margin: 4px 0 12px; border: 1px solid var(--ph-dim); border-radius: 2px; overflow: hidden; background: var(--panel2); }
 .mkt-scoutlog-head { display: flex; align-items: center; gap: 9px; width: 100%; font-family: inherit; text-align: left;
   background: transparent; border: 0; color: var(--ph); padding: 9px 12px; cursor: pointer; }
 .mkt-scoutlog-head:hover { background: var(--ph-faint); }
@@ -479,7 +588,7 @@ button.mkt-archive-head:focus-visible { outline: 2px solid var(--gold); outline-
 /* ---- R6: the "FOR YOU" discovery row (dossier-interest + goal-text ranked; honest category-spread fallback) ----
    Phosphor-headed (not gold) so it reads as distinct from the affinity SUGGESTED/RECOMMENDED shelves. Each card's
    WHY chip shows the recipe's browse CATEGORY — a truthful label, never a fabricated "popular" number. */
-.mkt-sect-h.mkt-foryou-sect { color: var(--ink); background: var(--ph); }
+.mkt-sect-h.mkt-foryou-sect { color: var(--ph-bright); }
 .mkt-foryou .mkt-rec-why-k { color: var(--ph-bright); border-color: var(--ph-dim); }
 
 /* ---- R6: IMPORT button in the recipes bar (file → validate → save as custom) ---- */
@@ -495,7 +604,7 @@ button.mkt-archive-head:focus-visible { outline: 2px solid var(--gold); outline-
    The headline fix: 40px stills of a chunky sprite are unidentifiable, so the picker uses big
    smooth-downscaled wells beside a LIVE preview stage (shared SkinStage) that plays the picked/hovered
    skin's real walk cycle. Material/depth off the shared phosphor vars — same amber, premium feel. */
-.mkt-skinbar { margin: 0 0 12px; padding: 11px 13px; border: 1px solid var(--ph-dim); border-radius: 8px;
+.mkt-skinbar { margin: 0 0 12px; padding: 11px 13px; border: 1px solid var(--ph-dim); border-radius: 2px;
   background: linear-gradient(180deg, var(--ph-faint), transparent 44%), var(--panel2);
   box-shadow: var(--raise); }
 .mkt-skinlabel { display: block; color: var(--ph); letter-spacing: 1px; font-size: 13px; margin-bottom: 8px;
@@ -550,7 +659,7 @@ button.mkt-archive-head:focus-visible { outline: 2px solid var(--gold); outline-
 /* ---- SUMMON CONFIG: the collapsible APPEARANCE + MODEL strip (keeps the class roster above the fold) ----
    Slim resting bar with a one-line summary of the current picks; expands to the full skin stage + model picker.
    Plain-label header rank (NOT the amber roster plate, NOT gold) — config is a secondary decision. */
-.mkt-cfg { margin: 0 0 12px; border: 1px solid var(--ph-dim); border-radius: 8px; overflow: hidden;
+.mkt-cfg { margin: 0 0 12px; border: 1px solid var(--ph-dim); border-radius: 2px; overflow: hidden;
   background: linear-gradient(180deg, var(--ph-faint), transparent 60%), var(--panel2); }
 .mkt-cfg-head { display: flex; align-items: center; gap: 9px; width: 100%; font-family: inherit; text-align: left;
   cursor: pointer; background: transparent; border: 0; color: var(--ph-bright); padding: 9px 12px; }
@@ -568,7 +677,7 @@ button.mkt-archive-head:focus-visible { outline: 2px solid var(--gold); outline-
 
 /* ---- SUMMON commit summary: the confirm row above the CTA (skin thumb + model/effort + class code) ---- */
 .mkt-commit { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; padding: 8px 11px; margin-bottom: 9px;
-  border-radius: 7px; background: var(--panel2); border: 1px solid var(--ph-faint); box-shadow: var(--well); }
+  border-radius: 2px; background: var(--panel2); border: 1px solid var(--ph-faint); box-shadow: var(--well); }
 .mkt-cs-cell { display: inline-flex; align-items: center; gap: 7px; color: var(--ph-bright); font-size: 12px; letter-spacing: .4px; }
 .mkt-cs-k { color: var(--ph-dim); font-size: 10px; letter-spacing: 1.5px; }
 .mkt-cs-skin { width: 26px; height: 26px; object-fit: contain; object-position: center bottom; image-rendering: auto;
@@ -578,7 +687,7 @@ button.mkt-archive-head:focus-visible { outline: 2px solid var(--gold); outline-
 /* ---- the ＋ build tile (a dashed grid cell) + the custom-class builder form ---- */
 .mkt-build { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
   min-height: 116px; cursor: pointer; font-family: inherit; text-align: center;
-  border: 1px dashed var(--ph-dim); border-radius: 9px; background: transparent; color: var(--ph-dim);
+  border: 1px dashed var(--ph-dim); border-radius: 2px; background: transparent; color: var(--ph-dim);
   transition: border-color .14s, color .14s, background .14s; }
 .mkt-build:hover { border-color: var(--ph); color: var(--ph-bright); background: var(--ph-faint); }
 .mkt-build:focus-visible { outline: 2px solid var(--ph); outline-offset: 2px; }
@@ -594,7 +703,7 @@ button.mkt-archive-head:focus-visible { outline: 2px solid var(--gold); outline-
 .mkt-sw.sel { box-shadow: 0 0 0 2px var(--ph-bright), 0 0 9px rgba(var(--ph-bright-rgb),.4); }
 .mkt-sw:focus-visible { outline: 2px solid var(--ph); outline-offset: 2px; }
 .mkt-segs { display: flex; gap: 6px; flex-wrap: wrap; }
-.mkt-seg { font-family: inherit; font-size: 12px; letter-spacing: 1px; cursor: pointer; padding: 5px 12px; border-radius: 5px;
+.mkt-seg { font-family: inherit; font-size: 12px; letter-spacing: 1px; cursor: pointer; padding: 5px 12px; border-radius: 2px;
   color: var(--ph); background: var(--panel2); border: 1px solid var(--ph-dim); }
 .mkt-seg:hover { color: var(--ph-bright); border-color: var(--ph); }
 .mkt-seg.sel { color: var(--ink); background: var(--ph); border-color: var(--ph); }

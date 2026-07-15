@@ -2972,9 +2972,13 @@ async function runScoutCycle(o) {
     // 2) MINT ATTEMPT — at most one per cycle; the pure gates decide if and which kind. A non-firing gate is
     //    NOT ledger-noise (it binds most runs by design); GET /api/scout reports the live binding instead.
     const warm = Interests.warm(interestsState, Date.now());
+    // lane E cold-start: a pushed Commander dossier is day-one evidence — it unlocks exactly ONE recipe attempt
+    // while interests are still cold (Scout.decide owns the one-shot; the attempt spends it whatever the outcome).
+    const dossierWarm = !!String(commanderDossier.get() || '').trim();
     scoutSweep();   // age out stale drafts first — an undecided-draft backlog must not wedge the gate at 'full'
-    const d = Scout.decide(scoutState, { now: Date.now(), warm: warm });
+    const d = Scout.decide(scoutState, { now: Date.now(), warm: warm, dossierWarm: dossierWarm });
     if (!d.fire) return;
+    if (d.coldStart) scoutNote({ kind: 'cycle', outcome: 'coldstart', reason: 'day-one mint unlocked by the commander dossier (interests not warm yet)' });
     // CROSS-WIRE: the shared declined index — a recipe/class shape the Commander declined in ANOTHER surface is
     // suppressed here too (in addition to the scout's own fingerprint denylist), with an honest ledger note.
     const declinedIdx = buildDeclinedIndex(agentId);
@@ -2990,13 +2994,15 @@ async function runScoutCycle(o) {
         activityBlock: activityBlock,
         directionBlock: directionBlock,
         existingRecipes: existing, gearKeys: SCOUT_CAP_KEYS,
-        launchedOften: Scout.topLaunched(scoutState, 5)
+        launchedOften: Scout.launchHints(scoutState, 5)   // lane B: names annotated "(rated well)" when the Commander's own verdicts earn it
       });
       const reply = await propose('You are the station\'s recipe author. Follow the format exactly; ground every claim in the provided evidence.', directive);
       // grounding = the same evidence the directive showed the model — the WHY must cite it (parseRecipe guard). The
-      // direction block is part of that evidence, so a WHY that cites an open quest / the north star is grounded.
-      const parsed = Scout.parseRecipe(reply, { existingRecipes: existing, denylist: scoutState.denylist, gearKeys: SCOUT_CAP_KEYS, grounding: [interestsBlock, activityBlock, directionBlock].filter(Boolean).join('\n') });
-      scoutState = Scout.stampAttempt(scoutState, 'recipe', { now: Date.now() });
+      // direction block is part of that evidence, so a WHY that cites an open quest / the north star is grounded —
+      // and so is the DOSSIER (it rides the directive at dossierBlock; excluding it here silently killed any WHY
+      // that honestly cited the Commander's own stated pain/ambition — the exact grounding a cold-start mint has).
+      const parsed = Scout.parseRecipe(reply, { existingRecipes: existing, denylist: scoutState.denylist, gearKeys: SCOUT_CAP_KEYS, grounding: [interestsBlock, activityBlock, directionBlock, commanderDossier.get()].filter(Boolean).join('\n') });
+      scoutState = Scout.stampAttempt(scoutState, 'recipe', { now: Date.now(), coldStart: !!d.coldStart });
       if (parsed && parsed.none) scoutNote({ kind: 'recipe', outcome: 'none', reason: 'model judged the library already serves the observed interests' });
       else if (!parsed) scoutNote({ kind: 'recipe', outcome: 'rejected', reason: 'draft failed hard validation (malformed / broken template / near-duplicate / denylisted)' });
       else if (declinedIdx.has(parsed.draft.name) || declinedIdx.has(parsed.draft.name + ' ' + parsed.draft.tagline)) scoutNote({ kind: 'recipe', outcome: 'rejected', reason: 'declined elsewhere', title: parsed.draft.name });
@@ -3065,7 +3071,8 @@ async function runScoutCycle(o) {
 function handleScoutGet(req, res) {
   scoutSweep();   // purge aged-out drafts even on an idle station (no runs) so the status read is truthful
   const now = Date.now();
-  const gate = Scout.decide(scoutState, { now: now, warm: Interests.warm(interestsState, now) });
+  // the SAME dossierWarm the cycle uses (lane E) — the bay's gate display must never disagree with the mint path.
+  const gate = Scout.decide(scoutState, { now: now, warm: Interests.warm(interestsState, now), dossierWarm: !!String(commanderDossier.get() || '').trim() });
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
   res.end(JSON.stringify({
     warm: Interests.warm(interestsState, now),
@@ -3076,13 +3083,23 @@ function handleScoutGet(req, res) {
     usage: scoutState.usage
   }));
 }
-// POST /api/scout/telemetry { kind:'recipe.launch', id, name } — the engagement loop's one write: count a real
-// recipe launch (counters only, no content). Feeds the FOR-YOU rank + the drafting directive's launch hint.
+// POST /api/scout/telemetry — the engagement loop's writes (counters only, no content):
+//   { kind:'recipe.launch', id, name }              — count a real recipe launch
+//   { kind:'recipe.rated',  id, verdict:great|ok|miss } — fold a rate-the-work verdict onto the launching recipe
+// Both feed the FOR-YOU rank + the drafting directive's launch hints. Verdict is clamped to the known enum.
 async function handleScoutTelemetry(req, res) {
   let body; try { body = JSON.parse(await readBody(req, 1 << 14)) || {}; } catch (e) { res.writeHead(400); return res.end('bad json'); }
   const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
-  if (body.kind !== 'recipe.launch' || !String(body.id || '')) return json(400, { ok: false, error: 'kind must be recipe.launch with an id' });
-  scoutState = Scout.noteLaunch(scoutState, { id: body.id, name: body.name }, { now: Date.now() });
+  const id = String(body.id || '').slice(0, 60);
+  if (body.kind === 'recipe.launch' && id) {
+    scoutState = Scout.noteLaunch(scoutState, { id: id, name: body.name }, { now: Date.now() });
+  } else if (body.kind === 'recipe.rated' && id) {
+    const verdict = String(body.verdict || '');
+    if (['great', 'ok', 'miss'].indexOf(verdict) === -1) return json(400, { ok: false, error: 'verdict must be great|ok|miss' });
+    scoutState = Scout.noteRated(scoutState, { id: id, verdict: verdict }, { now: Date.now() });
+  } else {
+    return json(400, { ok: false, error: 'kind must be recipe.launch or recipe.rated with an id' });
+  }
   persistScout();
   json(200, { ok: true });
 }
@@ -6451,6 +6468,7 @@ async function handleRun(req, res) {
   const reasoningEffort = resolveReasoningEffort(runProvider, body && (body.reasoningEffort || body.reasoning_effort || (body.reasoning && body.reasoning.effort)));
   const preloadSkills = Array.isArray(body && body.preloadSkills) ? body.preloadSkills.map(s => String(s || '').trim()).filter(Boolean).slice(0, 8) : [];
   const streamId = (body && body.streamId && /^[A-Za-z0-9_-]{1,64}$/.test(String(body.streamId))) ? String(body.streamId) : null;   // M-mem.2b: the active workstream (bounded; bad → global)
+  const recipeId = (body && body.recipeId && /^[A-Za-z0-9_-]{1,60}$/.test(String(body.recipeId))) ? String(body.recipeId) : null;   // provenance spine (lane A): the launching recipe (bounded; bad → none, never a crash)
   // PROJECT-SCOPED SESSION (Hermes-parity): an anchored session sends its projectRoot; the folder context line
   // is injected ONLY when that root is STILL a standing blessed path grant (isBlessedRoot — the same live check
   // the scanner uses). An un-blessed/revoked/garbage root injects NOTHING: the run must never assert folder
@@ -6585,6 +6603,7 @@ async function handleRun(req, res) {
       surface: 'interactive', prompt: promptConsent, pathPrompt: promptPathTrust, summon: summonRequest,   // team.summon → live summonAgent() round-trip; pathPrompt → NS-5 "work in <root>?" bless
 
       streamId,        // M-mem.2b: scope this run's working memory + recall boost to the active workstream
+      recipeId,        // provenance spine (lane A): rides to the durable run row so a rating can be attributed
       preloadSkills,
       extraObjects,    // a placed WORKBENCH -> shell.exec + verify.run, additive on the default office
       stationObjects,  // Class Loadouts (shared-gear): station-wide gear for SKILL availability (tools stay room-scoped)
@@ -7414,7 +7433,7 @@ async function runOnce(o) {
     try {
       let title = '';
       for (let i = msgs.length - 1; i >= 0; i--) { if (msgs[i] && msgs[i].role === 'user' && typeof msgs[i].content === 'string') { title = msgs[i].content; break; } }
-      runStore.record({ runId, agentId, reason: (result && result.reason) || 'done', turns: finalTurns, tokens: finalTokens, usd: finalUsd, title: title, streamId: o.streamId || '', model: finalModel, unmetered: providerUnmetered, artifacts: artifactLedger.list(), toolsOk, identityFallback });   // H3.2/H3.3/G6 + work-visibility + crate-honesty + P1.2 identity-honesty: transcript join + honest model/spend/deliverables/worked/named-agent
+      runStore.record({ runId, agentId, reason: (result && result.reason) || 'done', turns: finalTurns, tokens: finalTokens, usd: finalUsd, title: title, streamId: o.streamId || '', recipeId: o.recipeId || '', model: finalModel, unmetered: providerUnmetered, artifacts: artifactLedger.list(), toolsOk, identityFallback });   // H3.2/H3.3/G6 + work-visibility + crate-honesty + P1.2 identity-honesty: transcript join + honest model/spend/deliverables/worked/named-agent + recipe provenance
 
       // P0.1/H1.1: persist the full DIALOGUE (not just the outcome) — a durable server-side transcript for EVERY
       // run, incl. headless ones (cron/Telegram/delegated). Append the triggering user directive, then EVERY new

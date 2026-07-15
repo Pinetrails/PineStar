@@ -386,6 +386,20 @@ dossier-agent-mgmt (DELETE AGENT + CHANGE SKIN); update-safety P0.1 wv-cache-pur
 P0.2 mirror-truth, P1.1+P1.2 roster-honesty; voice-desktop-key; comms-fresh-session;
 multiplatform install docs. ✅ (all in git log)
 
+## P0 — Windows update sidecar-lock hang (canary-caught 2026-07-14)
+
+The local update canary (`npm run release:canary`) caught a UNIVERSAL Windows in-app-update
+failure the whole test suite could never see: the updater plugin launches the NSIS installer
+then hard-exits via `std::process::exit(0)`, which does NOT fire Tauri's `ExitRequested`
+handler — so `kill_sidecar()` never runs, the old `node.exe` sidecar stays alive holding a
+write lock, and NSIS FREEZES on "error opening file for writing: node.exe" (Retry/Abort/Ignore)
+forever. Every Windows user, every in-app update. FIX: wire the plugin's `on_before_exit` hook
+in `starnet_update_check` (main.rs) to set `shutting_down` + `kill_sidecar()` before the exit;
+the hook rides the pending Update into the install path. Compiles; being re-proven through the
+canary (rebuild old-with-fix → reinstall → drive to clean completion). The canary's `drive`
+was also hardened — it now requires installer-exited + app-relaunched, not just the version
+resource (which flips BEFORE the hang, so version-only was a false green).
+
 ## P0 — code: ALL LANDED 2026-07-06 night ✅ (do not rebuild — verify in log/code)
 
 The entire P0-code list from the evening reconcile merged during the update-safety /

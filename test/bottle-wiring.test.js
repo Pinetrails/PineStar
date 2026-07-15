@@ -37,7 +37,7 @@ A.ok(/return\s*\{[^}]*\brunDidWork\b[^}]*\}/.test(chatSrc), 'runDidWork is expor
 
 /* ---------- app.js: the launch marker + the dep contract + the editor route ---------- */
 // launchRecipe marks its send as recipe-launched.
-A.ok(/Chat\.send\(text,\s*\{\s*fromRecipe:\s*true\s*\}\)/.test(appSrc),
+A.ok(/Chat\.send\(text,\s*\{\s*fromRecipe:\s*true\b[^}]*\}\)/.test(appSrc),
   'launchRecipe marks its run fromRecipe:true (so it is never offered for bottling)');
 // BottleStore is initialized with BOTH deps: openEditor (opens the R2 editor) + runInfo (the honest facts).
 A.ok(/BottleStore\.init\(\{\s*openEditor:\s*openBottleEditor,\s*runInfo:\s*runBottleInfo\s*\}\)/.test(appSrc),

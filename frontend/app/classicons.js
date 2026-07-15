@@ -59,6 +59,41 @@
     herald: '<svg viewBox="0 0 24 24"><rect x="5" y="2.6" width="2" height="18.8" rx=".6" fill="currentColor"/><path fill="currentColor" d="M7 3.4 H20 L16.8 7.6 L20 11.8 H7 Z"/><g fill="none" stroke="' + D + '" stroke-width="1.4" stroke-linecap="round"><path d="M9.6 6 H16"/><path d="M9.6 9 H14"/></g></svg>',
   };
 
+  /* ---- ASCII MARKS (premium bay pass, 2026-07-14): the class emblem as terminal-native ASCII art ----
+     The bay renders THESE (in the class accent, VT323) instead of the SVG coins — the station is an ASCII
+     terminal, its insignia are typed, not drawn. Exactly 3 rows each, <=6 columns, pure printable ASCII so
+     every font on every machine renders them identically. The SVG ICONS above stay as the mission-seal art
+     + the fallback for surfaces that want a vector. Custom classes (no bespoke mark) fall back to their
+     chosen emoji glyph in the same socket. */
+  const ASCII = {
+    researcher: [' ,-. ', '( o )', ' `-\'\\'],   // hand lens
+    engineer:   ['.---.', '|</>|', '\'---\''],   // terminal chip
+    operator:   [' \\|/ ', '-(o)-', ' /|\\ '],   // gear hub
+    scribe:     ['   ,^', '  /  ', '_/___'],     // quill on the line
+    analyst:    ['   _ ', ' _|#|', '|#|#|'],     // rising bars
+    scout:      [' .-. ', '/(o)\\', '=====>'],   // radar dome on its base
+    designer:   ['.---.', '| ~ |', '\'---\''],   // framed canvas
+    chief:      ['=====', ' <*> ', '====='],     // command star between bars
+    tutor:      ['.-,-.', '| | |', '\'-^-\''],   // open book
+    navigator:  [' ,N. ', '<-+->', ' `S\' '],    // compass rose
+    curator:    ['.--,_', '|===|', '\'---\''],   // filed drawer
+    muse:       [' .~. ', '( ! )', ' `=\' '],    // filament bulb
+    reviewer:   ['\\o_o/', '(===)', '/| |\\'],   // the bug, found
+    archivist:  ['.---.', '|=|=|', '\'---\''],   // card file
+    liaison:    ['.---.', '|\\ /|', '|_V_|'],    // sealed envelope
+    broker:     ['  _  ', ' /|\\ ', 'o-|-o'],    // balance scale
+    publicist:  ['  ,-/', '=(  >', '  `-\\'],    // megaphone
+    auditor:    ['/```\\', '\\ ! /', ' \\_/ '],  // warded shield
+    bookkeeper: ['.---.', '|$ =|', '\'---\''],   // the ledger
+    translator: ['A --.', ' <=> ', '\'-- B'],    // A to B and back
+    herald:     ['|\\___', '|___/', '|    ']     // the raised banner
+  };
+  // the typed emblem for a class id — an array of 3 ASCII rows, or null (custom → caller draws its emoji).
+  function ascii(idOrSpec) {
+    const id = typeof idOrSpec === 'string' ? idOrSpec : (idOrSpec && idOrSpec.id);
+    return ASCII[id] || null;
+  }
+
   const CODE = {
     chief: 'CHF', engineer: 'ENG', researcher: 'RES', reviewer: 'REV', operator: 'OPR',
     scribe: 'SCR', analyst: 'ANL', scout: 'SCT', archivist: 'ARV', designer: 'DSN', liaison: 'LIA',
@@ -123,5 +158,5 @@
     return '<span class="mkt-pips">' + '<b>◆</b>'.repeat(n) + '◇'.repeat(3 - n) + '</span>';
   }
 
-  return { ICONS, CODE, LANE_LABEL, svg, code, lane, laneLabel, clearance, pipsHTML };
+  return { ICONS, ASCII, CODE, LANE_LABEL, svg, ascii, code, lane, laneLabel, clearance, pipsHTML };
 });

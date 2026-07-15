@@ -60,6 +60,26 @@ function fakeDeps(busy, extra) {
     A.eq(calls.shows.length, 0, 'confirmed close shows no second card');
   }
 
+  // update installing → close is the macOS/Linux app.restart(); MUST pass even with agents live,
+  // or the files swap but the app never relaunches (stuck update). Windows never hits this
+  // (its updater process::exit()s before restart) — but the guard must be right for mac.
+  {
+    const ev = fakeEvent();
+    const { deps, calls } = fakeDeps(4, { updates: { isInstalling: () => true, preInstallDrain: async () => { calls.drains += 1; } } });
+    await Q.handleCloseRequested(ev, deps);
+    A.eq(ev.prevented, false, 'an update-restart close is never blocked, even with live agents');
+    A.eq(calls.shows.length, 0, 'update restart shows no guard card');
+    A.eq(calls.drains, 1, 'update restart still drains state first');
+  }
+  // NOT installing → the guard still blocks live agents normally (proves the flag is the only bypass)
+  {
+    const ev = fakeEvent();
+    const { deps, calls } = fakeDeps(4, { updates: { isInstalling: () => false, preInstallDrain: async () => { calls.drains += 1; } } });
+    await Q.handleCloseRequested(ev, deps);
+    A.eq(ev.prevented, true, 'a normal close with live agents still blocks when no update is installing');
+    A.eq(calls.shows.join(','), '4', 'guard card shown for the normal live-agent close');
+  }
+
   // fail-open: Channels throwing reads as 0 live runs — the window stays closable
   {
     const ev = fakeEvent();

@@ -70,10 +70,21 @@
   // deps: { channels, updates, doc, destroy, confirmed, show } — `confirmed` = CLOSE ANYWAY
   // already clicked; `destroy` performs the real window teardown; `show` renders the card
   // (defaults to the real overlay; tests inject a spy).
+  // Is an update install committed? Then this close IS the updater's restart (macOS/Linux end
+  // install with app.restart(), which can emit close-requested). Blocking it would swap the files
+  // but never relaunch the app — the user already consented to the update, so let it through.
+  function updateInstalling(deps) {
+    try {
+      const u = (deps && deps.updates) || (typeof root.Updates !== 'undefined' ? root.Updates : null);
+      return !!(u && typeof u.isInstalling === 'function' && u.isInstalling());
+    } catch (_) { return false; }
+  }
+
   async function handleCloseRequested(ev, deps) {
     deps = deps || {};
     const doc = deps.doc || root.document;
     if (deps.confirmed && deps.confirmed()) { await drainState(deps); return; } // allow: API destroys
+    if (updateInstalling(deps)) { await drainState(deps); return; }              // allow: update restart
     const n = liveRunCount(deps.channels);
     if (!n) { await drainState(deps); return; }                                  // allow: nothing live
     ev.preventDefault();                                                          // block; ask first

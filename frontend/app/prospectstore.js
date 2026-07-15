@@ -167,14 +167,32 @@ const ProspectStore = (() => {
       api('/api/scout/telemetry', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kind: 'recipe.launch', id: recipe.id, name: recipe.name || '' }) }).catch(() => {});
     } catch (_) {}
   }
-  // the per-recipe launch counters ({id: {name, n, lastAt}}) — rankRecipes' engagement signal.
+  // outcome telemetry (lane B): fold a rate-the-work verdict onto the recipe that launched the run. What actually
+  // HELPED ranks the FOR-YOU shelf, not just what was clicked. Counters only, mirrored locally so the shelf
+  // re-ranks this session. Fire-and-forget; a miss just means a weaker rank until the next server read.
+  function noteRated(recipeId, verdict) {
+    const id = recipeId ? String(recipeId) : '';
+    const v = (verdict === 'great' || verdict === 'ok' || verdict === 'miss') ? verdict : null;
+    if (!id || !v) return;
+    try {
+      if (cache) {
+        cache.usage = cache.usage || { launches: {} };
+        const cur = cache.usage.launches[id] || { name: '', n: 0, lastAt: 0 };
+        cur.rated = cur.rated || { great: 0, ok: 0, miss: 0 };
+        cur.rated[v] = (cur.rated[v] || 0) + 1;
+        cache.usage.launches[id] = cur;
+      }
+      api('/api/scout/telemetry', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kind: 'recipe.rated', id: id, verdict: v }) }).catch(() => {});
+    } catch (_) {}
+  }
+  // the per-recipe launch counters ({id: {name, n, lastAt, rated?}}) — rankRecipes' engagement + outcome signal.
   function launches() { return (cache && cache.usage && cache.usage.launches) || {}; }
 
   // a brand-new hero drops the browser-side state; the server store is the station's own memory (kept).
   function reset() { legacy = hydrateLegacy(null); cache = null; try { localStorage.removeItem(KEY); } catch (_) {} }
 
   return { init, refresh, pushContext, list, recipeDrafts, get, interests, gate, warm, ledger, dismiss, accept, reset,
-    noteLaunch, launches,
+    noteLaunch, noteRated, launches,
     isDenied: fp => isDenied(fp), _hydrateLegacy: hydrateLegacy, _setCacheForTest: c => { cache = c; } };
 })();
 
