@@ -1073,6 +1073,11 @@ body.no-scan .crt-scan { display: none; }
 .up-progress div { height: 100%; background: var(--ph); box-shadow: 0 0 10px var(--ph-glow); transition: width .15s linear; }
 .up-empty { border: 1px dashed var(--ph-faint); padding: 9px; }   /* dim grade + size via the grouped empty rule (motion.css) */
 .up-error { color: #ffb0a8; border: 1px solid rgba(255, 120, 100, 0.45); background: rgba(80, 10, 5, 0.18); padding: 7px; }
+/* Manual-download fallback: the guaranteed update path when the auto-updater can't finish. */
+.up-manual { margin-top: 7px; }
+.up-manual-note { display: block; margin-top: 4px; }
+.up-manual-link { color: var(--ph); text-decoration: underline; cursor: pointer; }
+.up-manual-link:hover { color: var(--ph-bright); }
 /* GB-4 install guard: live agents would be killed by the restart — amber, not error-red,
    because nothing is broken; the station is asking for an explicit call. */
 .up-guard { color: var(--warn); border: 1px solid rgba(255, 182, 65, 0.45); background: rgba(70, 45, 5, 0.18); padding: 7px; margin-top: 9px; font-size: 12px; letter-spacing: 0.6px; }
