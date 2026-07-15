@@ -18,6 +18,7 @@ const StationUI = (() => {
 
   let present = [];          // agent objects currently on the station
   const runningAgents = new Map();   // agentId -> live-run COUNT (concurrent streams can share an agentId, e.g. 'agent')
+  const runSeenAt = new Map();       // agentId -> performance.now() of the last counted run.start (agentLive's veto grace)
   let crewLiveWired = false;         // the crew-status live listener is registered exactly once
   let repaintAutonomyDial = null;    // GROWTH Tier 3: the open Settings AUTONOMY panel's paint fn (null when closed) — lets an accepted trust offer repaint the EARNED badge live
   let lastStageSummary = '';         // #8: last screen-reader summary text, so we only update the live region on change
@@ -800,11 +801,11 @@ const StationUI = (() => {
     if (!present.length) return;
     // self-heal: drop any tracked id no longer on the roster (a left agent, or a stale id left behind when an
     // aborted/dropped run's agent.run.end never reached the bus) so the panel can't get stuck showing it WORKING.
-    for (const id of Array.from(runningAgents.keys())) { if (!present.some(a => a.id === id)) runningAgents.delete(id); }
+    for (const id of Array.from(runningAgents.keys())) { if (!present.some(a => a.id === id)) { runningAgents.delete(id); runSeenAt.delete(id); } }
     const act = activity();
     let working = 0;
     present.forEach(a => {
-      const live = runningAgents.has(a.id);
+      const live = agentLive(a.id);
       if (live) working++;
       const e = $('#cs-' + a.id);
       if (e) e.textContent = live ? (act === 'talk' ? 'in conversation' : 'working at the terminal') : 'idle — awaiting orders';
@@ -825,9 +826,27 @@ const StationUI = (() => {
   }
   // ref-counted so two concurrent runs sharing an agentId (e.g. two hero streams as 'agent') both count, and
   // one finishing doesn't prematurely flip the pill to IDLE while the other is still live. Deleted at 0 so
-  // crewTick's runningAgents.has(id) stays a clean "is this agent working?" test.
-  function incRun(id) { runningAgents.set(id, (runningAgents.get(id) || 0) + 1); }
-  function decRun(id) { const n = (runningAgents.get(id) || 0) - 1; if (n > 0) runningAgents.set(id, n); else runningAgents.delete(id); }
+  // crewTick's agentLive(id) stays a clean "is this agent working?" test.
+  function incRun(id) { runningAgents.set(id, (runningAgents.get(id) || 0) + 1); runSeenAt.set(id, performance.now()); }
+  function decRun(id) { const n = (runningAgents.get(id) || 0) - 1; if (n > 0) runningAgents.set(id, n); else { runningAgents.delete(id); runSeenAt.delete(id); } }
+  // THE one "is this agent working?" predicate (crew list, warroom dots, dossier roster). The local count is
+  // event-fed only, so a LOST agent.run.end (dropped SSE frame, stream that closed without the end event,
+  // sidecar restart) would assert "working at the terminal" forever while the world correctly stands the
+  // sprite down — the app claiming state the harness can't prove. World.agentRunsLive is the same run
+  // refcount but under the E2 truth nets (chat-teardown dropRun, 5m TTL sweep, snapshot reconciliation), so
+  // it is the tie-breaker in BOTH directions: it vetoes a stale local count (after a short grace, since
+  // within one bus emit this module's listener may fire before World's), and it lights an agent whose run
+  // the local map never saw start (reconnect mid-run — the snapshot rebuilt World, not this map).
+  function agentLive(id) {
+    let worldN = -1;   // -1 = unknowable (World absent/not started) → fall back to the local event count
+    try { if (typeof World !== 'undefined' && World.agentRunsLive) worldN = World.agentRunsLive(id); } catch (_) { worldN = -1; }
+    if (!runningAgents.has(id)) return worldN > 0;
+    if (worldN === 0 && performance.now() - (runSeenAt.get(id) || 0) > 8000) {
+      runningAgents.delete(id); runSeenAt.delete(id);   // self-heal: the world PROVES no live run — drop the stale count
+      return false;
+    }
+    return true;
+  }
   // register ONCE: track which agents actually have a live run so the crew panel reflects per-agent truth.
   function wireCrewLive() {
     if (crewLiveWired || typeof U === 'undefined' || !U.bus) return;
@@ -1524,7 +1543,7 @@ const StationUI = (() => {
       railTop: (top) => {
         // ROSTER: keep the exact .ag-list / .ag-item class names; upgrade the rows premium (color dot, name,
         // and a cheap live status hint driven by the same run state the crew panel reads).
-        const hint = (x) => runningAgents.has(x.id)
+        const hint = (x) => agentLive(x.id)
           ? '<span class="ag-item-st working">' + (act === 'talk' ? 'talking' : 'working') + '</span>'
           : '<span class="ag-item-st">idle</span>';
         top.innerHTML =
@@ -1614,7 +1633,7 @@ const StationUI = (() => {
     w.querySelectorAll('.ag-list .ag-item').forEach(it => {
       const x = present[+it.dataset.i]; if (!x) return;
       const st = it.querySelector('.ag-item-st'); if (!st) return;
-      const live = runningAgents.has(x.id);
+      const live = agentLive(x.id);
       st.textContent = live ? (act === 'talk' ? 'talking' : 'working') : 'idle';
       st.classList.toggle('working', live);
     });
@@ -5995,7 +6014,7 @@ const StationUI = (() => {
   function enter(agents, accessors) {
     present = Array.isArray(agents) ? agents : (agents ? [agents] : []);
     access = accessors || {};
-    runningAgents.clear();   // fresh station view — never inherit stale run-state across a (re)connect
+    runningAgents.clear(); runSeenAt.clear();   // fresh station view — never inherit stale run-state across a (re)connect
     sel = 0;
     importLegacyTasks();
     crewRender();
@@ -6031,7 +6050,7 @@ const StationUI = (() => {
   // called on disconnect — tear down floating windows, keep persisted state
   function leave() {
     Object.keys(open).forEach(k => closeTerm(k));
-    runningAgents.clear();   // a disconnect abandons in-flight streams (their run.end won't arrive) — reset
+    runningAgents.clear(); runSeenAt.clear();   // a disconnect abandons in-flight streams (their run.end won't arrive) — reset
   }
 
   /* the phosphor theme picked on the COMMISSION CONSOLE writes through HERE so it survives enterGame:
@@ -6047,5 +6066,5 @@ const StationUI = (() => {
   // GROWTH Tier 3: repaint the Settings AUTONOMY panel's EARNED badge if it is open (no-op otherwise — the paint fn
   // queries its own (possibly detached) host nodes, so a closed panel costs nothing). Called after a trust accept.
   const repaintAutonomy = () => { try { if (repaintAutonomyDial) repaintAutonomyDial(); } catch (_) {} };
-  return { init, enter, setRoster, leave, clearRunning, runningCount: () => runningAgents.size, isAgentRunning: (id) => runningAgents.has(id), notify, flashSave, openAgent, openArcade, toggleTerm, openTerm, rerender, refreshBoard: () => rerender('tasks'), pokeQuests, setTheme, getTheme, repaintAutonomy };
+  return { init, enter, setRoster, leave, clearRunning, runningCount: () => runningAgents.size, isAgentRunning: (id) => agentLive(id), notify, flashSave, openAgent, openArcade, toggleTerm, openTerm, rerender, refreshBoard: () => rerender('tasks'), pokeQuests, setTheme, getTheme, repaintAutonomy };
 })();
