@@ -264,14 +264,25 @@ as EL-11 FIX 1; 200 {ok:false,degraded:true} is a LOCKED test-asserted design, d
       MERGED to trunk, trees clean).
 
 **QUEUE — audited unmerged gems, NOT yet restored (claim here before building):**
-- [ ] **connector-spine rescue** — UNCOMMITTED in `C:/Users/andro/gen-trees/connector-spine`
-      (8.7d stale, base 1171 commits behind): email/sms/webhook/whatsapp adapters + tests
-      (new-file clean) + managed-credits billing seam. Its slack = superseded by trunk's; its
-      org/derive = orphaned (orgvalidator.js deleted). FIRST: commit the tree to a branch so it
-      stops being one `git clean` away from gone. Port = manual re-wire of index.js/stationui.js.
-- [ ] **Settings V2 control-plane** — UNCOMMITTED in `gen-trees/hermes-settings-audit` (14.5d):
-      schema-driven settings panel + /api/settings threaded into runOnce (max_turns, budgets,
-      timeouts, approvals). Biggest genuinely-missing feature; heavy reconcile. Same: commit first.
+- [ ] **connector-spine PORT** — rescue ✅ DONE (committed `9d2e2d93` on `agent/connector-spine`
+      + tag `archive/connector-spine-rescue-2026-07-09`; tree verified CLEAN 2026-07-14): email/
+      sms/webhook/whatsapp adapters + tests (new-file clean) + managed-credits billing seam. Its
+      slack = superseded by trunk's; its org/derive = orphaned (orgvalidator.js deleted).
+      Remaining = the port: manual re-wire of index.js/stationui.js in a fresh lane.
+- [ ] **Settings V2 control-plane PORT** — rescue ✅ DONE 2026-07-14 (committed verbatim as
+      `02d872f9` on `agent/hermes-settings-audit` + tag `archive/hermes-settings-audit-rescue-2026-07-14`;
+      tree CLEAN; its own settings-store test 21/21 green at its base). Contents: schema-driven
+      settings-store.js (schema/defaults/current triple, ~50 fields) + GET/POST `/api/settings`
+      + `/defaults` + `/schema` + schema-rendered panel (stationui.js +378). Port assessment
+      (2026-07-14, base 1867 behind): trunk STILL has no `/api/settings` — backend half genuinely
+      missing. But port must be SELECTIVE, not a merge: (a) reconcile with trunk's newer
+      `/api/runtime/knobs` (P1-9 — same protected-sibling persistence; don't ship two knob
+      stores); (b) drop fields refuted by locked decisions (appearance.music — music DELETED;
+      appearance.scanlines — toggle removed, always-on) and every `status:'planned'` no-op field
+      (tool surface must never exceed wired reality); (c) render new sections INTO the existing
+      premium SETTINGS window, don't replace it; (d) index.js/stationui.js hunks won't merge at
+      1867-commit drift — hand re-port using the rescue as reference; settings-store.js + test
+      port nearly clean after field re-curation.
 - [ ] **growth-t4 anti-nag budget** — global one-interactive-ask-per-task-end + starvation
       fairness. Do NOT merge the branch (chat.js +1386 drift, new thread/autopilot lanes it's
       blind to) — fresh re-port of the design.
