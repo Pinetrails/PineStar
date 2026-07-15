@@ -302,8 +302,10 @@ body:has(#screen-game.active):not(.refit-on) #logo { display: flex; }
 .logo-img {
   height: 30px; width: auto; display: block;
   /* BRAND-LOCKED glow: the wordmark art IS amber, so its halo stays amber on every theme.
-     (Theming it — the old var(--ph-glow) — put a green/blue/purple halo on the amber art.) */
-  filter: brightness(1.28) saturate(1.12)
+     (Theming it — the old var(--ph-glow) — put a green/blue/purple halo on the amber art.)
+     Brightness is mild now: the baked small asset (dev/bake-logo-small.mjs) already carries
+     the value lift the old 1.28 compensated for; stacking both clips the strokes to white. */
+  filter: brightness(1.08) saturate(1.05)
           drop-shadow(0 0 4px rgba(255, 170, 51, .5)) drop-shadow(0 0 1px #ffaa33);
 }
 /* one confident wordmark in the chrome — the big ASCII logo lives on the

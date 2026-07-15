@@ -324,7 +324,11 @@
      being tinted by the themed top-glow and striped by the scanlines. A .screen is a z-index:10
      stacking context, so nothing inside one can ever out-stack the glass. #logo-anchor below
      reserves its seat in the topbar; app.js positionLogo() keeps the two aligned. -->
-<div id="logo"><img class="logo-img" src="assets/brand/starnet-logo.png" alt="STARNET"><span class="logo-sub">AI-AGENT HARNESS</span></div>
+<!-- The img is the pre-baked SMALL variant (dev/bake-logo-small.mjs): the 1100px ASCII-mosaic
+     master collapses to gray speckle when the browser minifies it 6.6× to topbar size, so the
+     bake downscales the same art in linear light and re-solidifies the strokes. The title
+     screen keeps the full-size master. -->
+<div id="logo"><img class="logo-img" src="assets/brand/starnet-logo-small.png" alt="STARNET"><span class="logo-sub">AI-AGENT HARNESS</span></div>
 
 <section id="screen-game" class="screen">
 
