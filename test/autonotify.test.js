@@ -73,6 +73,34 @@ const JOBS = { j1: { agent: 'agent', name: 'Weekly digest' }, j2: { agent: 'othe
   eq(h.sent.map(s => [s.chatId, s.channel]).sort(), [['111', 'telegram'], ['222', 'discord']], 'pings every opted-in chat, each on its own channel');
 }
 
+// --- DELIVERY OUTCOME (2026-07-15 audit): every send attempt reports through onDelivery ---
+// (async settle: the assertions run on a queued microtask-flush before the final report below.)
+const deliveryOutcomes = [];
+{
+  let mode = 'ok';
+  const nf = makeAutoNotifier({
+    send: () => (mode === 'ok' ? Promise.resolve() : Promise.reject(new Error('rate limited'))),
+    chatsFor: () => [{ chatId: '111', channel: 'telegram' }],
+    jobName: () => 'x', jobAgent: () => 'agent',
+    onDelivery: (jobId, r) => deliveryOutcomes.push({ jobId, r })
+  });
+  nf.onEvent('cron.result', { jobId: 'j1', outcome: 'ok' });
+  mode = 'fail';
+  nf.onEvent('cron.result', { jobId: 'j1', outcome: 'ok' });
+}
+// --- a SYNCHRONOUSLY-throwing send also reports a failed delivery (and a hostile onDelivery never escapes) ---
+{
+  const outcomes = [];
+  const nf = makeAutoNotifier({
+    send: () => { throw new Error('boom'); },
+    chatsFor: () => [{ chatId: '1', channel: 'discord' }],
+    jobName: () => 'x', jobAgent: () => 'agent',
+    onDelivery: (jobId, r) => { outcomes.push(r); throw new Error('hostile'); }
+  });
+  nf.onEvent('cron.result', { jobId: 'j1', outcome: 'ok' });   // must not throw
+  eq([outcomes.length, outcomes[0].ok], [1, false], 'a throwing send reports ok:false; a throwing onDelivery is contained');
+}
+
 // --- never throws even if send is hostile ---
 {
   const nf = makeAutoNotifier({ send: () => { throw new Error('boom'); }, chatsFor: () => [{ chatId: '1' }], jobName: () => 'x', jobAgent: () => 'agent' });
@@ -94,4 +122,15 @@ ok(/saveChatRecord\(/.test(hub), 'the inbound hub persists the chat→agent bind
 const ui = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'app', 'stationui.js'), 'utf8');
 ok(/id="ch-notify"/.test(ui) && /\/api\/channels\/notify/.test(ui), 'the Messaging panel has the (now ONE shared) opt-in toggle + posts it');
 
-console.log('autonotify.test.js OK —', n, 'assertions');
+ok(/onDelivery:/.test(idx), 'index.js wires the per-send delivery-outcome recorder (onDelivery)');
+ok(/markDelivery\(/.test(idx), 'index.js persists delivery outcomes via the cron-store markDelivery reducer');
+ok(/r\.ok === false/.test(idx), 'index.js normalizes a resolved {ok:false} SendResult into a real failure');
+
+// the async delivery-outcome assertions settle after the send promises flush.
+setImmediate(() => {
+  eq(deliveryOutcomes.length, 2, 'every send attempt reported an outcome');
+  eq([deliveryOutcomes[0].r.ok, deliveryOutcomes[0].r.channel], [true, 'telegram'], 'a delivered ping reports ok:true');
+  eq(deliveryOutcomes[1].r.ok, false, 'a rejected send reports ok:false — never swallowed');
+  ok(/rate limited/.test(deliveryOutcomes[1].r.error), 'the failure carries the transport error');
+  console.log('autonotify.test.js OK —', n, 'assertions');
+});

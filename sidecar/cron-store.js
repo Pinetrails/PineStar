@@ -118,6 +118,11 @@
       retryCount: 0,
       // misfire policy for a recurring job (see normMisfire above). null -> schedule-derived default.
       misfire: normMisfire(spec.misfire),
+      // DELIVERY OUTCOME (2026-07-15 audit): the last channel-notification attempt for this job's runs —
+      // separate from the run's own success so a routine that WORKED but whose ping DIED is visible
+      // (previously the send rejection was swallowed and the failure left no trace anywhere). Additive:
+      // old jobs load these as undefined and every consumer tolerates absence.
+      lastDeliveryAt: null, lastDeliveryOk: null, lastDeliveryError: null,
       // G4.5 one-shot fire-claim: stamped at fire time (claimOnceFire), cleared on settlement (markRun).
       // null on a fresh job; only ever non-null while a one-shot run is in flight (or a zombie past maxRunMs).
       fireClaim: null, lastFireAttemptAt: null,
@@ -215,6 +220,22 @@
     return mapJob(jobs, id, (job) => (job.fireClaim == null ? job : Object.assign({}, job, { heartbeatAt: now })));
   }
 
+  /* markDelivery — DELIVERY OUTCOME (2026-07-15 audit): record the result of a channel-notification send
+     for this job, separate from the run outcome (a routine can succeed while its ping fails — that failure
+     must be durable and visible, never swallowed). result = { ok:bool, error?:string, channel?:string }.
+     Pure: `now` is injected. No-op-safe on an absent job (mapJob leaves the array unchanged). */
+  function markDelivery(jobs, id, result, ctx) {
+    result = result || {}; ctx = ctx || {};
+    const now = ctx.now || 0;
+    const ok = result.ok === true;
+    return mapJob(jobs, id, (job) => Object.assign({}, job, {
+      lastDeliveryAt: iso(now),
+      lastDeliveryOk: ok,
+      lastDeliveryError: ok ? null : String(result.error != null ? result.error : 'delivery failed') +
+        (result.channel ? ' [' + String(result.channel) + ']' : '')
+    }));
+  }
+
   /* markRun — record the outcome of a fired run. `result = { runId, status:'ok'|'error', reason, error, transient }`.
      ctx = { now, maxRetries=3, backoffMs=90000 }.
 
@@ -301,6 +322,7 @@
     claimOnceFire: claimOnceFire,
     renewOnceHeartbeat: renewOnceHeartbeat,
     markRun: markRun,
+    markDelivery: markDelivery,
     removeJob: removeJob,
     getJob: getJob,
     loadEnvelope: loadEnvelope,

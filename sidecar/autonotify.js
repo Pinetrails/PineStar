@@ -5,7 +5,8 @@
    the chat→agent map + the cron jobs into it.
 
    makeAutoNotifier({ send, chatsFor, jobName, jobAgent }) -> { onEvent(name, payload) }
-     send(chatId, text, channel) -> Promise   // the live channel send (routed by channel); failures swallowed
+     send(chatId, text, channel) -> Promise   // the live channel send (routed by channel); outcome -> onDelivery
+     onDelivery(jobId, {ok,error?,channel?})  // OPTIONAL per-send outcome report (durable delivery record)
      chatsFor(agentId) -> [{chatId, channel}]  // the agent's CONNECTED chats ([] if none OR opt-in off → no ping)
      jobName(jobId)    -> string               // the routine's display name (for the message)
      jobAgent(jobId)   -> agentId | null       // map a cron.result back to its agent (cron.result carries none)
@@ -35,6 +36,12 @@
     const chatsFor = typeof o.chatsFor === 'function' ? o.chatsFor : function () { return []; };
     const jobName = typeof o.jobName === 'function' ? o.jobName : function () { return 'a routine'; };
     const jobAgent = typeof o.jobAgent === 'function' ? o.jobAgent : function () { return null; };
+    // DELIVERY OUTCOME (2026-07-15 audit): every send attempt reports its result — onDelivery(jobId,
+    // { ok, error?, channel? }) — so a failed ping is durably recorded instead of vanishing (the old
+    // behavior swallowed the rejection entirely: the routine "succeeded" but nobody was ever told).
+    // Optional + injected; absent -> the pre-fix swallow, and it must never throw into the cron pipeline.
+    const rawOnDelivery = typeof o.onDelivery === 'function' ? o.onDelivery : function () {};
+    const onDelivery = function (jobId, result) { try { rawOnDelivery(jobId, result); } catch (_) {} };
 
     function onEvent(name, payload) {
       const p = payload || {};
@@ -48,7 +55,12 @@
         for (const c of chats) {
           const chatId = (c && c.chatId != null) ? c.chatId : c;     // tolerate {chatId,channel} or a bare id
           const channel = c && c.channel;
-          try { Promise.resolve(send(chatId, text, channel)).catch(function () {}); } catch (_) {}
+          try {
+            Promise.resolve(send(chatId, text, channel)).then(
+              function () { onDelivery(p.jobId, { ok: true, channel: channel }); },
+              function (e) { onDelivery(p.jobId, { ok: false, error: (e && e.message) || String(e || 'send failed'), channel: channel }); }
+            );
+          } catch (e) { onDelivery(p.jobId, { ok: false, error: (e && e.message) || String(e || 'send threw'), channel: channel }); }
         }
       } catch (_) { /* a notification must NEVER break the cron pipeline */ }
     }

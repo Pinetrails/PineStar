@@ -254,4 +254,35 @@ const iso = cron._internals.iso;
   A.eq(legacy.jobs[0].meta.recipeId, 'x', 'an on-disk record carrying meta loads intact');
 }
 
+// ---- MISFIRE + DELIVERY OUTCOME (2026-07-15 reliability audit) ----
+{
+  const T = 1700000000000;
+  const mk = (spec) => store.makeJob(Object.assign({ id: 'm1', prompt: 'p', schedule: { kind: 'interval', minutes: 60, display: 'every 1h' } }, spec || {}), { id: 'm1', now: T });
+
+  // misfire normalizes at creation: valid values kept, garbage -> null (schedule-derived default at plan time).
+  A.eq(mk().misfire, null, 'misfire defaults to null (derive from the schedule)');
+  A.eq(mk({ misfire: 'fire_once' }).misfire, 'fire_once', 'misfire fire_once persists');
+  A.eq(mk({ misfire: 'skip' }).misfire, 'skip', 'misfire skip persists');
+  A.eq(mk({ misfire: 'bogus' }).misfire, null, 'an unknown misfire value can never persist');
+
+  // misfire is editable and re-normalized on update.
+  let jobs = [mk()];
+  jobs = store.updateJob(jobs, 'm1', { misfire: 'fire_once' }, { now: T });
+  A.eq(store.getJob(jobs, 'm1').misfire, 'fire_once', 'updateJob sets misfire');
+  jobs = store.updateJob(jobs, 'm1', { misfire: 'whatever' }, { now: T });
+  A.eq(store.getJob(jobs, 'm1').misfire, null, 'updateJob normalizes a bogus misfire to null');
+
+  // markDelivery records the last notification attempt separately from the run outcome.
+  A.eq(store.getJob(jobs, 'm1').lastDeliveryOk, null, 'fresh job has no delivery record');
+  jobs = store.markDelivery(jobs, 'm1', { ok: true, channel: 'telegram' }, { now: T + 1000 });
+  let j = store.getJob(jobs, 'm1');
+  A.eq([j.lastDeliveryOk, j.lastDeliveryError], [true, null], 'a delivered ping records ok with no error');
+  A.ok(j.lastDeliveryAt, 'delivery timestamp stamped');
+  jobs = store.markDelivery(jobs, 'm1', { ok: false, error: 'rate limited', channel: 'discord' }, { now: T + 2000 });
+  j = store.getJob(jobs, 'm1');
+  A.eq(j.lastDeliveryOk, false, 'a failed ping records ok:false');
+  A.ok(/rate limited/.test(j.lastDeliveryError) && /discord/.test(j.lastDeliveryError), 'the failure carries the error + channel');
+  A.eq(store.markDelivery(jobs, 'nope', { ok: true }, { now: T }), jobs.map(x => x), 'markDelivery on an absent job is a no-op');
+}
+
 A.report('cron-store');

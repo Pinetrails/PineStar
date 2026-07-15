@@ -2550,7 +2550,19 @@ const autoNotifier = makeAutoNotifier({
   send: (chatId, text, channel) => {
     // fan out by channel name: the two bespoke slots else the generic map (slack/matrix/signal).
     const ch = (channel === 'discord') ? discord : (!channel || channel === 'telegram') ? telegram : genericChannels[channel];
-    return (ch && ch.adapter) ? ch.adapter.send(chatId, redact(text)) : Promise.resolve({ ok: false });
+    const p = (ch && ch.adapter) ? ch.adapter.send(chatId, redact(text)) : Promise.resolve({ ok: false, error: 'channel not connected' });
+    // DELIVERY HONESTY (2026-07-15 audit): transports NEVER throw — a failure is a resolved { ok:false,
+    // error } SendResult. Normalize that to a rejection so the notifier's per-send outcome reporting
+    // (onDelivery below) sees a failed ping as a failure instead of a phantom success.
+    return Promise.resolve(p).then(r => { if (r && r.ok === false) throw new Error(String(r.error || 'send failed')); return r; });
+  },
+  // DELIVERY OUTCOME (2026-07-15 audit): persist every notification attempt's result on the job record
+  // (lastDeliveryAt/Ok/Error via the markDelivery reducer, under the cron write lock) and warn loudly on a
+  // failure — previously a dead ping vanished: the routine "succeeded" but nobody was ever told. Fire-and-
+  // forget: a persist hiccup must never touch the cron pipeline (withCronWrite already serializes safely).
+  onDelivery: (jobId, result) => {
+    if (!(result && result.ok)) console.warn('[cron] notification delivery FAILED for routine ' + jobId + ':', (result && result.error) || 'unknown', result && result.channel ? '[' + result.channel + ']' : '');
+    Promise.resolve().then(() => withCronWrite(jobs => cronStore.markDelivery(jobs, jobId, result, { now: Date.now() }))).catch(e => console.warn('[cron] delivery-outcome persist failed:', (e && e.message) || e));
   },
   chatsFor: (agentId) => {
     if (!(channelSecrets && channelSecrets.notifyAutonomous)) return [];   // global opt-in gate (default off — anti-spam)
@@ -2672,6 +2684,25 @@ const cronDriver = makeCronDriver({
   persona: (agentId) => cronSystemFor(agentId)
 });
 let cronTimer = null;
+// TICKER HEALTH (2026-07-15 reliability audit): "armed" only proves a timer EXISTS — not that ticks are
+// completing. Track every tick attempt so GET /api/cron can report scheduler health honestly (truthful
+// telemetry: the panel must never show an enabled scheduler whose ticks have been failing for an hour).
+//   lastTickAt    — when a tick last RAN (attempted), ms.
+//   lastSuccessAt — when a tick last completed WITHOUT throwing, ms.
+//   lastTickError — the most recent tick exception message (null after a clean tick).
+const cronHealth = { lastTickAt: null, lastSuccessAt: null, lastTickError: null };
+function cronTickHealthy() {
+  cronHealth.lastTickAt = Date.now();
+  try {
+    const r = cronLock.withLock(() => cronDriver.applyTick(Date.now()));
+    cronHealth.lastSuccessAt = Date.now();
+    cronHealth.lastTickError = null;
+    return r;
+  } catch (e) {
+    cronHealth.lastTickError = String((e && e.message) || e);
+    throw e;
+  }
+}
 
 /* ============================ NIGHT SHIFT (NS-1) — the composition root ============================
    The ambient half of the server-owned idle-autonomy loop: the persisted state file, the ledger append, the
@@ -3564,9 +3595,9 @@ function armCron() {
   // boot reconcile UNDER the lock. If we do NOT acquire, another live sidecar (or a not-yet-reclaimed lock) holds
   // it — surface that instead of silently muting the boot catch-up (the pid-check now reclaims a crash-dead holder
   // immediately, so a persistent not-acquired here means a genuinely LIVE peer, which is worth a log line).
-  try { const r = cronLock.withLock(() => cronDriver.applyTick(Date.now())); if (r && !r.ran) console.warn('[cron] boot reconcile skipped — cron.lock held by another live process (no catch-up tick this boot)'); }
+  try { const r = cronTickHealthy(); if (r && !r.ran) console.warn('[cron] boot reconcile skipped — cron.lock held by another live process (no catch-up tick this boot)'); }
   catch (e) { console.warn('[cron] reconcile error:', (e && e.message) || e); }
-  cronTimer = setInterval(() => { try { cronLock.withLock(() => cronDriver.applyTick(Date.now())); } catch (e) { console.warn('[cron] tick error:', (e && e.message) || e); } }, CRON_TICK_MS);
+  cronTimer = setInterval(() => { try { cronTickHealthy(); } catch (e) { console.warn('[cron] tick error:', (e && e.message) || e); } }, CRON_TICK_MS);
   if (cronTimer.unref) cronTimer.unref();   // the http server keeps the process alive; the ticker alone shouldn't
   console.log('  · cron tick armed (' + Math.round(CRON_TICK_MS / 1000) + 's)');
   return true;
@@ -5356,7 +5387,16 @@ function handleWidgetsList(req, res) {
 
 function handleCronList(req, res) {
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-  res.end(JSON.stringify({ jobs: cronJobs, enabled: cronArmed, tickMs: CRON_TICK_MS }));
+  // TICKER HEALTH (additive, 2026-07-15 audit): armed alone can't prove ticks are completing. `healthy`
+  // is true only when the scheduler is armed AND a tick succeeded within the last 3 tick periods — real
+  // observed state, never synthesized (a disarmed scheduler is healthy:false with no error, honestly idle).
+  const health = {
+    lastTickAt: cronHealth.lastTickAt,
+    lastSuccessAt: cronHealth.lastSuccessAt,
+    lastTickError: cronHealth.lastTickError,
+    healthy: !!(cronArmed && cronTimer && cronHealth.lastSuccessAt != null && (Date.now() - cronHealth.lastSuccessAt) < 3 * CRON_TICK_MS)
+  };
+  res.end(JSON.stringify({ jobs: cronJobs, enabled: cronArmed, tickMs: CRON_TICK_MS, health: health }));
 }
 
 /* GET /api/state/snapshot — a RECONNECTION snapshot for the frontend (Lane E). After the SSE bridge drops and
