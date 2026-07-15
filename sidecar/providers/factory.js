@@ -56,6 +56,10 @@
         chatPath: profile.chatPath,
         modelsPath: profile.modelsPath,
         reasoningEffort: opts.reasoningEffort,
+        // profile wire hints: does this endpoint document `reasoning_effort`, and is tool support
+        // asserted/denied at the provider level (fallback when the catalog carries no capability data)?
+        sendReasoningEffort: profile.wireReasoningEffort === true,
+        supportsTools: typeof profile.supportsTools === 'boolean' ? profile.supportsTools : null,
         includeUsage: opts.includeUsage,
         defaultContext: opts.defaultContext,
         headers: opts.headers
