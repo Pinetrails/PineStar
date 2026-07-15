@@ -3421,13 +3421,16 @@ const StationUI = (() => {
       const paintFocus = (status) => {
         if (!nsFocus) return;
         const f = status && status.focus;
+        // f.steered is the LIVE steer bit (a durable steer is currently set); f.source is only the focus's
+        // provenance — after a CLEAR the focus record lingers with source:'steer' until the next re-resolve,
+        // so claiming "you steered this" (or offering CLEAR) off source alone overstates the live state.
         if (f && (f.label || f.ref)) {
           const why = Array.isArray(f.why) ? f.why.filter(Boolean).join('; ') : '';
-          nsFocus.textContent = String(f.label || f.ref) + (f.steered || f.source === 'steer' ? ' · you steered this' : '') + (why ? ' — ' + why : '');
+          nsFocus.textContent = String(f.label || f.ref) + (f.steered ? ' · you steered this' : '') + (why ? ' — ' + why : '');
         } else {
           nsFocus.textContent = 'none declared — the night improvises from evidence';
         }
-        if (nsSteerClear) nsSteerClear.style.display = (f && (f.steered || f.source === 'steer')) ? '' : 'none';
+        if (nsSteerClear) nsSteerClear.style.display = (f && f.steered) ? '' : 'none';
       };
       // STEER — POST/DELETE /api/nightshift/focus; the readout repaints from the ROUTE's response (server truth,
       // never an optimistic local flip). "thread:<id>" and the literal "goal" select their kinds; else project.
