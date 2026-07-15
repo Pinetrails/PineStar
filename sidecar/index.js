@@ -5360,8 +5360,8 @@ function handleCronList(req, res) {
      {
        ts: <ms>,                                  // when this snapshot was taken (server clock)
        runs: [ { runId, agentId, startedAt, source } ],   // live runs (runsMeta + the channel hubs' inflight maps)
-                                                          //   source ∈ 'interactive' | 'cron' | 'workshop' | 'telegram' | 'discord'
-                                                          //   Channel (Telegram/Discord) runs are driven by the messaging hub, which keeps its OWN inflight
+                                                          //   source ∈ 'interactive' | 'cron' | 'workshop' | 'telegram' | 'discord' | 'slack' | 'matrix' | 'signal'
+                                                          //   Channel runs are driven by the messaging hub, which keeps its OWN inflight
                                                           //   map (keyed by chatId) rather than runsMeta — so they are read from the SAME maps E-STOP kills
                                                           //   (telegram/discord hub._internals.inflight). Without this a reconnect would clear a live
                                                           //   channel run's agent from the floor mid-run (reconcileFromSnapshot drops any agent not listed here).
@@ -5397,6 +5397,9 @@ function handleStateSnapshot(req, res) {
   };
   try { addHubRuns(telegram && telegram.hub, 'telegram'); } catch (_) {}
   try { addHubRuns(discord && discord.hub, 'discord'); } catch (_) {}
+  // generic channels (slack/matrix/signal) run through the SAME hub shape — list their live runs too, or a
+  // reconnect would wipe a live Slack/Matrix/Signal run's floor/HUD state that E-STOP can still see and kill.
+  try { for (const gid of GENERIC_CHANNEL_IDS) addHubRuns(genericChannels[gid] && genericChannels[gid].hub, gid); } catch (_) {}
   try {
     for (const [runId, pending] of pendingByRun) {
       const meta = runsMeta.get(runId);
@@ -8083,7 +8086,12 @@ function handleDiagnostics(req, res) {
 function handleHalt(req, res) {
   const tgInflight = (telegram && telegram.hub && telegram.hub._internals) ? telegram.hub._internals.inflight : null;
   const dcInflight = (discord && discord.hub && discord.hub._internals) ? discord.hub._internals.inflight : null;
-  const halted = killAll(runs, tgInflight, dcInflight);   // browser runs + Telegram + Discord hub runs, in one kill (see sidecar/halt.js)
+  // EVERY connected channel's hub, not just the two bespoke slots — a Slack/Matrix/Signal run must die on E-STOP too.
+  const genericInflights = GENERIC_CHANNEL_IDS.map((id) => {
+    const w = genericChannels[id];
+    return (w && w.hub && w.hub._internals) ? w.hub._internals.inflight : null;
+  });
+  const halted = killAll(runs, tgInflight, dcInflight, ...genericInflights);   // browser runs + ALL channel hub runs, in one kill (see sidecar/halt.js)
   let cronAborted = 0;
   try { cronAborted = cronDriver.abortAllLeases(); } catch (_) {}   // Phase 0: E-STOP also aborts in-flight cron runs (unattended spend)
   let beatAborted = 0;
