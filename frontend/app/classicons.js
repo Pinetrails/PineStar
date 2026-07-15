@@ -61,32 +61,34 @@
 
   /* ---- ASCII MARKS (premium bay pass, 2026-07-14; upsized same day): terminal-native class emblems ----
      The bay renders THESE (in the class accent, VT323) instead of the SVG coins — the station is an ASCII
-     terminal, its insignia are typed, not drawn. Exactly 5 rows each, <=9 columns, pure printable ASCII so
-     every font on every machine types them identically. Authored + reviewed in the icon-lab loop at both
-     the row scale (~10px) and the dossier scale (~19px) — every mark must read at BOTH. The SVG ICONS above
-     stay as the mission-seal art + vector fallback; custom classes fall back to their emoji glyph. */
+     terminal, its insignia are typed, not drawn. Exactly 5 rows each, <=9 columns, printable ASCII plus the
+     terminal SHADE/HALF-BLOCK set (░ ▒ ▓ █ ▄ ▀ — the AsciiFX decode alphabet, so VT323 provably renders
+     them): strokes draw the structure, blocks carry lit MASS, which is what makes the emblems read as
+     glowing pictograms instead of line art. Authored + reviewed in the icon-lab loop at both the row scale
+     (~10px) and the dossier scale (~19px) — every mark must read at BOTH. The SVG ICONS above stay as the
+     mission-seal art + vector fallback; custom classes fall back to their emoji glyph. */
   const ASCII = {
-    researcher: ['  .--.   ', ' /    \\  ', '|  (+) | ', ' \\    /\\ ', '  \'--\'  \\'],   // hand lens
-    engineer:   ['.-------.', '| $ </> |', '|  ___  |', '\'---,-,-\'', '   |_|_| '],       // terminal on its stand
-    operator:   ['  \\ | /  ', ' .-----. ', '-|  o  |-', ' \'-----\' ', '  / | \\  '],     // the gear hub
-    scribe:     ['    ,--\\ ', '   /   ) ', '  /   /  ', ' |_,--`  ', ' ~~~~~~~ '],         // quill over the written line
-    analyst:    ['|       _', '|    _ |#', '|  _|#||#', '| |#|#||#', '\'--------'],         // rising bars on the axis
-    scout:      ['  .---.  ', ' / .   \\ ', '|  o---->', ' \\     / ', '  \'---\'  '],      // radar sweep
-    designer:   [' .-----. ', ' | o    |', ' | /\\/\\ |', ' \'-----\' ', '  /   \\  '],     // the picture on its easel
-    chief:      [' ======= ', '   .^.   ', '  <(*)>  ', '   \'v\'   ', ' ======= '],        // command star between bars
-    tutor:      [' ___ ___ ', '/   V   \\', '|   |   |', '\\___|___/', '   ---   '],        // the open book
-    navigator:  ['    N    ', '  .-|-.  ', ' (--+--) ', '  \'-|-\'  ', '    S    '],        // compass rose
-    curator:    [' .-----. ', ' | [-] | ', ' |-----| ', ' | [-] | ', ' \'-----\' '],        // labelled drawers
-    muse:       ['   .-.   ', '  /   \\  ', ' |  !  | ', '  \\ _ /  ', '   |=|   '],        // the bulb, lit
-    reviewer:   [' \\,   ,/ ', '  \\o-o/  ', '  (===)  ', '  (===)  ', '  /| |\\  '],       // the bug, found
-    archivist:  [' .-----. ', ' ||||||| ', ' ||||||| ', ' |     | ', ' \'-----\' '],        // the card index
-    liaison:    [' .-----. ', ' |\\   /| ', ' | \\ / | ', ' |  v  | ', ' \'-----\' '],      // sealed envelope
-    broker:     ['   .|.   ', '  / | \\  ', ' o  |  o ', '    |    ', '  __|__  '],         // the balance
-    publicist:  ['  .---.  ', ' |=====| ', ' |=====| ', '  \'-.-\'  ', '  __|__  '],        // the announcement mic
-    auditor:    [' ,-----. ', ' |  !  | ', ' \\     / ', '  \\   /  ', '   \'-\'   '],      // the warded shield
-    bookkeeper: [' .-----. ', ' | $ = | ', ' |--+--| ', ' | = $ | ', ' \'-----\' '],        // the ruled ledger
-    translator: [' A .---> ', '   |     ', '  <=>    ', '     |   ', ' <---. B '],          // A to B and back
-    herald:     [' |\\_____ ', ' |      \\', ' |______/', ' |       ', ' |       ']          // the raised banner
+    researcher: ['  .--.   ', ' /░░  \\  ', '| (+)  | ', ' \\    /█▄', '  \'--\' ▀█'],      // hand lens, glint + solid grip
+    engineer:   ['.-------.', '| $ </> |', '|░░░░░░░|', '\'---,-,-\'', '   ▄█▄   '],        // lit terminal on its stand
+    operator:   ['  \\ | /  ', ' .-----. ', '-| ▓█▓ |-', ' \'-----\' ', '  / | \\  '],      // the gear, core glowing
+    scribe:     ['    ,--\\ ', '   /▒▒) ', '  /▒▒/   ', ' |_,-`   ', ' ▀▀▀▀▀▀▀ '],           // shaded quill over the ink line
+    analyst:    ['|      ██', '|      ██', '|   ██ ██', '| ▄ ██ ██', '\'--------'],          // solid bars rising on the axis
+    scout:      ['  .---.  ', ' / .-. \\ ', '| (o---->', ' \\ `-\' / ', '  \'---\'  '],     // radar rings + the sweep
+    designer:   [' .-----. ', ' | ░ o | ', ' |▄▀▀▄▄| ', ' \'-----\' ', '  /   \\  '],        // the picture on its easel
+    chief:      [' ▀▀▀▀▀▀▀ ', '   .^.   ', '  <(*)>  ', '   \'v\'   ', ' ▄▄▄▄▄▄▄ '],        // command star between solid bars
+    tutor:      [' ▄▄▄ ▄▄▄ ', '/░░░V░░░\\', '|░░░|░░░|', '\\▄▄▄|▄▄▄/', '   ▀▀▀   '],         // the open book, pages lit
+    navigator:  ['    N    ', '  ▄▀|▀▄  ', ' (--+--) ', '  ▀▄|▄▀  ', '    S    '],            // compass rose in its ring
+    curator:    [' .-----. ', ' | [█] | ', ' |-----| ', ' | [█] | ', ' \'-----\' '],          // drawers, solid handles
+    muse:       ['   .-.   ', '  /░░░\\  ', ' |░░!░░| ', '  \\░▄░/  ', '   |=|   '],          // the bulb, glowing
+    reviewer:   [' \\,   ,/ ', '  \\o-o/  ', '  (▒▒▒)  ', '  (▒▒▒)  ', '  /| |\\  '],         // the bug, shell banded
+    archivist:  [' .-----. ', ' ||||||| ', ' ||||||| ', ' |░░░░░| ', ' \'-----\' '],          // the card index
+    liaison:    [' .-----. ', ' |\\▒▒▒/| ', ' | \\ / | ', ' |  v  | ', ' \'-----\' '],        // envelope, flap shaded
+    broker:     ['   ▄|▄   ', '  / | \\  ', ' o  |  o ', '    |    ', '  ▄▄█▄▄  '],           // the balance on its base
+    publicist:  ['  .---.  ', ' |▓▓▓▓▓| ', ' |▒▒▒▒▒| ', '  \'-.-\'  ', '  ▄▄█▄▄  '],         // the mic, grille shaded
+    auditor:    [' ,-----. ', ' |░░!░░| ', ' \\░░░░░/ ', '  \\░░░/  ', '   \'-\'   '],        // the warded shield
+    bookkeeper: [' .-----. ', ' | $ = | ', ' |--+--| ', ' | = $ | ', ' \'-----\' '],          // the ruled ledger
+    translator: [' A .---> ', '   |     ', '  <=>    ', '     |   ', ' <---. B '],            // A to B and back
+    herald:     [' |▀▄▄▄▄▄ ', ' |░░░░░░\\', ' |▄▄▄▄▄▄/', ' |       ', ' |       ']            // the banner, cloth catching light
   };
   // the typed emblem for a class id — an array of 5 ASCII rows, or null (custom → caller draws its emoji).
   function ascii(idOrSpec) {

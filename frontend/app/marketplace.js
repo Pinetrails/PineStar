@@ -104,7 +104,7 @@ const Marketplace = (() => {
      the structural strokes (.-'|/\(),_~) recede — one flat colour reads as a sticker; two tones read as
      depth cut into the readout. Runs of same-tone chars share one span so AsciiFX.scramble (leaf-text
      walking) can decode the emblem without disturbing the markup. */
-  const MARK_BRIGHT = /[A-Za-z0-9!$#*+<>=\[\]{}@%&?]/;
+  const MARK_BRIGHT = /[A-Za-z0-9!$#*+<>=\[\]{}@%&?░▒▓█▄▀]/;   // + the ░▒▓█▄▀ shade set: blocks are lit MASS
   function markHTML(mark) {
     const rows = [];
     for (const row of mark) {
@@ -622,17 +622,17 @@ const Marketplace = (() => {
     // MINE view: a single "YOUR RECIPES" section (the builtins are all filtered out anyway).
     if (catFilter === 'mine') {
       html += '<div class="mkt-sect-h">▮ YOUR RECIPES</div>';
-      html += customs.length ? '<div class="mkt-grid">' + customs.map(recipeCardHTML).join('') + '</div>'
+      html += customs.length ? '<div class="mkt-grid mkt-rows">' + customs.map(recipeCardHTML).join('') + '</div>'
         : '<div class="mkt-empty">' + (query ? 'none of your recipes match your search.'
             : 'no saved recipes yet — hit “＋ save a recipe” above, TWEAK any recipe into your own, or ⇪ IMPORT one from a file.') + '</div>';
       return html;
     }
     const libLabel = catFilter === 'all' ? '▮ RECIPE LIBRARY' : ('▮ ' + (CAT_LABEL[catFilter] || catFilter) + ' RECIPES');
     html += '<div class="mkt-sect-h">' + libLabel + '</div>';
-    html += builtins.length ? '<div class="mkt-grid">' + builtins.map(recipeCardHTML).join('') + '</div>'
+    html += builtins.length ? '<div class="mkt-grid mkt-rows">' + builtins.map(recipeCardHTML).join('') + '</div>'
       : '<div class="mkt-empty">no recipes match your ' + (query ? 'search' : 'filter') + '.</div>';
     html += '<div class="mkt-sect-h">▮ YOUR RECIPES</div>';
-    html += customs.length ? '<div class="mkt-grid">' + customs.map(recipeCardHTML).join('') + '</div>'
+    html += customs.length ? '<div class="mkt-grid mkt-rows">' + customs.map(recipeCardHTML).join('') + '</div>'
       : '<div class="mkt-empty">no saved recipes here yet — ＋ save one, TWEAK any recipe, or ⇪ IMPORT from a file.</div>';
     return html;
   }
@@ -715,16 +715,21 @@ const Marketplace = (() => {
     } catch (_) { return ''; }
   }
   function recipeCardHTML(r, i) {
+    // the SAME settings-console row shape as the class list (the two tabs share one UI language):
+    // [seal socket] [name + tagline] ……… [lane · setup / code stamp]
     const sel = (focusRecipe === r.id);
     const n = (r.params || []).length;
     const setup = n ? ('▤ ' + n + ' input' + (n === 1 ? '' : 's')) : '◷ no setup';
     return '<button class="mkt-card' + (sel ? ' sel' : '') + '" type="button" data-id="' + esc(r.id) + '" style="--accent:' + esc(r.accent) + ';--ci:' + (i || 0) + '">' +
-      sealHTML(r, true) +
+      sealHTML(r, false) +
       '<div class="mkt-card-id">' +
         '<div class="mkt-name">' + esc(r.name) + (r.custom ? ' <span class="mkt-badge">CUSTOM</span>' : '') + '</div>' +
         '<div class="mkt-tag">' + esc(r.tagline) + '</div>' +
+      '</div>' +
+      '<div class="mkt-card-side">' +
         '<div class="mkt-meta"><span class="mkt-chip lane">' + esc(laneLabelOf(r)) + '</span>' +
           '<span class="mkt-chip">' + setup + '</span>' + recipeLifeChip(r) + '</div>' +
+        '<span class="mkt-card-code">' + esc(codeOf(r)) + '</span>' +
       '</div>' +
     '</button>';
   }
