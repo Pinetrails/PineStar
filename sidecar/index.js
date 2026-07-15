@@ -2025,16 +2025,23 @@ function loadChannelSecrets() {
   try { const raw = loadResilient(CHANNEL_SECRETS_FILE, 'channels'); return (raw && typeof raw === 'object') ? raw : {}; }
   catch (e) { return {}; }   // unrecoverable -> nothing configured
 }
+// Verified persist (saveJsonVerified law): a non-durable bot token in this file is its LAST surviving copy, so a
+// swallowed write here is silent credential loss — the write must be read back and PROVEN before anyone says ok.
+const persistChannelSecretsVerified = channelSecretsMod.makeVerifiedPersist({
+  saveJsonVerified,
+  mkdir: () => fs.mkdirSync(CHANNELS_DIR, { recursive: true }),
+  save: (toPersist) => saveResilient(CHANNEL_SECRETS_FILE, toPersist),   // fsync-durable + .bak last-known-good
+  load: () => loadResilient(CHANNEL_SECRETS_FILE, 'channels'),
+  // Desktop: the provider API key never touches the file (it lives in the keychain). The bot token is stripped
+  // ONLY when it is DURABLE elsewhere (keychain/spawn-env) — a non-durable token (keychain store failed / stale
+  // cached frontend sent it inline) has no other home, so its plaintext copy is the honest last-known-good
+  // fallback and MUST survive, exactly like the bare sidecar. (see sidecar/channels/secrets.js stripTokens.)
+  strip: (obj) => DESKTOP_SHELL ? channelSecretsMod.stripTokens(obj, isChannelTokenDurable) : obj
+});
 function saveChannelSecrets(obj) {   // protected sibling of the fs jail; the agent's own fs.* tools can't read/write it
-  try {
-    fs.mkdirSync(CHANNELS_DIR, { recursive: true });
-    // Desktop: the provider API key never touches the file (it lives in the keychain). The bot token is stripped
-    // ONLY when it is DURABLE elsewhere (keychain/spawn-env) — a non-durable token (keychain store failed / stale
-    // cached frontend sent it inline) has no other home, so its plaintext copy is the honest last-known-good
-    // fallback and MUST survive, exactly like the bare sidecar. (see sidecar/channels/secrets.js stripTokens.)
-    const toPersist = DESKTOP_SHELL ? channelSecretsMod.stripTokens(obj, isChannelTokenDurable) : obj;
-    saveResilient(CHANNEL_SECRETS_FILE, toPersist);   // fsync-durable + .bak last-known-good (config survives power loss)
-  } catch (e) { console.warn('[channels] secrets persist failed:', (e && e.message) || e); }
+  const r = persistChannelSecretsVerified(obj);
+  if (!r.ok) console.warn('[channels] secrets persist UNVERIFIED after retry (' + r.error + ') — channel config/token may not survive a restart');
+  return r.ok;   // callers with a response channel surface this honestly (never a false "saved")
 }
 // Scrub the .bak last-known-good of any plaintext channel secret (P1 key hygiene). saveResilient snapshots the
 // CURRENT main into <file>.bak BEFORE overwriting it, so a legacy main that still carried a `key`/`token` leaves a
@@ -3779,7 +3786,7 @@ function startTelegram(token, key, model, agentCfg) {
     agentId: cfg.agentId || undefined, system: cfg.system || undefined, name: cfg.name || undefined,
     ownerId: cfg.ownerId || prev.ownerId || undefined
   } });
-  saveChannelSecrets(channelSecrets);
+  const secretsPersisted = saveChannelSecrets(channelSecrets);   // read-back-proven; surfaced by the connect route
   let adapterRef = null;
   const hub = makeChannelHub({
     channel: 'telegram', runOnce: runOnce, store: channelStore,
@@ -3889,6 +3896,7 @@ function startTelegram(token, key, model, agentCfg) {
   telegramStatus = { connected: false, state: 'connecting', detail: '' };
   adapter.connect();
   console.log('  · telegram channel connecting…');
+  return { secretsPersisted };
 }
 function stopTelegram() {
   if (telegram && telegram.adapter) { try { telegram.adapter.disconnect(); } catch (_) {} }
@@ -3915,7 +3923,7 @@ function startDiscord(token, key, model, agentCfg) {
     agentId: cfg.agentId || undefined, system: cfg.system || undefined, name: cfg.name || undefined,
     ownerId: cfg.ownerId || prev.ownerId || undefined
   } });
-  saveChannelSecrets(channelSecrets);
+  const secretsPersisted = saveChannelSecrets(channelSecrets);   // read-back-proven; surfaced by the connect route
   const wired = wireChannel(channelRegistry.get('discord'), {
     hub: {
       runOnce: runOnce, store: channelStore,
@@ -3989,6 +3997,7 @@ function startDiscord(token, key, model, agentCfg) {
   discordStatus = { connected: false, state: 'connecting', detail: '' };
   wired.adapter.connect();
   console.log('  · discord channel connecting (gateway)');
+  return { secretsPersisted };
 }
 function stopDiscord() {
   if (discord && discord.adapter) { try { discord.adapter.disconnect(); } catch (_) {} }
@@ -4112,7 +4121,7 @@ function startGenericChannel(id, token, key, model, agentCfg) {
   };
   const patch = {}; patch[id] = record;
   channelSecrets = Object.assign({}, channelSecrets, patch);
-  saveChannelSecrets(channelSecrets);
+  const secretsPersisted = saveChannelSecrets(channelSecrets);   // read-back-proven; surfaced by the connect route
   const adapterOpts = {
     fetch: globalThis.fetch, clock: { now: () => Date.now() },
     ownerUserId: record.ownerId || '',
@@ -4174,6 +4183,7 @@ function startGenericChannel(id, token, key, model, agentCfg) {
   genericStatus[id] = { connected: false, state: 'connecting', detail: '' };
   wired.adapter.connect();
   console.log('  · ' + id + ' channel connecting…');
+  return { secretsPersisted };
 }
 function stopGenericChannel(id) {
   const w = genericChannels[id];
@@ -8100,10 +8110,11 @@ async function handleChannelConnect(req, res) {
   if (!token) return json(400, { error: 'missing bot token — create one with @BotFather and paste it here' });
   if (!model) return json(400, { error: 'connect your agent first — choose a model in Settings → Providers' });
   if (!providerHasCredential(provider, key, baseUrl)) return json(400, { error: providerCredentialError(provider) });
-  try { startTelegram(token, providerUsesCodex(provider) ? '' : key, model, { agentId, system, name, provider, reasoningEffort, baseUrl }); } catch (e) { return json(500, { error: (e && e.message) || 'failed to start' }); }
+  let started; try { started = startTelegram(token, providerUsesCodex(provider) ? '' : key, model, { agentId, system, name, provider, reasoningEffort, baseUrl }); } catch (e) { return json(500, { error: (e && e.message) || 'failed to start' }); }
   // report the REAL post-start status (now 'connecting', not an assumed 'up') — the panel repaints from /status once
-  // the transport proves the round-trip. Never assert connected here.
-  json(200, { connected: !!telegramStatus.connected, state: telegramStatus.state });
+  // the transport proves the round-trip. Never assert connected here. `persisted` is the read-back-proven
+  // config-write bit: false = live this session but may not survive a restart (never a false "saved").
+  json(200, { connected: !!telegramStatus.connected, state: telegramStatus.state, persisted: !!(started && started.secretsPersisted) });
 }
 
 // POST /api/channels/telegram/sync { agentId?, system?, model?, key?, provider?, agentName? } — refresh the agent identity
@@ -8123,8 +8134,8 @@ async function handleChannelSync(req, res) {
   if (typeof body.key === 'string' && body.key.trim()) patch.key = body.key.trim();
   if (typeof body.agentName === 'string') patch.name = body.agentName;
   channelSecrets = Object.assign({}, channelSecrets, { telegram: Object.assign({}, t, patch) });
-  saveChannelSecrets(channelSecrets);
-  json(200, { synced: true });
+  const persisted = saveChannelSecrets(channelSecrets);
+  json(200, { synced: true, persisted });
 }
 
 // POST /api/channels/telegram/disconnect { purge? } — stop the bot and mark it disabled (kept in config so the
@@ -8135,14 +8146,16 @@ async function handleChannelDisconnect(req, res) {
   let purge = false;
   try { const b = JSON.parse((await readBody(req, 4096)) || '{}'); purge = !!(b && b.purge); } catch (_) {}
   stopTelegram();
+  let persisted = true;
   if (channelSecrets && channelSecrets.telegram) {
     const next = Object.assign({}, channelSecrets.telegram, { enabled: false });
     if (purge) { next.token = undefined; delete channelTokenRuntime.telegram; delete channelTokenDurable.telegram; }
     channelSecrets = Object.assign({}, channelSecrets, { telegram: next });
-    saveChannelSecrets(channelSecrets);
+    persisted = saveChannelSecrets(channelSecrets);
     if (purge) { try { scrubChannelSecretsBak(); } catch (_) {} }
   }
-  res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ connected: false, purged: purge }));
+  // `purged` is a DESTRUCTION claim — only assert it when the read-back proved the token left the disk.
+  res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ connected: false, purged: purge && persisted, persisted }));
 }
 
 // GET /api/channels/telegram/status — booleans + poll state ONLY; never the token/key (those stay server-side).
@@ -8178,9 +8191,9 @@ async function handleDiscordConnect(req, res) {
   if (!token) return json(400, { error: 'missing bot token — create a bot in the Discord Developer Portal and paste its token here' });
   if (!model) return json(400, { error: 'connect your agent first — choose a model in Settings → Providers' });
   if (!providerHasCredential(provider, key, baseUrl)) return json(400, { error: providerCredentialError(provider) });
-  try { startDiscord(token, providerUsesCodex(provider) ? '' : key, model, { agentId, system, name, provider, reasoningEffort, baseUrl }); } catch (e) { return json(500, { error: (e && e.message) || 'failed to start' }); }
+  let started; try { started = startDiscord(token, providerUsesCodex(provider) ? '' : key, model, { agentId, system, name, provider, reasoningEffort, baseUrl }); } catch (e) { return json(500, { error: (e && e.message) || 'failed to start' }); }
   // report the REAL post-start status ('connecting' until the gateway reaches READY) — the panel repaints from /status.
-  json(200, { connected: !!discordStatus.connected, state: discordStatus.state });
+  json(200, { connected: !!discordStatus.connected, state: discordStatus.state, persisted: !!(started && started.secretsPersisted) });
 }
 
 // POST /api/channels/discord/sync — refresh the agent identity the Discord bot runs as (mirrors handleChannelSync).
@@ -8198,19 +8211,20 @@ async function handleDiscordSync(req, res) {
   if (typeof body.key === 'string' && body.key.trim()) patch.key = body.key.trim();
   if (typeof body.agentName === 'string') patch.name = body.agentName;
   channelSecrets = Object.assign({}, channelSecrets, { discord: Object.assign({}, d, patch) });
-  saveChannelSecrets(channelSecrets);
-  json(200, { synced: true });
+  const persisted = saveChannelSecrets(channelSecrets);
+  json(200, { synced: true, persisted });
 }
 
 // POST /api/channels/discord/disconnect — stop the bot and mark it disabled (kept in config so the token can be
 // re-enabled without re-entry). Mirrors handleChannelDisconnect (Telegram).
 async function handleDiscordDisconnect(req, res) {
   stopDiscord();
+  let persisted = true;
   if (channelSecrets && channelSecrets.discord) {
     channelSecrets = Object.assign({}, channelSecrets, { discord: Object.assign({}, channelSecrets.discord, { enabled: false }) });
-    saveChannelSecrets(channelSecrets);
+    persisted = saveChannelSecrets(channelSecrets);
   }
-  res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ connected: false }));
+  res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ connected: false, persisted }));
 }
 
 // GET /api/channels/discord/status — booleans + gateway state ONLY; never the token/key. Mirrors handleChannelStatus.
@@ -8230,7 +8244,9 @@ async function handleChannelNotify(req, res) {
   let body; try { body = JSON.parse(await readBody(req, 4096)) || {}; } catch (e) { res.writeHead(400); return res.end('bad json'); }
   const on = !!body.on;
   channelSecrets = Object.assign({}, channelSecrets, { notifyAutonomous: on });
-  try { saveChannelSecrets(channelSecrets); } catch (e) { res.writeHead(500, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ ok: false, error: 'persist failed' })); }
+  // saveChannelSecrets never throws — it returns the READ-BACK-PROVEN ok bit (the old try/catch here was
+  // unreachable and this route always claimed ok:true even when the write silently failed).
+  if (!saveChannelSecrets(channelSecrets)) { res.writeHead(500, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ ok: false, error: 'persist failed' })); }
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
   res.end(JSON.stringify({ ok: true, notifyAutonomous: on }));
 }
@@ -8310,10 +8326,10 @@ async function handleGenericChannelConnect(req, res, id) {
   }
   if (!model) return json(400, { error: 'connect your agent first — choose a model in Settings → Providers' });
   if (!providerHasCredential(provider, key, baseUrl)) return json(400, { error: providerCredentialError(provider) });
-  try { startGenericChannel(id, token, providerUsesCodex(provider) ? '' : key, model, { agentId, system, name, provider, reasoningEffort, baseUrl, endpoint, account }); }
+  let started; try { started = startGenericChannel(id, token, providerUsesCodex(provider) ? '' : key, model, { agentId, system, name, provider, reasoningEffort, baseUrl, endpoint, account }); }
   catch (e) { return json(500, { error: (e && e.message) || 'failed to start' }); }
   // report the REAL post-start status (now 'connecting', not an assumed 'up') — the panel repaints from /status.
-  json(200, { connected: !!(genericStatus[id] && genericStatus[id].connected), state: (genericStatus[id] && genericStatus[id].state) || 'connecting' });
+  json(200, { connected: !!(genericStatus[id] && genericStatus[id].connected), state: (genericStatus[id] && genericStatus[id].state) || 'connecting', persisted: !!(started && started.secretsPersisted) });
 }
 
 // POST /api/channels/<id>/sync — refresh the agent identity the channel runs as (mirrors handleChannelSync).
@@ -8333,8 +8349,8 @@ async function handleGenericChannelSync(req, res, id) {
   if (typeof body.agentName === 'string') patch.name = body.agentName;
   const p = {}; p[id] = Object.assign({}, rec, patch);
   channelSecrets = Object.assign({}, channelSecrets, p);
-  saveChannelSecrets(channelSecrets);
-  json(200, { synced: true });
+  const persisted = saveChannelSecrets(channelSecrets);
+  json(200, { synced: true, persisted });
 }
 
 // POST /api/channels/<id>/disconnect { purge? } — stop the adapter and mark it disabled (config kept for one-click
@@ -8344,15 +8360,17 @@ async function handleGenericChannelDisconnect(req, res, id) {
   let purge = false;
   try { const b = JSON.parse((await readBody(req, 4096)) || '{}'); purge = !!(b && b.purge); } catch (_) {}
   stopGenericChannel(id);
+  let persisted = true;
   if (channelSecrets && channelSecrets[id]) {
     const next = Object.assign({}, channelSecrets[id], { enabled: false });
     if (purge) { next.token = undefined; delete channelTokenRuntime[id]; delete channelTokenDurable[id]; }
     const p = {}; p[id] = next;
     channelSecrets = Object.assign({}, channelSecrets, p);
-    saveChannelSecrets(channelSecrets);
+    persisted = saveChannelSecrets(channelSecrets);
     if (purge) { try { scrubChannelSecretsBak(); } catch (_) {} }
   }
-  res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ connected: false, purged: purge }));
+  // `purged` is a DESTRUCTION claim — only assert it when the read-back proved the token left the disk.
+  res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ connected: false, purged: purge && persisted, persisted }));
 }
 
 /* ----------------------- Codex (ChatGPT subscription) OAuth ----------------------- */
