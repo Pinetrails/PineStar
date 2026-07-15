@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "91e3495674ed12829a386bb4ad0dcb760cc16be5",
+    "sourceCommit": "64f58da43a459ccad78d56195456183a8f49e2f1",
     "pathSetSha256": "11a2ff1e8ccd7ca7503a7d3a57bf51e4d0c7f5aeebda7d500a3c3bb7b174ea6e",
     "files": [
       {
@@ -198,8 +198,8 @@
       },
       {
         "path": "frontend/app/data-shim.js",
-        "bytes": 2104,
-        "sha256": "f5d16c681c75256e57291a3371bebe22f1844516426a19e84ee5d0fc7f60e62e"
+        "bytes": 2421,
+        "sha256": "c73ccc1c57cdc867e455f89041cdee3abb0a5f3c2821535c72cedfa4c52748a6"
       },
       {
         "path": "frontend/app/diagnostics.js",
@@ -1516,7 +1516,7 @@
         {
           "kind": "contains",
           "path": "frontend/app/autonomy.js",
-          "needle": "run free toward my goals while i’m away"
+          "needle": "run free toward my goals while i\u00e2\u20ac\u2122m away"
         },
         {
           "kind": "contains",
