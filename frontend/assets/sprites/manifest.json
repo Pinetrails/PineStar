@@ -1423,6 +1423,18 @@
     ],
     "ultrondroid.sit.west": [
       "ultrondroid/sit_west.png"
+    ],
+    "ultrondroid.blink.south": [
+      "ultrondroid/blink_south.png"
+    ],
+    "ultrondroid.blink.north": [
+      "ultrondroid/blink_north.png"
+    ],
+    "ultrondroid.blink.east": [
+      "ultrondroid/blink_east.png"
+    ],
+    "ultrondroid.blink.west": [
+      "ultrondroid/blink_west.png"
     ]
   }
 }
