@@ -439,6 +439,11 @@ const Chat = (() => {
     threadRunsSeen.clear(); threadPending.length = 0; activeThreadCard = null;   // NS-6: the thread turn-in side starts clean per session (same law)
     beatSlot = (typeof Study !== 'undefined' && Study.makeBeatSlot) ? Study.makeBeatSlot() : null;
     log = el('chat-log'); input = el('chat-input'); statusEl = el('chat-status');
+    // F2: re-derive the idle status on the same cadence the topbar repaints #sig (3s) so a link that dies with
+    // NO run in flight still downgrades 'online' → 'station unreachable'. Once-armed (init re-runs per session).
+    if (typeof window !== 'undefined' && !window.__chatLinkStatusTimer) {
+      window.__chatLinkStatusTimer = setInterval(() => { try { if (!isBusy()) syncStatus(); } catch (_) {} }, 3000);
+    }
     attachInput = el('chat-attach-input'); attachStrip = el('chat-attach-strip');
     clearAttachments();   // a fresh agent session starts with no staged attachments (matches the clean-slate init above)
     if (log) log.addEventListener('scroll', () => { stick = nearBottom(); if (stick) hideNewPill(); else showNewPill(false); });   // at the bottom → retire the pill; scrolled up → a persistent "↓ latest" affordance
@@ -862,12 +867,13 @@ const Chat = (() => {
     if (!statusEl) return;
     statusEl.textContent = s;
     const low = String(s || '').toLowerCase();
-    statusEl.classList.remove('status-thinking', 'status-working', 'status-approval', 'status-stopping', 'status-connecting', 'status-online');
+    statusEl.classList.remove('status-thinking', 'status-working', 'status-approval', 'status-stopping', 'status-connecting', 'status-online', 'status-down');
     statusEl.classList.add(low.indexOf('approval') >= 0 ? 'status-approval'
       : low.indexOf('stopping') >= 0 ? 'status-stopping'
       : low.indexOf('working') >= 0 ? 'status-working'
       : low.indexOf('thinking') >= 0 ? 'status-thinking'
       : low.indexOf('connecting') >= 0 ? 'status-connecting'
+      : low.indexOf('unreachable') >= 0 ? 'status-down'
       : 'status-online');
   }
   // derive the DISPLAYED stream's status from real state, so a low-priority write (a finishing turn) can't
@@ -876,7 +882,13 @@ const Chat = (() => {
     if (interview) { status('waking…'); stopElapsedTimer(); return; }
     const p = (activeWs && typeof Channels !== 'undefined') ? Channels.pendingOf(activeWs.id) : null;
     const channelStatus = (activeWs && typeof Channels !== 'undefined' && Channels.statusOf) ? Channels.statusOf(activeWs.id) : '';
-    status(p ? 'awaiting your approval…' : (isBusy() ? (channelStatus || 'thinking…') : 'online'));
+    // F2 (2026-07-14 adversarial sweep): the idle claim folds the REAL bridge health (World.linkState — the
+    // same E1 predicate the topbar #sig / canvas LINK DOWN already read). A dead sidecar kept this label
+    // asserting 'online' indefinitely — connectivity the harness (being gone) provably couldn't back. Only a
+    // genuinely bridged-but-dead link downgrades; pre-entry and a deliberate pause still read as before.
+    let down = false;
+    try { const ls = (typeof World !== 'undefined' && World.linkState) ? World.linkState() : null; down = !!(ls && ls.bridged && !ls.paused && ls.down); } catch (_) {}
+    status(p ? 'awaiting your approval…' : (isBusy() ? (channelStatus || 'thinking…') : (down ? 'station unreachable' : 'online')));
     // keep the elapsed readout matched to the DISPLAYED stream — switching to a busy stream picks up its
     // live count, switching to an idle one clears it. (send() also starts it the instant a run begins.)
     if (isBusy()) ensureElapsedTimer(); else stopElapsedTimer();
@@ -3984,7 +3996,10 @@ const Chat = (() => {
       }
       return steerQueueFallback(note);
     }
-    send(note);
+    // F3 (2026-07-14 adversarial sweep): with NOTHING running there is nothing to steer — refuse honestly.
+    // The old fallthrough send(note) silently minted a FULL model run out of a steering note (real-provider
+    // spend for a no-op; the sidecar's own /api/run/steer honestly 404s in this state and was never asked).
+    localLine('Nothing is running to steer. Start a task first, or /queue <text> to stage it for the next run.');
   }
   function steerQueueFallback(note) {
     if (!activeWs) return;

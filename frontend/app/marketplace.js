@@ -99,10 +99,31 @@ const Marketplace = (() => {
   function el(tag, cls, html) { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; }
   function voiceName(personaId) { return (typeof Personas !== 'undefined' && Personas.get(personaId) && Personas.get(personaId).name) || personaId; }
 
-  /* ---------- the class seal — a TYPED ASCII mark (premium pass; SVG stays the mission-seal path) ---------- */
+  /* ---------- the class seal — a TYPED ASCII mark (premium pass; SVG stays the mission-seal path) ----------
+     TWO-TONE ENGRAVING: the mark's PAYLOAD glyphs (letters, digits, $ # ! * + < > = …) render bright while
+     the structural strokes (.-'|/\(),_~) recede — one flat colour reads as a sticker; two tones read as
+     depth cut into the readout. Runs of same-tone chars share one span so AsciiFX.scramble (leaf-text
+     walking) can decode the emblem without disturbing the markup. */
+  const MARK_BRIGHT = /[A-Za-z0-9!$#*+<>=\[\]{}@%&?]/;
+  function markHTML(mark) {
+    const rows = [];
+    for (const row of mark) {
+      let html = '', i = 0;
+      while (i < row.length) {
+        if (row[i] === ' ') { let j = i; while (j < row.length && row[j] === ' ') j++; html += row.slice(i, j); i = j; continue; }
+        const bright = MARK_BRIGHT.test(row[i]);
+        let j = i;
+        while (j < row.length && row[j] !== ' ' && MARK_BRIGHT.test(row[j]) === bright) j++;
+        html += '<span class="' + (bright ? 'mb' : 'md') + '">' + esc(row.slice(i, j)) + '</span>';
+        i = j;
+      }
+      rows.push(html);
+    }
+    return rows.join('\n');
+  }
   function coinInner(item) {
     const mark = (hasIcons() && ClassIcons.ascii) ? ClassIcons.ascii(item) : null;
-    if (mark) return '<pre class="mkt-amark" aria-hidden="true">' + mark.map(esc).join('\n') + '</pre>';
+    if (mark) return '<pre class="mkt-amark" aria-hidden="true">' + markHTML(mark) + '</pre>';
     const svg = hasIcons() ? ClassIcons.svg(item) : null;
     return svg ? '<span class="mkt-coin-ico">' + svg + '</span>' : '<span class="mkt-coin-emoji">' + esc(item.emoji || '◆') + '</span>';
   }
@@ -180,6 +201,7 @@ const Marketplace = (() => {
     view = 'grid'; editingId = null; editingRecipeId = null; launchId = null; pendingMintKey = null; pendingMintTemplate = null; pendingScoutRecipeId = null; scoutSeedDraft = null;
     editForkedFrom = null; editSourceRunId = null;
     laneFilter = 'all'; catFilter = 'all'; query = '';
+    lastDecodedHero = null;   // a fresh bay open replays the hero decode beat once
     // SCOUT: re-read server truth on open (fresh drafts/interests land) and push the browser-only dedup context.
     try { if (typeof ProspectStore !== 'undefined' && ProspectStore.refresh) { ProspectStore.pushContext(); ProspectStore.refresh(); } } catch (_) {}
     tab = (ctx.mode !== 'pick' && ctx.tab === 'recipes' && hasRecipes()) ? 'recipes' : 'agents';
@@ -425,6 +447,7 @@ const Marketplace = (() => {
     wireRoster(stage);
     wireDossier(stage);
     paintDossierAccent();
+    decodeHero();
     hydrateSkillRows();                          // fill real skill names once the catalog loads (agent + recipe dossiers)
     if (tab === 'recipes') hydrateLiveRoutines();   // fill the "● live as a routine" indicator once /api/cron loads
     if (!root.contains(document.activeElement)) { const p = root.querySelector('.mkt'); if (p) p.focus(); }
@@ -434,6 +457,7 @@ const Marketplace = (() => {
     d.innerHTML = dossierHTML();
     wireDossier(root);
     paintDossierAccent();
+    decodeHero();
     hydrateSkillRows();                          // fill real skill names once the catalog loads (agent + recipe dossiers)
     if (tab === 'recipes') hydrateLiveRoutines();   // refresh the live-routine indicator for the focused recipe
     const fid = tab === 'recipes' ? focusRecipe : focusAgent;
@@ -714,6 +738,18 @@ const Marketplace = (() => {
   function paintDossierAccent() {
     const d = root && root.querySelector('#mkt-dossier'); const it = focusedItem();
     if (d && it && it.accent) d.style.setProperty('--accent', it.accent);
+  }
+  // the DECODE beat: focusing a NEW class resolves its hero (emblem + name) out of glyph static — the
+  // station's own AsciiFX register (eerie signal-lock, never confetti). Once per focused id, instant
+  // under reduced-motion (the kit handles it), and null-safe when the kit isn't loaded.
+  let lastDecodedHero = null;
+  function decodeHero() {
+    if (typeof AsciiFX === 'undefined' || !AsciiFX.scramble) return;
+    const hero = root && root.querySelector('.mkt-dos-hero'); if (!hero) return;
+    const it = focusedItem(); const id = (it && it.id) || null;
+    if (!id || id === lastDecodedHero) return;
+    lastDecodedHero = id;
+    try { AsciiFX.scramble(hero, { duration: 460 }); } catch (_) {}
   }
   // narrow-viewport escape hatch: at <=820px the dossier is a full-width sheet OVER the roster, so it needs a
   // visible way back (the stranded-state fix). Hidden at wide widths by CSS (both panes show side by side).
