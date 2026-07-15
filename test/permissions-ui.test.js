@@ -15,8 +15,12 @@ ok(/id="perm-desc"/.test(src), '#perm-desc combined-level blurb element present'
 // the level spectrum: never → suggest → draft → full
 ok(/id="perm-level"/.test(src), '#perm-level chooser present');
 for (const lvl of ['never', 'suggest', 'draft', 'full']) ok(new RegExp('data-level="' + lvl + '"').test(src), 'level button present: ' + lvl);
+// 2026-07-15 UX sweep: one ladder, one vocabulary — the level buttons carry the SAME primary words as the
+// AUTONOMY dial (WAIT/SUGGEST/BUILD/FREE); FULLY AUTONOMOUS stays in the top label (it states the stakes).
 ok(/FULLY AUTONOMOUS/.test(src), 'the "fully autonomous" extreme is offered');
-ok(/>NEVER</.test(src), 'the "never" extreme is offered');
+ok(/>WAIT</.test(src), 'the hands-off extreme is offered with the dial\'s word (WAIT)');
+ok(/BUILD \(DRAFTS\)/.test(src), 'the draft rung carries the dial\'s word (BUILD)');
+ok(/same WAIT \/ SUGGEST \/ BUILD \/ FREE ladder/.test(src), 'the row says it is the SAME ladder as AUTONOMY');
 
 // the standing-grant list + grant/revoke wiring
 ok(/id="perm-grants"/.test(src), '#perm-grants standing-grant list present');

@@ -1411,8 +1411,8 @@ const App = (() => {
       // the catalog knows this model — surface BOTH context window and $/M in/out (previously ctx only)
       const fmt = (typeof CtxGauge !== 'undefined' && CtxGauge.fmtTokens) ? CtxGauge.fmtTokens : (n => String(n || 0));
       const bits = [];
-      if (limit) bits.push('context window: ' + fmt(limit) + ' tokens');
-      if (price) bits.push(usdPerM(price.in) + ' in · ' + usdPerM(price.out) + ' out / M tokens');
+      if (limit) bits.push('remembers up to ' + fmt(limit) + ' tokens of chat');
+      if (price) bits.push('costs ' + usdPerM(price.in) + ' in · ' + usdPerM(price.out) + ' out per million tokens (a token ≈ ¾ of a word)');
       hint.textContent = bits.join('  ·  ');
       return;
     }

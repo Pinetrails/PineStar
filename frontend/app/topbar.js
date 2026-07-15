@@ -61,7 +61,7 @@ const Topbar = (() => {
       el.classList.add('standby');
       el.childNodes[0].nodeValue = 'STANDBY ';
       bars.textContent = SIG_STANDBY;   // dim even bars — NOT full signal
-      el.title = ls && ls.paused ? 'uplink paused (disconnected)' : 'local sidecar uplink — standby (not yet bridged)';
+      el.title = ls && ls.paused ? 'connection to the background service is paused (disconnected)' : 'connection to StarNet’s background service — standby (not connected yet)';
       return;
     }
     if (ls.down) {
@@ -69,12 +69,12 @@ const Topbar = (() => {
       el.classList.add('down');
       el.childNodes[0].nodeValue = 'LINK DOWN ';
       bars.textContent = SIG_DOWN;
-      el.title = 'local sidecar uplink — DOWN (no live telemetry)';
+      el.title = 'lost the connection to StarNet’s background service — live numbers pause until it’s back (is the app still running?)';
     } else {
       el.classList.remove('down', 'standby');
       el.childNodes[0].nodeValue = 'UPLINK ';
       bars.textContent = SIG_UP;
-      el.title = 'local sidecar uplink — live';
+      el.title = 'connected to StarNet’s background service — everything on screen is live';
     }
   }
 

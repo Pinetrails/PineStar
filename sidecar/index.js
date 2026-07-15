@@ -1339,7 +1339,9 @@ function cronHasCredential(provider, key) {
   return providerHasCredential(provider, key, providerRuntimeBaseUrl(provider, ''));
 }
 function cronCredentialError(provider) {
-  return providerCredentialError(provider) + ' to run this routine';
+  // "scheduled routine" so the line explains itself even when it surfaces outside the ROUTINES panel
+  // (e.g. the quest log shows a skipped scheduled job) — UX sweep 2026-07-15.
+  return providerCredentialError(provider) + ' to run this scheduled routine';
 }
 
 // PERSISTENT agent save (M-save) — a durable mirror of the browser's localStorage save envelope, written to

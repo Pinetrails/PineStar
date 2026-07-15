@@ -527,7 +527,17 @@ const Tutorial = (() => {
     say([
       seg('one honest thing, because i won’t lie to you: right now it’s just me.', 42, 360),
       seg('  the others in that crew list are echoes — minds you haven’t recruited yet. recruit one and it takes a station of its own — and i start handing it the pieces. that’s the real job: i grow the crew, then i point it.', 42, 0)
-    ], () => { clearSpot(); beatHandoff(); });
+    ], () => { clearSpot(); beatWork(); });
+  }
+  // UX audit finding 6 (2026-07-15): the tour taught capabilities/consent/crew/quests but never the WORK
+  // vocabulary — recipes, tasks, routines, channels just sat in the dock unexplained. ONE beat, both paths
+  // (it runs before the pitch/classic fork so a delivered pitch can't skip it).
+  function beatWork() {
+    if (!active) return;
+    say([
+      seg('four doors you’ll actually use, all in the bottom bar: ❒ RECIPES is ready-made work — launch one and it lands on ☑ TASKS, where everything i’m doing lives.', 42, 360),
+      seg('  put any job on a schedule and it becomes a ⏱ ROUTINE. and ✉ CHANNELS puts me in your pocket — message me from telegram or slack like anyone else.', 42, 0)
+    ], beatHandoff);
   }
   function beatHandoff() {
     if (!active) return;
