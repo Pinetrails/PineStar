@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "13361f5365e9aa7772bc7bfbb347f171f6bbc51f",
+    "sourceCommit": "f436583903f08944bd5cc297060d4840633c12f5",
     "pathSetSha256": "11a2ff1e8ccd7ca7503a7d3a57bf51e4d0c7f5aeebda7d500a3c3bb7b174ea6e",
     "files": [
       {
@@ -143,8 +143,8 @@
       },
       {
         "path": "frontend/app/classicons.js",
-        "bytes": 18654,
-        "sha256": "29315aa33e3bebe5c5dfcf3cc6a0c45c269e6b04bdd7492420c5df5b7fadfd6c"
+        "bytes": 19683,
+        "sha256": "21805bb5df6170bf089e0bf1f6085ba5d1b927c10feef47c9fa2076f07a1fd73"
       },
       {
         "path": "frontend/app/classify.js",
@@ -803,8 +803,8 @@
       },
       {
         "path": "frontend/css/marketplace.css",
-        "bytes": 59827,
-        "sha256": "da165efa5d593611adb930c890da12017101c49df54b47237249a5ea1ef84445"
+        "bytes": 60041,
+        "sha256": "2adb360a8434ec158455c2a8ee7ddbf317675d2e374d5b150653c64eb95c3d8d"
       },
       {
         "path": "frontend/css/motion.css",
