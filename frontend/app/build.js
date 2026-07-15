@@ -674,7 +674,7 @@ const Build = (() => {
     if (typeof fetch === 'undefined') { rowsEl.innerHTML = '<div class="refit-conn-note">no sidecar — can\'t list connectors here.</div>'; return; }
     fetch('/api/connectors').then(r => { if (!r.ok) throw new Error('http ' + r.status); return r.json(); }).then(j => {
       const list = (j && j.connectors) || [];
-      if (!list.length) { rowsEl.innerHTML = '<div class="refit-conn-note">No MCP servers yet — add one in the <b>⇄ CONNECTORS</b> panel (bottom bar), then bind it here.</div>'; return; }
+      if (!list.length) { rowsEl.innerHTML = '<div class="refit-conn-note">No connected services yet — add one in the <b>⇄ TOOLSETS</b> panel (bottom bar), then bind it here.</div>'; return; }
       rowsEl.innerHTML = list.map(c => {
         const sel = (c.id === p.connectorId), scls = STATE_CLASS[c.state] || '';
         const meta = c.toolCount ? (c.toolCount + ' tool' + (c.toolCount === 1 ? '' : 's')) : (c.state || 'idle');

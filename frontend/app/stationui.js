@@ -1015,7 +1015,7 @@ const StationUI = (() => {
       '</div>';
     const confidence =
       '<div>' +
-      '<div class="gx-sec"><span class="gx-ref">B</span><span class="gx-title">Satisfaction</span><span class="gx-tag">FEEDBACK EWMA &middot; n' + (g.known ? '&ge;' + Xp.MIN_SAMPLES : '=' + g.samples) + '</span></div>' +
+      '<div class="gx-sec"><span class="gx-ref">B</span><span class="gx-title">Satisfaction</span><span class="gx-tag">' + (g.known ? 'average of your recent ratings (' + Xp.MIN_SAMPLES + '+ ratings)' : 'calibrating &middot; ' + g.samples + ' of ' + Xp.MIN_SAMPLES + ' ratings so far') + '</span></div>' +
       '<div style="display:flex;align-items:baseline;gap:10px;margin-bottom:9px;">' +
         '<span class="gx-confnum' + (g.known ? '' : ' cal') + '">' + confnum + '</span>' +
         '<span class="gx-band' + (g.known ? '' : ' cal') + '">' + (g.known ? g.band.toUpperCase() : 'CALIBRATING') + '</span></div>' +
@@ -1695,9 +1695,16 @@ const StationUI = (() => {
       '</div>' +
       '<p class="sk-note">Capabilities follow the <b>objects at the workstation</b> — the room layout IS the ' +
       'permission system. <b>File writes</b> and <b>commands</b> pause for one-click approval in COMMS; the private ' +
-      '<b>notebook</b> saves freely.</p>';
+      '<b>notebook</b> saves freely.</p>' +
+      // Audit finding 1: this readout and TOOLSETS are the SAME tool families under two names, and this panel
+      // never said where the switches live. One honest pointer closes the loop.
+      '<p class="sk-note">This view is <b>read-only</b> — the on/off switches for these same tool families live in ' +
+      'the <b>⇄ TOOLSETS</b> panel on the bottom bar.</p>';
     const secLibrary =
-      '<p class="sk-note sk-lib-intro">Pre-installed <b>recipes</b> your agents follow when a task matches. Each one ' +
+      // "recipes" here collided with the ❒ RECIPES dock feature (audit finding 2) — these are PROCEDURES: how-to
+      // guides an agent follows mid-task, not launchable jobs.
+      '<p class="sk-note sk-lib-intro">Pre-installed <b>procedures</b> your agents follow when a task matches ' +
+      '(not the same as ❒ RECIPES — those are launchable jobs; these are how-to guides). Each one ' +
       'rides on the capabilities above — it stays <b>locked</b> until ' + esc((a && a.name) || 'the agent') + ' has the ' +
       'objects it needs. Enabling is station-wide; what actually runs is still gated by the floor.</p>' +
       '<div id="sk-lib" class="sk-lib"><div class="sk-loading"><span class="loading pulse">loading the skill library…</span></div></div>';
@@ -1707,7 +1714,7 @@ const StationUI = (() => {
     const frag = html => (el => { el.innerHTML = html; });
     mountConsole(body, 'skills', [
       { id: 'caps', label: 'CAPABILITIES', glyph: '◈', desc: on + ' of ' + skills.length + ' live — what this agent can actually do, driven by the objects at its workstation.', build: frag(secCaps) },
-      { id: 'library', label: 'SKILL LIBRARY', glyph: '▤', desc: 'Pre-installed recipes your agents follow when a task matches, grouped by kind.', build: frag(secLibrary) },
+      { id: 'library', label: 'SKILL LIBRARY', glyph: '▤', desc: 'Pre-installed procedures your agents follow when a task matches, grouped by kind.', build: frag(secLibrary) },
       { id: 'agent', label: 'AGENT SKILLS', glyph: '✎', desc: 'Procedures this agent created or learned itself.', build: frag(secAgent) }
     ], { search: true, searchPlaceholder: 'search skills…' });
     loadSkillLibrary(agentId);
@@ -1731,7 +1738,7 @@ const StationUI = (() => {
       skills.forEach((s, i) => {
         if (s.cap && disabledObjs[s.cap] && perks[i]) {
           perks[i].classList.remove('on'); perks[i].classList.add('ts-disabled');
-          const stat = perks[i].querySelector('.perk-stat'); if (stat) { stat.textContent = '○ OFF · toolset disabled'; stat.classList.remove('ask'); }
+          const stat = perks[i].querySelector('.perk-stat'); if (stat) { stat.textContent = '○ OFF — switch it on in ⇄ TOOLSETS'; stat.classList.remove('ask'); }
         }
       });
     }).catch(() => {});
@@ -3113,11 +3120,13 @@ const StationUI = (() => {
       // maps to status.focus (server truth); the steer rides GET/POST/DELETE /api/nightshift/focus. A steer only
       // re-ranks the night's ONE priority — it grants nothing and reaches nothing new (route-enforced).
       '<div class="set-row"><span class="dim">FOCUS</span> <span id="ns-focus" class="dim">…</span></div>' +
-      '<div class="set-row"><input id="ns-steer" class="key-input" type="text" autocomplete="off" placeholder="steer it: a blessed project path · thread:&lt;id&gt; · goal"><button class="bb xs" id="ns-steer-set">STEER</button><button class="bb xs" id="ns-steer-clear" style="display:none">CLEAR</button></div>' +
+      '<div class="set-row"><input id="ns-steer" class="key-input" type="text" autocomplete="off" placeholder="point it at a project folder, or type what to focus on"><button class="bb xs" id="ns-steer-set">STEER</button><button class="bb xs" id="ns-steer-clear" style="display:none">CLEAR</button></div>' +
       '<div class="mc-hint">a steer outranks learned evidence (~7 days, or until cleared). It only redirects the night’s one priority — no new access.</div>' +
-      '<div class="set-row"><span class="dim">LEASH</span> <span id="ns-leash" class="dim">…</span></div>' +
-      '<div class="set-row"><span class="dim">LAST BEAT</span> <span id="ns-last" class="dim">…</span></div>' +
-      '<div class="set-row"><span class="dim">NEXT ELIGIBLE</span> <span id="ns-next" class="dim">…</span></div>' +
+      // row labels de-jargoned (UX sweep 2026-07-15): LEASH/LAST BEAT/NEXT ELIGIBLE assumed the internal
+      // vocabulary; a "beat" is just one small unattended job (glossary carries the term for the value text).
+      '<div class="set-row"><span class="dim" data-hint="beat">DAILY LIMIT</span> <span id="ns-leash" class="dim">…</span></div>' +
+      '<div class="set-row"><span class="dim" data-hint="beat">LAST JOB</span> <span id="ns-last" class="dim">…</span></div>' +
+      '<div class="set-row"><span class="dim">NEXT JOB EARLIEST</span> <span id="ns-next" class="dim">…</span></div>' +
       '<div class="set-row"><span class="dim">RECENT DECISIONS</span></div>' +
       '<div class="key-list" id="ns-trail"><p class="set-about">reading the decision trail…</p></div>' +
       // LAST REPORT (NS visibility 2026-07-13) — the morning-report beat is one-shot (fired=true spends it even on
@@ -3805,8 +3814,11 @@ const StationUI = (() => {
     }
     const num = g.querySelector('.ctx-num'); if (num) num.textContent = s.pctLabel;
     const cap = g.querySelector('.ctx-cap'); if (cap) cap.textContent = s.label;
-    g.title = 'CONTEXT - ' + (s.known ? s.label + ' - ' + s.pctLabel + ' of the model max context'
-      : (s.limit ? 'waiting for a measured prompt on this agent/model' : 'calibrating model context length'));
+    // beginner-facing tooltip (UX sweep 2026-07-15): say what the gauge MEANS and what to do when it fills,
+    // not just the raw token fraction.
+    g.title = 'MEMORY OF THIS CHAT — ' + (s.known
+      ? s.label + ' (' + s.pctLabel + ' full). How much of this conversation the model can still hold; when it fills, older turns are folded into a summary automatically.'
+      : (s.limit ? 'measuring… send a message and this fills in' : 'measuring this model’s memory size…'));
   }
   let compactWired = false;
   function wireCompactBeat() {
@@ -3949,7 +3961,8 @@ const StationUI = (() => {
 
       { id: 'slack', title: 'SLACK', pre: 'sl', glyph: '⌗', accent: '#b98ec8',
         // HONESTY: channel messages need a chat allowlist no production path supplies yet — DMs only today.
-        tagline: 'Your agent inside your Slack workspace — DM it and it replies. (DMs only for now — channels aren\'t wired yet.)',
+        // audit finding 5: Slack appears in BOTH panels — say which direction THIS one is.
+        tagline: 'Your agent inside your Slack workspace — DM it and it replies. (DMs only for now — channels aren\'t wired yet. Want the agent to USE Slack as a tool instead? That\'s ⇄ TOOLSETS.)',
         verb: 'receiving',
         steps: [
           'Open <b>api.slack.com/apps</b> → <b>Create New App</b> → From scratch.',
@@ -4049,7 +4062,7 @@ const StationUI = (() => {
           '<div class="set-save">' +
             '<button class="bb sm" id="' + c.pre + '-connect">⏼ CONNECT</button> ' +
             '<button class="bb sm danger" id="' + c.pre + '-disconnect" style="display:none">⏏ DISCONNECT</button> ' +
-            '<button class="bb xs danger" id="' + c.pre + '-forget" style="display:none">⌫ FORGET</button>' +
+            '<button class="bb xs danger" id="' + c.pre + '-forget" style="display:none" title="permanently deletes the saved token from this machine (record + OS keychain) — you’d have to set it up again">⌫ FORGET</button>' +
           '</div>' +
           '<div id="' + c.pre + '-msg" class="msg"></div>' +
         '</div>';
@@ -4366,6 +4379,7 @@ const StationUI = (() => {
     const secMcp =
       '<p class="set-about">Attach an <b>MCP server</b> to give your agents external tools (GitHub, Slack, a database…). ' +
         'Its tools appear automatically and run through the same approval gate as the built-ins. ' +
+        '<span class="dim">(Looking to chat with your agent FROM Slack or Telegram instead? That’s ✉ CHANNELS.)</span> ' +
         '<span class="dim">(Remote http(s) servers, or a local <code>stdio</code> command. Secrets are stored locally by the sidecar and never displayed.)</span></p>' +
       '<div id="mc-list" class="mc-list"><span class="loading pulse">loading…</span></div>' +
       '<div class="sec"><span class="sec-l" id="mc-form-h">ADD A CONNECTOR</span><span class="sec-r"></span><span class="sec-nd"></span></div>' +
@@ -4414,9 +4428,11 @@ const StationUI = (() => {
       '<div id="cc-msg" class="msg"></div>' +
       '<p class="set-about dim">Need something not listed? Add any MCP server by URL or local command in <b>MCP CONNECTORS</b>.</p>';
     const frag = h => (el => { el.innerHTML = h; });
+    // TOOLSETS first (audit finding 5): the dock button says TOOLSETS, so the panel must open on the tab it's
+    // named for — a first click used to land on the CATALOG storefront, which read as "TOOLSETS = connectors".
     mountConsole(body, 'connectors', [
-      { id: 'catalog', label: 'CATALOG', glyph: '⊞', desc: 'One-click connectors — browse vetted MCP servers (docs, search, automation, payments…) and add them to your station.', build: frag(secCatalog) },
       { id: 'toolsets', label: 'TOOLSETS', glyph: '▤', desc: 'Every capability your agents can use, grouped and switchable. A prop grants a toolset; the switch is the kill-switch on top.', build: frag(secToolsets) },
+      { id: 'catalog', label: 'CATALOG', glyph: '⊞', desc: 'One-click connectors — browse vetted services (docs, search, automation, payments…) and plug them in as agent tools.', build: frag(secCatalog) },
       { id: 'mcp', label: 'MCP CONNECTORS', glyph: '⧉', desc: 'External tool servers your agents can call — GitHub, Slack, a database. Their tools run through the same approval gate as the built-ins.', build: frag(secMcp) }
     ], { search: true, searchPlaceholder: 'search toolsets & connectors…' });
 
