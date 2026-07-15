@@ -149,19 +149,29 @@
       const errMsg = state.errMsg || (threw ? ('run failed: ' + ((threw && threw.message) || threw)) : null);
       const ok = !errMsg;
       const transient = !!(state.transient || (threw && threw.transient));
-      try {
-        const next = cronStore.markRun(getJobs(), jobId, {
-          runId: runId, status: ok ? 'ok' : 'error',
-          reason: state.reason || (ok ? 'done' : 'error'),
-          error: errMsg || undefined, transient: transient
-        }, { now: at });
-        setJobs(next);
-      } catch (_) { /* a persist/markRun failure must never crash a settling run */ }
+      // GENERATION FENCE (2026-07-15 reliability audit): only the run that STILL OWNS the job's lease may
+      // settle its record. A run whose lease was reclaimed (the sweep declared it a zombie — and possibly
+      // already launched a replacement) must NOT write markRun: its late settlement would overwrite the
+      // replacement's fresher state (nextRunAt / retryCount / lastRunId — the "stale completion clobbers
+      // the replacement" bug). The stale run still emits an honest cron.result (reason suffixed
+      // 'stale-lease') so its outcome is observable, but the STORE belongs to the current lease holder.
+      const lease = leases.get(jobId);
+      const owned = !!(lease && lease.runId === runId);
+      if (owned) {
+        try {
+          const next = cronStore.markRun(getJobs(), jobId, {
+            runId: runId, status: ok ? 'ok' : 'error',
+            reason: state.reason || (ok ? 'done' : 'error'),
+            error: errMsg || undefined, transient: transient
+          }, { now: at });
+          setJobs(next);
+        } catch (_) { /* a persist/markRun failure must never crash a settling run */ }
+      }
       // job-level outcome: a FAILED run always reports (never silent); SILENT only on a clean, exactly-"[SILENT]" reply.
       const outcome = !ok ? 'failed' : (reply === SILENT_MARKER ? 'silent' : 'ok');
-      try { emit('cron.result', { jobId: jobId, runId: runId, outcome: outcome, reason: state.reason || (errMsg ? 'error' : 'done') }); } catch (_) {}
-      const lease = leases.get(jobId);
-      if (lease && lease.runId === runId) leases.delete(jobId);   // a stale-lock sweep may have reclaimed+replaced it
+      const baseReason = state.reason || (errMsg ? 'error' : 'done');
+      try { emit('cron.result', { jobId: jobId, runId: runId, outcome: outcome, reason: owned ? baseReason : (baseReason + ' (stale-lease)') }); } catch (_) {}
+      if (owned) leases.delete(jobId);   // a stale-lock sweep may have reclaimed+replaced it — never delete a successor's lease
     }
 
     /* fireJob — launch one due job through the run host. Returns true iff a run was actually launched (false on a
@@ -362,7 +372,21 @@
           }
           // stamp + persist the one-shot fire-claim through the store reducer (keeps the claim shape in one place).
           for (const id of claimOnce) { jobs = cronStore.claimOnceFire(jobs, id, { now: nowMs }); }
-          setJobs(jobs);
+          // TRANSACTIONAL DISPATCH (2026-07-15 reliability audit): a launch is CONDITIONAL on a verified
+          // durable advance/claim. setJobs returns false when the persist did NOT reach disk (the host also
+          // rolls its mirror back to the disk state so the jobs stay DUE); a void/true return means persisted
+          // (back-compat: test hosts with a plain assigning setJobs keep working). On a failed receipt we
+          // fire NOTHING this tick — every planned fire is deferred and retried next tick, because launching
+          // over an unpersisted advance is exactly the crash-restart double-fire window this write closes.
+          const receipt = setJobs(jobs);
+          if (receipt === false) {
+            for (const f of plan.fire) {
+              if (deferredSet.has(f.jobId)) continue;
+              deferredSet.add(f.jobId); deferred.push(f.jobId);
+            }
+            try { emit('cron.tick', { fired: 0, skipped: skips, planned: plan.fire.length, deferred: deferred.length }); } catch (_) {}
+            return { fired: 0, skipped: skips, planned: plan.fire.length, deferred: deferred, unpersisted: true };
+          }
         }
       }
 

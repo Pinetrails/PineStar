@@ -2622,10 +2622,19 @@ const cronDriver = makeCronDriver({
     // by job id against the freshest disk snapshot so a settled run's outcome is neither lost nor clobbers an advance.
     try {
       const r = cronLock.withLock(() => { cronJobs = jobs; saveCronJobs(); });
-      if (r.ran) return;
+      if (r.ran) return true;
       cronJobs = mergeCronById(jobs, loadCronJobs());   // contended: id-level merge, not a blind last-write-wins persist
       saveCronJobs();
-    } catch (e) { console.warn('[cron] persist failed:', (e && e.message) || e); }
+      return true;
+    } catch (e) {
+      console.warn('[cron] persist failed:', (e && e.message) || e);
+      // TRANSACTIONAL DISPATCH (2026-07-15 audit): the durable write FAILED, so return an honest false
+      // receipt (the driver fires NOTHING over an unpersisted advance — the crash-restart double-fire
+      // window) and ROLL the in-memory mirror back to the disk state so the jobs stay DUE and are
+      // retried next tick instead of living as a RAM-only advance that a restart would forget.
+      try { cronJobs = loadCronJobs(); } catch (_) { /* disk unreadable too — keep the RAM mirror */ }
+      return false;
+    }
   },
   // the SAME run host the browser uses (hoisted decl below). AWAY WORKSHOP: a workshop shift routine stores the
   // WORKSHOP_MARK sentinel as its prompt; when the driver fires it, redirect to runWorkshopShift (which pops the

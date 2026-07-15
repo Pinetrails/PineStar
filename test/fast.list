@@ -257,6 +257,7 @@ test/confbeats.test.js
 test/cron.test.js
 test/cron-store.test.js
 test/mint-ledger.test.js
+test/cron.dispatch.test.js
 test/cron.tick.test.js
 test/cron.dst.test.js
 test/cron.durability.test.js
