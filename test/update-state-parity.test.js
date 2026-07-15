@@ -278,4 +278,24 @@ function loadSaveModule() {
   A.eq(mCur, CUR, 'v5->v5: a current-version doc migrates losslessly (byte-identical, no field churn)');
 }
 
+// --- (4) MANUAL-FALLBACK ENDPOINT PARITY. updates.js bakes RELEASES_PAGE (the human releases
+// page behind DOWNLOAD LATEST MANUALLY) as a second copy of the repo slug that tauri.conf.json's
+// updater endpoint carries. If the releases repo ever moves and only one is updated, the manual
+// fallback would silently send users to a dead/stale page — exactly when the auto-updater is
+// already failing. Lock the two to the same owner/repo.
+{
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const ROOT = path.resolve(__dirname, '..');
+  const conf = JSON.parse(fs.readFileSync(path.join(ROOT, 'src-tauri', 'tauri.conf.json'), 'utf8').replace(/^﻿/, ''));
+  const endpoint = conf.plugins.updater.endpoints[0];
+  const updatesSrc = fs.readFileSync(path.join(ROOT, 'frontend', 'app', 'updates.js'), 'utf8');
+  const pageMatch = updatesSrc.match(/RELEASES_PAGE = '([^']+)'/);
+  A.ok(pageMatch, 'updates.js declares RELEASES_PAGE');
+  const slugOf = u => (String(u).match(/github\.com\/([^/]+\/[^/]+)\//) || [])[1];
+  A.eq(slugOf(pageMatch[1] + '/'), slugOf(endpoint),
+    'manual-fallback releases page and the baked updater endpoint point at the SAME owner/repo');
+  A.ok(/\/releases\/latest$/.test(pageMatch[1]), 'manual fallback points at /releases/latest (never a pinned tag)');
+}
+
 A.report('update-state-parity');
