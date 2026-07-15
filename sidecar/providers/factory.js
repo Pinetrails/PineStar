@@ -56,7 +56,12 @@
         chatPath: profile.chatPath,
         modelsPath: profile.modelsPath,
         reasoningEffort: opts.reasoningEffort,
-        includeUsage: opts.includeUsage,
+        // profile wire hints: does this endpoint document `reasoning_effort`, and is tool support
+        // asserted/denied at the provider level (fallback when the catalog carries no capability data)?
+        sendReasoningEffort: profile.wireReasoningEffort === true,
+        supportsTools: typeof profile.supportsTools === 'boolean' ? profile.supportsTools : null,
+        // wireStreamOptions:false = endpoint rejects/lacks stream_options (usage streams by default there)
+        includeUsage: profile.wireStreamOptions === false ? false : opts.includeUsage,
         defaultContext: opts.defaultContext,
         headers: opts.headers
       });

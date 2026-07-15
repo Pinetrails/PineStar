@@ -14,6 +14,20 @@
   const DEFAULT_BASE = 'https://api.openai.com/v1';
   const RETRY_DELAYS = [400, 1200];
   const REWARM_MIN_MS = 5 * 60 * 1000;
+  // Optional request params that "OpenAI-compatible" providers disagree on. When a provider 400s and its
+  // error text names one of these, we drop it and retry — the request still means the same thing without
+  // them. `tools` is deliberately NOT in this list: silently removing tools would let a task run proceed
+  // without the capability it needs (the run must fail honestly instead).
+  const DROPPABLE_PARAMS = ['stream_options', 'parallel_tool_calls', 'tool_choice', 'reasoning_effort'];
+  // The chat-completions wire accepts this effort scale; StarNet's wider scale (xhigh/max) clamps into it.
+  const WIRE_EFFORTS = ['minimal', 'low', 'medium', 'high'];
+  function wireEffort(value) {
+    const v = String(value || '').trim().toLowerCase();
+    if (!v || v === 'none' || v === 'off') return '';
+    if (v === 'xhigh' || v === 'max' || v === 'extrahigh') return 'high';
+    if (v === 'min') return 'minimal';
+    return WIRE_EFFORTS.indexOf(v) >= 0 ? v : 'medium';
+  }
 
   function isAbort(e, signal) {
     return !!((signal && signal.aborted) || (e && e.name === 'AbortError'));
@@ -70,10 +84,36 @@
     const includeUsage = opts.includeUsage !== false;
     const defaultContext = Number(opts.defaultContext || 0) || 0;
     const clock = (opts.clock && typeof opts.clock.now === 'function') ? opts.clock : null;
+    // Provider-profile hints (registry): whether this endpoint documents the `reasoning_effort` chat
+    // param, and a tool-capability fallback for catalogs that carry no capability metadata (most raw
+    // /models responses). Both stay null/off unless the profile asserts them — capability claims must
+    // come from somewhere provable, never be assumed.
+    const sendReasoningEffort = opts.sendReasoningEffort === true;
+    const profileSupportsTools = (typeof opts.supportsTools === 'boolean') ? opts.supportsTools : null;
+    const defaultEffort = String(opts.reasoningEffort || '');
+    const droppedParams = new Map();   // model -> Set(param) learned from unsupported-param 400s
     let catalog = null;
     let catalogPromise = null;
     let catalogRewarmAt = 0;
     let rewarmKicked = false;
+
+    function rememberDrop(model, param) {
+      const key = String(model || '');
+      let set = droppedParams.get(key);
+      if (!set) { set = new Set(); droppedParams.set(key, set); }
+      set.add(param);
+    }
+    // A 4xx whose error text names an optional param we sent -> remove it from the body and signal a
+    // retry. One param per pass; terminates because each pass deletes a body field.
+    function dropUnsupportedParam(body, status, detail) {
+      if (status !== 400 && status !== 422) return null;
+      const text = String(detail || '').toLowerCase();
+      for (const p of DROPPABLE_PARAMS) {
+        if (body[p] === undefined) continue;
+        if (text.indexOf(p) >= 0) { delete body[p]; rememberDrop(body.model, p); return p; }
+      }
+      return null;
+    }
 
     // Non-blocking catalog re-warm: an empty catalog (boot-time /models failure) otherwise stays empty forever.
     // Throttled by the injected clock; no clock -> at most one kick per instance (determinism law: no Date.now).
@@ -94,12 +134,22 @@
     async function* stream(req) {
       req = req || {};
       maybeRewarmCatalog();
+      const dropped = droppedParams.get(String(req.model || ''));
+      const skip = p => !!(dropped && dropped.has(p));
       const body = { model: req.model, messages: req.messages || [], stream: true };
-      if (includeUsage) body.stream_options = { include_usage: true };
+      if (includeUsage && !skip('stream_options')) body.stream_options = { include_usage: true };
       if (req.tools && req.tools.length) {
         body.tools = req.tools;
-        body.tool_choice = 'auto';
-        body.parallel_tool_calls = false;
+        if (!skip('tool_choice')) body.tool_choice = 'auto';
+        if (!skip('parallel_tool_calls')) body.parallel_tool_calls = false;
+      }
+      // reasoning_effort goes on the wire only when the model provably reasons (catalog) or the provider
+      // profile documents the param; effort 'none' means omit it entirely.
+      const effort = wireEffort(req.reasoningEffort || defaultEffort);
+      if (effort && !skip('reasoning_effort')) {
+        const m = findModel(req.model);
+        const modelReasons = !!(m && (m.supportsReasoning === true || (Array.isArray(m.reasoningEfforts) && m.reasoningEfforts.length)));
+        if (modelReasons || sendReasoningEffort) body.reasoning_effort = effort;
       }
       let res;
       try { res = await requestWithRetry(body, req.signal); }
@@ -189,6 +239,10 @@
         let detail = res.statusText || '';
         try { const j = await res.json(); detail = (j && j.error && (j.error.message || j.error.code)) || JSON.stringify(j); }
         catch (_) { try { detail = (await res.text()).slice(0, 300); } catch (_) {} }
+        // Compatibility self-heal: providers behind the "OpenAI-compatible" label reject different optional
+        // params. Strip the named param and retry immediately (remembered per model, so later turns in the
+        // run never pay the extra round-trip). Does not consume a transient-retry attempt.
+        if (dropUnsupportedParam(body, res.status, detail)) { attempt--; continue; }
         const err = new Error('openai-compatible http ' + res.status + ' - ' + detail);
         err.status = res.status;
         err.headers = res.headers;
@@ -225,8 +279,19 @@
       const i = parseFloat(m.pricing.prompt) * 1e6, o = parseFloat(m.pricing.completion) * 1e6;
       return (isFinite(i) && isFinite(o)) ? { in: i, out: o } : null;
     }
-    function supportsTools(id) { const m = findModel(id); return m ? m.supportsTools : null; }
-    function reasoningEfforts() { return ['none']; }
+    // Catalog capability wins when it exists; otherwise fall back to the provider profile's assertion
+    // (e.g. Perplexity documents no function calling). null = genuinely unknown, never a guess.
+    function supportsTools(id) {
+      const m = findModel(id);
+      if (m && typeof m.supportsTools === 'boolean') return m.supportsTools;
+      return profileSupportsTools;
+    }
+    function reasoningEfforts(id) {
+      const m = findModel(id);
+      if (m && Array.isArray(m.reasoningEfforts) && m.reasoningEfforts.length) return m.reasoningEfforts.slice();
+      if ((m && m.supportsReasoning === true) || sendReasoningEffort) return ['none'].concat(WIRE_EFFORTS);
+      return ['none'];
+    }
 
     return { stream, listModels, contextLimit, priceOf, supportsTools, reasoningEfforts };
   }
