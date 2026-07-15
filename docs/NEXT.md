@@ -21,8 +21,11 @@ OPEN (routed, repros in the ledger):
   hero tile (3/3); F8 P2 cancelled runs persist `content:""` assistant turns (partial streamed
   text lost from the durable transcript); F9 P2-suspect NIGHT SHIFT trophy minted with zero
   night-shift activity (trophy condition needs reading).
-- KNOWN pre-existing: `test/qa-product-perfect-claims.test.js` is red at trunk `def45e97` on a
-  clean tree (9 fails) — product-perfect lane's; it masks the tail of the fast gate for everyone.
+- KNOWN pre-existing: `test/qa-product-perfect-claims.test.js` is ENVIRONMENT-DEPENDENT — red
+  (9 fails) in ANY fresh worktree because it needs the integration tree's gitignored `.dogfood`
+  candidate state; green in the integration tree (64 assertions). Every lane gating in a clean
+  worktree loses the fast-gate tail behind step ~133 — product-perfect lane should make it
+  skip-honestly (with a visible SKIPPED note) when `.dogfood` is absent.
 
 ## 2026-07-13 — FLAGSHIP WAVE: last-hop surfaces + cross-wiring (branch `claude/flagship-features-audit-d0e1a1`)
 
