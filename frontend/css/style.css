@@ -301,12 +301,8 @@ body:has(#screen-game.active):not(.refit-on) #logo { display: flex; }
    lives on the title screen where it has room to read */
 .logo-img {
   height: 30px; width: auto; display: block;
-  /* BRAND-LOCKED glow: the wordmark art IS amber, so its halo stays amber on every theme.
-     (Theming it — the old var(--ph-glow) — put a green/blue/purple halo on the amber art.)
-     Brightness is mild now: the baked small asset (dev/bake-logo-small.mjs) already carries
-     the value lift the old 1.28 compensated for; stacking both clips the strokes to white. */
-  filter: brightness(1.08) saturate(1.05)
-          drop-shadow(0 0 4px rgba(255, 170, 51, .5)) drop-shadow(0 0 1px #ffaa33);
+  /* No CSS glow/brightness: the baked small asset (dev/bake-logo-small.mjs) already carries
+     the art's own halo baked in; CSS drop-shadows on top fuzzed the mark (removed per Andrew). */
 }
 /* one confident wordmark in the chrome — the big ASCII logo lives on the
    title screen where it has room to read (salvaged from agent/design-system) */
