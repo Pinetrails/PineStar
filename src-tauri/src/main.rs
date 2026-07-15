@@ -691,6 +691,17 @@ fn channel_keychain_entry(channel: &str) -> keyring::Result<keyring::Entry> {
     keyring::Entry::new(KEYCHAIN_SERVICE, format!("channel:{channel}").as_str())
 }
 
+/// Delete a keychain credential, treating "nothing stored" as success. A REAL deletion
+/// failure (locked keychain, OS error) surfaces as Err so callers can stop claiming
+/// "purged" while the secret lives on — truthful telemetry applies to destruction too.
+fn delete_credential_honest(entry: &keyring::Entry) -> Result<(), String> {
+    match entry.delete_credential() {
+        Ok(()) => Ok(()),
+        Err(keyring::Error::NoEntry) => Ok(()),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
 /// The stored bot token for a channel, or None if unset/empty.
 fn read_channel_token(channel: &str) -> Option<String> {
     channel_keychain_entry(channel)
@@ -1451,13 +1462,21 @@ fn harness_store_channel_token(
     state: State<AppState>,
 ) -> Result<(), String> {
     let channel = channel.trim().to_ascii_lowercase();
+    let trimmed = token.trim();
     if !is_known_channel(&channel) {
+        // Clearing (empty token) a channel this shell never keychains is vacuously done — nothing was ever
+        // stored under its namespace, so FORGET must not report a phantom keychain failure for it. STORING
+        // a token for an unknown channel stays an error (defends the keychain account namespace).
+        if trimmed.is_empty() {
+            return Ok(());
+        }
         return Err(format!("unknown channel: {channel}"));
     }
     let entry = channel_keychain_entry(&channel).map_err(|e| e.to_string())?;
-    let trimmed = token.trim();
     if trimmed.is_empty() {
-        let _ = entry.delete_credential();
+        // FORGET path: a swallowed deletion failure here let the UI claim "purged" while the token
+        // survived in the OS keychain. A real failure now surfaces to the caller (NoEntry is fine).
+        delete_credential_honest(&entry)?;
     } else {
         entry.set_password(trimmed).map_err(|e| e.to_string())?;
     }

@@ -3902,7 +3902,8 @@ const StationUI = (() => {
         okMsg: '✓ connected — open Telegram and DM your bot' },
 
       { id: 'discord', title: 'DISCORD', pre: 'dc', glyph: '◈', accent: '#7c83f5',
-        tagline: 'Two-way chat on Discord — DM your bot (or @-mention it in a server) and it replies.',
+        // HONESTY: server/channel messages need a chat allowlist no production path supplies yet — DMs only today.
+        tagline: 'Two-way chat on Discord — DM your bot and it replies. (DMs only for now — server channels aren\'t wired yet.)',
         verb: 'receiving',
         steps: [
           'Open the <b>Discord Developer Portal</b> → <b>New Application</b> → <b>Bot</b> → <b>Reset Token</b> → copy the token.',
@@ -3919,13 +3920,14 @@ const StationUI = (() => {
         errHint: ' — check the bot token / MESSAGE CONTENT intent' },
 
       { id: 'slack', title: 'SLACK', pre: 'sl', glyph: '⌗', accent: '#b98ec8',
-        tagline: 'Your agent inside your Slack workspace — DM it or add it to a channel.',
+        // HONESTY: channel messages need a chat allowlist no production path supplies yet — DMs only today.
+        tagline: 'Your agent inside your Slack workspace — DM it and it replies. (DMs only for now — channels aren\'t wired yet.)',
         verb: 'receiving',
         steps: [
           'Open <b>api.slack.com/apps</b> → <b>Create New App</b> → From scratch.',
           'Enable <b>Socket Mode</b> (Settings → Socket Mode) and create an <b>app-level token</b> with <code>connections:write</code> (starts <code>xapp-</code>).',
           'Under <b>OAuth &amp; Permissions</b> add bot scopes <code>chat:write</code>, <code>im:history</code>, <code>channels:history</code> → <b>Install to Workspace</b> → copy the <b>bot token</b> (starts <code>xoxb-</code>).',
-          'Under <b>Event Subscriptions</b> subscribe the bot to <code>message.im</code> (and <code>message.channels</code> for channels).'
+          'Under <b>Event Subscriptions</b> subscribe the bot to <code>message.im</code>.'
         ],
         note: 'Both tokens are stored locally by the sidecar and never displayed.',
         fieldsHtml: '<label class="ch-lbl" for="sl-bot-token">BOT TOKEN <span class="dim">— xoxb-…, from OAuth &amp; Permissions</span></label>' +
@@ -3991,7 +3993,11 @@ const StationUI = (() => {
     let html =
       '<p class="set-about">Reach your agent from real messaging apps. Every connected channel talks to the <b>same agent</b> ' +
         '(same memory, tools, and workspace) using this app\'s current provider + model.</p>' +
-      '<p class="ch-headless">It keeps working <b>headless</b> — a DM runs your agent even with this window (and the app) closed.</p>' +
+      // HONESTY (2026-07-15): closing the desktop app STOPS the sidecar (the shell reaps it on exit), so "works
+      // with the app closed" was a false promise — and some channels deliberately discard the offline backlog on
+      // reconnect (anti-stale-directive). Claim exactly what the harness proves: headless of THIS window, alive
+      // only while the station runs, with the honest offline notice named instead of implied delivery.
+      '<p class="ch-headless">It keeps working <b>headless</b> — a DM runs your agent even with this window closed, as long as the station app is running. Messages sent while the station is fully off are <b>not</b> processed — you get an honest "I was offline" note instead.</p>' +
       '<label class="set-row ch-optin"><input type="checkbox" id="ch-notify"> <span class="ch-optin-t">Message me on my connected channels when my agent finishes autonomous work</span>' +
         '<span class="ch-optin-d dim">A routine that runs on its own and produces something pings you on every channel you\'ve connected.</span></label>' +
       '<div id="ch-notify-msg" class="msg"></div>';
@@ -4247,10 +4253,25 @@ const StationUI = (() => {
         if (!(configuredById[c.id])) { return; }
         armed(c.pre + '-forget', fBtn, '⌫ FORGET', '⌫ CONFIRM FORGET', async () => {
           try {
-            if (typeof Harness !== 'undefined' && Harness.storeChannelToken) { try { await Harness.storeChannelToken(c.id, ''); } catch (_) {} }
-            await fetch('/api/channels/' + c.id + '/disconnect', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ purge: true }) });
-            setMsg(msgEl, 'forgotten — the stored token was purged', 'info'); sfx('click');
-            try { c.clear(body); } catch (_) {}
+            // Desktop: clear the OS-keychain copy and KEEP the result — a swallowed failure here used to let
+            // the "purged" line lie while the token lived on in the keychain. Browser builds have no keychain
+            // copy (storeChannelToken is a no-op false there), so only desktop counts it.
+            let kcCleared = true;
+            if (typeof Harness !== 'undefined' && Harness.storeChannelToken && Harness.isDesktop && Harness.isDesktop()) {
+              kcCleared = await Promise.resolve(Harness.storeChannelToken(c.id, '')).then(ok => ok !== false).catch(() => false);
+            }
+            const r = await fetch('/api/channels/' + c.id + '/disconnect', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ purge: true }) });
+            const j = await r.json().catch(() => ({}));
+            // truthful telemetry: "purged" is a DESTRUCTION claim — assert it only from the backend's
+            // read-back-proven bit (j.purged) plus the keychain result, never from the click itself.
+            if (j.purged && kcCleared) { setMsg(msgEl, 'forgotten — the stored token was purged', 'info'); sfx('click'); try { c.clear(body); } catch (_) {} }
+            else if (!r.ok || j.error) { setMsg(msgEl, '✕ ' + (j.error || ('HTTP ' + r.status)), ''); sfx('bad'); }
+            else {
+              const where = [];
+              if (!j.purged) where.push('the saved record');
+              if (!kcCleared) where.push('the OS keychain');
+              setMsg(msgEl, '⚠ forget incomplete — could not prove the token left ' + where.join(' or ') + '; try again', ''); sfx('bad');
+            }
           } catch (_) { setMsg(msgEl, '✕ could not reach the sidecar', ''); }
           refreshAll();
         });
