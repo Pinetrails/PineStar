@@ -1970,6 +1970,9 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 #chat-status.status-connecting { color: var(--ph); opacity: .8; }
 #chat-status.status-working, #chat-status.status-approval { color: var(--gold); text-shadow: 0 0 7px rgba(var(--gold-rgb),.4); }
 #chat-status.status-stopping { color: var(--bad); text-shadow: 0 0 7px rgba(255,74,61,.35); }
+/* F2: bridge provably dead (World.linkState E1 — same predicate as the topbar LINK DOWN / canvas marker):
+   the idle label can't honestly read 'online', so it reads 'station unreachable' in the fault palette. */
+#chat-status.status-down { color: #ff6a4c; text-shadow: 0 0 7px rgba(255,106,76,.35); }
 
 /* COMMS PROCESSING TIMER — a small engraved readout in the amber header that counts a turn's REAL
    wall-clock (thinking → working → done). Monospace with a fixed min-width so the ticking seconds

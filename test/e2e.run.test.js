@@ -35,6 +35,25 @@ function startMockOpenRouter() {
             res.write('data: [DONE]\n\n');
             res.end();
           };
+          // DRIPFEED sentinel: a LONG slow stream (40 chunks × 150ms ≈ 6s) so a test can kill the client
+          // socket mid-generation and observe the sidecar noticing. res 'close' stops the drip (req 'close'
+          // fires at message completion on Node ≥15 — the very trap the F1 disconnect test guards).
+          if (body.indexOf('DRIPFEED') >= 0) {
+            let i = 0;
+            const t = setInterval(() => {
+              try {
+                if (res.writableEnded || res.destroyed) { clearInterval(t); return; }
+                if (i < 40) { res.write('data: ' + JSON.stringify({ choices: [{ delta: { content: 'drip ' } }] }) + '\n\n'); i++; }
+                else {
+                  clearInterval(t);
+                  res.write('data: ' + JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop' }], usage: { prompt_tokens: 4, completion_tokens: 40, total_tokens: 44 } }) + '\n\n');
+                  res.write('data: [DONE]\n\n'); res.end();
+                }
+              } catch (_) { clearInterval(t); }
+            }, 150);
+            res.on('close', () => clearInterval(t));
+            return;
+          }
           // SLOWPOKE sentinel: stall before answering so the sidecar's run stream sits event-silent — the
           // window the NDJSON keep-alive heartbeat must cover.
           if (body.indexOf('SLOWPOKE') >= 0) setTimeout(write, 300); else write();
@@ -165,6 +184,45 @@ function boot(port, env, attemptsLeft) {
       await clash.text(); await (await slow).text();                         // drain both
       const d1 = await (await fetch(B + '/api/diagnostics', { headers: { 'X-StarNet-Token': token, Origin: B } })).json();
       A.ok(d1.text.indexOf('already running a task') >= 0, 'the run error is in this session\'s diagnostics tail');
+    }
+
+    // ---- F1 escape (2026-07-14 adversarial sweep): a client that VANISHES mid-stream (reload / tab close /
+    //      crash) must cancel the run PROMPTLY. Before the fix, handleRun attached req.on('close') AFTER
+    //      readBody() had consumed the request — Node ≥15 emits req 'close' at message completion, so the
+    //      listener never fired: the abandoned run streamed on unwatched (real-provider spend), held the
+    //      same-agent mutex for minutes ("already running" with nothing visible), and the reloaded COMMS
+    //      claimed the turn failed while the harness was still driving it. The fix listens on res 'close'. ----
+    {
+      const hdr = { 'Content-Type': 'application/json', 'X-StarNet-Token': token, Origin: B };
+      // raw http.request so the CLIENT socket is destroyable mid-stream (fetch cannot half-kill a socket)
+      const seen = await new Promise((resolve, reject) => {
+        const guard = setTimeout(() => reject(new Error('no stream data before destroy')), 8000);
+        const rq = http.request({ host: HOST, port: port, path: '/api/run', method: 'POST', headers: hdr }, (rs) => {
+          let n = 0;
+          rs.on('data', () => { n++; if (n >= 2) { clearTimeout(guard); rq.destroy(); resolve(n); } });
+          rs.on('error', () => {});
+        });
+        rq.on('error', () => {});   // ECONNRESET after our own destroy is expected noise
+        rq.end(JSON.stringify({ key: 'sk-or-v1-e2e-fake', model: 'test/model', agentId: 'e2e-dc', messages: [{ role: 'user', content: 'DRIPFEED long answer' }] }));
+      });
+      A.ok(seen >= 2, 'the doomed run really streamed to the client before the client vanished');
+      // the abandoned run must settle into the durable log as CANCELLED within seconds (not minutes, not never)
+      let settled = null;
+      for (let i = 0; i < 40 && !settled; i++) {
+        await new Promise(r => setTimeout(r, 250));
+        const rows = (await (await fetch(B + '/api/runs?agent=e2e-dc&limit=10', { headers: { 'X-StarNet-Token': token, Origin: B } })).json()).runs || [];
+        settled = rows.find(r => String(r.title || '').indexOf('DRIPFEED') >= 0) || null;
+      }
+      A.ok(!!settled, 'the abandoned run settled into runs.jsonl within 10s of the disconnect');
+      A.eq(settled && settled.reason, 'cancelled', 'the abandoned run settled honestly as cancelled');
+      // and the same-agent mutex is FREE: a new run on the same agent admits and completes immediately
+      const r2 = await fetch(B + '/api/run', { method: 'POST', headers: hdr,
+        body: JSON.stringify({ key: 'sk-or-v1-e2e-fake', model: 'test/model', agentId: 'e2e-dc', messages: [{ role: 'user', content: 'hi again' }] }) });
+      const rd2 = r2.body.getReader(); const dc2 = new TextDecoder(); let raw2 = '';
+      while (true) { const { value, done } = await rd2.read(); if (done) break; raw2 += dc2.decode(value, { stream: true }); }
+      A.ok(raw2.indexOf('already running a task') < 0, 'no mutex ghost: the agent is not "already running" after its watcher died');
+      const evs2 = raw2.split('\n').map(l => l.trim()).filter(Boolean).map(l => { try { return JSON.parse(l); } catch (_) { return null; } }).filter(Boolean);
+      A.ok(evs2.some(e => e.name === 'agent.run.end' && e.payload.reason === 'done'), 'the follow-up run on the same agent completes clean');
     }
   } finally {
     try { child.kill(); } catch (_) {}
