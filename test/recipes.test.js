@@ -419,4 +419,26 @@ A.eq(lRank[0].id, 'summarize', 'a heavily-launched recipe ranks first on launche
 const lCap = R.rankRecipes(items, { launches: { 'summarize': { n: 500 }, 'fix-bug': 400 }, goalText: '', limit: 3 });
 A.eq(lCap.map(r => r.id).slice(0, 2).join(','), 'fix-bug,summarize', 'capped launch counts tie-break by catalog order; both launch shapes accepted');
 
+/* OUTCOME term (lane B): the Commander's own rate-the-work verdicts rank what actually HELPED. */
+// a great-rated recipe outranks an equally-launched unrated one
+const oUp = R.rankRecipes(items, { launches: { 'summarize': { n: 2, rated: { great: 2, ok: 0, miss: 0 } }, 'fix-bug': { n: 2 } }, limit: 2 });
+A.eq(oUp[0].id, 'summarize', 'great verdicts lift a recipe over an equally-launched unrated one');
+// the great lift is capped at 3 — beyond that, catalog order decides again
+const oCapA = R.rankRecipes(items, { launches: { 'summarize': { n: 2, rated: { great: 300 } }, 'fix-bug': { n: 2, rated: { great: 3 } } }, limit: 2 });
+A.eq(oCapA[0].id, 'fix-bug', 'the great lift caps at 3 (300 greats tie with 3, catalog order breaks it)');
+// miss verdicts sink a recipe below its launch score — and can drop it out of the row entirely (the HONEST sink)
+const oSink = R.rankRecipes(items, { launches: { 'summarize': { n: 2, rated: { miss: 3 } }, 'fix-bug': { n: 2 } }, limit: 4 });
+A.ok(!oSink.some(r => r.id === 'summarize'), 'a miss-heavy recipe (score <= 0) drops OUT of the FOR-YOU row — the honest sink');
+A.eq(oSink[0].id, 'fix-bug', 'the unrated launched recipe still ranks');
+// determinism + garbage tolerance
+const oDet1 = R.rankRecipes(items, { launches: { 'summarize': { n: 3, rated: { great: 1, miss: 1 } } }, limit: 3 });
+const oDet2 = R.rankRecipes(items, { launches: { 'summarize': { n: 3, rated: { great: 1, miss: 1 } } }, limit: 3 });
+A.eq(oDet1.map(r => r.id).join(','), oDet2.map(r => r.id).join(','), 'the outcome term is deterministic for a fixed input');
+const oGarbage = R.rankRecipes(items, { launches: { 'summarize': { n: 3, rated: { great: 'lots', miss: -4 } } }, limit: 3 });
+A.eq(oGarbage[0].id, 'summarize', 'garbage rated counters read as zeros (launch signal still ranks)');
+// ratings NEVER signal alone: rated-but-zero-launch entries leave the row on the cold-start spread
+const oAlone = R.rankRecipes(items, { launches: { 'summarize': { n: 0, rated: { great: 3 } } }, score: () => 0, goalText: '', limit: 5 });
+const oCold = R.rankRecipes(items, { score: () => 0, goalText: '', limit: 5 });
+A.eq(oAlone.map(r => r.id).join(','), oCold.map(r => r.id).join(','), 'ratings without launches do not flip anySignal (cold-start spread unchanged)');
+
 A.report('recipes');

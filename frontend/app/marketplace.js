@@ -222,6 +222,7 @@ const Marketplace = (() => {
     renderStage();
     const panel = root.querySelector('.mkt'); if (panel) panel.focus();
     maybeConsumeRecipeMint();   // R5: if opened to bottle a run, drop straight into the editor pre-filled from it
+    maybeConsumeLaunchSeed();   // lane D: if opened by the routine nudge, drop straight into the launch/SCHEDULE IT form
   }
   // R5 "BOTTLE A RUN" consume: app.js seeds ctx.recipeMint (a Recipes.mintFromRun proposal — a DRAFT custom recipe
   // pre-filled from a 👍-rated run's directive, carrying sourceRunId) before opening the bay on the RECIPES tab.
@@ -238,6 +239,27 @@ const Marketplace = (() => {
     // 'create' entry (a brand-new custom, not a fork of an existing recipe) — the proposal is the pre-fill.
     // enterRecipeEditor lifts seed.sourceRunId into editSourceRunId so it survives save.
     enterRecipeEditor(seed, 'create');
+  }
+  // lane D launch-seed consume (the recipeMint pattern): app.js seeds ctx.launchSeed = { id, mode:'run'|'routine' }
+  // before opening the bay on the RECIPES tab (App.openRecipeLaunch — the routine-nudge accept). Drop straight into
+  // that recipe's launch form, in routine mode when asked (cadence preset to the recipe's suggestion, cron armed-state
+  // warmed) — the same PROPOSE-AND-CONFIRM form every manual schedule goes through. One-shot: the seed is cleared
+  // before any render so a tab-switch / re-render never re-triggers it. Graceful no-op on an unknown recipe.
+  function maybeConsumeLaunchSeed() {
+    const seed = ctx && ctx.launchSeed;
+    if (!seed || typeof seed !== 'object') return;
+    if (ctx) ctx.launchSeed = null;   // one-shot: consume before doing anything that could re-render
+    if (!hasRecipes() || tab !== 'recipes') return;
+    const r = Recipes.get(String(seed.id || '')); if (!r) return;
+    focusRecipe = r.id;
+    launchId = r.id;
+    launchMode = (seed.mode === 'routine') ? 'routine' : 'run';
+    if (launchMode === 'routine') {
+      launchCadence = (r.cadence && cadenceOpt(r.cadence)) ? r.cadence : 'morning';
+      loadCronJobs().then(() => { if (view === 'launch') renderStage(); });   // refresh the armed-state note
+    }
+    view = 'launch';
+    renderBar(); renderStage();
   }
   function close() {
     if (!root) return;
@@ -653,6 +675,21 @@ const Marketplace = (() => {
       '</div>' +
     '</button>';
   }
+  // lane F: the honest-life chip — the Commander's OWN launch count for this recipe (never anyone else's, never
+  // a fake "popular"), plus a rated arrow once their own verdicts point somewhere (great>miss ▲ / miss>great ▽).
+  // Every number derives from the scout usage read (ProspectStore.launches — real persisted telemetry).
+  function recipeLifeChip(r) {
+    try {
+      if (typeof ProspectStore === 'undefined' || !ProspectStore.launches) return '';
+      const u = (ProspectStore.launches() || {})[r.id];
+      const n = (u && typeof u === 'object') ? u.n : u;
+      if (!Number.isFinite(n) || n <= 0) return '';
+      const rated = (u && typeof u === 'object' && u.rated && typeof u.rated === 'object') ? u.rated : null;
+      const g = rated ? (Number(rated.great) || 0) : 0, m = rated ? (Number(rated.miss) || 0) : 0;
+      const arrow = (g > m && g > 0) ? ' · rated ▲' : (m > g && m > 0) ? ' · rated ▽' : '';
+      return '<span class="mkt-chip mkt-life" title="your own launches' + (arrow ? ' + your ratings' : '') + '">↻ ran ' + Math.floor(n) + '×' + esc(arrow) + '</span>';
+    } catch (_) { return ''; }
+  }
   function recipeCardHTML(r, i) {
     const sel = (focusRecipe === r.id);
     const n = (r.params || []).length;
@@ -663,7 +700,7 @@ const Marketplace = (() => {
         '<div class="mkt-name">' + esc(r.name) + (r.custom ? ' <span class="mkt-badge">CUSTOM</span>' : '') + '</div>' +
         '<div class="mkt-tag">' + esc(r.tagline) + '</div>' +
         '<div class="mkt-meta"><span class="mkt-chip lane">' + esc(laneLabelOf(r)) + '</span>' +
-          '<span class="mkt-chip">' + setup + '</span></div>' +
+          '<span class="mkt-chip">' + setup + '</span>' + recipeLifeChip(r) + '</div>' +
       '</div>' +
     '</button>';
   }
@@ -929,7 +966,7 @@ const Marketplace = (() => {
       '<div class="mkt-dos-hero">' + sealHTML(r, true) +
         '<div class="mkt-dos-hi"><div class="mkt-dos-name">' + esc(r.name) + (r.custom ? ' <span class="mkt-badge">CUSTOM</span>' : '') + '</div>' +
           '<div class="mkt-dos-tag">' + esc(r.tagline) + '</div>' +
-          '<div class="mkt-meta"><span class="mkt-chip lane">' + esc(CAT_LABEL[railBucket(r)] || 'GENERAL') + '</span></div></div></div>' +
+          '<div class="mkt-meta"><span class="mkt-chip lane">' + esc(CAT_LABEL[railBucket(r)] || 'GENERAL') + '</span>' + recipeLifeChip(r) + '</div></div></div>' +
       liveRoutineBadgeHTML(r) + forkLine + cadHint +
       '<div class="mkt-block"><div class="bh">WHAT IT SENDS</div><pre>' + esc(r.task) + '</pre></div>' +
       inputs +
@@ -1692,10 +1729,19 @@ const Marketplace = (() => {
     const r = launchId && hasRecipes() ? Recipes.get(launchId) : null;
     if (!r) { view = 'grid'; return '<div class="mkt-roster">' + rosterHTML() + '</div>'; }
     const who = (ctx && ctx.agentName) || 'your agent';
-    const fields = (r.params || []).map(p =>
-      '<label class="mkt-lbl">' + esc(p.label) +
+    // lane C: prefill each field with the value this recipe launched with LAST time (LaunchMemory, own local key).
+    // Confirm-by-sight safety: the values sit visibly in the form and nothing runs until the button — plus the
+    // hint below names the mechanism. esc() covers the content (U.esc escapes & < > " ', so </textarea> can't break out).
+    const lastVals = (typeof LaunchMemory !== 'undefined' && LaunchMemory.get) ? (LaunchMemory.get(r.id) || {}) : {};
+    let prefilled = false;
+    const fields = (r.params || []).map(p => {
+      const val = (typeof lastVals[p.key] === 'string' && lastVals[p.key].trim()) ? lastVals[p.key] : '';
+      if (val) prefilled = true;
+      return '<label class="mkt-lbl">' + esc(p.label) +
         (p.required ? ' <span class="mkt-req" title="required">*</span>' : ' <span class="mkt-opt">(optional)</span>') +
-        '<textarea class="mkt-in mkt-p-in" data-key="' + esc(p.key) + '" rows="2" placeholder="' + esc(p.placeholder || '') + '"></textarea></label>').join('');
+        '<textarea class="mkt-in mkt-p-in" data-key="' + esc(p.key) + '" rows="2" placeholder="' + esc(p.placeholder || '') + '">' + esc(val) + '</textarea></label>';
+    }).join('');
+    const prefillHint = prefilled ? '<p class="mkt-hint mkt-prefill-hint">↺ using your last inputs — edit anything before you run</p>' : '';
     // MAKE ROUTINE panel — revealed when launchMode==='routine'. Cadence defaults to the recipe's suggested one.
     const outbound = hasRecipes() && Recipes.impliesOutbound(r);
     const warnLine = outbound
@@ -1727,6 +1773,7 @@ const Marketplace = (() => {
       '<div class="mkt-save-h">' + esc((launchMode === 'routine' ? '◷ MAKE ROUTINE — ' : '▸ LAUNCH — ') + r.name) + '</div>' +
       '<p class="mkt-hint">' + esc(r.blurb || r.tagline) + '</p>' +
       (fields || '<p class="mkt-hint">this recipe needs no setup — just launch it.</p>') +
+      prefillHint +
       routinePanel +
       '<p class="mkt-launch-note">' + modeNote + '</p>' +
       acts + '</div>';
@@ -1756,6 +1803,7 @@ const Marketplace = (() => {
       const r = launchId && hasRecipes() ? Recipes.get(launchId) : null;
       if (!r) { view = 'grid'; launchId = null; renderStage(); return; }
       const values = collectLaunchValues(stage, r); if (!values) return;
+      try { if (typeof LaunchMemory !== 'undefined' && LaunchMemory.save) LaunchMemory.save(r.id, values); } catch (_) {}   // lane C: remember what launched
       launchId = null; launchMode = 'run'; launchRecipeNow(r, values);
     });
     // MAKE ROUTINE — reveal the cadence panel (default to the recipe's suggested cadence, else morning).
@@ -1774,6 +1822,7 @@ const Marketplace = (() => {
     if (runAlt) runAlt.addEventListener('click', () => {
       const r = launchId && hasRecipes() ? Recipes.get(launchId) : null; if (!r) return;
       const values = collectLaunchValues(stage, r); if (!values) return;
+      try { if (typeof LaunchMemory !== 'undefined' && LaunchMemory.save) LaunchMemory.save(r.id, values); } catch (_) {}   // lane C: remember what launched
       launchId = null; launchMode = 'run'; launchRecipeNow(r, values);
     });
 
@@ -1808,6 +1857,7 @@ const Marketplace = (() => {
     if (doRoutine) doRoutine.addEventListener('click', () => {
       const r = launchId && hasRecipes() ? Recipes.get(launchId) : null; if (!r) return;
       const values = collectLaunchValues(stage, r); if (!values) return;
+      try { if (typeof LaunchMemory !== 'undefined' && LaunchMemory.save) LaunchMemory.save(r.id, values); } catch (_) {}   // lane C: remember what scheduled
       const schedule = scheduleForLaunchCadence(customIn && customIn.value);
       if (!schedule) { sfx('bad'); note('pick a cadence (or type a custom schedule)', 'bad'); if (customIn) customIn.focus(); return; }
       makeRoutine(r, values, schedule);

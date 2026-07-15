@@ -26,6 +26,14 @@ A.ok(iSeed > 0, 'chat.js consults SeedStore.willPropose() in the post-run beat s
 A.ok(iSuggest < iSeed, 'a seed offer is checked AFTER suggestion (suggestion keeps priority)');
 A.ok(iSeed < iCuriosity, 'a seed offer is checked BEFORE curiosity (seed takes the one beat over a get-to-know-you ask)');
 A.ok(/SeedStore\.propose\(\);\s*return;/.test(chatSrc.slice(iSeed, iCuriosity)), 'a seed offer fires and RETURNS, so curiosity never also runs that task');
+// lane D: the routine nudge sits BETWEEN seed and recruitment/curiosity, with the same early-return discipline.
+const iRoutineNudge = chatSrc.indexOf('RoutineNudgeStore.willPropose()');
+const iRecruit = chatSrc.indexOf('if (maybeRecruit()) return;');
+A.ok(iRoutineNudge > 0, 'chat.js consults RoutineNudgeStore.willPropose() in the post-run beat slot');
+A.ok(iSeed < iRoutineNudge, 'the routine nudge is checked AFTER the seed offer (rarer, more specific asks keep priority)');
+A.ok(iRecruit > 0 && iRoutineNudge < iRecruit, 'the routine nudge is checked BEFORE adaptive recruitment');
+A.ok(iRoutineNudge < iCuriosity, 'the routine nudge is checked BEFORE curiosity');
+A.ok(/RoutineNudgeStore\.propose\(\);\s*return;/.test(chatSrc.slice(iRoutineNudge, iCuriosity)), 'a routine nudge fires and RETURNS, so nothing stacks on that task');
 // the whole gentle-nudge slot stands down when a focused Dialogue panel (First Pitch / awakening / tutorial) is open.
 const iWire = chatSrc.indexOf('function wireCuriosity');
 A.ok(iWire > 0 && chatSrc.slice(iWire, iSuggest).indexOf('Dialogue.isOpen') >= 0, 'wireCuriosity stands down when a focused Dialogue panel is open (guard before any gentle nudge)');

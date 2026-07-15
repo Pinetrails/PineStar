@@ -68,9 +68,20 @@
   }
 
   const USAGE_CAP = 100;   // per-recipe launch counters kept (weakest/oldest evicted past the ceiling)
+  const VERDICTS = ['great', 'ok', 'miss'];   // the rate-the-work vocabulary (mirrors chat.js rateWork; one enum end-to-end)
+
+  // clamp a rated-counter bag to non-negative integers over the known verdicts; anything else hydrates to zeros.
+  function normRated(r) {
+    const out = { great: 0, ok: 0, miss: 0 };
+    if (r && typeof r === 'object') for (const v of VERDICTS) {
+      const n = Number(r[v]);
+      if (Number.isFinite(n) && n > 0) out[v] = Math.floor(n);
+    }
+    return out;
+  }
 
   function fresh(now) {
-    return { v: STATE_VERSION, staged: [], denylist: [], ledger: [], runsSinceMint: 0, lastMintAt: 0, lastKind: '', context: null, usage: { launches: {} } };
+    return { v: STATE_VERSION, staged: [], denylist: [], ledger: [], runsSinceMint: 0, lastMintAt: 0, lastKind: '', context: null, usage: { launches: {} }, coldStartDone: false };
   }
 
   // tolerant hydrate: clamp everything; a corrupt/partial save degrades per-field, never throws.
@@ -88,6 +99,7 @@
           .slice(-LEDGER_CAP)
           .map(e => ({ at: Number.isFinite(e.at) ? Math.floor(e.at) : 0, kind: str(e.kind), outcome: str(e.outcome), reason: str(e.reason).slice(0, 200), title: str(e.title).slice(0, 60) }));
       }
+      if (raw.coldStartDone === true) s.coldStartDone = true;   // lane E: the one-shot day-one mint, spent forever (old saves default false)
       if (Number.isFinite(raw.runsSinceMint) && raw.runsSinceMint >= 0) s.runsSinceMint = Math.floor(raw.runsSinceMint);
       if (Number.isFinite(raw.lastMintAt) && raw.lastMintAt >= 0) s.lastMintAt = Math.floor(raw.lastMintAt);
       if (KINDS.indexOf(raw.lastKind) !== -1) s.lastKind = raw.lastKind;
@@ -99,7 +111,8 @@
           s.usage.launches[str(id).slice(0, 60)] = {
             name: str(u.name).slice(0, 40),
             n: (Number.isFinite(u.n) && u.n > 0) ? Math.floor(u.n) : 0,
-            lastAt: Number.isFinite(u.lastAt) ? Math.floor(u.lastAt) : 0
+            lastAt: Number.isFinite(u.lastAt) ? Math.floor(u.lastAt) : 0,
+            rated: normRated(u.rated)   // outcome counters (lane B); an old save without them hydrates to zeros
           };
         }
       }
@@ -116,11 +129,24 @@
 
   /* decide — should a mint attempt fire NOW, and for which kind? Named bindings for the ledger
      (cold → cooldown → gap → full), most "not earned yet" first. warm comes from interests.warm().
-     kind selection: the kind with FEWER live drafts wins; tie → alternate away from lastKind. */
+     kind selection: the kind with FEWER live drafts wins; tie → alternate away from lastKind.
+
+     COLD-START (lane E): interests take days of use to warm, but a pushed Commander dossier (the awakening's
+     pain/ambition extraction) is real evidence on DAY ONE. When interests are cold, a non-empty dossier buys
+     exactly ONE recipe attempt — forced kind:'recipe' (the personalized recipe is the wow moment) — after at
+     least one qualifying run. The one-shot is spent by the ATTEMPT (stampAttempt {coldStart:true}: staged,
+     rejected, and NONE alike all spend it), so a crash BEFORE the attempt honestly re-arms and a weak draft
+     never earns a retry loop. After that, the normal interests-warmth floor rules again. */
   function decide(state, inp) {
     const now = Number(inp && inp.now) || 0;
     const s = normalize(state, now);
-    if (!(inp && inp.warm)) return { fire: false, binding: 'cold', kind: null };
+    if (!(inp && inp.warm)) {
+      if (inp && inp.dossierWarm && !s.coldStartDone && s.runsSinceMint >= 1) {
+        if (liveCount(s, 'recipe') >= MAX_LIVE) return { fire: false, binding: 'full', kind: null };
+        return { fire: true, binding: null, kind: 'recipe', coldStart: true };
+      }
+      return { fire: false, binding: 'cold', kind: null };
+    }
     if (s.runsSinceMint < MINT_EVERY_RUNS) return { fire: false, binding: 'cooldown', kind: null };
     if (now - s.lastMintAt < MINT_MIN_GAP_MS) return { fire: false, binding: 'gap', kind: null };
     const open = KINDS.filter(k => liveCount(s, k) < MAX_LIVE);
@@ -386,10 +412,14 @@
 
   // a mint ATTEMPT that produced nothing still spends the cadence (counter + stamp) — the scout tried;
   // it must not hammer the model on every following run. The ledger records why via note().
+  // opts.coldStart (lane E): a cold-start attempt also spends the one-shot dossier unlock, whatever its outcome.
   function stampAttempt(state, kind, opts) {
     const now = Number(opts && opts.now) || 0;
     const s = normalize(state, now);
-    return Object.assign({}, s, { runsSinceMint: 0, lastMintAt: now, lastKind: KINDS.indexOf(kind) !== -1 ? kind : s.lastKind });
+    return Object.assign({}, s, {
+      runsSinceMint: 0, lastMintAt: now, lastKind: KINDS.indexOf(kind) !== -1 ? kind : s.lastKind,
+      coldStartDone: s.coldStartDone || !!(opts && opts.coldStart)
+    });
   }
 
   // dismiss: remove the item AND denylist its fingerprint — an equivalent draft never re-mints.
@@ -438,7 +468,7 @@
     const launches = {};
     for (const k of Object.keys(s.usage.launches)) launches[k] = Object.assign({}, s.usage.launches[k]);
     const cur = launches[id];
-    launches[id] = { name: str((rec && rec.name) || (cur && cur.name)).slice(0, 40), n: (cur ? cur.n : 0) + 1, lastAt: now };
+    launches[id] = { name: str((rec && rec.name) || (cur && cur.name)).slice(0, 40), n: (cur ? cur.n : 0) + 1, lastAt: now, rated: normRated(cur && cur.rated) };   // a launch never erases the outcome counters
     // evict past the ceiling: fewest launches first (ties: oldest lastAt) — a long-lived station keeps its heavy hitters.
     const keys = Object.keys(launches);
     if (keys.length > USAGE_CAP) {
@@ -458,10 +488,51 @@
       .map(u => u.name);
   }
 
+  /* ---- outcome telemetry (lane B): rate-the-work verdicts folded per recipe ----
+     The Commander's 👍/👌/👎 on a recipe-launched run is the strongest quality signal there is — it feeds the
+     FOR-YOU rank (frontend rankRecipes outcome term) and the "rated well" hint in the drafting directive.
+     Counters only, never content. A rating on an unseen id still creates its entry (n:0) — a rating implies a
+     launch, but the counters must never silently drop a real verdict just because the launch ping was missed. */
+  function noteRated(state, rec, opts) {
+    const now = Number(opts && opts.now) || 0;
+    const s = normalize(state, now);
+    const id = str(rec && rec.id).slice(0, 60);
+    const verdict = str(rec && rec.verdict);
+    if (!id || VERDICTS.indexOf(verdict) === -1) return s;
+    const launches = {};
+    for (const k of Object.keys(s.usage.launches)) launches[k] = Object.assign({}, s.usage.launches[k]);
+    const cur = launches[id] || { name: '', n: 0, lastAt: 0 };
+    const rated = normRated(cur.rated);
+    rated[verdict] += 1;
+    launches[id] = Object.assign({}, cur, { rated: rated, lastAt: Math.max(cur.lastAt || 0, now) });
+    // same eviction discipline as noteLaunch so a rating on a fresh id can't push usage past the ceiling.
+    const keys = Object.keys(launches);
+    if (keys.length > USAGE_CAP) {
+      keys.sort((a, b) => (launches[b].n - launches[a].n) || (launches[b].lastAt - launches[a].lastAt));
+      for (const k of keys.slice(USAGE_CAP)) delete launches[k];
+    }
+    return Object.assign({}, s, { usage: { launches: launches } });
+  }
+  // the drafting-directive hint (lane B): top-launched names, each annotated when its own ratings say it landed —
+  // "(rated well)" only when the Commander's real verdicts earn it (>=2 great and more great than miss). A new
+  // helper rather than a topLaunched change so the locked names-only contract stays byte-stable for old callers.
+  function launchHints(state, limit) {
+    const s = normalize(state, 0);
+    return Object.keys(s.usage.launches)
+      .map(id => s.usage.launches[id])
+      .filter(u => u.n > 0 && u.name)
+      .sort((a, b) => (b.n - a.n) || (b.lastAt - a.lastAt))
+      .slice(0, Math.max(1, Number(limit) || 5))
+      .map(u => {
+        const r = normRated(u.rated);
+        return (r.great >= 2 && r.great > r.miss) ? (u.name + ' (rated well)') : u.name;
+      });
+  }
+
   return {
     fresh, normalize, noteRun, decide, buildRecipeDirective, parseRecipe,
     matchArchetype, archetypeDraft,
-    note, sweep, stage, stampAttempt, dismiss, accept, setContext, noteLaunch, topLaunched,
+    note, sweep, stage, stampAttempt, dismiss, accept, setContext, noteLaunch, noteRated, topLaunched, launchHints,
     fingerprint, overlap,
     KINDS, MINT_EVERY_RUNS, MINT_MIN_GAP_MS, MAX_LIVE, DRAFT_TTL_MS, LEDGER_CAP, TAG_LANES, CATEGORIES, USAGE_CAP,
     ARCH_MIN_TOPIC_WEIGHT
