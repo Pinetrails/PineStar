@@ -3099,7 +3099,10 @@ const StationUI = (() => {
       // NIGHT SHIFT — the honest live status of the server-owned night shift (NS-4). Every line maps to a field of
       // GET /api/nightshift/status + /api/autonomy/ledger; painted live from the routes (never invented). The
       // decision trail is the scrollable recent act/decline log. Loading/error states are honest, never fake-zero.
-      '<h4 class="ms-h">NIGHT SHIFT <span class="dim">— what it’s doing while you’re away, right now</span></h4>' +
+      '<h4 class="ms-h">NIGHT SHIFT <span class="dim">— works on its own whenever you stop using the station</span></h4>' +
+      // THE AWAY RULE, up front (clarity fix 2026-07-15): "away" read as "app closed" and the panel made no sense.
+      // Painted from panelModel.awayRuleText (the sidecar's REAL idle threshold — never a hardcoded number).
+      '<p class="set-about" id="ns-awayrule"></p>' +
       '<div class="set-row"><span class="dim">STATE</span> <span id="ns-state" class="dim">…</span></div>' +
       '<p class="set-about" id="ns-why"></p>' +
       // MODE — build-vs-draft honesty (status.buildMode/draftReason) + the cold-start readiness bars, so a station
@@ -3404,7 +3407,8 @@ const StationUI = (() => {
     // GET /api/nightshift/status + /api/autonomy/ledger through the PURE nightreport engine (panelModel/trailLine),
     // so every rendered value maps to a route field (truthful telemetry). Fail-open, honest loading/error states.
     if (typeof NightReport !== 'undefined') {
-      const nsState = host.querySelector('#ns-state'), nsWhy = host.querySelector('#ns-why'), nsLeash = host.querySelector('#ns-leash'),
+      const nsAwayRule = host.querySelector('#ns-awayrule'),
+            nsState = host.querySelector('#ns-state'), nsWhy = host.querySelector('#ns-why'), nsLeash = host.querySelector('#ns-leash'),
             nsLast = host.querySelector('#ns-last'), nsNext = host.querySelector('#ns-next'), nsTrail = host.querySelector('#ns-trail'),
             nsMode = host.querySelector('#ns-mode'), nsReadiness = host.querySelector('#ns-readiness'),
             nsFocus = host.querySelector('#ns-focus'), nsSteer = host.querySelector('#ns-steer'),
@@ -3419,10 +3423,11 @@ const StationUI = (() => {
         if (nsState) nsState.classList.toggle('ns-halt', !!m.halted);
         if (!m.reachable) {
           setDim(nsState, m.stateText);        // "station telemetry unreachable" — never a fake 0/3
-          setDim(nsWhy, ''); setDim(nsLeash, '—'); setDim(nsLast, '—'); setDim(nsNext, '—');
+          setDim(nsAwayRule, ''); setDim(nsWhy, ''); setDim(nsLeash, '—'); setDim(nsLast, '—'); setDim(nsNext, '—');
           setDim(nsMode, '—'); setDim(nsReadiness, ''); setDim(nsFocus, '—');
           return;
         }
+        setDim(nsAwayRule, m.awayRuleText || '');
         setDim(nsState, m.stateText);
         setDim(nsWhy, m.why || '');
         // MODE + READINESS honesty: modeText '' (older sidecar / halted model) renders as an em-dash, never a guess;
@@ -3482,16 +3487,20 @@ const StationUI = (() => {
       });
       const paintTrail = (entries) => {
         if (!nsTrail) return;
-        const rows = (Array.isArray(entries) ? entries : []).slice(0, 12);
-        if (!rows.length) { nsTrail.innerHTML = '<p class="set-about">no night-shift decisions yet — nothing has run unattended.</p>'; return; }
-        nsTrail.innerHTML = rows.map(e => '<div class="set-row"><span class="dim">' + esc(NightReport.trailLine(e, tz())) + '</span></div>').join('');
+        // COLLAPSED trail (clarity fix 2026-07-15): the driver records one decision per ~minute, so raw rows were
+        // twelve identical "declined · you were here" lines — pure noise. trailLines groups consecutive same-reason
+        // rows into "4:26–4:37 PM · declined ×12 · …" (every row still derives from real ledger entries).
+        const lines = NightReport.trailLines(Array.isArray(entries) ? entries : [], tz()).slice(0, 12);
+        if (!lines.length) { nsTrail.innerHTML = '<p class="set-about">no night-shift decisions yet — nothing has run unattended.</p>'; return; }
+        nsTrail.innerHTML = lines.map(t => '<div class="set-row"><span class="dim">' + esc(t) + '</span></div>').join('');
       };
       // paint honest "reading…" first, then replace with the live truth (or an honest unreachable/error state).
       const refreshPanel = () => {
         fetch('/api/nightshift/status', { cache: 'no-store' })
           .then(r => r.ok ? r.json() : null).catch(() => null)
           .then(paintPanel);
-        fetch('/api/autonomy/ledger?source=nightshift&limit=12', { cache: 'no-store' })
+        // limit 200 (was 12): collapsing eats duplicates, so 12 raw rows could cover only ~12 minutes of history.
+        fetch('/api/autonomy/ledger?source=nightshift&limit=200', { cache: 'no-store' })
           .then(r => r.ok ? r.json() : null).catch(() => null)
           .then(j => { if (j && Array.isArray(j.entries)) paintTrail(j.entries); else if (nsTrail) nsTrail.innerHTML = '<p class="set-about">the decision trail is unreachable right now.</p>'; });
       };

@@ -26,7 +26,9 @@
   //   posture: the dial itself forbade acting; present: Andrew was here; the rest are transient runtime gates.
   const BINDING_PHRASE = {
     posture: "the dial was below 'build' — I'm not allowed to act unattended",
-    present: 'you were here — the night shift only runs while you’re away',
+    // "present" confused real users (2026-07-15): "while you're away" read as "while the app is closed". It isn't —
+    // away = no clicks/keys for the idle threshold; the app stays open 24/7. Say the actual rule.
+    present: 'you were using the station — it waits until you step away (no clicks or keys for a while); the app stays open',
     halt: 'the emergency stop was engaged — re-set the autonomy dial to lift it',
     leash: 'the daily leash was already spent',
     // NS-2 pre-spend readiness: the station lacks grounded knowledge (a fresh/stale dossier AND too little recent
@@ -68,6 +70,17 @@
 
   // pluralise a count with its noun ("1 beat" / "2 beats"). Pure helper the headline + lines share.
   function plural(n, noun) { return n + ' ' + noun + (n === 1 ? '' : 's'); }
+
+  // THE AWAY RULE, in plain words (clarity fix 2026-07-15): "away" never meant "app closed" — it means no clicks or
+  // keys for status.awayAfterMs. Compose the one sentence that kills that misread, with the REAL threshold when the
+  // sidecar sends it (truthful telemetry — the number is the exact enforced knob, never a hardcoded guess). An older
+  // sidecar without the field still gets the honest rule, just without the number.
+  function awayRuleText(status) {
+    const ms = status && Number(status.awayAfterMs);
+    const mins = (Number.isFinite(ms) && ms > 0) ? Math.round(ms / 60000) : 0;
+    const span = mins > 0 ? (mins + ' min without clicks or keys') : 'a stretch without clicks or keys';
+    return 'Leave the app running — “away” just means ' + span + '. The night shift starts by itself once you stop using the station, and stands down the moment you’re back.';
+  }
 
   // ---- report composition ----------------------------------------------------------------------------------------
   // compose({ status, ledger, drafts, awaySince, nowMs, tzOffsetMin }) → the full morning-report view model, or
@@ -199,6 +212,7 @@
         stateText: '⛔ HALTED — E-STOP engaged',
         why: 'the night shift is stopped and will not run until you re-set the autonomy dial — press any LEVEL or dial button above to lift the halt',
         presence: away ? 'you’re away' : 'you’re present',
+        awayRuleText: awayRuleText(s),
         leashText: leashText,
         leashSpent: leash != null && used >= leash,
         lastBeatText: fmtLocalTime(s.lastBeatAt, tz) || 'no beat yet',
@@ -216,7 +230,8 @@
       halted: false,
       stateText: stateText,
       why: whyOff,
-      presence: away ? 'you’re away' : 'you’re present',
+      presence: away ? 'you’re away — it can act' : 'you’re at the station — it’s waiting',
+      awayRuleText: awayRuleText(s),
       leashText: leashText,
       leashSpent: leash != null && used >= leash,
       lastBeatText: fmtLocalTime(s.lastBeatAt, tz) || 'no beat yet',
@@ -289,5 +304,45 @@
     return when + ' · ' + kind + (tail ? ' · ' + tail : '');
   }
 
-  return { compose, panelModel, trailLine, fmtLocalTime, bindingPhrase, plural, modeText, readinessText, postureOutlook, unseenDrafts, BINDING_PHRASE };
+  // COLLAPSE the decision trail (clarity fix 2026-07-15). The driver honestly records a decision EVERY tick
+  // (~1/min), so a present/leash-bound hour renders as dozens of IDENTICAL "declined · …" rows — which reads as
+  // "this feature is broken". Group CONSECUTIVE rows with the same kind+binding+reason into one entry carrying
+  // count + the span's first/last ts. Pure, order-preserving (expects newest-first, works either way), truthful:
+  // every collapsed row is derived from real ledger rows, nothing is dropped — only summed.
+  function collapseTrail(entries) {
+    const list = Array.isArray(entries) ? entries : [];
+    const out = [];
+    for (const e of list) {
+      if (!e) continue;
+      const prev = out[out.length - 1];
+      const sameRun = prev && prev.kind === e.kind && String(prev.binding || '') === String(e.binding || '') &&
+        String(prev.reason || '') === String(e.reason || '') && e.kind !== 'act';   // acts are never collapsed (each is real work)
+      if (sameRun) {
+        prev.count += 1;
+        const ts = Number(e.ts) || 0;
+        if (ts < prev.spanFromTs || !prev.spanFromTs) prev.spanFromTs = ts;
+        if (ts > prev.ts) prev.ts = ts;   // the row keeps the NEWEST ts (what "when" means for a span)
+      } else {
+        out.push(Object.assign({}, e, { count: 1, spanFromTs: Number(e.ts) || 0 }));
+      }
+    }
+    return out;
+  }
+
+  // the display strings for a collapsed trail: a single row renders exactly like trailLine (locked format); a
+  // span renders "4:26–4:37 PM · declined ×12 · <reason>" — one line instead of twelve identical ones.
+  function trailLines(entries, tzOffsetMin) {
+    return collapseTrail(entries).map(e => {
+      if (!e.count || e.count === 1) return trailLine(e, tzOffsetMin);
+      const from = fmtLocalTime(e.spanFromTs, tzOffsetMin) || '—';
+      const to = fmtLocalTime(e.ts, tzOffsetMin) || '—';
+      const kind = e.kind === 'decline' ? 'declined' : (e.kind === 'act' ? 'acted' : 'noted');
+      let tail = '';
+      if (e.kind === 'decline') tail = bindingPhrase(e.binding);
+      else tail = e.reason || (e.detail && e.detail.title) || '';
+      return from + '–' + to + ' · ' + kind + ' ×' + e.count + (tail ? ' · ' + tail : '');
+    });
+  }
+
+  return { compose, panelModel, trailLine, collapseTrail, trailLines, awayRuleText, fmtLocalTime, bindingPhrase, plural, modeText, readinessText, postureOutlook, unseenDrafts, BINDING_PHRASE };
 });

@@ -193,6 +193,33 @@ A.eq(NR.trailLine({ ts: T0610Z, kind: 'decline', binding: 'leash' }, -300), '1:1
 A.eq(NR.trailLine({ ts: T0610Z, kind: 'act', detail: { title: 'Wrote X' } }, -300), '1:10 AM · acted · Wrote X', 'an act row names the title from detail');
 A.ok(/noted/.test(NR.trailLine({ ts: T0610Z, kind: 'note', reason: 'delivered' }, -300)), 'a note row renders its reason');
 
+/* ---------- collapseTrail()/trailLines(): the per-tick decline spam collapses to one honest span (2026-07-15) ----------
+   The driver records a decision every ~minute; the panel used to print 12 identical "declined · you were here"
+   rows, which read as broken. Consecutive same-kind+binding rows collapse; acts NEVER collapse (each is real work). */
+const M = 60000;
+const spamTrail = [];   // newest-first: 12 present-declines a minute apart, then an act, then 2 leash-declines
+for (let i = 0; i < 12; i++) spamTrail.push({ ts: T0610Z - i * M, kind: 'decline', binding: 'present' });
+spamTrail.push({ ts: T0610Z - 12 * M, kind: 'act', detail: { title: 'Wrote X' } });
+spamTrail.push({ ts: T0610Z - 13 * M, kind: 'decline', binding: 'leash' });
+spamTrail.push({ ts: T0610Z - 14 * M, kind: 'decline', binding: 'leash' });
+const collapsed = NR.collapseTrail(spamTrail);
+A.eq(collapsed.length, 3, '12 present-declines + 1 act + 2 leash-declines → 3 rows');
+A.eq(collapsed[0].count, 12, 'the present-decline span carries its true count');
+A.eq(collapsed[0].ts, T0610Z, 'a span keeps the NEWEST ts');
+A.eq(collapsed[0].spanFromTs, T0610Z - 11 * M, 'a span keeps the OLDEST ts as its start');
+A.eq(collapsed[2].count, 2, 'the leash-decline pair collapses too');
+const spamLines = NR.trailLines(spamTrail, -300);
+A.ok(/×12/.test(spamLines[0]) && /–/.test(spamLines[0]), 'a span line shows a time RANGE and ×count');
+A.eq(NR.trailLines([{ ts: T0610Z, kind: 'decline', binding: 'leash' }], -300)[0], NR.trailLine({ ts: T0610Z, kind: 'decline', binding: 'leash' }, -300), 'a single row renders exactly like trailLine (locked format)');
+A.eq(NR.collapseTrail([{ ts: 1, kind: 'act', detail: { title: 'a' } }, { ts: 2, kind: 'act', detail: { title: 'b' } }]).length, 2, 'acts never collapse — each is a real piece of work');
+A.eq(NR.collapseTrail(null).length, 0, 'a non-array trail → [] (fail-open)');
+
+/* ---------- awayRuleText(): the plain-words away rule, with the REAL enforced threshold ---------- */
+A.ok(/15 min/.test(NR.awayRuleText({ awayAfterMs: 900000 })), 'the rule states the sidecar-enforced threshold (15 min)');
+A.ok(/clicks or keys/i.test(NR.awayRuleText({})), 'an older sidecar without the field still states the rule (no number, never a guess)');
+A.ok(/leave the app running/i.test(NR.awayRuleText({ awayAfterMs: 900000 })), 'the rule kills the "app must be closed" misread head-on');
+A.ok(NR.panelModel({ status: { active: true, away: false, beatsUsedToday: 0, leashPerDay: 3, awayAfterMs: 900000 }, tzOffsetMin: 0 }).awayRuleText.indexOf('15 min') >= 0, 'panelModel surfaces the away rule');
+
 /* ---------- postureOutlook(): the honest dial-raise feedback (NS visibility 2026-07-13) ----------
    The instant the Commander raises the autonomy dial (awakening cadence beat / station panel), one honest line
    from the LIVE status says what a beat will actually do while they're away + how far the station is from acting. */
