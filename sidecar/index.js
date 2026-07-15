@@ -4353,6 +4353,7 @@ function dispatchRoute(req, res) {
   if (req.method === 'GET' && req.url.split('?')[0] === '/api/workshop/backlog') return handleWorkshopBacklog(req, res);
   if (req.method === 'GET' && req.url.split('?')[0] === '/api/workshop/pending') return handleWorkshopPending(req, res);
   if (req.method === 'POST' && req.url === '/api/workshop/decide') return handleWorkshopDecide(req, res);
+  if (req.method === 'POST' && req.url === '/api/workshop/remove') return handleWorkshopRemove(req, res);
   if (req.method === 'POST' && req.url === '/api/workshop/shift') return handleWorkshopShiftNow(req, res);
   // ---- QUEST V2 §A: the harness-owned quest ledger (frontend polls /api/quests on the existing 1s tick) ----
   if (req.method === 'GET' && req.url.split('?')[0] === '/api/quests') return handleQuestsList(req, res);
@@ -5729,18 +5730,23 @@ async function runWorkshopShift(agentId, opts) {
   const o = opts || {};
   const id = String(agentId || '');
   if (!/^[A-Za-z0-9_-]{1,40}$/.test(id)) return { fired: false, reason: 'bad-agent' };
-  if (!workshopOf(id)) return { fired: false, reason: 'not-granted' };   // grant revoked between arm and fire
+  // SHIFT HEALTH (2026-07-15 UX audit): every exit path records an honest lastShift outcome in the durable
+  // store, so the away card can distinguish "waiting" from "broken" — the old behavior was total silence
+  // (a keyless station no-op'd every 6h forever while the toggle read ON). Best-effort, never blocks the shift.
+  const noteShift = (info) => { try { workshopStore.setLastShift(id, Object.assign({ at: Date.now() }, info)).catch(() => {}); } catch (_) {} };
+  if (!workshopOf(id)) { noteShift({ reason: 'not-granted' }); return { fired: false, reason: 'not-granted' }; }   // grant revoked between arm and fire
   const runId = o.runId || crypto.randomUUID();
   // pass isRunLive so a zombie claim (a buildingRunId left by a crashed shift) is reaped in the SAME locked
   // claim, freeing an item that would otherwise look perpetually in-flight and mute this agent's backlog forever.
   const item = await workshopStore.claimNext(id, runId, isRunLive);
-  if (!item) return { fired: false, reason: 'empty-backlog' };           // nothing to build → silent no-op
+  if (!item) { noteShift({ reason: 'empty-backlog' }); return { fired: false, reason: 'empty-backlog' }; }   // nothing to build → quiet, but recorded
 
   const model = cronModelFor({ agentId: id });
   const provider = cronProviderFor({ agentId: id });
   const key = cronKeyFor(provider);
   if (!model || !cronHasCredential(provider, key)) {
     await workshopStore.releaseClaim(id, runId);                          // couldn't run → return the item to the queue
+    noteShift({ reason: 'no-capability', title: item.title });
     return { fired: false, reason: 'no-capability' };
   }
 
@@ -5776,9 +5782,11 @@ async function runWorkshopShift(agentId, opts) {
     // failed build → count the attempt; at the cap the item PARKS so a doomed item can't burn a run every shift.
     const rel = await workshopStore.releaseClaim(id, runId, { failed: true });
     if (rel && rel.parked) console.warn('[workshop] parked "' + (rel.parked.title || rel.parked.id) + '" for ' + id + ' after ' + rel.parked.attempts + ' failed builds — it will not be retried; re-queue it to try again.');
+    noteShift({ reason: threw ? 'run-failed' : 'no-manifest', runId: runId, title: item.title, parkedTitle: (rel && rel.parked) ? (rel.parked.title || rel.parked.id) : undefined });
     return { fired: true, runId: runId, reason: threw ? 'run-failed' : 'no-manifest', parked: !!(rel && rel.parked) };
   }
   await workshopStore.markBuilt(id, item.id, runId);
+  noteShift({ reason: 'built', runId: runId, title: manifest.title });
   try { chanEmit('workshop.built', { agentId: id, runId: runId, manifest: manifest }); } catch (_) {}
   return { fired: true, runId: runId, reason: 'built', manifest: manifest };
 }
@@ -5975,7 +5983,38 @@ async function handleWorkshopBacklog(req, res) {
   const agentId = String((new URL(req.url, 'http://x')).searchParams.get('agent') || '');
   if (!/^[A-Za-z0-9_-]{1,40}$/.test(agentId)) return json(400, { error: 'choose a valid agent' });
   let rec; try { rec = workshopStore.read(agentId); } catch (e) { return json(500, { error: 'could not read the backlog' }); }
-  json(200, { ok: true, agentId: agentId, granted: rec.grant, backlog: rec.backlog });
+  // AWAY-CARD TRUTH (2026-07-15 UX audit): the queue was invisible — no state, no cadence, no health. Derive
+  // each item's honest state from the stored record (never a synthesized status), and surface the shift's
+  // schedule + next fire + last outcome so "waiting" is distinguishable from "broken".
+  const MAX_ATTEMPTS = 2;   // mirrors workshop-store MAX_BUILD_ATTEMPTS (claimNext parks at this count)
+  const items = rec.backlog.map(b => ({
+    id: b.id, title: b.title || '', source: b.source || 'queued', ts: b.ts || 0,
+    state: b.builtRunId ? 'built' : (b.buildingRunId ? 'building' : ((Number(b.attempts) || 0) >= MAX_ATTEMPTS ? 'parked' : 'queued')),
+    builtRunId: b.builtRunId || undefined,
+    attempts: Number(b.attempts) || 0
+  }));
+  const routine = findWorkshopRoutine(agentId);
+  json(200, {
+    ok: true, agentId: agentId, granted: rec.grant, backlog: rec.backlog,
+    items: items,
+    nextShiftAt: (routine && routine.enabled && routine.nextRunAt) || null,
+    shiftEvery: WORKSHOP_SHIFT_SCHEDULE,
+    lastShift: rec.lastShift || null
+  });
+}
+
+// POST /api/workshop/remove { agentId, backlogId } — take an UN-BUILT idea off the queue ("changed my mind"),
+// WITHOUT the discard denylist (removing a queued idea is not "never propose this work again"). A built item
+// is refused: its files exist, so it must be decided from its delivery session (keep/discard).
+async function handleWorkshopRemove(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 1 << 14)) || {}; } catch (e) { return json(400, { error: 'bad request' }); }
+  const agentId = String(body.agentId || '');
+  if (!/^[A-Za-z0-9_-]{1,40}$/.test(agentId)) return json(400, { error: 'choose a valid agent' });
+  let r; try { r = await workshopStore.remove(agentId, String(body.backlogId || '')); } catch (e) { return json(500, { error: 'could not update the queue' }); }
+  if (r.removed) return json(200, { ok: true, removed: true });
+  if (r.reason === 'built') return json(409, { ok: false, error: 'that one is already built — review it from its session (Implement / Discard) instead' });
+  return json(404, { ok: false, error: 'that idea is no longer on the queue' });
 }
 
 // GET /api/workshop/pending?agent=<id> — undecided deliverable manifests (built, not yet kept/discarded/dismissed).
@@ -5989,7 +6028,11 @@ async function handleWorkshopPending(req, res) {
   for (const it of rec.backlog) {
     if (!it.builtRunId) continue;
     const man = await validateWorkshopManifest(agentId, it.builtRunId);   // re-prove it still exists
-    if (man) out.push(man);
+    if (!man) continue;
+    // pre-click consequence (2026-07-15 UX audit): resolve NOW, against the current blessed roots, what an
+    // Implement would do — so the card states "apply to a branch in X" vs "save files to Y" before the click.
+    try { man.implementPlan = workshopImplementPlan(man); } catch (_) {}
+    out.push(man);
   }
   json(200, { ok: true, agentId: agentId, pending: out });
 }
@@ -6042,6 +6085,33 @@ async function applyNightPatch(agentId, runId, relDir, target, title) {
   if (!commit.ok) return { ok: false, error: 'applied the patch but could not commit it:\n' + String(commit.stderr).slice(0, 300), branch };
   const head = await runGit(root, ['rev-parse', '--short', 'HEAD']);
   return { ok: true, branch, commit: head.stdout.trim(), root, prevBranch: curBranch };
+}
+
+// the DEFAULT Implement destination for a file deliverable (no folder picker on the simplified card):
+// <Desktop or home>/StarNet deliverables/<title-slug>-<runId8>. ONE function, used by BOTH the pre-click
+// plan preview (workshopImplementPlan) and the actual keep copy — so what the card promises is byte-identical
+// to where the files land.
+function workshopDefaultDest(man, runId) {
+  const home = os.homedir();
+  let base = path.join(home, 'Desktop');
+  try { if (!fs.existsSync(base)) base = home; } catch (_) { base = home; }
+  const slug = String((man && man.title) || 'deliverable').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'deliverable';
+  const runTag = String(runId || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 8) || 'run';
+  return path.join(base, 'StarNet deliverables', slug + '-' + runTag);
+}
+
+// what Implement (decide keep) WILL actually do for this manifest, resolved against the CURRENT blessed
+// roots — attached to every /api/workshop/pending row so the card states the consequence BEFORE the click
+// (2026-07-15 UX audit: an unblessed patch silently fell back to a file copy that read as an apply).
+//   { action:'apply', root }                                    — patch applies to a NEW branch in root
+//   { action:'copy',  dest, patchRefused? }                     — files land in dest; patchRefused carries the
+//                                                                 honest reason a patch deliverable can't apply
+function workshopImplementPlan(man) {
+  const t = nightpatch.patchTargetFrom(man, blessedRoots(), { winish: path.sep === '\\' });
+  if (t.ok) return { action: 'apply', root: t.root };
+  const plan = { action: 'copy', dest: workshopDefaultDest(man, man && man.runId) };
+  if (man && man.kind === 'patch') plan.patchRefused = t.reason || 'cannot apply this patch';
+  return plan;
 }
 
 // POST /api/workshop/decide { agentId, runId, decision: 'keep'|'discard'|'later', destPath? } — the return-card's
@@ -6099,20 +6169,12 @@ async function handleWorkshopDecide(req, res) {
   // ordinary file deliverable: copy the real files out to destPath — an interactive, user-initiated action
   // (they clicked Implement/Keep), so it writes OUTSIDE the jail by design. We only copy proven files and never
   // touch anything but destPath.
-  // NO destPath (the simplified card has no folder picker, 2026-07-15) → a DEFAULT per-deliverable folder the
-  // Commander can actually find: <Desktop or home>/StarNet deliverables/<title-slug>-<runId8>. The response
-  // reports the real destPath so the card states exactly where the files landed (server truth, never a guess).
+  // NO destPath (the simplified card has no folder picker, 2026-07-15) → the SAME default folder the pending
+  // plan previewed (workshopDefaultDest — one function, promise == reality). The response reports the real
+  // destPath so the card states exactly where the files landed (server truth, never a guess).
   let destPath = String(body.destPath || '');
   let defaulted = false;
-  if (!destPath) {
-    const home = os.homedir();
-    let base = path.join(home, 'Desktop');
-    try { if (!fs.existsSync(base)) base = home; } catch (_) { base = home; }
-    const slug = String(man.title || 'deliverable').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'deliverable';
-    const runTag = String(runId).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 8) || 'run';
-    destPath = path.join(base, 'StarNet deliverables', slug + '-' + runTag);
-    defaulted = true;
-  }
+  if (!destPath) { destPath = workshopDefaultDest(man, runId); defaulted = true; }
   // SAFE-BY-DEFAULT: copy with COPYFILE_EXCL so Keep never silently clobbers a file the user already has at
   // destPath. An explicit body.overwrite:true opts into the old replace behavior. The common happy path (a
   // fresh folder, or filenames that don't collide) is unaffected — EXCL only fires on a real pre-existing file,
@@ -6146,7 +6208,12 @@ async function handleWorkshopDecide(req, res) {
   // rollback net covers the agent's workspace — the copy-out is additive to a user-chosen empty folder (COPYFILE_EXCL).
   nightshiftDecideLearn(agentId, runId, true);
   try { chanEmit('workshop.decided', { agentId, runId, decision: 'keep', destPath: destPath }); } catch (_) {}
-  json(200, { ok: true, decision: 'keep', destPath: destPath, copied: copied, opened: opened });
+  // PATCH FALLBACK HONESTY (2026-07-15 UX audit): a patch deliverable that couldn't apply (unblessed target /
+  // no targetRoot) reaches here as a plain file copy. Say so in the response — the card must never let a
+  // saved-but-NOT-applied patch read as "implemented into your project".
+  const out = { ok: true, decision: 'keep', destPath: destPath, copied: copied, opened: opened };
+  if (man.kind === 'patch') { out.savedOnly = true; out.patchRefused = patchTarget.reason || 'could not apply this patch'; }
+  json(200, out);
 }
 
 // ---- W7: OPEN the deliverable, don't display its code ------------------------------------------------------------

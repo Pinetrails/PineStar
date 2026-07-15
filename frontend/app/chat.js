@@ -2070,46 +2070,63 @@ const Chat = (() => {
       r.body.appendChild(tryRow);
     }
 
-    // ── the files — clicking a file OPENS it (W7), it does not dump source; "view source" stays opt-in ──
+    // ── the files — every row's click ACTUALLY WORKS (2026-07-15 UX audit: the old "open in your default
+    // app" affordance was a guaranteed dead end — OS-launch is deliberately impossible from a run). Now:
+    //   .html and browser-renderable media → the jailed /workshop-run/ tab (runs/renders read-only);
+    //   everything else → the inline reader, right here in the card. No promise the station can't keep.
+    const TAB_RE = /\.(html?|png|jpe?g|gif|webp|svg|mp4|webm|mp3|wav|txt|csv|log|json)$/i;
     const fb = document.createElement('div'); fb.className = 'ws-pane ws-files';
     const fhead = document.createElement('div'); fhead.className = 'ws-fhead'; fhead.textContent = 'files';
     fb.appendChild(fhead);
     const list = document.createElement('div'); list.className = 'ws-flist';
-    const view = document.createElement('pre'); view.className = 'ws-fview'; view.hidden = true;   // hidden until "view source"
+    const view = document.createElement('pre'); view.className = 'ws-fview'; view.hidden = true;   // hidden until a file is viewed inline
     if (!files.length) { const e = document.createElement('div'); e.className = 'dim'; e.textContent = '(no files listed)'; list.appendChild(e); }
+    const viewInline = async (b, relPath) => {
+      list.querySelectorAll('.ws-file.sel').forEach(x => x.classList.remove('sel'));
+      b.classList.add('sel');
+      view.hidden = false; view.textContent = 'loading…';
+      let content = '';
+      try { content = opts.readFile ? await opts.readFile(agentId, m.runId, relPath) : ''; } catch (_) { content = ''; }
+      view.textContent = content || '(no preview available)';
+      autoscroll();
+    };
     files.forEach(f => {
       if (!f || !f.path) return;
-      const isHtml = /\.html?$/i.test(f.path);
+      const inTab = TAB_RE.test(f.path);
       const rowEl = document.createElement('div'); rowEl.className = 'ws-filerow';
-      // the file itself = the OPEN affordance (primary). Label says plainly what a click does.
       const b = document.createElement('button'); b.className = 'ws-file'; b.type = 'button';
       b.textContent = f.path + (f.bytes != null ? '  ·  ' + f.bytes + 'B' : '');
-      b.title = isHtml ? 'run this file in a new tab' : 'open this file in your default app';
-      b.onclick = async () => {
-        if (isHtml) { openRunTab(f.path); return; }
-        b.disabled = true; const was = b.textContent; b.textContent = 'opening…';
-        let res = null; try { res = opts.openFile ? await opts.openFile(f.path) : { ok: false }; } catch (_) { res = { ok: false }; }
-        b.disabled = false; b.textContent = was;
-        if (!res || !res.ok) localLine('Could not open that file: ' + ((res && res.error) || 'the station refused') + '.');
-      };
+      b.title = inTab ? 'open this file in a new tab' : 'read this file here';
+      b.onclick = () => { if (inTab) openRunTab(f.path); else viewInline(b, f.path); };
       rowEl.appendChild(b);
-      // demoted "view source" — the inline code reader, opt-in.
-      const src = document.createElement('button'); src.className = 'ws-viewsrc'; src.type = 'button'; src.textContent = 'view source';
-      src.title = 'show this file’s code inline';
-      src.onclick = async () => {
-        list.querySelectorAll('.ws-file.sel').forEach(x => x.classList.remove('sel'));
-        b.classList.add('sel');
-        view.hidden = false; view.textContent = 'loading…';
-        let content = '';
-        try { content = opts.readFile ? await opts.readFile(agentId, m.runId, f.path) : ''; } catch (_) { content = ''; }
-        view.textContent = content || '(no preview available)';
-        autoscroll();
-      };
-      rowEl.appendChild(src);
+      if (inTab) {   // a tab-openable file keeps the inline reader as the opt-in secondary (read the code without leaving)
+        const src = document.createElement('button'); src.className = 'ws-viewsrc'; src.type = 'button'; src.textContent = 'view source';
+        src.title = 'show this file’s contents inline';
+        src.onclick = () => viewInline(b, f.path);
+        rowEl.appendChild(src);
+      }
       list.appendChild(rowEl);
     });
     fb.appendChild(list); fb.appendChild(view);
     r.body.appendChild(fb);
+
+    // ── WHAT IMPLEMENT WILL DO — the server-resolved plan (current blessed roots), stated BEFORE the click.
+    // A patch that can't auto-apply is the loudest case: the old card let "files saved" read as an apply.
+    const plan = (m.implementPlan && typeof m.implementPlan === 'object') ? m.implementPlan : null;
+    if (plan && plan.action === 'apply') {
+      const pl = document.createElement('div'); pl.className = 'ws-line ws-plan';
+      pl.textContent = 'implement → applies this patch to a NEW branch in ' + plan.root + ' (your current branch is untouched)';
+      r.body.appendChild(pl);
+    } else if (plan && m.kind === 'patch') {
+      const pl = document.createElement('div'); pl.className = 'ws-line ws-capture-warn';
+      pl.textContent = '⚠ this patch can’t be auto-applied (' + (plan.patchRefused || 'no valid target') + '). '
+        + 'The button below only SAVES the .patch file — bless the target project in PROJECTS to enable auto-apply.';
+      r.body.appendChild(pl);
+    } else if (plan && plan.dest) {
+      const pl = document.createElement('div'); pl.className = 'ws-line ws-plan';
+      pl.textContent = 'implement → saves the files to ' + plan.dest;
+      r.body.appendChild(pl);
+    }
 
     // ── decide: an optional message + Implement / Later / Discard ──
     const acts = document.createElement('div'); acts.className = 'turnin-rate ws-acts';
@@ -2121,13 +2138,36 @@ const Chat = (() => {
     acts.appendChild(msgInput);
 
     let settled = false;
-    const settle = (label, isDeny) => {
+    // settle: flash the outcome on the card, then the card leaves and ONE honest line stays in the feed.
+    // destPath (when the decision landed files) adds copy-path / reveal-folder chips to that line — the old
+    // flow stranded the user with a long un-clickable path (2026-07-15 UX audit).
+    const settle = (label, isDeny, destPath) => {
       if (settled) return; settled = true;
       acts.remove();
       const tag = document.createElement('span'); tag.className = 'consent-result' + (isDeny ? ' err' : ''); tag.textContent = label;
       r.body.appendChild(tag);
-      // flash the outcome, then the decided card leaves; ONE honest line stays in the session feed
-      setTimeout(() => { vanish(r.d); if (inOwnSession()) localLine(label); }, 900);
+      setTimeout(() => {
+        vanish(r.d);
+        if (!inOwnSession()) return;
+        const lr = row('system'); lr.body.textContent = label;
+        if (destPath) {
+          const chips = document.createElement('span'); chips.className = 'consent-btns ws-destchips';
+          const cp = document.createElement('button'); cp.className = 'consent-btn'; cp.textContent = 'copy path';
+          cp.onclick = () => {
+            const done = () => { cp.textContent = 'copied ✓'; setTimeout(() => { cp.textContent = 'copy path'; }, 1400); };
+            try { navigator.clipboard.writeText(destPath).then(done, done); } catch (_) { done(); }
+          };
+          chips.appendChild(cp);
+          const core = tauriCore();   // desktop shell only — a real Explorer/Finder reveal exists there
+          if (core && core.invoke) {
+            const rv = document.createElement('button'); rv.className = 'consent-btn'; rv.textContent = '📂 open folder';
+            rv.onclick = () => { Promise.resolve(core.invoke('starnet_reveal_path', { path: destPath })).catch(() => { rv.textContent = 'could not open'; setTimeout(() => { rv.textContent = '📂 open folder'; }, 1600); }); };
+            chips.appendChild(rv);
+          }
+          lr.body.appendChild(chips);
+        }
+        autoscroll();
+      }, 900);
     };
     const sendNote = () => {   // the optional typed message → a REAL user turn in this session
       const msg = String(msgInput.value || '').trim();
@@ -2136,22 +2176,28 @@ const Chat = (() => {
     };
     const decideNote = (label) => { try { if (opts.noteDecision) opts.noteDecision(label); } catch (_) {} };
 
-    // IMPLEMENT — decide keep. The sidecar does the real thing for the deliverable's kind: a patch deliverable
-    // applies to a NEW branch in the blessed repo; anything else lands in the default deliverables folder.
-    // No folder picking — the result line reports exactly where it went (server truth, never a guess).
-    const implBtn = document.createElement('button'); implBtn.className = 'consent-btn'; implBtn.textContent = 'Implement';
-    implBtn.title = 'accept this work — apply it (patch → new branch; files → your deliverables folder)';
+    // IMPLEMENT — decide keep. The label states the plan's REAL consequence (apply vs save), and the outcome
+    // line is driven by the server's response: an apply says branch+repo; a patch that could only be SAVED
+    // never reads as "implemented" (res.savedOnly — the fallback-honesty fields from handleWorkshopDecide).
+    const patchSaveOnly = !!(plan && m.kind === 'patch' && plan.action !== 'apply');
+    const implBtn = document.createElement('button'); implBtn.className = 'consent-btn';
+    implBtn.textContent = patchSaveOnly ? 'Save patch file' : 'Implement';
+    implBtn.title = (plan && plan.action === 'apply') ? ('applies this patch to a new branch in ' + plan.root)
+      : patchSaveOnly ? 'saves the .patch file only — it will NOT be applied to your project'
+      : ('saves the files to ' + ((plan && plan.dest) || 'your StarNet deliverables folder'));
     implBtn.onclick = async () => {
       if (implBtn.disabled) return;
-      implBtn.disabled = true; implBtn.textContent = 'implementing…';
+      implBtn.disabled = true; implBtn.textContent = patchSaveOnly ? 'saving…' : 'implementing…';
       let res = null; try { res = await onDecide('keep'); } catch (_) { res = { ok: false }; }
       if (res && res.ok) {
         const done = res.applied
           ? ('✓ implemented — applied to branch ' + (res.branch || '?') + (res.root ? (' in ' + res.root) : ''))
-          : ('✓ implemented — files saved to ' + (res.destPath || 'your StarNet deliverables folder'));
-        decideNote(done); sendNote(); settle(done, false);
+          : res.savedOnly
+            ? ('⚠ patch file saved to ' + (res.destPath || 'your StarNet deliverables folder') + ' — NOT applied to your project')
+            : ('✓ implemented — files saved to ' + (res.destPath || 'your StarNet deliverables folder'));
+        decideNote(done); sendNote(); settle(done, false, res.applied ? '' : (res.destPath || ''));
       } else {
-        implBtn.disabled = false; implBtn.textContent = 'Implement';
+        implBtn.disabled = false; implBtn.textContent = patchSaveOnly ? 'Save patch file' : 'Implement';
         localLine('Could not implement this: ' + ((res && res.error) || 'the station refused') + '.');
       }
     };
@@ -2162,14 +2208,17 @@ const Chat = (() => {
     laterBtn.onclick = async () => { try { await onDecide('later'); } catch (_) {} sendNote(); settle('↩ left in the workshop — reopen this session any time to decide', false); };
     acts.appendChild(laterBtn);
 
-    // DISCARD — the ONE confirm (single click to arm, second to confirm). decide discard → wipe + denylist.
+    // DISCARD — the ONE confirm (single click to arm, second to confirm). Honest about its weight: discard
+    // wipes the files AND denylists the idea so it is never rebuilt or re-proposed (UX audit: the old confirm
+    // undersold a permanent decision).
     const discardBtn = document.createElement('button'); discardBtn.className = 'consent-btn deny'; discardBtn.textContent = 'Discard';
+    discardBtn.title = 'delete these files and never rebuild or re-propose this idea';
     let armed = false;
     discardBtn.onclick = async () => {
-      if (!armed) { armed = true; discardBtn.textContent = 'Discard — sure?'; setTimeout(() => { if (!settled) { armed = false; discardBtn.textContent = 'Discard'; } }, 4000); return; }
+      if (!armed) { armed = true; discardBtn.textContent = 'Discard forever?'; setTimeout(() => { if (!settled) { armed = false; discardBtn.textContent = 'Discard'; } }, 4000); return; }
       discardBtn.disabled = true;
       let res = null; try { res = await onDecide('discard'); } catch (_) { res = { ok: false }; }
-      if (res && res.ok) { const done = '✕ discarded'; decideNote(done); sendNote(); settle(done, true); }
+      if (res && res.ok) { const done = '✕ discarded — this idea won’t be rebuilt or re-proposed'; decideNote(done); sendNote(); settle(done, true); }
       else { discardBtn.disabled = false; armed = false; discardBtn.textContent = 'Discard'; localLine('Could not discard this: ' + ((res && res.error) || 'the station kept it') + '.'); }
     };
     acts.appendChild(discardBtn);

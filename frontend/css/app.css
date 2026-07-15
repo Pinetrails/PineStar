@@ -606,6 +606,10 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 .ws-acts { margin-top:8px; gap:6px 8px; align-items:center; flex-wrap:wrap; }
 /* the optional tell-the-agent message — rides the decision as a real user turn in the delivery session */
 .ws-msg { width:260px; max-width:100%; }
+/* the pre-click consequence line ("implement → applies to a new branch in …") — gold, it IS the consent copy */
+.workshop-return .ws-plan { color:var(--gold); font-size:12px; }
+/* copy-path / open-folder chips on the decided outcome line */
+.ws-destchips { display:inline-flex; gap:6px; margin-left:8px; vertical-align:middle; }
 /* per-command verification detail: the actual commands run + each one's pass/fail from the manifest */
 .ws-verdetail { margin-top:6px; }
 .ws-verdetail > .ws-k { display:block; color:var(--gold); font-size:10px; letter-spacing:1px; text-transform:uppercase; margin-bottom:3px; }
@@ -1810,6 +1814,9 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 /* LIVE: a run is in flight on this stream (phosphor pulse), or it is paused awaiting your approval (gold pulse) */
 .ws-dot.running { background: var(--ph-bright); animation: wsPulse 1.15s ease-in-out infinite; }
 .ws-dot.attn { background: var(--gold); animation: wsPulse 1.15s ease-in-out infinite; }
+/* an idle-built deliverable awaiting review — gold, steady (a decision owed, not a live run) */
+.ws-dot.review { background: var(--gold); box-shadow: 0 0 6px rgba(var(--gold-rgb), .55); }
+.ws-dot.review ~ .ws-meta { color: var(--gold); letter-spacing: .5px; }
 @keyframes wsPulse {
   0%, 100% { opacity: 1; box-shadow: 0 0 7px var(--ph-glow); }
   50% { opacity: .3; box-shadow: 0 0 2px var(--ph-glow); }

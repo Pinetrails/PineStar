@@ -52,11 +52,15 @@ const NightReportStore = (() => {
     if (!(awaySince > 0 && (now - awaySince) >= MIN_AWAY_MS)) return;   // no real absence → no beat
 
     // fetch the three surfaces in parallel; scope drafts/ledger to the away window server-side where we can.
-    const [status, ledgerRes, draftsRes] = await Promise.all([
+    // PLUS (2026-07-15 UX audit): the undecided workshop deliverables — the one thing a returning Commander
+    // actually has to act on was the one thing the morning report never mentioned.
+    const [status, ledgerRes, draftsRes, pendingRes] = await Promise.all([
       getJSON('/api/nightshift/status'),
       getJSON('/api/autonomy/ledger?source=nightshift&limit=200'),
-      getJSON('/api/nightshift/drafts?since=' + encodeURIComponent(awaySince) + '&limit=20')
+      getJSON('/api/nightshift/drafts?since=' + encodeURIComponent(awaySince) + '&limit=20'),
+      getJSON('/api/workshop/pending?agent=' + encodeURIComponent(agentId))
     ]);
+    const pendingBuilds = (pendingRes && Array.isArray(pendingRes.pending)) ? pendingRes.pending.filter(p => p && p.runId) : [];
     // status being null is tolerable (the report can still list acts/declines from the ledger); an entirely
     // unreachable station (no ledger AND no drafts) → nothing to compose, so no beat.
     const ledger = (ledgerRes && Array.isArray(ledgerRes.entries)) ? ledgerRes.entries : [];
@@ -65,8 +69,12 @@ const NightReportStore = (() => {
     const tz = tzOffsetMin();
     let report;
     try { report = NightReport.compose({ status, ledger, drafts, awaySince, nowMs: now, tzOffsetMin: tz }); }
-    catch (_) { return; }
-    if (!report || !report.hasReport) return;   // nothing acted AND nothing suppressed → no beat (never a nag)
+    catch (_) { report = null; }
+    // fire when the NIGHT SHIFT has a story OR builds are waiting for review (2026-07-15 UX audit: a workshop
+    // shift that built things while the night shift idled produced a silent morning — the one moment the
+    // Commander actually reads a summary said nothing about the work owed to them). Neither → no beat, never a nag.
+    const hasNight = !!(report && report.hasReport);
+    if (!hasNight && !pendingBuilds.length) return;
 
     fired = true;   // spend the session's single report even if the beat is later dismissed (anti-nag)
 
@@ -82,17 +90,24 @@ const NightReportStore = (() => {
     // the BEAT body: headline + the act lines + the honest declined half (+ the "did nothing and why" sentence when
     // it stood down entirely). Composed ENTIRELY from the report view-model — no invented text.
     const lines = [];
-    if (report.priorityLine) lines.push(report.priorityLine);   // NS-5b: lead with the night's declared focus + why
-    for (const l of (report.actLines || [])) lines.push(l);
-    for (const l of (report.declineLines || [])) lines.push(l);
-    if (report.idleReason) lines.push(report.idleReason);
-    const body = '✦ welcome back — while you were away: ' + report.headline + (lines.length ? '\n' + lines.join('\n') : '');
+    if (hasNight && report.priorityLine) lines.push(report.priorityLine);   // NS-5b: lead with the night's declared focus + why
+    if (hasNight) for (const l of (report.actLines || [])) lines.push(l);
+    if (hasNight) for (const l of (report.declineLines || [])) lines.push(l);
+    if (hasNight && report.idleReason) lines.push(report.idleReason);
+    // the review-owed line (server-proven /api/workshop/pending): name each waiting build, say where it lives.
+    if (pendingBuilds.length) {
+      lines.push('⚒ ' + pendingBuilds.length + ' build' + (pendingBuilds.length > 1 ? 's are' : ' is') + ' waiting for your review — each is a ⚒ session in your rail:');
+      for (const p of pendingBuilds.slice(0, 5)) lines.push('   · ' + String(p.title || 'a deliverable'));
+      if (pendingBuilds.length > 5) lines.push('   · …and ' + (pendingBuilds.length - 5) + ' more');
+    }
+    const headline = hasNight ? report.headline : 'the workshop finished work that’s waiting on you';
+    const body = '✦ welcome back — while you were away: ' + headline + (lines.length ? '\n' + lines.join('\n') : '');
 
     // "show me" prints every draft's full body straight into the feed (transparency law — the report must be able
     // to SHOW the work, not just count it). "got it" dismisses; both LEAVE the beat (nudge vanish()es on decision).
     const reveal = () => {
       if (typeof Chat === 'undefined' || typeof Chat.localLine !== 'function') return;
-      const ds = report.drafts || [];
+      const ds = (hasNight && report.drafts) || [];
       if (!ds.length) { Chat.localLine('(the night shift left no draft bodies — the acts above are the record)'); return; }
       for (const d of ds) {
         if (!d || !d.title) continue;
@@ -101,11 +116,17 @@ const NightReportStore = (() => {
         if (d.note) Chat.localLine('note: ' + String(d.note));
       }
     };
-    const opts = (report.drafts && report.drafts.length)
-      ? [{ label: 'show me', value: 'show' }, { label: 'got it', value: 'ok', skip: true }]
-      : [{ label: 'got it', value: 'ok', skip: true }];
-    Chat.nudge(body, opts, item => { if (item && item.value === 'show') reveal(); });
-    if (typeof World !== 'undefined' && World.say) { try { World.say(report.actCount ? '✦ left the night’s work on your desk' : '✦ nothing to report from the night'); } catch (_) {} }
+    const opts = [];
+    if (pendingBuilds.length) opts.push({ label: '⚒ review the builds', value: 'builds' });   // jump to the oldest waiting delivery session
+    if (hasNight && report.drafts && report.drafts.length) opts.push({ label: 'show me', value: 'show' });
+    opts.push({ label: 'got it', value: 'ok', skip: true });
+    Chat.nudge(body, opts, item => {
+      if (item && item.value === 'show') reveal();
+      if (item && item.value === 'builds') {
+        try { if (typeof App !== 'undefined' && App.openWorkstream) App.openWorkstream('workshop-' + String(pendingBuilds[0].runId)); } catch (_) {}
+      }
+    });
+    if (typeof World !== 'undefined' && World.say) { try { World.say((hasNight && report.actCount) || pendingBuilds.length ? '✦ there’s finished work waiting for you' : '✦ nothing to report from the night'); } catch (_) {} }
   }
 
   /* init({ enabled, agentId }) — called from enterGame, AFTER ReturnStore.init (so lastSeen() is the previous

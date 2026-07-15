@@ -102,7 +102,8 @@ const WorkshopStore = (() => {
   function queueConfirmLine(name) {
     const who = String(name || 'it').trim() || 'it';
     return '◈ queued for the away workshop — ' + who + ' will build this in its private sandbox on its next away shift '
-      + '(a recurring build that runs on its own while the station is up). you’ll review the result on return.';
+      + '(recurring, roughly every 6 hours while the station is up). the result arrives as a new ⚒ session in your rail — '
+      + 'see the build list (and a “build now” button) on the agent’s dossier › CONFIG.';
   }
 
   // read the agent's live "build while away" grant (GET /api/workshop/backlog returns { granted }). Fail-open to
@@ -188,7 +189,10 @@ const WorkshopStore = (() => {
         // gesture, so a run may not launch an OS file manager on the user's desktop.
         // A patch deliverable's keep is an APPLY (new branch in the blessed repo) — pass the server's
         // real result through so the card can report what actually happened, never a guess.
-        return { ok: true, destPath: keptPath, opened: false, applied: j && j.applied === true, branch: (j && j.branch) || null, commit: (j && j.commit) || null, root: (j && j.root) || null };
+        return { ok: true, destPath: keptPath, opened: false, applied: j && j.applied === true, branch: (j && j.branch) || null, commit: (j && j.commit) || null, root: (j && j.root) || null,
+          // PATCH FALLBACK HONESTY: the server says when a patch deliverable could only be SAVED (not applied) —
+          // the card's outcome line must never let that read as "implemented into your project".
+          savedOnly: j && j.savedOnly === true, patchRefused: (j && j.patchRefused) || null };
       }
       return { ok: false, error: (j && j.error) || 'could not save your decision' };
     } catch (_) { return { ok: false, error: 'decision failed to reach the station' }; }
@@ -345,7 +349,12 @@ const WorkshopStore = (() => {
     const m = Object.assign({}, p.manifest, { agentId: aid, runId: runId });
     ensureSession(m);   // marks seen; unread row in the rail, focus untouched
     try {
-      if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('✦ built while you were away: ' + String(m.title || 'a deliverable') + ' — waiting in its own session in the rail', 'gold', 'cronDigest');
+      if (typeof StationUI !== 'undefined' && StationUI.notify) {
+        // actionable toast (2026-07-15 UX audit): clicking it JUMPS to the delivery session — the old copy
+        // pointed at "the rail" and left the user to go find it.
+        const jump = () => { try { if (typeof App !== 'undefined' && App.openWorkstream) App.openWorkstream(sessionIdOf(runId)); } catch (_) {} };
+        StationUI.notify('✦ built while you were away: ' + String(m.title || 'a deliverable') + ' — click to review it', 'gold', 'cronDigest', { onClick: jump });
+      }
     } catch (_) {}
     try { if (typeof World !== 'undefined' && World.say) World.say('✦ finished a build — it’s waiting in its own session'); } catch (_) {}   // ambient in-world cue, same family as the desk-draft delivery
   }
