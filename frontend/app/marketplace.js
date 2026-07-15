@@ -1712,7 +1712,7 @@ const Marketplace = (() => {
   function launchRecipeNow(r, values) {
     const ok = !ctx || !ctx.onLaunch || ctx.onLaunch(r, values) !== false;
     if (ok) { note('recipe launched: ' + r.name + ' — ' + ((ctx && ctx.agentName) || 'your agent') + ' is on it', 'good'); close(); }
-    else { sfx('bad'); note('could not launch ' + r.name + ' — nothing to send', 'bad'); }
+    else { sfx('bad'); note('could not launch ' + r.name + ' — the agent is mid-run (or there was nothing to send). try again when it settles.', 'bad'); }
   }
   // the schedule string a launchCadence id maps to, plus a 'custom' free-text entry the user types (every Nh or
   // a 5-field cron). The sidecar re-validates via cron.parseSchedule, so a bad custom string is caught server-side.

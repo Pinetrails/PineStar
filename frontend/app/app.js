@@ -881,8 +881,13 @@ const App = (() => {
     if (!agent || typeof Recipes === 'undefined' || !recipe) return false;
     const text = Recipes.fillTask(recipe, values || {});
     if (!text) return false;                                              // nothing to send → report the no-op honestly
+    // HONESTY GATE (release polish): if the agent is mid-run the send below would silently no-op — that used to
+    // mint a dead empty workstream, count a launch that never ran (inflating the FOR-YOU rank + the routine
+    // nudge's "launched N times"), and still return true. A launch that can't kick off is a no-op: report false
+    // so the bay says so, and leave the counters truthful.
+    if (!(typeof Chat !== 'undefined' && Chat.send && !Chat.isBusy())) return false;
     const ws = (typeof Workstreams !== 'undefined') ? Workstreams.create(recipe.name || 'Mission', { kind: 'task' }) : null;   // a recipe mission is a board task
-    if (ws && typeof Chat !== 'undefined' && Chat.load) Chat.load(ws);   // make the new stream the compose target before sending
+    if (ws && Chat.load) Chat.load(ws);   // make the new stream the compose target before sending
     refreshUsage(); renderRail();
     // engagement loop (scout lane 5): count the REAL launch — feeds the FOR-YOU rank + the drafting hint.
     try { if (typeof ProspectStore !== 'undefined' && ProspectStore.noteLaunch) ProspectStore.noteLaunch(recipe); } catch (_) {}
@@ -890,7 +895,7 @@ const App = (() => {
     // already IS one). chat.js records it into RUN_META at onRunId; BottleStore reads it via runBottleInfo below.
     // recipeId is the provenance SPINE: it rides RUN_META → the /api/run body → the durable run row, so the
     // outcome loop (rate-the-work → recipe rank) can attribute a rating to the recipe that launched the run.
-    if (typeof Chat !== 'undefined' && Chat.send && !Chat.isBusy()) Chat.send(text, { fromRecipe: true, recipeId: recipe.id });   // kicks off the run on the fresh stream
+    Chat.send(text, { fromRecipe: true, recipeId: recipe.id });   // kicks off the run on the fresh stream
     persist();
     return true;
   }
