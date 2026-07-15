@@ -406,6 +406,10 @@ as EL-11 FIX 1; 200 {ok:false,degraded:true} is a LOCKED test-asserted design, d
       backend; VERIFY trunk forwards sub-* agent.run.* events before building, else sprites never light.
 - [ ] Restored-feature follow-ups: real-token pass on slack/matrix/signal; live file-upload
       round-trip (e2e-proven only); bubble-restyle visual check at zoom.
+      (2026-07-15 messaging-reliability lane, merged acfd82b5: slack reconnect truth, E-STOP/
+      snapshot cover all five channels, owner-binding persist warning, durable reply outbox,
+      FORGET honesty, DM-only copy honesty — see qa/STATUS.md digest. Still open here: the
+      real-token soak + mention-gated group messaging, chip spawned.)
 
 **SUPERSEDED — safe to delete, do not re-audit:** agent/parity-finish (fs.patch/MCP-stdio landed
 via bb398960), agent/ui-number-format (trunk U.usd/U.tokens better), spend-model-honesty +
