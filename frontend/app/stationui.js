@@ -1486,8 +1486,10 @@ const StationUI = (() => {
           (it.state === 'queued' || it.state === 'parked' ? '<button class="ws-bl-remove" title="take this off the list (it can be queued again later)">✕</button>' : '') +
         '</div>').join('');
       // cadence + build-now + honest last-shift outcome
-      const due = j.nextShiftAt ? (j.nextShiftAt - Date.now()) : 0;
-      const next = (j.granted && j.nextShiftAt)
+      // nextRunAt arrives as an ISO string from the cron store — parse, never subtract a string (NaN → "in now")
+      const nextAt = j.nextShiftAt ? (Date.parse(j.nextShiftAt) || Number(j.nextShiftAt) || 0) : 0;
+      const due = nextAt ? (nextAt - Date.now()) : 0;
+      const next = (j.granted && nextAt)
         ? (due <= 60000 ? 'next shift: due now' : 'next shift in ' + rel(due))
         : (j.granted ? 'shift not scheduled yet' : 'shifts are off (grant above)');
       h += '<div class="ws-bl-foot">' +
