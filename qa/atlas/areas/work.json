@@ -3,6 +3,37 @@
   "updatedAt": "2026-07-07T21:47:32.573Z",
   "entries": [
     {
+      "id": "state/work-deliverables",
+      "kind": "state",
+      "area": "work",
+      "name": "shoot state: work-deliverables",
+      "purpose": "The DELIVERABLES state: a station-wide, backend-backed library of real run artifacts and Workshop builds, including lifecycle decisions and bounded cleanup.",
+      "promise": "Opening DELIVERABLES shows searchable/filterable rows with source, status, size, creation time, and real file actions; pending Workshop rows offer Keep/Discard, HTML opens through the opaque-origin sandbox, Markdown/CSV/image previews are bounded, and cleanup previews exact metadata targets while protecting pending/kept work and offering undo.",
+      "wiring": {
+        "files": [
+          "frontend/app/deliverables.js",
+          "frontend/app/stationui.js",
+          "frontend/index.html",
+          "sidecar/index.js",
+          "sidecar/deliverable-store.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        { "kind": "journey", "ref": "J4" },
+        { "kind": "test", "ref": "test/workshop.e2e.test.js" },
+        { "kind": "test", "ref": "test/deliverables-ui.test.js" },
+        { "kind": "test", "ref": "test/deliverable-store.test.js" }
+      ],
+      "status": "mapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-16T08:00:00.000Z",
+      "lastSeen": "2026-07-16T08:00:00.000Z",
+      "missing": false,
+      "notes": "J4 physically opens the DELIVERABLES term after building a real Workshop HTML artifact and asserts search/filter/refresh/cleanup plus pending Open/Keep/Discard controls. HTTP lifecycle, preview allowlists, cleanup protection/undo, and restart durability are guarded by workshop.e2e. Held at mapped until the dedicated journey is re-run successfully at the shipping SHA."
+    },
+    {
       "id": "state/work-recipes",
       "kind": "state",
       "area": "work",

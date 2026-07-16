@@ -647,6 +647,26 @@ async function journeyDeliverableOpen(cdp, A, base, token, mock) {
   // and the token fence still holds (a no-token nav is refused) — the Open action always carries the token.
   const noTok = await fetch(base + '/workshop-run/' + agentId + '/' + runId + '/index.html').catch(() => ({ status: 0 }));
   A.ok('J4/token-required', noTok && noTok.status === 403, 'no-token GET → ' + (noTok && noTok.status) + ' (must be 403)');
+
+  // Open the real WORK-dock surface and prove the just-built backend row reaches its physical controls.
+  await evalJS(cdp, `(() => { StationUI.openTerm('deliverables'); return true; })()`).catch(() => false);
+  let library = null;
+  for (let i = 0; i < 30; i++) {
+    library = await evalJS(cdp, `(() => {
+      const q=document.querySelector('#dl-query'), s=document.querySelector('#dl-status'), row=document.querySelector('.deliverable-row');
+      return { q:!!q, status:!!s, refresh:!!document.querySelector('#dl-refresh'), clean:!!document.querySelector('#dl-clean'),
+        title:row?row.textContent:'', open:!!document.querySelector('.deliverable-row button[data-file]'),
+        keep:!!document.querySelector('.deliverable-row button[data-act="keep"]'), discard:!!document.querySelector('.deliverable-row button[data-act="discard"]') };
+    })()`).catch(() => null);
+    if (library && library.title && library.title.indexOf('Journey Demo Tool') >= 0) break;
+    await sleep(200);
+  }
+  A.ok('J4/library-controls-visible', library && library.q && library.status && library.refresh && library.clean, 'search/filter/refresh/cleanup controls=' + JSON.stringify(library));
+  A.ok('J4/library-real-pending-row', library && /Journey Demo Tool/.test(library.title || '') && library.open && library.keep && library.discard, 'pending card/actions=' + JSON.stringify(library));
+  const filtered = await evalJS(cdp, `(() => { const q=document.querySelector('#dl-query'); q.value='no-such-deliverable'; q.dispatchEvent(new Event('input',{bubbles:true})); return true; })()`).catch(() => false);
+  await sleep(400);
+  const emptyText = await evalJS(cdp, `document.querySelector('#dl-list')?.textContent || ''`).catch(() => '');
+  A.ok('J4/library-search-filters', filtered && /No deliverables match/.test(emptyText), 'search result=' + String(emptyText).trim().slice(0, 100));
 }
 
 /* ═══════════════════════════ J6 — bay-bound crew idle life (desk-stuck escape) ═══════════════════════════
