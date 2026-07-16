@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "557a1893e73fd5fdcb63b30b12573bc6bc8a34cc",
+    "sourceCommit": "a4a48793500314e8fec4f41b4e54d084ea0828bf",
     "pathSetSha256": "11a2ff1e8ccd7ca7503a7d3a57bf51e4d0c7f5aeebda7d500a3c3bb7b174ea6e",
     "files": [
       {
@@ -133,8 +133,8 @@
       },
       {
         "path": "frontend/app/chat.js",
-        "bytes": 387509,
-        "sha256": "4732e46ccaaa0e2c42f6627a9c403b774688b7bb1a584bc6e71af8b862bcd5f0"
+        "bytes": 389667,
+        "sha256": "37db4acb443649ce514c0d8aa801e1a94310fc4b55a85e1126038808f52e2641"
       },
       {
         "path": "frontend/app/chatresize.js",
@@ -323,8 +323,8 @@
       },
       {
         "path": "frontend/app/marketplace.js",
-        "bytes": 171333,
-        "sha256": "b87b2253d8b1c4213c139b3007609e7d6cc397ed99aade5937fbb91826e17b82"
+        "bytes": 173334,
+        "sha256": "01564c708e95c6d43974dd947a538c0e0ee80ae6af367df197248eb8ff1489e6"
       },
       {
         "path": "frontend/app/mint.js",
@@ -483,13 +483,13 @@
       },
       {
         "path": "frontend/app/recipe-catalog/core.js",
-        "bytes": 13783,
-        "sha256": "1ec2b5766f9ee7c1e206bd90c010ad1306ddbaa6ad0e78a273c494175da2e65b"
+        "bytes": 14733,
+        "sha256": "3d3feab510df48d783382cd05f73211311602cbcb8de303b192d02bee8856004"
       },
       {
         "path": "frontend/app/recipe-catalog/creator.js",
-        "bytes": 12223,
-        "sha256": "f52843805092ccc11d4bb7592bfd3f6ea30b7ffd019b07f55ead985ba28cba36"
+        "bytes": 12491,
+        "sha256": "dd9eeeff6106c39c1ca0374a242d30c227fd661ed681941f4384e4a5827fe2f9"
       },
       {
         "path": "frontend/app/recipe-catalog/dev.js",
@@ -503,18 +503,18 @@
       },
       {
         "path": "frontend/app/recipe-catalog/ops.js",
-        "bytes": 12694,
-        "sha256": "905ced7b27eb54bbdfcd77baf996e49e0007dfb83971aea732a087cb9bbe0449"
+        "bytes": 12920,
+        "sha256": "2c771b67fae4aae66c6110902e1b3668d88ac2cc09084460ca702d24a658eb38"
       },
       {
         "path": "frontend/app/recipe-catalog/research.js",
-        "bytes": 11942,
-        "sha256": "9a747719479549744483dce5235661a8b20d771ff0e719e828d519ca97dbc4e1"
+        "bytes": 12461,
+        "sha256": "3d2735876a0a8f7f001b345b39ac43ebce124e55f5a9746fc76b7c84ea912cc5"
       },
       {
         "path": "frontend/app/recipes.js",
-        "bytes": 40767,
-        "sha256": "6de13aff8da5f0f99e4b2652a3ad9f7ba1aa359680245464a0124c5006708879"
+        "bytes": 43269,
+        "sha256": "bf2087d0b2e9589c80a67def45d864cb2bf8c30fcb14f40612ffa597283c80be"
       },
       {
         "path": "frontend/app/recruiter.js",
@@ -788,8 +788,8 @@
       },
       {
         "path": "frontend/css/app.css",
-        "bytes": 191745,
-        "sha256": "8508ea74d7fd9dea80e782104f9d5190c2598e214d79a21e56574cef76ad6c4f"
+        "bytes": 192545,
+        "sha256": "13c03e43f6feefed38a2145c29e79fd7e22449e35a9c682726f29f0e80f6570d"
       },
       {
         "path": "frontend/css/asciifx.css",
@@ -803,8 +803,8 @@
       },
       {
         "path": "frontend/css/marketplace.css",
-        "bytes": 61370,
-        "sha256": "1c679621acac08b75f837f2b2a93b6eb850a2f464b67411bf7cc0a5d64214ef8"
+        "bytes": 62510,
+        "sha256": "8e17f754d700bd90dbff2394ce64332d6fdcef3b5f90de546fd84ee39906a4d4"
       },
       {
         "path": "frontend/css/motion.css",
