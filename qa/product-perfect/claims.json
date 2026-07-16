@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "af69d16418510ad1e83dde6d8ecaebbe9cc49109",
+    "sourceCommit": "532150f0b7c7f10ca01a3fe110b80215a53b4e07",
     "pathSetSha256": "e45261d65dc7ff0b9cc77172b4f800cc4bef6dec86bd786a26771964e9b2e342",
     "files": [
       {
@@ -63,8 +63,8 @@
       },
       {
         "path": "frontend/app/app.js",
-        "bytes": 263591,
-        "sha256": "de0e3be86e4d0cfa99f1842897a71c2d9ba7a559550ff0e904facddc12592fd3"
+        "bytes": 264217,
+        "sha256": "9908432fd48bb9b1d8cf4d372a8dd6955f5e2d9468a6fd89da039130a42ec4df"
       },
       {
         "path": "frontend/app/armconfirm.js",
@@ -108,8 +108,8 @@
       },
       {
         "path": "frontend/app/autosessions.js",
-        "bytes": 17580,
-        "sha256": "180213ebfdc0671d87d41968b38a8f94b641a3e4ca6b1f31cc4ab127c11f8b71"
+        "bytes": 17691,
+        "sha256": "9e6f5ffa6d01527f6376a3271ad90c0b51c04968c7a4f8ff2dcfffdfab073e55"
       },
       {
         "path": "frontend/app/backup.js",
@@ -543,8 +543,8 @@
       },
       {
         "path": "frontend/app/returnstore.js",
-        "bytes": 10316,
-        "sha256": "6f4b394c62cf2bddbf96cd29594b246bfbc81015610fb96ff0f5a525dbe52161"
+        "bytes": 10535,
+        "sha256": "28fce20afcba67ab2d561b8402a05079dfeff31e312ae3b663c51d56165104dc"
       },
       {
         "path": "frontend/app/routinenudgestore.js",
@@ -753,8 +753,8 @@
       },
       {
         "path": "frontend/app/workshopstore.js",
-        "bytes": 27990,
-        "sha256": "28409b503db205970c5ee04199b4470fef6f37a324f57e48e4670ff1870ad106"
+        "bytes": 29606,
+        "sha256": "ddbd36446defdf6b681c481dbb3d33f5e88492394090d79ba75c71796606aaa6"
       },
       {
         "path": "frontend/app/worksignal.js",
@@ -768,8 +768,8 @@
       },
       {
         "path": "frontend/app/workstreams.js",
-        "bytes": 25898,
-        "sha256": "f973689ee026a3a7d0730f27134c0d5c8f96df424c4809afdf9395c8aa0ed5bb"
+        "bytes": 27289,
+        "sha256": "cea6ce5213c61c26b380fd21fe06c383acd888a0720ca9a7fd1c2ab6060a67d8"
       },
       {
         "path": "frontend/app/world.js",
