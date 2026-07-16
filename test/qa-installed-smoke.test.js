@@ -10,7 +10,7 @@ const A = require('./_assert.js');
 const crypto = require('crypto');
 const vm = require('vm');
 const {
-  RESULTS, SMOKE_CREW, SMOKE_PROBE, STAMP_SCHEMA, REQUIRED_CHECKS,
+  RESULTS, SMOKE_CREW, SMOKE_PROBE, PREPARE_SMOKE_SURFACE, STAMP_SCHEMA, REQUIRED_CHECKS,
   classifyResult, normalizeStamp, validateStamp, buildFinding, makeSmoke
 } = require('../scripts/qa/installed-smoke.mjs');
 
@@ -114,6 +114,7 @@ const GREEN_PROBE = {
   A.ok(!/Bearer/.test(SMOKE_PROBE), 'SMOKE_PROBE uses NO Bearer scheme (the sidecar rejects Bearer as forbidden token)');
   A.ok(/starnet_build_info/.test(SMOKE_PROBE), 'SMOKE_PROBE obtains source identity from the running Tauri binary');
   A.ok(/executableSha256/.test(SMOKE_PROBE) && /executableSize/.test(SMOKE_PROBE), 'SMOKE_PROBE obtains content identity from the running executable');
+  A.ok(/data-term="tasks"/.test(PREPARE_SMOKE_SURFACE) && /\.kb-cols/.test(PREPARE_SMOKE_SURFACE), 'installed smoke physically opens TASKS before asserting its rendered state');
   A.ok(REQUIRED_CHECKS.includes('desktop/tauri-origin') && REQUIRED_CHECKS.includes('desktop/build-info') && REQUIRED_CHECKS.includes('desktop/executable-identity'), 'desktop source + executable identity assertions are mandatory');
 }
 
