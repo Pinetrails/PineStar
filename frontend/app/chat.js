@@ -3506,7 +3506,7 @@ const Chat = (() => {
       // line, NOT as agent speech; it never seeds the model (historyWindow drops it) and it stays visible in-thread.
       if (m && m.sys) { if ((m.content || '').trim()) toolLine(m.content, !!m.error); continue; }
       if (m.role !== 'assistant') continue;   // only dialogue turns render (a stray system marker never shows as an agent reply)
-      if (!(m.content || '').trim()) continue;   // skip a turn that produced no prose (tool-only / stopped run)
+      if (!(m.content || '').trim()) { if (m.stopped) lastReal = m; continue; }   // zero-token stop: durable recovery truth, never a blank speech row
       const r = row('agent', { stamp: stamp });   // past turns render as plain GROUPED messages; only the LIVE reply is the lit headline
       if (m.error) r.d.classList.add('err');
       renderProse(r.body, m.content);   // same linkify path as live tokens, so replayed history matches
@@ -3516,7 +3516,10 @@ const Chat = (() => {
     // STRANDED-USER LAW: a reload/switch onto a stream whose LAST turn failed (error:true) must not leave the
     // Commander with a dead thread and no way out — load() wiped the live recovery chips. Re-offer a plain retry
     // (offerRetry's context-aware verdict isn't stored per-turn, so the safe universal recovery is a re-run).
-    if (lastReal && lastReal.role === 'assistant' && lastReal.error && !isBusy()) offerRetry(null);
+    if (lastReal && lastReal.role === 'assistant' && (lastReal.error || lastReal.stopped) && !isBusy()) {
+      if (lastReal.stopped) offerTryAgain();
+      else offerRetry(null);
+    }
   }
 
   // SWITCH-SURVIVAL: re-render whatever in-flight run we left on the now-displayed stream — its streamed
@@ -3658,17 +3661,35 @@ const Chat = (() => {
     renderQueued();
     send(next);
   }
+  // Persist the truthful tail of a non-clean run. Normal envelopes may already have appended their partial
+  // assistant prose; thrown aborts have not. Mark the matching tail or add one durable marker (including empty
+  // output), so reload restores recovery without ever rendering a synthetic blank assistant message.
+  function markStoppedTurn(ws, content) {
+    if (!ws || !Array.isArray(ws.history)) return;
+    const text = String(content || '');
+    const last = ws.history[ws.history.length - 1];
+    if (last && last.role === 'assistant' && !last.error && String(last.content || '') === text) {
+      last.stopped = true;
+      return;
+    }
+    ws.history.push({ role: 'assistant', content: text, stopped: true, ts: Date.now() });
+  }
   // RETRY — re-run the last turn after an outage / connection drop / in-band error. Discard the trailing failed
   // reply, re-render the thread (dropping the ⚠ row), then resend the last user message WITHOUT echoing it again.
   function retryLast() {
     if (!activeWs || isBusy()) return;
     const h = activeWs.history;
-    if (h.length && h[h.length - 1].role === 'assistant' && h[h.length - 1].error) h.pop();   // drop the failed reply
+    if (h.length && h[h.length - 1].role === 'assistant' && (h[h.length - 1].error || h[h.length - 1].stopped)) h.pop();   // drop the failed/stopped partial reply
     let text = null;
     for (let i = h.length - 1; i >= 0; i--) { if (h[i].role === 'user') { text = h[i].content; break; } }
     if (text == null) return;
     load(activeWs);                 // re-render the thread cleanly (the popped ⚠ row is gone)
     send(text, { retry: true });    // re-run it; the user turn is already present, so don't echo it
+  }
+  // The shared plain recovery action for an intentional Stop and unknown retryable faults. It delegates to the
+  // same guarded retryLast path as `/retry`, so an inactive/busy stream cannot start a duplicate run.
+  function offerTryAgain() {
+    choices([{ label: '↻ Try again', value: 'retry' }], () => retryLast());
   }
   // a one-tap recovery chip dropped under a failed turn (reuses the suggestion-pill row, which self-removes on
   // tap). CONTEXT-AWARE on the classified verdict: a retryable fault offers "↻ Try again"; an auth/billing
@@ -3677,13 +3698,13 @@ const Chat = (() => {
   // when called without a verdict (legacy callers / unknowns), preserving the old behavior + value:'retry'.
   function offerRetry(verdict) {
     if (!log) return;
-    if (!verdict) { choices([{ label: '↻ Try again', value: 'retry' }], () => retryLast()); diagAffordance(); return; }
+    if (!verdict) { offerTryAgain(); diagAffordance(); return; }
     // ADOPTION (Lane A): every error names its DOOR and opens the exact one. Friendly.actionButton maps the
     // verdict to { label, run } — capdenied -> REFIT (with the named capability), auth/no-key -> the real key
     // field or "reconnect ChatGPT", model-not-found -> models. One source of truth; no local per-action ladder.
     const btn = (typeof Friendly !== 'undefined' && Friendly.actionButton) ? Friendly.actionButton(verdict) : null;
     if (btn) { choices([{ label: btn.label, value: verdict.action }], () => btn.run()); diagAffordance(); return; }
-    if (verdict.retryable) { choices([{ label: '↻ Try again', value: 'retry' }], () => retryLast()); diagAffordance(); return; }
+    if (verdict.retryable) { offerTryAgain(); diagAffordance(); return; }
     // non-retryable with no destination: leave no primary chip rather than inviting a doomed re-run — but a stuck
     // user still gets the quiet bug-report affordance so they can grab a diagnostic readout in place.
     diagAffordance();
@@ -4985,6 +5006,8 @@ const Chat = (() => {
             : endReason === 'budget' ? 'reached this run\'s limit'
             : endReason === 'cancelled' ? (interrupted.has(ws.id) ? 'stopped' : 'run cancelled')
             : 'stopped (' + endReason + ')'));
+          markStoppedTurn(ws, replyText);
+          if (isActiveWs(ws)) offerTryAgain();
           if (typeof StationUI !== 'undefined') StationUI.notify('run stopped: ' + endReason, 'warn');
         } else if (cutShort) {
           // distinct honest "cut short" recap: the reply is truncated/filtered, not a clean delivery.
@@ -5033,7 +5056,8 @@ const Chat = (() => {
       if (stopped) {
         // keep whatever already streamed, mark it stopped, and log NO error (the stop was intentional).
         if (isActiveWs(ws)) { if (activeLiveRow) activeLiveRow.done(); toolLine('⏹ stopped'); resolvePresence(ws, { stopped: true, steps: runToolsOk }); }
-        if (acc.trim()) ws.history.push({ role: 'assistant', content: acc, ts: Date.now() });   // the partial reply survives a switch
+        markStoppedTurn(ws, acc);
+        if (isActiveWs(ws)) offerTryAgain();
         if (!isTask && isActiveWs(ws) && acc.trim()) World.say(acc);
       } else {
         // A throw that is NOT a deliberate Stop: an unexpected disconnect (the reader aborted with no Stop) or a
