@@ -268,6 +268,7 @@ test/cron.oneshot.test.js
 test/cron.run-now.test.js
 test/routine-tools.test.js
 test/workstreams.test.js
+test/session-creation.test.js
 test/projects-view.test.js
 test/prepare-node.test.js
 test/summon.id.test.js

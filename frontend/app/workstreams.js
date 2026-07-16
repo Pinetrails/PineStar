@@ -150,6 +150,28 @@
     if (opts.activate !== false) activeId = w.id;   // board "add" passes {activate:false} so it won't hijack the active chat
     return w;
   }
+  // The +NEW session seam. An untouched active chat is already the blank line the Commander
+  // asked for, so focus it instead of minting another durable row. This makes a burst of clicks
+  // idempotent without a timer: the first legitimate create becomes active synchronously and the
+  // rest observe that same blank. Project-scoped actions only reuse a blank carrying the exact
+  // stored project root; entering another project must never silently re-anchor a session.
+  function startSession(opts) {
+    opts = opts || {};
+    const cur = active();
+    const scoped = Object.prototype.hasOwnProperty.call(opts, 'projectRoot');
+    const wantedRoot = scoped && opts.projectRoot != null ? String(opts.projectRoot) : null;
+    const sameScope = !scoped || ((cur && cur.projectRoot) || null) === wantedRoot;
+    const c = cur && cur.cost || {};
+    const untouched = !!cur && !cur.archived && cur.kind === 'chat' && cur.title == null
+      && cur.titleAuto !== false && !cur.pinned && cur.roomId == null && !cur.goalLoop
+      && (!cur.history || cur.history.length === 0)
+      && (!cur.runIds || cur.runIds.length === 0)
+      && (!cur.deliverables || cur.deliverables.length === 0)
+      && !(+c.tokens || +c.usd || +c.calls)
+      && sameScope;
+    if (opts.reuseActive !== false && untouched) return cur;
+    return create(null, opts);
+  }
   // ADOPT a workstream with a CALLER-CHOSEN id (idempotent): if one already exists with opts.id it is
   // returned untouched; otherwise a new record is minted from opts and inserted WITHOUT stealing the active
   // stream (never sets activeId — the caller decides whether to focus it). This is the seam the autosessions
@@ -313,7 +335,7 @@
 
   return {
     init, reset, serialize, all, list, search,
-    create, adopt, get, active, activeId: getActiveId, generalId: getGeneralId,
+    create, startSession, adopt, get, active, activeId: getActiveId, generalId: getGeneralId,
     switch: switchTo, rename, setAgent, setLane, setProjectRoot, pin, archive, del, removeByAgent, touch, markRead, unread: isUnread,
     autoTitle, retitle, deriveTitle,
     appendRun, recordDeliverable, addCost, costOf,
