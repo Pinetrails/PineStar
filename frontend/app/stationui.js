@@ -1313,21 +1313,23 @@ const StationUI = (() => {
       agCommand(a);   // SKIN swap + DANGER delete — lives at the END of CONFIG, off the BRIEF landing tab
   }
 
-  // W3 per-agent AWAY-WORKSHOP grant. One plainly-worded consent toggle — no jargon, no wizard. When on,
-  // this agent may build queued ideas in its own quarantined sandbox while the Commander is away; nothing
-  // touches real files until the Commander approves it on return (the return card). Writes a.workshop via
-  // App.setWorkshop → pushRoster, so the sidecar consent broker honors the grant. Available from minute one
-  // (sandbox law: a consent switch, never an unlock wall).
+  // W3 per-agent AWAY-WORKSHOP surface (rebuilt 2026-07-15 UX audit — the queue was invisible, the cadence
+  // unstated, and a broken shift indistinguishable from a waiting one). One card now answers the four questions
+  // a Commander actually has: is it on · what's on the build list (with each item's real state) · when does it
+  // build next (+ build now) · did the last shift work. Everything renders from /api/workshop/backlog server
+  // truth (wireConfig fills #ag-ws-live async); the static shell asserts nothing it can't prove.
   function workshopCard(a) {
     const on = !!(a && a.workshop);
     return '<div class="cf-card">' +
-      '<div class="cf-head"><span class="cf-file">◈ away workshop</span><span class="cf-badge">PER-AGENT</span></div>' +
+      '<div class="cf-head"><span class="cf-file">◈ while you’re away</span><span class="cf-badge">PER-AGENT</span></div>' +
       '<label class="set-row" style="align-items:flex-start;gap:8px;">' +
         '<input type="checkbox" id="ag-workshop-on"' + (on ? ' checked' : '') + ' aria-label="Build things while I am away">' +
         '<span><b>Build things while I’m away</b>' +
-        '<span class="dim" style="display:block;margin-top:2px;line-height:1.35;">On a recurring shift while the station is running, this agent builds queued ideas in its own sandbox. Nothing touches your files until you approve it on return.</span></span>' +
+        '<span class="dim" style="display:block;margin-top:2px;line-height:1.35;">A recurring shift (while the station is running) works through the build list below in this agent’s own sandbox. Each finished build arrives as a <b>new session in your rail</b> — nothing touches your files until you review it there.</span></span>' +
       '</label>' +
       '<div id="ag-workshop-msg" class="msg"></div>' +
+      '<div id="ag-ws-live"><div class="dim" style="font-size:11px;">reading the build list…</div></div>' +
+      '<div class="dim" style="font-size:11px;margin-top:6px;line-height:1.35;">Separate from this: the AUTONOMY dial’s night-shift beats let the agent pick its <i>own</i> small jobs while you’re away — those deliver to your rail the same way. This card is the list <b>you</b> queue (the ◈ on a quest, or /build-away in COMMS).</div>' +
     '</div>';
   }
 
@@ -1433,8 +1435,105 @@ const StationUI = (() => {
         wOn.disabled = false;
         if (!ok) { setWMsg('could not save that — the station didn’t record it', false); sfx('bad'); wOn.checked = !next; return; }
         setWMsg(next ? 'on — this agent can build in its sandbox while you’re away' : 'off — this agent stays idle while you’re away', true);
+        loadWsLive();   // grant flips arm/disarm the shift → the next-shift line changes
       });
     });
+
+    /* ---- the LIVE half of the while-you're-away card (2026-07-15 UX audit): build list + cadence + health.
+       Renders ONLY /api/workshop/backlog truth. States: queued (removable) · building · built → review (opens
+       the delivery session) · parked (2 failed builds — retry re-queues, which un-parks server-side). The
+       next-shift line carries a real countdown + a "build now" that force-fires POST /api/workshop/shift and
+       reports the shift's actual result reason. Fail-open: a fetch error renders an honest can't-read line. */
+    const wsLive = body.querySelector('#ag-ws-live');
+    const aid = (a && a.id) || 'agent';
+    const rel = (ms) => {
+      if (!ms || ms <= 0) return 'now';
+      const m = Math.round(ms / 60000);
+      if (m < 60) return '~' + Math.max(1, m) + 'm';
+      const h = Math.floor(m / 60);
+      return '~' + h + 'h ' + (m % 60) + 'm';
+    };
+    const ago = (t) => { const d = Date.now() - t; return d < 90000 ? 'just now' : rel(d).replace('~', '') + ' ago'; };
+    const lastShiftLine = (ls) => {
+      if (!ls || !ls.at) return '';
+      const when = ago(ls.at);
+      const r = String(ls.reason || '');
+      if (r === 'built') return '✓ last shift (' + when + '): built “' + esc(ls.title || 'a deliverable') + '” — it’s waiting in your rail';
+      if (r === 'empty-backlog') return '· last shift (' + when + '): nothing queued, so it rested';
+      if (r === 'no-capability') return '⚠ last shift (' + when + '): couldn’t run — no model/key available for unattended builds. Fix the provider key in SETTINGS.';
+      if (r === 'run-failed' || r === 'no-manifest') return '⚠ last shift (' + when + '): tried “' + esc(ls.title || '') + '” but produced nothing reviewable' + (ls.parkedTitle ? ' — it’s now PARKED after repeated failures (retry below to try again)' : ' — it will retry next shift');
+      if (r === 'not-granted') return '· last shift (' + when + '): skipped — the grant was off';
+      return '· last shift (' + when + '): ' + esc(r);
+    };
+    function loadWsLive() {
+      if (!wsLive) return;
+      fetch('/api/workshop/backlog?agent=' + encodeURIComponent(aid), { cache: 'no-store' })
+        .then(r => r.ok ? r.json() : null)
+        .then(j => { if (j && j.ok) renderWsLive(j); else if (wsLive) wsLive.innerHTML = '<div class="dim" style="font-size:11px;">couldn’t read the build list — the station may be unreachable</div>'; })
+        .catch(() => { if (wsLive) wsLive.innerHTML = '<div class="dim" style="font-size:11px;">couldn’t read the build list — the station may be unreachable</div>'; });
+    }
+    function renderWsLive(j) {
+      const items = Array.isArray(j.items) ? j.items : [];
+      const STATE = { queued: 'queued', building: 'building…', built: 'built — review it', parked: 'parked (failed twice)' };
+      let h = '<div class="ws-bl-head">build list' + (items.length ? ' · ' + items.length : '') + '</div>';
+      if (!items.length) h += '<div class="dim" style="font-size:12px;">nothing queued — use ◈ on a quest, or type /build-away in COMMS.</div>';
+      h += items.map(it =>
+        '<div class="ws-bl-row" data-blid="' + esc(it.id) + '">' +
+          '<span class="ws-bl-title">' + esc(it.title || '(untitled)') + '</span>' +
+          '<span class="ws-bl-state ' + esc(it.state) + '">' + (STATE[it.state] || esc(it.state)) + '</span>' +
+          (it.state === 'built' ? '<button class="ws-bl-review" data-run="' + esc(it.builtRunId || '') + '">review</button>' : '') +
+          (it.state === 'parked' ? '<button class="ws-bl-retry" data-title="' + esc(it.title || '') + '">retry</button>' : '') +
+          (it.state === 'queued' || it.state === 'parked' ? '<button class="ws-bl-remove" title="take this off the list (it can be queued again later)">✕</button>' : '') +
+        '</div>').join('');
+      // cadence + build-now + honest last-shift outcome
+      const due = j.nextShiftAt ? (j.nextShiftAt - Date.now()) : 0;
+      const next = (j.granted && j.nextShiftAt)
+        ? (due <= 60000 ? 'next shift: due now' : 'next shift in ' + rel(due))
+        : (j.granted ? 'shift not scheduled yet' : 'shifts are off (grant above)');
+      h += '<div class="ws-bl-foot">' +
+        '<span class="dim" style="font-size:11px;">' + esc(next) + (j.shiftEvery ? ' · repeats ' + esc(String(j.shiftEvery).replace(/^every /, 'every ')) : '') + '</span>' +
+        (j.granted && items.some(it => it.state === 'queued') ? '<button id="ag-ws-now">⚒ build now</button>' : '') +
+        '</div>';
+      const ls = lastShiftLine(j.lastShift);
+      if (ls) h += '<div class="ws-bl-last' + (/^⚠/.test(ls) ? ' warn' : '') + '">' + ls + '</div>';
+      wsLive.innerHTML = h;
+      // row actions — each posts, then re-renders from server truth (never an optimistic lie)
+      wsLive.querySelectorAll('.ws-bl-remove').forEach(b => b.addEventListener('click', () => {
+        const id = b.closest('.ws-bl-row').getAttribute('data-blid');
+        b.disabled = true;
+        fetch('/api/workshop/remove', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ agentId: aid, backlogId: id }) })
+          .then(r => r.json()).then(res => { if (!(res && res.ok)) notify((res && res.error) || 'could not remove that', 'bad'); loadWsLive(); })
+          .catch(() => { notify('could not reach the station', 'bad'); loadWsLive(); });
+      }));
+      wsLive.querySelectorAll('.ws-bl-retry').forEach(b => b.addEventListener('click', () => {
+        const id = b.closest('.ws-bl-row').getAttribute('data-blid');
+        b.disabled = true;   // re-queueing the SAME id un-parks it server-side (clears the failed-attempt count)
+        fetch('/api/workshop/queue', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ agentId: aid, id: id, title: b.getAttribute('data-title') || '' }) })
+          .then(r => r.json()).then(() => loadWsLive())
+          .catch(() => { notify('could not reach the station', 'bad'); loadWsLive(); });
+      }));
+      wsLive.querySelectorAll('.ws-bl-review').forEach(b => b.addEventListener('click', () => {
+        const run = b.getAttribute('data-run');
+        if (run && access.comms && access.comms.openWorkstream) { sfx('click'); access.comms.openWorkstream('workshop-' + run); }
+        else notify('open the ⚒ session in your rail to review it', 'gold');
+      }));
+      const nowBtn = wsLive.querySelector('#ag-ws-now');
+      if (nowBtn) nowBtn.addEventListener('click', () => {
+        nowBtn.disabled = true; nowBtn.textContent = 'building…';
+        fetch('/api/workshop/shift', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ agentId: aid }) })
+          .then(r => r.json()).then(res => {
+            const p = (res && res.payload) || res || {};
+            if (p.reason === 'built') notify('⚒ built — it’s waiting as a new session in your rail', 'gold');
+            else if (p.reason === 'no-capability') notify('couldn’t build — no model/key available for unattended runs', 'bad');
+            else if (p.reason === 'empty-backlog') notify('nothing queued to build', 'warn');
+            else if (p.fired) notify('the shift ran but produced nothing reviewable — it will retry', 'warn');
+            else notify('the shift didn’t run (' + (p.reason || 'unknown') + ')', 'warn');
+            loadWsLive();
+          })
+          .catch(() => { notify('could not reach the station', 'bad'); loadWsLive(); });
+      });
+    }
+    loadWsLive();
   }
 
   // header wiring (present on EVERY tab, so it lives here rather than in a per-tab wire): the rename affordance

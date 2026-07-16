@@ -3,8 +3,15 @@
    The Commander switched an agent's "build things while I'm away" grant on; while they were gone an
    autonomous shift built a deliverable in that agent's jailed sandbox and wrote a manifest. This store
    is the thin live wiring that, on browser attach, asks the sidecar what's UNDECIDED
-   (GET /api/workshop/pending) and hands ONE manifest at a time to the gold-inset return-card beat
-   (Chat.workshopReturn) — the same "one post-run beat at a time" slot every other return beat rides.
+   (GET /api/workshop/pending) and surfaces each one.
+
+   SESSION DELIVERY (2026-07-15, per Andrew): an idle-work deliverable must NEVER pop its card into
+   whatever session the Commander happens to have open. Every deliverable gets its OWN session — a
+   workstream adopted with id 'workshop-<runId>' (the SAME id the sidecar used as the shift's durable
+   streamId, so a follow-up message in that session resumes the build's real transcript server-side).
+   The session lands in the rail UNREAD (lastReadAt 0 — the same truthful unread the cron autosessions
+   ride) and steals no focus. The return card renders ONLY when the Commander opens that session
+   (chat.js load() → presentFor), never into a random feed.
 
    It also owns the two write paths the rest of the UI calls into:
      • queue(item)   → POST /api/workshop/queue  (the "build this while I'm away" action)
@@ -95,7 +102,8 @@ const WorkshopStore = (() => {
   function queueConfirmLine(name) {
     const who = String(name || 'it').trim() || 'it';
     return '◈ queued for the away workshop — ' + who + ' will build this in its private sandbox on its next away shift '
-      + '(a recurring build that runs on its own while the station is up). you’ll review the result on return.';
+      + '(recurring, roughly every 6 hours while the station is up). the result arrives as a new ⚒ session in your rail — '
+      + 'see the build list (and a “build now” button) on the agent’s dossier › CONFIG.';
   }
 
   // read the agent's live "build while away" grant (GET /api/workshop/backlog returns { granted }). Fail-open to
@@ -171,7 +179,7 @@ const WorkshopStore = (() => {
     if (state.seen.indexOf(runId) === -1) { state.seen.push(runId); if (state.seen.length > 200) state.seen = state.seen.slice(-200); }
     save();
     const body = { agentId: agentId || 'agent', runId: runId, decision: decision };
-    if (decision === 'keep' && destPath) body.destPath = destPath;
+    if (decision === 'keep' && destPath) body.destPath = destPath;   // absent → the sidecar lands it in the default deliverables folder (or applies a patch deliverable to a branch)
     try {
       const r = await fetch('/api/workshop/decide', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       const j = await r.json().catch(() => null);
@@ -179,7 +187,12 @@ const WorkshopStore = (() => {
         const keptPath = (j && j.destPath) || body.destPath;
         // Keep is a filesystem copy only. Renderer IPC cannot prove a fresh user
         // gesture, so a run may not launch an OS file manager on the user's desktop.
-        return { ok: true, destPath: keptPath, opened: false };
+        // A patch deliverable's keep is an APPLY (new branch in the blessed repo) — pass the server's
+        // real result through so the card can report what actually happened, never a guess.
+        return { ok: true, destPath: keptPath, opened: false, applied: j && j.applied === true, branch: (j && j.branch) || null, commit: (j && j.commit) || null, root: (j && j.root) || null,
+          // PATCH FALLBACK HONESTY: the server says when a patch deliverable could only be SAVED (not applied) —
+          // the card's outcome line must never let that read as "implemented into your project".
+          savedOnly: j && j.savedOnly === true, patchRefused: (j && j.patchRefused) || null };
       }
       return { ok: false, error: (j && j.error) || 'could not save your decision' };
     } catch (_) { return { ok: false, error: 'decision failed to reach the station' }; }
@@ -225,68 +238,125 @@ const WorkshopStore = (() => {
   // the sensible default Keep destination (the Commander's Desktop, when the desktop shell knows it).
   function desktopDefault() { try { return deps.desktopDefault ? (deps.desktopDefault() || '') : ''; } catch (_) { return ''; } }
 
-  // hand ONE manifest to the return-card beat (the single shared presenter under the attach poll, the
-  // live workshop.built push, and the return-from-away re-present). Marks the runId seen (session-scoped).
+  /* ---- SESSION DELIVERY (the seam that replaced feed injection, 2026-07-15) ---- */
+  const SESSION_PREFIX = 'workshop-';   // = the sidecar's shift streamId prefix, so session id ≡ durable stream
+  const sessionIdOf = (runId) => SESSION_PREFIX + String(runId);
+
+  // Adopt (idempotent) the deliverable's OWN session: unread in the rail, never focused. A re-offer of a
+  // still-undecided deliverable bumps the existing session unread again (Workstreams.touch — undecided = still
+  // owed), rather than re-rendering a card anywhere. Marks the runId seen (session-scoped poll-race guard).
+  function ensureSession(m) {
+    if (!m || !m.runId) return null;
+    if (typeof Workstreams === 'undefined' || !Workstreams.adopt) return null;
+    const runId = String(m.runId);
+    if (state && state.seen.indexOf(runId) === -1) { state.seen.push(runId); if (state.seen.length > 200) state.seen = state.seen.slice(-200); save(); }
+    const id = sessionIdOf(runId);
+    const existing = Workstreams.get ? Workstreams.get(id) : null;
+    if (existing) {
+      if (Workstreams.touch) Workstreams.touch(id);   // marks read only if it's the open stream — otherwise honest new-activity
+    } else {
+      Workstreams.adopt({
+        id: id,
+        title: '⚒ ' + (String(m.title || '').trim() || 'built while you were away').slice(0, 70),
+        agentId: m.agentId || 'agent', lane: 'active', kind: 'chat',
+        history: [{ role: 'system', sys: true, content: '⚒ built while you were away — “' + String(m.title || 'a deliverable') + '”. open this session any time to review and decide.' }],
+        lastActiveAt: Date.now(), lastReadAt: 0   // truthful unread: real new activity the Commander hasn't seen
+      });
+    }
+    try { if (typeof App !== 'undefined') { if (App.refreshRail) App.refreshRail(); if (App.persist) App.persist(); } } catch (_) {}
+    return id;
+  }
+
+  // append an honest, durable one-liner to the deliverable's session after a decision, so the session still
+  // tells the story after the live card vanishes (and across reloads).
+  function noteDecision(runId, text) {
+    try {
+      const ws = (typeof Workstreams !== 'undefined' && Workstreams.get) ? Workstreams.get(sessionIdOf(runId)) : null;
+      if (ws && Array.isArray(ws.history)) {
+        ws.history.push({ role: 'system', sys: true, content: String(text) });
+        if (typeof App !== 'undefined' && App.persist) App.persist();
+      }
+    } catch (_) {}
+  }
+
+  // hand ONE manifest to the return card — rendered INSIDE its own session (opts.sessionId makes chat.js
+  // refuse to paint it into any other stream). Marks the runId seen (session-scoped).
   function presentCard(m) {
     if (!m || !m.runId) return;
     const runId = String(m.runId);
     if (state.seen.indexOf(runId) === -1) { state.seen.push(runId); if (state.seen.length > 200) state.seen = state.seen.slice(-200); save(); }
     const aid = m.agentId || 'agent';
     Chat.workshopReturn(m, {
+      sessionId: sessionIdOf(runId),                             // the card belongs to THIS session only
       readFile: readFile,
       desktopDefault: desktopDefault(),
       runUrl: (relPath) => runUrl(aid, runId, relPath),          // W7: URL that RUNS a web file in a tab
       openFile: (relPath) => openFile(aid, runId, relPath),      // W7: manual-open guidance; never OS-launch
-      onDecide: (decision, destPath, extra) => decide(aid, runId, decision, destPath, extra)
+      onDecide: (decision, destPath, extra) => decide(aid, runId, decision, destPath, extra),
+      noteDecision: (text) => noteDecision(runId, text)
     });
   }
 
-  // auto-poll on attach: show the OLDEST undecided manifest as one return-card beat. Once per page session.
+  // THE CARD-ON-OPEN SEAM: chat.js load() calls this with the freshly displayed workstream id. If it is a
+  // deliverable session whose run is STILL UNDECIDED server-side (fresh honest read — never a cached claim),
+  // render the return card into it. Deliberately ignores the seen AND later ledgers: the Commander explicitly
+  // opened this session, which is the opposite of nagging. Fail-open: any fetch error → no card, no throw.
+  async function presentFor(wsId) {
+    const id = String(wsId || '');
+    if (id.indexOf(SESSION_PREFIX) !== 0) return;
+    if (typeof Chat === 'undefined' || !Chat.workshopReturn) return;
+    const runId = id.slice(SESSION_PREFIX.length);
+    const m = (await fetchRaw()).find(x => x && String(x.runId) === runId) || null;
+    if (!m) return;   // decided (or unreadable) — the session keeps its durable sys-marker history, no live card
+    presentCard(m);
+  }
+
+  // auto-poll on attach: give EVERY undecided deliverable its own unread session. Once per page session.
+  // No card is rendered here — the card appears when the Commander opens a delivery session (presentFor).
   async function maybePresent() {
     if (fired || !ready()) return;
-    if (typeof Chat === 'undefined' || !Chat.workshopReturn) return;
     const pending = await fetchPending();
     if (!pending.length) return;
     fired = true;
-    presentCard(pending[0]);
+    for (const m of pending) ensureSession(m);
   }
 
-  /* RETURN RE-PRESENT (2026-07-14): a night-shift build lands while the Commander is away BY DEFINITION,
-     so its live card + toast (onBuilt below) play to an empty room. On the Commander's first interaction
-     after a real absence (AutopilotStore's onReturn hook, wired in app.js), re-offer the oldest still-
-     UNDECIDED deliverable — even if its card already rendered this session. Respects 'later' (an explicit
-     dismissal stays dismissed); ignores 'seen' (shown-to-nobody must not count as told). chat.js keeps
-     the feed clean by dropping the stale duplicate row (data-wsrun) before rendering the fresh card. */
+  /* RETURN RE-PRESENT (2026-07-14, reshaped for session delivery 2026-07-15): a night-shift build lands
+     while the Commander is away BY DEFINITION, so the live delivery (onBuilt below) plays to an empty room.
+     On the Commander's first interaction after a real absence (AutopilotStore's onReturn hook, wired in
+     app.js), re-surface every still-UNDECIDED deliverable by bumping its session unread again (undecided =
+     still owed). Respects 'later' (an explicit dismissal stays quiet); ignores 'seen' (a session adopted
+     to an empty room must not count as told). */
   async function presentOnReturn() {
     if (!enabled) return;
-    if (typeof Chat === 'undefined' || !Chat.workshopReturn) return;
     const list = (await fetchRaw()).filter(m => m && m.runId && !state.later[m.runId]);
-    if (!list.length) return;
-    presentCard(list[0]);
+    for (const m of list) ensureSession(m);
   }
 
   /* LIVE PUSH — the attach-time poll above only covers session OPEN, so a deliverable that landed while the
      app sat open (a night-shift act or an away-workshop shift) was invisible until the next restart
      (2026-07-14: "it doesn't notify me anywhere"). The sidecar emits workshop.built the moment a manifest is
-     disk-validated; this presents the SAME return card immediately — Chat.workshopReturn already defers
-     behind live runs/interviews, so the one-beat-at-a-time law holds — plus a persistent StationUI toast
-     (category 'cronDigest', the Commander-mutable autonomous-run class). Anti-nag: the seen/later ledger
-     still guards, so a card already shown or deferred never re-fires here. */
+     disk-validated; this adopts the deliverable's OWN unread session immediately — never a card into whatever
+     stream is on screen — plus a persistent StationUI toast (category 'cronDigest', the Commander-mutable
+     autonomous-run class). Anti-nag: the seen/later ledger still guards, so a build already delivered this
+     session never re-fires here. */
   function onBuilt(p) {
     if (!enabled || !p || !p.runId || !p.manifest || typeof p.manifest !== 'object') return;
-    if (typeof Chat === 'undefined' || !Chat.workshopReturn) return;
     if (!ready()) state = hydrate(load());
     const runId = String(p.runId);
     if (state.later[runId] || state.seen.indexOf(runId) !== -1) return;
-    state.seen.push(runId); if (state.seen.length > 200) state.seen = state.seen.slice(-200);
-    save();
     const aid = String(p.agentId || 'agent');
     const m = Object.assign({}, p.manifest, { agentId: aid, runId: runId });
+    ensureSession(m);   // marks seen; unread row in the rail, focus untouched
     try {
-      if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('✦ built while you were away: ' + String(m.title || 'a deliverable') + ' — the return card is in COMMS', 'gold', 'cronDigest');
+      if (typeof StationUI !== 'undefined' && StationUI.notify) {
+        // actionable toast (2026-07-15 UX audit): clicking it JUMPS to the delivery session — the old copy
+        // pointed at "the rail" and left the user to go find it.
+        const jump = () => { try { if (typeof App !== 'undefined' && App.openWorkstream) App.openWorkstream(sessionIdOf(runId)); } catch (_) {} };
+        StationUI.notify('✦ built while you were away: ' + String(m.title || 'a deliverable') + ' — click to review it', 'gold', 'cronDigest', { onClick: jump });
+      }
     } catch (_) {}
-    try { if (typeof World !== 'undefined' && World.say) World.say('✦ finished a build — the result is in COMMS'); } catch (_) {}   // ambient in-world cue, same family as the desk-draft delivery
-    presentCard(m);
+    try { if (typeof World !== 'undefined' && World.say) World.say('✦ finished a build — it’s waiting in its own session'); } catch (_) {}   // ambient in-world cue, same family as the desk-draft delivery
   }
 
   // init({ enabled, desktopDefault }) — called from enterGame. enabled:false (the awakening) skips the beat.
@@ -305,7 +375,7 @@ const WorkshopStore = (() => {
   // S2/new-hero: a fresh Commander inherits no prior "later" list.
   function reset() { state = hydrate(null); fired = false; try { localStorage.removeItem(KEY); } catch (_) {} }
 
-  return { init, queue, decide, readFile, runUrl, openFile, desktopDefault, fetchPending, presentOnReturn, reset, queueConfirmLine, grantOf, openGrant, onBuilt, _hydrate: hydrate };
+  return { init, queue, decide, readFile, runUrl, openFile, desktopDefault, fetchPending, presentOnReturn, presentFor, ensureSession, reset, queueConfirmLine, grantOf, openGrant, onBuilt, _hydrate: hydrate };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = { WorkshopStore };

@@ -53,7 +53,12 @@ function normalize(stored) {
     denylist: Array.isArray(s.denylist) ? s.denylist.filter(x => x != null).map(String).filter(Boolean) : [],
     // normalized titles of DISCARDED items — a discarded piece of work can't be re-queued under a fresh id either
     // (doctrine: never re-create work the Commander already rejected). Distinct from `denylist` (by backlogId).
-    deniedTitles: Array.isArray(s.deniedTitles) ? s.deniedTitles.filter(x => x != null).map(String).filter(Boolean) : []
+    deniedTitles: Array.isArray(s.deniedTitles) ? s.deniedTitles.filter(x => x != null).map(String).filter(Boolean) : [],
+    // SHIFT HEALTH (2026-07-15 UX audit): the last workshop shift's honest outcome, so the away card can say
+    // "built X" / "couldn't run — no key" / "nothing queued" instead of the old total silence. Additive; a
+    // legacy record simply reads null. Shape: { at, reason, runId?, title?, parkedTitle? } (reason is the
+    // runWorkshopShift result reason: built | no-manifest | run-failed | no-capability | empty-backlog | not-granted).
+    lastShift: (s.lastShift && typeof s.lastShift === 'object') ? s.lastShift : null
   };
 }
 
@@ -264,9 +269,43 @@ function makeWorkshopStore(deps) {
     return read(agentId).backlog.find(b => b.builtRunId === rid || b.buildingRunId === rid) || null;
   }
 
+  // REMOVE (2026-07-15 UX audit): take an UN-BUILT item off the queue without the discard denylist — "I changed
+  // my mind about queueing this" is not "never propose this work again". A built item is refused here: its files
+  // exist, so it must be decided from its delivery session (keep/discard) instead. Resolves { removed, reason }.
+  function remove(agentId, backlogId) {
+    const id = String(backlogId || '');
+    let out = { removed: false, reason: 'not-found' };
+    if (!id) return Promise.resolve(out);
+    return durable.update(keyOf(agentId), (cur) => {
+      const rec = normalize(cur);
+      const it = rec.backlog.find(b => b.id === id);
+      if (!it) { out = { removed: false, reason: 'not-found' }; return undefined; }
+      if (it.builtRunId) { out = { removed: false, reason: 'built' }; return undefined; }
+      rec.backlog = rec.backlog.filter(b => b.id !== id);
+      out = { removed: true, reason: 'removed' };
+      return rec;
+    }).then(() => out);
+  }
+
+  // SHIFT HEALTH (2026-07-15 UX audit): record the last shift's honest outcome so the away card can render it.
+  // info: { at, reason, runId?, title?, parkedTitle? } — written by runWorkshopShift on EVERY exit path.
+  function setLastShift(agentId, info) {
+    return durable.update(keyOf(agentId), (cur) => {
+      const rec = normalize(cur);
+      rec.lastShift = {
+        at: Number(info && info.at) || 0,
+        reason: String((info && info.reason) || '').slice(0, 60),
+        runId: (info && info.runId) ? String(info.runId).slice(0, 64) : undefined,
+        title: (info && info.title) ? String(info.title).slice(0, 200) : undefined,
+        parkedTitle: (info && info.parkedTitle) ? String(info.parkedTitle).slice(0, 200) : undefined
+      };
+      return rec;
+    });
+  }
+
   return {
     read, hasGrant, setGrant, grantIfUndecided, backlogOf, isDenied,
-    queue, claimNext, sweepStaleClaims, markBuilt, releaseClaim, discard, complete, itemForRun,
+    queue, claimNext, sweepStaleClaims, markBuilt, releaseClaim, discard, complete, itemForRun, remove, setLastShift,
     _durable: durable
   };
 }
