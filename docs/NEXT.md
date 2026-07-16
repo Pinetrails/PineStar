@@ -1,5 +1,15 @@
 # NEXT.md — current priorities & task queue
 
+## 2026-07-15 — v0.5.1 CUT + INSTALLED LOCALLY (trunk `3d70d7b1`, tag `v0.5.1`)
+
+Signed release cut at trunk head (rc/0.5.1 content + docs + real RELEASE_NOTES.md; W0 surface
+re-stamped, claims authority PASS). minisign verify OK against the baked pubkey; artifacts staged
+in `release/` (StarNet_0.5.1_x64-setup.exe + .sig + latest.json, sha256 75bf43e4…). Installed on
+Andrew's machine (registry 0.5.1, exe ProductVersion 0.5.1, app relaunched, sidecar up + token-gated).
+- [ ] **Andrew: PUBLISH** — GitHub Release `v0.5.1` on `nonfungiblefunyuns-ship-it/starnet-releases`
+      with the three `release/` assets (checklist in the release-cut output); then
+      `node scripts/verify-update-host.mjs` + the public update canary.
+
 ## 2026-07-16 — RELEASE CANDIDATE PINNED: `rc/0.5.1` @ `503ba26f` (READY + beyond-gate proofs)
 
 `npm run qa:ready` = **READY at `503ba26f`** (2026-07-16 00:41Z; all 5 receipts, W0 wave PASS) and
