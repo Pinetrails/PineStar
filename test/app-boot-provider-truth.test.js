@@ -13,7 +13,10 @@ const src = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'app', 'app.j
 A.ok(/function bridgeAuthorityProven\s*\(/.test(src), 'app owns a bridge-authority predicate');
 A.ok(/ls\s*&&\s*ls\.bridged\s*&&\s*!ls\.paused\s*&&\s*!ls\.down/.test(src), 'bridge authority requires bridged + unpaused + not down');
 A.ok(/function paintBridgeConnecting\s*\(/.test(src), 'app owns the coherent connecting paint');
-A.ok(/chat-status[\s\S]{0,900}connectingâ€¦[\s\S]{0,900}status-pill[\s\S]{0,900}CONNECTING[\s\S]{0,900}COMMS connecting/i.test(src), 'connecting paint covers COMMS status, top pill, and empty-copy claim');
+A.ok(/chat-status[\s\S]{0,180}connecting\u2026/.test(src), 'connecting paint covers the COMMS status');
+A.ok(/status-pill[\s\S]{0,180}CONNECTING/.test(src), 'connecting paint covers the top status pill');
+A.ok(/COMMS connecting\u2026/.test(src), 'connecting paint retires the premature COMMS-online empty copy');
+A.ok(/sig[\s\S]{0,500}CONNECTING/.test(src), 'connecting paint covers the uplink instrument');
 A.ok(/Chat\.init\([\s\S]{0,900}beginBridgeAuthorityGate\(\)/.test(src), 'bridge gate starts only after COMMS has mounted its boot DOM');
 
 // PL-08: Custom has a required endpoint. That prerequisite must win BEFORE model validation, because
