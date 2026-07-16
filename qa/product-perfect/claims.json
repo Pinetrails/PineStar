@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "5340a94c455f2a9ae21f574ccb7cd13bd4511e59",
+    "sourceCommit": "e099a36389641fbaa8f4095c9a0fce660ea99835",
     "pathSetSha256": "e45261d65dc7ff0b9cc77172b4f800cc4bef6dec86bd786a26771964e9b2e342",
     "files": [
       {
@@ -133,8 +133,8 @@
       },
       {
         "path": "frontend/app/chat.js",
-        "bytes": 392850,
-        "sha256": "dfede01c0bc57d93864669f6627a0a90b73abf18ea875ef7851753bfc90695d6"
+        "bytes": 392880,
+        "sha256": "92b194322584363235956058a038aa0bdb3f8a472548a6f5e911eb2ed3ca730b"
       },
       {
         "path": "frontend/app/chatresize.js",
@@ -488,18 +488,18 @@
       },
       {
         "path": "frontend/app/recipe-catalog/core.js",
-        "bytes": 14733,
-        "sha256": "3d3feab510df48d783382cd05f73211311602cbcb8de303b192d02bee8856004"
+        "bytes": 15975,
+        "sha256": "4f69846f2b881712a87da85abf168650175bfecf6fffb6e6dc437081480b427b"
       },
       {
         "path": "frontend/app/recipe-catalog/creator.js",
-        "bytes": 12491,
-        "sha256": "dd9eeeff6106c39c1ca0374a242d30c227fd661ed681941f4384e4a5827fe2f9"
+        "bytes": 13423,
+        "sha256": "57ed4b133df743f76d3ce2da0d072899bbdc8e1f0f083aca1851111151ee1c7d"
       },
       {
         "path": "frontend/app/recipe-catalog/dev.js",
-        "bytes": 12177,
-        "sha256": "fae33d861f23bec816d8d73522c6adda86aa315bd1b7306bb34f63dd148f1f1e"
+        "bytes": 13283,
+        "sha256": "2c89771425548ff7da59047c78e67195185967b06bd202fecc7dc6e1bcdf3bfe"
       },
       {
         "path": "frontend/app/recipe-catalog/index.js",
@@ -508,13 +508,13 @@
       },
       {
         "path": "frontend/app/recipe-catalog/ops.js",
-        "bytes": 12920,
-        "sha256": "2c771b67fae4aae66c6110902e1b3668d88ac2cc09084460ca702d24a658eb38"
+        "bytes": 13655,
+        "sha256": "caf4bea0648eedf9386d47a8999900aef4580fe25433b0b3f2b2abfc76380186"
       },
       {
         "path": "frontend/app/recipe-catalog/research.js",
-        "bytes": 12461,
-        "sha256": "3d2735876a0a8f7f001b345b39ac43ebce124e55f5a9746fc76b7c84ea912cc5"
+        "bytes": 13890,
+        "sha256": "c3d2ec8f5457fc2a4ec8cdb2cb917c9818e5272ab14ad5e8363f671ed98612df"
       },
       {
         "path": "frontend/app/recipes.js",
