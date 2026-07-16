@@ -244,7 +244,11 @@
   }
   function clearSteer(state) {
     const s = normalize(state, 0);
-    return { v: STATE_VERSION, day: s.day, focus: s.focus, steer: null };
+    // A steer-derived focus is only a cache of that directive. Keeping it after CLEAR makes the route claim the
+    // deleted directive is still tonight's priority until a day roll. Evidence-derived focus is independent and
+    // may remain stable; a steer-derived one must be discarded so ensureFocus resolves fresh evidence (or null).
+    const focus = (s.focus && s.focus.source === 'steer') ? null : s.focus;
+    return { v: STATE_VERSION, day: s.day, focus, steer: null };
   }
 
   /* ensureFocus — the DAY-KEYED, steer-aware resolver the host calls at the start of every beat. Keeps the SAME

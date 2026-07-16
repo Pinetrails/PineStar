@@ -94,8 +94,14 @@ const goal = { text: 'launch the beta', done: 1, total: 4, next: 'wire the signu
 // ---- clearSteer drops the durable steer ----
 (function clearSteerWorks() {
   let st = F.applySteer(F.fresh(T0), { ref: 'C:/repo/beta', kind: 'project' }, T0);
+  st = F.ensureFocus(st, { projects: projects(), threads, goal }, { now: T0 + 1 }).state;
+  A.eq(st.focus.source, 'steer', 'precondition: the cached focus came from the steer');
   st = F.clearSteer(st);
   A.eq(st.steer, null, 'clearSteer removes the steer');
+  A.eq(st.focus, null, 'clearSteer also removes the steer-derived cached focus');
+  const fresh = F.ensureFocus(st, { projects: projects(), threads, goal }, { now: T0 + 2 });
+  A.ok(fresh.resolved && fresh.focus && fresh.focus.source === 'evidence', 'the next resolution is fresh evidence, never the cleared directive');
+  A.eq(fresh.focus.ref, 'C:/repo/alpha', 'clearing the steer reveals the current best evidence');
 })();
 
 // ---- envelope round-trips + tolerant hydrate ----
