@@ -2318,7 +2318,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
      TO DO -> IN PROGRESS the instant a real run fires (Workstreams.appendRun); SHIPPED is only ever a
      deliberate human turn-in (the ✓ SHIP button). The General chat home isn't a project, so it shows
      in the rail but never on this board. App owns persistence + the rail; we drive both via sync(). */
-  const COLS = [['todo', 'TO DO'], ['active', 'IN PROGRESS'], ['shipped', 'SHIPPED']];
+  const COLS = [['todo', 'TO DO'], ['active', 'ACTIVE'], ['shipped', 'SHIPPED']];
   const WS = () => (typeof Workstreams === 'object' && Workstreams) ? Workstreams : null;
   function boardStreams() {
     const w = WS(); if (!w) return [];
@@ -2397,6 +2397,18 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     if (s.runIds && s.runIds.length) return '<div class="kb-state done">DONE — REVIEW &amp; SHIP</div>';
     return '';
   }
+  function activeAggregate(items) {
+    let running = 0, ready = 0;
+    items.forEach(s => {
+      const busy = (typeof Channels !== 'undefined' && Channels.isBusy && Channels.isBusy(s.id));
+      if (busy) running++;
+      else if (s.runIds && s.runIds.length) ready++;
+    });
+    const parts = [];
+    if (running) parts.push(running + ' RUNNING');
+    if (ready) parts.push(ready + ' READY TO REVIEW');
+    return parts.length ? '<small class="kb-col-state">' + parts.join(' · ') + '</small>' : '';
+  }
   // the card's bound-agent chip: the workstream's OWN agent (s.agentId) resolved to a name + color from the live
   // roster. Truthful — a stream always carries a real agentId (default 'agent'); an unresolvable id shows verbatim,
   // never a made-up placeholder.
@@ -2430,7 +2442,8 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       '<div class="kb-cols">' +
       COLS.map(([lane, label]) => {
         const items = streams.filter(s => s.lane === lane);
-        return '<div class="kb-col"><h4>' + label + ' <i>' + items.length + '</i></h4>' +
+        return '<div class="kb-col"><h4>' + label + ' <i>' + items.length + '</i>' +
+          (lane === 'active' ? activeAggregate(items) : '') + '</h4>' +
           (items.length ? items.map(card).join('') : kbEmpty(lane)) + '</div>';
       }).join('') +
       '</div>';

@@ -2320,6 +2320,15 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
   #bottombar { flex-wrap: wrap; row-gap: 4px; overflow: visible; }
 }
 
+/* Short desktop windows need an explicit vertical path to every major region. */
+@media (max-width: 860px) and (max-height: 680px) {
+  #screen-game.active {
+    grid-template-rows: 50px minmax(180px, 1fr) minmax(180px, 1fr) minmax(44px, auto);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+}
+
 /* ---- CREW rail hidden (leftrail.js): the left column leaves the grid entirely and the stage
    absorbs the space; the ▸ CREW drawer tab (.crew-show) is the only way back. The body-class
    selector out-specifies every breakpoint's #screen-game.active rule, so each override below
