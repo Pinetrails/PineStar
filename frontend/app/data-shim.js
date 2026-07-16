@@ -40,5 +40,10 @@ DATA.SKINS = {
   ultrondroid:  { name: 'Ultron',         set: 'ultrondroid',  scale: 0.404 },
   xenomorph:    { name: 'Xenomorph',      set: 'xenomorph',    scale: 0.385 },
   voidwizard:   { name: 'Void Wizard',    set: 'voidwizard',   scale: 0.368 },
+  samaltman:    { name: 'Sam',            set: 'samaltman',    scale: 0.385 },
+  dario:        { name: 'Dario',          set: 'dario',        scale: 0.376 },
+  beachbabe:    { name: 'Beach Babe',     set: 'beachbabe',    scale: 0.394 },
+  secretagent:  { name: 'Secret Agent',   set: 'secretagent',  scale: 0.404 },
+  grimreaper:   { name: 'Grim Reaper',    set: 'grimreaper',   scale: 0.376 },
 };
 DATA.DEFAULT_SKIN = 'blank';
