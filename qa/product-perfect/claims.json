@@ -18,8 +18,8 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "4aa6a429e0bae5773746e77458e7aac2cc795b71",
-    "pathSetSha256": "11a2ff1e8ccd7ca7503a7d3a57bf51e4d0c7f5aeebda7d500a3c3bb7b174ea6e",
+    "sourceCommit": "68c927e5b99cff243e2f57b7bab81768456a562d",
+    "pathSetSha256": "de824fbe3db90310feda34075accb6f29b58c79b36ecec9718331778b9ff306f",
     "files": [
       {
         "path": "INSTALL.md",
@@ -133,8 +133,8 @@
       },
       {
         "path": "frontend/app/chat.js",
-        "bytes": 385082,
-        "sha256": "c79f55b9e6726648fb04c61e8a416e73b2ded7aafaeaaf96c7e8e9c1e30ff87d"
+        "bytes": 387110,
+        "sha256": "75761158ebc25c899eeac42aade402edaa67955af945f68d55c8b556691643ab"
       },
       {
         "path": "frontend/app/chatresize.js",
@@ -298,8 +298,8 @@
       },
       {
         "path": "frontend/app/launchmemory.js",
-        "bytes": 4865,
-        "sha256": "c326462cc74833cd6cbad9b626e1c3f68f1f11dc525c34ef6251cc1a3f278de5"
+        "bytes": 5453,
+        "sha256": "e98935fb201bbcf48b380cdab8bc994ec5d1b46fcbae1c1f6d82de2fbf7aeff8"
       },
       {
         "path": "frontend/app/leftrail.js",
@@ -602,6 +602,11 @@
         "sha256": "ef00e20f33937e4fc3012953079cdad682dfae2f84f59b2bfbdd1aa2b710738a"
       },
       {
+        "path": "frontend/app/starters.js",
+        "bytes": 6673,
+        "sha256": "148dd0b8c8c954520b7a0ce78e91f6a2e12054b7a9f322aecf2d62df0d57d050"
+      },
+      {
         "path": "frontend/app/stationbake.js",
         "bytes": 61560,
         "sha256": "f14920f72977bdeda59224e3b0c2c7de026e2abb18d1278a204f232e7869512d"
@@ -853,8 +858,8 @@
       },
       {
         "path": "frontend/index.html",
-        "bytes": 59532,
-        "sha256": "b88138690e7322bfe71a4dd735f4d5fb88408bac220605ac2f105989bbe66fda"
+        "bytes": 59766,
+        "sha256": "2e1773a1645c2f0eb1690175a6311da2dcf62f5c3a99880e72579a4aea058b41"
       },
       {
         "path": "frontend/js/arcade.js",
