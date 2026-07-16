@@ -331,6 +331,7 @@ test/toolsets.test.js
 test/channels.discord-wire.test.js
 test/widgets.test.js
 test/widgetfeed.test.js
+test/terminal-resize.test.js
 test/release-bump.test.js
 test/release-train-provenance.test.js
 test/lint-emits.js

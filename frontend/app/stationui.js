@@ -35,6 +35,23 @@ function visibleTerminalRect(rect, viewport) {
   };
 }
 
+// Pure size clamp for floating terminals. Per-window limits win until the viewport is smaller;
+// then the viewport temporarily becomes the ceiling (and effective floor) so every control remains reachable.
+function clampTerminalSize(size, limits, viewport) {
+  limits = limits || {}; viewport = viewport || {};
+  const vw = Math.max(0, Number(viewport.width) || 0), vh = Math.max(0, Number(viewport.height) || 0);
+  const availW = Math.max(0, vw - Math.min(16, vw / 2));
+  const availH = Math.max(0, vh - Math.min(16, vh / 2));
+  const maxW = Math.min(Math.max(0, Number(limits.maxWidth) || availW), availW);
+  const maxH = Math.min(Math.max(0, Number(limits.maxHeight) || availH), availH);
+  const minW = Math.min(Math.max(0, Number(limits.minWidth) || 0), maxW);
+  const minH = Math.min(Math.max(0, Number(limits.minHeight) || 0), maxH);
+  const rawW = Number(size && size.width), rawH = Number(size && size.height);
+  const width = Number.isFinite(rawW) && rawW > 0 ? rawW : minW;
+  const height = Number.isFinite(rawH) && rawH > 0 ? rawH : minH;
+  return { width: Math.max(minW, Math.min(width, maxW)), height: Math.max(minH, Math.min(height, maxH)) };
+}
+
 const StationUI = typeof document === 'undefined' ? {} : (() => {
   const $ = s => document.querySelector(s);
   const esc = s => U.esc(String(s == null ? '' : s));
@@ -65,7 +82,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   // P1-8 notification preferences: per-category on/off + a notification sound toggle. Every category defaults ON
   // (no silent regression); each is HONORED at emit time in notify() below (a decorative toggle would be a bug).
   function notifyDefaults() { return { runComplete: true, needsApproval: true, cronDigest: true, sound: true }; }
-  function blank() { return { v: 1, settings: defaults(), tasks: [], notifs: [], termPos: {}, consoleSection: {} }; }
+  function blank() { return { v: 1, settings: defaults(), tasks: [], notifs: [], termPos: {}, termSize: {}, consoleSection: {} }; }
   function load() {
     try {
       const r = JSON.parse(localStorage.getItem(KEY));
@@ -75,6 +92,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         if (!Array.isArray(r.tasks)) r.tasks = [];
         if (!Array.isArray(r.notifs)) r.notifs = [];
         if (!r.termPos || typeof r.termPos !== 'object') r.termPos = {};             // remembered drag positions (persisted)
+        if (!r.termSize || typeof r.termSize !== 'object') r.termSize = {};          // remembered dimensions (persisted)
         if (!r.consoleSection || typeof r.consoleSection !== 'object') r.consoleSection = {};  // last-active console section per window
         return r;
       }
@@ -231,7 +249,8 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   }
 
   /* ============== FLOATING TERMINAL WINDOWS (ported v7 ui.js) ============== */
-  let termDrag = null;
+  let termDrag = null, termResize = null;
+  const termSize = {};  // key -> {width,height} remembered user size
   let termTitleSeq = 0;   // a11y: gives each window's title a unique id for aria-labelledby
   // a11y: the tabbable controls inside a window, in DOM order, that are actually visible.
   function termFocusables(w) {
@@ -243,15 +262,69 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   const consoleSection = {};   // console key -> last-active section id, so reopening lands where the user was
   // P2: hydrate the persisted window layout so a panel re-opens where the Commander left it, and consoles land
   // on the last section they were on — across a full reload, not just this session. Saved back on drag-end / retab.
-  try { Object.assign(termPos, store.termPos || {}); Object.assign(consoleSection, store.consoleSection || {}); } catch (_) {}
-  function saveWindowState() { try { store.termPos = termPos; store.consoleSection = consoleSection; save(); } catch (_) {} }
+  try { Object.assign(termPos, store.termPos || {}); Object.assign(termSize, store.termSize || {}); Object.assign(consoleSection, store.consoleSection || {}); } catch (_) {}
+  function saveWindowState() { try { store.termPos = termPos; store.termSize = termSize; store.consoleSection = consoleSection; save(); } catch (_) {} }
   function terminalViewport() { return { width: window.innerWidth, height: window.innerHeight }; }
+  const DEFAULT_TERM_LIMITS = { minWidth: 320, minHeight: 220, maxWidth: 960, maxHeight: 760 };
+  const CONSOLE_TERM_LIMITS = { minWidth: 560, minHeight: 360, maxWidth: 1200, maxHeight: 840 };
+  function terminalLimits(opts) {
+    const base = opts && opts.console ? CONSOLE_TERM_LIMITS : DEFAULT_TERM_LIMITS;
+    return {
+      minWidth: Number(opts && opts.minWidth) || base.minWidth,
+      minHeight: Number(opts && opts.minHeight) || base.minHeight,
+      maxWidth: Number(opts && opts.maxWidth) || base.maxWidth,
+      maxHeight: Number(opts && opts.maxHeight) || base.maxHeight
+    };
+  }
   function rememberTermPosition(key, left, top) {
     if (!key) return;
     const prior = termPos[key];
     if (prior && prior.left === left && prior.top === top) return;
     termPos[key] = { left, top };
     saveWindowState();
+  }
+  function bakeTermRect(w) {
+    w.style.animation = 'none';
+    const r = w.getBoundingClientRect();
+    w.style.left = r.left + 'px'; w.style.top = r.top + 'px'; w.style.transform = 'none';
+    w.classList.add('term-moved');
+    return r;
+  }
+  function resizeTermTo(w, key, width, height, persist) {
+    if (!w) return null;
+    const next = clampTerminalSize({ width, height }, w._sizeLimits || DEFAULT_TERM_LIMITS, terminalViewport());
+    w.style.width = next.width + 'px'; w.style.height = next.height + 'px';
+    w.style.maxWidth = 'calc(100vw - 16px)'; w.style.maxHeight = 'calc(100vh - 16px)';
+    w.classList.add('term-sized');
+    // Keep the live map current even during pointermove. fitTermInViewport consults this map, so
+    // leaving the prior persisted value here would snap a pointer resize back to its old dimensions.
+    if (key) termSize[key] = { width: next.width, height: next.height };
+    if (persist !== false) saveWindowState();
+    return next;
+  }
+  function addTermResizeHandle(w, key, title) {
+    const grip = el('button', 'term-resize', '◢');
+    grip.type = 'button';
+    grip.setAttribute('aria-label', 'Resize ' + title);
+    grip.title = 'Drag to resize · arrow keys resize';
+    grip.addEventListener('pointerdown', ev => {
+      if (ev.button != null && ev.button !== 0) return;
+      const r = bakeTermRect(w);
+      termResize = { w, key, x: ev.clientX, y: ev.clientY, width: r.width, height: r.height, moved: false };
+      try { grip.setPointerCapture(ev.pointerId); } catch (_) {}
+      ev.preventDefault(); ev.stopPropagation();
+    });
+    grip.addEventListener('keydown', ev => {
+      const dx = ev.key === 'ArrowRight' ? 1 : ev.key === 'ArrowLeft' ? -1 : 0;
+      const dy = ev.key === 'ArrowDown' ? 1 : ev.key === 'ArrowUp' ? -1 : 0;
+      if (!dx && !dy) return;
+      const r = bakeTermRect(w), step = ev.shiftKey ? 48 : 16;
+      resizeTermTo(w, key, r.width + dx * step, r.height + dy * step, true);
+      fitTermInViewport(w, key, true);
+      ev.preventDefault(); ev.stopPropagation();
+    });
+    w.appendChild(grip);
+    return grip;
   }
   window.addEventListener('mousemove', ev => {
     if (termDrag) {
@@ -279,6 +352,23 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     }
     termDrag = null;
   });
+  window.addEventListener('pointermove', ev => {
+    if (!termResize) return;
+    termResize.moved = true;
+    resizeTermTo(termResize.w, termResize.key,
+      termResize.width + ev.clientX - termResize.x,
+      termResize.height + ev.clientY - termResize.y, false);
+    fitTermInViewport(termResize.w, termResize.key, false);
+  });
+  function finishTermResize() {
+    if (!termResize) return;
+    const r = termResize.w.getBoundingClientRect();
+    resizeTermTo(termResize.w, termResize.key, r.width, r.height, true);
+    fitTermInViewport(termResize.w, termResize.key, true);
+    termResize = null;
+  }
+  window.addEventListener('pointerup', finishTermResize);
+  window.addEventListener('pointercancel', finishTermResize);
   // P2: re-clamp every open (non-minimized) window back inside the viewport on a browser resize, so a panel
   // dragged to a corner can't be stranded off-screen when the window shrinks. CSS-centered consoles are skipped
   // by fitTermInViewport (they stay centered); only explicitly-moved windows are pulled back into view.
@@ -320,8 +410,10 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   function fitTermInViewport(w, key, persist) {
     if (!w) return;
     const resolvedKey = key || Object.keys(open).find(k => open[k] === w);
+    const savedSize = termSize[resolvedKey];
+    if (savedSize) resizeTermTo(w, resolvedKey, savedSize.width, savedSize.height, persist);
     // A never-moved single window stays safely CSS-centered; explicit coordinates are repaired.
-    if (!w.classList.contains('term-moved') && !termPos[resolvedKey] && w.style.transform !== 'none') return;
+    if (!w.classList.contains('term-moved') && !termPos[resolvedKey] && !savedSize && w.style.transform !== 'none') return;
     const repaired = visibleTerminalRect({
       left: w.offsetLeft,
       top: w.offsetTop,
@@ -459,7 +551,9 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     w.style.animation = '';
     void w.offsetWidth;
     w.classList.add('term-restoring');
-    const clearRestore = () => w.classList.remove('term-restoring');
+    // Do not expose the base .term power-on animation again when this one-shot class is removed.
+    // A resized/moved window would otherwise replay the centered keyframes and jump off-screen.
+    const clearRestore = () => { w.classList.remove('term-restoring'); w.style.animation = 'none'; fitTermInViewport(w, key, true); };
     w.addEventListener('animationend', clearRestore, { once: true });
     setTimeout(clearRestore, 460);
     // focus back onto the restored dialog itself (not its first control — the minimize button)
@@ -557,6 +651,9 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     if (opts && opts.console) w.classList.add('console');
     else if (opts && opts.w) w.style.width = opts.w;
     if (opts && opts.className) w.classList.add(opts.className);
+    w._sizeLimits = terminalLimits(opts);
+    const savedSize = termSize[key];
+    if (savedSize) resizeTermTo(w, key, savedSize.width, savedSize.height, false);
     w._onClose = opts && opts.onClose;
     w._opener = opener;
     // a11y: a floating window is a real modal dialog — label it by its title, make it focusable.
@@ -611,6 +708,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         '<span class="term-foot-sp"></span>' +
         '<span class="term-foot-grip" aria-hidden="true">···</span>'));
     }
+    addTermResizeHandle(w, key, String(title).replace(/<[^>]*>/g, ''));
     $('#terms').appendChild(w);
     open[key] = w;
     placeTerm(w, key);   // land in a cascaded slot (or its remembered spot) — never dead-center pile-up
@@ -6422,4 +6520,4 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   return { init, enter, setRoster, leave, clearRunning, runningCount: () => runningAgents.size, isAgentRunning: (id) => agentLive(id), notify, flashSave, openAgent, openArcade, toggleTerm, openTerm, rerender, refreshBoard: () => rerender('tasks'), pokeQuests, setTheme, getTheme, repaintAutonomy };
 })();
 
-if (typeof module !== 'undefined' && module.exports) module.exports = { visibleTerminalRect };
+if (typeof module !== 'undefined' && module.exports) module.exports = { visibleTerminalRect, clampTerminalSize };

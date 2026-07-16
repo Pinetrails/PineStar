@@ -703,6 +703,10 @@
         {
           "kind": "journey",
           "ref": "J1"
+        },
+        {
+          "kind": "journey",
+          "ref": "scripts/qa/terminal-resize-journey.mjs"
         }
       ],
       "status": "perfected",
@@ -912,6 +916,10 @@
         {
           "kind": "shoot",
           "ref": "sys-notifs"
+        },
+        {
+          "kind": "journey",
+          "ref": "scripts/qa/terminal-resize-journey.mjs"
         }
       ],
       "status": "perfected",
@@ -1056,6 +1064,10 @@
         {
           "kind": "shoot",
           "ref": "sys-settings"
+        },
+        {
+          "kind": "journey",
+          "ref": "scripts/qa/terminal-resize-journey.mjs"
         }
       ],
       "status": "perfected",
@@ -1090,6 +1102,10 @@
         {
           "kind": "shoot",
           "ref": "build-skills"
+        },
+        {
+          "kind": "journey",
+          "ref": "scripts/qa/terminal-resize-journey.mjs"
         }
       ],
       "status": "perfected",
