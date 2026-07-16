@@ -703,6 +703,10 @@
         {
           "kind": "journey",
           "ref": "J1"
+        },
+        {
+          "kind": "journey",
+          "ref": "scripts/qa/terminal-resize-journey.mjs"
         }
       ],
       "status": "perfected",
@@ -912,6 +916,10 @@
         {
           "kind": "shoot",
           "ref": "sys-notifs"
+        },
+        {
+          "kind": "journey",
+          "ref": "scripts/qa/terminal-resize-journey.mjs"
         }
       ],
       "status": "perfected",
@@ -1056,6 +1064,10 @@
         {
           "kind": "shoot",
           "ref": "sys-settings"
+        },
+        {
+          "kind": "journey",
+          "ref": "scripts/qa/terminal-resize-journey.mjs"
         }
       ],
       "status": "perfected",
@@ -1090,6 +1102,10 @@
         {
           "kind": "shoot",
           "ref": "build-skills"
+        },
+        {
+          "kind": "journey",
+          "ref": "scripts/qa/terminal-resize-journey.mjs"
         }
       ],
       "status": "perfected",
@@ -15758,6 +15774,15 @@
       "state": "ingame",
       "notes": "REDESIGNED 2026-07-08: the #ws-archived head button was removed (Commander directive — rail head is SESSIONS/PROJECTS + NEW only); the reveal moved to a footer row inside #workstreams (updateArchivedToggle). Prior audit no longer applies — demoted to mapped, needs re-audit."
     },
+    {"id":"ui/world/ws-bulk-apply","kind":"ui","area":"world","name":"ARCHIVE PREVIEWED","purpose":"Apply the currently displayed exact session-cleanup preview.","promise":"The button stays disabled until a non-empty preview exists; clicking archives exactly those previewed IDs, protects General and pinned sessions by default, persists the change, and exposes undo.","wiring":{"files":["frontend/index.html","frontend/app/app.js","frontend/app/workstreams.js","frontend/css/app.css"],"events":[]},"coverage":[{"kind":"test","ref":"test/session-power-tools.test.js"}],"status":"mapped","auditedAt":null,"findings":[],"firstSeen":"2026-07-16T07:46:38.407Z","lastSeen":"2026-07-16T07:47:13.046Z","missing":false,"selector":"#ws-bulk-apply","state":"ingame","notes":"Cartographer enumerated the control in the seeded ingame DOM. Exact membership is machine-guarded; physical click proof remains for composed Wave 4."},
+    {"id":"ui/world/ws-bulk-completed","kind":"ui","area":"world","name":"completed session criterion","purpose":"Include deliberately completed sessions in a cleanup preview.","promise":"Changing this criterion invalidates any old preview; the next preview includes only shipped sessions plus other explicitly selected criteria.","wiring":{"files":["frontend/index.html","frontend/app/app.js","frontend/app/workstreams.js"],"events":[]},"coverage":[{"kind":"test","ref":"test/session-power-tools.test.js"}],"status":"mapped","auditedAt":null,"findings":[],"firstSeen":"2026-07-16T07:46:38.407Z","lastSeen":"2026-07-16T07:47:13.046Z","missing":false,"selector":"#ws-bulk-completed","state":"ingame"},
+    {"id":"ui/world/ws-bulk-days","kind":"ui","area":"world","name":"archive age threshold","purpose":"Choose the age boundary used by the older-than cleanup criterion.","promise":"Choices are 30 days, 90 days, and 1 year; changing one invalidates the old preview and never archives until a new exact preview is applied.","wiring":{"files":["frontend/index.html","frontend/app/app.js","frontend/app/workstreams.js"],"events":[]},"coverage":[{"kind":"test","ref":"test/session-power-tools.test.js"}],"status":"mapped","auditedAt":null,"findings":[],"firstSeen":"2026-07-16T07:46:38.407Z","lastSeen":"2026-07-16T07:47:13.046Z","missing":false,"selector":"#ws-bulk-days","state":"ingame"},
+    {"id":"ui/world/ws-bulk-empty","kind":"ui","area":"world","name":"empty session criterion","purpose":"Include untouched sessions with no visible dialogue, run, or deliverable in a cleanup preview.","promise":"Empty is selected by default; changing it invalidates an old preview, and pinned/General sessions remain protected.","wiring":{"files":["frontend/index.html","frontend/app/app.js","frontend/app/workstreams.js"],"events":[]},"coverage":[{"kind":"test","ref":"test/session-power-tools.test.js"}],"status":"mapped","auditedAt":null,"findings":[],"firstSeen":"2026-07-16T07:46:38.407Z","lastSeen":"2026-07-16T07:47:13.046Z","missing":false,"selector":"#ws-bulk-empty","state":"ingame"},
+    {"id":"ui/world/ws-bulk-old","kind":"ui","area":"world","name":"older-than session criterion","purpose":"Include sessions whose last-active timestamp crosses the selected age threshold.","promise":"Checking it uses the adjacent threshold; changing it invalidates the old preview and no row moves before explicit apply.","wiring":{"files":["frontend/index.html","frontend/app/app.js","frontend/app/workstreams.js"],"events":[]},"coverage":[{"kind":"test","ref":"test/session-power-tools.test.js"}],"status":"mapped","auditedAt":null,"findings":[],"firstSeen":"2026-07-16T07:46:38.407Z","lastSeen":"2026-07-16T07:47:13.046Z","missing":false,"selector":"#ws-bulk-old","state":"ingame"},
+    {"id":"ui/world/ws-bulk-preview","kind":"ui","area":"world","name":"PREVIEW session archive","purpose":"Compute and disclose the exact set matching selected cleanup criteria before mutation.","promise":"Clicking reports an exact count, protects General and pinned sessions, and enables apply only for a non-empty token-bound preview.","wiring":{"files":["frontend/index.html","frontend/app/app.js","frontend/app/workstreams.js"],"events":[]},"coverage":[{"kind":"test","ref":"test/session-power-tools.test.js"}],"status":"mapped","auditedAt":null,"findings":[],"firstSeen":"2026-07-16T07:46:38.407Z","lastSeen":"2026-07-16T07:47:13.046Z","missing":false,"selector":"#ws-bulk-preview","state":"ingame"},
+    {"id":"ui/world/ws-clear","kind":"ui","area":"world","name":"CLEAR ACTIVE CONVERSATION","purpose":"Clear only the open conversation while retaining unrelated sessions, agent memory, and run/deliverable records.","promise":"A first click arms a scope-named confirmation; the second checkpoints and clears only transcript history, persists, and exposes undo. An active run must stop first.","wiring":{"files":["frontend/index.html","frontend/app/app.js","frontend/app/workstreams.js","frontend/css/app.css"],"events":[]},"coverage":[{"kind":"test","ref":"test/session-power-tools.test.js"}],"status":"mapped","auditedAt":null,"findings":[],"firstSeen":"2026-07-16T07:46:38.407Z","lastSeen":"2026-07-16T07:47:13.046Z","missing":false,"selector":"#ws-clear","state":"ingame"},
+    {"id":"ui/world/ws-export-json","kind":"ui","area":"world","name":"EXPORT .JSON","purpose":"Download the active conversation as a portable structured transcript.","promise":"JSON contains only dialogue/title, declares secretsIncluded:false, excludes hidden/system records, scrubs credentials, round-trips, and revokes its object URL.","wiring":{"files":["frontend/index.html","frontend/app/app.js","frontend/app/workstreams.js"],"events":[]},"coverage":[{"kind":"test","ref":"test/session-power-tools.test.js"}],"status":"mapped","auditedAt":null,"findings":[],"firstSeen":"2026-07-16T07:46:38.407Z","lastSeen":"2026-07-16T07:47:13.046Z","missing":false,"selector":"#ws-export-json","state":"ingame"},
+    {"id":"ui/world/ws-export-md","kind":"ui","area":"world","name":"EXPORT .MD","purpose":"Download the active conversation as readable Markdown.","promise":"Markdown labels Commander/Agent dialogue, excludes hidden/system rows, scrubs credentials, and revokes its object URL.","wiring":{"files":["frontend/index.html","frontend/app/app.js","frontend/app/workstreams.js"],"events":[]},"coverage":[{"kind":"test","ref":"test/session-power-tools.test.js"}],"status":"mapped","auditedAt":null,"findings":[],"firstSeen":"2026-07-16T07:46:38.407Z","lastSeen":"2026-07-16T07:47:13.046Z","missing":false,"selector":"#ws-export-md","state":"ingame"},
     {
       "id": "ui/world/ws-new",
       "kind": "ui",
@@ -15791,6 +15816,9 @@
       "selector": "#ws-new",
       "state": "ingame",
       "notes": "Live-proven 2026-07-07T22:16:20.560Z (port 8968): clicking #ws-new grew ws elements 8→14 (new workstream). onclick=newWorkstream app.js:2245. Evidence dock-chrome.json."
-    }
+    },
+    {"id":"ui/world/ws-search","kind":"ui","area":"world","name":"search sessions and transcripts","purpose":"Search one local surface across every session title and visible transcript body.","promise":"Typing returns case-insensitive title/body hits with snippets across active and archived sessions; hidden/system rows and credentials are not exposed, and activating a hit opens its session.","wiring":{"files":["frontend/index.html","frontend/app/app.js","frontend/app/workstreams.js","frontend/css/app.css"],"events":[]},"coverage":[{"kind":"test","ref":"test/session-power-tools.test.js"}],"status":"mapped","auditedAt":null,"findings":[],"firstSeen":"2026-07-16T07:46:38.407Z","lastSeen":"2026-07-16T07:47:13.046Z","missing":false,"selector":"#ws-search","state":"ingame"},
+    {"id":"ui/world/ws-tools-btn","kind":"ui","area":"world","name":"session TOOLS","purpose":"Expose session search, export, clear, bulk archive, and recovery controls from the sessions rail.","promise":"Clicking toggles the labelled Session tools region, keeps aria-expanded truthful, and focuses search on open.","wiring":{"files":["frontend/index.html","frontend/app/app.js","frontend/css/app.css"],"events":[]},"coverage":[{"kind":"test","ref":"test/session-power-tools.test.js"}],"status":"mapped","auditedAt":null,"findings":[],"firstSeen":"2026-07-16T07:46:38.407Z","lastSeen":"2026-07-16T07:47:13.046Z","missing":false,"selector":"#ws-tools-btn","state":"ingame"},
+    {"id":"ui/world/ws-undo","kind":"ui","area":"world","name":"UNDO LAST SESSION CHANGE","purpose":"Restore the last clear or bulk-archive recovery checkpoint.","promise":"The button appears only when a durable checkpoint exists; clicking restores exact history/archive state, returns to the recovered active session when valid, clears the checkpoint, and persists restoration across restart.","wiring":{"files":["frontend/index.html","frontend/app/app.js","frontend/app/workstreams.js","frontend/css/app.css"],"events":[]},"coverage":[{"kind":"test","ref":"test/session-power-tools.test.js"}],"status":"mapped","auditedAt":null,"findings":[],"firstSeen":"2026-07-16T07:46:38.407Z","lastSeen":"2026-07-16T07:47:13.046Z","missing":false,"selector":"#ws-undo","state":"ingame","notes":"Cartographer enumerated the control in the seeded ingame DOM. Recovery is machine-guarded; physical click proof remains for composed Wave 4."}
   ]
 }

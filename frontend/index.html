@@ -365,7 +365,17 @@
     <ul id="crew"></ul>
     <div id="crew-sum"></div>
     <div id="ws-wrap">
-      <div class="ws-head"><span class="ws-view" role="tablist" aria-label="rail view"><button id="ws-tab-sessions" class="ws-tab on" role="tab" aria-selected="true" title="your conversations">SESSIONS</button><button id="ws-tab-projects" class="ws-tab" role="tab" aria-selected="false" title="trusted project folders">PROJECTS</button></span><span class="ws-head-acts"><button id="ws-new" title="start a new workstream">+ NEW</button><button id="ws-addproject" title="bless a folder as a trusted project" hidden>+ ADD</button></span></div>
+      <div class="ws-head"><span class="ws-view" role="tablist" aria-label="rail view"><button id="ws-tab-sessions" class="ws-tab on" role="tab" aria-selected="true" title="your conversations">SESSIONS</button><button id="ws-tab-projects" class="ws-tab" role="tab" aria-selected="false" title="trusted project folders">PROJECTS</button></span><span class="ws-head-acts"><button id="ws-tools-btn" title="search, export, clear, or archive sessions" aria-expanded="false" aria-controls="ws-tools">TOOLS</button><button id="ws-new" title="start a new workstream">+ NEW</button><button id="ws-addproject" title="bless a folder as a trusted project" hidden>+ ADD</button></span></div>
+      <section id="ws-tools" aria-label="Session tools" hidden>
+        <label class="ws-tools-search"><span class="sr-only">Search session titles and transcripts</span><input id="ws-search" type="search" placeholder="search sessions + transcripts" autocomplete="off"></label>
+        <ul id="ws-search-results" aria-live="polite"></ul>
+        <div class="ws-tools-row"><span>ACTIVE CONVERSATION</span><button id="ws-export-md">EXPORT .MD</button><button id="ws-export-json">EXPORT .JSON</button></div>
+        <button id="ws-clear" class="ws-tools-wide danger">CLEAR ACTIVE CONVERSATION</button>
+        <fieldset class="ws-bulk"><legend>ARCHIVE SESSIONS</legend><label><input id="ws-bulk-empty" type="checkbox" checked> empty</label><label><input id="ws-bulk-completed" type="checkbox"> completed</label><label><input id="ws-bulk-old" type="checkbox"> older than <select id="ws-bulk-days"><option value="30">30 days</option><option value="90">90 days</option><option value="365">1 year</option></select></label><button id="ws-bulk-preview">PREVIEW</button></fieldset>
+        <div id="ws-bulk-status" role="status" aria-live="polite">Preview before archiving. General and pinned sessions stay protected.</div>
+        <button id="ws-bulk-apply" class="ws-tools-wide" disabled>ARCHIVE PREVIEWED</button>
+        <button id="ws-undo" class="ws-tools-wide" hidden>UNDO LAST SESSION CHANGE</button>
+      </section>
       <ul id="workstreams"></ul>
       <ul id="projects" hidden></ul>
     </div>
@@ -477,6 +487,7 @@
         <!-- WORK menu, one axis per entry (UX confusion audit 2026-07-15): RECIPES = WHAT to run,
              ROUTINES = WHEN it runs, TASKS = WHERE live work sits, QUESTS = progress only. -->
         <button class="bb" data-term="tasks" data-hint="task"><span class="bb-i">☑</span><span class="bb-tx"><b>TASKS</b><small>where all work lives — queued, running &amp; done</small></span></button>
+        <button class="bb" data-term="deliverables" data-hint="deliverable"><span class="bb-i">▣</span><span class="bb-tx"><b>DELIVERABLES</b><small>outputs, Workshop builds &amp; cleanup</small></span></button>
         <button class="bb" id="bb-missions" data-hint="recipe"><span class="bb-i">❒</span><span class="bb-tx"><b>RECIPES</b><small>ready-made jobs to launch — they land on TASKS</small></span></button>
         <button class="bb" data-term="routines" data-hint="routine"><span class="bb-i">⏱</span><span class="bb-tx"><b>ROUTINES</b><small>any job, put on a schedule</small></span></button>
         <button class="bb" data-term="quests" data-hint="quest"><span class="bb-i">⚑</span><span class="bb-tx"><b>QUESTS</b><small>progress &amp; suggestions — not a second to-do list</small></span></button>
@@ -629,6 +640,7 @@ document.write('<script src="' + ((window.__STARNET_API__ || '') + '/shared/spec
 <script src="app/chat.js"></script>
 <script src="app/voice.js"></script>
 <script src="app/keepawake.js"></script>
+<script src="app/deliverables.js"></script><!-- backend-backed run artifact + Workshop library with bounded safe previews -->
 <script src="app/stationui.js"></script>
 <script src="app/navdock.js"></script>
 <script src="app/chatresize.js"></script>

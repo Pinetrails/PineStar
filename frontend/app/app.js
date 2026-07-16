@@ -23,6 +23,71 @@ const App = (() => {
   let pickedCustomVoice = '';   // the Commander's free-text "in their own words" voice note (optional)
   let pickedApproval = 'ask';   // the APPROVAL mode — 'ask' (consent-gated) | 'full' (auto-approve). Drives the REAL consent broker (sidecar bypass), not a cosmetic toggle.
   let pickedProvider = 'codex';   // BEGINNER-FIRST default: 'codex' (personal ChatGPT sign-in, NO API key) leads the funnel; 'openrouter' (BYO API key) + the rest stay one click away. initConnect() still honours a returning agent's saved provider (selectProviderUI(Harness.getProv())).
+  // POWER-USER LOOP PL-03 — entry is a four-surface truth transaction. World opens its EventSource
+  // before Chat/StationUI finish mounting, and their independent timers used to expose an impossible
+  // mixture during reload: unreachable + STANDBY + ONLINE + "COMMS online". Hold every idle claim at
+  // CONNECTING until the bridge itself proves OPEN; a sustained failure then converges to one DOWN state.
+  let bridgeAuthorityTimer = null;
+  let bridgeAuthorityObserver = null;
+  function bridgeAuthorityProven() {
+    try {
+      const ls = (typeof World !== 'undefined' && World.linkState) ? World.linkState() : null;
+      return !!(ls && ls.bridged && !ls.paused && !ls.down);
+    } catch (_) { return false; }
+  }
+  function paintBridgeConnecting() {
+    const chat = el('chat-status');
+    if (chat) { if (chat.textContent !== 'connecting…') chat.textContent = 'connecting…'; if (chat.className !== 'status-connecting') chat.className = 'status-connecting'; }
+    const pill = el('status-pill');
+    if (pill) { if (pill.textContent !== 'CONNECTING') pill.textContent = 'CONNECTING'; if (pill.className !== 'standby') pill.className = 'standby'; }
+    const empty = document.querySelector('.cmsg-empty-line');
+    if (empty && empty.textContent !== 'COMMS connecting…') empty.textContent = 'COMMS connecting…';
+    const sig = el('sig'), bars = sig && sig.querySelector('b');
+    if (sig && bars) { sig.classList.remove('down'); sig.classList.add('standby'); if (sig.childNodes[0].nodeValue !== 'CONNECTING ') sig.childNodes[0].nodeValue = 'CONNECTING '; if (bars.textContent !== '▃▃▃▃') bars.textContent = '▃▃▃▃'; }
+    // Do not let our own corrective mutations recursively re-enter the observer and starve the
+    // EventSource/timers that are supposed to earn authority.
+    if (bridgeAuthorityObserver) bridgeAuthorityObserver.takeRecords();
+  }
+  function paintBridgeUnavailable() {
+    const chat = el('chat-status');
+    if (chat) { chat.textContent = 'station unreachable'; chat.className = 'status-down'; }
+    const pill = el('status-pill');
+    if (pill) { pill.textContent = 'LINK DOWN'; pill.className = 'down'; }
+    const empty = document.querySelector('.cmsg-empty-line');
+    if (empty) empty.textContent = 'COMMS unavailable — reconnecting to the station.';
+    const sig = el('sig'), bars = sig && sig.querySelector('b');
+    if (sig && bars) { sig.classList.remove('standby'); sig.classList.add('down'); sig.childNodes[0].nodeValue = 'LINK DOWN '; bars.textContent = '▁▁▁▁'; }
+  }
+  function beginBridgeAuthorityGate() {
+    if (bridgeAuthorityTimer) clearTimeout(bridgeAuthorityTimer);
+    if (bridgeAuthorityObserver) { bridgeAuthorityObserver.disconnect(); bridgeAuthorityObserver = null; }
+    const beganAt = Date.now();
+    // StationUI and Topbar have independent repaint cadences. During the gate, synchronously fold any
+    // attempted status mutation back into CONNECTING before the browser paints a contradictory frame.
+    if (typeof MutationObserver !== 'undefined') {
+      bridgeAuthorityObserver = new MutationObserver(() => { if (bridgeAuthorityTimer && !bridgeAuthorityProven()) paintBridgeConnecting(); });
+      const game = el('screen-game');
+      if (game) bridgeAuthorityObserver.observe(game, { subtree: true, childList: true, characterData: true, attributes: true });
+    }
+    const check = () => {
+      if (bridgeAuthorityProven()) {
+        bridgeAuthorityTimer = null;
+        if (bridgeAuthorityObserver) { bridgeAuthorityObserver.disconnect(); bridgeAuthorityObserver = null; }
+        try { if (typeof Topbar !== 'undefined' && Topbar._paintSig) Topbar._paintSig(); } catch (_) {}
+        if (typeof Chat !== 'undefined' && Chat.status && !(Chat.isBusy && Chat.isBusy())) Chat.status('online');
+        const pill = el('status-pill'); if (pill) { pill.textContent = 'ONLINE'; pill.className = ''; }
+        const empty = document.querySelector('.cmsg-empty-line');
+        if (empty && agent) empty.textContent = 'COMMS online. Type a task or a question to ' + agent.name + '.';
+        return;
+      }
+      // EventSource.CONNECTING is not a fault. Only call the link unavailable after it has failed to
+      // earn authority for a full retry window; until then every surface stays on the same neutral word.
+      if ((Date.now() - beganAt) >= 12000) { bridgeAuthorityTimer = null; if (bridgeAuthorityObserver) { bridgeAuthorityObserver.disconnect(); bridgeAuthorityObserver = null; } paintBridgeUnavailable(); return; }
+      paintBridgeConnecting();
+      bridgeAuthorityTimer = setTimeout(check, 100);
+    };
+    check();
+  }
   let prefilledKey = '';               // the key the CONNECT field was pre-seeded with from storage (browser BYOK). Empty
                                        //   when nothing was stored (or on desktop, where the key lives in the keychain and
                                        //   getKey() returns ''). Used by onWake's one-time overwrite guard: editing a
@@ -1873,7 +1938,6 @@ const App = (() => {
   async function onWakeAttempt() {
     SFX.boot(); SFX.open();
     stopCodexPoll();   // leaving the connect screen — drop any in-flight sign-in poll
-    const model = el('in-model').value.trim();
     // single funnel for agent.name → honor the 18-char design cap (covers the roster-pick path too).
     // A blank/sentinel name mints a station codename (never the bland 'AGENT'), matching the awakening
     // speaker — dialogue.js owns the generator so both surfaces stay consistent.
@@ -1881,6 +1945,15 @@ const App = (() => {
     if (typeof Dialogue !== 'undefined' && Dialogue.isUnnamed && Dialogue.isUnnamed(rawName)) rawName = Dialogue.codename();
     const name = (rawName || 'AGENT').toUpperCase().slice(0, 18);
     const msg = el('connect-msg'); msg.className = 'msg';
+    // PL-08: provider prerequisites outrank the asynchronously refreshed model catalog. A rapid
+    // CUSTOM → WAKE can still have the prior Codex slug in #in-model for one turn; that stale value
+    // must never make us coach the Commander to pick gpt-5.5 for an unrelated /v1 endpoint.
+    const baseUrl = el('in-base-url') ? el('in-base-url').value.trim() : '';
+    if (providerNeedsBaseUrl(pickedProvider) && !baseUrl) {
+      msg.textContent = 'enter your Custom /v1 base URL.';
+      return false;
+    }
+    const model = el('in-model').value.trim();
     if (!model) {
       // COLD-START: never strand a beginner on an empty required field. Pre-fill a sensible default for the
       // chosen provider (Codex discovers its own lineup, so leave that path to its own picker) and say so.
@@ -1898,9 +1971,7 @@ const App = (() => {
       Harness.setModel(model); Harness.setProv('codex');
     } else {
       const key = el('in-key').value.trim();
-      const baseUrl = el('in-base-url') ? el('in-base-url').value.trim() : '';
       if (providerNeedsBaseUrl(pickedProvider)) {
-        if (!baseUrl) { msg.textContent = 'enter your Custom /v1 base URL.'; return false; }
         if (Harness.setBaseUrl) await Harness.setBaseUrl(baseUrl, pickedProvider);
       }
       const configured = !!(Harness.configured && Harness.configured(pickedProvider));
@@ -1999,7 +2070,7 @@ const App = (() => {
     if (!agent.reasoningEffort && saved.reasoningEffort) agent.reasoningEffort = saved.reasoningEffort;
     Harness.setModel(agent.model || Harness.getModel());
     Harness.setTotals(saved.usage || { tokens: 0, cost: 0, calls: 0 });
-    Workstreams.init({ workstreams: saved.workstreams, activeId: saved.activeId, generalId: saved.generalId });
+    Workstreams.init({ workstreams: saved.workstreams, activeId: saved.activeId, generalId: saved.generalId, sessionUndo: saved.sessionUndo });
     pendingStationDoc = saved.station || null;   // restore the built station (if any)
     pendingStationStats = saved.stationStats || null;   // restore the station-growth rollup (XP/level/confidence)
     pendingProfile = saved.profile || null;   // restore the learned user-affinity profile
@@ -2082,7 +2153,8 @@ const App = (() => {
         config: { apply: applyAgentConfig, setModel: setAgentModelPin, setName: setAgentName, setWorkshop: setAgentWorkshop, setSkin: setAgentSkin, deleteAgent: deleteAgent, crewCount: () => agents.size },   // dossier edits re-shape the live prompt; setModel pins per-agent model/provider/effort (P1-6); setName renames the agent; setWorkshop flips the away-build grant (W3); setSkin repoints the sprite (genesis catalog); deleteAgent archives+removes a specialist; crewCount gates the last-agent delete guard
         comms: { openWorkstream: openWorkstream }   // the while-you're-away card's "review" jumps straight to a deliverable's session (2026-07-15)
       });
-      if (!opts.awaitingPurpose) StationUI.notify(agent.name + ' is online — ' + agent.model, 'good');   // during the awakening the finale announces it instead
+      // Presence is already proven by the live roster, link indicator, and COMMS state. Do not
+      // create a fresh persistent notification every time an existing station is reloaded.
     }
     // AGENT GROWTH: subscribe XP/Level/Confidence to the real run-outcome bus. Seeds agent.stats +
     // the station rollup, pushes the live numbers to the world HUD, and fires level-up celebrations.
@@ -2325,6 +2397,7 @@ const App = (() => {
       notify: (text, kind) => { if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify(text, kind || 'warn'); }
     });
     Chat.init({ system: agent.systemPrompt, name: agent.name, ws: Workstreams.active(), onTurn: persist });
+    beginBridgeAuthorityGate();   // Chat mounted the four boot claims; hold them together until the bridge proves itself
     // G2 RETURN RITUAL: arm the durable lastSeenAt heartbeat and (once per session, never during the
     // awakening) fire the while-you-were-away digest for unattended runs the sidecar recorded. The
     // store reads /api/runs + /api/cron itself and hands the rows to Chat.awayDigest; rating a row
@@ -2475,6 +2548,7 @@ const App = (() => {
     pushRoster();     // Stage 2: seed the sidecar with the live crew so the lead can delegate (no-op for a solo station)
     renderRail();
     el('ws-new').onclick = newWorkstream;
+    wireSessionTools();
     // NS-5c SESSIONS ↔ PROJECTS toggle + ADD-a-project wiring
     { const ts = el('ws-tab-sessions'); if (ts) ts.onclick = () => setRailView('sessions'); }
     { const tp = el('ws-tab-projects'); if (tp) tp.onclick = () => setRailView('projects'); }
@@ -2642,6 +2716,101 @@ const App = (() => {
   function newWorkstream() {
     const ws = Workstreams.startSession();
     SFX.open(); Chat.load(ws); refreshUsage(); renderRail(); persist();
+  }
+  /* Session power tools — one compact rail surface for title/transcript search, secret-safe active
+     conversation export, explicit clear+checkpoint, and exact-preview bulk archive. The pure store
+     owns every selection/recovery invariant; this layer only renders and persists its decisions. */
+  let sessionToolsPreview = null;
+  function sessionDownload(bundle) {
+    if (!bundle || !bundle.text) return false;
+    try {
+      const blob = new Blob([bundle.text], { type: bundle.mime || 'text/plain' });
+      const url = URL.createObjectURL(blob), a = document.createElement('a');
+      a.href = url; a.download = bundle.filename || 'starnet-conversation.txt';
+      document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 0);
+      return true;
+    } catch (_) { return false; }
+  }
+  function refreshSessionUndo() {
+    const b = el('ws-undo'); if (b) b.hidden = !Workstreams.canUndo();
+  }
+  function renderSessionSearch() {
+    const input = el('ws-search'), out = el('ws-search-results'); if (!input || !out) return;
+    const q = input.value.trim(); out.innerHTML = '';
+    if (!q) return;
+    const hits = Workstreams.search(q);
+    for (const hit of hits) {
+      const li = document.createElement('li'); li.className = 'ws-search-hit'; li.tabIndex = 0; li.dataset.id = hit.id;
+      const title = document.createElement('b'); title.textContent = hit.title || 'General';
+      const snippet = document.createElement('small'); snippet.textContent = hit.snippet;
+      li.append(title, snippet);
+      const open = () => { switchWorkstream(hit.id); input.value = ''; out.innerHTML = ''; };
+      li.onclick = open; li.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } };
+      out.appendChild(li);
+    }
+    if (!hits.length) {
+      const li = document.createElement('li'); li.className = 'ws-search-hit'; li.textContent = 'No title or transcript matches.'; out.appendChild(li);
+    }
+  }
+  function resetBulkPreview(message) {
+    sessionToolsPreview = null;
+    const apply = el('ws-bulk-apply'); if (apply) apply.disabled = true;
+    const status = el('ws-bulk-status'); if (status) status.textContent = message || 'Preview before archiving. General and pinned sessions stay protected.';
+  }
+  function wireSessionTools() {
+    const panel = el('ws-tools'), toggle = el('ws-tools-btn'); if (!panel || !toggle || toggle.__wired) return;
+    toggle.__wired = true;
+    toggle.onclick = () => {
+      const open = panel.hidden; panel.hidden = !open; toggle.setAttribute('aria-expanded', String(open));
+      SFX.click(); refreshSessionUndo(); if (open) { const q = el('ws-search'); if (q) q.focus(); }
+    };
+    { const q = el('ws-search'); if (q) q.oninput = renderSessionSearch; }
+    const exportActive = format => {
+      const w = Workstreams.active(), bundle = w && Workstreams.exportConversation(w.id, format);
+      const ok = sessionDownload(bundle); if (ok) SFX.click(); else SFX.bad();
+      if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify(ok ? ('exported “' + ((w && w.title) || 'General') + '” — hidden data and secrets excluded') : 'conversation export failed', ok ? '' : 'warn');
+    };
+    el('ws-export-md').onclick = () => exportActive('markdown');
+    el('ws-export-json').onclick = () => exportActive('json');
+    const clear = el('ws-clear');
+    clear.onclick = () => {
+      const w = Workstreams.active(); if (!w) return;
+      if (typeof Channels !== 'undefined' && Channels.isBusy(w.id)) {
+        SFX.bad(); if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('stop the active run before clearing this conversation', 'warn'); return;
+      }
+      if (!clear.dataset.armed) {
+        clear.dataset.armed = '1'; clear.textContent = 'CONFIRM CLEAR “' + (w.title || 'General') + '”'; SFX.bad();
+        setTimeout(() => { if (clear.isConnected && clear.dataset.armed) { delete clear.dataset.armed; clear.textContent = 'CLEAR ACTIVE CONVERSATION'; } }, 5000);
+        return;
+      }
+      delete clear.dataset.armed; clear.textContent = 'CLEAR ACTIVE CONVERSATION';
+      const cp = Workstreams.clearConversation(w.id); if (!cp) { SFX.bad(); return; }
+      Chat.load(w); persist(); refreshSessionUndo(); renderRail(); SFX.close();
+      if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('conversation cleared — recovery checkpoint ready', 'warn');
+    };
+    el('ws-bulk-preview').onclick = () => {
+      const empty = !!el('ws-bulk-empty').checked, completed = !!el('ws-bulk-completed').checked, old = !!el('ws-bulk-old').checked;
+      const days = Math.max(1, +el('ws-bulk-days').value || 30);
+      sessionToolsPreview = Workstreams.previewArchive({ empty, completed, olderThanMs: old ? days * 86400000 : 0 });
+      const n = sessionToolsPreview.count, status = el('ws-bulk-status'), apply = el('ws-bulk-apply');
+      status.textContent = n ? (n + ' exact session' + (n === 1 ? '' : 's') + ' previewed. General and pinned sessions are protected.') : '0 sessions match this preview.';
+      apply.disabled = !n; SFX.click();
+    };
+    for (const id of ['ws-bulk-empty', 'ws-bulk-completed', 'ws-bulk-old', 'ws-bulk-days']) {
+      const n = el(id); if (n) n.onchange = () => resetBulkPreview('Criteria changed — preview again before archiving.');
+    }
+    el('ws-bulk-apply').onclick = () => {
+      const before = Workstreams.activeId(), result = Workstreams.archivePreview(sessionToolsPreview);
+      if (!result) { SFX.bad(); resetBulkPreview('Preview expired or changed — preview again.'); return; }
+      if (Workstreams.activeId() !== before) loadActiveStream();
+      persist(); renderRail(); refreshSessionUndo(); resetBulkPreview(result.count + ' session' + (result.count === 1 ? '' : 's') + ' archived. Undo is available below.');
+      refreshSessionUndo(); SFX.close();
+    };
+    el('ws-undo').onclick = () => {
+      if (!Workstreams.undoLast()) { SFX.bad(); refreshSessionUndo(); return; }
+      loadActiveStream(); persist(); renderRail(); refreshSessionUndo(); resetBulkPreview('Last session change restored.'); SFX.open();
+    };
+    refreshSessionUndo();
   }
   // COMMS AGENT SELECTOR: put the Commander on the line with agent <agentId>. Selecting an agent must never
   // silently rebind an existing conversation to a different agent (that would corrupt whose transcript it is);
