@@ -97,6 +97,19 @@ const Marketplace = (() => {
   const sfx = n => { try { if (typeof SFX !== 'undefined' && SFX[n]) SFX[n](); } catch (_) {} };
   const note = (m, k) => { try { if (ctx && ctx.notify) ctx.notify(m, k); } catch (_) {} };
   const esc = s => U.esc(s == null ? '' : s);   // delegate to the one complete impl (escapes & < > " ')
+  function summonCandidateName(s) {
+    const typed = (typeof AgentId !== 'undefined' && AgentId.normalizeName) ? AgentId.normalizeName(pickedSummonName) : String(pickedSummonName || '').trim().toUpperCase();
+    if (typed) return typed;
+    if (ctx && typeof ctx.nextAgentName === 'function') return ctx.nextAgentName((s && s.name) || 'AGENT');
+    return (typeof AgentId !== 'undefined' && AgentId.normalizeName) ? AgentId.normalizeName((s && s.name) || 'AGENT') : String((s && s.name) || 'AGENT').toUpperCase();
+  }
+  function summonNameIssue() {
+    if (!String(pickedSummonName || '').trim()) return '';
+    return (typeof AgentId !== 'undefined' && AgentId.nameIssue) ? AgentId.nameIssue(pickedSummonName) : (String(pickedSummonName).length > 18 ? 'too-long' : '');
+  }
+  function summonNameConflict() {
+    return !!(String(pickedSummonName || '').trim() && ctx && typeof ctx.nameConflict === 'function' && ctx.nameConflict(pickedSummonName));
+  }
   function el(tag, cls, html) { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; }
   function voiceName(personaId) { return (typeof Personas !== 'undefined' && Personas.get(personaId) && Personas.get(personaId).name) || personaId; }
 
@@ -595,7 +608,7 @@ const Marketplace = (() => {
       '<button type="button" class="mkt-cfg-head" aria-expanded="' + (summonConfigOpen ? 'true' : 'false') + '">' +
         '<span class="mkt-cfg-caret" aria-hidden="true">' + (summonConfigOpen ? '▾' : '▸') + '</span>' +
         '<span class="mkt-cfg-ttl">SUMMON CONFIG</span>' +
-        '<span class="mkt-cfg-sum"><span class="mkt-cfg-k">NAME</span> ' + (pickedSummonName ? esc(pickedSummonName) : 'class name') +
+        '<span class="mkt-cfg-sum"><span class="mkt-cfg-k">NAME</span> <span class="mkt-candidate-name">' + esc(summonCandidateName((focusAgent && Specialties.get(focusAgent)) || null)) + '</span>' +
           ' <span class="mkt-cfg-k">SKIN</span> ' + esc(summonSkinName()) +
           ' <span class="mkt-cfg-k">MODEL</span> ' + modelSummary + '</span>' +
       '</button>';
@@ -640,13 +653,18 @@ const Marketplace = (() => {
     return html;
   }
 
-  // SUMMON-only: type the new agent's NAME (optional — blank inherits the class name, the pre-existing default).
-  // Normalized exactly like the dossier rename (single-spaced, UPPER, ≤18) so a named-at-summon agent is
-  // indistinguishable from a renamed one; the maxlength mirrors the ≤18 design cap.
+  // Keep the raw value visible so a 19-character paste can be explained, never silently clipped.
   function summonNameBarHTML() {
     if (!(ctx && ctx.mode === 'pick' && ctx.summon)) return '';
-    return '<div class="mkt-skinbar mkt-namebar"><label class="mkt-skinlabel" for="mkt-summon-name">NAME <span class="mkt-hint">— what this agent answers to (blank = the class name)</span></label>' +
-      '<input class="mkt-in" id="mkt-summon-name" type="text" maxlength="18" autocomplete="off" spellcheck="false" placeholder="class name" value="' + esc(pickedSummonName) + '"></div>';
+    const used = ((typeof AgentId !== 'undefined' && AgentId.normalizeName) ? AgentId.normalizeName(pickedSummonName) : String(pickedSummonName || '')).length;
+    const max = (ctx && ctx.displayNameLimit) || (typeof AgentId !== 'undefined' && AgentId.NAME_MAX) || 18;
+    const issue = summonNameIssue(), dup = summonNameConflict();
+    const helper = issue === 'too-long' ? 'too long — shorten this name before summoning'
+      : dup ? 'duplicate name — summon requires a second confirmation; the agent id will remain unique'
+      : 'blank uses the proposed default: ' + summonCandidateName((focusAgent && Specialties.get(focusAgent)) || null);
+    return '<div class="mkt-skinbar mkt-namebar"><label class="mkt-skinlabel" for="mkt-summon-name">NAME <span class="mkt-hint">— what this agent answers to</span></label>' +
+      '<input class="mkt-in" id="mkt-summon-name" type="text" autocomplete="off" spellcheck="false" aria-invalid="' + (issue ? 'true' : 'false') + '" placeholder="proposed default" value="' + esc(pickedSummonName) + '">' +
+      '<div class="mkt-name-meta"><span class="mkt-name-help' + (issue || dup ? ' warn' : '') + '">' + esc(helper) + '</span><span class="mkt-name-count' + (used > max ? ' over' : '') + '">' + used + ' / ' + max + '</span></div></div>';
   }
 
   // SUMMON-only: pick the new agent's APPEARANCE (its own choice — independent of class). A LIVE preview
@@ -879,7 +897,7 @@ const Marketplace = (() => {
     // is already stated by the FOCUS chip above, so the three bars would just repeat it (audit item 8 declutter).
     const laneSpread = ['code', 'research', 'general'].filter(k => (t[k] || 0) > 0).length >= 2;
     const badges = (here ? ' <span class="mkt-badge mkt-here">DEPLOYED</span>' : '') + (s.custom ? ' <span class="mkt-badge">CUSTOM</span>' : '');
-    const ctaLabel = deploy ? ('⏼ DEPLOY TO ' + esc(((ctx && ctx.agentName) || 'AGENT')).toUpperCase()) : ('⏼ SUMMON ' + esc(s.name).toUpperCase());
+    const ctaLabel = deploy ? ('⏼ DEPLOY TO ' + esc(((ctx && ctx.agentName) || 'AGENT')).toUpperCase()) : ('⏼ SUMMON ' + esc(summonCandidateName(s)));
     const ctaSub = deploy
       ? 're-specs ' + esc((ctx && ctx.agentName) || 'your agent') + '’s purpose &amp; standing orders'
       : 'opens its own <span data-hint="workstream">chat thread</span> — name, voice &amp; purpose pre-filled from this class';
@@ -943,6 +961,7 @@ const Marketplace = (() => {
     const effortTxt = (pickedSummonModel && pickedSummonModel.effort) ? esc(String(pickedSummonModel.effort).toUpperCase())
       : (s.reasoningEffort ? esc(String(s.reasoningEffort).toUpperCase()) : '');
     return '<div class="mkt-commit" aria-label="what this summon creates">' +
+      '<span class="mkt-cs-cell"><span class="mkt-cs-k">NAME</span> <span class="mkt-candidate-name">' + esc(summonCandidateName(s)) + '</span></span>' +
       '<span class="mkt-cs-cell mkt-cs-appear"><img class="mkt-cs-skin" src="assets/sprites/' + esc(sk.set) + '/rot_south.png" alt="" draggable="false"><span>' + esc(sk.name || skinId) + '</span></span>' +
       '<span class="mkt-cs-cell"><span class="mkt-cs-k">MODEL</span> ' + modelTxt + (effortTxt ? ' · ' + effortTxt : '') + '</span>' +
       '<span class="mkt-cs-cell"><span class="mkt-cs-k">CLASS</span> ' + esc(codeOf(s)) + '</span>' +
@@ -1392,7 +1411,24 @@ const Marketplace = (() => {
     // SUMMON name field: track keystrokes into pickedSummonName (survives the strip's collapse/expand re-renders).
     // No renderStage on input — a re-render would blow away the focused field mid-typing.
     const nameIn = stage.querySelector('#mkt-summon-name');
-    if (nameIn) nameIn.addEventListener('input', () => { pickedSummonName = nameIn.value; });
+    if (nameIn) nameIn.addEventListener('input', () => {
+      pickedSummonName = nameIn.value;
+      renderDossier();
+      const s = (focusAgent && Specialties.get(focusAgent)) || null;
+      root.querySelectorAll('.mkt-candidate-name').forEach(e => { e.textContent = summonCandidateName(s); });
+      const used = ((typeof AgentId !== 'undefined' && AgentId.normalizeName) ? AgentId.normalizeName(pickedSummonName) : String(pickedSummonName || '')).length;
+      const max = (ctx && ctx.displayNameLimit) || (typeof AgentId !== 'undefined' && AgentId.NAME_MAX) || 18;
+      const count = root.querySelector('.mkt-name-count'); if (count) { count.textContent = used + ' / ' + max; count.classList.toggle('over', used > max); }
+      const issue = summonNameIssue(), dup = summonNameConflict();
+      const help = root.querySelector('.mkt-name-help');
+      if (help) {
+        help.textContent = issue === 'too-long' ? 'too long — shorten this name before summoning'
+          : dup ? 'duplicate name — summon requires a second confirmation; the agent id will remain unique'
+          : 'blank uses the proposed default: ' + summonCandidateName(s);
+        help.classList.toggle('warn', !!(issue || dup));
+      }
+      nameIn.setAttribute('aria-invalid', issue ? 'true' : 'false');
+    });
 
     const skinWrap = stage.querySelector('#mkt-skin-picker');
     if (skinWrap) {
@@ -1534,12 +1570,21 @@ const Marketplace = (() => {
         // pick (the wake screen) has no live agent to activate — it just hands the chosen spec back.
         deployBtn.addEventListener('click', () => {
           const s = Specialties.get(deployBtn.dataset.id); if (!s) return;
-          sfx('click');
-          if (ctx.onPick) {
-            if (ctx.summon) ctx.onPick(Object.assign({}, s, { skin: pickedSummonSkin || (typeof DATA !== 'undefined' && DATA.DEFAULT_SKIN), modelPin: pickedSummonModel || null, agentName: (pickedSummonName || '').trim() || null }), { activate: true });
-            else ctx.onPick(s);
+          const commit = () => {
+            sfx('click');
+            if (ctx.onPick) {
+              if (ctx.summon) ctx.onPick(Object.assign({}, s, { skin: pickedSummonSkin || (typeof DATA !== 'undefined' && DATA.DEFAULT_SKIN), modelPin: pickedSummonModel || null, agentName: summonCandidateName(s) }), { activate: true });
+              else ctx.onPick(s);
+            }
+            close();
+          };
+          if (ctx.summon && summonNameIssue()) {
+            summonConfigOpen = true; sfx('bad'); note('name is too long — use 18 characters or fewer', 'bad'); renderStage();
+            const input = root.querySelector('#mkt-summon-name'); if (input) input.focus();
+            return;
           }
-          close();
+          if (ctx.summon && summonNameConflict()) return armDelete(deployBtn, deployBtn.textContent, commit, 'SUMMON DUPLICATE NAME?');
+          commit();
         });
       } else {
         // DEPLOY TO <current> (deploy mode) — a RE-SPEC that rewrites the live agent's purpose + standing orders.

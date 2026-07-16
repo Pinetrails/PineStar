@@ -766,6 +766,10 @@ const Chat = (() => {
     if (rosterStatusMsg) { if (modelEl) { modelEl.textContent = rosterStatusMsg; modelEl.classList.add('comms-agent-warn'); } if (bar) bar.hidden = false; return; }
     if (modelEl) modelEl.classList.remove('comms-agent-warn');
     const list = (typeof App !== 'undefined' && App.agents) ? (App.agents() || []) : [];
+    const duplicateAgentName = a => {
+      const key = String((a && a.name) || '').trim().toUpperCase();
+      return !!key && list.filter(x => String((x && x.name) || '').trim().toUpperCase() === key).length > 1;
+    };
     const activeId = activeWs ? (activeWs.agentId || 'agent') : null;
     // rebuild the <option> set only when the roster (ids+names) or selection changed, so a redundant re-render
     // never collapses a mid-open native dropdown.
@@ -773,7 +777,7 @@ const Chat = (() => {
     if (sel.__idKey !== key) {
       sel.__idKey = key;
       sel.innerHTML = '';
-      for (const a of list) { const o = document.createElement('option'); o.value = a.id; o.textContent = a.name || a.id; sel.appendChild(o); }
+      for (const a of list) { const o = document.createElement('option'); o.value = a.id; o.textContent = (a.name || a.id) + (duplicateAgentName(a) ? ' [' + a.id + ']' : ''); sel.appendChild(o); }
       if (activeId != null) sel.value = activeId;
     }
     const cur = list.find(a => a.id === activeId) || null;
