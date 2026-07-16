@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "fcd89889fde5de618dd12c57f6fc1c510e4e1ecb",
+    "sourceCommit": "8ce4c96711a701cf5e24f56a487274f48f3e824c",
     "pathSetSha256": "95100c67f873b121d4586a6d7fa52eb86e792f7dfaaf24fe50ed8f22f229d9c8",
     "files": [
       {
@@ -133,8 +133,8 @@
       },
       {
         "path": "frontend/app/chat.js",
-        "bytes": 385082,
-        "sha256": "c79f55b9e6726648fb04c61e8a416e73b2ded7aafaeaaf96c7e8e9c1e30ff87d"
+        "bytes": 387509,
+        "sha256": "4732e46ccaaa0e2c42f6627a9c403b774688b7bb1a584bc6e71af8b862bcd5f0"
       },
       {
         "path": "frontend/app/chatresize.js",
@@ -248,8 +248,8 @@
       },
       {
         "path": "frontend/app/fullscreen.js",
-        "bytes": 5088,
-        "sha256": "844af5605d3f3e39e4223ccbd110c05e95b83346b4a795eb71a07326f0af248d"
+        "bytes": 5948,
+        "sha256": "fa02f3929eafc1f6a2a3e6cdda94b92c0a465bc727d3213e282538f90ff58380"
       },
       {
         "path": "frontend/app/glossary.js",
@@ -538,13 +538,13 @@
       },
       {
         "path": "frontend/app/returns.js",
-        "bytes": 6657,
-        "sha256": "d0ad21971c1ed0359d54262c9c87e2d9072847014a96c6cfaa79139ba279248e"
+        "bytes": 6771,
+        "sha256": "8ad4f3253b4666c8b83766078b3c82801b7a256bb15734cafd1f340ceca82731"
       },
       {
         "path": "frontend/app/returnstore.js",
-        "bytes": 7608,
-        "sha256": "6d083a41c293511f6228928b9fb5dc0e5505d48d172fc39fbcb3415a94dd24ff"
+        "bytes": 10030,
+        "sha256": "80aa4a7e1800872658a797eea3d38982f8cf9da1e65e4dc3645d08b1cc091501"
       },
       {
         "path": "frontend/app/routinenudgestore.js",
@@ -768,8 +768,8 @@
       },
       {
         "path": "frontend/app/world.js",
-        "bytes": 450429,
-        "sha256": "180102cfd109e694a626d802c61c9a842509a4b7dbe5c6a5de3345cd328ef410"
+        "bytes": 452747,
+        "sha256": "e8c1e8c687a945264944d1c5adb6fc280402a5a5cfe23c636dc03004de1f109f"
       },
       {
         "path": "frontend/app/worldmodel.js",
