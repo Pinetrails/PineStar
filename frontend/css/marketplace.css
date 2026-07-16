@@ -685,6 +685,10 @@ button.mkt-archive-head:focus-visible { outline: 2px solid var(--gold); outline-
 /* SUMMON NAME field: uppercase echo matches the ≤18 UPPER normalization the summon actually applies */
 .mkt-namebar .mkt-in { max-width: 320px; margin-top: 6px; text-transform: uppercase; letter-spacing: 1px; }
 .mkt-namebar .mkt-in::placeholder { text-transform: none; letter-spacing: .3px; color: var(--ph-dim); }
+.mkt-name-meta { max-width: 320px; display:flex; justify-content:space-between; gap:12px; margin-top:5px; font-size:12px; color:var(--ph-dim); }
+.mkt-name-help.warn, .mkt-name-count.over { color:var(--warn, #ffb34e); }
+.mkt-name-count { flex:0 0 auto; font-variant-numeric:tabular-nums; }
+.mkt-namebar .mkt-in[aria-invalid="true"] { border-color:var(--warn, #ffb34e); }
 
 /* ---- SUMMON commit summary: the confirm row above the CTA (skin thumb + model/effort + class code) ---- */
 .mkt-commit { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; padding: 8px 11px; margin-bottom: 9px;

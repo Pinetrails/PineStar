@@ -766,6 +766,10 @@ const Chat = (() => {
     if (rosterStatusMsg) { if (modelEl) { modelEl.textContent = rosterStatusMsg; modelEl.classList.add('comms-agent-warn'); } if (bar) bar.hidden = false; return; }
     if (modelEl) modelEl.classList.remove('comms-agent-warn');
     const list = (typeof App !== 'undefined' && App.agents) ? (App.agents() || []) : [];
+    const duplicateAgentName = a => {
+      const key = String((a && a.name) || '').trim().toUpperCase();
+      return !!key && list.filter(x => String((x && x.name) || '').trim().toUpperCase() === key).length > 1;
+    };
     const activeId = activeWs ? (activeWs.agentId || 'agent') : null;
     // rebuild the <option> set only when the roster (ids+names) or selection changed, so a redundant re-render
     // never collapses a mid-open native dropdown.
@@ -773,7 +777,7 @@ const Chat = (() => {
     if (sel.__idKey !== key) {
       sel.__idKey = key;
       sel.innerHTML = '';
-      for (const a of list) { const o = document.createElement('option'); o.value = a.id; o.textContent = a.name || a.id; sel.appendChild(o); }
+      for (const a of list) { const o = document.createElement('option'); o.value = a.id; o.textContent = (a.name || a.id) + (duplicateAgentName(a) ? ' [' + a.id + ']' : ''); sel.appendChild(o); }
       if (activeId != null) sel.value = activeId;
     }
     const cur = list.find(a => a.id === activeId) || null;
@@ -883,8 +887,44 @@ const Chat = (() => {
     return real.length > HISTORY_CAP ? real.slice(-HISTORY_CAP) : real;
   }
   function getHistory() { return activeWs ? activeWs.history.slice() : []; }
+  // A streamed fragment is real assistant output even when the transport dies before a clean result envelope.
+  // Persist it as its own turn before the failure marker so switch/reload cannot erase what was already visible.
+  function persistPartial(ws, text) {
+    if (!ws || !ws.history) return false;
+    const content = String(text == null ? '' : text);
+    if (!content.trim()) return false;
+    const last = ws.history[ws.history.length - 1];
+    if (last && last.role === 'assistant' && !last.error && last.content === content) return false;
+    ws.history.push({ role: 'assistant', content: content, ts: Date.now() });
+    capHistory(ws);
+    return true;
+  }
   function isBusy() { return !!(activeWs && typeof Channels !== 'undefined' && Channels.isBusy(activeWs.id)); }
   function isActiveWs(ws) { return !!(ws && activeWs && activeWs.id === ws.id); }   // is THIS stream the one on screen right now?
+  // The backend mutex is per AGENT/workspace, not per session. Resolve that same scope locally so a fresh
+  // session never claims ONLINE or accepts a doomed turn while another session owns this agent's run.
+  function busyPeerFor(ws) {
+    if (!ws || typeof Workstreams === 'undefined' || typeof Channels === 'undefined') return null;
+    const aid = ws.agentId || 'agent';
+    const list = Workstreams.list ? Workstreams.list({ includeArchived: true }) : (Workstreams.all ? Workstreams.all() : []);
+    return list.find(w => w && w.id !== ws.id && (w.agentId || 'agent') === aid && Channels.isBusy(w.id)) || null;
+  }
+  function renderAgentBusy(peer, detail) {
+    if (!log) return;
+    const old = log.querySelector('#comms-agent-busy');
+    if (!peer && !detail) { if (old) old.remove(); return; }
+    const rowEl = old || document.createElement('div');
+    rowEl.id = 'comms-agent-busy'; rowEl.className = 'choice-row comms-agent-busy'; rowEl.textContent = '';
+    const label = document.createElement('span'); label.className = 'dim';
+    label.textContent = peer ? ('BUSY IN ' + streamLabel(peer).toUpperCase()) : String(detail || 'AGENT BUSY');
+    rowEl.appendChild(label);
+    if (peer) {
+      const view = document.createElement('button'); view.type = 'button'; view.className = 'choice'; view.textContent = 'VIEW ACTIVE RUN';
+      view.onclick = () => { if (typeof App !== 'undefined' && App.openWorkstream) App.openWorkstream(peer.id); };
+      rowEl.appendChild(view);
+    }
+    if (!old) log.appendChild(rowEl);
+  }
   function status(s) {
     if (!statusEl) return;
     statusEl.textContent = s;
@@ -910,7 +950,9 @@ const Chat = (() => {
     // genuinely bridged-but-dead link downgrades; pre-entry and a deliberate pause still read as before.
     let down = false;
     try { const ls = (typeof World !== 'undefined' && World.linkState) ? World.linkState() : null; down = !!(ls && ls.bridged && !ls.paused && ls.down); } catch (_) {}
-    status(p ? 'awaiting your approval…' : (isBusy() ? (channelStatus || 'thinking…') : (down ? 'station unreachable' : 'online')));
+    const peer = !isBusy() ? busyPeerFor(activeWs) : null;
+    status(p ? 'awaiting your approval…' : (isBusy() ? (channelStatus || 'thinking…') : (peer ? ('busy in ' + streamLabel(peer)) : (down ? 'station unreachable' : 'online'))));
+    renderAgentBusy(peer);
     // keep the elapsed readout matched to the DISPLAYED stream — switching to a busy stream picks up its
     // live count, switching to an idle one clears it. (send() also starts it the instant a run begins.)
     if (isBusy()) ensureElapsedTimer(); else stopElapsedTimer();
@@ -921,6 +963,7 @@ const Chat = (() => {
   function maybeEmptyState() {
     if (!log || interview) return;
     if (activeWs && activeWs.history && activeWs.history.length) return;
+    if (busyPeerFor(activeWs)) return;   // never pair BUSY IN … with the contradictory "COMMS online" empty hint
     if (isBusy() || log.querySelector('.cmsg')) return;
     const s = (typeof Channels !== 'undefined' && activeWs) ? Channels.snapshot(activeWs.id) : null;
     if (s && ((s.toolEvents && s.toolEvents.length) || s.tools.length || s.acc || s.pending)) return;
@@ -3671,6 +3714,10 @@ const Chat = (() => {
   // switch + turn-end) and at send() start (status goes 'thinking…' without a syncStatus).
   function updateControls() {
     const stop = el('chat-stop'); if (stop) stop.hidden = !isBusy();
+    const peer = !isBusy() ? busyPeerFor(activeWs) : null;
+    if (input) { input.disabled = !!peer; input.title = peer ? ('This agent is busy in ' + streamLabel(peer)) : ''; }
+    const sendBtn = el('chat-send'); if (sendBtn) sendBtn.disabled = !!peer;
+    const attachBtn = el('chat-attach'); if (attachBtn) attachBtn.disabled = !!peer;
     renderQueued();
   }
 
@@ -4683,6 +4730,8 @@ const Chat = (() => {
     if (interview) { clearChoices(); interview(text); return; }   // THE AWAKENING owns the input: typed answers retire any stale chip row
     const ws = activeWs;   // CAPTURE the origin stream now — a mid-run switch must not cross-post its cost/files
     if (!ws) return;
+    const preflightPeer = busyPeerFor(ws);
+    if (preflightPeer) { renderAgentBusy(preflightPeer); syncStatus(); return; }
     const pending = pendingTaskQuestion && pendingTaskQuestion.streamId === ws.id ? pendingTaskQuestion : null;
     const routedTaskReply = pending && typeof TaskIntent !== 'undefined' && TaskIntent.routeReply ? TaskIntent.routeReply(text) : null;
     const taskAction = (opts && opts.taskAction) || (routedTaskReply && routedTaskReply.action) || '';
@@ -4788,6 +4837,7 @@ const Chat = (() => {
     // streams — so it starts talking while the rest is still generating, instead of after the whole reply
     // is done + synthesized. spokenIdx tracks how much of `acc` we've already queued.
     let spokenIdx = 0, finalReply = '', titleOk = false;
+    let busyRefusal = null;   // race-time server mutex refusal: restore the directive instead of minting failed turns
     let goalJudgeReply = null;   // GOAL LOOP: set to the clean assistant reply when a turn should be judged; fired in finally
     const pushSpeech = (finalize, finalText) => {
       if (typeof Voice === 'undefined' || !willSpeak || !Voice.speakChunk) return;
@@ -4883,16 +4933,29 @@ const Chat = (() => {
         // PLAIN-LANGUAGE: lead with the beginner-facing message, keep the raw error as a dim sub-line; persist
         // the friendly text (not the plumbing) so a switch-back / replay shows the same readable failure.
         const v = (typeof Friendly !== 'undefined') ? Friendly.friendlyError(error) : { userMessage: error, retryable: true, action: null, raw: error };
+        // A mutex race can still happen after the local preflight. The sidecar is authoritative, but this is an
+        // availability state — not an assistant turn. Undo the optimistic user row, restore its directive to the
+        // composer, and let the existing run remain the only durable conversation activity.
+        if (v.kind === 'agent_busy') {
+          busyRefusal = v.userMessage;
+          if (!retry) {
+            const last = ws.history[ws.history.length - 1];
+            if (last && last.role === 'user' && last.content === text) ws.history.pop();
+            if (isActiveWs(ws) && input) { input.value = text; autoGrowInput(); }
+          }
+        } else {
         // CRASH HONESTY: a network-kind failure on an in-flight run = the stream to the sidecar dropped (the
         // sidecar crashed / the app lost the connection). The run can't be resumed — the sidecar respawns fresh.
         // Flag this stream so that WHEN the sidecar is provably back (health probe on reconnect) we tell the
         // Commander their run was interrupted and must be restarted, instead of leaving a silent dead run.
         if (v.kind === 'network' && thisRunId) { interruptedStreams.add(ws.id); armReconnectWatch(); }
-        if (isActiveWs(ws)) { if (activeLiveRow) activeLiveRow.error(v.userMessage, v.raw); if (!isTask) World.say('…' + (v.userMessage.length > 40 ? v.userMessage.slice(0, 40) + '…' : v.userMessage)); }
+        persistPartial(ws, acc);
+        if (isActiveWs(ws)) { if (activeLiveRow) activeLiveRow.error(v.userMessage, v.raw); }
         ws.history.push({ role: 'assistant', content: '⚠ ' + v.userMessage, error: true, ts: Date.now() });   // so the failure survives a switch-back, not just a transient notify
         if (typeof StationUI !== 'undefined') StationUI.notify(brief(v.userMessage), 'warn');
         if (isActiveWs(ws)) resolvePresence(ws, { error: true });   // COMMS-PREMIUM: presence card resolves red
         if (isActiveWs(ws)) offerRetry(v);   // RETRY: context-aware recovery chip (retry / Settings / SKILLS / none)
+        }
       } else {
         let replyText = reply || acc;
         const taskQuestion = (isTask && typeof TaskIntent !== 'undefined' && TaskIntent.parse) ? TaskIntent.parse(replyText) : null;
@@ -4979,7 +5042,8 @@ const Chat = (() => {
         const v = (typeof Friendly !== 'undefined')
           ? Friendly.friendlyError(aborted ? new Error('cannot reach the STARNET sidecar — connection dropped') : e)
           : { userMessage: aborted ? 'Lost the connection — try again.' : (e.message || String(e)), retryable: true, action: null, raw: (e && e.message) || String(e) };
-        if (isActiveWs(ws)) { if (activeLiveRow) activeLiveRow.error(v.userMessage, v.raw); if (!isTask) World.say('…connection trouble…'); resolvePresence(ws, { error: true }); }
+        persistPartial(ws, acc);
+        if (isActiveWs(ws)) { if (activeLiveRow) activeLiveRow.error(v.userMessage, v.raw); resolvePresence(ws, { error: true }); }
         ws.history.push({ role: 'assistant', content: '⚠ ' + v.userMessage, error: true, ts: Date.now() });   // keep a readable trace of the failure
         if (isActiveWs(ws)) offerRetry(v);   // RETRY: context-aware recovery chip (a dropped connection is retryable)
       }
@@ -4994,7 +5058,11 @@ const Chat = (() => {
       // P1: drain this directive from the QUEUE gauge on ANY teardown (shipped, in-band error, or abort) —
       // the backlog is "runs in flight", independent of whether the work shipped.
       if (wiPlaced) { const depth = wiBump(wiAid, -1); wiEmit('queue.status', { queueId: wiAid, depth: depth, maxCapacity: 64, nextAdvanceAt: 0 }); }
-      if (isActiveWs(ws)) { syncStatus(); activeLiveRow = null; }
+      if (isActiveWs(ws)) {
+        activeLiveRow = null;
+        if (busyRefusal) { load(ws); renderAgentBusy(busyPeerFor(ws), busyRefusal); }
+        else syncStatus();
+      }
       // after a turn: in a hands-free voice conversation keep him facing you (one-on-one, no wandering off
       // between turns); otherwise he stands up and goes back to idle. Only steer the world if THIS finished
       // stream is the one on screen — a background stream finishing must not move the view.

@@ -733,7 +733,11 @@ const App = (() => {
     // NAME: an explicit creation-time pick (bay spec.agentName — a DISTINCT key so the class name spec.name keeps
     // driving specialty/id derivation) beats the class-name default. Normalized to the exact shape setAgentName
     // mints (single-spaced, UPPER, ≤18) so a named-at-summon agent is indistinguishable from a renamed one.
-    const nm = String((spec && (spec.agentName || spec.name)) || 'AGENT').replace(/\s+/g, ' ').trim().toUpperCase().slice(0, 18) || 'AGENT';
+    const requestedName = String((spec && spec.agentName) || '');
+    const requestedIssue = requestedName && typeof AgentId !== 'undefined' ? AgentId.nameIssue(requestedName) : '';
+    const nm = requestedName && !requestedIssue
+      ? AgentId.normalizeName(requestedName)
+      : AgentId.allocName((spec && spec.name) || 'AGENT', liveAgents());
     const a = {
       id, name: nm, role: 'specialist',   // summoned crew are specialists under the Orchestrator
       color: SUITS[agents.size % SUITS.length], skin: (spec && spec.skin) || DATA.DEFAULT_SKIN,
@@ -867,7 +871,10 @@ const App = (() => {
       // already runs as, so the bay can flag DEPLOYED and re-spec honestly.
       onDeploy: deploySpecialty,
       agentName: agent.name,
-      currentSpecialtyId: agent.specialtyId || null
+      currentSpecialtyId: agent.specialtyId || null,
+      nextAgentName: className => AgentId.allocName(className, liveAgents()),
+      nameConflict: name => AgentId.nameConflict(name, liveAgents()),
+      displayNameLimit: AgentId.NAME_MAX
     });
     // surface the REAL concurrency ceiling in the bay so "summon as many as you like" doesn't imply they all
     // run at once (the gate refuses excess parallel workers). Fetch once; open immediately thereafter.

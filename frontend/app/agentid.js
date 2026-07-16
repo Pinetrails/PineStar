@@ -18,6 +18,7 @@
   'use strict';
 
   const RE = /^[A-Za-z0-9_-]{1,40}$/;
+  const NAME_MAX = 18;
 
   // sanitize any seed (specialty id/name) into a valid base: lowercase, non-id chars → '-', trim
   // stray dashes, cap at 32 so a '-N' disambiguator can never push the result past the 40-char limit.
@@ -36,5 +37,41 @@
     return id;
   }
 
-  return { slug, alloc, RE };
+  function normalizeName(name) {
+    return String(name == null ? '' : name).replace(/\s+/g, ' ').trim().toUpperCase();
+  }
+
+  function nameIssue(name) {
+    const n = normalizeName(name);
+    if (!n) return 'empty';
+    if (n.length > NAME_MAX) return 'too-long';
+    return '';
+  }
+
+  function namesOf(taken) {
+    if (!taken) return [];
+    if (Array.isArray(taken)) return taken;
+    if (taken instanceof Map) return Array.from(taken.values());
+    if (typeof taken.values === 'function') return Array.from(taken.values());
+    return [];
+  }
+
+  function nameConflict(name, taken) {
+    const key = normalizeName(name);
+    return !!key && namesOf(taken).some(a => normalizeName(a && (a.name || a)) === key);
+  }
+
+  function allocName(seed, taken) {
+    const raw = normalizeName(seed) || 'AGENT';
+    const base = raw.slice(0, NAME_MAX);
+    if (!nameConflict(base, taken)) return base;
+    for (let n = 2; n < 10000; n++) {
+      const suffix = ' ' + n;
+      const candidate = base.slice(0, NAME_MAX - suffix.length).trimEnd() + suffix;
+      if (!nameConflict(candidate, taken)) return candidate;
+    }
+    return ('AGENT ' + Date.now()).slice(0, NAME_MAX);
+  }
+
+  return { slug, alloc, normalizeName, nameIssue, nameConflict, allocName, RE, NAME_MAX };
 });
