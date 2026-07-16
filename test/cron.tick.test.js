@@ -49,6 +49,7 @@ function setup(jobs, runOnceFake, opts) {
     defaultModel: opts.defaultModel !== undefined ? opts.defaultModel : 'test/model',
     identityForAgent: opts.identityForAgent,
     persona: 'PERSONA',
+    agentExists: opts.agentExists,       // deleted-agent guard: absent -> pre-guard behavior (every agent passes)
     maxRunMs: opts.maxRunMs || 480000,
     maxParallel: opts.maxParallel,       // G4.4: undefined -> driver default (4); a number caps in-flight fires
     resolveStation: opts.resolveStation  // B5 parity: absent -> station undefined (default office), like the host
@@ -528,6 +529,35 @@ const okRun = (text) => (o) => { o.emit('agent.run.start', { agentId: 'a', runId
     s.clock.advance(60000);
     s.driver.applyTick(s.clock.now());
     A.eq(countOf(s.events, 'cron.skipped'), 1, 'the same disabled due-window is not re-reported (deduped, no spam)');
+  }
+
+  // ---- DELETED-AGENT GUARD (2026-07-16 resurrect audit): a job whose agent no longer exists is REMOVED, not
+  //      fired — an orphaned routine must never keep spending / minting ghost sessions after DELETE AGENT. ----
+  {
+    const ghost = intervalJob('gj', 'every 1m');               // agentId 'cron_gj' — will be "deleted"
+    const alive = intervalJob('aj', 'every 1m');               // agentId 'cron_aj' — still on the roster
+    const s = setup([ghost, alive], okRun(), { agentExists: (id) => id !== 'cron_gj' });
+    s.clock.set(T0 + 60000);
+    s.driver.applyTick(s.clock.now());
+    A.eq(s.runs.length, 1, 'only the living agent\'s job fired');
+    A.eq(s.runs[0].agentId, 'cron_aj', 'the fired run belongs to the living agent');
+    A.ok(s.events.some(e => e.name === 'cron.skipped' && e.payload.jobId === 'gj' && e.payload.reason === 'no-capability'),
+      'the orphaned job reports an honest skip (governed no-capability reason)');
+    A.eq(s.getJob('gj'), null, 'the orphaned job is REMOVED from the durable store (never fires again)');
+    A.ok(s.getJob('aj'), 'the living agent\'s job survives untouched');
+    A.eq(s.placed.filter(p => p.agentId === 'cron_gj').length, 0, 'no floor crate is placed for a deleted agent');
+    // next tick: the removed job stays gone — no re-fire, no repeat skip for it.
+    const skipsBefore = s.events.filter(e => e.name === 'cron.skipped').length;
+    s.clock.advance(60000);
+    s.driver.applyTick(s.clock.now());
+    A.eq(s.runs.filter(r => r.agentId === 'cron_gj').length, 0, 'the deleted agent never fires on later ticks');
+    A.eq(s.events.filter(e => e.name === 'cron.skipped' && e.payload.jobId === 'gj').length,
+      skipsBefore ? 1 : 0, 'the removed job does not re-report every tick (it is gone from the store)');
+    // absent agentExists dep -> pre-guard behavior (both fire) — the guard is strictly opt-in for hosts.
+    const legacy = setup([intervalJob('lg', 'every 1m')], okRun());
+    legacy.clock.set(T0 + 60000);
+    legacy.driver.applyTick(legacy.clock.now());
+    A.eq(legacy.runs.length, 1, 'a host that injects no agentExists keeps the pre-guard behavior');
   }
 
   require('./cron.run-now.test.js');

@@ -30,6 +30,10 @@
      deps.defaultModel     -> string             // boot-frozen SKYNET_DEFAULT_MODEL fallback when job.model is null
      deps.identityForAgent -> (agentId, job) -> { system?, model? } | null
                                                  // optional selected-agent identity (browser roster / persisted mirror)
+     deps.agentExists      -> (agentId) -> bool  // OPTIONAL deleted-agent guard: false = the job's agent no longer
+                                                 //   exists (durable roster miss), so the job is REMOVED instead of
+                                                 //   fired — an orphaned routine must never keep spending/minting
+                                                 //   sessions under a deleted agent. Absent -> pre-guard behavior.
      deps.persona          -> string | ()=>string // the autonomous system prompt (carries the [SILENT] hint);
                                                  //   a getter is re-read each fire so it can fold in the live
                                                  //   Commander dossier (Phase C). Both forms stay determinism-clean.
@@ -72,6 +76,7 @@
     const hasCredential = typeof d.hasCredential === 'function' ? d.hasCredential : function (_provider, key) { return !!key; };
     const defaultModel = d.defaultModel || '';
     const identityForAgent = typeof d.identityForAgent === 'function' ? d.identityForAgent : function () { return null; };
+    const agentExists = typeof d.agentExists === 'function' ? d.agentExists : null;
     // persona may be a STRING (the autonomous system prompt) or a GETTER that returns it fresh each fire
     // (Phase C: index.js passes a getter so each run folds in the live Commander dossier). Both stay
     // determinism-clean — a getter is just an injected dep, exactly like getKey/getJobs.
@@ -178,6 +183,17 @@
        no-capability skip). The run settles asynchronously; its lease is released in finishFire on EVERY terminal
        path (resolve or reject), so a throwing/zombie run never permanently wedges the job. */
     function fireJob(job, scheduledFor, nowMs) {
+      // DELETED-AGENT GUARD (2026-07-16): a job whose agent no longer exists must not fire — before this,
+      // an orphaned routine kept running forever after DELETE AGENT (real spend, ghost rail sessions and
+      // floor crates under the dead agentId). The host's agentExists reads the durable roster (fail-open
+      // on an empty roster, hero always passes), so a miss means the agent was genuinely deleted: REMOVE
+      // the job durably instead of firing. Skip reason reuses the governed 'no-capability' enum value
+      // (the cron.skipped enum is owned/closed; a gone agent has no capability to run as).
+      if (agentExists && !agentExists(job.agentId)) {
+        try { setJobs(cronStore.removeJob(getJobs(), job.id)); } catch (_) { /* removal is best-effort; the guard still blocks the fire */ }
+        try { emit('cron.skipped', { jobId: job.id, reason: 'no-capability' }); } catch (_) {}
+        return false;
+      }
       const ident = identityForAgent(job.agentId, job) || {};
       const model = (job.model && String(job.model).trim()) || (ident.model && String(ident.model).trim()) || defaultModel;
       const provider = providerForJob(job, ident) || 'openrouter';
