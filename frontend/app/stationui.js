@@ -2574,8 +2574,13 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     return keys.map((k, i) => {
 */
     const rows = keys.map((k, i) => {
-      // ACTIVE only when the key can actually run: selected provider AND a model is set (never overstate runnability).
-      const runnable = k.provider === active && !!k.model;
+      // The credential row follows the same truth contract as the provider card above. Selection is useful context,
+      // but ACTIVE is reserved for a selected model whose endpoint/credential probe proved it can run.
+      const health = providerHealth[k.provider];
+      const selected = k.provider === active && !!k.model;
+      const runnable = !!(selected && health && health.reachable && health.credentialVerified);
+      const runState = runnable ? '<span class="key-stat on">ACTIVE</span>'
+        : selected ? '<span class="key-stat">SELECTED</span>' : '<span class="key-stat">idle</span>';
       // Codex (OAuth) has no API key to mask/edit/remove — render it honestly as a sign-in connection.
       // The row always carries its OWN actions (⏼ RE-SIGN-IN / ✕ DISCONNECT): the 2026-07-08 escape was a
       // dead sign-in still labelled SIGNED IN with zero recovery actions on this exact row.
@@ -2584,7 +2589,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         const meta = dead
           ? '<span class="key-stat bad">⚠ SIGN-IN EXPIRED — ' + esc(codexExpiredReason() || 'the stored sign-in no longer works; reconnect to run again') + '</span>'
           : 'model <b>' + esc(k.model || '—') + '</b> · ' +
-            (runnable ? '<span class="key-stat on">ACTIVE</span>' : '<span class="key-stat">idle</span>') +
+            runState +
             ' · <span class="key-stat">no API key needed</span>';
         return '<div class="key-row' + (dead ? ' expired' : '') + '">' +
           '<span class="conn-dot"></span>' +
@@ -2614,7 +2619,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
           '<div class="key-top"><span class="key-prov">' + esc(provName(k.provider)) + '</span>' +
           '<code class="key-mask" title="local OpenAI-compatible endpoint">Local endpoint</code></div>' +
           '<div class="key-meta">model <b>' + esc(k.model || '—') + '</b> · ' +
-          (runnable ? '<span class="key-stat on">ACTIVE</span>' : '<span class="key-stat">idle</span>') +
+          runState +
           ' · <span class="key-stat">no API key needed</span></div>' +
           '</div></div>';
       }
@@ -2624,7 +2629,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         '<div class="key-top"><span class="key-prov">' + esc(provName(k.provider)) + '</span>' +
         '<code class="key-mask" title="shown masked when a key exists — the full key is never displayed">' + esc(k.key ? maskKey(k.key) : (k.baseUrl || 'keyless endpoint')) + '</code></div>' +
         '<div class="key-meta">model <b>' + esc(k.model || '—') + '</b> · ' +
-        (runnable ? '<span class="key-stat on">ACTIVE</span>' : '<span class="key-stat">idle</span>') + '</div>' +
+        runState + '</div>' +
         '</div>' +
         '<div class="key-acts">' +
         '<button class="bb sm" data-act="edit" data-i="' + i + '">✎ UPDATE</button>' +

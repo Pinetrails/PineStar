@@ -51,6 +51,9 @@ ok(/credentialSaved[\s\S]*endpointConfigured[\s\S]*reachable[\s\S]*catalogAvaila
 ok(/h\.probeProvider\(provider\)/.test(station), 'Settings provider cards refresh from the live Harness probe');
 ok(/LOCAL ENDPOINT CONFIGURED/.test(station) && /OFFLINE/.test(station), 'keyless provider copy distinguishes configured endpoints from offline endpoints');
 ok(/const\s+runnable\s*=\s*!!\(health\s*&&\s*health\.reachable/.test(station), 'ACTIVE is gated on proven endpoint reachability');
+ok(/const\s+health\s*=\s*providerHealth\[k\.provider\]/.test(station) &&
+   !/const\s+runnable\s*=\s*k\.provider\s*===\s*active\s*&&\s*!!k\.model/.test(station),
+  'the API-key rows also reserve ACTIVE for probe-proven runnability instead of selection alone');
 ok(!/connected\s*\?\s*connLabel[\s\S]{0,160}p\.id\s*===\s*'ollama'\s*\?\s*'[^']*LOCAL'/.test(station), 'Ollama does not fall through the generic credential status copy');
 
 console.log('provider-connections-ui.test.js OK -', n, 'assertions');
