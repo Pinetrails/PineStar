@@ -2644,7 +2644,7 @@ const App = (() => {
     const ws = Workstreams.startSession();
     SFX.open(); Chat.load(ws); refreshUsage(); renderRail(); persist();
   }
-  /* Session power tools — one compact rail surface for title/transcript search, secret-safe active
+  /* Session power tools — the SESSION TOOLS floating window (SYSTEM menu) for title/transcript search, secret-safe active
      conversation export, explicit clear+checkpoint, and exact-preview bulk archive. The pure store
      owns every selection/recovery invariant; this layer only renders and persists its decisions. */
   let sessionToolsPreview = null;
@@ -2685,12 +2685,11 @@ const App = (() => {
     const status = el('ws-bulk-status'); if (status) status.textContent = message || 'Preview before archiving. General and pinned sessions stay protected.';
   }
   function wireSessionTools() {
-    const panel = el('ws-tools'), toggle = el('ws-tools-btn'); if (!panel || !toggle || toggle.__wired) return;
-    toggle.__wired = true;
-    toggle.onclick = () => {
-      const open = panel.hidden; panel.hidden = !open; toggle.setAttribute('aria-expanded', String(open));
-      SFX.click(); refreshSessionUndo(); if (open) { const q = el('ws-search'); if (q) q.focus(); }
-    };
+    // The panel lives parked+hidden in #ws-tools-park; StationUI's SESSION TOOLS window (SYSTEM menu)
+    // adopts the node into its body on open and re-parks it on close. Wiring here runs exactly once and
+    // survives adoption because the DOM node itself moves — nothing is rebuilt.
+    const panel = el('ws-tools'); if (!panel || panel.__wired) return;
+    panel.__wired = true;
     { const q = el('ws-search'); if (q) q.oninput = renderSessionSearch; }
     const exportActive = format => {
       const w = Workstreams.active(), bundle = w && Workstreams.exportConversation(w.id, format);
@@ -3496,5 +3495,6 @@ const App = (() => {
     selectAgent: selectAgent,   // COMMS top-bar agent selector: switch to (or mint) a workstream bound to agentId
     openSummonBay: openSummonBay,   // adaptive-recruitment beat: accepting the recruit nudge deep-links into the bay's summon flow
     openRecipeLaunch: openRecipeLaunch,   // routine-nudge beat (lane D): accepting deep-links into the recipe's SCHEDULE IT form
+    sessionToolsShown: refreshSessionUndo,   // SESSION TOOLS window opened (stationui adopts the panel): sync the undo button to the store
     applyConfig: applyAgentConfig };
 })();

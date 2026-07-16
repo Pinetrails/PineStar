@@ -365,7 +365,12 @@
     <ul id="crew"></ul>
     <div id="crew-sum"></div>
     <div id="ws-wrap">
-      <div class="ws-head"><span class="ws-view" role="tablist" aria-label="rail view"><button id="ws-tab-sessions" class="ws-tab on" role="tab" aria-selected="true" title="your conversations">SESSIONS</button><button id="ws-tab-projects" class="ws-tab" role="tab" aria-selected="false" title="trusted project folders">PROJECTS</button></span><span class="ws-head-acts"><button id="ws-tools-btn" title="search, export, clear, or archive sessions" aria-expanded="false" aria-controls="ws-tools">TOOLS</button><button id="ws-new" title="start a new workstream">+ NEW</button><button id="ws-addproject" title="bless a folder as a trusted project" hidden>+ ADD</button></span></div>
+      <div class="ws-head"><span class="ws-view" role="tablist" aria-label="rail view"><button id="ws-tab-sessions" class="ws-tab on" role="tab" aria-selected="true" title="your conversations">SESSIONS</button><button id="ws-tab-projects" class="ws-tab" role="tab" aria-selected="false" title="trusted project folders">PROJECTS</button></span><span class="ws-head-acts"><button id="ws-new" title="start a new workstream">+ NEW</button><button id="ws-addproject" title="bless a folder as a trusted project" hidden>+ ADD</button></span></div>
+      <!-- SESSION TOOLS panel — parked here hidden; StationUI's SESSION TOOLS floating window (SYSTEM ▸
+           SESSION TOOLS, data-term="sessiontools") ADOPTS this node into its body on open and re-parks it
+           on close, so App's one-time wiring survives. The rail head stays SESSIONS/PROJECTS + NEW only
+           (Commander directive, 2026-07-08 — see qa/atlas ui/world/ws-archived-reveal notes). -->
+      <div id="ws-tools-park">
       <section id="ws-tools" aria-label="Session tools" hidden>
         <label class="ws-tools-search"><span class="sr-only">Search session titles and transcripts</span><input id="ws-search" type="search" placeholder="search sessions + transcripts" autocomplete="off"></label>
         <ul id="ws-search-results" aria-live="polite"></ul>
@@ -376,6 +381,7 @@
         <button id="ws-bulk-apply" class="ws-tools-wide" disabled>ARCHIVE PREVIEWED</button>
         <button id="ws-undo" class="ws-tools-wide" hidden>UNDO LAST SESSION CHANGE</button>
       </section>
+      </div>
       <ul id="workstreams"></ul>
       <ul id="projects" hidden></ul>
     </div>
@@ -512,6 +518,7 @@
         <button class="bb" data-term="settings"><span class="bb-i">⚙</span><span class="bb-tx"><b>SETTINGS</b><small>keys, models, voice, data</small></span></button>
         <button class="bb" data-term="updates"><span class="bb-i">↑</span><span class="bb-tx"><b>UPDATES</b><small>version &amp; release notes</small></span></button>
         <button class="bb" data-term="rewind"><span class="bb-i">↶</span><span class="bb-tx"><b>RESTORE</b><small>restore an agent's workspace files</small></span></button>
+        <button class="bb" data-term="sessiontools"><span class="bb-i">▤</span><span class="bb-tx"><b>SESSION TOOLS</b><small>search, export &amp; archive conversations</small></span></button>
         <button class="bb" data-term="logbook"><span class="bb-i">▦</span><span class="bb-tx"><b>LOGBOOK</b><small>this agent's run history</small></span></button>
         <button class="bb" data-term="notifs"><span class="bb-i">▲</span><span class="bb-tx"><b>NOTIFICATIONS</b><small>alerts &amp; unread events</small></span><span id="nf-badge" class="badge"></span></button>
       </div>
