@@ -1,5 +1,31 @@
 # NEXT.md — current priorities & task queue
 
+## 2026-07-16 — RELEASE CANDIDATE PINNED: `rc/0.5.1` @ `503ba26f` (READY + beyond-gate proofs)
+
+`npm run qa:ready` = **READY at `503ba26f`** (2026-07-16 00:41Z; all 5 receipts, W0 wave PASS) and
+that exact commit is pinned as branch `rc/0.5.1` + tag `rc/0.5.1-rc.1` — trunk keeps moving (3
+sibling merges landed during the pass; freeze-first is the law), the RC pin holds the proven bytes.
+Beyond the gate, proven this session (receipts `.bugloops/release-prep-2026-07-15/`):
+- **Update canary CLEAN end-to-end**: canary 0.5.0 → 0.5.1 through the REAL machinery — signed
+  manifest via release-assemble-manifest, minisign verify against the baked pubkey, NSIS passive
+  install with NO node.exe lock hang (the 72dea45a fix holding), installer exited, app relaunched
+  as the new version. `release:cut --dry-run` clean; verify-sig wired.
+- **Real-provider run on the installed binary**: live OpenRouter run in the installed 0.5.0
+  (@503ba26f), went busy, streamed, completed — agent replied RELEASE-CHECK-OK.
+- **Installed smoke GREEN v3** (reproducible-source, 9/9), Guardian GREEN (incl. one hourly cycle
+  under the real scheduler token proving the shell-machine-state fix), Beginner PASS, journeys
+  123/123, golden re-blessed 2× (recruit/messaging + UX-clarity copy drifts, eyeballed).
+- Guardian-RED-under-load = KNOWN flake class (spawnSync null / J2 poll windows while cargo builds
+  run) — re-run isolated before believing an hourly RED that overlaps builds.
+REMAINING, honestly out of this machine's reach:
+- [ ] **Andrew: attended 15-min playtest** — also unblocks the W1 wave (its fresh-run precondition
+      requires attended-operator attestation by design; never auto-attest).
+- [ ] **Andrew: publish `starnet-releases` + key backups + dev-key rotation**, then the public
+      per-platform update canaries; 48h RC soak per docs/RELEASE_READINESS.md.
+- [ ] T0 clean-machine + T3.2/T3.4 proofs: need a true clean Windows box (this one is Win11 Home —
+      no Sandbox/Hyper-V); fold into the 10-outside-installs step.
+- [ ] Mac auto-update remains unproven (runbook ready: docs/MAC_UPDATE_TEST.md).
+
 ## 2026-07-15 — RELEASE PREP (lane `claude/release-prep-d04205`): qa:ready burn-down
 
 `qa:ready` said NOT READY (4 reasons). This lane's disposition of each:
