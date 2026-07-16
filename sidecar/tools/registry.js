@@ -23,7 +23,7 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function (schema, toolMod) {
   'use strict';
 
-  const okResult = (content, summary) => ({ ok: true, isError: false, content: content, summary: summary || 'ok' });
+  const okResult = (content, summary, control) => ({ ok: true, isError: false, content: content, summary: summary || 'ok', control: control || null });
   const errResult = (content, summary) => ({ ok: false, isError: true, content: content, summary: summary || 'error' });
 
   // Race a promise against a timeout. onTimeout (if given) fires BEFORE the reject so the caller can abort the
@@ -121,7 +121,7 @@
       const runCtx = ac !== ctx.signal ? Object.assign({}, ctx, { signal: ac.signal }) : ctx;
       try {
         const out = await withTimeout(tool.run(call.args, runCtx), timeoutMs, () => { try { ac.abort(new Error('tool timeout')); } catch (_) { try { ac.abort(); } catch (_) {} } });
-        if (out && typeof out === 'object' && 'content' in out) return okResult(out.content, out.summary);
+        if (out && typeof out === 'object' && 'content' in out) return okResult(out.content, out.summary, out.control);
         return okResult(out == null ? '' : out);
       } catch (e) {
         if (e && e.__timeout) return errResult('tool ' + call.name + ' timed out after ' + timeoutMs + 'ms', 'timeout');

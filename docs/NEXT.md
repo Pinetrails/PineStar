@@ -1,5 +1,17 @@
 # NEXT.md — current priorities & task queue
 
+## IMPLEMENTED 2026-07-16 — TASK-BRIEF RELIABILITY HARDENING (`agent/briefing-reliability`)
+
+The intent layer now has a host-enforced decision boundary before settings are exposed. Structured
+`brief.ask` / `brief.proceed` controls validate question quality and settle a compact execution brief;
+write/execute tools stay locked until settlement, while read tools remain available for research. The host
+enforces the two-question ceiling and second-blocker rule, stops same-batch actions after a question, routes
+cancel/pivot/answer replies without contaminating the prior task, resumes terse messaging-channel answers from
+durable state, and derives weak relationship patterns only from completed briefs. Internal controls are hidden
+from ordinary tool telemetry; the existing natural COMMS chips and numbered channel fallback remain compatible.
+Deterministic coverage is expanded to 73 task-intent assertions spanning validation, restart, cancellation,
+pivots, completed-only learning, mutation gates, registry control preservation, call pairing, and one-turn pause.
+
 ## READY TO MERGE 2026-07-15 — TASK-CONTEXT ELICITATION (`agent/intent-engine`)
 
 StarNet now listens before it builds without turning every request into an interview: a shared
