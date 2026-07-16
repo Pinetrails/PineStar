@@ -125,6 +125,7 @@
     const classify = typeof o.classify === 'function' ? o.classify : () => true;
     const redact = typeof o.redact === 'function' ? o.redact : (p) => p;
     const emit = typeof o.emit === 'function' ? o.emit : () => {};
+    const taskIntent = o.taskIntent && typeof o.taskIntent.parse === 'function' ? o.taskIntent : null;
     const newId = typeof o.newId === 'function' ? o.newId : (() => { let n = 0; return () => channel + '-run-' + (++n); })();
     // INJECTED wall-clock — no ambient fallback (this module is pure/deterministic; the determinism gate bans a bare
     // Date.now here). The composition root passes now:()=>Date.now(); a hub built without one (unit tests) stamps a
@@ -460,7 +461,9 @@
             key: usingCodex ? '' : sec.key, model: sec.model, provider, baseUrl: sec.baseUrl || sec.base_url || '', reasoningEffort, system, messages, agentId, isTask,
             emit: sink, signal: ac.signal, runId, trigger: 'event', surface: 'autonomous',
             broadcast: true,   // P1: mirror this routed run's lifecycle to the station floor over SSE — it has no browser-local stream
-            station: bayStation || undefined
+            station: bayStation || undefined,
+            taskKey: 'channel:' + channel + ':' + chatId,
+            taskSource: channel
           });
         } catch (e) {
           state.errMsg = state.errMsg || ('run failed: ' + ((e && e.message) || e));
@@ -498,8 +501,17 @@
           ? '⚠ Still busy finishing your last message — please send that again in a moment.'
           : '⚠ ' + state.errMsg;
       } else {
-        if (state.buf) { try { store.appendTurn(agentId, 'assistant', state.buf); } catch (_) {} }
         reply = state.buf || '(no reply)';
+        if (taskIntent) {
+          const tq = taskIntent.parse(reply);
+          if (tq) {
+            const pre = taskIntent.strip(reply);
+            reply = (pre ? pre + '\n\n' : '') + tq.question + '\n'
+              + tq.options.map((x, i) => (i + 1) + '. ' + x).join('\n')
+              + '\nReply with a choice, or say "use your judgment."';
+          }
+        }
+        if (reply) { try { store.appendTurn(agentId, 'assistant', reply); } catch (_) {} }
         if (state.reason && state.reason !== 'done') reply += endNote(state.reason);
       }
       await deliver(chatId, reply, lastRunId, state.errMsg ? 'error' : (state.reason || 'done'), agentId);

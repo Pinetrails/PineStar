@@ -20,7 +20,7 @@
 (function (root, factory) {
   const api = factory();
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
-  else { root.Fork = api; }
+  else { root.Fork = api; root.TaskIntent = api.TaskIntent; }
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
 
@@ -91,5 +91,49 @@
     return q ? (a + ' (asked: ' + q + '?)') : a;
   }
 
-  return { shouldOffer, directive, parse, strip, beliefText, CONF_FLOOR, MAX_OPTS };
+  // TASK CONTEXT is the complementary, task-local decision protocol. It intentionally lives beside durable
+  // preference forks so the browser and Node host share one already-shipped decision-protocol module without
+  // adding another release-surface path. Unlike FORK, its answers stay in the Task Brief, never the dossier.
+  const TASK_LINE = /^\s*TASK_QUESTION:\s*(.+?)\s*\|\|\s*(.+?)\s*$/mi;
+  const TASK_Q_CHARS = 240, TASK_OPT_CHARS = 72, TASK_MAX_OPTS = 3;
+  function taskClean(s, max) { return String(s == null ? '' : s).replace(/\s+/g, ' ').trim().slice(0, max); }
+  function taskParse(text) {
+    const m = TASK_LINE.exec(String(text == null ? '' : text));
+    if (!m) return null;
+    const question = taskClean(m[1], TASK_Q_CHARS);
+    const options = m[2].split('|').map(x => taskClean(x, TASK_OPT_CHARS)).filter(Boolean).slice(0, TASK_MAX_OPTS);
+    return question && options.length >= 2 ? { question, options } : null;
+  }
+  function taskStrip(text) {
+    return String(text == null ? '' : text).replace(TASK_LINE, '').replace(/\n{3,}/g, '\n\n').trim();
+  }
+  function taskDirective(contextBlock) {
+    const lines = [
+      'TASK CONTEXT — LISTEN BEFORE YOU BUILD:',
+      'Before consequential work, decide whether the Commander already supplied enough context for the result they actually want.',
+      'Proceed immediately when the task is clear. Infer low-impact details with reversible defaults; do not turn a good request into an interview.',
+      'Research before asking: inspect the granted project, conversation, task brief, and available sources when they can answer the gap.',
+      'Ask only when different plausible answers would materially change the outcome, audience, deliverable, source of truth, safety, or acceptance boundary.',
+      'Ask ONE concrete question at a time, with 2-3 short, genuinely different options. Never ask vague prompts such as "what does good look like?".',
+      'A task may ask at most two questions total; a second is allowed only when the first answer exposed another genuinely blocking decision.',
+      'If the Commander said "use your judgment", "just do it", or equivalent, choose the most sensible reversible default and act.',
+      'To ask, do no consequential mutation first and END your reply with exactly:',
+      'TASK_QUESTION: <one concrete question> || <option A> | <option B> | <option C, optional>',
+      'You may inspect/read before asking. Do not emit TASK_QUESTION when you can responsibly proceed. Never repeat a question already answered in the task brief.'
+    ];
+    const cx = String(contextBlock || '').trim();
+    if (cx) lines.push(cx);
+    return lines.join('\n');
+  }
+  function taskAnswerMessage(question, answer) {
+    const a = taskClean(answer, 500);
+    if (!a) return 'Use your judgment. Choose the most sensible reversible default and continue the original task.';
+    return a;
+  }
+  const TaskIntent = {
+    parse: taskParse, strip: taskStrip, directive: taskDirective, answerMessage: taskAnswerMessage,
+    MAX_QUESTION: TASK_Q_CHARS, MAX_OPTION: TASK_OPT_CHARS, MAX_OPTIONS: TASK_MAX_OPTS
+  };
+
+  return { shouldOffer, directive, parse, strip, beliefText, CONF_FLOOR, MAX_OPTS, TaskIntent };
 });

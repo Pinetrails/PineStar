@@ -61,6 +61,13 @@
     // the LEAD's OWN base identity (system prompt), threaded from the run host so team.spawn can clone it. Empty
     // string when absent → a spawned subagent still runs, just without an inherited persona.
     const selfSystem = (typeof deps.selfSystem === 'string') ? deps.selfSystem : '';
+    const taskContext = (typeof deps.taskContext === 'string') ? deps.taskContext.trim() : '';
+    function workerSystem(base) {
+      const identity = String(base || '');
+      if (!taskContext) return identity;
+      return identity + '\n\n' + taskContext
+        + '\n\n[DELEGATED EXECUTION] Treat the task context above as settled input from the Commander. Do not ask the Commander another discovery question. If a truly blocking gap remains, report that gap to the lead agent.';
+    }
     const perWorker = (typeof deps.perWorker === 'number' && isFinite(deps.perWorker) && deps.perWorker > 0) ? deps.perWorker : 0;
     const workerMaxIters = (typeof deps.workerMaxIters === 'number' && isFinite(deps.workerMaxIters) && deps.workerMaxIters > 0) ? Math.floor(deps.workerMaxIters) : 10;
     let _seq = 0;
@@ -145,7 +152,7 @@
               // lead's — a dispatched specialist honors its loadout. Falls back to the lead's effort when unset.
               reasoningEffort: (job.ident && job.ident.reasoningEffort) || reasoningEffort,
               model: wire.model,
-              system: (job.ident && job.ident.system) || '',
+              system: workerSystem((job.ident && job.ident.system) || ''),
               messages: [{ role: 'user', content: job.prompt }],
               agentId: job.agentId, isTask: true,
               emit: o2.emit || childEmit,      // lifecycle/cost ride the lead/global stream -> the floor lights the worker
@@ -251,7 +258,7 @@
             try {
               result = await runOnce({
                 key, provider, baseUrl, reasoningEffort, model,      // the lead's OWN model - a clone of self
-                system: selfSystem,                         // the lead's OWN base identity; the clone's runOnce
+                system: workerSystem(selfSystem),           // the lead's OWN identity plus settled task context
                                                             // composes its own caps for its (narrowed) toolset
                 messages: [{ role: 'user', content: prompt }],
                 agentId: ephemeralId, isTask: true,
@@ -368,7 +375,7 @@
             key: wire.key, provider: wire.provider, baseUrl: wire.baseUrl,
             reasoningEffort: (ident && ident.reasoningEffort) || reasoningEffort,   // Class Loadouts S1: worker's own class effort (see runWorker)
             model: wire.model,
-            system: (ident && ident.system) || '',
+            system: workerSystem((ident && ident.system) || ''),
             messages: [{ role: 'user', content: rec.prompt || '' }],
             agentId: rec.agentId, isTask: true,
             emit: h.emit, signal: h.signal, runId: h.runId,
