@@ -184,8 +184,8 @@ const Harness = (() => {
   function hasStoredCredential(provider) {
     const p = normalizeProviderId(provider);
     if (p === 'codex') return DESKTOP ? !!_configuredByProvider.codex : (getProv() === 'codex');
-    if (p === 'ollama') return true;                       // local endpoint — no key by design
-    if (p === 'custom') return !!getBaseUrl(p);            // keyless only when a baseUrl is deliberately set
+    if (p === 'ollama') return false;                      // an endpoint is configuration, never a credential
+    if (p === 'custom' && !getKey(p)) return false;        // a keyless custom endpoint must not manufacture a key row
     if (DESKTOP) return !!(_configuredByProvider[p] || (p === 'openrouter' && _configured));
     if (!!readScoped(LS.key, p)) return true;              // a real key is stored in this browser
     if (DEVMODE && DEV && normalizeProviderId(DEV.prov) === p) return true;  // server-held runtime key for the seeded provider
@@ -338,6 +338,33 @@ const Harness = (() => {
       console.warn('[harness] model list unavailable:', e.message);
       return [];
     }
+  }
+
+  // Truthful provider state for Settings. Configuration, credential custody, endpoint reachability and catalog
+  // availability are independent facts; callers must never infer one from another. The sidecar performs the
+  // round-trip so desktop keychain credentials stay out of the WebView, while browser BYOK can be supplied over
+  // the same authenticated loopback seam used by /api/run. A failed probe is data, not an exception-shaped lie.
+  async function probeProvider(provider) {
+    const p = normalizeProviderId(provider || getProv());
+    const baseUrl = getBaseUrl(p) || '';
+    const credentialSaved = hasStoredCredential(p);
+    const endpointConfigured = p === 'ollama' || (p === 'custom' && !!baseUrl);
+    const selected = p === getProv();
+    const fallback = { provider: p, credentialSaved, endpointConfigured, reachable: false, catalogAvailable: false, credentialVerified: false, selected, error: 'station unreachable' };
+    if (p === 'custom' && !endpointConfigured) return Object.assign({}, fallback, { error: 'endpoint not configured' });
+    try {
+      const r = await fetch('/api/providers/probe', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider: p, key: getKey(p) || '', baseUrl })
+      });
+      const j = await r.json().catch(() => ({}));
+      return {
+        provider: p, credentialSaved, endpointConfigured,
+        reachable: !!(r.ok && j.reachable), catalogAvailable: !!(j && j.catalogAvailable),
+        credentialVerified: !!(j && j.credentialVerified), selected,
+        error: String((j && j.error) || '')
+      };
+    } catch (_) { return fallback; }
   }
 
   // PURE (test-locked in harness-internal.test.js): fold a sidecar error-response body into the human tail of
@@ -657,7 +684,7 @@ const Harness = (() => {
   return {
     isDesktop: () => DESKTOP,   // lets the UI tell a desktop keychain-store failure (token saved locally) from a browser no-op
     getKey, setKey, storeChannelToken, getModel, setModel, getProv, setProv, getBaseUrl, setBaseUrl, getReasoningEffort, setReasoningEffort, normalizeReasoningEffort, init, configured, hasStoredCredential,
-    listModels, priceOf, contextLimitOf, contextState, chat, cancel, haltAll, consent, consentAck, summonAck, notebook,
+    listModels, probeProvider, priceOf, contextLimitOf, contextState, chat, cancel, haltAll, consent, consentAck, summonAck, notebook,
     memoryProposals, memoryTurnin, memoryVeto, memoryReset, memoryRecords, memoryDeclined, memoryRestore, memoryPin, memoryEdit, memoryForget,
     studyProposals,
     threadProposals, threadTurnin,

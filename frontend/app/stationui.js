@@ -2443,6 +2443,29 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     if (keychainModeKnown === false) return 'stored locally in this browser';
     return 'stored on this machine';
   }
+  const providerHealth = Object.create(null);   // last no-generation sidecar probe, keyed by provider id
+  const providerProbePending = Object.create(null);
+  function invalidateProviderHealth(provider) { delete providerHealth[provider]; delete providerProbePending[provider]; }
+  function refreshProviderHealth(provider) {
+    const h = H();
+    if (!h || !h.probeProvider || providerProbePending[provider]) return;
+    providerProbePending[provider] = true;
+    Promise.resolve(h.probeProvider(provider)).then(result => { providerHealth[provider] = result || null; })
+      .catch(() => { providerHealth[provider] = null; })
+      .finally(() => {
+        delete providerProbePending[provider];
+        // Repaint only while Settings is still open. The cache prevents this repaint from starting a probe loop.
+        if (open.settings) rerender('settings');
+      });
+  }
+  function queueProviderHealthRefresh() {
+    const h = H(); if (!h) return;
+    for (const p of PROVIDERS) {
+      const credentialSaved = !!(h.hasStoredCredential && h.hasStoredCredential(p.id));
+      const endpointConfigured = p.id === 'ollama' || (p.id === 'custom' && !!(h.getBaseUrl && h.getBaseUrl(p.id)));
+      if ((credentialSaved || endpointConfigured || p.id === activeProv()) && providerHealth[p.id] === undefined) refreshProviderHealth(p.id);
+    }
+  }
   function connectedKeys() {
     const h = H(); if (!h) return [];
     const out = [];
@@ -2490,27 +2513,38 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       // the codex sign-in can be KNOWN-dead (sidecar recorded a consumed/invalid refresh token) — that must
       // never render as SIGNED IN. The row still exists (ks has the expired entry) so RE-SIGN-IN is reachable.
       const codexDead = p.id === 'codex' && codexExpired();
-      const connected = p.live && ks.length > 0 && !codexDead;
-      // ACTIVE means this transport can actually run right now: selected provider AND a model is set.
-      const runnable = connected && p.id === active && !!ks[0].model;
-      const cls = codexDead ? 'avail expired' : (connected ? 'conn' : (p.live ? 'avail' : 'soon'));
+      const h = H();
+      const credentialSaved = p.id === 'codex' ? (ks.length > 0 && !codexDead) : !!(h && h.hasStoredCredential && h.hasStoredCredential(p.id));
+      const endpointConfigured = p.id === 'ollama' || (p.id === 'custom' && !!(h && h.getBaseUrl && h.getBaseUrl(p.id)));
+      const configured = credentialSaved || endpointConfigured;
+      const health = providerHealth[p.id];
+      // ACTIVE is reserved for a selected model whose endpoint and credential (when applicable) were proven by
+      // the no-generation probe. Selection plus a model id is not evidence that a run can leave the station.
+      const runnable = !!(health && health.reachable && health.credentialVerified && p.id === active && h && h.getModel && h.getModel());
+      const cls = codexDead ? 'avail expired' : (configured ? 'conn' : (p.live ? 'avail' : 'soon'));
       // E5: `connected` is KEY PRESENCE, not a verified live connection — a saved key can be revoked,
       // rate-limited, or wrong, and we haven't round-tripped it. Label it "KEY SAVED" (or SIGNED IN for
       // the codex OAuth path, which IS real auth) rather than the over-claiming "CONNECTED". The
       // ACTIVE/runnable badge logic below is unchanged — that already gates on selected provider + model.
       const connLabel = p.id === 'codex' ? '● SIGNED IN' : '● KEY SAVED';
-      const stat = !p.live ? '○ COMING SOON' : codexDead ? '⚠ SIGN-IN EXPIRED — RECONNECT' : connected ? connLabel : (p.id === 'codex' ? '○ NOT SIGNED IN' : (p.id === 'ollama' ? '○ LOCAL' : '○ NO KEY'));
+      const keyless = p.id === 'ollama' || (p.id === 'custom' && endpointConfigured && !credentialSaved);
+      const localStat = !endpointConfigured ? '○ NO ENDPOINT' : health === undefined ? '◐ LOCAL ENDPOINT CONFIGURED · CHECKING…'
+        : health && health.reachable ? '● LOCAL ENDPOINT CONFIGURED · REACHABLE' : '○ LOCAL ENDPOINT CONFIGURED · OFFLINE';
+      const keyStat = health === undefined ? connLabel + ' · CHECKING…'
+        : health && health.credentialVerified ? connLabel + ' · VERIFIED' : health && health.reachable ? connLabel + ' · NOT VERIFIED' : connLabel + ' · CHECK FAILED';
+      const stat = !p.live ? '○ COMING SOON' : codexDead ? '⚠ SIGN-IN EXPIRED — RECONNECT'
+        : keyless ? localStat : credentialSaved ? keyStat : (p.id === 'codex' ? '○ NOT SIGNED IN' : (p.id === 'custom' ? '○ NO ENDPOINT' : '○ NO KEY'));
       const n = ks.length;
       // NO-KEY cards that accept a key get an inline, collapsible paste-and-save row so the user never has to hunt
       // for where keys live. It reuses the SAME save path (Harness.setKey) as the key list below — no duplicate logic.
-      const wantsInline = p.live && !connected && providerAcceptsKey(p.id);
+      const wantsInline = p.live && !credentialSaved && providerAcceptsKey(p.id);
       return '<div class="prov-card ' + cls + '" data-provider="' + esc(p.id) + '" role="button" tabindex="0" style="--ci:' + pi + '">' +
         '<span class="conn-dot"></span>' +
         '<div class="prov-main">' +
         '<div class="prov-name">' + esc(p.name) + (runnable ? '<span class="prov-badge">ACTIVE</span>' : '') + '</div>' +
         '<div class="prov-ep">' + esc(p.endpoint) + ' · ' + esc(p.blurb) + '</div>' +
         '</div>' +
-        '<div class="prov-stat">' + stat + (connected ? '<i>' + n + (n === 1 ? ' key' : ' keys') + '</i>' : '') +
+        '<div class="prov-stat">' + stat + (credentialSaved && p.id !== 'codex' ? '<i>' + n + (n === 1 ? ' key' : ' keys') + '</i>' : '') +
           (wantsInline ? '<button class="bb sm prov-addkey" data-act="prov-add-toggle" data-provider="' + esc(p.id) + '" aria-label="Add a ' + esc(p.name) + ' key" title="paste a ' + esc(p.name) + ' key without leaving this card">＋ ADD KEY</button>' : '') +
         '</div>' +
         (wantsInline
@@ -2662,6 +2696,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
           if (!v) { sfx('bad'); return; }
           const provider = b.dataset.provider || activeProv();
           if (h.setKey) h.setKey(v, provider);
+          invalidateProviderHealth(provider);
           notify('✓ connected ' + provName(provider) + ' API key — ' + keyStoreClause(), 'good');
           if (typeof ModelDock !== 'undefined' && ModelDock.reflect) ModelDock.reflect();   // clear the dock's no-key warning the instant a key lands
           if (typeof KeyCTA !== 'undefined' && KeyCTA.refresh) KeyCTA.refresh();             // …and the world's keyless-brain banner
@@ -2678,12 +2713,13 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
           const v = inp ? inp.value.trim() : '';
           if (!v) { sfx('bad'); return; }
           if (h.setKey) h.setKey(v, row.provider);
+          invalidateProviderHealth(row.provider);
           notify('✓ updated ' + provName(row.provider) + ' API key — ' + keyStoreClause(), 'good');
           if (typeof ModelDock !== 'undefined' && ModelDock.reflect) ModelDock.reflect();   // keep the dock's no-key warning honest after an edit
           if (typeof KeyCTA !== 'undefined' && KeyCTA.refresh) KeyCTA.refresh();
           rerender('settings');
         } else if (act === 'rm') {
-          if (b.dataset.armed) { if (h.setKey) h.setKey('', row.provider); notify('removed ' + provName(row.provider) + ' key — paste a new one here to reconnect', 'warn'); if (typeof ModelDock !== 'undefined' && ModelDock.reflect) ModelDock.reflect(); if (typeof KeyCTA !== 'undefined' && KeyCTA.refresh) KeyCTA.refresh(); sfx('bad'); rerender('settings'); return; }
+          if (b.dataset.armed) { if (h.setKey) h.setKey('', row.provider); invalidateProviderHealth(row.provider); notify('removed ' + provName(row.provider) + ' key — paste a new one here to reconnect', 'warn'); if (typeof ModelDock !== 'undefined' && ModelDock.reflect) ModelDock.reflect(); if (typeof KeyCTA !== 'undefined' && KeyCTA.refresh) KeyCTA.refresh(); sfx('bad'); rerender('settings'); return; }
           // Arm: make the destructive state impossible to miss — filled --bad button + pulse, red hairline on the row,
           // and an inline "click again to confirm" hint. Disarms after 5s, restoring the calm state.
           const rowEl = b.closest('.key-row');
@@ -2715,6 +2751,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       if (!v) { sfx('bad'); if (inp) inp.focus(); return; }
       if (!h || !h.setKey) { sfx('bad'); return; }
       h.setKey(v, provider);
+      invalidateProviderHealth(provider);
       notify('✓ connected ' + provName(provider) + ' API key — ' + keyStoreClause(), 'good');
       if (typeof ModelDock !== 'undefined' && ModelDock.reflect) ModelDock.reflect();
       if (typeof KeyCTA !== 'undefined' && KeyCTA.refresh) KeyCTA.refresh();
@@ -3522,6 +3559,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
 
     wireProviderActions(host);
     wireKeyActions(host);
+    queueProviderHealthRefresh();
     wireCredits(host);
     wireBudget(host);
     wireFallbackChain(host);
@@ -4323,7 +4361,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
           '<div class="set-save">' +
             '<button class="bb sm" id="' + c.pre + '-connect">⏼ CONNECT</button> ' +
             '<button class="bb sm danger" id="' + c.pre + '-disconnect" style="display:none">⏏ DISCONNECT</button> ' +
-            '<button class="bb xs danger" id="' + c.pre + '-forget" style="display:none" title="permanently deletes the saved token from this machine (record + OS keychain) — you’d have to set it up again">⌫ FORGET</button>' +
+            '<button class="bb xs danger" id="' + c.pre + '-forget" style="display:none" title="' + (c.id === 'signal' ? 'removes the saved bridge URL and registered number from this machine' : 'permanently deletes the saved token from this machine (record + OS keychain) — you’d have to set it up again') + '">' + (c.id === 'signal' ? '✕ REMOVE CONFIGURATION' : '⌫ FORGET') + '</button>' +
           '</div>' +
           '<div id="' + c.pre + '-msg" class="msg"></div>' +
         '</div>';
@@ -4391,7 +4429,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         cBtn.textContent = inFlight ? '◐ CONNECTING…' : (configured && !conn ? '⏵ RESUME' : '⏼ CONNECT');
       }
       if (dBtn) { dBtn.style.display = (conn || configured) ? '' : 'none'; if (!(conn || configured)) disarm(c.pre + '-disconnect', dBtn, '⏏ DISCONNECT'); }
-      if (fBtn) { fBtn.style.display = configured ? '' : 'none'; if (!configured) disarm(c.pre + '-forget', fBtn, '⌫ FORGET'); }
+      if (fBtn) { fBtn.style.display = configured ? '' : 'none'; if (!configured) disarm(c.pre + '-forget', fBtn, c.id === 'signal' ? '✕ REMOVE CONFIGURATION' : '⌫ FORGET'); }
 
       // saved-but-offline: swap the password placeholder to a non-echoing hint (never render the secret).
       body.querySelectorAll('#ch-card-' + c.id + ' input[type=password]').forEach(inp => {
@@ -4557,8 +4595,25 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       const fBtn = body.querySelector('#' + c.pre + '-forget');
       fBtn.addEventListener('click', () => {
         if (!(configuredById[c.id])) { return; }
-        armed(c.pre + '-forget', fBtn, '⌫ FORGET', '⌫ CONFIRM FORGET', async () => {
+        const removeLabel = c.id === 'signal' ? '✕ REMOVE CONFIGURATION' : '⌫ FORGET';
+        const confirmRemoveLabel = c.id === 'signal' ? '✕ CONFIRM REMOVE' : '⌫ CONFIRM FORGET';
+        armed(c.pre + '-forget', fBtn, removeLabel, confirmRemoveLabel, async () => {
           try {
+            // Signal has no token. Its destructive action removes the actual durable configuration — endpoint,
+            // registered account and adapter ownership — and claims success only from the backend read-back bit.
+            if (c.id === 'signal') {
+              const r = await fetch('/api/channels/signal/disconnect', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ purge: true }) });
+              const j = await r.json().catch(() => ({}));
+              if (j.removedConfiguration) {
+                setMsg(msgEl, 'configuration removed — Signal is no longer configured on this machine', 'info');
+                const endpoint = body.querySelector('#sg-endpoint'); if (endpoint) endpoint.value = '';
+                const account = body.querySelector('#sg-account'); if (account) account.value = '';
+                sfx('click');
+              } else if (!r.ok || j.error) { setMsg(msgEl, '✕ ' + (j.error || ('HTTP ' + r.status)), ''); sfx('bad'); }
+              else { setMsg(msgEl, '⚠ removal incomplete — could not prove the Signal configuration left disk; try again', ''); sfx('bad'); }
+              refreshAll();
+              return;
+            }
             // Desktop: clear the OS-keychain copy and KEEP the result — a swallowed failure here used to let
             // the "purged" line lie while the token lived on in the keychain. Browser builds have no keychain
             // copy (storeChannelToken is a no-op false there), so only desktop counts it.

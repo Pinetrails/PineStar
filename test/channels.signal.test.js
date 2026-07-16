@@ -4,12 +4,26 @@
 const A = require('./_assert.js');
 const { makeSignalTransport } = require('../sidecar/channels/signal.transport.js');
 const { makeSignalAdapter, normalize, MAX_MESSAGE_LENGTH } = require('../sidecar/channels/signal.js');
+const fs = require('fs');
+const path = require('path');
 
 const tick = () => new Promise(r => setTimeout(r, 0));
 const jres = (status, body) => ({ ok: status >= 200 && status < 300, status, async json() { return body; } });
 const envOf = (over, dmOver) => ({ envelope: Object.assign({ sourceNumber: '+15550001111', sourceName: 'Alice', timestamp: 111, dataMessage: Object.assign({ message: 'hi', timestamp: 111 }, dmOver || {}) }, over || {}) });
 
 (async () => {
+  // ---- PU-06: Signal is tokenless, so its destructive action removes endpoint/account configuration. ----
+  {
+    const idx = fs.readFileSync(path.join(__dirname, '..', 'sidecar', 'index.js'), 'utf8');
+    const ui = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'app', 'stationui.js'), 'utf8');
+    const disconnect = (idx.split('async function handleGenericChannelDisconnect')[1] || '').split('/* ----------------------- Codex')[0];
+    A.ok(/id\s*===\s*'signal'[\s\S]*delete\s+next\.endpoint[\s\S]*delete\s+next\.account/.test(disconnect), 'Signal purge removes its endpoint and account configuration');
+    A.ok(/removedConfiguration/.test(disconnect), 'Signal removal response reports a separately proven configuration-removal bit');
+    A.ok(/REMOVE CONFIGURATION/.test(ui), 'Signal card names its destructive action REMOVE CONFIGURATION');
+    A.ok(/configuration removed/.test(ui), 'Signal success copy names configuration removal, never token deletion');
+    A.ok(!/c\.id\s*===\s*'signal'[\s\S]{0,400}stored token was purged/.test(ui), 'Signal-specific action never claims a token was purged');
+  }
+
   // ---- A. normalize: envelope -> neutral InboundMessage ----
   {
     const m = normalize(envOf());
