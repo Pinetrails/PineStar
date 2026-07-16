@@ -28,7 +28,11 @@
       if (wasOpen && t && g.contains(document.activeElement)) { try { t.focus(); } catch (_) {} }
     });
   }
-  function toggle(g) {
+  // viaKeyboard: only a KEYBOARD-initiated open moves focus into the popover (menu-button pattern).
+  // A mouse open must NOT transfer focus to the first item (TASKS in the WORK dock) — that invisible
+  // focus meant any stray Enter/Space afterwards "clicked" TASKS, so the task board popped open
+  // seemingly at random. Mouse users keep their focus; keyboard users still land on the first item.
+  function toggle(g, viaKeyboard) {
     const willOpen = !g.classList.contains('open');
     closeAll(g);
     g.classList.toggle('open', willOpen);
@@ -36,8 +40,8 @@
     if (t) t.setAttribute('aria-expanded', String(willOpen));
     if (willOpen) {
       dismissCoach();   // they found the docks — retire the hint for good
-      // a11y: move focus to the first menu item so the open popover is keyboard-navigable
-      const first = itemsOf(g)[0]; if (first) { try { first.focus(); } catch (_) {} }
+      // a11y: on a keyboard open, move focus to the first menu item so the popover is navigable
+      if (viaKeyboard) { const first = itemsOf(g)[0]; if (first) { try { first.focus(); } catch (_) {} } }
     }
     try { if (typeof SFX === 'object' && SFX[willOpen ? 'open' : 'close']) SFX[willOpen ? 'open' : 'close'](); } catch (_) {}
   }
@@ -74,7 +78,15 @@
 
   groups.forEach(g => {
     const trigger = g.querySelector('.bb-grp');
-    if (trigger) trigger.addEventListener('click', ev => { ev.stopPropagation(); toggle(g); });
+    // ev.detail === 0 ⇒ the click was synthesized by Enter/Space on the trigger (keyboard); > 0 ⇒ real mouse.
+    // After a MOUSE toggle, also drop focus from the trigger — otherwise it silently keeps focus and a stray
+    // Space/Enter later re-toggles the dock (the same "opens by itself" class of bug, one level up).
+    if (trigger) trigger.addEventListener('click', ev => {
+      ev.stopPropagation();
+      const viaKeyboard = ev.detail === 0;
+      toggle(g, viaKeyboard);
+      if (!viaKeyboard) { try { trigger.blur(); } catch (_) {} }
+    });
     // picking an item runs its own (existing) handler — just collapse the dock after.
     itemsOf(g).forEach(item => {
       item.setAttribute('role', 'menuitem');   // a11y: items inside the role=menu popover
@@ -88,7 +100,7 @@
     g.addEventListener('keydown', ev => {
       const open = g.classList.contains('open');
       if (!open && (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') && document.activeElement === trigger) {
-        ev.preventDefault(); toggle(g); return;   // toggle() focuses the first item
+        ev.preventDefault(); toggle(g, true); return;   // keyboard open → toggle() focuses the first item
       }
       // closed trigger: Left/Right walks to the adjacent dock trigger (menubar-style), no popover opened.
       if (!open && (ev.key === 'ArrowLeft' || ev.key === 'ArrowRight') && document.activeElement === trigger) {
@@ -102,7 +114,7 @@
       if (ev.key === 'ArrowLeft' || ev.key === 'ArrowRight') {
         ev.preventDefault();
         const nb = sibling(ev.key === 'ArrowRight' ? 1 : -1);
-        if (nb && nb !== g) toggle(nb);   // toggle() closes this one + focuses the neighbour's first item
+        if (nb && nb !== g) toggle(nb, true);   // keyboard walk: closes this one + focuses the neighbour's first item
         return;
       }
       const items = itemsOf(g); if (!items.length) return;

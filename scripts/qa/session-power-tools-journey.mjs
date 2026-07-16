@@ -37,9 +37,10 @@ try {
   await sleep(1200);
   check('seeded General plus 50 sessions', seeded === 51, String(seeded));
 
-  await evalJS(cdp, `document.querySelector('#ws-tools-btn').click()`);
-  const opened = await evalJS(cdp, `({expanded:document.querySelector('#ws-tools-btn').getAttribute('aria-expanded'),hidden:document.querySelector('#ws-tools').hidden,focused:document.activeElement.id})`);
-  check('TOOLS opens and focuses search', opened.expanded === 'true' && !opened.hidden && opened.focused === 'ws-search', JSON.stringify(opened));
+  await evalJS(cdp, `StationUI.openTerm('sessiontools')`);
+  await sleep(200);   // window mount + the deferred search focus (setTimeout 0)
+  const opened = await evalJS(cdp, `({inWindow:!!document.querySelector('#ws-tools').closest('.term'),hidden:document.querySelector('#ws-tools').hidden,focused:document.activeElement.id})`);
+  check('SESSION TOOLS window opens and focuses search', opened.inWindow && !opened.hidden && opened.focused === 'ws-search', JSON.stringify(opened));
   await evalJS(cdp, `(() => { const q=document.querySelector('#ws-search'); q.value='NEBULA-NEEDLE'; q.dispatchEvent(new Event('input',{bubbles:true})); })()`);
   const search = await evalJS(cdp, `[...document.querySelectorAll('#ws-search-results .ws-search-hit')].map(e=>({id:e.dataset.id,text:e.textContent}))`);
   check('body search finds exact known session', search.length === 1 && search[0].id === 'power-23', JSON.stringify(search));
@@ -61,9 +62,9 @@ try {
   await evalJS(cdp, `document.querySelector('#ws-clear').click()`);
   check('confirmed clear empties only active transcript and offers undo', await evalJS(cdp, `Workstreams.get('power-17').history.length===0 && !document.querySelector('#ws-undo').hidden && Workstreams.get('power-23').history.length===2`));
   await cdp.send('Page.reload', { ignoreCache: true });
-  await waitFor(cdp, `typeof Workstreams === 'object' && !!document.querySelector('#screen-game.active') && !!document.querySelector('#ws-tools-btn')`, 'reload after clear');
+  await waitFor(cdp, `typeof Workstreams === 'object' && typeof StationUI === 'object' && !!document.querySelector('#screen-game.active') && !!document.querySelector('#ws-tools')`, 'reload after clear');
   await sleep(300);
-  await evalJS(cdp, `document.querySelector('#ws-tools-btn').click()`);
+  await evalJS(cdp, `StationUI.openTerm('sessiontools')`); await sleep(200);
   check('clear checkpoint survives reload', await evalJS(cdp, `Workstreams.get('power-17').history.length===0 && !document.querySelector('#ws-undo').hidden`));
   await evalJS(cdp, `document.querySelector('#ws-undo').click()`);
   check('clear undo restores exact transcript', await evalJS(cdp, `Workstreams.get('power-17').history.length===2 && !Workstreams.canUndo()`));
@@ -76,9 +77,9 @@ try {
   check('bulk apply cannot cross previewed set', JSON.stringify(archived) === JSON.stringify(preview.expected), JSON.stringify({ archived, expected: preview.expected }));
   check('General and pinned remain protected', !archived.includes('power-general') && !archived.includes('power-49'));
   await cdp.send('Page.reload', { ignoreCache: true });
-  await waitFor(cdp, `typeof Workstreams === 'object' && !!document.querySelector('#screen-game.active') && !!document.querySelector('#ws-tools-btn')`, 'reload after bulk');
+  await waitFor(cdp, `typeof Workstreams === 'object' && typeof StationUI === 'object' && !!document.querySelector('#screen-game.active') && !!document.querySelector('#ws-tools')`, 'reload after bulk');
   await sleep(300);
-  await evalJS(cdp, `document.querySelector('#ws-tools-btn').click()`);
+  await evalJS(cdp, `StationUI.openTerm('sessiontools')`); await sleep(200);
   check('bulk checkpoint survives reload', await evalJS(cdp, `Workstreams.canUndo() && !document.querySelector('#ws-undo').hidden`));
   await evalJS(cdp, `document.querySelector('#ws-undo').click()`);
   check('bulk undo restores every previewed row', (await evalJS(cdp, `Workstreams.all().filter(w=>w.archived).length`)) === 0);

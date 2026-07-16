@@ -90,7 +90,10 @@ A.eq(!!W.get('s23').archived, beforeArchived.s23, 'rejected forged preview canno
 /* browser wiring: the power tools are discoverable, confirmed, persisted, and download both formats */
 const app = fs.readFileSync(require.resolve('../frontend/app/app.js'), 'utf8');
 const html = fs.readFileSync(require.resolve('../frontend/index.html'), 'utf8');
-A.ok(/id="ws-tools-btn"[\s\S]*aria-controls="ws-tools"/.test(html), 'rail exposes a discoverable session-tools control');
+const sui = fs.readFileSync(require.resolve('../frontend/app/stationui.js'), 'utf8');
+A.ok(/data-term="sessiontools"/.test(html) && /id="ws-tools-park"/.test(html), 'SESSION TOOLS is discoverable from the SYSTEM menu and the panel is parked outside the rail');
+A.ok(!/ws-tools-btn/.test(html), 'rail head stays SESSIONS/PROJECTS + NEW only (no inline TOOLS button)');
+A.ok(/sessiontools:\s*\['SESSION TOOLS',\s*buildSessionTools/.test(sui) && /onClose:\s*parkSessionTools/.test(sui), 'the floating window adopts the parked panel and re-parks it on close');
 A.ok(/id="ws-search"[\s\S]*search sessions \+ transcripts/.test(html), 'one labelled search surface covers sessions and transcripts');
 A.ok(/EXPORT \.MD[\s\S]*EXPORT \.JSON/.test(html), 'both conversation export formats are visible');
 A.ok(/CONFIRM CLEAR/.test(app) && /clearConversation\(w\.id\)/.test(app), 'clear requires an explicit second confirmation');

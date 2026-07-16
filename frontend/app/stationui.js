@@ -2471,7 +2471,12 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
           (lane === 'active' ? activeAggregate(items) : '') + '</h4>' +
           (items.length ? items.map(card).join('') : kbEmpty(lane)) + '</div>';
       }).join('') +
-      '</div>';
+      '</div>' +
+      // the dead-end this footnote kills (2026-07-16): "a run finished while you were away" sent users
+      // hunting HERE, but this board only holds queued directives — finished routine/away runs are
+      // readable sessions in COMMS and collectable on the OUTBOX. Shown only when the board is empty
+      // (that's exactly when the hunt strands); openTerm('outbox') is the one-click door.
+      (streams.length ? '' : '<div class="mc-detail dim" style="margin-top:8px">Looking for finished work? Routine and while-away runs aren’t board cards — they land as sessions in COMMS and wait on the <button type="button" class="lb-tx-btn" id="kb-outbox-link">▸ OUTBOX</button>.</div>');
     const inp = body.querySelector('#kb-in');
     const submit = () => { addTask(inp.value); };
     body.querySelector('#kb-add').addEventListener('click', () => { sfx('click'); submit(); });
@@ -2479,6 +2484,8 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     // empty-state CTA (TO DO column): focus the add-a-workstream input — no new behaviour, just focus.
     body.querySelectorAll('.kb-empty-col .es-cta').forEach(b =>
       b.addEventListener('click', () => { sfx('click'); inp.focus(); }));
+    const obLink = body.querySelector('#kb-outbox-link');
+    if (obLink) obLink.addEventListener('click', () => { sfx('click'); openTerm('outbox'); });
     inp.focus();
     body.querySelectorAll('.kb-card').forEach(c => {
       const id = c.dataset.id;
@@ -6442,6 +6449,26 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     wireVerdict(nsNo, 'decline', 'warn');
   }
 
+  /* ============== SESSION TOOLS ==============
+     Search/export/clear/bulk-archive for conversations. The controls live in ONE parked DOM node
+     (#ws-tools in index.html) that App wires exactly once at init; this window ADOPTS that node into
+     its body on open and re-parks it hidden on close, so the wiring (and any armed confirm state)
+     survives open/close cycles. Rail head stays SESSIONS/PROJECTS + NEW (Commander directive). */
+  function parkSessionTools() {
+    const panel = document.getElementById('ws-tools'), park = document.getElementById('ws-tools-park');
+    if (!panel) return;
+    panel.hidden = true;
+    if (park) park.appendChild(panel);
+  }
+  function buildSessionTools(body) {
+    const panel = document.getElementById('ws-tools'); if (!panel) return;
+    panel.hidden = false;
+    body.appendChild(panel);
+    if (typeof App !== 'undefined' && App.sessionToolsShown) App.sessionToolsShown();
+    const q = panel.querySelector('#ws-search');
+    if (q) setTimeout(() => { try { q.focus(); } catch (_) {} }, 0);
+  }
+
   /* ============== OUTBOX — the finished-work window (2026-07-16 UX fix) ==============
      Clicking the OUTBOX prop opens THIS: one clean list of every uncollected finished run — what ran,
      who ran it, when, what it cost — each readable IN PLACE (lazy inline transcript, the LOGBOOK's
@@ -6534,6 +6561,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     connectors:['TOOLSETS & CONNECTORS', buildConnectors,{ console: true }],
     routines: ['ROUTINES',               buildRoutines,  { console: true }],
     rewind:   ['RESTORE POINTS',         buildRewind,    { w: '520px' }],
+    sessiontools: ['SESSION TOOLS',      buildSessionTools, { w: '440px', onClose: parkSessionTools }],
     logbook:  ['LOGBOOK',                buildLogbook,   { console: true }],
     notifs:   ['NOTIFICATIONS',          buildNotifs,    { w: '460px' }],
     // the FIELD MANUAL codex is owned by tutorial.js (P3); this term just hosts its builder
