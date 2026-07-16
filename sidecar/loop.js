@@ -455,7 +455,10 @@
         const controlText = String(finalControl.text || '').trim();
         if (controlText) {
           messages.push({ role: 'assistant', content: controlText });
-          emit('agent.token', { agentId, runId, delta: controlText });
+          // The delta lands on its OWN line: the client accumulates deltas into one reply string, and a
+          // control marker glued to the model's trailing prose ("…one key thing:TASK_QUESTION: …") fails
+          // the line-anchored TASK_QUESTION parse — raw marker leaked, no chips (live-caught 2026-07-16).
+          emit('agent.token', { agentId, runId, delta: '\n\n' + controlText });
         }
         return end(finalControl.reason || 'done');
       }

@@ -21,7 +21,11 @@ const IMPACTS = Object.freeze({
   PHYSICAL_INPUT: 'physical-input'
 });
 const IMPACT_SET = new Set(Object.keys(IMPACTS).map(k => IMPACTS[k]));
-const SAFE_BUILTIN_CAPS = new Set(['compute', 'cabinet', 'memory', 'quest', 'studio', 'orchestrator']);
+// 'taskbrief' = the host's OWN internal Task Brief controls (brief.ask / brief.proceed): read-only
+// bookkeeping against a host-side store with zero external effect. Without it they fell through to
+// EXTERNAL_UNKNOWN and the host demanded a per-call confirmation for the tool whose whole job is
+// asking the Commander a question (live-caught 2026-07-16: three approval cards to ask one question).
+const SAFE_BUILTIN_CAPS = new Set(['compute', 'cabinet', 'memory', 'quest', 'studio', 'orchestrator', 'taskbrief']);
 
 function impactOfTool(tool) {
   tool = tool || {};

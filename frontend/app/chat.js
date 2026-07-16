@@ -5129,6 +5129,10 @@ const Chat = (() => {
         }
         if (isActiveWs(ws) && activeLiveRow) activeLiveRow.done();
         if (isActiveWs(ws) && taskQuestion) presentTaskQuestion(ws, taskQuestion);   // enriches with the stored recommendation, then renders
+        // Belt-and-braces (live-caught 2026-07-16): a run can end 'clarifying' with the marker unparseable
+        // client-side (e.g. a malformed/glued reply line) while the DURABLE brief holds the real validated
+        // question — re-present from the store so the Commander is never left with a question-less pause.
+        else if (isActiveWs(ws) && endReason === 'clarifying') restoreTaskQuestion(ws);
         // R1 MID-TASK FORK: the agent may have ended this reply with one FORK marker (earned only while the
         // style model's confidence is low — the directive isn't even in the prompt otherwise). Render the
         // one-tap chips at the run boundary; a malformed marker parses null and stays plain text.

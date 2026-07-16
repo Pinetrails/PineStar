@@ -30,7 +30,7 @@ function validateQuestion(candidate, brief) {
   const recommended = clean(c.recommended || c.defaultOption, 72);
   const reason = clean(c.reason, 240);
   const prior = brief && Array.isArray(brief.questions) ? brief.questions : [];
-  if (!DIMENSIONS.has(dimension)) return { ok: false, error: 'choose a concrete decision dimension' };
+  if (!DIMENSIONS.has(dimension)) return { ok: false, error: 'dimension must be one of: ' + Array.from(DIMENSIONS).join(', ') };
   if (!question || VAGUE.test(question)) return { ok: false, error: 'ask one concrete, non-vague question' };
   if (options.length < 2) return { ok: false, error: 'provide 2-3 genuinely different options' };
   if (!recommended || !options.some(x => x.toLowerCase() === recommended.toLowerCase())) return { ok: false, error: 'recommended must exactly match one option' };

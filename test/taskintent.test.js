@@ -193,6 +193,28 @@ A.eq(Policy.canMutate({ status: 'executing' }, { scope: 'execute' }).ok, true, '
     A.ok(reasonEnum[1].indexOf("'" + r + "'") >= 0, 'run-end reason enum carries ' + r + ' (additive-only contract)');
   }
   A.ok(/reason === 'clarifying'\) return ''/.test(hubSrc), 'channel endNote treats a clarifying end as the reply itself, never a stopped note');
+
+  // Live-caught 2026-07-16 (real haiku-4.5 run): the internal brief controls must never route through the
+  // external-unknown per-call confirmation, and the model must SEE the legal dimensions in the tool schema.
+  const InputPolicy = require('../sidecar/inputpolicy.js');
+  {
+    const reg2 = makeRegistry();
+    registerTaskBriefTools(reg2, { ask: async () => null, proceed: async () => null }, { brief: { id: 'x', status: 'ready', questions: [] } }, { now: () => 1 });
+    const authority = InputPolicy.makeRunAuthority({ surface: 'interactive', isTask: true, confirm: () => { throw new Error('brief controls must not need confirmation'); } });
+    for (const nm of ['brief.ask', 'brief.proceed']) {
+      const t2 = reg2.get(nm);
+      A.eq(t2.capability, 'taskbrief', nm + ' carries the internal taskbrief capability');
+      const auth = await authority.authorize({ name: nm }, t2);
+      A.eq(auth.ok, true, nm + ' authorizes without an external-unknown confirmation');
+      A.ok(auth.oneShot !== true, nm + ' is not the one-shot external-unknown lease');
+    }
+    const dimSchema = reg2.get('brief.ask').schema.properties.dimension;
+    A.ok(Array.isArray(dimSchema.enum) && dimSchema.enum.length === Policy.DIMENSIONS.size && dimSchema.enum.every(d => Policy.DIMENSIONS.has(d)), 'the wire schema enum IS the policy dimension whitelist');
+  }
+  A.ok(/dimension must be one of:/.test(Policy.validateQuestion(material({ dimension: 'dashboard_tech' }), { questions: [] }).error), 'a rejected dimension names the legal set in the error');
+  const loopSrc = fs.readFileSync(path.join(__dirname, '../sidecar/loop.js'), 'utf8');
+  A.ok(/delta: '\\n\\n' \+ controlText/.test(loopSrc), 'the final-control marker streams on its own line so the client line-anchored parse always hits');
+  A.ok(/endReason === 'clarifying'\) restoreTaskQuestion\(ws\)/.test(chatSrc), 'a clarifying end without a parsed marker re-presents from the durable brief');
   A.ok(/endReason !== 'clarifying'/.test(chatSrc), 'COMMS never renders a clarifying end as a stopped run');
   A.ok(/offerTaskQuestion/.test(chatSrc) && /TaskIntent\.strip/.test(chatSrc), 'COMMS strips the marker and renders the natural decision');
   A.ok(/clarificationRuns\.has\(runId\)/.test(chatSrc) && /clarificationRuns\.add\(thisRunId\)/.test(chatSrc), 'clarification turns do not count as completed-work beats');
