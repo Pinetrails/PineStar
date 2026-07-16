@@ -81,6 +81,9 @@
     },
     {
       id: 'fix-bug', name: 'Fix a Bug', emoji: '⌗', tagline: 'Diagnose & patch a defect', accent: '#7bc88a',
+      intake: [
+        { dimension: "constraints", question: "How far may the fix go?", options: ["smallest safe patch","refactor if warranted"], recommended: "smallest safe patch", reason: "sets the blast radius of the change" }
+      ],
       blurb: 'Reproduces first, fixes the root cause with the smallest change, and proves the fix before reporting.',
       tags: { code: 1 }, gear: ['cabinet', 'workbench'], cadence: null, category: 'code',
       params: [{ key: 'error', label: 'Error / symptom', placeholder: 'paste the error or describe the bug' }],
@@ -88,6 +91,9 @@
     },
     {
       id: 'code-review', name: 'Code Review', emoji: '⊗', tagline: 'Adversarial review pass', accent: '#cf8a7d',
+      intake: [
+        { dimension: "scope", question: "How deep should the review go?", options: ["full adversarial pass","quick sanity pass"], recommended: "full adversarial pass", reason: "depth decides how much of the change gets traced" }
+      ],
       blurb: 'Tries to break the change before a user does — edge cases, error paths, a verdict you can act on.',
       tags: { code: 0.8, general: 0.2 }, gear: ['cabinet'], cadence: null, category: 'code',
       params: [{ key: 'target', label: 'What to review', placeholder: 'a file, a diff, or a plan' }],
@@ -95,6 +101,9 @@
     },
     {
       id: 'ship-feature', name: 'Build a Feature', emoji: '⊞', tagline: 'Add something, end to end', accent: '#7bc88a',
+      intake: [
+        { dimension: "acceptance", question: "What proves it done?", options: ["verified live like a user","tests green is enough"], recommended: "verified live like a user", reason: "sets the bar before the work is called finished" }
+      ],
       blurb: 'Builds the smallest complete version in the codebase\'s own style, wired fully and verified like a user.',
       tags: { code: 1 }, gear: ['cabinet', 'workbench'], cadence: null, category: 'code',
       params: [
@@ -115,6 +124,9 @@
     },
     {
       id: 'tighten-writing', name: 'Tighten This', emoji: '✎', tagline: 'Cut filler, keep the meaning', accent: '#b790c0',
+      intake: [
+        { dimension: "constraints", question: "How hard should I cut?", options: ["light trim (keep the voice)","aggressive cut"], recommended: "light trim (keep the voice)", reason: "decides how much of the original survives" }
+      ],
       blurb: 'Cuts filler without flattening the voice — and shows you what it cut, so nothing changes silently.',
       tags: { general: 1 }, gear: [], cadence: null, category: 'writing',
       params: [{ key: 'text', label: 'The text', placeholder: 'paste the passage to tighten' }],
@@ -122,6 +134,9 @@
     },
     {
       id: 'plan-project', name: 'Plan a Project', emoji: '◇', tagline: 'Break a goal into a plan', accent: '#d9a85a',
+      intake: [
+        { dimension: "deliverable", question: "What shape of plan?", options: ["one-page plan","full roadmap"], recommended: "one-page plan", reason: "a plan you will read beats a thorough one you will not" }
+      ],
       blurb: 'Works backwards from done into steps you can start today — risks named, first move included.',
       tags: { general: 1 }, gear: ['notebook'], cadence: null, category: 'planning',
       params: [{ key: 'goal', label: 'The goal', placeholder: 'what you’re trying to accomplish' }],

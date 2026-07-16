@@ -7851,8 +7851,8 @@ async function runOnce(o) {
   let result;
   const _txStart = msgs.length;   // H1.1: boundary — turns the loop appends to msgs after this ARE this run's new dialogue
   let bufferedTaskEnd = null;
-  // The frozen contract has no "clarifying" reason. Hold a successful user-facing Task Brief end until the
-  // final text is known; a question maps to the existing neutral `cancelled` terminal (neither product nor slag).
+  // Hold a successful user-facing Task Brief end until the final text is known; a question maps to the
+  // contract's additive `clarifying` terminal (neither product nor slag — every success path keys on 'done').
   const loopEmit = (name, payload) => {
     if (taskBrief && name === 'agent.run.end' && payload && payload.runId === runId && payload.reason === 'done') {
       bufferedTaskEnd = payload; return;
@@ -7915,12 +7915,12 @@ async function runOnce(o) {
       } catch (e) { console.warn('[taskbrief] settle failed:', (e && e.message) || e); }
     }
     if (bufferedTaskEnd) {
-      emit('agent.run.end', Object.assign({}, bufferedTaskEnd, { reason: taskQuestionAsked ? 'cancelled' : bufferedTaskEnd.reason }));
+      emit('agent.run.end', Object.assign({}, bufferedTaskEnd, { reason: taskQuestionAsked ? 'clarifying' : bufferedTaskEnd.reason }));
       bufferedTaskEnd = null;
     }
   } finally {
     if (bufferedTaskEnd) {
-      emit('agent.run.end', Object.assign({}, bufferedTaskEnd, { reason: taskQuestionAsked ? 'cancelled' : bufferedTaskEnd.reason }));
+      emit('agent.run.end', Object.assign({}, bufferedTaskEnd, { reason: taskQuestionAsked ? 'clarifying' : bufferedTaskEnd.reason }));
       bufferedTaskEnd = null;
     }
     // book this run's spend into the append-only ledger (so day/global pools persist across runs), THEN drop its
