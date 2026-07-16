@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "532150f0b7c7f10ca01a3fe110b80215a53b4e07",
+    "sourceCommit": "b3491aa9ebcb3b0542cfd9c842313e7f3482cd02",
     "pathSetSha256": "e45261d65dc7ff0b9cc77172b4f800cc4bef6dec86bd786a26771964e9b2e342",
     "files": [
       {
@@ -228,8 +228,8 @@
       },
       {
         "path": "frontend/app/dossierstore.js",
-        "bytes": 6090,
-        "sha256": "e4cabc6674b4b54299cb0ba9cac830d3c6ad40ef2262038d6c736f52265867e3"
+        "bytes": 6721,
+        "sha256": "5c1b9426d6a0157edf5e684ff94f266684667871deb278e7af574dba8c90a786"
       },
       {
         "path": "frontend/app/floorstats.js",
@@ -638,8 +638,8 @@
       },
       {
         "path": "frontend/app/studystore.js",
-        "bytes": 15202,
-        "sha256": "aefe52849668d2bb8e3c5bfa96a4a132bbe83bf6ed278a86cb1b995cd83db889"
+        "bytes": 16486,
+        "sha256": "964e963d686904ac849fa4ac279384bc3a9541c6692d0dc3f03cc115d521ab78"
       },
       {
         "path": "frontend/app/subagentsprites.js",
