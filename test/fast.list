@@ -271,6 +271,7 @@ test/workstreams.test.js
 test/projects-view.test.js
 test/prepare-node.test.js
 test/summon.id.test.js
+test/recruit-identity-ui.test.js
 test/subagents.test.js
 test/subagentsprites.test.js
 test/orchestration.test.js
