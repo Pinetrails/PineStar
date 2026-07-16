@@ -131,7 +131,7 @@ const QuestSweeps = require('./questsweeps.js');
 const QuestRefresh = require('./questrefresh.js'); // QUEST V3: the standing 24h + caught-up quest-refresh engine (pure gates/directive/parse) // QUEST V2 §A: pure seam-matchers for the mechanical contract sweeps (run-bind / prop-live / fact-learned / artifact-exists)
 const { makeThreadsStore } = require('./threads-store.js');   // NS-6: durable THREAD LEDGER (ideas raised but never acted on)
 const { makeTaskBriefStore } = require('./taskbrief-store.js'); // durable original request + visible task decisions
-const TaskIntent = require('../frontend/app/taskintent.js');    // shared TASK_QUESTION protocol + prompt doctrine
+const TaskIntent = require('../frontend/app/fork.js').TaskIntent;    // shared TASK_QUESTION protocol + prompt doctrine
 const CommanderContext = require('./commander-context.js');    // bounded provenance-labelled task context
 const threadmine = require('./threadmine.js');                // NS-6: pure post-run thread-mining producer (reflect/study mold)
 const AuxGovernor = require('./auxgovernor.js');              // aux-budget lane: PURE joint ceiling over the post-run aux passes (priority + budget)
@@ -6822,6 +6822,7 @@ async function runOnce(o) {
   // Only user-facing callers with a stable conversation key receive the intent layer. Unattended cron/night-shift
   // work has nobody present to answer and therefore remains byte-for-byte on its existing execution path.
   let taskBrief = null;
+  let taskContextBlock = '';
   let taskQuestionAsked = false;
   // Everything below is wrapped so the admission slot is ALWAYS released (early-return refusals above run
   // before tryEnter; every exit below — return, throw, or the normal finish — passes through leave()).
@@ -6871,6 +6872,14 @@ async function runOnce(o) {
         source: o.taskSource || (surface === 'interactive' ? 'interactive' : 'channel'), text: latestUser
       }, Date.now());
     } catch (e) { console.warn('[taskbrief] prepare failed:', (e && e.message) || e); taskBrief = null; }
+  }
+
+  if (taskBrief) {
+    let goal = null; try { goal = commanderGoals.get() || null; } catch (_) {}
+    let patterns = []; try { patterns = taskBriefStore.patterns(5); } catch (_) {}
+    taskContextBlock = CommanderContext.compose({
+      brief: taskBrief, dossier: commanderDossier.get(), goal, patterns, existingSystem: system || ''
+    });
   }
 
   // ---- tools (registered fresh per run; cheap) ----
@@ -6955,6 +6964,7 @@ async function runOnce(o) {
     runOnce, roster: () => agentRoster, key: runKey, model, provider: providerId, baseUrl, reasoningEffort, subagents,
     classes: SPECIALIST_CLASSES,   // Class Loadouts S1: the summon-tool class list, composed from the shared catalog (no hardcoded prose)
     selfSystem: system,   // team.spawn clones the LEAD's OWN base identity into each ephemeral subagent (Meeseeks)
+    taskContext: taskContextBlock,   // workers inherit settled task decisions without re-questioning the Commander
     perWorker: ORCH_PER_WORKER, newId: () => crypto.randomUUID(),
     dispatchTimeoutMs: ORCH_DISPATCH_TIMEOUT_MS,   // minutes, not the 30s fast-tool cap (see constant)
     // Cross-provider dispatch: resolve a WORKER's own roster provider to the station's server-held credential
@@ -7439,14 +7449,7 @@ async function runOnce(o) {
     if (isTask) for (const _qid of QuestSweeps.runBindIds(questStore.openForAgent(agentId), agentId)) questStore.bindRun(_qid, runId).catch(() => {});
   } catch (_) {}
   let taskIntentNote = '';
-  if (taskBrief) {
-    let goal = null; try { goal = commanderGoals.get() || null; } catch (_) {}
-    let patterns = []; try { patterns = taskBriefStore.patterns(5); } catch (_) {}
-    const contextBlock = CommanderContext.compose({
-      brief: taskBrief, dossier: commanderDossier.get(), goal, patterns, existingSystem: system || ''
-    });
-    taskIntentNote = '\n\n' + TaskIntent.directive(contextBlock);
-  }
+  if (taskBrief) taskIntentNote = '\n\n' + TaskIntent.directive(taskContextBlock);
   const sys = withQuests((system || '') + runtimeBlock + toolNote + teamNote + manualBlock + summarizeCapabilities(resolved, { surface }) + skillBlock + runtimeSkillBlock + preloadedSkillBlock + taskIntentNote, questsBlock);   // ground-truth caps + task-context doctrine share the one final prompt seam
   // H1.2: bulletproof resume — if this run arrives with NO prior history (a fresh restart whose browser save was
   // wiped, or any caller that only sent the new directive) AND it names an explicit workstream, seed the

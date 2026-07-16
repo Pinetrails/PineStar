@@ -75,6 +75,7 @@ const Chat = (() => {
   const activeChoiceRows = new Set();   // one-shot chip rows; cleared when a typed answer supersedes them
   const proposalRunsSeen = new Set();   // runIds already turned into a beat (memory.proposed fires once per proposal)
   const receiptRunsSeen = new Set();    // runIds whose SILENT auto-saved receipts already rendered (memory.write triggers once per run)
+  const clarificationRuns = new Set();  // an intent-question turn is a continuation, not completed work
   const runWork = new Map();    // runId -> { toolsOk, delivered, cost, agentId } captured at run end → the "rate the work"
                                 // beat's HONEST, un-farmable size + the delivery gate (real tools/deliverables only). FIFO-capped.
   // P3.2 CREW ATTRIBUTION: a lead run that dispatched crew gets each worker's PROVABLE spend so a 👍 on the run
@@ -1820,6 +1821,9 @@ const Chat = (() => {
     if (armedRateRuns.size > 120) armedRateRuns.delete(armedRateRuns.values().next().value);
     (function attempt(left) {
       setTimeout(() => {
+        // Marker parsing happens as the stream closes, before this delayed post-run beat. A question turn did
+        // not ship work and must not bank curiosity credit, earn a rating, or trigger another proactive ask.
+        if (runId && clarificationRuns.has(runId)) { clarificationRuns.delete(runId); return; }
         const r = maybeStandaloneRate(agentId, runId);
         if (r === 'blocked' && left > 0) attempt(left - 1);
       }, 5000);
@@ -4861,6 +4865,10 @@ const Chat = (() => {
         let replyText = reply || acc;
         const taskQuestion = (isTask && typeof TaskIntent !== 'undefined' && TaskIntent.parse) ? TaskIntent.parse(replyText) : null;
         if (taskQuestion) {
+          if (thisRunId) {
+            clarificationRuns.add(thisRunId);
+            if (clarificationRuns.size > 60) clarificationRuns.delete(clarificationRuns.values().next().value);
+          }
           replyText = TaskIntent.strip(replyText);
           if (isActiveWs(ws) && activeLiveRow && activeLiveRow.cleanTaskIntent) activeLiveRow.cleanTaskIntent();
         }

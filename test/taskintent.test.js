@@ -3,7 +3,7 @@
 const A = require('./_assert.js');
 const fs = require('fs');
 const path = require('path');
-const TaskIntent = require('../frontend/app/taskintent.js');
+const TaskIntent = require('../frontend/app/fork.js').TaskIntent;
 const CommanderContext = require('../sidecar/commander-context.js');
 const { makeTaskBriefStore } = require('../sidecar/taskbrief-store.js');
 
@@ -61,9 +61,12 @@ A.ok(/at most two questions total/.test(doctrine) && /second is allowed only/.te
   const indexSrc = fs.readFileSync(path.join(__dirname, '../sidecar/index.js'), 'utf8');
   const chatSrc = fs.readFileSync(path.join(__dirname, '../frontend/app/chat.js'), 'utf8');
   const hubSrc = fs.readFileSync(path.join(__dirname, '../sidecar/channels/hub.js'), 'utf8');
+  const orchestrationSrc = fs.readFileSync(path.join(__dirname, '../sidecar/tools/builtin/orchestration.js'), 'utf8');
   A.ok(/taskBriefStore\.prepare/.test(indexSrc) && /TaskIntent\.directive/.test(indexSrc), 'runOnce prepares the durable brief and injects the shared doctrine');
+  A.ok(/taskContext:\s*taskContextBlock/.test(indexSrc) && /workerSystem/.test(orchestrationSrc), 'delegated workers inherit the settled brief without re-questioning the Commander');
   A.ok(/taskQuestionAsked/.test(indexSrc) && /!taskQuestionAsked/.test(indexSrc), 'clarifications suppress completed-task learning sweeps');
   A.ok(/offerTaskQuestion/.test(chatSrc) && /TaskIntent\.strip/.test(chatSrc), 'COMMS strips the marker and renders the natural decision');
+  A.ok(/clarificationRuns\.has\(runId\)/.test(chatSrc) && /clarificationRuns\.add\(thisRunId\)/.test(chatSrc), 'clarification turns do not count as completed-work beats');
   A.ok(/function restoreTaskQuestion/.test(chatSrc) && /status=clarifying/.test(chatSrc), 'reload or stream-switch re-presents the real unanswered durable brief');
   const offer = chatSrc.slice(chatSrc.indexOf('function offerTaskQuestion'), chatSrc.indexOf('function offerTaskQuestion') + 1400);
   A.ok(!/DossierStore\.upsert/.test(offer), 'task-specific answers never pollute the global dossier');
