@@ -181,6 +181,12 @@ async function startSse(url) {
     // 6. it shows up as a PENDING deliverable for the return-card.
     const pending = await (await fetch(B + '/api/workshop/pending?agent=builder', { headers })).json();
     A.ok(pending.pending.some(m => m.runId === runId && m.title === 'CSV cleaner'), '/pending lists the built deliverable');
+    const libraryPendingRes = await fetch(B + '/api/deliverables?status=pending&query=csv', { headers });
+    const libraryPending = await libraryPendingRes.json();
+    const pendingRow = (libraryPending.items || []).find(r => r.runId === runId);
+    A.eq(libraryPendingRes.status, 200, 'deliverable library API exists');
+    A.ok(pendingRow && pendingRow.status === 'pending' && pendingRow.source === 'queued', 'library projects the real pending Workshop record');
+    A.ok(pendingRow.size === 21 && pendingRow.files[0].openUrl, 'library reports manifest-proven size and a safe open URL');
 
     // ===================== W7: OPEN the deliverable, don't display its code =====================
     // Build a SELF-CONTAINED web tool (index.html + README.md) and prove the two open surfaces + their guards.
@@ -300,6 +306,18 @@ async function startSse(url) {
     A.ok(!fs.existsSync(runDir), 'discard wiped the run dir');
     const reQ = await (await fetch(B + '/api/workshop/queue', { method: 'POST', headers, body: JSON.stringify({ agentId: 'builder', id: 'item-1', title: 'CSV cleaner' }) })).json();
     A.ok(reQ.ok === false && reQ.reason === 'discarded', 'the discarded item cannot be re-queued (discard = never again)');
+
+    const libraryDecided = await (await fetch(B + '/api/deliverables', { headers })).json();
+    A.ok(libraryDecided.items.some(r => r.runId === runId2 && r.status === 'kept'), 'library preserves the kept lifecycle after the backlog row retires');
+    A.ok(libraryDecided.items.some(r => r.runId === runId && r.status === 'discarded'), 'library preserves the discarded lifecycle after files are removed');
+
+    const preview = await (await fetch(B + '/api/deliverables/cleanup-preview', { method: 'POST', headers, body: JSON.stringify({ statuses: ['discarded'] }) })).json();
+    A.ok(preview.ok && preview.targets.length === 1 && preview.targets[0].runId === runId, 'cleanup preview names the exact discarded target');
+    A.ok(preview.protected.some(r => r.runId === runId2 && r.status === 'kept'), 'cleanup preview protects kept work');
+    const cleaned = await (await fetch(B + '/api/deliverables/cleanup', { method: 'POST', headers, body: JSON.stringify({ statuses: preview.statuses, fingerprint: preview.fingerprint }) })).json();
+    A.ok(cleaned.ok && cleaned.removed === 1 && cleaned.undoToken, 'cleanup applies only the previewed metadata rows');
+    const undone = await (await fetch(B + '/api/deliverables/cleanup-undo', { method: 'POST', headers, body: JSON.stringify({ undoToken: cleaned.undoToken }) })).json();
+    A.ok(undone.ok && undone.restored === 1, 'cleanup undo restores the removed lifecycle row');
 
     // 9. PERSISTENCE: the grant survives a sidecar RESTART.
     A.ok(fs.existsSync(path.join(ws, 'builder.workshop.json')), 'the workshop store persisted to disk');
