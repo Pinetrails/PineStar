@@ -26,6 +26,7 @@ W.init({ workstreams: rows, activeId: 's17', generalId: 'general' });
 A.eq(W.search('orchid').map(x => x.id), ['s17'], 'title search finds the known session');
 A.eq(W.search('nebula-needle').map(x => x.id), ['s23'], 'body search finds the known transcript hit');
 A.ok(W.search('answer').length === 40, 'search spans all seeded transcript bodies');
+A.ok(!W.search('nebula-needle')[0].snippet.startsWith('Session 23'), 'body snippet does not repeat the separately rendered title');
 
 /* export: visible dialogue only, obvious secrets scrubbed, hidden/system material absent */
 const active = W.get('s17');

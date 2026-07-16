@@ -398,11 +398,13 @@
     if (!q) return [];
     const out = [];
     for (const w of ws) {
-      const hay = [safeTitle(w)].concat(visibleMessages(w).map(m => scrubSecrets(m.content))).join('\n');
-      const i = hay.toLowerCase().indexOf(q);
-      if (i >= 0) {
+      const title = safeTitle(w), ti = title.toLowerCase().indexOf(q);
+      if (ti >= 0) { out.push({ id: w.id, title: w.title, snippet: 'title match', match: 'title' }); continue; }
+      for (const m of visibleMessages(w)) {
+        const body = scrubSecrets(m.content), i = body.toLowerCase().indexOf(q); if (i < 0) continue;
         const start = Math.max(0, i - 20);
-        out.push({ id: w.id, title: w.title, snippet: hay.slice(start, start + 60).replace(/\s+/g, ' ').trim() });
+        out.push({ id: w.id, title: w.title, snippet: body.slice(start, start + 60).replace(/\s+/g, ' ').trim(), match: 'transcript' });
+        break;
       }
     }
     return out;
