@@ -3930,6 +3930,7 @@ function startTelegram(token, key, model, agentCfg) {
       return { key, model: t.model, provider, baseUrl, configured: providerHasCredential(provider, key, baseUrl), reasoningEffort: resolveReasoningEffort(provider, t.reasoningEffort), agentId: t.agentId, system: t.system };
     },
     persona: TELEGRAM_PERSONA, classify: Classify.isTaskDirective, redact: redact, emit: chanEmit, taskIntent: TaskIntent,
+    briefFor: (key) => taskBriefStore.active(key),   // TASK BRIEF v2: the fallback line carries the stored recommendation
     newId: () => crypto.randomUUID(), now: () => Date.now(), maxMessageLength: 4096,
     // Phase B: the placed floor decides WHICH agent runs (resolveTarget); null -> the hub's own resolution
     // (configured agentId else tg_<chatId>), so a no-floor or mis-wired station never stalls real work.
@@ -4149,6 +4150,7 @@ function getDevHub() {
     send: (chatId, text) => { const k = String(chatId); const arr = devReplies.get(k) || []; arr.push({ text: String(text == null ? '' : text), ts: Date.now() }); if (arr.length > 20) arr.shift(); devReplies.set(k, arr); return Promise.resolve({ ok: true }); },
     secrets: devHubSecrets,
     persona: DEV_PERSONA, classify: Classify.isTaskDirective, redact: redact, emit: chanEmit, taskIntent: TaskIntent,
+    briefFor: (key) => taskBriefStore.active(key),   // TASK BRIEF v2: same recommendation line on the dev channel
     newId: () => crypto.randomUUID(), now: () => Date.now(),
     resolveAgent: (ctx) => router.resolveTarget(ctx),
     getTag: (text) => (Classify.getTag ? Classify.getTag(text) : undefined),
@@ -7188,8 +7190,12 @@ async function runOnce(o) {
   } else if (taskBrief) {
     let goal = null; try { goal = commanderGoals.get() || null; } catch (_) {}
     let patterns = []; try { patterns = taskBriefStore.patterns(5); } catch (_) {}
+    // TASK BRIEF v2: a recipe-launched run carries its recipe's declared material decisions (normalized by
+    // recipes.js — the same data the launch chips rendered), so a mid-run question arrives pre-aimed.
+    let recipeIntake = [];
+    try { const rr = o.recipeId ? Recipes.get(String(o.recipeId)) : null; if (rr && Array.isArray(rr.intake)) recipeIntake = rr.intake; } catch (_) {}
     taskContextBlock = CommanderContext.compose({
-      brief: taskBrief, dossier: commanderDossier.get(), goal, patterns, existingSystem: system || ''
+      brief: taskBrief, dossier: commanderDossier.get(), goal, patterns, recipeIntake, existingSystem: system || ''
     });
   }
 
@@ -7881,10 +7887,11 @@ async function runOnce(o) {
         const liveBrief = taskBriefStore.active(taskBrief.key);
         if (q) {
           taskQuestionAsked = true;
-          if (!liveBrief || liveBrief.status !== 'clarifying') await taskBriefStore.ask(taskBrief.id, Object.assign({
-            dimension: 'scope', recommended: q.options[0], reason: 'The model identified a material unresolved decision.', discoverable: false,
-            newBlocker: !!(liveBrief && liveBrief.questions && liveBrief.questions.length === 1)
-          }, q), Date.now());
+          // A brief.ask tool call already persisted the validated question (status 'clarifying'). This branch
+          // is the plain-text marker path: record ONLY what the model actually said ({ source: 'marker' } is
+          // the store's relaxed, honestly-unvalidated entry) — never fabricate dimension/recommended/reason
+          // to satisfy the validator; a fake recommendation would render as a real suggestion in the UI.
+          if (!liveBrief || liveBrief.status !== 'clarifying') await taskBriefStore.ask(taskBrief.id, q, Date.now(), { source: 'marker' });
         }
         else await taskBriefStore.complete(taskBrief.id, runId, Date.now());
       } catch (e) { console.warn('[taskbrief] settle failed:', (e && e.message) || e); }

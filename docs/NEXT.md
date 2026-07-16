@@ -499,6 +499,19 @@ channels, RC-soak doc-fiction, runbook staleness) · release-train provenance UN
 celebration round-trip PROVEN live (21/21, item closed below). GB-9 was REFUTED — already shipped
 as EL-11 FIX 1; 200 {ok:false,degraded:true} is a LOCKED test-asserted design, do not "fix" to 5xx.
 
+**Task Brief v2 (2026-07-16, branch `claude/starnet-context-extraction-a06d70`, docs/TASKBRIEF_V2_PLAN.md):**
+- [x] Lanes A/B/C built + live-verified in-branch: marker-path questions persist honestly
+      (no fabricated dimension/recommended), the host-validated recommendation renders on
+      every question surface (COMMS gold ★ chip + why, restore, channel fallback), and six
+      flagship recipes declare launch-time intake (one-tap material decisions ride the
+      directive; `<recipe_intake>` aims mid-run questions). W0 surface re-stamped in-branch;
+      receipt mint at merge. Remaining intake authoring (rest of catalog) is open.
+- [ ] Lane D — request to the `shared/events.js` OWNER (cortex-memory workstream): an
+      ADDITIVE `'clarifying'` agent.run.end reason, so a Task Brief question stops
+      overloading the neutral `'cancelled'` terminal (index.js bufferedTaskEnd seam). On
+      grant: flip the mapping, teach chat.js/quest sweeps the new reason, update the
+      contract-safety source-guards in test/taskintent.test.js.
+
 **NEW QUEUE from the launch-polish session (claim before building):**
 - [ ] EL-11 leftovers 8-13, all frontend-owned (stationui.js/chat.js — was blocked on the 7/09 UI
       session; fix shapes with file:line evidence in the 2026-07-09 launch-polish triage, session

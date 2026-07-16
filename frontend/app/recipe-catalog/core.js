@@ -64,6 +64,12 @@
       blurb: 'Three-pass research — map the landscape, dig the evidence, attack its own conclusion — briefed tight.',
       tags: { research: 1 }, gear: ['dish', 'cabinet'], cadence: null, category: 'research',
       params: [{ key: 'topic', label: 'Question / topic', placeholder: 'e.g. is X worth adopting?' }],
+      // TASK BRIEF v2 intake: this task type's material decisions, settled by one tap at launch
+      // (dimension must be one of taskbrief-policy's; the launch form renders these as suggested-default chips).
+      intake: [
+        { dimension: 'deliverable', question: 'How should the findings land?', options: ['tight brief', 'full report with citations', 'bullet digest'], recommended: 'tight brief', reason: 'the shape of the write-up changes the whole final pass' },
+        { dimension: 'sources', question: 'What counts as a source?', options: ['broad web', 'primary/expert only'], recommended: 'primary/expert only', reason: 'the source bar decides what evidence is admissible' }
+      ],
       task: 'Research {topic} in depth, in three passes. First map the landscape: who the credible voices are and where they disagree. Then dig the strongest evidence on each side from at least three independent sources — primary sources over commentary. Finally pressure-test your own conclusion: actively hunt for what would prove it wrong. Deliver a brief that leads with the answer and your confidence in it, then the evidence, the honest counter-case, and what remains unknown. Offer to save the full brief as a file I can keep.'
     },
     {
@@ -126,6 +132,9 @@
       blurb: 'Summarizes like the person who has to act on it — decisions, deadlines, and the buried surprise first.',
       tags: { general: 0.6, research: 0.4 }, gear: ['cabinet'], cadence: null, category: 'general',
       params: [{ key: 'content', label: 'Content', placeholder: 'paste the text — or point me at a file or link' }],
+      intake: [
+        { dimension: 'deliverable', question: 'What shape of summary?', options: ['two-sentence TL;DR', 'action bullets', 'one-pager'], recommended: 'action bullets', reason: 'length and shape decide what survives the cut' }
+      ],
       task: 'Summarize this as the person who has to act on it, not a book reporter — if it is a file path or a link, go read the real thing first. Lead with the bottom line in two sentences, then the few points that actually change decisions, then anything surprising or buried that I would regret missing. Anything with an action or a deadline goes at the top. Point me at the exact spot worth reading in full, if any:\n\n{content}'
     }
   ];

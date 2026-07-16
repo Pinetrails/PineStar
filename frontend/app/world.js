@@ -4331,7 +4331,7 @@ const World = (() => {
   function drawOutboxHoverTag(now) {
     if (!hoverOutbox) return;
     const n = returnCrates();
-    const text = n > 0 ? (n + ' TO REVIEW — CLICK') : 'SHIPPED TODAY — CLICK FOR LOGBOOK';
+    const text = n > 0 ? (n + ' TO REVIEW — CLICK') : 'FINISHED WORK — CLICK';
     ctx.save();
     ctx.font = NAG_FONT; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
     ctx.shadowBlur = 3; ctx.shadowColor = n > 0 ? '#ffd88a' : '#62ff9e';
@@ -4358,13 +4358,12 @@ const World = (() => {
   function returnCrates() {
     try { return (typeof ReturnStore !== 'undefined' && ReturnStore.pendingCount) ? (ReturnStore.pendingCount() | 0) : 0; } catch (_) { return 0; }
   }
-  // hit-test: the OUTBOX chute under a world-space point — clickable while return-crates are stacked
-  // (click = review) OR while today's shipped pallet is showing (click = the LOGBOOK shift record).
-  // An empty chute keeps plain floor behavior; no dead affordance. The stacks spill above AND below
-  // the footprint, so the box extends both ways to keep the crates themselves clickable.
+  // hit-test: the OUTBOX chute under a world-space point — ALWAYS clickable while placed (2026-07-16:
+  // the click opens the OUTBOX window, which has honest content in every state — pending crates,
+  // or the "finished work lands here" empty state — so the affordance is never dead, mirroring the
+  // MISSION BOARD). The stacks spill above AND below the footprint, so the box extends both ways.
   function outboxAt(wp) {
     if (!geo || !geo.props) return null;
-    if (returnCrates() <= 0 && !(shipStats.known && shipStats.done > 0)) return null;
     for (const p of geo.props) {
       if (p.t !== 'outbox') continue;
       const x0 = p.x * T, y0 = p.y * T - 34;

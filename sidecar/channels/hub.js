@@ -126,6 +126,9 @@
     const redact = typeof o.redact === 'function' ? o.redact : (p) => p;
     const emit = typeof o.emit === 'function' ? o.emit : () => {};
     const taskIntent = o.taskIntent && typeof o.taskIntent.parse === 'function' ? o.taskIntent : null;
+    // TASK BRIEF v2 (additive dep): read the durable brief so the channel fallback can carry the host-validated
+    // recommendation. Optional — a hub built without it renders the plain numbered choices exactly as before.
+    const briefFor = typeof o.briefFor === 'function' ? o.briefFor : null;
     const newId = typeof o.newId === 'function' ? o.newId : (() => { let n = 0; return () => channel + '-run-' + (++n); })();
     // INJECTED wall-clock — no ambient fallback (this module is pure/deterministic; the determinism gate bans a bare
     // Date.now here). The composition root passes now:()=>Date.now(); a hub built without one (unit tests) stamps a
@@ -506,8 +509,17 @@
           const tq = taskIntent.parse(reply);
           if (tq) {
             const pre = taskIntent.strip(reply);
+            // Carry the durable brief's REAL recommendation (brief_ask path) into the channel text. Marker-path
+            // questions store no recommendation, so this line simply doesn't render — never fabricated here.
+            let suggested = '';
+            try {
+              const b = briefFor ? briefFor('channel:' + channel + ':' + chatId) : null;
+              const q = b && b.status === 'clarifying' && Array.isArray(b.questions) ? b.questions[b.questions.length - 1] : null;
+              if (q && !q.answer && q.text === tq.question && q.recommended) suggested = '\nsuggested: ' + q.recommended + (q.reason ? ' — ' + q.reason : '');
+            } catch (_) { /* enrichment only; the question always renders */ }
             reply = (pre ? pre + '\n\n' : '') + tq.question + '\n'
               + tq.options.map((x, i) => (i + 1) + '. ' + x).join('\n')
+              + suggested
               + '\nReply with a choice, or say "use your judgment."';
           }
         }

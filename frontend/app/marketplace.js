@@ -1845,6 +1845,17 @@ const Marketplace = (() => {
         '<textarea class="mkt-in mkt-p-in" data-key="' + esc(p.key) + '" rows="2" placeholder="' + esc(p.placeholder || '') + '">' + esc(val) + '</textarea></label>';
     }).join('');
     const prefillHint = prefilled ? '<p class="mkt-hint mkt-prefill-hint">↺ using your last inputs — edit anything before you run</p>' : '';
+    // TASK BRIEF v2 intake: the recipe's declared material decisions as one-tap chip rows. The recommended
+    // option starts selected (★, gold); "agent decides" opts out — the run then resolves or asks per the
+    // task-context doctrine. Answers ride the composed directive (Recipes.fillTask values.__intake).
+    const intakeRows = (r.intake || []).map(e =>
+      '<div class="mkt-intake" data-dim="' + esc(e.dimension) + '"><div class="mkt-lbl">' + esc(e.question) +
+        (e.reason ? ' <span class="mkt-lbl-hint">— ' + esc(e.reason) + '</span>' : '') + '</div>' +
+        '<div class="mkt-intake-opts">' +
+          e.options.map(o => '<button type="button" class="mkt-intake-opt' + (o === e.recommended ? ' sel rec' : '') + '" data-val="' + esc(o) + '">' + (o === e.recommended ? '★ ' : '') + esc(o) + '</button>').join('') +
+          '<button type="button" class="mkt-intake-opt mkt-intake-skip" data-val="">agent decides</button>' +
+        '</div></div>'
+    ).join('');
     // MAKE ROUTINE panel — revealed when launchMode==='routine'. Cadence defaults to the recipe's suggested one.
     const outbound = hasRecipes() && Recipes.impliesOutbound(r);
     const warnLine = outbound
@@ -1876,6 +1887,7 @@ const Marketplace = (() => {
       '<div class="mkt-save-h">' + esc((launchMode === 'routine' ? '◷ MAKE ROUTINE — ' : '▸ LAUNCH — ') + r.name) + '</div>' +
       '<p class="mkt-hint">' + esc(r.blurb || r.tagline) + '</p>' +
       (fields || '<p class="mkt-hint">this recipe needs no setup — just launch it.</p>') +
+      intakeRows +
       prefillHint +
       routinePanel +
       '<p class="mkt-launch-note">' + modeNote + '</p>' +
@@ -1886,6 +1898,15 @@ const Marketplace = (() => {
   function collectLaunchValues(stage, r) {
     const values = {};
     stage.querySelectorAll('.mkt-p-in').forEach(inp => { values[inp.dataset.key] = inp.value; });
+    // TASK BRIEF v2: fold the tapped intake decisions in (dimension -> answer). "agent decides" contributes
+    // nothing — an unanswered material decision is the run's to resolve, never a fabricated choice.
+    const intake = {};
+    stage.querySelectorAll('.mkt-intake').forEach(rowEl => {
+      const sel = rowEl.querySelector('.mkt-intake-opt.sel');
+      const val = sel ? String(sel.dataset.val || '').trim() : '';
+      if (val && rowEl.dataset.dim) intake[rowEl.dataset.dim] = val;
+    });
+    if (Object.keys(intake).length) values.__intake = intake;
     const missing = Recipes.requiredMissing(r, values);
     if (missing.length) {
       sfx('bad');
@@ -1899,6 +1920,13 @@ const Marketplace = (() => {
     const back = stage.querySelector('.mkt-cancel');
     if (back) back.addEventListener('click', () => { sfx('click'); view = 'grid'; launchId = null; launchMode = 'run'; renderStage(); });
     stage.querySelectorAll('.mkt-p-in').forEach(inp => inp.addEventListener('input', () => inp.classList.remove('mkt-bad')));
+    // TASK BRIEF v2 intake chips: single-select per decision row (tap toggles which chip holds .sel).
+    stage.querySelectorAll('.mkt-intake').forEach(rowEl => {
+      rowEl.querySelectorAll('.mkt-intake-opt').forEach(btn => btn.addEventListener('click', () => {
+        rowEl.querySelectorAll('.mkt-intake-opt').forEach(b => b.classList.remove('sel'));
+        btn.classList.add('sel'); sfx('click');
+      }));
+    });
 
     // RUN NOW (from run mode) — the existing path, unchanged.
     const go = stage.querySelector('.mkt-do-launch');

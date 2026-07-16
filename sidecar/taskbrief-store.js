@@ -113,12 +113,25 @@ function makeTaskBriefStore(deps) {
     }).then(() => out);
   }
 
-  function ask(id, question, now) {
-    const key = String(id || ''); let out = null;
+  function ask(id, question, now, opts) {
+    const key = String(id || ''); const fromMarker = !!(opts && opts.source === 'marker'); let out = null;
     return durable.update(STORE_KEY, cur => {
       const rec = normalize(cur); const b = rec.briefs.find(x => x.id === key); if (!b) return undefined;
-      const checked = Policy.validateQuestion(question, b); if (!checked.ok) return undefined;
-      const q = normalizeQuestion(Object.assign({ id: key + '_q' + (b.questions.length + 1), askedAt: now }, checked.question));
+      let fields;
+      if (fromMarker) {
+        // Marker path: the model asked via the plain TASK_QUESTION reply line, so only the question and
+        // options actually exist. Record exactly that — an empty dimension/recommended/reason is honest;
+        // stamping placeholder values would let an unvalidated question masquerade as a host-validated one
+        // (and a fabricated recommendation would surface in the UI). The whole-task question budget still holds.
+        const base = normalizeQuestion(question); if (!base || base.options.length < 2) return undefined;
+        if (b.questions.length >= 2) return undefined;
+        if (b.questions.length === 1 && !b.questions[0].answer) return undefined;
+        fields = { text: base.text, options: base.options };
+      } else {
+        const checked = Policy.validateQuestion(question, b); if (!checked.ok) return undefined;
+        fields = checked.question;
+      }
+      const q = normalizeQuestion(Object.assign({ id: key + '_q' + (b.questions.length + 1), askedAt: now }, fields));
       b.questions.push(q); b.status = 'clarifying'; b.updatedAt = Number(now) || b.updatedAt; out = b; return rec;
     }).then(() => out);
   }
@@ -145,12 +158,15 @@ function makeTaskBriefStore(deps) {
 
   // Weak relationship evidence only: the same concrete question answered the same way at least twice.
   // The prompt labels these OBSERVED PATTERNS, never standing orders, so they cannot override the current task.
+  // The bin key is dimension AND question fingerprint: dimension alone merged unrelated questions that
+  // happened to share an answer, and a marker-path question (empty dimension) still bins by its text.
   function patterns(limit) {
     const bins = {};
     for (const b of list({ limit: 200 })) {
       if (b.status !== 'done') continue;
       for (const q of b.questions) {
-      if (!q.answer) continue; const fp = q.dimension ? ('dimension:' + q.dimension) : fingerprintQuestion(q.text); const ans = q.answer.toLowerCase(); if (!fp || !ans) continue;
+      if (!q.answer) continue; const fpText = fingerprintQuestion(q.text); const ans = q.answer.toLowerCase(); if (!fpText || !ans) continue;
+      const fp = (q.dimension ? 'dimension:' + q.dimension + ':' : '') + fpText;
       const k = fp + '::' + ans; if (!bins[k]) bins[k] = { question: q.text, answer: q.answer, count: 0, updatedAt: q.answeredAt || b.updatedAt };
       bins[k].count++; bins[k].updatedAt = Math.max(bins[k].updatedAt, q.answeredAt || b.updatedAt);
       }

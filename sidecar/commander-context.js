@@ -20,6 +20,19 @@ function compose(input) {
     lines.push('Continue this same task. Do not re-ask answered decisions. Verify the result against the original request and decisions.');
     lines.push('</task_brief>');
   }
+  // TASK BRIEF v2 — recipe intake: the launching recipe's DECLARED material decisions (normalized by
+  // recipes.js — dimension ∈ the taskbrief-policy set). Aims any mid-run question at the right dimension
+  // even when the Commander skipped the launch chips; launch-tapped answers already ride the directive.
+  const intake = Array.isArray(input.recipeIntake) ? input.recipeIntake.slice(0, 3) : [];
+  if (intake.length) {
+    lines.push('<recipe_intake provenance="recipe-declared">');
+    lines.push('MATERIAL DECISIONS for this task type — resolve each from the request, launch decisions, or dossier before consequential work; if one is genuinely unresolved and material, it is THE thing to ask about. Default everything else:');
+    for (const e of intake) {
+      lines.push('- ' + clip(e.dimension, 24) + ': ' + clip(e.question, 160) + ' [' + (Array.isArray(e.options) ? e.options.map(o => clip(o, 72)).join(' | ') : '') + ']'
+        + (e.recommended ? ' (suggested: ' + clip(e.recommended, 72) + (e.reason ? ' — ' + clip(e.reason, 160) : '') + ')' : ''));
+    }
+    lines.push('</recipe_intake>');
+  }
   const dossier = clip(input.dossier, 5000), existing = String(input.existingSystem || '');
   if (dossier && existing.indexOf(dossier) < 0) lines.push('<commander_context provenance="commander-dossier">\n' + dossier + '\n</commander_context>');
   const goal = input.goal && (input.goal.title || input.goal.text || input.goal.goal);

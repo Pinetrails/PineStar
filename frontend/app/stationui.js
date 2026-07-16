@@ -6442,6 +6442,85 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     wireVerdict(nsNo, 'decline', 'warn');
   }
 
+  /* ============== OUTBOX — the finished-work window (2026-07-16 UX fix) ==============
+     Clicking the OUTBOX prop opens THIS: one clean list of every uncollected finished run — what ran,
+     who ran it, when, what it cost — each readable IN PLACE (lazy inline transcript, the LOGBOOK's
+     proven ▸ pattern) with the real rate-the-work control (rating collects the crate) and an
+     ↗ OPEN IN COMMS jump. Replaces the old one-crate-at-a-time chat beat as the chute's click-through
+     (the beat surfaces remain for session-open digests). TRUTHFUL: rows come only from ReturnStore's
+     durable pending ledger; a missing transcript says so; the empty state says what lands here. */
+  function buildOutbox(body) {
+    const RS = (typeof ReturnStore !== 'undefined') ? ReturnStore : null;
+    const rows = (RS && RS.pendingRows) ? RS.pendingRows() : [];
+    const obLabel = rw => rw.routine ? ('“' + esc(rw.routine) + '” ran on its own') : esc(rw.title || 'an unnamed run');
+    body.innerHTML =
+      '<div class="mc-detail dim" style="margin-bottom:6px">Work that finished while you were away lands here as crates. Read each run below; rating it collects the crate.</div>' +
+      '<div id="ob-list" class="mc-list"></div>' +
+      '<div class="mc-detail" style="margin-top:8px"><button class="bb sm" id="ob-logbook">▸ FULL RUN HISTORY — LOGBOOK</button></div>';
+    const list = body.querySelector('#ob-list');
+    const lb = body.querySelector('#ob-logbook');
+    if (lb) lb.addEventListener('click', () => openTerm('logbook'));
+    function renderEmpty() {
+      list.innerHTML = '<div class="fb-empty">NO UNCOLLECTED WORK.<br><span>When a run finishes while you’re away, its crate stacks on the OUTBOX and the full result is readable here.</span></div>';
+    }
+    if (!rows.length) { renderEmpty(); return; }
+    // legacy crates (persisted before streamId rode the rows) — fill their transcript join once, best-effort.
+    const fillStreams = (async () => {
+      if (rows.every(r => r.streamId)) return;
+      try {
+        const j = await (await fetch('/api/runs?agent=*&limit=200', { cache: 'no-store' })).json();
+        const by = {}; for (const r of ((j && j.runs) || [])) if (r && r.runId) by[r.runId] = String(r.streamId || '');
+        for (const rw of rows) if (!rw.streamId && by[rw.runId]) rw.streamId = by[rw.runId];
+      } catch (_) {}
+    })();
+    let open = rows.length;
+    const collected = (row) => { row.style.transition = 'opacity .25s ease'; row.style.opacity = '0'; setTimeout(() => { row.remove(); if (--open <= 0) renderEmpty(); }, 300); };
+    for (const rw of rows) {
+      const row = document.createElement('div'); row.className = 'mc-row';
+      const when = rw.ts ? esc(fmtRel(new Date(rw.ts).toISOString())) : '';
+      const usd = (+rw.usd > 0 && typeof U !== 'undefined' && U.usd) ? ' · ' + esc(U.usd(+rw.usd)) : '';
+      row.innerHTML =
+        '<div class="mc-top"><b>◷ ' + obLabel(rw) + '</b> <span class="dim">' + when + '</span> ' +
+        '<button type="button" class="lb-tx-btn" aria-expanded="false">▸ read the work</button></div>' +
+        '<div class="mc-url dim">' + esc(rw.agentId || 'agent') + usd + '</div>' +
+        '<div class="lb-tx" hidden></div>' +
+        '<div class="turnin-rate ob-acts"><button type="button" class="consent-btn ob-open">↗ OPEN IN COMMS</button><span class="ob-rate"></span></div>';
+      list.appendChild(row);
+      const tx = row.querySelector('.lb-tx'), txBtn = row.querySelector('.lb-tx-btn');
+      txBtn.addEventListener('click', async () => {
+        if (!tx.hidden) { tx.hidden = true; txBtn.setAttribute('aria-expanded', 'false'); txBtn.textContent = '▸ read the work'; return; }
+        tx.hidden = false; txBtn.setAttribute('aria-expanded', 'true'); txBtn.textContent = '▾ read the work';
+        if (tx.dataset.loaded) return;
+        tx.innerHTML = '<div class="mc-detail"><span class="loading">loading transcript…</span></div>';
+        await fillStreams;
+        if (!rw.streamId) { tx.innerHTML = '<div class="mc-detail">no transcript recorded for this run.</div>'; tx.dataset.loaded = '1'; return; }
+        try {
+          const t = await (await fetch('/api/transcript?stream=' + encodeURIComponent(rw.streamId) + '&agent=' + encodeURIComponent(rw.agentId || 'agent') + '&limit=50')).json();
+          const turns = (t && t.turns) || [];
+          tx.innerHTML = turns.length
+            ? turns.filter(m => m && (m.role === 'user' || m.role === 'assistant')).map(m => '<div class="mc-detail"><b>' + esc(m.role === 'user' ? 'ask' : 'reply') + ':</b> ' + esc(String(m.content || '').slice(0, 1200)) + '</div>').join('')
+            : '<div class="mc-detail">no transcript recorded for this run.</div>';
+          tx.dataset.loaded = '1';
+        } catch (_) { tx.innerHTML = '<div class="mc-detail">could not load the transcript — is the station running?</div>'; }
+      });
+      row.querySelector('.ob-open').addEventListener('click', async ev => {
+        const b = ev.currentTarget; b.disabled = true;
+        const ok = (RS && RS.openWork) ? await RS.openWork(rw) : false;
+        b.disabled = false;
+        if (!ok) notify('transcript unreachable for that run', 'warn');
+      });
+      const rateHost = row.querySelector('.ob-rate');
+      const mounted = (typeof Chat !== 'undefined' && Chat.awayRate)
+        ? Chat.awayRate(rateHost, rw, () => { if (RS && RS.resolve) RS.resolve(rw.runId); collected(row); })
+        : false;
+      if (!mounted) {   // already judged this session — offer the plain collect so the crate never wedges
+        const b = document.createElement('button'); b.type = 'button'; b.className = 'consent-btn'; b.textContent = '✓ collect crate';
+        b.addEventListener('click', () => { if (RS && RS.resolve) RS.resolve(rw.runId); collected(row); });
+        rateHost.appendChild(b);
+      }
+    }
+  }
+
   /* ============== lifecycle ============== */
   const BUILDERS = {
     agents:   ['AGENT DOSSIER',          buildAgents,    { console: true, feature: true }],
@@ -6460,7 +6539,8 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     // the FIELD MANUAL codex is owned by tutorial.js (P3); this term just hosts its builder
     manual:   ['FIELD MANUAL',           body => { if (typeof Tutorial !== 'undefined' && Tutorial.fillFieldManual) Tutorial.fillFieldManual(body); }, { w: '640px' }],
     quests:   ['QUEST LOG',              buildQuests,    { w: '560px' }],
-    trophies: ['TROPHY CASE',            buildTrophies,  { w: '560px' }]   // G3b: the TROPHY CASE prop opens this station-wide surface
+    trophies: ['TROPHY CASE',            buildTrophies,  { w: '560px' }],   // G3b: the TROPHY CASE prop opens this station-wide surface
+    outbox:   ['OUTBOX — FINISHED WORK', buildOutbox,    { w: '620px' }]    // the OUTBOX prop's click-through: all uncollected finished runs, readable + rateable in place
   };
 
   function init() {

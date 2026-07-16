@@ -187,6 +187,7 @@ test/curiosity.test.js
 test/dossierinject.test.js
 test/recipes.test.js
 test/launchmemory.test.js
+test/starters.test.js
 test/routinenudgestore.test.js
 test/bottlestore.test.js
 test/bottle-wiring.test.js

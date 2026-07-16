@@ -98,6 +98,9 @@ const ReturnStore = (() => {
 
   // ---- the OUTBOX crate surface (world.js renders from these; clicking the chute reviews) ----
   function pendingCount() { return ready() ? Returns.pendingCount(state) : 0; }
+  // the full uncollected ledger, oldest first (crate order) — the OUTBOX window renders from this.
+  // Copies, so a render can't mutate the durable state.
+  function pendingRows() { return ready() ? Returns.hydrate(state).pending.map(r => Object.assign({}, r)) : []; }
   /* openWork(rw) — make the crated run READABLE: open its transcript session in COMMS. The digest rows
      carry the run's streamId (returns.js); a legacy crate (persisted before streamId rode the rows) is
      resolved from the run record. A stream with no live workstream yet (e.g. a nightshift-* run — the
@@ -147,7 +150,7 @@ const ReturnStore = (() => {
   // S2/new-hero: a fresh Commander inherits no prior pending crates or attendance trail.
   function reset() { state = null; fired = false; try { localStorage.removeItem(KEY); } catch (_) {} }
 
-  return { init, pendingCount, reviewNext, resolve, reset, lastSeen, isAttended, outboxLine, openWork };
+  return { init, pendingCount, pendingRows, reviewNext, resolve, reset, lastSeen, isAttended, outboxLine, openWork };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = { ReturnStore };

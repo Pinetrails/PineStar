@@ -797,6 +797,15 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 .choice.quiet { font-size: 12px; letter-spacing: 0.3px; border-style: dashed; border-color: var(--ph-faint); color: var(--ph-dim); text-shadow: none; padding: 3px 8px; background: transparent; box-shadow: none; }
 .choice.quiet:hover, .choice.quiet:focus-visible { color: var(--ph-bright); border-color: var(--ph-dim); border-style: solid; }
 .choice.quiet:disabled { cursor: default; opacity: 0.7; }
+/* TASK BRIEF — the host-validated recommended default on a task question: gold-marked so one tap accepts
+   the suggestion. Rendered ONLY when the durable brief carries a REAL recommendation (the brief_ask path);
+   marker-path questions have none and stay plain chips. Accent via --gold-rgb, never a literal amber. */
+.choice.suggested { color: var(--gold); border-color: var(--gold); text-shadow: 0 0 5px rgba(var(--gold-rgb), .45); }
+.choice.suggested:hover, .choice.suggested:focus-visible {
+  color: var(--gold); border-color: var(--gold); background: rgba(var(--gold-rgb), .08);
+  box-shadow: inset 0 1px 0 rgba(var(--gold-rgb),.15), 0 0 9px rgba(var(--gold-rgb), .35), 0 1px 0 rgba(0,0,0,.35);
+}
+.tq-reason { font-size: 12px; color: var(--ph-dim); letter-spacing: 0.3px; margin-top: 3px; }
 
 /* ===== THE DIALOGUE MODE (dialogue.js) — Fallout-style focused first-run conversation =====
    Mounts as a child overlay of #chat-panel, covering COMMS while the awakening/tutorial runs. One short
