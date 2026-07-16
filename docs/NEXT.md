@@ -505,12 +505,11 @@ as EL-11 FIX 1; 200 {ok:false,degraded:true} is a LOCKED test-asserted design, d
       every question surface (COMMS gold ★ chip + why, restore, channel fallback), and six
       flagship recipes declare launch-time intake (one-tap material decisions ride the
       directive; `<recipe_intake>` aims mid-run questions). W0 surface re-stamped in-branch;
-      receipt mint at merge. Remaining intake authoring (rest of catalog) is open.
-- [ ] Lane D — request to the `shared/events.js` OWNER (cortex-memory workstream): an
-      ADDITIVE `'clarifying'` agent.run.end reason, so a Task Brief question stops
-      overloading the neutral `'cancelled'` terminal (index.js bufferedTaskEnd seam). On
-      grant: flip the mapping, teach chat.js/quest sweeps the new reason, update the
-      contract-safety source-guards in test/taskintent.test.js.
+      receipt mint at merge. Catalog intake completed in round 2 (see Lane D entry).
+- [x] Lane D DONE (Andrew-approved additive change, merged 11435856): 'clarifying' joined the
+      agent.run.end reason enum; the buffered task-end emits it, hub endNote and COMMS treat it
+      as the clean decision turn it is; additivity pinned by test (all prior reasons asserted).
+      Catalog intake also DONE same merge: 29/50 recipes declare their material decision.
 
 **NEW QUEUE from the launch-polish session (claim before building):**
 - [ ] EL-11 leftovers 8-13, all frontend-owned (stationui.js/chat.js — was blocked on the 7/09 UI
