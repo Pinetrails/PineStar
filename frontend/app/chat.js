@@ -1903,6 +1903,24 @@ const Chat = (() => {
     const seed = rw.seed ? (' · from the seed you saved — “' + rw.seed + '”') : '';
     return '◷ ' + name + who + usd + seed;
   }
+  // the "↗ read the work" affordance (2026-07-16 UX fix): every review surface must let the Commander SEE
+  // the run's actual output before rating it — the old beat showed only the raw prompt title and a rate
+  // control, which read as a context-free popup ("what is this? where's the work?"). opts.openWork(rw)
+  // (ReturnStore.openWork) opens the run's transcript session in COMMS; an unreachable transcript says so
+  // honestly in place — never a dead click.
+  function openWorkBtn(host, rw, openWork) {
+    if (!openWork) return;
+    const b = document.createElement('button'); b.className = 'consent-btn'; b.textContent = '↗ read the work';
+    b.onclick = () => {
+      b.disabled = true; b.textContent = 'opening…';
+      Promise.resolve().then(() => openWork(rw)).then(ok => {
+        if (ok) { b.disabled = false; b.textContent = '↗ read the work'; return; }   // reusable — the beat stays for rating
+        const note = document.createElement('span'); note.className = 'consent-result err'; note.textContent = 'transcript unreachable';
+        b.replaceWith(note);
+      }).catch(() => { b.disabled = false; b.textContent = '↗ read the work'; });
+    };
+    host.appendChild(b);
+  }
   // ONE digest per session (ReturnStore owns the budget + the row data). opts.onRated(runId) clears the crate.
   function awayDigest(rows, opts, _try) {
     if (!log || !rows || !rows.length) return;
@@ -1926,7 +1944,7 @@ const Chat = (() => {
     }
     const r = row('agent'); r.d.classList.add('tool'); r.d.classList.add('turnin'); r.d.classList.add('away-digest');
     const title = document.createElement('span'); title.className = 'turnin-title';
-    title.textContent = '◈ while you were away — ' + rows.length + (rows.length > 1 ? ' runs' : ' run') + ' finished. the work is waiting.';
+    title.textContent = '◈ while you were away — ' + rows.length + (rows.length > 1 ? ' runs' : ' run') + ' finished. read each one, then rate it:';
     r.body.appendChild(title);
     let open = rows.length;
     const settleRow = (item) => { vanish(item); if (--open <= 0) vanish(r.d); };
@@ -1935,7 +1953,8 @@ const Chat = (() => {
       const text = document.createElement('span'); text.className = 'turnin-text'; text.textContent = awayRowLabel(rw);
       const btns = document.createElement('span'); btns.className = 'consent-btns';
       item.appendChild(text); item.appendChild(btns);
-      const b = document.createElement('button'); b.className = 'consent-btn'; b.textContent = 'review';
+      openWorkBtn(btns, rw, opts && opts.openWork);   // SEE the output first — rating blind was the confusion
+      const b = document.createElement('button'); b.className = 'consent-btn'; b.textContent = 'rate it';
       b.onclick = () => {   // swap the review affordance for the real rate control, in place
         btns.remove();
         const rate = document.createElement('div'); rate.className = 'turnin-rate';
@@ -1962,14 +1981,27 @@ const Chat = (() => {
   }
   // the OUTBOX collect beat: clicking the chute (or a stacked crate) reviews ONE pending away run.
   // Same gold-inset family; rating clears the crate (onRated) and the beat vanishes.
+  // Reshaped 2026-07-16: the beat now SAYS what it is (a run that finished while you were away), offers
+  // "↗ read the work" (open the run's transcript session) BEFORE asking for a verdict, and has a "later"
+  // out that keeps the crate on the chute — the old shape was a bare prompt-title + rate control, which
+  // read as a context-free popup with no way to see the work it asked you to judge.
   function awayReview(rw, opts) {
     if (!log || !rw || !rw.runId) return;
     const onRated = (opts && opts.onRated) || (() => {});
     if (workRatedRuns.has(rw.runId)) { try { onRated(rw.runId); } catch (_) {} return; }   // already judged — just clear the crate
     const r = row('agent'); r.d.classList.add('tool'); r.d.classList.add('turnin'); r.d.classList.add('work-rate');
     const title = document.createElement('span'); title.className = 'turnin-title';
-    title.textContent = '◈ from the OUTBOX — ' + awayRowLabel(rw);
+    title.textContent = '◈ OUTBOX crate — this run finished while you were away:';
     r.body.appendChild(title);
+    const item = document.createElement('div'); item.className = 'turnin-item';
+    const text = document.createElement('span'); text.className = 'turnin-text'; text.textContent = awayRowLabel(rw);
+    const btns = document.createElement('span'); btns.className = 'consent-btns';
+    item.appendChild(text); item.appendChild(btns);
+    openWorkBtn(btns, rw, opts && opts.openWork);
+    const later = document.createElement('button'); later.className = 'consent-btn deny'; later.textContent = 'later';
+    later.onclick = () => vanish(r.d);   // the crate STAYS on the chute — deferring never loses the work
+    btns.appendChild(later);
+    r.body.appendChild(item);
     const rate = document.createElement('div'); rate.className = 'turnin-rate';
     r.body.appendChild(rate);
     seedAwayWork(rw);

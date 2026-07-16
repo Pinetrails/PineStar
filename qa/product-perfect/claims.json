@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "735c8e1bd5df290854d49189704a4049a1723ea4",
+    "sourceCommit": "557a1893e73fd5fdcb63b30b12573bc6bc8a34cc",
     "pathSetSha256": "11a2ff1e8ccd7ca7503a7d3a57bf51e4d0c7f5aeebda7d500a3c3bb7b174ea6e",
     "files": [
       {
@@ -133,8 +133,8 @@
       },
       {
         "path": "frontend/app/chat.js",
-        "bytes": 387240,
-        "sha256": "5380529e3cba74876dcbc8554efe8c9dfa0effd0982a0364b1d5cc29fe1063f9"
+        "bytes": 387509,
+        "sha256": "4732e46ccaaa0e2c42f6627a9c403b774688b7bb1a584bc6e71af8b862bcd5f0"
       },
       {
         "path": "frontend/app/chatresize.js",
@@ -243,8 +243,8 @@
       },
       {
         "path": "frontend/app/fullscreen.js",
-        "bytes": 5088,
-        "sha256": "844af5605d3f3e39e4223ccbd110c05e95b83346b4a795eb71a07326f0af248d"
+        "bytes": 5948,
+        "sha256": "fa02f3929eafc1f6a2a3e6cdda94b92c0a465bc727d3213e282538f90ff58380"
       },
       {
         "path": "frontend/app/glossary.js",
@@ -323,8 +323,8 @@
       },
       {
         "path": "frontend/app/marketplace.js",
-        "bytes": 173334,
-        "sha256": "01564c708e95c6d43974dd947a538c0e0ee80ae6af367df197248eb8ff1489e6"
+        "bytes": 171333,
+        "sha256": "b87b2253d8b1c4213c139b3007609e7d6cc397ed99aade5937fbb91826e17b82"
       },
       {
         "path": "frontend/app/mint.js",
@@ -483,13 +483,13 @@
       },
       {
         "path": "frontend/app/recipe-catalog/core.js",
-        "bytes": 14733,
-        "sha256": "3d3feab510df48d783382cd05f73211311602cbcb8de303b192d02bee8856004"
+        "bytes": 13783,
+        "sha256": "1ec2b5766f9ee7c1e206bd90c010ad1306ddbaa6ad0e78a273c494175da2e65b"
       },
       {
         "path": "frontend/app/recipe-catalog/creator.js",
-        "bytes": 12491,
-        "sha256": "dd9eeeff6106c39c1ca0374a242d30c227fd661ed681941f4384e4a5827fe2f9"
+        "bytes": 12223,
+        "sha256": "f52843805092ccc11d4bb7592bfd3f6ea30b7ffd019b07f55ead985ba28cba36"
       },
       {
         "path": "frontend/app/recipe-catalog/dev.js",
@@ -503,18 +503,18 @@
       },
       {
         "path": "frontend/app/recipe-catalog/ops.js",
-        "bytes": 12920,
-        "sha256": "2c771b67fae4aae66c6110902e1b3668d88ac2cc09084460ca702d24a658eb38"
+        "bytes": 12694,
+        "sha256": "905ced7b27eb54bbdfcd77baf996e49e0007dfb83971aea732a087cb9bbe0449"
       },
       {
         "path": "frontend/app/recipe-catalog/research.js",
-        "bytes": 12461,
-        "sha256": "3d2735876a0a8f7f001b345b39ac43ebce124e55f5a9746fc76b7c84ea912cc5"
+        "bytes": 11942,
+        "sha256": "9a747719479549744483dce5235661a8b20d771ff0e719e828d519ca97dbc4e1"
       },
       {
         "path": "frontend/app/recipes.js",
-        "bytes": 43269,
-        "sha256": "bf2087d0b2e9589c80a67def45d864cb2bf8c30fcb14f40612ffa597283c80be"
+        "bytes": 40767,
+        "sha256": "6de13aff8da5f0f99e4b2652a3ad9f7ba1aa359680245464a0124c5006708879"
       },
       {
         "path": "frontend/app/recruiter.js",
@@ -533,13 +533,13 @@
       },
       {
         "path": "frontend/app/returns.js",
-        "bytes": 6657,
-        "sha256": "d0ad21971c1ed0359d54262c9c87e2d9072847014a96c6cfaa79139ba279248e"
+        "bytes": 6771,
+        "sha256": "8ad4f3253b4666c8b83766078b3c82801b7a256bb15734cafd1f340ceca82731"
       },
       {
         "path": "frontend/app/returnstore.js",
-        "bytes": 7608,
-        "sha256": "6d083a41c293511f6228928b9fb5dc0e5505d48d172fc39fbcb3415a94dd24ff"
+        "bytes": 10030,
+        "sha256": "80aa4a7e1800872658a797eea3d38982f8cf9da1e65e4dc3645d08b1cc091501"
       },
       {
         "path": "frontend/app/routinenudgestore.js",
@@ -763,8 +763,8 @@
       },
       {
         "path": "frontend/app/world.js",
-        "bytes": 450429,
-        "sha256": "180102cfd109e694a626d802c61c9a842509a4b7dbe5c6a5de3345cd328ef410"
+        "bytes": 452747,
+        "sha256": "e8c1e8c687a945264944d1c5adb6fc280402a5a5cfe23c636dc03004de1f109f"
       },
       {
         "path": "frontend/app/worldmodel.js",
@@ -788,8 +788,8 @@
       },
       {
         "path": "frontend/css/app.css",
-        "bytes": 192545,
-        "sha256": "13c03e43f6feefed38a2145c29e79fd7e22449e35a9c682726f29f0e80f6570d"
+        "bytes": 191745,
+        "sha256": "8508ea74d7fd9dea80e782104f9d5190c2598e214d79a21e56574cef76ad6c4f"
       },
       {
         "path": "frontend/css/asciifx.css",
@@ -803,8 +803,8 @@
       },
       {
         "path": "frontend/css/marketplace.css",
-        "bytes": 62510,
-        "sha256": "8e17f754d700bd90dbff2394ce64332d6fdcef3b5f90de546fd84ee39906a4d4"
+        "bytes": 61370,
+        "sha256": "1c679621acac08b75f837f2b2a93b6eb850a2f464b67411bf7cc0a5d64214ef8"
       },
       {
         "path": "frontend/css/motion.css",
