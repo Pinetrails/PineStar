@@ -184,10 +184,19 @@ A.eq(Policy.canMutate({ status: 'executing' }, { scope: 'execute' }).ok, true, '
   A.ok(/taskContext:\s*taskContextBlock/.test(indexSrc) && /workerSystem/.test(orchestrationSrc), 'delegated workers inherit the settled brief without re-questioning the Commander');
   A.ok(/taskQuestionAsked/.test(indexSrc) && /!taskQuestionAsked/.test(indexSrc), 'clarifications suppress completed-task learning sweeps');
   A.ok(/\{ source: 'marker' \}/.test(indexSrc) && !/The model identified a material unresolved decision/.test(indexSrc), 'the marker settle path records honestly instead of fabricating validation metadata');
-  A.ok(/bufferedTaskEnd/.test(indexSrc) && /taskQuestionAsked\s*\?\s*'cancelled'/.test(indexSrc), 'clarification maps to the contract-safe neutral terminal before global completed-work listeners run');
+  A.ok(/bufferedTaskEnd/.test(indexSrc) && /taskQuestionAsked\s*\?\s*'clarifying'/.test(indexSrc) && !/taskQuestionAsked\s*\?\s*'cancelled'/.test(indexSrc), 'clarification ends as the honest additive clarifying terminal before global completed-work listeners run');
+  // Lane D — the additive contract change: 'clarifying' joined the run-end enum; every prior reason survives.
+  const eventsSrc = fs.readFileSync(path.join(__dirname, '../shared/events.js'), 'utf8');
+  const reasonEnum = /'agent\.run\.end'[\s\S]{0,1500}?reason:\s*\{\s*enum:\s*\[([^\]]+)\]/.exec(eventsSrc);
+  A.ok(reasonEnum, 'run-end reason enum is declared in the shared contract');
+  for (const r of ['done', 'max_iters', 'budget', 'cancelled', 'error', 'refusal', 'empty', 'clarifying']) {
+    A.ok(reasonEnum[1].indexOf("'" + r + "'") >= 0, 'run-end reason enum carries ' + r + ' (additive-only contract)');
+  }
+  A.ok(/reason === 'clarifying'\) return ''/.test(hubSrc), 'channel endNote treats a clarifying end as the reply itself, never a stopped note');
+  A.ok(/endReason !== 'clarifying'/.test(chatSrc), 'COMMS never renders a clarifying end as a stopped run');
   A.ok(/offerTaskQuestion/.test(chatSrc) && /TaskIntent\.strip/.test(chatSrc), 'COMMS strips the marker and renders the natural decision');
   A.ok(/clarificationRuns\.has\(runId\)/.test(chatSrc) && /clarificationRuns\.add\(thisRunId\)/.test(chatSrc), 'clarification turns do not count as completed-work beats');
-  A.ok(/endReason !== 'done' && !taskQuestion/.test(chatSrc), 'the neutral clarification terminal is not rendered as a stopped/error run');
+  A.ok(/endReason !== 'done' && endReason !== 'clarifying' && !taskQuestion/.test(chatSrc), 'the neutral clarification terminal is not rendered as a stopped/error run');
   A.ok(/endReason:\s*taskQuestion\s*\?\s*'done'/.test(chatSrc), 'the visible presence line describes the completed decision turn without claiming task delivery');
   A.ok(/function restoreTaskQuestion/.test(chatSrc) && /status=clarifying/.test(chatSrc), 'reload or stream-switch re-presents the real unanswered durable brief');
   const offer = chatSrc.slice(chatSrc.indexOf('function offerTaskQuestion'), chatSrc.indexOf('function offerTaskQuestion') + 1400);

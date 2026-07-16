@@ -36,6 +36,7 @@
     if (reason === 'max_iters') return '\n\n(reached the step limit — message "continue" to keep going.)';
     if (reason === 'budget') return '\n\n(reached this run\'s cost limit.)';
     if (reason === 'cancelled') return '';
+    if (reason === 'clarifying') return '';   // a Task Brief question IS the reply — never a "(stopped: …)" note
     if (reason === 'refusal') return '';
     return '\n\n(stopped: ' + reason + ')';
   }

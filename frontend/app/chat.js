@@ -5112,7 +5112,7 @@ const Chat = (() => {
         // would be premature. The judge runs in the finally (after teardown) so it never delays this turn's unwind.
         if (!taskQuestion && (!endReason || endReason === 'done') && !cutShort && replyText.trim() && typeof GoalLoop !== 'undefined' && goalOf(ws)) goalJudgeReply = replyText;
         // the stop-reason is part of the WORK log → close the live paragraph, then drop it in chronologically.
-        if (endReason && endReason !== 'done' && !taskQuestion) {
+        if (endReason && endReason !== 'done' && endReason !== 'clarifying' && !taskQuestion) {
           if (isActiveWs(ws)) breakLive(), toolLine('⏹ ' + (endReason === 'max_iters' ? 'reached the step limit — say "continue" to keep going'
             : endReason === 'budget' ? 'reached this run\'s limit'
             : endReason === 'cancelled' ? (interrupted.has(ws.id) ? 'stopped' : 'run cancelled')
