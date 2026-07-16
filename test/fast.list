@@ -241,6 +241,7 @@ test/provider-connections-ui.test.js
 test/newhero-reset.test.js
 test/harness-internal.test.js
 test/chat-runmeta.test.js
+test/chat-stopped-retry.test.js
 test/mint.test.js
 test/ctxgauge.test.js
 test/floorstats.test.js

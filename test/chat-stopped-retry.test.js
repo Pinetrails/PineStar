@@ -1,0 +1,42 @@
+/* node test/chat-stopped-retry.test.js — EL-3 lock for PU-14 stopped-run recovery.
+
+   chat.js is browser/DOM flow and is not directly require-able. As with chat-runmeta.test.js,
+   this locks the exact behavioral seam in source: a deliberate stop must preserve truthful partial
+   output, expose the existing one-turn retry action immediately and after reload, and discard only
+   that stopped partial before re-running the already-present user turn. */
+'use strict';
+const A = require('./_assert.js');
+const fs = require('fs');
+const path = require('path');
+
+const src = fs.readFileSync(path.join(__dirname, '../frontend/app/chat.js'), 'utf8');
+
+// The deliberate-stop branch owns the recovery offer. Network errors use their classified action;
+// a Commander stop is not an error and must use the plain existing Try again action.
+const stoppedBranch = /if\s*\(stopped\)\s*\{([\s\S]*?)\n\s*\}\s*else\s*\{/.exec(src);
+A.ok(stoppedBranch, 'chat.js has a distinct deliberate-stop branch');
+A.ok(/offerTryAgain\s*\(\s*\)/.test(stoppedBranch[1]), 'RUN STOPPED renders a reachable Try again action');
+
+// Partial prose is real and remains visible, but the record is tagged so retry/reload can distinguish
+// it from a completed assistant turn without inventing backend state.
+A.ok(/ws\.history\.push\s*\(\s*\{[^}]*role:\s*'assistant'[^}]*stopped:\s*true/.test(stoppedBranch[1]),
+  'a stopped partial assistant turn is truthfully tagged in history');
+
+// Existing /retry semantics: drop the failed/stopped assistant tail, find the existing user turn,
+// and call send(..., {retry:true}) so there is exactly one new run and no duplicate user row.
+const retryFn = /function\s+retryLast\s*\(\s*\)\s*\{([\s\S]*?)\n\s*\}/.exec(src);
+A.ok(retryFn, 'retryLast exists');
+A.ok(/h\[h\.length\s*-\s*1\]\.error\s*\|\|\s*h\[h\.length\s*-\s*1\]\.stopped/.test(retryFn[1]),
+  'retryLast discards a stopped partial assistant tail before re-running');
+A.ok(/send\s*\(\s*text\s*,\s*\{\s*retry:\s*true\s*\}\s*\)/.test(retryFn[1]),
+  'Try again uses the existing no-duplicate retry send path');
+
+// Reload/switch reconstructs the same recovery affordance from durable history once the stream is idle.
+A.ok(/lastReal\s*&&\s*lastReal\.role\s*===\s*'assistant'\s*&&\s*\(lastReal\.error\s*\|\|\s*lastReal\.stopped\)\s*&&\s*!isBusy\(\)\)\s*offer/.test(src),
+  'a stopped trailing turn restores Try again after reload without offering it while busy');
+
+// The shared action itself remains guarded by retryLast's disabled-state rule.
+A.ok(/function\s+retryLast[\s\S]*?if\s*\(\s*!activeWs\s*\|\|\s*isBusy\(\)\s*\)\s*return/.test(src),
+  'Try again is inert without an active idle stream');
+
+A.report('chat-stopped-retry.test');
