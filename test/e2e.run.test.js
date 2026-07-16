@@ -176,12 +176,14 @@ function boot(port, env, attemptsLeft) {
     //      RAM-only). Provoke a recorded run error (same-agent mutex), reboot on the same workspace, and
     //      the error must still be in the report. ----
     {
-      const drive2 = (agentId, text) => fetch(B + '/api/run', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-StarNet-Token': token, Origin: B },
-        body: JSON.stringify({ key: 'sk-or-v1-e2e-fake', model: 'test/model', agentId, messages: [{ role: 'user', content: text }] }) });
-      const slow = drive2('dup-agent', 'SLOWPOKE hold the desk');            // holds dup-agent in flight ~300ms
+      const drive2 = (agentId, text, streamId) => fetch(B + '/api/run', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-StarNet-Token': token, Origin: B },
+        body: JSON.stringify({ key: 'sk-or-v1-e2e-fake', model: 'test/model', agentId, streamId, messages: [{ role: 'user', content: text }] }) });
+      const slow = drive2('dup-agent', 'SLOWPOKE hold the desk', 'dup-session-a'); // holds dup-agent in flight ~300ms
       await new Promise(r => setTimeout(r, 60));                            // let the first run be admitted
       const clash = await drive2('dup-agent', 'collide');                    // same agent -> run.error (mutex)
-      await clash.text(); await (await slow).text();                         // drain both
+      const clashText = await clash.text(); await (await slow).text();        // drain both
+      A.ok(/started just now/.test(clashText), 'sub-minute mutex age says just now (never fabricates one minute)');
+      A.ok(/session: dup-session-a/.test(clashText), 'mutex refusal names the holding interactive session');
       const d1 = await (await fetch(B + '/api/diagnostics', { headers: { 'X-StarNet-Token': token, Origin: B } })).json();
       A.ok(d1.text.indexOf('already running a task') >= 0, 'the run error is in this session\'s diagnostics tail');
     }

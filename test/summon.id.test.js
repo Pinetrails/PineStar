@@ -40,4 +40,16 @@ const AgentId = require('../frontend/app/agentid.js');
   A.ok(AgentId.RE.test(id) && id !== 'agent', 'alloc with no taken-set still yields a valid non-hero id');
 }
 
+// ---- display identity: normalized, length-aware, and unique case-insensitively ----
+{
+  A.eq(AgentId.normalizeName('  research   agent  '), 'RESEARCH AGENT', 'display names normalize to single-spaced uppercase');
+  A.eq(AgentId.nameIssue('x'.repeat(19)), 'too-long', '19 visible characters are rejected instead of silently truncated');
+  A.eq(AgentId.nameIssue('x'.repeat(18)), '', '18 visible characters are accepted');
+  A.eq(AgentId.allocName('Researcher', [{ name: 'researcher' }]), 'RESEARCHER 2', 'a duplicate class default gets a distinct visible suffix');
+  A.eq(AgentId.allocName('Researcher', [{ name: 'RESEARCHER' }, { name: 'researcher 2' }]), 'RESEARCHER 3', 'the default counter advances across case-insensitive collisions');
+  A.eq(AgentId.allocName('Very Long Researcher Name', [{ name: 'VERY LONG RESEARCH' }]).length <= AgentId.NAME_MAX, true, 'a suffixed default always stays within the visible cap');
+  A.eq(AgentId.nameConflict('Researcher', [{ name: 'RESEARCHER' }]), true, 'an explicit duplicate is detected case-insensitively');
+  A.eq(AgentId.nameConflict('Researcher 2', [{ name: 'RESEARCHER' }]), false, 'a distinct explicit name is accepted');
+}
+
 A.report('summon.id.test');

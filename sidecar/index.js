@@ -779,6 +779,13 @@ const runs = new Map();          // runId -> AbortController (the kill path)
 // (interactive/cron/workshop) and dropped in the same finally that deletes from `runs`, so it exactly tracks the
 // set of live runs. Backs GET /api/state/snapshot — only real per-run facts, never fabricated telemetry.
 const runsMeta = new Map();
+// Human copy for a same-agent mutex holder. Sub-minute values must not round up to a fabricated minute.
+function formatRunHolderAge(ageMs) {
+  const ms = Math.max(0, Number(ageMs) || 0);
+  if (ms < 60000) return 'just now';
+  const mins = Math.floor(ms / 60000);
+  return mins + ' min ago';
+}
 // LIVE STEERING: runId -> [pending Commander notes]. POST /api/run/steer appends; the loop's injected steer()
 // drains once per iteration (see runAgentLoop o.steer). A note only lands while the run is IN-FLIGHT (its runId
 // is still in `runs`); once the run ends the entry is dropped, so a stale steer can never reach a later run.
@@ -4408,6 +4415,7 @@ function dispatchRoute(req, res) {
   if (req.method === 'GET' && req.url === '/api/auth/codex/status') return handleCodexStatus(req, res);
   if (req.method === 'GET' && req.url === '/api/auth/codex/models') return handleCodexModels(req, res);
   if (req.method === 'GET' && req.url === '/api/providers') return handleProviders(req, res);
+  if (req.method === 'POST' && req.url === '/api/providers/probe') return handleProviderProbe(req, res);
   // /api/models/openrouter is served by this same prefix (id='openrouter'); the old dedicated branch below it was
   // dead code (shadowed by this line) and has been removed. handleProviderModels answers 200 with {models:[]}
   // + error on any catalog failure, so it never throws into the central guard.
@@ -6731,7 +6739,7 @@ async function handleRun(req, res) {
   const ac = new AbortController();
   const runId = crypto.randomUUID();
   runs.set(runId, ac);
-  runsMeta.set(runId, { agentId: agentId, startedAt: Date.now(), source: 'interactive' });
+  runsMeta.set(runId, { agentId: agentId, startedAt: Date.now(), source: 'interactive', streamId: streamId || '' });
   // NS-1 AWAY DETECTION: a browser /api/run is genuinely user-triggered work — stamp the away clock so the
   // night-shift driver treats the Commander as PRESENT. Cron/workshop/night-shift runs go through runOnce with
   // surface:'autonomous' and NEVER reach this route, so they can't reset the away clock (which would make the
@@ -6931,7 +6939,7 @@ async function runOnce(o) {
     let holder = '';
     try {
       const h = [...runsMeta.values()].filter(m => m && m.agentId === agentId).sort((a, b) => a.startedAt - b.startedAt)[0];
-      holder = h ? ('The run holding it started ' + Math.max(1, Math.round((Date.now() - h.startedAt) / 60000)) + ' min ago (source: ' + (h.source || 'unknown') + ').')
+      holder = h ? ('The run holding it started ' + formatRunHolderAge(Date.now() - h.startedAt) + ' (source: ' + (h.source || 'unknown') + (h.streamId ? ', session: ' + h.streamId : '') + ').')
                  : 'The run holding it is a background one (a scheduled routine or delegated worker).';
     } catch (_) {}
     emit('agent.run.start', { agentId, runId, trigger: trigger, model });
@@ -8714,16 +8722,30 @@ async function handleGenericChannelDisconnect(req, res, id) {
   try { const b = JSON.parse((await readBody(req, 4096)) || '{}'); purge = !!(b && b.purge); } catch (_) {}
   stopGenericChannel(id);
   let persisted = true;
+  let removedConfiguration = false;
   if (channelSecrets && channelSecrets[id]) {
     const next = Object.assign({}, channelSecrets[id], { enabled: false });
     if (purge) { next.token = undefined; delete channelTokenRuntime[id]; delete channelTokenDurable[id]; }
-    const p = {}; p[id] = next;
-    channelSecrets = Object.assign({}, channelSecrets, p);
+    if (purge && id === 'signal') {
+      delete next.endpoint;
+      delete next.account;
+      delete next.ownerId;
+      const copy = Object.assign({}, channelSecrets);
+      delete copy[id];
+      channelSecrets = copy;
+    } else {
+      const p = {}; p[id] = next;
+      channelSecrets = Object.assign({}, channelSecrets, p);
+    }
     persisted = saveChannelSecrets(channelSecrets);
     if (purge) { try { scrubChannelSecretsBak(); } catch (_) {} }
+    removedConfiguration = id === 'signal' && purge && persisted && !channelSecrets[id];
   }
   // `purged` is a DESTRUCTION claim — only assert it when the read-back proved the token left the disk.
-  res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ connected: false, purged: purge && persisted, persisted }));
+  // Signal is tokenless, so report its separately proven configuration-removal fact and never call that a purge.
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  if (id === 'signal') res.end(JSON.stringify({ connected: false, purged: false, removedConfiguration, persisted }));
+  else res.end(JSON.stringify({ connected: false, purged: purge && persisted, removedConfiguration: false, persisted }));
 }
 
 /* ----------------------- Codex (ChatGPT subscription) OAuth ----------------------- */
@@ -8805,6 +8827,28 @@ function handleProviders(req, res) {
   // confirmation reads this so it names the ACTUAL store honestly (keychain vs this browser) — never claims
   // keychain when the key is in fact held in the browser (truthful-telemetry law).
   res.end(JSON.stringify({ providers, keychainMode: DESKTOP_SHELL }));
+}
+
+// POST /api/providers/probe — a no-generation provider round-trip for truthful Settings telemetry. The supplied
+// browser BYOK key is consumed in memory only and never echoed/persisted; desktop callers send no key because the
+// sidecar already owns the keychain-backed runtime credential. A 200 response always carries the probe facts.
+async function handleProviderProbe(req, res) {
+  const json = (obj) => { res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 1 << 16)) || {}; } catch (_) { return json({ reachable: false, catalogAvailable: false, credentialVerified: false, error: 'bad json' }); }
+  const id = normalizeProvider(body.provider);
+  const profile = getProviderProfile(id);
+  if (!profile) return json({ provider: id, reachable: false, catalogAvailable: false, credentialVerified: false, error: 'unknown provider' });
+  try {
+    const models = await listModelsForProvider(id, { key: String(body.key || ''), baseUrl: String(body.baseUrl || body.base_url || '') });
+    // A catalog endpoint that does not require authentication proves reachability, not that a saved key can run.
+    // Provider adapters intentionally fail closed to [] when /models cannot be reached. Without at least one real
+    // model there is no runnable endpoint to prove, so do not upgrade mere request completion into REACHABLE.
+    const catalogAvailable = models.length > 0;
+    const credentialVerified = catalogAvailable && (!providerRequiresKey(id) || profile.modelsRequireAuth !== false);
+    json({ provider: id, reachable: catalogAvailable, catalogAvailable, credentialVerified });
+  } catch (e) {
+    json({ provider: id, reachable: false, catalogAvailable: false, credentialVerified: false, error: (e && e.message) || 'provider probe failed', code: (e && e.code) || '' });
+  }
 }
 
 async function listModelsForProvider(providerId, opts) {
