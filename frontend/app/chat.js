@@ -812,6 +812,7 @@ const Chat = (() => {
     if (log) log.innerHTML = '';
     stick = true; hideNewPill();   // a freshly-loaded / switched-to stream starts pinned to its latest line
     renderHistory();
+    restoreTaskQuestion(activeWs);   // restart/switch continuity: re-present a real still-unanswered durable brief
     replayChannel();   // re-render an in-flight stream we left running: tool lines / partial reply / pending approval
     syncStatus();      // also paints the Stop control + this stream's queued pills (updateControls)
     maybeEmptyState();   // brand-new / empty + idle stream → a one-line hint instead of a blank void
@@ -826,6 +827,20 @@ const Chat = (() => {
     // cursor); it yields instantly to a reply run and resumes after. This is the ONLY chat.js change for D1 (G7).
     if (typeof World !== 'undefined' && World.setChatFocus) World.setChatFocus(activeWs ? (activeWs.agentId || 'agent') : null);
     renderIdBar();   // the agent selector + model readout follow the displayed stream's agent
+  }
+
+  async function restoreTaskQuestion(ws) {
+    if (!ws || !ws.id) return;
+    const id = String(ws.id), key = 'stream:' + id;
+    try {
+      const r = await fetch('/api/task-briefs?key=' + encodeURIComponent(key) + '&status=clarifying&limit=1', { cache: 'no-store' });
+      if (!r.ok) return;
+      const j = await r.json();
+      if (!activeWs || activeWs.id !== id || isBusy()) return;
+      const b = j && Array.isArray(j.briefs) && j.briefs[0];
+      const q = b && Array.isArray(b.questions) && b.questions[b.questions.length - 1];
+      if (q && !q.answer && Array.isArray(q.options) && q.options.length >= 2) offerTaskQuestion({ question: q.text, options: q.options });
+    } catch (_) { /* a missing/offline sidecar leaves history readable; the next load retries */ }
   }
 
   function setSystem(s) { system = s; }
@@ -2496,6 +2511,23 @@ const Chat = (() => {
     });
   }
 
+  // A task-specific decision resumes the sidecar-owned brief. It is deliberately NOT banked into the global dossier.
+  function offerTaskQuestion(tq) {
+    const items = tq.options.map(o => ({ label: o, value: o }));
+    items.push({ label: 'use your judgment', value: '', skip: true });
+    const q = row('agent'); q.d.classList.add('nudge');
+    q.body.textContent = '⌖ ' + tq.question;
+    autoscroll();
+    choices(items, item => {
+      vanish(q.d);
+      const ans = (item && !item.skip) ? String(item.value || '').trim() : '';
+      const msg = (typeof TaskIntent !== 'undefined' && TaskIntent.answerMessage)
+        ? TaskIntent.answerMessage(tq.question, ans)
+        : (ans || 'Use your judgment and continue the original task.');
+      if (!isBusy()) send(msg); else echoUser(msg);
+    });
+  }
+
   // R4 PAYOFF RECEIPT: one provable line at the exact moment an answer/observation lands in the dossier, so
   // feeding the station visibly pays off. Truthful by construction: the dossier block folds into EVERY agent's
   // system prompt (DossierStore.composeBlock), so "every agent now knows" states the wiring, not a wish. Same
@@ -3461,6 +3493,7 @@ const Chat = (() => {
     return {
       append(t) { if (!t) return; if (!seg) open(); raw += t; renderProse(seg.body, raw); autoscroll(); },
       breakSeg() { closeSeg(); },   // an inline action is about to render below — end this paragraph
+      cleanTaskIntent() { if (seg && typeof TaskIntent !== 'undefined' && TaskIntent.strip) { raw = TaskIntent.strip(raw); renderProse(seg.body, raw); } },
       done() { closeSeg(); },
       // m = the plain-language headline to LEAD with; rawDetail (optional) = the original technical text, kept
       // accessible as a dim sub-line + a title tooltip so debugging info isn't lost, just de-emphasized.
@@ -4825,7 +4858,12 @@ const Chat = (() => {
         if (isActiveWs(ws)) resolvePresence(ws, { error: true });   // COMMS-PREMIUM: presence card resolves red
         if (isActiveWs(ws)) offerRetry(v);   // RETRY: context-aware recovery chip (retry / Settings / SKILLS / none)
       } else {
-        const replyText = reply || acc;
+        let replyText = reply || acc;
+        const taskQuestion = (isTask && typeof TaskIntent !== 'undefined' && TaskIntent.parse) ? TaskIntent.parse(replyText) : null;
+        if (taskQuestion) {
+          replyText = TaskIntent.strip(replyText);
+          if (isActiveWs(ws) && activeLiveRow && activeLiveRow.cleanTaskIntent) activeLiveRow.cleanTaskIntent();
+        }
         finalReply = replyText;
         titleOk = !!replyText.trim();   // a real, non-empty reply landed → this stream is eligible for a summary title
         if (replyText.trim()) ws.history.push({ role: 'assistant', content: replyText, ts: Date.now() });   // never persist an empty turn
@@ -4837,7 +4875,7 @@ const Chat = (() => {
         // GOAL LOOP: a clean turn (done / no endReason) with a real reply is judgeable. A max_iters/budget/refusal
         // stop — or a provider-truncated reply — is NOT — the agent didn't get to finish its thought, so re-judging
         // would be premature. The judge runs in the finally (after teardown) so it never delays this turn's unwind.
-        if ((!endReason || endReason === 'done') && !cutShort && replyText.trim() && typeof GoalLoop !== 'undefined' && goalOf(ws)) goalJudgeReply = replyText;
+        if (!taskQuestion && (!endReason || endReason === 'done') && !cutShort && replyText.trim() && typeof GoalLoop !== 'undefined' && goalOf(ws)) goalJudgeReply = replyText;
         // the stop-reason is part of the WORK log → close the live paragraph, then drop it in chronologically.
         if (endReason && endReason !== 'done') {
           if (isActiveWs(ws)) breakLive(), toolLine('⏹ ' + (endReason === 'max_iters' ? 'reached the step limit — say "continue" to keep going'
@@ -4853,6 +4891,7 @@ const Chat = (() => {
           if (typeof StationUI !== 'undefined') StationUI.notify('reply cut short: ' + finishReason, 'warn');
         }
         if (isActiveWs(ws) && activeLiveRow) activeLiveRow.done();
+        if (isActiveWs(ws) && taskQuestion) offerTaskQuestion(taskQuestion);
         // R1 MID-TASK FORK: the agent may have ended this reply with one FORK marker (earned only while the
         // style model's confidence is low — the directive isn't even in the prompt otherwise). Render the
         // one-tap chips at the run boundary; a malformed marker parses null and stays plain text.
@@ -4867,13 +4906,13 @@ const Chat = (() => {
         // profile/XP ship-signal + the "tasks shipped" milestone. Only on done/undefined — a max_iters/budget/
         // error/refusal stop is an unproductive run (the agent.run.end SLAG path owns that); abort/hard-error never
         // reach this branch. (Not gated on isActiveWs: a background stream's work still ships.)
-        if (wiPlaced && (!endReason || endReason === 'done') && !cutShort) wiEmit('workitem.delivered', { workitemId: wiId, finalQueueId: 'outbox', agentId: wiAid, box: '', ms: Date.now() - wiPlacedTs, ts: Date.now() });
+        if (wiPlaced && !taskQuestion && (!endReason || endReason === 'done') && !cutShort) wiEmit('workitem.delivered', { workitemId: wiId, finalQueueId: 'outbox', agentId: wiAid, box: '', ms: Date.now() - wiPlacedTs, ts: Date.now() });
         // stash this run's REAL work so the post-run "rate the work" beat can size the XP honestly + gate on real work.
         // Lane 5: a cut-short run (provider truncated/filtered) is NOT rateable work — leaving no runWork stash makes
         // maybeStandaloneRate return 'never', so no XP is ever minted for an amputated reply. runCost is still computed
         // for the honest presence/recap readout.
         let runCost = 0;
-        if (thisRunId) { runCost = Math.max(0, (Harness.totals().cost || 0) - (before.cost || 0)); if (!cutShort) { runWork.set(thisRunId, { toolsOk: runToolsOk, delivered: runDeliv, cost: runCost, agentId: ws.agentId || 'agent' }); if (runWork.size > 60) runWork.delete(runWork.keys().next().value); } }
+        if (thisRunId) { runCost = Math.max(0, (Harness.totals().cost || 0) - (before.cost || 0)); if (!cutShort && !taskQuestion) { runWork.set(thisRunId, { toolsOk: runToolsOk, delivered: runDeliv, cost: runCost, agentId: ws.agentId || 'agent' }); if (runWork.size > 60) runWork.delete(runWork.keys().next().value); } }
         // P3.2 — CLAIM this lead run's dispatched crew (workers whose forwarded run.end fell inside its live window)
         // so a 👍 verdict can split its XP mint honestly. A run that dispatched no crew records nothing (empty list),
         // and the split falls back to lead-only — no fabricated attribution. Only a HERO lead run has crew to claim.

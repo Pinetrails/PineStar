@@ -130,6 +130,9 @@ const { questBlock, withQuests } = require('./questinject.js'); // QUEST V2 §B:
 const QuestSweeps = require('./questsweeps.js');
 const QuestRefresh = require('./questrefresh.js'); // QUEST V3: the standing 24h + caught-up quest-refresh engine (pure gates/directive/parse) // QUEST V2 §A: pure seam-matchers for the mechanical contract sweeps (run-bind / prop-live / fact-learned / artifact-exists)
 const { makeThreadsStore } = require('./threads-store.js');   // NS-6: durable THREAD LEDGER (ideas raised but never acted on)
+const { makeTaskBriefStore } = require('./taskbrief-store.js'); // durable original request + visible task decisions
+const TaskIntent = require('../frontend/app/taskintent.js');    // shared TASK_QUESTION protocol + prompt doctrine
+const CommanderContext = require('./commander-context.js');    // bounded provenance-labelled task context
 const threadmine = require('./threadmine.js');                // NS-6: pure post-run thread-mining producer (reflect/study mold)
 const AuxGovernor = require('./auxgovernor.js');              // aux-budget lane: PURE joint ceiling over the post-run aux passes (priority + budget)
 const DeclinedIndex = require('./declinedindex.js');         // flagship cross-wire (NS-8 lite): read-side shared declined index — a decline ANYWHERE suppresses a re-propose EVERYWHERE
@@ -1070,6 +1073,12 @@ const threadsStore = makeThreadsStore({
   fs: fs, path: path, workspaces: WORKSPACES, writeDurable: writeFileDurable,
   onRecover: (key, file) => console.warn('[threads] recovered ' + file + ' from .bak last-known-good after a torn/corrupt main.'),
   onCorrupt: (key, file) => quarantineCorrupt(file, 'threads'),
+  warn: (...args) => console.warn.apply(console, args)
+});
+const taskBriefStore = makeTaskBriefStore({
+  fs: fs, path: path, workspaces: WORKSPACES, writeDurable: writeFileDurable,
+  onRecover: (key, file) => console.warn('[taskbrief] recovered ' + file + ' from .bak last-known-good after a torn/corrupt main.'),
+  onCorrupt: (key, file) => quarantineCorrupt(file, 'taskbrief'),
   warn: (...args) => console.warn.apply(console, args)
 });
 // No sidecar workshop opener exists: API possession is never a user gesture.
@@ -3864,7 +3873,7 @@ function startTelegram(token, key, model, agentCfg) {
       const baseUrl = providerRuntimeBaseUrl(provider, t.baseUrl || t.base_url || '');
       return { key, model: t.model, provider, baseUrl, configured: providerHasCredential(provider, key, baseUrl), reasoningEffort: resolveReasoningEffort(provider, t.reasoningEffort), agentId: t.agentId, system: t.system };
     },
-    persona: TELEGRAM_PERSONA, classify: Classify.isTaskDirective, redact: redact, emit: chanEmit,
+    persona: TELEGRAM_PERSONA, classify: Classify.isTaskDirective, redact: redact, emit: chanEmit, taskIntent: TaskIntent,
     newId: () => crypto.randomUUID(), now: () => Date.now(), maxMessageLength: 4096,
     // Phase B: the placed floor decides WHICH agent runs (resolveTarget); null -> the hub's own resolution
     // (configured agentId else tg_<chatId>), so a no-floor or mis-wired station never stalls real work.
@@ -4083,7 +4092,7 @@ function getDevHub() {
     runOnce: runOnce, store: channelStore,
     send: (chatId, text) => { const k = String(chatId); const arr = devReplies.get(k) || []; arr.push({ text: String(text == null ? '' : text), ts: Date.now() }); if (arr.length > 20) arr.shift(); devReplies.set(k, arr); return Promise.resolve({ ok: true }); },
     secrets: devHubSecrets,
-    persona: DEV_PERSONA, classify: Classify.isTaskDirective, redact: redact, emit: chanEmit,
+    persona: DEV_PERSONA, classify: Classify.isTaskDirective, redact: redact, emit: chanEmit, taskIntent: TaskIntent,
     newId: () => crypto.randomUUID(), now: () => Date.now(),
     resolveAgent: (ctx) => router.resolveTarget(ctx),
     getTag: (text) => (Classify.getTag ? Classify.getTag(text) : undefined),
@@ -4453,6 +4462,7 @@ function dispatchRoute(req, res) {
   if (req.method === 'GET' && req.url.indexOf('/api/threads/proposals') === 0) return serveThreadProposals(req, res);   // NS-6: pending mined thread candidates for a run (turn-in)
   if (req.method === 'POST' && req.url === '/api/threads/turnin') return handleThreadTurnin(req, res);   // NS-6: keep/edit → commit an open thread; discard → permanently deny the fingerprint
   if (req.method === 'GET' && req.url.indexOf('/api/threads') === 0) return serveThreads(req, res);   // NS-6: the durable thread ledger (read surface)
+  if (req.method === 'GET' && req.url.indexOf('/api/task-briefs') === 0) return serveTaskBriefs(req, res); // durable intent-context truth
   if (req.method === 'POST' && req.url === '/api/memory/reset') return handleMemoryReset(req, res);
   if (req.method === 'POST' && req.url === '/api/memory/declined/restore') return handleDeclinedRestore(req, res);
   if (req.method === 'GET' && req.url.indexOf('/api/memory/declined') === 0) return serveDeclined(req, res);
@@ -6682,6 +6692,8 @@ async function handleRun(req, res) {
       surface: 'interactive', prompt: promptConsent, pathPrompt: promptPathTrust, summon: summonRequest,   // team.summon → live summonAgent() round-trip; pathPrompt → NS-5 "work in <root>?" bless
 
       streamId,        // M-mem.2b: scope this run's working memory + recall boost to the active workstream
+      taskKey: streamId ? ('stream:' + streamId) : null,
+      taskSource: 'interactive',
       recipeId,        // provenance spine (lane A): rides to the durable run row so a rating can be attributed
       preloadSkills,
       extraObjects,    // a placed WORKBENCH -> shell.exec + verify.run, additive on the default office
@@ -6807,6 +6819,10 @@ async function runOnce(o) {
   // Per-run headless CDP session. Kept outside the try so the outer finally always closes it,
   // including provider refusal, abort, timeout, and thrown-tool paths.
   let runBrowser = null;
+  // Only user-facing callers with a stable conversation key receive the intent layer. Unattended cron/night-shift
+  // work has nobody present to answer and therefore remains byte-for-byte on its existing execution path.
+  let taskBrief = null;
+  let taskQuestionAsked = false;
   // Everything below is wrapped so the admission slot is ALWAYS released (early-return refusals above run
   // before tryEnter; every exit below — return, throw, or the normal finish — passes through leave()).
   try {
@@ -6842,6 +6858,19 @@ async function runOnce(o) {
       return;   // the outer finally releases the concurrency slot; nothing was reserved (billed stays false)
     }
     billed = adm.managed === true;
+  }
+
+  if (isTask && o.taskKey) {
+    try {
+      let latestUser = '';
+      for (let i = messages.length - 1; i >= 0; i--) {
+        if (messages[i] && messages[i].role === 'user' && typeof messages[i].content === 'string') { latestUser = messages[i].content; break; }
+      }
+      if (latestUser) taskBrief = await taskBriefStore.prepare({
+        id: 'tb_' + runId, key: String(o.taskKey), streamId: streamId || '', agentId, runId,
+        source: o.taskSource || (surface === 'interactive' ? 'interactive' : 'channel'), text: latestUser
+      }, Date.now());
+    } catch (e) { console.warn('[taskbrief] prepare failed:', (e && e.message) || e); taskBrief = null; }
   }
 
   // ---- tools (registered fresh per run; cheap) ----
@@ -7409,7 +7438,16 @@ async function runOnce(o) {
   try {
     if (isTask) for (const _qid of QuestSweeps.runBindIds(questStore.openForAgent(agentId), agentId)) questStore.bindRun(_qid, runId).catch(() => {});
   } catch (_) {}
-  const sys = withQuests((system || '') + runtimeBlock + toolNote + teamNote + manualBlock + summarizeCapabilities(resolved, { surface }) + skillBlock + runtimeSkillBlock + preloadedSkillBlock, questsBlock);   // ground-truth caps: name the object to place instead of promising work it has no tool for
+  let taskIntentNote = '';
+  if (taskBrief) {
+    let goal = null; try { goal = commanderGoals.get() || null; } catch (_) {}
+    let patterns = []; try { patterns = taskBriefStore.patterns(5); } catch (_) {}
+    const contextBlock = CommanderContext.compose({
+      brief: taskBrief, dossier: commanderDossier.get(), goal, patterns, existingSystem: system || ''
+    });
+    taskIntentNote = '\n\n' + TaskIntent.directive(contextBlock);
+  }
+  const sys = withQuests((system || '') + runtimeBlock + toolNote + teamNote + manualBlock + summarizeCapabilities(resolved, { surface }) + skillBlock + runtimeSkillBlock + preloadedSkillBlock + taskIntentNote, questsBlock);   // ground-truth caps + task-context doctrine share the one final prompt seam
   // H1.2: bulletproof resume — if this run arrives with NO prior history (a fresh restart whose browser save was
   // wiped, or any caller that only sent the new directive) AND it names an explicit workstream, seed the
   // conversation from the durable server transcript so the agent remembers the dialogue. Never overrides real
@@ -7496,6 +7534,20 @@ async function runOnce(o) {
       // /models catalog warms, which (by design) disables the ratio so a bare 400 is never mislabelled.
       approxTokens: Math.ceil(JSON.stringify(msgs).length / 4), contextLimit: provider.contextLimit(model)
     });
+    // Persist visible task context only — never hidden reasoning. A clarification is a clean model run but not
+    // completed work, so it leaves the brief waiting across restart and suppresses task-learning sweeps below.
+    if (taskBrief && result && result.reason === 'done') {
+      try {
+        let reply = '';
+        for (let i = result.messages.length - 1; i >= 0; i--) {
+          const m = result.messages[i];
+          if (m && m.role === 'assistant' && typeof m.content === 'string') { reply = m.content; break; }
+        }
+        const q = TaskIntent.parse(reply);
+        if (q) { taskQuestionAsked = true; await taskBriefStore.ask(taskBrief.id, q, Date.now()); }
+        else await taskBriefStore.complete(taskBrief.id, runId, Date.now());
+      } catch (e) { console.warn('[taskbrief] settle failed:', (e && e.message) || e); }
+    }
   } finally {
     // book this run's spend into the append-only ledger (so day/global pools persist across runs), THEN drop its
     // in-flight tally — record-before-clear so the spend is always counted by at least one source, never neither.
@@ -7527,7 +7579,7 @@ async function runOnce(o) {
     // run teardown. The prop sweep fires at run ADMISSION (resolveTools — capability provably live) and the
     // fact sweep at writeMemoryRecord (memory provably committed); see questsweeps.js.
     try {
-      const _qReason = (result && result.reason) || 'done';
+      const _qReason = taskQuestionAsked ? 'clarifying' : ((result && result.reason) || 'done');
       if (_qReason === 'done') questStore.completeByContract('run', runId, Date.now()).catch(() => {});
       else questStore.stallRun(runId, _qReason, Date.now()).catch(() => {});
     } catch (_) {}
@@ -7563,7 +7615,7 @@ async function runOnce(o) {
   const _fr = result && result.finishReason;
   const _truncated = _fr === 'length' || _fr === 'content_filter';
   const _qualifies = !_truncated;   // true when finishReason is absent or a clean value
-  const _auxDone = !!(result && result.reason === 'done' && _qualifies && !signal.aborted);   // the shared run-end gate
+  const _auxDone = !!(result && result.reason === 'done' && !taskQuestionAsked && _qualifies && !signal.aborted);   // a clarification learns nothing and ships nothing
   const _auxNow = Date.now();       // one clock read for the scout cadence fold + curator-due check below
   const _auxModel = _auxDone ? (reflectModel || resolveEffectiveModel({ result, requestedModel: o.model, usingCodex, codexDefaultModel: CODEX_DEFAULT_MODEL, defaultModel: CRON_DEFAULT_MODEL })) : '';
 
@@ -9495,6 +9547,20 @@ function serveThreads(req, res) {
     for (const t of all) if (counts[t.state] != null) counts[t.state]++;
     json(200, { threads, counts, state });
   } catch (e) { json(200, { threads: [], counts: { open: 0, picked: 0, delivered: 0, declined: 0 } }); }
+}
+
+// GET /api/task-briefs?key=<conversation-key>&status=<state>&limit=<n> — real durable intent state only.
+// Briefs are written exclusively at the run prompt/result seams; this route cannot fabricate or mutate them.
+function serveTaskBriefs(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  try {
+    const u = new URL(req.url, 'http://127.0.0.1');
+    const key = String(u.searchParams.get('key') || '').slice(0, 160);
+    const status = String(u.searchParams.get('status') || '').slice(0, 24);
+    const limit = Math.max(1, Math.min(100, Number(u.searchParams.get('limit')) || 20));
+    const briefs = taskBriefStore.list({ key: key || undefined, status: status || undefined, limit });
+    json(200, { briefs, patterns: taskBriefStore.patterns(5) });
+  } catch (_) { json(200, { briefs: [], patterns: [] }); }
 }
 
 // GET /api/threads/proposals?agent=<id>&run=<id> — NS-6: the pending MINED thread candidates for a run (with the
