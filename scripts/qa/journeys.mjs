@@ -467,7 +467,7 @@ async function journeyTaskLifecycle(cdp, A, mock) {
   await parityCheck(cdp, A, 'J1.2-run-live');
   // the assigned card must be in ACTIVE (hybrid-honest auto-advance) and show a truthful chip.
   const activeLane = await evalJS(cdp, `(() => { const c=document.querySelector('.kb-card[data-id="${tid}"]'); if(!c) return 'NO_CARD'; const col=c.closest('.kb-col'); const h=col&&col.querySelector('h4'); return h?h.textContent.trim():'NO_COL'; })()`).catch(() => 'ERR');
-  A.ok('J1/assigned-card-active', /IN PROGRESS/.test(String(activeLane)), 'card column header = "' + activeLane + '"');
+  A.ok('J1/assigned-card-active', /^ACTIVE\b/.test(String(activeLane)) && /(RUNNING|READY TO REVIEW)/.test(String(activeLane)), 'card column header = "' + activeLane + '"');
 
   // step 3: let the run complete → the chip must flip RUNNING → DONE (never forever-RUNNING).
   const wentIdle = await waitIdle(cdp, 60);
