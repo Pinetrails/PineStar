@@ -850,7 +850,7 @@ const Chat = (() => {
       if (!activeWs || activeWs.id !== id || isBusy()) return;
       const b = j && Array.isArray(j.briefs) && j.briefs[0];
       const q = b && Array.isArray(b.questions) && b.questions[b.questions.length - 1];
-      if (q && !q.answer && Array.isArray(q.options) && q.options.length >= 2) offerTaskQuestion({ question: q.text, options: q.options });
+      if (q && !q.answer && Array.isArray(q.options) && q.options.length >= 2) offerTaskQuestion({ question: q.text, options: q.options, recommended: q.recommended || '', reason: q.reason || '' });
     } catch (_) { /* a missing/offline sidecar leaves history readable; the next load retries */ }
   }
 
@@ -2587,10 +2587,21 @@ const Chat = (() => {
   let pendingTaskQuestion = null;
   function offerTaskQuestion(tq) {
     pendingTaskQuestion = Object.assign({}, tq, { streamId: activeWs && activeWs.id });
-    const items = tq.options.map(o => ({ label: o, value: o }));
+    // The host-validated recommended default (brief_ask path) gets the gold suggested chip + a one-line why.
+    // A marker-path question stores no recommendation, so rec resolves empty and this renders plain chips.
+    const rec = String(tq.recommended || '').trim().toLowerCase();
+    const items = tq.options.map(o => {
+      const suggested = !!(rec && o.toLowerCase() === rec);
+      return { label: suggested ? '★ ' + o : o, value: o, suggested };
+    });
     items.push({ label: 'use your judgment', value: '', skip: true });
     const q = row('agent'); q.d.classList.add('nudge');
     q.body.textContent = '⌖ ' + tq.question;
+    if (rec && items.some(it => it.suggested) && String(tq.reason || '').trim()) {
+      const why = document.createElement('div'); why.className = 'tq-reason';
+      why.textContent = '★ suggested: ' + tq.recommended + ' — ' + String(tq.reason).trim();
+      q.body.appendChild(why);
+    }
     autoscroll();
     choices(items, item => {
       vanish(q.d);
@@ -2600,6 +2611,25 @@ const Chat = (() => {
         : (ans || 'Use your judgment and continue the original task.');
       if (!isBusy()) send(msg, { taskAction: 'answer' }); else echoUser(msg);
     });
+  }
+
+  // TASK BRIEF v2: enrich a run-end marker question with the durable brief's host-validated recommendation
+  // before rendering the chips. Safe ordering: the sidecar persists the question BEFORE it emits the buffered
+  // task run-end, so one fetch here always sees the stored row. Fail-open on every path — offline sidecar,
+  // mismatched text, or a marker-path question (no recommendation stored) renders exactly the plain chips.
+  async function presentTaskQuestion(ws, tq) {
+    let recommended = '', reason = '';
+    try {
+      const r = await fetch('/api/task-briefs?key=' + encodeURIComponent('stream:' + ws.id) + '&status=clarifying&limit=1', { cache: 'no-store' });
+      if (r.ok) {
+        const j = await r.json();
+        const b = j && Array.isArray(j.briefs) && j.briefs[0];
+        const q = b && Array.isArray(b.questions) && b.questions[b.questions.length - 1];
+        if (q && !q.answer && q.text === tq.question) { recommended = q.recommended || ''; reason = q.reason || ''; }
+      }
+    } catch (_) { /* enrichment only — the question itself never depends on this fetch */ }
+    if (!isActiveWs(ws)) return;   // the Commander switched away mid-fetch; restoreTaskQuestion re-presents on return
+    offerTaskQuestion(Object.assign({}, tq, { recommended, reason }));
   }
 
   // R4 PAYOFF RECEIPT: one provable line at the exact moment an answer/observation lands in the dossier, so
@@ -5017,7 +5047,7 @@ const Chat = (() => {
           if (typeof StationUI !== 'undefined') StationUI.notify('reply cut short: ' + finishReason, 'warn');
         }
         if (isActiveWs(ws) && activeLiveRow) activeLiveRow.done();
-        if (isActiveWs(ws) && taskQuestion) offerTaskQuestion(taskQuestion);
+        if (isActiveWs(ws) && taskQuestion) presentTaskQuestion(ws, taskQuestion);   // enriches with the stored recommendation, then renders
         // R1 MID-TASK FORK: the agent may have ended this reply with one FORK marker (earned only while the
         // style model's confidence is low — the directive isn't even in the prompt otherwise). Render the
         // one-tap chips at the run boundary; a malformed marker parses null and stays plain text.
@@ -5260,7 +5290,7 @@ const Chat = (() => {
     activeChoiceRows.add(rowEl);
     let done = false;
     (items || []).forEach(it => {
-      const b = document.createElement('button'); b.className = 'choice' + (it.quiet ? ' quiet' : ''); b.textContent = it.label;   // .quiet = a subdued secondary chip (e.g. "✕ leave interview") — never competes with the real answers
+      const b = document.createElement('button'); b.className = 'choice' + (it.quiet ? ' quiet' : '') + (it.suggested ? ' suggested' : ''); b.textContent = it.label;   // .quiet = subdued secondary chip; .suggested = the task brief's host-validated recommended default (gold)
       const pick = () => { if (done) return; done = true; activeChoiceRows.delete(rowEl); rowEl.remove(); if (typeof SFX !== 'undefined') SFX.click(); onPick(it); };
       // activate on POINTERDOWN, not click: a document-level activity listener (autopilotstore's welcome-back
       // digest) can fire during the capture phase of this same press and remove this row mid-dispatch. The event

@@ -194,5 +194,14 @@ A.eq(Policy.canMutate({ status: 'executing' }, { scope: 'execute' }).ok, true, '
   A.ok(!/DossierStore\.upsert/.test(offer), 'task-specific answers never pollute the global dossier');
   A.ok(/taskKey: 'channel:'/.test(hubSrc) && /Reply with a choice/.test(hubSrc), 'messaging channels share brief continuity with a text-choice fallback');
 
+  // TASK BRIEF v2 — the stored recommendation reaches every surface, and only when it is real.
+  const cssSrc = fs.readFileSync(path.join(__dirname, '../frontend/css/app.css'), 'utf8');
+  A.ok(/function presentTaskQuestion/.test(chatSrc) && /presentTaskQuestion\(ws, taskQuestion\)/.test(chatSrc), 'run-end questions render through the brief-enriched presenter');
+  A.ok(/it\.suggested \? ' suggested'/.test(chatSrc) && /tq-reason/.test(chatSrc), 'COMMS marks the recommended chip and renders the one-line why');
+  A.ok(/recommended: q\.recommended \|\| ''/.test(chatSrc), 'restore-on-reload passes the stored recommendation through');
+  A.ok(/\.choice\.suggested/.test(cssSrc) && /--gold-rgb/.test(cssSrc.slice(cssSrc.indexOf('.choice.suggested'), cssSrc.indexOf('.choice.suggested') + 700)), 'the suggested chip uses the theme gold vocabulary, never a literal amber');
+  A.ok(/briefFor/.test(hubSrc) && /suggested: ' \+ q\.recommended/.test(hubSrc), 'the channel fallback carries the stored recommendation');
+  A.ok(/briefFor: \(key\) => taskBriefStore\.active\(key\)/.test(indexSrc), 'both hub compositions read recommendations from the durable store');
+
   A.report('taskintent.test');
 })().catch(e => { console.error(e); process.exitCode = 1; });

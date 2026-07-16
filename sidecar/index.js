@@ -3923,6 +3923,7 @@ function startTelegram(token, key, model, agentCfg) {
       return { key, model: t.model, provider, baseUrl, configured: providerHasCredential(provider, key, baseUrl), reasoningEffort: resolveReasoningEffort(provider, t.reasoningEffort), agentId: t.agentId, system: t.system };
     },
     persona: TELEGRAM_PERSONA, classify: Classify.isTaskDirective, redact: redact, emit: chanEmit, taskIntent: TaskIntent,
+    briefFor: (key) => taskBriefStore.active(key),   // TASK BRIEF v2: the fallback line carries the stored recommendation
     newId: () => crypto.randomUUID(), now: () => Date.now(), maxMessageLength: 4096,
     // Phase B: the placed floor decides WHICH agent runs (resolveTarget); null -> the hub's own resolution
     // (configured agentId else tg_<chatId>), so a no-floor or mis-wired station never stalls real work.
@@ -4142,6 +4143,7 @@ function getDevHub() {
     send: (chatId, text) => { const k = String(chatId); const arr = devReplies.get(k) || []; arr.push({ text: String(text == null ? '' : text), ts: Date.now() }); if (arr.length > 20) arr.shift(); devReplies.set(k, arr); return Promise.resolve({ ok: true }); },
     secrets: devHubSecrets,
     persona: DEV_PERSONA, classify: Classify.isTaskDirective, redact: redact, emit: chanEmit, taskIntent: TaskIntent,
+    briefFor: (key) => taskBriefStore.active(key),   // TASK BRIEF v2: same recommendation line on the dev channel
     newId: () => crypto.randomUUID(), now: () => Date.now(),
     resolveAgent: (ctx) => router.resolveTarget(ctx),
     getTag: (text) => (Classify.getTag ? Classify.getTag(text) : undefined),
