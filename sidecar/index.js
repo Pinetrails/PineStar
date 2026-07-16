@@ -7505,9 +7505,18 @@ async function runOnce(o) {
 
   let result;
   const _txStart = msgs.length;   // H1.1: boundary — turns the loop appends to msgs after this ARE this run's new dialogue
+  let bufferedTaskEnd = null;
+  // The frozen contract has no "clarifying" reason. Hold a successful user-facing Task Brief end until the
+  // final text is known; a question maps to the existing neutral `cancelled` terminal (neither product nor slag).
+  const loopEmit = (name, payload) => {
+    if (taskBrief && name === 'agent.run.end' && payload && payload.runId === runId && payload.reason === 'done') {
+      bufferedTaskEnd = payload; return;
+    }
+    emit(name, payload);
+  };
   try {
     result = await runAgentLoop({
-      messages: msgs, provider, emit, cost, tools: toolDefs, dispatch, capCtx,
+      messages: msgs, provider, emit: loopEmit, cost, tools: toolDefs, dispatch, capCtx,
       // Real backoff for the loop's bounded mid-stream retry: without an injected sleep the loop retries a
       // dropped/half-streamed generation with ZERO delay (a tight hammer against an upstream that just hiccupped).
       // A plain (non-unref) setTimeout so the backoff actually elapses before the retry fires.
@@ -7551,7 +7560,15 @@ async function runOnce(o) {
         else await taskBriefStore.complete(taskBrief.id, runId, Date.now());
       } catch (e) { console.warn('[taskbrief] settle failed:', (e && e.message) || e); }
     }
+    if (bufferedTaskEnd) {
+      emit('agent.run.end', Object.assign({}, bufferedTaskEnd, { reason: taskQuestionAsked ? 'cancelled' : bufferedTaskEnd.reason }));
+      bufferedTaskEnd = null;
+    }
   } finally {
+    if (bufferedTaskEnd) {
+      emit('agent.run.end', Object.assign({}, bufferedTaskEnd, { reason: taskQuestionAsked ? 'cancelled' : bufferedTaskEnd.reason }));
+      bufferedTaskEnd = null;
+    }
     // book this run's spend into the append-only ledger (so day/global pools persist across runs), THEN drop its
     // in-flight tally — record-before-clear so the spend is always counted by at least one source, never neither.
     // result.usd/tokens already INCLUDE the summarizer's spend (the loop folds it into spentUsd as it accrues).

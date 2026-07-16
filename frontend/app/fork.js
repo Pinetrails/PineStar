@@ -126,9 +126,9 @@
     return lines.join('\n');
   }
   function taskAnswerMessage(question, answer) {
-    const q = taskClean(question, TASK_Q_CHARS), a = taskClean(answer, 500);
+    const a = taskClean(answer, 500);
     if (!a) return 'Use your judgment. Choose the most sensible reversible default and continue the original task.';
-    return a + (q ? ' — for: ' + q : '');
+    return a;
   }
   const TaskIntent = {
     parse: taskParse, strip: taskStrip, directive: taskDirective, answerMessage: taskAnswerMessage,

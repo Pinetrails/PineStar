@@ -50,6 +50,17 @@ src-tauri/ desktop shell (Tauri 2, NSIS/dmg, embedded node, keyring; updater fee
 
 Most bugs are **seam bugs**: emitter → store → renderer. Trace the full path before editing.
 
+### Task-context elicitation (2026-07-15)
+
+Interactive COMMS and messaging-channel tasks pass through one intent layer in `runOnce`. The model
+proceeds immediately when context is sufficient; only a materially outcome-changing, non-discoverable
+gap may produce one `TASK_QUESTION` with 2–3 choices (two questions maximum for the whole task, with
+the second reserved for a newly exposed blocker). COMMS strips the protocol into a natural one-tap
+choice; text channels render numbered choices. The answer resumes the same durable Task Brief, survives
+reload/restart, and is injected into delegated workers. Task-local answers never silently become global
+dossier beliefs; only an identical decision repeated across two completed briefs appears later as
+bounded, explicitly weak relationship evidence. Unattended cron and night-shift runs remain unchanged.
+
 ## How to work here (non-negotiable)
 
 1. **Read `CLAUDE.md`** (repo root) — the multi-agent worktree protocol. You are one of many

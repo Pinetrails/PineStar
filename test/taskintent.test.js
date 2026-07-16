@@ -24,6 +24,7 @@ A.eq(parsed.question, 'who is this dashboard primarily for?', 'protocol parses o
 A.eq(parsed.options, ['operators', 'executives', 'customers'], 'protocol parses 2-3 options');
 A.eq(TaskIntent.strip('Ready.\nTASK_QUESTION: format? || PDF | HTML'), 'Ready.', 'internal marker is stripped from the visible reply');
 A.eq(TaskIntent.parse('TASK_QUESTION: only one? || yes'), null, 'one-option marker fails closed instead of rendering a broken choice');
+A.eq(TaskIntent.answerMessage('who is this for?', 'operators'), 'operators', 'choice continuation preserves the actual answer without UI annotation noise');
 const doctrine = TaskIntent.directive('KNOWN: existing React admin shell');
 A.ok(/Research before asking/.test(doctrine) && /what does good look like/.test(doctrine), 'doctrine says discover first and bans vague questions');
 A.ok(/use your judgment/i.test(doctrine) && /Proceed immediately/.test(doctrine), 'doctrine preserves autonomy for clear/defaultable tasks');
@@ -65,8 +66,11 @@ A.ok(/at most two questions total/.test(doctrine) && /second is allowed only/.te
   A.ok(/taskBriefStore\.prepare/.test(indexSrc) && /TaskIntent\.directive/.test(indexSrc), 'runOnce prepares the durable brief and injects the shared doctrine');
   A.ok(/taskContext:\s*taskContextBlock/.test(indexSrc) && /workerSystem/.test(orchestrationSrc), 'delegated workers inherit the settled brief without re-questioning the Commander');
   A.ok(/taskQuestionAsked/.test(indexSrc) && /!taskQuestionAsked/.test(indexSrc), 'clarifications suppress completed-task learning sweeps');
+  A.ok(/bufferedTaskEnd/.test(indexSrc) && /taskQuestionAsked\s*\?\s*'cancelled'/.test(indexSrc), 'clarification maps to the contract-safe neutral terminal before global completed-work listeners run');
   A.ok(/offerTaskQuestion/.test(chatSrc) && /TaskIntent\.strip/.test(chatSrc), 'COMMS strips the marker and renders the natural decision');
   A.ok(/clarificationRuns\.has\(runId\)/.test(chatSrc) && /clarificationRuns\.add\(thisRunId\)/.test(chatSrc), 'clarification turns do not count as completed-work beats');
+  A.ok(/endReason !== 'done' && !taskQuestion/.test(chatSrc), 'the neutral clarification terminal is not rendered as a stopped/error run');
+  A.ok(/endReason:\s*taskQuestion\s*\?\s*'done'/.test(chatSrc), 'the visible presence line describes the completed decision turn without claiming task delivery');
   A.ok(/function restoreTaskQuestion/.test(chatSrc) && /status=clarifying/.test(chatSrc), 'reload or stream-switch re-presents the real unanswered durable brief');
   const offer = chatSrc.slice(chatSrc.indexOf('function offerTaskQuestion'), chatSrc.indexOf('function offerTaskQuestion') + 1400);
   A.ok(!/DossierStore\.upsert/.test(offer), 'task-specific answers never pollute the global dossier');

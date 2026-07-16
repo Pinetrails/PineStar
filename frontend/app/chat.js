@@ -4885,7 +4885,7 @@ const Chat = (() => {
         // would be premature. The judge runs in the finally (after teardown) so it never delays this turn's unwind.
         if (!taskQuestion && (!endReason || endReason === 'done') && !cutShort && replyText.trim() && typeof GoalLoop !== 'undefined' && goalOf(ws)) goalJudgeReply = replyText;
         // the stop-reason is part of the WORK log → close the live paragraph, then drop it in chronologically.
-        if (endReason && endReason !== 'done') {
+        if (endReason && endReason !== 'done' && !taskQuestion) {
           if (isActiveWs(ws)) breakLive(), toolLine('⏹ ' + (endReason === 'max_iters' ? 'reached the step limit — say "continue" to keep going'
             : endReason === 'budget' ? 'reached this run\'s limit'
             : endReason === 'cancelled' ? (interrupted.has(ws.id) ? 'stopped' : 'run cancelled')
@@ -4927,7 +4927,7 @@ const Chat = (() => {
         if (thisRunId && (ws.agentId || 'agent') === 'agent') { const crew = claimCrew(runStartedAt); if (crew.length) { runCrew.set(thisRunId, crew); if (runCrew.size > 60) runCrew.delete(runCrew.keys().next().value); } }
         // COMMS-PREMIUM: resolve the presence card into a compact summary. steps = real successful tool rounds,
         // cost = this run's REAL usd delta — both truthful (shown only when > 0), never fabricated.
-        if (isActiveWs(ws)) resolvePresence(ws, { endReason: endReason, cutShort: cutShort, steps: runToolsOk, cost: runCost });
+        if (isActiveWs(ws)) resolvePresence(ws, { endReason: taskQuestion ? 'done' : endReason, cutShort: cutShort, steps: runToolsOk, cost: runCost });
         // WORK VISIBILITY: a passive recap of what this run PRODUCED, fetched from the run's recorded
         // artifacts ledger. A report, not an ask — it never claims the post-run beat slot. Fire-and-forget.
         if (thisRunId) renderRunRecap(ws, thisRunId, Date.now() - wiPlacedTs);
