@@ -42,9 +42,9 @@ DATA.SKINS = {
   voidwizard:   { name: 'Void Wizard',    set: 'voidwizard',   scale: 0.368 },
   samaltman:    { name: 'Sam',            set: 'samaltman',    scale: 0.385 },
   dario:        { name: 'Dario',          set: 'dario',        scale: 0.376 },
-  beachbabe:    { name: 'Beach Babe',     set: 'beachbabe',    scale: 0.394 },
+  beachbabe:    { name: 'Beach Babe',     set: 'beachbabe',    scale: 0.385 },
   secretagent:  { name: 'Secret Agent',   set: 'secretagent',  scale: 0.404 },
-  grimreaper:   { name: 'Grim Reaper',    set: 'grimreaper',   scale: 0.376 },
-  plaguedoctor: { name: 'Plague Doctor',  set: 'plaguedoctor', scale: 0.368 },
+  grimreaper:   { name: 'Grim Reaper',    set: 'grimreaper',   scale: 0.394 },
+  plaguedoctor: { name: 'Plague Doctor',  set: 'plaguedoctor', scale: 0.376 },
 };
 DATA.DEFAULT_SKIN = 'blank';
