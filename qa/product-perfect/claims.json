@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "86ed5f4ced5e34e6def092444bf3866310831425",
+    "sourceCommit": "c7d9b199a0fda2a602345a2aa43c027088989d15",
     "pathSetSha256": "e45261d65dc7ff0b9cc77172b4f800cc4bef6dec86bd786a26771964e9b2e342",
     "files": [
       {
@@ -63,8 +63,8 @@
       },
       {
         "path": "frontend/app/app.js",
-        "bytes": 265205,
-        "sha256": "6811432c56afb6aaedd011b65c437159a42192acb3a562fa69e97b97499faccd"
+        "bytes": 266707,
+        "sha256": "0d70f34595c35b3ddd0d01adf6b5a2836b022afe5c211691ffa135434e367906"
       },
       {
         "path": "frontend/app/armconfirm.js",
@@ -798,8 +798,8 @@
       },
       {
         "path": "frontend/css/app.css",
-        "bytes": 195346,
-        "sha256": "496c10f9ba0a3f538534abd65a5ea0a6833df2f782f33fb1faef2b74aa8642ff"
+        "bytes": 195589,
+        "sha256": "ca67bb9b97db72f31eb626b681cc2a4827d3073130ffdd649cb7e8c941b7d4ef"
       },
       {
         "path": "frontend/css/asciifx.css",
@@ -863,8 +863,8 @@
       },
       {
         "path": "frontend/index.html",
-        "bytes": 62753,
-        "sha256": "16d069f8eef969a07afbf8e8fbdff78291e4a33a732f8ae8e653968bc55aad74"
+        "bytes": 62831,
+        "sha256": "2c5db5fdea9e6ae0b5d3a15421cc73c8a809ea1f18881578e7883919caa1e192"
       },
       {
         "path": "frontend/js/arcade.js",

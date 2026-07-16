@@ -2640,6 +2640,7 @@ const App = (() => {
     const ul = el('workstreams');
     if (!ul || typeof Workstreams === 'undefined') return;
     refreshSessionToolsActive();   // keep the SESSION TOOLS window's active-conversation label truthful across switches
+    refreshSessionToolsArchived(); // …and its archived-mirror row in step with the rail footer it mirrors
     const activeId = Workstreams.activeId();
     ul.innerHTML = Workstreams.list({ includeArchived: railShowArchived }).map(w => {
       const title = w.title || 'General';
@@ -2740,7 +2741,20 @@ const App = (() => {
     const w = Workstreams.active();
     n.textContent = '— “' + ((w && w.title) || 'General') + '”';
   }
-  function sessionToolsShown() { refreshSessionUndo(); refreshSessionToolsActive(); }
+  // MIRROR of the rail's archived footer — same count, same railShowArchived state, refreshed by the
+  // same renderRail pass. One source of truth: this row can never claim a reveal state the rail
+  // doesn't have. Hidden at zero archived (a door to nothing would be a dead control).
+  function refreshSessionToolsArchived() {
+    const b = el('ws-tools-archived'); if (!b) return;
+    let n = 0; for (const w of Workstreams.list({ includeArchived: true })) if (w.archived) n++;
+    b.hidden = !n;
+    if (!n) return;
+    b.textContent = railShowArchived
+      ? '▾ ARCHIVED SHOWN IN THE SESSIONS RAIL — CLICK TO HIDE'
+      : '▸ VIEW ' + n + ' ARCHIVED — IN THE SESSIONS RAIL';
+    b.title = railShowArchived ? 'hide the archived sessions in the rail' : 'reveal the ' + n + ' archived session' + (n === 1 ? '' : 's') + ' (dimmed) in the sessions rail';
+  }
+  function sessionToolsShown() { refreshSessionUndo(); refreshSessionToolsActive(); refreshSessionToolsArchived(); }
   function renderSessionSearch() {
     const input = el('ws-search'), out = el('ws-search-results'); if (!input || !out) return;
     const q = input.value.trim(); out.innerHTML = '';
@@ -2815,6 +2829,13 @@ const App = (() => {
     el('ws-undo').onclick = () => {
       if (!Workstreams.undoLast()) { SFX.bad(); refreshSessionUndo(); return; }
       loadActiveStream(); persist(); renderRail(); refreshSessionUndo(); resetBulkPreview('Last session change restored.'); SFX.open();
+    };
+    // the archived-mirror row: flips the rail's OWN reveal (toggleArchived), forcing the rail onto the
+    // SESSIONS view first — the archived rows live in #workstreams, which the PROJECTS view hides, and a
+    // click that visibly does nothing is exactly the kind of lie this window exists to avoid.
+    el('ws-tools-archived').onclick = () => {
+      setRailView('sessions');
+      toggleArchived();   // ends in renderRail(), which re-labels this mirror row in the same pass
     };
     refreshSessionUndo();
   }
