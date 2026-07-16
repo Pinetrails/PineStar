@@ -2471,7 +2471,12 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
           (lane === 'active' ? activeAggregate(items) : '') + '</h4>' +
           (items.length ? items.map(card).join('') : kbEmpty(lane)) + '</div>';
       }).join('') +
-      '</div>';
+      '</div>' +
+      // the dead-end this footnote kills (2026-07-16): "a run finished while you were away" sent users
+      // hunting HERE, but this board only holds queued directives — finished routine/away runs are
+      // readable sessions in COMMS and collectable on the OUTBOX. Shown only when the board is empty
+      // (that's exactly when the hunt strands); openTerm('outbox') is the one-click door.
+      (streams.length ? '' : '<div class="mc-detail dim" style="margin-top:8px">Looking for finished work? Routine and while-away runs aren’t board cards — they land as sessions in COMMS and wait on the <button type="button" class="lb-tx-btn" id="kb-outbox-link">▸ OUTBOX</button>.</div>');
     const inp = body.querySelector('#kb-in');
     const submit = () => { addTask(inp.value); };
     body.querySelector('#kb-add').addEventListener('click', () => { sfx('click'); submit(); });
@@ -2479,6 +2484,8 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     // empty-state CTA (TO DO column): focus the add-a-workstream input — no new behaviour, just focus.
     body.querySelectorAll('.kb-empty-col .es-cta').forEach(b =>
       b.addEventListener('click', () => { sfx('click'); inp.focus(); }));
+    const obLink = body.querySelector('#kb-outbox-link');
+    if (obLink) obLink.addEventListener('click', () => { sfx('click'); openTerm('outbox'); });
     inp.focus();
     body.querySelectorAll('.kb-card').forEach(c => {
       const id = c.dataset.id;

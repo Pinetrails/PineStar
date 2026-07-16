@@ -59,6 +59,8 @@ const ReturnStore = (() => {
     if (!rows.length) return;                       // NEVER an empty digest
     fired = true;                                   // one per session, even if the beat is later dismissed
     state = Returns.fold(state, rows); save();      // listed once, never re-listed; crates now pending
+    // an already-open OUTBOX window re-renders with the fresh crates (no-op when closed)
+    try { if (typeof StationUI !== 'undefined' && StationUI.rerender) StationUI.rerender('outbox'); } catch (_) {}
     if (typeof Chat !== 'undefined' && Chat.awayDigest) Chat.awayDigest(rows, { onRated: resolve, openWork: openWork });
   }
 
