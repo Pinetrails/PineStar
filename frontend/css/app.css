@@ -2937,8 +2937,7 @@ select.fbc-sel:focus { border-color: var(--ph); box-shadow: inset 0 2px 5px rgba
 .con-searching .con-sec-head:hover .sec-l { color: var(--ph-bright); }
 /* while searching: every section is shown, non-matching rows fade, empty sections collapse their body */
 .con-searching .con-miss { opacity: .18; }
-.con-searching .con-sec.con-sec-nomatch { opacity: .4; }
-.con-searching .con-sec.con-sec-nomatch .con-sec-body { display: none; }
+.con-searching .con-sec-nomatch { display: none; }
 .con-searching .con-sec + .con-sec { margin-top: 18px; }
 
 /* responsive: on a narrow viewport the rail sits on top as a horizontal strip */
