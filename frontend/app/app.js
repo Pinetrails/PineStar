@@ -2070,7 +2070,7 @@ const App = (() => {
     if (!agent.reasoningEffort && saved.reasoningEffort) agent.reasoningEffort = saved.reasoningEffort;
     Harness.setModel(agent.model || Harness.getModel());
     Harness.setTotals(saved.usage || { tokens: 0, cost: 0, calls: 0 });
-    Workstreams.init({ workstreams: saved.workstreams, activeId: saved.activeId, generalId: saved.generalId, sessionUndo: saved.sessionUndo });
+    Workstreams.init({ workstreams: saved.workstreams, activeId: saved.activeId, generalId: saved.generalId, sessionUndo: saved.sessionUndo, deletedIds: saved.deletedIds });
     pendingStationDoc = saved.station || null;   // restore the built station (if any)
     pendingStationStats = saved.stationStats || null;   // restore the station-growth rollup (XP/level/confidence)
     pendingProfile = saved.profile || null;   // restore the learned user-affinity profile
@@ -2925,11 +2925,18 @@ const App = (() => {
   }
   function deleteWorkstream(id) {
     const w = Workstreams.get(id); const label = w ? (w.title || 'General') : '';
+    const agentId = w ? (w.agentId || 'agent') : 'agent';
     const wasActive = (id === Workstreams.activeId());
     if (!Workstreams.del(id)) { SFX.bad(); return; }
     SFX.bad();
     if (wasActive) loadActiveStream();   // deleting the OPEN stream falls back to General
     renderRail(); persist();
+    // a deliverable session ('workshop-<runId>'): deleting it is the Commander's final verdict on the
+    // build too — discard the still-pending deliverable server-side so it can't return next restart.
+    // The Workstreams tombstone already guarantees the ROW never re-forms even if this write fails.
+    if (String(id).indexOf('workshop-') === 0 && typeof WorkshopStore !== 'undefined' && WorkshopStore.discardIfPending) {
+      WorkshopStore.discardIfPending(agentId, String(id).slice('workshop-'.length)).catch(() => {});
+    }
     if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('deleted “' + label + '”', 'warn');
   }
   // re-open whatever the store now treats as active (after archive/delete bumps the open stream to General)

@@ -117,8 +117,11 @@ const ReturnStore = (() => {
     if (!sid || typeof Workstreams === 'undefined' || !Workstreams.adopt) return false;
     let w = Workstreams.get(sid);
     if (!w || !(w.history || []).some(m => m && m.role === 'assistant')) {
-      // no session yet (or an output-less shell) — adopt + fold the durable transcript so the work is readable
-      w = Workstreams.adopt({ id: sid, title: (rw.routine || rw.title || 'finished run').slice(0, 80), agentId: rw.agentId || 'agent', lane: 'active' });
+      // no session yet (or an output-less shell) — adopt + fold the durable transcript so the work is readable.
+      // revive:true — this is a DELIBERATE Commander click ("review the work"), the one case that may
+      // clear a deleted-session tombstone and bring the session back.
+      w = Workstreams.adopt({ id: sid, title: (rw.routine || rw.title || 'finished run').slice(0, 80), agentId: rw.agentId || 'agent', lane: 'active', revive: true });
+      if (!w) return false;
       let turns = [], fetchOk = false;
       try {
         const tr = await fetch('/api/transcript?agent=' + encodeURIComponent(rw.agentId || 'agent') + '&stream=' + encodeURIComponent(sid) + '&limit=200', { cache: 'no-store' });

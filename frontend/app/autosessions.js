@@ -72,6 +72,7 @@ const AutoSessions = (() => {
     const agentId = (job && job.agentId) || 'agent';
     const seed = (job && job.prompt) ? [{ role: 'user', content: String(job.prompt) }] : [];
     const ws = Workstreams.adopt({ id: id, title: title, agentId: agentId, lane: 'active', history: seed });
+    if (!ws) return null;   // a session the Commander DELETED stays deleted (adopt refused the tombstoned id)
     // mark the row busy via the SAME per-workstream channel state chat.js drives (Channels.begin) so the
     // rail's railRowState paints the pulsing "running" dot — reused, not a bespoke busy flag.
     if (hasCh() && !Channels.isBusy(id)) { Channels.begin(id, Date.now()); Channels.setStatus(id, 'thinking…'); }   // cron.fire IS server truth — skip the 'connecting…' unconfirmed state

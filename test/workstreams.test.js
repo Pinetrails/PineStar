@@ -193,6 +193,29 @@ const ad2 = W.adopt({ id: cronId, title: 'different title' });
 A.ok(ad2 === ad, 'adopt is idempotent — re-adopting the same id returns the existing record untouched');
 A.eq(W.get(cronId).title, 'Daily digest', 'a re-adopt never stomps the existing title/history');
 
+/* ---------- deleted-session tombstones: adopt() can never resurrect a deleted id ---------- */
+W.reset();
+const shopId = 'workshop-abc123';
+W.adopt({ id: shopId, title: '⚒ built while you were away', lane: 'active' });
+A.ok(W.del(shopId) === true, 'delete the adopted deliverable session');
+A.ok(W.isDeleted(shopId) === true, 'the deleted id is tombstoned');
+A.eq(W.adopt({ id: shopId, title: 're-mint attempt' }), null, 'adopt REFUSES a tombstoned id (the restart-resurrection bug)');
+A.ok(!W.list({ includeArchived: true }).some(w => w.id === shopId), 'the deleted session did not re-form');
+// the tombstone survives a save/load round-trip — "deleted forever" must outlive a restart.
+const tombDump = W.serialize();
+A.ok(Array.isArray(tombDump.deletedIds) && tombDump.deletedIds.indexOf(shopId) >= 0, 'serialize carries deletedIds');
+W.init(JSON.parse(JSON.stringify(tombDump)));
+A.ok(W.isDeleted(shopId) === true, 'tombstone survives init(serialize()) — a restart cannot resurrect');
+A.eq(W.adopt({ id: shopId, title: 'post-restart re-mint' }), null, 'post-restart adopt still refused');
+// revive:true is the ONE deliberate re-open path (the Commander clicked "review the work").
+const revived = W.adopt({ id: shopId, title: 'revived on purpose', revive: true });
+A.ok(revived && revived.id === shopId, 'adopt({revive:true}) deliberately brings the session back');
+A.ok(W.isDeleted(shopId) === false, 'revive clears the tombstone (the session behaves normally again)');
+// reset (NEW AGENT) clears tombstones with everything else.
+W.del(shopId); A.ok(W.isDeleted(shopId), 're-deleted before reset');
+W.reset();
+A.ok(W.isDeleted(shopId) === false, 'reset clears tombstones (a fresh Commander inherits none)');
+
 /* ---------- TASK-BOARD TRUTH: kind field ('task' = board card, 'chat' = rail-only session) ---------- */
 W.reset();
 // create() defaults to 'chat' — a plain new stream (summon/newWorkstream) is a session, not a board task.

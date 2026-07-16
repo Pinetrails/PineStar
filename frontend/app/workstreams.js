@@ -32,6 +32,13 @@
   let activeId = null;
   let generalId = null;
   let undoCheckpoint = null;   // one durable, bounded recovery point for clear/bulk archive
+  // DELETED-SESSION TOMBSTONES: adopt() is the seam that re-mints sessions from server-side state
+  // (workshop deliverables, cron backfill) — without a durable record of the delete, every restart
+  // resurrected rows the Commander had deliberately removed. A deleted id lands here, rides
+  // serialize()/init(), and adopt() refuses it unless the caller passes revive:true (a deliberate
+  // human re-open, e.g. the OUTBOX crate's "review"). Bounded so the list can't grow unboundedly.
+  const MAX_TOMBS = 500;
+  let tombs = [];       // string ids of deleted workstreams, oldest first
 
   // frontend module: ambient time/rng is fine here (lint-determinism scans only shared/ + sidecar/).
   function now() { return Date.now(); }
@@ -104,6 +111,7 @@
   function init(slice) {
     slice = slice || {};
     ws = Array.isArray(slice.workstreams) ? slice.workstreams.map(make) : [];
+    tombs = Array.isArray(slice.deletedIds) ? slice.deletedIds.filter(x => typeof x === 'string' && x).slice(-MAX_TOMBS) : [];
     generalId = (slice.generalId && find(slice.generalId)) ? slice.generalId : null;
     ensureGeneral();
     activeId = (slice.activeId && find(slice.activeId)) ? slice.activeId : generalId;
@@ -114,10 +122,10 @@
   }
 
   // wipe to a single fresh General (NEW AGENT clears everything).
-  function reset() { ws = []; activeId = generalId = null; undoCheckpoint = null; const g = ensureGeneral(); activeId = g.id; return active(); }
+  function reset() { ws = []; activeId = generalId = null; undoCheckpoint = null; tombs = []; const g = ensureGeneral(); activeId = g.id; return active(); }
 
   // the persisted slice — App.persist() serializes this alongside { agent, usage }.
-  function serialize() { return { workstreams: ws, activeId, generalId, sessionUndo: undoCheckpoint }; }
+  function serialize() { return { workstreams: ws, activeId, generalId, sessionUndo: undoCheckpoint, deletedIds: tombs }; }
   function all() { return ws; }
 
   // ---------- selection ----------
@@ -181,11 +189,21 @@
   // the rail row and the durable server transcript share one identity. Returns the (existing or new) record.
   function adopt(opts) {
     opts = opts || {};
-    if (opts.id) { const ex = find(opts.id); if (ex) return ex; }
+    if (opts.id) {
+      const ex = find(opts.id); if (ex) return ex;
+      // a DELETED id stays deleted: the boot-time resurrection paths (workshop pending poll, cron
+      // backfill) must not re-mint a session the Commander removed. revive:true is the deliberate
+      // human re-open (it clears the tombstone so the session behaves normally from then on).
+      if (isDeleted(opts.id)) {
+        if (opts.revive !== true) return null;
+        tombs = tombs.filter(t => t !== opts.id);
+      }
+    }
     const w = make(opts);
     ws.push(w);
     return w;
   }
+  function isDeleted(id) { return !!id && tombs.indexOf(String(id)) >= 0; }
 
   // a MANUAL rename: locks the title (titleAuto=false) so the auto-summary upgrade never overwrites it.
   function rename(id, title) { const w = find(id); if (!w) return false; w.title = title ? clamp(title, 80) : null; w.titleAuto = false; return true; }
@@ -218,6 +236,7 @@
     const i = ws.findIndex(w => w.id === id);
     if (i < 0) return false;
     ws.splice(i, 1);
+    if (tombs.indexOf(id) < 0) { tombs.push(id); if (tombs.length > MAX_TOMBS) tombs = tombs.slice(-MAX_TOMBS); }
     if (activeId === id) activeId = generalId;
     return true;
   }
@@ -445,7 +464,7 @@
     exportConversation, parseConversationExport, clearConversation,
     previewArchive, archivePreview, canUndo, undoLast,
     create, startSession, adopt, get, active, activeId: getActiveId, generalId: getGeneralId,
-    switch: switchTo, rename, setAgent, setLane, setProjectRoot, pin, archive, del, removeByAgent, touch, markRead, unread: isUnread,
+    switch: switchTo, rename, setAgent, setLane, setProjectRoot, pin, archive, del, removeByAgent, isDeleted, touch, markRead, unread: isUnread,
     autoTitle, retitle, deriveTitle,
     appendRun, recordDeliverable, addCost, costOf,
     migrateV1, importTasks,
