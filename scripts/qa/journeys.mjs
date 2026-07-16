@@ -117,6 +117,40 @@ const ONLY = (() => {
 })();
 
 const J = (v) => JSON.stringify(v);
+let JOURNEY_API_TOKEN = '';
+
+async function backendSnapshot() {
+  if (!JOURNEY_API_TOKEN) return null;
+  try {
+    const r = await fetch(APP_URL + 'api/state/snapshot', {
+      headers: { 'X-StarNet-Token': JOURNEY_API_TOKEN, Origin: APP_URL.replace(/\/$/, '') },
+      cache: 'no-store'
+    });
+    return r.ok ? await r.json() : null;
+  } catch (_) { return null; }
+}
+
+// A frontend channel going idle is only local projection truth. Before starting the next interrupt journey,
+// require the sidecar's authoritative snapshot to omit every prior run AND report no queued work twice in a row.
+// Two samples prevent a just-completed /api/halt response from racing its run-loop `finally` teardown.
+async function waitBackendPriorRunsDrained(priorRunIds, tries = 80) {
+  const wanted = new Set((priorRunIds || []).filter(Boolean));
+  let consecutive = 0, last = null;
+  for (let i = 0; i < tries; i++) {
+    last = await backendSnapshot();
+    const runs = last && Array.isArray(last.runs) ? last.runs : null;
+    const queues = last && Array.isArray(last.queues) ? last.queues : null;
+    const livePrior = runs ? runs.filter(r => wanted.has(r.runId)).map(r => r.runId) : [...wanted];
+    const drained = !!runs && !!queues && livePrior.length === 0 && queues.every(q => !(Number(q.depth) > 0));
+    if (drained) {
+      consecutive++;
+      if (consecutive >= 2) return { ok: true, livePrior: [], snapshot: last };
+    } else consecutive = 0;
+    await sleep(100);
+  }
+  const livePrior = last && Array.isArray(last.runs) ? last.runs.filter(r => wanted.has(r.runId)).map(r => r.runId) : [...wanted];
+  return { ok: false, livePrior, snapshot: last };
+}
 
 /* ─────────────────────────── CONTROLLABLE MOCK PROVIDER ───────────────────────────
  * A mock OpenRouter whose completion stream we can HOLD OPEN and RELEASE on command. Unlike the
@@ -433,7 +467,7 @@ async function journeyTaskLifecycle(cdp, A, mock) {
   await parityCheck(cdp, A, 'J1.2-run-live');
   // the assigned card must be in ACTIVE (hybrid-honest auto-advance) and show a truthful chip.
   const activeLane = await evalJS(cdp, `(() => { const c=document.querySelector('.kb-card[data-id="${tid}"]'); if(!c) return 'NO_CARD'; const col=c.closest('.kb-col'); const h=col&&col.querySelector('h4'); return h?h.textContent.trim():'NO_COL'; })()`).catch(() => 'ERR');
-  A.ok('J1/assigned-card-active', /IN PROGRESS/.test(String(activeLane)), 'card column header = "' + activeLane + '"');
+  A.ok('J1/assigned-card-active', /^ACTIVE\b/.test(String(activeLane)) && /(RUNNING|READY TO REVIEW)/.test(String(activeLane)), 'card column header = "' + activeLane + '"');
 
   // step 3: let the run complete → the chip must flip RUNNING → DONE (never forever-RUNNING).
   const wentIdle = await waitIdle(cdp, 60);
@@ -457,9 +491,15 @@ async function startHeldRun(cdp, A, mock, title) {
   // lingering sidecar-side run (an E-STOPped run can be mid-teardown on 'agent'; a new run on the same agent
   // would queue behind it and never reach busy), then wait for every channel to go idle. This ties the run
   // we're about to hold to being the ONLY one in flight (a leftover busy channel makes the check ambiguous).
+  const beforeHalt = await backendSnapshot();
+  const priorRunIds = beforeHalt && Array.isArray(beforeHalt.runs) ? beforeHalt.runs.map(r => r.runId).filter(Boolean) : [];
   try { mock.control.setMode('quick'); mock.control.release(); } catch (_) {}
   await evalJS(cdp, "(typeof Harness!=='undefined' && Harness.haltAll) ? Harness.haltAll() : 0").catch(() => {});
   await waitIdle(cdp, 60);
+  // RED contract for PL-05: frontend-idle is not sufficient authority. The exact prior runs must also
+  // have left the sidecar snapshot before a new held run is allowed to start.
+  const drain = await waitBackendPriorRunsDrained(priorRunIds);
+  A.ok('J2/teardown/backend-prior-runs-drained', drain.ok, drain.snapshot ? ('prior=' + JSON.stringify(priorRunIds) + ' livePrior=' + JSON.stringify(drain.livePrior)) : 'backend snapshot unavailable');
   await evalJS(cdp, closeOnly).catch(() => {});
   await sleep(400);
   mock.control.setMode('hold');
@@ -647,6 +687,26 @@ async function journeyDeliverableOpen(cdp, A, base, token, mock) {
   // and the token fence still holds (a no-token nav is refused) — the Open action always carries the token.
   const noTok = await fetch(base + '/workshop-run/' + agentId + '/' + runId + '/index.html').catch(() => ({ status: 0 }));
   A.ok('J4/token-required', noTok && noTok.status === 403, 'no-token GET → ' + (noTok && noTok.status) + ' (must be 403)');
+
+  // Open the real WORK-dock surface and prove the just-built backend row reaches its physical controls.
+  await evalJS(cdp, `(() => { StationUI.openTerm('deliverables'); return true; })()`).catch(() => false);
+  let library = null;
+  for (let i = 0; i < 30; i++) {
+    library = await evalJS(cdp, `(() => {
+      const q=document.querySelector('#dl-query'), s=document.querySelector('#dl-status'), row=document.querySelector('.deliverable-row');
+      return { q:!!q, status:!!s, refresh:!!document.querySelector('#dl-refresh'), clean:!!document.querySelector('#dl-clean'),
+        title:row?row.textContent:'', open:!!document.querySelector('.deliverable-row button[data-file]'),
+        keep:!!document.querySelector('.deliverable-row button[data-act="keep"]'), discard:!!document.querySelector('.deliverable-row button[data-act="discard"]') };
+    })()`).catch(() => null);
+    if (library && library.title && library.title.indexOf('Journey Demo Tool') >= 0) break;
+    await sleep(200);
+  }
+  A.ok('J4/library-controls-visible', library && library.q && library.status && library.refresh && library.clean, 'search/filter/refresh/cleanup controls=' + JSON.stringify(library));
+  A.ok('J4/library-real-pending-row', library && /Journey Demo Tool/.test(library.title || '') && library.open && library.keep && library.discard, 'pending card/actions=' + JSON.stringify(library));
+  const filtered = await evalJS(cdp, `(() => { const q=document.querySelector('#dl-query'); q.value='no-such-deliverable'; q.dispatchEvent(new Event('input',{bubbles:true})); return true; })()`).catch(() => false);
+  await sleep(400);
+  const emptyText = await evalJS(cdp, `document.querySelector('#dl-list')?.textContent || ''`).catch(() => '');
+  A.ok('J4/library-search-filters', filtered && /No deliverables match/.test(emptyText), 'search result=' + String(emptyText).trim().slice(0, 100));
 }
 
 /* ═══════════════════════════ J6 — bay-bound crew idle life (desk-stuck escape) ═══════════════════════════
@@ -896,6 +956,7 @@ async function main() {
     const html = await (await fetch(APP_URL)).text();
     const m = html.match(/window\.__STARNET_API_TOKEN__=("(?:\\.|[^"])*")/);
     if (m) token = String(JSON.parse(m[1]) || '');
+    JOURNEY_API_TOKEN = token;
   } catch (_) {}
 
   const { proc: chromeProc, chrome } = launchChrome({ cdpPort: CDP_PORT, win: WIN, profileDir: PROFILE });

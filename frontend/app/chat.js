@@ -850,7 +850,7 @@ const Chat = (() => {
       if (!activeWs || activeWs.id !== id || isBusy()) return;
       const b = j && Array.isArray(j.briefs) && j.briefs[0];
       const q = b && Array.isArray(b.questions) && b.questions[b.questions.length - 1];
-      if (q && !q.answer && Array.isArray(q.options) && q.options.length >= 2) offerTaskQuestion({ question: q.text, options: q.options });
+      if (q && !q.answer && Array.isArray(q.options) && q.options.length >= 2) offerTaskQuestion({ question: q.text, options: q.options, recommended: q.recommended || '', reason: q.reason || '' });
     } catch (_) { /* a missing/offline sidecar leaves history readable; the next load retries */ }
   }
 
@@ -960,6 +960,35 @@ const Chat = (() => {
   }
   function clearEmptyState() { const e = log && log.querySelector('.cmsg-empty'); if (e) e.remove(); }
   // first-run state: an empty + idle + non-interview stream shows a single dim hint instead of a black void.
+  // gather the HONEST signals the starter engine ranks on: catalog, real launch history, whether the
+  // station has any prior life, and the local clock. Every read fails open — a missing store just means
+  // fewer signals, never a crash (the engine degrades to the classic orientation set).
+  function pickStarters() {
+    const recipes = (typeof Recipes !== 'undefined' && Recipes.list) ? (Recipes.list() || []) : [];
+    let recent = [], valuesOf = () => null;
+    if (typeof LaunchMemory !== 'undefined' && LaunchMemory.recent) {
+      try { recent = LaunchMemory.recent(8) || []; valuesOf = id => LaunchMemory.get(id); } catch (_) {}
+    }
+    // returning = any OTHER session ever had a real row, or anything was ever launched from the catalog.
+    // (maybeEmptyState only renders when the ACTIVE session is empty, so it can't vouch for itself.)
+    let returning = recent.length > 0;
+    try {
+      if (!returning && typeof Workstreams !== 'undefined' && Workstreams.list) {
+        returning = (Workstreams.list() || []).some(w => w && w !== activeWs && w.history && w.history.length > 0);
+      }
+    } catch (_) {}
+    const now = new Date();
+    const sig = { recipes, recent, valuesOf, returning, hour: now.getHours(), day: Math.floor(now.getTime() / 86400000) };
+    if (typeof Starters !== 'undefined' && Starters.pick) {
+      try { const out = Starters.pick(sig); if (out && out.length) return out; } catch (_) {}
+    }
+    // engine missing/hiccuped → the classic orientation set, verbatim.
+    const fallback = [{ label: 'what can you do here', send: 'What can you do here? Give me a short tour of what you can actually do for me.' }];
+    if (recipes[0]) fallback.push({ label: String(recipes[0].name || recipes[0].id), recipe: recipes[0] });
+    fallback.push({ label: 'brief me on this station', send: 'Brief me on this station — what is around me and what I can do from here.' });
+    return fallback;
+  }
+
   function maybeEmptyState() {
     if (!log || interview) return;
     if (activeWs && activeWs.history && activeWs.history.length) return;
@@ -971,20 +1000,19 @@ const Chat = (() => {
     const line = document.createElement('div'); line.className = 'cmsg-empty-line';
     line.textContent = 'COMMS online. Type a task or a question to ' + name + '.';
     d.appendChild(line);
-    // STARTER CHIPS — a couple of tappable openers so the first prompt isn't a blank void. Sandbox tone,
+    // STARTER CHIPS — tappable openers so the first prompt isn't a blank void. Sandbox tone,
     // eerie-not-cute, no exclamation marks. A chip fills the composer and sends; a recipe fills its directive
     // (blanks left for the Commander to complete) instead of firing blind. Children of .cmsg-empty, so any real
     // row (clearEmptyState) retires them with the hint.
-    const starters = [{ label: 'what can you do here', send: 'What can you do here? Give me a short tour of what you can actually do for me.' }];
-    const recipe = (typeof Recipes !== 'undefined' && Recipes.list) ? (Recipes.list()[0] || null) : null;
-    if (recipe) starters.push({ label: String(recipe.name || recipe.id), recipe: recipe });
-    starters.push({ label: 'brief me on this station', send: 'Brief me on this station — what is around me and what I can do from here.' });
+    // WHICH chips is the Starters engine's call (starters.js): fresh station → the orientation set;
+    // returning Commander → their usual recipe (prefilled from LaunchMemory), a discovery pick, a pitch ask.
+    const starters = pickStarters();
     const chips = document.createElement('div'); chips.className = 'cmsg-empty-chips';
     for (const st of starters.slice(0, 3)) {
       const b = document.createElement('button'); b.type = 'button'; b.className = 'choice cmsg-starter'; b.textContent = st.label;
       b.addEventListener('click', () => {
         if (typeof SFX !== 'undefined' && SFX.click) SFX.click();
-        if (st.recipe) { insertRecipe(st.recipe); return; }   // fill the directive to edit, don't auto-fire
+        if (st.recipe) { insertRecipe(st.recipe, st.values); return; }   // fill the directive to edit, don't auto-fire
         if (input) { input.value = st.send; autoGrowInput(); }
         submitComposer();
       });
@@ -2629,10 +2657,21 @@ const Chat = (() => {
   let pendingTaskQuestion = null;
   function offerTaskQuestion(tq) {
     pendingTaskQuestion = Object.assign({}, tq, { streamId: activeWs && activeWs.id });
-    const items = tq.options.map(o => ({ label: o, value: o }));
+    // The host-validated recommended default (brief_ask path) gets the gold suggested chip + a one-line why.
+    // A marker-path question stores no recommendation, so rec resolves empty and this renders plain chips.
+    const rec = String(tq.recommended || '').trim().toLowerCase();
+    const items = tq.options.map(o => {
+      const suggested = !!(rec && o.toLowerCase() === rec);
+      return { label: suggested ? '★ ' + o : o, value: o, suggested };
+    });
     items.push({ label: 'use your judgment', value: '', skip: true });
     const q = row('agent'); q.d.classList.add('nudge');
     q.body.textContent = '⌖ ' + tq.question;
+    if (rec && items.some(it => it.suggested) && String(tq.reason || '').trim()) {
+      const why = document.createElement('div'); why.className = 'tq-reason';
+      why.textContent = '★ suggested: ' + tq.recommended + ' — ' + String(tq.reason).trim();
+      q.body.appendChild(why);
+    }
     autoscroll();
     choices(items, item => {
       vanish(q.d);
@@ -2642,6 +2681,25 @@ const Chat = (() => {
         : (ans || 'Use your judgment and continue the original task.');
       if (!isBusy()) send(msg, { taskAction: 'answer' }); else echoUser(msg);
     });
+  }
+
+  // TASK BRIEF v2: enrich a run-end marker question with the durable brief's host-validated recommendation
+  // before rendering the chips. Safe ordering: the sidecar persists the question BEFORE it emits the buffered
+  // task run-end, so one fetch here always sees the stored row. Fail-open on every path — offline sidecar,
+  // mismatched text, or a marker-path question (no recommendation stored) renders exactly the plain chips.
+  async function presentTaskQuestion(ws, tq) {
+    let recommended = '', reason = '';
+    try {
+      const r = await fetch('/api/task-briefs?key=' + encodeURIComponent('stream:' + ws.id) + '&status=clarifying&limit=1', { cache: 'no-store' });
+      if (r.ok) {
+        const j = await r.json();
+        const b = j && Array.isArray(j.briefs) && j.briefs[0];
+        const q = b && Array.isArray(b.questions) && b.questions[b.questions.length - 1];
+        if (q && !q.answer && q.text === tq.question) { recommended = q.recommended || ''; reason = q.reason || ''; }
+      }
+    } catch (_) { /* enrichment only — the question itself never depends on this fetch */ }
+    if (!isActiveWs(ws)) return;   // the Commander switched away mid-fetch; restoreTaskQuestion re-presents on return
+    offerTaskQuestion(Object.assign({}, tq, { recommended, reason }));
   }
 
   // R4 PAYOFF RECEIPT: one provable line at the exact moment an answer/observation lands in the dossier, so
@@ -4619,11 +4677,15 @@ const Chat = (() => {
   }
   // drop a recipe's directive into the input: apply each OPTIONAL param's default, but leave REQUIRED blanks
   // visible as {tokens} so the Commander can see what to fill — and pre-select the first one to type over.
-  function insertRecipe(r) {
+  function insertRecipe(r, values) {
     if (!input) return;
     let directive = (r && r.task) || (r && r.name) || '';
     for (const p of (r && r.params) || []) {
-      if (p && p.key && p.default != null && p.default !== '') directive = directive.split('{' + p.key + '}').join(p.default);
+      if (!p || !p.key) continue;
+      // last-used inputs (confirm-by-sight: they land visibly in the composer) beat catalog defaults.
+      const remembered = values && typeof values[p.key] === 'string' && values[p.key].trim() ? values[p.key] : null;
+      const v = remembered != null ? remembered : ((p.default != null && p.default !== '') ? p.default : null);
+      if (v != null) directive = directive.split('{' + p.key + '}').join(v);
     }
     input.value = directive; input.focus();
     const m = /\{[^}]+\}/.exec(directive);   // select the first remaining blank to type over (else cursor at end)
@@ -5059,7 +5121,7 @@ const Chat = (() => {
           if (typeof StationUI !== 'undefined') StationUI.notify('reply cut short: ' + finishReason, 'warn');
         }
         if (isActiveWs(ws) && activeLiveRow) activeLiveRow.done();
-        if (isActiveWs(ws) && taskQuestion) offerTaskQuestion(taskQuestion);
+        if (isActiveWs(ws) && taskQuestion) presentTaskQuestion(ws, taskQuestion);   // enriches with the stored recommendation, then renders
         // R1 MID-TASK FORK: the agent may have ended this reply with one FORK marker (earned only while the
         // style model's confidence is low — the directive isn't even in the prompt otherwise). Render the
         // one-tap chips at the run boundary; a malformed marker parses null and stays plain text.
@@ -5302,7 +5364,7 @@ const Chat = (() => {
     activeChoiceRows.add(rowEl);
     let done = false;
     (items || []).forEach(it => {
-      const b = document.createElement('button'); b.className = 'choice' + (it.quiet ? ' quiet' : ''); b.textContent = it.label;   // .quiet = a subdued secondary chip (e.g. "✕ leave interview") — never competes with the real answers
+      const b = document.createElement('button'); b.className = 'choice' + (it.quiet ? ' quiet' : '') + (it.suggested ? ' suggested' : ''); b.textContent = it.label;   // .quiet = subdued secondary chip; .suggested = the task brief's host-validated recommended default (gold)
       const pick = () => { if (done) return; done = true; activeChoiceRows.delete(rowEl); rowEl.remove(); if (typeof SFX !== 'undefined') SFX.click(); onPick(it); };
       // activate on POINTERDOWN, not click: a document-level activity listener (autopilotstore's welcome-back
       // digest) can fire during the capture phase of this same press and remove this row mid-dispatch. The event

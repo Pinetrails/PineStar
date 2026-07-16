@@ -95,6 +95,10 @@
 
     const controls = doc.createElement('div');
     controls.className = 'sn-tb-controls';
+    // Windows exposes the authoritative window controls at the top-level UIA boundary.
+    // Keep these themed mouse targets visual, but do not duplicate those same actions in
+    // the document accessibility tree or keyboard order.
+    controls.setAttribute('aria-hidden', 'true');
 
     const mkBtn = (id, label, iconClass, extra) => {
       const b = doc.createElement('button');
@@ -102,6 +106,7 @@
       b.type = 'button';
       b.className = 'sn-tb-btn' + (extra ? ' ' + extra : '');
       b.setAttribute('aria-label', label);
+      b.tabIndex = -1;
       const ic = doc.createElement('span');
       ic.className = 'sn-ic ' + iconClass;
       b.appendChild(ic);

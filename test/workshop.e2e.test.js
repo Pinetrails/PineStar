@@ -54,7 +54,10 @@ function startMockOpenRouter() {
           // (all CSS/JS inline) + a README.md, so the return card's "Open it" opens a RUNNING page and a non-html
           // file exists to test the shell-open route. Keyed off the item title carried in the prompt.
           const wantsWeb = /web tool/i.test(prompt);
-          if (prompt.indexOf(WORKSHOP_MARK) === 0 && wantsWeb) {
+          const wantsFailure = /fail build/i.test(prompt);
+          if (prompt.indexOf(WORKSHOP_MARK) === 0 && wantsFailure) {
+            text('I could not produce a valid deliverable.');
+          } else if (prompt.indexOf(WORKSHOP_MARK) === 0 && wantsWeb) {
             const html = '<!doctype html><meta charset="utf-8"><title>Tip Calc</title>'
               + '<h1 id="h">Tip Calculator</h1><script>document.getElementById("h").dataset.ready="1";</script>';
             if (toolResults === 0) {
@@ -131,8 +134,9 @@ async function startSse(url) {
   // is now gated on DEV_MODE (audit 1.4): a production process carrying SKYNET_TEST_OPEN_LOG must NOT fake-launch,
   // so the env var alone no longer installs the fake opener — the run must also declare itself dev/test.
   const env = { SKYNET_WORKSPACES: ws, SKYNET_DEV: '1', SKYNET_OPENROUTER_BASE: mock.base, SKYNET_OPENROUTER_KEY: 'sk-or-v1-workshop-fake', SKYNET_DEFAULT_MODEL: 'test/model', SKYNET_TEST_OPEN_LOG: openLog };
-  const { child, port } = await boot(8960 + (process.pid % 30), env, 20);
-  const B = 'http://' + HOST + ':' + port;
+  const firstBoot = await boot(8960 + (process.pid % 30), env, 20);
+  let child = firstBoot.child;
+  let B = 'http://' + HOST + ':' + firstBoot.port;
   let sse = null;
   try {
     const token = await bootToken(B, B);
@@ -173,6 +177,14 @@ async function startSse(url) {
     const manRaw = fs.readFileSync(path.join(runDir, 'deliverable.json'), 'utf8');
     const man = JSON.parse(manRaw);
     A.ok(man.v === 1 && Array.isArray(man.files) && man.files.length >= 1, 'deliverable.json on disk is a valid v1 manifest');
+    const extraFiles = {
+      'README.md': Buffer.from('# CSV cleaner\n\n**Safe** preview.\n<script>never run</script>'),
+      'sample.csv': Buffer.from('name,value\nalpha,1\nbeta,2\n'),
+      'pixel.png': Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64'),
+      'index.html': Buffer.from('<!doctype html><title>CSV cleaner</title><script>document.body.dataset.ready="1"</script>')
+    };
+    for (const [name, bytes] of Object.entries(extraFiles)) { fs.writeFileSync(path.join(runDir, name), bytes); man.files.push({ path: name, bytes: bytes.length }); }
+    fs.writeFileSync(path.join(runDir, 'deliverable.json'), JSON.stringify(man));
 
     // 5. workshop.built arrived on the durable SSE bus with the proven manifest.
     await sse.waitFor(ev => ev.some(e => e.name === 'workshop.built' && e.payload && e.payload.agentId === 'builder' && e.payload.runId === runId && e.payload.manifest && e.payload.manifest.files.length >= 1), 6000, 'workshop.built SSE');
@@ -181,6 +193,15 @@ async function startSse(url) {
     // 6. it shows up as a PENDING deliverable for the return-card.
     const pending = await (await fetch(B + '/api/workshop/pending?agent=builder', { headers })).json();
     A.ok(pending.pending.some(m => m.runId === runId && m.title === 'CSV cleaner'), '/pending lists the built deliverable');
+    const libraryPendingRes = await fetch(B + '/api/deliverables?status=pending&query=csv', { headers });
+    const libraryPending = await libraryPendingRes.json();
+    const pendingRow = (libraryPending.items || []).find(r => r.runId === runId);
+    A.eq(libraryPendingRes.status, 200, 'deliverable library API exists');
+    A.ok(pendingRow && pendingRow.status === 'pending' && pendingRow.source === 'queued', 'library projects the real pending Workshop record');
+    const expectedSize = man.files.reduce((n, f) => n + f.bytes, 0);
+    A.ok(pendingRow.size === expectedSize && pendingRow.files[0].openUrl, 'library reports manifest-proven size and safe open URLs');
+    A.ok(pendingRow.files.some(f => f.preview === 'markdown') && pendingRow.files.some(f => f.preview === 'csv') && pendingRow.files.some(f => f.preview === 'image'), 'library allowlists bounded Markdown, CSV, and image previews');
+    A.ok(pendingRow.files.some(f => /index\.html$/.test(f.path) && f.sandboxed === true), 'library labels HTML for the existing opaque-origin sandbox');
 
     // ===================== W7: OPEN the deliverable, don't display its code =====================
     // Build a SELF-CONTAINED web tool (index.html + README.md) and prove the two open surfaces + their guards.
@@ -270,6 +291,12 @@ async function startSse(url) {
     A.ok(ngRes.payload && ngRes.payload.fired === false && ngRes.payload.reason === 'not-granted', 'an UNGRANTED agent cannot run a workshop shift (grant is load-bearing)');
     A.ok(!fs.existsSync(path.join(ws, 'nogrant', 'workshop')), 'the ungranted agent wrote nothing');
 
+    // A twice-failed Workshop item parks and remains visible as failed rather than disappearing into the queue.
+    await fetch(B + '/api/workshop/queue', { method: 'POST', headers, body: JSON.stringify({ agentId: 'builder', id: 'item-fail', title: 'Fail build deliberately' }) });
+    for (let i = 0; i < 2; i++) await readNdjson(await fetch(B + '/api/workshop/shift', { method: 'POST', headers, body: JSON.stringify({ agentId: 'builder' }) }));
+    const failedLibrary = await (await fetch(B + '/api/deliverables?status=failed', { headers })).json();
+    A.ok(failedLibrary.items.some(r => r.title === 'Fail build deliberately' && r.status === 'failed'), 'parked Workshop failure is a durable failed library row');
+
     // 7.4 KEEP copies a deliverable OUT to a user-chosen folder — COPYFILE_EXCL by default (never a silent
     //     clobber). Runs on its OWN queued item so it doesn't retire item-1 (step 8 still needs it). A second
     //     keep to the SAME folder is refused 409 EEXIST; overwrite:true then replaces.
@@ -301,8 +328,29 @@ async function startSse(url) {
     const reQ = await (await fetch(B + '/api/workshop/queue', { method: 'POST', headers, body: JSON.stringify({ agentId: 'builder', id: 'item-1', title: 'CSV cleaner' }) })).json();
     A.ok(reQ.ok === false && reQ.reason === 'discarded', 'the discarded item cannot be re-queued (discard = never again)');
 
-    // 9. PERSISTENCE: the grant survives a sidecar RESTART.
+    const libraryDecided = await (await fetch(B + '/api/deliverables', { headers })).json();
+    A.ok(libraryDecided.items.some(r => r.runId === runId2 && r.status === 'kept'), 'library preserves the kept lifecycle after the backlog row retires');
+    A.ok(libraryDecided.items.some(r => r.runId === runId && r.status === 'discarded'), 'library preserves the discarded lifecycle after files are removed');
+
+    const preview = await (await fetch(B + '/api/deliverables/cleanup-preview', { method: 'POST', headers, body: JSON.stringify({ statuses: ['discarded'] }) })).json();
+    A.ok(preview.ok && preview.targets.length === 1 && preview.targets[0].runId === runId, 'status-scoped cleanup preview names the exact discarded target');
+    A.ok(preview.protected.some(r => r.runId === runId2 && r.status === 'kept'), 'cleanup preview protects kept work');
+    const cleaned = await (await fetch(B + '/api/deliverables/cleanup', { method: 'POST', headers, body: JSON.stringify({ statuses: preview.statuses, fingerprint: preview.fingerprint }) })).json();
+    A.ok(cleaned.ok && cleaned.removed === 1 && cleaned.undoToken, 'cleanup applies only the previewed metadata rows');
+    const undone = await (await fetch(B + '/api/deliverables/cleanup-undo', { method: 'POST', headers, body: JSON.stringify({ undoToken: cleaned.undoToken }) })).json();
+    A.ok(undone.ok && undone.restored === 1, 'cleanup undo restores the removed lifecycle row');
+
+    // 9. PERSISTENCE: lifecycle records survive a real sidecar restart, not merely a fresh store instance.
     A.ok(fs.existsSync(path.join(ws, 'builder.workshop.json')), 'the workshop store persisted to disk');
+    if (sse) { sse.close(); sse = null; }
+    try { child.kill(); } catch (_) {}
+    await sleep(180);
+    const restarted = await boot(firstBoot.port, env, 20); child = restarted.child; B = 'http://' + HOST + ':' + restarted.port;
+    const token2 = await bootToken(B, B);
+    const headers2 = { 'Content-Type': 'application/json', 'X-StarNet-Token': token2, Origin: B };
+    const afterRestart = await (await fetch(B + '/api/deliverables', { headers: headers2 })).json();
+    A.ok(afterRestart.items.some(r => r.runId === runId2 && r.status === 'kept'), 'kept deliverable remains indexed after sidecar restart');
+    A.ok(afterRestart.items.some(r => r.runId === runId && r.status === 'discarded'), 'discarded deliverable remains indexed after cleanup undo and restart');
   } finally {
     if (sse) sse.close();
     try { child.kill(); } catch (_) {}

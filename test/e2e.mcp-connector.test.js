@@ -222,6 +222,33 @@ async function readNdjson(res) {
     A.ok(token.length >= 32, 'got a session API token');
     let headers = { 'Content-Type': 'application/json', 'X-StarNet-Token': token, Origin: B };
 
+    // PL-06: a permanently-invalid transport URL is INPUT validation, not a failed connection.
+    // It must be rejected before either the config or its bearer token reaches durable storage.
+    const invalidSecret = 'mcp-invalid-scheme-secret';
+    const invalid = await fetch(B + '/api/connectors', {
+      method: 'POST', headers,
+      body: JSON.stringify({ id: 'invalid-scheme', label: 'Invalid scheme', transport: 'http', url: 'file:///etc/passwd', token: invalidSecret })
+    });
+    A.eq(invalid.status, 400, 'non-http(s) connector URL is rejected as bad input');
+    const invalidBody = await invalid.json();
+    A.ok(invalidBody.ok === false && invalidBody.saved === false && invalidBody.code === 'INVALID_URL', 'invalid URL response explicitly says it was not saved');
+    const afterInvalid = await (await fetch(B + '/api/connectors', { headers: { 'X-StarNet-Token': token, Origin: B } })).json();
+    A.ok(!(afterInvalid.connectors || []).some(c => c.id === 'invalid-scheme'), 'invalid connector is absent from the live/config projection');
+    const connectorFile = path.join(ws, 'connectors', 'connectors.json');
+    const invalidDisk = fs.existsSync(connectorFile) ? fs.readFileSync(connectorFile, 'utf8') : '';
+    A.ok(invalidDisk.indexOf('invalid-scheme') < 0 && invalidDisk.indexOf(invalidSecret) < 0, 'invalid connector id and secret never reach disk');
+
+    // A syntactically-valid endpoint may simply be offline. Saving that configuration is useful, but the
+    // response must state BOTH facts so the panel never turns a successful save into an ambiguous 502.
+    const unreachable = await fetch(B + '/api/connectors', {
+      method: 'POST', headers,
+      body: JSON.stringify({ id: 'offline-demo', label: 'Offline demo', transport: 'http', url: 'http://127.0.0.1:1/mcp', token: 'offline-secret', timeoutMs: 1000 })
+    });
+    A.eq(unreachable.status, 200, 'valid but unreachable connector returns a saved-state envelope');
+    const unreachableBody = await unreachable.json();
+    A.ok(unreachableBody.ok === false && unreachableBody.saved === true && unreachableBody.connected === false && unreachableBody.state === 'error', 'offline envelope distinguishes saved from connected');
+    A.ok(/saved.*not connected/i.test(unreachableBody.error || ''), 'offline envelope explains saved-but-not-connected in plain language');
+
     const upsert = await fetch(B + '/api/connectors', {
       method: 'POST',
       headers,
@@ -282,10 +309,16 @@ async function readNdjson(res) {
     const restartedDemo = (afterRestart.connectors || []).find(c => c.id === 'demo');
     const restartedDeepwiki = (afterRestart.connectors || []).find(c => c.id === 'deepwiki');
     const restartedStripe = (afterRestart.connectors || []).find(c => c.id === 'stripe');
+    const restartedOffline = (afterRestart.connectors || []).find(c => c.id === 'offline-demo');
     A.ok(restartedDemo && restartedDemo.state === 'up', 'enabled connector rewarms after restart');
     A.ok(restartedDeepwiki && restartedDeepwiki.enabled === false, 'disabled catalog connector remains listed after restart');
     A.ok(restartedStripe && restartedStripe.enabled === false, 'disabled manual connector remains listed after restart');
+    A.ok(restartedOffline && restartedOffline.enabled === true && restartedOffline.state === 'error' && restartedOffline.hasToken === true, 'valid offline connector remains durably saved and truthfully offline after restart');
+    A.ok(!(afterRestart.connectors || []).some(c => c.id === 'invalid-scheme'), 'invalid-scheme connector remains absent after restart');
     A.ok(JSON.stringify(afterRestart).indexOf('mcp-secret-token') === -1, 'restart list never leaks a persisted connector token');
+    A.ok(JSON.stringify(afterRestart).indexOf(invalidSecret) === -1, 'restart projection never contains the rejected secret');
+    const restartDisk = fs.existsSync(connectorFile) ? fs.readFileSync(connectorFile, 'utf8') : '';
+    A.ok(restartDisk.indexOf('invalid-scheme') < 0 && restartDisk.indexOf(invalidSecret) < 0, 'restart readback proves invalid connector and token were never persisted');
 
     sse = await startSseCollector(B + '/api/channels/events?token=' + encodeURIComponent(token));
     const create = await fetch(B + '/api/cron', {

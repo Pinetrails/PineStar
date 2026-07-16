@@ -38,6 +38,9 @@
       blurb: 'Surveys the credible sources, weights by evidence quality — ten posts citing one study count once.',
       tags: { research: 1 },
       params: [{ key: 'topic', label: 'Question / field', placeholder: 'e.g. RAG vs long-context for retrieval' }],
+      intake: [
+        { dimension: 'audience', question: 'Who is this review for?', options: ['practitioner (me)', 'technical deep-dive', 'executive summary'], recommended: 'practitioner (me)', reason: 'audience sets the rigor and jargon level' }
+      ],
       task: 'Do a literature review on {topic}. Survey the credible sources — papers, serious practitioners, primary data — and synthesize the actual state of knowledge: what is well-established, where credible sources genuinely disagree, and what nobody has answered yet. Weight by evidence quality, not volume: ten posts citing the same study are ONE source. Lead with the state of the art in a paragraph, then the evidence with citations, then the open questions. Offer to save the full review as a file I can keep.',
       category: 'research', gear: ['dish', 'cabinet'], skills: ['web-research', 'source-triangulation'], cadence: null,
       source: 'builtin', forkedFrom: null
@@ -48,6 +51,9 @@
       blurb: 'Tracks a rival against its own history — pricing pages and job posts, not press-release adjectives.',
       tags: { research: 0.8, general: 0.2 },
       params: [{ key: 'competitor', label: 'Competitor', placeholder: 'e.g. a company or product name' }],
+      intake: [
+        { dimension: 'scope', question: 'Track how wide?', options: ['product + pricing', 'full company (hiring, funding, positioning)'], recommended: 'product + pricing', reason: 'scope decides where each watch pass spends its time' }
+      ],
       task: 'Track {competitor} and brief me on what actually CHANGED: launches, pricing moves, positioning shifts, key hires, funding. Compare against your notes from the last check so you report movement, not the standing state — a changed pricing page and three new job posts tell you more than any press release. Lead with the one move that matters most and what it implies for us. Cite sources; skip the announcement adjectives. Update your notes for next time.',
       category: 'research', gear: ['dish', 'notebook'], skills: ['domain-intel', 'web-research'], cadence: 'weekly',
       source: 'builtin', forkedFrom: null
