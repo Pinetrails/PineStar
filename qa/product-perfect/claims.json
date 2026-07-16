@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "e099a36389641fbaa8f4095c9a0fce660ea99835",
+    "sourceCommit": "c45493a5fd7e90860d15a41774519881f5bbd9e6",
     "pathSetSha256": "e45261d65dc7ff0b9cc77172b4f800cc4bef6dec86bd786a26771964e9b2e342",
     "files": [
       {
@@ -353,8 +353,8 @@
       },
       {
         "path": "frontend/app/navdock.js",
-        "bytes": 8607,
-        "sha256": "35434a4a1c63d6c4f059bb572e6b4cab66cbef65cbe54c4fe8b9d791e9895744"
+        "bytes": 9552,
+        "sha256": "215df57e5533dc49e10c9d81cfde6ffc8c73633ff9b12e2d9a1f468cba5e9f3b"
       },
       {
         "path": "frontend/app/nightnudge.js",
