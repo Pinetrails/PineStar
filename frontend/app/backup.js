@@ -3,8 +3,8 @@
    Browser localStorage is the FRAGILE store. A cache wipe, a different browser, or a different
    machine loses the agent the user built up — identity, XP/level/confidence, personalization
    (dossier docs + persona), workstreams (chat history) and the station layout all live in
-   localStorage under the `starnet.*` keys. This module is the safety net: one click bundles EVERY
-   starnet.* key plus a read-only snapshot of the agent's backend memory (notebook) into a
+   localStorage under the `starnet.*` keys. This module is the safety net: one click bundles the
+   nonsecret starnet.* records plus a read-only snapshot of the agent's backend memory (notebook) into a
    downloadable file, and import restores the local half on any browser. Back-compat: a backup
    exported BEFORE the Skynet→StarNet rename holds `skynet.*` keys + a `skynet.backup` schema; both
    import fine and are mapped forward to `starnet.*` on restore.
@@ -27,15 +27,31 @@ const Backup = (() => {
   const PREFIX = 'starnet.';
   const LEGACY_PREFIX = 'skynet.';
   const SAVE_KEY = 'starnet.save';
+  const SECRET_POLICY = 'credentials-excluded';
+  // BYOK is default-deny: only these known, nonsecret selections are portable. This keeps a future credential
+  // field from silently entering a plaintext backup just because its storage key was added after this code.
+  const SAFE_BYOK_KEYS = new Set([
+    'starnet.byok.model',
+    'starnet.byok.prov',
+    'starnet.byok.reasoningEffort'
+  ]);
+  const SECRET_NAMESPACE_RE = /^starnet\.(?:channels?|oauth|auth|credentials?|secrets?)(?:[._:-]|$)/i;
+  const SECRET_SEGMENT_RE = /(?:^|[._:-])(?:api[-_]?key|apikey|key|keys|token|tokens|secret|secrets|credential|credentials|password|passwd|pwd|authorization|bearer)(?:$|[._:-])/i;
   // map any captured key forward to its StarNet name (old backups hold skynet.* keys; new ones already starnet.*).
   function toCurrentKey(k) { return (k.indexOf(LEGACY_PREFIX) === 0) ? (PREFIX + k.slice(LEGACY_PREFIX.length)) : k; }
+
+  function isCredentialKey(rawKey) {
+    const key = toCurrentKey(String(rawKey || ''));
+    if (key.indexOf('starnet.byok.') === 0) return !SAFE_BYOK_KEYS.has(key);
+    return SECRET_NAMESPACE_RE.test(key) || SECRET_SEGMENT_RE.test(key);
+  }
 
   function collectStore() {
     const out = {};
     try {
       for (let i = 0; i < localStorage.length; i++) {
         const k = localStorage.key(i);
-        if (k && k.indexOf(PREFIX) === 0) out[k] = localStorage.getItem(k);
+        if (k && k.indexOf(PREFIX) === 0 && !isCredentialKey(k)) out[k] = localStorage.getItem(k);
       }
     } catch (_) {}
     return out;
@@ -72,6 +88,8 @@ const Backup = (() => {
       schema: SCHEMA, version: VERSION, app: 'starnet',
       exportedAt: Date.now(),
       agentName: agentName(),
+      secretsIncluded: false,
+      secretPolicy: SECRET_POLICY,
       store: collectStore(),
       notebook: await snapshotNotebook()
     };
@@ -92,7 +110,8 @@ const Backup = (() => {
     const bundle = await build();
     const file = 'starnet-' + slug(bundle.agentName) + '-' + stamp(new Date()) + '.json';
     const ok = triggerDownload(file, JSON.stringify(bundle, null, 2));
-    return { ok, file, keys: Object.keys(bundle.store).length, notes: bundle.notebook ? bundle.notebook.length : 0 };
+    const records = Object.keys(bundle.store).length;
+    return { ok, file, records, keys: records, secretsIncluded: false, notes: bundle.notebook ? bundle.notebook.length : 0 };
   }
 
   // validate a parsed bundle WITHOUT mutating anything — callers decide whether to apply.
@@ -119,10 +138,11 @@ const Backup = (() => {
       for (const k in store) {
         if (!Object.prototype.hasOwnProperty.call(store, k) || typeof store[k] !== 'string') continue;
         if (k.indexOf(PREFIX) !== 0 && k.indexOf(LEGACY_PREFIX) !== 0) continue;   // ours (or a legacy ours) only
+        if (isCredentialKey(k)) continue;                                        // portable files never grant credential authority
         localStorage.setItem(toCurrentKey(k), store[k]); n++;                       // map skynet.* -> starnet.* on the way in
       }
     } catch (e) { return { ok: false, error: (e && e.message) || 'write failed' }; }
-    return { ok: true, keys: n, agentName: doc.agentName || agentName(), memories: Array.isArray(doc.notebook) ? doc.notebook.length : 0 };
+    return { ok: true, records: n, keys: n, agentName: doc.agentName || agentName(), memories: Array.isArray(doc.notebook) ? doc.notebook.length : 0 };
   }
 
   function readFileText(file) {
@@ -170,6 +190,6 @@ const Backup = (() => {
     return res;
   }
 
-  return { exportAll, importFile, applyBundle, validate, collectStore, build, SCHEMA, VERSION };
+  return { exportAll, importFile, applyBundle, validate, collectStore, build, isCredentialKey, SCHEMA, VERSION, SECRET_POLICY };
 })();
 if (typeof module !== 'undefined' && module.exports) module.exports = Backup;
