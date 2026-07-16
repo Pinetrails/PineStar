@@ -19,8 +19,19 @@ A.ok(/offerTryAgain\s*\(\s*\)/.test(stoppedBranch[1]), 'RUN STOPPED renders a re
 
 // Partial prose is real and remains visible, but the record is tagged so retry/reload can distinguish
 // it from a completed assistant turn without inventing backend state.
-A.ok(/ws\.history\.push\s*\(\s*\{[^}]*role:\s*'assistant'[^}]*stopped:\s*true/.test(stoppedBranch[1]),
-  'a stopped partial assistant turn is truthfully tagged in history');
+A.ok(/markStoppedTurn\s*\(\s*ws\s*,\s*acc\s*\)/.test(stoppedBranch[1]),
+  'the thrown-abort stop truthfully marks its partial assistant turn');
+A.ok(!/if\s*\(\s*acc\.trim\(\)\s*\)\s*markStoppedTurn/.test(stoppedBranch[1]),
+  'even a zero-token stop writes a durable stopped marker for reload recovery');
+
+// A normal completed stream envelope can also report endReason != done (max_iters, budget,
+// cancellation, refusal). Those cards render RUN STOPPED too and need the same recovery seam.
+const envelopeStop = /if\s*\(endReason\s*&&\s*endReason\s*!==\s*'done'\s*&&\s*!taskQuestion\)\s*\{([\s\S]*?)\n\s*\}\s*else\s+if\s*\(cutShort\)/.exec(src);
+A.ok(envelopeStop, 'chat.js has a normal-envelope RUN STOPPED branch');
+A.ok(/markStoppedTurn\s*\(\s*ws\s*,\s*replyText\s*\)/.test(envelopeStop[1]),
+  'normal-envelope RUN STOPPED marks its partial/empty tail for exact retry');
+A.ok(/offerTryAgain\s*\(\s*\)/.test(envelopeStop[1]),
+  'normal-envelope RUN STOPPED renders the same reachable Try again action');
 
 // Existing /retry semantics: drop the failed/stopped assistant tail, find the existing user turn,
 // and call send(..., {retry:true}) so there is exactly one new run and no duplicate user row.
@@ -32,8 +43,13 @@ A.ok(/send\s*\(\s*text\s*,\s*\{\s*retry:\s*true\s*\}\s*\)/.test(retryFn[1]),
   'Try again uses the existing no-duplicate retry send path');
 
 // Reload/switch reconstructs the same recovery affordance from durable history once the stream is idle.
-A.ok(/lastReal\s*&&\s*lastReal\.role\s*===\s*'assistant'\s*&&\s*\(lastReal\.error\s*\|\|\s*lastReal\.stopped\)\s*&&\s*!isBusy\(\)\)\s*offer/.test(src),
+A.ok(/lastReal\s*&&\s*lastReal\.role\s*===\s*'assistant'\s*&&\s*\(lastReal\.error\s*\|\|\s*lastReal\.stopped\)\s*&&\s*!isBusy\(\)[\s\S]{0,120}?offerTryAgain\s*\(\s*\)/.test(src),
   'a stopped trailing turn restores Try again after reload without offering it while busy');
+const renderStart = src.indexOf('function renderHistory');
+const stoppedMarker = src.indexOf('m.stopped', renderStart);
+const assistantRow = src.indexOf("const r = row('agent'", renderStart);
+A.ok(stoppedMarker > renderStart && stoppedMarker < assistantRow,
+  'renderHistory recognizes a zero-token stopped marker before skipping empty assistant prose');
 
 // The shared action itself remains guarded by retryLast's disabled-state rule.
 A.ok(/function\s+retryLast[\s\S]*?if\s*\(\s*!activeWs\s*\|\|\s*isBusy\(\)\s*\)\s*return/.test(src),
