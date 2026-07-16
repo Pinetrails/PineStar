@@ -111,6 +111,25 @@
       .map(freezeParam);
   }
 
+  // TASK BRIEF v2 — a recipe's declared MATERIAL decisions, settled by one tap at launch (or aimed at mid-run).
+  // dimension must be one of the taskbrief-policy decision dimensions — mirrored here because this browser module
+  // never requires sidecar code; the taskintent test pins the two lists together. Malformed entries drop silently
+  // (author error is never a crash); a recipe without valid intake simply has none and launches exactly as before.
+  const INTAKE_DIMENSIONS = { objective: 1, audience: 1, deliverable: 1, scope: 1, constraints: 1, sources: 1, acceptance: 1, safety: 1 };
+  function normIntake(arr) {
+    return Object.freeze((Array.isArray(arr) ? arr : []).map(e => {
+      if (!e || typeof e !== 'object') return null;
+      const dimension = String(e.dimension || '').toLowerCase();
+      const question = String(e.question || '').replace(/\s+/g, ' ').trim().slice(0, 160);
+      const options = (Array.isArray(e.options) ? e.options : []).map(x => String(x == null ? '' : x).trim().slice(0, 72)).filter(Boolean).slice(0, 3);
+      const recommended = String(e.recommended || '').trim().slice(0, 72);
+      const reason = String(e.reason || '').replace(/\s+/g, ' ').trim().slice(0, 160);
+      if (!INTAKE_DIMENSIONS[dimension] || !question || options.length < 2) return null;
+      if (!recommended || !options.some(o => o.toLowerCase() === recommended.toLowerCase())) return null;
+      return Object.freeze({ dimension, question, options: Object.freeze(options), recommended, reason });
+    }).filter(Boolean).slice(0, 3));
+  }
+
   // humanize a param key into a form label: snake_case / camelCase -> Title-cased words ('look_back' -> 'Look Back').
   // (Tokens are \w+ — see the fillTask/paramsFromTemplate regex — so hyphens never reach here.)
   function humanize(key) {
@@ -154,6 +173,7 @@
       params: Object.freeze(normParams(r.params)),    // the param form: [{ key, label, placeholder, required, default }]
       task: r.task || '',                             // the directive TEMPLATE; {key} tokens get param values
       // ---- schema v2 (all ADVISORY; never gate execution) ----
+      intake: normIntake(r.intake),                   // TASK BRIEF v2: material decisions offered as one-tap chips at launch
       gear: Object.freeze(normGear(r.gear)),          // capability objectTypes this use case draws on (WANT badge)
       skills: Object.freeze(normSkills(r.skills)),    // bundled-skill references (pairs-with hints)
       cadence: normCadence(r.cadence),                // suggested cadence id, or null (one-shot by nature)
@@ -310,7 +330,18 @@
       out += literal + val;
     }
     out += tmpl.slice(cursor);
-    return out.trim();
+    out = out.trim();
+    // TASK BRIEF v2: launch-time intake decisions ride the directive ITSELF — never a new run-body field
+    // (handleRun whitelists body fields). values.__intake maps dimension -> the tapped answer; a skipped
+    // decision says nothing (the agent resolves or asks per the task-context doctrine).
+    const intake = v.__intake && typeof v.__intake === 'object' ? v.__intake : null;
+    if (out && intake && r.intake && r.intake.length) {
+      const lines = r.intake
+        .filter(e => typeof intake[e.dimension] === 'string' && intake[e.dimension].trim())
+        .map(e => '- ' + e.dimension + ': ' + intake[e.dimension].trim().slice(0, 72));
+      if (lines.length) out += '\n\nDecisions (chosen at launch — treat these as answered; do not re-ask them):\n' + lines.join('\n');
+    }
+    return out;
   }
 
   // build a DRAFT custom recipe from a launched one (P3 "save what you keep asking for" seam). Returns a plain

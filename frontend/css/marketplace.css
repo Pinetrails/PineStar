@@ -443,6 +443,18 @@ button.mkt-archive-head:focus-visible { outline: 2px solid var(--gold); outline-
 .mkt-req { color: var(--bad); }   /* --bad IS the emphasis; no synthesized bold (VT323 single-weight) */
 .mkt-opt { color: var(--ph-dim); font-size: 10px; letter-spacing: .5px; }
 .mkt-in.mkt-bad { border-color: var(--bad); box-shadow: 0 0 8px rgba(255,92,77,.4); }
+/* TASK BRIEF v2 — launch-time intake: the recipe's material decisions as one-tap chip rows. The recommended
+   chip carries the gold suggested treatment (--gold-rgb, never a literal amber); "agent decides" stays plain. */
+.mkt-intake { display: flex; flex-direction: column; gap: 4px; margin: 2px 0 4px; }
+.mkt-intake-opts { display: flex; flex-wrap: wrap; gap: 6px; }
+.mkt-intake-opt { font: inherit; font-size: 13px; letter-spacing: .4px; cursor: pointer; color: var(--ph);
+  background: transparent; border: 1px solid var(--ph-dim); border-radius: 4px; padding: 4px 10px;
+  transition: color .1s, border-color .1s, background-color .1s, box-shadow .1s; }
+.mkt-intake-opt:hover { color: var(--ph-bright); border-color: var(--ph); }
+.mkt-intake-opt.sel { color: var(--ink); background: var(--ph); border-color: var(--ph); text-shadow: none; }
+.mkt-intake-opt.rec:not(.sel) { color: var(--gold); border-color: var(--gold); }
+.mkt-intake-opt.rec.sel { background: var(--gold); border-color: var(--gold); box-shadow: 0 0 9px rgba(var(--gold-rgb), .35); }
+.mkt-intake-skip { font-size: 11.5px; border-style: dashed; color: var(--ph-dim); }
 .mkt-launch-note { color: var(--ph-dim); font-size: 11.5px; }
 .mkt-launch-note b { color: var(--ph-bright); }
 .mkt-r-tokens { font-size: 11.5px; color: var(--ph-dim); letter-spacing: .3px; min-height: 18px; margin-top: -4px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }

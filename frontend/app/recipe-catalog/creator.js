@@ -114,6 +114,9 @@
       blurb: 'Five subject lines with a pick, best-first sequencing, a personal take per item — the reason they subscribe.',
       tags: { general: 0.8, research: 0.2 },
       params: [{ key: 'material', label: 'Notes / links', placeholder: 'paste what goes in this issue — or a file path' }],
+      intake: [
+        { dimension: 'constraints', question: 'What length is this issue?', options: ['short and punchy', 'standard issue', 'deep dive'], recommended: 'standard issue', reason: 'length changes the sequencing and how many items make the cut' }
+      ],
       task: 'Draft a newsletter issue from this material:\n\n{material}\n\nSubject line first — write five options and mark your pick, because the subject is half the open rate. Open with one warm human line that earns the scroll. Sequence the pieces best-first, each with a one-line personal take — the take is why they subscribe to ME and not a feed. Close with one clear next thing: a question, a link, a promise. Draft only; I edit before anything goes out.',
       category: 'creator', gear: [], skills: ['humanizer', 'announcement-kit'], cadence: null,
       source: 'builtin', forkedFrom: null

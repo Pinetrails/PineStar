@@ -7031,8 +7031,12 @@ async function runOnce(o) {
   } else if (taskBrief) {
     let goal = null; try { goal = commanderGoals.get() || null; } catch (_) {}
     let patterns = []; try { patterns = taskBriefStore.patterns(5); } catch (_) {}
+    // TASK BRIEF v2: a recipe-launched run carries its recipe's declared material decisions (normalized by
+    // recipes.js — the same data the launch chips rendered), so a mid-run question arrives pre-aimed.
+    let recipeIntake = [];
+    try { const rr = o.recipeId ? Recipes.get(String(o.recipeId)) : null; if (rr && Array.isArray(rr.intake)) recipeIntake = rr.intake; } catch (_) {}
     taskContextBlock = CommanderContext.compose({
-      brief: taskBrief, dossier: commanderDossier.get(), goal, patterns, existingSystem: system || ''
+      brief: taskBrief, dossier: commanderDossier.get(), goal, patterns, recipeIntake, existingSystem: system || ''
     });
   }
 

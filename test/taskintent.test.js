@@ -203,5 +203,25 @@ A.eq(Policy.canMutate({ status: 'executing' }, { scope: 'execute' }).ok, true, '
   A.ok(/briefFor/.test(hubSrc) && /suggested: ' \+ q\.recommended/.test(hubSrc), 'the channel fallback carries the stored recommendation');
   A.ok(/briefFor: \(key\) => taskBriefStore\.active\(key\)/.test(indexSrc), 'both hub compositions read recommendations from the durable store');
 
+  // TASK BRIEF v2 — recipe intake: declared material decisions, settled at launch or aimed mid-run.
+  const Recipes = require('../frontend/app/recipes.js');
+  for (const r of Recipes.list()) {
+    for (const e of (r.intake || [])) {
+      A.ok(Policy.DIMENSIONS.has(e.dimension), 'recipe intake dimension is a policy dimension: ' + r.id + '/' + e.dimension);
+      A.ok(e.options.some(o => o.toLowerCase() === e.recommended.toLowerCase()), 'recipe intake recommended is one of its options: ' + r.id);
+    }
+  }
+  const dr = Recipes.get('deep-research');
+  A.eq((dr.intake || []).length, 2, 'the flagship intake survived catalog normalization');
+  const filled = Recipes.fillTask('deep-research', { topic: 'X', __intake: { deliverable: 'tight brief' } });
+  A.ok(/Decisions \(chosen at launch/.test(filled) && /- deliverable: tight brief/.test(filled), 'launch-tapped intake decisions ride the directive itself');
+  A.ok(!/Decisions \(chosen at launch/.test(Recipes.fillTask('deep-research', { topic: 'X' })), 'no tapped decisions -> no decisions block');
+  const cxIntake = CommanderContext.compose({ recipeIntake: dr.intake });
+  A.ok(/<recipe_intake provenance="recipe-declared">/.test(cxIntake) && /suggested: tight brief/.test(cxIntake), 'composer renders the declared decisions with their suggested defaults');
+  A.ok(CommanderContext.compose({}).indexOf('recipe_intake') < 0, 'no recipe -> no intake block');
+  const mktSrc = fs.readFileSync(path.join(__dirname, '../frontend/app/marketplace.js'), 'utf8');
+  A.ok(/values\.__intake = intake/.test(mktSrc) && /mkt-intake-opt/.test(mktSrc), 'the launch form collects one-tap intake decisions');
+  A.ok(/recipeIntake/.test(indexSrc) && /Recipes\.get\(String\(o\.recipeId\)\)/.test(indexSrc), 'a recipe-launched run injects its declared intake');
+
   A.report('taskintent.test');
 })().catch(e => { console.error(e); process.exitCode = 1; });
