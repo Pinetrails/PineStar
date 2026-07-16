@@ -246,6 +246,24 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     A.eq(models.status, 200, 'GET /api/models/openrouter -> 200');
     A.ok(Array.isArray(models.body.models), 'provider model route returns a models array');
 
+    // PU-07: provider probes distinguish a configured endpoint from a reachable/catalog-backed endpoint.
+    const offlineProbe = await j('POST', '/api/providers/probe', { provider: 'custom', baseUrl: 'http://127.0.0.1:65530/v1' });
+    A.eq(offlineProbe.status, 200, 'POST /api/providers/probe returns a fact payload even when the endpoint is offline');
+    A.eq(offlineProbe.body.reachable, false, 'offline custom endpoint is not reachable');
+    A.eq(offlineProbe.body.catalogAvailable, false, 'offline custom endpoint has no proven catalog');
+    const probeServer = http.createServer((rq, rs) => {
+      rs.writeHead(200, { 'Content-Type': 'application/json' });
+      rs.end(JSON.stringify({ data: [{ id: 'local/proven-model' }] }));
+    });
+    await new Promise(resolve => probeServer.listen(0, HOST, resolve));
+    try {
+      const liveBase = 'http://' + HOST + ':' + probeServer.address().port + '/v1';
+      const liveProbe = await j('POST', '/api/providers/probe', { provider: 'custom', baseUrl: liveBase });
+      A.eq(liveProbe.body.reachable, true, 'reachable custom endpoint is proven by a real model-catalog round-trip');
+      A.eq(liveProbe.body.catalogAvailable, true, 'reachable custom endpoint reports its real non-empty catalog');
+      A.eq(liveProbe.body.credentialVerified, true, 'keyless custom endpoint needs no fabricated credential proof');
+    } finally { await new Promise(resolve => probeServer.close(resolve)); }
+
     const pushOpenAi = await fetch(B + '/api/key', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Skynet-Token': IPC_TOKEN },
@@ -292,6 +310,24 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     A.eq(!!(customProvider && customProvider.configured), true, 'Custom provider is configured after scoped base URL push');
     A.ok(JSON.stringify(configuredProviders.body).indexOf('sk-provider-http-test-secret') < 0, 'provider list never leaks the pushed secret');
     A.ok(JSON.stringify(configuredProviders.body).indexOf('xai-provider-http-test-secret') < 0, 'provider list never leaks the pushed xAI secret');
+
+    // PU-06: Signal is tokenless. Removing it destroys endpoint/account configuration, not a fictional token.
+    const signalConnect = await j('POST', '/api/channels/signal/connect', {
+      endpoint: 'http://127.0.0.1:65529', account: '+15551234567', model: 'local/proven-model',
+      provider: 'custom', baseUrl: 'http://127.0.0.1:65530/v1', agentId: 'agent', agentName: 'Ultron'
+    });
+    A.eq(signalConnect.status, 200, 'Signal accepts endpoint/account configuration against an offline bridge');
+    const signalSaved = await j('GET', '/api/channels/signal/status');
+    A.eq(signalSaved.body.configured, true, 'Signal status is configured from saved endpoint/account');
+    const signalRemove = await j('POST', '/api/channels/signal/disconnect', { purge: true });
+    A.eq(signalRemove.body.removedConfiguration, true, 'Signal removal is read-back-proven');
+    A.eq(signalRemove.body.purged, false, 'Signal removal never claims token purging');
+    const signalGone = await j('GET', '/api/channels/signal/status');
+    A.eq(signalGone.body.configured, false, 'Signal becomes unconfigured immediately after removal');
+    A.eq(signalGone.body.endpoint, '', 'removed Signal status exposes no stale endpoint');
+    A.eq(signalGone.body.account, '', 'removed Signal status exposes no stale account');
+    const signalDisk = JSON.parse(fs.readFileSync(path.join(ws, 'channels', 'secrets.json'), 'utf8'));
+    A.eq(Object.prototype.hasOwnProperty.call(signalDisk, 'signal'), false, 'Signal record is absent from durable channel configuration');
     const sensitiveGets = [
       ['/api/connectors', 'connectors'],
       ['/api/cron', 'cron'],
