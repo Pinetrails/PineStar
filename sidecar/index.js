@@ -124,6 +124,7 @@ const { makeKeyedMutex, readJsonResilient, writeJsonResilient, makeDurableJsonSt
 const { makeWidgetTools } = require('./tools/builtin/widgets.js'); // WIDGET RAILS Phase 2: widget.set — agent-fed readouts for the chrome rails (polled via GET /api/widgets)
 const { makeMemoryStore, resetAgentMemory, restoreDeclined } = require('./memory-store.js'); // durable notebook:/todo:/declined: sibling stores
 const { makeWorkshopStore } = require('./workshop-store.js'); // durable per-agent away-workshop grant + backlog + discard denylist
+const { makeDeliverableStore } = require('./deliverable-store.js'); // durable kept/discarded/failed Workshop lifecycle index
 const { makeQuestStore } = require('./quest-store.js'); // QUEST V2 §A: station-wide harness-owned quest ledger (contract-enforced)
 const { makeQuestTools } = require('./tools/builtin/quests.js'); // QUEST V2 §B: quest.update — the agent's read/write reach into the ledger
 const { questBlock, withQuests } = require('./questinject.js'); // QUEST V2 §B: fold an agent's OPEN quests into its system prompt (pure, dossierinject idiom)
@@ -1062,6 +1063,11 @@ const workshopStore = makeWorkshopStore({
   onRecover: (key, file) => console.warn('[workshop] recovered ' + file + ' from .bak last-known-good after a torn/corrupt main.'),
   onCorrupt: (key, file) => quarantineCorrupt(file, 'workshop'),
   warn: (...args) => console.warn.apply(console, args)
+});
+const deliverableStore = makeDeliverableStore({
+  fs: fs, path: path, workspaces: WORKSPACES, writeDurable: writeFileDurable,
+  onRecover: (key, file) => console.warn('[deliverables] recovered ' + file + ' from .bak last-known-good.'),
+  onCorrupt: (key, file) => quarantineCorrupt(file, 'deliverables')
 });
 function workshopOf(agentId) { try { return workshopStore.hasGrant(String(agentId || '')); } catch (_) { return false; } }
 
@@ -4457,6 +4463,10 @@ function dispatchRoute(req, res) {
   if (req.method === 'POST' && req.url === '/api/workshop/decide') return handleWorkshopDecide(req, res);
   if (req.method === 'POST' && req.url === '/api/workshop/remove') return handleWorkshopRemove(req, res);
   if (req.method === 'POST' && req.url === '/api/workshop/shift') return handleWorkshopShiftNow(req, res);
+  if (req.method === 'GET' && req.url.split('?')[0] === '/api/deliverables') return handleDeliverablesList(req, res);
+  if (req.method === 'POST' && req.url === '/api/deliverables/cleanup-preview') return handleDeliverablesCleanupPreview(req, res);
+  if (req.method === 'POST' && req.url === '/api/deliverables/cleanup') return handleDeliverablesCleanup(req, res);
+  if (req.method === 'POST' && req.url === '/api/deliverables/cleanup-undo') return handleDeliverablesCleanupUndo(req, res);
   // ---- QUEST V2 §A: the harness-owned quest ledger (frontend polls /api/quests on the existing 1s tick) ----
   if (req.method === 'GET' && req.url.split('?')[0] === '/api/quests') return handleQuestsList(req, res);
   if (req.method === 'POST' && req.url === '/api/quests/mint') return handleQuestsMint(req, res);
@@ -5906,6 +5916,11 @@ async function runWorkshopShift(agentId, opts) {
   if (!manifest) {
     // failed build → count the attempt; at the cap the item PARKS so a doomed item can't burn a run every shift.
     const rel = await workshopStore.releaseClaim(id, runId, { failed: true });
+    if (rel && rel.parked) {
+      const failedRow = lifecycleRow('failed', id, runId, rel.parked, null);
+      failedRow.id = 'workshop-failed:' + id + ':' + rel.parked.id;
+      try { await deliverableStore.record(failedRow, Date.now()); } catch (_) {}
+    }
     if (rel && rel.parked) console.warn('[workshop] parked "' + (rel.parked.title || rel.parked.id) + '" for ' + id + ' after ' + rel.parked.attempts + ' failed builds — it will not be retried; re-queue it to try again.');
     noteShift({ reason: threw ? 'run-failed' : 'no-manifest', runId: runId, title: item.title, parkedTitle: (rel && rel.parked) ? (rel.parked.title || rel.parked.id) : undefined });
     return { fired: true, runId: runId, reason: threw ? 'run-failed' : 'no-manifest', parked: !!(rel && rel.parked) };
@@ -6102,6 +6117,117 @@ async function handleWorkshopQueue(req, res) {
   json(200, { ok: true, item: r.item, reason: 'added' });
 }
 
+// DELIVERABLE LIBRARY: a read model over the two existing byte authorities (runs.jsonl artifacts and the
+// Workshop backlog/manifests) plus the small lifecycle index that preserves keep/discard after backlog retirement.
+// It never invents files or reads unproved paths. Preview hints are an allowlist consumed by the renderer.
+const DELIVERABLE_PREVIEW_MAX = 512 * 1024;
+const DELIVERABLE_IMAGE_MAX = 8 * 1024 * 1024;
+function deliverableFile(agentId, runId, f, workshop) {
+  const p = String((f && f.path) || '');
+  const bytes = Number.isFinite(f && f.bytes) && f.bytes >= 0 ? Math.floor(f.bytes) : null;
+  const ext = path.extname(p).toLowerCase();
+  let preview = null;
+  if ((ext === '.md' || ext === '.markdown') && bytes !== null && bytes <= DELIVERABLE_PREVIEW_MAX) preview = 'markdown';
+  else if (ext === '.csv' && bytes !== null && bytes <= DELIVERABLE_PREVIEW_MAX) preview = 'csv';
+  else if (['.png', '.jpg', '.jpeg', '.gif', '.webp'].indexOf(ext) >= 0 && bytes !== null && bytes <= DELIVERABLE_IMAGE_MAX) preview = 'image';
+  const rel = workshop ? ('workshop/' + runId + '/' + p) : p;
+  const openUrl = workshop && ext === '.html'
+    ? '/workshop-run/' + encodeURIComponent(agentId) + '/' + encodeURIComponent(runId) + '/' + p.split('/').map(encodeURIComponent).join('/')
+    : '/api/file?agent=' + encodeURIComponent(agentId) + '&path=' + encodeURIComponent(rel);
+  return { path: p, bytes, preview, openUrl, sandboxed: workshop && ext === '.html' };
+}
+function deliverableSize(files) {
+  const known = files.filter(f => f.bytes !== null);
+  return known.length ? known.reduce((n, f) => n + f.bytes, 0) : null;
+}
+function workshopAgentIds() {
+  const ids = new Set(['agent']);
+  for (const id of agentRoster.keys()) ids.add(id);
+  try {
+    for (const name of fs.readdirSync(WORKSPACES)) {
+      const m = String(name).match(/^([A-Za-z0-9_-]{1,40})\.workshop\.json$/); if (m) ids.add(m[1]);
+    }
+  } catch (_) {}
+  return [...ids];
+}
+function lifecycleRow(status, agentId, runId, item, man) {
+  item = item || {}; man = man || {};
+  return {
+    id: 'workshop:' + agentId + ':' + runId, agentId, runId,
+    title: man.title || item.title || 'Workshop deliverable', source: item.source || 'workshop', status,
+    kind: man.kind || 'files', summary: man.summary || '', files: man.files || [], createdAt: item.ts || Date.now()
+  };
+}
+async function deliverableRows() {
+  const rows = [], seen = new Set();
+  for (const saved of deliverableStore.list()) {
+    const available = saved.status === 'kept';
+    const files = saved.files.map(f => available ? deliverableFile(saved.agentId, saved.runId, f, true) : { path: f.path, bytes: Number.isFinite(f.bytes) ? f.bytes : null, preview: null, openUrl: null, sandboxed: false });
+    rows.push(Object.assign({}, saved, { files, size: deliverableSize(files), actions: { open: available && files.length > 0, keep: false, discard: false } }));
+    seen.add(saved.id);
+  }
+  for (const agentId of workshopAgentIds()) {
+    let rec; try { rec = workshopStore.read(agentId); } catch (_) { continue; }
+    for (const item of rec.backlog) {
+      if (item.builtRunId) {
+        const id = 'workshop:' + agentId + ':' + item.builtRunId; if (seen.has(id)) continue;
+        const man = await validateWorkshopManifest(agentId, item.builtRunId); if (!man) continue;
+        const files = man.files.map(f => deliverableFile(agentId, item.builtRunId, f, true));
+        rows.push({ id, agentId, runId: item.builtRunId, title: man.title, source: item.source || 'workshop', status: 'pending', kind: man.kind || 'files', summary: man.summary || '', files, size: deliverableSize(files), createdAt: item.ts || 0, updatedAt: item.ts || 0, actions: { open: files.length > 0, keep: true, discard: true } });
+        seen.add(id);
+      } else if ((Number(item.attempts) || 0) >= 2) {
+        const id = 'workshop-failed:' + agentId + ':' + item.id; if (seen.has(id)) continue;
+        rows.push({ id, agentId, runId: '', title: item.title || 'Workshop build', source: item.source || 'workshop', status: 'failed', kind: 'files', summary: 'The Workshop could not produce a valid deliverable manifest after two attempts.', files: [], size: null, createdAt: item.ts || 0, updatedAt: item.ts || 0, actions: { open: false, keep: false, discard: false } });
+      }
+    }
+  }
+  for (const run of runStore.list(null, { limit: 1000 })) {
+    if (/^workshop-/.test(String(run.streamId || ''))) continue;
+    (run.artifacts || []).forEach((a, i) => {
+      const p = a.path || '';
+      const files = p ? [deliverableFile(run.agentId, run.runId, a, false)] : [];
+      rows.push({ id: 'run:' + run.runId + ':' + i, agentId: run.agentId, runId: run.runId, title: path.basename(p || a.target || (run.title + ' output')), source: 'run', status: run.reason === 'done' ? 'produced' : 'failed', kind: a.kind, summary: run.title || '', files, target: a.target || '', size: deliverableSize(files), createdAt: run.ts || 0, updatedAt: run.ts || 0, actions: { open: files.length > 0, keep: false, discard: false } });
+    });
+  }
+  return rows.sort((a, b) => (b.updatedAt - a.updatedAt) || String(a.id).localeCompare(String(b.id)));
+}
+async function handleDeliverablesList(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  const u = new URL(req.url, 'http://x');
+  const query = String(u.searchParams.get('query') || '').trim().toLowerCase().slice(0, 120);
+  const status = String(u.searchParams.get('status') || '').trim();
+  const kind = String(u.searchParams.get('kind') || '').trim();
+  try {
+    let items = await deliverableRows();
+    if (status) items = items.filter(r => r.status === status);
+    if (kind) items = items.filter(r => r.kind === kind);
+    if (query) items = items.filter(r => [r.title, r.summary, r.source, r.agentId, r.runId].join(' ').toLowerCase().indexOf(query) >= 0);
+    json(200, { ok: true, items: items.slice(0, 500), total: items.length, previewLimits: { markdown: DELIVERABLE_PREVIEW_MAX, csv: DELIVERABLE_PREVIEW_MAX, image: DELIVERABLE_IMAGE_MAX } });
+  } catch (e) { json(500, { ok: false, error: 'could not read the deliverable library' }); }
+}
+async function handleDeliverablesCleanupPreview(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 4096)) || {}; } catch (_) { return json(400, { ok: false, error: 'bad request' }); }
+  const p = deliverableStore.previewCleanup({ statuses: body.statuses });
+  const all = await deliverableRows(); const targetIds = new Set(p.targets.map(r => r.id));
+  json(200, { ok: true, statuses: p.statuses, fingerprint: p.fingerprint, targets: p.targets, protected: all.filter(r => !targetIds.has(r.id)), note: 'Cleanup removes library metadata only; deliverable files are never deleted by this bulk action.' });
+}
+async function handleDeliverablesCleanup(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 4096)) || {}; } catch (_) { return json(400, { ok: false, error: 'bad request' }); }
+  const token = crypto.randomUUID();
+  const out = await deliverableStore.applyCleanup({ statuses: body.statuses, fingerprint: body.fingerprint }, token, Date.now());
+  if (!out.ok) return json(409, { ok: false, error: 'The library changed after preview. Preview cleanup again.', reason: out.reason });
+  json(200, Object.assign({ metadataOnly: true }, out));
+}
+async function handleDeliverablesCleanupUndo(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 4096)) || {}; } catch (_) { return json(400, { ok: false, error: 'bad request' }); }
+  const out = await deliverableStore.undoCleanup(String(body.undoToken || ''), Date.now());
+  if (!out.ok) return json(404, { ok: false, error: 'That cleanup can no longer be undone.' });
+  json(200, out);
+}
+
 // GET /api/workshop/backlog?agent=<id> — the raw queued/building/built items for an agent (the "what's lined up" view).
 async function handleWorkshopBacklog(req, res) {
   const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
@@ -6259,6 +6385,9 @@ async function handleWorkshopDecide(req, res) {
   }
 
   if (decision === 'discard') {
+    const discardMan = await validateWorkshopManifest(agentId, runId);
+    try { await deliverableStore.record(lifecycleRow('discarded', agentId, runId, item, discardMan), Date.now()); }
+    catch (_) { return json(500, { ok: false, error: 'could not record the discard, so no files were removed' }); }
     // wipe the run dir (jail-checked) and denylist the backlogId so it isn't silently rebuilt.
     try { const { abs } = await fsJail.resolveInside(agentId, relDir); await fsp.rm(abs, { recursive: true, force: true }); } catch (_) {}
     if (item) { try { await workshopStore.discard(agentId, item.id); } catch (_) {} }
@@ -6283,6 +6412,8 @@ async function handleWorkshopDecide(req, res) {
     catch (e) { applied = { ok: false, error: 'apply crashed: ' + ((e && e.message) || e) }; }
     if (applied.ok) {
       if (item) { try { await workshopStore.complete(agentId, item.id); } catch (_) {} }   // decided; keep the archive
+      try { await deliverableStore.record(lifecycleRow('kept', agentId, runId, item, man), Date.now()); }
+      catch (_) { return json(500, { ok: false, error: 'the patch landed, but its library record could not be saved', applied: true, branch: applied.branch, commit: applied.commit }); }
       nightshiftDecideLearn(agentId, runId, true);   // approve → learn + thread writeback (it genuinely landed)
       try { chanEmit('workshop.decided', { agentId, runId, decision: 'keep', branch: applied.branch, root: applied.root }); } catch (_) {}
       return json(200, { ok: true, decision: 'keep', applied: true, branch: applied.branch, commit: applied.commit, root: applied.root });
@@ -6324,6 +6455,8 @@ async function handleWorkshopDecide(req, res) {
   // kept = decided: retire the backlog item so /pending never re-lists (and the card never resurrects) a kept
   // build. The run dir stays in the workshop as an archive; unlike discard, the title is NOT denylisted.
   if (item) { try { await workshopStore.complete(agentId, item.id); } catch (_) {} }
+  try { await deliverableStore.record(lifecycleRow('kept', agentId, runId, item, man), Date.now()); }
+  catch (_) { return json(500, { ok: false, error: 'the files were copied, but their library record could not be saved', destPath: destPath, copied: copied }); }
   // Keep never launches Explorer/Finder. A loopback API token or renderer IPC
   // message is not proof of a fresh human gesture; return the path for manual use.
   const opened = false;
