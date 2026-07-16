@@ -960,6 +960,35 @@ const Chat = (() => {
   }
   function clearEmptyState() { const e = log && log.querySelector('.cmsg-empty'); if (e) e.remove(); }
   // first-run state: an empty + idle + non-interview stream shows a single dim hint instead of a black void.
+  // gather the HONEST signals the starter engine ranks on: catalog, real launch history, whether the
+  // station has any prior life, and the local clock. Every read fails open — a missing store just means
+  // fewer signals, never a crash (the engine degrades to the classic orientation set).
+  function pickStarters() {
+    const recipes = (typeof Recipes !== 'undefined' && Recipes.list) ? (Recipes.list() || []) : [];
+    let recent = [], valuesOf = () => null;
+    if (typeof LaunchMemory !== 'undefined' && LaunchMemory.recent) {
+      try { recent = LaunchMemory.recent(8) || []; valuesOf = id => LaunchMemory.get(id); } catch (_) {}
+    }
+    // returning = any OTHER session ever had a real row, or anything was ever launched from the catalog.
+    // (maybeEmptyState only renders when the ACTIVE session is empty, so it can't vouch for itself.)
+    let returning = recent.length > 0;
+    try {
+      if (!returning && typeof Workstreams !== 'undefined' && Workstreams.list) {
+        returning = (Workstreams.list() || []).some(w => w && w !== activeWs && w.history && w.history.length > 0);
+      }
+    } catch (_) {}
+    const now = new Date();
+    const sig = { recipes, recent, valuesOf, returning, hour: now.getHours(), day: Math.floor(now.getTime() / 86400000) };
+    if (typeof Starters !== 'undefined' && Starters.pick) {
+      try { const out = Starters.pick(sig); if (out && out.length) return out; } catch (_) {}
+    }
+    // engine missing/hiccuped → the classic orientation set, verbatim.
+    const fallback = [{ label: 'what can you do here', send: 'What can you do here? Give me a short tour of what you can actually do for me.' }];
+    if (recipes[0]) fallback.push({ label: String(recipes[0].name || recipes[0].id), recipe: recipes[0] });
+    fallback.push({ label: 'brief me on this station', send: 'Brief me on this station — what is around me and what I can do from here.' });
+    return fallback;
+  }
+
   function maybeEmptyState() {
     if (!log || interview) return;
     if (activeWs && activeWs.history && activeWs.history.length) return;
@@ -971,20 +1000,19 @@ const Chat = (() => {
     const line = document.createElement('div'); line.className = 'cmsg-empty-line';
     line.textContent = 'COMMS online. Type a task or a question to ' + name + '.';
     d.appendChild(line);
-    // STARTER CHIPS — a couple of tappable openers so the first prompt isn't a blank void. Sandbox tone,
+    // STARTER CHIPS — tappable openers so the first prompt isn't a blank void. Sandbox tone,
     // eerie-not-cute, no exclamation marks. A chip fills the composer and sends; a recipe fills its directive
     // (blanks left for the Commander to complete) instead of firing blind. Children of .cmsg-empty, so any real
     // row (clearEmptyState) retires them with the hint.
-    const starters = [{ label: 'what can you do here', send: 'What can you do here? Give me a short tour of what you can actually do for me.' }];
-    const recipe = (typeof Recipes !== 'undefined' && Recipes.list) ? (Recipes.list()[0] || null) : null;
-    if (recipe) starters.push({ label: String(recipe.name || recipe.id), recipe: recipe });
-    starters.push({ label: 'brief me on this station', send: 'Brief me on this station — what is around me and what I can do from here.' });
+    // WHICH chips is the Starters engine's call (starters.js): fresh station → the orientation set;
+    // returning Commander → their usual recipe (prefilled from LaunchMemory), a discovery pick, a pitch ask.
+    const starters = pickStarters();
     const chips = document.createElement('div'); chips.className = 'cmsg-empty-chips';
     for (const st of starters.slice(0, 3)) {
       const b = document.createElement('button'); b.type = 'button'; b.className = 'choice cmsg-starter'; b.textContent = st.label;
       b.addEventListener('click', () => {
         if (typeof SFX !== 'undefined' && SFX.click) SFX.click();
-        if (st.recipe) { insertRecipe(st.recipe); return; }   // fill the directive to edit, don't auto-fire
+        if (st.recipe) { insertRecipe(st.recipe, st.values); return; }   // fill the directive to edit, don't auto-fire
         if (input) { input.value = st.send; autoGrowInput(); }
         submitComposer();
       });
@@ -4639,11 +4667,15 @@ const Chat = (() => {
   }
   // drop a recipe's directive into the input: apply each OPTIONAL param's default, but leave REQUIRED blanks
   // visible as {tokens} so the Commander can see what to fill — and pre-select the first one to type over.
-  function insertRecipe(r) {
+  function insertRecipe(r, values) {
     if (!input) return;
     let directive = (r && r.task) || (r && r.name) || '';
     for (const p of (r && r.params) || []) {
-      if (p && p.key && p.default != null && p.default !== '') directive = directive.split('{' + p.key + '}').join(p.default);
+      if (!p || !p.key) continue;
+      // last-used inputs (confirm-by-sight: they land visibly in the composer) beat catalog defaults.
+      const remembered = values && typeof values[p.key] === 'string' && values[p.key].trim() ? values[p.key] : null;
+      const v = remembered != null ? remembered : ((p.default != null && p.default !== '') ? p.default : null);
+      if (v != null) directive = directive.split('{' + p.key + '}').join(v);
     }
     input.value = directive; input.focus();
     const m = /\{[^}]+\}/.exec(directive);   // select the first remaining blank to type over (else cursor at end)
