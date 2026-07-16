@@ -129,6 +129,7 @@ test/runstore.test.js
 test/autonomy-ledger.test.js
 test/artifacts.test.js
 test/deliverable-store.test.js
+test/deliverables-ui.test.js
 test/work-recap.test.js
 test/qa-ledger.test.js
 test/qa-guardian.test.js
