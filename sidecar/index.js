@@ -2305,7 +2305,8 @@ function saveConnectorConfigs() {
   try {
     fs.mkdirSync(CONNECTORS_DIR, { recursive: true });
     saveResilient(CONNECTORS_FILE, { version: 1, connectors: connectorConfigs });   // fsync-durable + .bak last-known-good
-  } catch (e) { console.warn('[connectors] persist failed:', (e && e.message) || e); }
+    return true;
+  } catch (e) { console.warn('[connectors] persist failed:', (e && e.message) || e); return false; }
 }
 const connectors = makeConnectorManager({
   makeTransport: (cfg) => cfg && cfg.transport === 'stdio' ? makeStdioTransport(cfg) : makeHttpTransport(cfg),
@@ -5177,6 +5178,19 @@ async function handleConnectorUpsert(req, res) {
   const command = String(body.command || (transport === 'stdio' ? (prev.command || '') : '')).trim();
   if (transport === 'http' && !url) return json(400, { error: 'a server URL is required' });
   if (transport === 'stdio' && !command) return json(400, { error: 'a stdio command is required' });
+  // PL-06: scheme/URL syntax is permanent INPUT validity, not connector reachability. Validate it before
+  // constructing cfg (which carries the bearer) and before saveConnectorConfigs(), so a failed Connect click
+  // cannot silently persist an enabled file:// record + secret and feed it into the reconnect scheduler.
+  if (transport === 'http') {
+    let parsed = null;
+    try { parsed = new URL(url); } catch (_) {}
+    if (!parsed || (parsed.protocol !== 'http:' && parsed.protocol !== 'https:')) {
+      return json(400, {
+        ok: false, saved: false, connected: false, code: 'INVALID_URL',
+        error: 'connector URL must start with http:// or https://'
+      });
+    }
+  }
   let args = Array.isArray(prev.args) ? prev.args.slice() : [];
   if ('args' in body) {
     if (!Array.isArray(body.args)) return json(400, { error: 'stdio args must be an array' });
@@ -5223,10 +5237,22 @@ async function handleConnectorUpsert(req, res) {
   // it would silently strip auth and self-destruct a signed-in connector. Route through configureConnectorCfg so an
   // oauth connector re-warms with a fresh tokenProvider; non-oauth connectors pass straight through unchanged.
   if (prev.oauth || body.oauth) cfg.oauth = true;
+  const priorConfigs = connectorConfigs;
   connectorConfigs = connectorConfigs.filter(c => c.id !== id).concat([cfg]);
-  saveConnectorConfigs();
+  if (!saveConnectorConfigs()) {
+    connectorConfigs = priorConfigs;
+    return json(500, { ok: false, saved: false, connected: false, error: 'connector configuration could not be saved' });
+  }
   let result; try { result = await configureConnectorCfg(cfg); } catch (e) { result = { ok: false, state: 'error', error: (e && e.message) || 'configure failed' }; }
-  json(result.ok ? 200 : 502, Object.assign({ status: connectors.status(id) }, result));
+  const status = connectors.status(id);
+  if (result.ok) return json(200, Object.assign({ saved: true, connected: status.state === 'up', status: status }, result));
+  // The configuration write succeeded; only the live handshake failed. Return a successful request envelope
+  // carrying both truths so the UI can say "saved, but not connected" and still render/edit the durable row.
+  const detail = String(result.error || (status && status.detail) || 'connection failed');
+  json(200, Object.assign({}, result, {
+    ok: false, saved: true, connected: false, state: 'error', status: status,
+    error: 'saved, but not connected — ' + detail
+  }));
 }
 async function handleConnectorRemove(req, res) {
   const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
