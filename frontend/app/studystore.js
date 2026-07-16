@@ -183,6 +183,28 @@ const StudyStore = (() => {
     markResolved(prop);            // saves
     resolveOnServer(prop, agentId);   // carries the updated denylist to the sidecar
   }
+  // FORGET → DENYLIST (2026-07-16 resurrect audit): the COMMANDER panel's Forget must be as durable as a
+  // study discard — without this, the study loop re-proposed the exact belief the Commander just forgot
+  // (forget spliced the dossier but fed no denylist). Text-only sibling of discard(): no proposal object
+  // exists (the belief was already IN the dossier), so we append the text to the permanent denylist, save,
+  // and mirror it to the sidecar via the same /api/study/resolve POST with no runId/id (a documented
+  // harmless no-op consume that still carries the declined list). Fail-soft when the store isn't up yet.
+  function declineText(text, agentId) {
+    if (!state) return false;
+    const t = String(text || '').trim();
+    if (!t) return false;
+    if (state.declined.indexOf(t) < 0) { state.declined.push(t); while (state.declined.length > DECLINED_CAP) state.declined.shift(); }
+    save();
+    if (typeof fetch === 'function') {
+      try {
+        fetch('/api/study/resolve', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ agentId: agentId || 'agent', runId: '', id: '', declined: declinedList() })
+        }).catch(() => {});
+      } catch (_) {}
+    }
+    return true;
+  }
   // IGNORE (the Commander left the card without deciding — it expired at the next run end / was replaced):
   // tally it; IGNORE_LIMIT ignores stops the belief for good. NOT resolved server-side — an ignored-once belief
   // may legitimately re-offer at a later task end (that is the second chance the 2× limit exists to give).
@@ -229,7 +251,7 @@ const StudyStore = (() => {
 
   return {
     init, reset, canShow, isExhausted, nextLive, markShown, fetchProposals, retireTarget,
-    declinedList, accept, discard, ignore, noteRating, fingerprint, noteGoalProgress, recentGoalNotes,
+    declinedList, accept, discard, declineText, ignore, noteRating, fingerprint, noteGoalProgress, recentGoalNotes,
     SESSION_CAP, IGNORE_LIMIT,
     _state: () => state
   };
