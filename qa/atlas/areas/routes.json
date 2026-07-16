@@ -452,6 +452,43 @@
       "missing": false
     },
     {
+      "id": "route/get-api-deliverables",
+      "kind": "route",
+      "area": "routes",
+      "name": "GET /api/deliverables",
+      "purpose": "List the durable Deliverables library projected from real run artifacts, Workshop manifests, and lifecycle records.",
+      "promise": "GET returns truthful searchable/filterable records with provenance, status, size, preview kind, and created time; it never invents artifact bytes or exposes secrets.",
+      "wiring": {
+        "files": [
+          "sidecar/index.js",
+          "sidecar/deliverable-store.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/workshop.e2e.test.js",
+          "gate": "test:http"
+        },
+        {
+          "kind": "journey",
+          "ref": "scripts/qa/journeys.mjs#J4",
+          "gate": "qa:journeys"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "04f842188765e8ae3f58ff9d387935756b9a8c4f",
+        "date": "2026-07-16T08:05:11.987Z"
+      },
+      "findings": [],
+      "firstSeen": "2026-07-16T08:05:11.987Z",
+      "lastSeen": "2026-07-16T08:05:11.987Z",
+      "missing": false,
+      "notes": "Wave 4C live J4 proof covered the physical library, real pending row, filters, lifecycle actions, and safe open path; HTTP restart proof covered durable projection."
+    },
+    {
       "id": "route/get-api-diagnostics",
       "kind": "route",
       "area": "routes",
@@ -2417,6 +2454,114 @@
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-10T05:18:57.442Z",
+      "missing": false
+    },
+    {
+      "id": "route/post-api-deliverables-cleanup",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/deliverables/cleanup",
+      "purpose": "Apply an exact, previously previewed metadata cleanup set and return an undo token.",
+      "promise": "POST accepts the preview fingerprint and statuses, refuses stale or mismatched sets, protects pending/kept records by default, and never deletes artifact bytes.",
+      "wiring": {
+        "files": [
+          "sidecar/index.js",
+          "sidecar/deliverable-store.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/workshop.e2e.test.js",
+          "gate": "test:http"
+        },
+        {
+          "kind": "test",
+          "ref": "test/deliverable-store.test.js",
+          "gate": "test:fast"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "04f842188765e8ae3f58ff9d387935756b9a8c4f",
+        "date": "2026-07-16T08:05:11.987Z"
+      },
+      "findings": [],
+      "firstSeen": "2026-07-16T08:05:11.987Z",
+      "lastSeen": "2026-07-16T08:05:11.987Z",
+      "missing": false
+    },
+    {
+      "id": "route/post-api-deliverables-cleanup-preview",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/deliverables/cleanup-preview",
+      "purpose": "Preview the exact lifecycle records a bulk cleanup would affect.",
+      "promise": "POST returns exact target IDs and a fingerprint without mutating storage; pending and kept records remain protected unless explicitly included.",
+      "wiring": {
+        "files": [
+          "sidecar/index.js",
+          "sidecar/deliverable-store.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/workshop.e2e.test.js",
+          "gate": "test:http"
+        },
+        {
+          "kind": "test",
+          "ref": "test/deliverable-store.test.js",
+          "gate": "test:fast"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "04f842188765e8ae3f58ff9d387935756b9a8c4f",
+        "date": "2026-07-16T08:05:11.987Z"
+      },
+      "findings": [],
+      "firstSeen": "2026-07-16T08:05:11.987Z",
+      "lastSeen": "2026-07-16T08:05:11.987Z",
+      "missing": false
+    },
+    {
+      "id": "route/post-api-deliverables-cleanup-undo",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/deliverables/cleanup-undo",
+      "purpose": "Restore lifecycle records removed by the most recent authorized cleanup token.",
+      "promise": "POST accepts a valid undo token, restores only that cleanup set, and refuses invalid or expired tokens.",
+      "wiring": {
+        "files": [
+          "sidecar/index.js",
+          "sidecar/deliverable-store.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/workshop.e2e.test.js",
+          "gate": "test:http"
+        },
+        {
+          "kind": "test",
+          "ref": "test/deliverable-store.test.js",
+          "gate": "test:fast"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "04f842188765e8ae3f58ff9d387935756b9a8c4f",
+        "date": "2026-07-16T08:05:11.987Z"
+      },
+      "findings": [],
+      "firstSeen": "2026-07-16T08:05:11.987Z",
+      "lastSeen": "2026-07-16T08:05:11.987Z",
       "missing": false
     },
     {

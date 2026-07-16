@@ -59,7 +59,7 @@ const ReturnStore = (() => {
     if (!rows.length) return;                       // NEVER an empty digest
     fired = true;                                   // one per session, even if the beat is later dismissed
     state = Returns.fold(state, rows); save();      // listed once, never re-listed; crates now pending
-    if (typeof Chat !== 'undefined' && Chat.awayDigest) Chat.awayDigest(rows, { onRated: resolve });
+    if (typeof Chat !== 'undefined' && Chat.awayDigest) Chat.awayDigest(rows, { onRated: resolve, openWork: openWork });
   }
 
   /* init({ enabled }) — called from enterGame. Captures the PREVIOUS session's lastSeenAt (the
@@ -98,12 +98,50 @@ const ReturnStore = (() => {
 
   // ---- the OUTBOX crate surface (world.js renders from these; clicking the chute reviews) ----
   function pendingCount() { return ready() ? Returns.pendingCount(state) : 0; }
+  // the full uncollected ledger, oldest first (crate order) — the OUTBOX window renders from this.
+  // Copies, so a render can't mutate the durable state.
+  function pendingRows() { return ready() ? Returns.hydrate(state).pending.map(r => Object.assign({}, r)) : []; }
+  /* openWork(rw) — make the crated run READABLE: open its transcript session in COMMS. The digest rows
+     carry the run's streamId (returns.js); a legacy crate (persisted before streamId rode the rows) is
+     resolved from the run record. A stream with no live workstream yet (e.g. a nightshift-* run — the
+     autosessions layer only adopts cron-*) is adopted read-only and its DURABLE transcript folded in via
+     AutoSessions' generic foldTurns, so "review the work" always lands on the actual work — never a hunt
+     through TASKS. Fail-open: false when the transcript genuinely can't be reached (the caller says so
+     honestly; never a dead click). */
+  async function openWork(rw) {
+    if (!rw || !rw.runId) return false;
+    let sid = String(rw.streamId || '');
+    if (!sid) {   // legacy crate — resolve the streamId from the sidecar's run record
+      try {
+        const r = await fetch('/api/runs?agent=*&limit=200', { cache: 'no-store' });
+        if (r.ok) { const hit = (((await r.json()) || {}).runs || []).find(x => x && x.runId === rw.runId); sid = String((hit && hit.streamId) || ''); }
+      } catch (_) {}
+    }
+    if (!sid || typeof Workstreams === 'undefined' || !Workstreams.adopt) return false;
+    let w = Workstreams.get(sid);
+    if (!w || !(w.history || []).some(m => m && m.role === 'assistant')) {
+      // no session yet (or an output-less shell) — adopt + fold the durable transcript so the work is readable.
+      // revive:true — this is a DELIBERATE Commander click ("review the work"), the one case that may
+      // clear a deleted-session tombstone and bring the session back.
+      w = Workstreams.adopt({ id: sid, title: (rw.routine || rw.title || 'finished run').slice(0, 80), agentId: rw.agentId || 'agent', lane: 'active', revive: true });
+      if (!w) return false;
+      let turns = [], fetchOk = false;
+      try {
+        const tr = await fetch('/api/transcript?agent=' + encodeURIComponent(rw.agentId || 'agent') + '&stream=' + encodeURIComponent(sid) + '&limit=200', { cache: 'no-store' });
+        if (tr.ok) { turns = (((await tr.json()) || {}).turns || []); fetchOk = true; }
+      } catch (_) {}
+      if (!fetchOk && !(w.history || []).length) return false;   // nothing readable AND nothing already there — honest failure
+      try { if (typeof AutoSessions !== 'undefined' && AutoSessions._internals) AutoSessions._internals.foldTurns(w, turns, 'ok', '', fetchOk); } catch (_) {}
+    }
+    if (typeof App !== 'undefined' && App.openWorkstream) { App.openWorkstream(sid); return true; }
+    return false;
+  }
   // open the collect/review beat for the OLDEST uncollected run (FIFO — crates clear in arrival order)
   function reviewNext() {
     if (!ready()) return false;
     const row = Returns.oldestPending(state);
     if (!row || typeof Chat === 'undefined' || !Chat.awayReview) return false;
-    Chat.awayReview(row, { onRated: resolve });
+    Chat.awayReview(row, { onRated: resolve, openWork: openWork });
     return true;
   }
   // rated (collected) — clear the crate
@@ -112,7 +150,7 @@ const ReturnStore = (() => {
   // S2/new-hero: a fresh Commander inherits no prior pending crates or attendance trail.
   function reset() { state = null; fired = false; try { localStorage.removeItem(KEY); } catch (_) {} }
 
-  return { init, pendingCount, reviewNext, resolve, reset, lastSeen, isAttended, outboxLine };
+  return { init, pendingCount, pendingRows, reviewNext, resolve, reset, lastSeen, isAttended, outboxLine, openWork };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = { ReturnStore };

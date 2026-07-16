@@ -27,6 +27,7 @@ const World = (() => {
   let beltTileSet = null;                        // Set("x,y") of every belt tile (hover hit-test; rebuilt with the plan)
   let routeTagCache = null;                      // tileKey -> {text, ok} composed hover route tag (invalidated on recompile)
   let hoverBeltTile = null;                      // belt tile under the cursor (hover-glance route tag), or null
+  let hoverOutbox = null;                        // stacked OUTBOX under the cursor (hover-glance "N TO REVIEW" tag), or null
   let routingNags = null;                        // [{x,y,w,h,label,warn}] in-world callouts mirroring the compiler's errors
   let feedState = { known: false, fed: true };   // server-proven "something feeds the intake" truth (channels/cron); fed=true until proven otherwise
   let feedNagOn = false;                         // a NO FEED nag is showing → the intake becomes clickable (→ CHANNELS)
@@ -43,6 +44,7 @@ const World = (() => {
   let _scanCv = null, _scanKey = '';    // cached SOFT-scanline tile canvas (rebuilt only when scan/pitch/dpr change) — see scanCanvas()
   let _grainCv = null, _grainPat = null;   // cached film-grain noise tile + pattern — see grainPattern()/drawCRT()
   let scale = 2, panX = 0, panY = 0, fitNeeded = true;
+  let fitW = 0, fitH = 0;   // canvas size the last fitCamera() framed against — a fit on a hidden/degenerate stage doesn't count as a real view
   const MINZ = 0.5, MAXZ = 6;
   const clampz = (v, a, b) => v < a ? a : v > b ? b : v;
   let drag = null, hoverAgent = null, onClick = null, onArcade = null, onOutbox = null, onMissionBoard = null, onTrophyCase = null, onBayAssign = null, onIntakeFeed = null, wakeAt = 0;
@@ -697,7 +699,9 @@ const World = (() => {
     cv = canvas; ctx = cv.getContext('2d');
     resize();
     camUserAt = performance.now();   // boot / a new agent re-arms the cinecam idle clock — the director never fires into a fresh floor
-    try { if (ro) ro.disconnect(); ro = new ResizeObserver(() => { resize(); fitNeeded = true; redrawNow(); }); ro.observe(cv.parentElement || cv); } catch (e) {}
+    // resize() preserves the current view (centre-anchored) — never re-fit here, or every
+    // COMMS-seam drag tick / fullscreen toggle snaps the Commander's pan/zoom back to fit-all.
+    try { if (ro) ro.disconnect(); ro = new ResizeObserver(() => { resize(); redrawNow(); }); ro.observe(cv.parentElement || cv); } catch (e) {}
     // bind the input/visibility handlers + SSE bridge ONCE — init() re-runs on every NEW AGENT (same canvas
     // element), so without this guard each new agent stacked another full set of listeners and SSE streams.
     if (listenersBound) return;
@@ -732,7 +736,8 @@ const World = (() => {
       // belt under the cursor (and no body over it) → arm the hover-glance route tag for the draw pass
       hoverBeltTile = null;
       if (!hit && beltTileSet) { const bt = tileOf(wp.x, wp.y); if (beltTileSet.has(bt.x + ',' + bt.y)) hoverBeltTile = bt; }
-      cv.style.cursor = (hit || arcadeAt(wp) || outboxAt(wp) || missionBoardAt(wp) || trophyCaseAt(wp) || unboundBayAt(wp) || intakeFeedAt(wp)) ? 'pointer' : 'default';   // arcade cabinets + a stacked OUTBOX + the MISSION BOARD + the TROPHY CASE + an unbound BAY + a starved INTAKE are clickable too
+      hoverOutbox = hit ? null : outboxAt(wp);   // arm the hover-glance crate tag (a glance, never a window)
+      cv.style.cursor = (hit || hoverOutbox || arcadeAt(wp) || missionBoardAt(wp) || trophyCaseAt(wp) || unboundBayAt(wp) || intakeFeedAt(wp)) ? 'pointer' : 'default';   // arcade cabinets + a stacked OUTBOX + the MISSION BOARD + the TROPHY CASE + an unbound BAY + a starved INTAKE are clickable too
     });
     cv.addEventListener('mouseup', ev => {
       if (kindleArmed) { kindleHolding = false; return; }   // releasing during the kindle lets the spark ebb
@@ -763,7 +768,7 @@ const World = (() => {
       const inf = intakeFeedAt(wp);
       if (inf && onIntakeFeed) onIntakeFeed(inf.id);
     });
-    cv.addEventListener('mouseleave', () => { if (kindleArmed) kindleHolding = false; hoverAgent = null; hoverBeltTile = null; if (!drag) cv.style.cursor = 'default'; });
+    cv.addEventListener('mouseleave', () => { if (kindleArmed) kindleHolding = false; hoverAgent = null; hoverBeltTile = null; hoverOutbox = null; if (!drag) cv.style.cursor = 'default'; });
     // you just came back to the tab → for a few seconds the agent is likelier to look up and notice you
     try { document.addEventListener('visibilitychange', () => { if (!document.hidden) userReturnUntil = performance.now() + 3000; }); } catch (e) {}
     connectChannelBridge();   // open the SSE bridge so real inbound work animates as boxes on the belts
@@ -779,6 +784,15 @@ const World = (() => {
     const w = cv.clientWidth || cv.parentElement.clientWidth, h = cv.clientHeight || cv.parentElement.clientHeight;
     const nw = Math.max(1, Math.round(w * dpr)), nh = Math.max(1, Math.round(h * dpr));
     if (cv.width === nw && cv.height === nh) return;   // assigning to canvas.width/height WIPES the bitmap even when unchanged — skip the needless clear
+    // keep the world point under the canvas centre anchored through the resize (zoom untouched):
+    // the view stays put while the stage grows/shrinks around it. Skipped until the first fit
+    // has framed the station (fitNeeded) — there's no meaningful view to preserve yet. A fit
+    // that landed on a DEGENERATE canvas (boot while the game screen was still hidden → 1px
+    // stage) is no view either — re-fit at the first real size instead of anchoring garbage.
+    if (!fitNeeded && cache) {
+      if (fitW <= 2 || fitH <= 2) fitNeeded = true;
+      else { panX += (nw - cv.width) / 2; panY += (nh - cv.height) / 2; }
+    }
     cv.width = nw; cv.height = nh;
   }
 
@@ -1000,6 +1014,7 @@ const World = (() => {
     const W = cache.W, H = cache.H;
     scale = clampz(Math.min(cv.width / W, cv.height / H), MINZ, MAXZ);
     panX = (cv.width - W * scale) / 2; panY = (cv.height - H * scale) / 2;
+    fitW = cv.width; fitH = cv.height;   // remember the size this fit framed — resize() treats a degenerate-size fit as "never fit"
   }
   function toCanvas(ev) {
     const r = cv.getBoundingClientRect();
@@ -3339,6 +3354,7 @@ const World = (() => {
     drawAwaitTag(now);    // G4.1: the amber AWAITING APPROVAL tag over a permission-blocked hero
     drawRoutingNags(now); // BELT LEGIBILITY: the compiled plan's errors as in-world callouts on the broken piece
     drawBeltHoverTag(now);// BELT LEGIBILITY: hover a belt tile → where does this line flow (a glance, never a window)
+    drawOutboxHoverTag(now);// OUTBOX LEGIBILITY: hover the stacked chute → what the crates are + what a click does
     drawDockFlashes(now); // LONE-BAY dock arrival: the bay visibly catches work when no belt line exists
     drawPinFlourish(now); // G4.2: the amber pin-burst at the board the instant a proposal is pinned
     if (agent && !agent.unplaced) drawBubble(now);
@@ -4309,6 +4325,20 @@ const World = (() => {
       ctx.restore();
     }
   }
+  // the hover-glance tag over a clickable OUTBOX: crates pending → "N TO REVIEW — CLICK"; pallet only →
+  // the LOGBOOK click-through. Names what the stacked boxes ARE and what the click does (the 2026-07-16
+  // confusion: "boxes showing output but I can't see it"). A glance, never a window (hover law).
+  function drawOutboxHoverTag(now) {
+    if (!hoverOutbox) return;
+    const n = returnCrates();
+    const text = n > 0 ? (n + ' TO REVIEW — CLICK') : 'FINISHED WORK — CLICK';
+    ctx.save();
+    ctx.font = NAG_FONT; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+    ctx.shadowBlur = 3; ctx.shadowColor = n > 0 ? '#ffd88a' : '#62ff9e';
+    ctx.fillStyle = n > 0 ? '#ffe9bd' : '#9adcb0';
+    ctx.fillText(text, (hoverOutbox.x + (hoverOutbox.w || 1) / 2) * T, hoverOutbox.y * T - 40);
+    ctx.restore();
+  }
   // the hover-glance route tag over the belt tile under the cursor (green = flows to a bound bay, amber = doesn't)
   function drawBeltHoverTag(now) {
     if (!hoverBeltTile) return;
@@ -4328,13 +4358,12 @@ const World = (() => {
   function returnCrates() {
     try { return (typeof ReturnStore !== 'undefined' && ReturnStore.pendingCount) ? (ReturnStore.pendingCount() | 0) : 0; } catch (_) { return 0; }
   }
-  // hit-test: the OUTBOX chute under a world-space point — clickable while return-crates are stacked
-  // (click = review) OR while today's shipped pallet is showing (click = the LOGBOOK shift record).
-  // An empty chute keeps plain floor behavior; no dead affordance. The stacks spill above AND below
-  // the footprint, so the box extends both ways to keep the crates themselves clickable.
+  // hit-test: the OUTBOX chute under a world-space point — ALWAYS clickable while placed (2026-07-16:
+  // the click opens the OUTBOX window, which has honest content in every state — pending crates,
+  // or the "finished work lands here" empty state — so the affordance is never dead, mirroring the
+  // MISSION BOARD). The stacks spill above AND below the footprint, so the box extends both ways.
   function outboxAt(wp) {
     if (!geo || !geo.props) return null;
-    if (returnCrates() <= 0 && !(shipStats.known && shipStats.done > 0)) return null;
     for (const p of geo.props) {
       if (p.t !== 'outbox') continue;
       const x0 = p.x * T, y0 = p.y * T - 34;

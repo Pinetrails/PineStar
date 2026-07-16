@@ -94,6 +94,9 @@
       blurb: 'Options with honest trade-offs — "do nothing" included — then a real position, not a hedge.',
       tags: { general: 1 },
       params: [{ key: 'decision', label: 'The decision', placeholder: 'the choice you are weighing' }],
+      intake: [
+        { dimension: 'audience', question: 'Who reads the memo?', options: ['just me', 'team / stakeholders'], recommended: 'just me', reason: 'a stakeholder memo needs context a self-memo can skip' }
+      ],
       task: 'Write a one-page decision memo for: {decision}. State the actual question — often not the one asked — then the viable options with honest trade-offs, including "do nothing", which is always an option and usually the incumbent. Name the few facts that would change the answer and the cheapest way to get them. Then decide: a clear recommendation, the reasoning, your confidence, and the early signal that would tell us we chose wrong. Take a position — hedged memos decide nothing.',
       category: 'ops', gear: [], skills: ['decision-1-3-1'], cadence: null,
       source: 'builtin', forkedFrom: null

@@ -35,6 +35,23 @@ function visibleTerminalRect(rect, viewport) {
   };
 }
 
+// Pure size clamp for floating terminals. Per-window limits win until the viewport is smaller;
+// then the viewport temporarily becomes the ceiling (and effective floor) so every control remains reachable.
+function clampTerminalSize(size, limits, viewport) {
+  limits = limits || {}; viewport = viewport || {};
+  const vw = Math.max(0, Number(viewport.width) || 0), vh = Math.max(0, Number(viewport.height) || 0);
+  const availW = Math.max(0, vw - Math.min(16, vw / 2));
+  const availH = Math.max(0, vh - Math.min(16, vh / 2));
+  const maxW = Math.min(Math.max(0, Number(limits.maxWidth) || availW), availW);
+  const maxH = Math.min(Math.max(0, Number(limits.maxHeight) || availH), availH);
+  const minW = Math.min(Math.max(0, Number(limits.minWidth) || 0), maxW);
+  const minH = Math.min(Math.max(0, Number(limits.minHeight) || 0), maxH);
+  const rawW = Number(size && size.width), rawH = Number(size && size.height);
+  const width = Number.isFinite(rawW) && rawW > 0 ? rawW : minW;
+  const height = Number.isFinite(rawH) && rawH > 0 ? rawH : minH;
+  return { width: Math.max(minW, Math.min(width, maxW)), height: Math.max(minH, Math.min(height, maxH)) };
+}
+
 const StationUI = typeof document === 'undefined' ? {} : (() => {
   const $ = s => document.querySelector(s);
   const esc = s => U.esc(String(s == null ? '' : s));
@@ -65,7 +82,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   // P1-8 notification preferences: per-category on/off + a notification sound toggle. Every category defaults ON
   // (no silent regression); each is HONORED at emit time in notify() below (a decorative toggle would be a bug).
   function notifyDefaults() { return { runComplete: true, needsApproval: true, cronDigest: true, sound: true }; }
-  function blank() { return { v: 1, settings: defaults(), tasks: [], notifs: [], termPos: {}, consoleSection: {} }; }
+  function blank() { return { v: 1, settings: defaults(), tasks: [], notifs: [], termPos: {}, termSize: {}, consoleSection: {} }; }
   function load() {
     try {
       const r = JSON.parse(localStorage.getItem(KEY));
@@ -75,6 +92,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         if (!Array.isArray(r.tasks)) r.tasks = [];
         if (!Array.isArray(r.notifs)) r.notifs = [];
         if (!r.termPos || typeof r.termPos !== 'object') r.termPos = {};             // remembered drag positions (persisted)
+        if (!r.termSize || typeof r.termSize !== 'object') r.termSize = {};          // remembered dimensions (persisted)
         if (!r.consoleSection || typeof r.consoleSection !== 'object') r.consoleSection = {};  // last-active console section per window
         return r;
       }
@@ -231,7 +249,8 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   }
 
   /* ============== FLOATING TERMINAL WINDOWS (ported v7 ui.js) ============== */
-  let termDrag = null;
+  let termDrag = null, termResize = null;
+  const termSize = {};  // key -> {width,height} remembered user size
   let termTitleSeq = 0;   // a11y: gives each window's title a unique id for aria-labelledby
   // a11y: the tabbable controls inside a window, in DOM order, that are actually visible.
   function termFocusables(w) {
@@ -243,15 +262,69 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   const consoleSection = {};   // console key -> last-active section id, so reopening lands where the user was
   // P2: hydrate the persisted window layout so a panel re-opens where the Commander left it, and consoles land
   // on the last section they were on — across a full reload, not just this session. Saved back on drag-end / retab.
-  try { Object.assign(termPos, store.termPos || {}); Object.assign(consoleSection, store.consoleSection || {}); } catch (_) {}
-  function saveWindowState() { try { store.termPos = termPos; store.consoleSection = consoleSection; save(); } catch (_) {} }
+  try { Object.assign(termPos, store.termPos || {}); Object.assign(termSize, store.termSize || {}); Object.assign(consoleSection, store.consoleSection || {}); } catch (_) {}
+  function saveWindowState() { try { store.termPos = termPos; store.termSize = termSize; store.consoleSection = consoleSection; save(); } catch (_) {} }
   function terminalViewport() { return { width: window.innerWidth, height: window.innerHeight }; }
+  const DEFAULT_TERM_LIMITS = { minWidth: 320, minHeight: 220, maxWidth: 960, maxHeight: 760 };
+  const CONSOLE_TERM_LIMITS = { minWidth: 560, minHeight: 360, maxWidth: 1200, maxHeight: 840 };
+  function terminalLimits(opts) {
+    const base = opts && opts.console ? CONSOLE_TERM_LIMITS : DEFAULT_TERM_LIMITS;
+    return {
+      minWidth: Number(opts && opts.minWidth) || base.minWidth,
+      minHeight: Number(opts && opts.minHeight) || base.minHeight,
+      maxWidth: Number(opts && opts.maxWidth) || base.maxWidth,
+      maxHeight: Number(opts && opts.maxHeight) || base.maxHeight
+    };
+  }
   function rememberTermPosition(key, left, top) {
     if (!key) return;
     const prior = termPos[key];
     if (prior && prior.left === left && prior.top === top) return;
     termPos[key] = { left, top };
     saveWindowState();
+  }
+  function bakeTermRect(w) {
+    w.style.animation = 'none';
+    const r = w.getBoundingClientRect();
+    w.style.left = r.left + 'px'; w.style.top = r.top + 'px'; w.style.transform = 'none';
+    w.classList.add('term-moved');
+    return r;
+  }
+  function resizeTermTo(w, key, width, height, persist) {
+    if (!w) return null;
+    const next = clampTerminalSize({ width, height }, w._sizeLimits || DEFAULT_TERM_LIMITS, terminalViewport());
+    w.style.width = next.width + 'px'; w.style.height = next.height + 'px';
+    w.style.maxWidth = 'calc(100vw - 16px)'; w.style.maxHeight = 'calc(100vh - 16px)';
+    w.classList.add('term-sized');
+    // Keep the live map current even during pointermove. fitTermInViewport consults this map, so
+    // leaving the prior persisted value here would snap a pointer resize back to its old dimensions.
+    if (key) termSize[key] = { width: next.width, height: next.height };
+    if (persist !== false) saveWindowState();
+    return next;
+  }
+  function addTermResizeHandle(w, key, title) {
+    const grip = el('button', 'term-resize', '◢');
+    grip.type = 'button';
+    grip.setAttribute('aria-label', 'Resize ' + title);
+    grip.title = 'Drag to resize · arrow keys resize';
+    grip.addEventListener('pointerdown', ev => {
+      if (ev.button != null && ev.button !== 0) return;
+      const r = bakeTermRect(w);
+      termResize = { w, key, x: ev.clientX, y: ev.clientY, width: r.width, height: r.height, moved: false };
+      try { grip.setPointerCapture(ev.pointerId); } catch (_) {}
+      ev.preventDefault(); ev.stopPropagation();
+    });
+    grip.addEventListener('keydown', ev => {
+      const dx = ev.key === 'ArrowRight' ? 1 : ev.key === 'ArrowLeft' ? -1 : 0;
+      const dy = ev.key === 'ArrowDown' ? 1 : ev.key === 'ArrowUp' ? -1 : 0;
+      if (!dx && !dy) return;
+      const r = bakeTermRect(w), step = ev.shiftKey ? 48 : 16;
+      resizeTermTo(w, key, r.width + dx * step, r.height + dy * step, true);
+      fitTermInViewport(w, key, true);
+      ev.preventDefault(); ev.stopPropagation();
+    });
+    w.appendChild(grip);
+    return grip;
   }
   window.addEventListener('mousemove', ev => {
     if (termDrag) {
@@ -279,6 +352,23 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     }
     termDrag = null;
   });
+  window.addEventListener('pointermove', ev => {
+    if (!termResize) return;
+    termResize.moved = true;
+    resizeTermTo(termResize.w, termResize.key,
+      termResize.width + ev.clientX - termResize.x,
+      termResize.height + ev.clientY - termResize.y, false);
+    fitTermInViewport(termResize.w, termResize.key, false);
+  });
+  function finishTermResize() {
+    if (!termResize) return;
+    const r = termResize.w.getBoundingClientRect();
+    resizeTermTo(termResize.w, termResize.key, r.width, r.height, true);
+    fitTermInViewport(termResize.w, termResize.key, true);
+    termResize = null;
+  }
+  window.addEventListener('pointerup', finishTermResize);
+  window.addEventListener('pointercancel', finishTermResize);
   // P2: re-clamp every open (non-minimized) window back inside the viewport on a browser resize, so a panel
   // dragged to a corner can't be stranded off-screen when the window shrinks. CSS-centered consoles are skipped
   // by fitTermInViewport (they stay centered); only explicitly-moved windows are pulled back into view.
@@ -295,13 +385,21 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   function placeTerm(w, key) {
     const p = termPos[key];
     if (p) {
+      // The base CRT animation is authored around CSS-centred windows and owns `transform` while it
+      // runs. Replaying it over persisted left/top coordinates visually subtracts half the restored
+      // window size, stranding the titlebar off-screen until the animation releases. Persisted windows
+      // are already established state, so suppress that centred entrance before applying their rect.
+      w.style.animation = 'none';
       w.style.left = p.left + 'px'; w.style.top = p.top + 'px'; w.style.transform = 'none';
       w.classList.add('term-moved');
       requestAnimationFrame(() => fitTermInViewport(w, key, true));
       return;
     }
-    const prior = Math.max(0, Object.keys(open).filter(k => k !== key && !minimized[k]).length);   // how many OTHER visible windows are already open (minimized ones don't crowd the cascade)
-    if (prior === 0) {
+    const candidates = Object.keys(open).filter(k => k !== key && !minimized[k] && open[k]).map(k => ({
+      el: open[k], rect: open[k].getBoundingClientRect()
+    }));
+    let anchor = candidates[candidates.length - 1];
+    if (!anchor) {
       // SINGLE window = the focal point: let CSS center it (left/top:50% + translate(-50%,-50%) with a
       // capped max-height), which is ALWAYS on-screen even for tall panels like Settings. We must NOT
       // measure offsetHeight here and pin an inline top: placeTerm runs before the body content (and the
@@ -309,19 +407,30 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       // tall modals ~200px off the bottom of the viewport. Leaving the CSS centering in place fixes that.
       return;
     }
-    // 2nd+ window: cascade off the corner so stacked panels never bury each other.
+    // 2nd+ window: cascade from the actual visible rectangle of the topmost existing
+    // console. offsetLeft cannot describe a CSS-centred/transformed window.
+    const CASCADE_STEP = 32;
+    candidates.forEach(item => {
+      const z = Number(getComputedStyle(item.el).zIndex) || 0;
+      const anchorZ = Number(getComputedStyle(anchor.el).zIndex) || 0;
+      if (z >= anchorZ) anchor = item;
+    });
     const wpx = w.offsetWidth || 480, hpx = w.offsetHeight || 320;
-    const baseL = 92, baseT = 80, step = 30, span = 6;
-    let left = baseL + (prior % span) * step;
-    let top  = baseT + (prior % span) * step;
+    const left = anchor.rect.left + CASCADE_STEP;
+    const top = anchor.rect.top + CASCADE_STEP;
     const placed = visibleTerminalRect({ left, top, width: wpx, height: hpx }, terminalViewport());
+    // Cascaded windows also use explicit coordinates; the centred keyframes are invalid for them.
+    w.style.animation = 'none';
     w.style.left = placed.left + 'px'; w.style.top = placed.top + 'px'; w.style.transform = 'none';
+    w.classList.add('term-moved');
   }
   function fitTermInViewport(w, key, persist) {
     if (!w) return;
     const resolvedKey = key || Object.keys(open).find(k => open[k] === w);
+    const savedSize = termSize[resolvedKey];
+    if (savedSize) resizeTermTo(w, resolvedKey, savedSize.width, savedSize.height, persist);
     // A never-moved single window stays safely CSS-centered; explicit coordinates are repaired.
-    if (!w.classList.contains('term-moved') && !termPos[resolvedKey] && w.style.transform !== 'none') return;
+    if (!w.classList.contains('term-moved') && !termPos[resolvedKey] && !savedSize && w.style.transform !== 'none') return;
     const repaired = visibleTerminalRect({
       left: w.offsetLeft,
       top: w.offsetTop,
@@ -459,7 +568,9 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     w.style.animation = '';
     void w.offsetWidth;
     w.classList.add('term-restoring');
-    const clearRestore = () => w.classList.remove('term-restoring');
+    // Do not expose the base .term power-on animation again when this one-shot class is removed.
+    // A resized/moved window would otherwise replay the centered keyframes and jump off-screen.
+    const clearRestore = () => { w.classList.remove('term-restoring'); w.style.animation = 'none'; fitTermInViewport(w, key, true); };
     w.addEventListener('animationend', clearRestore, { once: true });
     setTimeout(clearRestore, 460);
     // focus back onto the restored dialog itself (not its first control — the minimize button)
@@ -557,6 +668,9 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     if (opts && opts.console) w.classList.add('console');
     else if (opts && opts.w) w.style.width = opts.w;
     if (opts && opts.className) w.classList.add(opts.className);
+    w._sizeLimits = terminalLimits(opts);
+    const savedSize = termSize[key];
+    if (savedSize) resizeTermTo(w, key, savedSize.width, savedSize.height, false);
     w._onClose = opts && opts.onClose;
     w._opener = opener;
     // a11y: a floating window is a real modal dialog — label it by its title, make it focusable.
@@ -611,6 +725,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         '<span class="term-foot-sp"></span>' +
         '<span class="term-foot-grip" aria-hidden="true">···</span>'));
     }
+    addTermResizeHandle(w, key, String(title).replace(/<[^>]*>/g, ''));
     $('#terms').appendChild(w);
     open[key] = w;
     placeTerm(w, key);   // land in a cascaded slot (or its remembered spot) — never dead-center pile-up
@@ -808,6 +923,17 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       if (viaClick) { try { railItems[id].focus(); } catch (_) {} }
     }
 
+    // Search is temporary context, not navigation: expose which matching section owns the
+    // visible results without overwriting the section the user chose and persisted.
+    function setSearchContext(id) {
+      Object.keys(railItems).forEach(k => {
+        const on = k === id;
+        railItems[k].classList.toggle('active', on);
+        railItems[k].setAttribute('aria-selected', on ? 'true' : 'false');
+        railItems[k].tabIndex = on ? 0 : -1;
+      });
+    }
+
     // keyboard nav on the tablist: Up/Down (vertical rail) or Left/Right (horizontal top strip) move + activate;
     // Home/End jump ends. Both arrow pairs are accepted regardless of orientation, so this handler is shared.
     (tabsTop ? topTabs : rail).addEventListener('keydown', ev => {
@@ -838,6 +964,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
           return;
         }
         // in search mode every section pane is shown; rows are marked hit/miss; a zero-hit section dims its rail item
+        const matches = [];
         sections.forEach(sec => {
           const pane = panes[sec.id];
           pane.classList.remove('con-sec-hidden');
@@ -853,10 +980,12 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
           });
           // also let a section match by its own label/desc even if no granular row matched
           const secMatch = hits > 0 || sec.label.toLowerCase().indexOf(q) >= 0 || (sec.desc || '').toLowerCase().indexOf(q) >= 0;
+          if (secMatch) matches.push(sec.id);
           pane.classList.toggle('con-sec-nomatch', !secMatch);
           railItems[sec.id].classList.toggle('con-rail-dim', !secMatch);
           railItems[sec.id].classList.toggle('con-rail-hit', secMatch);
         });
+        setSearchContext(matches[0] || null);
       };
       searchInput.addEventListener('input', doFilter);
       // Esc: first clears a non-empty search (and refocuses), only then lets the window's Esc close it.
@@ -2066,6 +2195,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     // A pill SWITCH (the user's choice) — reads unambiguously as a control, not a status dot. data-toggle drives the round-trip.
     const switchHTML = (s) =>
       '<button class="sk-switch ' + (s.enabled ? 'on' : 'off') + '" role="switch" aria-checked="' + (s.enabled ? 'true' : 'false') + '" ' +
+        'aria-label="Turn ' + (s.enabled ? 'off' : 'on') + ' ' + esc(s.name) + '" ' +
         'data-toggle="' + esc(s.slug) + '" data-enabled="' + (s.enabled ? 'true' : 'false') + '" title="' + (s.enabled ? 'Turn OFF' : 'Turn ON') + ' this skill station-wide">' +
         '<span class="sk-sw-track"><span class="sk-sw-knob"></span></span>' +
         '<span class="sk-sw-label">' + (s.enabled ? 'ON' : 'OFF') + '</span>' +
@@ -2095,7 +2225,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
               '<div class="sk-reqs">' + reqBadges(s) + '</div>' +
               (missing.length ? '<div class="sk-place-row">' + placeBtns(missing) + '</div>' : '') +
             '</div>' +
-            '<button class="sk-expand" data-expand="' + esc(s.slug) + '" title="Read the recipe">▸</button>' +
+            '<button class="sk-expand" data-expand="' + esc(s.slug) + '" title="Read the recipe" aria-label="Read the ' + esc(s.name) + ' recipe">▸</button>' +
           '</div>' +
           '<div class="sk-body"><pre>' + esc(s.body || '') + '</pre>' +
             (s.author ? '<div class="sk-attr">Ported from ' + esc(s.author) + (s.license ? ' · ' + esc(s.license) : '') + '</div>' : '') +
@@ -2213,7 +2343,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
      TO DO -> IN PROGRESS the instant a real run fires (Workstreams.appendRun); SHIPPED is only ever a
      deliberate human turn-in (the ✓ SHIP button). The General chat home isn't a project, so it shows
      in the rail but never on this board. App owns persistence + the rail; we drive both via sync(). */
-  const COLS = [['todo', 'TO DO'], ['active', 'IN PROGRESS'], ['shipped', 'SHIPPED']];
+  const COLS = [['todo', 'TO DO'], ['active', 'ACTIVE'], ['shipped', 'SHIPPED']];
   const WS = () => (typeof Workstreams === 'object' && Workstreams) ? Workstreams : null;
   function boardStreams() {
     const w = WS(); if (!w) return [];
@@ -2292,6 +2422,18 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     if (s.runIds && s.runIds.length) return '<div class="kb-state done">DONE — REVIEW &amp; SHIP</div>';
     return '';
   }
+  function activeAggregate(items) {
+    let running = 0, ready = 0;
+    items.forEach(s => {
+      const busy = (typeof Channels !== 'undefined' && Channels.isBusy && Channels.isBusy(s.id));
+      if (busy) running++;
+      else if (s.runIds && s.runIds.length) ready++;
+    });
+    const parts = [];
+    if (running) parts.push(running + ' RUNNING');
+    if (ready) parts.push(ready + ' READY TO REVIEW');
+    return parts.length ? '<small class="kb-col-state">' + parts.join(' · ') + '</small>' : '';
+  }
   // the card's bound-agent chip: the workstream's OWN agent (s.agentId) resolved to a name + color from the live
   // roster. Truthful — a stream always carries a real agentId (default 'agent'); an unresolvable id shows verbatim,
   // never a made-up placeholder.
@@ -2325,7 +2467,8 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       '<div class="kb-cols">' +
       COLS.map(([lane, label]) => {
         const items = streams.filter(s => s.lane === lane);
-        return '<div class="kb-col"><h4>' + label + ' <i>' + items.length + '</i></h4>' +
+        return '<div class="kb-col"><h4>' + label + ' <i>' + items.length + '</i>' +
+          (lane === 'active' ? activeAggregate(items) : '') + '</h4>' +
           (items.length ? items.map(card).join('') : kbEmpty(lane)) + '</div>';
       }).join('') +
       '</div>';
@@ -3473,8 +3616,8 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     const customSw = deriveCustomTheme(s.themeHue, s.themeSat, 100)['--ph'];   // swatch tint for the CUSTOM chip
     const secAppearance =
       '<h4 class="ms-h">PHOSPHOR THEME</h4><div class="set-themes">' +
-      THEMES.map(([t, c]) => '<button class="set-theme ' + (s.theme === t ? 'sel' : '') + '" data-t="' + t + '" style="--sw:' + c + '">' + t.toUpperCase() + '</button>').join('') +
-      '<button class="set-theme ' + (s.theme === 'custom' ? 'sel' : '') + '" data-t="custom" id="set-theme-custom" style="--sw:' + customSw + '">CUSTOM</button>' +
+      THEMES.map(([t, c]) => '<button class="set-theme ' + (s.theme === t ? 'sel' : '') + '" aria-pressed="' + (s.theme === t ? 'true' : 'false') + '" data-t="' + t + '" style="--sw:' + c + '">' + t.toUpperCase() + '</button>').join('') +
+      '<button class="set-theme ' + (s.theme === 'custom' ? 'sel' : '') + '" aria-pressed="' + (s.theme === 'custom' ? 'true' : 'false') + '" data-t="custom" id="set-theme-custom" style="--sw:' + customSw + '">CUSTOM</button>' +
       '</div>' +
       // CUSTOM PHOSPHOR — hue + saturation derive a full palette live (moving either switches to CUSTOM);
       // GLOW is independent and scales the bloom on EVERY theme, presets included. All instant-save.
@@ -3578,6 +3721,11 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     const hueIn = host.querySelector('#set-hue'), satIn = host.querySelector('#set-sat'), glowIn = host.querySelector('#set-glow');
     const sliderVal = (id, txt) => { const e = host.querySelector(id); if (e) e.textContent = txt; };
     const syncCustomChip = () => { const c = host.querySelector('#set-theme-custom'); if (c) c.style.setProperty('--sw', deriveCustomTheme(s.themeHue, s.themeSat, 100)['--ph']); };
+    const syncThemeSelection = theme => host.querySelectorAll('[data-t]').forEach(x => {
+      const selected = x.dataset.t === theme;
+      x.classList.toggle('sel', selected);
+      x.setAttribute('aria-pressed', selected ? 'true' : 'false');
+    });
     host.querySelectorAll('[data-t]').forEach(b => b.addEventListener('click', () => {
       s.theme = b.dataset.t;
       // a preset click snaps the CUSTOM hue/sat sliders to a matching start point (GLOW is an
@@ -3590,12 +3738,12 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         syncCustomChip();
       }
       applySettings(); save(); sfx('click');
-      host.querySelectorAll('[data-t]').forEach(x => x.classList.toggle('sel', x === b));
+      syncThemeSelection(s.theme);
       flashSaved(appMsg());
     }));
     // CUSTOM sliders — hue/sat derive live (and switch the theme to CUSTOM); glow applies to any theme.
     // 'input' repaints every drag tick; 'change' persists + flashes once on release.
-    const selCustom = () => host.querySelectorAll('[data-t]').forEach(x => x.classList.toggle('sel', x.dataset.t === 'custom'));
+    const selCustom = () => syncThemeSelection('custom');
     const wireSlider = (input, apply) => {
       if (!input) return;
       input.addEventListener('input', ev => { apply(ev.target.value); applySettings(); });
@@ -4067,7 +4215,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         return '<div class="nf ' + (n.cls || '') + ' sev-' + sev + (n.read ? ' read' : '') + '" style="--ci:' + i + '">' +
           '<span class="nf-sev" aria-hidden="true">' + esc(SEV_GLYPH[sev]) + '</span>' +
           '<span class="nf-ts">' + notifStamp(n.t) + '</span> <span class="nf-txt">' + esc(n.txt) + '</span>' +
-          '<button class="nf-x" data-nid="' + esc(n.id) + '" title="dismiss this notification" aria-label="Dismiss notification">✕</button>' +
+          '<button class="nf-x" data-nid="' + esc(n.id) + '" title="dismiss this notification" aria-label="Dismiss ' + esc(n.txt) + '">✕</button>' +
           '</div>';
       }).join('') + '</div>';
     body.querySelector('#nf-clear').addEventListener('click', () => {
@@ -6314,12 +6462,92 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     if (q) setTimeout(() => { try { q.focus(); } catch (_) {} }, 0);
   }
 
+  /* ============== OUTBOX — the finished-work window (2026-07-16 UX fix) ==============
+     Clicking the OUTBOX prop opens THIS: one clean list of every uncollected finished run — what ran,
+     who ran it, when, what it cost — each readable IN PLACE (lazy inline transcript, the LOGBOOK's
+     proven ▸ pattern) with the real rate-the-work control (rating collects the crate) and an
+     ↗ OPEN IN COMMS jump. Replaces the old one-crate-at-a-time chat beat as the chute's click-through
+     (the beat surfaces remain for session-open digests). TRUTHFUL: rows come only from ReturnStore's
+     durable pending ledger; a missing transcript says so; the empty state says what lands here. */
+  function buildOutbox(body) {
+    const RS = (typeof ReturnStore !== 'undefined') ? ReturnStore : null;
+    const rows = (RS && RS.pendingRows) ? RS.pendingRows() : [];
+    const obLabel = rw => rw.routine ? ('“' + esc(rw.routine) + '” ran on its own') : esc(rw.title || 'an unnamed run');
+    body.innerHTML =
+      '<div class="mc-detail dim" style="margin-bottom:6px">Work that finished while you were away lands here as crates. Read each run below; rating it collects the crate.</div>' +
+      '<div id="ob-list" class="mc-list"></div>' +
+      '<div class="mc-detail" style="margin-top:8px"><button class="bb sm" id="ob-logbook">▸ FULL RUN HISTORY — LOGBOOK</button></div>';
+    const list = body.querySelector('#ob-list');
+    const lb = body.querySelector('#ob-logbook');
+    if (lb) lb.addEventListener('click', () => openTerm('logbook'));
+    function renderEmpty() {
+      list.innerHTML = '<div class="fb-empty">NO UNCOLLECTED WORK.<br><span>When a run finishes while you’re away, its crate stacks on the OUTBOX and the full result is readable here.</span></div>';
+    }
+    if (!rows.length) { renderEmpty(); return; }
+    // legacy crates (persisted before streamId rode the rows) — fill their transcript join once, best-effort.
+    const fillStreams = (async () => {
+      if (rows.every(r => r.streamId)) return;
+      try {
+        const j = await (await fetch('/api/runs?agent=*&limit=200', { cache: 'no-store' })).json();
+        const by = {}; for (const r of ((j && j.runs) || [])) if (r && r.runId) by[r.runId] = String(r.streamId || '');
+        for (const rw of rows) if (!rw.streamId && by[rw.runId]) rw.streamId = by[rw.runId];
+      } catch (_) {}
+    })();
+    let open = rows.length;
+    const collected = (row) => { row.style.transition = 'opacity .25s ease'; row.style.opacity = '0'; setTimeout(() => { row.remove(); if (--open <= 0) renderEmpty(); }, 300); };
+    for (const rw of rows) {
+      const row = document.createElement('div'); row.className = 'mc-row';
+      const when = rw.ts ? esc(fmtRel(new Date(rw.ts).toISOString())) : '';
+      const usd = (+rw.usd > 0 && typeof U !== 'undefined' && U.usd) ? ' · ' + esc(U.usd(+rw.usd)) : '';
+      row.innerHTML =
+        '<div class="mc-top"><b>◷ ' + obLabel(rw) + '</b> <span class="dim">' + when + '</span> ' +
+        '<button type="button" class="lb-tx-btn" aria-expanded="false">▸ read the work</button></div>' +
+        '<div class="mc-url dim">' + esc(rw.agentId || 'agent') + usd + '</div>' +
+        '<div class="lb-tx" hidden></div>' +
+        '<div class="turnin-rate ob-acts"><button type="button" class="consent-btn ob-open">↗ OPEN IN COMMS</button><span class="ob-rate"></span></div>';
+      list.appendChild(row);
+      const tx = row.querySelector('.lb-tx'), txBtn = row.querySelector('.lb-tx-btn');
+      txBtn.addEventListener('click', async () => {
+        if (!tx.hidden) { tx.hidden = true; txBtn.setAttribute('aria-expanded', 'false'); txBtn.textContent = '▸ read the work'; return; }
+        tx.hidden = false; txBtn.setAttribute('aria-expanded', 'true'); txBtn.textContent = '▾ read the work';
+        if (tx.dataset.loaded) return;
+        tx.innerHTML = '<div class="mc-detail"><span class="loading">loading transcript…</span></div>';
+        await fillStreams;
+        if (!rw.streamId) { tx.innerHTML = '<div class="mc-detail">no transcript recorded for this run.</div>'; tx.dataset.loaded = '1'; return; }
+        try {
+          const t = await (await fetch('/api/transcript?stream=' + encodeURIComponent(rw.streamId) + '&agent=' + encodeURIComponent(rw.agentId || 'agent') + '&limit=50')).json();
+          const turns = (t && t.turns) || [];
+          tx.innerHTML = turns.length
+            ? turns.filter(m => m && (m.role === 'user' || m.role === 'assistant')).map(m => '<div class="mc-detail"><b>' + esc(m.role === 'user' ? 'ask' : 'reply') + ':</b> ' + esc(String(m.content || '').slice(0, 1200)) + '</div>').join('')
+            : '<div class="mc-detail">no transcript recorded for this run.</div>';
+          tx.dataset.loaded = '1';
+        } catch (_) { tx.innerHTML = '<div class="mc-detail">could not load the transcript — is the station running?</div>'; }
+      });
+      row.querySelector('.ob-open').addEventListener('click', async ev => {
+        const b = ev.currentTarget; b.disabled = true;
+        const ok = (RS && RS.openWork) ? await RS.openWork(rw) : false;
+        b.disabled = false;
+        if (!ok) notify('transcript unreachable for that run', 'warn');
+      });
+      const rateHost = row.querySelector('.ob-rate');
+      const mounted = (typeof Chat !== 'undefined' && Chat.awayRate)
+        ? Chat.awayRate(rateHost, rw, () => { if (RS && RS.resolve) RS.resolve(rw.runId); collected(row); })
+        : false;
+      if (!mounted) {   // already judged this session — offer the plain collect so the crate never wedges
+        const b = document.createElement('button'); b.type = 'button'; b.className = 'consent-btn'; b.textContent = '✓ collect crate';
+        b.addEventListener('click', () => { if (RS && RS.resolve) RS.resolve(rw.runId); collected(row); });
+        rateHost.appendChild(b);
+      }
+    }
+  }
+
   /* ============== lifecycle ============== */
   const BUILDERS = {
     agents:   ['AGENT DOSSIER',          buildAgents,    { console: true, feature: true }],
     commander:['COMMANDER DOSSIER',      buildCommander, { w: '560px' }],
     skills:   ['SKILLS & CAPABILITIES',  buildSkills,    { console: true }],
     tasks:    ['TASK BOARD',             buildTasks,     { w: '760px' }],
+    deliverables:['DELIVERABLES',         body => { if (typeof Deliverables !== 'undefined') Deliverables.mount(body); }, { w: '760px' }],
     updates:  ['UPDATE CENTER',          buildUpdates,   { w: '540px' }],
     settings: ['SETTINGS',               buildSettings,  { console: true }],
     messaging:['CHANNELS',               buildMessaging, { w: '520px' }],   // dock label = window title (it's Telegram/external channels, not COMMS)
@@ -6332,7 +6560,8 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     // the FIELD MANUAL codex is owned by tutorial.js (P3); this term just hosts its builder
     manual:   ['FIELD MANUAL',           body => { if (typeof Tutorial !== 'undefined' && Tutorial.fillFieldManual) Tutorial.fillFieldManual(body); }, { w: '640px' }],
     quests:   ['QUEST LOG',              buildQuests,    { w: '560px' }],
-    trophies: ['TROPHY CASE',            buildTrophies,  { w: '560px' }]   // G3b: the TROPHY CASE prop opens this station-wide surface
+    trophies: ['TROPHY CASE',            buildTrophies,  { w: '560px' }],   // G3b: the TROPHY CASE prop opens this station-wide surface
+    outbox:   ['OUTBOX — FINISHED WORK', buildOutbox,    { w: '620px' }]    // the OUTBOX prop's click-through: all uncollected finished runs, readable + rateable in place
   };
 
   function init() {
@@ -6443,4 +6672,4 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   return { init, enter, setRoster, leave, clearRunning, runningCount: () => runningAgents.size, isAgentRunning: (id) => agentLive(id), notify, flashSave, openAgent, openArcade, toggleTerm, openTerm, rerender, refreshBoard: () => rerender('tasks'), pokeQuests, setTheme, getTheme, repaintAutonomy };
 })();
 
-if (typeof module !== 'undefined' && module.exports) module.exports = { visibleTerminalRect };
+if (typeof module !== 'undefined' && module.exports) module.exports = { visibleTerminalRect, clampTerminalSize };

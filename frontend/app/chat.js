@@ -850,7 +850,7 @@ const Chat = (() => {
       if (!activeWs || activeWs.id !== id || isBusy()) return;
       const b = j && Array.isArray(j.briefs) && j.briefs[0];
       const q = b && Array.isArray(b.questions) && b.questions[b.questions.length - 1];
-      if (q && !q.answer && Array.isArray(q.options) && q.options.length >= 2) offerTaskQuestion({ question: q.text, options: q.options });
+      if (q && !q.answer && Array.isArray(q.options) && q.options.length >= 2) offerTaskQuestion({ question: q.text, options: q.options, recommended: q.recommended || '', reason: q.reason || '' });
     } catch (_) { /* a missing/offline sidecar leaves history readable; the next load retries */ }
   }
 
@@ -960,6 +960,35 @@ const Chat = (() => {
   }
   function clearEmptyState() { const e = log && log.querySelector('.cmsg-empty'); if (e) e.remove(); }
   // first-run state: an empty + idle + non-interview stream shows a single dim hint instead of a black void.
+  // gather the HONEST signals the starter engine ranks on: catalog, real launch history, whether the
+  // station has any prior life, and the local clock. Every read fails open — a missing store just means
+  // fewer signals, never a crash (the engine degrades to the classic orientation set).
+  function pickStarters() {
+    const recipes = (typeof Recipes !== 'undefined' && Recipes.list) ? (Recipes.list() || []) : [];
+    let recent = [], valuesOf = () => null;
+    if (typeof LaunchMemory !== 'undefined' && LaunchMemory.recent) {
+      try { recent = LaunchMemory.recent(8) || []; valuesOf = id => LaunchMemory.get(id); } catch (_) {}
+    }
+    // returning = any OTHER session ever had a real row, or anything was ever launched from the catalog.
+    // (maybeEmptyState only renders when the ACTIVE session is empty, so it can't vouch for itself.)
+    let returning = recent.length > 0;
+    try {
+      if (!returning && typeof Workstreams !== 'undefined' && Workstreams.list) {
+        returning = (Workstreams.list() || []).some(w => w && w !== activeWs && w.history && w.history.length > 0);
+      }
+    } catch (_) {}
+    const now = new Date();
+    const sig = { recipes, recent, valuesOf, returning, hour: now.getHours(), day: Math.floor(now.getTime() / 86400000) };
+    if (typeof Starters !== 'undefined' && Starters.pick) {
+      try { const out = Starters.pick(sig); if (out && out.length) return out; } catch (_) {}
+    }
+    // engine missing/hiccuped → the classic orientation set, verbatim.
+    const fallback = [{ label: 'what can you do here', send: 'What can you do here? Give me a short tour of what you can actually do for me.' }];
+    if (recipes[0]) fallback.push({ label: String(recipes[0].name || recipes[0].id), recipe: recipes[0] });
+    fallback.push({ label: 'brief me on this station', send: 'Brief me on this station — what is around me and what I can do from here.' });
+    return fallback;
+  }
+
   function maybeEmptyState() {
     if (!log || interview) return;
     if (activeWs && activeWs.history && activeWs.history.length) return;
@@ -971,20 +1000,19 @@ const Chat = (() => {
     const line = document.createElement('div'); line.className = 'cmsg-empty-line';
     line.textContent = 'COMMS online. Type a task or a question to ' + name + '.';
     d.appendChild(line);
-    // STARTER CHIPS — a couple of tappable openers so the first prompt isn't a blank void. Sandbox tone,
+    // STARTER CHIPS — tappable openers so the first prompt isn't a blank void. Sandbox tone,
     // eerie-not-cute, no exclamation marks. A chip fills the composer and sends; a recipe fills its directive
     // (blanks left for the Commander to complete) instead of firing blind. Children of .cmsg-empty, so any real
     // row (clearEmptyState) retires them with the hint.
-    const starters = [{ label: 'what can you do here', send: 'What can you do here? Give me a short tour of what you can actually do for me.' }];
-    const recipe = (typeof Recipes !== 'undefined' && Recipes.list) ? (Recipes.list()[0] || null) : null;
-    if (recipe) starters.push({ label: String(recipe.name || recipe.id), recipe: recipe });
-    starters.push({ label: 'brief me on this station', send: 'Brief me on this station — what is around me and what I can do from here.' });
+    // WHICH chips is the Starters engine's call (starters.js): fresh station → the orientation set;
+    // returning Commander → their usual recipe (prefilled from LaunchMemory), a discovery pick, a pitch ask.
+    const starters = pickStarters();
     const chips = document.createElement('div'); chips.className = 'cmsg-empty-chips';
     for (const st of starters.slice(0, 3)) {
       const b = document.createElement('button'); b.type = 'button'; b.className = 'choice cmsg-starter'; b.textContent = st.label;
       b.addEventListener('click', () => {
         if (typeof SFX !== 'undefined' && SFX.click) SFX.click();
-        if (st.recipe) { insertRecipe(st.recipe); return; }   // fill the directive to edit, don't auto-fire
+        if (st.recipe) { insertRecipe(st.recipe, st.values); return; }   // fill the directive to edit, don't auto-fire
         if (input) { input.value = st.send; autoGrowInput(); }
         submitComposer();
       });
@@ -1903,6 +1931,24 @@ const Chat = (() => {
     const seed = rw.seed ? (' · from the seed you saved — “' + rw.seed + '”') : '';
     return '◷ ' + name + who + usd + seed;
   }
+  // the "↗ read the work" affordance (2026-07-16 UX fix): every review surface must let the Commander SEE
+  // the run's actual output before rating it — the old beat showed only the raw prompt title and a rate
+  // control, which read as a context-free popup ("what is this? where's the work?"). opts.openWork(rw)
+  // (ReturnStore.openWork) opens the run's transcript session in COMMS; an unreachable transcript says so
+  // honestly in place — never a dead click.
+  function openWorkBtn(host, rw, openWork) {
+    if (!openWork) return;
+    const b = document.createElement('button'); b.className = 'consent-btn'; b.textContent = '↗ read the work';
+    b.onclick = () => {
+      b.disabled = true; b.textContent = 'opening…';
+      Promise.resolve().then(() => openWork(rw)).then(ok => {
+        if (ok) { b.disabled = false; b.textContent = '↗ read the work'; return; }   // reusable — the beat stays for rating
+        const note = document.createElement('span'); note.className = 'consent-result err'; note.textContent = 'transcript unreachable';
+        b.replaceWith(note);
+      }).catch(() => { b.disabled = false; b.textContent = '↗ read the work'; });
+    };
+    host.appendChild(b);
+  }
   // ONE digest per session (ReturnStore owns the budget + the row data). opts.onRated(runId) clears the crate.
   function awayDigest(rows, opts, _try) {
     if (!log || !rows || !rows.length) return;
@@ -1926,7 +1972,7 @@ const Chat = (() => {
     }
     const r = row('agent'); r.d.classList.add('tool'); r.d.classList.add('turnin'); r.d.classList.add('away-digest');
     const title = document.createElement('span'); title.className = 'turnin-title';
-    title.textContent = '◈ while you were away — ' + rows.length + (rows.length > 1 ? ' runs' : ' run') + ' finished. the work is waiting.';
+    title.textContent = '◈ while you were away — ' + rows.length + (rows.length > 1 ? ' runs' : ' run') + ' finished. read each one, then rate it:';
     r.body.appendChild(title);
     let open = rows.length;
     const settleRow = (item) => { vanish(item); if (--open <= 0) vanish(r.d); };
@@ -1935,7 +1981,8 @@ const Chat = (() => {
       const text = document.createElement('span'); text.className = 'turnin-text'; text.textContent = awayRowLabel(rw);
       const btns = document.createElement('span'); btns.className = 'consent-btns';
       item.appendChild(text); item.appendChild(btns);
-      const b = document.createElement('button'); b.className = 'consent-btn'; b.textContent = 'review';
+      openWorkBtn(btns, rw, opts && opts.openWork);   // SEE the output first — rating blind was the confusion
+      const b = document.createElement('button'); b.className = 'consent-btn'; b.textContent = 'rate it';
       b.onclick = () => {   // swap the review affordance for the real rate control, in place
         btns.remove();
         const rate = document.createElement('div'); rate.className = 'turnin-rate';
@@ -1960,16 +2007,39 @@ const Chat = (() => {
     r.body.appendChild(foot);
     autoscroll();
   }
+  // awayRate(host, rw, onSettle) — mount the real rate-the-work control for an away run into any DOM host
+  // (the OUTBOX window uses this). Same XP-law path as every attended run (seedAwayWork → workRateControl →
+  // rateWork). Returns false when the run was already judged this session (the caller just collects the crate).
+  function awayRate(host, rw, onSettle) {
+    if (!host || !rw || !rw.runId) return false;
+    if (workRatedRuns.has(rw.runId)) return false;   // already judged — nothing to mount, crate is collectable
+    seedAwayWork(rw);
+    workRateControl(host, rw.agentId || 'agent', rw.runId, onSettle);
+    return true;
+  }
   // the OUTBOX collect beat: clicking the chute (or a stacked crate) reviews ONE pending away run.
   // Same gold-inset family; rating clears the crate (onRated) and the beat vanishes.
+  // Reshaped 2026-07-16: the beat now SAYS what it is (a run that finished while you were away), offers
+  // "↗ read the work" (open the run's transcript session) BEFORE asking for a verdict, and has a "later"
+  // out that keeps the crate on the chute — the old shape was a bare prompt-title + rate control, which
+  // read as a context-free popup with no way to see the work it asked you to judge.
   function awayReview(rw, opts) {
     if (!log || !rw || !rw.runId) return;
     const onRated = (opts && opts.onRated) || (() => {});
     if (workRatedRuns.has(rw.runId)) { try { onRated(rw.runId); } catch (_) {} return; }   // already judged — just clear the crate
     const r = row('agent'); r.d.classList.add('tool'); r.d.classList.add('turnin'); r.d.classList.add('work-rate');
     const title = document.createElement('span'); title.className = 'turnin-title';
-    title.textContent = '◈ from the OUTBOX — ' + awayRowLabel(rw);
+    title.textContent = '◈ OUTBOX crate — this run finished while you were away:';
     r.body.appendChild(title);
+    const item = document.createElement('div'); item.className = 'turnin-item';
+    const text = document.createElement('span'); text.className = 'turnin-text'; text.textContent = awayRowLabel(rw);
+    const btns = document.createElement('span'); btns.className = 'consent-btns';
+    item.appendChild(text); item.appendChild(btns);
+    openWorkBtn(btns, rw, opts && opts.openWork);
+    const later = document.createElement('button'); later.className = 'consent-btn deny'; later.textContent = 'later';
+    later.onclick = () => vanish(r.d);   // the crate STAYS on the chute — deferring never loses the work
+    btns.appendChild(later);
+    r.body.appendChild(item);
     const rate = document.createElement('div'); rate.className = 'turnin-rate';
     r.body.appendChild(rate);
     seedAwayWork(rw);
@@ -2587,10 +2657,21 @@ const Chat = (() => {
   let pendingTaskQuestion = null;
   function offerTaskQuestion(tq) {
     pendingTaskQuestion = Object.assign({}, tq, { streamId: activeWs && activeWs.id });
-    const items = tq.options.map(o => ({ label: o, value: o }));
+    // The host-validated recommended default (brief_ask path) gets the gold suggested chip + a one-line why.
+    // A marker-path question stores no recommendation, so rec resolves empty and this renders plain chips.
+    const rec = String(tq.recommended || '').trim().toLowerCase();
+    const items = tq.options.map(o => {
+      const suggested = !!(rec && o.toLowerCase() === rec);
+      return { label: suggested ? '★ ' + o : o, value: o, suggested };
+    });
     items.push({ label: 'use your judgment', value: '', skip: true });
     const q = row('agent'); q.d.classList.add('nudge');
     q.body.textContent = '⌖ ' + tq.question;
+    if (rec && items.some(it => it.suggested) && String(tq.reason || '').trim()) {
+      const why = document.createElement('div'); why.className = 'tq-reason';
+      why.textContent = '★ suggested: ' + tq.recommended + ' — ' + String(tq.reason).trim();
+      q.body.appendChild(why);
+    }
     autoscroll();
     choices(items, item => {
       vanish(q.d);
@@ -2600,6 +2681,25 @@ const Chat = (() => {
         : (ans || 'Use your judgment and continue the original task.');
       if (!isBusy()) send(msg, { taskAction: 'answer' }); else echoUser(msg);
     });
+  }
+
+  // TASK BRIEF v2: enrich a run-end marker question with the durable brief's host-validated recommendation
+  // before rendering the chips. Safe ordering: the sidecar persists the question BEFORE it emits the buffered
+  // task run-end, so one fetch here always sees the stored row. Fail-open on every path — offline sidecar,
+  // mismatched text, or a marker-path question (no recommendation stored) renders exactly the plain chips.
+  async function presentTaskQuestion(ws, tq) {
+    let recommended = '', reason = '';
+    try {
+      const r = await fetch('/api/task-briefs?key=' + encodeURIComponent('stream:' + ws.id) + '&status=clarifying&limit=1', { cache: 'no-store' });
+      if (r.ok) {
+        const j = await r.json();
+        const b = j && Array.isArray(j.briefs) && j.briefs[0];
+        const q = b && Array.isArray(b.questions) && b.questions[b.questions.length - 1];
+        if (q && !q.answer && q.text === tq.question) { recommended = q.recommended || ''; reason = q.reason || ''; }
+      }
+    } catch (_) { /* enrichment only — the question itself never depends on this fetch */ }
+    if (!isActiveWs(ws)) return;   // the Commander switched away mid-fetch; restoreTaskQuestion re-presents on return
+    offerTaskQuestion(Object.assign({}, tq, { recommended, reason }));
   }
 
   // R4 PAYOFF RECEIPT: one provable line at the exact moment an answer/observation lands in the dossier, so
@@ -4577,11 +4677,15 @@ const Chat = (() => {
   }
   // drop a recipe's directive into the input: apply each OPTIONAL param's default, but leave REQUIRED blanks
   // visible as {tokens} so the Commander can see what to fill — and pre-select the first one to type over.
-  function insertRecipe(r) {
+  function insertRecipe(r, values) {
     if (!input) return;
     let directive = (r && r.task) || (r && r.name) || '';
     for (const p of (r && r.params) || []) {
-      if (p && p.key && p.default != null && p.default !== '') directive = directive.split('{' + p.key + '}').join(p.default);
+      if (!p || !p.key) continue;
+      // last-used inputs (confirm-by-sight: they land visibly in the composer) beat catalog defaults.
+      const remembered = values && typeof values[p.key] === 'string' && values[p.key].trim() ? values[p.key] : null;
+      const v = remembered != null ? remembered : ((p.default != null && p.default !== '') ? p.default : null);
+      if (v != null) directive = directive.split('{' + p.key + '}').join(v);
     }
     input.value = directive; input.focus();
     const m = /\{[^}]+\}/.exec(directive);   // select the first remaining blank to type over (else cursor at end)
@@ -5017,7 +5121,7 @@ const Chat = (() => {
           if (typeof StationUI !== 'undefined') StationUI.notify('reply cut short: ' + finishReason, 'warn');
         }
         if (isActiveWs(ws) && activeLiveRow) activeLiveRow.done();
-        if (isActiveWs(ws) && taskQuestion) offerTaskQuestion(taskQuestion);
+        if (isActiveWs(ws) && taskQuestion) presentTaskQuestion(ws, taskQuestion);   // enriches with the stored recommendation, then renders
         // R1 MID-TASK FORK: the agent may have ended this reply with one FORK marker (earned only while the
         // style model's confidence is low — the directive isn't even in the prompt otherwise). Render the
         // one-tap chips at the run boundary; a malformed marker parses null and stays plain text.
@@ -5260,7 +5364,7 @@ const Chat = (() => {
     activeChoiceRows.add(rowEl);
     let done = false;
     (items || []).forEach(it => {
-      const b = document.createElement('button'); b.className = 'choice' + (it.quiet ? ' quiet' : ''); b.textContent = it.label;   // .quiet = a subdued secondary chip (e.g. "✕ leave interview") — never competes with the real answers
+      const b = document.createElement('button'); b.className = 'choice' + (it.quiet ? ' quiet' : '') + (it.suggested ? ' suggested' : ''); b.textContent = it.label;   // .quiet = subdued secondary chip; .suggested = the task brief's host-validated recommended default (gold)
       const pick = () => { if (done) return; done = true; activeChoiceRows.delete(rowEl); rowEl.remove(); if (typeof SFX !== 'undefined') SFX.click(); onPick(it); };
       // activate on POINTERDOWN, not click: a document-level activity listener (autopilotstore's welcome-back
       // digest) can fire during the capture phase of this same press and remove this row mid-dispatch. The event
@@ -5310,5 +5414,5 @@ const Chat = (() => {
   // only" gate maybeStandaloneRate uses — so a pure-chat run is never bottle-offered. Used by App.runBottleInfo (R5).
   function runDidWork(id) { const w = id ? runWork.get(id) : null; return !!(w && ((w.toolsOk || 0) >= 1 || (w.delivered || 0) >= 1)); }
 
-  return { init, load, send, status, localLine, broadcast, setSystem, getHistory, abort, isBusy, beatBusy: skillBeatBusy, beginInterview, endInterview, echoUser, prefill, autoGrowInput, choices, clearChoices, typeLine, nudge, clearNudge, offerCuriosity, offerFork, briefingReceipt, runMeta, runDidWork, awayDigest, awayReview, workshopReturn, refreshIdBar: renderIdBar, setRosterStatus };
+  return { init, load, send, status, localLine, broadcast, setSystem, getHistory, abort, isBusy, beatBusy: skillBeatBusy, beginInterview, endInterview, echoUser, prefill, autoGrowInput, choices, clearChoices, typeLine, nudge, clearNudge, offerCuriosity, offerFork, briefingReceipt, runMeta, runDidWork, awayDigest, awayReview, awayRate, workshopReturn, refreshIdBar: renderIdBar, setRosterStatus };
 })();

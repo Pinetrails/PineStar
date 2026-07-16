@@ -46,9 +46,12 @@ global.fetch = async (url, opts) => {
 // a minimal Workstreams fake with the REAL unread semantics (lastActiveAt > lastReadAt, never the active stream)
 const streams = new Map();
 let activeStreamId = 'ws_general';
+const deletedIds = new Set();   // mirrors the real store's tombstones: adopt() refuses a deleted id
 global.Workstreams = {
   adopt(opts) {
     if (streams.has(opts.id)) return streams.get(opts.id);
+    if (deletedIds.has(opts.id) && opts.revive !== true) return null;
+    deletedIds.delete(opts.id);
     const w = Object.assign({ history: [] }, opts);
     streams.set(w.id, w);
     return w;
@@ -139,6 +142,30 @@ const { WorkshopStore } = require('../frontend/app/workshopstore.js');
   A.eq(toasts[0].cat, 'cronDigest', 'the toast stays in the Commander-mutable autonomous category (P1-8 mute works)');
   global.App = savedApp;
 
+  /* ---------- B5. DELETED = GONE (2026-07-16): a session the Commander deleted never re-forms,
+     never reveals, never toasts — even while its manifest is still pending server-side ---------- */
+  pending.push({ runId: 'run-E', title: 'doomed build', files: [] });
+  streams.delete('workshop-run-E'); deletedIds.add('workshop-run-E');   // simulate rail delete → tombstone
+  activeStreamId = 'ws_general';
+  cards = []; toasts = [];
+  await WorkshopStore.presentOnReturn();
+  A.ok(!streams.has('workshop-run-E'), 'a deleted deliverable session is NOT resurrected by the return poll');
+  A.ok(activeStreamId !== 'workshop-run-E', 'and its session is never revealed/focused');
+  cards = []; toasts = [];
+  WorkshopStore.onBuilt({ agentId: 'agent', runId: 'run-E', manifest: { title: 'doomed build', files: [] } });
+  A.ok(!streams.has('workshop-run-E'), 'the live push cannot resurrect a deleted session either');
+  A.eq(cards.length, 0, 'no card for a deleted session');
+  A.eq(toasts.length, 0, 'no toast for a deleted session');
+  // discardIfPending: the delete handler's server-side cleanup — discards ONLY a genuinely-pending run.
+  decides = [];
+  const dp = await WorkshopStore.discardIfPending('agent', 'run-E');
+  A.ok(dp.ok === true, 'discardIfPending succeeds for a pending run');
+  A.ok(decides.some(d => d.runId === 'run-E' && d.decision === 'discard'), 'the pending deliverable is DISCARDED server-side (gone forever)');
+  decides = [];
+  const dp2 = await WorkshopStore.discardIfPending('agent', 'run-NOT-PENDING');
+  A.ok(dp2.ok === true && dp2.pending === false, 'a run that is not pending is left alone');
+  A.eq(decides.length, 0, 'no spurious discard for an already-decided run');
+
   /* ---------- B4. the ledger never persists (the 2026-07-14 root regression) ---------- */
   A.eq(mem.get('starnet.workshop.v1'), STALE, 'no session state was written back to localStorage — the ledger is in-memory only');
 
@@ -154,6 +181,7 @@ const { WorkshopStore } = require('../frontend/app/workshopstore.js');
   const appSrc = fs.readFileSync(path.join(__dirname, '../frontend/app/app.js'), 'utf8');
   A.ok(/onReturn:\s*\(\)\s*=>/.test(appSrc), 'app.js wires the genuine-return hook into AutopilotStore');
   A.ok(/WorkshopStore\.presentOnReturn/.test(appSrc), 'app.js routes the return hook to WorkshopStore.presentOnReturn');
+  A.ok(/WorkshopStore\.discardIfPending/.test(appSrc), 'app.js deleteWorkstream discards a deleted deliverable session server-side (deleted = gone forever)');
 
   const apSrc = fs.readFileSync(path.join(__dirname, '../frontend/app/autopilotstore.js'), 'utf8');
   A.ok(/deps\.onReturn/.test(apSrc), 'autopilotstore.js fires deps.onReturn on a genuine return (independent of the local draft log)');

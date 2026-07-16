@@ -204,6 +204,22 @@ const WorkshopStore = (() => {
     } catch (_) { return { ok: false, error: 'decision failed to reach the station' }; }
   }
 
+  // DELETED SESSION → SERVER-SIDE DISCARD: when the Commander deletes a deliverable's session
+  // ('workshop-<runId>'), the deliverable itself must not stay pending server-side — that pending
+  // manifest is exactly what re-minted the session on every restart. Only fires when the run is
+  // GENUINELY still pending (a kept/discarded deliverable is left alone — no spurious ledger rows).
+  // The Workstreams tombstone is the hard guarantee; this is the cleanup that makes "deleted" mean
+  // the build is gone server-side too. Fail-open: an unreachable station just leaves the tombstone.
+  async function discardIfPending(agentId, runId) {
+    const rid = String(runId || '');
+    if (!rid) return { ok: false, error: 'no run' };
+    try {
+      const m = (await fetchRaw()).find(x => x && String(x.runId) === rid) || null;
+      if (!m) return { ok: true, pending: false };
+      return await decide(m.agentId || agentId || 'agent', rid, 'discard');
+    } catch (_) { return { ok: false, error: 'could not reach the station' }; }
+  }
+
   // read a file inside the deliverable for the viewer, via the EXISTING jailed read-only route /api/file
   // (resolveInside proves the path can't escape the agent's workspace). The deliverable's files are relative
   // to the run dir, so we prefix workshop/<runId>/. Auth: the hardened window.fetch (harness.js) attaches the
@@ -261,7 +277,9 @@ const WorkshopStore = (() => {
     if (existing) {
       if (Workstreams.touch) Workstreams.touch(id);   // marks read only if it's the open stream — otherwise honest new-activity
     } else {
-      Workstreams.adopt({
+      // DELETED = GONE: the Commander removed this deliverable's session; adopt() refuses the
+      // tombstoned id, so the row must not re-form (the delete path also discards server-side).
+      const adopted = Workstreams.adopt({
         id: id,
         title: '⚒ ' + (String(m.title || '').trim() || 'built while you were away').slice(0, 70),
         agentId: m.agentId || 'agent', lane: 'active', kind: 'chat',
@@ -270,6 +288,7 @@ const WorkshopStore = (() => {
           + ' open this session any time to review and decide.' }],
         lastActiveAt: Date.now(), lastReadAt: 0   // truthful unread: real new activity the Commander hasn't seen
       });
+      if (!adopted) return null;
     }
     try { if (typeof App !== 'undefined') { if (App.refreshRail) App.refreshRail(); if (App.persist) App.persist(); } } catch (_) {}
     return id;
@@ -351,8 +370,10 @@ const WorkshopStore = (() => {
     const pending = await fetchPending();
     if (!pending.length) return;
     fired = true;
-    for (const m of pending) ensureSession(m);
-    reveal(pending[pending.length - 1]);   // backlog order: last = newest build
+    // ensureSession returns null for a deliverable whose session the Commander DELETED — never
+    // resurrect it, and never reveal it (deleted = gone, the whole point of the tombstone).
+    const live = pending.filter(m => ensureSession(m) != null);
+    if (live.length) reveal(live[live.length - 1]);   // backlog order: last = newest build
   }
 
   /* RETURN RE-PRESENT (2026-07-14, reshaped for session delivery 2026-07-15): a night-shift build lands
@@ -364,8 +385,8 @@ const WorkshopStore = (() => {
   async function presentOnReturn() {
     if (!enabled) return;
     const list = (await fetchRaw()).filter(m => m && m.runId && !state.later[m.runId]);
-    for (const m of list) ensureSession(m);
-    if (list.length) reveal(list[list.length - 1]);   // greet the return with the newest build's card
+    const live = list.filter(m => ensureSession(m) != null);   // deleted sessions stay deleted
+    if (live.length) reveal(live[live.length - 1]);   // greet the return with the newest build's card
   }
 
   /* LIVE PUSH — the attach-time poll above only covers session OPEN, so a deliverable that landed while the
@@ -382,7 +403,7 @@ const WorkshopStore = (() => {
     if (state.later[runId] || state.seen.indexOf(runId) !== -1) return;
     const aid = String(p.agentId || 'agent');
     const m = Object.assign({}, p.manifest, { agentId: aid, runId: runId });
-    ensureSession(m);   // marks seen; durable session either way
+    if (ensureSession(m) == null) return;   // marks seen; a DELETED session never re-forms or re-toasts
     // DELIVERY REVEAL: the moment the build lands, open its session with the full card. Fallback (the
     // Commander is mid-something, or no App yet): unread row + ONE actionable toast that jumps there.
     const opened = reveal(m);
@@ -411,7 +432,7 @@ const WorkshopStore = (() => {
   // S2/new-hero: a fresh Commander inherits no prior "later" list.
   function reset() { state = hydrate(null); fired = false; try { localStorage.removeItem(KEY); } catch (_) {} }
 
-  return { init, queue, decide, readFile, runUrl, openFile, desktopDefault, fetchPending, presentOnReturn, presentFor, ensureSession, reset, queueConfirmLine, grantOf, openGrant, onBuilt, _hydrate: hydrate };
+  return { init, queue, decide, discardIfPending, readFile, runUrl, openFile, desktopDefault, fetchPending, presentOnReturn, presentFor, ensureSession, reset, queueConfirmLine, grantOf, openGrant, onBuilt, _hydrate: hydrate };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = { WorkshopStore };

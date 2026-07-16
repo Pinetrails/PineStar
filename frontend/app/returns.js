@@ -78,7 +78,8 @@
         routine: '',                                       // matchRoutines() fills this best-effort
         usd: Math.max(0, num(r.usd)),
         turns: Math.max(0, num(r.turns)),
-        ts: num(r.ts)
+        ts: num(r.ts),
+        streamId: str(r.streamId)                          // joins the crate to its readable transcript session
       });
     }
     return out;

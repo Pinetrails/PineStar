@@ -86,8 +86,14 @@ A.eq(Policy.canMutate({ status: 'executing' }, { scope: 'execute' }).ok, true, '
 
   // Same decision twice becomes weak observed relationship evidence, never a standing order.
   const second = await s2.prepare({ id: 'tb_run3', key: 'stream:w2', text: 'Build another dashboard' }, 200);
-  await s2.ask(second.id, material({ question: 'Who will use this dashboard day to day?' }), 210); await s2.prepare({ key: 'stream:w2', text: 'operators' }, 220); await s2.complete(second.id, 'run4', 230);
+  await s2.ask(second.id, material(), 210); await s2.prepare({ key: 'stream:w2', text: 'operators' }, 220); await s2.complete(second.id, 'run4', 230);
   A.eq(s2.patterns(5)[0].count, 2, 'repeated identical decisions compound into bounded weak evidence');
+
+  // A DIFFERENT question in the same dimension sharing an answer is a different decision — never merged.
+  const cousin = await s2.prepare({ id: 'tb_cousin', key: 'stream:w2b', text: 'Build a status page' }, 232);
+  await s2.ask(cousin.id, material({ question: 'Who will use this status page day to day?' }), 234);
+  await s2.prepare({ key: 'stream:w2b', text: 'operators' }, 236); await s2.complete(cousin.id, 'run4b', 238);
+  A.eq(s2.patterns(5).length, 1, 'same dimension + same answer under a different question never merges into the bin');
 
   const incomplete = await s2.prepare({ id: 'tb_incomplete', key: 'stream:w3', text: 'Build a third dashboard' }, 240);
   await s2.ask(incomplete.id, material({ question: 'Which group owns this dashboard?' }), 250);
@@ -99,6 +105,26 @@ A.eq(Policy.canMutate({ status: 'executing' }, { scope: 'execute' }).ok, true, '
   const cancelResult = await s2.prepare({ key: 'stream:cancel', text: 'never mind' }, 320);
   A.eq(cancelResult.status, 'cancelled', 'explicit cancel closes rather than answers the pending brief');
   A.eq(cancelResult.questions[0].answer, '', 'cancel text is never learned as a task answer');
+
+  // Marker path: a plain TASK_QUESTION reply persists honestly — nothing the model didn't say is recorded.
+  const marker = await s2.prepare({ id: 'tb_marker', key: 'stream:marker', text: 'Build a landing page' }, 340);
+  const mq = await s2.ask(marker.id, { question: 'dark theme or light theme?', options: ['dark', 'light'] }, 342, { source: 'marker' });
+  A.eq(mq.status, 'clarifying', 'a marker question still leaves the brief waiting');
+  A.eq(mq.questions[0].dimension, '', 'marker questions record no fabricated dimension');
+  A.eq(mq.questions[0].recommended, '', 'marker questions record no fabricated recommendation');
+  A.eq(mq.questions[0].reason, '', 'marker questions record no fabricated reason');
+  A.eq(await s2.ask(marker.id, { question: 'serif or sans?', options: ['serif', 'sans'] }, 344, { source: 'marker' }), null, 'a marker second question requires an answered first question');
+  await s2.prepare({ key: 'stream:marker', text: 'dark' }, 346);
+  A.ok(await s2.ask(marker.id, { question: 'serif or sans?', options: ['serif', 'sans'] }, 348, { source: 'marker' }), 'a marker second question is allowed once the first is answered');
+  A.eq(await s2.ask(marker.id, { question: 'hero image?', options: ['yes', 'no'] }, 350, { source: 'marker' }), null, 'the marker path still enforces the whole-task two-question cap');
+  const soloBrief = await s2.prepare({ id: 'tb_solo', key: 'stream:solo', text: 'Build a page' }, 352);
+  A.eq(await s2.ask(soloBrief.id, { question: 'only one?', options: ['solo'] }, 354, { source: 'marker' }), null, 'a one-option marker fails closed in the store too');
+  // Marker questions (empty dimension) still feed pattern learning, binned by their question text.
+  await s2.prepare({ key: 'stream:marker', text: 'sans' }, 356); await s2.complete(marker.id, 'run-m1', 358);
+  const marker2 = await s2.prepare({ id: 'tb_marker2', key: 'stream:marker2', text: 'Build a second landing page' }, 360);
+  await s2.ask(marker2.id, { question: 'dark theme or light theme?', options: ['dark', 'light'] }, 362, { source: 'marker' });
+  await s2.prepare({ key: 'stream:marker2', text: 'dark' }, 364); await s2.complete(marker2.id, 'run-m2', 366);
+  A.ok(s2.patterns(5).some(p => p.question === 'dark theme or light theme?' && p.count === 2), 'repeated marker decisions bin by question text');
 
   const pivoted = await s2.prepare({ id: 'tb_pivot', key: 'stream:pivot', text: 'Build a report' }, 400);
   await s2.ask(pivoted.id, material(), 410);
@@ -157,6 +183,7 @@ A.eq(Policy.canMutate({ status: 'executing' }, { scope: 'execute' }).ok, true, '
   A.ok(/taskBriefStore\.prepare/.test(indexSrc) && /TaskIntent\.directive/.test(indexSrc), 'runOnce prepares the durable brief and injects the shared doctrine');
   A.ok(/taskContext:\s*taskContextBlock/.test(indexSrc) && /workerSystem/.test(orchestrationSrc), 'delegated workers inherit the settled brief without re-questioning the Commander');
   A.ok(/taskQuestionAsked/.test(indexSrc) && /!taskQuestionAsked/.test(indexSrc), 'clarifications suppress completed-task learning sweeps');
+  A.ok(/\{ source: 'marker' \}/.test(indexSrc) && !/The model identified a material unresolved decision/.test(indexSrc), 'the marker settle path records honestly instead of fabricating validation metadata');
   A.ok(/bufferedTaskEnd/.test(indexSrc) && /taskQuestionAsked\s*\?\s*'cancelled'/.test(indexSrc), 'clarification maps to the contract-safe neutral terminal before global completed-work listeners run');
   A.ok(/offerTaskQuestion/.test(chatSrc) && /TaskIntent\.strip/.test(chatSrc), 'COMMS strips the marker and renders the natural decision');
   A.ok(/clarificationRuns\.has\(runId\)/.test(chatSrc) && /clarificationRuns\.add\(thisRunId\)/.test(chatSrc), 'clarification turns do not count as completed-work beats');
@@ -166,6 +193,35 @@ A.eq(Policy.canMutate({ status: 'executing' }, { scope: 'execute' }).ok, true, '
   const offer = chatSrc.slice(chatSrc.indexOf('function offerTaskQuestion'), chatSrc.indexOf('function offerTaskQuestion') + 1400);
   A.ok(!/DossierStore\.upsert/.test(offer), 'task-specific answers never pollute the global dossier');
   A.ok(/taskKey: 'channel:'/.test(hubSrc) && /Reply with a choice/.test(hubSrc), 'messaging channels share brief continuity with a text-choice fallback');
+
+  // TASK BRIEF v2 — the stored recommendation reaches every surface, and only when it is real.
+  const cssSrc = fs.readFileSync(path.join(__dirname, '../frontend/css/app.css'), 'utf8');
+  A.ok(/function presentTaskQuestion/.test(chatSrc) && /presentTaskQuestion\(ws, taskQuestion\)/.test(chatSrc), 'run-end questions render through the brief-enriched presenter');
+  A.ok(/it\.suggested \? ' suggested'/.test(chatSrc) && /tq-reason/.test(chatSrc), 'COMMS marks the recommended chip and renders the one-line why');
+  A.ok(/recommended: q\.recommended \|\| ''/.test(chatSrc), 'restore-on-reload passes the stored recommendation through');
+  A.ok(/\.choice\.suggested/.test(cssSrc) && /--gold-rgb/.test(cssSrc.slice(cssSrc.indexOf('.choice.suggested'), cssSrc.indexOf('.choice.suggested') + 700)), 'the suggested chip uses the theme gold vocabulary, never a literal amber');
+  A.ok(/briefFor/.test(hubSrc) && /suggested: ' \+ q\.recommended/.test(hubSrc), 'the channel fallback carries the stored recommendation');
+  A.ok(/briefFor: \(key\) => taskBriefStore\.active\(key\)/.test(indexSrc), 'both hub compositions read recommendations from the durable store');
+
+  // TASK BRIEF v2 — recipe intake: declared material decisions, settled at launch or aimed mid-run.
+  const Recipes = require('../frontend/app/recipes.js');
+  for (const r of Recipes.list()) {
+    for (const e of (r.intake || [])) {
+      A.ok(Policy.DIMENSIONS.has(e.dimension), 'recipe intake dimension is a policy dimension: ' + r.id + '/' + e.dimension);
+      A.ok(e.options.some(o => o.toLowerCase() === e.recommended.toLowerCase()), 'recipe intake recommended is one of its options: ' + r.id);
+    }
+  }
+  const dr = Recipes.get('deep-research');
+  A.eq((dr.intake || []).length, 2, 'the flagship intake survived catalog normalization');
+  const filled = Recipes.fillTask('deep-research', { topic: 'X', __intake: { deliverable: 'tight brief' } });
+  A.ok(/Decisions \(chosen at launch/.test(filled) && /- deliverable: tight brief/.test(filled), 'launch-tapped intake decisions ride the directive itself');
+  A.ok(!/Decisions \(chosen at launch/.test(Recipes.fillTask('deep-research', { topic: 'X' })), 'no tapped decisions -> no decisions block');
+  const cxIntake = CommanderContext.compose({ recipeIntake: dr.intake });
+  A.ok(/<recipe_intake provenance="recipe-declared">/.test(cxIntake) && /suggested: tight brief/.test(cxIntake), 'composer renders the declared decisions with their suggested defaults');
+  A.ok(CommanderContext.compose({}).indexOf('recipe_intake') < 0, 'no recipe -> no intake block');
+  const mktSrc = fs.readFileSync(path.join(__dirname, '../frontend/app/marketplace.js'), 'utf8');
+  A.ok(/values\.__intake = intake/.test(mktSrc) && /mkt-intake-opt/.test(mktSrc), 'the launch form collects one-tap intake decisions');
+  A.ok(/recipeIntake/.test(indexSrc) && /Recipes\.get\(String\(o\.recipeId\)\)/.test(indexSrc), 'a recipe-launched run injects its declared intake');
 
   A.report('taskintent.test');
 })().catch(e => { console.error(e); process.exitCode = 1; });

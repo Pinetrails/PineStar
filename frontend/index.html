@@ -493,6 +493,7 @@
         <!-- WORK menu, one axis per entry (UX confusion audit 2026-07-15): RECIPES = WHAT to run,
              ROUTINES = WHEN it runs, TASKS = WHERE live work sits, QUESTS = progress only. -->
         <button class="bb" data-term="tasks" data-hint="task"><span class="bb-i">☑</span><span class="bb-tx"><b>TASKS</b><small>where all work lives — queued, running &amp; done</small></span></button>
+        <button class="bb" data-term="deliverables" data-hint="deliverable"><span class="bb-i">▣</span><span class="bb-tx"><b>DELIVERABLES</b><small>outputs, Workshop builds &amp; cleanup</small></span></button>
         <button class="bb" id="bb-missions" data-hint="recipe"><span class="bb-i">❒</span><span class="bb-tx"><b>RECIPES</b><small>ready-made jobs to launch — they land on TASKS</small></span></button>
         <button class="bb" data-term="routines" data-hint="routine"><span class="bb-i">⏱</span><span class="bb-tx"><b>ROUTINES</b><small>any job, put on a schedule</small></span></button>
         <button class="bb" data-term="quests" data-hint="quest"><span class="bb-i">⚑</span><span class="bb-tx"><b>QUESTS</b><small>progress &amp; suggestions — not a second to-do list</small></span></button>
@@ -646,6 +647,7 @@ document.write('<script src="' + ((window.__STARNET_API__ || '') + '/shared/spec
 <script src="app/chat.js"></script>
 <script src="app/voice.js"></script>
 <script src="app/keepawake.js"></script>
+<script src="app/deliverables.js"></script><!-- backend-backed run artifact + Workshop library with bounded safe previews -->
 <script src="app/stationui.js"></script>
 <script src="app/navdock.js"></script>
 <script src="app/chatresize.js"></script>
@@ -672,6 +674,7 @@ document.write('<script src="' + ((window.__STARNET_API__ || '') + '/shared/spec
 <script src="app/recruiterstore.js"></script><!-- adaptive-recruitment read surface: joins worksignal+profile+dossier+live roster → the bay's CURATED shelf + the recruit beat -->
 <script src="app/prospectstore.js"></script><!-- prospect generator wiring: growth-gated async mint (reason-only), denylist, staging → the bay's DRAFTED FOR YOU row; never emits -->
 <script src="app/launchmemory.js"></script><!-- lane C: last-used recipe inputs (own key) — the launch form prefills what you filled last time; confirm-by-sight, localStorage only, never emits -->
+<script src="app/starters.js"></script><!-- session-opener chip engine (pure): fresh station → orientation set; returning Commander → usual recipe (LaunchMemory-prefilled) + discovery pick + pitch ask; no storage, never emits -->
 <script src="app/routinenudgestore.js"></script><!-- lane D: "you keep launching this — schedule it?" nudge (own key) — reads scout launch counters + /api/cron (read-only), shares the one post-run beat slot, deep-links into SCHEDULE IT; never emits -->
 <script src="app/dossierstore.js"></script>
 <script src="app/studystore.js"></script><!-- GROWTH Tier 1: STUDY wiring (dossier Phase B) — fetch belief-update proposals, session cap + denylist, ratings→taste; self-persists (own key), never emits -->

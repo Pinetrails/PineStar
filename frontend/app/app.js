@@ -23,6 +23,71 @@ const App = (() => {
   let pickedCustomVoice = '';   // the Commander's free-text "in their own words" voice note (optional)
   let pickedApproval = 'ask';   // the APPROVAL mode — 'ask' (consent-gated) | 'full' (auto-approve). Drives the REAL consent broker (sidecar bypass), not a cosmetic toggle.
   let pickedProvider = 'codex';   // BEGINNER-FIRST default: 'codex' (personal ChatGPT sign-in, NO API key) leads the funnel; 'openrouter' (BYO API key) + the rest stay one click away. initConnect() still honours a returning agent's saved provider (selectProviderUI(Harness.getProv())).
+  // POWER-USER LOOP PL-03 — entry is a four-surface truth transaction. World opens its EventSource
+  // before Chat/StationUI finish mounting, and their independent timers used to expose an impossible
+  // mixture during reload: unreachable + STANDBY + ONLINE + "COMMS online". Hold every idle claim at
+  // CONNECTING until the bridge itself proves OPEN; a sustained failure then converges to one DOWN state.
+  let bridgeAuthorityTimer = null;
+  let bridgeAuthorityObserver = null;
+  function bridgeAuthorityProven() {
+    try {
+      const ls = (typeof World !== 'undefined' && World.linkState) ? World.linkState() : null;
+      return !!(ls && ls.bridged && !ls.paused && !ls.down);
+    } catch (_) { return false; }
+  }
+  function paintBridgeConnecting() {
+    const chat = el('chat-status');
+    if (chat) { if (chat.textContent !== 'connecting…') chat.textContent = 'connecting…'; if (chat.className !== 'status-connecting') chat.className = 'status-connecting'; }
+    const pill = el('status-pill');
+    if (pill) { if (pill.textContent !== 'CONNECTING') pill.textContent = 'CONNECTING'; if (pill.className !== 'standby') pill.className = 'standby'; }
+    const empty = document.querySelector('.cmsg-empty-line');
+    if (empty && empty.textContent !== 'COMMS connecting…') empty.textContent = 'COMMS connecting…';
+    const sig = el('sig'), bars = sig && sig.querySelector('b');
+    if (sig && bars) { sig.classList.remove('down'); sig.classList.add('standby'); if (sig.childNodes[0].nodeValue !== 'CONNECTING ') sig.childNodes[0].nodeValue = 'CONNECTING '; if (bars.textContent !== '▃▃▃▃') bars.textContent = '▃▃▃▃'; }
+    // Do not let our own corrective mutations recursively re-enter the observer and starve the
+    // EventSource/timers that are supposed to earn authority.
+    if (bridgeAuthorityObserver) bridgeAuthorityObserver.takeRecords();
+  }
+  function paintBridgeUnavailable() {
+    const chat = el('chat-status');
+    if (chat) { chat.textContent = 'station unreachable'; chat.className = 'status-down'; }
+    const pill = el('status-pill');
+    if (pill) { pill.textContent = 'LINK DOWN'; pill.className = 'down'; }
+    const empty = document.querySelector('.cmsg-empty-line');
+    if (empty) empty.textContent = 'COMMS unavailable — reconnecting to the station.';
+    const sig = el('sig'), bars = sig && sig.querySelector('b');
+    if (sig && bars) { sig.classList.remove('standby'); sig.classList.add('down'); sig.childNodes[0].nodeValue = 'LINK DOWN '; bars.textContent = '▁▁▁▁'; }
+  }
+  function beginBridgeAuthorityGate() {
+    if (bridgeAuthorityTimer) clearTimeout(bridgeAuthorityTimer);
+    if (bridgeAuthorityObserver) { bridgeAuthorityObserver.disconnect(); bridgeAuthorityObserver = null; }
+    const beganAt = Date.now();
+    // StationUI and Topbar have independent repaint cadences. During the gate, synchronously fold any
+    // attempted status mutation back into CONNECTING before the browser paints a contradictory frame.
+    if (typeof MutationObserver !== 'undefined') {
+      bridgeAuthorityObserver = new MutationObserver(() => { if (bridgeAuthorityTimer && !bridgeAuthorityProven()) paintBridgeConnecting(); });
+      const game = el('screen-game');
+      if (game) bridgeAuthorityObserver.observe(game, { subtree: true, childList: true, characterData: true, attributes: true });
+    }
+    const check = () => {
+      if (bridgeAuthorityProven()) {
+        bridgeAuthorityTimer = null;
+        if (bridgeAuthorityObserver) { bridgeAuthorityObserver.disconnect(); bridgeAuthorityObserver = null; }
+        try { if (typeof Topbar !== 'undefined' && Topbar._paintSig) Topbar._paintSig(); } catch (_) {}
+        if (typeof Chat !== 'undefined' && Chat.status && !(Chat.isBusy && Chat.isBusy())) Chat.status('online');
+        const pill = el('status-pill'); if (pill) { pill.textContent = 'ONLINE'; pill.className = ''; }
+        const empty = document.querySelector('.cmsg-empty-line');
+        if (empty && agent) empty.textContent = 'COMMS online. Type a task or a question to ' + agent.name + '.';
+        return;
+      }
+      // EventSource.CONNECTING is not a fault. Only call the link unavailable after it has failed to
+      // earn authority for a full retry window; until then every surface stays on the same neutral word.
+      if ((Date.now() - beganAt) >= 12000) { bridgeAuthorityTimer = null; if (bridgeAuthorityObserver) { bridgeAuthorityObserver.disconnect(); bridgeAuthorityObserver = null; } paintBridgeUnavailable(); return; }
+      paintBridgeConnecting();
+      bridgeAuthorityTimer = setTimeout(check, 100);
+    };
+    check();
+  }
   let prefilledKey = '';               // the key the CONNECT field was pre-seeded with from storage (browser BYOK). Empty
                                        //   when nothing was stored (or on desktop, where the key lives in the keychain and
                                        //   getKey() returns ''). Used by onWake's one-time overwrite guard: editing a
@@ -1873,7 +1938,6 @@ const App = (() => {
   async function onWakeAttempt() {
     SFX.boot(); SFX.open();
     stopCodexPoll();   // leaving the connect screen — drop any in-flight sign-in poll
-    const model = el('in-model').value.trim();
     // single funnel for agent.name → honor the 18-char design cap (covers the roster-pick path too).
     // A blank/sentinel name mints a station codename (never the bland 'AGENT'), matching the awakening
     // speaker — dialogue.js owns the generator so both surfaces stay consistent.
@@ -1881,6 +1945,15 @@ const App = (() => {
     if (typeof Dialogue !== 'undefined' && Dialogue.isUnnamed && Dialogue.isUnnamed(rawName)) rawName = Dialogue.codename();
     const name = (rawName || 'AGENT').toUpperCase().slice(0, 18);
     const msg = el('connect-msg'); msg.className = 'msg';
+    // PL-08: provider prerequisites outrank the asynchronously refreshed model catalog. A rapid
+    // CUSTOM → WAKE can still have the prior Codex slug in #in-model for one turn; that stale value
+    // must never make us coach the Commander to pick gpt-5.5 for an unrelated /v1 endpoint.
+    const baseUrl = el('in-base-url') ? el('in-base-url').value.trim() : '';
+    if (providerNeedsBaseUrl(pickedProvider) && !baseUrl) {
+      msg.textContent = 'enter your Custom /v1 base URL.';
+      return false;
+    }
+    const model = el('in-model').value.trim();
     if (!model) {
       // COLD-START: never strand a beginner on an empty required field. Pre-fill a sensible default for the
       // chosen provider (Codex discovers its own lineup, so leave that path to its own picker) and say so.
@@ -1898,9 +1971,7 @@ const App = (() => {
       Harness.setModel(model); Harness.setProv('codex');
     } else {
       const key = el('in-key').value.trim();
-      const baseUrl = el('in-base-url') ? el('in-base-url').value.trim() : '';
       if (providerNeedsBaseUrl(pickedProvider)) {
-        if (!baseUrl) { msg.textContent = 'enter your Custom /v1 base URL.'; return false; }
         if (Harness.setBaseUrl) await Harness.setBaseUrl(baseUrl, pickedProvider);
       }
       const configured = !!(Harness.configured && Harness.configured(pickedProvider));
@@ -1999,7 +2070,7 @@ const App = (() => {
     if (!agent.reasoningEffort && saved.reasoningEffort) agent.reasoningEffort = saved.reasoningEffort;
     Harness.setModel(agent.model || Harness.getModel());
     Harness.setTotals(saved.usage || { tokens: 0, cost: 0, calls: 0 });
-    Workstreams.init({ workstreams: saved.workstreams, activeId: saved.activeId, generalId: saved.generalId, sessionUndo: saved.sessionUndo });
+    Workstreams.init({ workstreams: saved.workstreams, activeId: saved.activeId, generalId: saved.generalId, sessionUndo: saved.sessionUndo, deletedIds: saved.deletedIds });
     pendingStationDoc = saved.station || null;   // restore the built station (if any)
     pendingStationStats = saved.stationStats || null;   // restore the station-growth rollup (XP/level/confidence)
     pendingProfile = saved.profile || null;   // restore the learned user-affinity profile
@@ -2024,13 +2095,10 @@ const App = (() => {
     World.spawn(agent);
     World.setOnClick(() => { if (typeof StationUI !== 'undefined') StationUI.openAgent(0); });
     World.setOnArcade(() => { if (typeof StationUI !== 'undefined' && StationUI.openArcade) StationUI.openArcade(); });   // click a cabinet → BREACH PROTOCOL
-    if (World.setOnOutbox) World.setOnOutbox(() => {
-      // G2.3 first: pending while-away return-crates outrank the pallet — click reviews the oldest.
-      // Otherwise the click opens the LOGBOOK: the shift record behind today's SHIPPED stack.
-      const pending = (typeof ReturnStore !== 'undefined' && ReturnStore.pendingCount) ? (ReturnStore.pendingCount() | 0) : 0;
-      if (pending > 0 && ReturnStore.reviewNext) ReturnStore.reviewNext();
-      else if (typeof StationUI !== 'undefined' && StationUI.openTerm) StationUI.openTerm('logbook');
-    });
+    // 2026-07-16 UX fix: the OUTBOX click opens the OUTBOX window — one clean list of ALL uncollected
+    // finished work, readable + rateable in place (the old path fired a one-crate chat beat, which read
+    // as a context-free popup). The window's footer links to the LOGBOOK for the full run history.
+    if (World.setOnOutbox) World.setOnOutbox(() => { if (typeof StationUI !== 'undefined' && StationUI.openTerm) StationUI.openTerm('outbox'); });
     if (World.setOnMissionBoard) World.setOnMissionBoard(() => { if (typeof StationUI !== 'undefined' && StationUI.openTerm) StationUI.openTerm('quests'); });   // G1b: click the MISSION BOARD → the QUEST LOG (the board is a projection, never a gate)
     if (World.setOnTrophyCase) World.setOnTrophyCase(() => { if (typeof StationUI !== 'undefined' && StationUI.openTerm) StationUI.openTerm('trophies'); });   // G3b: click the TROPHY CASE → the TROPHY surface (a projection of real completions, never a gate)
     if (World.setOnBayAssign) World.setOnBayAssign(pid => { if (typeof Build !== 'undefined' && Build.openAssign) Build.openAssign(pid); });   // belt legibility: click an unbound BAY's "NO AGENT" nag → REFIT opens straight into its agent picker
@@ -2082,7 +2150,8 @@ const App = (() => {
         config: { apply: applyAgentConfig, setModel: setAgentModelPin, setName: setAgentName, setWorkshop: setAgentWorkshop, setSkin: setAgentSkin, deleteAgent: deleteAgent, crewCount: () => agents.size },   // dossier edits re-shape the live prompt; setModel pins per-agent model/provider/effort (P1-6); setName renames the agent; setWorkshop flips the away-build grant (W3); setSkin repoints the sprite (genesis catalog); deleteAgent archives+removes a specialist; crewCount gates the last-agent delete guard
         comms: { openWorkstream: openWorkstream }   // the while-you're-away card's "review" jumps straight to a deliverable's session (2026-07-15)
       });
-      if (!opts.awaitingPurpose) StationUI.notify(agent.name + ' is online — ' + agent.model, 'good');   // during the awakening the finale announces it instead
+      // Presence is already proven by the live roster, link indicator, and COMMS state. Do not
+      // create a fresh persistent notification every time an existing station is reloaded.
     }
     // AGENT GROWTH: subscribe XP/Level/Confidence to the real run-outcome bus. Seeds agent.stats +
     // the station rollup, pushes the live numbers to the world HUD, and fires level-up celebrations.
@@ -2325,6 +2394,7 @@ const App = (() => {
       notify: (text, kind) => { if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify(text, kind || 'warn'); }
     });
     Chat.init({ system: agent.systemPrompt, name: agent.name, ws: Workstreams.active(), onTurn: persist });
+    beginBridgeAuthorityGate();   // Chat mounted the four boot claims; hold them together until the bridge proves itself
     // G2 RETURN RITUAL: arm the durable lastSeenAt heartbeat and (once per session, never during the
     // awakening) fire the while-you-were-away digest for unattended runs the sidecar recorded. The
     // store reads /api/runs + /api/cron itself and hands the rows to Chat.awayDigest; rating a row
@@ -2851,11 +2921,18 @@ const App = (() => {
   }
   function deleteWorkstream(id) {
     const w = Workstreams.get(id); const label = w ? (w.title || 'General') : '';
+    const agentId = w ? (w.agentId || 'agent') : 'agent';
     const wasActive = (id === Workstreams.activeId());
     if (!Workstreams.del(id)) { SFX.bad(); return; }
     SFX.bad();
     if (wasActive) loadActiveStream();   // deleting the OPEN stream falls back to General
     renderRail(); persist();
+    // a deliverable session ('workshop-<runId>'): deleting it is the Commander's final verdict on the
+    // build too — discard the still-pending deliverable server-side so it can't return next restart.
+    // The Workstreams tombstone already guarantees the ROW never re-forms even if this write fails.
+    if (String(id).indexOf('workshop-') === 0 && typeof WorkshopStore !== 'undefined' && WorkshopStore.discardIfPending) {
+      WorkshopStore.discardIfPending(agentId, String(id).slice('workshop-'.length)).catch(() => {});
+    }
     if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('deleted “' + label + '”', 'warn');
   }
   // re-open whatever the store now treats as active (after archive/delete bumps the open stream to General)

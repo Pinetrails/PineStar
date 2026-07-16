@@ -82,6 +82,20 @@
     return Object.keys(vals).length ? vals : null;
   }
 
+  // the launches this memory remembers, newest-first ([{id, at}]) — the starter engine's "usual
+  // recipe" signal. Reads the same store as get(); an empty/corrupt store honestly returns [].
+  function recent(n) {
+    const all = readAll();
+    const out = [];
+    for (const id of Object.keys(all.byRecipe)) {
+      const rec = all.byRecipe[id];
+      if (rec && typeof rec === 'object') out.push({ id: id, at: Number(rec.at) || 0 });
+    }
+    out.sort((a, b) => b.at - a.at);
+    const cap = Number(n);
+    return (isFinite(cap) && cap > 0) ? out.slice(0, cap) : out;
+  }
+
   function clear(recipeId) {
     const id = recipeId ? String(recipeId).slice(0, 60) : '';
     if (!id) return;
@@ -92,5 +106,5 @@
   // a brand-new hero starts with a clean memory (the same own-key discipline every session store follows).
   function reset() { try { if (store) store.removeItem(KEY); } catch (_) {} }
 
-  return { save, get, clear, reset, KEY, MAX_RECIPES, VALUE_MAX, _setStoreForTest: s => { store = s; } };
+  return { save, get, recent, clear, reset, KEY, MAX_RECIPES, VALUE_MAX, _setStoreForTest: s => { store = s; } };
 });
