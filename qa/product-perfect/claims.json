@@ -1548,7 +1548,7 @@
       "surfaceLocators": [
         {
           "path": "frontend/app/stationui.js",
-          "needle": "even with this window (and the app) closed"
+          "needle": "even with this window closed, as long as the station app is running"
         }
       ],
       "authorityChecks": [
@@ -2558,7 +2558,7 @@
         {
           "kind": "contains",
           "path": "frontend/app/stationui.js",
-          "needle": "even with this window (and the app) closed"
+          "needle": "even with this window closed, as long as the station app is running"
         },
         {
           "kind": "absent",
