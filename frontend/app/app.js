@@ -1214,8 +1214,10 @@ const App = (() => {
   ]);
   const approvalById = id => APPROVAL.find(a => a.id === id) || APPROVAL[0];
   function applyTheme(t) {
-    document.body.classList.remove('theme-amber', 'theme-green', 'theme-blue', 'theme-purple', 'theme-red', 'theme-white');
+    document.body.classList.remove('theme-amber', 'theme-green', 'theme-blue', 'theme-purple', 'theme-red', 'theme-white', 'theme-custom');
     document.body.classList.add('theme-' + t);
+    // 'custom' carries no palette in CSS — its derived vars are inline on <body>, set by
+    // StationUI.applySettings at init and cleared by StationUI.setTheme when a preset is picked here.
   }
   function buildPhosphor() {
     const wrap = el('phosphor-swatches'); if (!wrap) return;
