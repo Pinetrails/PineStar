@@ -76,6 +76,11 @@ try {
   const archived = await evalJS(cdp, `Workstreams.all().filter(w=>w.archived).map(w=>w.id).sort()`);
   check('bulk apply cannot cross previewed set', JSON.stringify(archived) === JSON.stringify(preview.expected), JSON.stringify({ archived, expected: preview.expected }));
   check('General and pinned remain protected', !archived.includes('power-general') && !archived.includes('power-49'));
+  const mirror = await evalJS(cdp, `(() => { const b=document.querySelector('#ws-tools-archived'); return {hidden:b.hidden,label:b.textContent}; })()`);
+  check('archived mirror surfaces the count after bulk apply', !mirror.hidden && mirror.label.includes('VIEW ' + preview.expected.length + ' ARCHIVED'), JSON.stringify(mirror));
+  const reveal = await evalJS(cdp, `(() => { document.querySelector('#ws-tools-archived').click(); return {archRowOn:!!document.querySelector('#workstreams .ws-arch-row.on'), label:document.querySelector('#ws-tools-archived').textContent}; })()`);
+  check('mirror click reveals archived in the rail and re-labels itself', reveal.archRowOn && /CLICK TO HIDE/.test(reveal.label), JSON.stringify(reveal));
+  await evalJS(cdp, `document.querySelector('#ws-tools-archived').click()`);   // flip the reveal back so later steps see the default rail
   await cdp.send('Page.reload', { ignoreCache: true });
   await waitFor(cdp, `typeof Workstreams === 'object' && typeof StationUI === 'object' && !!document.querySelector('#screen-game.active') && !!document.querySelector('#ws-tools')`, 'reload after bulk');
   await sleep(300);
@@ -83,6 +88,7 @@ try {
   check('bulk checkpoint survives reload', await evalJS(cdp, `Workstreams.canUndo() && !document.querySelector('#ws-undo').hidden`));
   await evalJS(cdp, `document.querySelector('#ws-undo').click()`);
   check('bulk undo restores every previewed row', (await evalJS(cdp, `Workstreams.all().filter(w=>w.archived).length`)) === 0);
+  check('archived mirror hides again at zero archived', await evalJS(cdp, `document.querySelector('#ws-tools-archived').hidden`));
   check('no uncaught page exceptions', exceptions.length === 0, exceptions.join(' ; '));
 } catch (e) {
   console.log('FAIL harness :: ' + (e && e.stack || e)); failures.push('harness');
