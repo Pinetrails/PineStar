@@ -4575,11 +4575,18 @@ server.listen(PORT, '127.0.0.1', () => {
       }
     } catch (e) { console.warn('[channels] ' + gid + ' auto-start failed:', (e && e.message) || e); }
   }
-  // warm every configured+enabled connector so its tools are ready on the first run (fire-and-forget; a
-  // connector that is down/errors simply projects no tools — it never blocks the host or a run).
+  // Restore EVERY saved connector into the manager so the control plane remains complete after restart.
+  // Disabled rows configure to manager state `down` without opening a transport (the same no-I/O path the
+  // interactive enabled:false upsert uses); enabled rows warm in the background for the first run.
   try {
-    for (const c of connectorConfigs) { if (c && c.enabled !== false && (c.url || c.command || c.oauth)) configureConnectorCfg(c).catch(() => {}); }
-    if (connectorConfigs.length) console.log('  · ' + connectorConfigs.length + ' MCP connector(s) warming');
+    let warming = 0, disabled = 0;
+    for (const c of connectorConfigs) {
+      if (!c || !(c.url || c.command || c.oauth)) continue;
+      if (c.enabled === false) disabled++; else warming++;
+      configureConnectorCfg(c).catch(() => {});
+    }
+    if (warming) console.log('  · ' + warming + ' MCP connector(s) warming');
+    if (disabled) console.log('  · ' + disabled + ' disabled MCP connector(s) loaded');
   } catch (e) { console.warn('[connectors] warm failed:', (e && e.message) || e); }
   // cron (OPT-IN): the scheduler arms iff SKYNET_CRON_ENABLED OR the persisted runtime cronArmed flag is set
   // (G4.6 — `cronArmed` is that OR, computed at the store). armCron() RESUMES by running ONE immediate reconcile
