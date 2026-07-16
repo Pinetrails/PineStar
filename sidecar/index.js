@@ -2305,7 +2305,8 @@ function saveConnectorConfigs() {
   try {
     fs.mkdirSync(CONNECTORS_DIR, { recursive: true });
     saveResilient(CONNECTORS_FILE, { version: 1, connectors: connectorConfigs });   // fsync-durable + .bak last-known-good
-  } catch (e) { console.warn('[connectors] persist failed:', (e && e.message) || e); }
+    return true;
+  } catch (e) { console.warn('[connectors] persist failed:', (e && e.message) || e); return false; }
 }
 const connectors = makeConnectorManager({
   makeTransport: (cfg) => cfg && cfg.transport === 'stdio' ? makeStdioTransport(cfg) : makeHttpTransport(cfg),
@@ -5236,8 +5237,12 @@ async function handleConnectorUpsert(req, res) {
   // it would silently strip auth and self-destruct a signed-in connector. Route through configureConnectorCfg so an
   // oauth connector re-warms with a fresh tokenProvider; non-oauth connectors pass straight through unchanged.
   if (prev.oauth || body.oauth) cfg.oauth = true;
+  const priorConfigs = connectorConfigs;
   connectorConfigs = connectorConfigs.filter(c => c.id !== id).concat([cfg]);
-  saveConnectorConfigs();
+  if (!saveConnectorConfigs()) {
+    connectorConfigs = priorConfigs;
+    return json(500, { ok: false, saved: false, connected: false, error: 'connector configuration could not be saved' });
+  }
   let result; try { result = await configureConnectorCfg(cfg); } catch (e) { result = { ok: false, state: 'error', error: (e && e.message) || 'configure failed' }; }
   const status = connectors.status(id);
   if (result.ok) return json(200, Object.assign({ saved: true, connected: status.state === 'up', status: status }, result));
