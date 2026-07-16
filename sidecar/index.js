@@ -8742,7 +8742,10 @@ async function handleGenericChannelDisconnect(req, res, id) {
     removedConfiguration = id === 'signal' && purge && persisted && !channelSecrets[id];
   }
   // `purged` is a DESTRUCTION claim — only assert it when the read-back proved the token left the disk.
-  res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ connected: false, purged: id !== 'signal' && purge && persisted, removedConfiguration, persisted }));
+  // Signal is tokenless, so report its separately proven configuration-removal fact and never call that a purge.
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  if (id === 'signal') res.end(JSON.stringify({ connected: false, purged: false, removedConfiguration, persisted }));
+  else res.end(JSON.stringify({ connected: false, purged: purge && persisted, removedConfiguration: false, persisted }));
 }
 
 /* ----------------------- Codex (ChatGPT subscription) OAuth ----------------------- */
