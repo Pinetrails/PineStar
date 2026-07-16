@@ -1999,7 +1999,7 @@ const App = (() => {
     if (!agent.reasoningEffort && saved.reasoningEffort) agent.reasoningEffort = saved.reasoningEffort;
     Harness.setModel(agent.model || Harness.getModel());
     Harness.setTotals(saved.usage || { tokens: 0, cost: 0, calls: 0 });
-    Workstreams.init({ workstreams: saved.workstreams, activeId: saved.activeId, generalId: saved.generalId });
+    Workstreams.init({ workstreams: saved.workstreams, activeId: saved.activeId, generalId: saved.generalId, sessionUndo: saved.sessionUndo });
     pendingStationDoc = saved.station || null;   // restore the built station (if any)
     pendingStationStats = saved.stationStats || null;   // restore the station-growth rollup (XP/level/confidence)
     pendingProfile = saved.profile || null;   // restore the learned user-affinity profile
@@ -2475,6 +2475,7 @@ const App = (() => {
     pushRoster();     // Stage 2: seed the sidecar with the live crew so the lead can delegate (no-op for a solo station)
     renderRail();
     el('ws-new').onclick = newWorkstream;
+    wireSessionTools();
     // NS-5c SESSIONS ↔ PROJECTS toggle + ADD-a-project wiring
     { const ts = el('ws-tab-sessions'); if (ts) ts.onclick = () => setRailView('sessions'); }
     { const tp = el('ws-tab-projects'); if (tp) tp.onclick = () => setRailView('projects'); }
@@ -2642,6 +2643,101 @@ const App = (() => {
   function newWorkstream() {
     const ws = Workstreams.startSession();
     SFX.open(); Chat.load(ws); refreshUsage(); renderRail(); persist();
+  }
+  /* Session power tools — one compact rail surface for title/transcript search, secret-safe active
+     conversation export, explicit clear+checkpoint, and exact-preview bulk archive. The pure store
+     owns every selection/recovery invariant; this layer only renders and persists its decisions. */
+  let sessionToolsPreview = null;
+  function sessionDownload(bundle) {
+    if (!bundle || !bundle.text) return false;
+    try {
+      const blob = new Blob([bundle.text], { type: bundle.mime || 'text/plain' });
+      const url = URL.createObjectURL(blob), a = document.createElement('a');
+      a.href = url; a.download = bundle.filename || 'starnet-conversation.txt';
+      document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 0);
+      return true;
+    } catch (_) { return false; }
+  }
+  function refreshSessionUndo() {
+    const b = el('ws-undo'); if (b) b.hidden = !Workstreams.canUndo();
+  }
+  function renderSessionSearch() {
+    const input = el('ws-search'), out = el('ws-search-results'); if (!input || !out) return;
+    const q = input.value.trim(); out.innerHTML = '';
+    if (!q) return;
+    const hits = Workstreams.search(q);
+    for (const hit of hits) {
+      const li = document.createElement('li'); li.className = 'ws-search-hit'; li.tabIndex = 0; li.dataset.id = hit.id;
+      const title = document.createElement('b'); title.textContent = hit.title || 'General';
+      const snippet = document.createElement('small'); snippet.textContent = hit.snippet;
+      li.append(title, snippet);
+      const open = () => { switchWorkstream(hit.id); input.value = ''; out.innerHTML = ''; };
+      li.onclick = open; li.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } };
+      out.appendChild(li);
+    }
+    if (!hits.length) {
+      const li = document.createElement('li'); li.className = 'ws-search-hit'; li.textContent = 'No title or transcript matches.'; out.appendChild(li);
+    }
+  }
+  function resetBulkPreview(message) {
+    sessionToolsPreview = null;
+    const apply = el('ws-bulk-apply'); if (apply) apply.disabled = true;
+    const status = el('ws-bulk-status'); if (status) status.textContent = message || 'Preview before archiving. General and pinned sessions stay protected.';
+  }
+  function wireSessionTools() {
+    const panel = el('ws-tools'), toggle = el('ws-tools-btn'); if (!panel || !toggle || toggle.__wired) return;
+    toggle.__wired = true;
+    toggle.onclick = () => {
+      const open = panel.hidden; panel.hidden = !open; toggle.setAttribute('aria-expanded', String(open));
+      SFX.click(); refreshSessionUndo(); if (open) { const q = el('ws-search'); if (q) q.focus(); }
+    };
+    { const q = el('ws-search'); if (q) q.oninput = renderSessionSearch; }
+    const exportActive = format => {
+      const w = Workstreams.active(), bundle = w && Workstreams.exportConversation(w.id, format);
+      const ok = sessionDownload(bundle); if (ok) SFX.click(); else SFX.bad();
+      if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify(ok ? ('exported “' + ((w && w.title) || 'General') + '” — hidden data and secrets excluded') : 'conversation export failed', ok ? '' : 'warn');
+    };
+    el('ws-export-md').onclick = () => exportActive('markdown');
+    el('ws-export-json').onclick = () => exportActive('json');
+    const clear = el('ws-clear');
+    clear.onclick = () => {
+      const w = Workstreams.active(); if (!w) return;
+      if (typeof Channels !== 'undefined' && Channels.isBusy(w.id)) {
+        SFX.bad(); if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('stop the active run before clearing this conversation', 'warn'); return;
+      }
+      if (!clear.dataset.armed) {
+        clear.dataset.armed = '1'; clear.textContent = 'CONFIRM CLEAR “' + (w.title || 'General') + '”'; SFX.bad();
+        setTimeout(() => { if (clear.isConnected && clear.dataset.armed) { delete clear.dataset.armed; clear.textContent = 'CLEAR ACTIVE CONVERSATION'; } }, 5000);
+        return;
+      }
+      delete clear.dataset.armed; clear.textContent = 'CLEAR ACTIVE CONVERSATION';
+      const cp = Workstreams.clearConversation(w.id); if (!cp) { SFX.bad(); return; }
+      Chat.load(w); persist(); refreshSessionUndo(); renderRail(); SFX.close();
+      if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('conversation cleared — recovery checkpoint ready', 'warn');
+    };
+    el('ws-bulk-preview').onclick = () => {
+      const empty = !!el('ws-bulk-empty').checked, completed = !!el('ws-bulk-completed').checked, old = !!el('ws-bulk-old').checked;
+      const days = Math.max(1, +el('ws-bulk-days').value || 30);
+      sessionToolsPreview = Workstreams.previewArchive({ empty, completed, olderThanMs: old ? days * 86400000 : 0 });
+      const n = sessionToolsPreview.count, status = el('ws-bulk-status'), apply = el('ws-bulk-apply');
+      status.textContent = n ? (n + ' exact session' + (n === 1 ? '' : 's') + ' previewed. General and pinned sessions are protected.') : '0 sessions match this preview.';
+      apply.disabled = !n; SFX.click();
+    };
+    for (const id of ['ws-bulk-empty', 'ws-bulk-completed', 'ws-bulk-old', 'ws-bulk-days']) {
+      const n = el(id); if (n) n.onchange = () => resetBulkPreview('Criteria changed — preview again before archiving.');
+    }
+    el('ws-bulk-apply').onclick = () => {
+      const before = Workstreams.activeId(), result = Workstreams.archivePreview(sessionToolsPreview);
+      if (!result) { SFX.bad(); resetBulkPreview('Preview expired or changed — preview again.'); return; }
+      if (Workstreams.activeId() !== before) loadActiveStream();
+      persist(); renderRail(); refreshSessionUndo(); resetBulkPreview(result.count + ' session' + (result.count === 1 ? '' : 's') + ' archived. Undo is available below.');
+      refreshSessionUndo(); SFX.close();
+    };
+    el('ws-undo').onclick = () => {
+      if (!Workstreams.undoLast()) { SFX.bad(); refreshSessionUndo(); return; }
+      loadActiveStream(); persist(); renderRail(); refreshSessionUndo(); resetBulkPreview('Last session change restored.'); SFX.open();
+    };
+    refreshSessionUndo();
   }
   // COMMS AGENT SELECTOR: put the Commander on the line with agent <agentId>. Selecting an agent must never
   // silently rebind an existing conversation to a different agent (that would corrupt whose transcript it is);
