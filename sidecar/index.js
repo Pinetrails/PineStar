@@ -7722,10 +7722,11 @@ async function runOnce(o) {
         const liveBrief = taskBriefStore.active(taskBrief.key);
         if (q) {
           taskQuestionAsked = true;
-          if (!liveBrief || liveBrief.status !== 'clarifying') await taskBriefStore.ask(taskBrief.id, Object.assign({
-            dimension: 'scope', recommended: q.options[0], reason: 'The model identified a material unresolved decision.', discoverable: false,
-            newBlocker: !!(liveBrief && liveBrief.questions && liveBrief.questions.length === 1)
-          }, q), Date.now());
+          // A brief.ask tool call already persisted the validated question (status 'clarifying'). This branch
+          // is the plain-text marker path: record ONLY what the model actually said ({ source: 'marker' } is
+          // the store's relaxed, honestly-unvalidated entry) — never fabricate dimension/recommended/reason
+          // to satisfy the validator; a fake recommendation would render as a real suggestion in the UI.
+          if (!liveBrief || liveBrief.status !== 'clarifying') await taskBriefStore.ask(taskBrief.id, q, Date.now(), { source: 'marker' });
         }
         else await taskBriefStore.complete(taskBrief.id, runId, Date.now());
       } catch (e) { console.warn('[taskbrief] settle failed:', (e && e.message) || e); }
