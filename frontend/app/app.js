@@ -2639,6 +2639,7 @@ const App = (() => {
   function renderRail() {
     const ul = el('workstreams');
     if (!ul || typeof Workstreams === 'undefined') return;
+    refreshSessionToolsActive();   // keep the SESSION TOOLS window's active-conversation label truthful across switches
     const activeId = Workstreams.activeId();
     ul.innerHTML = Workstreams.list({ includeArchived: railShowArchived }).map(w => {
       const title = w.title || 'General';
@@ -2731,6 +2732,15 @@ const App = (() => {
   function refreshSessionUndo() {
     const b = el('ws-undo'); if (b) b.hidden = !Workstreams.canUndo();
   }
+  // The floating window is detached from the rail, so "ACTIVE CONVERSATION" must NAME the session it
+  // acts on — export/clear aiming at an unnamed target reads as a trap. Kept live via renderRail (every
+  // session switch re-renders the rail), so the label can never go stale while the window is open.
+  function refreshSessionToolsActive() {
+    const n = el('ws-tools-active'); if (!n) return;
+    const w = Workstreams.active();
+    n.textContent = '— “' + ((w && w.title) || 'General') + '”';
+  }
+  function sessionToolsShown() { refreshSessionUndo(); refreshSessionToolsActive(); }
   function renderSessionSearch() {
     const input = el('ws-search'), out = el('ws-search-results'); if (!input || !out) return;
     const q = input.value.trim(); out.innerHTML = '';
@@ -2752,7 +2762,7 @@ const App = (() => {
   function resetBulkPreview(message) {
     sessionToolsPreview = null;
     const apply = el('ws-bulk-apply'); if (apply) apply.disabled = true;
-    const status = el('ws-bulk-status'); if (status) status.textContent = message || 'Preview before archiving. General and pinned sessions stay protected.';
+    const status = el('ws-bulk-status'); if (status) status.textContent = message || 'Nothing is archived until you preview, then apply. Archived sessions stay restorable under the rail’s ARCHIVED footer; General and pinned are never touched.';
   }
   function wireSessionTools() {
     // The panel lives parked+hidden in #ws-tools-park; StationUI's SESSION TOOLS window (SYSTEM menu)
@@ -3572,6 +3582,6 @@ const App = (() => {
     selectAgent: selectAgent,   // COMMS top-bar agent selector: switch to (or mint) a workstream bound to agentId
     openSummonBay: openSummonBay,   // adaptive-recruitment beat: accepting the recruit nudge deep-links into the bay's summon flow
     openRecipeLaunch: openRecipeLaunch,   // routine-nudge beat (lane D): accepting deep-links into the recipe's SCHEDULE IT form
-    sessionToolsShown: refreshSessionUndo,   // SESSION TOOLS window opened (stationui adopts the panel): sync the undo button to the store
+    sessionToolsShown: sessionToolsShown,   // SESSION TOOLS window opened (stationui adopts the panel): sync the undo button + active-session label
     applyConfig: applyAgentConfig };
 })();
