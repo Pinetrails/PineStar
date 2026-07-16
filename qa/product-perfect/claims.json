@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "f3fed75d8f8775df6cdddb6559f1cdbd8bc32970",
+    "sourceCommit": "6ca2800c0736670b64a14cae927bf4708395d43d",
     "pathSetSha256": "95100c67f873b121d4586a6d7fa52eb86e792f7dfaaf24fe50ed8f22f229d9c8",
     "files": [
       {
@@ -63,8 +63,8 @@
       },
       {
         "path": "frontend/app/app.js",
-        "bytes": 252313,
-        "sha256": "cb73172c6ac16c078800773ed4aee9b29eec6fb43fe9f4d1c834cbed4f263a81"
+        "bytes": 258570,
+        "sha256": "e28e559ac844ba594625201aac5ff5c49fd4733131e65d25475a79aac3102249"
       },
       {
         "path": "frontend/app/armconfirm.js",
@@ -623,8 +623,8 @@
       },
       {
         "path": "frontend/app/stationui.js",
-        "bytes": 461272,
-        "sha256": "52297d6cfe2985664511daf2df7c7bc1130d2b46dc674dcf3f1c6f1fe43ebdce"
+        "bytes": 466819,
+        "sha256": "853f542f205afc9df6d81f8a879a6b8697500e8550ad532e04f673e25b942922"
       },
       {
         "path": "frontend/app/study.js",
@@ -763,8 +763,8 @@
       },
       {
         "path": "frontend/app/workstreams.js",
-        "bytes": 19480,
-        "sha256": "9910bea754e1fade7853509fadffa1bbbc911c01640671dcbbc38343bf908269"
+        "bytes": 25898,
+        "sha256": "f973689ee026a3a7d0730f27134c0d5c8f96df424c4809afdf9395c8aa0ed5bb"
       },
       {
         "path": "frontend/app/world.js",
@@ -793,8 +793,8 @@
       },
       {
         "path": "frontend/css/app.css",
-        "bytes": 191745,
-        "sha256": "8508ea74d7fd9dea80e782104f9d5190c2598e214d79a21e56574cef76ad6c4f"
+        "bytes": 193821,
+        "sha256": "cdb1d05f546c675efcabeb0054b758dbad373032a4559fd162ae2f66912a1fc2"
       },
       {
         "path": "frontend/css/asciifx.css",
@@ -828,8 +828,8 @@
       },
       {
         "path": "frontend/css/style.css",
-        "bytes": 84171,
-        "sha256": "94d58ae012e24e88676061bee850be39fe700ba75ba2e39490173412429797b1"
+        "bytes": 85098,
+        "sha256": "79f66fc064457f77c5ae6358849db01d4aeac2fe3e60536a593d99a45304b42b"
       },
       {
         "path": "frontend/css/titlebar.css",
@@ -858,8 +858,8 @@
       },
       {
         "path": "frontend/index.html",
-        "bytes": 59872,
-        "sha256": "8076d60f945272cb77fec872bf68828ed6828f8265fa3c241ffc27587488717f"
+        "bytes": 61425,
+        "sha256": "d31a6fb025689719f2811793861d611ce30fbd4d05124987cc87c31efd0adcd4"
       },
       {
         "path": "frontend/js/arcade.js",
