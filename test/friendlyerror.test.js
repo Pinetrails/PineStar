@@ -5,6 +5,20 @@
 const A = require('./_assert.js');
 const { friendlyError, actionButton, KINDS, CAP_INFO } = require('../frontend/app/friendlyerror.js');
 
+// ---- transport loss during an established SSE stream => local-service recovery, never "unknown" ----
+for (const raw of [
+  'terminated',
+  'socket hang up',
+  'other side closed',
+  'premature close',
+  'read ECONNRESET'
+]) {
+  const v = friendlyError(new Error(raw));
+  A.eq(v.kind, 'network', raw + ' classifies as a local-service/network disconnect');
+  A.eq(v.retryable, true, raw + ' remains retryable after the station returns');
+  A.ok(/local service|app.*running|reload|restart/i.test(v.userMessage), raw + ' gives concrete local-service recovery guidance');
+}
+
 // ---- managed-credit exhaustion => STORE upsell (only reachable when a credits backend is wired) ----
 {
   const v = friendlyError('Out of managed credit — add credits in the STORE to keep running (or connect your own provider key).');
