@@ -702,7 +702,16 @@ const StationBake = (() => {
     // per-rect fills UNION instead of stacking — overlapping footprints (and the new tall-wall
     // reach above/below them) never double-darken.
     const capH = Math.max(2, Math.round(WALL.capH));
-    const upReach = r => Math.round((G.isCorridor(r.z) ? WALL.corUp : WALL.up) + capH + 4);
+    // up-reach must never exceed the pixels the wall art actually paints — anything past the
+    // wall's top edge darkens BARE SPACE, which reads as a floating shadow band above rooms
+    // on the colored SpaceBG (invisible back when space was pure black). The tall face tops
+    // out at topY - capH - 2 (lip) above the floor line; the legacy up:0 short wall at its
+    // NCAP band (4 rooms / 2 corridors). Both sit above the pad-wide hull plate, so the extra
+    // strip spans the footprint width ONLY (no horizontal pad — the pad wings would hang in space).
+    const upReach = r => {
+      const up = Math.max(0, Math.round(G.isCorridor(r.z) ? WALL.corUp : WALL.up));
+      return up > 0 ? up + capH + 2 : (G.isCorridor(r.z) ? 2 : 4);
+    };
     // the raised north faces sit under the ambient like the rest of the interior (lamp cuts
     // give them life); the hull SKIRT below stays OUTSIDE the mask — it hangs in void where
     // no lamp reaches, so it renders at its baked tones (else it fades to nothing).
@@ -713,7 +722,11 @@ const StationBake = (() => {
     mg.fillStyle = 'rgb(' + LIGHT.ambR + ',' + LIGHT.ambG + ',' + LIGHT.ambB + ')';
     for (const r of G.allRects) {
       const u = upReach(r);
-      mg.fillRect(r.x1 * T - pad, r.y1 * T - pad - u, (r.x2 - r.x1 + 1) * T + pad * 2, (r.y2 - r.y1 + 1) * T + pad * 2 + u);
+      const RW = (r.x2 - r.x1 + 1) * T, RH = (r.y2 - r.y1 + 1) * T;
+      // footprint + pad matches the opaque hull plate; the wall-height strip above spans the
+      // footprint width only (the wall face paints per-tile, exactly X..X+T)
+      mg.fillRect(r.x1 * T - pad, r.y1 * T - pad, RW + pad * 2, RH + pad * 2);
+      if (u > pad) mg.fillRect(r.x1 * T, r.y1 * T - u, RW, u);
     }
     for (const [ccx, ccy, kind] of G.chamfers) { const A = CORNER[kind]; eraseSpandrel(mg, kind, (ccx + A.cx) * T, (ccy + A.cy) * T, T + pad); }
     L.globalAlpha = LIGHT.ambient;
