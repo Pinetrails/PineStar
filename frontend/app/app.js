@@ -28,6 +28,7 @@ const App = (() => {
   // mixture during reload: unreachable + STANDBY + ONLINE + "COMMS online". Hold every idle claim at
   // CONNECTING until the bridge itself proves OPEN; a sustained failure then converges to one DOWN state.
   let bridgeAuthorityTimer = null;
+  let bridgeAuthorityObserver = null;
   function bridgeAuthorityProven() {
     try {
       const ls = (typeof World !== 'undefined' && World.linkState) ? World.linkState() : null;
@@ -36,13 +37,16 @@ const App = (() => {
   }
   function paintBridgeConnecting() {
     const chat = el('chat-status');
-    if (chat) { chat.textContent = 'connecting…'; chat.className = 'status-connecting'; }
+    if (chat) { if (chat.textContent !== 'connecting…') chat.textContent = 'connecting…'; if (chat.className !== 'status-connecting') chat.className = 'status-connecting'; }
     const pill = el('status-pill');
-    if (pill) { pill.textContent = 'CONNECTING'; pill.className = 'standby'; }
+    if (pill) { if (pill.textContent !== 'CONNECTING') pill.textContent = 'CONNECTING'; if (pill.className !== 'standby') pill.className = 'standby'; }
     const empty = document.querySelector('.cmsg-empty-line');
-    if (empty) empty.textContent = 'COMMS connecting…';
+    if (empty && empty.textContent !== 'COMMS connecting…') empty.textContent = 'COMMS connecting…';
     const sig = el('sig'), bars = sig && sig.querySelector('b');
-    if (sig && bars) { sig.classList.remove('down'); sig.classList.add('standby'); sig.childNodes[0].nodeValue = 'CONNECTING '; bars.textContent = '▃▃▃▃'; }
+    if (sig && bars) { sig.classList.remove('down'); sig.classList.add('standby'); if (sig.childNodes[0].nodeValue !== 'CONNECTING ') sig.childNodes[0].nodeValue = 'CONNECTING '; if (bars.textContent !== '▃▃▃▃') bars.textContent = '▃▃▃▃'; }
+    // Do not let our own corrective mutations recursively re-enter the observer and starve the
+    // EventSource/timers that are supposed to earn authority.
+    if (bridgeAuthorityObserver) bridgeAuthorityObserver.takeRecords();
   }
   function paintBridgeUnavailable() {
     const chat = el('chat-status');
@@ -56,10 +60,19 @@ const App = (() => {
   }
   function beginBridgeAuthorityGate() {
     if (bridgeAuthorityTimer) clearTimeout(bridgeAuthorityTimer);
+    if (bridgeAuthorityObserver) { bridgeAuthorityObserver.disconnect(); bridgeAuthorityObserver = null; }
     const beganAt = Date.now();
+    // StationUI and Topbar have independent repaint cadences. During the gate, synchronously fold any
+    // attempted status mutation back into CONNECTING before the browser paints a contradictory frame.
+    if (typeof MutationObserver !== 'undefined') {
+      bridgeAuthorityObserver = new MutationObserver(() => { if (bridgeAuthorityTimer && !bridgeAuthorityProven()) paintBridgeConnecting(); });
+      const game = el('screen-game');
+      if (game) bridgeAuthorityObserver.observe(game, { subtree: true, childList: true, characterData: true, attributes: true });
+    }
     const check = () => {
       if (bridgeAuthorityProven()) {
         bridgeAuthorityTimer = null;
+        if (bridgeAuthorityObserver) { bridgeAuthorityObserver.disconnect(); bridgeAuthorityObserver = null; }
         try { if (typeof Topbar !== 'undefined' && Topbar._paintSig) Topbar._paintSig(); } catch (_) {}
         if (typeof Chat !== 'undefined' && Chat.status && !(Chat.isBusy && Chat.isBusy())) Chat.status('online');
         const pill = el('status-pill'); if (pill) { pill.textContent = 'ONLINE'; pill.className = ''; }
@@ -69,7 +82,7 @@ const App = (() => {
       }
       // EventSource.CONNECTING is not a fault. Only call the link unavailable after it has failed to
       // earn authority for a full retry window; until then every surface stays on the same neutral word.
-      if ((Date.now() - beganAt) >= 12000) { bridgeAuthorityTimer = null; paintBridgeUnavailable(); return; }
+      if ((Date.now() - beganAt) >= 12000) { bridgeAuthorityTimer = null; if (bridgeAuthorityObserver) { bridgeAuthorityObserver.disconnect(); bridgeAuthorityObserver = null; } paintBridgeUnavailable(); return; }
       paintBridgeConnecting();
       bridgeAuthorityTimer = setTimeout(check, 100);
     };

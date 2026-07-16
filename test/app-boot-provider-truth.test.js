@@ -17,6 +17,7 @@ A.ok(/chat-status[\s\S]{0,180}connecting\u2026/.test(src), 'connecting paint cov
 A.ok(/status-pill[\s\S]{0,180}CONNECTING/.test(src), 'connecting paint covers the top status pill');
 A.ok(/COMMS connecting\u2026/.test(src), 'connecting paint retires the premature COMMS-online empty copy');
 A.ok(/sig[\s\S]{0,500}CONNECTING/.test(src), 'connecting paint covers the uplink instrument');
+A.ok(/new MutationObserver\([\s\S]{0,240}paintBridgeConnecting/.test(src), 'independent status timers cannot paint a contradictory frame during the gate');
 A.ok(/Chat\.init\([\s\S]{0,900}beginBridgeAuthorityGate\(\)/.test(src), 'bridge gate starts only after COMMS has mounted its boot DOM');
 
 // PL-08: Custom has a required endpoint. That prerequisite must win BEFORE model validation, because
