@@ -9,9 +9,15 @@
    whatever session the Commander happens to have open. Every deliverable gets its OWN session — a
    workstream adopted with id 'workshop-<runId>' (the SAME id the sidecar used as the shift's durable
    streamId, so a follow-up message in that session resumes the build's real transcript server-side).
-   The session lands in the rail UNREAD (lastReadAt 0 — the same truthful unread the cron autosessions
-   ride) and steals no focus. The return card renders ONLY when the Commander opens that session
-   (chat.js load() → presentFor), never into a random feed.
+
+   DELIVERY REVEAL (2026-07-16, per Andrew): a finished build must GREET the Commander, not hide as an
+   unread rail row with a one-line stub ("it puts it all on me to prompt and figure out what it even
+   is"). When a deliverable lands — live push, attach poll, or genuine return — StarNet OPENS the
+   deliverable's OWN session and presents the full return card there (what it built, the honest
+   verification line, the summary, the files, the Open-it link, and the decide row). The card still
+   renders ONLY inside its own session — never into a random feed — and the reveal stands down (unread
+   row + toast fallback) whenever the Commander is mid-something (a streaming reply, the awakening, an
+   open dialogue). With several deliverables pending, the NEWEST opens; the rest land unread.
 
    It also owns the two write paths the rest of the UI calls into:
      • queue(item)   → POST /api/workshop/queue  (the "build this while I'm away" action)
@@ -259,7 +265,9 @@ const WorkshopStore = (() => {
         id: id,
         title: '⚒ ' + (String(m.title || '').trim() || 'built while you were away').slice(0, 70),
         agentId: m.agentId || 'agent', lane: 'active', kind: 'chat',
-        history: [{ role: 'system', sys: true, content: '⚒ built while you were away — “' + String(m.title || 'a deliverable') + '”. open this session any time to review and decide.' }],
+        history: [{ role: 'system', sys: true, content: '⚒ built while you were away — “' + String(m.title || 'a deliverable') + '”.'
+          + (String(m.summary || '').trim() ? ' ' + String(m.summary).trim() : '')
+          + ' open this session any time to review and decide.' }],
         lastActiveAt: Date.now(), lastReadAt: 0   // truthful unread: real new activity the Commander hasn't seen
       });
     }
@@ -297,6 +305,30 @@ const WorkshopStore = (() => {
     });
   }
 
+  // the Commander is mid-something a focus jump would stomp: a streaming reply, an interview flow, or a
+  // focused dialogue panel. Any probe error fails toward NOT engaged (reveal proceeds) — the reveal itself
+  // is harmless (it opens a session), while a false "engaged" re-hides the build (the bug this fixes).
+  function commanderEngaged() {
+    try { if (typeof Chat !== 'undefined' && Chat.isBusy && Chat.isBusy()) return true; } catch (_) {}
+    try { if (typeof Onboarding !== 'undefined' && Onboarding.isRunning && Onboarding.isRunning()) return true; } catch (_) {}
+    try { if (typeof Intake !== 'undefined' && Intake.isRunning && Intake.isRunning()) return true; } catch (_) {}
+    try { if (typeof Dialogue !== 'undefined' && Dialogue.isOpen && Dialogue.isOpen()) return true; } catch (_) {}
+    return false;
+  }
+
+  // DELIVERY REVEAL (2026-07-16): open the deliverable's OWN session and present the full return card there.
+  // Returns true when the reveal happened; false → the caller keeps the unread-row + toast fallback. The
+  // direct presentCard makes the card unconditional on the open (chat.js load() → presentFor also fires and
+  // re-fetches; its data-wsrun dedupe keeps exactly one live card).
+  function reveal(m) {
+    if (!m || !m.runId) return false;
+    if (commanderEngaged()) return false;
+    if (typeof App === 'undefined' || !App.openWorkstream) return false;
+    try { App.openWorkstream(sessionIdOf(String(m.runId))); } catch (_) { return false; }
+    try { presentCard(m); } catch (_) {}
+    return true;
+  }
+
   // THE CARD-ON-OPEN SEAM: chat.js load() calls this with the freshly displayed workstream id. If it is a
   // deliverable session whose run is STILL UNDECIDED server-side (fresh honest read — never a cached claim),
   // render the return card into it. Deliberately ignores the seen AND later ledgers: the Commander explicitly
@@ -311,14 +343,16 @@ const WorkshopStore = (() => {
     presentCard(m);
   }
 
-  // auto-poll on attach: give EVERY undecided deliverable its own unread session. Once per page session.
-  // No card is rendered here — the card appears when the Commander opens a delivery session (presentFor).
+  // auto-poll on attach: give EVERY undecided deliverable its own unread session, then REVEAL the newest
+  // (open its session + full return card) so the Commander is greeted with what was built, not a stub row.
+  // Once per page session.
   async function maybePresent() {
     if (fired || !ready()) return;
     const pending = await fetchPending();
     if (!pending.length) return;
     fired = true;
     for (const m of pending) ensureSession(m);
+    reveal(pending[pending.length - 1]);   // backlog order: last = newest build
   }
 
   /* RETURN RE-PRESENT (2026-07-14, reshaped for session delivery 2026-07-15): a night-shift build lands
@@ -331,6 +365,7 @@ const WorkshopStore = (() => {
     if (!enabled) return;
     const list = (await fetchRaw()).filter(m => m && m.runId && !state.later[m.runId]);
     for (const m of list) ensureSession(m);
+    if (list.length) reveal(list[list.length - 1]);   // greet the return with the newest build's card
   }
 
   /* LIVE PUSH — the attach-time poll above only covers session OPEN, so a deliverable that landed while the
@@ -347,11 +382,12 @@ const WorkshopStore = (() => {
     if (state.later[runId] || state.seen.indexOf(runId) !== -1) return;
     const aid = String(p.agentId || 'agent');
     const m = Object.assign({}, p.manifest, { agentId: aid, runId: runId });
-    ensureSession(m);   // marks seen; unread row in the rail, focus untouched
-    try {
+    ensureSession(m);   // marks seen; durable session either way
+    // DELIVERY REVEAL: the moment the build lands, open its session with the full card. Fallback (the
+    // Commander is mid-something, or no App yet): unread row + ONE actionable toast that jumps there.
+    const opened = reveal(m);
+    if (!opened) try {
       if (typeof StationUI !== 'undefined' && StationUI.notify) {
-        // actionable toast (2026-07-15 UX audit): clicking it JUMPS to the delivery session — the old copy
-        // pointed at "the rail" and left the user to go find it.
         const jump = () => { try { if (typeof App !== 'undefined' && App.openWorkstream) App.openWorkstream(sessionIdOf(runId)); } catch (_) {} };
         StationUI.notify('✦ built while you were away: ' + String(m.title || 'a deliverable') + ' — click to review it', 'gold', 'cronDigest', { onClick: jump });
       }
