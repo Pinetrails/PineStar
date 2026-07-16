@@ -119,6 +119,7 @@ test/slash.config.test.js
 test/voice.button.test.js
 test/save.test.js
 test/saveversion.test.js
+test/backup-secrets.test.js
 test/schema-stamp.test.js
 test/rename-migrate.test.js
 test/update-state-parity.test.js

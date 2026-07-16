@@ -212,13 +212,15 @@ async function readNdjson(res) {
     SKYNET_DEFAULT_MODEL: 'test/model',
     STARNET_DEFAULT_MODEL: 'test/model'
   };
-  const { child, port } = await boot(9020 + (process.pid % 50), env, 20);
-  const B = 'http://' + HOST + ':' + port;
+  let booted = await boot(9020 + (process.pid % 50), env, 20);
+  let child = booted.child;
+  let port = booted.port;
+  let B = 'http://' + HOST + ':' + port;
   let sse = null;
   try {
-    const token = await bootToken(B, B);
+    let token = await bootToken(B, B);
     A.ok(token.length >= 32, 'got a session API token');
-    const headers = { 'Content-Type': 'application/json', 'X-StarNet-Token': token, Origin: B };
+    let headers = { 'Content-Type': 'application/json', 'X-StarNet-Token': token, Origin: B };
 
     const upsert = await fetch(B + '/api/connectors', {
       method: 'POST',
@@ -258,6 +260,32 @@ async function readNdjson(res) {
     await fetch(B + '/api/connectors', { method: 'POST', headers, body: JSON.stringify({ id: 'stripe', label: 'not stripe', transport: 'http', url: 'https://mcp.example.invalid/mcp', enabled: false }) });
     const cat3 = await (await fetch(B + '/api/connectors/catalog', { headers: { 'X-StarNet-Token': token, Origin: B } })).json();
     A.eq((cat3.connectors.find(c => c.id === 'stripe') || {}).installed, false, 'a foreign-url id collision does NOT mark the vetted vendor card installed');
+
+    // EL-3 PU-02: disabled connectors are durable MANAGEMENT state. They must remain visible after
+    // restart even though they are deliberately absent from the live runtime/tool projection.
+    // Before the fix, boot skips disabled configs and GET /api/connectors lists manager state only,
+    // so both rows vanish while their config (and possible secret) remains on disk.
+    try { child.kill(); } catch (_) {}
+    await new Promise(resolve => child.once('exit', resolve));
+    booted = await boot(port, env, 20);
+    child = booted.child;
+    port = booted.port;
+    B = 'http://' + HOST + ':' + port;
+    token = await bootToken(B, B);
+    headers = { 'Content-Type': 'application/json', 'X-StarNet-Token': token, Origin: B };
+    let afterRestart = { connectors: [] };
+    for (let i = 0; i < 50; i++) {
+      afterRestart = await (await fetch(B + '/api/connectors', { headers: { 'X-StarNet-Token': token, Origin: B } })).json();
+      if ((afterRestart.connectors || []).some(c => c.id === 'demo' && c.state === 'up')) break;
+      await sleep(100);
+    }
+    const restartedDemo = (afterRestart.connectors || []).find(c => c.id === 'demo');
+    const restartedDeepwiki = (afterRestart.connectors || []).find(c => c.id === 'deepwiki');
+    const restartedStripe = (afterRestart.connectors || []).find(c => c.id === 'stripe');
+    A.ok(restartedDemo && restartedDemo.state === 'up', 'enabled connector rewarms after restart');
+    A.ok(restartedDeepwiki && restartedDeepwiki.enabled === false, 'disabled catalog connector remains listed after restart');
+    A.ok(restartedStripe && restartedStripe.enabled === false, 'disabled manual connector remains listed after restart');
+    A.ok(JSON.stringify(afterRestart).indexOf('mcp-secret-token') === -1, 'restart list never leaks a persisted connector token');
 
     sse = await startSseCollector(B + '/api/channels/events?token=' + encodeURIComponent(token));
     const create = await fetch(B + '/api/cron', {

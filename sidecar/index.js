@@ -2788,7 +2788,47 @@ function nightFocusInputs() {
 
 // ensure a day-keyed focus for the current night; persist iff it changed; return the focus (or null → improv). When
 // `resolved` is true (first beat of the night / a new day / a fresh steer) the caller ledgers the fresh declaration.
+// A focus is a selector over EXISTING authority, never a second authority surface. projects.json is metadata only:
+// a standing path grant is the project authority, and open/picked ledger rows are the thread authority.
+function blessedProjectRootFor(ref) {
+  const norm = pathTrustCore.normalizeRoot(String(ref == null ? '' : ref));
+  const want = path.sep === '\\' ? norm.toLowerCase() : norm;
+  for (const root of blessedRoots()) {
+    const candidate = path.sep === '\\' ? String(root).toLowerCase() : String(root);
+    if (candidate === want) return root;
+  }
+  return null;
+}
+function liveNightThread(ref) {
+  const id = String(ref == null ? '' : ref);
+  try { return threadsStore.list({ state: 'all' }).find(t => t && t.id === id && (t.state === 'open' || t.state === 'picked')) || null; }
+  catch (_) { return null; }
+}
+function nightFocusTargetAvailable(target) {
+  if (!target || !target.ref) return false;
+  if (target.kind === 'project') {
+    const root = blessedProjectRootFor(target.ref);
+    if (!root) return false;
+    try { return fs.statSync(root).isDirectory(); } catch (_) { return false; }
+  }
+  if (target.kind === 'thread') return !!liveNightThread(target.ref);
+  if (target.kind === 'goal') {
+    const goal = commanderGoals.get();
+    return target.ref === 'goal' && !!(goal && String(goal.text || '').trim());
+  }
+  return true; // quest/northstar are resolver-owned evidence kinds, not steer kinds.
+}
+function reconcileNightFocusAuthority() {
+  const before = JSON.stringify(nightFocusState);
+  if (nightFocusState && nightFocusState.steer && !nightFocusTargetAvailable(nightFocusState.steer))
+    nightFocusState = nightfocus.clearSteer(nightFocusState);
+  if (nightFocusState && nightFocusState.focus && !nightFocusTargetAvailable(nightFocusState.focus))
+    nightFocusState = Object.assign({}, nightFocusState, { focus: null });
+  if (JSON.stringify(nightFocusState) !== before) saveNightFocusState();
+}
+
 function resolveNightFocus() {
+  reconcileNightFocusAuthority();
   const inp = nightFocusInputs();
   const r = nightfocus.ensureFocus(nightFocusState, inp, { now: inp.now });
   if (r.resolved || JSON.stringify(r.state) !== JSON.stringify(nightFocusState)) { nightFocusState = r.state; saveNightFocusState(); }
@@ -4537,11 +4577,18 @@ server.listen(PORT, '127.0.0.1', () => {
       }
     } catch (e) { console.warn('[channels] ' + gid + ' auto-start failed:', (e && e.message) || e); }
   }
-  // warm every configured+enabled connector so its tools are ready on the first run (fire-and-forget; a
-  // connector that is down/errors simply projects no tools — it never blocks the host or a run).
+  // Restore EVERY saved connector into the manager so the control plane remains complete after restart.
+  // Disabled rows configure to manager state `down` without opening a transport (the same no-I/O path the
+  // interactive enabled:false upsert uses); enabled rows warm in the background for the first run.
   try {
-    for (const c of connectorConfigs) { if (c && c.enabled !== false && (c.url || c.command || c.oauth)) configureConnectorCfg(c).catch(() => {}); }
-    if (connectorConfigs.length) console.log('  · ' + connectorConfigs.length + ' MCP connector(s) warming');
+    let warming = 0, disabled = 0;
+    for (const c of connectorConfigs) {
+      if (!c || !(c.url || c.command || c.oauth)) continue;
+      if (c.enabled === false) disabled++; else warming++;
+      configureConnectorCfg(c).catch(() => {});
+    }
+    if (warming) console.log('  · ' + warming + ' MCP connector(s) warming');
+    if (disabled) console.log('  · ' + disabled + ' disabled MCP connector(s) loaded');
   } catch (e) { console.warn('[connectors] warm failed:', (e && e.message) || e); }
   // cron (OPT-IN): the scheduler arms iff SKYNET_CRON_ENABLED OR the persisted runtime cronArmed flag is set
   // (G4.6 — `cronArmed` is that OR, computed at the store). armCron() RESUMES by running ONE immediate reconcile
@@ -8077,8 +8124,10 @@ function handleNightshiftStatus(req, res) {
 }
 
 // the declared focus as a truthful-telemetry view: the persisted focus (what the night is actually chasing), plus
-// the durable steer if one is set. Never re-resolves (status reflects state, it doesn't mutate it).
+// the durable steer if one is set. It never re-ranks evidence, but it does retire authority that was revoked since
+// resolution so status cannot keep advertising an unavailable target.
 function nightFocusView() {
+  reconcileNightFocusAuthority();
   const f = nightFocusState && nightFocusState.focus;
   if (!f || !f.ref) return null;
   return { kind: f.kind, ref: f.ref, label: f.label, why: Array.isArray(f.why) ? f.why : [], source: f.source, steered: !!(nightFocusState.steer && nightFocusState.steer.ref) };
@@ -8124,14 +8173,47 @@ async function handleNightshiftBeatNow(req, res) {
      GET    → the current declared focus + steer (read-only preview; re-resolves so an empty state still shows intent).
      POST   { ref, kind? } → set the steer (stamped now) + re-resolve the focus toward it immediately.
      DELETE → clear the steer (derived evidence takes over again). */
+async function validateNightFocusSteer(kind, ref) {
+  if (kind !== 'project' && kind !== 'thread' && kind !== 'goal')
+    return { ok: false, status: 400, error: 'focus kind must be project, thread, or goal' };
+  if (kind === 'thread') {
+    const thread = liveNightThread(ref);
+    if (!thread) return { ok: false, status: 404, error: 'that thread is not open or picked; choose a current thread id' };
+    return { ok: true, kind, ref: thread.id };
+  }
+  if (kind === 'goal') {
+    const goal = commanderGoals.get();
+    if (ref !== 'goal') return { ok: false, status: 400, error: 'the current goal is selected with ref "goal"' };
+    if (!goal || !String(goal.text || '').trim()) return { ok: false, status: 404, error: 'there is no current goal to focus on' };
+    return { ok: true, kind, ref: 'goal' };
+  }
+
+  if (!path.isAbsolute(ref)) return { ok: false, status: 400, error: 'project focus requires an absolute path to a trusted project' };
+  const norm = pathTrustCore.normalizeRoot(ref);
+  const hardline = pathTrustCore._internals.hardlineReason(ref, norm);
+  if (hardline) return { ok: false, status: 400, error: hardline };
+  let st;
+  try { st = await fsp.stat(norm); }
+  catch (_) { return { ok: false, status: 404, error: 'that project path does not exist: ' + norm }; }
+  if (!st.isDirectory() && !st.isFile()) return { ok: false, status: 400, error: 'that project path is not a file or folder: ' + norm };
+  let canonical;
+  try { canonical = pathTrustCore.normalizeRoot(await pathTrustCore.detectRoot(norm)); }
+  catch (_) { return { ok: false, status: 400, error: 'could not resolve that project path' }; }
+  const root = blessedProjectRootFor(canonical);
+  if (!root) return { ok: false, status: 403, error: 'that project is not currently trusted; add or re-enable it in Projects first' };
+  return { ok: true, kind, ref: root };
+}
+
 async function handleNightshiftFocus(req, res) {
   const json = (code, obj) => { if (res.headersSent) return; res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
   if (req.method === 'POST') {
     let body; try { body = JSON.parse(await readBody(req, 1 << 14, res)) || {}; } catch (e) { return json(400, { ok: false, error: 'bad json' }); }
     const ref = String(body.ref || '').trim();
     if (!ref) return json(400, { ok: false, error: 'a focus ref is required (a project path, a thread id, or "goal")' });
-    const kind = (body.kind === 'thread' || body.kind === 'goal') ? body.kind : 'project';
-    nightFocusState = nightfocus.applySteer(nightFocusState, { ref, kind }, Date.now());
+    const requestedKind = (body.kind == null || body.kind === '') ? 'project' : body.kind;
+    const checked = await validateNightFocusSteer(requestedKind, ref);
+    if (!checked.ok) return json(checked.status, { ok: false, error: checked.error });
+    nightFocusState = nightfocus.applySteer(nightFocusState, { ref: checked.ref, kind: checked.kind }, Date.now());
     saveNightFocusState();
     const foc = resolveNightFocus();   // re-resolve toward the steer NOW so status reflects it immediately
     return json(200, { ok: true, focus: nightFocusView(), steered: true, resolved: !!(foc && foc.resolved) });
@@ -8139,7 +8221,8 @@ async function handleNightshiftFocus(req, res) {
   if (req.method === 'DELETE') {
     nightFocusState = nightfocus.clearSteer(nightFocusState);
     saveNightFocusState();
-    return json(200, { ok: true, cleared: true, focus: nightFocusView() });
+    const foc = resolveNightFocus();
+    return json(200, { ok: true, cleared: true, focus: nightFocusView() || (foc && foc.focus) || null, resolved: !!(foc && foc.resolved) });
   }
   // GET — a read-only preview: resolve (persist iff changed) so a first-ever read still shows what the night WOULD chase.
   const foc = resolveNightFocus();

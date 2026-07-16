@@ -3285,14 +3285,14 @@ const App = (() => {
     // (the title screen — RESUME / NEW STATION / the destructive NEW AGENT wipe — is gone; boot auto-resumes,
     //  see the three-way at the foot of init(). Re-entry is handled by reentry()/startCreation().)
 
-    // data portability — the safety net for the localStorage-fragile agent. Export bundles every
-    // starnet.* key + a memory snapshot into one file; import restores it on any browser.
+    // data portability — the safety net for the localStorage-fragile agent. Export bundles nonsecret
+    // starnet.* records + a memory snapshot into one file; import restores them on any browser.
     const dataStatus = m => { const n = el('data-status'); if (n) n.textContent = m || ''; };
     el('btn-export').onclick = async () => {
       SFX.click(); dataStatus('exporting…');
       const r = await Backup.exportAll();
       dataStatus(r && r.ok
-        ? 'saved ' + r.file + ' — ' + r.keys + ' keys' + (r.notes ? ' + ' + r.notes + ' memories' : '')
+        ? 'saved ' + r.file + ' — secrets excluded; ' + r.records + ' records' + (r.notes ? ' + ' + r.notes + ' memories' : '')
         : 'export failed');
     };
     const fileImport = el('file-import');
@@ -3305,7 +3305,7 @@ const App = (() => {
       SFX.boot();
       const mem = (typeof r.memoriesRestored === 'number') ? r.memoriesRestored
         : (r.memories ? r.memories + ' in file' : 0);
-      dataStatus('restored ' + (r.agentName || 'agent') + ' — ' + r.keys + ' keys'
+      dataStatus('restored ' + (r.agentName || 'agent') + ' — ' + (r.records == null ? r.keys : r.records) + ' records'
         + (mem ? ' + ' + mem + ' memories' : ''));
       reentry();   // resume straight into the restored agent (or its RESUME screen if creds are still missing)
     };
