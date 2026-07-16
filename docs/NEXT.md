@@ -53,8 +53,13 @@ Beyond the gate, proven this session (receipts `.bugloops/release-prep-2026-07-1
 - Guardian-RED-under-load = KNOWN flake class (spawnSync null / J2 poll windows while cargo builds
   run) — re-run isolated before believing an hourly RED that overlaps builds.
 REMAINING, honestly out of this machine's reach:
-- [ ] **Andrew: attended 15-min playtest** — also unblocks the W1 wave (its fresh-run precondition
-      requires attended-operator attestation by design; never auto-attest).
+- [x] **Andrew: attended 15-min playtest** — DONE per Andrew 2026-07-15: "ran perfectly for me as
+      a user" (the docs/PLAYTEST_SCRIPT_GATE5.md item dodged since 7/02 is cleared). NOTE: the W1
+      WAVE is a separate, stricter proof — attended FRESH-PROFILE first-run on the exact rc binary
+      through `scripts/qa/installed-first-run.mjs`, with isolation authority `separate-windows-user`
+      / `virtual-machine` / `clean-machine` (this login doesn't qualify). Cheapest honest path on
+      this PC: create a second Windows user, install the rc exe there, run the W1 driver attended
+      (~15 min). Folds naturally into the 10-outside-installs step otherwise.
 - [ ] **Andrew: publish `starnet-releases` + key backups + dev-key rotation**, then the public
       per-platform update canaries; 48h RC soak per docs/RELEASE_READINESS.md.
 - [ ] T0 clean-machine + T3.2/T3.4 proofs: need a true clean Windows box (this one is Win11 Home —
