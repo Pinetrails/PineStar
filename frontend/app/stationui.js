@@ -385,6 +385,11 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   function placeTerm(w, key) {
     const p = termPos[key];
     if (p) {
+      // The base CRT animation is authored around CSS-centred windows and owns `transform` while it
+      // runs. Replaying it over persisted left/top coordinates visually subtracts half the restored
+      // window size, stranding the titlebar off-screen until the animation releases. Persisted windows
+      // are already established state, so suppress that centred entrance before applying their rect.
+      w.style.animation = 'none';
       w.style.left = p.left + 'px'; w.style.top = p.top + 'px'; w.style.transform = 'none';
       w.classList.add('term-moved');
       requestAnimationFrame(() => fitTermInViewport(w, key, true));
@@ -405,6 +410,8 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     let left = baseL + (prior % span) * step;
     let top  = baseT + (prior % span) * step;
     const placed = visibleTerminalRect({ left, top, width: wpx, height: hpx }, terminalViewport());
+    // Cascaded windows also use explicit coordinates; the centred keyframes are invalid for them.
+    w.style.animation = 'none';
     w.style.left = placed.left + 'px'; w.style.top = placed.top + 'px'; w.style.transform = 'none';
   }
   function fitTermInViewport(w, key, persist) {

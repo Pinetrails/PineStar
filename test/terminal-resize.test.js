@@ -26,5 +26,6 @@ A.ok(/aria-label[^\n]+Resize/.test(src), 'resize affordance has an explicit acce
 A.ok(/function\s+fitTermInViewport[\s\S]{0,500}resizeTermTo/.test(src) && /function\s+resizeTermTo[\s\S]{0,400}clampTerminalSize/.test(src), 'viewport repair clamps dimensions before position');
 A.ok(/minWidth/.test(src) && /maxWidth/.test(src) && /minHeight/.test(src) && /maxHeight/.test(src), 'per-window min/max dimensions are explicit');
 A.ok(/termSize\[key\]\s*=\s*\{\s*width:\s*next\.width,\s*height:\s*next\.height\s*\}/.test(src), 'pointermove updates the live size map before viewport repair can consult it');
+A.ok(/const p = termPos\[key\][\s\S]{0,450}w\.style\.animation = 'none'[\s\S]{0,180}w\.style\.transform = 'none'/.test(src), 'persisted coordinates suppress centered entrance keyframes before restoring the rectangle');
 
 A.report('terminal-resize.test');
