@@ -22,6 +22,20 @@ Attack order and verified/unverified surface inventory are in the audit. EL-3 la
 the exact failing reproduction before each fix. Do not infer station-wide readiness from the green
 baseline; Atlas at this head is 444 stale · 123 unmapped · 1 missing.
 
+## READY TO MERGE 2026-07-15 — TASK-CONTEXT ELICITATION (`agent/intent-engine`)
+
+StarNet now listens before it builds without turning every request into an interview: a shared
+discover-before-ask doctrine; one natural 2–3 choice question only for material, non-discoverable
+gaps; a hard two-question task cap; and an explicit “use your judgment” escape. Answers resume the
+same durable Task Brief after reload/restart, remain task-local, flow into delegated workers, and only
+compound into weak relationship evidence after the same decision is observed twice. COMMS strips the
+protocol into chips; Telegram/Discord/Slack/Matrix/Signal use the same continuity with numbered text.
+Clarification turns are neutral (no product/XP/First-Pitch/learning sweep); unattended cron/night-shift
+runs stay unchanged. Live-proven in the real seeded app: question → reload → restored choices →
+“operators” → clean continuation, with `task-briefs.json` recording `status:"done"` and the clean answer.
+Gate: 328/328 runnable fast steps green; the sole stop is the documented 9-assertion W0 candidate-SHA
+worktree baseline in `qa-product-perfect-claims`; `test:http` fully green (404 sidecar assertions + all e2e).
+
 ## 2026-07-15 — v0.5.1 CUT + INSTALLED LOCALLY (trunk `3d70d7b1`, tag `v0.5.1`)
 
 Signed release cut at trunk head (rc/0.5.1 content + docs + real RELEASE_NOTES.md; W0 surface

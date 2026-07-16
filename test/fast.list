@@ -168,6 +168,7 @@ test/scout.test.js
 test/dossier.test.js
 test/understanding.test.js
 test/fork.test.js
+test/taskintent.test.js
 test/understandingstore.test.js
 test/study.test.js
 test/goals.test.js
