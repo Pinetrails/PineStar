@@ -1999,9 +1999,13 @@ const Chat = (() => {
     const r = row('agent'); r.d.classList.add('tool'); r.d.classList.add('turnin'); r.d.classList.add('workshop-return');
     try { r.d.setAttribute('data-wsrun', String(m.runId)); } catch (_) {}   // the re-present dedupe key (above)
 
-    // ── headline ──
+    // ── headline (+ an honest kind chip straight off the validated manifest) ──
     const title = document.createElement('span'); title.className = 'turnin-title';
     title.textContent = '◈ while you were away — ' + who + ' built: ' + String(m.title || 'a deliverable');
+    if (m.kind && m.kind !== 'other') {
+      const chip = document.createElement('span'); chip.className = 'ws-kindchip'; chip.textContent = String(m.kind);
+      title.appendChild(chip);
+    }
     r.body.appendChild(title);
 
     // HONEST verification line — proves off the manifest ONLY. Three truthful states:
@@ -2027,28 +2031,24 @@ const Chat = (() => {
     }
     r.body.appendChild(ver);
 
+    // labeled section rows — the premium dossier grammar (gold uppercase micro-label over a bright value),
+    // same ws-k/ws-v vocabulary the old summary pane and the config cards speak.
+    const mkSection = (label, value, cls) => {
+      const d = document.createElement('div'); d.className = 'ws-line ' + cls;
+      const kk = document.createElement('span'); kk.className = 'ws-k'; kk.textContent = label;
+      const vv = document.createElement('span'); vv.className = 'ws-v'; vv.textContent = value;
+      d.appendChild(kk); d.appendChild(vv); r.body.appendChild(d);
+    };
     // ── WHAT it did — the one paragraph the agent wrote, plain ──
-    if (m.summary) {
-      const what = document.createElement('div'); what.className = 'ws-line ws-what';
-      what.textContent = String(m.summary);
-      r.body.appendChild(what);
-    }
+    if (m.summary) mkSection('what it did', String(m.summary), 'ws-what');
     // ── how to use — ONE short line. The workshop prompt now caps this to a sentence; a verbose legacy
     // manifest is clamped here rather than dumped as a wall of instructions (the old confusing card).
     if (m.howToUse) {
       const one = String(m.howToUse).replace(/\s+/g, ' ').trim();
-      if (one) {
-        const how = document.createElement('div'); how.className = 'ws-line ws-how';
-        how.textContent = 'how to use — ' + (one.length > 200 ? one.slice(0, 200) + '…' : one);
-        r.body.appendChild(how);
-      }
+      if (one) mkSection('how to use', one.length > 200 ? one.slice(0, 200) + '…' : one, 'ws-how');
     }
     // what a human still needs to check — honest, compact (never implied failure, never hidden).
-    if (Array.isArray(m.notVerified) && m.notVerified.length) {
-      const nv = document.createElement('div'); nv.className = 'ws-line ws-notver';
-      nv.textContent = 'check yourself — ' + m.notVerified.join('; ');
-      r.body.appendChild(nv);
-    }
+    if (Array.isArray(m.notVerified) && m.notVerified.length) mkSection('check yourself', m.notVerified.join('; '), 'ws-notver');
     // per-command verification detail: the ACTUAL commands run + each one's pass/fail from the manifest
     // (renders only when the manifest actually recorded them — never invents a command or a result).
     if (vcmds && vcmds.length) {
@@ -2080,7 +2080,7 @@ const Chat = (() => {
         r.body.appendChild(warn);
       }
       const tryRow = document.createElement('div'); tryRow.className = 'turnin-rate ws-try';
-      const openItBtn = document.createElement('button'); openItBtn.className = 'consent-btn'; openItBtn.textContent = '▶ Open it — try it in a tab';
+      const openItBtn = document.createElement('button'); openItBtn.className = 'consent-btn ws-openit'; openItBtn.textContent = '▶ Open it — try it in a tab';
       openItBtn.title = m.capturesInput
         ? 'run this tool in a new browser tab — it will capture your mouse; Esc releases it'
         : 'run this tool in a new browser tab';
@@ -2095,7 +2095,7 @@ const Chat = (() => {
     //   everything else → the inline reader, right here in the card. No promise the station can't keep.
     const TAB_RE = /\.(html?|png|jpe?g|gif|webp|svg|mp4|webm|mp3|wav|txt|csv|log|json)$/i;
     const fb = document.createElement('div'); fb.className = 'ws-pane ws-files';
-    const fhead = document.createElement('div'); fhead.className = 'ws-fhead'; fhead.textContent = 'files';
+    const fhead = document.createElement('div'); fhead.className = 'ws-fhead'; fhead.textContent = 'files' + (files.length ? ' · ' + files.length : '');
     fb.appendChild(fhead);
     const list = document.createElement('div'); list.className = 'ws-flist';
     const view = document.createElement('pre'); view.className = 'ws-fview'; view.hidden = true;   // hidden until a file is viewed inline
@@ -2199,7 +2199,8 @@ const Chat = (() => {
     // line is driven by the server's response: an apply says branch+repo; a patch that could only be SAVED
     // never reads as "implemented" (res.savedOnly — the fallback-honesty fields from handleWorkshopDecide).
     const patchSaveOnly = !!(plan && m.kind === 'patch' && plan.action !== 'apply');
-    const implBtn = document.createElement('button'); implBtn.className = 'consent-btn';
+    // gold PRIMARY when the click really implements; a fallback save stays neutral so the gold always means "accept"
+    const implBtn = document.createElement('button'); implBtn.className = 'consent-btn' + (patchSaveOnly ? '' : ' ws-primary');
     implBtn.textContent = patchSaveOnly ? 'Save patch file' : 'Implement';
     implBtn.title = (plan && plan.action === 'apply') ? ('applies this patch to a new branch in ' + plan.root)
       : patchSaveOnly ? 'saves the .patch file only — it will NOT be applied to your project'

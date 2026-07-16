@@ -849,7 +849,9 @@ body.no-scan .crt-scan { display: none; }
 
 /* while-you're-away card — the live BUILD LIST (2026-07-15 UX audit: the queue was invisible) */
 .ws-bl-head { color: var(--gold); font-size: 10px; letter-spacing: 1px; text-transform: uppercase; margin: 8px 0 3px; }
-.ws-bl-row { display: flex; align-items: center; gap: 7px; padding: 2px 0; font-size: 12px; }
+.ws-bl-row { display: flex; align-items: center; gap: 7px; padding: 2px 4px; font-size: 12px; border-radius: 2px;
+  transition: background var(--t-fast) var(--ease-soft); }
+.ws-bl-row:hover { background: var(--ph-faint); }
 .ws-bl-title { flex: 1 1 auto; min-width: 0; color: var(--ph-bright); overflow-wrap: anywhere; }
 .ws-bl-state { flex: 0 0 auto; font-size: 10px; letter-spacing: .5px; color: var(--ph-dim); border: 1px solid var(--ph-faint); border-radius: 2px; padding: 0 5px; }
 .ws-bl-state.built { color: var(--gold); border-color: var(--gold); }
@@ -859,7 +861,8 @@ body.no-scan .crt-scan { display: none; }
 .ws-bl-row button:hover { color: var(--ph-bright); border-color: var(--ph); }
 .ws-bl-row .ws-bl-review { color: var(--gold); border-color: var(--gold); }
 .ws-bl-row .ws-bl-remove { border-color: transparent; color: var(--ph-dim); }
-.ws-bl-foot { display: flex; align-items: center; gap: 8px; margin-top: 6px; flex-wrap: wrap; }
+.ws-bl-foot { display: flex; align-items: center; gap: 8px; margin-top: 7px; padding-top: 6px; flex-wrap: wrap;
+  border-top: 1px solid var(--ph-faint); }
 .ws-bl-foot button { background: none; border: 1px solid var(--gold); border-radius: 2px; color: var(--gold); font-family: inherit; font-size: 11px; padding: 1px 8px; cursor: pointer; }
 .ws-bl-foot button:disabled { opacity: .6; cursor: default; }
 .ws-bl-last { font-size: 11px; color: var(--ph-dim); margin-top: 5px; line-height: 1.35; }
