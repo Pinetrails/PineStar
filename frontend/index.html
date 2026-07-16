@@ -655,6 +655,7 @@ document.write('<script src="' + ((window.__STARNET_API__ || '') + '/shared/spec
 <script src="app/recruiterstore.js"></script><!-- adaptive-recruitment read surface: joins worksignal+profile+dossier+live roster → the bay's CURATED shelf + the recruit beat -->
 <script src="app/prospectstore.js"></script><!-- prospect generator wiring: growth-gated async mint (reason-only), denylist, staging → the bay's DRAFTED FOR YOU row; never emits -->
 <script src="app/launchmemory.js"></script><!-- lane C: last-used recipe inputs (own key) — the launch form prefills what you filled last time; confirm-by-sight, localStorage only, never emits -->
+<script src="app/starters.js"></script><!-- session-opener chip engine (pure): fresh station → orientation set; returning Commander → usual recipe (LaunchMemory-prefilled) + discovery pick + pitch ask; no storage, never emits -->
 <script src="app/routinenudgestore.js"></script><!-- lane D: "you keep launching this — schedule it?" nudge (own key) — reads scout launch counters + /api/cron (read-only), shares the one post-run beat slot, deep-links into SCHEDULE IT; never emits -->
 <script src="app/dossierstore.js"></script>
 <script src="app/studystore.js"></script><!-- GROWTH Tier 1: STUDY wiring (dossier Phase B) — fetch belief-update proposals, session cap + denylist, ratings→taste; self-persists (own key), never emits -->
