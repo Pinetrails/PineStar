@@ -65,15 +65,17 @@ A.ok(/function\s+busyPeerFor\s*\(ws\)[\s\S]{0,700}Workstreams\.list[\s\S]{0,1200
   'COMMS resolves another busy workstream for the same agent before claiming availability');
 A.ok(/BUSY IN/.test(src) && /VIEW ACTIVE RUN/.test(src),
   'a blocked session names the busy session and offers a route to its active run');
+A.ok(/function\s+maybeEmptyState[\s\S]{0,300}busyPeerFor\(activeWs\)/.test(src),
+  'the blocked session cannot also render the contradictory COMMS-online empty hint');
 A.ok(/function\s+updateControls[\s\S]{0,700}busyPeerFor[\s\S]{0,700}disabled/.test(src),
   'the normal composer/send controls are disabled while that agent is busy elsewhere');
-A.ok(/async function\s+send[\s\S]{0,1800}busyPeerFor\(ws\)/.test(src),
+A.ok(/async function\s+send[\s\S]{0,3200}busyPeerFor\(ws\)/.test(src),
   'send rechecks agent-global availability before creating a turn');
 
 /* ---------- 6. a disconnect durably keeps real partial output before its marker ---------- */
 A.ok(/function\s+persistPartial[\s\S]{0,700}role:\s*'assistant'[\s\S]{0,220}content:/.test(src),
   'chat owns one helper that persists accumulated partial assistant text');
-A.ok(/if\s*\(error\)[\s\S]{0,900}persistPartial\(ws,\s*acc\)[\s\S]{0,900}error:\s*true/.test(src),
+A.ok(/if\s*\(error\)[\s\S]{0,2200}persistPartial\(ws,\s*acc\)[\s\S]{0,900}error:\s*true/.test(src),
   'a 200/error-envelope stores partial text before its durable failure marker');
 A.ok(/catch\s*\(e\)[\s\S]{0,1500}persistPartial\(ws,\s*acc\)[\s\S]{0,900}error:\s*true/.test(src),
   'a thrown stream disconnect stores partial text before its durable failure marker');
