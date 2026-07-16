@@ -40,8 +40,8 @@
   function mount(body) {
     let rows = [], blobUrl = '', loadSeq = 0;
     const revoke = () => { if (blobUrl) { try { URL.revokeObjectURL(blobUrl); } catch (_) {} blobUrl = ''; } };
-    body.innerHTML = '<div class="cfg"><h3>DELIVERABLES / WORKSHOP LIBRARY</h3><p class="muted">Real run artifacts and Workshop builds. HTML opens in an opaque-origin sandbox; Markdown and CSV previews are escaped and bounded.</p>' +
-      '<div class="row"><input id="dl-query" aria-label="Search deliverables" placeholder="search title, run, source"><select id="dl-status" aria-label="Filter deliverables"><option value="">ALL STATUS</option><option>pending</option><option>kept</option><option>discarded</option><option>produced</option><option>failed</option></select><button id="dl-refresh">REFRESH</button><button id="dl-clean">CLEAN OLD RECORDS</button></div>' +
+    body.innerHTML = '<div class="cfg"><h3>DELIVERABLES / WORKSHOP LIBRARY</h3><p class="muted">Real run outputs and Workshop builds. Previews open safely inside StarNet; original files stay unchanged until you choose an action.</p>' +
+      '<div class="deliverables-toolbar"><input id="dl-query" aria-label="Search deliverables" placeholder="search title, run, source"><select id="dl-status" aria-label="Filter deliverables"><option value="">ALL STATUS</option><option>pending</option><option>kept</option><option>discarded</option><option>produced</option><option>failed</option></select><button class="bb sm" id="dl-refresh">REFRESH</button><button class="bb sm" id="dl-clean">CLEAN OLD RECORDS</button></div>' +
       '<div id="dl-msg" class="msg" aria-live="polite"></div><div id="dl-cleanup"></div><div id="dl-list"></div><div id="dl-preview" aria-live="polite"></div></div>';
     const q = body.querySelector('#dl-query'), status = body.querySelector('#dl-status'), list = body.querySelector('#dl-list'), preview = body.querySelector('#dl-preview'), msg = body.querySelector('#dl-msg'), cleanup = body.querySelector('#dl-cleanup');
     const say = (s, bad) => { msg.textContent = s || ''; msg.className = 'msg ' + (bad ? 'bad' : 'ok'); };
