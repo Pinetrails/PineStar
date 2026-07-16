@@ -21,6 +21,9 @@
   const RECIPES = [
     {
       id: 'content-repurpose', name: 'Repurpose Content', emoji: '⊕', tagline: 'One piece into many formats',
+      intake: [
+        { dimension: "constraints", question: "How faithful to the source?", options: ["faithful adaptation","remix freely"], recommended: "faithful adaptation", reason: "decides how far each format may drift" }
+      ],
       accent: '#b790c0',
       blurb: 'Finds the core idea and strongest line first, then reshapes per format — never a flattened summary.',
       tags: { general: 1 },
@@ -34,6 +37,9 @@
     },
     {
       id: 'hook-drafts', name: 'Hook Drafts', emoji: '⌁', tagline: 'Ten openings that earn the next line',
+      intake: [
+        { dimension: "audience", question: "Who must the hooks stop?", options: ["a cold audience","my existing followers"], recommended: "a cold audience", reason: "changes what a first line has to earn" }
+      ],
       accent: '#cf8a7d',
       blurb: 'Scouts what already works in the niche, then writes hooks built to stand apart — every one payable.',
       tags: { general: 0.6, research: 0.4 },
@@ -64,6 +70,9 @@
     },
     {
       id: 'script-outline', name: 'Script Outline', emoji: '◇', tagline: 'A beat-by-beat outline that holds attention',
+      intake: [
+        { dimension: "audience", question: "Who is this for?", options: ["new viewers","returning subscribers"], recommended: "new viewers", reason: "changes how much context the beats must carry" }
+      ],
       accent: '#b790c0',
       blurb: 'Promise → proof → payoff structure, the retention lull pre-armed, and the actual opening line written.',
       tags: { general: 1 },
@@ -87,6 +96,9 @@
     },
     {
       id: 'posting-schedule', name: 'Posting Plan', emoji: '▦', tagline: 'A publishing cadence you can keep',
+      intake: [
+        { dimension: "constraints", question: "How ambitious a cadence?", options: ["sustainable minimum","ambitious push"], recommended: "sustainable minimum", reason: "a cadence you keep beats one you abandon" }
+      ],
       accent: '#d9a85a',
       blurb: 'Sequences for momentum, batches what produces together, and stays honest about what pace will hold.',
       tags: { general: 1 },

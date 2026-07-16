@@ -2699,6 +2699,11 @@ const cronDriver = makeCronDriver({
   maxParallel: CRON_MAX_PARALLEL,                          // G4.4 global concurrency cap: at most N cron runs in-flight; the rest defer
   defaultTz: CRON_HOST_TZ,                                 // boot-frozen host tz: a tz-less schedule fires on LOCAL wall-clock (G4.1)
   identityForAgent: (agentId) => cronIdentityFor(agentId),
+  // DELETED-AGENT GUARD (2026-07-16): the durable roster is the authority on who exists — a miss means the
+  // agent was deleted, so the driver removes the job instead of firing it (orphaned routines kept spending
+  // and minting ghost sessions forever). Fail-open on an EMPTY roster (a boot before any push must never
+  // reap legitimate jobs on missing data); the hero 'agent' is undeletable and always passes.
+  agentExists: (agentId) => { const id = String(agentId || ''); return !id || id === 'agent' || agentRoster.size === 0 || agentRoster.has(id); },
   // B5 parity (2026-07-06 audit): routines were the ONE dispatch path that never passed a station — a
   // bay-docked agent's cron ran with the default office instead of its bay room's objects. Same resolver
   // the telegram/discord hubs use; null -> the default office, exactly like an unrouted chat.
@@ -6717,6 +6722,19 @@ async function handleAgentDelete(req, res) {
   // drop the in-memory + on-disk roster entry (the browser also re-pushes the surviving set right after).
   let removed = false;
   try { removed = agentRoster.delete(agentId); if (removed) saveAgentRoster(); } catch (e) { console.warn('[agent.delete] roster drop failed:', (e && e.message) || e); }
+  // ORPHANED-AUTOMATION CLEANUP (2026-07-16 resurrect audit): a deleted agent's cron routines — including its
+  // away-workshop shift (meta.workshop) — kept firing forever: real spend, ghost rail sessions, and floor
+  // crates under the dead agentId, surviving restarts. Drop every job bound to this agent under the cron
+  // write lock. (The agent's workshop grant/backlog file was already archived above, so nothing re-arms.)
+  // The cron-driver's agentExists guard is the defense-in-depth for orphans minted before this cleanup.
+  let cronRemoved = 0;
+  try {
+    await withCronWrite(jobs => {
+      const keep = (jobs || []).filter(j => !(j && j.agentId === agentId));
+      cronRemoved = (jobs || []).length - keep.length;
+      return keep;
+    });
+  } catch (e) { console.warn('[agent.delete] cron cleanup failed:', (e && e.message) || e); }
   // clear any live in-RAM per-agent proposal/study queues so a gone agent can't land a turn-in later.
   try {
     for (const [rid, b] of proposalsByRun) { if (b && b.agentId === agentId) proposalsByRun.delete(rid); }
@@ -6724,7 +6742,7 @@ async function handleAgentDelete(req, res) {
     for (const [rid, b] of studyByRun) { if (b && b.agentId === agentId) studyByRun.delete(rid); }
     latestStudyRun.delete(agentId); lastStudyAt.delete(agentId); studyingNow.delete(agentId); studyDeclinedByAgent.delete(agentId);
   } catch (_) {}
-  return json(200, { ok: true, agentId, rosterRemoved: removed, archived });
+  return json(200, { ok: true, agentId, rosterRemoved: removed, archived, cronRemoved });
 }
 
 // POST /api/dossier { block } — the browser pushes the composed Commander-dossier block whenever it changes,
@@ -7833,8 +7851,8 @@ async function runOnce(o) {
   let result;
   const _txStart = msgs.length;   // H1.1: boundary — turns the loop appends to msgs after this ARE this run's new dialogue
   let bufferedTaskEnd = null;
-  // The frozen contract has no "clarifying" reason. Hold a successful user-facing Task Brief end until the
-  // final text is known; a question maps to the existing neutral `cancelled` terminal (neither product nor slag).
+  // Hold a successful user-facing Task Brief end until the final text is known; a question maps to the
+  // contract's additive `clarifying` terminal (neither product nor slag — every success path keys on 'done').
   const loopEmit = (name, payload) => {
     if (taskBrief && name === 'agent.run.end' && payload && payload.runId === runId && payload.reason === 'done') {
       bufferedTaskEnd = payload; return;
@@ -7897,12 +7915,12 @@ async function runOnce(o) {
       } catch (e) { console.warn('[taskbrief] settle failed:', (e && e.message) || e); }
     }
     if (bufferedTaskEnd) {
-      emit('agent.run.end', Object.assign({}, bufferedTaskEnd, { reason: taskQuestionAsked ? 'cancelled' : bufferedTaskEnd.reason }));
+      emit('agent.run.end', Object.assign({}, bufferedTaskEnd, { reason: taskQuestionAsked ? 'clarifying' : bufferedTaskEnd.reason }));
       bufferedTaskEnd = null;
     }
   } finally {
     if (bufferedTaskEnd) {
-      emit('agent.run.end', Object.assign({}, bufferedTaskEnd, { reason: taskQuestionAsked ? 'cancelled' : bufferedTaskEnd.reason }));
+      emit('agent.run.end', Object.assign({}, bufferedTaskEnd, { reason: taskQuestionAsked ? 'clarifying' : bufferedTaskEnd.reason }));
       bufferedTaskEnd = null;
     }
     // book this run's spend into the append-only ledger (so day/global pools persist across runs), THEN drop its
@@ -10269,6 +10287,10 @@ async function handleMemoryMutate(req, res, op) {
   if (r.error) return json(400, { error: r.error });
   if (!r.found) return json(404, { error: 'no such memory' });
   if (r.emit) { try { chanEmit(r.emit.name, r.emit.payload); } catch (_) {} }
+  // §5.6 parity (2026-07-16 resurrect audit): an op may hand back the removed belief's text so it joins the
+  // SAME permanent denylist veto/discard use — without it, Memory Core's Forget wasn't durable (reflection
+  // re-minted the exact deleted fact on the next run and silent-saved it back with no card).
+  if (r.declineText) await appendDeclined(agentId, r.declineText);
   return json(200, Object.assign({ ok: true, id: String(body.id) }, r.extra || {}));
 }
 function handleMemoryPin(req, res) {
@@ -10287,9 +10309,21 @@ function handleMemoryEdit(req, res) {
 }
 function handleMemoryForget(req, res) {
   return handleMemoryMutate(req, res, (list, body, agentId) => {
-    const out = memcore.applyForget(list, String(body.id));
+    const id = String(body.id);
+    // FORGET = NEVER AGAIN (2026-07-16 resurrect audit): capture the doomed record's text BEFORE the splice
+    // so handleMemoryMutate can append it to the permanent per-agent declined list — the same list veto and
+    // discard already feed. Without this, reflection's dedup (live notebook + declined) had no memory of the
+    // delete, so the identical belief re-minted from a later run and the silent-save UX wrote it straight
+    // back: the user's explicit Forget quietly un-deleted itself.
+    const doomed = (Array.isArray(list) ? list : []).find(rec => rec && rec.id === id) || null;
+    const out = memcore.applyForget(list, id);
+    if (out.found && doomed) {
+      out.declineText = doomed.content != null
+        ? String(doomed.content)
+        : (((doomed.title || '') + ' ' + (doomed.body || '')).trim());
+    }
     // memory.forget's FIRST producer (the rung was frozen in M-mem.1 with no emitter until now).
-    if (out.found) out.emit = { name: 'memory.forget', payload: { agentId, id: String(body.id), reason: String(body.reason || 'user') } };
+    if (out.found) out.emit = { name: 'memory.forget', payload: { agentId, id: id, reason: String(body.reason || 'user') } };
     return out;
   });
 }

@@ -88,7 +88,17 @@ const DossierStore = (() => {
     Dossier.upsert(dossier, dim, belief, now()); commit();
     if (typeof CuriosityStore !== 'undefined' && CuriosityStore.markAnswered) { try { CuriosityStore.markAnswered(dim); } catch (_) {} }
   }
-  function forget(dim, id) { if (ready()) { Dossier.forget(dossier, dim, id, now()); commit(); } }
+  function forget(dim, id) {
+    if (!ready()) return;
+    // FORGET = NEVER RE-PROPOSED (2026-07-16 resurrect audit): capture the belief's text BEFORE the splice so
+    // it joins the permanent studyDeclined denylist — without this, the study loop re-proposed the exact
+    // belief the Commander just forgot on its next pass (forget removed the record but fed no denylist).
+    let text = '';
+    try { const b = (Dossier.beliefs(dossier, dim) || []).find(x => x && x.id === id); text = b ? String(b.text || '') : ''; } catch (_) {}
+    Dossier.forget(dossier, dim, id, now());
+    commit();
+    try { if (text && typeof StudyStore !== 'undefined' && StudyStore.declineText) StudyStore.declineText(text); } catch (_) {}
+  }
   function setPinned(dim, id, pinned) { if (ready()) { Dossier.setPinned(dossier, dim, id, pinned, now()); commit(); } }
 
   return { init, syncDocs, composeBlock, summary, beliefs, dims, serialize, upsert, forget, setPinned };

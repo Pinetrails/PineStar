@@ -682,6 +682,22 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     A.ok(iTurnin > 0 && iWrite > iTurnin, 'handleMemoryTurnin routes keep/edit through writeMemoryRecord');
     A.ok(guard > iTurnin && guard < iWrite, 'a saved:true stash item is 409-rejected BEFORE the keep/edit write path (no duplicate mint)');
 
+    // ---- FORGET = NEVER AGAIN (2026-07-16 resurrect audit): Memory Core's Forget must be as durable as a
+    //      veto/discard — the removed belief's text joins the SAME permanent declined denylist, or reflection
+    //      re-mints the deleted fact on a later run and the silent-save writes it straight back. ----
+    const forgetNoTok = await fetch(B + '/api/memory/forget', { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: B }, body: JSON.stringify({ agentId: 'agent', id: 'note_2' }) });
+    A.eq(forgetNoTok.status, 403, 'POST /api/memory/forget WITHOUT a token -> 403');
+    const forget = await j('POST', '/api/memory/forget', { agentId: 'agent', id: 'note_2' });
+    A.eq(forget.status, 200, 'forget of a saved record -> 200');
+    const recsPostForget = await j('GET', '/api/memory/records?agent=agent');
+    A.ok((recsPostForget.body.records || []).every(r => r.id !== 'note_2'), 'the forgotten record was removed from the notebook');
+    const declForget = await j('GET', '/api/memory/declined?agent=agent');
+    A.ok((declForget.body.declined || []).indexOf('prefers terse answers') >= 0, 'the FORGOTTEN belief joined the permanent declined denylist (forget = never re-minted)');
+    const forgetMiss = await j('POST', '/api/memory/forget', { agentId: 'agent', id: 'note_2' });
+    A.eq(forgetMiss.status, 404, 'a repeat forget of a gone record -> 404 (nothing to remove)');
+    const declForget2 = await j('GET', '/api/memory/declined?agent=agent');
+    A.eq((declForget2.body.declined || []).filter(t => t === 'prefers terse answers').length, 1, 'a repeat forget appends no duplicate denylist entry');
+
     const resetNoTok = await fetch(B + '/api/memory/reset', { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: B }, body: JSON.stringify({ agent: 'agent' }) });
     A.eq(resetNoTok.status, 403, 'POST /api/memory/reset WITHOUT a token -> 403');
     const resetBad = await j('POST', '/api/memory/reset', { agent: '../evil' });
@@ -893,6 +909,36 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     A.ok(fwRec.nested && fwRec.nested.a === 1, 'an UNKNOWN nested field is preserved through re-save');
     A.eq(fwRec.name, 'Ultron', 'the KNOWN fields still win / persist alongside the preserved ones');
     A.eq(fwRec.provider, 'openrouter', 'the known provider field is intact next to the preserved unknowns');
+
+    // ---- DELETE AGENT ⇒ ITS AUTOMATION DIES TOO (2026-07-16 resurrect audit): a deleted agent's cron
+    //      routines (incl. its away-workshop shift) kept firing forever — spend + ghost sessions under the
+    //      dead agentId. handleAgentDelete must drop every job bound to the agent; the hero's jobs survive. ----
+    {
+      // roster the doomed specialist so the create paths accept it as a real agent
+      const dPush = await j('POST', '/api/roster', { agents: [
+        { agentId: 'agent', system: 'hero', name: 'Ultron', provider: 'openrouter' },
+        { agentId: 'doomed-7', system: 'worker', name: 'Doomed', provider: 'openrouter', role: 'research' }
+      ], updatedAt: Date.now() + 300000 });
+      A.eq(dPush.status, 200, 'rostered the doomed specialist');
+      const mkJob = await j('POST', '/api/cron', { name: 'Doomed digest', prompt: 'summarize', schedule: 'every 60m', agentId: 'doomed-7' });
+      A.eq(mkJob.status, 200, 'created a routine bound to the doomed agent');
+      const mkHero = await j('POST', '/api/cron', { name: 'Hero digest', prompt: 'summarize', schedule: 'every 60m', agentId: 'agent' });
+      A.eq(mkHero.status, 200, 'created a routine bound to the hero');
+      const grant = await j('POST', '/api/workshop/grant', { agentId: 'doomed-7', on: true });
+      A.eq(grant.status, 200, 'armed the doomed agent\'s away-workshop shift (a second cron job, meta.workshop)');
+      const cronBefore = await j('GET', '/api/cron');
+      A.eq((cronBefore.body.jobs || []).filter(x => x.agentId === 'doomed-7').length, 2, 'the doomed agent owns 2 jobs (routine + workshop shift)');
+      const del = await j('POST', '/api/agent/delete', { agentId: 'doomed-7' });
+      A.eq(del.status, 200, 'POST /api/agent/delete -> 200');
+      A.eq(del.body.cronRemoved, 2, 'the delete reports BOTH of the agent\'s cron jobs removed');
+      const cronAfter = await j('GET', '/api/cron');
+      A.eq((cronAfter.body.jobs || []).filter(x => x.agentId === 'doomed-7').length, 0, 'no cron job survives for the deleted agent (nothing left to fire/resurrect)');
+      A.eq((cronAfter.body.jobs || []).filter(x => x.agentId === 'agent' && x.name === 'Hero digest').length, 1, 'the hero\'s routine is untouched');
+      // cleanup so later sections see the state they expect
+      const heroJob = (cronAfter.body.jobs || []).find(x => x.agentId === 'agent' && x.name === 'Hero digest');
+      if (heroJob) await j('POST', '/api/cron/remove', { id: heroJob.id });
+      await j('POST', '/api/roster', { agents: [{ agentId: 'agent', system: 'hero', name: 'Ultron', provider: 'openrouter', futureField: 'keep-me-42', nested: { a: 1 } }], updatedAt: Date.now() + 400000 });
+    }
 
     // ---- reconnect reconciliation snapshot: GET /api/state/snapshot returns the documented shape, token-gated ----
     const snapNoTok = await fetch(B + '/api/state/snapshot');

@@ -939,6 +939,20 @@
       }
     },
     {
+      "name": "taskbrief-clarify-proof",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "dev/seed-mock-comms.js"
+      ],
+      "port": 9073,
+      "autoPort": false,
+      "env": {
+        "SKYNET_PORT": "9073",
+        "SKYNET_MOCK_REPLY": "TASK_QUESTION: who is this dashboard primarily for? || operators | executives | customers",
+        "SKYNET_MOCK_FOLLOWUP_REPLY": "Understood — building the operators dashboard now. Work complete: produced the operator-focused layout."
+      }
+    },
+    {
       "name": "taskbrief-v2-seed",
       "runtimeExecutable": "node",
       "runtimeArgs": [

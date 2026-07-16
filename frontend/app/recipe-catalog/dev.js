@@ -43,6 +43,9 @@
     },
     {
       id: 'dependency-audit', name: 'Dependency Audit', emoji: '⊡', tagline: 'What is outdated, risky, or unused',
+      intake: [
+        { dimension: "scope", question: "Report or act?", options: ["report only","draft the upgrades too"], recommended: "report only", reason: "acting mutates the project; reporting never does" }
+      ],
       accent: '#d9a85a',
       blurb: 'Reads the manifest and lockfile, ranks the real risk, and gives a safe upgrade order — not a wall of bumps.',
       tags: { code: 0.8, research: 0.2 },
@@ -63,6 +66,9 @@
     },
     {
       id: 'changelog-draft', name: 'Changelog Draft', emoji: '⊞', tagline: 'Turn commits into a readable changelog',
+      intake: [
+        { dimension: "audience", question: "Who reads it?", options: ["end users","developers"], recommended: "end users", reason: "decides vocabulary and what counts as a highlight" }
+      ],
       accent: '#7bc88a',
       blurb: 'Reads the history AND the diffs — commit messages lie by omission — and writes it for humans.',
       tags: { code: 0.7, general: 0.3 },
@@ -73,6 +79,9 @@
     },
     {
       id: 'refactor-scout', name: 'Refactor Scout', emoji: '⌘', tagline: 'Find the code most worth cleaning up',
+      intake: [
+        { dimension: "scope", question: "Scout or clean?", options: ["scout + report","apply the safest cleanups"], recommended: "scout + report", reason: "applying changes code; scouting never does" }
+      ],
       accent: '#b790c0',
       blurb: 'Maps the highest-leverage cleanups by payoff-vs-risk — only debt that pays rent, no cosmetic churn.',
       tags: { code: 1 },
@@ -103,6 +112,9 @@
     },
     {
       id: 'perf-pass', name: 'Performance Pass', emoji: '◈', tagline: 'Find where the time and memory go',
+      intake: [
+        { dimension: "scope", question: "Measure or fix?", options: ["measure + report","apply safe optimizations"], recommended: "measure + report", reason: "fixing mutates code; measuring never does" }
+      ],
       accent: '#d9a85a',
       blurb: 'Measures before guessing, names the top bottlenecks with evidence, and estimates each win before selling it.',
       tags: { code: 1 },
@@ -113,6 +125,9 @@
     },
     {
       id: 'release-notes', name: 'Release Notes', emoji: '⊛', tagline: 'Write the notes users will read',
+      intake: [
+        { dimension: "audience", question: "Who reads the notes?", options: ["end users","developers"], recommended: "end users", reason: "decides vocabulary and what counts as a highlight" }
+      ],
       accent: '#7bc88a',
       blurb: 'Leads with what users feel, spells out breaking changes exactly, and matches your past notes\' voice.',
       tags: { code: 0.5, general: 0.5 },

@@ -47,7 +47,11 @@
       // no text (a degraded provider streaming empty completions). Distinct from 'done' so it never reads as a clean
       // delivery (loop.js ends it 'empty'; the frontend renders "ended: empty", never a delivered crate). Enum VALUE
       // added, never renamed/removed — old payloads and consumers stay valid.
-      reason: { enum: ['done', 'max_iters', 'budget', 'cancelled', 'error', 'refusal', 'empty'] },
+      // 'clarifying' (additive, 2026-07-16, Andrew-approved): the run ended by asking the Commander one
+      // Task Brief question — a clean model turn that is neither completed work nor a cancellation. Every
+      // consumer that keys success on reason === 'done' treats it as neutral, exactly like 'cancelled' did
+      // while it overloaded that terminal.
+      reason: { enum: ['done', 'max_iters', 'budget', 'cancelled', 'error', 'refusal', 'empty', 'clarifying'] },
       turns: int, usd: num,
       // ADDITIVE (optional, Lane 5): WHY the provider stopped when it was a truncation/policy cut. Present ONLY
       // for the non-clean stops so the frontend can render a "cut short" recap instead of a delivered crate; a
