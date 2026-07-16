@@ -1463,12 +1463,14 @@
       ],
       "verdict": "SHIPPED",
       "disposition": "PROVEN",
-      "ownerWave": "W4C",
+      "ownerWave": "W4",
       "qualification": "DELIVERABLES is the coherent artifact/Workshop library; TASKS and ROUTINES remain focused work controls linked from the same WORK dock.",
       "liveProofRequired": true,
       "liveProof": "PROVEN",
       "refsChecked": [
-        "agent/wave4-deliverables-library@f3fed75d8f8775df6cdddb6559f1cdbd8bc32970",
+        "trunk@51619cad5a6adb93011b9f461875ede52417300e audited 2026-07-16",
+        "branches@refs/heads/* audited 2026-07-16 including agent/wave4-deliverables-library@f3fed75d8f8775df6cdddb6559f1cdbd8bc32970",
+        "worktrees@git-worktree-list audited 2026-07-16",
         "J4 13/13 live Chromium assertions 2026-07-16",
         "test/workshop.e2e.test.js 64 assertions including restart"
       ]
