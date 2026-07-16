@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "67aa11174d7f6f0530f5bf7178cf7a3c3ce14436",
+    "sourceCommit": "34f49cf9547fe5b4afa16b67df469c693ef06824",
     "pathSetSha256": "e45261d65dc7ff0b9cc77172b4f800cc4bef6dec86bd786a26771964e9b2e342",
     "files": [
       {
@@ -1424,7 +1424,7 @@
         {
           "kind": "contains",
           "path": "frontend/app/chat.js",
-          "needle": "openItBtn.textContent = '\u00e2\u2013\u00b6 Open it \u00e2\u20ac\u201d try it in a tab'"
+          "needle": "openItBtn.textContent = '▶ Open it — try it in a tab'"
         },
         {
           "kind": "contains",
@@ -1528,7 +1528,7 @@
         {
           "kind": "contains",
           "path": "frontend/app/autonomy.js",
-          "needle": "run free toward my goals while i\u00e2\u20ac\u2122m away"
+          "needle": "run free toward my goals while i’m away"
         },
         {
           "kind": "contains",
