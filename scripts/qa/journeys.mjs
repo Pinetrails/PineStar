@@ -117,6 +117,40 @@ const ONLY = (() => {
 })();
 
 const J = (v) => JSON.stringify(v);
+let JOURNEY_API_TOKEN = '';
+
+async function backendSnapshot() {
+  if (!JOURNEY_API_TOKEN) return null;
+  try {
+    const r = await fetch(APP_URL + 'api/state/snapshot', {
+      headers: { 'X-StarNet-Token': JOURNEY_API_TOKEN, Origin: APP_URL.replace(/\/$/, '') },
+      cache: 'no-store'
+    });
+    return r.ok ? await r.json() : null;
+  } catch (_) { return null; }
+}
+
+// A frontend channel going idle is only local projection truth. Before starting the next interrupt journey,
+// require the sidecar's authoritative snapshot to omit every prior run AND report no queued work twice in a row.
+// Two samples prevent a just-completed /api/halt response from racing its run-loop `finally` teardown.
+async function waitBackendPriorRunsDrained(priorRunIds, tries = 80) {
+  const wanted = new Set((priorRunIds || []).filter(Boolean));
+  let consecutive = 0, last = null;
+  for (let i = 0; i < tries; i++) {
+    last = await backendSnapshot();
+    const runs = last && Array.isArray(last.runs) ? last.runs : null;
+    const queues = last && Array.isArray(last.queues) ? last.queues : null;
+    const livePrior = runs ? runs.filter(r => wanted.has(r.runId)).map(r => r.runId) : [...wanted];
+    const drained = !!runs && !!queues && livePrior.length === 0 && queues.every(q => !(Number(q.depth) > 0));
+    if (drained) {
+      consecutive++;
+      if (consecutive >= 2) return { ok: true, livePrior: [], snapshot: last };
+    } else consecutive = 0;
+    await sleep(100);
+  }
+  const livePrior = last && Array.isArray(last.runs) ? last.runs.filter(r => wanted.has(r.runId)).map(r => r.runId) : [...wanted];
+  return { ok: false, livePrior, snapshot: last };
+}
 
 /* ─────────────────────────── CONTROLLABLE MOCK PROVIDER ───────────────────────────
  * A mock OpenRouter whose completion stream we can HOLD OPEN and RELEASE on command. Unlike the
@@ -457,9 +491,15 @@ async function startHeldRun(cdp, A, mock, title) {
   // lingering sidecar-side run (an E-STOPped run can be mid-teardown on 'agent'; a new run on the same agent
   // would queue behind it and never reach busy), then wait for every channel to go idle. This ties the run
   // we're about to hold to being the ONLY one in flight (a leftover busy channel makes the check ambiguous).
+  const beforeHalt = await backendSnapshot();
+  const priorRunIds = beforeHalt && Array.isArray(beforeHalt.runs) ? beforeHalt.runs.map(r => r.runId).filter(Boolean) : [];
   try { mock.control.setMode('quick'); mock.control.release(); } catch (_) {}
   await evalJS(cdp, "(typeof Harness!=='undefined' && Harness.haltAll) ? Harness.haltAll() : 0").catch(() => {});
   await waitIdle(cdp, 60);
+  // RED contract for PL-05: frontend-idle is not sufficient authority. The exact prior runs must also
+  // have left the sidecar snapshot before a new held run is allowed to start.
+  const drain = await waitBackendPriorRunsDrained(priorRunIds);
+  A.ok('J2/teardown/backend-prior-runs-drained', drain.ok, drain.snapshot ? ('prior=' + JSON.stringify(priorRunIds) + ' livePrior=' + JSON.stringify(drain.livePrior)) : 'backend snapshot unavailable');
   await evalJS(cdp, closeOnly).catch(() => {});
   await sleep(400);
   mock.control.setMode('hold');
@@ -916,6 +956,7 @@ async function main() {
     const html = await (await fetch(APP_URL)).text();
     const m = html.match(/window\.__STARNET_API_TOKEN__=("(?:\\.|[^"])*")/);
     if (m) token = String(JSON.parse(m[1]) || '');
+    JOURNEY_API_TOKEN = token;
   } catch (_) {}
 
   const { proc: chromeProc, chrome } = launchChrome({ cdpPort: CDP_PORT, win: WIN, profileDir: PROFILE });
