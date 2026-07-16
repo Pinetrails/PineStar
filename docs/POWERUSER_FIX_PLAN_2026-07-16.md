@@ -1,8 +1,8 @@
 # StarNet power-user findings — complete fix plan
 
-Plan date: 2026-07-16  
-Audit source: `75cad9e8`  
-Plan baseline: `bf99df2a`  
+Plan date: 2026-07-16
+Audit source: `75cad9e8`
+Plan baseline: `bf99df2a`
 Finding source: `docs/POWERUSER_AUDIT_2026-07-15.md`
 
 ## Objective
