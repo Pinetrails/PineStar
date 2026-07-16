@@ -79,16 +79,23 @@
   // Every call gets exactly one result (success / error / timeout / denial) — never thrown.
   async function executeCalls(calls, dispatch, capCtx, emit, meta) {
     const results = [];
+    let finalControl = null;
     for (const c of calls) {
-      emit('agent.tool_call', { agentId: meta.agentId, runId: meta.runId, callId: c.id, name: c.name || 'unknown', argsSummary: summarize(c.argsRaw) });
+      if (finalControl) {
+        results.push({ callId: c.id, isError: true, ok: false, content: 'skipped: the Task Brief paused for the Commander', control: null });
+        continue;
+      }
+      const hidden = meta.hiddenTools && meta.hiddenTools.has(c.name);
+      if (!hidden) emit('agent.tool_call', { agentId: meta.agentId, runId: meta.runId, callId: c.id, name: c.name || 'unknown', argsSummary: summarize(c.argsRaw) });
       const t0 = meta.clock ? meta.clock.now() : 0;
       let r;
       try { r = await dispatch(c, capCtx); }
       catch (e) { r = { ok: false, isError: true, content: 'tool dispatch threw: ' + (e && e.message), summary: 'error' }; }
       r = r || { ok: false, isError: true, content: 'tool returned nothing', summary: 'error' };
       const t1 = meta.clock ? meta.clock.now() : 0;
-      results.push({ callId: c.id, isError: !!r.isError, ok: !!r.ok, content: r.content });
-      emit('agent.tool_result', {
+      results.push({ callId: c.id, isError: !!r.isError, ok: !!r.ok, content: r.content, control: r.control || null });
+      if (r.control && r.control.final) finalControl = r.control;
+      if (!hidden) emit('agent.tool_result', {
         agentId: meta.agentId, runId: meta.runId, callId: c.id, ok: !!r.ok,
         ms: Math.max(0, t1 - t0), summary: r.summary || (r.isError ? 'error' : 'ok'), isError: !!r.isError
       });
@@ -435,13 +442,23 @@
       }
       let results;
       try {
-        results = await executeCalls(calls, dispatch, capCtx, emit, { agentId, runId, clock });
+        results = await executeCalls(calls, dispatch, capCtx, emit, { agentId, runId, clock, hiddenTools: new Set(o.hiddenTools || []) });
         assertPaired(calls, results); // (7) HARD INVARIANT
       } catch (e) {
         emit('agent.run.error', { agentId, runId, message: String((e && e.message) || e), transient: false });
         return end('error');
       }
       for (const r of results) messages.push(toolResultMsg(r.callId, r.isError, r.content));
+
+      const finalControl = results.map(r => r.control).find(c => c && c.final);
+      if (finalControl) {
+        const controlText = String(finalControl.text || '').trim();
+        if (controlText) {
+          messages.push({ role: 'assistant', content: controlText });
+          emit('agent.token', { agentId, runId, delta: controlText });
+        }
+        return end(finalControl.reason || 'done');
+      }
 
       // (8) LOOP GUARD — break out of a run that keeps making the SAME failing tool call. Warn once, then stop.
       if (LG_WARN || LG_STOP) {

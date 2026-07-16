@@ -117,6 +117,8 @@
       'Ask ONE concrete question at a time, with 2-3 short, genuinely different options. Never ask vague prompts such as "what does good look like?".',
       'A task may ask at most two questions total; a second is allowed only when the first answer exposed another genuinely blocking decision.',
       'If the Commander said "use your judgment", "just do it", or equivalent, choose the most sensible reversible default and act.',
+      'When brief_ask and brief_proceed are available, use them as the authoritative protocol. Call brief_proceed immediately before the first consequential tool; the host blocks writes/executes until you do.',
+      'Use brief_ask to pause on a material unknown. It validates the decision dimension, distinct options, recommended default, research status, and whole-task question budget.',
       'To ask, do no consequential mutation first and END your reply with exactly:',
       'TASK_QUESTION: <one concrete question> || <option A> | <option B> | <option C, optional>',
       'You may inspect/read before asking. Do not emit TASK_QUESTION when you can responsibly proceed. Never repeat a question already answered in the task brief.'
@@ -130,8 +132,14 @@
     if (!a) return 'Use your judgment. Choose the most sensible reversible default and continue the original task.';
     return a;
   }
+  function taskRouteReply(text) {
+    const raw = taskClean(text, 4000);
+    if (/^\s*(cancel|stop|never\s*mind|nevermind|forget\s+(?:it|that)|drop\s+(?:it|that))\s*[.!]?\s*$/i.test(raw)) return { action: 'cancel', text: raw };
+    const m = /^\s*(?:new\s+task\s*:|instead\s*,?|forget\s+that\s*[,;:]?|change\s+of\s+plan\s*[:,]?)\s*(.+)$/i.exec(raw);
+    return m && taskClean(m[1], 4000) ? { action: 'replace', text: taskClean(m[1], 4000) } : { action: 'answer', text: raw };
+  }
   const TaskIntent = {
-    parse: taskParse, strip: taskStrip, directive: taskDirective, answerMessage: taskAnswerMessage,
+    parse: taskParse, strip: taskStrip, directive: taskDirective, answerMessage: taskAnswerMessage, routeReply: taskRouteReply,
     MAX_QUESTION: TASK_Q_CHARS, MAX_OPTION: TASK_OPT_CHARS, MAX_OPTIONS: TASK_MAX_OPTS
   };
 

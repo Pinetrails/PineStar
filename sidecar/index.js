@@ -131,6 +131,8 @@ const QuestSweeps = require('./questsweeps.js');
 const QuestRefresh = require('./questrefresh.js'); // QUEST V3: the standing 24h + caught-up quest-refresh engine (pure gates/directive/parse) // QUEST V2 §A: pure seam-matchers for the mechanical contract sweeps (run-bind / prop-live / fact-learned / artifact-exists)
 const { makeThreadsStore } = require('./threads-store.js');   // NS-6: durable THREAD LEDGER (ideas raised but never acted on)
 const { makeTaskBriefStore } = require('./taskbrief-store.js'); // durable original request + visible task decisions
+const TaskBriefPolicy = require('./taskbrief-policy.js');       // host validation + mutation boundary
+const { registerTaskBriefTools } = require('./taskbrief-tools.js'); // structured ask/proceed controls
 const TaskIntent = require('../frontend/app/fork.js').TaskIntent;    // shared TASK_QUESTION protocol + prompt doctrine
 const CommanderContext = require('./commander-context.js');    // bounded provenance-labelled task context
 const threadmine = require('./threadmine.js');                // NS-6: pure post-run thread-mining producer (reflect/study mold)
@@ -6776,6 +6778,7 @@ async function handleRun(req, res) {
       streamId,        // M-mem.2b: scope this run's working memory + recall boost to the active workstream
       taskKey: streamId ? ('stream:' + streamId) : null,
       taskSource: 'interactive',
+      taskAction: body && body.taskAction,
       recipeId,        // provenance spine (lane A): rides to the durable run row so a rating can be attributed
       preloadSkills,
       extraObjects,    // a placed WORKBENCH -> shell.exec + verify.run, additive on the default office
@@ -6809,7 +6812,13 @@ async function handleRun(req, res) {
    reply-assembler for the hub), the run lifecycle/cleanup, AND the consent SURFACE — 'interactive' + a live
    `prompt` for the watched browser; 'autonomous' (default-deny on ungranted mutation) for a headless chat. */
 async function runOnce(o) {
-  const { key, system, messages = [], agentId = 'agent', isTask = false, signal, runId } = o;
+  const { key, system, messages = [], agentId = 'agent', signal, runId } = o;
+  let isTask = !!o.isTask;
+  // A short channel reply such as "operators" is not independently task-shaped. Durable brief continuity is
+  // stronger evidence than the generic classifier, so resume it as task work without asking the user to restate it.
+  if (!isTask && o.taskKey) {
+    try { const pending = taskBriefStore.active(String(o.taskKey)); if (pending && pending.status === 'clarifying') isTask = true; } catch (_) {}
+  }
   // P1-6 per-agent model/provider OVERRIDE: when a run carries NO explicit model/provider (headless hub, delegated
   // worker, or any caller that didn't pass one), fall back to THIS AGENT's pinned identity in the roster before the
   // station default. An explicit per-run o.model/o.provider still wins (the interactive dock path is unchanged), so
@@ -6904,6 +6913,7 @@ async function runOnce(o) {
   // Only user-facing callers with a stable conversation key receive the intent layer. Unattended cron/night-shift
   // work has nobody present to answer and therefore remains byte-for-byte on its existing execution path.
   let taskBrief = null;
+  let taskBriefState = null;
   let taskContextBlock = '';
   let taskQuestionAsked = false;
   // Everything below is wrapped so the admission slot is ALWAYS released (early-return refusals above run
@@ -6951,12 +6961,17 @@ async function runOnce(o) {
       }
       if (latestUser) taskBrief = await taskBriefStore.prepare({
         id: 'tb_' + runId, key: String(o.taskKey), streamId: streamId || '', agentId, runId,
-        source: o.taskSource || (surface === 'interactive' ? 'interactive' : 'channel'), text: latestUser
+        source: o.taskSource || (surface === 'interactive' ? 'interactive' : 'channel'), text: latestUser,
+        taskAction: o.taskAction || ''
       }, Date.now());
     } catch (e) { console.warn('[taskbrief] prepare failed:', (e && e.message) || e); taskBrief = null; }
   }
 
-  if (taskBrief) {
+  if (taskBrief) taskBriefState = { brief: taskBrief };
+  if (taskBrief && taskBrief.inputAction === 'cancel') {
+    taskQuestionAsked = true; // neutral terminal: cancellation is never completed work or learning evidence
+    taskContextBlock = 'TASK CANCELLED BY COMMANDER: acknowledge briefly. Do not continue or mutate anything.';
+  } else if (taskBrief) {
     let goal = null; try { goal = commanderGoals.get() || null; } catch (_) {}
     let patterns = []; try { patterns = taskBriefStore.patterns(5); } catch (_) {}
     taskContextBlock = CommanderContext.compose({
@@ -6966,6 +6981,8 @@ async function runOnce(o) {
 
   // ---- tools (registered fresh per run; cheap) ----
   const registry = makeRegistry();
+  const internalBriefTools = taskBriefState && taskBrief.status !== 'cancelled'
+    ? registerTaskBriefTools(registry, taskBriefStore, taskBriefState, { now: () => Date.now() }) : [];
   const loadedSkills = [];
   const managedSkills = [];
   const seenLoadedSkills = new Set();
@@ -7141,6 +7158,8 @@ async function runOnce(o) {
   // no dynamic server or future registration order can restore a real-screen tool by name.
   resolved = enforceSyntheticOnly(resolved);
   resolved = enforceRunAuthority(resolved, registry, userControlAuthority);
+  // Harness controls never grant reach into the world. They exist only while an attended Task Brief is active.
+  for (const name of internalBriefTools) if (resolved.tools.indexOf(name) < 0) resolved.tools.push(name);
   // QUEST V2 §A — the PROP-contract sweep, wired at the one seam where the sidecar PROVES a capability is live:
   // resolveTools just projected the placed office (+ live connector tools) into this run's real grants. A prop
   // quest keyed to a live objectType / capId family / tool name completes here — there is no other server-side
@@ -7321,6 +7340,12 @@ async function runOnce(o) {
   const artifactLedger = makeArtifactCollector();
   const dispatch = async (c, ctx) => {
     if (fromWire.has(c.name)) c = Object.assign({}, c, { name: fromWire.get(c.name) });   // wire -> real (dotted) name
+    const liveTool = registry.get(c.name);
+    const internalBriefControl = internalBriefTools.indexOf(c.name) >= 0;
+    if (taskBriefState && !internalBriefControl) {
+      const gate = TaskBriefPolicy.canMutate(taskBriefState.brief, liveTool);
+      if (!gate.ok) return { ok: false, isError: true, content: 'Task Brief gate: ' + gate.reason, summary: 'task-brief-gate' };
+    }
     // LOOP GUARD (mirrors loop.js semantics): key on the FULL argsRaw via a sha1 digest (the old .slice(0,400)
     // collided two DIFFERENT long payloads sharing a 400-char prefix — a false positive), and count only FAILING
     // calls — a byte-identical call that keeps SUCCEEDING (e.g. many fs_write to the same path with different
@@ -7341,7 +7366,7 @@ async function runOnce(o) {
     const dctx = (ctx && ctx.callId !== c.id) ? Object.assign({}, ctx, { callId: c.id }) : ctx;   // per-call id for shell.exec telemetry
     let r = await registry.dispatch(c, dctx);
     // observe BEFORE the tool-output budget clip below, so the collector parses the tool's REAL result text.
-    try { artifactLedger.observe({ toolName: c.name, args: c.args, result: r }); } catch (_) { /* never breaks a run */ }
+    if (!internalBriefControl) try { artifactLedger.observe({ toolName: c.name, args: c.args, result: r }); } catch (_) { /* never breaks a run */ }
     // bound the TOTAL tool output across a run so a few big fetches/reads can't blow the context window or cost
     if (r && typeof r.content === 'string' && r.content.length) {
       if (toolBytes >= CAPS.maxToolBytes) {
@@ -7351,7 +7376,7 @@ async function runOnce(o) {
       }
       toolBytes += r.content.length;
     }
-    if (r && !r.isError) toolsOk++;   // crate-honesty: count PROVEN work (each successful tool result)
+    if (r && !r.isError && !internalBriefControl) toolsOk++;   // crate-honesty: internal brief bookkeeping is not completed work
     // loop-guard bookkeeping: a FAILING result advances this signature's streak; ANY success clears it (so an
     // intermittently-failing call that eventually works never trips the guard). Matches loop.js's reset-on-success.
     if (r && r.isError) seen.set(sig, (seen.get(sig) || 0) + 1);
@@ -7599,6 +7624,7 @@ async function runOnce(o) {
   try {
     result = await runAgentLoop({
       messages: msgs, provider, emit: loopEmit, cost, tools: toolDefs, dispatch, capCtx,
+      hiddenTools: ['brief_ask', 'brief_proceed'],
       // Real backoff for the loop's bounded mid-stream retry: without an injected sleep the loop retries a
       // dropped/half-streamed generation with ZERO delay (a tight hammer against an upstream that just hiccupped).
       // A plain (non-unref) setTimeout so the backoff actually elapses before the retry fires.
@@ -7630,7 +7656,7 @@ async function runOnce(o) {
     });
     // Persist visible task context only — never hidden reasoning. A clarification is a clean model run but not
     // completed work, so it leaves the brief waiting across restart and suppresses task-learning sweeps below.
-    if (taskBrief && result && result.reason === 'done') {
+    if (taskBrief && taskBrief.inputAction !== 'cancel' && result && result.reason === 'done') {
       try {
         let reply = '';
         for (let i = result.messages.length - 1; i >= 0; i--) {
@@ -7638,7 +7664,14 @@ async function runOnce(o) {
           if (m && m.role === 'assistant' && typeof m.content === 'string') { reply = m.content; break; }
         }
         const q = TaskIntent.parse(reply);
-        if (q) { taskQuestionAsked = true; await taskBriefStore.ask(taskBrief.id, q, Date.now()); }
+        const liveBrief = taskBriefStore.active(taskBrief.key);
+        if (q) {
+          taskQuestionAsked = true;
+          if (!liveBrief || liveBrief.status !== 'clarifying') await taskBriefStore.ask(taskBrief.id, Object.assign({
+            dimension: 'scope', recommended: q.options[0], reason: 'The model identified a material unresolved decision.', discoverable: false,
+            newBlocker: !!(liveBrief && liveBrief.questions && liveBrief.questions.length === 1)
+          }, q), Date.now());
+        }
         else await taskBriefStore.complete(taskBrief.id, runId, Date.now());
       } catch (e) { console.warn('[taskbrief] settle failed:', (e && e.message) || e); }
     }
