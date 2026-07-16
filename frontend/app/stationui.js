@@ -6300,6 +6300,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     commander:['COMMANDER DOSSIER',      buildCommander, { w: '560px' }],
     skills:   ['SKILLS & CAPABILITIES',  buildSkills,    { console: true }],
     tasks:    ['TASK BOARD',             buildTasks,     { w: '760px' }],
+    deliverables:['DELIVERABLES',         body => { if (typeof Deliverables !== 'undefined') Deliverables.mount(body); }, { w: '760px' }],
     updates:  ['UPDATE CENTER',          buildUpdates,   { w: '540px' }],
     settings: ['SETTINGS',               buildSettings,  { console: true }],
     messaging:['CHANNELS',               buildMessaging, { w: '520px' }],   // dock label = window title (it's Telegram/external channels, not COMMS)
