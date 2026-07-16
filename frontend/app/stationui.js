@@ -283,13 +283,6 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     termPos[key] = { left, top };
     saveWindowState();
   }
-  function rememberTermSize(key, width, height) {
-    if (!key) return;
-    const prior = termSize[key];
-    if (prior && prior.width === width && prior.height === height) return;
-    termSize[key] = { width, height };
-    saveWindowState();
-  }
   function bakeTermRect(w) {
     w.style.animation = 'none';
     const r = w.getBoundingClientRect();
@@ -303,7 +296,10 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     w.style.width = next.width + 'px'; w.style.height = next.height + 'px';
     w.style.maxWidth = 'calc(100vw - 16px)'; w.style.maxHeight = 'calc(100vh - 16px)';
     w.classList.add('term-sized');
-    if (persist !== false) rememberTermSize(key, next.width, next.height);
+    // Keep the live map current even during pointermove. fitTermInViewport consults this map, so
+    // leaving the prior persisted value here would snap a pointer resize back to its old dimensions.
+    if (key) termSize[key] = { width: next.width, height: next.height };
+    if (persist !== false) saveWindowState();
     return next;
   }
   function addTermResizeHandle(w, key, title) {
@@ -364,13 +360,15 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       termResize.height + ev.clientY - termResize.y, false);
     fitTermInViewport(termResize.w, termResize.key, false);
   });
-  window.addEventListener('pointerup', () => {
+  function finishTermResize() {
     if (!termResize) return;
     const r = termResize.w.getBoundingClientRect();
     resizeTermTo(termResize.w, termResize.key, r.width, r.height, true);
     fitTermInViewport(termResize.w, termResize.key, true);
     termResize = null;
-  });
+  }
+  window.addEventListener('pointerup', finishTermResize);
+  window.addEventListener('pointercancel', finishTermResize);
   // P2: re-clamp every open (non-minimized) window back inside the viewport on a browser resize, so a panel
   // dragged to a corner can't be stranded off-screen when the window shrinks. CSS-centered consoles are skipped
   // by fitTermInViewport (they stay centered); only explicitly-moved windows are pulled back into view.
@@ -553,7 +551,9 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     w.style.animation = '';
     void w.offsetWidth;
     w.classList.add('term-restoring');
-    const clearRestore = () => w.classList.remove('term-restoring');
+    // Do not expose the base .term power-on animation again when this one-shot class is removed.
+    // A resized/moved window would otherwise replay the centered keyframes and jump off-screen.
+    const clearRestore = () => { w.classList.remove('term-restoring'); w.style.animation = 'none'; fitTermInViewport(w, key, true); };
     w.addEventListener('animationend', clearRestore, { once: true });
     setTimeout(clearRestore, 460);
     // focus back onto the restored dialog itself (not its first control — the minimize button)

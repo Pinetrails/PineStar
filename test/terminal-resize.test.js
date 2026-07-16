@@ -20,9 +20,11 @@ const src = fs.readFileSync(path.join(__dirname, '../frontend/app/stationui.js')
 A.ok(/termSize/.test(src) && /store\.termSize\s*=\s*termSize/.test(src), 'dimensions persist beside positions');
 A.ok(/className\s*=\s*'term-resize'|el\('button',\s*'term-resize'/.test(src), 'every terminal gets one shared resize affordance');
 A.ok(/pointerdown/.test(src) && /pointermove/.test(src) && /pointerup/.test(src), 'resize supports pointer, touch, and pen through pointer events');
+A.ok(/pointercancel/.test(src), 'an interrupted pointer resize still commits a reachable final size');
 A.ok(/ArrowLeft/.test(src) && /ArrowRight/.test(src) && /ArrowUp/.test(src) && /ArrowDown/.test(src), 'resize affordance supports all keyboard arrow directions');
 A.ok(/aria-label[^\n]+Resize/.test(src), 'resize affordance has an explicit accessible name');
 A.ok(/function\s+fitTermInViewport[\s\S]{0,500}resizeTermTo/.test(src) && /function\s+resizeTermTo[\s\S]{0,400}clampTerminalSize/.test(src), 'viewport repair clamps dimensions before position');
 A.ok(/minWidth/.test(src) && /maxWidth/.test(src) && /minHeight/.test(src) && /maxHeight/.test(src), 'per-window min/max dimensions are explicit');
+A.ok(/termSize\[key\]\s*=\s*\{\s*width:\s*next\.width,\s*height:\s*next\.height\s*\}/.test(src), 'pointermove updates the live size map before viewport repair can consult it');
 
 A.report('terminal-resize.test');
