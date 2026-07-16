@@ -131,8 +131,9 @@ async function startSse(url) {
   // is now gated on DEV_MODE (audit 1.4): a production process carrying SKYNET_TEST_OPEN_LOG must NOT fake-launch,
   // so the env var alone no longer installs the fake opener — the run must also declare itself dev/test.
   const env = { SKYNET_WORKSPACES: ws, SKYNET_DEV: '1', SKYNET_OPENROUTER_BASE: mock.base, SKYNET_OPENROUTER_KEY: 'sk-or-v1-workshop-fake', SKYNET_DEFAULT_MODEL: 'test/model', SKYNET_TEST_OPEN_LOG: openLog };
-  const { child, port } = await boot(8960 + (process.pid % 30), env, 20);
-  const B = 'http://' + HOST + ':' + port;
+  const firstBoot = await boot(8960 + (process.pid % 30), env, 20);
+  let child = firstBoot.child;
+  let B = 'http://' + HOST + ':' + firstBoot.port;
   let sse = null;
   try {
     const token = await bootToken(B, B);
@@ -319,8 +320,17 @@ async function startSse(url) {
     const undone = await (await fetch(B + '/api/deliverables/cleanup-undo', { method: 'POST', headers, body: JSON.stringify({ undoToken: cleaned.undoToken }) })).json();
     A.ok(undone.ok && undone.restored === 1, 'cleanup undo restores the removed lifecycle row');
 
-    // 9. PERSISTENCE: the grant survives a sidecar RESTART.
+    // 9. PERSISTENCE: lifecycle records survive a real sidecar restart, not merely a fresh store instance.
     A.ok(fs.existsSync(path.join(ws, 'builder.workshop.json')), 'the workshop store persisted to disk');
+    if (sse) { sse.close(); sse = null; }
+    try { child.kill(); } catch (_) {}
+    await sleep(180);
+    const restarted = await boot(firstBoot.port, env, 20); child = restarted.child; B = 'http://' + HOST + ':' + restarted.port;
+    const token2 = await bootToken(B, B);
+    const headers2 = { 'Content-Type': 'application/json', 'X-StarNet-Token': token2, Origin: B };
+    const afterRestart = await (await fetch(B + '/api/deliverables', { headers: headers2 })).json();
+    A.ok(afterRestart.items.some(r => r.runId === runId2 && r.status === 'kept'), 'kept deliverable remains indexed after sidecar restart');
+    A.ok(afterRestart.items.some(r => r.runId === runId && r.status === 'discarded'), 'discarded deliverable remains indexed after cleanup undo and restart');
   } finally {
     if (sse) sse.close();
     try { child.kill(); } catch (_) {}
