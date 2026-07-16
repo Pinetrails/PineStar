@@ -194,6 +194,26 @@ const S = require('../frontend/app/study.js');
   A.eq(StudyStore.nextLive([badProp]), null, 'nextLive drops a declined belief');
   A.eq(StudyStore.isExhausted('pain', 'this belief is wrong and unwanted'), true, 'a declined belief is exhausted');
 
+  // FORGET → DENYLIST (2026-07-16 resurrect audit): declineText is the COMMANDER-panel Forget's denylist hook —
+  // text-only (no proposal object exists for a belief already IN the dossier), same durability as discard.
+  const resolvesBefore = resolveCalls.length;
+  A.eq(StudyStore.declineText('a forgotten dossier belief', 'agent'), true, 'declineText accepts a real text');
+  A.ok(StudyStore.declinedList().indexOf('a forgotten dossier belief') >= 0, 'the forgotten belief joins the permanent studyDeclined denylist');
+  A.eq(StudyStore.nextLive([{ id: 'study_f1', dim: 'goals', kind: 'add', text: 'a forgotten dossier belief' }]), null,
+    'a forgotten belief can never be re-proposed (nextLive drops it)');
+  A.eq(resolveCalls.length, resolvesBefore + 1, 'declineText mirrors the denylist to the sidecar');
+  A.eq(resolveCalls[resolveCalls.length - 1].body.runId, '', 'the mirror rides /api/study/resolve with no runId (documented no-op consume)');
+  A.ok(resolveCalls[resolveCalls.length - 1].body.declined.indexOf('a forgotten dossier belief') >= 0, 'the mirrored list carries the forgotten text');
+  A.eq(StudyStore.declineText('   '), false, 'blank text is refused (nothing to denylist)');
+  // the denylist persists: a re-init (reload) still refuses the forgotten belief.
+  StudyStore.init({ now: () => 1000 });
+  A.ok(StudyStore.declinedList().indexOf('a forgotten dossier belief') >= 0, 'the forget-denylist survives a re-init (persisted)');
+  // source-guard: DossierStore.forget captures the belief text BEFORE the splice and feeds declineText.
+  const dsSrc = fs.readFileSync(path.join(__dirname, '../frontend/app/dossierstore.js'), 'utf8');
+  A.ok(/StudyStore\.declineText/.test(dsSrc), 'dossierstore.forget routes the forgotten belief into StudyStore.declineText');
+  A.ok(dsSrc.indexOf('Dossier.beliefs(dossier, dim)') < dsSrc.indexOf('Dossier.forget(dossier, dim, id'),
+    'the belief text is captured BEFORE the splice (after it, the text is gone)');
+
   // IGNORE 2× -> stop proposing that belief (stop-forever)
   const ignProp = { id: 'study_5', dim: 'stack', kind: 'add', text: 'uses some obscure toolchain daily' };
   A.eq(StudyStore.isExhausted('stack', ignProp.text), false, 'a fresh belief is not exhausted');
