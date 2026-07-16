@@ -6,6 +6,12 @@ Full evidence and repros: `docs/POWERUSER_AUDIT_2026-07-15.md`. Baseline gates w
 (`test:fast` 328 steps, full `test:http`, `qa:journeys` 123/123), but live adversarial use
 confirmed **14 new defects: 4 P1 · 8 P2 · 2 P3**. Highest priority:
 
+**Fix execution plan (2026-07-16):** `docs/POWERUSER_FIX_PLAN_2026-07-16.md` — four waves,
+EL-3 reproduction per defect, serialized `index.js` / `stationui.js` / `chat.js` ownership,
+live restart criteria, composed gates, and a final installed-app proof. Wave 4D (tray-supervised
+background lifecycle) remains an explicit owner decision checkpoint; the plan recommends opt-in
+launch-at-login plus visible tray ownership, never a hidden daemon.
+
 - [ ] **PU-03 P1:** recovery EXPORT AGENT includes browser BYOK localStorage secrets despite
       Settings saying secrets are excluded.
 - [ ] **PU-01 P1:** Night Shift accepts/persists nonexistent or unblessed project/thread focus
