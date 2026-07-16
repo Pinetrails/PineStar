@@ -1847,6 +1847,9 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 .ws-tools-row span { flex: 1; letter-spacing: 1px; min-width: 0; }
 #ws-tools-active { color: var(--ph); font-weight: normal; letter-spacing: 0; overflow-wrap: anywhere; }
 .ws-tools-hint { margin-top: -4px; line-height: 1.3; opacity: .75; }
+/* the archived-mirror door reads QUIET like the rail footer it mirrors — a pointer, not a primary action */
+#ws-tools-archived { border-style: dashed; color: var(--ph-dim); }
+#ws-tools-archived:hover:not(:disabled) { border-style: solid; }
 #ws-tools button, .ws-bulk select {
   font: inherit; color: var(--ph); background: transparent; border: 1px solid var(--ph-dim); border-radius: 2px; padding: 4px 8px; cursor: pointer;
 }

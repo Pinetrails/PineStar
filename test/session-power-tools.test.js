@@ -94,6 +94,9 @@ const sui = fs.readFileSync(require.resolve('../frontend/app/stationui.js'), 'ut
 A.ok(/data-term="sessiontools"/.test(html) && /id="ws-tools-park"/.test(html), 'SESSION TOOLS is discoverable from the SYSTEM menu and the panel is parked outside the rail');
 A.ok(!/ws-tools-btn/.test(html), 'rail head stays SESSIONS/PROJECTS + NEW only (no inline TOOLS button)');
 A.ok(/sessiontools:\s*\['SESSION TOOLS',\s*buildSessionTools/.test(sui) && /onClose:\s*parkSessionTools/.test(sui), 'the floating window adopts the parked panel and re-parks it on close');
+A.ok(/id="ws-tools-archived"[^>]*hidden/.test(html), 'archived mirror row ships hidden until at least one session is archived');
+A.ok(/function refreshSessionToolsArchived[\s\S]{0,600}railShowArchived/.test(app), 'archived mirror derives its label from the rail reveal state — one source of truth');
+A.ok(/ws-tools-archived'\)\.onclick[\s\S]{0,300}setRailView\('sessions'\)[\s\S]{0,100}toggleArchived\(\)/.test(app), 'mirror click forces the sessions view then flips the rail’s own reveal');
 A.ok(/id="ws-search"[\s\S]*search sessions \+ transcripts/.test(html), 'one labelled search surface covers sessions and transcripts');
 A.ok(/EXPORT \.MD[\s\S]*EXPORT \.JSON/.test(html), 'both conversation export formats are visible');
 A.ok(/CONFIRM CLEAR/.test(app) && /clearConversation\(w\.id\)/.test(app), 'clear requires an explicit second confirmation');
