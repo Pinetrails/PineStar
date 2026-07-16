@@ -27,9 +27,14 @@ REMAINING, honestly out of this machine's reach:
       (~15 min). Folds naturally into the 10-outside-installs step otherwise.
 - [ ] **Andrew: publish `starnet-releases` + key backups + dev-key rotation**, then the public
       per-platform update canaries; 48h RC soak per docs/RELEASE_READINESS.md.
-- [ ] T0 clean-machine + T3.2/T3.4 proofs: need a true clean Windows box (this one is Win11 Home —
-      no Sandbox/Hyper-V); fold into the 10-outside-installs step.
-- [ ] Mac auto-update remains unproven (runbook ready: docs/MAC_UPDATE_TEST.md).
+- [x] Outside installs on other hardware — ATTESTED by Andrew 2026-07-15: installed on a separate
+      Windows machine AND a Mac, both "worked perfectly" as a user. This clears the practical
+      clean-machine concern; the FORMAL T0/T3.2 gates still want their evidence JSON captured
+      during such an install (`STARNET_T0_CLEAN_EVIDENCE` — see scripts/t0-clean-install.mjs) —
+      capture it on the next outside install rather than re-doing these.
+- [ ] Mac AUTO-UPDATE remains the one unproven mechanism (install ≠ update): one run of
+      docs/MAC_UPDATE_TEST.md on that Mac after the next release publishes. The guaranteed manual
+      fallback + data-preservation guarantee (1884393f) bound the damage if it fails.
 
 ## 2026-07-15 — RELEASE PREP (lane `claude/release-prep-d04205`): qa:ready burn-down
 
