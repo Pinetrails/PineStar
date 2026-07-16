@@ -5916,6 +5916,11 @@ async function runWorkshopShift(agentId, opts) {
   if (!manifest) {
     // failed build → count the attempt; at the cap the item PARKS so a doomed item can't burn a run every shift.
     const rel = await workshopStore.releaseClaim(id, runId, { failed: true });
+    if (rel && rel.parked) {
+      const failedRow = lifecycleRow('failed', id, runId, rel.parked, null);
+      failedRow.id = 'workshop-failed:' + id + ':' + rel.parked.id;
+      try { await deliverableStore.record(failedRow, Date.now()); } catch (_) {}
+    }
     if (rel && rel.parked) console.warn('[workshop] parked "' + (rel.parked.title || rel.parked.id) + '" for ' + id + ' after ' + rel.parked.attempts + ' failed builds — it will not be retried; re-queue it to try again.');
     noteShift({ reason: threw ? 'run-failed' : 'no-manifest', runId: runId, title: item.title, parkedTitle: (rel && rel.parked) ? (rel.parked.title || rel.parked.id) : undefined });
     return { fired: true, runId: runId, reason: threw ? 'run-failed' : 'no-manifest', parked: !!(rel && rel.parked) };

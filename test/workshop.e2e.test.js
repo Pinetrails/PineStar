@@ -54,7 +54,10 @@ function startMockOpenRouter() {
           // (all CSS/JS inline) + a README.md, so the return card's "Open it" opens a RUNNING page and a non-html
           // file exists to test the shell-open route. Keyed off the item title carried in the prompt.
           const wantsWeb = /web tool/i.test(prompt);
-          if (prompt.indexOf(WORKSHOP_MARK) === 0 && wantsWeb) {
+          const wantsFailure = /fail build/i.test(prompt);
+          if (prompt.indexOf(WORKSHOP_MARK) === 0 && wantsFailure) {
+            text('I could not produce a valid deliverable.');
+          } else if (prompt.indexOf(WORKSHOP_MARK) === 0 && wantsWeb) {
             const html = '<!doctype html><meta charset="utf-8"><title>Tip Calc</title>'
               + '<h1 id="h">Tip Calculator</h1><script>document.getElementById("h").dataset.ready="1";</script>';
             if (toolResults === 0) {
@@ -174,6 +177,14 @@ async function startSse(url) {
     const manRaw = fs.readFileSync(path.join(runDir, 'deliverable.json'), 'utf8');
     const man = JSON.parse(manRaw);
     A.ok(man.v === 1 && Array.isArray(man.files) && man.files.length >= 1, 'deliverable.json on disk is a valid v1 manifest');
+    const extraFiles = {
+      'README.md': Buffer.from('# CSV cleaner\n\n**Safe** preview.\n<script>never run</script>'),
+      'sample.csv': Buffer.from('name,value\nalpha,1\nbeta,2\n'),
+      'pixel.png': Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64'),
+      'index.html': Buffer.from('<!doctype html><title>CSV cleaner</title><script>document.body.dataset.ready="1"</script>')
+    };
+    for (const [name, bytes] of Object.entries(extraFiles)) { fs.writeFileSync(path.join(runDir, name), bytes); man.files.push({ path: name, bytes: bytes.length }); }
+    fs.writeFileSync(path.join(runDir, 'deliverable.json'), JSON.stringify(man));
 
     // 5. workshop.built arrived on the durable SSE bus with the proven manifest.
     await sse.waitFor(ev => ev.some(e => e.name === 'workshop.built' && e.payload && e.payload.agentId === 'builder' && e.payload.runId === runId && e.payload.manifest && e.payload.manifest.files.length >= 1), 6000, 'workshop.built SSE');
@@ -187,7 +198,10 @@ async function startSse(url) {
     const pendingRow = (libraryPending.items || []).find(r => r.runId === runId);
     A.eq(libraryPendingRes.status, 200, 'deliverable library API exists');
     A.ok(pendingRow && pendingRow.status === 'pending' && pendingRow.source === 'queued', 'library projects the real pending Workshop record');
-    A.ok(pendingRow.size === 21 && pendingRow.files[0].openUrl, 'library reports manifest-proven size and a safe open URL');
+    const expectedSize = man.files.reduce((n, f) => n + f.bytes, 0);
+    A.ok(pendingRow.size === expectedSize && pendingRow.files[0].openUrl, 'library reports manifest-proven size and safe open URLs');
+    A.ok(pendingRow.files.some(f => f.preview === 'markdown') && pendingRow.files.some(f => f.preview === 'csv') && pendingRow.files.some(f => f.preview === 'image'), 'library allowlists bounded Markdown, CSV, and image previews');
+    A.ok(pendingRow.files.some(f => /index\.html$/.test(f.path) && f.sandboxed === true), 'library labels HTML for the existing opaque-origin sandbox');
 
     // ===================== W7: OPEN the deliverable, don't display its code =====================
     // Build a SELF-CONTAINED web tool (index.html + README.md) and prove the two open surfaces + their guards.
@@ -277,6 +291,12 @@ async function startSse(url) {
     A.ok(ngRes.payload && ngRes.payload.fired === false && ngRes.payload.reason === 'not-granted', 'an UNGRANTED agent cannot run a workshop shift (grant is load-bearing)');
     A.ok(!fs.existsSync(path.join(ws, 'nogrant', 'workshop')), 'the ungranted agent wrote nothing');
 
+    // A twice-failed Workshop item parks and remains visible as failed rather than disappearing into the queue.
+    await fetch(B + '/api/workshop/queue', { method: 'POST', headers, body: JSON.stringify({ agentId: 'builder', id: 'item-fail', title: 'Fail build deliberately' }) });
+    for (let i = 0; i < 2; i++) await readNdjson(await fetch(B + '/api/workshop/shift', { method: 'POST', headers, body: JSON.stringify({ agentId: 'builder' }) }));
+    const failedLibrary = await (await fetch(B + '/api/deliverables?status=failed', { headers })).json();
+    A.ok(failedLibrary.items.some(r => r.title === 'Fail build deliberately' && r.status === 'failed'), 'parked Workshop failure is a durable failed library row');
+
     // 7.4 KEEP copies a deliverable OUT to a user-chosen folder — COPYFILE_EXCL by default (never a silent
     //     clobber). Runs on its OWN queued item so it doesn't retire item-1 (step 8 still needs it). A second
     //     keep to the SAME folder is refused 409 EEXIST; overwrite:true then replaces.
@@ -313,7 +333,7 @@ async function startSse(url) {
     A.ok(libraryDecided.items.some(r => r.runId === runId && r.status === 'discarded'), 'library preserves the discarded lifecycle after files are removed');
 
     const preview = await (await fetch(B + '/api/deliverables/cleanup-preview', { method: 'POST', headers, body: JSON.stringify({ statuses: ['discarded'] }) })).json();
-    A.ok(preview.ok && preview.targets.length === 1 && preview.targets[0].runId === runId, 'cleanup preview names the exact discarded target');
+    A.ok(preview.ok && preview.targets.length === 1 && preview.targets[0].runId === runId, 'status-scoped cleanup preview names the exact discarded target');
     A.ok(preview.protected.some(r => r.runId === runId2 && r.status === 'kept'), 'cleanup preview protects kept work');
     const cleaned = await (await fetch(B + '/api/deliverables/cleanup', { method: 'POST', headers, body: JSON.stringify({ statuses: preview.statuses, fingerprint: preview.fingerprint }) })).json();
     A.ok(cleaned.ok && cleaned.removed === 1 && cleaned.undoToken, 'cleanup applies only the previewed metadata rows');
