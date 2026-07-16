@@ -359,6 +359,7 @@ body:has(#screen-game.active):not(.refit-on) #logo { display: flex; }
 .dot.alert { background: var(--warn); box-shadow: 0 0 7px var(--warn); animation: pulse 0.7s infinite; }
 .crew-main { min-width: 0; flex: 1; }
 .crew-name { font-size: 17px; letter-spacing: 1px; display: flex; align-items: baseline; }
+.crew-id, .ag-name-id { margin-left:6px; color:var(--ph-dim); font-size:.72em; letter-spacing:.5px; }
 .crew-room { font-size: 10.5px; color: var(--ph-dim); margin-left: auto; letter-spacing: 1px; padding-left: 8px; }
 .crew-status {
   font-size: 12px; color: var(--text); opacity: 0.7;
