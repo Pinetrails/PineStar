@@ -56,9 +56,22 @@
     return request ? Promise.resolve(request.call(doc.documentElement)).then(() => true) : Promise.resolve(false);
   }
 
+  // Flip body.sn-fs (titlebar hide + strip reclaim) the moment the toggle resolves — the
+  // titlebar's own resize probe can trail by ~250ms on Windows, which reads as a second
+  // layout jolt after the window has already gone fullscreen. Probes still reconcile later.
+  function syncBodyClass(doc, on) {
+    try {
+      if (doc && doc.body && doc.body.classList && typeof on === 'boolean') doc.body.classList.toggle('sn-fs', on);
+    } catch (_) {}
+  }
+
   function toggle(win, doc) {
     win = win || root;
     doc = doc || (win && win.document) || (root && root.document);
+    return toggleInner(win, doc).then(on => { syncBodyClass(doc, on); return on; });
+  }
+
+  function toggleInner(win, doc) {
     const appWindow = tauriWindow(win);
     if (appWindow && typeof appWindow.isFullscreen === 'function' && typeof appWindow.setFullscreen === 'function') {
       return Promise.resolve(appWindow.isFullscreen()).then(on => {
@@ -110,6 +123,10 @@
     if (win.__STARNET_FULLSCREEN_WIRED__) return false;
     win.__STARNET_FULLSCREEN_WIRED__ = true;
     win.addEventListener('keydown', ev => handleKeydown(ev, win, doc), true);
+    // Esc leaves browser fullscreen without going through toggle() — keep the class honest
+    if (doc && typeof doc.addEventListener === 'function') {
+      doc.addEventListener('fullscreenchange', () => syncBodyClass(doc, !!doc.fullscreenElement));
+    }
     return true;
   }
 
@@ -121,5 +138,5 @@
     }
   }
 
-  return { isF11, toggleBrowser, toggle, handleKeydown, install };
+  return { isF11, toggleBrowser, toggle, handleKeydown, install, syncBodyClass };
 });

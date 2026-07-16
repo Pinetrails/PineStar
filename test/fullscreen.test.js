@@ -116,6 +116,38 @@ const Fullscreen = require('../frontend/app/fullscreen.js');
   A.eq(await Fullscreen.toggle(failingTauriWin, doc), true, 'native failure falls back to browser fullscreen');
   A.eq(requested, 1, 'fallback requestFullscreen still runs after a native error');
 
+  // toggle() flips body.sn-fs immediately (titlebar hide) instead of waiting for the
+  // titlebar's trailing resize probe — the probe still reconciles the truth later.
+  {
+    const classes = new Set();
+    const fsDoc = {
+      body: { classList: { toggle(name, on) { if (on) classes.add(name); else classes.delete(name); } } },
+      fullscreenElement: null,
+      documentElement: {
+        requestFullscreen() { fsDoc.fullscreenElement = fsDoc.documentElement; return Promise.resolve(); }
+      },
+      exitFullscreen() { fsDoc.fullscreenElement = null; return Promise.resolve(); }
+    };
+    let fsOn = false;
+    const fsWin = {
+      __TAURI__: {
+        window: {
+          getCurrentWindow() {
+            return {
+              isFullscreen() { return Promise.resolve(fsOn); },
+              setFullscreen(next) { fsOn = next; return Promise.resolve(); }
+            };
+          }
+        }
+      }
+    };
+    A.eq(await Fullscreen.toggle(fsWin, fsDoc), true, 'class-sync toggle enters fullscreen');
+    A.ok(classes.has('sn-fs'), 'entering fullscreen sets body.sn-fs immediately');
+    A.eq(await Fullscreen.toggle(fsWin, fsDoc), false, 'class-sync toggle exits fullscreen');
+    A.ok(!classes.has('sn-fs'), 'exiting fullscreen clears body.sn-fs immediately');
+    Fullscreen.syncBodyClass(null, true);   // never throws without a document
+  }
+
   let listener = null;
   const fakeWin = {
     document: {},

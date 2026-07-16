@@ -43,6 +43,7 @@ const World = (() => {
   let _scanCv = null, _scanKey = '';    // cached SOFT-scanline tile canvas (rebuilt only when scan/pitch/dpr change) — see scanCanvas()
   let _grainCv = null, _grainPat = null;   // cached film-grain noise tile + pattern — see grainPattern()/drawCRT()
   let scale = 2, panX = 0, panY = 0, fitNeeded = true;
+  let fitW = 0, fitH = 0;   // canvas size the last fitCamera() framed against — a fit on a hidden/degenerate stage doesn't count as a real view
   const MINZ = 0.5, MAXZ = 6;
   const clampz = (v, a, b) => v < a ? a : v > b ? b : v;
   let drag = null, hoverAgent = null, onClick = null, onArcade = null, onOutbox = null, onMissionBoard = null, onTrophyCase = null, onBayAssign = null, onIntakeFeed = null, wakeAt = 0;
@@ -697,7 +698,9 @@ const World = (() => {
     cv = canvas; ctx = cv.getContext('2d');
     resize();
     camUserAt = performance.now();   // boot / a new agent re-arms the cinecam idle clock — the director never fires into a fresh floor
-    try { if (ro) ro.disconnect(); ro = new ResizeObserver(() => { resize(); fitNeeded = true; redrawNow(); }); ro.observe(cv.parentElement || cv); } catch (e) {}
+    // resize() preserves the current view (centre-anchored) — never re-fit here, or every
+    // COMMS-seam drag tick / fullscreen toggle snaps the Commander's pan/zoom back to fit-all.
+    try { if (ro) ro.disconnect(); ro = new ResizeObserver(() => { resize(); redrawNow(); }); ro.observe(cv.parentElement || cv); } catch (e) {}
     // bind the input/visibility handlers + SSE bridge ONCE — init() re-runs on every NEW AGENT (same canvas
     // element), so without this guard each new agent stacked another full set of listeners and SSE streams.
     if (listenersBound) return;
@@ -779,6 +782,15 @@ const World = (() => {
     const w = cv.clientWidth || cv.parentElement.clientWidth, h = cv.clientHeight || cv.parentElement.clientHeight;
     const nw = Math.max(1, Math.round(w * dpr)), nh = Math.max(1, Math.round(h * dpr));
     if (cv.width === nw && cv.height === nh) return;   // assigning to canvas.width/height WIPES the bitmap even when unchanged — skip the needless clear
+    // keep the world point under the canvas centre anchored through the resize (zoom untouched):
+    // the view stays put while the stage grows/shrinks around it. Skipped until the first fit
+    // has framed the station (fitNeeded) — there's no meaningful view to preserve yet. A fit
+    // that landed on a DEGENERATE canvas (boot while the game screen was still hidden → 1px
+    // stage) is no view either — re-fit at the first real size instead of anchoring garbage.
+    if (!fitNeeded && cache) {
+      if (fitW <= 2 || fitH <= 2) fitNeeded = true;
+      else { panX += (nw - cv.width) / 2; panY += (nh - cv.height) / 2; }
+    }
     cv.width = nw; cv.height = nh;
   }
 
@@ -1000,6 +1012,7 @@ const World = (() => {
     const W = cache.W, H = cache.H;
     scale = clampz(Math.min(cv.width / W, cv.height / H), MINZ, MAXZ);
     panX = (cv.width - W * scale) / 2; panY = (cv.height - H * scale) / 2;
+    fitW = cv.width; fitH = cv.height;   // remember the size this fit framed — resize() treats a degenerate-size fit as "never fit"
   }
   function toCanvas(ev) {
     const r = cv.getBoundingClientRect();
