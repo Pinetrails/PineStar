@@ -1,19 +1,20 @@
-/* node test/workshop-visibility.test.js — the "it never tells me what it did" fix (2026-07-14).
+/* node test/workshop-visibility.test.js — SESSION DELIVERY + DELIVERY REVEAL for idle-work deliverables.
 
-   A night-shift build lands while the Commander is away BY DEFINITION, so the live card + toast play to
-   an empty room. Pre-fix, the frontend WorkshopStore then persisted its seen/later ledger to localStorage,
-   so the undecided deliverable was filtered out of every future attach poll: pending server-side, invisible
-   forever. This proves the three legs of the fix over the real store with injected fakes:
+   Locked behaviors, per Andrew:
+     A. (2026-07-15) An automated build never paints its card into a FOREIGN session. Every deliverable
+        gets its OWN workstream ('workshop-<runId>' — the shift's durable streamId); the card renders only
+        inside that session, pinned via opts.sessionId.
+     A'. (2026-07-16) DELIVERY REVEAL: a landed build GREETS the Commander — its own session OPENS with the
+        full return card (explanation + files + decide row) on live push, attach, and genuine return; the
+        newest build opens when several are pending, the rest land unread. If the Commander is mid-something
+        (or App isn't up), the reveal stands down to the unread row + one actionable toast.
+     B. The 2026-07-14 honesty laws survive the reshape: a prior session's persisted seen/later ledger is
+        ignored (session-scoped), undecided = still owed (re-surfaced every session until decided), an
+        explicit 'later' stays quiet for the session, and a duplicate workshop.built never double-delivers.
 
-     1. SESSION-SCOPED LEDGER — a prior session's persisted seen/later is ignored; the attach poll re-offers
-        the oldest UNDECIDED deliverable every session until the Commander decides.
-     2. RETURN RE-PRESENT — presentOnReturn() (wired to AutopilotStore's genuine-return hook) re-offers an
-        undecided deliverable even if its card already rendered this session; an explicit 'later' still
-        silences it for the rest of the session (anti-nag), and server-decided work drops out.
-     3. LIVE PUSH — onBuilt presents toast + card once per runId (the duplicate-event guard holds).
-
-   Plus source-guards for the browser-only wiring: chat.js's one-live-card-per-runId dedupe (data-wsrun),
-   app.js's onReturn → WorkshopStore.presentOnReturn bridge, and autopilotstore.js's deps.onReturn call. */
+   Proven over the real store with injected fakes (Workstreams/Chat/StationUI/fetch), plus source-guards
+   for the browser-only wiring: chat.js load() calls presentFor, the card is session-pinned, and app.js
+   still routes the genuine-return hook to WorkshopStore.presentOnReturn. */
 'use strict';
 const A = require('./_assert.js');
 const fs = require('fs');
@@ -26,7 +27,7 @@ global.localStorage = {
   setItem: (k, v) => mem.set(k, String(v)),
   removeItem: k => mem.delete(k)
 };
-// a PRIOR SESSION's persisted ledger (the pre-fix bug): both pending runs already "seen", one later'd.
+// a PRIOR SESSION's persisted ledger (the pre-2026-07-14 bug): both pending runs already "seen", one later'd.
 const STALE = JSON.stringify({ v: 1, later: { 'run-A': true }, seen: ['run-A', 'run-B'] });
 mem.set('starnet.workshop.v1', STALE);
 
@@ -41,58 +42,114 @@ global.fetch = async (url, opts) => {
   if (u.indexOf('/api/workshop/decide') === 0) { decides.push(JSON.parse(opts.body)); return { ok: true, json: async () => ({ ok: true }) }; }
   return { ok: false, json: async () => null };
 };
+
+// a minimal Workstreams fake with the REAL unread semantics (lastActiveAt > lastReadAt, never the active stream)
+const streams = new Map();
+let activeStreamId = 'ws_general';
+global.Workstreams = {
+  adopt(opts) {
+    if (streams.has(opts.id)) return streams.get(opts.id);
+    const w = Object.assign({ history: [] }, opts);
+    streams.set(w.id, w);
+    return w;
+  },
+  get(id) { return streams.get(id) || null; },
+  touch(id) { const w = streams.get(id); if (w) { w.lastActiveAt = Date.now(); if (id === activeStreamId) w.lastReadAt = w.lastActiveAt; } return !!w; },
+  unread(w) { w = (w && w.id) ? w : streams.get(w); return !!w && w.id !== activeStreamId && (w.lastActiveAt || 0) > (w.lastReadAt || 0); }
+};
+
 let cards = [];
 global.Chat = { workshopReturn: (m, o) => { cards.push({ m: m, o: o }); } };
 let toasts = [];
 global.StationUI = { notify: (msg, kind, cat) => toasts.push({ msg: msg, kind: kind, cat: cat }) };
+// the App shim reveal() drives — openWorkstream is the real focus switch (switchWorkstream → Chat.load)
+global.App = { openWorkstream: (id) => { activeStreamId = id; const w = streams.get(id); if (w) w.lastReadAt = Date.now(); } };
 
 const { WorkshopStore } = require('../frontend/app/workshopstore.js');
 
 (async () => {
-  /* ---------- 1. the attach poll IGNORES a prior session's persisted ledger ---------- */
+  /* ---------- A1. the attach poll adopts a session per deliverable and REVEALS the newest: its own session
+     opens with the full return card; older deliverables land unread; no card in a foreign session ---------- */
   WorkshopStore.init({ enabled: true, agentIds: () => ['agent'] });
   await new Promise(r => setTimeout(r, 2300));   // past ATTACH_DELAY_MS (1800)
-  A.eq(cards.length, 1, 'attach poll presents exactly ONE return card');
-  A.eq(cards[0].m.runId, 'run-A', 'the OLDEST undecided deliverable is re-offered — a prior session\'s seen/later ledger is IGNORED (session-scoped)');
+  A.ok(streams.has('workshop-run-A') && streams.has('workshop-run-B'), 'every undecided deliverable got its own session (a prior session\'s persisted seen/later ledger is IGNORED)');
+  A.eq(activeStreamId, 'workshop-run-B', 'the NEWEST deliverable\'s own session OPENED (delivery reveal, 2026-07-16)');
+  A.eq(cards.length, 1, 'the reveal presented exactly ONE return card');
+  A.eq(cards[0].m.runId, 'run-B', 'the card is the newest build\'s');
+  A.eq(cards[0].o.sessionId, 'workshop-run-B', 'the card is pinned to the deliverable\'s OWN session — never a foreign feed');
+  A.ok(Workstreams.unread(streams.get('workshop-run-A')), 'the older delivery session lands UNREAD in the rail');
+  A.ok((streams.get('workshop-run-A').history || []).some(m2 => m2 && m2.sys), 'the session opens with an honest sys marker, never fabricated agent speech');
 
-  /* ---------- 2a. presentOnReturn re-offers even a card already shown THIS session ---------- */
+  /* ---------- A2. the card renders ONLY when its session is opened (presentFor), pinned to it ---------- */
+  cards = [];
+  await WorkshopStore.presentFor('workshop-run-A');
+  A.eq(cards.length, 1, 'opening the delivery session presents its return card');
+  A.eq(cards[0].m.runId, 'run-A', 'the card carries THAT session\'s deliverable');
+  A.eq(cards[0].o.sessionId, 'workshop-run-A', 'the card is PINNED to its own session (chat.js refuses to paint it elsewhere)');
+  cards = [];
+  await WorkshopStore.presentFor('ws_general');
+  A.eq(cards.length, 0, 'a non-delivery session id never presents a card');
+  await WorkshopStore.presentFor('workshop-run-GONE');
+  A.eq(cards.length, 0, 'a decided/unknown run presents nothing (server truth, fail-open)');
+
+  /* ---------- B1. return-from-away re-surfaces UNDECIDED work: sessions bump unread, the newest REVEALS ---------- */
+  const wsA = streams.get('workshop-run-A');
+  wsA.lastReadAt = Date.now() + 1;   // simulate: the Commander read it, then went away
+  activeStreamId = 'ws_general';     // …and is back on a plain stream
+  await new Promise(r => setTimeout(r, 5));
   cards = [];
   await WorkshopStore.presentOnReturn();
-  A.eq(cards.length, 1, 'return-from-away re-presents an undecided deliverable');
-  A.eq(cards[0].m.runId, 'run-A', 'the session "seen" mark does not hide it — shown-to-nobody must not count as told');
+  A.eq(cards.length, 1, 'a genuine return reveals the newest undecided deliverable\'s card');
+  A.eq(cards[0].o.sessionId, 'workshop-run-B', 'that card lives in its own session, never the stream the Commander left open');
+  A.ok(Workstreams.unread(wsA), 'an undecided deliverable\'s session goes unread again on a genuine return — undecided = still owed');
 
-  /* ---------- 2b. an explicit LATER silences it for the rest of THIS session ---------- */
+  /* ---------- B2. an explicit LATER stays quiet for the session; an explicit OPEN still shows the card ---------- */
   await WorkshopStore.decide('agent', 'run-A', 'later');
-  cards = [];
+  A.ok(decides.some(d => d.runId === 'run-A' && d.decision === 'later'), 'later reached the server');
+  wsA.lastReadAt = Date.now() + 1;
+  activeStreamId = 'ws_general';
+  await new Promise(r => setTimeout(r, 5));
   await WorkshopStore.presentOnReturn();
-  A.eq(cards.length, 1, 'the return re-present moves on to the next undecided deliverable');
-  A.eq(cards[0].m.runId, 'run-B', 'a later\'d card stays dismissed this session (anti-nag) — the NEXT undecided one is offered');
-
-  /* ---------- 2c. server-decided work drops out entirely ---------- */
-  pending = [];
+  A.ok(!Workstreams.unread(wsA), 'a later\'d deliverable is not re-bumped on return (anti-nag)');
   cards = [];
-  await WorkshopStore.presentOnReturn();
-  A.eq(cards.length, 0, 'nothing pending server-side → no card, no fabricated beat (fail-open)');
+  await WorkshopStore.presentFor('workshop-run-A');
+  A.eq(cards.length, 1, 'but deliberately OPENING its session still shows the card — an explicit open is the opposite of nagging');
 
-  /* ---------- 3. the live workshop.built push: toast + card, once per runId ---------- */
+  /* ---------- B3. the live workshop.built push REVEALS: its own session opens with the card, once per runId ---------- */
   cards = []; toasts = [];
   const builtPayload = { agentId: 'agent', runId: 'run-C', manifest: { title: 'fresh build', files: [] } };
   WorkshopStore.onBuilt(builtPayload);
-  A.eq(cards.length, 1, 'a live build presents its return card immediately');
-  A.eq(cards[0].m.runId, 'run-C', 'the card carries the built run');
-  A.eq(toasts.length, 1, 'the live build announces ONE toast');
+  A.ok(streams.has('workshop-run-C'), 'a live build adopts its own session immediately');
+  A.eq(activeStreamId, 'workshop-run-C', 'the live build OPENS its own session (delivery reveal)');
+  A.eq(cards.length, 1, 'and presents the full return card there');
+  A.eq(cards[0].o.sessionId, 'workshop-run-C', 'the card is pinned to the build\'s own session');
+  A.eq(toasts.length, 0, 'a revealed build needs no toast — the card IS the announcement');
+  WorkshopStore.onBuilt(builtPayload);
+  A.eq(cards.length, 1, 'a duplicate workshop.built event never double-delivers (seen guard)');
+
+  /* ---------- B3b. the reveal FALLBACK: no App shell → unread session + ONE actionable toast ---------- */
+  const savedApp = global.App; delete global.App;
+  cards = []; toasts = [];
+  WorkshopStore.onBuilt({ agentId: 'agent', runId: 'run-D', manifest: { title: 'quiet build', files: [] } });
+  A.ok(streams.has('workshop-run-D'), 'the fallback still adopts the deliverable\'s own session');
+  A.ok(Workstreams.unread(streams.get('workshop-run-D')), 'the fallback session lands unread');
+  A.eq(cards.length, 0, 'no card without the reveal — it belongs to the session open');
+  A.eq(toasts.length, 1, 'the fallback announces ONE toast');
   A.ok(/built while you were away/.test(toasts[0].msg), 'the toast says what happened');
   A.eq(toasts[0].cat, 'cronDigest', 'the toast stays in the Commander-mutable autonomous category (P1-8 mute works)');
-  WorkshopStore.onBuilt(builtPayload);
-  A.eq(cards.length, 1, 'a duplicate workshop.built event never double-presents (seen guard)');
+  global.App = savedApp;
 
-  /* ---------- 4. the ledger never persists (the root regression) ---------- */
+  /* ---------- B4. the ledger never persists (the 2026-07-14 root regression) ---------- */
   A.eq(mem.get('starnet.workshop.v1'), STALE, 'no session state was written back to localStorage — the ledger is in-memory only');
 
-  /* ---------- 5. source-guards for the browser-only wiring (not node-loadable) ---------- */
+  /* ---------- C. source-guards for the browser-only wiring (not node-loadable) ---------- */
   const chatSrc = fs.readFileSync(path.join(__dirname, '../frontend/app/chat.js'), 'utf8');
-  A.ok(/setAttribute\('data-wsrun'/.test(chatSrc), 'chat.js tags each workshop return card with its runId (data-wsrun)');
-  A.ok(/\.workshop-return\[data-wsrun=/.test(chatSrc), 'chat.js drops the stale duplicate card before re-presenting (one live card per deliverable)');
+  A.ok(/WorkshopStore\.presentFor/.test(chatSrc), 'chat.js load() routes a freshly opened session through WorkshopStore.presentFor');
+  A.ok(/opts\.sessionId/.test(chatSrc) && /inOwnSession/.test(chatSrc), 'chat.js pins the delivery card to its own session (never another stream\'s feed)');
+  A.ok(/setAttribute\('data-wsrun'/.test(chatSrc), 'chat.js tags each delivery card with its runId (data-wsrun)');
+  A.ok(/\.workshop-return\[data-wsrun=/.test(chatSrc), 'chat.js drops a stale duplicate card before re-presenting (one live card per deliverable)');
+  A.ok(!/folder to copy into/.test(chatSrc), 'the folder-picker Keep flow is gone from the card (simplified: message + Implement/Later/Discard)');
+  A.ok(/Implement/.test(chatSrc), 'the card offers the one-click Implement decision');
 
   const appSrc = fs.readFileSync(path.join(__dirname, '../frontend/app/app.js'), 'utf8');
   A.ok(/onReturn:\s*\(\)\s*=>/.test(appSrc), 'app.js wires the genuine-return hook into AutopilotStore');

@@ -92,8 +92,8 @@
     return [
       { id: 'wait',    initiative: 'wait',    reach: 'observe', label: "wait for me — do nothing until i'm back" },
       { id: 'suggest', initiative: 'propose', reach: 'observe', label: 'line up suggestions i can one-tap when i return' },
-      { id: 'build',   initiative: 'leash',   reach: 'sandbox', label: 'quietly build a few small things while i’m away (a beat every ~45 min, up to the daily leash) and leave them on my desk to review' },
-      { id: 'free',    initiative: 'free',    reach: 'sandbox', label: 'run free toward my goals while i’m away — build all night up to the leash, show me everything on my desk when i’m back' }
+      { id: 'build',   initiative: 'leash',   reach: 'sandbox', label: 'quietly build a few small things while i’m away (a beat every ~45 min, up to the daily leash) — each one arrives as a new session in my rail to review' },
+      { id: 'free',    initiative: 'free',    reach: 'sandbox', label: 'run free toward my goals while i’m away — build all night up to the leash; everything arrives as new sessions in my rail when i’m back' }
     ];
   }
   function presetById(id) { return cadencePresets().filter(p => p.id === id)[0] || null; }

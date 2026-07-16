@@ -572,22 +572,38 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 }
 .turnin-edit:focus { outline: none; border-color: var(--ph); }
 
-/* W3 — THE AWAY-WORKSHOP RETURN CARD. Rides the gold-inset turn-in family (.cmsg.turnin.workshop-return);
-   these styles are only the expanded two-pane viewer + the honest verification line. Collapsed, it's just a
-   title + one review button (inherited). */
+/* W3 — THE DELIVERY CARD (rendered inside the deliverable's OWN session, 2026-07-15). Rides the gold-inset
+   turn-in family (.cmsg.turnin.workshop-return); a flat stack — headline, verify line, what/how lines, the
+   Open-it action, the files pane, and one action row (optional message + Implement / Later / Discard). */
 .ws-verline { display:block; font-size:12px; letter-spacing:.3px; margin-top:-2px; }
 .ws-verline.ok { color:var(--gold); }
 .ws-verline.dim { color:var(--ph-dim); }
-.ws-slot { display:block; min-width:0; }
-.ws-panes { display:flex; gap:9px; margin-top:6px; flex-wrap:wrap; }
-.ws-pane { flex:1 1 220px; min-width:0; background:var(--ph-faint); border:1px solid var(--ph-glow2);
-  border-radius:3px; padding:7px 8px; box-sizing:border-box; }
-.ws-summary .ws-line { display:block; margin-bottom:5px; font-size:13px; line-height:1.35; overflow-wrap:anywhere; }
+/* the flat delivery card (2026-07-15, premium pass 2026-07-16): labeled sections in the dossier grammar —
+   a gold uppercase micro-label over a bright value (the same ws-k/ws-v voice the config cards speak). */
+.workshop-return .ws-line { display:block; margin-top:2px; font-size:13px; line-height:1.4; overflow-wrap:anywhere; }
+.workshop-return .ws-k { display:block; color:var(--gold); font-size:10px; letter-spacing:1.2px; text-transform:uppercase; opacity:.92; margin-bottom:1px; }
+.workshop-return .ws-v { display:block; color:var(--ph-bright); }
+.workshop-return .ws-how .ws-v, .workshop-return .ws-notver .ws-v { color:var(--ph-dim); font-size:12.5px; }
+/* honest kind chip beside the headline — cf-badge vocabulary, gold edge */
+.ws-kindchip { margin-left:8px; font-size:10px; letter-spacing:1px; text-transform:uppercase; color:var(--gold);
+  border:1px solid rgba(var(--gold-rgb),.55); border-radius:2px; padding:0 5px; background:rgba(var(--gold-rgb),.06);
+  vertical-align:2px; white-space:nowrap; }
+.ws-pane { min-width:0; background:var(--ph-faint); border:1px solid var(--ph-glow2);
+  border-radius:3px; padding:7px 8px; box-sizing:border-box; margin-top:7px; }
 /* disk-proven input-capture notice (validateWorkshopManifest.capturesInput) — shown above the Open-it action */
 .ws-capture-warn { display:block; margin-top:6px; font-size:12px; line-height:1.35; color:var(--gold);
   background:rgba(var(--gold-rgb),.07); border:1px solid rgba(var(--gold-rgb),.35); border-radius:3px; padding:4px 7px; }
-.ws-summary .ws-k { display:block; color:var(--gold); font-size:10px; letter-spacing:1px; text-transform:uppercase; }
-.ws-summary .ws-v { display:block; color:var(--ph-bright); }
+.ws-try { margin-top:7px; }
+/* the HERO action — the one click that runs the deliverable. Gold, bloomed, unmistakably primary. */
+.consent-btn.ws-openit { color:var(--gold); border-color:var(--gold); font-size:13px; padding:4px 14px;
+  background:rgba(var(--gold-rgb),.07); box-shadow:0 0 10px rgba(var(--gold-rgb),.16);
+  transition:box-shadow var(--t-fast) var(--ease-soft), background var(--t-fast) var(--ease-soft), color var(--t-fast) var(--ease-soft); }
+.consent-btn.ws-openit:hover { color:var(--ph-bright); border-color:var(--gold); background:rgba(var(--gold-rgb),.16);
+  box-shadow:0 0 16px rgba(var(--gold-rgb),.34); }
+/* the ACCEPT action — gold means "this really implements"; a fallback save stays neutral by design */
+.consent-btn.ws-primary { color:var(--gold); border-color:var(--gold); background:rgba(var(--gold-rgb),.06);
+  box-shadow:0 0 8px rgba(var(--gold-rgb),.12); }
+.consent-btn.ws-primary:hover { color:var(--ph-bright); background:rgba(var(--gold-rgb),.15); box-shadow:0 0 12px rgba(var(--gold-rgb),.28); }
 .ws-fhead { color:var(--gold); font-size:10px; letter-spacing:1px; text-transform:uppercase; margin-bottom:4px; }
 .ws-flist { display:flex; flex-direction:column; gap:2px; margin-bottom:6px; }
 .ws-filerow { display:flex; align-items:center; gap:6px; }
@@ -602,11 +618,19 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 .ws-fview { margin:0; max-height:180px; overflow:auto; background:var(--ink); border:1px solid var(--ph-glow2);
   border-radius:2px; padding:6px 7px; color:var(--ph-bright); font-size:12px; line-height:1.4; white-space:pre-wrap;
   overflow-wrap:anywhere; }
-.ws-acts { margin-top:8px; gap:6px 8px; }
-.ws-keep { display:inline-flex; align-items:center; gap:5px; flex-wrap:wrap; }
-.ws-path { width:220px; max-width:100%; }
-.ws-pathhint { flex-basis:100%; font-size:11px; color:var(--ph-dim); letter-spacing:.2px; }
-.ws-pick { white-space:nowrap; }
+/* the decide row — separated from the evidence above by a gold hairline; it is the card's consent moment */
+.workshop-return .ws-acts { margin-top:9px; padding-top:9px; border-top:1px solid rgba(var(--gold-rgb),.22);
+  gap:6px 8px; align-items:center; flex-wrap:wrap; }
+.ws-acts { margin-top:8px; gap:6px 8px; align-items:center; flex-wrap:wrap; }
+/* the optional tell-the-agent message — rides the decision as a real user turn in the delivery session */
+.ws-msg { flex:1 1 200px; min-width:160px; width:auto; max-width:100%; }
+/* the pre-click consequence line ("implement → applies to a new branch in …") — an inset gold consent strip,
+   the same left-edge voice as .cmsg.consent: this line IS the consent copy */
+.workshop-return .ws-plan { color:var(--gold); font-size:12px; line-height:1.4; margin-top:7px;
+  border-left:2px solid var(--gold); border-radius:0 3px 3px 0; padding:5px 8px;
+  background:rgba(var(--gold-rgb),.07); }
+/* copy-path / open-folder chips on the decided outcome line */
+.ws-destchips { display:inline-flex; gap:6px; margin-left:8px; vertical-align:middle; }
 /* per-command verification detail: the actual commands run + each one's pass/fail from the manifest */
 .ws-verdetail { margin-top:6px; }
 .ws-verdetail > .ws-k { display:block; color:var(--gold); font-size:10px; letter-spacing:1px; text-transform:uppercase; margin-bottom:3px; }
@@ -1811,6 +1835,9 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 /* LIVE: a run is in flight on this stream (phosphor pulse), or it is paused awaiting your approval (gold pulse) */
 .ws-dot.running { background: var(--ph-bright); animation: wsPulse 1.15s ease-in-out infinite; }
 .ws-dot.attn { background: var(--gold); animation: wsPulse 1.15s ease-in-out infinite; }
+/* an idle-built deliverable awaiting review — gold, steady (a decision owed, not a live run) */
+.ws-dot.review { background: var(--gold); box-shadow: 0 0 7px rgba(var(--gold-rgb), .6); }
+.ws-dot.review ~ .ws-meta { color: var(--gold); letter-spacing: .5px; text-shadow: 0 0 6px rgba(var(--gold-rgb), .45); }
 @keyframes wsPulse {
   0%, 100% { opacity: 1; box-shadow: 0 0 7px var(--ph-glow); }
   50% { opacity: .3; box-shadow: 0 0 2px var(--ph-glow); }

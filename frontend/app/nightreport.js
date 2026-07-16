@@ -246,7 +246,7 @@
   // buildMode/draftReason (server-proven). An older sidecar without the field → '' (render nothing, never guess).
   function modeText(s) {
     if (!s || (s.buildMode !== 'build' && s.buildMode !== 'draft')) return '';
-    if (s.buildMode === 'build') return 'beats BUILD real deliverables in the workshop';
+    if (s.buildMode === 'build') return 'beats BUILD real deliverables — each arrives as a new ⚒ session in your rail';
     if (s.draftReason === 'no-workshop-grant') return 'drafts only — the away-workshop grant is off, so beats can’t build for real';
     return 'drafts only — raise REACH to sandbox to let beats build for real';
   }

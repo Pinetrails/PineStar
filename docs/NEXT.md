@@ -28,6 +28,18 @@ Attack order and verified/unverified surface inventory are in the audit. EL-3 la
 the exact failing reproduction before each fix. Do not infer station-wide readiness from the green
 baseline; Atlas at this head is 444 stale · 123 unmapped · 1 missing.
 
+## IMPLEMENTED 2026-07-16 — TASK-BRIEF RELIABILITY HARDENING (`agent/briefing-reliability`)
+
+The intent layer now has a host-enforced decision boundary before settings are exposed. Structured
+`brief.ask` / `brief.proceed` controls validate question quality and settle a compact execution brief;
+write/execute tools stay locked until settlement, while read tools remain available for research. The host
+enforces the two-question ceiling and second-blocker rule, stops same-batch actions after a question, routes
+cancel/pivot/answer replies without contaminating the prior task, resumes terse messaging-channel answers from
+durable state, and derives weak relationship patterns only from completed briefs. Internal controls are hidden
+from ordinary tool telemetry; the existing natural COMMS chips and numbered channel fallback remain compatible.
+Deterministic coverage is expanded to 73 task-intent assertions spanning validation, restart, cancellation,
+pivots, completed-only learning, mutation gates, registry control preservation, call pairing, and one-turn pause.
+
 ## READY TO MERGE 2026-07-15 — TASK-CONTEXT ELICITATION (`agent/intent-engine`)
 
 StarNet now listens before it builds without turning every request into an interview: a shared
@@ -70,8 +82,13 @@ Beyond the gate, proven this session (receipts `.bugloops/release-prep-2026-07-1
 - Guardian-RED-under-load = KNOWN flake class (spawnSync null / J2 poll windows while cargo builds
   run) — re-run isolated before believing an hourly RED that overlaps builds.
 REMAINING, honestly out of this machine's reach:
-- [ ] **Andrew: attended 15-min playtest** — also unblocks the W1 wave (its fresh-run precondition
-      requires attended-operator attestation by design; never auto-attest).
+- [x] **Andrew: attended 15-min playtest** — DONE per Andrew 2026-07-15: "ran perfectly for me as
+      a user" (the docs/PLAYTEST_SCRIPT_GATE5.md item dodged since 7/02 is cleared). NOTE: the W1
+      WAVE is a separate, stricter proof — attended FRESH-PROFILE first-run on the exact rc binary
+      through `scripts/qa/installed-first-run.mjs`, with isolation authority `separate-windows-user`
+      / `virtual-machine` / `clean-machine` (this login doesn't qualify). Cheapest honest path on
+      this PC: create a second Windows user, install the rc exe there, run the W1 driver attended
+      (~15 min). Folds naturally into the 10-outside-installs step otherwise.
 - [ ] **Andrew: publish `starnet-releases` + key backups + dev-key rotation**, then the public
       per-platform update canaries; 48h RC soak per docs/RELEASE_READINESS.md.
 - [ ] T0 clean-machine + T3.2/T3.4 proofs: need a true clean Windows box (this one is Win11 Home —

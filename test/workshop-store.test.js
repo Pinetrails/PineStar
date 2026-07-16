@@ -220,7 +220,7 @@ function freshStore() {
 
   // ---- 7. normalize is defensive: partial/legacy/absent records load to a full safe shape ----
   {
-    A.eq(normalize(null), { grant: false, grantExplicit: false, grantAuto: false, backlog: [], denylist: [], deniedTitles: [] }, 'null -> empty safe record');
+    A.eq(normalize(null), { grant: false, grantExplicit: false, grantAuto: false, backlog: [], denylist: [], deniedTitles: [], lastShift: null }, 'null -> empty safe record');
     A.eq(normalize({ grant: true }).grant, true, 'partial record keeps its grant');
     A.eq(normalize({ backlog: [{ id: 'ok' }, { nope: 1 }, 'junk'] }).backlog.length, 1, 'backlog drops entries without an id');
     A.eq(normalize({ denylist: ['a', 1, null, 'b'] }).denylist, ['a', '1', 'b'], 'denylist coerces to non-empty strings');
@@ -280,6 +280,39 @@ function freshStore() {
     A.eq(built.id, 'c', 'the only queued item is claimed');
     await s2.markBuilt('cap', 'c', 'rc');
     A.eq(await s2.sweepStaleClaims('cap', () => false), 0, 'a built item is not swept (has builtRunId, not buildingRunId)');
+  }
+
+  // ---- 8. remove(): a queued idea leaves WITHOUT the denylist; a built item is refused (2026-07-15 UX audit) ----
+  {
+    const s = freshStore();
+    await s.queue('hero', { id: 'q1', title: 'idea one' }, 1);
+    await s.queue('hero', { id: 'q2', title: 'idea two' }, 2);
+    const r1 = await s.remove('hero', 'q1');
+    A.ok(r1.removed === true, 'a queued item is removable');
+    A.eq(s.read('hero').backlog.length, 1, 'the queue shrank');
+    A.eq(s.read('hero').denylist.length, 0, 'remove does NOT denylist (unlike discard)');
+    const re = await s.queue('hero', { id: 'q1', title: 'idea one' }, 3);
+    A.eq(re.reason, 'added', 'a removed idea can be queued again later');
+    // built items are protected: they must be decided from their delivery session
+    await s.claimNext('hero', 'r2', () => false);
+    await s.markBuilt('hero', 'q2', 'r2');
+    const r2 = await s.remove('hero', 'q2');
+    A.ok(r2.removed === false && r2.reason === 'built', 'a BUILT item refuses remove (decide it from its session)');
+    A.ok(await s.remove('hero', 'nope').then(x => x.reason === 'not-found'), 'an unknown id reports not-found');
+  }
+
+  // ---- 9. setLastShift(): shift health persists + survives a fresh store (2026-07-15 UX audit) ----
+  {
+    const fs = memFs();
+    const s = makeWorkshopStore({ fs, path, workspaces: '/ws', writeDurable });
+    A.eq(s.read('hero').lastShift, null, 'a new agent has no lastShift');
+    await s.setLastShift('hero', { at: 1000, reason: 'no-capability', title: 'a build' });
+    const ls = s.read('hero').lastShift;
+    A.ok(ls && ls.at === 1000 && ls.reason === 'no-capability' && ls.title === 'a build', 'lastShift round-trips');
+    const s2 = makeWorkshopStore({ fs, path, workspaces: '/ws', writeDurable });
+    A.ok(s2.read('hero').lastShift && s2.read('hero').lastShift.reason === 'no-capability', 'lastShift SURVIVES a fresh store (restart-safe)');
+    await s.setLastShift('hero', { at: 2000, reason: 'built', runId: 'r9', title: 'thing' });
+    A.eq(s.read('hero').lastShift.reason, 'built', 'a newer shift outcome replaces the old one');
   }
 
   A.report('workshop-store.test');

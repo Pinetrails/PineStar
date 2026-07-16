@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "ed418aa79acf309c361ca92cf42179a4c66c9b2b",
+    "sourceCommit": "e63303bda82aca57d16b83f80a8783925863c8d2",
     "pathSetSha256": "11a2ff1e8ccd7ca7503a7d3a57bf51e4d0c7f5aeebda7d500a3c3bb7b174ea6e",
     "files": [
       {
@@ -63,8 +63,8 @@
       },
       {
         "path": "frontend/app/app.js",
-        "bytes": 250946,
-        "sha256": "6e838b41048b905d88c23d3211aa464c101d4ad2f583326ccceea2227335bb3a"
+        "bytes": 251632,
+        "sha256": "aa3352988e6883bf3c8a1991bb9688841ea3a102d508d108c1c066277656e654"
       },
       {
         "path": "frontend/app/armconfirm.js",
@@ -88,8 +88,8 @@
       },
       {
         "path": "frontend/app/autonomy.js",
-        "bytes": 9768,
-        "sha256": "9196a159aac45f83228ac0665ca53e5fb2aedd21412a7acec91ce0b785fb6749"
+        "bytes": 9807,
+        "sha256": "db4d6f361f8e0a040b8090eef855fc31f5be8b152e8d02ae1653ebd0e75f45b4"
       },
       {
         "path": "frontend/app/autonomystore.js",
@@ -98,8 +98,8 @@
       },
       {
         "path": "frontend/app/autopilot.js",
-        "bytes": 47720,
-        "sha256": "4dd3ae09d739a44127f5bbbb90e41142cc01782bdc175fe70c0670cd912f8108"
+        "bytes": 47938,
+        "sha256": "9854122b344a1a3d5ae88ad1f157094874cf7d28922958c3d2504914f725f0ce"
       },
       {
         "path": "frontend/app/autopilotstore.js",
@@ -133,8 +133,8 @@
       },
       {
         "path": "frontend/app/chat.js",
-        "bytes": 376487,
-        "sha256": "53b93cf228b747accc7d4218ad7e408102a282f39e90d97e0818eb00c248d26d"
+        "bytes": 379907,
+        "sha256": "3b4d38f925de176ddd9f5c5db4c325f7c968ae9f4366c170eb9c368e60f99228"
       },
       {
         "path": "frontend/app/chatresize.js",
@@ -233,8 +233,8 @@
       },
       {
         "path": "frontend/app/fork.js",
-        "bytes": 9259,
-        "sha256": "bd9a72ffe2b9b0b2113e685869d60ef384244db288ae172b749e9acab4a7effa"
+        "bytes": 10158,
+        "sha256": "fe25c859da25c0f73fb05d1ce1c64ba3d10b27366dbefe50c078d85a4128a698"
       },
       {
         "path": "frontend/app/friendlyerror.js",
@@ -268,8 +268,8 @@
       },
       {
         "path": "frontend/app/harness.js",
-        "bytes": 40769,
-        "sha256": "425d2cd5f66b1c8890d8dc3a6abb2d5a862eed11f28b23e145bf127ac360c28f"
+        "bytes": 40892,
+        "sha256": "7670c858629267170dd34e3764329ae604db5a0fc45323e06f2764961112bf40"
       },
       {
         "path": "frontend/app/hint.js",
@@ -358,13 +358,13 @@
       },
       {
         "path": "frontend/app/nightreport.js",
-        "bytes": 22015,
-        "sha256": "c7aa76091ee307f8ff2e12c1cd0bf4ab082712940e11fbd2e9a0771c48651556"
+        "bytes": 22050,
+        "sha256": "d9fa7cb29953f6ef5498ee8326278012a8e996e382df72fb1b31b9de2c5c181b"
       },
       {
         "path": "frontend/app/nightreportstore.js",
-        "bytes": 9077,
-        "sha256": "f47fe0838ac5b7eeee95c9dc3d1491ed47c1f86e350ea27dcaf61298311095c9"
+        "bytes": 10907,
+        "sha256": "3919652c6cd90235d9f66d073091960837b70aeaadd0e71dc7b568ad6fb61137"
       },
       {
         "path": "frontend/app/onboarding.js",
@@ -603,8 +603,8 @@
       },
       {
         "path": "frontend/app/stationbake.js",
-        "bytes": 60638,
-        "sha256": "474046ca2e0569e3b31545d4472635c96bc7a89ebd978a0350120bf83b506926"
+        "bytes": 61560,
+        "sha256": "f14920f72977bdeda59224e3b0c2c7de026e2abb18d1278a204f232e7869512d"
       },
       {
         "path": "frontend/app/stationquests.js",
@@ -618,8 +618,8 @@
       },
       {
         "path": "frontend/app/stationui.js",
-        "bytes": 437300,
-        "sha256": "3cab6130f1b8049b9d21b2f53770e02cd933b049ef800e523acb5828baeea014"
+        "bytes": 445745,
+        "sha256": "19bcfc264c182685999eec7aba7e2099c0b1bc601caf96e6ed9591d9f60da3f5"
       },
       {
         "path": "frontend/app/study.js",
@@ -743,8 +743,8 @@
       },
       {
         "path": "frontend/app/workshopstore.js",
-        "bytes": 20457,
-        "sha256": "eb37bcafffc9603ee14707be1d8f817244cb67134edf7f144e5072e2e32268fd"
+        "bytes": 27990,
+        "sha256": "28409b503db205970c5ee04199b4470fef6f37a324f57e48e4670ff1870ad106"
       },
       {
         "path": "frontend/app/worksignal.js",
@@ -763,8 +763,8 @@
       },
       {
         "path": "frontend/app/world.js",
-        "bytes": 446909,
-        "sha256": "2346e967f45958c40626e9b0be5822d4b0297e60cfadc7c3697ac892d7bbf227"
+        "bytes": 450041,
+        "sha256": "042ac911ccad5bb7afc02d673a86d191a9e99bc2149b743f287d92713b9d976a"
       },
       {
         "path": "frontend/app/worldmodel.js",
@@ -788,8 +788,8 @@
       },
       {
         "path": "frontend/css/app.css",
-        "bytes": 188908,
-        "sha256": "2f96e96208599c41135e276933971a8d6dad79ea2379a1aa49e0acf1fcc111bc"
+        "bytes": 191745,
+        "sha256": "8508ea74d7fd9dea80e782104f9d5190c2598e214d79a21e56574cef76ad6c4f"
       },
       {
         "path": "frontend/css/asciifx.css",
@@ -823,8 +823,8 @@
       },
       {
         "path": "frontend/css/style.css",
-        "bytes": 79291,
-        "sha256": "626e9d41eec8ffe85fed43fc4c1a00b6ef4306df366329645a265b706868d893"
+        "bytes": 81175,
+        "sha256": "5f147481f9c1e6ad8705386deb34c38189a749c367bf1dfe51683f91da09d30c"
       },
       {
         "path": "frontend/css/titlebar.css",
@@ -1414,7 +1414,7 @@
         {
           "kind": "contains",
           "path": "frontend/app/chat.js",
-          "needle": "openItBtn.textContent = 'Open it'"
+          "needle": "openItBtn.textContent = '▶ Open it — try it in a tab'"
         },
         {
           "kind": "contains",
@@ -1565,7 +1565,7 @@
       "verdict": "REFUTED",
       "disposition": "NARROW",
       "ownerWave": "W5",
-      "qualification": "The product is one sidecar owned by the app; closing the app ends it. Surface copy narrowed to the honest promise (trunk acfd82b5, 2026-07-15).",
+      "qualification": "The product is one sidecar owned by the app; closing the app ends it.",
       "liveProofRequired": true,
       "liveProof": "PENDING",
       "refsChecked": [
@@ -2553,7 +2553,7 @@
       "verdict": "REFUTED",
       "disposition": "NARROW",
       "ownerWave": "W5",
-      "qualification": "Single-process desktop ownership means close stops the sidecar; this is a copy-honesty fix. Landed: trunk acfd82b5 (2026-07-15).",
+      "qualification": "Single-process desktop ownership means close stops the sidecar; this is a copy-honesty fix.",
       "authorityChecks": [
         {
           "kind": "contains",
