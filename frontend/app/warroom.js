@@ -90,6 +90,12 @@
   }
   window.addEventListener('keydown', e => {
     if (e.target && /^(INPUT|TEXTAREA)$/.test(e.target.tagName)) return;
+    const game = $('#screen-game');
+    if (e.key === 'Escape' && game && game.classList.contains('cinema')) {
+      e.preventDefault();
+      toggleCinema();
+      return;
+    }
     if (e.key === 'c' || e.key === 'C') toggleCinema();
   });
 

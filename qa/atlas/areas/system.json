@@ -162,6 +162,10 @@
           "ref": "test/settings-p1-ui.test.js"
         },
         {
+          "kind": "test",
+          "ref": "test/poweruser-shell-repairs.test.js"
+        },
+        {
           "kind": "shoot",
           "ref": "sys-settings"
         }
@@ -789,7 +793,7 @@
       "area": "system",
       "name": "Search settings",
       "purpose": "Search box that filters the SETTINGS console rail/sections to the matching controls.",
-      "promise": "Typing narrows the visible SETTINGS sections; the aria-label reads \"Search settings\".",
+      "promise": "Typing narrows the visible SETTINGS sections, hides irrelevant headings, and highlights the first matching section without replacing the user's persisted section; the aria-label reads \"Search settings\".",
       "wiring": {
         "files": [
           "frontend/app/stationui.js"
@@ -797,6 +801,10 @@
         "events": []
       },
       "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/poweruser-shell-repairs.test.js"
+        },
         {
           "kind": "shoot",
           "ref": "sys-settings"
@@ -1272,6 +1280,10 @@
           "ref": "test/settings-p1-ui.test.js"
         },
         {
+          "kind": "test",
+          "ref": "test/poweruser-shell-repairs.test.js"
+        },
+        {
           "kind": "shoot",
           "ref": "sys-settings"
         }
@@ -1422,6 +1434,10 @@
         {
           "kind": "test",
           "ref": "test/settings-p1-ui.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/poweruser-shell-repairs.test.js"
         },
         {
           "kind": "shoot",

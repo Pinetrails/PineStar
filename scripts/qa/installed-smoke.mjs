@@ -67,6 +67,21 @@ export const REQUIRED_CHECKS = Object.freeze([
   'board/no-forever-running'
 ]);
 
+// The board invariant is only meaningful against a rendered TASKS board. Installed smoke used to
+// inspect the boot-default (closed) surface and report a product RED without ever operating the
+// control whose contents it claimed to verify. Drive the real dock control first and wait for the
+// panel to settle; SMOKE_PROBE remains the read-only assertion pass.
+export const PREPARE_SMOKE_SURFACE = `(async () => {
+  let clicked = false;
+  for (let i = 0; i < 60; i++) {
+    if (document.querySelectorAll('.kb-cols').length === 1) return true;
+    const trigger = document.querySelector('[data-term="tasks"]');
+    if (!clicked && trigger) { trigger.click(); clicked = true; }
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  return document.querySelectorAll('.kb-cols').length === 1;
+})()`;
+
 function str(v) { return v == null ? '' : String(v); }
 
 // The in-page probe. A self-contained async IIFE returning
@@ -584,7 +599,10 @@ if (INVOKED_DIRECTLY) (async () => {
     try { await cdp.send('Runtime.enable', {}); } catch (_) {}
     const diag = collectDiagnostics(cdp);
     return {
-      async probe() { return await evalJS(cdp, SMOKE_PROBE); },
+      async probe() {
+        await evalJS(cdp, PREPARE_SMOKE_SURFACE);
+        return await evalJS(cdp, SMOKE_PROBE);
+      },
       diagnostics() { return diag; },
       async close() { try { cdp.ws.close(); } catch (_) {} }
     };

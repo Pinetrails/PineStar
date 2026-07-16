@@ -18,8 +18,8 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "a4a48793500314e8fec4f41b4e54d084ea0828bf",
-    "pathSetSha256": "11a2ff1e8ccd7ca7503a7d3a57bf51e4d0c7f5aeebda7d500a3c3bb7b174ea6e",
+    "sourceCommit": "8ce4c96711a701cf5e24f56a487274f48f3e824c",
+    "pathSetSha256": "95100c67f873b121d4586a6d7fa52eb86e792f7dfaaf24fe50ed8f22f229d9c8",
     "files": [
       {
         "path": "INSTALL.md",
@@ -63,8 +63,8 @@
       },
       {
         "path": "frontend/app/app.js",
-        "bytes": 252313,
-        "sha256": "cb73172c6ac16c078800773ed4aee9b29eec6fb43fe9f4d1c834cbed4f263a81"
+        "bytes": 263697,
+        "sha256": "f3f0343195401f7513ebfaf65d2cf83c6cf17b1038ade8706ce3ca65964bcb3f"
       },
       {
         "path": "frontend/app/armconfirm.js",
@@ -133,8 +133,8 @@
       },
       {
         "path": "frontend/app/chat.js",
-        "bytes": 389667,
-        "sha256": "37db4acb443649ce514c0d8aa801e1a94310fc4b55a85e1126038808f52e2641"
+        "bytes": 387509,
+        "sha256": "4732e46ccaaa0e2c42f6627a9c403b774688b7bb1a584bc6e71af8b862bcd5f0"
       },
       {
         "path": "frontend/app/chatresize.js",
@@ -200,6 +200,11 @@
         "path": "frontend/app/data-shim.js",
         "bytes": 2579,
         "sha256": "61f82feee7deca978fef9cdcbca97167b6b9149e580d21c3f33d48705928b74e"
+      },
+      {
+        "path": "frontend/app/deliverables.js",
+        "bytes": 9443,
+        "sha256": "8c14e679eed66937ece778ed97aeefc5393fa03dae4372ac9bf49f8d22f8a012"
       },
       {
         "path": "frontend/app/diagnostics.js",
@@ -323,8 +328,8 @@
       },
       {
         "path": "frontend/app/marketplace.js",
-        "bytes": 173334,
-        "sha256": "01564c708e95c6d43974dd947a538c0e0ee80ae6af367df197248eb8ff1489e6"
+        "bytes": 171333,
+        "sha256": "b87b2253d8b1c4213c139b3007609e7d6cc397ed99aade5937fbb91826e17b82"
       },
       {
         "path": "frontend/app/mint.js",
@@ -483,13 +488,13 @@
       },
       {
         "path": "frontend/app/recipe-catalog/core.js",
-        "bytes": 14733,
-        "sha256": "3d3feab510df48d783382cd05f73211311602cbcb8de303b192d02bee8856004"
+        "bytes": 13783,
+        "sha256": "1ec2b5766f9ee7c1e206bd90c010ad1306ddbaa6ad0e78a273c494175da2e65b"
       },
       {
         "path": "frontend/app/recipe-catalog/creator.js",
-        "bytes": 12491,
-        "sha256": "dd9eeeff6106c39c1ca0374a242d30c227fd661ed681941f4384e4a5827fe2f9"
+        "bytes": 12223,
+        "sha256": "f52843805092ccc11d4bb7592bfd3f6ea30b7ffd019b07f55ead985ba28cba36"
       },
       {
         "path": "frontend/app/recipe-catalog/dev.js",
@@ -503,18 +508,18 @@
       },
       {
         "path": "frontend/app/recipe-catalog/ops.js",
-        "bytes": 12920,
-        "sha256": "2c771b67fae4aae66c6110902e1b3668d88ac2cc09084460ca702d24a658eb38"
+        "bytes": 12694,
+        "sha256": "905ced7b27eb54bbdfcd77baf996e49e0007dfb83971aea732a087cb9bbe0449"
       },
       {
         "path": "frontend/app/recipe-catalog/research.js",
-        "bytes": 12461,
-        "sha256": "3d2735876a0a8f7f001b345b39ac43ebce124e55f5a9746fc76b7c84ea912cc5"
+        "bytes": 11942,
+        "sha256": "9a747719479549744483dce5235661a8b20d771ff0e719e828d519ca97dbc4e1"
       },
       {
         "path": "frontend/app/recipes.js",
-        "bytes": 43269,
-        "sha256": "bf2087d0b2e9589c80a67def45d864cb2bf8c30fcb14f40612ffa597283c80be"
+        "bytes": 40767,
+        "sha256": "6de13aff8da5f0f99e4b2652a3ad9f7ba1aa359680245464a0124c5006708879"
       },
       {
         "path": "frontend/app/recruiter.js",
@@ -618,8 +623,8 @@
       },
       {
         "path": "frontend/app/stationui.js",
-        "bytes": 461133,
-        "sha256": "94a7329ee7dc25cb8d807a1f76f0fd1fb7edc7f41f8a7985b5fd0bd09c3979ce"
+        "bytes": 469283,
+        "sha256": "e8b4195df17e7b8372fab960753ce5974890e180ce09fea991fe030b03a2c8f5"
       },
       {
         "path": "frontend/app/study.js",
@@ -653,8 +658,8 @@
       },
       {
         "path": "frontend/app/titlebar.js",
-        "bytes": 6888,
-        "sha256": "031c567631909548e113e0c601e9feb4292f78c673d0d5b09196bc5805dce405"
+        "bytes": 7197,
+        "sha256": "6b00f3de08e078af120a0911fccb70bcba0f4281075327473db799ca8d2422a3"
       },
       {
         "path": "frontend/app/toolprops.js",
@@ -723,8 +728,8 @@
       },
       {
         "path": "frontend/app/warroom.js",
-        "bytes": 7389,
-        "sha256": "7d858227b58eff720a8e40eeaf29d4b18aec3605a209bbb9719f7bfbfaf1d251"
+        "bytes": 7568,
+        "sha256": "2d02bc318b0cd98ddb51efa551a5eccb3bac1f7c1a557f86c38d2bf71c9ce0fb"
       },
       {
         "path": "frontend/app/widgets.js",
@@ -758,8 +763,8 @@
       },
       {
         "path": "frontend/app/workstreams.js",
-        "bytes": 19480,
-        "sha256": "9910bea754e1fade7853509fadffa1bbbc911c01640671dcbbc38343bf908269"
+        "bytes": 25898,
+        "sha256": "f973689ee026a3a7d0730f27134c0d5c8f96df424c4809afdf9395c8aa0ed5bb"
       },
       {
         "path": "frontend/app/world.js",
@@ -788,8 +793,8 @@
       },
       {
         "path": "frontend/css/app.css",
-        "bytes": 192545,
-        "sha256": "13c03e43f6feefed38a2145c29e79fd7e22449e35a9c682726f29f0e80f6570d"
+        "bytes": 194050,
+        "sha256": "b3896d8839a990b74e2c5fc743d2bbebad3a748f1fd3330da8a2bf004a23f029"
       },
       {
         "path": "frontend/css/asciifx.css",
@@ -803,8 +808,8 @@
       },
       {
         "path": "frontend/css/marketplace.css",
-        "bytes": 62510,
-        "sha256": "8e17f754d700bd90dbff2394ce64332d6fdcef3b5f90de546fd84ee39906a4d4"
+        "bytes": 61370,
+        "sha256": "1c679621acac08b75f837f2b2a93b6eb850a2f464b67411bf7cc0a5d64214ef8"
       },
       {
         "path": "frontend/css/motion.css",
@@ -823,8 +828,8 @@
       },
       {
         "path": "frontend/css/style.css",
-        "bytes": 83496,
-        "sha256": "dcefb4b77c34992d6f0640eeb2ab48c76099588f4639da6d025d2ac4314b6631"
+        "bytes": 85334,
+        "sha256": "ff882fc1d59c82dc224b133e0674351f89fe61e5ccef47fb8b59f8d46313f28e"
       },
       {
         "path": "frontend/css/titlebar.css",
@@ -853,8 +858,8 @@
       },
       {
         "path": "frontend/index.html",
-        "bytes": 59532,
-        "sha256": "b88138690e7322bfe71a4dd735f4d5fb88408bac220605ac2f105989bbe66fda"
+        "bytes": 61425,
+        "sha256": "d31a6fb025689719f2811793861d611ce30fbd4d05124987cc87c31efd0adcd4"
       },
       {
         "path": "frontend/js/arcade.js",
@@ -1440,32 +1445,34 @@
       "claim": "One coherent visible ledger unifies tasks, deliverables, routines, and past work.",
       "surfaceLocators": [
         {
-          "path": "docs/RELEASE_NOTES_v1.0.0_DRAFT.md",
-          "needle": "routines fire real scheduled runs with visible"
+          "path": "frontend/index.html",
+          "needle": "DELIVERABLES</b><small>outputs, Workshop builds &amp; cleanup"
         }
       ],
       "authorityChecks": [
         {
           "kind": "contains",
-          "path": "frontend/app/workstreams.js",
-          "needle": "root.Workstreams = api"
+          "path": "frontend/app/deliverables.js",
+          "needle": "DELIVERABLES / WORKSHOP LIBRARY"
         },
         {
           "kind": "contains",
-          "path": "frontend/app/chat.js",
-          "needle": "END-OF-RUN RECAP"
+          "path": "sidecar/index.js",
+          "needle": "DELIVERABLE LIBRARY: a read model"
         }
       ],
-      "verdict": "PARTIAL",
-      "disposition": "COMPLETE",
-      "ownerWave": "W3",
-      "qualification": "The data and separate views exist, but there is no single unified ledger/library.",
+      "verdict": "SHIPPED",
+      "disposition": "PROVEN",
+      "ownerWave": "W4",
+      "qualification": "DELIVERABLES is the coherent artifact/Workshop library; TASKS and ROUTINES remain focused work controls linked from the same WORK dock.",
       "liveProofRequired": true,
-      "liveProof": "PENDING",
+      "liveProof": "PROVEN",
       "refsChecked": [
-        "trunk@ef16fa087ad872f9d266ecde8b72ef813cb9ca82",
-        "branches@refs/heads/* audited 2026-07-12",
-        "worktrees@git-worktree-list audited 2026-07-12"
+        "trunk@51619cad5a6adb93011b9f461875ede52417300e audited 2026-07-16",
+        "branches@refs/heads/* audited 2026-07-16 including agent/wave4-deliverables-library@f3fed75d8f8775df6cdddb6559f1cdbd8bc32970",
+        "worktrees@git-worktree-list audited 2026-07-16",
+        "J4 13/13 live Chromium assertions 2026-07-16",
+        "test/workshop.e2e.test.js 64 assertions including restart"
       ]
     },
     {

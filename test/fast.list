@@ -128,6 +128,8 @@ test/notebookrestore.test.js
 test/runstore.test.js
 test/autonomy-ledger.test.js
 test/artifacts.test.js
+test/deliverable-store.test.js
+test/deliverables-ui.test.js
 test/work-recap.test.js
 test/qa-ledger.test.js
 test/qa-guardian.test.js
@@ -269,6 +271,7 @@ test/cron.oneshot.test.js
 test/cron.run-now.test.js
 test/routine-tools.test.js
 test/workstreams.test.js
+test/session-power-tools.test.js
 test/session-creation.test.js
 test/projects-view.test.js
 test/prepare-node.test.js
@@ -281,6 +284,7 @@ test/channels.test.js
 test/comms-presence.test.js
 test/comms-busy-age.test.js
 test/comms-link-honesty.test.js
+test/app-boot-provider-truth.test.js
 test/steer-idle-honesty.test.js
 test/model-ack-honesty.test.js
 test/toolprops.test.js
@@ -330,6 +334,8 @@ test/toolsets.test.js
 test/channels.discord-wire.test.js
 test/widgets.test.js
 test/widgetfeed.test.js
+test/terminal-resize.test.js
+test/poweruser-shell-repairs.test.js
 test/release-bump.test.js
 test/release-train-provenance.test.js
 test/lint-emits.js
