@@ -2640,7 +2640,7 @@ const App = (() => {
   }
   function openWorkstream(id) { switchWorkstream(id); }
   function newWorkstream() {
-    const ws = Workstreams.create(null);
+    const ws = Workstreams.startSession();
     SFX.open(); Chat.load(ws); refreshUsage(); renderRail(); persist();
   }
   // COMMS AGENT SELECTOR: put the Commander on the line with agent <agentId>. Selecting an agent must never
@@ -2989,7 +2989,7 @@ const App = (() => {
   // run as the working folder; the title auto-mints from the first message, same as the sessions rail's + NEW).
   function newSessionInProject(root) {
     if (!root) return;
-    const ws = Workstreams.create(null, { activate: false, projectRoot: root });
+    const ws = Workstreams.startSession({ activate: false, projectRoot: root });
     if (!ws) return;
     switchWorkstream(ws.id);
     SFX.open();
