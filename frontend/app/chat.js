@@ -1996,6 +1996,13 @@ const Chat = (() => {
     }
     // dismissed = gone (anti-nag law). Uncollected crates remain on the OUTBOX — evidence, not nagging.
     const foot = document.createElement('div'); foot.className = 'turnin-rate';
+    // the ONE door that always works, prop or no prop on the floor: open the OUTBOX window — every listed
+    // run readable + rateable in one place (2026-07-16; a floor with no OUTBOX placed had no other path).
+    if (typeof StationUI !== 'undefined' && StationUI.openTerm) {
+      const ob = document.createElement('button'); ob.className = 'consent-btn'; ob.textContent = '▸ open the OUTBOX';
+      ob.onclick = () => StationUI.openTerm('outbox');
+      foot.appendChild(ob);
+    }
     const dis = document.createElement('button'); dis.className = 'consent-btn deny'; dis.textContent = 'dismiss';
     dis.onclick = () => vanish(r.d);
     foot.appendChild(dis);
