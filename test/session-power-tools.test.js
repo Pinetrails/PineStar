@@ -1,6 +1,7 @@
 /* node test/session-power-tools.test.js — Wave 4A session search/export/recovery/bulk cleanup. */
 'use strict';
 const A = require('./_assert.js');
+const fs = require('fs');
 const W = require('../frontend/app/workstreams.js');
 
 const DAY = 86400000;
@@ -84,5 +85,17 @@ const exact = W.previewArchive({ empty: true }, { now: NOW });
 const forged = Object.assign({}, exact, { ids: exact.ids.concat('s23') });
 A.eq(W.archivePreview(forged), null, 'a forged preview token is rejected without mutation');
 A.eq(!!W.get('s23').archived, beforeArchived.s23, 'rejected forged preview cannot archive an unpreviewed session');
+
+/* browser wiring: the power tools are discoverable, confirmed, persisted, and download both formats */
+const app = fs.readFileSync(require.resolve('../frontend/app/app.js'), 'utf8');
+const html = fs.readFileSync(require.resolve('../frontend/index.html'), 'utf8');
+A.ok(/id="ws-tools-btn"[\s\S]*aria-controls="ws-tools"/.test(html), 'rail exposes a discoverable session-tools control');
+A.ok(/id="ws-search"[\s\S]*search sessions \+ transcripts/.test(html), 'one labelled search surface covers sessions and transcripts');
+A.ok(/EXPORT \.MD[\s\S]*EXPORT \.JSON/.test(html), 'both conversation export formats are visible');
+A.ok(/CONFIRM CLEAR/.test(app) && /clearConversation\(w\.id\)/.test(app), 'clear requires an explicit second confirmation');
+A.ok(/archivePreview\(sessionToolsPreview\)/.test(app), 'bulk apply consumes the exact stored preview');
+A.ok(/sessionUndo:\s*saved\.sessionUndo/.test(app), 'durable recovery checkpoint is hydrated on restart');
+A.ok(/Workstreams\.undoLast\(\)[\s\S]*persist\(\)/.test(app), 'undo is immediately persisted');
+A.ok(/URL\.revokeObjectURL/.test(app), 'export object URL is always revoked');
 
 A.report('session-power-tools.test');
