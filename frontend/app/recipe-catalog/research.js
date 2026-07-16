@@ -70,6 +70,9 @@
     },
     {
       id: 'topic-monitor', name: 'Topic Monitor', emoji: '◐', tagline: 'Standing watch on a subject',
+      intake: [
+        { dimension: "sources", question: "What feeds the watch?", options: ["broad web","high-signal sources only"], recommended: "high-signal sources only", reason: "sets the noise floor of a standing watch" }
+      ],
       accent: '#6fa8bf',
       blurb: 'Keeps a running memory of where a subject stands, so every report is a true delta — never a rerun.',
       tags: { research: 1 },
@@ -80,6 +83,9 @@
     },
     {
       id: 'paper-summarize', name: 'Summarize a Paper', emoji: '◫', tagline: 'The paper, minus the jargon',
+      intake: [
+        { dimension: "audience", question: "Who is the summary for?", options: ["plain-English (me)","technical peer"], recommended: "plain-English (me)", reason: "sets the jargon level and depth" }
+      ],
       accent: '#9fc0c4',
       blurb: 'Reads the results, not just the abstract — the gap between them is usually the story.',
       tags: { research: 0.7, general: 0.3 },
@@ -90,6 +96,9 @@
     },
     {
       id: 'source-compare', name: 'Source Compare', emoji: '⊞', tagline: 'Where the sources actually disagree',
+      intake: [
+        { dimension: "deliverable", question: "How should the comparison land?", options: ["verdict + key splits","full comparison table"], recommended: "verdict + key splits", reason: "shape decides how the disagreements read" }
+      ],
       accent: '#88b6c4',
       blurb: 'Diagnoses WHY sources diverge — different data, definitions, or incentives — and what would settle it.',
       tags: { research: 1 },
@@ -100,6 +109,9 @@
     },
     {
       id: 'trend-scan', name: 'Trend Scan', emoji: '◇', tagline: 'What is rising in a space',
+      intake: [
+        { dimension: "scope", question: "How rigorous a scan?", options: ["fast pulse","evidence-weighted scan"], recommended: "evidence-weighted scan", reason: "depth decides how much gets verified before reporting" }
+      ],
       accent: '#d9a85a',
       blurb: 'Applies the three-signal rule — money, adoption, organic demand — to split real trends from loud weeks.',
       tags: { research: 0.9, general: 0.1 },
@@ -110,6 +122,9 @@
     },
     {
       id: 'background-check', name: 'Background Brief', emoji: '◈', tagline: 'What is on the public record',
+      intake: [
+        { dimension: "scope", question: "How thorough a pass?", options: ["quick public sweep","thorough record pass"], recommended: "thorough record pass", reason: "decides how far past page one the check goes" }
+      ],
       accent: '#9fc0c4',
       blurb: 'Builds the verified spine first, then the texture — shipped-versus-claimed, patterns, independent coverage.',
       tags: { research: 0.8, general: 0.2 },
@@ -120,6 +135,9 @@
     },
     {
       id: 'research-digest', name: 'Research Digest', emoji: '▤', tagline: 'A themed roundup on your topics',
+      intake: [
+        { dimension: "deliverable", question: "How should the roundup read?", options: ["bullet digest","narrative brief"], recommended: "bullet digest", reason: "shape decides how the themes are woven" }
+      ],
       accent: '#6fa8bf',
       blurb: 'A weekly roundup that checks what past digests covered — all fresh, themed, with a what-it-means read.',
       tags: { research: 1 },

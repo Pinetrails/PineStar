@@ -31,6 +31,9 @@
     },
     {
       id: 'meeting-prep', name: 'Meeting Prep', emoji: '◱', tagline: 'Walk in ready, not cold',
+      intake: [
+        { dimension: "objective", question: "What should the prep aim at?", options: ["just get me oriented","help me drive an outcome"], recommended: "just get me oriented", reason: "changes whether prep is a briefing or a playbook" }
+      ],
       accent: '#6fa8bf',
       blurb: 'Situation brief, likely topics, your talking points — with a live background pass on who is in the room.',
       tags: { general: 0.7, research: 0.3 },
@@ -54,6 +57,9 @@
     },
     {
       id: 'travel-plan', name: 'Travel Plan', emoji: '◈', tagline: 'A trip mapped end to end',
+      intake: [
+        { dimension: "constraints", question: "What wins on trade-offs?", options: ["budget-conscious","comfort first"], recommended: "budget-conscious", reason: "decides every either/or in the itinerary" }
+      ],
       accent: '#d9a85a',
       blurb: 'Researches real options into a walkable day-by-day — with what to book early and what to leave loose.',
       tags: { general: 0.6, research: 0.4 },
@@ -103,6 +109,9 @@
     },
     {
       id: 'learning-plan', name: 'Learning Plan', emoji: '◫', tagline: 'A path from zero to competent',
+      intake: [
+        { dimension: "deliverable", question: "What kind of path?", options: ["project-based path","course/reading path"], recommended: "project-based path", reason: "changes what each stage of the plan looks like" }
+      ],
       accent: '#7bc88a',
       blurb: 'A project at every stage, ONE resource per stage, testable milestones — and progress tracked in memory.',
       tags: { general: 0.6, research: 0.4 },
