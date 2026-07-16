@@ -1,43 +1,20 @@
-# StarNet v0.5.0
+# StarNet v0.5.1
 
-The station looks better, works harder while you're away, and understands what you're building.
+Everything merged since v0.5.0, cut from the READY-certified rc/0.5.1 line.
 
-## Station visuals — the bake overhaul
-- New floor materials: per-kind V2 recipes (plate / panel / tile / tread / soft) and V3 dimensional slab tiles with grout and lit bevels.
-- Floor wear: scuffs, drag marks, grime films, and corridor traffic lanes.
-- Corner AO — shadow pools in concave wall corners — and a Bayer-dithered light map for a hard pixel-idiom look (defaults hand-dialed in crtlab).
-- Removed the glitched floating INBOX gauge the CRT warp mangled.
+## New
+- **6 new agent skins** — CRT-head, astronaut, endoskeleton, Ultron (true regen), xenomorph, void wizard.
+- **Voice decoupled from the LLM** — free keyless Edge neural TTS floor, dedicated ASR chain (Groq whisper), robotic fallback voice removed.
+- **Provider compatibility hardening** — reasoning-effort reaches the wire, unsupported-param self-heal (tools never dropped), xAI cost normalization, Perplexity Sonar roster, plus a live provider-certification harness (`npm run certify:providers`).
 
-## Quests V3
-- Standing 24-hour quest refresh with a caught-up fast path, grounded in your interests and progression.
-- North star: the station proposes what it thinks you're aiming at and asks you to confirm — never silently adopts an inference.
-- New QUEST V3 panel: north star, REFRESH QUESTS, and the attempt ledger.
+## Reliability
+- **Scheduler**: missed routines fire once instead of being discarded, transactional dispatch (no fire-over-unpersisted), zombie-run generation fencing, ticker health + delivery outcomes on `/api/cron`.
+- **Messaging**: Slack reconnect truth, E-STOP/snapshot across all five channels, durable reply outbox, FORGET honesty.
+- **Run honesty**: client disconnects detected on all run routes (no more ghost runs), COMMS folds sidecar death into "station unreachable", idle steer no longer mints a paid run, `/model` warns on unknown model ids.
+- **Windows updater**: the NSIS node.exe lock hang is fixed — in-app updates complete cleanly and relaunch (proven end-to-end by the update canary).
 
-## Night Shift honesty
-- Raising the dial now records the away-workshop grant explicitly; the panel says whether it will BUILD or DRAFT, with honest readiness lines.
-- LAST REPORT can be re-opened from the NIGHT SHIFT panel.
-- A nudge surfaces unseen overnight drafts when the app was left open.
-
-## Scout & recruitment
-- SCOUT LOG: the scout's attempt ledger rendered in the recruitment bay.
-- Scout drafting now cites your open quest slate and confirmed north star.
-- Fixed the recruiter warm floor tracking calibration.
-
-## Voice
-- ONE locked station voice across all personas, with TTS from any provider credential — preferring the run provider's native voice API.
-
-## COMMS & UI polish
-- ROBCO-style composer register with a redrawn fine-line icon set; agent selector shows the full name on a molded chip.
-- The COMMS seam now drags as far left as you want.
-- ASCII-motion kit: spinners, a cell-tick context gauge, and decode transitions on toasts/broadcasts.
-- Premium molded register across shared controls and instrument-styled widgets.
-- Context gauge now tracks real occupancy (internal side-runs no longer stomp it).
-
-## Projects & onboarding
-- PROJECTS is its own drill-in space; anchored sessions carry their folder into every run.
-- The awakening now digs for your actual projects and ambitions, not just categories.
-
-## Under the hood
-- Aux model spend is bounded by a joint governor.
-- A decline anywhere suppresses re-proposals everywhere (shared declined index).
-- Removed the postcard/clip share buttons.
+## UX
+- Confusion-audit rounds: unified labels, SEND & PUBLISH clarity, channel first-step guidance, quest-refresh wording, tour beat polish.
+- Nightshift panel legibility: honest "away = idle 15 min" wording, collapsed per-tick decline rows.
+- Crew panel run-state reads the world's truth (no stale RUNNING badges).
+- Recruit bay recuration: 12 core classes + 9 archetypes in a searchable specialist archive, archetype-seeded scouting.

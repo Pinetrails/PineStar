@@ -13,6 +13,15 @@ runs stay unchanged. Live-proven in the real seeded app: question → reload →
 “operators” → clean continuation, with `task-briefs.json` recording `status:"done"` and the clean answer.
 Gate: 328/328 runnable fast steps green; the sole stop is the documented 9-assertion W0 candidate-SHA
 worktree baseline in `qa-product-perfect-claims`; `test:http` fully green (404 sidecar assertions + all e2e).
+## 2026-07-15 — v0.5.1 CUT + INSTALLED LOCALLY (trunk `3d70d7b1`, tag `v0.5.1`)
+
+Signed release cut at trunk head (rc/0.5.1 content + docs + real RELEASE_NOTES.md; W0 surface
+re-stamped, claims authority PASS). minisign verify OK against the baked pubkey; artifacts staged
+in `release/` (StarNet_0.5.1_x64-setup.exe + .sig + latest.json, sha256 75bf43e4…). Installed on
+Andrew's machine (registry 0.5.1, exe ProductVersion 0.5.1, app relaunched, sidecar up + token-gated).
+- [ ] **Andrew: PUBLISH** — GitHub Release `v0.5.1` on `nonfungiblefunyuns-ship-it/starnet-releases`
+      with the three `release/` assets (checklist in the release-cut output); then
+      `node scripts/verify-update-host.mjs` + the public update canary.
 
 ## 2026-07-16 — RELEASE CANDIDATE PINNED: `rc/0.5.1` @ `503ba26f` (READY + beyond-gate proofs)
 
