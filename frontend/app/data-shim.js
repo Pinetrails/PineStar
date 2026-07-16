@@ -45,5 +45,6 @@ DATA.SKINS = {
   beachbabe:    { name: 'Beach Babe',     set: 'beachbabe',    scale: 0.394 },
   secretagent:  { name: 'Secret Agent',   set: 'secretagent',  scale: 0.404 },
   grimreaper:   { name: 'Grim Reaper',    set: 'grimreaper',   scale: 0.376 },
+  plaguedoctor: { name: 'Plague Doctor',  set: 'plaguedoctor', scale: 0.368 },
 };
 DATA.DEFAULT_SKIN = 'blank';

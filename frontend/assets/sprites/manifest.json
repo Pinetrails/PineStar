@@ -1911,6 +1911,74 @@
     ],
     "grimreaper.blink.west": [
       "grimreaper/blink_west.png"
+    ],
+    "plaguedoctor.rot.south": [
+      "plaguedoctor/rot_south.png"
+    ],
+    "plaguedoctor.walk.south": [
+      "plaguedoctor/walk_south_0.png",
+      "plaguedoctor/walk_south_1.png",
+      "plaguedoctor/walk_south_2.png",
+      "plaguedoctor/walk_south_3.png",
+      "plaguedoctor/walk_south_4.png",
+      "plaguedoctor/walk_south_5.png"
+    ],
+    "plaguedoctor.sit.south": [
+      "plaguedoctor/sit_south.png"
+    ],
+    "plaguedoctor.blink.south": [
+      "plaguedoctor/blink_south.png"
+    ],
+    "plaguedoctor.rot.north": [
+      "plaguedoctor/rot_north.png"
+    ],
+    "plaguedoctor.walk.north": [
+      "plaguedoctor/walk_north_0.png",
+      "plaguedoctor/walk_north_1.png",
+      "plaguedoctor/walk_north_2.png",
+      "plaguedoctor/walk_north_3.png",
+      "plaguedoctor/walk_north_4.png",
+      "plaguedoctor/walk_north_5.png"
+    ],
+    "plaguedoctor.sit.north": [
+      "plaguedoctor/sit_north.png"
+    ],
+    "plaguedoctor.blink.north": [
+      "plaguedoctor/blink_north.png"
+    ],
+    "plaguedoctor.rot.east": [
+      "plaguedoctor/rot_east.png"
+    ],
+    "plaguedoctor.walk.east": [
+      "plaguedoctor/walk_east_0.png",
+      "plaguedoctor/walk_east_1.png",
+      "plaguedoctor/walk_east_2.png",
+      "plaguedoctor/walk_east_3.png",
+      "plaguedoctor/walk_east_4.png",
+      "plaguedoctor/walk_east_5.png"
+    ],
+    "plaguedoctor.sit.east": [
+      "plaguedoctor/sit_east.png"
+    ],
+    "plaguedoctor.blink.east": [
+      "plaguedoctor/blink_east.png"
+    ],
+    "plaguedoctor.rot.west": [
+      "plaguedoctor/rot_west.png"
+    ],
+    "plaguedoctor.walk.west": [
+      "plaguedoctor/walk_west_0.png",
+      "plaguedoctor/walk_west_1.png",
+      "plaguedoctor/walk_west_2.png",
+      "plaguedoctor/walk_west_3.png",
+      "plaguedoctor/walk_west_4.png",
+      "plaguedoctor/walk_west_5.png"
+    ],
+    "plaguedoctor.sit.west": [
+      "plaguedoctor/sit_west.png"
+    ],
+    "plaguedoctor.blink.west": [
+      "plaguedoctor/blink_west.png"
     ]
   }
 }
