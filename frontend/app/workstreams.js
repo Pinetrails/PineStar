@@ -31,6 +31,7 @@
   let ws = [];          // Workstream[]
   let activeId = null;
   let generalId = null;
+  let undoCheckpoint = null;   // one durable, bounded recovery point for clear/bulk archive
 
   // frontend module: ambient time/rng is fine here (lint-determinism scans only shared/ + sidecar/).
   function now() { return Date.now(); }
@@ -106,16 +107,17 @@
     generalId = (slice.generalId && find(slice.generalId)) ? slice.generalId : null;
     ensureGeneral();
     activeId = (slice.activeId && find(slice.activeId)) ? slice.activeId : generalId;
+    undoCheckpoint = normalizeCheckpoint(slice.sessionUndo);
     const a = active();
     if (a && (a.lastActiveAt || 0) > (a.lastReadAt || 0)) a.lastReadAt = a.lastActiveAt;   // boot renders it — read
     return a;
   }
 
   // wipe to a single fresh General (NEW AGENT clears everything).
-  function reset() { ws = []; activeId = generalId = null; const g = ensureGeneral(); activeId = g.id; return active(); }
+  function reset() { ws = []; activeId = generalId = null; undoCheckpoint = null; const g = ensureGeneral(); activeId = g.id; return active(); }
 
   // the persisted slice — App.persist() serializes this alongside { agent, usage }.
-  function serialize() { return { workstreams: ws, activeId, generalId }; }
+  function serialize() { return { workstreams: ws, activeId, generalId, sessionUndo: undoCheckpoint }; }
   function all() { return ws; }
 
   // ---------- selection ----------
@@ -287,13 +289,116 @@
   }
   function costOf(id) { const w = find(id); return w ? { tokens: w.cost.tokens, usd: w.cost.usd, calls: w.cost.calls } : zeroCost(); }
 
-  // ---------- search (title + message bodies; client-side, localStorage scale) ----------
+  // ---------- session power tools: visible search/export + reversible cleanup ----------
+  // Only actual Commander/agent dialogue belongs in search or export. Local/system records can contain
+  // prompts, recovery markers, tool metadata, or other implementation state and must never leak through
+  // a user-facing transcript surface.
+  function visibleMessages(w) {
+    return ((w && Array.isArray(w.history)) ? w.history : []).filter(m => m && !m.sys && !m.hidden && !m.internal
+      && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string');
+  }
+  const SECRET_RES = [
+    /\bsk-[A-Za-z0-9_-]{16,}\b/g,
+    /\b(?:xox[baprs]-|ghp_|gho_|github_pat_)[A-Za-z0-9_-]{10,}\b/g,
+    /\bBearer\s+[A-Za-z0-9._-]{16,}\b/gi,
+    /\b[A-Fa-f0-9]{32,}\b/g
+  ];
+  function scrubSecrets(s) {
+    let out = String(s == null ? '' : s);
+    for (const re of SECRET_RES) out = out.replace(re, '[redacted]');
+    return out;
+  }
+  function safeTitle(w) { return scrubSecrets((w && w.title) || 'General'); }
+
+  function exportConversation(id, format, opts) {
+    const w = find(id); if (!w) return null;
+    opts = opts || {};
+    const title = safeTitle(w);
+    const messages = visibleMessages(w).map(m => ({ role: m.role, content: scrubSecrets(m.content) }));
+    const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 48) || 'general';
+    if (format === 'json') {
+      const doc = { schema: 'starnet.conversation', version: 1, exportedAt: opts.exportedAt != null ? opts.exportedAt : now(), title, messages, secretsIncluded: false };
+      return { format: 'json', mime: 'application/json', filename: 'starnet-' + slug + '.json', text: JSON.stringify(doc, null, 2), doc };
+    }
+    const lines = ['# ' + title, '', '_Exported from StarNet. Hidden/system data and obvious credentials are excluded._', ''];
+    for (const m of messages) lines.push('## ' + (m.role === 'user' ? 'Commander' : 'Agent'), '', m.content, '');
+    return { format: 'markdown', mime: 'text/markdown', filename: 'starnet-' + slug + '.md', text: lines.join('\n') };
+  }
+  function parseConversationExport(text) {
+    let doc;
+    try { doc = JSON.parse(String(text || '')); } catch (_) { return null; }
+    if (!doc || doc.schema !== 'starnet.conversation' || doc.version !== 1 || !Array.isArray(doc.messages)) return null;
+    const messages = doc.messages.filter(m => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string')
+      .map(m => ({ role: m.role, content: scrubSecrets(m.content) }));
+    return { title: scrubSecrets(doc.title || 'General'), messages, secretsIncluded: false };
+  }
+
+  function clone(v) { return JSON.parse(JSON.stringify(v)); }
+  function normalizeCheckpoint(c) {
+    if (!c || (c.kind !== 'clear' && c.kind !== 'archive') || !Array.isArray(c.rows)) return null;
+    return { kind: c.kind, at: +c.at || 0, rows: clone(c.rows), activeId: c.activeId || null, count: c.rows.length };
+  }
+  function clearConversation(id, opts) {
+    const w = find(id); if (!w || !w.history.length) return null;
+    opts = opts || {};
+    undoCheckpoint = normalizeCheckpoint({ kind: 'clear', at: opts.at != null ? opts.at : now(), activeId, rows: [{ id, history: clone(w.history) }] });
+    w.history = [];
+    w.lastActiveAt = opts.at != null ? opts.at : now();
+    if (id === activeId) w.lastReadAt = w.lastActiveAt;
+    return clone(undoCheckpoint);
+  }
+  function criteriaOf(input) {
+    input = input || {};
+    return { empty: !!input.empty, completed: !!input.completed, olderThanMs: Math.max(0, +input.olderThanMs || 0), includePinned: !!input.includePinned };
+  }
+  function hashPreview(criteria, stamp, ids) {
+    const s = JSON.stringify(criteria) + '|' + stamp + '|' + ids.join(',');
+    let h = 2166136261;
+    for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+    return 'pv_' + (h >>> 0).toString(16);
+  }
+  function previewArchive(input, opts) {
+    const criteria = criteriaOf(input); opts = opts || {};
+    const stamp = opts.now != null ? +opts.now : now();
+    const ids = ws.filter(w => {
+      if (w.id === generalId || w.archived || (!criteria.includePinned && w.pinned)) return false;
+      const empty = criteria.empty && visibleMessages(w).length === 0 && w.runIds.length === 0 && w.deliverables.length === 0;
+      const complete = criteria.completed && w.lane === 'shipped';
+      const old = criteria.olderThanMs > 0 && (+w.lastActiveAt || 0) <= stamp - criteria.olderThanMs;
+      return empty || complete || old;
+    }).map(w => w.id).sort();
+    return { criteria, now: stamp, ids, count: ids.length, token: hashPreview(criteria, stamp, ids) };
+  }
+  function archivePreview(preview, opts) {
+    if (!preview || !Array.isArray(preview.ids)) return null;
+    const fresh = previewArchive(preview.criteria, { now: preview.now });
+    if (fresh.token !== preview.token || JSON.stringify(fresh.ids) !== JSON.stringify(preview.ids)) return null;
+    opts = opts || {};
+    const rows = fresh.ids.map(id => ({ id, archived: !!find(id).archived }));
+    undoCheckpoint = normalizeCheckpoint({ kind: 'archive', at: opts.at != null ? opts.at : now(), activeId, rows });
+    for (const id of fresh.ids) archive(id, true);
+    return { kind: 'archive', ids: fresh.ids.slice(), count: fresh.ids.length };
+  }
+  function canUndo() { return !!undoCheckpoint; }
+  function undoLast() {
+    const cp = undoCheckpoint; if (!cp) return false;
+    if (cp.kind === 'clear') {
+      for (const row of cp.rows) { const w = find(row.id); if (w && Array.isArray(row.history)) w.history = clone(row.history); }
+    } else {
+      for (const row of cp.rows) { const w = find(row.id); if (w) w.archived = !!row.archived; }
+    }
+    if (cp.activeId && find(cp.activeId) && !find(cp.activeId).archived) activeId = cp.activeId;
+    undoCheckpoint = null;
+    return true;
+  }
+
+  // ---------- search (title + visible message bodies; client-side, localStorage scale) ----------
   function search(q) {
     q = String(q || '').trim().toLowerCase();
     if (!q) return [];
     const out = [];
     for (const w of ws) {
-      const hay = [w.title || 'general'].concat(w.history.map(m => (m && m.content) || '')).join('\n');
+      const hay = [safeTitle(w)].concat(visibleMessages(w).map(m => scrubSecrets(m.content))).join('\n');
       const i = hay.toLowerCase().indexOf(q);
       if (i >= 0) {
         const start = Math.max(0, i - 20);
@@ -335,6 +440,8 @@
 
   return {
     init, reset, serialize, all, list, search,
+    exportConversation, parseConversationExport, clearConversation,
+    previewArchive, archivePreview, canUndo, undoLast,
     create, startSession, adopt, get, active, activeId: getActiveId, generalId: getGeneralId,
     switch: switchTo, rename, setAgent, setLane, setProjectRoot, pin, archive, del, removeByAgent, touch, markRead, unread: isUnread,
     autoTitle, retitle, deriveTitle,
