@@ -1414,6 +1414,9 @@ body.no-scan .crt-scan { display: none; }
 }
 .deliverable-row { border: 1px solid var(--ph-dim); margin: 10px 0; padding: 10px; background: var(--panel2); }
 .deliverable-row .row, .cfg > .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.deliverables-toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 10px 0; }
+.deliverables-toolbar input { flex: 1 1 260px; min-width: 0; }
+.deliverables-toolbar select { flex: 0 1 190px; min-width: 140px; }
 .deliverable-row small { display: block; color: var(--ph-dim); margin: 4px 0; }
 .deliverable-image { display: block; max-width: 100%; max-height: 55vh; object-fit: contain; border: 1px solid var(--ph-dim); }
 .deliverable-csv { border-collapse: collapse; width: 100%; font-size: 12px; }

@@ -395,8 +395,11 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       requestAnimationFrame(() => fitTermInViewport(w, key, true));
       return;
     }
-    const prior = Math.max(0, Object.keys(open).filter(k => k !== key && !minimized[k]).length);   // how many OTHER visible windows are already open (minimized ones don't crowd the cascade)
-    if (prior === 0) {
+    const candidates = Object.keys(open).filter(k => k !== key && !minimized[k] && open[k]).map(k => ({
+      el: open[k], rect: open[k].getBoundingClientRect()
+    }));
+    let anchor = candidates[candidates.length - 1];
+    if (!anchor) {
       // SINGLE window = the focal point: let CSS center it (left/top:50% + translate(-50%,-50%) with a
       // capped max-height), which is ALWAYS on-screen even for tall panels like Settings. We must NOT
       // measure offsetHeight here and pin an inline top: placeTerm runs before the body content (and the
@@ -404,15 +407,22 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       // tall modals ~200px off the bottom of the viewport. Leaving the CSS centering in place fixes that.
       return;
     }
-    // 2nd+ window: cascade off the corner so stacked panels never bury each other.
+    // 2nd+ window: cascade from the actual visible rectangle of the topmost existing
+    // console. offsetLeft cannot describe a CSS-centred/transformed window.
+    const CASCADE_STEP = 32;
+    candidates.forEach(item => {
+      const z = Number(getComputedStyle(item.el).zIndex) || 0;
+      const anchorZ = Number(getComputedStyle(anchor.el).zIndex) || 0;
+      if (z >= anchorZ) anchor = item;
+    });
     const wpx = w.offsetWidth || 480, hpx = w.offsetHeight || 320;
-    const baseL = 92, baseT = 80, step = 30, span = 6;
-    let left = baseL + (prior % span) * step;
-    let top  = baseT + (prior % span) * step;
+    const left = anchor.rect.left + CASCADE_STEP;
+    const top = anchor.rect.top + CASCADE_STEP;
     const placed = visibleTerminalRect({ left, top, width: wpx, height: hpx }, terminalViewport());
     // Cascaded windows also use explicit coordinates; the centred keyframes are invalid for them.
     w.style.animation = 'none';
     w.style.left = placed.left + 'px'; w.style.top = placed.top + 'px'; w.style.transform = 'none';
+    w.classList.add('term-moved');
   }
   function fitTermInViewport(w, key, persist) {
     if (!w) return;
@@ -913,6 +923,17 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       if (viaClick) { try { railItems[id].focus(); } catch (_) {} }
     }
 
+    // Search is temporary context, not navigation: expose which matching section owns the
+    // visible results without overwriting the section the user chose and persisted.
+    function setSearchContext(id) {
+      Object.keys(railItems).forEach(k => {
+        const on = k === id;
+        railItems[k].classList.toggle('active', on);
+        railItems[k].setAttribute('aria-selected', on ? 'true' : 'false');
+        railItems[k].tabIndex = on ? 0 : -1;
+      });
+    }
+
     // keyboard nav on the tablist: Up/Down (vertical rail) or Left/Right (horizontal top strip) move + activate;
     // Home/End jump ends. Both arrow pairs are accepted regardless of orientation, so this handler is shared.
     (tabsTop ? topTabs : rail).addEventListener('keydown', ev => {
@@ -943,6 +964,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
           return;
         }
         // in search mode every section pane is shown; rows are marked hit/miss; a zero-hit section dims its rail item
+        const matches = [];
         sections.forEach(sec => {
           const pane = panes[sec.id];
           pane.classList.remove('con-sec-hidden');
@@ -958,10 +980,12 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
           });
           // also let a section match by its own label/desc even if no granular row matched
           const secMatch = hits > 0 || sec.label.toLowerCase().indexOf(q) >= 0 || (sec.desc || '').toLowerCase().indexOf(q) >= 0;
+          if (secMatch) matches.push(sec.id);
           pane.classList.toggle('con-sec-nomatch', !secMatch);
           railItems[sec.id].classList.toggle('con-rail-dim', !secMatch);
           railItems[sec.id].classList.toggle('con-rail-hit', secMatch);
         });
+        setSearchContext(matches[0] || null);
       };
       searchInput.addEventListener('input', doFilter);
       // Esc: first clears a non-empty search (and refocuses), only then lets the window's Esc close it.
@@ -2171,6 +2195,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     // A pill SWITCH (the user's choice) — reads unambiguously as a control, not a status dot. data-toggle drives the round-trip.
     const switchHTML = (s) =>
       '<button class="sk-switch ' + (s.enabled ? 'on' : 'off') + '" role="switch" aria-checked="' + (s.enabled ? 'true' : 'false') + '" ' +
+        'aria-label="Turn ' + (s.enabled ? 'off' : 'on') + ' ' + esc(s.name) + '" ' +
         'data-toggle="' + esc(s.slug) + '" data-enabled="' + (s.enabled ? 'true' : 'false') + '" title="' + (s.enabled ? 'Turn OFF' : 'Turn ON') + ' this skill station-wide">' +
         '<span class="sk-sw-track"><span class="sk-sw-knob"></span></span>' +
         '<span class="sk-sw-label">' + (s.enabled ? 'ON' : 'OFF') + '</span>' +
@@ -2200,7 +2225,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
               '<div class="sk-reqs">' + reqBadges(s) + '</div>' +
               (missing.length ? '<div class="sk-place-row">' + placeBtns(missing) + '</div>' : '') +
             '</div>' +
-            '<button class="sk-expand" data-expand="' + esc(s.slug) + '" title="Read the recipe">▸</button>' +
+            '<button class="sk-expand" data-expand="' + esc(s.slug) + '" title="Read the recipe" aria-label="Read the ' + esc(s.name) + ' recipe">▸</button>' +
           '</div>' +
           '<div class="sk-body"><pre>' + esc(s.body || '') + '</pre>' +
             (s.author ? '<div class="sk-attr">Ported from ' + esc(s.author) + (s.license ? ' · ' + esc(s.license) : '') + '</div>' : '') +
@@ -2318,7 +2343,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
      TO DO -> IN PROGRESS the instant a real run fires (Workstreams.appendRun); SHIPPED is only ever a
      deliberate human turn-in (the ✓ SHIP button). The General chat home isn't a project, so it shows
      in the rail but never on this board. App owns persistence + the rail; we drive both via sync(). */
-  const COLS = [['todo', 'TO DO'], ['active', 'IN PROGRESS'], ['shipped', 'SHIPPED']];
+  const COLS = [['todo', 'TO DO'], ['active', 'ACTIVE'], ['shipped', 'SHIPPED']];
   const WS = () => (typeof Workstreams === 'object' && Workstreams) ? Workstreams : null;
   function boardStreams() {
     const w = WS(); if (!w) return [];
@@ -2397,6 +2422,18 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     if (s.runIds && s.runIds.length) return '<div class="kb-state done">DONE — REVIEW &amp; SHIP</div>';
     return '';
   }
+  function activeAggregate(items) {
+    let running = 0, ready = 0;
+    items.forEach(s => {
+      const busy = (typeof Channels !== 'undefined' && Channels.isBusy && Channels.isBusy(s.id));
+      if (busy) running++;
+      else if (s.runIds && s.runIds.length) ready++;
+    });
+    const parts = [];
+    if (running) parts.push(running + ' RUNNING');
+    if (ready) parts.push(ready + ' READY TO REVIEW');
+    return parts.length ? '<small class="kb-col-state">' + parts.join(' · ') + '</small>' : '';
+  }
   // the card's bound-agent chip: the workstream's OWN agent (s.agentId) resolved to a name + color from the live
   // roster. Truthful — a stream always carries a real agentId (default 'agent'); an unresolvable id shows verbatim,
   // never a made-up placeholder.
@@ -2430,7 +2467,8 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       '<div class="kb-cols">' +
       COLS.map(([lane, label]) => {
         const items = streams.filter(s => s.lane === lane);
-        return '<div class="kb-col"><h4>' + label + ' <i>' + items.length + '</i></h4>' +
+        return '<div class="kb-col"><h4>' + label + ' <i>' + items.length + '</i>' +
+          (lane === 'active' ? activeAggregate(items) : '') + '</h4>' +
           (items.length ? items.map(card).join('') : kbEmpty(lane)) + '</div>';
       }).join('') +
       '</div>';
@@ -3578,8 +3616,8 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     const customSw = deriveCustomTheme(s.themeHue, s.themeSat, 100)['--ph'];   // swatch tint for the CUSTOM chip
     const secAppearance =
       '<h4 class="ms-h">PHOSPHOR THEME</h4><div class="set-themes">' +
-      THEMES.map(([t, c]) => '<button class="set-theme ' + (s.theme === t ? 'sel' : '') + '" data-t="' + t + '" style="--sw:' + c + '">' + t.toUpperCase() + '</button>').join('') +
-      '<button class="set-theme ' + (s.theme === 'custom' ? 'sel' : '') + '" data-t="custom" id="set-theme-custom" style="--sw:' + customSw + '">CUSTOM</button>' +
+      THEMES.map(([t, c]) => '<button class="set-theme ' + (s.theme === t ? 'sel' : '') + '" aria-pressed="' + (s.theme === t ? 'true' : 'false') + '" data-t="' + t + '" style="--sw:' + c + '">' + t.toUpperCase() + '</button>').join('') +
+      '<button class="set-theme ' + (s.theme === 'custom' ? 'sel' : '') + '" aria-pressed="' + (s.theme === 'custom' ? 'true' : 'false') + '" data-t="custom" id="set-theme-custom" style="--sw:' + customSw + '">CUSTOM</button>' +
       '</div>' +
       // CUSTOM PHOSPHOR — hue + saturation derive a full palette live (moving either switches to CUSTOM);
       // GLOW is independent and scales the bloom on EVERY theme, presets included. All instant-save.
@@ -3683,6 +3721,11 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     const hueIn = host.querySelector('#set-hue'), satIn = host.querySelector('#set-sat'), glowIn = host.querySelector('#set-glow');
     const sliderVal = (id, txt) => { const e = host.querySelector(id); if (e) e.textContent = txt; };
     const syncCustomChip = () => { const c = host.querySelector('#set-theme-custom'); if (c) c.style.setProperty('--sw', deriveCustomTheme(s.themeHue, s.themeSat, 100)['--ph']); };
+    const syncThemeSelection = theme => host.querySelectorAll('[data-t]').forEach(x => {
+      const selected = x.dataset.t === theme;
+      x.classList.toggle('sel', selected);
+      x.setAttribute('aria-pressed', selected ? 'true' : 'false');
+    });
     host.querySelectorAll('[data-t]').forEach(b => b.addEventListener('click', () => {
       s.theme = b.dataset.t;
       // a preset click snaps the CUSTOM hue/sat sliders to a matching start point (GLOW is an
@@ -3695,12 +3738,12 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         syncCustomChip();
       }
       applySettings(); save(); sfx('click');
-      host.querySelectorAll('[data-t]').forEach(x => x.classList.toggle('sel', x === b));
+      syncThemeSelection(s.theme);
       flashSaved(appMsg());
     }));
     // CUSTOM sliders — hue/sat derive live (and switch the theme to CUSTOM); glow applies to any theme.
     // 'input' repaints every drag tick; 'change' persists + flashes once on release.
-    const selCustom = () => host.querySelectorAll('[data-t]').forEach(x => x.classList.toggle('sel', x.dataset.t === 'custom'));
+    const selCustom = () => syncThemeSelection('custom');
     const wireSlider = (input, apply) => {
       if (!input) return;
       input.addEventListener('input', ev => { apply(ev.target.value); applySettings(); });
@@ -4172,7 +4215,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         return '<div class="nf ' + (n.cls || '') + ' sev-' + sev + (n.read ? ' read' : '') + '" style="--ci:' + i + '">' +
           '<span class="nf-sev" aria-hidden="true">' + esc(SEV_GLYPH[sev]) + '</span>' +
           '<span class="nf-ts">' + notifStamp(n.t) + '</span> <span class="nf-txt">' + esc(n.txt) + '</span>' +
-          '<button class="nf-x" data-nid="' + esc(n.id) + '" title="dismiss this notification" aria-label="Dismiss notification">✕</button>' +
+          '<button class="nf-x" data-nid="' + esc(n.id) + '" title="dismiss this notification" aria-label="Dismiss ' + esc(n.txt) + '">✕</button>' +
           '</div>';
       }).join('') + '</div>';
     body.querySelector('#nf-clear').addEventListener('click', () => {
