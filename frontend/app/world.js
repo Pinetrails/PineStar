@@ -4463,7 +4463,15 @@ const World = (() => {
   const RUN_TTL_MS = 300000;                     // 5m of NO token/tool/start event ⇒ the run clock degrades to unknown
   const AWAIT_TTL_MS = 660000;                   // consent max (600s) + grace ⇒ a stuck await clears if its response was lost
   let awaitStampAt = 0;                           // performance.now() when the current awaitPrompt was last reinforced
-  function stampRun(aid) { if (aid) runLastSeenByAgent.set(aid, (typeof performance !== 'undefined') ? performance.now() : fnow); }
+  function stampRun(aid, rid) {
+    if (!aid) return;
+    const now = (typeof performance !== 'undefined') ? performance.now() : fnow;
+    runLastSeenByAgent.set(aid, now);
+    // per-RUN reinforcement: a leaked runId (lost run.end) must go stale on ITS OWN clock — the agent-level
+    // stamp above stays fresh as long as ANY run of this agent emits, which used to keep a leaked refcount
+    // alive forever on a busy agent (the crew panel then asserted WORKING between every run).
+    if (rid) { const s = liveRunsByAgent.get(aid); if (s && s.has(rid)) s.set(rid, now); }
+  }
   /* OVERLAP-SAFE RUN REFCOUNT (the black-screen-while-working fix). The work pose, serverLit set and the
      run clock are all AGENT-keyed, but an agent's runs can OVERLAP (a scheduled routine ending while a chat
      run streams, two channel runs, a background workstream). Extinguishing on the FIRST run.end used to
@@ -4472,8 +4480,8 @@ const World = (() => {
      So every live run registers by runId here, and only the LAST live run's end may extinguish agent-keyed
      state. noteRunEnd is IDEMPOTENT per runId (Set.delete), so every run.end consumer can call it and read
      the remaining count without depending on listener registration order. */
-  const liveRunsByAgent = new Map();   // agentId -> Set(runId), every live run regardless of trigger
-  function noteRunStart(aid, rid) { if (!aid || !rid) return; let s = liveRunsByAgent.get(aid); if (!s) { s = new Set(); liveRunsByAgent.set(aid, s); } s.add(rid); }
+  const liveRunsByAgent = new Map();   // agentId -> Map(runId -> lastSeen ms), every live run regardless of trigger
+  function noteRunStart(aid, rid) { if (!aid || !rid) return; let s = liveRunsByAgent.get(aid); if (!s) { s = new Map(); liveRunsByAgent.set(aid, s); } s.set(rid, (typeof performance !== 'undefined') ? performance.now() : fnow); }
   function noteRunEnd(aid, rid) {
     const s = aid ? liveRunsByAgent.get(aid) : null; if (!s) return 0;
     if (rid) s.delete(rid); else s.clear();   // a runId-less end can't be matched — treat it as agent-terminal (old behavior)
@@ -4498,6 +4506,19 @@ const World = (() => {
           if (serverLit.has(aid)) { serverLit.delete(aid); setActivityFor(aid, 'idle'); }   // drop an autonomous body out of the working pose
           const b = bodyForAgent(aid); if (b && b !== agent && b.workUntil) b.workUntil = 0;  // clear a stuck crew work pose
         }
+      }
+    }
+    // per-RUN sweep: a single leaked runId (its run.end lost) on an otherwise BUSY agent never trips the
+    // agent-level clock above — its siblings keep runLastSeenByAgent fresh forever. Each tracked run now
+    // carries its own last-reinforced stamp; one that has gone RUN_TTL_MS silent is dropped individually.
+    // When that empties an agent's set, release the same agent-keyed state the agent-level branch does.
+    for (const [aid, s] of Array.from(liveRunsByAgent)) {
+      for (const [rid, seen] of Array.from(s)) if (now - seen > RUN_TTL_MS) s.delete(rid);
+      if (!s.size) {
+        liveRunsByAgent.delete(aid);
+        runStartByAgent.delete(aid); runLastSeenByAgent.delete(aid); glyphByAgent.delete(aid);
+        if (serverLit.has(aid)) { serverLit.delete(aid); setActivityFor(aid, 'idle'); }
+        const b = bodyForAgent(aid); if (b && b !== agent && b.workUntil) b.workUntil = 0;
       }
     }
     // a serverLit entry whose agent has NO live run and NO run clock is a leftover from an overlap window
@@ -4539,8 +4560,17 @@ const World = (() => {
         live.add(r.agentId);
         const startedAgo = Math.max(0, +r.startedMsAgo || 0);
         if (!runStartByAgent.has(r.agentId)) runStartByAgent.set(r.agentId, now - startedAgo);
+        // ORPHAN RUN → WORK POSE: the server proves this run live but no local stream ever saw it start
+        // (app reloaded mid-run, or the run belongs to another client). Nothing will ever drive this body —
+        // chat.js only poses runs it launched, and the schedule/event listener only fires on the live bus
+        // event — so the crew panel would honestly say "working at the terminal" over a standing sprite.
+        // Light it through the existing autonomous-work channel (serverLit), whose extinguish paths
+        // (run.end refcount, TTL sweep, this reconcile's ended-during-outage branch) already release it.
+        const tracked = liveRunsByAgent.get(r.agentId);
+        const orphan = !!(r.runId && !(tracked && tracked.has(r.runId)));
         noteRunStart(r.agentId, r.runId);   // rebuild the overlap refcount from the authoritative live set
-        stampRun(r.agentId);
+        stampRun(r.agentId, r.runId);
+        if (orphan && !serverLit.has(r.agentId)) { serverLit.add(r.agentId); setActivityFor(r.agentId, 'task'); }
       }
       for (const aid of Array.from(runStartByAgent.keys())) if (!live.has(aid)) {   // ended during the outage
         runStartByAgent.delete(aid); runLastSeenByAgent.delete(aid); glyphByAgent.delete(aid); liveRunsByAgent.delete(aid);
@@ -5329,7 +5359,7 @@ const World = (() => {
       // ONLY (orchestration forwards no token/tool events), so without this the worker's sprite decayed to
       // idle at RUN_TTL while its run was still genuinely working (2026-07-07 escape: "the researcher just
       // stopped"). Cost fires every completed worker turn — the honest per-turn heartbeat we do have.
-      if (p && p.agentId && runStartByAgent.has(p.agentId)) stampRun(p.agentId);
+      if (p && p.agentId && runStartByAgent.has(p.agentId)) stampRun(p.agentId, p.runId);
     });
     // H3.1: a mid-run model/credential FAILOVER was invisible (provider.fallback had no consumer). Fold it into
     // the floor stats AND surface a LOGBOOK line so the operator sees the harness rerouting around a bad provider.
@@ -5527,7 +5557,7 @@ const World = (() => {
       const n = p && p.name;
       if (!n) return;
       heatBump(p.agentId, 0.35);                  // G0.3: any real tool fire is activity — stoke the desk heat
-      stampRun(p.agentId);                        // E2: a tool fire reinforces the run TTL
+      stampRun(p.agentId, p.runId);               // E2: a tool fire reinforces the run TTL (its own run's clock too)
       if (typeof PropSprites === 'undefined') return;   // E6e: prop layer not loaded — heat still stoked, no throw
       if (n.indexOf('mcp__') === 0) {             // connector portals: pulse the BOUND portal (fires a packet on call — its LIVE/error glow is polled separately)
         if (!PropSprites.pulseConnector) return;
@@ -5564,7 +5594,7 @@ const World = (() => {
     U.bus.on('verify.result', p => pulseWb(p && p.agentId, !!(p && p.passed)));
     // G0.3 TOKEN HEAT: every streamed token stokes the acting agent's desk heat —
     // the working screens burn by REAL token flow, never a faked flicker.
-    U.bus.on('agent.token', p => { heatBump(p && p.agentId, 0.06); stampRun(p && p.agentId); });   // E2: a token reinforces the run TTL
+    U.bus.on('agent.token', p => { heatBump(p && p.agentId, 0.06); stampRun(p && p.agentId, p && p.runId); });   // E2: a token reinforces the run TTL (its own run's clock too)
     // G0.2 RUN CLOCK: elapsed-time bookkeeping keyed to the REAL run lifecycle (a run.error is always
     // followed by run.end reason 'error', so end is the one cleanup point). Internal reason-only runs
     // never reach U.bus (harness.js suppresses their start/end), so no clock ever shows for self-talk.
@@ -5598,6 +5628,12 @@ const World = (() => {
     };
     connOpenFn = open;
     open();
+    // E2+ (2026-07-16): the snapshot reconcile used to fire ONLY on SSE (re)open, so a lost run.end inside a
+    // HEALTHY link waited out the full 5m TTL before the floor/panel stopped asserting WORKING. Poll the same
+    // authoritative snapshot on a slow cadence: truth converges within ~30s in BOTH directions (a dead run is
+    // cleared; a genuinely live one is re-stamped, which also keeps the per-run TTL from biting a long quiet
+    // run, e.g. one paused on a consent prompt). Paused bridge = deliberate silence — no polling.
+    setInterval(() => { if (!bridgePaused) fetchSnapshot(); }, 30000);
   }
   /* E2: fetch the authoritative live-state snapshot on every SSE (re)open and reconcile the paired-state maps.
      404/failure-tolerant: the endpoint is owned by the lifecycle lane and may not exist here — any non-OK/throw
@@ -5745,7 +5781,7 @@ const World = (() => {
   // synthetic snapshot — so the paired-state TTL + reconnect reconciliation can be proven without a 5-minute wait or
   // the real /api/state/snapshot endpoint. Read-only paths (dbg()) already expose ttl counts.
   const _dbgSeedRun = (aid) => { if (!aid) return; runStartByAgent.set(aid, (typeof performance !== 'undefined') ? performance.now() : fnow); stampRun(aid); };
-  const _dbgAgeRun = (aid, ms) => { const t = runLastSeenByAgent.get(aid); if (t != null) runLastSeenByAgent.set(aid, t - (+ms || 0)); const s = runStartByAgent.get(aid); if (s != null) runStartByAgent.set(aid, s - (+ms || 0)); };
+  const _dbgAgeRun = (aid, ms) => { const t = runLastSeenByAgent.get(aid); if (t != null) runLastSeenByAgent.set(aid, t - (+ms || 0)); const s = runStartByAgent.get(aid); if (s != null) runStartByAgent.set(aid, s - (+ms || 0)); const m = liveRunsByAgent.get(aid); if (m) for (const [rid, tt] of m) m.set(rid, tt - (+ms || 0)); };
   const _dbgReconcile = (snap) => { try { reconcileFromSnapshot(snap); } catch (_) {} };
   const _dbgSweep = () => { sweepStaleStates((typeof performance !== 'undefined') ? performance.now() : fnow); };   // drive the TTL sweep directly (rAF is throttled in a headless preview tab)
   // E1 verification: report the live link predicate, and force the real chanES closed (a genuine dropped socket)
