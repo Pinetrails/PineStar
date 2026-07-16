@@ -133,16 +133,33 @@ function hotBeliefs(now) {
   return { known: ['goals', 'pain', 'stack', 'ambition'], beliefs: { goals: b('ship the invoice tooling'), pain: b('empty-list crashes bite me'), stack: b('node'), ambition: b('a solid billing lib') } };
 }
 
+async function stop(child) {
+  if (!child || child.exitCode != null) return;
+  await new Promise(resolve => {
+    const timer = setTimeout(resolve, 2500);
+    child.once('exit', () => { clearTimeout(timer); resolve(); });
+    try { child.kill(); } catch (_) { clearTimeout(timer); resolve(); }
+  });
+}
+
 (async () => {
   const mock = await startMock();
   const repo = makeRepo();
+  const unblessed = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'sk-ns5b-unblessed-')));
+  const revoked = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'sk-ns5b-revoked-')));
   const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-ns5b-ws-'));
   // PRE-BLESS the repo: seed the durable allowlist (path:<repo>) + the known-projects metadata (fresh lastTouchedAt).
   const now = Date.now();
   fs.writeFileSync(path.join(ws, 'permissions.allow.json'), JSON.stringify({ allow: ['path:' + repo], meta: { ['path:' + repo]: { grantedAt: now } } }));
-  fs.writeFileSync(path.join(ws, 'projects.json'), JSON.stringify({ version: 1, projects: [{ root: repo, displayPath: repo, grantedAt: now, lastTouchedAt: now, isGitRepo: true }] }));
+  fs.writeFileSync(path.join(ws, 'projects.json'), JSON.stringify({ version: 1, projects: [
+    { root: repo, displayPath: repo, grantedAt: now, lastTouchedAt: now, isGitRepo: true },
+    { root: revoked, displayPath: revoked, grantedAt: now - 1000, lastTouchedAt: now - 1000, isGitRepo: false }
+  ] }));
+  fs.writeFileSync(path.join(ws, '_commander.goals.json'), JSON.stringify({ goal: { text: 'launch billing beta', done: 1, total: 3, next: 'finish export' } }));
   const env = { SKYNET_WORKSPACES: ws, SKYNET_DEV: '1', SKYNET_OPENROUTER_BASE: mock.base, SKYNET_OPENROUTER_KEY: 'sk-or-v1-ns5b-fake', SKYNET_DEFAULT_MODEL: 'test/model' };
-  const { child, port } = await boot(8970 + (process.pid % 25), env, 20);
+  const started = await boot(8970 + (process.pid % 25), env, 20);
+  let child = started.child;
+  const port = started.port;
   const B = 'http://' + HOST + ':' + port;
   try {
     const token = await bootToken(B, B);
@@ -166,6 +183,32 @@ function hotBeliefs(now) {
     const led = await (await fetch(B + '/api/autonomy/ledger?source=nightshift&limit=200', { headers })).json();
     const focusNote = (led.entries || []).find(e => e && e.reason === 'focus' && e.detail && e.detail.ref === repo);
     A.ok(focusNote, 'the autonomy ledger recorded the FOCUS declaration (priority + why)');
+
+    // AUTHORITY: malformed or stale references are rejected without mutating the current durable focus.
+    const beforeInvalid = await (await fetch(B + '/api/nightshift/focus', { headers })).json();
+    const beforeSerialized = JSON.stringify(beforeInvalid);
+    const invalidCases = [
+      [{ ref: path.join(ws, 'missing-project'), kind: 'project' }, 'a missing project path'],
+      [{ ref: unblessed, kind: 'project' }, 'an existing but unblessed project'],
+      [{ ref: revoked, kind: 'project' }, 'a revoked project'],
+      [{ ref: 'th_missing', kind: 'thread' }, 'a missing thread'],
+      [{ ref: 'goal', kind: 'bogus' }, 'an unknown kind'],
+      [{ ref: 'stale-goal-name', kind: 'goal' }, 'a stale/noncanonical goal ref']
+    ];
+    for (const [body, label] of invalidCases) {
+      const response = await fetch(B + '/api/nightshift/focus', { method: 'POST', headers, body: JSON.stringify(body) });
+      const payload = await response.json();
+      A.ok(response.status >= 400 && response.status < 500 && payload.ok === false && payload.error, label + ' is rejected with an actionable 4xx');
+      const after = await (await fetch(B + '/api/nightshift/focus', { headers })).json();
+      A.eq(JSON.stringify(after), beforeSerialized, label + ' does not mutate focus or steer state');
+    }
+    await fetch(B + '/api/goals', { method: 'POST', headers, body: JSON.stringify({ goal: null }) });
+    const missingGoalResponse = await fetch(B + '/api/nightshift/focus', { method: 'POST', headers, body: JSON.stringify({ ref: 'goal', kind: 'goal' }) });
+    const missingGoalPayload = await missingGoalResponse.json();
+    A.ok(missingGoalResponse.status === 404 && missingGoalPayload.ok === false, 'a cleared/stale goal is rejected against current goal truth');
+    const afterMissingGoal = await (await fetch(B + '/api/nightshift/focus', { headers })).json();
+    A.eq(JSON.stringify(afterMissingGoal), beforeSerialized, 'a cleared/stale goal rejection does not mutate focus or steer state');
+    await fetch(B + '/api/goals', { method: 'POST', headers, body: JSON.stringify({ goal: { text: 'launch billing beta', done: 1, total: 3, next: 'finish export' } }) });
 
     // PROJECT PATCH landed in /pending as a patch-kind deliverable.
     const pend = await (await fetch(B + '/api/workshop/pending?agent=agent', { headers })).json();
@@ -204,19 +247,63 @@ function hotBeliefs(now) {
     // ===== 5. STEER — a durable "focus on Y" outranks derived evidence and is reported as steer-sourced =====
     const steerRes = await (await fetch(B + '/api/nightshift/focus', { method: 'POST', headers, body: JSON.stringify({ ref: repo, kind: 'project' }) })).json();
     A.ok(steerRes.ok === true && steerRes.focus && steerRes.focus.source === 'steer', 'POST /api/nightshift/focus sets a durable steer the focus reports as steer-sourced');
+    const goalSteer = await (await fetch(B + '/api/nightshift/focus', { method: 'POST', headers, body: JSON.stringify({ ref: 'goal', kind: 'goal' }) })).json();
+    A.ok(goalSteer.ok === true && goalSteer.focus && goalSteer.focus.kind === 'goal', 'the current real goal is accepted as a steer');
     const clr = await (await fetch(B + '/api/nightshift/focus', { method: 'DELETE', headers })).json();
     A.ok(clr.ok === true && clr.cleared === true, 'DELETE clears the steer');
+    A.ok(!clr.focus || clr.focus.source !== 'steer', 'DELETE never returns the cleared steer-derived cached focus');
+    A.ok(!clr.focus || JSON.stringify(clr.focus.why || []).indexOf('you asked me to focus on') < 0, 'DELETE hides the old steer reason immediately');
 
     // ===== 6. FOCUS PERSISTS ACROSS A RESTART (single-focus-per-night is durable) =====
     A.ok(fs.existsSync(path.join(ws, 'nightfocus.state.json')), 'the focus state persisted to disk (survives a restart mid-night)');
     const savedFocus = JSON.parse(fs.readFileSync(path.join(ws, 'nightfocus.state.json'), 'utf8'));
     A.eq(savedFocus.focus && savedFocus.focus.ref, repo, 'the persisted focus is the repo (a restart resumes the same night, not a re-scatter)');
+    await stop(child);
+    fs.writeFileSync(path.join(ws, 'threads.json'), JSON.stringify({ v: 1, threads: [
+      { id: 'th_open', title: 'ship the invoice export', spec: 'finish the real export', state: 'open', createdAt: now - 2000, updatedAt: now - 2000 },
+      { id: 'th_picked', title: 'polish the billing report', spec: 'continue picked work', state: 'picked', createdAt: now - 3000, updatedAt: now - 1000 }
+    ], declined: [] }));
+    const restarted = await boot(port, env, 0);
+    child = restarted.child;
+    const token2 = await bootToken(B, B);
+    const headers2 = { 'Content-Type': 'application/json', 'X-StarNet-Token': token2, Origin: B };
+    const afterRestart = await (await fetch(B + '/api/nightshift/focus', { headers: headers2 })).json();
+    A.eq(afterRestart.steer, null, 'the cleared steer remains cleared after a real sidecar restart');
+    A.eq(afterRestart.focus && afterRestart.focus.ref, repo, 'restart preserves only the valid post-clear derived focus');
+    A.ok(afterRestart.focus && afterRestart.focus.source === 'evidence', 'restart cannot resurrect a steer-derived focus');
+
+    const pickedSteer = await (await fetch(B + '/api/nightshift/focus', { method: 'POST', headers: headers2, body: JSON.stringify({ ref: 'th_picked', kind: 'thread' }) })).json();
+    A.ok(pickedSteer.ok === true && pickedSteer.focus && pickedSteer.focus.ref === 'th_picked', 'a real picked thread is accepted as a steer');
+    const openSteer = await (await fetch(B + '/api/nightshift/focus', { method: 'POST', headers: headers2, body: JSON.stringify({ ref: 'th_open', kind: 'thread' }) })).json();
+    A.ok(openSteer.ok === true && openSteer.focus && openSteer.focus.ref === 'th_open', 'a real open thread is accepted as a steer');
+    const clearThread = await (await fetch(B + '/api/nightshift/focus', { method: 'DELETE', headers: headers2 })).json();
+    A.ok(clearThread.ok === true && (!clearThread.focus || clearThread.focus.source !== 'steer'), 'clearing a thread steer immediately returns derived evidence or null');
+    await stop(child);
+    const restartedAgain = await boot(port, env, 0);
+    child = restartedAgain.child;
+    const token3 = await bootToken(B, B);
+    const headers3 = { 'Content-Type': 'application/json', 'X-StarNet-Token': token3, Origin: B };
+    const afterThreadRestart = await (await fetch(B + '/api/nightshift/focus', { headers: headers3 })).json();
+    A.eq(afterThreadRestart.steer, null, 'a cleared thread steer stays cleared through restart');
+    A.ok(!afterThreadRestart.focus || afterThreadRestart.focus.source !== 'steer', 'restart preserves only fresh derived focus/null after thread clear');
+
+    const projectAgain = await (await fetch(B + '/api/nightshift/focus', { method: 'POST', headers: headers3, body: JSON.stringify({ ref: repo, kind: 'project' }) })).json();
+    A.ok(projectAgain.ok === true && projectAgain.focus && projectAgain.focus.ref === repo, 'precondition: the blessed project can be selected before revocation');
+    const revoke = await (await fetch(B + '/api/permissions/revoke', { method: 'POST', headers: headers3, body: JSON.stringify({ key: 'path:' + repo }) })).json();
+    A.ok(revoke.ok === true, 'the project standing grant is revoked through the real authority route');
+    const afterRevoke = await (await fetch(B + '/api/nightshift/focus', { headers: headers3 })).json();
+    A.eq(afterRevoke.steer, null, 'revoking a selected project retires its durable steer');
+    A.ok(!afterRevoke.focus || afterRevoke.focus.ref !== repo, 'focus read never advertises the now-unavailable project');
+    const statusAfterRevoke = await (await fetch(B + '/api/nightshift/status', { headers: headers3 })).json();
+    A.ok(!statusAfterRevoke.focus || statusAfterRevoke.focus.ref !== repo, 'night-shift status never advertises the now-unavailable project');
   } finally {
-    try { child.kill(); } catch (_) {}
+    await stop(child);
     try { mock.server.close(); } catch (_) {}
     await sleep(150);
     try { fs.rmSync(ws, { recursive: true, force: true }); } catch (_) {}
     try { fs.rmSync(repo, { recursive: true, force: true }); } catch (_) {}
+    try { fs.rmSync(unblessed, { recursive: true, force: true }); } catch (_) {}
+    try { fs.rmSync(revoked, { recursive: true, force: true }); } catch (_) {}
   }
   A.report('nightshift-focus.e2e.test');
 })().catch(e => { console.log('FAIL: nightshift-focus.e2e.test threw - ' + (e && e.stack || e)); process.exit(1); });
