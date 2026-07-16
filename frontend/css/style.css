@@ -675,6 +675,23 @@ body.no-scan .crt-scan { display: none; }
 .term-body::-webkit-scrollbar { width: 6px; }
 .term-body::-webkit-scrollbar-thumb { background: var(--ph); }
 
+/* Shared resize affordance: pointer/touch/pen drag plus arrow-key resizing (wired in stationui.js).
+   It sits above both ordinary footer chrome and the molded feature casing, and remains reachable on phones. */
+.term-resize {
+  position: absolute; right: 3px; bottom: 3px; z-index: 10;
+  width: 24px; height: 24px; padding: 0; display: grid; place-items: center;
+  font: 14px/1 VT323, monospace; color: var(--ph); background: rgba(0,0,0,.78);
+  border: 1px solid var(--ph-dim); border-radius: var(--r-sm); cursor: nwse-resize;
+  touch-action: none; user-select: none; opacity: .78;
+  text-shadow: 0 0 6px var(--ph-glow2); box-shadow: 0 0 7px rgba(0,0,0,.7);
+}
+.term-resize:hover, .term-resize:focus-visible {
+  opacity: 1; color: var(--ph-bright); border-color: var(--ph);
+  outline: 2px solid var(--ph-bright); outline-offset: 1px;
+  box-shadow: 0 0 12px var(--ph-glow2);
+}
+.term-resize:active { filter: brightness(.82); }
+
 /* ---- HERO "feature window": the full molded-monitor casing (opt-in) ----
    Reserved for hero windows (the dossier). The casing is real plastic with
    corner screws + a nameplate + control knobs; head+body live inside a

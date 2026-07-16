@@ -12,7 +12,7 @@ const smallLimits = { minWidth: 320, minHeight: 220, maxWidth: 960, maxHeight: 7
 A.eq(clampTerminalSize({ width: 900, height: 640 }, consoleLimits, desktop), { width: 900, height: 640 }, 'in-range console size is unchanged');
 A.eq(clampTerminalSize({ width: 100, height: 100 }, consoleLimits, desktop), { width: 560, height: 360 }, 'desktop console clamps to its usable minimum');
 A.eq(clampTerminalSize({ width: 5000, height: 5000 }, consoleLimits, desktop), { width: 1200, height: 840 }, 'desktop console clamps to its per-window maximum');
-A.eq(clampTerminalSize({ width: 1060, height: 720 }, consoleLimits, phone), { width: 374, height: 828 }, 'phone viewport temporarily wins over desktop minimums');
+A.eq(clampTerminalSize({ width: 1060, height: 720 }, consoleLimits, phone), { width: 374, height: 720 }, 'phone viewport temporarily wins over desktop width minimums');
 A.eq(clampTerminalSize({ width: 1, height: 1 }, smallLimits, phone), { width: 320, height: 220 }, 'small window keeps its smaller usable minimum on phone');
 A.eq(clampTerminalSize({ width: 'bad', height: null }, smallLimits, desktop), { width: 320, height: 220 }, 'malformed persisted size fails closed to usable minimums');
 
@@ -22,7 +22,7 @@ A.ok(/className\s*=\s*'term-resize'|el\('button',\s*'term-resize'/.test(src), 'e
 A.ok(/pointerdown/.test(src) && /pointermove/.test(src) && /pointerup/.test(src), 'resize supports pointer, touch, and pen through pointer events');
 A.ok(/ArrowLeft/.test(src) && /ArrowRight/.test(src) && /ArrowUp/.test(src) && /ArrowDown/.test(src), 'resize affordance supports all keyboard arrow directions');
 A.ok(/aria-label[^\n]+Resize/.test(src), 'resize affordance has an explicit accessible name');
-A.ok(/fitTermInViewport[\s\S]{0,1300}clampTerminalSize/.test(src), 'viewport repair clamps dimensions before position');
+A.ok(/function\s+fitTermInViewport[\s\S]{0,500}resizeTermTo/.test(src) && /function\s+resizeTermTo[\s\S]{0,400}clampTerminalSize/.test(src), 'viewport repair clamps dimensions before position');
 A.ok(/minWidth/.test(src) && /maxWidth/.test(src) && /minHeight/.test(src) && /maxHeight/.test(src), 'per-window min/max dimensions are explicit');
 
 A.report('terminal-resize.test');
