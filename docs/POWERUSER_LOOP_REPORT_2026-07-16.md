@@ -64,3 +64,42 @@ invalid-scheme no-write/no-token restart readback, and valid-unreachable saved/e
 3. Repeat the new adversarial live journeys, including 10 full J2 sequences.
 4. Rebuild/reinstall Tauri and run exact-head installed smoke plus Windows AX checks.
 5. Report fixes, evidence, and residual risks to the user. **Do not merge without user review.**
+
+## Repair outcome
+
+All 16 confirmed concerns were repaired on the isolated `agent/qa-poweruser-root` composition branch.
+The exact final commit is recorded by the installed smoke evidence; nothing in this loop has been
+merged to `feat/harness-backend`.
+
+| IDs | Resolution | Verification |
+| --- | --- | --- |
+| PL-01, PL-11 | Small viewports can scroll to COMMS and the dock; large overlapping windows recover with a visible cascade. | Responsive shell and terminal geometry regressions; physical seeded viewport/window proof. |
+| PL-02, PL-09 | Presence notifications deduplicate across reloads; dismiss buttons include the notification subject. | Reload-count journey, notification rendering assertions, and Windows accessibility inspection. |
+| PL-03 | Reload shows a single connecting state until the bridge is authoritative. | Ten timed reload loops, coherent from pre-authority through settled online state. |
+| PL-04, PL-10, PL-14 | Skill controls have unique names, themes expose selection state, and the installed accessibility tree no longer duplicates titlebar controls. | Skills/appearance/titlebar regressions plus Windows accessibility inspection. |
+| PL-05 | J2 waits for authoritative prior-run teardown before beginning the next held run. | Ten complete J2 sequences (380 assertions) and the full 129-step journey suite. |
+| PL-06 | Non-HTTP(S) MCP URLs are rejected before config or secret persistence; valid unreachable URLs are explicitly saved-but-offline. | HTTP/restart readback and MCP end-to-end tests, including zero-write invalid-scheme proof. |
+| PL-07 | Settings search activates the section containing the selected match and suppresses irrelevant section chrome. | Console search regressions and physical seeded proof. |
+| PL-08 | Rapid CUSTOM-to-WAKE validation requires the Custom endpoint and cannot leak the previous provider model error. | Ten rapid onboarding loops and boot-provider truth regressions. |
+| PL-12, PL-13 | Deliverables controls use the CRT visual language and user-facing copy replaces implementation jargon. | Deliverables UI/store suites and physical seeded review. |
+| PL-15 | The task aggregate is labelled ACTIVE, while each card retains its authoritative state. | Task-board regression and updated full journey assertion. |
+| PL-16 | Escape exits Cinema mode. | Shell keyboard regression and physical seeded proof. |
+
+### Automated composition evidence
+
+- `npm run test:fast`: 341 steps passed.
+- `npm run test:http`: passed, including sidecar 418 coverage and 40 MCP end-to-end assertions.
+- `npm run qa:journeys`: 129/129 passed.
+- Focused suites passed for shell repairs, boot/provider truth, terminal resize, titlebar,
+  Deliverables UI/store, Skills Library, and MCP behavior.
+- Dedicated live stress passed: ten reload-state loops, ten rapid Custom-to-WAKE loops, and ten
+  complete J2 lifecycle sequences.
+
+### Residual limits and decisions
+
+- The updater bundle cannot be cryptographically signed in this workspace because the private signing
+  key is not present. The native executable and installer can still be built and tested locally.
+- Real external provider credentials, OAuth grants, microphone hardware, and native file-picker
+  integrations were not exercised; the seeded/mock and local backend paths were exercised instead.
+- The separate background-supervisor lifecycle proposal remains an explicit product decision and is
+  not part of this defect repair set.
