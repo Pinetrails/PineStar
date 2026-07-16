@@ -184,8 +184,8 @@ const Harness = (() => {
   function hasStoredCredential(provider) {
     const p = normalizeProviderId(provider);
     if (p === 'codex') return DESKTOP ? !!_configuredByProvider.codex : (getProv() === 'codex');
-    if (p === 'ollama') return true;                       // local endpoint — no key by design
-    if (p === 'custom') return !!getBaseUrl(p);            // keyless only when a baseUrl is deliberately set
+    if (p === 'ollama') return false;                      // an endpoint is configuration, never a credential
+    if (p === 'custom' && !getKey(p)) return false;        // a keyless custom endpoint must not manufacture a key row
     if (DESKTOP) return !!(_configuredByProvider[p] || (p === 'openrouter' && _configured));
     if (!!readScoped(LS.key, p)) return true;              // a real key is stored in this browser
     if (DEVMODE && DEV && normalizeProviderId(DEV.prov) === p) return true;  // server-held runtime key for the seeded provider
@@ -340,6 +340,33 @@ const Harness = (() => {
     }
   }
 
+  // Truthful provider state for Settings. Configuration, credential custody, endpoint reachability and catalog
+  // availability are independent facts; callers must never infer one from another. The sidecar performs the
+  // round-trip so desktop keychain credentials stay out of the WebView, while browser BYOK can be supplied over
+  // the same authenticated loopback seam used by /api/run. A failed probe is data, not an exception-shaped lie.
+  async function probeProvider(provider) {
+    const p = normalizeProviderId(provider || getProv());
+    const baseUrl = getBaseUrl(p) || '';
+    const credentialSaved = hasStoredCredential(p);
+    const endpointConfigured = p === 'ollama' || (p === 'custom' && !!baseUrl);
+    const selected = p === getProv();
+    const fallback = { provider: p, credentialSaved, endpointConfigured, reachable: false, catalogAvailable: false, credentialVerified: false, selected, error: 'station unreachable' };
+    if (p === 'custom' && !endpointConfigured) return Object.assign({}, fallback, { error: 'endpoint not configured' });
+    try {
+      const r = await fetch('/api/providers/probe', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider: p, key: getKey(p) || '', baseUrl })
+      });
+      const j = await r.json().catch(() => ({}));
+      return {
+        provider: p, credentialSaved, endpointConfigured,
+        reachable: !!(r.ok && j.reachable), catalogAvailable: !!(j && j.catalogAvailable),
+        credentialVerified: !!(j && j.credentialVerified), selected,
+        error: String((j && j.error) || '')
+      };
+    } catch (_) { return fallback; }
+  }
+
   // PURE (test-locked in harness-internal.test.js): fold a sidecar error-response body into the human tail of
   // the thrown "sidecar HTTP <status> — <detail>" message. JSON envelopes ({error}/{message}, + code when it
   // isn't already in the text) unwrap to their message; anything else passes through. Bounded, never throws.
@@ -363,7 +390,7 @@ const Harness = (() => {
      stream of newline-delimited JSON events — the FROZEN agent.* U.bus events the harness emits.
      Each event is re-emitted on U.bus (for telemetry) and mapped to the caller's callbacks.
      onToken(delta) per text delta · onToolCall/onToolResult per tool step · onUsage per turn. */
-  async function chat({ system, messages, onToken, onUsage, onToolCall, onToolResult, onRunId, onDeliverable, onPermission, onSummon, agentId, isTask, recurring, signal, streamId, recipeId, workbench, placed, stationPlaced, internal, projectRoot }) {
+  async function chat({ system, messages, onToken, onUsage, onToolCall, onToolResult, onRunId, onDeliverable, onPermission, onSummon, agentId, isTask, recurring, signal, streamId, recipeId, workbench, placed, stationPlaced, internal, projectRoot, taskAction }) {
     const model = getModel(), provider = getProv(), key = getKey(provider), reasoningEffort = getReasoningEffort(provider);
     // Codex authenticates by an OAuth token (server-side); the desktop build keeps the key in the
     // sidecar's env (keychain). Neither needs a key sent from here.
@@ -375,6 +402,7 @@ const Harness = (() => {
       const reqBody = { model, provider, reasoningEffort, system, messages, agentId: agentId || 'agent', isTask: !!isTask, recurring: !!recurring };
       if (getBaseUrl(provider)) reqBody.baseUrl = getBaseUrl(provider);
       if (streamId) reqBody.streamId = streamId;   // M-mem.2b: scope this run's memory to the active workstream
+      if (/^(answer|cancel|replace)$/.test(String(taskAction || ''))) reqBody.taskAction = String(taskAction);
       if (recipeId) reqBody.recipeId = String(recipeId).slice(0, 60);   // provenance spine: which recipe launched this run (rides to the durable run row)
       // project-anchored session (Hermes-parity working folder): the sidecar injects the folder context line
       // ONLY when this root is still a standing blessed path grant — an un-blessed root injects nothing.
@@ -656,7 +684,7 @@ const Harness = (() => {
   return {
     isDesktop: () => DESKTOP,   // lets the UI tell a desktop keychain-store failure (token saved locally) from a browser no-op
     getKey, setKey, storeChannelToken, getModel, setModel, getProv, setProv, getBaseUrl, setBaseUrl, getReasoningEffort, setReasoningEffort, normalizeReasoningEffort, init, configured, hasStoredCredential,
-    listModels, priceOf, contextLimitOf, contextState, chat, cancel, haltAll, consent, consentAck, summonAck, notebook,
+    listModels, probeProvider, priceOf, contextLimitOf, contextState, chat, cancel, haltAll, consent, consentAck, summonAck, notebook,
     memoryProposals, memoryTurnin, memoryVeto, memoryReset, memoryRecords, memoryDeclined, memoryRestore, memoryPin, memoryEdit, memoryForget,
     studyProposals,
     threadProposals, threadTurnin,

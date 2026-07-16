@@ -7,7 +7,35 @@
    (task board · UI settings · notifications) persists to localStorage. */
 'use strict';
 
-const StationUI = (() => {
+// Pure geometry seam for floating terminal placement. Kept outside StationUI so its viewport
+// invariants can be exercised without a browser DOM.
+function visibleTerminalRect(rect, viewport) {
+  const vw = Math.max(0, Number(viewport && viewport.width) || 0);
+  const vh = Math.max(0, Number(viewport && viewport.height) || 0);
+  const width = Math.max(0, Number(rect && rect.width) || 0);
+  const height = Math.max(0, Number(rect && rect.height) || 0);
+  const left = Number.isFinite(Number(rect && rect.left)) ? Number(rect.left) : 0;
+  const top = Number.isFinite(Number(rect && rect.top)) ? Number(rect.top) : 0;
+  const padX = Math.min(8, vw / 4);
+  const padY = Math.min(8, vh / 4);
+  const fitsWidth = width <= Math.max(0, vw - padX * 2);
+  const fitsHeight = height <= Math.max(0, vh - padY * 2);
+  // If responsive rules have not settled and the old rect is wider than the viewport, align
+  // its right edge so the close control remains reachable. The settled-size pass then moves
+  // the responsive rect to the normal inset.
+  const minLeft = fitsWidth ? padX : vw - padX - width;
+  const maxLeft = vw - padX - width;
+  const minTop = padY;
+  const maxTop = vh - padY - height;
+  return {
+    left: fitsWidth ? Math.max(minLeft, Math.min(left, maxLeft)) : maxLeft,
+    top: fitsHeight ? Math.max(minTop, Math.min(top, maxTop)) : minTop,
+    width,
+    height
+  };
+}
+
+const StationUI = typeof document === 'undefined' ? {} : (() => {
   const $ = s => document.querySelector(s);
   const esc = s => U.esc(String(s == null ? '' : s));
   const el = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html !== undefined) e.innerHTML = html; return e; };
@@ -31,7 +59,9 @@ const StationUI = (() => {
   let started = false;
 
   /* ---------- persistence (user-owned UI state) ---------- */
-  function defaults() { return { theme: 'amber', flicker: true, sound: true, keepComputerAwake: false, notifyPrefs: notifyDefaults() }; }
+  // themeHue/themeSat drive the CUSTOM phosphor derivation (theme:'custom'); themeGlow (0–150%) is an
+  // independent bloom dial that also tames the hand-tuned presets. 100 = the shipped look, untouched.
+  function defaults() { return { theme: 'amber', themeHue: 35, themeSat: 100, themeGlow: 100, flicker: true, sound: true, keepComputerAwake: false, notifyPrefs: notifyDefaults() }; }
   // P1-8 notification preferences: per-category on/off + a notification sound toggle. Every category defaults ON
   // (no silent regression); each is HONORED at emit time in notify() below (a decorative toggle would be a bug).
   function notifyDefaults() { return { runComplete: true, needsApproval: true, cronDigest: true, sound: true }; }
@@ -64,11 +94,70 @@ const StationUI = (() => {
     elm._flashTimer = setTimeout(() => { if (elm.isConnected) { elm.textContent = ''; elm.className = 'msg'; } }, 1600);
   }
 
+  /* ---------- CUSTOM PHOSPHOR derivation ---------- */
+  // One hue + saturation → the full themed token set, applied as inline vars on <body> (inline
+  // beats the body.theme-* class, and the composite --bezel/--well recipes declared on body
+  // resolve their var(--ph) against these — the theming trap stays respected). Derivation math
+  // is calibrated against the shipped amber reference (#ffaa33 = hsl(35,100%,60%)), so a custom
+  // hue 35 / sat 100 lands visually beside the hand-tuned preset. Semantic status colours
+  // (--ok / --bad / --link-down / --warn) are NOT derived — they stay constant by law.
+  const THEME_VARS = ['--ph', '--ph-bright', '--ph-dim', '--ph-faint', '--ink', '--ph-glow', '--ph-glow2',
+    '--bg', '--panel', '--panel2', '--text', '--gold', '--ph-rgb', '--ph-bright-rgb', '--gold-rgb', '--cam-grade'];
+  function hslToRgb(h, s, l) {
+    s /= 100; l /= 100;
+    const k = n => (n + h / 30) % 12, a = s * Math.min(l, 1 - l);
+    const f = n => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+    return [Math.round(f(0) * 255), Math.round(f(8) * 255), Math.round(f(4) * 255)];
+  }
+  const rgbHex = a => '#' + a.map(v => v.toString(16).padStart(2, '0')).join('');
+  const hexRgb = c => [parseInt(c.slice(1, 3), 16), parseInt(c.slice(3, 5), 16), parseInt(c.slice(5, 7), 16)];
+  const clampN = (v, lo, hi, dflt) => { v = Number(v); return isFinite(v) ? Math.max(lo, Math.min(hi, v)) : dflt; };
+  function deriveCustomTheme(hue, sat, glowPct) {
+    const h = ((clampN(hue, 0, 359, 35) % 360) + 360) % 360;
+    const s = clampN(sat, 0, 100, 100);
+    const g = clampN(glowPct, 0, 150, 100) / 100;
+    const at = (l, so) => hslToRgb(h, so == null ? s : so, l);
+    const ph = at(60), bright = at(82), gold = hslToRgb((h + 42) % 360, s, 64);
+    return {
+      '--ph': rgbHex(ph), '--ph-bright': rgbHex(bright),
+      '--ph-dim': rgbHex(at(42, s * 0.75)), '--ph-faint': rgbHex(at(7, s * 0.76)),
+      '--ink': rgbHex(at(5, s * 0.85)),
+      '--ph-glow': 'rgba(' + ph.join(', ') + ', ' + (0.45 * g).toFixed(3) + ')',
+      '--ph-glow2': 'rgba(' + ph.join(', ') + ', ' + (0.14 * g).toFixed(3) + ')',
+      '--bg': rgbHex(at(1, s * 0.5)),
+      '--panel': 'rgba(' + at(3, s * 0.7).join(', ') + ', 0.93)', '--panel2': rgbHex(at(6, s * 0.65)),
+      '--text': rgbHex(at(75, s * 0.74)), '--gold': rgbHex(gold),
+      '--ph-rgb': ph.join(', '), '--ph-bright-rgb': bright.join(', '), '--gold-rgb': gold.join(', '),
+      '--cam-grade': 'saturate(0.72) contrast(1.08) brightness(0.88)'
+    };
+  }
+  // per-preset base glow alphas (from the hand-tuned body.theme-* blocks) so the GLOW dial can
+  // scale a preset's bloom without re-deriving its locked palette.
+  const PRESET_GLOW = { amber: [0.5, 0.14], white: [0.35, 0.10] };
+  // per-preset hue/sat so clicking a preset snaps the CUSTOM sliders to a matching start point.
+  const PRESET_HS = { amber: [35, 100], green: [136, 100], blue: [198, 100], purple: [270, 100], red: [3, 100], white: [120, 8] };
+
   /* ---------- settings → DOM ---------- */
   function applySettings() {
     const s = store.settings;
-    document.body.classList.remove('theme-amber', 'theme-green', 'theme-blue', 'theme-purple', 'theme-red', 'theme-white');
-    document.body.classList.add('theme-' + s.theme);
+    document.body.classList.remove('theme-amber', 'theme-green', 'theme-blue', 'theme-purple', 'theme-red', 'theme-white', 'theme-custom');
+    THEME_VARS.forEach(v => document.body.style.removeProperty(v));
+    if (s.theme === 'custom') {
+      document.body.classList.add('theme-custom');   // vars come from the inline derivation below (falls back to :root amber if JS ever misses)
+      const vars = deriveCustomTheme(s.themeHue, s.themeSat, s.themeGlow);
+      for (const k in vars) document.body.style.setProperty(k, vars[k]);
+    } else {
+      document.body.classList.add('theme-' + s.theme);
+      // GLOW dial on a preset: scale only the two bloom vars, never the locked palette.
+      const gm = clampN(s.themeGlow, 0, 150, 100) / 100;
+      const preset = THEMES.find(([name]) => name === s.theme);
+      if (preset && Math.abs(gm - 1) > 0.001) {
+        const rgb = hexRgb(preset[1]).join(', ');
+        const base = PRESET_GLOW[s.theme] || [0.45, 0.14];
+        document.body.style.setProperty('--ph-glow', 'rgba(' + rgb + ', ' + (base[0] * gm).toFixed(3) + ')');
+        document.body.style.setProperty('--ph-glow2', 'rgba(' + rgb + ', ' + (base[1] * gm).toFixed(3) + ')');
+      }
+    }
     // CRT scanlines are part of the fixed shipped look — no user toggle. `no-scan` stays an
     // internal flag (set by scripts/verify-stars2.mjs to flatten the feed for star-pixel
     // checks) and is intentionally never driven by settings here.
@@ -156,16 +245,28 @@ const StationUI = (() => {
   // on the last section they were on — across a full reload, not just this session. Saved back on drag-end / retab.
   try { Object.assign(termPos, store.termPos || {}); Object.assign(consoleSection, store.consoleSection || {}); } catch (_) {}
   function saveWindowState() { try { store.termPos = termPos; store.consoleSection = consoleSection; save(); } catch (_) {} }
+  function terminalViewport() { return { width: window.innerWidth, height: window.innerHeight }; }
+  function rememberTermPosition(key, left, top) {
+    if (!key) return;
+    const prior = termPos[key];
+    if (prior && prior.left === left && prior.top === top) return;
+    termPos[key] = { left, top };
+    saveWindowState();
+  }
   window.addEventListener('mousemove', ev => {
     if (termDrag) {
       termDrag.moved = true;   // real drag movement — a dblclick-to-minimize must not fire after a drag
-      const w = termDrag.w, ww = termDrag.ww;
-      // clamp so the title bar can never be dragged off-screen (lost window): keep >=64px of the panel
-      // horizontally on each edge and the header row always reachable. (ww/wh cached at grab — no layout read.)
-      const nl = Math.max(64 - ww, Math.min(ev.clientX - termDrag.dx, window.innerWidth - 64));
-      const nt = Math.max(0, Math.min(ev.clientY - termDrag.dy, window.innerHeight - 36));
-      w.style.left = nl + 'px';
-      w.style.top = nt + 'px';
+      const w = termDrag.w;
+      // Shared clamp keeps the titlebar and its right-side close control reachable.
+      // Its cached size keeps this mousemove path free of layout reads.
+      const next = visibleTerminalRect({
+        left: ev.clientX - termDrag.dx,
+        top: ev.clientY - termDrag.dy,
+        width: termDrag.ww,
+        height: termDrag.wh
+      }, terminalViewport());
+      w.style.left = next.left + 'px';
+      w.style.top = next.top + 'px';
       w.style.transform = 'none';
     }
   });
@@ -173,7 +274,7 @@ const StationUI = (() => {
     // remember where the Commander parked this panel so it re-opens there, not back at dead-center
     if (termDrag) {
       const w = termDrag.w, k = Object.keys(open).find(key => open[key] === w);
-      if (k && termDrag.moved) { termPos[k] = { left: w.offsetLeft, top: w.offsetTop }; saveWindowState(); }
+      if (k && termDrag.moved) fitTermInViewport(w, k, true);
       w._lastDragMoved = !!termDrag.moved;   // let dblclick-to-minimize know if this grab was actually a drag
     }
     termDrag = null;
@@ -184,7 +285,8 @@ const StationUI = (() => {
   let resizeClampTimer = 0;
   window.addEventListener('resize', () => {
     clearTimeout(resizeClampTimer);
-    resizeClampTimer = setTimeout(() => { Object.keys(open).forEach(k => { if (!minimized[k]) fitTermInViewport(open[k]); }); }, 120);
+    requestAnimationFrame(() => { Object.keys(open).forEach(k => { if (!minimized[k]) fitTermInViewport(open[k], k, true); }); });
+    resizeClampTimer = setTimeout(() => { Object.keys(open).forEach(k => { if (!minimized[k]) fitTermInViewport(open[k], k, true); }); }, 120);
   });
 
   // Land a freshly-opened window in a tidy left-anchored column, CASCADING each so stacked panels
@@ -192,7 +294,12 @@ const StationUI = (() => {
   // A remembered drag position always wins. Clamped to the viewport so nothing opens off-screen.
   function placeTerm(w, key) {
     const p = termPos[key];
-    if (p) { w.style.left = p.left + 'px'; w.style.top = p.top + 'px'; w.style.transform = 'none'; return; }
+    if (p) {
+      w.style.left = p.left + 'px'; w.style.top = p.top + 'px'; w.style.transform = 'none';
+      w.classList.add('term-moved');
+      requestAnimationFrame(() => fitTermInViewport(w, key, true));
+      return;
+    }
     const prior = Math.max(0, Object.keys(open).filter(k => k !== key && !minimized[k]).length);   // how many OTHER visible windows are already open (minimized ones don't crowd the cascade)
     if (prior === 0) {
       // SINGLE window = the focal point: let CSS center it (left/top:50% + translate(-50%,-50%) with a
@@ -207,20 +314,24 @@ const StationUI = (() => {
     const baseL = 92, baseT = 80, step = 30, span = 6;
     let left = baseL + (prior % span) * step;
     let top  = baseT + (prior % span) * step;
-    left = Math.max(8, Math.min(left, window.innerWidth  - wpx - 8));
-    top  = Math.max(8, Math.min(top,  window.innerHeight - hpx - 8));
-    w.style.left = left + 'px'; w.style.top = top + 'px'; w.style.transform = 'none';
+    const placed = visibleTerminalRect({ left, top, width: wpx, height: hpx }, terminalViewport());
+    w.style.left = placed.left + 'px'; w.style.top = placed.top + 'px'; w.style.transform = 'none';
   }
-  function fitTermInViewport(w) {
+  function fitTermInViewport(w, key, persist) {
     if (!w) return;
-    // a console window is CSS-centered + fixed-size; pinning it here would knock it off its centering transform.
-    if (w.classList.contains('console') && !w.classList.contains('term-moved')) return;
-    const pad = 8;
-    const maxLeft = Math.max(pad, window.innerWidth - w.offsetWidth - pad);
-    const maxTop = Math.max(pad, window.innerHeight - w.offsetHeight - pad);
-    w.style.left = Math.max(pad, Math.min(w.offsetLeft, maxLeft)) + 'px';
-    w.style.top = Math.max(pad, Math.min(w.offsetTop, maxTop)) + 'px';
+    const resolvedKey = key || Object.keys(open).find(k => open[k] === w);
+    // A never-moved single window stays safely CSS-centered; explicit coordinates are repaired.
+    if (!w.classList.contains('term-moved') && !termPos[resolvedKey] && w.style.transform !== 'none') return;
+    const repaired = visibleTerminalRect({
+      left: w.offsetLeft,
+      top: w.offsetTop,
+      width: w.offsetWidth,
+      height: w.offsetHeight
+    }, terminalViewport());
+    w.style.left = repaired.left + 'px';
+    w.style.top = repaired.top + 'px';
     w.style.transform = 'none';
+    if (persist !== false) rememberTermPosition(resolvedKey, repaired.left, repaired.top);
   }
 
   // how many windows are actually VISIBLE (open but not minimized to the strip). Drives the scrim.
@@ -571,7 +682,7 @@ const StationUI = (() => {
         void body.offsetWidth;   // restart the animation if it was mid-flight
         body.classList.add('swap-in');
       }
-      if (opts && opts.fitViewport) requestAnimationFrame(() => fitTermInViewport(w));
+      requestAnimationFrame(() => fitTermInViewport(w, key, true));
     };
     w._render();
     // a11y: land focus on the dialog itself (role=dialog, tabIndex -1) — NOT the first control, which was the
@@ -769,6 +880,11 @@ const StationUI = (() => {
   }
 
   /* ============== CREW MANIFEST (left panel) ============== */
+  function duplicateAgentName(a) {
+    if (!a || !a.name) return '';
+    const key = String(a.name).trim().toUpperCase();
+    return present.filter(x => x && String(x.name || '').trim().toUpperCase() === key).length > 1 ? String(a.id || '') : '';
+  }
   function crewRender() {
     wireCrewLive();   // ensure the per-agent run-state listener is live
     const ul = $('#crew'); if (!ul) return;
@@ -783,6 +899,7 @@ const StationUI = (() => {
       '<span class="dot on"></span>' +
       '<div class="crew-main">' +
       '<div class="crew-name" style="color:' + esc(a.color) + '">' + esc(a.name) +
+      (duplicateAgentName(a) ? '<span class="crew-id">[' + esc(duplicateAgentName(a)) + ']</span>' : '') +
       '<span class="crew-room">' + (a.stats && a.stats.level ? 'Lv ' + a.stats.level : '') + '</span></div>' +
       '<div class="crew-status" id="cs-' + esc(a.id) + '">…</div>' +
       // in-flight work bar: hidden until the row is .working (crewTick toggles it from the real run state).
@@ -922,6 +1039,7 @@ const StationUI = (() => {
             '<button class="ag-name-ok" id="ag-rename-save" title="save name" aria-label="Save name">✓</button>' +
             '<button class="ag-name-x" id="ag-rename-cancel" title="cancel" aria-label="Cancel rename">✕</button></div>'
         : '<div class="ag-name" style="color:' + a.color + '">' + esc(a.name) +
+            (duplicateAgentName(a) ? '<span class="ag-name-id">[' + esc(duplicateAgentName(a)) + ']</span>' : '') +
             '<button class="ag-rename" id="ag-rename-btn" title="rename this agent" aria-label="Rename agent">✎</button>' +
             (lv ? '<span class="ag-lv">Lv ' + lv + '</span>' : '') + '</div>') +
       '<div class="ag-role-line"><span class="ag-sdot ' + dotCls + '"></span>' + statusText + '</div>' +
@@ -2325,6 +2443,29 @@ const StationUI = (() => {
     if (keychainModeKnown === false) return 'stored locally in this browser';
     return 'stored on this machine';
   }
+  const providerHealth = Object.create(null);   // last no-generation sidecar probe, keyed by provider id
+  const providerProbePending = Object.create(null);
+  function invalidateProviderHealth(provider) { delete providerHealth[provider]; delete providerProbePending[provider]; }
+  function refreshProviderHealth(provider) {
+    const h = H();
+    if (!h || !h.probeProvider || providerProbePending[provider]) return;
+    providerProbePending[provider] = true;
+    Promise.resolve(h.probeProvider(provider)).then(result => { providerHealth[provider] = result || null; })
+      .catch(() => { providerHealth[provider] = null; })
+      .finally(() => {
+        delete providerProbePending[provider];
+        // Repaint only while Settings is still open. The cache prevents this repaint from starting a probe loop.
+        if (open.settings) rerender('settings');
+      });
+  }
+  function queueProviderHealthRefresh() {
+    const h = H(); if (!h) return;
+    for (const p of PROVIDERS) {
+      const credentialSaved = !!(h.hasStoredCredential && h.hasStoredCredential(p.id));
+      const endpointConfigured = p.id === 'ollama' || (p.id === 'custom' && !!(h.getBaseUrl && h.getBaseUrl(p.id)));
+      if ((credentialSaved || endpointConfigured || p.id === activeProv()) && providerHealth[p.id] === undefined) refreshProviderHealth(p.id);
+    }
+  }
   function connectedKeys() {
     const h = H(); if (!h) return [];
     const out = [];
@@ -2372,27 +2513,38 @@ const StationUI = (() => {
       // the codex sign-in can be KNOWN-dead (sidecar recorded a consumed/invalid refresh token) — that must
       // never render as SIGNED IN. The row still exists (ks has the expired entry) so RE-SIGN-IN is reachable.
       const codexDead = p.id === 'codex' && codexExpired();
-      const connected = p.live && ks.length > 0 && !codexDead;
-      // ACTIVE means this transport can actually run right now: selected provider AND a model is set.
-      const runnable = connected && p.id === active && !!ks[0].model;
-      const cls = codexDead ? 'avail expired' : (connected ? 'conn' : (p.live ? 'avail' : 'soon'));
+      const h = H();
+      const credentialSaved = p.id === 'codex' ? (ks.length > 0 && !codexDead) : !!(h && h.hasStoredCredential && h.hasStoredCredential(p.id));
+      const endpointConfigured = p.id === 'ollama' || (p.id === 'custom' && !!(h && h.getBaseUrl && h.getBaseUrl(p.id)));
+      const configured = credentialSaved || endpointConfigured;
+      const health = providerHealth[p.id];
+      // ACTIVE is reserved for a selected model whose endpoint and credential (when applicable) were proven by
+      // the no-generation probe. Selection plus a model id is not evidence that a run can leave the station.
+      const runnable = !!(health && health.reachable && health.credentialVerified && p.id === active && h && h.getModel && h.getModel());
+      const cls = codexDead ? 'avail expired' : (configured ? 'conn' : (p.live ? 'avail' : 'soon'));
       // E5: `connected` is KEY PRESENCE, not a verified live connection — a saved key can be revoked,
       // rate-limited, or wrong, and we haven't round-tripped it. Label it "KEY SAVED" (or SIGNED IN for
       // the codex OAuth path, which IS real auth) rather than the over-claiming "CONNECTED". The
       // ACTIVE/runnable badge logic below is unchanged — that already gates on selected provider + model.
       const connLabel = p.id === 'codex' ? '● SIGNED IN' : '● KEY SAVED';
-      const stat = !p.live ? '○ COMING SOON' : codexDead ? '⚠ SIGN-IN EXPIRED — RECONNECT' : connected ? connLabel : (p.id === 'codex' ? '○ NOT SIGNED IN' : (p.id === 'ollama' ? '○ LOCAL' : '○ NO KEY'));
+      const keyless = p.id === 'ollama' || (p.id === 'custom' && endpointConfigured && !credentialSaved);
+      const localStat = !endpointConfigured ? '○ NO ENDPOINT' : health === undefined ? '◐ LOCAL ENDPOINT CONFIGURED · CHECKING…'
+        : health && health.reachable ? '● LOCAL ENDPOINT CONFIGURED · REACHABLE' : '○ LOCAL ENDPOINT CONFIGURED · OFFLINE';
+      const keyStat = health === undefined ? connLabel + ' · CHECKING…'
+        : health && health.credentialVerified ? connLabel + ' · VERIFIED' : health && health.reachable ? connLabel + ' · NOT VERIFIED' : connLabel + ' · CHECK FAILED';
+      const stat = !p.live ? '○ COMING SOON' : codexDead ? '⚠ SIGN-IN EXPIRED — RECONNECT'
+        : keyless ? localStat : credentialSaved ? keyStat : (p.id === 'codex' ? '○ NOT SIGNED IN' : (p.id === 'custom' ? '○ NO ENDPOINT' : '○ NO KEY'));
       const n = ks.length;
       // NO-KEY cards that accept a key get an inline, collapsible paste-and-save row so the user never has to hunt
       // for where keys live. It reuses the SAME save path (Harness.setKey) as the key list below — no duplicate logic.
-      const wantsInline = p.live && !connected && providerAcceptsKey(p.id);
+      const wantsInline = p.live && !credentialSaved && providerAcceptsKey(p.id);
       return '<div class="prov-card ' + cls + '" data-provider="' + esc(p.id) + '" role="button" tabindex="0" style="--ci:' + pi + '">' +
         '<span class="conn-dot"></span>' +
         '<div class="prov-main">' +
         '<div class="prov-name">' + esc(p.name) + (runnable ? '<span class="prov-badge">ACTIVE</span>' : '') + '</div>' +
         '<div class="prov-ep">' + esc(p.endpoint) + ' · ' + esc(p.blurb) + '</div>' +
         '</div>' +
-        '<div class="prov-stat">' + stat + (connected ? '<i>' + n + (n === 1 ? ' key' : ' keys') + '</i>' : '') +
+        '<div class="prov-stat">' + stat + (credentialSaved && p.id !== 'codex' ? '<i>' + n + (n === 1 ? ' key' : ' keys') + '</i>' : '') +
           (wantsInline ? '<button class="bb sm prov-addkey" data-act="prov-add-toggle" data-provider="' + esc(p.id) + '" aria-label="Add a ' + esc(p.name) + ' key" title="paste a ' + esc(p.name) + ' key without leaving this card">＋ ADD KEY</button>' : '') +
         '</div>' +
         (wantsInline
@@ -2422,8 +2574,13 @@ const StationUI = (() => {
     return keys.map((k, i) => {
 */
     const rows = keys.map((k, i) => {
-      // ACTIVE only when the key can actually run: selected provider AND a model is set (never overstate runnability).
-      const runnable = k.provider === active && !!k.model;
+      // The credential row follows the same truth contract as the provider card above. Selection is useful context,
+      // but ACTIVE is reserved for a selected model whose endpoint/credential probe proved it can run.
+      const health = providerHealth[k.provider];
+      const selected = k.provider === active && !!k.model;
+      const runnable = !!(selected && health && health.reachable && health.credentialVerified);
+      const runState = runnable ? '<span class="key-stat on">ACTIVE</span>'
+        : selected ? '<span class="key-stat">SELECTED</span>' : '<span class="key-stat">idle</span>';
       // Codex (OAuth) has no API key to mask/edit/remove — render it honestly as a sign-in connection.
       // The row always carries its OWN actions (⏼ RE-SIGN-IN / ✕ DISCONNECT): the 2026-07-08 escape was a
       // dead sign-in still labelled SIGNED IN with zero recovery actions on this exact row.
@@ -2432,7 +2589,7 @@ const StationUI = (() => {
         const meta = dead
           ? '<span class="key-stat bad">⚠ SIGN-IN EXPIRED — ' + esc(codexExpiredReason() || 'the stored sign-in no longer works; reconnect to run again') + '</span>'
           : 'model <b>' + esc(k.model || '—') + '</b> · ' +
-            (runnable ? '<span class="key-stat on">ACTIVE</span>' : '<span class="key-stat">idle</span>') +
+            runState +
             ' · <span class="key-stat">no API key needed</span>';
         return '<div class="key-row' + (dead ? ' expired' : '') + '">' +
           '<span class="conn-dot"></span>' +
@@ -2462,7 +2619,7 @@ const StationUI = (() => {
           '<div class="key-top"><span class="key-prov">' + esc(provName(k.provider)) + '</span>' +
           '<code class="key-mask" title="local OpenAI-compatible endpoint">Local endpoint</code></div>' +
           '<div class="key-meta">model <b>' + esc(k.model || '—') + '</b> · ' +
-          (runnable ? '<span class="key-stat on">ACTIVE</span>' : '<span class="key-stat">idle</span>') +
+          runState +
           ' · <span class="key-stat">no API key needed</span></div>' +
           '</div></div>';
       }
@@ -2472,7 +2629,7 @@ const StationUI = (() => {
         '<div class="key-top"><span class="key-prov">' + esc(provName(k.provider)) + '</span>' +
         '<code class="key-mask" title="shown masked when a key exists — the full key is never displayed">' + esc(k.key ? maskKey(k.key) : (k.baseUrl || 'keyless endpoint')) + '</code></div>' +
         '<div class="key-meta">model <b>' + esc(k.model || '—') + '</b> · ' +
-        (runnable ? '<span class="key-stat on">ACTIVE</span>' : '<span class="key-stat">idle</span>') + '</div>' +
+        runState + '</div>' +
         '</div>' +
         '<div class="key-acts">' +
         '<button class="bb sm" data-act="edit" data-i="' + i + '">✎ UPDATE</button>' +
@@ -2544,6 +2701,7 @@ const StationUI = (() => {
           if (!v) { sfx('bad'); return; }
           const provider = b.dataset.provider || activeProv();
           if (h.setKey) h.setKey(v, provider);
+          invalidateProviderHealth(provider);
           notify('✓ connected ' + provName(provider) + ' API key — ' + keyStoreClause(), 'good');
           if (typeof ModelDock !== 'undefined' && ModelDock.reflect) ModelDock.reflect();   // clear the dock's no-key warning the instant a key lands
           if (typeof KeyCTA !== 'undefined' && KeyCTA.refresh) KeyCTA.refresh();             // …and the world's keyless-brain banner
@@ -2560,12 +2718,13 @@ const StationUI = (() => {
           const v = inp ? inp.value.trim() : '';
           if (!v) { sfx('bad'); return; }
           if (h.setKey) h.setKey(v, row.provider);
+          invalidateProviderHealth(row.provider);
           notify('✓ updated ' + provName(row.provider) + ' API key — ' + keyStoreClause(), 'good');
           if (typeof ModelDock !== 'undefined' && ModelDock.reflect) ModelDock.reflect();   // keep the dock's no-key warning honest after an edit
           if (typeof KeyCTA !== 'undefined' && KeyCTA.refresh) KeyCTA.refresh();
           rerender('settings');
         } else if (act === 'rm') {
-          if (b.dataset.armed) { if (h.setKey) h.setKey('', row.provider); notify('removed ' + provName(row.provider) + ' key — paste a new one here to reconnect', 'warn'); if (typeof ModelDock !== 'undefined' && ModelDock.reflect) ModelDock.reflect(); if (typeof KeyCTA !== 'undefined' && KeyCTA.refresh) KeyCTA.refresh(); sfx('bad'); rerender('settings'); return; }
+          if (b.dataset.armed) { if (h.setKey) h.setKey('', row.provider); invalidateProviderHealth(row.provider); notify('removed ' + provName(row.provider) + ' key — paste a new one here to reconnect', 'warn'); if (typeof ModelDock !== 'undefined' && ModelDock.reflect) ModelDock.reflect(); if (typeof KeyCTA !== 'undefined' && KeyCTA.refresh) KeyCTA.refresh(); sfx('bad'); rerender('settings'); return; }
           // Arm: make the destructive state impossible to miss — filled --bad button + pulse, red hairline on the row,
           // and an inline "click again to confirm" hint. Disarms after 5s, restoring the calm state.
           const rowEl = b.closest('.key-row');
@@ -2597,6 +2756,7 @@ const StationUI = (() => {
       if (!v) { sfx('bad'); if (inp) inp.focus(); return; }
       if (!h || !h.setKey) { sfx('bad'); return; }
       h.setKey(v, provider);
+      invalidateProviderHealth(provider);
       notify('✓ connected ' + provName(provider) + ' API key — ' + keyStoreClause(), 'good');
       if (typeof ModelDock !== 'undefined' && ModelDock.reflect) ModelDock.reflect();
       if (typeof KeyCTA !== 'undefined' && KeyCTA.refresh) KeyCTA.refresh();
@@ -3098,7 +3258,9 @@ const StationUI = (() => {
     // gather the browser-owned slices the sidecar can't see (localStorage).
     const browserSections = () => {
       const out = { settings: {
-        theme: store.settings.theme, flicker: store.settings.flicker,
+        theme: store.settings.theme, themeHue: store.settings.themeHue,
+        themeSat: store.settings.themeSat, themeGlow: store.settings.themeGlow,
+        flicker: store.settings.flicker,
         sound: store.settings.sound, keepComputerAwake: store.settings.keepComputerAwake
       }, notifyPrefs: Object.assign({}, store.settings.notifyPrefs || notifyDefaults()) };
       try { if (typeof AutonomyStore !== 'undefined' && AutonomyStore.exportState) out.autonomy = AutonomyStore.exportState(); } catch (_) {}
@@ -3308,10 +3470,19 @@ const StationUI = (() => {
         '<div class="mc-hint">A pin applies to the next agent you summon of that tier. Empty = follow the model dock. This never overrides a model you set on a specific agent.</div>' +
       '</div>' +
       '<div id="tm-msg" class="msg"></div>';
+    const customSw = deriveCustomTheme(s.themeHue, s.themeSat, 100)['--ph'];   // swatch tint for the CUSTOM chip
     const secAppearance =
       '<h4 class="ms-h">PHOSPHOR THEME</h4><div class="set-themes">' +
       THEMES.map(([t, c]) => '<button class="set-theme ' + (s.theme === t ? 'sel' : '') + '" data-t="' + t + '" style="--sw:' + c + '">' + t.toUpperCase() + '</button>').join('') +
+      '<button class="set-theme ' + (s.theme === 'custom' ? 'sel' : '') + '" data-t="custom" id="set-theme-custom" style="--sw:' + customSw + '">CUSTOM</button>' +
       '</div>' +
+      // CUSTOM PHOSPHOR — hue + saturation derive a full palette live (moving either switches to CUSTOM);
+      // GLOW is independent and scales the bloom on EVERY theme, presets included. All instant-save.
+      '<h4 class="ms-h">CUSTOM PHOSPHOR <span class="dim">— dial in any colour</span></h4>' +
+      '<p class="set-about">Drag <b>HUE</b> or <b>SATURATION</b> to derive your own phosphor — the whole station recolours live. <b>GLOW</b> tames or boosts the CRT bloom on any theme, including the presets. 100% is the shipped look.</p>' +
+      '<label class="set-slider"><span class="set-slider-name">HUE</span><input type="range" id="set-hue" class="set-hue-track" min="0" max="359" step="1" value="' + clampN(s.themeHue, 0, 359, 35) + '"><span class="set-slider-val" id="set-hue-val">' + clampN(s.themeHue, 0, 359, 35) + '°</span></label>' +
+      '<label class="set-slider"><span class="set-slider-name">SATURATION</span><input type="range" id="set-sat" min="0" max="100" step="1" value="' + clampN(s.themeSat, 0, 100, 100) + '"><span class="set-slider-val" id="set-sat-val">' + clampN(s.themeSat, 0, 100, 100) + '%</span></label>' +
+      '<label class="set-slider"><span class="set-slider-name">GLOW</span><input type="range" id="set-glow" min="0" max="150" step="5" value="' + clampN(s.themeGlow, 0, 150, 100) + '"><span class="set-slider-val" id="set-glow-val">' + clampN(s.themeGlow, 0, 150, 100) + '%</span></label>' +
       '<h4 class="ms-h">DISPLAY</h4>' +
       '<label class="set-row"><input type="checkbox" id="set-flicker" ' + (s.flicker ? 'checked' : '') + '> SCREEN FLICKER</label>' +
       // TERMINAL AUDIO is a sound control, not a display one — its own header (it also gates notification chimes).
@@ -3393,6 +3564,7 @@ const StationUI = (() => {
 
     wireProviderActions(host);
     wireKeyActions(host);
+    queueProviderHealthRefresh();
     wireCredits(host);
     wireBudget(host);
     wireFallbackChain(host);
@@ -3403,11 +3575,35 @@ const StationUI = (() => {
     wireDiagnostics(host);
     const appMsg = () => host.querySelector('#appearance-msg');
     // switch theme in place — applySettings repaints via the body class; do NOT rerender (it would wipe an open key editor).
+    const hueIn = host.querySelector('#set-hue'), satIn = host.querySelector('#set-sat'), glowIn = host.querySelector('#set-glow');
+    const sliderVal = (id, txt) => { const e = host.querySelector(id); if (e) e.textContent = txt; };
+    const syncCustomChip = () => { const c = host.querySelector('#set-theme-custom'); if (c) c.style.setProperty('--sw', deriveCustomTheme(s.themeHue, s.themeSat, 100)['--ph']); };
     host.querySelectorAll('[data-t]').forEach(b => b.addEventListener('click', () => {
-      s.theme = b.dataset.t; applySettings(); save(); sfx('click');
+      s.theme = b.dataset.t;
+      // a preset click snaps the CUSTOM hue/sat sliders to a matching start point (GLOW is an
+      // independent display dial and survives theme switches on purpose).
+      const hs = PRESET_HS[s.theme];
+      if (hs) {
+        s.themeHue = hs[0]; s.themeSat = hs[1];
+        if (hueIn) hueIn.value = hs[0]; if (satIn) satIn.value = hs[1];
+        sliderVal('#set-hue-val', hs[0] + '°'); sliderVal('#set-sat-val', hs[1] + '%');
+        syncCustomChip();
+      }
+      applySettings(); save(); sfx('click');
       host.querySelectorAll('[data-t]').forEach(x => x.classList.toggle('sel', x === b));
       flashSaved(appMsg());
     }));
+    // CUSTOM sliders — hue/sat derive live (and switch the theme to CUSTOM); glow applies to any theme.
+    // 'input' repaints every drag tick; 'change' persists + flashes once on release.
+    const selCustom = () => host.querySelectorAll('[data-t]').forEach(x => x.classList.toggle('sel', x.dataset.t === 'custom'));
+    const wireSlider = (input, apply) => {
+      if (!input) return;
+      input.addEventListener('input', ev => { apply(ev.target.value); applySettings(); });
+      input.addEventListener('change', () => { save(); sfx('click'); flashSaved(appMsg()); });
+    };
+    wireSlider(hueIn, v => { s.theme = 'custom'; s.themeHue = clampN(v, 0, 359, 35); sliderVal('#set-hue-val', s.themeHue + '°'); selCustom(); syncCustomChip(); });
+    wireSlider(satIn, v => { s.theme = 'custom'; s.themeSat = clampN(v, 0, 100, 100); sliderVal('#set-sat-val', s.themeSat + '%'); selCustom(); syncCustomChip(); });
+    wireSlider(glowIn, v => { s.themeGlow = clampN(v, 0, 150, 100); sliderVal('#set-glow-val', s.themeGlow + '%'); });
     const bind = (id, key) => host.querySelector(id).addEventListener('change', ev => { s[key] = ev.target.checked; applySettings(); save(); flashSaved(appMsg()); });
     bind('#set-flicker', 'flicker'); bind('#set-sound', 'sound');
     const awakeToggle = host.querySelector('#set-awake');
@@ -4170,7 +4366,7 @@ const StationUI = (() => {
           '<div class="set-save">' +
             '<button class="bb sm" id="' + c.pre + '-connect">⏼ CONNECT</button> ' +
             '<button class="bb sm danger" id="' + c.pre + '-disconnect" style="display:none">⏏ DISCONNECT</button> ' +
-            '<button class="bb xs danger" id="' + c.pre + '-forget" style="display:none" title="permanently deletes the saved token from this machine (record + OS keychain) — you’d have to set it up again">⌫ FORGET</button>' +
+            '<button class="bb xs danger" id="' + c.pre + '-forget" style="display:none" title="' + (c.id === 'signal' ? 'removes the saved bridge URL and registered number from this machine' : 'permanently deletes the saved token from this machine (record + OS keychain) — you’d have to set it up again') + '">' + (c.id === 'signal' ? '✕ REMOVE CONFIGURATION' : '⌫ FORGET') + '</button>' +
           '</div>' +
           '<div id="' + c.pre + '-msg" class="msg"></div>' +
         '</div>';
@@ -4238,7 +4434,7 @@ const StationUI = (() => {
         cBtn.textContent = inFlight ? '◐ CONNECTING…' : (configured && !conn ? '⏵ RESUME' : '⏼ CONNECT');
       }
       if (dBtn) { dBtn.style.display = (conn || configured) ? '' : 'none'; if (!(conn || configured)) disarm(c.pre + '-disconnect', dBtn, '⏏ DISCONNECT'); }
-      if (fBtn) { fBtn.style.display = configured ? '' : 'none'; if (!configured) disarm(c.pre + '-forget', fBtn, '⌫ FORGET'); }
+      if (fBtn) { fBtn.style.display = configured ? '' : 'none'; if (!configured) disarm(c.pre + '-forget', fBtn, c.id === 'signal' ? '✕ REMOVE CONFIGURATION' : '⌫ FORGET'); }
 
       // saved-but-offline: swap the password placeholder to a non-echoing hint (never render the secret).
       body.querySelectorAll('#ch-card-' + c.id + ' input[type=password]').forEach(inp => {
@@ -4404,8 +4600,25 @@ const StationUI = (() => {
       const fBtn = body.querySelector('#' + c.pre + '-forget');
       fBtn.addEventListener('click', () => {
         if (!(configuredById[c.id])) { return; }
-        armed(c.pre + '-forget', fBtn, '⌫ FORGET', '⌫ CONFIRM FORGET', async () => {
+        const removeLabel = c.id === 'signal' ? '✕ REMOVE CONFIGURATION' : '⌫ FORGET';
+        const confirmRemoveLabel = c.id === 'signal' ? '✕ CONFIRM REMOVE' : '⌫ CONFIRM FORGET';
+        armed(c.pre + '-forget', fBtn, removeLabel, confirmRemoveLabel, async () => {
           try {
+            // Signal has no token. Its destructive action removes the actual durable configuration — endpoint,
+            // registered account and adapter ownership — and claims success only from the backend read-back bit.
+            if (c.id === 'signal') {
+              const r = await fetch('/api/channels/signal/disconnect', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ purge: true }) });
+              const j = await r.json().catch(() => ({}));
+              if (j.removedConfiguration) {
+                setMsg(msgEl, 'configuration removed — Signal is no longer configured on this machine', 'info');
+                const endpoint = body.querySelector('#sg-endpoint'); if (endpoint) endpoint.value = '';
+                const account = body.querySelector('#sg-account'); if (account) account.value = '';
+                sfx('click');
+              } else if (!r.ok || j.error) { setMsg(msgEl, '✕ ' + (j.error || ('HTTP ' + r.status)), ''); sfx('bad'); }
+              else { setMsg(msgEl, '⚠ removal incomplete — could not prove the Signal configuration left disk; try again', ''); sfx('bad'); }
+              refreshAll();
+              return;
+            }
             // Desktop: clear the OS-keychain copy and KEEP the result — a swallowed failure here used to let
             // the "purged" line lie while the token lived on in the keychain. Browser builds have no keychain
             // copy (storeChannelToken is a no-op false there), so only desktop counts it.
@@ -6195,8 +6408,11 @@ const StationUI = (() => {
      stale in-memory copy when applySettings() runs on enter. Routing through the live store + save() keeps
      the create-screen pick and the in-game Settings panel as one source of truth. */
   function setTheme(t) {
-    const ok = THEMES.some(([name]) => name === t); if (!ok) return;
-    store.settings.theme = t; applySettings(); save();
+    const ok = t === 'custom' || THEMES.some(([name]) => name === t); if (!ok) return;
+    store.settings.theme = t;
+    const hs = PRESET_HS[t];   // keep the CUSTOM sliders in lockstep with a preset picked at commission
+    if (hs) { store.settings.themeHue = hs[0]; store.settings.themeSat = hs[1]; }
+    applySettings(); save();
   }
   function getTheme() { return store.settings.theme; }
 
@@ -6205,3 +6421,5 @@ const StationUI = (() => {
   const repaintAutonomy = () => { try { if (repaintAutonomyDial) repaintAutonomyDial(); } catch (_) {} };
   return { init, enter, setRoster, leave, clearRunning, runningCount: () => runningAgents.size, isAgentRunning: (id) => agentLive(id), notify, flashSave, openAgent, openArcade, toggleTerm, openTerm, rerender, refreshBoard: () => rerender('tasks'), pokeQuests, setTheme, getTheme, repaintAutonomy };
 })();
+
+if (typeof module !== 'undefined' && module.exports) module.exports = { visibleTerminalRect };

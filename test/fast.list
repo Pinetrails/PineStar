@@ -119,6 +119,7 @@ test/slash.config.test.js
 test/voice.button.test.js
 test/save.test.js
 test/saveversion.test.js
+test/backup-secrets.test.js
 test/schema-stamp.test.js
 test/rename-migrate.test.js
 test/update-state-parity.test.js
@@ -240,6 +241,7 @@ test/provider-connections-ui.test.js
 test/newhero-reset.test.js
 test/harness-internal.test.js
 test/chat-runmeta.test.js
+test/chat-stopped-retry.test.js
 test/mint.test.js
 test/ctxgauge.test.js
 test/floorstats.test.js
@@ -267,14 +269,17 @@ test/cron.oneshot.test.js
 test/cron.run-now.test.js
 test/routine-tools.test.js
 test/workstreams.test.js
+test/session-creation.test.js
 test/projects-view.test.js
 test/prepare-node.test.js
 test/summon.id.test.js
+test/recruit-identity-ui.test.js
 test/subagents.test.js
 test/subagentsprites.test.js
 test/orchestration.test.js
 test/channels.test.js
 test/comms-presence.test.js
+test/comms-busy-age.test.js
 test/comms-link-honesty.test.js
 test/steer-idle-honesty.test.js
 test/model-ack-honesty.test.js

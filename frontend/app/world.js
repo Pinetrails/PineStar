@@ -3838,6 +3838,13 @@ const World = (() => {
      level, and the 1px XP-to-next sliver along the bottom all share the suit color — one tiny extra.
      Anchored just above the head, clamped to the viewport. Intentionally small: a glance, not a window. */
   const PLATE_FONT = '"VT323","Courier New",monospace';   // the station terminal face (mirrors the body font stack)
+  function floorDisplayName(who) {
+    const raw = String((who && who.name) || '');
+    const key = raw.trim().toUpperCase();
+    const bodies = [agent].concat(crew || []).filter(Boolean);
+    const duplicate = key && bodies.filter(b => String(b.name || '').trim().toUpperCase() === key).length > 1;
+    return duplicate ? raw + ' [' + String(who.id || who.agentId || '') + ']' : raw;
+  }
   function drawNameplate(now, who) {
     who = who || agent;
     if (!cache || !who) return;
@@ -3845,7 +3852,7 @@ const World = (() => {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.imageSmoothingEnabled = false;
     const Wc = cv.width / dpr, Hc = cv.height / dpr;
     const suit = who.color || '#ffaa33';
-    const name = String(who.name || '');
+    const name = floorDisplayName(who);
     // per-body XP: the hero keeps its exact xpByAgent-or-xpAgent fallback; a crew body reads its own snapshot
     const xp = xpByAgent.get(who.id) || (who === agent ? xpAgent : null);
     const lvl = (xp && xp.level) ? ('Lv ' + xp.level) : null;

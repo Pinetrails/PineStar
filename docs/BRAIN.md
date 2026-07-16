@@ -50,7 +50,7 @@ src-tauri/ desktop shell (Tauri 2, NSIS/dmg, embedded node, keyring; updater fee
 
 Most bugs are **seam bugs**: emitter → store → renderer. Trace the full path before editing.
 
-### Task-context elicitation (2026-07-15)
+### Task-context elicitation (2026-07-16)
 
 Interactive COMMS and messaging-channel tasks pass through one intent layer in `runOnce`. The model
 proceeds immediately when context is sufficient; only a materially outcome-changing, non-discoverable
@@ -60,6 +60,16 @@ choice; text channels render numbered choices. The answer resumes the same durab
 reload/restart, and is injected into delegated workers. Task-local answers never silently become global
 dossier beliefs; only an identical decision repeated across two completed briefs appears later as
 bounded, explicitly weak relationship evidence. Unattended cron and night-shift runs remain unchanged.
+
+Reliability is host-enforced, not prompt-dependent. An attended Task Brief receives two internal controls:
+`brief.ask` validates the decision dimension, material reason, research status, 2–3 distinct choices,
+recommended default, second-question blocker, and whole-task two-question ceiling; `brief.proceed` stores a
+compact settled objective and unlocks consequential tools. Until proceed succeeds, reads remain available for
+research but every write/execute tool is rejected before checkpoint or dispatch. A final ask stops the same tool
+batch, so a model cannot ask and mutate behind the question. Explicit cancel/pivot replies are routed separately
+instead of being learned as answers, terse channel answers resume by durable brief state, and only `done` briefs
+can contribute weak relationship evidence. The text `TASK_QUESTION` marker remains a compatibility/UI transport,
+not the authority boundary.
 
 ## How to work here (non-negotiable)
 

@@ -1,5 +1,45 @@
 # NEXT.md — current priorities & task queue
 
+## 2026-07-15 — POWER-USER DEEP-DIVE AUDIT (3 isolated agents, no fixes)
+
+Full evidence and repros: `docs/POWERUSER_AUDIT_2026-07-15.md`. Baseline gates were green
+(`test:fast` 328 steps, full `test:http`, `qa:journeys` 123/123), but live adversarial use
+confirmed **14 new defects: 4 P1 · 8 P2 · 2 P3**. Highest priority:
+
+**Fix execution plan (2026-07-16):** `docs/POWERUSER_FIX_PLAN_2026-07-16.md` — four waves,
+EL-3 reproduction per defect, serialized `index.js` / `stationui.js` / `chat.js` ownership,
+live restart criteria, composed gates, and a final installed-app proof. Wave 4D (tray-supervised
+background lifecycle) remains an explicit owner decision checkpoint; the plan recommends opt-in
+launch-at-login plus visible tray ownership, never a hidden daemon.
+
+- [ ] **PU-03 P1:** recovery EXPORT AGENT includes browser BYOK localStorage secrets despite
+      Settings saying secrets are excluded.
+- [ ] **PU-01 P1:** Night Shift accepts/persists nonexistent or unblessed project/thread focus
+      and reports it resolved/buildable.
+- [ ] **PU-02 P1:** disabled MCP connector disappears after restart while its secret-bearing
+      config remains on disk and unmanageable.
+- [ ] **PU-04 P1:** drag-wide-window left + viewport shrink can persist Settings fully off-screen.
+- [ ] **PU-05..PU-12 P2:** stale focus after CLEAR; misleading Signal FORGET; false Ollama/custom
+      KEY SAVED/ACTIVE; duplicate recruit display names; cross-session agent-busy composer trap;
+      false 1-minute age; generic sidecar-loss error; partial transcript loss on disconnect.
+- [ ] **PU-13..PU-14 P3:** rapid +NEW durable empty-session spam; stopped run lacks visible retry.
+
+Attack order and verified/unverified surface inventory are in the audit. EL-3 law applies: land
+the exact failing reproduction before each fix. Do not infer station-wide readiness from the green
+baseline; Atlas at this head is 444 stale · 123 unmapped · 1 missing.
+
+## IMPLEMENTED 2026-07-16 — TASK-BRIEF RELIABILITY HARDENING (`agent/briefing-reliability`)
+
+The intent layer now has a host-enforced decision boundary before settings are exposed. Structured
+`brief.ask` / `brief.proceed` controls validate question quality and settle a compact execution brief;
+write/execute tools stay locked until settlement, while read tools remain available for research. The host
+enforces the two-question ceiling and second-blocker rule, stops same-batch actions after a question, routes
+cancel/pivot/answer replies without contaminating the prior task, resumes terse messaging-channel answers from
+durable state, and derives weak relationship patterns only from completed briefs. Internal controls are hidden
+from ordinary tool telemetry; the existing natural COMMS chips and numbered channel fallback remain compatible.
+Deterministic coverage is expanded to 73 task-intent assertions spanning validation, restart, cancellation,
+pivots, completed-only learning, mutation gates, registry control preservation, call pairing, and one-turn pause.
+
 ## READY TO MERGE 2026-07-15 — TASK-CONTEXT ELICITATION (`agent/intent-engine`)
 
 StarNet now listens before it builds without turning every request into an interview: a shared
@@ -13,6 +53,7 @@ runs stay unchanged. Live-proven in the real seeded app: question → reload →
 “operators” → clean continuation, with `task-briefs.json` recording `status:"done"` and the clean answer.
 Gate: 328/328 runnable fast steps green; the sole stop is the documented 9-assertion W0 candidate-SHA
 worktree baseline in `qa-product-perfect-claims`; `test:http` fully green (404 sidecar assertions + all e2e).
+
 ## 2026-07-15 — v0.5.1 CUT + INSTALLED LOCALLY (trunk `3d70d7b1`, tag `v0.5.1`)
 
 Signed release cut at trunk head (rc/0.5.1 content + docs + real RELEASE_NOTES.md; W0 surface
@@ -50,9 +91,14 @@ REMAINING, honestly out of this machine's reach:
       (~15 min). Folds naturally into the 10-outside-installs step otherwise.
 - [ ] **Andrew: publish `starnet-releases` + key backups + dev-key rotation**, then the public
       per-platform update canaries; 48h RC soak per docs/RELEASE_READINESS.md.
-- [ ] T0 clean-machine + T3.2/T3.4 proofs: need a true clean Windows box (this one is Win11 Home —
-      no Sandbox/Hyper-V); fold into the 10-outside-installs step.
-- [ ] Mac auto-update remains unproven (runbook ready: docs/MAC_UPDATE_TEST.md).
+- [x] Outside installs on other hardware — ATTESTED by Andrew 2026-07-15: installed on a separate
+      Windows machine AND a Mac, both "worked perfectly" as a user. This clears the practical
+      clean-machine concern; the FORMAL T0/T3.2 gates still want their evidence JSON captured
+      during such an install (`STARNET_T0_CLEAN_EVIDENCE` — see scripts/t0-clean-install.mjs) —
+      capture it on the next outside install rather than re-doing these.
+- [ ] Mac AUTO-UPDATE remains the one unproven mechanism (install ≠ update): one run of
+      docs/MAC_UPDATE_TEST.md on that Mac after the next release publishes. The guaranteed manual
+      fallback + data-preservation guarantee (1884393f) bound the damage if it fails.
 
 ## 2026-07-15 — RELEASE PREP (lane `claude/release-prep-d04205`): qa:ready burn-down
 

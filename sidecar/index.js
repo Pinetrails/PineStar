@@ -131,6 +131,8 @@ const QuestSweeps = require('./questsweeps.js');
 const QuestRefresh = require('./questrefresh.js'); // QUEST V3: the standing 24h + caught-up quest-refresh engine (pure gates/directive/parse) // QUEST V2 §A: pure seam-matchers for the mechanical contract sweeps (run-bind / prop-live / fact-learned / artifact-exists)
 const { makeThreadsStore } = require('./threads-store.js');   // NS-6: durable THREAD LEDGER (ideas raised but never acted on)
 const { makeTaskBriefStore } = require('./taskbrief-store.js'); // durable original request + visible task decisions
+const TaskBriefPolicy = require('./taskbrief-policy.js');       // host validation + mutation boundary
+const { registerTaskBriefTools } = require('./taskbrief-tools.js'); // structured ask/proceed controls
 const TaskIntent = require('../frontend/app/fork.js').TaskIntent;    // shared TASK_QUESTION protocol + prompt doctrine
 const CommanderContext = require('./commander-context.js');    // bounded provenance-labelled task context
 const threadmine = require('./threadmine.js');                // NS-6: pure post-run thread-mining producer (reflect/study mold)
@@ -777,6 +779,13 @@ const runs = new Map();          // runId -> AbortController (the kill path)
 // (interactive/cron/workshop) and dropped in the same finally that deletes from `runs`, so it exactly tracks the
 // set of live runs. Backs GET /api/state/snapshot — only real per-run facts, never fabricated telemetry.
 const runsMeta = new Map();
+// Human copy for a same-agent mutex holder. Sub-minute values must not round up to a fabricated minute.
+function formatRunHolderAge(ageMs) {
+  const ms = Math.max(0, Number(ageMs) || 0);
+  if (ms < 60000) return 'just now';
+  const mins = Math.floor(ms / 60000);
+  return mins + ' min ago';
+}
 // LIVE STEERING: runId -> [pending Commander notes]. POST /api/run/steer appends; the loop's injected steer()
 // drains once per iteration (see runAgentLoop o.steer). A note only lands while the run is IN-FLIGHT (its runId
 // is still in `runs`); once the run ends the entry is dropped, so a stale steer can never reach a later run.
@@ -2786,7 +2795,47 @@ function nightFocusInputs() {
 
 // ensure a day-keyed focus for the current night; persist iff it changed; return the focus (or null → improv). When
 // `resolved` is true (first beat of the night / a new day / a fresh steer) the caller ledgers the fresh declaration.
+// A focus is a selector over EXISTING authority, never a second authority surface. projects.json is metadata only:
+// a standing path grant is the project authority, and open/picked ledger rows are the thread authority.
+function blessedProjectRootFor(ref) {
+  const norm = pathTrustCore.normalizeRoot(String(ref == null ? '' : ref));
+  const want = path.sep === '\\' ? norm.toLowerCase() : norm;
+  for (const root of blessedRoots()) {
+    const candidate = path.sep === '\\' ? String(root).toLowerCase() : String(root);
+    if (candidate === want) return root;
+  }
+  return null;
+}
+function liveNightThread(ref) {
+  const id = String(ref == null ? '' : ref);
+  try { return threadsStore.list({ state: 'all' }).find(t => t && t.id === id && (t.state === 'open' || t.state === 'picked')) || null; }
+  catch (_) { return null; }
+}
+function nightFocusTargetAvailable(target) {
+  if (!target || !target.ref) return false;
+  if (target.kind === 'project') {
+    const root = blessedProjectRootFor(target.ref);
+    if (!root) return false;
+    try { return fs.statSync(root).isDirectory(); } catch (_) { return false; }
+  }
+  if (target.kind === 'thread') return !!liveNightThread(target.ref);
+  if (target.kind === 'goal') {
+    const goal = commanderGoals.get();
+    return target.ref === 'goal' && !!(goal && String(goal.text || '').trim());
+  }
+  return true; // quest/northstar are resolver-owned evidence kinds, not steer kinds.
+}
+function reconcileNightFocusAuthority() {
+  const before = JSON.stringify(nightFocusState);
+  if (nightFocusState && nightFocusState.steer && !nightFocusTargetAvailable(nightFocusState.steer))
+    nightFocusState = nightfocus.clearSteer(nightFocusState);
+  if (nightFocusState && nightFocusState.focus && !nightFocusTargetAvailable(nightFocusState.focus))
+    nightFocusState = Object.assign({}, nightFocusState, { focus: null });
+  if (JSON.stringify(nightFocusState) !== before) saveNightFocusState();
+}
+
 function resolveNightFocus() {
+  reconcileNightFocusAuthority();
   const inp = nightFocusInputs();
   const r = nightfocus.ensureFocus(nightFocusState, inp, { now: inp.now });
   if (r.resolved || JSON.stringify(r.state) !== JSON.stringify(nightFocusState)) { nightFocusState = r.state; saveNightFocusState(); }
@@ -4366,6 +4415,7 @@ function dispatchRoute(req, res) {
   if (req.method === 'GET' && req.url === '/api/auth/codex/status') return handleCodexStatus(req, res);
   if (req.method === 'GET' && req.url === '/api/auth/codex/models') return handleCodexModels(req, res);
   if (req.method === 'GET' && req.url === '/api/providers') return handleProviders(req, res);
+  if (req.method === 'POST' && req.url === '/api/providers/probe') return handleProviderProbe(req, res);
   // /api/models/openrouter is served by this same prefix (id='openrouter'); the old dedicated branch below it was
   // dead code (shadowed by this line) and has been removed. handleProviderModels answers 200 with {models:[]}
   // + error on any catalog failure, so it never throws into the central guard.
@@ -4535,11 +4585,18 @@ server.listen(PORT, '127.0.0.1', () => {
       }
     } catch (e) { console.warn('[channels] ' + gid + ' auto-start failed:', (e && e.message) || e); }
   }
-  // warm every configured+enabled connector so its tools are ready on the first run (fire-and-forget; a
-  // connector that is down/errors simply projects no tools — it never blocks the host or a run).
+  // Restore EVERY saved connector into the manager so the control plane remains complete after restart.
+  // Disabled rows configure to manager state `down` without opening a transport (the same no-I/O path the
+  // interactive enabled:false upsert uses); enabled rows warm in the background for the first run.
   try {
-    for (const c of connectorConfigs) { if (c && c.enabled !== false && (c.url || c.command || c.oauth)) configureConnectorCfg(c).catch(() => {}); }
-    if (connectorConfigs.length) console.log('  · ' + connectorConfigs.length + ' MCP connector(s) warming');
+    let warming = 0, disabled = 0;
+    for (const c of connectorConfigs) {
+      if (!c || !(c.url || c.command || c.oauth)) continue;
+      if (c.enabled === false) disabled++; else warming++;
+      configureConnectorCfg(c).catch(() => {});
+    }
+    if (warming) console.log('  · ' + warming + ' MCP connector(s) warming');
+    if (disabled) console.log('  · ' + disabled + ' disabled MCP connector(s) loaded');
   } catch (e) { console.warn('[connectors] warm failed:', (e && e.message) || e); }
   // cron (OPT-IN): the scheduler arms iff SKYNET_CRON_ENABLED OR the persisted runtime cronArmed flag is set
   // (G4.6 — `cronArmed` is that OR, computed at the store). armCron() RESUMES by running ONE immediate reconcile
@@ -6682,7 +6739,7 @@ async function handleRun(req, res) {
   const ac = new AbortController();
   const runId = crypto.randomUUID();
   runs.set(runId, ac);
-  runsMeta.set(runId, { agentId: agentId, startedAt: Date.now(), source: 'interactive' });
+  runsMeta.set(runId, { agentId: agentId, startedAt: Date.now(), source: 'interactive', streamId: streamId || '' });
   // NS-1 AWAY DETECTION: a browser /api/run is genuinely user-triggered work — stamp the away clock so the
   // night-shift driver treats the Commander as PRESENT. Cron/workshop/night-shift runs go through runOnce with
   // surface:'autonomous' and NEVER reach this route, so they can't reset the away clock (which would make the
@@ -6776,6 +6833,7 @@ async function handleRun(req, res) {
       streamId,        // M-mem.2b: scope this run's working memory + recall boost to the active workstream
       taskKey: streamId ? ('stream:' + streamId) : null,
       taskSource: 'interactive',
+      taskAction: body && body.taskAction,
       recipeId,        // provenance spine (lane A): rides to the durable run row so a rating can be attributed
       preloadSkills,
       extraObjects,    // a placed WORKBENCH -> shell.exec + verify.run, additive on the default office
@@ -6809,7 +6867,13 @@ async function handleRun(req, res) {
    reply-assembler for the hub), the run lifecycle/cleanup, AND the consent SURFACE — 'interactive' + a live
    `prompt` for the watched browser; 'autonomous' (default-deny on ungranted mutation) for a headless chat. */
 async function runOnce(o) {
-  const { key, system, messages = [], agentId = 'agent', isTask = false, signal, runId } = o;
+  const { key, system, messages = [], agentId = 'agent', signal, runId } = o;
+  let isTask = !!o.isTask;
+  // A short channel reply such as "operators" is not independently task-shaped. Durable brief continuity is
+  // stronger evidence than the generic classifier, so resume it as task work without asking the user to restate it.
+  if (!isTask && o.taskKey) {
+    try { const pending = taskBriefStore.active(String(o.taskKey)); if (pending && pending.status === 'clarifying') isTask = true; } catch (_) {}
+  }
   // P1-6 per-agent model/provider OVERRIDE: when a run carries NO explicit model/provider (headless hub, delegated
   // worker, or any caller that didn't pass one), fall back to THIS AGENT's pinned identity in the roster before the
   // station default. An explicit per-run o.model/o.provider still wins (the interactive dock path is unchanged), so
@@ -6875,7 +6939,7 @@ async function runOnce(o) {
     let holder = '';
     try {
       const h = [...runsMeta.values()].filter(m => m && m.agentId === agentId).sort((a, b) => a.startedAt - b.startedAt)[0];
-      holder = h ? ('The run holding it started ' + Math.max(1, Math.round((Date.now() - h.startedAt) / 60000)) + ' min ago (source: ' + (h.source || 'unknown') + ').')
+      holder = h ? ('The run holding it started ' + formatRunHolderAge(Date.now() - h.startedAt) + ' (source: ' + (h.source || 'unknown') + (h.streamId ? ', session: ' + h.streamId : '') + ').')
                  : 'The run holding it is a background one (a scheduled routine or delegated worker).';
     } catch (_) {}
     emit('agent.run.start', { agentId, runId, trigger: trigger, model });
@@ -6904,6 +6968,7 @@ async function runOnce(o) {
   // Only user-facing callers with a stable conversation key receive the intent layer. Unattended cron/night-shift
   // work has nobody present to answer and therefore remains byte-for-byte on its existing execution path.
   let taskBrief = null;
+  let taskBriefState = null;
   let taskContextBlock = '';
   let taskQuestionAsked = false;
   // Everything below is wrapped so the admission slot is ALWAYS released (early-return refusals above run
@@ -6951,12 +7016,17 @@ async function runOnce(o) {
       }
       if (latestUser) taskBrief = await taskBriefStore.prepare({
         id: 'tb_' + runId, key: String(o.taskKey), streamId: streamId || '', agentId, runId,
-        source: o.taskSource || (surface === 'interactive' ? 'interactive' : 'channel'), text: latestUser
+        source: o.taskSource || (surface === 'interactive' ? 'interactive' : 'channel'), text: latestUser,
+        taskAction: o.taskAction || ''
       }, Date.now());
     } catch (e) { console.warn('[taskbrief] prepare failed:', (e && e.message) || e); taskBrief = null; }
   }
 
-  if (taskBrief) {
+  if (taskBrief) taskBriefState = { brief: taskBrief };
+  if (taskBrief && taskBrief.inputAction === 'cancel') {
+    taskQuestionAsked = true; // neutral terminal: cancellation is never completed work or learning evidence
+    taskContextBlock = 'TASK CANCELLED BY COMMANDER: acknowledge briefly. Do not continue or mutate anything.';
+  } else if (taskBrief) {
     let goal = null; try { goal = commanderGoals.get() || null; } catch (_) {}
     let patterns = []; try { patterns = taskBriefStore.patterns(5); } catch (_) {}
     taskContextBlock = CommanderContext.compose({
@@ -6966,6 +7036,8 @@ async function runOnce(o) {
 
   // ---- tools (registered fresh per run; cheap) ----
   const registry = makeRegistry();
+  const internalBriefTools = taskBriefState && taskBrief.status !== 'cancelled'
+    ? registerTaskBriefTools(registry, taskBriefStore, taskBriefState, { now: () => Date.now() }) : [];
   const loadedSkills = [];
   const managedSkills = [];
   const seenLoadedSkills = new Set();
@@ -7141,6 +7213,8 @@ async function runOnce(o) {
   // no dynamic server or future registration order can restore a real-screen tool by name.
   resolved = enforceSyntheticOnly(resolved);
   resolved = enforceRunAuthority(resolved, registry, userControlAuthority);
+  // Harness controls never grant reach into the world. They exist only while an attended Task Brief is active.
+  for (const name of internalBriefTools) if (resolved.tools.indexOf(name) < 0) resolved.tools.push(name);
   // QUEST V2 §A — the PROP-contract sweep, wired at the one seam where the sidecar PROVES a capability is live:
   // resolveTools just projected the placed office (+ live connector tools) into this run's real grants. A prop
   // quest keyed to a live objectType / capId family / tool name completes here — there is no other server-side
@@ -7321,6 +7395,12 @@ async function runOnce(o) {
   const artifactLedger = makeArtifactCollector();
   const dispatch = async (c, ctx) => {
     if (fromWire.has(c.name)) c = Object.assign({}, c, { name: fromWire.get(c.name) });   // wire -> real (dotted) name
+    const liveTool = registry.get(c.name);
+    const internalBriefControl = internalBriefTools.indexOf(c.name) >= 0;
+    if (taskBriefState && !internalBriefControl) {
+      const gate = TaskBriefPolicy.canMutate(taskBriefState.brief, liveTool);
+      if (!gate.ok) return { ok: false, isError: true, content: 'Task Brief gate: ' + gate.reason, summary: 'task-brief-gate' };
+    }
     // LOOP GUARD (mirrors loop.js semantics): key on the FULL argsRaw via a sha1 digest (the old .slice(0,400)
     // collided two DIFFERENT long payloads sharing a 400-char prefix — a false positive), and count only FAILING
     // calls — a byte-identical call that keeps SUCCEEDING (e.g. many fs_write to the same path with different
@@ -7341,7 +7421,7 @@ async function runOnce(o) {
     const dctx = (ctx && ctx.callId !== c.id) ? Object.assign({}, ctx, { callId: c.id }) : ctx;   // per-call id for shell.exec telemetry
     let r = await registry.dispatch(c, dctx);
     // observe BEFORE the tool-output budget clip below, so the collector parses the tool's REAL result text.
-    try { artifactLedger.observe({ toolName: c.name, args: c.args, result: r }); } catch (_) { /* never breaks a run */ }
+    if (!internalBriefControl) try { artifactLedger.observe({ toolName: c.name, args: c.args, result: r }); } catch (_) { /* never breaks a run */ }
     // bound the TOTAL tool output across a run so a few big fetches/reads can't blow the context window or cost
     if (r && typeof r.content === 'string' && r.content.length) {
       if (toolBytes >= CAPS.maxToolBytes) {
@@ -7351,7 +7431,7 @@ async function runOnce(o) {
       }
       toolBytes += r.content.length;
     }
-    if (r && !r.isError) toolsOk++;   // crate-honesty: count PROVEN work (each successful tool result)
+    if (r && !r.isError && !internalBriefControl) toolsOk++;   // crate-honesty: internal brief bookkeeping is not completed work
     // loop-guard bookkeeping: a FAILING result advances this signature's streak; ANY success clears it (so an
     // intermittently-failing call that eventually works never trips the guard). Matches loop.js's reset-on-success.
     if (r && r.isError) seen.set(sig, (seen.get(sig) || 0) + 1);
@@ -7599,6 +7679,7 @@ async function runOnce(o) {
   try {
     result = await runAgentLoop({
       messages: msgs, provider, emit: loopEmit, cost, tools: toolDefs, dispatch, capCtx,
+      hiddenTools: ['brief_ask', 'brief_proceed'],
       // Real backoff for the loop's bounded mid-stream retry: without an injected sleep the loop retries a
       // dropped/half-streamed generation with ZERO delay (a tight hammer against an upstream that just hiccupped).
       // A plain (non-unref) setTimeout so the backoff actually elapses before the retry fires.
@@ -7630,7 +7711,7 @@ async function runOnce(o) {
     });
     // Persist visible task context only — never hidden reasoning. A clarification is a clean model run but not
     // completed work, so it leaves the brief waiting across restart and suppresses task-learning sweeps below.
-    if (taskBrief && result && result.reason === 'done') {
+    if (taskBrief && taskBrief.inputAction !== 'cancel' && result && result.reason === 'done') {
       try {
         let reply = '';
         for (let i = result.messages.length - 1; i >= 0; i--) {
@@ -7638,7 +7719,14 @@ async function runOnce(o) {
           if (m && m.role === 'assistant' && typeof m.content === 'string') { reply = m.content; break; }
         }
         const q = TaskIntent.parse(reply);
-        if (q) { taskQuestionAsked = true; await taskBriefStore.ask(taskBrief.id, q, Date.now()); }
+        const liveBrief = taskBriefStore.active(taskBrief.key);
+        if (q) {
+          taskQuestionAsked = true;
+          if (!liveBrief || liveBrief.status !== 'clarifying') await taskBriefStore.ask(taskBrief.id, Object.assign({
+            dimension: 'scope', recommended: q.options[0], reason: 'The model identified a material unresolved decision.', discoverable: false,
+            newBlocker: !!(liveBrief && liveBrief.questions && liveBrief.questions.length === 1)
+          }, q), Date.now());
+        }
         else await taskBriefStore.complete(taskBrief.id, runId, Date.now());
       } catch (e) { console.warn('[taskbrief] settle failed:', (e && e.message) || e); }
     }
@@ -8044,8 +8132,10 @@ function handleNightshiftStatus(req, res) {
 }
 
 // the declared focus as a truthful-telemetry view: the persisted focus (what the night is actually chasing), plus
-// the durable steer if one is set. Never re-resolves (status reflects state, it doesn't mutate it).
+// the durable steer if one is set. It never re-ranks evidence, but it does retire authority that was revoked since
+// resolution so status cannot keep advertising an unavailable target.
 function nightFocusView() {
+  reconcileNightFocusAuthority();
   const f = nightFocusState && nightFocusState.focus;
   if (!f || !f.ref) return null;
   return { kind: f.kind, ref: f.ref, label: f.label, why: Array.isArray(f.why) ? f.why : [], source: f.source, steered: !!(nightFocusState.steer && nightFocusState.steer.ref) };
@@ -8091,14 +8181,47 @@ async function handleNightshiftBeatNow(req, res) {
      GET    → the current declared focus + steer (read-only preview; re-resolves so an empty state still shows intent).
      POST   { ref, kind? } → set the steer (stamped now) + re-resolve the focus toward it immediately.
      DELETE → clear the steer (derived evidence takes over again). */
+async function validateNightFocusSteer(kind, ref) {
+  if (kind !== 'project' && kind !== 'thread' && kind !== 'goal')
+    return { ok: false, status: 400, error: 'focus kind must be project, thread, or goal' };
+  if (kind === 'thread') {
+    const thread = liveNightThread(ref);
+    if (!thread) return { ok: false, status: 404, error: 'that thread is not open or picked; choose a current thread id' };
+    return { ok: true, kind, ref: thread.id };
+  }
+  if (kind === 'goal') {
+    const goal = commanderGoals.get();
+    if (ref !== 'goal') return { ok: false, status: 400, error: 'the current goal is selected with ref "goal"' };
+    if (!goal || !String(goal.text || '').trim()) return { ok: false, status: 404, error: 'there is no current goal to focus on' };
+    return { ok: true, kind, ref: 'goal' };
+  }
+
+  if (!path.isAbsolute(ref)) return { ok: false, status: 400, error: 'project focus requires an absolute path to a trusted project' };
+  const norm = pathTrustCore.normalizeRoot(ref);
+  const hardline = pathTrustCore._internals.hardlineReason(ref, norm);
+  if (hardline) return { ok: false, status: 400, error: hardline };
+  let st;
+  try { st = await fsp.stat(norm); }
+  catch (_) { return { ok: false, status: 404, error: 'that project path does not exist: ' + norm }; }
+  if (!st.isDirectory() && !st.isFile()) return { ok: false, status: 400, error: 'that project path is not a file or folder: ' + norm };
+  let canonical;
+  try { canonical = pathTrustCore.normalizeRoot(await pathTrustCore.detectRoot(norm)); }
+  catch (_) { return { ok: false, status: 400, error: 'could not resolve that project path' }; }
+  const root = blessedProjectRootFor(canonical);
+  if (!root) return { ok: false, status: 403, error: 'that project is not currently trusted; add or re-enable it in Projects first' };
+  return { ok: true, kind, ref: root };
+}
+
 async function handleNightshiftFocus(req, res) {
   const json = (code, obj) => { if (res.headersSent) return; res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
   if (req.method === 'POST') {
     let body; try { body = JSON.parse(await readBody(req, 1 << 14, res)) || {}; } catch (e) { return json(400, { ok: false, error: 'bad json' }); }
     const ref = String(body.ref || '').trim();
     if (!ref) return json(400, { ok: false, error: 'a focus ref is required (a project path, a thread id, or "goal")' });
-    const kind = (body.kind === 'thread' || body.kind === 'goal') ? body.kind : 'project';
-    nightFocusState = nightfocus.applySteer(nightFocusState, { ref, kind }, Date.now());
+    const requestedKind = (body.kind == null || body.kind === '') ? 'project' : body.kind;
+    const checked = await validateNightFocusSteer(requestedKind, ref);
+    if (!checked.ok) return json(checked.status, { ok: false, error: checked.error });
+    nightFocusState = nightfocus.applySteer(nightFocusState, { ref: checked.ref, kind: checked.kind }, Date.now());
     saveNightFocusState();
     const foc = resolveNightFocus();   // re-resolve toward the steer NOW so status reflects it immediately
     return json(200, { ok: true, focus: nightFocusView(), steered: true, resolved: !!(foc && foc.resolved) });
@@ -8106,7 +8229,8 @@ async function handleNightshiftFocus(req, res) {
   if (req.method === 'DELETE') {
     nightFocusState = nightfocus.clearSteer(nightFocusState);
     saveNightFocusState();
-    return json(200, { ok: true, cleared: true, focus: nightFocusView() });
+    const foc = resolveNightFocus();
+    return json(200, { ok: true, cleared: true, focus: nightFocusView() || (foc && foc.focus) || null, resolved: !!(foc && foc.resolved) });
   }
   // GET — a read-only preview: resolve (persist iff changed) so a first-ever read still shows what the night WOULD chase.
   const foc = resolveNightFocus();
@@ -8598,16 +8722,30 @@ async function handleGenericChannelDisconnect(req, res, id) {
   try { const b = JSON.parse((await readBody(req, 4096)) || '{}'); purge = !!(b && b.purge); } catch (_) {}
   stopGenericChannel(id);
   let persisted = true;
+  let removedConfiguration = false;
   if (channelSecrets && channelSecrets[id]) {
     const next = Object.assign({}, channelSecrets[id], { enabled: false });
     if (purge) { next.token = undefined; delete channelTokenRuntime[id]; delete channelTokenDurable[id]; }
-    const p = {}; p[id] = next;
-    channelSecrets = Object.assign({}, channelSecrets, p);
+    if (purge && id === 'signal') {
+      delete next.endpoint;
+      delete next.account;
+      delete next.ownerId;
+      const copy = Object.assign({}, channelSecrets);
+      delete copy[id];
+      channelSecrets = copy;
+    } else {
+      const p = {}; p[id] = next;
+      channelSecrets = Object.assign({}, channelSecrets, p);
+    }
     persisted = saveChannelSecrets(channelSecrets);
     if (purge) { try { scrubChannelSecretsBak(); } catch (_) {} }
+    removedConfiguration = id === 'signal' && purge && persisted && !channelSecrets[id];
   }
   // `purged` is a DESTRUCTION claim — only assert it when the read-back proved the token left the disk.
-  res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ connected: false, purged: purge && persisted, persisted }));
+  // Signal is tokenless, so report its separately proven configuration-removal fact and never call that a purge.
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  if (id === 'signal') res.end(JSON.stringify({ connected: false, purged: false, removedConfiguration, persisted }));
+  else res.end(JSON.stringify({ connected: false, purged: purge && persisted, removedConfiguration: false, persisted }));
 }
 
 /* ----------------------- Codex (ChatGPT subscription) OAuth ----------------------- */
@@ -8689,6 +8827,28 @@ function handleProviders(req, res) {
   // confirmation reads this so it names the ACTUAL store honestly (keychain vs this browser) — never claims
   // keychain when the key is in fact held in the browser (truthful-telemetry law).
   res.end(JSON.stringify({ providers, keychainMode: DESKTOP_SHELL }));
+}
+
+// POST /api/providers/probe — a no-generation provider round-trip for truthful Settings telemetry. The supplied
+// browser BYOK key is consumed in memory only and never echoed/persisted; desktop callers send no key because the
+// sidecar already owns the keychain-backed runtime credential. A 200 response always carries the probe facts.
+async function handleProviderProbe(req, res) {
+  const json = (obj) => { res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 1 << 16)) || {}; } catch (_) { return json({ reachable: false, catalogAvailable: false, credentialVerified: false, error: 'bad json' }); }
+  const id = normalizeProvider(body.provider);
+  const profile = getProviderProfile(id);
+  if (!profile) return json({ provider: id, reachable: false, catalogAvailable: false, credentialVerified: false, error: 'unknown provider' });
+  try {
+    const models = await listModelsForProvider(id, { key: String(body.key || ''), baseUrl: String(body.baseUrl || body.base_url || '') });
+    // A catalog endpoint that does not require authentication proves reachability, not that a saved key can run.
+    // Provider adapters intentionally fail closed to [] when /models cannot be reached. Without at least one real
+    // model there is no runnable endpoint to prove, so do not upgrade mere request completion into REACHABLE.
+    const catalogAvailable = models.length > 0;
+    const credentialVerified = catalogAvailable && (!providerRequiresKey(id) || profile.modelsRequireAuth !== false);
+    json({ provider: id, reachable: catalogAvailable, catalogAvailable, credentialVerified });
+  } catch (e) {
+    json({ provider: id, reachable: false, catalogAvailable: false, credentialVerified: false, error: (e && e.message) || 'provider probe failed', code: (e && e.code) || '' });
+  }
 }
 
 async function listModelsForProvider(providerId, opts) {

@@ -733,7 +733,11 @@ const App = (() => {
     // NAME: an explicit creation-time pick (bay spec.agentName — a DISTINCT key so the class name spec.name keeps
     // driving specialty/id derivation) beats the class-name default. Normalized to the exact shape setAgentName
     // mints (single-spaced, UPPER, ≤18) so a named-at-summon agent is indistinguishable from a renamed one.
-    const nm = String((spec && (spec.agentName || spec.name)) || 'AGENT').replace(/\s+/g, ' ').trim().toUpperCase().slice(0, 18) || 'AGENT';
+    const requestedName = String((spec && spec.agentName) || '');
+    const requestedIssue = requestedName && typeof AgentId !== 'undefined' ? AgentId.nameIssue(requestedName) : '';
+    const nm = requestedName && !requestedIssue
+      ? AgentId.normalizeName(requestedName)
+      : AgentId.allocName((spec && spec.name) || 'AGENT', liveAgents());
     const a = {
       id, name: nm, role: 'specialist',   // summoned crew are specialists under the Orchestrator
       color: SUITS[agents.size % SUITS.length], skin: (spec && spec.skin) || DATA.DEFAULT_SKIN,
@@ -867,7 +871,10 @@ const App = (() => {
       // already runs as, so the bay can flag DEPLOYED and re-spec honestly.
       onDeploy: deploySpecialty,
       agentName: agent.name,
-      currentSpecialtyId: agent.specialtyId || null
+      currentSpecialtyId: agent.specialtyId || null,
+      nextAgentName: className => AgentId.allocName(className, liveAgents()),
+      nameConflict: name => AgentId.nameConflict(name, liveAgents()),
+      displayNameLimit: AgentId.NAME_MAX
     });
     // surface the REAL concurrency ceiling in the bay so "summon as many as you like" doesn't imply they all
     // run at once (the gate refuses excess parallel workers). Fetch once; open immediately thereafter.
@@ -1214,8 +1221,10 @@ const App = (() => {
   ]);
   const approvalById = id => APPROVAL.find(a => a.id === id) || APPROVAL[0];
   function applyTheme(t) {
-    document.body.classList.remove('theme-amber', 'theme-green', 'theme-blue', 'theme-purple', 'theme-red', 'theme-white');
+    document.body.classList.remove('theme-amber', 'theme-green', 'theme-blue', 'theme-purple', 'theme-red', 'theme-white', 'theme-custom');
     document.body.classList.add('theme-' + t);
+    // 'custom' carries no palette in CSS — its derived vars are inline on <body>, set by
+    // StationUI.applySettings at init and cleared by StationUI.setTheme when a preset is picked here.
   }
   function buildPhosphor() {
     const wrap = el('phosphor-swatches'); if (!wrap) return;
@@ -2631,7 +2640,7 @@ const App = (() => {
   }
   function openWorkstream(id) { switchWorkstream(id); }
   function newWorkstream() {
-    const ws = Workstreams.create(null);
+    const ws = Workstreams.startSession();
     SFX.open(); Chat.load(ws); refreshUsage(); renderRail(); persist();
   }
   // COMMS AGENT SELECTOR: put the Commander on the line with agent <agentId>. Selecting an agent must never
@@ -2980,7 +2989,7 @@ const App = (() => {
   // run as the working folder; the title auto-mints from the first message, same as the sessions rail's + NEW).
   function newSessionInProject(root) {
     if (!root) return;
-    const ws = Workstreams.create(null, { activate: false, projectRoot: root });
+    const ws = Workstreams.startSession({ activate: false, projectRoot: root });
     if (!ws) return;
     switchWorkstream(ws.id);
     SFX.open();
@@ -3285,14 +3294,14 @@ const App = (() => {
     // (the title screen — RESUME / NEW STATION / the destructive NEW AGENT wipe — is gone; boot auto-resumes,
     //  see the three-way at the foot of init(). Re-entry is handled by reentry()/startCreation().)
 
-    // data portability — the safety net for the localStorage-fragile agent. Export bundles every
-    // starnet.* key + a memory snapshot into one file; import restores it on any browser.
+    // data portability — the safety net for the localStorage-fragile agent. Export bundles nonsecret
+    // starnet.* records + a memory snapshot into one file; import restores them on any browser.
     const dataStatus = m => { const n = el('data-status'); if (n) n.textContent = m || ''; };
     el('btn-export').onclick = async () => {
       SFX.click(); dataStatus('exporting…');
       const r = await Backup.exportAll();
       dataStatus(r && r.ok
-        ? 'saved ' + r.file + ' — ' + r.keys + ' keys' + (r.notes ? ' + ' + r.notes + ' memories' : '')
+        ? 'saved ' + r.file + ' — secrets excluded; ' + r.records + ' records' + (r.notes ? ' + ' + r.notes + ' memories' : '')
         : 'export failed');
     };
     const fileImport = el('file-import');
@@ -3305,7 +3314,7 @@ const App = (() => {
       SFX.boot();
       const mem = (typeof r.memoriesRestored === 'number') ? r.memoriesRestored
         : (r.memories ? r.memories + ' in file' : 0);
-      dataStatus('restored ' + (r.agentName || 'agent') + ' — ' + r.keys + ' keys'
+      dataStatus('restored ' + (r.agentName || 'agent') + ' — ' + (r.records == null ? r.keys : r.records) + ' records'
         + (mem ? ' + ' + mem + ' memories' : ''));
       reentry();   // resume straight into the restored agent (or its RESUME screen if creds are still missing)
     };

@@ -131,6 +131,12 @@ body.theme-white {
   --gold: #ffe9a3; --ph-rgb: 232, 240, 232; --ph-bright-rgb: 255, 255, 255; --gold-rgb: 255, 233, 163;
   --cam-grade: saturate(0.7) contrast(1.06) brightness(0.92);
 }
+/* body.theme-custom carries NO palette here on purpose: its full token set is derived from the
+   user's hue/sat/glow sliders and written as INLINE custom properties on <body> by
+   stationui.js applySettings() (deriveCustomTheme). Inline-on-body keeps the composite
+   --bezel/--well recipes below resolving against the derived phosphor (the theming trap).
+   If JS ever misses, the :root amber fallback still renders. Semantic status colours
+   (--ok/--bad/--link-down/--warn) are never derived — they stay constant across every theme. */
 
 /* ---- PREMIUM CRT SURFACE: the shared depth recipe (windows + panels) ----
    A molded-bezel monitor, outside-in: outer phosphor ring → black casing
@@ -359,6 +365,7 @@ body:has(#screen-game.active):not(.refit-on) #logo { display: flex; }
 .dot.alert { background: var(--warn); box-shadow: 0 0 7px var(--warn); animation: pulse 0.7s infinite; }
 .crew-main { min-width: 0; flex: 1; }
 .crew-name { font-size: 17px; letter-spacing: 1px; display: flex; align-items: baseline; }
+.crew-id, .ag-name-id { margin-left:6px; color:var(--ph-dim); font-size:.72em; letter-spacing:.5px; }
 .crew-room { font-size: 10.5px; color: var(--ph-dim); margin-left: auto; letter-spacing: 1px; padding-left: 8px; }
 .crew-status {
   font-size: 12px; color: var(--text); opacity: 0.7;
@@ -990,6 +997,31 @@ body.no-scan .crt-scan { display: none; }
 .set-theme.earned { position: relative; }
 .set-theme.earned::after { content: '◈'; position: absolute; top: -6px; right: -4px; font-size: 10px; color: var(--gold); text-shadow: 0 0 4px var(--gold); }
 .auto-earned { color: var(--gold); opacity: .92; font-size: 12px; letter-spacing: 1px; }
+/* CUSTOM PHOSPHOR sliders — hue/sat derive a live palette, glow scales the bloom. Recessed-well
+   track (the --well vocabulary) + a phosphor thumb; the HUE track shows the actual spectrum at
+   the derivation lightness (hsl l 60%) so the handle sits on the colour you'll get. */
+.set-slider { display: flex; align-items: center; gap: 10px; margin: 7px 0; font-size: 13px; cursor: pointer; }
+.set-slider-name { width: 92px; letter-spacing: 2px; color: var(--ph-dim); flex: none; }
+.set-slider-val { width: 44px; text-align: right; color: var(--ph); font-size: 13px; flex: none; }
+.set-slider input[type="range"] {
+  -webkit-appearance: none; appearance: none; flex: 1; min-width: 0; height: 10px; border-radius: 3px;
+  background: linear-gradient(180deg, rgba(0,0,0,.6), rgba(var(--ph-rgb),.08));
+  border: 1px solid var(--ph-dim); box-shadow: inset 0 2px 5px rgba(0,0,0,.85); cursor: pointer;
+}
+.set-slider input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none; width: 12px; height: 20px; border-radius: 3px;
+  background: var(--ph); border: 1px solid rgba(0,0,0,.9);
+  box-shadow: 0 0 8px var(--ph-glow), inset 0 1px 0 rgba(var(--ph-bright-rgb),.5);
+}
+.set-slider input[type="range"]::-moz-range-thumb {
+  width: 12px; height: 20px; border-radius: 3px; background: var(--ph); border: 1px solid rgba(0,0,0,.9);
+  box-shadow: 0 0 8px var(--ph-glow), inset 0 1px 0 rgba(var(--ph-bright-rgb),.5);
+}
+.set-slider input.set-hue-track {
+  background: linear-gradient(90deg,
+    hsl(0,90%,55%), hsl(45,90%,55%), hsl(90,90%,55%), hsl(135,90%,55%),
+    hsl(180,90%,55%), hsl(225,90%,55%), hsl(270,90%,55%), hsl(315,90%,55%), hsl(359,90%,55%));
+}
 .set-row { display: block; margin: 5px 0; font-size: 15px; cursor: pointer; }
 .set-row input { accent-color: var(--ph); }
 .set-save { display: flex; gap: 8px; }

@@ -6,6 +6,7 @@
 'use strict';
 
 const { makeDurableJsonStore } = require('./durable-store.js');
+const Policy = require('./taskbrief-policy.js');
 
 const STORE_KEY = 'task-briefs';
 const CAP = 500;
@@ -18,7 +19,8 @@ function normalizeQuestion(q) {
   const options = Array.isArray(q.options) ? q.options.map(x => bounded(x, 72)).filter(Boolean).slice(0, 3) : [];
   if (!text) return null;
   return {
-    id: bounded(q.id, 80), text, options,
+    id: bounded(q.id, 80), text, options, dimension: bounded(q.dimension, 24),
+    recommended: bounded(q.recommended, 72), reason: bounded(q.reason, 240), newBlocker: q.newBlocker === true,
     answer: bounded(q.answer, 500), askedAt: Number(q.askedAt) || 0, answeredAt: Number(q.answeredAt) || 0
   };
 }
@@ -31,6 +33,12 @@ function normalizeBrief(b) {
     status: STATES[x.status] ? x.status : 'ready',
     questions: Array.isArray(x.questions) ? x.questions.map(normalizeQuestion).filter(Boolean).slice(-8) : [],
     assumptions: Array.isArray(x.assumptions) ? x.assumptions.map(v => bounded(v, 300)).filter(Boolean).slice(-12) : [],
+    settled: x.settled && typeof x.settled === 'object' ? {
+      objective: bounded(x.settled.objective, 500), deliverable: bounded(x.settled.deliverable, 500),
+      audience: bounded(x.settled.audience, 500), success: bounded(x.settled.success, 500),
+      assumptions: Array.isArray(x.settled.assumptions) ? x.settled.assumptions.map(v => bounded(v, 300)).filter(Boolean).slice(0, 8) : [],
+      sources: Array.isArray(x.settled.sources) ? x.settled.sources.map(v => bounded(v, 300)).filter(Boolean).slice(0, 8) : []
+    } : null,
     createdAt: Number(x.createdAt) || 0, updatedAt: Number(x.updatedAt) || Number(x.createdAt) || 0,
     completedAt: Number(x.completedAt) || 0, runId: bounded(x.runId, 100)
   };
@@ -73,8 +81,24 @@ function makeTaskBriefStore(deps) {
       const rec = normalize(cur); const ts = Number(now) || 0;
       const prior = rec.briefs.filter(b => b.key === key).sort((a, b) => b.updatedAt - a.updatedAt)[0] || null;
       if (prior && prior.status === 'clarifying') {
+        const routed = Policy.routeReply(text, input.taskAction);
+        if (routed.action === 'cancel') {
+          prior.status = 'cancelled'; prior.currentInput = text; prior.updatedAt = ts;
+          out = Object.assign({}, prior, { inputAction: 'cancel' }); return rec;
+        }
+        if (routed.action === 'replace') {
+          prior.status = 'cancelled'; prior.updatedAt = ts;
+          out = normalizeBrief({
+            id: bounded(input.id, 100) || ('tb_' + bounded(input.runId, 80)), key,
+            streamId: bounded(input.streamId, 80), agentId: bounded(input.agentId || prior.agentId || 'agent', 40),
+            source: bounded(input.source || prior.source || 'interactive', 24), originalDirective: routed.text, currentInput: routed.text,
+            status: 'ready', createdAt: ts, updatedAt: ts, runId: bounded(input.runId, 100)
+          });
+          rec.briefs.push(out); while (rec.briefs.length > CAP) rec.briefs.shift();
+          out = Object.assign({}, out, { inputAction: 'replace' }); return rec;
+        }
         const q = prior.questions[prior.questions.length - 1];
-        if (q && !q.answer) { q.answer = text; q.answeredAt = ts; }
+        if (q && !q.answer) { q.answer = routed.text; q.answeredAt = ts; }
         prior.currentInput = text; prior.status = 'ready'; prior.updatedAt = ts; out = prior;
       } else {
         out = normalizeBrief({
@@ -93,9 +117,19 @@ function makeTaskBriefStore(deps) {
     const key = String(id || ''); let out = null;
     return durable.update(STORE_KEY, cur => {
       const rec = normalize(cur); const b = rec.briefs.find(x => x.id === key); if (!b) return undefined;
-      const q = normalizeQuestion({ id: key + '_q' + (b.questions.length + 1), text: question.question || question.text, options: question.options, askedAt: now });
-      if (!q) return undefined;
+      const checked = Policy.validateQuestion(question, b); if (!checked.ok) return undefined;
+      const q = normalizeQuestion(Object.assign({ id: key + '_q' + (b.questions.length + 1), askedAt: now }, checked.question));
       b.questions.push(q); b.status = 'clarifying'; b.updatedAt = Number(now) || b.updatedAt; out = b; return rec;
+    }).then(() => out);
+  }
+
+  function proceed(id, candidate, now) {
+    const key = String(id || ''); let out = null;
+    return durable.update(STORE_KEY, cur => {
+      const rec = normalize(cur); const b = rec.briefs.find(x => x.id === key); if (!b) return undefined;
+      const checked = Policy.validateProceed(candidate); if (!checked.ok || b.status === 'clarifying' || b.status === 'done' || b.status === 'cancelled') return undefined;
+      b.settled = checked.brief; b.assumptions = checked.brief.assumptions;
+      b.status = 'executing'; b.updatedAt = Number(now) || b.updatedAt; out = b; return rec;
     }).then(() => out);
   }
 
@@ -113,15 +147,18 @@ function makeTaskBriefStore(deps) {
   // The prompt labels these OBSERVED PATTERNS, never standing orders, so they cannot override the current task.
   function patterns(limit) {
     const bins = {};
-    for (const b of list({ limit: 200 })) for (const q of b.questions) {
-      if (!q.answer) continue; const fp = fingerprintQuestion(q.text); const ans = q.answer.toLowerCase(); if (!fp || !ans) continue;
+    for (const b of list({ limit: 200 })) {
+      if (b.status !== 'done') continue;
+      for (const q of b.questions) {
+      if (!q.answer) continue; const fp = q.dimension ? ('dimension:' + q.dimension) : fingerprintQuestion(q.text); const ans = q.answer.toLowerCase(); if (!fp || !ans) continue;
       const k = fp + '::' + ans; if (!bins[k]) bins[k] = { question: q.text, answer: q.answer, count: 0, updatedAt: q.answeredAt || b.updatedAt };
       bins[k].count++; bins[k].updatedAt = Math.max(bins[k].updatedAt, q.answeredAt || b.updatedAt);
+      }
     }
     return Object.values(bins).filter(x => x.count >= 2).sort((a, b) => b.updatedAt - a.updatedAt).slice(0, Number.isFinite(limit) ? limit : 5);
   }
 
-  return { read, list, active, prepare, ask, complete, patterns, fingerprintQuestion, _durable: durable };
+  return { read, list, active, prepare, ask, proceed, complete, patterns, fingerprintQuestion, _durable: durable };
 }
 
 module.exports = { makeTaskBriefStore, normalize, normalizeBrief, normalizeQuestion, fingerprintQuestion };

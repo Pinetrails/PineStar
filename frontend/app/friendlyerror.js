@@ -71,7 +71,7 @@
   //   family) · 'store' (top up managed credit) · null (just retry / nothing).
   const KINDS = {
     server_error:  { retryable: true,  action: null,       msg: 'The local StarNet service hit an error — give it a moment and try again.' },
-    network:       { retryable: true,  action: null,       msg: "Can't reach StarNet's local service — make sure the app is still running, then try again." },
+    network:       { retryable: true,  action: null,       msg: "Can't reach StarNet's local service — if the app closed, restart it; if it restarted, reload this window, then try again." },
     rate_limit:    { retryable: true,  action: null,       msg: 'The model provider is busy (too many requests) — wait a few seconds and try again.' },
     // auth: the pure message is context-blind (classify time can't know if ChatGPT is already connected). It names the
     // one honest next step; the action BUTTON (actionButton) tailors the door — "add a key" vs "sign in with ChatGPT".
@@ -118,6 +118,12 @@
     if (err == null) return '';
     if (typeof err === 'string') return err;
     return String((err && err.message) || err);
+  }
+  // Browser fetch implementations do not agree on the message used when an established response stream dies.
+  // Chromium commonly reports "Failed to fetch"; undici/Tauri can surface only "terminated", a socket close,
+  // or ECONNRESET. They all mean the same user-visible fact here: COMMS lost its local sidecar transport.
+  function isTransportLoss(raw) {
+    return /cannot reach|can'?t reach|unreachable|failed to fetch|fetch failed|networkerror|load failed|connection (?:refused|reset)|disconnected|\bterminated\b|socket (?:hang up|closed)|other side closed|premature close|econnreset|epipe/i.test(String(raw || ''));
   }
   // a user-initiated stop (Esc / Stop button → AbortController) reads as an AbortError or an "abort" message.
   // A user abort is NOT a fault — it must not produce a scary error row.
@@ -166,7 +172,7 @@
     // a forwarded capability denial ("no web — …" / "capdenied")
     if (/\bcapdenied\b/.test(low) || /^no\s+\w+\s+—/.test(low) || /needs a capability|capability.*(off|denied)/.test(low)) return 'capdenied';
     // the sidecar is unreachable (fetch threw — Harness throws "cannot reach the STARNET sidecar…")
-    if (/cannot reach|can'?t reach|unreachable|failed to fetch|fetch failed|networkerror|load failed|connection (refused|reset)|disconnected/.test(low)) return 'network';
+    if (isTransportLoss(low)) return 'network';
     // content / policy beats a status
     if (/content[ _]?policy|moderation|flagged|safety|content_filter/.test(low)) return 'content_policy_blocked';
     // HTTP status from "sidecar HTTP <status>" or an explicit status arg
@@ -238,7 +244,7 @@
         kind = REASON_TO_KIND[verdict.reason] || 'unknown';
         // a bare network failure ("cannot reach the sidecar") classifies as `unknown` upstream (it never reached
         // the API) — promote it to the friendlier `network` bucket so the message points at the sidecar.
-        if (kind === 'unknown' && /cannot reach|can'?t reach|unreachable|failed to fetch|fetch failed|networkerror|disconnected/.test(raw.toLowerCase())) kind = 'network';
+        if (kind === 'unknown' && isTransportLoss(raw)) kind = 'network';
       } catch (_) { kind = kindFromRaw(raw, status); }
     } else {
       kind = kindFromRaw(raw, status);
@@ -317,5 +323,5 @@
   }
 
   return { friendlyError, actionButton, KINDS, CAP_INFO,
-    _internals: { kindFromRaw, isUserAbort, REASON_TO_KIND, capFromRaw, capdeniedMessage, codexConnected } };
+    _internals: { kindFromRaw, isTransportLoss, isUserAbort, REASON_TO_KIND, capFromRaw, capdeniedMessage, codexConnected } };
 });
