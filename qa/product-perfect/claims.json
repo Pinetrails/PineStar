@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "21d4aba0781791b090dfab620914df9795bfb2b0",
+    "sourceCommit": "67aa11174d7f6f0530f5bf7178cf7a3c3ce14436",
     "pathSetSha256": "e45261d65dc7ff0b9cc77172b4f800cc4bef6dec86bd786a26771964e9b2e342",
     "files": [
       {
@@ -198,8 +198,8 @@
       },
       {
         "path": "frontend/app/data-shim.js",
-        "bytes": 2579,
-        "sha256": "61f82feee7deca978fef9cdcbca97167b6b9149e580d21c3f33d48705928b74e"
+        "bytes": 3053,
+        "sha256": "101ce5dcd3ae7634fb56991ab769d7fa182d017a3bf39e191ba21027525f57ea"
       },
       {
         "path": "frontend/app/deliverables.js",
@@ -1424,7 +1424,7 @@
         {
           "kind": "contains",
           "path": "frontend/app/chat.js",
-          "needle": "openItBtn.textContent = '▶ Open it — try it in a tab'"
+          "needle": "openItBtn.textContent = '\u00e2\u2013\u00b6 Open it \u00e2\u20ac\u201d try it in a tab'"
         },
         {
           "kind": "contains",
@@ -1528,7 +1528,7 @@
         {
           "kind": "contains",
           "path": "frontend/app/autonomy.js",
-          "needle": "run free toward my goals while i’m away"
+          "needle": "run free toward my goals while i\u00e2\u20ac\u2122m away"
         },
         {
           "kind": "contains",
