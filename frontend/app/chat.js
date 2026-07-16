@@ -1979,6 +1979,16 @@ const Chat = (() => {
     r.body.appendChild(foot);
     autoscroll();
   }
+  // awayRate(host, rw, onSettle) — mount the real rate-the-work control for an away run into any DOM host
+  // (the OUTBOX window uses this). Same XP-law path as every attended run (seedAwayWork → workRateControl →
+  // rateWork). Returns false when the run was already judged this session (the caller just collects the crate).
+  function awayRate(host, rw, onSettle) {
+    if (!host || !rw || !rw.runId) return false;
+    if (workRatedRuns.has(rw.runId)) return false;   // already judged — nothing to mount, crate is collectable
+    seedAwayWork(rw);
+    workRateControl(host, rw.agentId || 'agent', rw.runId, onSettle);
+    return true;
+  }
   // the OUTBOX collect beat: clicking the chute (or a stacked crate) reviews ONE pending away run.
   // Same gold-inset family; rating clears the crate (onRated) and the beat vanishes.
   // Reshaped 2026-07-16: the beat now SAYS what it is (a run that finished while you were away), offers
@@ -5342,5 +5352,5 @@ const Chat = (() => {
   // only" gate maybeStandaloneRate uses — so a pure-chat run is never bottle-offered. Used by App.runBottleInfo (R5).
   function runDidWork(id) { const w = id ? runWork.get(id) : null; return !!(w && ((w.toolsOk || 0) >= 1 || (w.delivered || 0) >= 1)); }
 
-  return { init, load, send, status, localLine, broadcast, setSystem, getHistory, abort, isBusy, beatBusy: skillBeatBusy, beginInterview, endInterview, echoUser, prefill, autoGrowInput, choices, clearChoices, typeLine, nudge, clearNudge, offerCuriosity, offerFork, briefingReceipt, runMeta, runDidWork, awayDigest, awayReview, workshopReturn, refreshIdBar: renderIdBar, setRosterStatus };
+  return { init, load, send, status, localLine, broadcast, setSystem, getHistory, abort, isBusy, beatBusy: skillBeatBusy, beginInterview, endInterview, echoUser, prefill, autoGrowInput, choices, clearChoices, typeLine, nudge, clearNudge, offerCuriosity, offerFork, briefingReceipt, runMeta, runDidWork, awayDigest, awayReview, awayRate, workshopReturn, refreshIdBar: renderIdBar, setRosterStatus };
 })();
