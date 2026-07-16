@@ -7,7 +7,35 @@
    (task board · UI settings · notifications) persists to localStorage. */
 'use strict';
 
-const StationUI = (() => {
+// Pure geometry seam for floating terminal placement. Kept outside StationUI so its viewport
+// invariants can be exercised without a browser DOM.
+function visibleTerminalRect(rect, viewport) {
+  const vw = Math.max(0, Number(viewport && viewport.width) || 0);
+  const vh = Math.max(0, Number(viewport && viewport.height) || 0);
+  const width = Math.max(0, Number(rect && rect.width) || 0);
+  const height = Math.max(0, Number(rect && rect.height) || 0);
+  const left = Number.isFinite(Number(rect && rect.left)) ? Number(rect.left) : 0;
+  const top = Number.isFinite(Number(rect && rect.top)) ? Number(rect.top) : 0;
+  const padX = Math.min(8, vw / 4);
+  const padY = Math.min(8, vh / 4);
+  const fitsWidth = width <= Math.max(0, vw - padX * 2);
+  const fitsHeight = height <= Math.max(0, vh - padY * 2);
+  // If responsive rules have not settled and the old rect is wider than the viewport, align
+  // its right edge so the close control remains reachable. The settled-size pass then moves
+  // the responsive rect to the normal inset.
+  const minLeft = fitsWidth ? padX : vw - padX - width;
+  const maxLeft = vw - padX - width;
+  const minTop = padY;
+  const maxTop = vh - padY - height;
+  return {
+    left: fitsWidth ? Math.max(minLeft, Math.min(left, maxLeft)) : maxLeft,
+    top: fitsHeight ? Math.max(minTop, Math.min(top, maxTop)) : minTop,
+    width,
+    height
+  };
+}
+
+const StationUI = typeof document === 'undefined' ? {} : (() => {
   const $ = s => document.querySelector(s);
   const esc = s => U.esc(String(s == null ? '' : s));
   const el = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html !== undefined) e.innerHTML = html; return e; };
@@ -156,16 +184,28 @@ const StationUI = (() => {
   // on the last section they were on — across a full reload, not just this session. Saved back on drag-end / retab.
   try { Object.assign(termPos, store.termPos || {}); Object.assign(consoleSection, store.consoleSection || {}); } catch (_) {}
   function saveWindowState() { try { store.termPos = termPos; store.consoleSection = consoleSection; save(); } catch (_) {} }
+  function terminalViewport() { return { width: window.innerWidth, height: window.innerHeight }; }
+  function rememberTermPosition(key, left, top) {
+    if (!key) return;
+    const prior = termPos[key];
+    if (prior && prior.left === left && prior.top === top) return;
+    termPos[key] = { left, top };
+    saveWindowState();
+  }
   window.addEventListener('mousemove', ev => {
     if (termDrag) {
       termDrag.moved = true;   // real drag movement — a dblclick-to-minimize must not fire after a drag
-      const w = termDrag.w, ww = termDrag.ww;
-      // clamp so the title bar can never be dragged off-screen (lost window): keep >=64px of the panel
-      // horizontally on each edge and the header row always reachable. (ww/wh cached at grab — no layout read.)
-      const nl = Math.max(64 - ww, Math.min(ev.clientX - termDrag.dx, window.innerWidth - 64));
-      const nt = Math.max(0, Math.min(ev.clientY - termDrag.dy, window.innerHeight - 36));
-      w.style.left = nl + 'px';
-      w.style.top = nt + 'px';
+      const w = termDrag.w;
+      // Shared clamp keeps the titlebar and its right-side close control reachable.
+      // Its cached size keeps this mousemove path free of layout reads.
+      const next = visibleTerminalRect({
+        left: ev.clientX - termDrag.dx,
+        top: ev.clientY - termDrag.dy,
+        width: termDrag.ww,
+        height: termDrag.wh
+      }, terminalViewport());
+      w.style.left = next.left + 'px';
+      w.style.top = next.top + 'px';
       w.style.transform = 'none';
     }
   });
@@ -173,7 +213,7 @@ const StationUI = (() => {
     // remember where the Commander parked this panel so it re-opens there, not back at dead-center
     if (termDrag) {
       const w = termDrag.w, k = Object.keys(open).find(key => open[key] === w);
-      if (k && termDrag.moved) { termPos[k] = { left: w.offsetLeft, top: w.offsetTop }; saveWindowState(); }
+      if (k && termDrag.moved) fitTermInViewport(w, k, true);
       w._lastDragMoved = !!termDrag.moved;   // let dblclick-to-minimize know if this grab was actually a drag
     }
     termDrag = null;
@@ -184,7 +224,8 @@ const StationUI = (() => {
   let resizeClampTimer = 0;
   window.addEventListener('resize', () => {
     clearTimeout(resizeClampTimer);
-    resizeClampTimer = setTimeout(() => { Object.keys(open).forEach(k => { if (!minimized[k]) fitTermInViewport(open[k]); }); }, 120);
+    requestAnimationFrame(() => { Object.keys(open).forEach(k => { if (!minimized[k]) fitTermInViewport(open[k], k, true); }); });
+    resizeClampTimer = setTimeout(() => { Object.keys(open).forEach(k => { if (!minimized[k]) fitTermInViewport(open[k], k, true); }); }, 120);
   });
 
   // Land a freshly-opened window in a tidy left-anchored column, CASCADING each so stacked panels
@@ -192,7 +233,12 @@ const StationUI = (() => {
   // A remembered drag position always wins. Clamped to the viewport so nothing opens off-screen.
   function placeTerm(w, key) {
     const p = termPos[key];
-    if (p) { w.style.left = p.left + 'px'; w.style.top = p.top + 'px'; w.style.transform = 'none'; return; }
+    if (p) {
+      w.style.left = p.left + 'px'; w.style.top = p.top + 'px'; w.style.transform = 'none';
+      w.classList.add('term-moved');
+      requestAnimationFrame(() => fitTermInViewport(w, key, true));
+      return;
+    }
     const prior = Math.max(0, Object.keys(open).filter(k => k !== key && !minimized[k]).length);   // how many OTHER visible windows are already open (minimized ones don't crowd the cascade)
     if (prior === 0) {
       // SINGLE window = the focal point: let CSS center it (left/top:50% + translate(-50%,-50%) with a
@@ -207,20 +253,24 @@ const StationUI = (() => {
     const baseL = 92, baseT = 80, step = 30, span = 6;
     let left = baseL + (prior % span) * step;
     let top  = baseT + (prior % span) * step;
-    left = Math.max(8, Math.min(left, window.innerWidth  - wpx - 8));
-    top  = Math.max(8, Math.min(top,  window.innerHeight - hpx - 8));
-    w.style.left = left + 'px'; w.style.top = top + 'px'; w.style.transform = 'none';
+    const placed = visibleTerminalRect({ left, top, width: wpx, height: hpx }, terminalViewport());
+    w.style.left = placed.left + 'px'; w.style.top = placed.top + 'px'; w.style.transform = 'none';
   }
-  function fitTermInViewport(w) {
+  function fitTermInViewport(w, key, persist) {
     if (!w) return;
-    // a console window is CSS-centered + fixed-size; pinning it here would knock it off its centering transform.
-    if (w.classList.contains('console') && !w.classList.contains('term-moved')) return;
-    const pad = 8;
-    const maxLeft = Math.max(pad, window.innerWidth - w.offsetWidth - pad);
-    const maxTop = Math.max(pad, window.innerHeight - w.offsetHeight - pad);
-    w.style.left = Math.max(pad, Math.min(w.offsetLeft, maxLeft)) + 'px';
-    w.style.top = Math.max(pad, Math.min(w.offsetTop, maxTop)) + 'px';
+    const resolvedKey = key || Object.keys(open).find(k => open[k] === w);
+    // A never-moved single window stays safely CSS-centered; explicit coordinates are repaired.
+    if (!w.classList.contains('term-moved') && !termPos[resolvedKey] && w.style.transform !== 'none') return;
+    const repaired = visibleTerminalRect({
+      left: w.offsetLeft,
+      top: w.offsetTop,
+      width: w.offsetWidth,
+      height: w.offsetHeight
+    }, terminalViewport());
+    w.style.left = repaired.left + 'px';
+    w.style.top = repaired.top + 'px';
     w.style.transform = 'none';
+    if (persist !== false) rememberTermPosition(resolvedKey, repaired.left, repaired.top);
   }
 
   // how many windows are actually VISIBLE (open but not minimized to the strip). Drives the scrim.
@@ -571,7 +621,7 @@ const StationUI = (() => {
         void body.offsetWidth;   // restart the animation if it was mid-flight
         body.classList.add('swap-in');
       }
-      if (opts && opts.fitViewport) requestAnimationFrame(() => fitTermInViewport(w));
+      requestAnimationFrame(() => fitTermInViewport(w, key, true));
     };
     w._render();
     // a11y: land focus on the dialog itself (role=dialog, tabIndex -1) — NOT the first control, which was the
@@ -6205,3 +6255,5 @@ const StationUI = (() => {
   const repaintAutonomy = () => { try { if (repaintAutonomyDial) repaintAutonomyDial(); } catch (_) {} };
   return { init, enter, setRoster, leave, clearRunning, runningCount: () => runningAgents.size, isAgentRunning: (id) => agentLive(id), notify, flashSave, openAgent, openArcade, toggleTerm, openTerm, rerender, refreshBoard: () => rerender('tasks'), pokeQuests, setTheme, getTheme, repaintAutonomy };
 })();
+
+if (typeof module !== 'undefined' && module.exports) module.exports = { visibleTerminalRect };
