@@ -114,30 +114,17 @@ for (const iid of iconIds) {
     'seal ' + iid + ' uses only currentColor/none/deboss (no theme-breaking hardcoded colour): ' + c);
 }
 
-/* ---------- 1b''. TYPED ASCII MARKS (premium bay pass): the bay's rendered emblem is TYPED, not drawn ----
-   The bay renders ClassIcons.ascii() for every class (the SVG seals stay as the mission art + vector
-   fallback). Laws: every catalog class has a bespoke mark; every mark maps back to a catalog class (no
-   orphans); a mark is exactly 5 rows of <=9 columns drawn ONLY from printable ASCII (0x20-0x7E) plus the
-   terminal shade/half-block set ░▒▓█▄▀ (the AsciiFX decode alphabet — VT323 provably renders it), so every
-   machine types it identically; and no two classes share a mark (identity, not decoration). */
-const MARK_CHARSET = /^[\x20-\x7E░▒▓█▄▀]*$/;   // ASCII + ░ ▒ ▓ █ ▄ ▀
-for (const b of CATALOG) {
-  const m = classicons.ascii(b.id);
-  A.ok(Array.isArray(m) && m.length === 5, b.id + ' has a 5-row typed ASCII mark');
-  if (m) for (const row of m) {
-    A.ok(typeof row === 'string' && row.length >= 1 && row.length <= 9, b.id + ' mark row is 1-9 columns: "' + row + '"');
-    A.ok(MARK_CHARSET.test(row), b.id + ' mark row is ASCII + the ░▒▓█▄▀ shade set only: "' + row + '"');
-  }
-}
-const asciiIds = Object.keys(classicons.ASCII);
-for (const aid of asciiIds) A.ok(catIds.has(aid), 'ASCII mark maps to a real catalog class (no orphan mark): ' + aid);
-A.eq(asciiIds.length, CATALOG.length, 'exactly one typed mark per class (' + asciiIds.length + ' marks, ' + CATALOG.length + ' classes)');
-const markKeys = CATALOG.map(b => classicons.ascii(b.id).join('\n'));
-A.eq(new Set(markKeys).size, markKeys.length, 'every typed mark is unique (no two classes share an emblem)');
-// the bay actually renders the typed mark (never silently regresses to the coin for classes)
+/* ---------- 1b''. THE SEAL IS THE EMBLEM (ASCII-mark layer removed 2026-07-16, Andrew's call) ----
+   The bay renders the engraved SVG coin seal for every class — the typed-ASCII emblem layer is GONE and
+   must never silently return. Laws: no ascii()/ASCII export survives in classicons; the bay's coinInner
+   renders ClassIcons.svg() with the emoji as the custom-class fallback; no .mkt-amark path remains. */
+A.ok(!classicons.ascii && !classicons.ASCII, 'the typed-ASCII mark system is fully removed from classicons');
 const mktSrc = fs.readFileSync(path.join(__dirname, '../frontend/app/marketplace.js'), 'utf8');
-A.ok(/ClassIcons\.ascii\s*\(/.test(mktSrc) && /mkt-amark/.test(mktSrc),
-  'the bay renders ClassIcons.ascii() as the class emblem (.mkt-amark)');
+A.ok(/ClassIcons\.svg\s*\(/.test(mktSrc) && /mkt-coin-ico/.test(mktSrc),
+  'the bay renders ClassIcons.svg() as the class emblem (.mkt-coin-ico)');
+A.ok(!/ClassIcons\.ascii|mkt-amark/.test(mktSrc), 'no ASCII-mark render path survives in the bay');
+const mktCss = fs.readFileSync(path.join(__dirname, '../frontend/css/marketplace.css'), 'utf8');
+A.ok(!/mkt-amark/.test(mktCss), 'no ASCII-mark styling survives in marketplace.css');
 
 /* ---------- 1b'. DISTINCTNESS: a beginner must be able to tell the classes apart at pick-time ---------- */
 // taglines + blurbs are unique across BOTH shelves (no two classes present as the same thing in the bay).

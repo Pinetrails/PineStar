@@ -59,42 +59,9 @@
     herald: '<svg viewBox="0 0 24 24"><rect x="5" y="2.6" width="2" height="18.8" rx=".6" fill="currentColor"/><path fill="currentColor" d="M7 3.4 H20 L16.8 7.6 L20 11.8 H7 Z"/><g fill="none" stroke="' + D + '" stroke-width="1.4" stroke-linecap="round"><path d="M9.6 6 H16"/><path d="M9.6 9 H14"/></g></svg>',
   };
 
-  /* ---- ASCII MARKS (premium bay pass, 2026-07-14; upsized same day): terminal-native class emblems ----
-     The bay renders THESE (in the class accent, VT323) instead of the SVG coins — the station is an ASCII
-     terminal, its insignia are typed, not drawn. Exactly 5 rows each, <=9 columns, printable ASCII plus the
-     terminal SHADE/HALF-BLOCK set (░ ▒ ▓ █ ▄ ▀ — the AsciiFX decode alphabet, so VT323 provably renders
-     them): strokes draw the structure, blocks carry lit MASS, which is what makes the emblems read as
-     glowing pictograms instead of line art. Authored + reviewed in the icon-lab loop at both the row scale
-     (~10px) and the dossier scale (~19px) — every mark must read at BOTH. The SVG ICONS above stay as the
-     mission-seal art + vector fallback; custom classes fall back to their emoji glyph. */
-  const ASCII = {
-    researcher: ['  .--.   ', ' /░░  \\  ', '| (+)  | ', ' \\    /█▄', '  \'--\' ▀█'],      // hand lens, glint + solid grip
-    engineer:   ['.-------.', '| $ </> |', '|░░░░░░░|', '\'---,-,-\'', '   ▄█▄   '],        // lit terminal on its stand
-    operator:   ['  \\ | /  ', ' .-----. ', '-| ▓█▓ |-', ' \'-----\' ', '  / | \\  '],      // the gear, core glowing
-    scribe:     ['    ,--\\ ', '   /▒▒) ', '  /▒▒/   ', ' |_,-`   ', ' ▀▀▀▀▀▀▀ '],           // shaded quill over the ink line
-    analyst:    ['|      ██', '|      ██', '|   ██ ██', '| ▄ ██ ██', '\'--------'],          // solid bars rising on the axis
-    scout:      ['  .---.  ', ' / .-. \\ ', '| (o---->', ' \\ `-\' / ', '  \'---\'  '],     // radar rings + the sweep
-    designer:   [' .-----. ', ' | ░ o | ', ' |▄▀▀▄▄| ', ' \'-----\' ', '  /   \\  '],        // the picture on its easel
-    chief:      [' ▀▀▀▀▀▀▀ ', '   .^.   ', '  <(*)>  ', '   \'v\'   ', ' ▄▄▄▄▄▄▄ '],        // command star between solid bars
-    tutor:      [' ▄▄▄ ▄▄▄ ', '/░░░V░░░\\', '|░░░|░░░|', '\\▄▄▄|▄▄▄/', '   ▀▀▀   '],         // the open book, pages lit
-    navigator:  ['    N    ', '  ▄▀|▀▄  ', ' (--+--) ', '  ▀▄|▄▀  ', '    S    '],            // compass rose in its ring
-    curator:    [' .-----. ', ' | [█] | ', ' |-----| ', ' | [█] | ', ' \'-----\' '],          // drawers, solid handles
-    muse:       ['   .-.   ', '  /░░░\\  ', ' |░░!░░| ', '  \\░▄░/  ', '   |=|   '],          // the bulb, glowing
-    reviewer:   [' \\,   ,/ ', '  \\o-o/  ', '  (▒▒▒)  ', '  (▒▒▒)  ', '  /| |\\  '],         // the bug, shell banded
-    archivist:  [' .-----. ', ' ||||||| ', ' ||||||| ', ' |░░░░░| ', ' \'-----\' '],          // the card index
-    liaison:    [' .-----. ', ' |\\▒▒▒/| ', ' | \\ / | ', ' |  v  | ', ' \'-----\' '],        // envelope, flap shaded
-    broker:     ['   ▄|▄   ', '  / | \\  ', ' o  |  o ', '    |    ', '  ▄▄█▄▄  '],           // the balance on its base
-    publicist:  ['  .---.  ', ' |▓▓▓▓▓| ', ' |▒▒▒▒▒| ', '  \'-.-\'  ', '  ▄▄█▄▄  '],         // the mic, grille shaded
-    auditor:    [' ,-----. ', ' |░░!░░| ', ' \\░░░░░/ ', '  \\░░░/  ', '   \'-\'   '],        // the warded shield
-    bookkeeper: [' .-----. ', ' | $ = | ', ' |--+--| ', ' | = $ | ', ' \'-----\' '],          // the ruled ledger
-    translator: [' A .---> ', '   |     ', '  <=>    ', '     |   ', ' <---. B '],            // A to B and back
-    herald:     [' |▀▄▄▄▄▄ ', ' |░░░░░░\\', ' |▄▄▄▄▄▄/', ' |       ', ' |       ']            // the banner, cloth catching light
-  };
-  // the typed emblem for a class id — an array of 5 ASCII rows, or null (custom → caller draws its emoji).
-  function ascii(idOrSpec) {
-    const id = typeof idOrSpec === 'string' ? idOrSpec : (idOrSpec && idOrSpec.id);
-    return ASCII[id] || null;
-  }
+  /* (The 2026-07-14 "typed ASCII mark" layer was REMOVED 2026-07-16 on Andrew's call — the typed
+     emblems read as noise next to the engraved coins. The SVG seals above are the ONE class emblem
+     system again: clean, accent-themed, unique per class. Custom classes fall back to their emoji.) */
 
   const CODE = {
     chief: 'CHF', engineer: 'ENG', researcher: 'RES', reviewer: 'REV', operator: 'OPR',
@@ -160,5 +127,5 @@
     return '<span class="mkt-pips">' + '<b>◆</b>'.repeat(n) + '◇'.repeat(3 - n) + '</span>';
   }
 
-  return { ICONS, ASCII, CODE, LANE_LABEL, svg, ascii, code, lane, laneLabel, clearance, pipsHTML };
+  return { ICONS, CODE, LANE_LABEL, svg, code, lane, laneLabel, clearance, pipsHTML };
 });
