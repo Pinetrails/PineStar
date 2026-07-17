@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "0278d32d7785096f28f973773536ece98b4ce651",
+    "sourceCommit": "930f9ebd8a884ddab490b52d0cfa6c1791bf9823",
     "pathSetSha256": "9eeefd91d6d300f96627d4a5036f6c767a4a1fe611b7bce6175e1b94964d750f",
     "files": [
       {
@@ -133,8 +133,8 @@
       },
       {
         "path": "frontend/app/chat.js",
-        "bytes": 393945,
-        "sha256": "0c8ff1cfbac4f9d74a644227e07158ff7351d42c1398fbe53c9006d817bf523a"
+        "bytes": 393982,
+        "sha256": "b84cd3ee96b4dcd4c9cd45ad234a5ac759ec6946c07f3675d309aac6bf3d1912"
       },
       {
         "path": "frontend/app/chatresize.js",
@@ -374,7 +374,7 @@
       {
         "path": "frontend/app/nightreportstore.js",
         "bytes": 10907,
-        "sha256": "7ba198ef0b5cd5e0aafc2a77865b6e619b971238b600b0d7368033237626e5f0"
+        "sha256": "3919652c6cd90235d9f66d073091960837b70aeaadd0e71dc7b568ad6fb61137"
       },
       {
         "path": "frontend/app/onboarding.js",
