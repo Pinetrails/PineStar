@@ -156,6 +156,7 @@ test/fs.jail.test.js
 test/fs.patch.test.js
 test/web.ssrf.test.js
 test/web.search.test.js
+test/web.fence.test.js
 test/browser.test.js
 test/desktop.test.js
 test/computer.test.js
