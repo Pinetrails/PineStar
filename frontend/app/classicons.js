@@ -63,6 +63,12 @@
     scriptwright: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M5 2.6 H15.4 L19.6 6.8 V21.4 H5 Z"/><path fill="' + D + '" d="M15.4 2.6 L19.6 6.8 H15.4 Z"/><g fill="none" stroke="' + D + '" stroke-width="1.5" stroke-linecap="round"><path d="M7.6 9.4 H16.8"/><path d="M7.6 12.4 H16.8"/><path d="M7.6 15.4 H12.4"/></g><path fill="' + D + '" d="M14.4 14.2 L17.8 16.2 L14.4 18.2 Z"/></svg>',
     // prospector: the funnel — the wide field narrowed to the qualified few.
     prospector: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M2.6 3.6 H21.4 L14.6 12.2 V19.4 L9.4 22.4 V12.2 Z"/><g fill="none" stroke="' + D + '" stroke-width="1.5" stroke-linecap="round"><path d="M6.2 6.4 H17.8"/><path d="M8.8 9.2 H15.2"/></g></svg>',
+    // closer: the contract signed and sealed — the deal done.
+    closer: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M4 2.6 H16.2 L20 6.4 V21.4 H4 Z"/><g fill="none" stroke="' + D + '" stroke-width="1.5" stroke-linecap="round"><path d="M6.6 8 H17"/><path d="M6.6 11 H17"/><path d="M6.6 14 H11.4"/></g><circle cx="15.4" cy="16.6" r="4.2" fill="' + D + '"/><path fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" d="M13.4 16.6 L14.9 18.1 L17.5 15.3"/></svg>',
+    // steward: two speech bubbles in conversation — the tended community.
+    steward: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M2.6 3.6 H15 a1.8 1.8 0 0 1 1.8 1.8 V11 a1.8 1.8 0 0 1 -1.8 1.8 H8.4 L4.6 16 v-3.2 H4.4 a1.8 1.8 0 0 1 -1.8 -1.8 Z"/><path fill="currentColor" d="M9.8 14.8 H19.6 a1.8 1.8 0 0 1 1.8 1.8 v3 a1.8 1.8 0 0 1 -1.8 1.8 h-2 v2.2 L14.6 21.4 H9.8 Z"/><g fill="none" stroke="' + D + '" stroke-width="1.5" stroke-linecap="round"><path d="M5.4 6.6 H13.6"/><path d="M5.4 9.4 H11"/></g></svg>',
+    // optimizer: the magnifier over rising bars — found, and climbing.
+    optimizer: '<svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="8" fill="currentColor"/><path fill="currentColor" d="M16 14.2 L22 20.2 L20.2 22 L14.2 16 Z"/><g fill="' + D + '"><rect x="6.2" y="10.4" width="2.2" height="4" rx=".4"/><rect x="9.4" y="8.4" width="2.2" height="6" rx=".4"/><rect x="12.6" y="6.2" width="2.2" height="8.2" rx=".4"/></g></svg>',
     // translator: two-way arrows over two script marks — swapping languages. The glyphs are stroke PATHS (a Latin
     // "A" top-left, an abstract CJK mark bottom-right), not <text> — <text> was the only seal that rendered with a
     // system font, so it scaled + themed inconsistently against the other engraved paths.
@@ -81,7 +87,8 @@
     broker: 'BRK', tutor: 'TUT', auditor: 'AUD', translator: 'XLT', herald: 'HLD',
     navigator: 'NAV', curator: 'CUR', muse: 'MUS',
     strategist: 'STG', marketer: 'MKT', publisher: 'PUB', producer: 'PRD', scriptwright: 'WRT',
-    prospector: 'PRS', envoy: 'ENV', treasurer: 'TRE'
+    prospector: 'PRS', envoy: 'ENV', treasurer: 'TRE',
+    closer: 'CLO', steward: 'STW', optimizer: 'OPT'
   };
 
   // bespoke emblems for the built-in RECIPES (missions) — same matte/debossed style, keyed by recipe id.

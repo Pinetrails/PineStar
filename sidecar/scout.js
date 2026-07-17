@@ -344,7 +344,13 @@
       let score = 0; const hits = [];
       for (const t of topics) {
         const toks = archTokens(t.label);
-        if (toks.length && toks.some(tok => corpus.indexOf(tok) !== -1)) { score += Number(t.weight) || 0; hits.push(t); }
+        if (!toks.length) continue;
+        // COVERAGE scoring (2026-07-16 precision fix): a topic only counts when the archetype's corpus
+        // matches a MAJORITY of its tokens, and it scores weight×coverage — so "gpu price tracking" lands
+        // on the class whose whole JOB is prices, not one whose blurb grazes the word once. Before this,
+        // any single-token graze scored the full weight and array order broke the tie.
+        const cover = toks.filter(tok => corpus.indexOf(tok) !== -1).length / toks.length;
+        if (cover > 0.5) { score += (Number(t.weight) || 0) * cover; hits.push(t); }
       }
       // the anchoring hit must be a WARM habit — one stray mention never summons the long tail.
       if (!hits.length || !hits.some(h => (Number(h.weight) || 0) >= ARCH_MIN_TOPIC_WEIGHT)) continue;
