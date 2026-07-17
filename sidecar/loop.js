@@ -54,6 +54,44 @@
     }
   }
 
+  // TEXT TOOL-CALL RESCUE (model-consistency sweep 2026-07-17): some models (Kimi/Qwen/GLM families) emit
+  // their tool call as PLAIN TEXT markup — `<tool_call>{"name":…,"arguments":{…}}</tool_call>` — instead of
+  // the tool_calls wire, typically when a provider mangles the tools param. Without rescue the run ends
+  // 'done' with raw XML shown to the Commander and the work not done. Conservative recovery: fires ONLY when
+  // the wire produced ZERO tool calls; each block must JSON-parse (one bounded mechanical repair attempt) to
+  // an object naming a WIRED tool; anything else stays visible text. Rescued calls flow through the SAME
+  // parseCall/repair/dispatch path, so capability + consent gates are unchanged. Accepted markup is stripped
+  // from the kept assistant text so the replayed transcript reads like a normal tool turn.
+  function rescueTextToolCalls(text, tools) {
+    const t = String(text == null ? '' : text);
+    if (t.indexOf('<tool_call>') < 0) return null;
+    const wired = new Set();
+    for (const tl of (tools || [])) {
+      const n = tl && (tl.name || (tl.function && tl.function.name));
+      if (n) wired.add(String(n));
+    }
+    if (!wired.size) return null;
+    const re = /<tool_call>\s*([\s\S]*?)\s*<\/tool_call>/g;
+    const calls = [], spans = [];
+    let m;
+    while ((m = re.exec(t))) {
+      let obj = null;
+      try { obj = JSON.parse(m[1]); }
+      catch (_) { try { obj = JSON.parse(repairToolCallArguments(m[1])); } catch (_) { obj = null; } }
+      const name = (obj && typeof obj.name === 'string') ? obj.name.trim() : '';
+      if (!name || !wired.has(name)) continue;   // unknown tool or unparseable block -> left as text, never guessed
+      let rawArgs = (obj.arguments !== undefined) ? obj.arguments : ((obj.parameters !== undefined) ? obj.parameters : {});
+      const argsRaw = (typeof rawArgs === 'string') ? rawArgs : JSON.stringify(rawArgs == null ? {} : rawArgs);
+      calls.push(parseCall({ id: 'textcall_' + calls.length, name, args: argsRaw }, calls.length));
+      spans.push([m.index, re.lastIndex]);
+    }
+    if (!calls.length) return null;
+    let kept = '', at = 0;
+    for (const [s, e] of spans) { kept += t.slice(at, s); at = e; }
+    kept += t.slice(at);
+    return { calls, text: kept.trim() };
+  }
+
   function assistantTurn(text, calls) {
     const msg = { role: 'assistant', content: text || '' };
     if (calls.length) {
@@ -442,7 +480,13 @@
       // content merely duplicates the previous assistant turn can be detected below.
       let priorAssistantText = null;
       for (let mi = messages.length - 1; mi >= 0; mi--) { if (messages[mi].role === 'assistant') { priorAssistantText = String(messages[mi].content == null ? '' : messages[mi].content); break; } }
-      const calls = Object.keys(acc.toolCalls).sort((a, b) => a - b).map((k, i) => parseCall(acc.toolCalls[k], i));
+      let calls = Object.keys(acc.toolCalls).sort((a, b) => a - b).map((k, i) => parseCall(acc.toolCalls[k], i));
+      // TEXT TOOL-CALL RESCUE: a zero-wire-call turn whose TEXT carries <tool_call> markup naming wired tools
+      // is a mis-wired action, not a final answer — recover the calls and strip the markup from the kept text.
+      if (calls.length === 0) {
+        const rescued = rescueTextToolCalls(acc.text, tools);
+        if (rescued) { calls = rescued.calls; acc.text = rescued.text; }
+      }
       repairCalls(calls, emit, agentId, runId);   // L2: fix broken tool-call JSON before it is used or discarded
       messages.push(assistantTurn(acc.text, calls));
 
@@ -527,5 +571,5 @@
     }
   }
 
-  return { runAgentLoop, _internals: { parseCall, repairCalls, assistantTurn, toolResultMsg, assertPaired, executeCalls, announcesIntent } };
+  return { runAgentLoop, _internals: { parseCall, repairCalls, assistantTurn, toolResultMsg, assertPaired, executeCalls, announcesIntent, rescueTextToolCalls } };
 });
