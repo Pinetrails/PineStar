@@ -7961,6 +7961,8 @@ async function runOnce(o) {
       + (hasWriteTools ? 'Saving a file shows the Commander a quick one-click approval prompt — so just CALL the write tool when you are ready; do not ask permission in chat or claim you cannot save. If they decline, carry on without it. ' : '')
       + 'Keep working across as many tool calls as the task needs; when it is fully done, give the Commander a clear '
       + 'final report of what you found/did' + (hasWriteTools ? ' and which files you saved.' : '.')
+      + ' Never end a reply by only announcing your next action ("Let me read the file", "Fixing it now") — a reply '
+      + 'with no tool calls ends your run. If you name a next step, make that tool call in the SAME reply.'
     : '';
   // Stage 2/3: a LEAD run is told it can DELEGATE to existing crew (team.dispatch, listed FRESH from the roster
   // the browser pushed via /api/roster) AND SUMMON new specialists (team.summon). Only the lead gets this (it alone
