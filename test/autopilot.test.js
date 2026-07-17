@@ -165,6 +165,19 @@ const dd2 = Autopilot.buildDoDirectiveV2(cands2[0], { runId: 'run-xyz', dir: 'wo
 A.ok(/deliverable\.json/.test(dd2) && /workshop\/run-xyz\//.test(dd2), 'V2 do directive demands a manifest + writes under the run dir');
 A.ok(/"backlogId":\s*"ns-act-run-xyz"/.test(dd2), 'V2 do directive threads the backlogId into the manifest shape');
 A.ok(/(never send|LOCAL ONLY|not.*publish|spend)/i.test(dd2), 'V2 do directive keeps the local-only (no send/publish/spend) rule');
+// FORMAT-FIT LAW (2026-07-17, root cause of dashboard-for-everything): the deliverable format must
+// match the ask — the HTML tool is the exception, never the default. Locked in BOTH away-work
+// personas: the V2 directive (executed here) and the sidecar workshop prompt (source-locked below).
+A.ok(/MATCH THE FORMAT TO THE ASK/.test(dd2), 'V2 do directive carries the format-fit ladder');
+A.ok(/NEVER default to a dashboard/.test(dd2), 'V2 do directive forbids the dashboard default');
+A.ok(!/Prefer a SELF-CONTAINED/.test(dd2), 'the old prefer-HTML-tool line is gone from the V2 directive');
+A.ok(/ZERO SETUP/.test(dd2), 'the zero-setup / one-click-Open law survives the format-fit rewrite');
+{
+  const sidecarSrc = require('fs').readFileSync(require('path').join(__dirname, '..', 'sidecar', 'index.js'), 'utf8');
+  const wp = sidecarSrc.slice(sidecarSrc.indexOf('function workshopPrompt'), sidecarSrc.indexOf('function workshopPrompt') + 4000);
+  A.ok(/MATCH THE FORMAT TO THE ASK/.test(wp) && /NEVER default to a dashboard/.test(wp) && !/Prefer a SELF-CONTAINED/.test(wp),
+    'the workshop-shift persona carries the same format-fit ladder (and dropped the prefer-HTML default)');
+}
 
 // the shared LEARN transform: fold verdicts, derive the capped bias — the SAME math the frontend AutopilotStore uses.
 let L = {};
