@@ -60,6 +60,7 @@ const {
   getProviderProfile,
   normalizeProviderId: normalizeProviderIdFromRegistry,
   providerUsesCodex: registryProviderUsesCodex,
+  providerUsesDeviceOAuth: registryProviderUsesDeviceOAuth,
   defaultReasoningEffortForProvider: registryDefaultReasoningEffort,
   providerRequiresKey,
   providerRequiresBaseUrl
@@ -68,6 +69,10 @@ const { DEFAULT_MODEL: CODEX_DEFAULT_MODEL } = require('./providers/codex.js');
 const codexAuth = require('./providers/codex-auth.js');
 const codexTokenStore = require('./providers/codex-token-store.js');
 const codexAuthState = require('./providers/codex-auth-state.js');
+// Grok / Kimi ride the STANDARD RFC 8628 device-code grant (one generic module), reusing codex-auth-state's
+// pure dead-token machinery. Codex keeps its own proprietary wire above — these are additive, never a reroute.
+const oauthDevice = require('./providers/oauth-device.js');
+const oauthTokenStore = require('./providers/oauth-token-store.js');
 const { effectiveModel: resolveEffectiveModel, effectiveUsd } = require('./spend.js');
 const { makeEmitter } = require('../shared/emitter.js');
 const { redact, renderRecall, injectRecall, rank, makeContext, compactionMemoryBlock, compactionSummaryPrompt } = require('./context.js');
@@ -1334,6 +1339,7 @@ function providerRuntimeBaseUrl(provider, explicitBaseUrl) {
 function providerHasCredential(provider, key, baseUrl) {
   const id = normalizeProvider(provider);
   if (registryProviderUsesCodex(id)) return !!(codexTokens && codexTokens.access_token);
+  if (registryProviderUsesDeviceOAuth(id)) { const e = oauthProviders[id]; return !!(e && e.tokens && e.tokens.access_token); }
   if (providerRequiresBaseUrl(id) && !String(baseUrl || '').trim()) return false;
   if (providerRequiresKey(id) && !String(key || '').trim()) return false;
   return true;
@@ -1343,6 +1349,7 @@ function providerCredentialError(provider) {
   const profile = getProviderProfile(id);
   const label = (profile && profile.label) || id;
   if (registryProviderUsesCodex(id)) return 'connect ChatGPT first - a signed-in ChatGPT account + model are required';
+  if (registryProviderUsesDeviceOAuth(id)) return 'sign in to ' + label + ' first - a signed-in subscription + model are required';
   if (providerRequiresBaseUrl(id)) return 'configure the ' + label + ' base URL';
   if (providerRequiresKey(id)) return 'connect a ' + label + ' API key';
   return 'provider is not configured';
@@ -2231,6 +2238,137 @@ async function ensureCodexAccessToken() {
   codexAuthDead = null;
   saveCodexTokens(codexTokens);
   return codexTokens.access_token;
+}
+
+// ---- Grok / Kimi (subscription) device-OAuth — the SAME protected-sibling posture as the codex tokens above:
+//      tokens live ONLY in WORKSPACES/<id>/tokens.json (out of the fs jail) and NEVER ride the event bus.
+//      Codex is deliberately NOT in this table (it keeps its own proprietary wire + ensureCodexAccessToken). ----
+const OAUTH_PROVIDER_IDS = ['grok', 'kimi'];
+// The static X-Msh-* device signature the kimi-cli sends, plus the runtime OS version + a stable per-install
+// device id (minted once, persisted with the tokens). Sent on EVERY kimi auth request AND on inference.
+function kimiMshHeaders(deviceId) {
+  return {
+    'X-Msh-Platform': 'kimi_cli',
+    'X-Msh-Version': '1.0.0',
+    'X-Msh-Device-Name': 'starnet',
+    'X-Msh-Device-Model': 'starnet',
+    'X-Msh-Os-Version': (() => { try { return os.release() || 'unknown'; } catch (_) { return 'unknown'; } })(),
+    'X-Msh-Device-Id': String(deviceId || '')
+  };
+}
+// The verified wire constants for each provider (from the official device-code implementations). Everything
+// provider-specific is contained here; the generic oauth-device.js knows none of it.
+function oauthDeviceConfig(id, deviceId) {
+  if (id === 'grok') {
+    return {
+      providerId: 'grok',
+      clientId: 'b1a00492-073a-47ea-816f-4c329264a828',
+      deviceUrl: 'https://auth.x.ai/oauth2/device/code',
+      tokenUrl: 'https://auth.x.ai/oauth2/token',
+      scope: 'openid profile email offline_access grok-cli:access api:access conversations:read conversations:write',
+      deviceExtraBody: { referrer: 'starnet' },
+      encoding: 'form',
+      refreshSkewSeconds: 120,
+      forbiddenIsAllowlist: true   // xAI's OAuth surface can 403 an active subscriber -> steer to the API-key provider, not a re-sign-in
+    };
+  }
+  if (id === 'kimi') {
+    return {
+      providerId: 'kimi',
+      clientId: '17e5f671-d194-4dfb-9706-5516cb48c098',
+      deviceUrl: 'https://auth.kimi.com/api/oauth/device_authorization',
+      tokenUrl: 'https://auth.kimi.com/api/oauth/token',
+      encoding: 'json',
+      refreshSkewSeconds: 300,
+      halfLifeRefresh: true,       // ~15min access tokens: refresh past 50% of life OR within 300s of expiry
+      headers: kimiMshHeaders(deviceId)
+    };
+  }
+  return null;
+}
+// Extra inference headers for a device-OAuth provider (kimi's X-Msh-* set; grok needs none). The registry
+// profile carries the STATIC kimi headers; these add the runtime OS version + device id, merged by the factory.
+function oauthInferenceHeaders(id) {
+  const entry = oauthProviders[id];
+  if (id === 'kimi' && entry) return kimiMshHeaders(entry.deviceId);
+  return undefined;
+}
+const oauthProviders = (() => {
+  const map = {};
+  for (const id of OAUTH_PROVIDER_IDS) {
+    const file = path.join(WORKSPACES, id, 'tokens.json');
+    let tokens = null;
+    try { tokens = oauthTokenStore.loadTokens({ file, load: (f, t) => loadResilient(f, t), tag: id }); } catch (_) { tokens = null; }
+    // stable per-install device id: reuse the persisted one, else mint (persisted on the first token write).
+    const deviceId = (tokens && typeof tokens.device_id === 'string' && tokens.device_id) ? tokens.device_id : crypto.randomUUID();
+    map[id] = {
+      id, file, deviceId,
+      auth: oauthDevice.makeDeviceOAuth(oauthDeviceConfig(id, deviceId)),
+      tokens: (tokens && typeof tokens === 'object') ? tokens : null,
+      authDead: codexAuthState.deadFromTokens(tokens),
+      persistError: '',
+      pending: new Map()   // browser-opaque loginId -> { device_code (kept SERVER-SIDE), interval, at }
+    };
+  }
+  return map;
+})();
+function oauthLabel(id) {
+  const p = getProviderProfile(id);
+  return (p && (p.label || p.name)) || id;
+}
+// Verified persist (write -> read-back proof -> retry once), mirroring saveCodexTokens. Stamps the stable
+// device id into the envelope so it survives a restart. persistError is surfaced honestly by the status route.
+function saveOAuthTokens(id, obj) {
+  const entry = oauthProviders[id];
+  if (!entry) return false;
+  try { fs.mkdirSync(path.dirname(entry.file), { recursive: true }); } catch (_) {}
+  if (entry.deviceId && obj && typeof obj === 'object' && !obj.device_id) obj.device_id = entry.deviceId;
+  const r = oauthTokenStore.persistTokensVerified({
+    tokens: obj,
+    save: (o) => saveResilient(entry.file, o),
+    load: () => loadResilient(entry.file, id)
+  });
+  if (r.ok) { entry.persistError = ''; return true; }
+  entry.persistError = r.error || 'token could not be persisted to disk';
+  console.error('[' + id + '] token persist UNVERIFIED after retry (' + entry.persistError + ') — tokens kept in memory for this session; a restart may require re-signing in.');
+  return false;
+}
+function clearOAuthTokens(id) {
+  const entry = oauthProviders[id];
+  if (!entry) return;
+  try { fs.unlinkSync(entry.file); } catch (e) {}
+  try { fs.unlinkSync(entry.file + '.bak'); } catch (e) {}
+  entry.persistError = ''; entry.authDead = null;
+}
+// Hand a Grok/Kimi run a FRESH access token: refresh when the persisted expiry (or JWT exp) is inside the skew
+// window, persisting the rotated tokens. Mirrors ensureCodexAccessToken — a relogin-class refresh failure marks
+// the sign-in DEAD (durably), a transient one leaves the credentials standing; success strips any dead marker.
+async function ensureOAuthAccessToken(pid) {
+  const id = normalizeProvider(pid);
+  const entry = oauthProviders[id];
+  if (!entry) { const e = new Error('Unknown OAuth provider: ' + id); e.code = 'oauth_unknown_provider'; e.reloginRequired = false; throw e; }
+  if (!entry.tokens || !entry.tokens.access_token) {
+    const e = new Error('Not signed in to ' + oauthLabel(id) + ' — connect it first.');
+    e.code = id + '_not_connected'; e.reloginRequired = true; throw e;
+  }
+  if (!entry.auth.accessTokenIsExpiring(entry.tokens, Date.now())) return entry.tokens.access_token;
+  let next;
+  try {
+    next = await entry.auth.refreshTokens({ fetch: globalThis.fetch, refresh_token: entry.tokens.refresh_token, now: Date.now() });
+  } catch (e) {
+    const marker = codexAuthState.deadMarkerFromError(e, new Date().toISOString());
+    if (marker) {
+      entry.authDead = marker;
+      entry.tokens = codexAuthState.withDeadMarker(entry.tokens, marker);
+      saveOAuthTokens(id, entry.tokens);
+      console.warn('[' + id + '] refresh token is dead (' + marker.code + ') — Settings will show SIGN-IN EXPIRED until the user reconnects.');
+    }
+    throw e;
+  }
+  entry.tokens = codexAuthState.withoutDeadMarker(Object.assign({}, entry.tokens, next));
+  entry.authDead = null;
+  saveOAuthTokens(id, entry.tokens);
+  return entry.tokens.access_token;
 }
 // channel.* / workitem.* / queue.* telemetry: validated + redacted, logged to the sidecar console AND
 // forwarded to open browser EventSources (the station HUD). The bot token / OR key are NEVER placed on a
@@ -3707,6 +3845,7 @@ async function runQuestRefreshCycle(why) {
   // standalone provider (no live run to ride): the cron seam's provider/credential resolution, verbatim.
   const providerId = cronProviderFor(null);
   const usingCodex = providerUsesCodex(providerId);
+  const usingDeviceOAuth = providerUsesDeviceOAuth(providerId);
   const baseUrl = providerRuntimeBaseUrl(providerId, '');
   const key = cronKeyFor(providerId);
   if (!cronHasCredential(providerId, key)) { questRefreshNote({ outcome: 'skipped', reason: 'no provider credential — ' + cronCredentialError(providerId, 'the quest refresh') }); return; }
@@ -3761,6 +3900,7 @@ async function runQuestRefreshCycle(why) {
     // evidence exists → NOW pay for the provider (codex token fetch is a network hop; never spend it on a cold save).
     let provider;
     if (usingCodex) { const token = await ensureCodexAccessToken(); provider = selectProvider({ provider: providerId, fetch: globalThis.fetch, token, baseUrl }); }
+    else if (usingDeviceOAuth) { const token = await ensureOAuthAccessToken(providerId); provider = selectProvider({ provider: providerId, fetch: globalThis.fetch, token, headers: oauthInferenceHeaders(providerId), baseUrl }); }
     else provider = selectProvider({ provider: providerId, fetch: globalThis.fetch, key, baseUrl });
     const cost = makeCostEngine({ priceOf: provider.priceOf });
     const directive = QuestRefresh.buildDirective(evidenceCtx);
@@ -3885,6 +4025,7 @@ function normalizeProvider(provider) {
   return normalizeProviderIdFromRegistry(provider, 'openrouter');
 }
 function providerUsesCodex(provider) { return registryProviderUsesCodex(normalizeProvider(provider)); }
+function providerUsesDeviceOAuth(provider) { return registryProviderUsesDeviceOAuth(normalizeProvider(provider)); }
 function normalizeReasoningEffort(value) {
   const key = String(value || 'medium').trim().toLowerCase().replace(/[\s_-]+/g, '');
   const map = {
@@ -4428,6 +4569,18 @@ function dispatchRoute(req, res) {
   if (req.method === 'POST' && req.url === '/api/auth/codex/poll') return handleCodexPoll(req, res);
   if (req.method === 'GET' && req.url === '/api/auth/codex/status') return handleCodexStatus(req, res);
   if (req.method === 'GET' && req.url === '/api/auth/codex/models') return handleCodexModels(req, res);
+  // Grok / Kimi subscription device-OAuth — the SAME five-verb shape as codex, keyed by provider id. Tokens
+  // live only in WORKSPACES/<id>/tokens.json and never ride any response payload (status is booleans/strings).
+  if (req.method === 'POST' && req.url === '/api/auth/grok/start') return handleOAuthStart(req, res, 'grok');
+  if (req.method === 'POST' && req.url === '/api/auth/grok/poll') return handleOAuthPoll(req, res, 'grok');
+  if (req.method === 'GET' && req.url === '/api/auth/grok/status') return handleOAuthStatus(req, res, 'grok');
+  if (req.method === 'GET' && req.url === '/api/auth/grok/models') return handleOAuthModels(req, res, 'grok');
+  if (req.method === 'POST' && req.url === '/api/auth/grok/logout') return handleOAuthLogout(req, res, 'grok');
+  if (req.method === 'POST' && req.url === '/api/auth/kimi/start') return handleOAuthStart(req, res, 'kimi');
+  if (req.method === 'POST' && req.url === '/api/auth/kimi/poll') return handleOAuthPoll(req, res, 'kimi');
+  if (req.method === 'GET' && req.url === '/api/auth/kimi/status') return handleOAuthStatus(req, res, 'kimi');
+  if (req.method === 'GET' && req.url === '/api/auth/kimi/models') return handleOAuthModels(req, res, 'kimi');
+  if (req.method === 'POST' && req.url === '/api/auth/kimi/logout') return handleOAuthLogout(req, res, 'kimi');
   if (req.method === 'GET' && req.url === '/api/providers') return handleProviders(req, res);
   if (req.method === 'POST' && req.url === '/api/providers/probe') return handleProviderProbe(req, res);
   // /api/models/openrouter is served by this same prefix (id='openrouter'); the old dedicated branch below it was
@@ -7066,6 +7219,7 @@ async function runOnce(o) {
   if (identityFallback) warnRosterMiss(agentId, 'runOnce');
   const providerId = normalizeProvider(o.provider || (rosterIdent && rosterIdent.provider) || '');
   const usingCodex = providerUsesCodex(providerId);
+  const usingDeviceOAuth = providerUsesDeviceOAuth(providerId);
   const providerUnmetered = !!((getProviderProfile(providerId) || {}).unmetered);
   // Class Loadouts S1: reasoning-effort precedence = explicit run-option > this agent's roster record (the class
   // applied default) > provider default. An explicit per-run choice still wins; the roster only fills a gap.
@@ -7454,6 +7608,19 @@ async function runOnce(o) {
       return;
     }
     provider = selectProvider({ provider: providerId, fetch: globalThis.fetch, token: codexToken, baseUrl, reasoningEffort });
+  } else if (usingDeviceOAuth) {
+    // Grok / Kimi subscription: the OAuth access token authenticates the OpenAI-compatible endpoint (riding in
+    // AS the Bearer key). Same dead/missing-token -> clean run.error contract as codex; kimi's X-Msh-* headers
+    // ride via oauthInferenceHeaders. A grok allowlist 403 surfaces here as a transient (non-relogin) error.
+    let oauthToken;
+    try { oauthToken = await ensureOAuthAccessToken(providerId); }
+    catch (e) {
+      emit('agent.run.start', { agentId, runId, trigger: trigger, model });
+      emit('agent.run.error', { agentId, runId, transient: !(e && e.reloginRequired), message: oauthLabel(providerId) + ' sign-in needed: ' + ((e && e.message) || e) });
+      emit('agent.run.end', { agentId, runId, reason: 'error', turns: 0, usd: 0 });
+      return;
+    }
+    provider = selectProvider({ provider: providerId, fetch: globalThis.fetch, token: oauthToken, headers: oauthInferenceHeaders(providerId), baseUrl, reasoningEffort });
   } else {
     provider = selectProvider({ provider: providerId, fetch: globalThis.fetch, key: runKey, baseUrl, reasoningEffort });
   }
@@ -7474,7 +7641,7 @@ async function runOnce(o) {
   // OpenRouter only (Codex authenticates by OAuth token, not an API key). Empty pool = byte-identical to today.
   let rotationFallbacks = [];
   const primaryProfile = getProviderProfile(providerId);
-  if (!usingCodex && primaryProfile && primaryProfile.credentialPool) {
+  if (!usingCodex && !usingDeviceOAuth && primaryProfile && primaryProfile.credentialPool) {
     const pool = (Array.isArray(o.keyPool) ? o.keyPool : String(ENV('KEY_POOL') || '').split(','))
       .map(s => String(s || '').trim()).filter(s => s && s !== runKey);
     rotationFallbacks = credPool.order(pool).map(rk => ({
@@ -7497,6 +7664,10 @@ async function runOnce(o) {
       let fbToken;
       try { fbToken = await ensureCodexAccessToken(); } catch (_) { continue; }
       fbProvider = selectProvider({ provider: fbProviderId, fetch: globalThis.fetch, token: fbToken, baseUrl: fbBaseUrl, reasoningEffort });
+    } else if (providerUsesDeviceOAuth(fbProviderId)) {
+      let fbToken;
+      try { fbToken = await ensureOAuthAccessToken(fbProviderId); } catch (_) { continue; }
+      fbProvider = selectProvider({ provider: fbProviderId, fetch: globalThis.fetch, token: fbToken, headers: oauthInferenceHeaders(fbProviderId), baseUrl: fbBaseUrl, reasoningEffort });
     } else {
       fbProvider = selectProvider({ provider: fbProviderId, fetch: globalThis.fetch, key: fbKey, baseUrl: fbBaseUrl, reasoningEffort });
     }
@@ -9051,6 +9222,9 @@ async function listModelsForProvider(providerId, opts) {
   if (providerUsesCodex(id)) {
     const token = await ensureCodexAccessToken();
     provider = selectProvider({ provider: id, fetch: globalThis.fetch, token, baseUrl });
+  } else if (providerUsesDeviceOAuth(id)) {
+    const token = await ensureOAuthAccessToken(id);
+    provider = selectProvider({ provider: id, fetch: globalThis.fetch, token, headers: oauthInferenceHeaders(id), baseUrl });
   } else {
     provider = selectProvider({ provider: id, fetch: globalThis.fetch, key, baseUrl });
   }
@@ -9104,6 +9278,92 @@ async function handleCodexModels(req, res) {
 // POST /api/auth/codex/logout — forget the stored ChatGPT credentials.
 function handleCodexLogout(req, res) {
   codexTokens = null; clearCodexTokens();
+  res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ connected: false }));
+}
+
+/* -------------------- Grok / Kimi (subscription) device-OAuth — RFC 8628 --------------------
+   Identical five-verb browser flow to codex, parameterized by provider id:
+     POST /start          -> { login_id, user_code, verification_uri[_complete], interval, expires_in }
+     POST /poll {login_id} -> { status:'pending', interval } until done, then persist -> { status:'connected' }
+     GET  /status         -> codex-auth-state.statusPayload (booleans/strings only; NEVER the tokens)
+     GET  /models         -> the account's live catalog (falls back to the static roster + reports the error)
+     POST /logout         -> forgets the stored tokens
+   THE opaque `device_code` (the poll handle) is kept SERVER-SIDE in entry.pending, keyed by a random login_id —
+   exactly as codex keeps its PKCE code_verifier server-side. Only login_id ever reaches the browser. */
+const OAUTH_PENDING_TTL_MS = 16 * 60 * 1000;   // device codes expire ~15min; prune the server-side map just past that
+function pruneOAuthPending(entry) {
+  const now = Date.now();
+  for (const [k, v] of entry.pending) { if (!v || (now - (v.at || 0)) > OAUTH_PENDING_TTL_MS) entry.pending.delete(k); }
+}
+
+async function handleOAuthStart(req, res, id) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  const entry = oauthProviders[id];
+  if (!entry) return json(404, { error: 'unknown provider' });
+  try {
+    const d = await entry.auth.startDeviceLogin({ fetch: globalThis.fetch });
+    pruneOAuthPending(entry);
+    const login_id = crypto.randomUUID();
+    entry.pending.set(login_id, { device_code: d.device_code, interval: d.interval, at: Date.now() });
+    // device_code is DELIBERATELY absent from this payload — it stays server-side (entry.pending).
+    json(200, { login_id, user_code: d.user_code, verification_uri: d.verification_uri, verification_uri_complete: d.verification_uri_complete, interval: d.interval, expires_in: d.expires_in });
+  } catch (e) {
+    json(502, { error: (e && e.message) || ('failed to start ' + oauthLabel(id) + ' sign-in'), code: (e && e.code) || 'device_code_request_failed' });
+  }
+}
+
+// POST /api/auth/<id>/poll { login_id } — one poll tick; on completion it persists the tokens.
+async function handleOAuthPoll(req, res, id) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  const entry = oauthProviders[id];
+  if (!entry) return json(404, { status: 'error', error: 'unknown provider' });
+  let body; try { body = JSON.parse(await readBody(req, 1 << 16)) || {}; } catch (e) { return json(400, { status: 'error', error: 'bad json' }); }
+  const login_id = String(body.login_id || '');
+  const pending = login_id && entry.pending.get(login_id);
+  if (!pending) return json(400, { status: 'error', error: 'unknown or expired sign-in — start again', code: 'login_not_found' });
+  try {
+    const poll = await entry.auth.pollDeviceLogin({ fetch: globalThis.fetch, device_code: pending.device_code, interval: pending.interval, now: Date.now() });
+    if (poll && poll.pending) {
+      if (poll.interval) pending.interval = poll.interval;   // honor a slow_down replacement interval
+      return json(200, { status: 'pending', interval: pending.interval });
+    }
+    // poll resolved to the normalized token envelope — a completed device sign-in supersedes any dead marker.
+    entry.tokens = Object.assign({}, poll, entry.deviceId ? { device_id: entry.deviceId } : {});
+    entry.authDead = null;
+    saveOAuthTokens(id, entry.tokens);
+    entry.pending.delete(login_id);
+    console.log('  · ' + oauthLabel(id) + ' subscription connected (device OAuth) — agents can now run on it');
+    json(200, { status: 'connected' });
+  } catch (e) {
+    entry.pending.delete(login_id);
+    json(502, { status: 'error', error: (e && e.message) || (oauthLabel(id) + ' sign-in failed'), code: (e && e.code) || 'device_code_poll_error' });
+  }
+}
+
+// GET /api/auth/<id>/status — booleans/strings only; never the tokens.
+function handleOAuthStatus(req, res, id) {
+  res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  const entry = oauthProviders[id] || {};
+  res.end(JSON.stringify(codexAuthState.statusPayload({ tokens: entry.tokens, dead: entry.authDead, persistError: entry.persistError })));
+}
+
+// GET /api/auth/<id>/models — the account's live catalog with a fresh token; falls back to the static roster
+// (and reports the error) when not connected / discovery fails, so the connect dropdown is never empty.
+async function handleOAuthModels(req, res, id) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  if (!oauthProviders[id]) return json(404, { models: [], default: null, error: 'unknown provider' });
+  try {
+    const models = await listModelsForProvider(id, {});
+    json(200, { models: models.map(publicModel), default: (models[0] && models[0].id) || null });
+  } catch (e) {
+    json(200, { models: [], default: null, error: (e && e.message) || 'not connected', code: (e && e.code) || '' });
+  }
+}
+
+// POST /api/auth/<id>/logout — forget the stored subscription credentials.
+function handleOAuthLogout(req, res, id) {
+  const entry = oauthProviders[id];
+  if (entry) { entry.tokens = null; clearOAuthTokens(id); }
   res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ connected: false }));
 }
 
