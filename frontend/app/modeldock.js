@@ -57,7 +57,7 @@ const ModelDock = (() => {
     qwen: 'QWEN',
     cohere: 'COHERE'
   };
-  const PROVIDER_RANK = { codex: 0, openrouter: 1, openai: 2, anthropic: 3, gemini: 4, xai: 5, groq: 6, mistral: 7, deepseek: 8, together: 9, fireworks: 10, perplexity: 11, cerebras: 12, ollama: 13, custom: 14 };
+  const PROVIDER_RANK = { codex: 0, grok: 1, kimi: 2, openrouter: 3, openai: 4, anthropic: 5, gemini: 6, xai: 7, groq: 8, mistral: 9, deepseek: 10, together: 11, fireworks: 12, perplexity: 13, cerebras: 14, ollama: 15, custom: 16 };
 
   let opts = {};
   let wired = false;
@@ -72,7 +72,7 @@ const ModelDock = (() => {
   }
   function providerLabel(p) {
     p = normalizeProvider(p);
-    const map = { codex: 'GPT / CODEX', openrouter: 'OPENROUTER', openai: 'OPENAI API', anthropic: 'ANTHROPIC', gemini: 'GEMINI', xai: 'XAI', groq: 'GROQ', mistral: 'MISTRAL', deepseek: 'DEEPSEEK', together: 'TOGETHER', fireworks: 'FIREWORKS', perplexity: 'PERPLEXITY', cerebras: 'CEREBRAS', ollama: 'OLLAMA', custom: 'CUSTOM' };
+    const map = { codex: 'GPT / CODEX', grok: 'GROK OAUTH', kimi: 'KIMI OAUTH', openrouter: 'OPENROUTER', openai: 'OPENAI API', anthropic: 'ANTHROPIC', gemini: 'GEMINI', xai: 'XAI', groq: 'GROQ', mistral: 'MISTRAL', deepseek: 'DEEPSEEK', together: 'TOGETHER', fireworks: 'FIREWORKS', perplexity: 'PERPLEXITY', cerebras: 'CEREBRAS', ollama: 'OLLAMA', custom: 'CUSTOM' };
     return map[p] || String(p || 'openrouter').toUpperCase();
   }
   function normalizeProvider(p) {
@@ -81,7 +81,10 @@ const ModelDock = (() => {
     if (p === 'openai' || p === 'openai-api') return 'openai';
     if (p === 'anthropic' || p === 'claude') return 'anthropic';
     if (p === 'gemini' || p === 'google' || p === 'google-ai' || p === 'google-gemini') return 'gemini';
-    if (p === 'xai' || p === 'x-ai' || p === 'grok') return 'xai';
+    // grok/kimi are their OWN keyless OAuth providers now — NOT aliases for the xAI (API KEY) provider.
+    if (p === 'grok' || p === 'grok-oauth' || p === 'supergrok') return 'grok';
+    if (p === 'kimi' || p === 'moonshot' || p === 'kimi-for-coding') return 'kimi';
+    if (p === 'xai' || p === 'x-ai') return 'xai';
     if (p === 'groq') return 'groq';
     if (p === 'mistral' || p === 'mistralai') return 'mistral';
     if (p === 'deepseek') return 'deepseek';
@@ -193,7 +196,7 @@ const ModelDock = (() => {
   // local/self-hosted endpoints.) Mirrors Harness.providerNeedsKey, kept local so the dock has no new dep.
   function providerNeedsKey(p) {
     p = normalizeProvider(p);
-    return p !== 'codex' && p !== 'ollama' && p !== 'custom';
+    return p !== 'codex' && p !== 'grok' && p !== 'kimi' && p !== 'ollama' && p !== 'custom';
   }
   // TRUTHFUL: is the ACTIVE provider missing a real, run-able credential? Uses Harness.hasStoredCredential
   // (never fabricated by DEVMODE) so the warning only shows when a run would genuinely fail for lack of a key —
@@ -228,6 +231,18 @@ const ModelDock = (() => {
       return false;
     }
   }
+  // the generalized enablement probe for the other keyless device-code providers (grok/kimi): enabled iff it's
+  // the active provider OR /api/auth/<pid>/status reports connected:true. Mirrors codexEnabled exactly.
+  async function oauthProviderEnabled(pid) {
+    if (provider() === pid) return true;
+    try {
+      const r = await apiFetch('/api/auth/' + pid + '/status', { cache: 'no-store' });
+      const j = await r.json();
+      return !!(j && j.connected);
+    } catch (_) {
+      return false;
+    }
+  }
 
   function openRouterGroupName(item) {
     const id = String((item && item.id) || '');
@@ -240,7 +255,8 @@ const ModelDock = (() => {
     const id = String((item && item.id) || '').toLowerCase();
     const name = String((item && item.name) || '').toLowerCase();
     if (p === 'codex') return 'gpt';
-    if (p === 'xai') return 'grok';
+    if (p === 'grok' || p === 'xai') return 'grok';
+    if (p === 'kimi') return 'kimi';
     if (p === 'mistral') return 'mistral';
     if (p === 'deepseek') return 'deepseek';
     if (p === 'perplexity') return 'perplexity';
@@ -331,6 +347,12 @@ const ModelDock = (() => {
         const r = await apiFetch('/api/auth/codex/models', { cache: 'no-store' });
         const j = await r.json();
         if (Array.isArray(j.models)) list = j.models.map(m => asModel(m, p));
+      } else if (p === 'grok' || p === 'kimi') {
+        // the other keyless device-code providers: gate on the OAuth status, discover models via /api/auth/<pid>/models.
+        if (!(await oauthProviderEnabled(p))) { cache[p] = []; return []; }
+        const r = await apiFetch('/api/auth/' + p + '/models', { cache: 'no-store' });
+        const j = await r.json();
+        if (Array.isArray(j.models)) list = j.models.map(m => asModel(m, p));
       } else if (typeof Harness !== 'undefined' && Harness.listModels) {
         if (!providerEnabled(p)) { cache[p] = []; return []; }
         try {
@@ -364,7 +386,7 @@ const ModelDock = (() => {
   async function fetchModels(force) {
     loading = true;
     renderList();
-    const ids = ['codex', 'openrouter', 'openai', 'anthropic', 'gemini', 'xai', 'groq', 'mistral', 'deepseek', 'together', 'fireworks', 'perplexity', 'cerebras', 'ollama', 'custom'];
+    const ids = ['codex', 'grok', 'kimi', 'openrouter', 'openai', 'anthropic', 'gemini', 'xai', 'groq', 'mistral', 'deepseek', 'together', 'fireworks', 'perplexity', 'cerebras', 'ollama', 'custom'];
     const active = provider();
     if (ids.indexOf(active) < 0) ids.unshift(active);
     const parts = await Promise.all(ids.map(p => fetchProviderModels(p, force)));
@@ -698,7 +720,7 @@ const ModelDock = (() => {
   // `ensure: { id, provider }` guarantees a specific model (e.g. an agent's own pin) is present even if the
   // provider is unconfigured, so the picker can always show + preselect it. Returns [{ id, name, provider, … }].
   async function computeCatalog(force, ensure) {
-    const ids = ['codex', 'openrouter', 'openai', 'anthropic', 'gemini', 'xai', 'groq', 'mistral', 'deepseek', 'together', 'fireworks', 'perplexity', 'cerebras', 'ollama', 'custom'];
+    const ids = ['codex', 'grok', 'kimi', 'openrouter', 'openai', 'anthropic', 'gemini', 'xai', 'groq', 'mistral', 'deepseek', 'together', 'fireworks', 'perplexity', 'cerebras', 'ollama', 'custom'];
     const active = provider();
     if (ids.indexOf(active) < 0) ids.unshift(active);
     const parts = await Promise.all(ids.map(p => fetchProviderModels(p, force).catch(() => [])));

@@ -2517,6 +2517,8 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   const PROVIDERS = [
     { id: 'openrouter',    name: 'OPENROUTER',        endpoint: 'openrouter.ai/api/v1',      blurb: 'one key · 300+ models',  live: true },
     { id: 'codex',         name: 'CHATGPT (CODEX)',   endpoint: 'OAuth · ChatGPT subscription', blurb: 'sign-in, no API key',  live: true },
+    { id: 'grok',          name: 'GROK (XAI)',        endpoint: 'OAuth · SuperGrok / X Premium+', blurb: 'sign-in, no API key', live: true },
+    { id: 'kimi',          name: 'KIMI FOR CODING',   endpoint: 'OAuth · Moonshot subscription', blurb: 'sign-in, no API key', live: true },
     { id: 'openai',        name: 'OPENAI API',        endpoint: 'api.openai.com/v1',          blurb: 'OpenAI-compatible', live: true },
     { id: 'anthropic',     name: 'ANTHROPIC',         endpoint: 'api.anthropic.com/v1',       blurb: 'Claude native API', live: true },
     { id: 'gemini',        name: 'GEMINI',            endpoint: 'generativelanguage.googleapis.com/v1beta', blurb: 'Google native API', live: true },
@@ -2571,6 +2573,47 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   // the KNOWN-dead sign-in (sidecar recorded a relogin-class refresh failure): tokens exist but can't run.
   function codexExpired() { return !!(codexStatusKnown && codexStatusKnown.expired); }
   function codexExpiredReason() { return (codexStatusKnown && codexStatusKnown.reason) || ''; }
+
+  // The OTHER keyless device-code OAuth providers (grok/kimi) follow codex's exact contract but through the
+  // SHARED path — one status cache + one refresh + one row/handler parameterized by provider id, so we never
+  // copy the codex block per provider. Codex keeps its own literal state above (the source-lock tests pin it).
+  const OAUTH_EXTRA = ['grok', 'kimi'];                 // codex is handled by the literal path above
+  const OAUTH_ALL = ['codex'].concat(OAUTH_EXTRA);      // every keyless device-code provider
+  function isOAuthProvider(id) { return OAUTH_ALL.indexOf(id) >= 0; }
+  const oauthLabels = { grok: 'Grok OAuth', kimi: 'Kimi OAuth' };
+  function oauthMaskLabel(pid) { return oauthLabels[pid] || (provName(pid) + ' OAuth'); }
+  const oauthStatus = { grok: null, kimi: null };       // last /api/auth/<pid>/status truth per provider
+  const oauthChecking = { grok: false, kimi: false };
+  function refreshOAuthStatus(pid) {
+    if (oauthChecking[pid] || typeof fetch !== 'function') return;
+    oauthChecking[pid] = true;
+    fetch('/api/auth/' + pid + '/status', { cache: 'no-store' })
+      .then(r => r.ok ? r.json() : { connected: false })
+      .then(j => {
+        // carry the WHOLE truth shape (connected + expired + reason), exactly like codex — a lone bool can't
+        // distinguish "never signed in" from the dead-refresh-token death the row must render differently.
+        const next = { connected: !!(j && j.connected), expired: !!(j && j.expired), reason: (j && j.reason) || '' };
+        const prev = oauthStatus[pid];
+        oauthStatus[pid] = next;
+        if (!prev || prev.connected !== next.connected || prev.expired !== next.expired) rerender('settings');
+      })
+      .catch(() => {})
+      .finally(() => { oauthChecking[pid] = false; });
+  }
+  function refreshExtraOAuthStatus() { OAUTH_EXTRA.forEach(refreshOAuthStatus); }
+  function oauthProvConnected(pid) {
+    const s = oauthStatus[pid];
+    if (s !== null) return !!s.connected;
+    const h = H();
+    return !!(h && h.getProv && h.getProv() === pid);
+  }
+  function oauthProvExpired(pid) { const s = oauthStatus[pid]; return !!(s && s.expired); }
+  function oauthProvReason(pid) { const s = oauthStatus[pid]; return (s && s.reason) || ''; }
+  // unified accessors that route codex to its literal predicates and grok/kimi to the shared cache, so the
+  // render/handler logic below reads one truth interface regardless of which OAuth provider a row is for.
+  function oauthConnectedFor(pid) { return pid === 'codex' ? codexConnected() : oauthProvConnected(pid); }
+  function oauthExpiredFor(pid) { return pid === 'codex' ? codexExpired() : oauthProvExpired(pid); }
+  function oauthReasonFor(pid) { return pid === 'codex' ? codexExpiredReason() : oauthProvReason(pid); }
   // Where do saved API keys actually live? TRUTH SOURCE = the sidecar's keychainMode (DESKTOP_SHELL): the packaged
   // desktop build holds BYOK keys in the OS keychain; the browser holds them in its own local store. We learn this
   // lazily from /api/providers (mirrors the codex-status probe) and cache it so the key-save confirmation can name
@@ -2624,9 +2667,18 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     // A KNOWN-dead sign-in still gets its row (marked expired): the credentials exist on disk and the row is
     // where RE-SIGN-IN / DISCONNECT live — hiding it was the escape where the user had no recovery path.
     if (codexConnected() || codexExpired()) out.push({ provider: 'codex', key: '', model: (h.getModel && h.getModel()) || '', oauth: true, expired: codexExpired() });
+    // the other keyless device-code sign-ins (grok/kimi) get the SAME additive row treatment as codex: a live or
+    // KNOWN-dead sign-in earns a row (that's where RE-SIGN-IN / DISCONNECT live). The model is only shown when the
+    // provider is actually active (truthful telemetry — getModel() is the active-provider model, not this row's).
+    OAUTH_EXTRA.forEach(pid => {
+      if (oauthProvConnected(pid) || oauthProvExpired(pid)) {
+        const activeModel = (h.getProv && h.getProv() === pid && h.getModel) ? (h.getModel() || '') : '';
+        out.push({ provider: pid, key: '', model: activeModel, oauth: true, expired: oauthProvExpired(pid) });
+      }
+    });
     // OpenRouter BYOK: desktop keeps the key in the OS keychain (getKey returns ''); configured() reports it's set.
     function addProvider(provider) {
-      if (!provider || provider === 'codex' || out.some(k => k.provider === provider)) return;
+      if (!provider || isOAuthProvider(provider) || out.some(k => k.provider === provider)) return;
       if (provider === 'ollama' && provider !== active) return;
       // Truthful list: only providers with an ACTUALLY-stored credential show a row/badge (never DEVMODE-fabricated).
       // hasStoredCredential is the honest getter; fall back to the older signals if an old harness lacks it.
@@ -2642,7 +2694,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   function keysFor(id) { return connectedKeys().filter(x => x.provider === id); }
   function providerAcceptsKey(provider) {
     provider = provider || activeProv();
-    return provider !== 'codex' && provider !== 'ollama';
+    return !isOAuthProvider(provider) && provider !== 'ollama';
   }
   function addKeyHtml(provider, empty) {
     provider = provider || 'openrouter';
@@ -2660,11 +2712,13 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     const active = activeProv();
     return PROVIDERS.map((p, pi) => {
       const ks = keysFor(p.id);
-      // the codex sign-in can be KNOWN-dead (sidecar recorded a consumed/invalid refresh token) — that must
-      // never render as SIGNED IN. The row still exists (ks has the expired entry) so RE-SIGN-IN is reachable.
-      const codexDead = p.id === 'codex' && codexExpired();
+      // a keyless device-code sign-in (codex/grok/kimi) can be KNOWN-dead (sidecar recorded a consumed/invalid
+      // refresh token) — that must never render as SIGNED IN. The row still exists (ks has the expired entry) so
+      // RE-SIGN-IN is reachable. `codexDead` keeps its historical name because the source-lock tests pin
+      // `codexDead ? 'avail expired'` / `&& !codexDead`; it now flags a dead sign-in for ANY OAuth provider.
+      const codexDead = isOAuthProvider(p.id) && oauthExpiredFor(p.id);
       const h = H();
-      const credentialSaved = p.id === 'codex' ? (ks.length > 0 && !codexDead) : !!(h && h.hasStoredCredential && h.hasStoredCredential(p.id));
+      const credentialSaved = isOAuthProvider(p.id) ? (ks.length > 0 && !codexDead) : !!(h && h.hasStoredCredential && h.hasStoredCredential(p.id));
       const endpointConfigured = p.id === 'ollama' || (p.id === 'custom' && !!(h && h.getBaseUrl && h.getBaseUrl(p.id)));
       const configured = credentialSaved || endpointConfigured;
       const health = providerHealth[p.id];
@@ -2676,26 +2730,31 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       // rate-limited, or wrong, and we haven't round-tripped it. Label it "KEY SAVED" (or SIGNED IN for
       // the codex OAuth path, which IS real auth) rather than the over-claiming "CONNECTED". The
       // ACTIVE/runnable badge logic below is unchanged — that already gates on selected provider + model.
-      const connLabel = p.id === 'codex' ? '● SIGNED IN' : '● KEY SAVED';
+      const connLabel = isOAuthProvider(p.id) ? '● SIGNED IN' : '● KEY SAVED';
       const keyless = p.id === 'ollama' || (p.id === 'custom' && endpointConfigured && !credentialSaved);
       const localStat = !endpointConfigured ? '○ NO ENDPOINT' : health === undefined ? '◐ LOCAL ENDPOINT CONFIGURED · CHECKING…'
         : health && health.reachable ? '● LOCAL ENDPOINT CONFIGURED · REACHABLE' : '○ LOCAL ENDPOINT CONFIGURED · OFFLINE';
       const keyStat = health === undefined ? connLabel + ' · CHECKING…'
         : health && health.credentialVerified ? connLabel + ' · VERIFIED' : health && health.reachable ? connLabel + ' · NOT VERIFIED' : connLabel + ' · CHECK FAILED';
       const stat = !p.live ? '○ COMING SOON' : codexDead ? '⚠ SIGN-IN EXPIRED — RECONNECT'
-        : keyless ? localStat : credentialSaved ? keyStat : (p.id === 'codex' ? '○ NOT SIGNED IN' : (p.id === 'custom' ? '○ NO ENDPOINT' : '○ NO KEY'));
+        : keyless ? localStat : credentialSaved ? keyStat : (isOAuthProvider(p.id) ? '○ NOT SIGNED IN' : (p.id === 'custom' ? '○ NO ENDPOINT' : '○ NO KEY'));
       const n = ks.length;
       // NO-KEY cards that accept a key get an inline, collapsible paste-and-save row so the user never has to hunt
       // for where keys live. It reuses the SAME save path (Harness.setKey) as the key list below — no duplicate logic.
       const wantsInline = p.live && !credentialSaved && providerAcceptsKey(p.id);
+      // A never-signed-in device-code provider (grok/kimi) gets its FIRST sign-in right on the card — these have
+      // no connect-screen block (codex does), so without this button the ⏼ RE-SIGN-IN row below is unreachable:
+      // that row only exists once a live or known-dead sign-in exists. Same shared engine, card-local inline box.
+      const wantsOAuthSignin = p.live && OAUTH_EXTRA.indexOf(p.id) !== -1 && !credentialSaved && !codexDead;
       return '<div class="prov-card ' + cls + '" data-provider="' + esc(p.id) + '" role="button" tabindex="0" style="--ci:' + pi + '">' +
         '<span class="conn-dot"></span>' +
         '<div class="prov-main">' +
         '<div class="prov-name">' + esc(p.name) + (runnable ? '<span class="prov-badge">ACTIVE</span>' : '') + '</div>' +
         '<div class="prov-ep">' + esc(p.endpoint) + ' · ' + esc(p.blurb) + '</div>' +
         '</div>' +
-        '<div class="prov-stat">' + stat + (credentialSaved && p.id !== 'codex' ? '<i>' + n + (n === 1 ? ' key' : ' keys') + '</i>' : '') +
+        '<div class="prov-stat">' + stat + (credentialSaved && !isOAuthProvider(p.id) ? '<i>' + n + (n === 1 ? ' key' : ' keys') + '</i>' : '') +
           (wantsInline ? '<button class="bb sm prov-addkey" data-act="prov-add-toggle" data-provider="' + esc(p.id) + '" aria-label="Add a ' + esc(p.name) + ' key" title="paste a ' + esc(p.name) + ' key without leaving this card">＋ ADD KEY</button>' : '') +
+          (wantsOAuthSignin ? '<button class="bb sm prov-addkey" data-act="prov-oauth-signin" data-provider="' + esc(p.id) + '" aria-label="Sign in to ' + esc(p.name) + '" title="device-code sign-in — no API key needed">⏼ SIGN IN</button>' : '') +
         '</div>' +
         (wantsInline
           ? '<div class="key-edit prov-key-edit" id="prov-key-edit-' + esc(p.id) + '" hidden>' +
@@ -2703,8 +2762,48 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
             '<button class="bb sm" data-act="prov-add-save" data-provider="' + esc(p.id) + '">SAVE</button>' +
             '</div>'
           : '') +
+        (wantsOAuthSignin
+          ? '<div class="key-edit codex-inline prov-oauth-inline" id="prov-oauth-inline-' + esc(p.id) + '" hidden>' +
+            '<span class="dim" id="prov-oauth-status-' + esc(p.id) + '"></span>' +
+            '<code class="key-mask" id="prov-oauth-code-' + esc(p.id) + '" hidden></code>' +
+            '<button class="bb sm" id="prov-oauth-open-' + esc(p.id) + '" hidden>↗ OPEN PAGE</button>' +
+            '</div>'
+          : '') +
         '</div>';
     }).join('');
+  }
+  // The SHARED credential-row for a keyless device-code OAuth provider (grok/kimi) — the parameterized twin of
+  // the codex oauth branch in keysHtml. Same honest contract: SIGN-IN EXPIRED (never SIGNED IN) when dead, a
+  // scrubbed reason, and always-present ⏼ RE-SIGN-IN / ✕ DISCONNECT wired to the shared engine + its own inline
+  // device-code box (id'd by provider so two rows never collide). No token material is ever rendered.
+  function oauthKeyRow(k, runState) {
+    const pid = k.provider;
+    const dead = !!k.expired;
+    const meta = dead
+      ? '<span class="key-stat bad">⚠ SIGN-IN EXPIRED — ' + esc(oauthProvReason(pid) || 'the stored sign-in no longer works; reconnect to run again') + '</span>'
+      : 'model <b>' + esc(k.model || '—') + '</b> · ' +
+        runState +
+        ' · <span class="key-stat">no API key needed</span>';
+    return '<div class="key-row' + (dead ? ' expired' : '') + '">' +
+      '<span class="conn-dot"></span>' +
+      '<div class="key-main">' +
+      '<div class="key-top"><span class="key-prov">' + esc(provName(pid)) + '</span>' +
+      (dead
+        ? '<code class="key-mask key-mask-dead" title="the sidecar recorded a dead refresh token — a re-sign-in is the only cure">⚠ EXPIRED</code>'
+        : '<code class="key-mask" title="authenticated by OAuth sign-in — no API key is stored">' + esc(oauthMaskLabel(pid)) + '</code>') + '</div>' +
+      '<div class="key-meta">' + meta + '</div>' +
+      '</div>' +
+      '<div class="key-acts">' +
+      '<button class="bb sm" data-act="' + esc(pid) + '-resign">⏼ RE-SIGN-IN</button>' +
+      '<button class="bb sm danger" data-act="' + esc(pid) + '-logout">✕ DISCONNECT</button>' +
+      '</div></div>' +
+      // the inline device-code surface the RE-SIGN-IN action fills (same engine as codex: OAuthSignIn.for(pid)
+      // → code + verification URL here, poll until the sidecar reports connected).
+      '<div class="key-edit codex-inline" id="' + esc(pid) + '-inline-signin" hidden>' +
+      '<span class="dim" id="' + esc(pid) + '-inline-status"></span>' +
+      '<code class="key-mask" id="' + esc(pid) + '-inline-code" hidden></code>' +
+      '<button class="bb sm" id="' + esc(pid) + '-inline-open" hidden>↗ OPEN PAGE</button>' +
+      '</div>';
   }
   function keysHtml() {
     const keys = connectedKeys(), active = activeProv();
@@ -2731,6 +2830,9 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       const runnable = !!(selected && health && health.reachable && health.credentialVerified);
       const runState = runnable ? '<span class="key-stat on">ACTIVE</span>'
         : selected ? '<span class="key-stat">SELECTED</span>' : '<span class="key-stat">idle</span>';
+      // grok/kimi (the other keyless device-code sign-ins) render through the SHARED oauth row below — same
+      // semantics as codex, parameterized by provider id, so the codex block is not copy-pasted per provider.
+      if (k.oauth && k.provider !== 'codex') return oauthKeyRow(k, runState);
       // Codex (OAuth) has no API key to mask/edit/remove — render it honestly as a sign-in connection.
       // The row always carries its OWN actions (⏼ RE-SIGN-IN / ✕ DISCONNECT): the 2026-07-08 escape was a
       // dead sign-in still labelled SIGNED IN with zero recovery actions on this exact row.
@@ -2844,6 +2946,54 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
           });
           return;
         }
+        // ---- grok / kimi OAuth row actions — the SHARED path: same wiring as codex, but through the generalized
+        //      engine OAuthSignIn.for(pid) and this provider's own inline device-code surface. No Harness store. ----
+        const oauthAct = act && act.match(/^(grok|kimi)-(resign|logout)$/);
+        if (oauthAct) {
+          const pid = oauthAct[1];
+          const engine = (typeof OAuthSignIn !== 'undefined') ? OAuthSignIn.for(pid) : null;
+          if (oauthAct[2] === 'resign') {
+            if (!engine) return;
+            const box = body.querySelector('#' + pid + '-inline-signin');
+            const st = body.querySelector('#' + pid + '-inline-status');
+            const code = body.querySelector('#' + pid + '-inline-code');
+            const open = body.querySelector('#' + pid + '-inline-open');
+            if (box) box.hidden = false;
+            engine.start({
+              onRequesting: () => { if (st) st.textContent = 'requesting a sign-in code…'; },
+              onError: msg => { if (st) st.textContent = msg; sfx('bad'); },
+              onTimeout: () => { if (st) st.textContent = 'sign-in timed out — hit RE-SIGN-IN to start again'; },
+              onCode: c => {
+                if (code) { code.textContent = c.user_code; code.hidden = false; }
+                if (st) st.innerHTML = 'enter this code at <b>' + esc(c.verification_uri) + '</b> (opening it now)…';
+                if (open) { open.hidden = false; open.onclick = () => { sfx('click'); openExternal(c.verification_uri); }; }
+                openExternal(c.verification_uri);
+              },
+              onConnected: () => {
+                // the sidecar just exchanged + persisted fresh tokens — that POLL answer is backend truth.
+                oauthStatus[pid] = { connected: true, expired: false, reason: '' };
+                notify('✓ reconnected ' + provName(pid) + ' — your agents can run on your subscription again', 'good');
+                if (typeof ModelDock !== 'undefined' && ModelDock.reflect) ModelDock.reflect();
+                if (typeof KeyCTA !== 'undefined' && KeyCTA.refresh) KeyCTA.refresh();
+                refreshOAuthStatus(pid);   // re-read the durable status (persistError etc.) behind the repaint
+                rerender('settings');
+              }
+            });
+            return;
+          }
+          // logout
+          if (engine) engine.cancel();
+          const drop = engine ? engine.logout() : fetch('/api/auth/' + pid + '/logout', { method: 'POST' }).catch(() => {});
+          Promise.resolve(drop).then(() => {
+            oauthStatus[pid] = { connected: false, expired: false, reason: '' };   // the sidecar just confirmed the drop
+            notify('disconnected ' + provName(pid) + ' — sign in again anytime from PROVIDERS', 'warn');
+            sfx('bad');
+            if (typeof ModelDock !== 'undefined' && ModelDock.reflect) ModelDock.reflect();
+            if (typeof KeyCTA !== 'undefined' && KeyCTA.refresh) KeyCTA.refresh();
+            rerender('settings');
+          });
+          return;
+        }
         if (!h) return;
         if (act === 'add') {              // empty-state: connect a first key without leaving the game
           const inp = body.querySelector('#key-in-new');
@@ -2923,6 +3073,41 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         sfx('click');
         rerender('settings');
       };
+      // FIRST sign-in for a keyless device-code provider (grok/kimi) — the card-local twin of the key-row's
+      // ⏼ RE-SIGN-IN, driving the SAME shared engine (OAuthSignIn.for). stopPropagation: the card click selects.
+      const oauthSignin = card.querySelector('[data-act="prov-oauth-signin"]');
+      if (oauthSignin) oauthSignin.addEventListener('click', ev => {
+        ev.stopPropagation();
+        sfx('click');
+        const pid = card.dataset.provider;
+        const engine = (typeof OAuthSignIn !== 'undefined') ? OAuthSignIn.for(pid) : null;
+        if (!engine) return;
+        const box = card.querySelector('#prov-oauth-inline-' + pid);
+        const st = card.querySelector('#prov-oauth-status-' + pid);
+        const code = card.querySelector('#prov-oauth-code-' + pid);
+        const open = card.querySelector('#prov-oauth-open-' + pid);
+        if (box) { box.hidden = false; box.addEventListener('click', e2 => e2.stopPropagation()); }
+        engine.start({
+          onRequesting: () => { if (st) st.textContent = 'requesting a sign-in code…'; },
+          onError: msg => { if (st) st.textContent = msg; sfx('bad'); },
+          onTimeout: () => { if (st) st.textContent = 'sign-in timed out — hit ⏼ SIGN IN to start again'; },
+          onCode: c => {
+            if (code) { code.textContent = c.user_code; code.hidden = false; }
+            if (st) st.innerHTML = 'enter this code at <b>' + esc(c.verification_uri) + '</b> (opening it now)…';
+            if (open) { open.hidden = false; open.onclick = e2 => { e2.stopPropagation(); sfx('click'); openExternal(c.verification_uri); }; }
+            openExternal(c.verification_uri);
+          },
+          onConnected: () => {
+            // the sidecar just exchanged + persisted fresh tokens — that POLL answer is backend truth.
+            oauthStatus[pid] = { connected: true, expired: false, reason: '' };
+            notify('✓ signed in to ' + provName(pid) + ' — your agents can run on your subscription', 'good');
+            if (typeof ModelDock !== 'undefined' && ModelDock.reflect) ModelDock.reflect();
+            if (typeof KeyCTA !== 'undefined' && KeyCTA.refresh) KeyCTA.refresh();
+            refreshOAuthStatus(pid);   // re-read the durable status (persistError etc.) behind the repaint
+            rerender('settings');
+          }
+        });
+      });
       // clicks on the inline key controls must NOT bubble up to provider-select — they toggle/save the key row.
       const inlineToggle = card.querySelector('[data-act="prov-add-toggle"]');
       const inlineSave = card.querySelector('[data-act="prov-add-save"]');
@@ -3466,6 +3651,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
 
   function buildSettings(body) {
     refreshCodexConnectionStatus();
+    refreshExtraOAuthStatus();   // the same live-status probe for the other keyless sign-ins (grok/kimi)
     refreshKeychainMode();   // learn keychain-vs-browser once, so the key-save confirmation can name the real store
     const s = store.settings;
     const awakeDesktop = !!(typeof KeepAwake !== 'undefined' && KeepAwake.isDesktop && KeepAwake.isDesktop());

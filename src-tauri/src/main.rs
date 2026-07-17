@@ -635,7 +635,10 @@ fn normalize_provider(provider: &str) -> &'static str {
         "openai" | "openai-api" => "openai",
         "anthropic" | "claude" => "anthropic",
         "gemini" | "google" | "google-ai" | "google-gemini" => "gemini",
-        "xai" | "x-ai" | "grok" => "xai",
+        // 'grok' is now the OAuth (subscription) Grok id; 'xai'/'x-ai' stay the API-key Grok. (Mirrors the JS registry.)
+        "grok" | "grok-oauth" | "xai-oauth" => "grok",
+        "kimi" | "moonshot" | "kimi-code" | "kimi-oauth" => "kimi",
+        "xai" | "x-ai" => "xai",
         "groq" => "groq",
         "mistral" | "mistralai" => "mistral",
         "deepseek" => "deepseek",
@@ -1402,7 +1405,9 @@ fn harness_store_provider_key(
     let provider_id = normalize_provider(&provider);
     let key_trimmed = key.as_ref().map(|k| k.trim().to_string());
     if let Some(ref key_value) = key_trimmed {
-        if provider_id != "codex" && provider_id != "ollama" {
+        // codex + the device-OAuth providers (grok/kimi) authenticate by OAuth token (sidecar-owned), not a
+        // keychain API key; ollama is keyless. None of them get a keychain entry.
+        if provider_id != "codex" && provider_id != "ollama" && provider_id != "grok" && provider_id != "kimi" {
             let entry = keychain_entry_for(provider_id).map_err(|e| e.to_string())?;
             if key_value.is_empty() {
                 let _ = entry.delete_credential();

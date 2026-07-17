@@ -48,10 +48,17 @@
       });
     }
     if (profile.adapter === 'openai-compatible') {
+      // Device-OAuth providers (grok/kimi) authenticate the OpenAI-compatible endpoint with their OAuth ACCESS
+      // TOKEN riding in AS the Bearer key (opts.token). Static per-provider wire headers (e.g. kimi's X-Msh-*)
+      // merge UNDER any caller-supplied runtime headers (e.g. the dynamic X-Msh-Device-Id / X-Msh-Os-Version).
+      const isDeviceOAuth = profile.authType === 'oauth_device_code';
+      const mergedHeaders = (profile.extraHeaders || opts.headers)
+        ? Object.assign({}, profile.extraHeaders || {}, opts.headers || {})
+        : undefined;
       return openaiCompatible.makeOpenAICompatibleProvider({
         fetch: opts.fetch,
         clock: opts.clock,
-        key: opts.key,
+        key: isDeviceOAuth ? (opts.token || opts.key) : opts.key,
         baseUrl: opts.baseUrl || profile.baseUrl,
         chatPath: profile.chatPath,
         modelsPath: profile.modelsPath,
@@ -64,7 +71,7 @@
         includeUsage: profile.wireStreamOptions === false ? false : opts.includeUsage,
         staticModels: profile.staticModels,
         defaultContext: opts.defaultContext,
-        headers: opts.headers
+        headers: mergedHeaders
       });
     }
     if (profile.adapter === 'anthropic') {
@@ -95,6 +102,7 @@
     listProviderProfiles: registry.listProviderProfiles,
     normalizeProviderId: registry.normalizeProviderId,
     providerUsesCodex: registry.providerUsesCodex,
+    providerUsesDeviceOAuth: registry.providerUsesDeviceOAuth,
     defaultReasoningEffortForProvider: registry.defaultReasoningEffortForProvider,
     providerRequiresKey: registry.providerRequiresKey,
     providerRequiresBaseUrl: registry.providerRequiresBaseUrl
