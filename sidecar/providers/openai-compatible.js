@@ -262,7 +262,11 @@
       if (!catalogPromise) {
         catalogPromise = (async () => {
           try {
-            const res = await doFetch(baseUrl + modelsPath, { headers: key ? { Authorization: 'Bearer ' + key } : {} });
+            // Extra wire headers (e.g. kimi's X-Msh-* device signature) must ride the /models probe too, or the
+            // catalog endpoint rejects it and the connect screen is needlessly empty. Auth header layers on top.
+            const catHeaders = Object.assign({}, opts.headers || {});
+            if (key) catHeaders.Authorization = 'Bearer ' + key;
+            const res = await doFetch(baseUrl + modelsPath, { headers: catHeaders });
             if (!res.ok) return [];
             const j = await res.json();
             const raw = Array.isArray(j.data) ? j.data : (Array.isArray(j.models) ? j.models : []);
