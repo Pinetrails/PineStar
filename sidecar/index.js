@@ -2278,7 +2278,7 @@ function oauthDeviceConfig(id, deviceId) {
       clientId: '17e5f671-d194-4dfb-9706-5516cb48c098',
       deviceUrl: 'https://auth.kimi.com/api/oauth/device_authorization',
       tokenUrl: 'https://auth.kimi.com/api/oauth/token',
-      encoding: 'json',
+      encoding: 'form',            // live-proven 2026-07-17: auth.kimi.com 400s JSON bodies; kimi-cli's requests(data=) is form-encoded
       refreshSkewSeconds: 300,
       halfLifeRefresh: true,       // ~15min access tokens: refresh past 50% of life OR within 300s of expiry
       headers: kimiMshHeaders(deviceId)
@@ -9306,7 +9306,8 @@ async function handleOAuthStart(req, res, id) {
     const login_id = crypto.randomUUID();
     entry.pending.set(login_id, { device_code: d.device_code, interval: d.interval, at: Date.now() });
     // device_code is DELIBERATELY absent from this payload — it stays server-side (entry.pending).
-    json(200, { login_id, user_code: d.user_code, verification_uri: d.verification_uri, verification_uri_complete: d.verification_uri_complete, interval: d.interval, expires_in: d.expires_in });
+    // device_auth_id mirrors login_id so the ONE shared browser sign-in engine (codexsignin.js) works verbatim.
+    json(200, { login_id, device_auth_id: login_id, user_code: d.user_code, verification_uri: d.verification_uri, verification_uri_complete: d.verification_uri_complete, interval: d.interval, expires_in: d.expires_in });
   } catch (e) {
     json(502, { error: (e && e.message) || ('failed to start ' + oauthLabel(id) + ' sign-in'), code: (e && e.code) || 'device_code_request_failed' });
   }
@@ -9318,7 +9319,7 @@ async function handleOAuthPoll(req, res, id) {
   const entry = oauthProviders[id];
   if (!entry) return json(404, { status: 'error', error: 'unknown provider' });
   let body; try { body = JSON.parse(await readBody(req, 1 << 16)) || {}; } catch (e) { return json(400, { status: 'error', error: 'bad json' }); }
-  const login_id = String(body.login_id || '');
+  const login_id = String(body.login_id || body.device_auth_id || '');   // engine sends device_auth_id (codex vocabulary)
   const pending = login_id && entry.pending.get(login_id);
   if (!pending) return json(400, { status: 'error', error: 'unknown or expired sign-in — start again', code: 'login_not_found' });
   try {

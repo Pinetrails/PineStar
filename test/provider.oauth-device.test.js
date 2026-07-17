@@ -39,7 +39,7 @@ const KIMI = {
   clientId: '17e5f671-d194-4dfb-9706-5516cb48c098',
   deviceUrl: 'https://auth.kimi.com/api/oauth/device_authorization',
   tokenUrl: 'https://auth.kimi.com/api/oauth/token',
-  encoding: 'json',
+  encoding: 'form',   // live-proven 2026-07-17: auth.kimi.com 400s JSON; kimi-cli requests(data=) is form-encoded
   refreshSkewSeconds: 300,
   halfLifeRefresh: true,
   headers: { 'X-Msh-Platform': 'kimi_cli', 'X-Msh-Version': '1.0.0', 'X-Msh-Device-Id': 'dev-uuid-123' }
@@ -166,19 +166,19 @@ const KIMI = {
     }
   }
 
-  // ============================ KIMI (JSON-encoded + X-Msh headers) ============================
+  // ============================ KIMI (form-encoded + X-Msh headers) ============================
   {
     const kimi = makeDeviceOAuth(KIMI);
 
-    // A. startDeviceLogin: JSON POST with client_id, X-Msh-* headers present, NO scope/referrer
+    // A. startDeviceLogin: form POST with client_id, X-Msh-* headers present, NO scope/referrer
     {
       const f = recordingFetch(() => json({ device_code: 'dc_kimi', user_code: 'WXYZ-9', verification_uri: 'https://auth.kimi.com/device', interval: 5, expires_in: 900 }));
       const r = await kimi.startDeviceLogin({ fetch: f });
       A.eq(f.calls[0].url, 'https://auth.kimi.com/api/oauth/device_authorization', 'kimi device endpoint');
-      A.eq(f.calls[0].init.headers['Content-Type'], 'application/json', 'kimi device leg is JSON-encoded');
+      A.eq(f.calls[0].init.headers['Content-Type'], 'application/x-www-form-urlencoded', 'kimi device leg is form-encoded (live-proven; JSON gets a 400)');
       A.eq(f.calls[0].init.headers['X-Msh-Platform'], 'kimi_cli', 'kimi sends X-Msh-Platform on the device leg');
       A.eq(f.calls[0].init.headers['X-Msh-Device-Id'], 'dev-uuid-123', 'kimi sends the stable X-Msh-Device-Id');
-      const body = jsonBody(f.calls[0].init);
+      const body = formObj(f.calls[0].init);
       A.eq(body.client_id, '17e5f671-d194-4dfb-9706-5516cb48c098', 'kimi sends its public client_id');
       A.eq(body.scope, undefined, 'kimi sends no scope');
       A.eq(body.referrer, undefined, 'kimi sends no referrer');
@@ -186,13 +186,13 @@ const KIMI = {
       A.eq(r.user_code, 'WXYZ-9', 'returns user_code');
     }
 
-    // B. poll: JSON grant body carries the device-code grant + client_id + X-Msh headers
+    // B. poll: form grant body carries the device-code grant + client_id + X-Msh headers
     {
       const done = recordingFetch(() => json({ access_token: 'at_kimi', refresh_token: 'rt_kimi', expires_in: 900 }));
       const dr = await kimi.pollDeviceLogin({ fetch: done, device_code: 'dc_kimi', now: 2_000_000 });
       A.eq(done.calls[0].url, 'https://auth.kimi.com/api/oauth/token', 'kimi poll hits the token endpoint');
       A.eq(done.calls[0].init.headers['X-Msh-Platform'], 'kimi_cli', 'kimi poll carries X-Msh headers');
-      const pb = jsonBody(done.calls[0].init);
+      const pb = formObj(done.calls[0].init);
       A.eq(pb.grant_type, 'urn:ietf:params:oauth:grant-type:device_code', 'kimi poll grant_type is the device-code grant');
       A.eq(pb.device_code, 'dc_kimi', 'kimi poll sends the device_code');
       A.eq(pb.client_id, '17e5f671-d194-4dfb-9706-5516cb48c098', 'kimi poll sends client_id');
