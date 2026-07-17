@@ -2062,8 +2062,8 @@ const Chat = (() => {
   /* W3 — THE DELIVERY CARD (reshaped 2026-07-15). WorkshopStore adopts one SESSION per idle-work
      deliverable ('workshop-<runId>', unread in the rail) and calls this ONLY when the Commander opens that
      session — opts.sessionId pins the card to it, so a delivery can never paint into an unrelated stream.
-     Simple by design: the headline, the honest verification line, WHAT it did, a link that RUNS it (when a
-     web entry exists), the files, and ONE action row — an optional message to the agent plus three one-click
+     Simple by design: the headline, the honest verification line, the link that RUNS it FIRST (when a
+     web entry exists — open-not-read law), then WHAT it did / WHY / check-yourself, the files, and ONE action row — an optional message to the agent plus three one-click
      decisions: Implement (decide keep — the sidecar applies a patch deliverable to a new branch, or lands
      files in the default deliverables folder), Later (dismiss; the session stays), Discard (single confirm →
      wipe + denylist). A typed message rides the decision as a REAL user turn in this same session — the
@@ -2156,6 +2156,32 @@ const Chat = (() => {
     }
     r.body.appendChild(ver);
 
+    // ── TRY IT FIRST (2026-07-17, deliverable = open-not-read law) — when a web entry exists, the RUN
+    // action leads the card: the Commander opens the thing, the prose below is supporting context, not a
+    // gate in front of the click. Jailed /workshop-run/ route, same as before — only the position moved.
+    if (htmlEntry) {
+      // disk-proven by validateWorkshopManifest (never the model's claim): this deliverable requests pointer
+      // lock / fullscreen, i.e. opening it will capture the Commander's REAL mouse. Say so BEFORE the click.
+      if (m.capturesInput) {
+        const warn = document.createElement('div'); warn.className = 'ws-line ws-capture-warn';
+        warn.textContent = '⚠ captures your mouse/keyboard when opened (pointer lock) — press Esc to release it';
+        r.body.appendChild(warn);
+      }
+      if (m.usesMedia) {
+        const warn = document.createElement('div'); warn.className = 'ws-line ws-capture-warn';
+        warn.textContent = '⚠ may ask to use your camera, microphone, or screen when opened';
+        r.body.appendChild(warn);
+      }
+      const tryRow = document.createElement('div'); tryRow.className = 'turnin-rate ws-try';
+      const openItBtn = document.createElement('button'); openItBtn.className = 'consent-btn ws-openit'; openItBtn.textContent = '▶ Open it — try it in a tab';
+      openItBtn.title = m.capturesInput
+        ? 'run this tool in a new browser tab — it will capture your mouse; Esc releases it'
+        : 'run this tool in a new browser tab';
+      openItBtn.onclick = () => openRunTab(htmlEntry);
+      tryRow.appendChild(openItBtn);
+      r.body.appendChild(tryRow);
+    }
+
     // labeled section rows — the premium dossier grammar (gold uppercase micro-label over a bright value),
     // same ws-k/ws-v vocabulary the old summary pane and the config cards speak.
     const mkSection = (label, value, cls) => {
@@ -2185,9 +2211,17 @@ const Chat = (() => {
         d.appendChild(kk); d.appendChild(vv); r.body.appendChild(d);
       }
     }
-    // ── how to use — ONE short line. The workshop prompt now caps this to a sentence; a verbose legacy
-    // manifest is clamped here rather than dumped as a wall of instructions (the old confusing card).
-    if (m.howToUse) {
+    // ── why this — server-stamped provenance (workshopBecause): the grounds quote or the Commander's own
+    // ask that queued the build. Real recorded data only; absent → no line. This is the adaptation made
+    // visible: the card says WHY in your terms, not just WHAT in the agent's.
+    if (m.because) {
+      const because = String(m.because).replace(/\s+/g, ' ').trim();
+      if (because) mkSection('why this', because.length > 300 ? because.slice(0, 300) + '…' : because, 'ws-because');
+    }
+    // ── how to use — ONE short line, and ONLY when there is no Open button (an html entry's how-to-use IS
+    // the ▶ Open it action above; repeating "open index.html" under it was dead weight). A verbose legacy
+    // manifest is clamped rather than dumped as a wall of instructions (the old confusing card).
+    if (m.howToUse && !htmlEntry) {
       const one = String(m.howToUse).replace(/\s+/g, ' ').trim();
       if (one) mkSection('how to use', one.length > 200 ? one.slice(0, 200) + '…' : one, 'ws-how');
     }
@@ -2227,30 +2261,6 @@ const Chat = (() => {
         vd.appendChild(line);
       });
       r.body.appendChild(vd);
-    }
-
-    // ── TRY IT — the link that RUNS the deliverable (jailed /workshop-run/ route), when a web entry exists ──
-    if (htmlEntry) {
-      // disk-proven by validateWorkshopManifest (never the model's claim): this deliverable requests pointer
-      // lock / fullscreen, i.e. opening it will capture the Commander's REAL mouse. Say so BEFORE the click.
-      if (m.capturesInput) {
-        const warn = document.createElement('div'); warn.className = 'ws-line ws-capture-warn';
-        warn.textContent = '⚠ captures your mouse/keyboard when opened (pointer lock) — press Esc to release it';
-        r.body.appendChild(warn);
-      }
-      if (m.usesMedia) {
-        const warn = document.createElement('div'); warn.className = 'ws-line ws-capture-warn';
-        warn.textContent = '⚠ may ask to use your camera, microphone, or screen when opened';
-        r.body.appendChild(warn);
-      }
-      const tryRow = document.createElement('div'); tryRow.className = 'turnin-rate ws-try';
-      const openItBtn = document.createElement('button'); openItBtn.className = 'consent-btn ws-openit'; openItBtn.textContent = '▶ Open it — try it in a tab';
-      openItBtn.title = m.capturesInput
-        ? 'run this tool in a new browser tab — it will capture your mouse; Esc releases it'
-        : 'run this tool in a new browser tab';
-      openItBtn.onclick = () => openRunTab(htmlEntry);
-      tryRow.appendChild(openItBtn);
-      r.body.appendChild(tryRow);
     }
 
     // ── the files — every row's click ACTUALLY WORKS (2026-07-15 UX audit: the old "open in your default

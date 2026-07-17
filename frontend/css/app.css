@@ -583,7 +583,8 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 .workshop-return .ws-line { display:block; margin-top:2px; font-size:13px; line-height:1.4; overflow-wrap:anywhere; }
 .workshop-return .ws-k { display:block; color:var(--gold); font-size:10px; letter-spacing:1.2px; text-transform:uppercase; opacity:.92; margin-bottom:1px; }
 .workshop-return .ws-v { display:block; color:var(--ph-bright); }
-.workshop-return .ws-how .ws-v, .workshop-return .ws-notver .ws-v { color:var(--ph-dim); font-size:12.5px; }
+.workshop-return .ws-how .ws-v, .workshop-return .ws-notver .ws-v, .workshop-return .ws-because .ws-v { color:var(--ph-dim); font-size:12.5px; }
+.workshop-return .ws-because .ws-v { font-style:italic; }   /* provenance reads as a quoted aside, not a claim */
 /* honest-brevity furniture (2026-07-17): verbose legacy manifests FOLD instead of walling — a quiet
    inline "+ more" reveal, and one gold-marked row per check-yourself item (the old semicolon join). */
 .workshop-return .ws-more { background:none; border:0; padding:0; margin-left:2px; font:inherit; font-size:11px;

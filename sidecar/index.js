@@ -3738,7 +3738,7 @@ async function runNightshiftActShift(opts) {
   const runId = opts.runId || crypto.randomUUID();
   const backlogId = 'ns-act-' + runId;
   const title = String(sel.selected.title || 'Night-shift build').slice(0, 200);
-  try { await workshopStore.queue(agentId, { id: backlogId, title, detail: String(sel.selected.spec || ''), source: 'nightshift' }, Date.now()); }
+  try { await workshopStore.queue(agentId, { id: backlogId, title, detail: String(sel.selected.spec || ''), source: 'nightshift', grounds: String(sel.selected.grounds || '') }, Date.now()); }
   catch (_) { /* a queue hiccup (e.g. a title the Commander earlier discarded) → stand down honestly */ return { delivered: false, reason: 'queue-refused' }; }
   await workshopStore.claimNext(agentId, runId, isRunLive).catch(() => null);   // stamp buildingRunId (zombie-reap aware)
 
@@ -3774,6 +3774,8 @@ async function runNightshiftActShift(opts) {
   }
   try { await workshopStore.markBuilt(agentId, backlogId, runId); } catch (_) {}
   recordNightshiftAct(runId, sel.selected.archetype, sel.selected.threadId);   // so a keep/discard verdict feeds the RIGHT archetype into LEARN (+ NS-6: delivers/declines the cited thread)
+  // WHY-THIS: the card's provenance line — the grounding-veto-checked GROUNDS quote this job was selected on.
+  manifest.because = workshopBecause({ grounds: sel.selected.grounds, detail: sel.selected.spec, title: manifest.title });
   try { chanEmit('workshop.built', { agentId, runId, manifest }); } catch (_) {}
   const paths = (manifest.files || []).map(f => dir + '/' + f.path).slice(0, 8).join(', ');
   // LEDGER TRUTH (NS-3): a real tool-run that BUILT an artifact records kind 'act' here — the authoritative place
@@ -6096,6 +6098,20 @@ function workshopPrompt(runId, item) {
     + '- The manifest MUST list the real files you wrote (paths relative to "' + dir + '/"). This is required — a shift with no manifest is discarded.';
 }
 
+// WHY-THIS (2026-07-17): the one-line grounding the delivery card shows — WHY the agent built this, from
+// REAL recorded data only: the backlog item's stored grounds quote (night-shift GROUNDS), else the
+// Commander's own ask detail. Never model-authored at delivery time and never synthesized here; empty
+// in → empty out (the card simply omits the line). Truthful telemetry: this is provenance, not prose.
+function workshopBecause(item) {
+  const it = item || {};
+  const grounds = String(it.grounds || '').replace(/\s+/g, ' ').trim();
+  const detail = String(it.detail || '').replace(/\s+/g, ' ').trim();
+  const title = String(it.title || '').replace(/\s+/g, ' ').trim().toLowerCase();
+  const pick = grounds || detail;
+  if (!pick || pick.toLowerCase() === title) return '';   // adds nothing over the headline → omit
+  return pick.length > 300 ? pick.slice(0, 300) + '…' : pick;
+}
+
 // validate a run's deliverable.json against the pinned schema v1 AND the real files on disk. Returns the parsed
 // manifest (normalized) on success, or null with a reason logged. Truthful telemetry: workshop.built is emitted
 // ONLY when this passes, so the return-card never asserts a deliverable the harness can't prove exists.
@@ -6228,6 +6244,8 @@ async function runWorkshopShift(agentId, opts) {
   }
   await workshopStore.markBuilt(id, item.id, runId);
   noteShift({ reason: 'built', runId: runId, title: manifest.title });
+  // WHY-THIS: the card's provenance line, from the REAL backlog ask that queued this build.
+  manifest.because = workshopBecause(item);
   try { chanEmit('workshop.built', { agentId: id, runId: runId, manifest: manifest }); } catch (_) {}
   return { fired: true, runId: runId, reason: 'built', manifest: manifest };
 }
@@ -6586,6 +6604,8 @@ async function handleWorkshopPending(req, res) {
     // pre-click consequence (2026-07-15 UX audit): resolve NOW, against the current blessed roots, what an
     // Implement would do — so the card states "apply to a branch in X" vs "save files to Y" before the click.
     try { man.implementPlan = workshopImplementPlan(man); } catch (_) {}
+    // WHY-THIS: provenance from the REAL backlog item that queued this build (grounds quote, else the ask detail).
+    try { man.because = workshopBecause(it); } catch (_) {}
     out.push(man);
   }
   json(200, { ok: true, agentId: agentId, pending: out });
