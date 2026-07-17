@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "0838321449ec7cc29434ea295166b10f3766318a",
+    "sourceCommit": "c75d4f1c428886d02b50755d44f050536e1c7924",
     "pathSetSha256": "9eeefd91d6d300f96627d4a5036f6c767a4a1fe611b7bce6175e1b94964d750f",
     "files": [
       {
@@ -98,8 +98,8 @@
       },
       {
         "path": "frontend/app/autopilot.js",
-        "bytes": 48425,
-        "sha256": "d75ab377628aa004fb9ea05e5944e5966e3b4588c9e3a8bd6eb81a449057ea31"
+        "bytes": 48902,
+        "sha256": "f8352d62f0deeb6ed6fc6175587e07ee5f42cea6b993d745c093dc77549453af"
       },
       {
         "path": "frontend/app/autopilotstore.js",
@@ -133,8 +133,8 @@
       },
       {
         "path": "frontend/app/chat.js",
-        "bytes": 393982,
-        "sha256": "b84cd3ee96b4dcd4c9cd45ad234a5ac759ec6946c07f3675d309aac6bf3d1912"
+        "bytes": 396741,
+        "sha256": "8325d69ddab695f26a2e6f470f1bc108f8ac194f21b165840b34d43de2db6727"
       },
       {
         "path": "frontend/app/chatresize.js",
@@ -803,8 +803,8 @@
       },
       {
         "path": "frontend/css/app.css",
-        "bytes": 197884,
-        "sha256": "6f9684ccb97b2394e062a1cbb32e7103f85952c2c062d5b62e53f035e4ae0b1e"
+        "bytes": 198558,
+        "sha256": "ea7aad156ffce309c7e94b38dca379b74323aa0052da90884c4d6742bc44f0a4"
       },
       {
         "path": "frontend/css/asciifx.css",
