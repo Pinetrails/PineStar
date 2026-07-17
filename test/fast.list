@@ -53,6 +53,7 @@ test/loop.provider-recovery.test.js
 test/compaction.test.js
 test/loopguard.test.js
 test/loopguard.dispatch.test.js
+test/continuation-guard.test.js
 test/iteration-budget.test.js
 test/updatecore.test.js
 test/quitguard.test.js

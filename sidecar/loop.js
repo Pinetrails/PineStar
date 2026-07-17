@@ -103,6 +103,27 @@
     return results;
   }
 
+  // Pure heuristic for the continuation guard: does a final, tool-free text ANNOUNCE work the model never did?
+  // Tuned to the observed narrate-then-stop family: "Let me read…", "I'll fix…", "Now let me check…",
+  // "Reading the file now", "Fixing all three now." Deliberately conservative — "let me know…" (a closing
+  // pleasantry) never matches. A false positive costs one bounded extra turn; a false negative just keeps
+  // today's behavior. Only the tail is scanned: intent that ends a message is what signals a premature stop.
+  const CG_VERBS = 'read|re-?read|check|look|open|find|fix|run|apply|write|patch|search|scan|inspect|start|create|update|edit|trace|dig|verify|test|grep|examine|review|implement|investigate|continue|proceed|execute|analy[sz]e|debug';
+  const CG_GERUNDS = 'reading|checking|looking|opening|finding|fixing|running|applying|writing|patching|searching|scanning|inspecting|starting|creating|updating|editing|tracing|digging|verifying|testing|examining|reviewing|implementing|investigating|proceeding|executing|analy[sz]ing|debugging';
+  const CG_PATTERNS = [
+    new RegExp('\\blet me\\s+(?!know\\b)[a-z]', 'i'),                                                       // "Let me read the file"
+    new RegExp('\\b(i\'?ll|i\\s+will|i\'?m\\s+going\\s+to|about\\s+to|now\\s+i(?:\'?ll|\\s+will)?)\\s+(now\\s+)?(' + CG_VERBS + ')\\b', 'i'),  // "I'll fix all three"
+    new RegExp('\\b(' + CG_GERUNDS + ')\\b[^.!?\\n]{0,80}\\bnow\\b', 'i'),                                  // "Reading the full main.js now"
+    new RegExp('\\bnow\\b[^.!?\\n]{0,40}\\b(' + CG_GERUNDS + ')\\b', 'i')                                   // "now fixing the death path"
+  ];
+  function announcesIntent(text) {
+    const t = String(text == null ? '' : text).trim();
+    if (!t) return false;
+    const tail = t.slice(-600);
+    for (const re of CG_PATTERNS) if (re.test(tail)) return true;
+    return false;
+  }
+
   async function runAgentLoop(o) {
     const messages = o.messages;
     let provider = o.provider;
@@ -168,6 +189,17 @@
     const LG_STOP = (_lg === false) ? 0 : (_lg && _lg.stopAfter != null ? _lg.stopAfter : 6);
     const lgFails = new Map();    // signature (name\0args) -> failure count
     const lgWarned = new Set();   // signatures already nudged (the warn fires once)
+
+    // CONTINUATION GUARD (default ON): some models (Kimi K3, live-caught 2026-07-17) end a turn by ANNOUNCING
+    // the next action ("Reading the full main.js now — then fixing immediately.") with finish_reason 'stop' and
+    // NO tool call. A no-tool turn normally means "final answer", so the run ends 'done' mid-task and the
+    // Commander has to prod the agent repeatedly. When the final text clearly announces imminent work AND tools
+    // are wired, inject ONE system nudge (act now or say you're done) and give the model another turn instead
+    // of ending. Bounded: at most `continueMax` nudges per run (limits.continueGuard === false disables;
+    // { max } overrides), and never on a grace turn — a narrate-forever model still terminates.
+    const _cg = limits.continueGuard;
+    const CG_MAX = (_cg === false) ? 0 : (_cg && _cg.max != null ? _cg.max : 2);
+    let cgUsed = 0;
 
     // NO-OP TURN REFUND (reference-harness iteration-budget parity): a turn that produced NO tool call AND no NEW assistant
     // content (empty/whitespace text, OR text byte-identical to the immediately-prior assistant turn) is wasted work
@@ -420,6 +452,15 @@
         const text = String(acc.text || '');
         const empty = !text.trim();                                   // nothing usable produced
         const duplicate = !empty && priorAssistantText != null && text === priorAssistantText;   // a re-emitted prior turn
+        // CONTINUATION GUARD: an announce-without-acting final turn ("Reading main.js now…" + zero tool calls)
+        // is a premature stop, not a delivery — nudge the model back to work instead of ending 'done' mid-task.
+        // Never fires on a grace turn (that turn is CONTRACTED to be tool-free) and never past CG_MAX, so a
+        // model that narrates forever still terminates through the normal end below.
+        if (!empty && !duplicate && !graceUsed && cgUsed < CG_MAX && tools.length > 0 && announcesIntent(text)) {
+          cgUsed++;
+          messages.push({ role: 'system', content: '<continuation>Your last message only ANNOUNCED an action but you called no tools — ending your reply without tool calls ends the run with the work not done. Do not narrate intentions. If work remains, make the actual tool call(s) NOW in this same turn; if the task is truly complete, give your final answer without announcing further actions.</continuation>' });
+          continue;
+        }
         if ((empty || duplicate) && refundsUsed < REFUND_MAX) {
           refundsUsed++;
           turns = turnStart;                                          // refund: this turn didn't advance the budget
@@ -486,5 +527,5 @@
     }
   }
 
-  return { runAgentLoop, _internals: { parseCall, repairCalls, assistantTurn, toolResultMsg, assertPaired, executeCalls } };
+  return { runAgentLoop, _internals: { parseCall, repairCalls, assistantTurn, toolResultMsg, assertPaired, executeCalls, announcesIntent } };
 });
