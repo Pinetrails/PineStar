@@ -16,7 +16,7 @@ const NightReportStore = (() => {
   const KEY = 'starnet.nightreport.v1';
   const DELAY_MS = 1400;           // let the floor + COMMS settle before the beat (mirrors ReturnStore's cadence)
   const HEARTBEAT_MS = 30000;      // stamp "the app is open" — so "away" means it was genuinely CLOSED
-  const MIN_AWAY_MS = 15 * 60000;  // "genuinely away" — matches the sidecar's default NIGHTSHIFT_AWAY_MS (15 min)
+  const MIN_AWAY_MS = 30 * 60000;  // "genuinely away" — matches the sidecar's default NIGHTSHIFT_AWAY_MS (30 min)
   let fired = false;               // ONE report per page session (survives enterGame re-entry)
   let agentId = 'agent';
   let boundary = 0;                // the PREVIOUS session's last-seen stamp (captured at init, before we heartbeat)
