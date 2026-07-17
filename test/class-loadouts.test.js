@@ -60,20 +60,26 @@ for (const b of CATALOG) {
   }
 }
 
-/* ---------- 1b. RECURATED CONTENT: 12 curated + 9 archetypes, seals/codes, prompt-size sanity ----------
-   Recuration 2026-07-14: the default roster was trimmed from 18 to 12 distinct majority-use jobs; the 9
-   demoted deep cuts became the ARCHETYPE pool (off the roster, never gated, seeds for the scout's
-   personalized prospect minting). Three genuinely new practical classes joined the curated 12. */
+/* ---------- 1b. BUSINESS-ROSTER CONTENT: 12 specialized builtins + 14 archetypes, seals/codes, sanity ----------
+   Redesign 2026-07-16 (supersedes the 2026-07-14 recuration): the curated roster is 12 truly SPECIALIZED
+   business-grade jobs; the generalist/lifestyle classes were demoted to the ARCHETYPE pool (off the roster,
+   never gated, seeds for the scout's personalized prospect minting). liaison/publicist/bookkeeper were
+   RETIRED outright — envoy, marketer+publisher, and treasurer are their strict supersets, and near-duplicate
+   archetypes would shadow the real class in the scout's matcher. */
 const classicons = require('../frontend/app/classicons.js');
 A.eq(builtins.length, 12, 'the curated roster ships exactly 12 classes');
-A.eq(archetypes.length, 9, 'the archetype pool holds the 9 deep cuts');
-const CURATED = ['researcher', 'engineer', 'operator', 'scribe', 'analyst', 'scout', 'designer', 'chief', 'tutor', 'navigator', 'curator', 'muse'];
-A.eq(builtins.map(b => b.id).sort().join(','), CURATED.slice().sort().join(','), 'the curated roster is exactly the 12 majority-use classes');
-const ARCH_IDS = ['reviewer', 'archivist', 'liaison', 'broker', 'publicist', 'auditor', 'bookkeeper', 'translator', 'herald'];
-A.eq(archetypes.map(a => a.id).sort().join(','), ARCH_IDS.slice().sort().join(','), 'the archetype pool is exactly the 9 demoted deep cuts');
+A.eq(archetypes.length, 14, 'the archetype pool holds the 14 deep cuts');
+const CURATED = ['strategist', 'researcher', 'engineer', 'analyst', 'marketer', 'publisher', 'producer', 'scriptwright', 'prospector', 'envoy', 'treasurer', 'scout'];
+A.eq(builtins.map(b => b.id).sort().join(','), CURATED.slice().sort().join(','), 'the curated roster is exactly the 12 specialized business classes');
+A.eq(builtins[0].id, 'strategist', 'the strategist is the roster\'s first card (the bay\'s default focus)');
+const ARCH_IDS = ['chief', 'operator', 'scribe', 'designer', 'tutor', 'navigator', 'curator', 'muse',
+  'reviewer', 'archivist', 'broker', 'auditor', 'translator', 'herald'];
+A.eq(archetypes.map(a => a.id).sort().join(','), ARCH_IDS.slice().sort().join(','), 'the archetype pool is exactly the 14 deep cuts');
 for (const id of ARCH_IDS) A.ok(!builtins.some(b => b.id === id), 'archetype is OFF the default roster: ' + id);
+// the retired near-duplicates must be GONE from both shelves (they would shadow their superset builtins)
+for (const id of ['liaison', 'publicist', 'bookkeeper']) A.ok(!CATALOG.some(b => b.id === id), 'retired class is fully removed: ' + id);
 // no id/name collision across the two shelves (an archetype must never shadow a curated class)
-const NEW_CLASSES = ['navigator', 'curator', 'muse'];
+const NEW_CLASSES = ['strategist', 'marketer', 'publisher', 'producer', 'scriptwright', 'prospector', 'envoy', 'treasurer'];
 const byId = new Map(CATALOG.map(b => [b.id, b]));
 for (const id of NEW_CLASSES) {
   const b = byId.get(id);
@@ -187,8 +193,8 @@ for (const b of CATALOG) {
   const text = (b.manual + ' ' + b.purpose).toLowerCase();
   A.ok(!SEND_TOOL_RE.test(text), b.id + ' names no phantom channel-send tool (none exists in the registry)');
 }
-// the three outward-comms classes must carry explicit DRAFT-not-send framing (they have no send tool)
-for (const id of ['liaison', 'publicist', 'herald']) {
+// the outward-comms classes must carry explicit DRAFT-not-send framing (they have no send tool)
+for (const id of ['envoy', 'marketer', 'publisher', 'herald']) {
   const b = byId.get(id);
   const text = (b.manual + ' ' + b.purpose + ' ' + b.blurb).toLowerCase();
   A.ok(/draft|go-ahead|do not auto|don't auto|not auto-broadcast|theirs to (publish|send)|without the commander/.test(text),
@@ -210,10 +216,12 @@ for (const slug of referenced) {
     A.ok(sk.body && sk.body.length > 100, slug + ' has a real procedural body');
   }
 }
-// the S2 + recuration signature skills are all present + honestly grounded (requires are real CAP types)
+// the signature class skills are all present + honestly grounded (requires are real CAP types)
 const NEW_SKILLS = ['source-triangulation', 'feed-watch', 'adversarial-review-pass', 'price-watch',
   'announcement-kit', 'study-plan', 'security-sweep', 'ledger-upkeep', 'translation-pass', 'digest-composer',
-  'itinerary-planning', 'file-curation'];
+  'itinerary-planning', 'file-curation',
+  // 2026-07-16 business-roster skills
+  'marketing-plan', 'content-calendar', 'ugc-brief', 'short-form-script', 'lead-scouting', 'inbox-triage', 'cost-audit'];
 for (const slug of NEW_SKILLS) {
   const sk = SLUGS.get(slug);
   A.ok(!!sk, 'S2 new skill authored: ' + slug);
@@ -229,7 +237,7 @@ const arch = S.get('translator');
 A.ok(arch && arch.id === 'translator' && arch.custom === false, 'Specialties.get resolves an archetype id');
 A.ok(!S.builtins().some(b => b.id === 'translator'), 'builtins() (the default roster) excludes archetypes');
 A.ok(!S.list().some(b => b.id === 'translator'), 'list() (roster + customs) excludes archetypes — they are asked for explicitly');
-A.eq(S.archetypes().length, 9, 'archetypes() exposes the pool');
+A.eq(S.archetypes().length, 14, 'archetypes() exposes the pool');
 const archCompose = S.compose('reviewer');
 A.ok(archCompose && archCompose.purpose.length > 0 && archCompose.manual.length > 0, 'compose() works on an archetype (summonable as-is, same deploy path)');
 // a custom can never shadow an archetype id (uniqueId consults get(), which now spans both shelves)
