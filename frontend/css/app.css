@@ -3004,3 +3004,22 @@ input[type=number] { -moz-appearance: textfield; }
 button:disabled, select:disabled, input:disabled, textarea:disabled {
   opacity: 0.45; cursor: not-allowed;
 }
+
+/* OUTBOX — FINISHED WORK window (accordion, 2026-07-16 round 4). Collapsed row = title + what the
+   agent actually did + a dim meta line, nothing else; the whole head is the toggle. Expanded body
+   holds the ask, the full output (scrolls inside itself), and the one action row. */
+.ob-list { display: flex; flex-direction: column; gap: 8px; }
+.ob-row { border: 1px solid var(--ph-faint); border-radius: var(--r-sm); background: var(--panel2); box-shadow: var(--raise); overflow: hidden; transition: border-color 0.15s; }
+.ob-row.open { border-color: var(--ph-dim); box-shadow: var(--raise), inset 0 0 14px var(--ph-glow2); }
+.ob-head { padding: 9px 12px; cursor: pointer; }
+.ob-head:hover, .ob-head:focus-visible { background: rgba(255, 255, 255, 0.03); outline: none; }
+.ob-title { color: var(--ph); letter-spacing: 0.5px; display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.ob-title b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1; }
+.ob-caret { color: var(--ph-dim); flex: none; }
+.ob-desc { margin-top: 3px; font-size: 12px; line-height: 1.45; color: var(--text); opacity: 0.78; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.ob-meta { margin-top: 5px; font-size: 10.5px; color: var(--ph-dim); letter-spacing: 1px; }
+.ob-body { border-top: 1px solid var(--ph-faint); padding: 10px 12px 12px; }
+.ob-sec { font-size: 10px; letter-spacing: 2px; color: var(--ph-dim); margin: 10px 0 4px; }
+.ob-sec:first-child { margin-top: 0; }
+.ob-ask, .ob-out { white-space: pre-wrap; word-break: break-word; max-height: 240px; overflow: auto; }
+.ob-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-top: 12px; }
