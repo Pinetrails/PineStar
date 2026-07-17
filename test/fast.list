@@ -46,6 +46,7 @@ test/billing.test.js
 test/credits.test.js
 test/friendlyerror.test.js
 test/codexsignin.test.js
+test/oauthsignin.test.js
 test/loop.replay.test.js
 test/loop.steer.test.js
 test/loop.provider-recovery.test.js
@@ -239,6 +240,7 @@ test/permissionsstore.test.js
 test/permissions-ui.test.js
 test/settings-p1-ui.test.js
 test/settings-codex-row.test.js
+test/settings-oauth-rows.test.js
 test/modelpicker.test.js
 test/agent-model-select.test.js
 test/provider-connections-ui.test.js
