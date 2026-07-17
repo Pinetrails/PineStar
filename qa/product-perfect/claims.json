@@ -1572,17 +1572,17 @@
         {
           "kind": "contains",
           "path": "src-tauri/src/main.rs",
-          "needles": [
-            "TrayIcon",
-            "tauri_plugin_autostart"
-          ]
+          "needle": "TrayIcon"
+        },
+        {
+          "kind": "contains",
+          "path": "src-tauri/src/main.rs",
+          "needle": "tauri_plugin_autostart"
         },
         {
           "kind": "contains",
           "path": "sidecar/index.js",
-          "needles": [
-            "/api/lifecycle/armed"
-          ]
+          "needle": "/api/lifecycle/armed"
         }
       ],
       "verdict": "SHIPPED",
@@ -2587,9 +2587,7 @@
         {
           "kind": "contains",
           "path": "src-tauri/src/main.rs",
-          "needles": [
-            "TrayIcon"
-          ]
+          "needle": "TrayIcon"
         }
       ],
       "refsChecked": [
