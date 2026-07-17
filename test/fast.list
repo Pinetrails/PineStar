@@ -248,6 +248,7 @@ test/newhero-reset.test.js
 test/harness-internal.test.js
 test/chat-runmeta.test.js
 test/chat-stopped-retry.test.js
+test/chat-linkify.test.js
 test/mint.test.js
 test/ctxgauge.test.js
 test/floorstats.test.js
