@@ -18,8 +18,8 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "3f682986dcea02204ab68c2814894a4647c6e78a",
-    "pathSetSha256": "e45261d65dc7ff0b9cc77172b4f800cc4bef6dec86bd786a26771964e9b2e342",
+    "sourceCommit": "7f3af0befb0d0660dab6f2d7bef15ef6041b8eb4",
+    "pathSetSha256": "9eeefd91d6d300f96627d4a5036f6c767a4a1fe611b7bce6175e1b94964d750f",
     "files": [
       {
         "path": "INSTALL.md",
@@ -63,8 +63,8 @@
       },
       {
         "path": "frontend/app/app.js",
-        "bytes": 267987,
-        "sha256": "b6bcbfbcc3d17a0204b7a08f3f1c625a58259826e4fa2554a6844e944dc3d712"
+        "bytes": 267949,
+        "sha256": "50d904024db01af9a9b9c7e37ce6f247a5e78f9d4132f21aa704cd31e4dde5ad"
       },
       {
         "path": "frontend/app/armconfirm.js",
@@ -315,6 +315,11 @@
         "path": "frontend/app/legacymigrate.js",
         "bytes": 2307,
         "sha256": "59b365ec22af9e6480231e67b88406549da7721d1e1c221d0b89c58effba3866"
+      },
+      {
+        "path": "frontend/app/lifecycle.js",
+        "bytes": 3024,
+        "sha256": "a5e4dde18f6c1dbf34a54eb59ba7343e159fc5c46549a9da905987d5699dec3d"
       },
       {
         "path": "frontend/app/maintquests.js",
@@ -628,8 +633,8 @@
       },
       {
         "path": "frontend/app/stationui.js",
-        "bytes": 494971,
-        "sha256": "2d0ebc7bda299bf06a2f40ccf9a901949544ac49e21963ad3bff06102cdc5673"
+        "bytes": 497988,
+        "sha256": "ab0b575ef1c646490ca11653df6e0cab695ddadbc4822422c6a25ce96a5f3dc9"
       },
       {
         "path": "frontend/app/study.js",
@@ -798,8 +803,8 @@
       },
       {
         "path": "frontend/css/app.css",
-        "bytes": 197884,
-        "sha256": "6f9684ccb97b2394e062a1cbb32e7103f85952c2c062d5b62e53f035e4ae0b1e"
+        "bytes": 197665,
+        "sha256": "fc860a9e4d9231343cac0424ef0da465ce92f5a4190554ab0074d127608287ff"
       },
       {
         "path": "frontend/css/asciifx.css",
@@ -863,8 +868,8 @@
       },
       {
         "path": "frontend/index.html",
-        "bytes": 62831,
-        "sha256": "2c5db5fdea9e6ae0b5d3a15421cc73c8a809ea1f18881578e7883919caa1e192"
+        "bytes": 62961,
+        "sha256": "b008de4d8ca4ffaf125fa19b2ce9d5358b536c43bbc486883836984e487248ce"
       },
       {
         "path": "frontend/js/arcade.js",
@@ -1565,25 +1570,32 @@
       ],
       "authorityChecks": [
         {
-          "kind": "absent",
+          "kind": "contains",
           "path": "src-tauri/src/main.rs",
-          "needles": [
-            "TrayIcon",
-            "SystemTray",
-            "tauri_plugin_autostart"
-          ]
+          "needle": "TrayIcon"
+        },
+        {
+          "kind": "contains",
+          "path": "src-tauri/src/main.rs",
+          "needle": "tauri_plugin_autostart"
+        },
+        {
+          "kind": "contains",
+          "path": "sidecar/index.js",
+          "needle": "/api/lifecycle/armed"
         }
       ],
-      "verdict": "REFUTED",
+      "verdict": "SHIPPED",
       "disposition": "NARROW",
       "ownerWave": "W5",
-      "qualification": "The product is one sidecar owned by the app; closing the app ends it.",
+      "qualification": "Wave 4D (7f3af0be): a VISIBLE tray supervisor keeps the one sidecar alive after window-close ONLY while armed work exists (routines not durably halted, connected channels, armed night-shift; GET /api/lifecycle/armed is the truth source). Explicit Quit stops it after a bounded drain; launch-at-login is opt-in and default OFF; no hidden daemon. Messages sent while fully quit still get the honest offline note.",
       "liveProofRequired": true,
       "liveProof": "PENDING",
       "refsChecked": [
         "trunk@ef16fa087ad872f9d266ecde8b72ef813cb9ca82",
         "branches@refs/heads/* audited 2026-07-12",
-        "worktrees@git-worktree-list audited 2026-07-12"
+        "worktrees@git-worktree-list audited 2026-07-12",
+        "trunk@7f3af0befb0d0660dab6f2d7bef15ef6041b8eb4 (Wave 4D lifecycle) audited 2026-07-17"
       ]
     },
     {
@@ -2562,10 +2574,10 @@
       "id": "W5-after-close-continuation",
       "wave": "W5",
       "item": "Work continues after the desktop app closes.",
-      "verdict": "REFUTED",
+      "verdict": "SHIPPED",
       "disposition": "NARROW",
       "ownerWave": "W5",
-      "qualification": "Single-process desktop ownership means close stops the sidecar; this is a copy-honesty fix.",
+      "qualification": "Wave 4D (7f3af0be) ships the supervised background lifecycle: window-close keeps the station only when armed work requires it, surfaced in the tray; Quit drains and stops; autostart opt-in. Six interactive installed-exe proofs pending (tracked in docs/NEXT.md).",
       "authorityChecks": [
         {
           "kind": "contains",
@@ -2573,18 +2585,16 @@
           "needle": "even with this window closed, as long as the station app is running"
         },
         {
-          "kind": "absent",
+          "kind": "contains",
           "path": "src-tauri/src/main.rs",
-          "needles": [
-            "TrayIcon",
-            "SystemTray"
-          ]
+          "needle": "TrayIcon"
         }
       ],
       "refsChecked": [
         "trunk@ef16fa087ad872f9d266ecde8b72ef813cb9ca82",
         "branches@refs/heads/* audited 2026-07-12",
-        "worktrees@git-worktree-list audited 2026-07-12"
+        "worktrees@git-worktree-list audited 2026-07-12",
+        "trunk@7f3af0befb0d0660dab6f2d7bef15ef6041b8eb4 (Wave 4D lifecycle) audited 2026-07-17"
       ]
     },
     {

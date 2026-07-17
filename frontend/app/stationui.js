@@ -3656,6 +3656,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     const s = store.settings;
     const awakeDesktop = !!(typeof KeepAwake !== 'undefined' && KeepAwake.isDesktop && KeepAwake.isDesktop());
     const awakeChecked = awakeDesktop && !!s.keepComputerAwake;
+    const lifecycleDesktop = !!(typeof Lifecycle !== 'undefined' && Lifecycle.isDesktop && Lifecycle.isDesktop());
     if (!s.notifyPrefs) s.notifyPrefs = notifyDefaults();   // defensive: an old save may predate P1-8
     const npf = k => s.notifyPrefs[k] !== false;            // per-category checked-state (default on)
     // ── SECTION FRAGMENTS ──────────────────────────────────────────────────────────────────
@@ -3843,6 +3844,11 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       // "POWER" — this header held only KEEP COMPUTER AWAKE, so "SCHEDULED TASKS" mislabelled it.
       '<h4 class="ms-h">POWER</h4>' +
       '<label class="set-row"><input type="checkbox" id="set-awake" ' + (awakeChecked ? 'checked' : '') + (awakeDesktop ? '' : ' disabled') + '> KEEP COMPUTER AWAKE <span class="dim">— ' + (awakeDesktop ? 'prevent idle sleep while StarNet is open' : 'desktop app only') + '</span></label>' +
+      // Lane 4D — LAUNCH AT LOGIN (opt-in, default OFF) + the honest background-lifecycle explainer. Both are
+      // desktop-only; the checkbox is disabled and the line names the browser reality otherwise. The explainer
+      // is filled live from the tray supervisor's REAL armed state (wireLifecycle) so it never over-claims.
+      '<label class="set-row"><input type="checkbox" id="set-autostart" disabled> LAUNCH AT LOGIN <span class="dim">— ' + (lifecycleDesktop ? 'start StarNet automatically when you sign in' : 'desktop app only') + '</span></label>' +
+      '<p class="set-about" id="lifecycle-desc">' + (lifecycleDesktop ? 'Checking what runs in the background…' : 'In the desktop app, closing the window keeps the station running only when armed work (routines, connected channels, or the night shift) needs it — otherwise closing fully quits. This browser tab has no background process.') + '</p>' +
       // ADVANCED — env-only runtime knobs, now editable + persisted server-side (P1-9). PRECEDENCE is spelled out
       // in the card: an explicit environment variable ALWAYS wins over a value saved here (a deploy stays in control).
       '<h4 class="ms-h">ADVANCED <span class="dim">— runtime limits (usually leave these alone)</span></h4>' +
@@ -3962,6 +3968,46 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         sfx('bad');
       });
     });
+    // Lane 4D — LAUNCH AT LOGIN toggle + live background-lifecycle explainer. Desktop-only; both read REAL state
+    // (the OS autostart registration and the tray supervisor's armed truth), so neither line ever over-claims.
+    if (typeof Lifecycle !== 'undefined' && Lifecycle.isDesktop && Lifecycle.isDesktop()) {
+      const autostartToggle = host.querySelector('#set-autostart');
+      const lifeDesc = host.querySelector('#lifecycle-desc');
+      // Reflect the real OS autostart state onto the checkbox (default OFF; opt-in).
+      Lifecycle.autostartStatus().then(st => {
+        if (!autostartToggle) return;
+        autostartToggle.disabled = false;
+        autostartToggle.checked = !!(st && st.enabled);
+      }).catch(() => {});
+      // Fill the explainer from the tray supervisor's live armed summary — truthful about what survives a close.
+      const paintLife = () => {
+        if (!lifeDesc) return;
+        Lifecycle.status().then(v => {
+          if (!v || !v.supervised) { lifeDesc.textContent = 'Closing the window keeps the station running only when armed work needs it — otherwise it fully quits.'; return; }
+          if (v.armed) {
+            const why = (v.reasons && v.reasons.length) ? v.reasons.join(', ') : 'armed background work';
+            lifeDesc.textContent = 'Right now, closing the window KEEPS the station running in the background (' + why + '). Quit fully from the tray icon. Otherwise closing would fully quit.';
+          } else {
+            lifeDesc.textContent = 'Right now, nothing is armed — closing the window fully quits StarNet (no background process). Arm a routine, connect a channel, or turn on the night shift to keep it running while closed.';
+          }
+        }).catch(() => { lifeDesc.textContent = 'Closing the window keeps the station running only when armed work needs it — otherwise it fully quits.'; });
+      };
+      paintLife();
+      if (autostartToggle) autostartToggle.addEventListener('change', ev => {
+        const desired = !!ev.target.checked;
+        sfx('click');
+        Lifecycle.setAutostart(desired).then(st => {
+          const real = !!(st && st.enabled);
+          ev.target.checked = real;
+          if (real !== desired) notify('Launch at login could not be ' + (desired ? 'enabled' : 'disabled') + ' on this system.', 'warn');
+          else flashSaved(appMsg());
+        }).catch(err => {
+          ev.target.checked = !desired;
+          notify('Launch at login failed: ' + ((err && err.message) || err), 'warn');
+          sfx('bad');
+        });
+      });
+    }
     // PERMISSIONS panel repaint hook — set by the permissions block below; called whenever the granular dial
     // changes so the level highlight + #perm-desc stay in sync with the posture. No-op until that block wires it.
     let syncPerm = function () {};
