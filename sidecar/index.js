@@ -4609,6 +4609,7 @@ function dispatchRoute(req, res) {
   if (req.method === 'POST' && req.url === '/api/spotify/disconnect') return handleSpotifyDisconnect(req, res);
   if (req.method === 'GET' && req.url === '/api/widgets') return handleWidgetsList(req, res);   // WIDGET RAILS Phase 2: the agent-fed readouts the chrome rails poll
   if (req.method === 'GET' && req.url === '/api/state/snapshot') return handleStateSnapshot(req, res);   // reconnect reconciliation (frontend lane consumes it)
+  if (req.method === 'GET' && req.url === '/api/lifecycle/armed') return handleLifecycleArmed(req, res);   // Lane 4D: tray supervisor's close-decision truth
   if (req.method === 'GET' && req.url === '/api/cron') return handleCronList(req, res);
   if (req.method === 'POST' && req.url === '/api/cron') return handleCronCreate(req, res);
   if (req.method === 'POST' && req.url === '/api/cron/update') return handleCronUpdate(req, res);
@@ -5665,6 +5666,62 @@ function handleCronList(req, res) {
     healthy: !!(cronArmed && cronTimer && cronHealth.lastSuccessAt != null && (Date.now() - cronHealth.lastSuccessAt) < 3 * CRON_TICK_MS)
   };
   res.end(JSON.stringify({ jobs: cronJobs, enabled: cronArmed, tickMs: CRON_TICK_MS, health: health }));
+}
+
+/* GET /api/lifecycle/armed — Lane 4D: the ONE aggregate the desktop tray supervisor polls to decide whether
+   closing the window may keep the sidecar alive. "Armed work" = background work that genuinely needs a live
+   process after the window is gone: a cron scheduler with routines, a connected messaging channel, or an
+   armed night-shift. TRUTHFUL TELEMETRY: every field reads REAL in-memory server state (the same sources the
+   ROUTINES / CHANNELS / night-shift panels read) — nothing is synthesized. When nothing is armed, `armed:false`
+   and the tray quits the whole app on window close (no hidden daemon). Reasons are short human strings the tray
+   can show verbatim ("2 routines armed", "Telegram connected"). Defensive: a failing subsystem degrades to
+   armed:false for THAT category rather than 500-ing the poll (a poll error must never wedge the close decision). */
+function lifecycleArmedSnapshot(now) {
+  now = now || Date.now();
+  // ROUTINES — armed only when the scheduler is armed AND at least one routine exists to fire. A disarmed
+  // scheduler (or an armed one with zero jobs) is honestly not armed: nothing would tick after window close.
+  let routines = { armed: false, count: 0, healthy: false };
+  try {
+    const jobs = Array.isArray(cronJobs) ? cronJobs : [];
+    const armed = !!cronArmed && jobs.length > 0;
+    const healthy = !!(cronArmed && cronTimer && cronHealth.lastSuccessAt != null && (now - cronHealth.lastSuccessAt) < 3 * CRON_TICK_MS);
+    routines = { armed: armed, count: armed ? jobs.length : 0, healthy: healthy };
+  } catch (_) {}
+  // CHANNELS — the ids of every messaging channel reporting connected:true (real socket/poll state).
+  let channels = { armed: false, connected: [] };
+  try {
+    const connected = [];
+    for (const d of channelRegistry.list()) { try { if (channelStatusPayload(d.id).connected) connected.push(d.id); } catch (_) {} }
+    channels = { armed: connected.length > 0, connected: connected };
+  } catch (_) {}
+  // NIGHT SHIFT / AUTONOMY — armed = the beat timer is live (nightshiftTimer). This subsumes the autonomy dial:
+  // the timer arms only when the Commander set an unattended posture (nightshiftShouldArm reads actsUnattended),
+  // so a live timer IS the provable "autonomy will act while you're away" signal. `halted` is the durable E-STOP
+  // stand-down (survives restart) — reported so the tray never claims armed work the halt has actually frozen.
+  let nightshift = { armed: false, halted: false };
+  try {
+    const rolled = nightshift$rollDay(now);
+    nightshift = { armed: !!nightshiftTimer, halted: (rolled.haltedAt || 0) > 0 };
+  } catch (_) {}
+  // A halted night shift is not doing work — reflect that in `armed` (truthful: don't hold the process for a
+  // frozen shift). Routines/channels are independent of the NS halt.
+  const nsArmedActive = nightshift.armed && !nightshift.halted;
+  const armed = routines.armed || channels.armed || nsArmedActive;
+  const reasons = [];
+  if (routines.armed) reasons.push(routines.count === 1 ? '1 routine armed' : (routines.count + ' routines armed'));
+  for (const id of channels.connected) reasons.push((id.charAt(0).toUpperCase() + id.slice(1)) + ' connected');
+  if (nsArmedActive) reasons.push('Night shift armed');
+  return { armed: armed, categories: { routines: routines, channels: channels, nightshift: nightshift }, reasons: reasons, ts: now };
+}
+// small wrapper so lifecycleArmedSnapshot never throws on the nightshift day-roll (state may be uninitialized
+// in edge boots); returns a benign shape rather than propagating.
+function nightshift$rollDay(now) {
+  try { return nightshift.rollDay(nightshiftState, now) || {}; } catch (_) { return {}; }
+}
+function handleLifecycleArmed(req, res) {
+  const out = lifecycleArmedSnapshot(Date.now());
+  res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify(out));
 }
 
 /* GET /api/state/snapshot — a RECONNECTION snapshot for the frontend (Lane E). After the SSE bridge drops and
