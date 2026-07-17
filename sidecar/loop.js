@@ -54,42 +54,35 @@
     }
   }
 
-  // TEXT TOOL-CALL RESCUE (model-consistency sweep 2026-07-17): some models (Kimi/Qwen/GLM families) emit
-  // their tool call as PLAIN TEXT markup — `<tool_call>{"name":…,"arguments":{…}}</tool_call>` — instead of
-  // the tool_calls wire, typically when a provider mangles the tools param. Without rescue the run ends
-  // 'done' with raw XML shown to the Commander and the work not done. Conservative recovery: fires ONLY when
-  // the wire produced ZERO tool calls; each block must JSON-parse (one bounded mechanical repair attempt) to
-  // an object naming a WIRED tool; anything else stays visible text. Rescued calls flow through the SAME
-  // parseCall/repair/dispatch path, so capability + consent gates are unchanged. Accepted markup is stripped
-  // from the kept assistant text so the replayed transcript reads like a normal tool turn.
-  function rescueTextToolCalls(text, tools) {
-    const t = String(text == null ? '' : text);
-    if (t.indexOf('<tool_call>') < 0) return null;
-    const wired = new Set();
-    for (const tl of (tools || [])) {
-      const n = tl && (tl.name || (tl.function && tl.function.name));
-      if (n) wired.add(String(n));
+  // TEXT TOOL-CALL MARKUP SCRUB (model-consistency sweep 2026-07-17; aligned with the reference harness):
+  // some models (Kimi/Qwen/GLM/Gemma families) emit tool-call markup — `<tool_call>{"name":…}</tool_call>`,
+  // `<function_call>…`, Gemma's `<function name="…">…</function>` — as PLAIN TEXT instead of the tool_calls
+  // wire. The markup must NEVER be executed: the reference harness's #47967 class showed weak models ECHO
+  // tool-call markup they saw in file contents or tool output, so executing it would let FILE DATA drive
+  // tool execution (an injection vector). Instead: strip the blocks from the kept text (raw XML never shows
+  // as a "final answer") and, when tools are wired, the caller nudges the model once — the wire here is
+  // intact (tools are never dropped; provider-compatibility law), so a model that MEANT to act re-emits the
+  // call properly next turn, and an echo of data continues without it. The `<function>` variant is gated on
+  // a name= attribute at a block boundary so prose like "use <function> in JS" is preserved.
+  const TEXT_MARKUP_RES = [
+    /<tool_call>[\s\S]*?<\/tool_call>/gi,
+    /<tool_calls>[\s\S]*?<\/tool_calls>/gi,
+    /<function_call>[\s\S]*?<\/function_call>/gi,
+    /<function_calls>[\s\S]*?<\/function_calls>/gi,
+    /(?:(?<=^)|(?<=[\n\r.!?:]))[ \t]*<function\b[^>]*\bname\s*=[^>]*>[\s\S]*?<\/function>/gi
+  ];
+  function scrubTextToolCallMarkup(text) {
+    let t = String(text == null ? '' : text);
+    let found = false;
+    for (const re of TEXT_MARKUP_RES) {
+      re.lastIndex = 0;
+      if (!re.test(t)) continue;
+      re.lastIndex = 0;
+      found = true;
+      t = t.replace(re, '');
     }
-    if (!wired.size) return null;
-    const re = /<tool_call>\s*([\s\S]*?)\s*<\/tool_call>/g;
-    const calls = [], spans = [];
-    let m;
-    while ((m = re.exec(t))) {
-      let obj = null;
-      try { obj = JSON.parse(m[1]); }
-      catch (_) { try { obj = JSON.parse(repairToolCallArguments(m[1])); } catch (_) { obj = null; } }
-      const name = (obj && typeof obj.name === 'string') ? obj.name.trim() : '';
-      if (!name || !wired.has(name)) continue;   // unknown tool or unparseable block -> left as text, never guessed
-      let rawArgs = (obj.arguments !== undefined) ? obj.arguments : ((obj.parameters !== undefined) ? obj.parameters : {});
-      const argsRaw = (typeof rawArgs === 'string') ? rawArgs : JSON.stringify(rawArgs == null ? {} : rawArgs);
-      calls.push(parseCall({ id: 'textcall_' + calls.length, name, args: argsRaw }, calls.length));
-      spans.push([m.index, re.lastIndex]);
-    }
-    if (!calls.length) return null;
-    let kept = '', at = 0;
-    for (const [s, e] of spans) { kept += t.slice(at, s); at = e; }
-    kept += t.slice(at);
-    return { calls, text: kept.trim() };
+    if (!found) return null;
+    return { text: t.replace(/\n{3,}/g, '\n\n').trim() };
   }
 
   function assistantTurn(text, calls) {
@@ -238,6 +231,14 @@
     const _cg = limits.continueGuard;
     const CG_MAX = (_cg === false) ? 0 : (_cg && _cg.max != null ? _cg.max : 2);
     let cgUsed = 0;
+    // Companion nudge budgets (same disable knob as the continuation guard — they are one family):
+    //  · markup nudge — the turn's TEXT carried tool-call markup (scrubbed above; NEVER executed). Tell the
+    //    model once that text markup is data and to make a REAL call. Bounded like CG.
+    //  · empty-after-tools nudge — the reference harness's "weaker models return empty after tool results
+    //    instead of continuing" class (its #9400): one bounded push to process the results and continue,
+    //    instead of ending the run 'empty' on the first silence.
+    let mkUsed = 0;
+    let emptyNudgeUsed = false;
 
     // NO-OP TURN REFUND (reference-harness iteration-budget parity): a turn that produced NO tool call AND no NEW assistant
     // content (empty/whitespace text, OR text byte-identical to the immediately-prior assistant turn) is wasted work
@@ -480,12 +481,14 @@
       // content merely duplicates the previous assistant turn can be detected below.
       let priorAssistantText = null;
       for (let mi = messages.length - 1; mi >= 0; mi--) { if (messages[mi].role === 'assistant') { priorAssistantText = String(messages[mi].content == null ? '' : messages[mi].content); break; } }
-      let calls = Object.keys(acc.toolCalls).sort((a, b) => a - b).map((k, i) => parseCall(acc.toolCalls[k], i));
-      // TEXT TOOL-CALL RESCUE: a zero-wire-call turn whose TEXT carries <tool_call> markup naming wired tools
-      // is a mis-wired action, not a final answer — recover the calls and strip the markup from the kept text.
+      const calls = Object.keys(acc.toolCalls).sort((a, b) => a - b).map((k, i) => parseCall(acc.toolCalls[k], i));
+      // TEXT TOOL-CALL MARKUP: a zero-wire-call turn whose TEXT carries tool-call markup is neither a final
+      // answer nor a call to execute (echoed markup = data; see scrubTextToolCallMarkup). Strip it from the
+      // kept turn; the stop branch below nudges the model to make a REAL call.
+      let textMarkup = false;
       if (calls.length === 0) {
-        const rescued = rescueTextToolCalls(acc.text, tools);
-        if (rescued) { calls = rescued.calls; acc.text = rescued.text; }
+        const scrubbed = scrubTextToolCallMarkup(acc.text);
+        if (scrubbed) { textMarkup = true; acc.text = scrubbed.text; }
       }
       repairCalls(calls, emit, agentId, runId);   // L2: fix broken tool-call JSON before it is used or discarded
       messages.push(assistantTurn(acc.text, calls));
@@ -496,6 +499,28 @@
         const text = String(acc.text || '');
         const empty = !text.trim();                                   // nothing usable produced
         const duplicate = !empty && priorAssistantText != null && text === priorAssistantText;   // a re-emitted prior turn
+        // MARKUP NUDGE: the turn's text carried tool-call markup (scrubbed above, never executed). Point the
+        // model at the real wire once — a model that meant to act re-emits the call properly; an echo of
+        // quoted data just continues without it. Shares the continuation-guard disable knob and grace rule.
+        if (textMarkup && !graceUsed && CG_MAX > 0 && mkUsed < CG_MAX && tools.length > 0) {
+          mkUsed++;
+          messages.push({ role: 'system', content: '<tool_markup>Tool-call markup (e.g. <tool_call>…</tool_call>) appeared in your reply TEXT. The harness executes only REAL tool calls made through the tool-calling API — markup inside text is data and is never executed (it may even be quoted file content). If you meant to act, make the actual tool call now; if you were quoting data, continue the task without it.</tool_markup>' });
+          continue;
+        }
+        // EMPTY-AFTER-TOOLS NUDGE (reference-harness parity): weaker models sometimes stream NOTHING right
+        // after tool results instead of continuing. One bounded nudge to process the results and continue
+        // beats ending the whole run 'empty' on the first silence; the empty turn is still refunded.
+        if (empty && !graceUsed && !emptyNudgeUsed && CG_MAX > 0 && tools.length > 0
+            && messages.slice(-6).some(m => m && m.role === 'tool')) {
+          emptyNudgeUsed = true;
+          if (refundsUsed < REFUND_MAX) {
+            refundsUsed++;
+            turns = turnStart;
+            emit('iteration.refunded', { agentId, runId, turn: turnStart, reason: 'empty', refundsUsed });
+          }
+          messages.push({ role: 'system', content: '<continue_after_tools>You returned an empty reply after tool results. Process the tool results above and continue the task now; if the task is fully complete, give your final answer.</continue_after_tools>' });
+          continue;
+        }
         // CONTINUATION GUARD: an announce-without-acting final turn ("Reading main.js now…" + zero tool calls)
         // is a premature stop, not a delivery — nudge the model back to work instead of ending 'done' mid-task.
         // Never fires on a grace turn (that turn is CONTRACTED to be tool-free) and never past CG_MAX, so a
@@ -571,5 +596,5 @@
     }
   }
 
-  return { runAgentLoop, _internals: { parseCall, repairCalls, assistantTurn, toolResultMsg, assertPaired, executeCalls, announcesIntent, rescueTextToolCalls } };
+  return { runAgentLoop, _internals: { parseCall, repairCalls, assistantTurn, toolResultMsg, assertPaired, executeCalls, announcesIntent, scrubTextToolCallMarkup } };
 });

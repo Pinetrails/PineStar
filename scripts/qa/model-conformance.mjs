@@ -15,8 +15,8 @@
  * Card (per check: PASS / WARN / FAIL):
  *   run.completes      — agent.run.end reason 'done' on both probes            (FAIL otherwise)
  *   tool.roundtrip     — ≥1 agent.tool_call + ok agent.tool_result in probe A  (FAIL otherwise)
- *   tool.wire          — calls arrived on the tool_calls wire; a `textcall_` callId means the
- *                        text-markup RESCUE fired (WARN: works, but the model mis-wires calls)
+ *   tool.wire          — calls arrived on the tool_calls wire; tool-call MARKUP in the streamed
+ *                        text means the loop scrubbed + nudged (WARN: model mis-wires calls)
  *   args.clean         — no tool.args.repaired events (WARN: model emits broken JSON; repaired)
  *   cost.reported      — ≥1 reconciled agent.cost with real token counts       (FAIL otherwise)
  *   no.errors          — zero agent.run.error events                           (FAIL otherwise)
@@ -50,8 +50,9 @@ export const CHECKS = ['run.completes', 'tool.roundtrip', 'tool.wire', 'args.cle
 export function tallyRun(events) {
   const t = {
     end: null, errors: [], toolCalls: [], toolResults: [], repaired: 0, fallbacks: 0,
-    consentPrompts: 0, costOk: false, usd: 0, turns: 0, firstTokenAt: null, tokens: 0
+    consentPrompts: 0, costOk: false, usd: 0, turns: 0, firstTokenAt: null, tokens: 0, textMarkup: false
   };
+  let allText = '';
   for (const ev of events || []) {
     if (!ev || !ev.name) continue;
     const p = ev.payload || {};
@@ -63,8 +64,12 @@ export function tallyRun(events) {
     else if (ev.name === 'provider.fallback') t.fallbacks++;
     else if (ev.name === 'permission.prompt') t.consentPrompts++;
     else if (ev.name === 'agent.cost' && p.reconciled) { t.costOk = true; t.tokens += (p.tokensIn || 0) + (p.tokensOut || 0); }
-    else if (ev.name === 'agent.token' && t.firstTokenAt == null && p.delta) t.firstTokenAt = ev.at != null ? ev.at : -1;
+    else if (ev.name === 'agent.token' && p.delta) {
+      if (t.firstTokenAt == null) t.firstTokenAt = ev.at != null ? ev.at : -1;
+      allText += p.delta;   // scrubbed from stored turns, but the raw stream still shows what the model emitted
+    }
   }
+  if (/<tool_call>|<function_call>|<tool_calls>|<function_calls>/i.test(allText)) t.textMarkup = true;
   return t;
 }
 
@@ -78,8 +83,8 @@ export function scoreCard(toolT, chatT) {
   const okResults = toolT.toolResults.filter(r => r.ok).length;
   put('tool.roundtrip', (toolT.toolCalls.length >= 1 && okResults >= 1) ? 'PASS' : 'FAIL',
     toolT.toolCalls.length + ' call(s), ' + okResults + ' ok result(s)');
-  const rescued = toolT.toolCalls.filter(x => x.id.indexOf('textcall_') === 0).length;
-  put('tool.wire', rescued === 0 ? 'PASS' : 'WARN', rescued === 0 ? 'calls arrived on the tool_calls wire' : rescued + ' call(s) emitted as TEXT and rescued — model mis-wires tool calls');
+  const markup = toolT.textMarkup || chatT.textMarkup;
+  put('tool.wire', !markup ? 'PASS' : 'WARN', !markup ? 'calls arrived on the tool_calls wire' : 'tool-call MARKUP streamed as text — scrubbed + nudged, never executed; model mis-wires calls');
   put('args.clean', toolT.repaired === 0 ? 'PASS' : 'WARN', toolT.repaired === 0 ? 'argument JSON parsed as sent' : toolT.repaired + ' broken-JSON repair(s)');
   put('cost.reported', (toolT.costOk && toolT.tokens > 0) ? 'PASS' : 'FAIL', toolT.costOk ? toolT.tokens + ' tokens reconciled' : 'no reconciled usage — cost/compaction blind on this model');
   const errs = toolT.errors.concat(chatT.errors);

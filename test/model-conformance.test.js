@@ -45,12 +45,11 @@ const A = require('./_assert.js');
 
   // ---- quirk signatures classify as designed ----
   {
-    // text-rescued call -> WARN tool.wire (works, but the model mis-wires calls)
-    const rescued = cleanToolRun.map(e => e.name.indexOf('agent.tool_') === 0
-      ? ev(e.name, Object.assign({}, e.payload, { callId: 'textcall_0' })) : e);
-    const c1 = scoreCard(tallyRun(rescued), tallyRun(cleanChatRun));
-    A.eq(c1.checks['tool.wire'].status, 'WARN', 'textcall_ id -> WARN tool.wire');
-    A.eq(c1.fail, 0, 'rescue is a WARN, not a FAIL');
+    // tool-call markup streamed as text -> WARN tool.wire (scrubbed + nudged, never executed)
+    const withMarkup = cleanToolRun.concat([ev('agent.token', { agentId: 'a', runId: 'r', delta: '<tool_call>{"name":"fs.list"}</tool_call>' }, 500)]);
+    const c1 = scoreCard(tallyRun(withMarkup), tallyRun(cleanChatRun));
+    A.eq(c1.checks['tool.wire'].status, 'WARN', 'markup in stream -> WARN tool.wire');
+    A.eq(c1.fail, 0, 'markup is a WARN, not a FAIL');
 
     // repaired argument JSON -> WARN args.clean
     const c2 = scoreCard(tallyRun(cleanToolRun.concat([ev('tool.args.repaired', { agentId: 'a', runId: 'r', callId: 'call_0', name: 'fs.list', before: '{', after: '{}' })])), tallyRun(cleanChatRun));
