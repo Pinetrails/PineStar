@@ -2476,7 +2476,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       // hunting HERE, but this board only holds queued directives — finished routine/away runs are
       // readable sessions in COMMS and collectable on the OUTBOX. Shown only when the board is empty
       // (that's exactly when the hunt strands); openTerm('outbox') is the one-click door.
-      (streams.length ? '' : '<div class="mc-detail dim" style="margin-top:8px">Looking for finished work? Routine and while-away runs aren’t board cards — they land as sessions in COMMS and wait on the <button type="button" class="lb-tx-btn" id="kb-outbox-link">▸ OUTBOX</button>.</div>');
+      (streams.length ? '' : '<div class="win-note" style="margin-top:8px">Looking for finished work? Routine and while-away runs aren’t board cards — they land as sessions in COMMS and wait on the <button type="button" class="lb-tx-btn" id="kb-outbox-link">▸ OUTBOX</button>.</div>');
     const inp = body.querySelector('#kb-in');
     const submit = () => { addTask(inp.value); };
     body.querySelector('#kb-add').addEventListener('click', () => { sfx('click'); submit(); });
@@ -6668,9 +6668,9 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     const RS = (typeof ReturnStore !== 'undefined') ? ReturnStore : null;
     const rows = (RS && RS.pendingRows) ? RS.pendingRows() : [];
     body.innerHTML =
-      '<div class="mc-detail dim" style="margin-bottom:8px">Work that finished while you were away. Click a task to see the full result.</div>' +
+      '<div class="win-note" style="margin-bottom:8px">Work that finished while you were away. Click a task to see the full result.</div>' +
       '<div id="ob-list" class="ob-list"></div>' +
-      '<div class="mc-detail" style="margin-top:10px"><button class="bb sm" id="ob-logbook">▸ FULL RUN HISTORY — LOGBOOK</button></div>';
+      '<div style="margin-top:10px"><button class="bb sm" id="ob-logbook">▸ FULL RUN HISTORY — LOGBOOK</button></div>';
     const list = body.querySelector('#ob-list');
     const lb = body.querySelector('#ob-logbook');
     if (lb) lb.addEventListener('click', () => openTerm('logbook'));
@@ -6680,7 +6680,10 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     if (!rows.length) { renderEmpty(); return; }
     // agent id → display name via the live roster (raw ids read as debug output)
     const agentName = id => { const a = (Array.isArray(present) ? present.find(x => x && x.id === id) : null); return (a && a.name) || id || 'agent'; };
-    const firstLine = (s, n) => String(s || '').replace(/\s+/g, ' ').trim().slice(0, n);
+    const firstLine = (s, n) => { const t = String(s || '').replace(/\s+/g, ' ').trim(); return t.length > n ? t.slice(0, n - 1).trimEnd() + '…' : t; };
+    // strip markdown scaffolding (fences, table pipes, headings, emphasis) for the one-line glance —
+    // the FULL untouched output stays in .ob-out; this only keeps the collapsed desc readable.
+    const plain = s => String(s || '').replace(/```[\s\S]*?(```|$)/g, ' ').replace(/[|#*_>`]+/g, ' ').replace(/(^|\s)[-:=]{3,}(?=\s|$)/g, ' ').replace(/\s+/g, ' ').trim();
     // legacy crates (persisted before streamId rode the rows) — fill their transcript join once, best-effort.
     const fillStreams = (async () => {
       if (rows.every(r => r.streamId)) return;
@@ -6707,8 +6710,8 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
           '<div class="ob-meta">' + esc(agentName(rw.agentId)) + ' · ' + when + usd + '</div>' +
         '</div>' +
         '<div class="ob-body" hidden>' +
-          '<div class="ob-sec">THE ASK</div><div class="ob-ask mc-detail"><span class="loading">loading…</span></div>' +
-          '<div class="ob-sec">WHAT THE AGENT DID</div><div class="ob-out mc-detail"><span class="loading">loading…</span></div>' +
+          '<div class="ob-sec">THE ASK</div><div class="ob-ask"><span class="loading">loading…</span></div>' +
+          '<div class="ob-sec">WHAT THE AGENT DID</div><div class="ob-out"><span class="loading">loading…</span></div>' +
           '<div class="ob-acts">' +
             '<button type="button" class="consent-btn ob-open">↗ OPEN — test it in the session</button>' +
             '<button type="button" class="consent-btn ob-fork">⊕ NEW SESSION — expand on this</button>' +
@@ -6733,11 +6736,12 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         const replies = (turns || []).filter(m => m && m.role === 'assistant' && String(m.content || '').trim() && String(m.content).trim() !== '[SILENT]');
         const lastReply = replies.length ? String(replies[replies.length - 1].content) : '';
         if (!rw.routine && users.length) row.querySelector('.ob-title b').textContent = firstLine(users[0].content, 64);
-        desc.textContent = lastReply ? firstLine(lastReply, 150)
+        desc.textContent = lastReply ? firstLine(plain(lastReply), 150)
           : (turns === null ? 'couldn’t read the result — is the station running?'
             : (turns && turns.length ? 'the run finished with nothing to report.' : 'no transcript recorded for this run.'));
-        ask.textContent = users.length ? String(users[0].content).slice(0, 1500) : (rw.title || '—');
-        out.textContent = lastReply ? lastReply.slice(0, 4000)
+        const askFull = users.length ? String(users[0].content) : '';
+        ask.textContent = askFull ? (askFull.length > 1500 ? askFull.slice(0, 1500) + ' …' : askFull) : (rw.title || '—');
+        out.textContent = lastReply ? (lastReply.length > 4000 ? lastReply.slice(0, 4000) + '\n\n… output truncated — ↗ OPEN shows the full run.' : lastReply)
           : (turns === null ? '⚠ couldn’t load the output — the run’s transcript wasn’t reachable.'
             : 'this run recorded no readable output.');
       })();

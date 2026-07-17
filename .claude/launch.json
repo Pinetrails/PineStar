@@ -981,6 +981,20 @@
       }
     },
     {
+      "name": "polish24-seed",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "C:/Users/andro/Desktop/gen/.claude/worktrees/polish-recent-changes-334045/dev/seed.js",
+        "--keep"
+      ],
+      "port": 9137,
+      "autoPort": false,
+      "env": {
+        "SKYNET_PORT": "9137",
+        "SKYNET_DEFAULT_MODEL": "anthropic/claude-haiku-4.5"
+      }
+    },
+    {
       "name": "taskbrief-v2-seed",
       "runtimeExecutable": "node",
       "runtimeArgs": [
