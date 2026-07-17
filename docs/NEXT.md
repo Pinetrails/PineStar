@@ -12,21 +12,32 @@ live restart criteria, composed gates, and a final installed-app proof. Wave 4D 
 background lifecycle) remains an explicit owner decision checkpoint; the plan recommends opt-in
 launch-at-login plus visible tray ownership, never a hidden daemon.
 
-- [ ] **PU-03 P1:** recovery EXPORT AGENT includes browser BYOK localStorage secrets despite
-      Settings saying secrets are excluded.
-- [ ] **PU-01 P1:** Night Shift accepts/persists nonexistent or unblessed project/thread focus
-      and reports it resolved/buildable.
-- [ ] **PU-02 P1:** disabled MCP connector disappears after restart while its secret-bearing
-      config remains on disk and unmanageable.
-- [ ] **PU-04 P1:** drag-wide-window left + viewport shrink can persist Settings fully off-screen.
-- [ ] **PU-05..PU-12 P2:** stale focus after CLEAR; misleading Signal FORGET; false Ollama/custom
-      KEY SAVED/ACTIVE; duplicate recruit display names; cross-session agent-busy composer trap;
-      false 1-minute age; generic sidecar-loss error; partial transcript loss on disconnect.
-- [ ] **PU-13..PU-14 P3:** rapid +NEW durable empty-session spam; stopped run lacks visible retry.
+**2026-07-16 (late) — ALL 14 PU FINDINGS RE-VERIFIED FIXED AT TRUNK `f2c6d92a`** (post-merge-review
+lane; 5-agent code-verification sweep with file:line evidence). The plan above was written at
+baseline `bf99df2a`; the subsequent power-user loop repairs merge (`8ce4c967`), the summon-naming
+lane, the nightfocus validator, and the Task Brief chat.js waves closed every seam. Each has a
+dedicated regression test on trunk:
 
-Attack order and verified/unverified surface inventory are in the audit. EL-3 law applies: land
-the exact failing reproduction before each fix. Do not infer station-wide readiness from the green
-baseline; Atlas at this head is 444 stale · 123 unmapped · 1 missing.
+- [x] **PU-03 P1:** backup.js `isCredentialKey` denylist (default-deny `starnet.byok.*`), export
+      `secretsIncluded:false`, import guard. — [x] **PU-01 P1:** `validateNightFocusSteer`
+      (index.js ~8368): 404 missing path, 403 unblessed, thread/goal checked; nothing persists on
+      reject. — [x] **PU-02 P1:** disabled connectors are durable management rows (boot registers
+      all, list merges, EL-3 restart test in e2e.mcp-connector). — [x] **PU-04 P1:**
+      `visibleTerminalRect` clamp on drag/restore/resize + repaired coords persisted
+      (terminal-resize journey asserts reachability incl. phone viewport).
+- [x] **PU-05..PU-12 P2:** clearSteer drops steer-derived focus; Signal ✕ REMOVE CONFIGURATION
+      (read-back proven, no token lie); Ollama/custom = LOCAL ENDPOINT CONFIGURED/OFFLINE with
+      reachability-gated ACTIVE; `allocName` uniquifies defaults + `[id]` badge on collisions;
+      `busyPeerFor` preflight = BUSY IN <session> + VIEW ACTIVE RUN; `formatRunHolderAge` "just
+      now"; mid-stream sidecar death classified station-unreachable; `persistPartial` keeps
+      streamed text + disconnect marker on both error branches.
+- [x] **PU-13..PU-14 P3:** `Workstreams.startSession` reuses the untouched blank; stopped runs
+      offer Try again (incl. after reload; clarifying end correctly excluded).
+
+Remaining from this audit: Wave 4D (background lifecycle) = Andrew's product decision; minor
+coverage gaps noted in the review lane (route-level test for validateNightFocusSteer; explicit
+poisoned-termPos reload assert). EL-3 law applies to any NEW finding. Do not infer station-wide
+readiness from the green baseline; Atlas at this head is 444 stale · 123 unmapped · 1 missing.
 
 ## IMPLEMENTED 2026-07-16 — TASK-BRIEF RELIABILITY HARDENING (`agent/briefing-reliability`)
 

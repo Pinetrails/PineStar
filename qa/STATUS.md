@@ -90,6 +90,17 @@ per-crew roll-up below can be regenerated any time with:
 node scripts/qa/ledger.mjs --status
 ```
 
+## 2026-07-17 — guardian-red triage merge (claude/starnet-post-merge-review-b35656 → trunk `a17b2e91`)
+
+All 5 open Guardian P1 findings resolved, ledger flipped with evidence. (1) The 3 approval truth
+regressions were INSTRUMENT lag: the briefing-reliability boundary (a948a530) blocks mutating tools
+until the brief settles, so scripts/audit.mjs's tool-mock burned its fs.write on the brief gate —
+mock now settles via brief_proceed first; local AUDIT PASS 45/45. (2) sys-sessiontools golden =
+intended SESSION TOOLS redesign + archived-mirror row, eyeballed, re-blessed at the synced tree,
+GOLDEN PASS. (3) J1.1 working-covers-busy passes at 20260716-230003 and locally (39/39) — transient.
+Gate: test:fast 342/342 green at the exact merged tree. Bonus: PU-01..14 re-verified FIXED at HEAD
+(5-agent code sweep, file:line evidence in docs/NEXT.md) — the fix-plan checkboxes were stale.
+
 ## Crew last-run
 
 Last-run / result per crew member. `Last run` and `Result` are filled in by each crew's
@@ -98,7 +109,7 @@ own runner (Q1 Guardian, Q2 Beginner Run, Q4 Janitor) or the Overseer digest; th
 
 | Crew member | Question it answers | Last run | Result | Open findings |
 | --- | --- | --- | --- | --- |
-| Green Guardian | Is trunk green and does the app still boot + look right? | 2026-07-16 23:06Z @ 1faf09a7 | RED | 5 |
+| Green Guardian | Is trunk green and does the app still boot + look right? | 2026-07-17 00:05Z @ a17b2e91 | GREEN | 0 |
 | Beginner Run | Can a brand-new user reach first value, unassisted? | 2026-07-16T13:01:37.305Z · ui-only · 94396ms | PASS | 0 |
 | Truth Auditor | Does the UI show what actually happened? | 2026-07-01 23:28Z (in Guardian cycle) | GREEN | 0 |
 | Visual Auditor | Is the rendered game coherent? (needs eyes) | — (local /loop; not headless) | — | 0 |
