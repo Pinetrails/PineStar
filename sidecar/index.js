@@ -6088,10 +6088,11 @@ function workshopPrompt(runId, item) {
     + '- You CANNOT run commands or tests here, so do not claim anything was tested — list what a human still needs to verify.\n'
     + '- When finished, write a manifest to "' + dir + '/deliverable.json" with EXACTLY this shape:\n'
     + '  { "v": 1, "runId": "' + runId + '", "agentId": "<your id>", "backlogId": "' + ((item && item.id) || '') + '",\n'
-    + '    "title": "<short name>", "kind": "tool|fix|draft|doc|other", "summary": "<one paragraph, plain language>",\n'
+    + '    "title": "<short name>", "kind": "tool|fix|draft|doc|other",\n'
+    + '    "summary": "<2-3 SHORT plain sentences a busy person absorbs in ten seconds: what it IS and what it does for them. NEVER an inventory — no inline lists of categories, failure modes, or counts, and no sentence over ~25 words; the deliverable itself holds the detail>",\n'
     + '    "files": [{ "path": "<relative to ' + dir + '>", "bytes": <number> }],\n'
     + '    "howToUse": "<ONE short sentence — at most the single run command. The station already gives the Commander an Open link and one-click actions, so NEVER write multi-step setup or git instructions here>",\n'
-    + '    "notVerified": ["<what you could not check>"] }\n'
+    + '    "notVerified": ["<up to 5 items, each ONE short check written FOR the Commander — a concrete thing THEY can do in a minute, e.g. \\"open it and click through the tabs\\". NEVER your run diagnostics: no notes about tool budgets, byte counts, or what this shift could not execute — turn every limitation into the check it implies>"] }\n'
     + '- The manifest MUST list the real files you wrote (paths relative to "' + dir + '/"). This is required — a shift with no manifest is discarded.';
 }
 

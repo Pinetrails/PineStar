@@ -497,10 +497,11 @@
     lines.push('- LOCAL ONLY: never send, publish, spend, or message. You cannot run commands or tests, so do not claim anything was tested — list what a human still needs to verify.');
     lines.push('- When finished, write a manifest to "' + dir + '/deliverable.json" with EXACTLY this shape:');
     lines.push('  { "v": 1, "runId": "' + String(ctx.runId || '') + '", "agentId": "<your id>", "backlogId": "' + backlogId + '",');
-    lines.push('    "title": "<short name>", "kind": "tool|fix|draft|doc|other", "summary": "<one paragraph, plain language>",');
+    lines.push('    "title": "<short name>", "kind": "tool|fix|draft|doc|other",');
+    lines.push('    "summary": "<2-3 SHORT plain sentences a busy person absorbs in ten seconds: what it IS and what it does for them. NEVER an inventory — no inline lists of categories, failure modes, or counts, and no sentence over ~25 words; the deliverable itself holds the detail>",');
     lines.push('    "files": [{ "path": "<relative to ' + dir + '>", "bytes": <number> }],');
     lines.push('    "howToUse": "<ONE short sentence — at most the single run command. The station gives the Commander an Open link and a one-click Implement action (a patch is applied for them), so NEVER write multi-step setup or git instructions here>",');
-    lines.push('    "notVerified": ["<what you could not check>"] }');
+    lines.push('    "notVerified": ["<up to 5 items, each ONE short check written FOR the Commander — a concrete thing THEY can do in a minute. NEVER your run diagnostics: no tool budgets, byte counts, or what this shift could not execute — turn every limitation into the check it implies>"] }');
     lines.push('- The manifest MUST list the real files you wrote (paths relative to "' + dir + '/"). A shift with no manifest is discarded.');
     return lines.join('\n');
   }

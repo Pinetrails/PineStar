@@ -2164,16 +2164,55 @@ const Chat = (() => {
       const vv = document.createElement('span'); vv.className = 'ws-v'; vv.textContent = value;
       d.appendChild(kk); d.appendChild(vv); r.body.appendChild(d);
     };
-    // ── WHAT it did — the one paragraph the agent wrote, plain ──
-    if (m.summary) mkSection('what it did', String(m.summary), 'ws-what');
+    // ── WHAT it did — the agent's plain summary. Both away-work personas (sidecar workshopPrompt +
+    // autopilot buildDoDirectiveV2) now cap this to 2-3 short sentences; a verbose legacy manifest folds
+    // at a sentence boundary behind a one-tap "more" instead of painting a wall of prose. Nothing is
+    // hidden for good — expand shows the agent's full paragraph verbatim.
+    if (m.summary) {
+      const full = String(m.summary).replace(/\s+/g, ' ').trim();
+      if (full && full.length <= 360) mkSection('what it did', full, 'ws-what');
+      else if (full) {
+        const win = full.slice(0, 340);
+        const sentEnd = Math.max(win.lastIndexOf('. '), win.lastIndexOf('! '), win.lastIndexOf('? '));
+        // prefer a sentence boundary; a boundary-free run-on breaks at a WORD boundary with an honest ellipsis
+        const short = sentEnd > 120 ? full.slice(0, sentEnd + 1) : full.slice(0, win.lastIndexOf(' ') > 120 ? win.lastIndexOf(' ') : 300).trim() + '…';
+        const d = document.createElement('div'); d.className = 'ws-line ws-what';
+        const kk = document.createElement('span'); kk.className = 'ws-k'; kk.textContent = 'what it did';
+        const vv = document.createElement('span'); vv.className = 'ws-v'; vv.textContent = short + ' ';
+        const more = document.createElement('button'); more.type = 'button'; more.className = 'ws-more'; more.textContent = '+ more';
+        more.onclick = () => { vv.textContent = full; autoscroll(); };   // one-way expand; replacing textContent drops the button
+        vv.appendChild(more);
+        d.appendChild(kk); d.appendChild(vv); r.body.appendChild(d);
+      }
+    }
     // ── how to use — ONE short line. The workshop prompt now caps this to a sentence; a verbose legacy
     // manifest is clamped here rather than dumped as a wall of instructions (the old confusing card).
     if (m.howToUse) {
       const one = String(m.howToUse).replace(/\s+/g, ' ').trim();
       if (one) mkSection('how to use', one.length > 200 ? one.slice(0, 200) + '…' : one, 'ws-how');
     }
-    // what a human still needs to check — honest, compact (never implied failure, never hidden).
-    if (Array.isArray(m.notVerified) && m.notVerified.length) mkSection('check yourself', m.notVerified.join('; '), 'ws-notver');
+    // what a human still needs to check — honest, compact (never implied failure, never hidden). One short
+    // row per item (the old semicolon join painted a wall); past the fourth, items fold behind "+N more".
+    if (Array.isArray(m.notVerified) && m.notVerified.length) {
+      const items = m.notVerified.filter(Boolean)
+        .map(s => { const t = String(s).replace(/\s+/g, ' ').trim(); return t.length > 200 ? t.slice(0, 200) + '…' : t; })
+        .filter(Boolean);
+      if (items.length === 1) mkSection('check yourself', items[0], 'ws-notver');
+      else if (items.length) {
+        const d = document.createElement('div'); d.className = 'ws-line ws-notver';
+        const kk = document.createElement('span'); kk.className = 'ws-k'; kk.textContent = 'check yourself';
+        const vv = document.createElement('span'); vv.className = 'ws-v';
+        const addItem = (t) => { const li = document.createElement('div'); li.className = 'ws-nvitem'; li.textContent = t; vv.appendChild(li); };
+        items.slice(0, 4).forEach(addItem);
+        if (items.length > 4) {
+          const more = document.createElement('button'); more.type = 'button'; more.className = 'ws-more';
+          more.textContent = '+ ' + (items.length - 4) + ' more';
+          more.onclick = () => { more.remove(); items.slice(4).forEach(addItem); autoscroll(); };
+          vv.appendChild(more);
+        }
+        d.appendChild(kk); d.appendChild(vv); r.body.appendChild(d);
+      }
+    }
     // per-command verification detail: the ACTUAL commands run + each one's pass/fail from the manifest
     // (renders only when the manifest actually recorded them — never invents a command or a result).
     if (vcmds && vcmds.length) {
