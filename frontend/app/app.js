@@ -2831,7 +2831,7 @@ const App = (() => {
       const days = Math.max(1, +el('ws-bulk-days').value || 30);
       sessionToolsPreview = Workstreams.previewArchive({ empty, completed, olderThanMs: old ? days * 86400000 : 0 });
       const n = sessionToolsPreview.count, status = el('ws-bulk-status'), apply = el('ws-bulk-apply');
-      status.textContent = n ? (n + ' exact session' + (n === 1 ? '' : 's') + ' previewed. General and pinned sessions are protected.') : '0 sessions match this preview.';
+      status.textContent = n ? (n + ' session' + (n === 1 ? '' : 's') + ' staged — ARCHIVE PREVIEWED touches exactly this set. General and pinned sessions are protected.') : '0 sessions match this preview.';
       apply.disabled = !n; SFX.click();
     };
     for (const id of ['ws-bulk-empty', 'ws-bulk-completed', 'ws-bulk-old', 'ws-bulk-days']) {
