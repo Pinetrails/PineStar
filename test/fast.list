@@ -55,6 +55,7 @@ test/loopguard.test.js
 test/loopguard.dispatch.test.js
 test/continuation-guard.test.js
 test/text-toolcall-rescue.test.js
+test/model-conformance.test.js
 test/iteration-budget.test.js
 test/updatecore.test.js
 test/quitguard.test.js
