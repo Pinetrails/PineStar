@@ -1409,22 +1409,24 @@ fn push_channel_token(state: &AppState, channel: &str, token: &str) {
 // LIVE sidecar truth; a poll failure degrades to "not armed" (a dead sidecar can't be doing background work, so
 // a full quit is the safe + honest choice).
 
-/// Blocking poll of GET /api/lifecycle/armed. Returns None on any error (sidecar down, timeout, non-200,
-/// malformed) — callers treat None as not-armed. Uses the per-launch API token as the X-StarNet-Token header
-/// (the same gate the frontend fetches use); no Origin header (absent Origin is allowed for loopback callers).
-fn query_lifecycle_armed(port: u16, api_token: &str, timeout: Duration) -> Option<LifecycleArmed> {
-    use std::io::{Read, Write};
-    let mut stream = TcpStream::connect(("127.0.0.1", port)).ok()?;
-    let _ = stream.set_read_timeout(Some(timeout));
-    let _ = stream.set_write_timeout(Some(timeout));
-    let head = format!(
-        "GET /api/lifecycle/armed HTTP/1.1\r\nHost: 127.0.0.1\r\nX-StarNet-Token: {api_token}\r\nConnection: close\r\n\r\n"
-    );
-    stream.write_all(head.as_bytes()).ok()?;
-    stream.flush().ok()?;
-    let mut raw = Vec::new();
-    let _ = stream.read_to_end(&mut raw);
-    let text = String::from_utf8_lossy(&raw);
+/// The classified outcome of one lifecycle poll. The DISTINCTION matters for the close decision (M2):
+/// a refused TCP connect proves no sidecar is listening — nothing armed can exist, quitting is safe. But a
+/// connect that SUCCEEDS and then times out / returns garbage means the sidecar is ALIVE but slow or unwell —
+/// killing it on that evidence could destroy armed background work, so those cases must fail OPEN (keep the
+/// process; the tray keeps polling until the status recovers).
+enum LifecycleProbe {
+    /// TCP connect failed — no sidecar is listening on the port. Safe to fully quit.
+    NotRunning,
+    /// Connect succeeded but the poll didn't produce a valid 200 snapshot (read timeout, non-200, malformed
+    /// body). The sidecar is alive; its armed state is UNKNOWN — never treat this as "not armed".
+    Ambiguous,
+    /// A valid 200 snapshot — the sidecar's own truthful account.
+    Armed(LifecycleArmed),
+}
+
+/// Pure parser for the raw HTTP response text of GET /api/lifecycle/armed. None = not a valid 200 snapshot
+/// (callers classify that as Ambiguous). Kept side-effect-free so it is unit-testable (M3).
+fn parse_lifecycle_response(text: &str) -> Option<LifecycleArmed> {
     // Status line must be 200; the body is the JSON after the header/body blank line.
     let status_line = text.lines().next().unwrap_or("");
     if !status_line.contains(" 200 ") {
@@ -1432,7 +1434,9 @@ fn query_lifecycle_armed(port: u16, api_token: &str, timeout: Duration) -> Optio
     }
     let body = text.split("\r\n\r\n").nth(1)?;
     let json: serde_json::Value = serde_json::from_str(body.trim()).ok()?;
-    let armed = json.get("armed").and_then(|v| v.as_bool()).unwrap_or(false);
+    // `armed` must be PRESENT and boolean — a 200 without it is not our snapshot (never default to false
+    // here: the caller would translate that into "safe to kill").
+    let armed = json.get("armed").and_then(|v| v.as_bool())?;
     let reasons = json
         .get("reasons")
         .and_then(|v| v.as_array())
@@ -1443,6 +1447,40 @@ fn query_lifecycle_armed(port: u16, api_token: &str, timeout: Duration) -> Optio
         })
         .unwrap_or_default();
     Some(LifecycleArmed { armed, reasons })
+}
+
+/// Blocking poll of GET /api/lifecycle/armed, classified per LifecycleProbe. Uses the per-launch API token as
+/// the X-StarNet-Token header (the same gate the frontend fetches use); no Origin header (absent Origin is
+/// allowed for loopback callers).
+fn probe_lifecycle_armed(port: u16, api_token: &str, timeout: Duration) -> LifecycleProbe {
+    use std::io::{Read, Write};
+    let Ok(mut stream) = TcpStream::connect(("127.0.0.1", port)) else {
+        return LifecycleProbe::NotRunning;
+    };
+    let _ = stream.set_read_timeout(Some(timeout));
+    let _ = stream.set_write_timeout(Some(timeout));
+    let head = format!(
+        "GET /api/lifecycle/armed HTTP/1.1\r\nHost: 127.0.0.1\r\nX-StarNet-Token: {api_token}\r\nConnection: close\r\n\r\n"
+    );
+    if stream.write_all(head.as_bytes()).is_err() || stream.flush().is_err() {
+        return LifecycleProbe::Ambiguous; // connected, then failed — alive but unwell
+    }
+    let mut raw = Vec::new();
+    let _ = stream.read_to_end(&mut raw); // a timeout mid-read still yields what arrived; parse decides
+    let text = String::from_utf8_lossy(&raw);
+    match parse_lifecycle_response(&text) {
+        Some(l) => LifecycleProbe::Armed(l),
+        None => LifecycleProbe::Ambiguous,
+    }
+}
+
+/// Back-compat convenience for surfaces that only need the snapshot when one is available (the frontend
+/// status command). The close decision must NOT use this — it needs the full classification above.
+fn query_lifecycle_armed(port: u16, api_token: &str, timeout: Duration) -> Option<LifecycleArmed> {
+    match probe_lifecycle_armed(port, api_token, timeout) {
+        LifecycleProbe::Armed(l) => Some(l),
+        _ => None,
+    }
 }
 
 /// POST /api/halt (the E-STOP) to the running sidecar, bounded by `timeout`. Aborts every in-flight run,
@@ -1487,19 +1525,27 @@ fn show_main_window(app: &AppHandle) {
 
 /// Tray menu dispatch. Open reveals the window; Pause Automation fires the E-STOP so background work stops even
 /// with the window closed; Quit drains + kills the sidecar and exits the app (no daemon left behind).
+/// Pause/Quit run their bounded network work on a worker thread — tray menu events arrive on the main loop and
+/// a multi-second drain there would freeze the app (review m1).
 fn on_tray_menu(app: &AppHandle, id: &str) {
     match id {
         "lifecycle_open" => show_main_window(app),
         "lifecycle_pause" => {
-            if let Some(state) = app.try_state::<AppState>() {
-                post_sidecar_halt(state.inner(), Duration::from_secs(3));
-            }
+            let app2 = app.clone();
+            std::thread::spawn(move || {
+                if let Some(state) = app2.try_state::<AppState>() {
+                    post_sidecar_halt(state.inner(), Duration::from_secs(3));
+                }
+            });
         }
         "lifecycle_quit" => {
-            if let Some(state) = app.try_state::<AppState>() {
-                drain_and_kill_sidecar(state.inner());
-            }
-            app.exit(0);
+            let app2 = app.clone();
+            std::thread::spawn(move || {
+                if let Some(state) = app2.try_state::<AppState>() {
+                    drain_and_kill_sidecar(state.inner());
+                }
+                app2.exit(0);
+            });
         }
         _ => {}
     }
@@ -1511,37 +1557,45 @@ fn on_tray_menu(app: &AppHandle, id: &str) {
 /// "still working" claim.
 fn spawn_tray_updater(app: AppHandle) {
     std::thread::spawn(move || loop {
-        std::thread::sleep(Duration::from_secs(4));
-        let Some(state) = app.try_state::<AppState>() else {
-            continue;
-        };
-        if state.shutting_down.load(Ordering::SeqCst) {
-            break;
-        }
-        let armed = query_lifecycle_armed(state.port, &state.api_token, Duration::from_millis(1500));
-        let (tooltip, status_text) = match armed {
-            Some(l) if l.armed => {
-                let summary = if l.reasons.is_empty() {
-                    "running in the background".to_string()
-                } else {
-                    l.reasons.join(", ")
-                };
-                (
-                    format!("StarNet — {summary}"),
-                    format!("Background: {summary}"),
-                )
+        // Poll FIRST, sleep after (review m2): the menu is built with a non-committal "checking…" line, and an
+        // immediate first poll replaces it with real state before a user can plausibly open the tray — the tray
+        // must never assert a stale claim.
+        if let Some(state) = app.try_state::<AppState>() {
+            if state.shutting_down.load(Ordering::SeqCst) {
+                break;
             }
-            _ => (
-                "StarNet — idle (closing quits)".to_string(),
-                "Background: idle — closing quits".to_string(),
-            ),
-        };
-        if let Some(tray) = app.tray_by_id("starnet-tray") {
-            let _ = tray.set_tooltip(Some(tooltip.as_str()));
+            let probe = probe_lifecycle_armed(state.port, &state.api_token, Duration::from_millis(1500));
+            let (tooltip, status_text) = match probe {
+                LifecycleProbe::Armed(l) if l.armed => {
+                    let summary = if l.reasons.is_empty() {
+                        "running in the background".to_string()
+                    } else {
+                        l.reasons.join(", ")
+                    };
+                    (
+                        format!("StarNet — {summary}"),
+                        format!("Background: {summary}"),
+                    )
+                }
+                LifecycleProbe::Armed(_) | LifecycleProbe::NotRunning => (
+                    // Nothing armed (or no engine at all): closing quits — the same rule the close path applies.
+                    "StarNet — idle (closing quits)".to_string(),
+                    "Background: idle — closing quits".to_string(),
+                ),
+                LifecycleProbe::Ambiguous => (
+                    // Alive but the poll failed — honest "unknown", mirroring the close path's fail-open.
+                    "StarNet — status unavailable (close keeps it running)".to_string(),
+                    "Background: status unavailable — close keeps it running".to_string(),
+                ),
+            };
+            if let Some(tray) = app.tray_by_id("starnet-tray") {
+                let _ = tray.set_tooltip(Some(tooltip.as_str()));
+            }
+            if let Some(handles) = app.try_state::<TrayHandles>() {
+                let _ = handles.status.set_text(status_text.as_str());
+            }
         }
-        if let Some(handles) = app.try_state::<TrayHandles>() {
-            let _ = handles.status.set_text(status_text.as_str());
-        }
+        std::thread::sleep(Duration::from_secs(4));
     });
 }
 
@@ -2021,19 +2075,21 @@ fn starnet_lifecycle_status(state: State<AppState>) -> LifecycleView {
 
 fn main() {
     tauri::Builder::default()
+        // A second launch should focus the running window, not spin up a 2nd sidecar. Registered FIRST per
+        // Tauri guidance (n1): single-instance must run before other plugins so a second process bails early.
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            if let Some(win) = app.get_webview_window("main") {
+                let _ = win.show(); // the window may be hidden in the tray — a relaunch should reveal it
+                let _ = win.unminimize();
+                let _ = win.set_focus();
+            }
+        }))
         // Lane 4D: launch-at-login (opt-in, default OFF). macOS uses a LaunchAgent; Windows a Run key; Linux an
         // autostart .desktop. Registered here so the ManagerExt API is available; the toggle lives in Settings.
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
         ))
-        // A second launch should focus the running window, not spin up a 2nd sidecar.
-        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
-            if let Some(win) = app.get_webview_window("main") {
-                let _ = win.unminimize();
-                let _ = win.set_focus();
-            }
-        }))
         .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             harness_store_key,
@@ -2121,7 +2177,9 @@ fn main() {
                 let status_item = MenuItem::with_id(
                     app,
                     "lifecycle_status",
-                    "Background: idle — closing quits",
+                    // Non-committal until the FIRST real poll lands (spawn_tray_updater polls immediately) —
+                    // the tray must never assert an armed/idle claim it hasn't read from the sidecar (m2).
+                    "Background: checking…",
                     false, // a non-clickable live status line, not an action
                     None::<&str>,
                 )?;
@@ -2203,40 +2261,56 @@ fn main() {
             let main_window = main_window.build()?;
 
             // ---- Lane 4D: close-to-tray, gated on REAL armed work ----
-            // On a close request, poll the sidecar's armed truth (bounded). If armed work exists, hide the window
-            // and keep the ONE sidecar running (explicit in the tray). If nothing is armed — or the sidecar can't
-            // be reached — drain + kill + exit: window-close is a full quit, leaving NO background process. This is
-            // the whole product promise: no hidden daemon, and no claim of 24/7 work the harness can't prove.
+            // On a close request: ALWAYS intercept + hide immediately (instant feedback, and the poll must not
+            // block the UI thread — review m1), then decide on a worker thread from the classified probe (M2):
+            //   Armed{armed:true}  -> keep the ONE sidecar running, window lives in the tray (explicit there).
+            //   Armed{armed:false} -> nothing armed: drain + kill + exit — full quit, NO background process.
+            //   NotRunning         -> connect refused: no sidecar is listening, so no armed work can exist —
+            //                         full quit is safe (this is the ONLY failure that may quit).
+            //   Ambiguous (x2)     -> the sidecar ACCEPTED the connection but the poll failed (slow/garbled):
+            //                         it is ALIVE and may hold armed work — killing it on that evidence could
+            //                         destroy the work, so after one retry we FAIL OPEN: stay hidden in the
+            //                         tray and let the updater keep polling until the status recovers.
+            // This is the whole product promise: no hidden daemon, and no claim the harness can't prove.
             {
                 let app_handle = app.handle().clone();
                 main_window.on_window_event(move |event| {
                     if let WindowEvent::CloseRequested { api, .. } = event {
-                        let armed = app_handle
-                            .try_state::<AppState>()
-                            .map(|st| {
-                                query_lifecycle_armed(
+                        api.prevent_close();
+                        if let Some(win) = app_handle.get_webview_window("main") {
+                            let _ = win.hide();
+                        }
+                        let app2 = app_handle.clone();
+                        std::thread::spawn(move || {
+                            let Some(state) = app2.try_state::<AppState>() else {
+                                app2.exit(0);
+                                return;
+                            };
+                            let st = state.inner();
+                            let mut probe = probe_lifecycle_armed(
+                                st.port,
+                                &st.api_token,
+                                Duration::from_millis(1500),
+                            );
+                            if matches!(probe, LifecycleProbe::Ambiguous) {
+                                // One retry before deciding — a single slow poll must not park the app in the
+                                // tray forever when the sidecar is actually healthy and idle.
+                                probe = probe_lifecycle_armed(
                                     st.port,
                                     &st.api_token,
-                                    Duration::from_millis(1200),
-                                )
-                                .map(|l| l.armed)
-                                .unwrap_or(false)
-                            })
-                            .unwrap_or(false);
-                        if armed {
-                            // Keep the station running in the background; hide rather than destroy the window.
-                            api.prevent_close();
-                            if let Some(win) = app_handle.get_webview_window("main") {
-                                let _ = win.hide();
+                                    Duration::from_millis(1500),
+                                );
                             }
-                        } else {
-                            // Nothing armed → full quit. The tray icon would otherwise keep the process alive, so
-                            // we explicitly drain + kill + exit (disabled state creates NO background process).
-                            if let Some(state) = app_handle.try_state::<AppState>() {
-                                drain_and_kill_sidecar(state.inner());
+                            match probe {
+                                LifecycleProbe::Armed(l) if l.armed => { /* stay hidden in the tray */ }
+                                LifecycleProbe::Ambiguous => { /* alive but unwell — fail OPEN, stay in tray */ }
+                                _ => {
+                                    // Armed{armed:false} or NotRunning: window-close is a full quit.
+                                    drain_and_kill_sidecar(st);
+                                    app2.exit(0);
+                                }
                             }
-                            app_handle.exit(0);
-                        }
+                        });
                     }
                 });
             }
@@ -2349,6 +2423,121 @@ mod sidecar_reap_tests {
             Path::new(r"C:\Program Files\nodejs\node.exe"),
             Path::new(r"C:\Program Files\StarNet\node.exe"),
         ));
+    }
+}
+
+#[cfg(test)]
+mod lifecycle_probe_tests {
+    use super::*;
+
+    // ---- parse_lifecycle_response: the pure decision the close path/tray rely on (M3) ----
+
+    #[test]
+    fn parses_valid_200_snapshot_with_reasons() {
+        let raw = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n{\"armed\":true,\"reasons\":[\"1 routine armed\",\"Telegram connected\"]}";
+        let l = parse_lifecycle_response(raw).expect("valid 200 snapshot parses");
+        assert!(l.armed);
+        assert_eq!(l.reasons, vec!["1 routine armed", "Telegram connected"]);
+    }
+
+    #[test]
+    fn parses_valid_200_not_armed() {
+        let raw = "HTTP/1.1 200 OK\r\n\r\n{\"armed\":false,\"reasons\":[]}";
+        let l = parse_lifecycle_response(raw).expect("valid idle snapshot parses");
+        assert!(!l.armed);
+        assert!(l.reasons.is_empty());
+    }
+
+    #[test]
+    fn rejects_non_200_status() {
+        // A 403 (token mismatch) or 500 must NOT read as a snapshot — the caller classifies it Ambiguous
+        // (alive but unwell), never "not armed".
+        assert!(parse_lifecycle_response("HTTP/1.1 403 Forbidden\r\n\r\nforbidden token").is_none());
+        assert!(parse_lifecycle_response("HTTP/1.1 500 Internal Server Error\r\n\r\n{\"error\":\"x\"}").is_none());
+    }
+
+    #[test]
+    fn rejects_missing_or_garbage_body() {
+        assert!(parse_lifecycle_response("HTTP/1.1 200 OK\r\n\r\n").is_none(), "empty body");
+        assert!(parse_lifecycle_response("HTTP/1.1 200 OK\r\n\r\nnot-json").is_none(), "garbage body");
+        assert!(parse_lifecycle_response("HTTP/1.1 200 OK").is_none(), "no header/body separator");
+        assert!(parse_lifecycle_response("").is_none(), "empty response (read timeout yielded nothing)");
+    }
+
+    #[test]
+    fn rejects_200_without_armed_field() {
+        // `armed` must be present and boolean — defaulting a missing field to false would let a half-written
+        // response authorize a kill.
+        assert!(parse_lifecycle_response("HTTP/1.1 200 OK\r\n\r\n{\"reasons\":[]}").is_none());
+        assert!(parse_lifecycle_response("HTTP/1.1 200 OK\r\n\r\n{\"armed\":\"yes\"}").is_none());
+    }
+
+    #[test]
+    fn tolerates_missing_reasons() {
+        let l = parse_lifecycle_response("HTTP/1.1 200 OK\r\n\r\n{\"armed\":true}").expect("armed without reasons parses");
+        assert!(l.armed);
+        assert!(l.reasons.is_empty());
+    }
+
+    // ---- refused-vs-timeout classification (the M2 distinction) ----
+
+    #[test]
+    fn refused_connect_classifies_not_running() {
+        // Reserve a port, then close the listener so nothing is listening — connect must be refused.
+        let port = {
+            let l = TcpListener::bind("127.0.0.1:0").unwrap();
+            l.local_addr().unwrap().port()
+        };
+        assert!(matches!(
+            probe_lifecycle_armed(port, "t", Duration::from_millis(300)),
+            LifecycleProbe::NotRunning
+        ));
+    }
+
+    #[test]
+    fn silent_listener_classifies_ambiguous_not_not_running() {
+        // A listener that ACCEPTS but never responds = alive-but-slow sidecar. This must be Ambiguous
+        // (fail open), never NotRunning — killing on this evidence could destroy armed work.
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let handle = std::thread::spawn(move || {
+            // Hold the accepted socket open (no response) until the client times out.
+            if let Ok((sock, _)) = listener.accept() {
+                std::thread::sleep(Duration::from_millis(900));
+                drop(sock);
+            }
+        });
+        let got = probe_lifecycle_armed(port, "t", Duration::from_millis(300));
+        assert!(matches!(got, LifecycleProbe::Ambiguous));
+        let _ = handle.join();
+    }
+
+    #[test]
+    fn live_responder_classifies_armed() {
+        use std::io::{Read as _, Write as _};
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let handle = std::thread::spawn(move || {
+            if let Ok((mut sock, _)) = listener.accept() {
+                let mut buf = [0u8; 2048];
+                let _ = sock.read(&mut buf); // consume the request head
+                let body = "{\"armed\":true,\"reasons\":[\"Night shift armed\"]}";
+                let resp = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                let _ = sock.write_all(resp.as_bytes());
+            }
+        });
+        match probe_lifecycle_armed(port, "t", Duration::from_millis(1000)) {
+            LifecycleProbe::Armed(l) => {
+                assert!(l.armed);
+                assert_eq!(l.reasons, vec!["Night shift armed"]);
+            }
+            _ => panic!("a live 200 responder must classify Armed"),
+        }
+        let _ = handle.join();
     }
 }
 
