@@ -87,4 +87,18 @@ A.ok(/p !== 'codex' && p !== 'grok' && p !== 'kimi'/.test(keycta), 'keycta treat
   A.eq(actionButton(cx).label, '⏼ RECONNECT CHATGPT', 'the codex door is unchanged (⏼ RECONNECT CHATGPT)');
 }
 
+// ---- FIRST sign-in reachability (live-caught 2026-07-17): a never-signed-in grok/kimi card must offer
+// ⏼ SIGN IN right on the provider card — the oauth key-row (where RE-SIGN-IN lives) only renders once a
+// live or known-dead sign-in exists, and grok/kimi have no connect-screen block like codex. Without the
+// card button there is NO path to the first sign-in anywhere in the app.
+{
+  const ui = read('frontend', 'app', 'stationui.js');
+  A.ok(/data-act="prov-oauth-signin"/.test(ui), 'the provider card renders a ⏼ SIGN IN action for a not-signed-in device-code provider');
+  A.ok(/wantsOAuthSignin\s*=\s*p\.live\s*&&\s*OAUTH_EXTRA\.indexOf\(p\.id\)\s*!==\s*-1\s*&&\s*!credentialSaved/.test(ui), 'the card sign-in is gated to OAUTH_EXTRA (grok/kimi) providers without a stored sign-in');
+  A.ok(/prov-oauth-signin"\]'\)/.test(ui) && /OAuthSignIn\.for\(pid\)/.test(ui), 'the card sign-in drives the SAME shared engine (OAuthSignIn.for), no bespoke fetch loop');
+  A.ok(/id="prov-oauth-code-'\s*\+\s*esc\(p\.id\)/.test(ui) && /id="prov-oauth-status-'\s*\+\s*esc\(p\.id\)/.test(ui), 'the card owns a per-provider inline device-code surface (no id collision)');
+  const signinHandler = ui.slice(ui.indexOf("querySelector('[data-act=\"prov-oauth-signin\"]')"));
+  A.ok(/stopPropagation/.test(signinHandler.slice(0, 600)), 'the card sign-in click does not bubble into provider-select');
+}
+
 A.report('settings-oauth-rows.test');

@@ -2742,6 +2742,10 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       // NO-KEY cards that accept a key get an inline, collapsible paste-and-save row so the user never has to hunt
       // for where keys live. It reuses the SAME save path (Harness.setKey) as the key list below — no duplicate logic.
       const wantsInline = p.live && !credentialSaved && providerAcceptsKey(p.id);
+      // A never-signed-in device-code provider (grok/kimi) gets its FIRST sign-in right on the card — these have
+      // no connect-screen block (codex does), so without this button the ⏼ RE-SIGN-IN row below is unreachable:
+      // that row only exists once a live or known-dead sign-in exists. Same shared engine, card-local inline box.
+      const wantsOAuthSignin = p.live && OAUTH_EXTRA.indexOf(p.id) !== -1 && !credentialSaved && !codexDead;
       return '<div class="prov-card ' + cls + '" data-provider="' + esc(p.id) + '" role="button" tabindex="0" style="--ci:' + pi + '">' +
         '<span class="conn-dot"></span>' +
         '<div class="prov-main">' +
@@ -2750,11 +2754,19 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         '</div>' +
         '<div class="prov-stat">' + stat + (credentialSaved && !isOAuthProvider(p.id) ? '<i>' + n + (n === 1 ? ' key' : ' keys') + '</i>' : '') +
           (wantsInline ? '<button class="bb sm prov-addkey" data-act="prov-add-toggle" data-provider="' + esc(p.id) + '" aria-label="Add a ' + esc(p.name) + ' key" title="paste a ' + esc(p.name) + ' key without leaving this card">＋ ADD KEY</button>' : '') +
+          (wantsOAuthSignin ? '<button class="bb sm prov-addkey" data-act="prov-oauth-signin" data-provider="' + esc(p.id) + '" aria-label="Sign in to ' + esc(p.name) + '" title="device-code sign-in — no API key needed">⏼ SIGN IN</button>' : '') +
         '</div>' +
         (wantsInline
           ? '<div class="key-edit prov-key-edit" id="prov-key-edit-' + esc(p.id) + '" hidden>' +
             '<input type="password" class="key-input" id="prov-key-in-' + esc(p.id) + '" placeholder="paste ' + esc(p.name) + ' key…" autocomplete="off" spellcheck="false">' +
             '<button class="bb sm" data-act="prov-add-save" data-provider="' + esc(p.id) + '">SAVE</button>' +
+            '</div>'
+          : '') +
+        (wantsOAuthSignin
+          ? '<div class="key-edit codex-inline prov-oauth-inline" id="prov-oauth-inline-' + esc(p.id) + '" hidden>' +
+            '<span class="dim" id="prov-oauth-status-' + esc(p.id) + '"></span>' +
+            '<code class="key-mask" id="prov-oauth-code-' + esc(p.id) + '" hidden></code>' +
+            '<button class="bb sm" id="prov-oauth-open-' + esc(p.id) + '" hidden>↗ OPEN PAGE</button>' +
             '</div>'
           : '') +
         '</div>';
@@ -3061,6 +3073,41 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         sfx('click');
         rerender('settings');
       };
+      // FIRST sign-in for a keyless device-code provider (grok/kimi) — the card-local twin of the key-row's
+      // ⏼ RE-SIGN-IN, driving the SAME shared engine (OAuthSignIn.for). stopPropagation: the card click selects.
+      const oauthSignin = card.querySelector('[data-act="prov-oauth-signin"]');
+      if (oauthSignin) oauthSignin.addEventListener('click', ev => {
+        ev.stopPropagation();
+        sfx('click');
+        const pid = card.dataset.provider;
+        const engine = (typeof OAuthSignIn !== 'undefined') ? OAuthSignIn.for(pid) : null;
+        if (!engine) return;
+        const box = card.querySelector('#prov-oauth-inline-' + pid);
+        const st = card.querySelector('#prov-oauth-status-' + pid);
+        const code = card.querySelector('#prov-oauth-code-' + pid);
+        const open = card.querySelector('#prov-oauth-open-' + pid);
+        if (box) { box.hidden = false; box.addEventListener('click', e2 => e2.stopPropagation()); }
+        engine.start({
+          onRequesting: () => { if (st) st.textContent = 'requesting a sign-in code…'; },
+          onError: msg => { if (st) st.textContent = msg; sfx('bad'); },
+          onTimeout: () => { if (st) st.textContent = 'sign-in timed out — hit ⏼ SIGN IN to start again'; },
+          onCode: c => {
+            if (code) { code.textContent = c.user_code; code.hidden = false; }
+            if (st) st.innerHTML = 'enter this code at <b>' + esc(c.verification_uri) + '</b> (opening it now)…';
+            if (open) { open.hidden = false; open.onclick = e2 => { e2.stopPropagation(); sfx('click'); openExternal(c.verification_uri); }; }
+            openExternal(c.verification_uri);
+          },
+          onConnected: () => {
+            // the sidecar just exchanged + persisted fresh tokens — that POLL answer is backend truth.
+            oauthStatus[pid] = { connected: true, expired: false, reason: '' };
+            notify('✓ signed in to ' + provName(pid) + ' — your agents can run on your subscription', 'good');
+            if (typeof ModelDock !== 'undefined' && ModelDock.reflect) ModelDock.reflect();
+            if (typeof KeyCTA !== 'undefined' && KeyCTA.refresh) KeyCTA.refresh();
+            refreshOAuthStatus(pid);   // re-read the durable status (persistError etc.) behind the repaint
+            rerender('settings');
+          }
+        });
+      });
       // clicks on the inline key controls must NOT bubble up to provider-select — they toggle/save the key row.
       const inlineToggle = card.querySelector('[data-act="prov-add-toggle"]');
       const inlineSave = card.querySelector('[data-act="prov-add-save"]');
