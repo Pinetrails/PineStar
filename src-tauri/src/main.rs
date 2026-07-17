@@ -21,7 +21,11 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
 use sha2::{Digest, Sha256};
-use tauri::{ipc::Channel, AppHandle, Manager, RunEvent, State, WebviewUrl, WebviewWindowBuilder};
+use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use tauri::{
+    ipc::Channel, AppHandle, Manager, RunEvent, State, WebviewUrl, WebviewWindowBuilder, WindowEvent,
+};
 use tauri_plugin_updater::{Update, UpdaterExt};
 
 const KEYCHAIN_SERVICE: &str = "ai.skynet.harness";
@@ -97,6 +101,27 @@ impl AppState {
 }
 
 struct PendingUpdate(Mutex<Option<Update>>);
+
+/// Lane 4D: the parsed result of a GET /api/lifecycle/armed poll — the sidecar's truthful account of whether
+/// any background work (armed routines, connected channels, an armed night-shift) requires the process to keep
+/// running after the window closes. `reasons` are short human strings the tray shows verbatim.
+struct LifecycleArmed {
+    armed: bool,
+    reasons: Vec<String>,
+}
+
+/// Handles to the mutable tray menu items so the background poll thread can keep the tray honest (the status
+/// line + tooltip must reflect REAL armed state, never a stale or optimistic claim).
+struct TrayHandles {
+    status: tauri::menu::MenuItem<tauri::Wry>,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AutostartStatus {
+    desktop: bool,
+    enabled: bool,
+}
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -1376,6 +1401,150 @@ fn push_channel_token(state: &AppState, channel: &str, token: &str) {
     }
 }
 
+// ---- Lane 4D: supervised background lifecycle (tray + close-to-tray + bounded drain) ----
+//
+// The tray owns the ONE sidecar's visibility contract: closing the window keeps the station running ONLY when
+// the sidecar proves armed work exists (GET /api/lifecycle/armed), and that state is explicit in the tray. If
+// nothing is armed, window-close = full quit (drain + kill + app.exit) — no hidden daemon. Every decision reads
+// LIVE sidecar truth; a poll failure degrades to "not armed" (a dead sidecar can't be doing background work, so
+// a full quit is the safe + honest choice).
+
+/// Blocking poll of GET /api/lifecycle/armed. Returns None on any error (sidecar down, timeout, non-200,
+/// malformed) — callers treat None as not-armed. Uses the per-launch API token as the X-StarNet-Token header
+/// (the same gate the frontend fetches use); no Origin header (absent Origin is allowed for loopback callers).
+fn query_lifecycle_armed(port: u16, api_token: &str, timeout: Duration) -> Option<LifecycleArmed> {
+    use std::io::{Read, Write};
+    let mut stream = TcpStream::connect(("127.0.0.1", port)).ok()?;
+    let _ = stream.set_read_timeout(Some(timeout));
+    let _ = stream.set_write_timeout(Some(timeout));
+    let head = format!(
+        "GET /api/lifecycle/armed HTTP/1.1\r\nHost: 127.0.0.1\r\nX-StarNet-Token: {api_token}\r\nConnection: close\r\n\r\n"
+    );
+    stream.write_all(head.as_bytes()).ok()?;
+    stream.flush().ok()?;
+    let mut raw = Vec::new();
+    let _ = stream.read_to_end(&mut raw);
+    let text = String::from_utf8_lossy(&raw);
+    // Status line must be 200; the body is the JSON after the header/body blank line.
+    let status_line = text.lines().next().unwrap_or("");
+    if !status_line.contains(" 200 ") {
+        return None;
+    }
+    let body = text.split("\r\n\r\n").nth(1)?;
+    let json: serde_json::Value = serde_json::from_str(body.trim()).ok()?;
+    let armed = json.get("armed").and_then(|v| v.as_bool()).unwrap_or(false);
+    let reasons = json
+        .get("reasons")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|x| x.as_str().map(String::from))
+                .collect()
+        })
+        .unwrap_or_default();
+    Some(LifecycleArmed { armed, reasons })
+}
+
+/// POST /api/halt (the E-STOP) to the running sidecar, bounded by `timeout`. Aborts every in-flight run,
+/// releases the cron lock, and reaps backend-owned background processes — so no unattended spend outlives the
+/// action. Best-effort: a dead sidecar or timeout is a no-op (nothing to halt). API-token guarded like the UI.
+fn post_sidecar_halt(state: &AppState, timeout: Duration) {
+    use std::io::{Read, Write};
+    let body = "{}";
+    let head = format!(
+        "POST /api/halt HTTP/1.1\r\nHost: 127.0.0.1\r\nX-StarNet-Token: {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+        state.api_token,
+        body.len()
+    );
+    if let Ok(mut s) = TcpStream::connect(("127.0.0.1", state.port)) {
+        let _ = s.set_read_timeout(Some(timeout));
+        let _ = s.set_write_timeout(Some(timeout));
+        let _ = s.write_all(head.as_bytes());
+        let _ = s.write_all(body.as_bytes());
+        let _ = s.flush();
+        let mut buf = [0u8; 64];
+        let _ = s.read(&mut buf);
+    }
+}
+
+/// Bounded drain, then kill: flip `shutting_down` so the guardian never respawns, ask the sidecar to halt all
+/// in-flight work (bounded), then terminate the child. The halt gives unattended runs a clean stop before the
+/// process dies; the kill guarantees no orphan sidecar outlives an explicit Quit.
+fn drain_and_kill_sidecar(state: &AppState) {
+    state.shutting_down.store(true, Ordering::SeqCst);
+    post_sidecar_halt(state, Duration::from_secs(3));
+    state.kill_sidecar();
+}
+
+/// Reveal + focus the main window (from a hidden/close-to-tray state or a minimized one).
+fn show_main_window(app: &AppHandle) {
+    if let Some(win) = app.get_webview_window("main") {
+        let _ = win.show();
+        let _ = win.unminimize();
+        let _ = win.set_focus();
+    }
+}
+
+/// Tray menu dispatch. Open reveals the window; Pause Automation fires the E-STOP so background work stops even
+/// with the window closed; Quit drains + kills the sidecar and exits the app (no daemon left behind).
+fn on_tray_menu(app: &AppHandle, id: &str) {
+    match id {
+        "lifecycle_open" => show_main_window(app),
+        "lifecycle_pause" => {
+            if let Some(state) = app.try_state::<AppState>() {
+                post_sidecar_halt(state.inner(), Duration::from_secs(3));
+            }
+        }
+        "lifecycle_quit" => {
+            if let Some(state) = app.try_state::<AppState>() {
+                drain_and_kill_sidecar(state.inner());
+            }
+            app.exit(0);
+        }
+        _ => {}
+    }
+}
+
+/// Background thread keeping the tray tooltip + status line HONEST: every few seconds it re-polls the sidecar's
+/// armed truth and re-renders the tray. When idle it says so ("closing quits"); when armed it lists the real
+/// reasons. Stops when the app is shutting down. A poll failure renders the idle/unknown state, never a stale
+/// "still working" claim.
+fn spawn_tray_updater(app: AppHandle) {
+    std::thread::spawn(move || loop {
+        std::thread::sleep(Duration::from_secs(4));
+        let Some(state) = app.try_state::<AppState>() else {
+            continue;
+        };
+        if state.shutting_down.load(Ordering::SeqCst) {
+            break;
+        }
+        let armed = query_lifecycle_armed(state.port, &state.api_token, Duration::from_millis(1500));
+        let (tooltip, status_text) = match armed {
+            Some(l) if l.armed => {
+                let summary = if l.reasons.is_empty() {
+                    "running in the background".to_string()
+                } else {
+                    l.reasons.join(", ")
+                };
+                (
+                    format!("StarNet — {summary}"),
+                    format!("Background: {summary}"),
+                )
+            }
+            _ => (
+                "StarNet — idle (closing quits)".to_string(),
+                "Background: idle — closing quits".to_string(),
+            ),
+        };
+        if let Some(tray) = app.tray_by_id("starnet-tray") {
+            let _ = tray.set_tooltip(Some(tooltip.as_str()));
+        }
+        if let Some(handles) = app.try_state::<TrayHandles>() {
+            let _ = handles.status.set_text(status_text.as_str());
+        }
+    });
+}
+
 // ---- Tauri commands (called from the frontend Harness seam) ----
 
 /// Store (or, for an empty value, clear) the BYOK key in the OS keychain, then push it
@@ -1793,8 +1962,71 @@ fn starnet_build_info(app: AppHandle) -> BuildInfo {
     }
 }
 
+/// Lane 4D: is launch-at-login currently registered? OPT-IN, default OFF — this only reports the real OS state
+/// (Windows Run key / macOS LaunchAgent / Linux autostart .desktop) so the Settings toggle never lies.
+#[tauri::command]
+fn starnet_autostart_status(app: AppHandle) -> Result<AutostartStatus, String> {
+    use tauri_plugin_autostart::ManagerExt;
+    let enabled = app.autolaunch().is_enabled().map_err(|e| e.to_string())?;
+    Ok(AutostartStatus {
+        desktop: true,
+        enabled,
+    })
+}
+
+/// Enable/disable launch-at-login and report the resulting REAL state (read back, not assumed). The single-
+/// instance plugin guarantees a login launch focuses the running app rather than starting a 2nd sidecar.
+#[tauri::command]
+fn starnet_set_autostart(app: AppHandle, enabled: bool) -> Result<AutostartStatus, String> {
+    use tauri_plugin_autostart::ManagerExt;
+    let manager = app.autolaunch();
+    if enabled {
+        manager.enable().map_err(|e| e.to_string())?;
+    } else {
+        manager.disable().map_err(|e| e.to_string())?;
+    }
+    let now = manager.is_enabled().map_err(|e| e.to_string())?;
+    Ok(AutostartStatus {
+        desktop: true,
+        enabled: now,
+    })
+}
+
+/// Lane 4D: the live armed-work summary for the frontend's background-lifecycle surface. Proxies the sidecar's
+/// own truth through the supervisor so the UI's "what keeps running when you close the window" copy is gated on
+/// the SAME state the tray's close decision uses — never a divergent claim.
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LifecycleView {
+    supervised: bool,
+    armed: bool,
+    reasons: Vec<String>,
+}
+
+#[tauri::command]
+fn starnet_lifecycle_status(state: State<AppState>) -> LifecycleView {
+    match query_lifecycle_armed(state.port, &state.api_token, Duration::from_millis(1500)) {
+        Some(l) => LifecycleView {
+            supervised: true,
+            armed: l.armed,
+            reasons: l.reasons,
+        },
+        None => LifecycleView {
+            supervised: true,
+            armed: false,
+            reasons: Vec::new(),
+        },
+    }
+}
+
 fn main() {
     tauri::Builder::default()
+        // Lane 4D: launch-at-login (opt-in, default OFF). macOS uses a LaunchAgent; Windows a Run key; Linux an
+        // autostart .desktop. Registered here so the ManagerExt API is available; the toggle lives in Settings.
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ))
         // A second launch should focus the running window, not spin up a 2nd sidecar.
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
             if let Some(win) = app.get_webview_window("main") {
@@ -1819,7 +2051,10 @@ fn main() {
             starnet_update_status,
             starnet_update_check,
             starnet_update_install,
-            starnet_build_info
+            starnet_build_info,
+            starnet_autostart_status,
+            starnet_set_autostart,
+            starnet_lifecycle_status
         ])
         .setup(|app| {
             let root = project_root(app.handle());
@@ -1876,6 +2111,49 @@ fn main() {
             // Respawn the sidecar if it crashes while the window is open (see spawn_guardian).
             spawn_guardian(app.handle().clone());
 
+            // ---- Lane 4D: tray supervisor ----
+            // The tray is the visible owner of the background-lifecycle contract. Open reveals the window; the
+            // status line reflects REAL armed work (kept honest by spawn_tray_updater); Pause Automation fires
+            // the E-STOP (reaches background work even with the window closed); Quit drains + kills the sidecar
+            // and exits. Built here so it exists before the window, so a close-to-tray has somewhere to live.
+            {
+                let open_item = MenuItem::with_id(app, "lifecycle_open", "Open StarNet", true, None::<&str>)?;
+                let status_item = MenuItem::with_id(
+                    app,
+                    "lifecycle_status",
+                    "Background: idle — closing quits",
+                    false, // a non-clickable live status line, not an action
+                    None::<&str>,
+                )?;
+                let pause_item = MenuItem::with_id(app, "lifecycle_pause", "Pause Automation (E-STOP)", true, None::<&str>)?;
+                let quit_item = MenuItem::with_id(app, "lifecycle_quit", "Quit StarNet", true, None::<&str>)?;
+                let sep = PredefinedMenuItem::separator(app)?;
+                let menu = Menu::with_items(app, &[&open_item, &status_item, &sep, &pause_item, &quit_item])?;
+                let mut tray_builder = TrayIconBuilder::with_id("starnet-tray")
+                    .tooltip("StarNet")
+                    .menu(&menu)
+                    .show_menu_on_left_click(false)
+                    .on_menu_event(|app, event| on_tray_menu(app, event.id.as_ref()))
+                    .on_tray_icon_event(|tray, event| {
+                        // A left click on the tray icon reveals the window (the expected "bring it back" gesture).
+                        if let TrayIconEvent::Click {
+                            button: MouseButton::Left,
+                            button_state: MouseButtonState::Up,
+                            ..
+                        } = event
+                        {
+                            show_main_window(tray.app_handle());
+                        }
+                    });
+                if let Some(icon) = app.default_window_icon().cloned() {
+                    tray_builder = tray_builder.icon(icon);
+                }
+                tray_builder.build(app)?;
+                app.manage(TrayHandles { status: status_item });
+                // Keep the tray tooltip/status honest against live sidecar truth.
+                spawn_tray_updater(app.handle().clone());
+            }
+
             // The frontend is served LOCALLY (bundled via frontendDist), NOT from the sidecar's
             // http origin — Tauri denies IPC (the keychain commands) to remote origins. This shim
             // rewrites the frontend's root-relative /api/* fetches to the sidecar's port.
@@ -1922,7 +2200,46 @@ fn main() {
             // pass is designed (unverified there — do not blind-apply).
             #[cfg(windows)]
             let main_window = main_window.decorations(false).shadow(true);
-            main_window.build()?;
+            let main_window = main_window.build()?;
+
+            // ---- Lane 4D: close-to-tray, gated on REAL armed work ----
+            // On a close request, poll the sidecar's armed truth (bounded). If armed work exists, hide the window
+            // and keep the ONE sidecar running (explicit in the tray). If nothing is armed — or the sidecar can't
+            // be reached — drain + kill + exit: window-close is a full quit, leaving NO background process. This is
+            // the whole product promise: no hidden daemon, and no claim of 24/7 work the harness can't prove.
+            {
+                let app_handle = app.handle().clone();
+                main_window.on_window_event(move |event| {
+                    if let WindowEvent::CloseRequested { api, .. } = event {
+                        let armed = app_handle
+                            .try_state::<AppState>()
+                            .map(|st| {
+                                query_lifecycle_armed(
+                                    st.port,
+                                    &st.api_token,
+                                    Duration::from_millis(1200),
+                                )
+                                .map(|l| l.armed)
+                                .unwrap_or(false)
+                            })
+                            .unwrap_or(false);
+                        if armed {
+                            // Keep the station running in the background; hide rather than destroy the window.
+                            api.prevent_close();
+                            if let Some(win) = app_handle.get_webview_window("main") {
+                                let _ = win.hide();
+                            }
+                        } else {
+                            // Nothing armed → full quit. The tray icon would otherwise keep the process alive, so
+                            // we explicitly drain + kill + exit (disabled state creates NO background process).
+                            if let Some(state) = app_handle.try_state::<AppState>() {
+                                drain_and_kill_sidecar(state.inner());
+                            }
+                            app_handle.exit(0);
+                        }
+                    }
+                });
+            }
 
             Ok(())
         })
