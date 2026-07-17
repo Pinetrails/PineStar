@@ -254,6 +254,7 @@ test/xp.test.js
 test/xp-crewsplit.test.js
 test/xpstore.test.js
 test/returns.test.js
+test/outbox-window.test.js
 test/pride.test.js
 test/seedcredit.test.js
 test/seedreuse.test.js

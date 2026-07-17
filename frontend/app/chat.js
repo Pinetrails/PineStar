@@ -1826,7 +1826,12 @@ const Chat = (() => {
       try { localStorage.setItem(WORKRATE_COACH_KEY, '1'); } catch (_) {}
     }
     const lbl = document.createElement('span'); lbl.className = 'work-rate-label';
-    lbl.textContent = '◈ rate ' + name + '’s work — ';
+    // name the RUN's agent, not whoever the active chat happens to be bound to — the OUTBOX window
+    // (and any multi-agent surface) rates crew runs while a different agent is on screen. The verdict
+    // already routes by the agentId param; the label must agree with it (truthful telemetry).
+    let ratee = name;
+    try { if (typeof App !== 'undefined' && App.agentName) ratee = App.agentName(agentId || 'agent') || name; } catch (_) {}
+    lbl.textContent = '◈ rate ' + ratee + '’s work — ';
     const btns = document.createElement('span'); btns.className = 'consent-btns';
     host.appendChild(lbl); host.appendChild(btns);
     let done = false;
