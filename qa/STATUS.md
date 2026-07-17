@@ -100,6 +100,24 @@ per-crew roll-up below can be regenerated any time with:
 node scripts/qa/ledger.mjs --status
 ```
 
+## 2026-07-17 — Wave 4D supervised background lifecycle (agent/lifecycle-4d → trunk `7f3af0be`, W0 re-stamp `bc4ac138`)
+
+The poweruser-plan 4D owner-decision checkpoint was APPROVED (recommended shape) and shipped:
+Tauri v2 tray supervisor owns the one sidecar (Open / live status / Pause Automation=E-STOP /
+Quit); window-close keeps the process ONLY when `GET /api/lifecycle/armed` proves armed work
+(routines not durably halted, connected channels, armed night-shift) — else full drain+quit, no
+hidden daemon; launch-at-login opt-in (default OFF, read-back honest). Adversarial review ran
+pre-merge (FIX-FIRST): M1 E-STOP now durably halts routines (`cron.halt.json`, survives restart,
+explicit arm/dial lifts — the be03e5d0 night-shift treatment extended to cron); M2 close-poll
+distinguishes refused (quit safe) from timeout-after-connect (fail OPEN, stay hidden — never kill
+an alive-but-slow sidecar); M3 9 new rust probe tests. W0 claims flipped truthfully: the formerly
+REFUTED "work continues after close" claims now assert the supervisor's PRESENCE, liveProof
+PENDING. Gates: test:fast 346/346 (clean worktree @ bc4ac138 — the re-stamp also unblocked the
+stale autopilot.js W0 state), test:http full green, cargo check + 21 rust tests green.
+OPEN (honest): the six interactive installed-exe proofs (close-with-armed-routine fire-once,
+orphan-free Quit, autostart login, update-drain, tray-E-STOP-while-closed, disabled-no-process)
+need an ATTENDED session on a freshly installed build; macOS runtime unproven (cfg-clean only).
+
 ## 2026-07-17 — guardian-red triage merge (claude/starnet-post-merge-review-b35656 → trunk `a17b2e91`)
 
 All 5 open Guardian P1 findings resolved, ledger flipped with evidence. (1) The 3 approval truth
@@ -119,7 +137,7 @@ own runner (Q1 Guardian, Q2 Beginner Run, Q4 Janitor) or the Overseer digest; th
 
 | Crew member | Question it answers | Last run | Result | Open findings |
 | --- | --- | --- | --- | --- |
-| Green Guardian | Is trunk green and does the app still boot + look right? | 2026-07-17 07:06Z @ 26ad2a32 | RED | 0 |
+| Green Guardian | Is trunk green and does the app still boot + look right? | 2026-07-17 08:05Z @ ef42c5f1 | RED | 0 |
 | Beginner Run | Can a brand-new user reach first value, unassisted? | 2026-07-17T00:32:20.042Z · ui-only · 107118ms | PASS | 0 |
 | Truth Auditor | Does the UI show what actually happened? | 2026-07-01 23:28Z (in Guardian cycle) | GREEN | 0 |
 | Visual Auditor | Is the rendered game coherent? (needs eyes) | — (local /loop; not headless) | — | 0 |

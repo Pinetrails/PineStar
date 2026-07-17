@@ -1,5 +1,31 @@
 # NEXT.md — current priorities & task queue
 
+## 2026-07-17 — FULL-RELEASE CAMPAIGN (active; Fable-orchestrated)
+
+Goal: full public release clean on Windows AND macOS; subscriptions = the NEXT official update.
+
+**MERGED: Wave 4D supervised background lifecycle** (agent/lifecycle-4d → trunk `7f3af0be`,
+claims re-stamp `bc4ac138`; full digest in qa/STATUS.md 2026-07-17). The owner-decision
+checkpoint below (POWERUSER_FIX_PLAN Lane 4D) is CLEARED — Andrew approved the recommended
+shape. Tray supervisor + `GET /api/lifecycle/armed` + durable cron halt (`cron.halt.json`,
+E-STOP parity with night-shift be03e5d0) + opt-in launch-at-login. Gates green (fast 346/346
+clean-worktree, http full, cargo 21 tests). The formerly-REFUTED after-close claims are now
+SHIPPED-with-liveProof-PENDING in qa/product-perfect/claims.json.
+- [ ] **ATTENDED (Andrew or supervised session): the six installed-exe lifecycle proofs** —
+      close-with-armed-routine → fires exactly once + durable result; orphan-free Quit;
+      autostart login = one sidecar; update-drain; tray Pause/E-STOP while closed; disabled
+      state spawns nothing. Requires installing a fresh trunk build (this machine currently
+      runs an older installed build; EBWebView purge recipe applies on exe swap).
+- [ ] macOS runtime proof of the tray/autostart paths (cfg-clean + documented APIs only so far).
+- [ ] **LAUNCH RUNBOOK: docs/LAUNCH_RUNBOOK.md** (committed on claude/starnet-code-prompts-a9d3a7
+      @ 36596f99 — merge or copy forward). KEY FINDING: NOTHING 0.5.x was ever pushed/published —
+      origin tags stop at v0.4.0, starnet-releases 404s; launch = the CI train's FIRST live run
+      (all 5 platforms) at v0.5.2. Andrew's chain: updater-key backup (NONE exists) + dev-key
+      rotation → push trunk+tag → publish → verify-update-host → W1 second-user proof →
+      per-platform canaries → Mac auto-update test → T0 evidence → certify:providers real keys.
+- [ ] Subscriptions/credits merge (claude/starnet-subscriptions-plan-4d56d1, 5 ahead / 314
+      behind trunk) + Stripe/domain/deploy — NEXT UPDATE, do not merge during launch.
+
 ## 2026-07-15 — POWER-USER DEEP-DIVE AUDIT (3 isolated agents, no fixes)
 
 Full evidence and repros: `docs/POWERUSER_AUDIT_2026-07-15.md`. Baseline gates were green
