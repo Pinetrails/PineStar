@@ -5259,11 +5259,22 @@ function setProviderRuntimeConfig(provider, patch) {
   return id;
 }
 
+/* the per-launch IPC token gate shared by the desktop push routes. Constant-time compare: a plain
+   !== leaks match-prefix length through response timing; hash both sides to fixed width first so
+   timingSafeEqual never throws on length mismatch and the comparison cost is length-independent. */
+function ipcTokenOk(req) {
+  const token = String(ENV('IPC_TOKEN') || '');
+  if (!token) return false;
+  const given = String(req.headers['x-starnet-token'] || req.headers['x-skynet-token'] || '');
+  const a = crypto.createHash('sha256').update(given, 'utf8').digest();
+  const b = crypto.createHash('sha256').update(token, 'utf8').digest();
+  return crypto.timingSafeEqual(a, b);
+}
+
 /* desktop key push: the parent shell sets live BYOK/provider config here (token-gated), so changing a
    key never restarts the sidecar. Legacy text/plain bodies still update the OpenRouter key. */
 async function handleSetKey(req, res) {
-  const token = String(ENV('IPC_TOKEN') || '');
-  if (!token || (req.headers['x-starnet-token'] || req.headers['x-skynet-token']) !== token) { res.writeHead(403); return res.end('forbidden'); }
+  if (!ipcTokenOk(req)) { res.writeHead(403); return res.end('forbidden'); }
   let raw = '';
   try { raw = String(await readBody(req, 1 << 16) || ''); } catch (_) {}
   let provider = 'openrouter';
@@ -5296,8 +5307,7 @@ async function handleSetKey(req, res) {
    empty token CLEARS the runtime token for that channel. Never echoes the token back — only booleans. */
 async function handleSetChannelToken(req, res) {
   const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
-  const token = String(ENV('IPC_TOKEN') || '');
-  if (!token || (req.headers['x-starnet-token'] || req.headers['x-skynet-token']) !== token) { res.writeHead(403); return res.end('forbidden'); }
+  if (!ipcTokenOk(req)) { res.writeHead(403); return res.end('forbidden'); }
   let body; try { body = JSON.parse(String(await readBody(req, 1 << 16) || '') || '{}') || {}; } catch (_) { return json(400, { error: 'bad json' }); }
   const channel = String(body.channel || body.id || '').trim().toLowerCase();
   if (channelSecretsMod.CHANNEL_IDS.indexOf(channel) < 0) return json(400, { error: 'unknown channel' });
