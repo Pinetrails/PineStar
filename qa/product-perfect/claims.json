@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "c63f1ccf2bbe85a879d86f74fa3c6e3eb181b1d0",
+    "sourceCommit": "7547db2b7fb1a63d5e4b102c409f33dd3d213508",
     "pathSetSha256": "e45261d65dc7ff0b9cc77172b4f800cc4bef6dec86bd786a26771964e9b2e342",
     "files": [
       {
@@ -63,8 +63,8 @@
       },
       {
         "path": "frontend/app/app.js",
-        "bytes": 266707,
-        "sha256": "0d70f34595c35b3ddd0d01adf6b5a2836b022afe5c211691ffa135434e367906"
+        "bytes": 267949,
+        "sha256": "50d904024db01af9a9b9c7e37ce6f247a5e78f9d4132f21aa704cd31e4dde5ad"
       },
       {
         "path": "frontend/app/armconfirm.js",
@@ -133,8 +133,8 @@
       },
       {
         "path": "frontend/app/chat.js",
-        "bytes": 393293,
-        "sha256": "b64333be179aa9066558f8c18e9943db7d4f31766281e0f54d6afa7d6bc4b669"
+        "bytes": 393497,
+        "sha256": "677e42f57d30272e6850a4f413c515750b56c735415cc2e4082335de6f09a278"
       },
       {
         "path": "frontend/app/chatresize.js",
@@ -388,8 +388,8 @@
       },
       {
         "path": "frontend/app/personas.js",
-        "bytes": 14349,
-        "sha256": "e63fc50616e7fdf4f235c3b7f6a713b4d8faaed1032740233ef6dcefd80e2786"
+        "bytes": 23678,
+        "sha256": "bfc98b5320ce4ed27575621d4bb64c5df11a190f301af4f10f18802dcd616a0b"
       },
       {
         "path": "frontend/app/pipeline.js",
@@ -798,8 +798,8 @@
       },
       {
         "path": "frontend/css/app.css",
-        "bytes": 195589,
-        "sha256": "ca67bb9b97db72f31eb626b681cc2a4827d3073130ffdd649cb7e8c941b7d4ef"
+        "bytes": 195906,
+        "sha256": "92f2af4add5e896a08e5d5f9e00eed1fb440bfb4c3c01d937e07faa0b1606a66"
       },
       {
         "path": "frontend/css/asciifx.css",
