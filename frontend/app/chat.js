@@ -347,7 +347,7 @@ const Chat = (() => {
     let out = '', last = 0, m;
     while ((m = re.exec(s)) !== null) {
       let url = m[0];
-      const trail = /[.,;:!?'")\]}>]+$/.exec(url);   // don't swallow sentence punctuation trailing the URL
+      const trail = /[.,;:!?'")\]}>*`]+$/.exec(url); // don't swallow sentence punctuation OR markdown markers (**url**, `url`) trailing the URL
       if (trail) url = url.slice(0, url.length - trail[0].length);
       if (!url) continue;                            // pathological match (scheme only) — let escape handle it
       out += escapeHtml(s.slice(last, m.index));     // escaped text before the URL
