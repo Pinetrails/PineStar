@@ -1278,6 +1278,11 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
   background: linear-gradient(180deg, var(--ph-bright) -40%, var(--ph) 60%); color: var(--ink); border-color: var(--ph);
   text-shadow: none; box-shadow: inset 0 1px 0 rgba(255,255,255,.25), 0 0 9px var(--ph-glow2);
 }
+/* the UNHINGED chip's armed state (two-press confirm — it swears for real): warn tint until the second press */
+.ov-vchip.arm {
+  color: var(--warn); border-color: var(--warn);
+  box-shadow: inset 0 1px 0 rgba(var(--ph-rgb),.1), 0 0 9px color-mix(in srgb, var(--warn) 40%, transparent), 0 1px 0 rgba(0,0,0,.35);
+}
 .ov-vpreview { margin-top: 8px; }
 
 .ov-field-brain { margin-bottom: 0; }

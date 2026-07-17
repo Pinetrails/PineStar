@@ -93,6 +93,8 @@ const App = (() => {
                                        //   getKey() returns ''). Used by onWake's one-time overwrite guard: editing a
                                        //   pre-filled key asks once before it silently replaces the stored one.
   let keyOverwriteConfirmed = false;   // set true once the Commander confirms replacing the pre-filled key (one-time per screen)
+  let unhingedConfirmed = false;       // set true once the Commander confirms the UNHINGED voice chip (it swears for real;
+                                       //   two-press arm like the delete buttons — one-time per create screen)
   let codexConnected = false;          // last-known /api/auth/codex/status — gates waking on the Codex provider
   let station = null;         // the canonical WorldModel station (the builder's source of truth)
   let pendingStationDoc = null; // a saved station doc awaiting enterGame()
@@ -1703,14 +1705,29 @@ const App = (() => {
     if (!Personas.exists(pickedPersona)) pickedPersona = Personas.DEFAULT_ID;
     pickedPersona = Personas.resolve(pickedPersona);   // collapse any legacy id to its grounded archetype
     wrap.innerHTML = '';
+    let armedChip = null;   // the UNHINGED chip while it awaits its second press (house two-press confirm)
+    const disarm = () => { if (armedChip) { armedChip.textContent = armedChip.dataset.name; armedChip.classList.remove('arm'); armedChip = null; } };
     Personas.list().forEach(p => {
       const chip = document.createElement('button');
       chip.type = 'button';
       chip.className = 'ov-vchip' + (p.id === pickedPersona ? ' sel' : '');
       chip.title = p.vibe;
       chip.textContent = p.name;
+      chip.dataset.name = p.name;
       chip.setAttribute('aria-pressed', String(p.id === pickedPersona));
       chip.onclick = () => {
+        // UNHINGED curses for real, so its chip arms first (same two-press pattern as the delete buttons):
+        // press one names what it means, press two selects. Once confirmed, it's a normal chip this screen.
+        if (p.id === 'unhinged' && pickedPersona !== 'unhinged' && !unhingedConfirmed && armedChip !== chip) {
+          disarm();
+          armedChip = chip;
+          chip.classList.add('arm');
+          chip.textContent = 'UNHINGED — SURE? it swears, for real';
+          SFX.click();
+          return;
+        }
+        if (p.id === 'unhinged') unhingedConfirmed = true;
+        disarm();
         pickedPersona = p.id;
         [...wrap.children].forEach(x => { const on = x === chip; x.classList.toggle('sel', on); x.setAttribute('aria-pressed', String(on)); });
         SFX.click(); renderVoicePreview();
@@ -1758,6 +1775,7 @@ const App = (() => {
     // this fresh screen. (An empty prefill means there's nothing to overwrite — the guard stays dormant.)
     prefilledKey = el('in-key').value || '';
     keyOverwriteConfirmed = false;
+    unhingedConfirmed = false;   // each fresh create screen re-arms the UNHINGED two-press confirm
     // desktop: the key lives in the OS keychain (getKey returns ''); show that it's already set.
     if (Harness.configured && Harness.configured() && !el('in-key').value) {
       el('in-key').placeholder = '•••••••• stored in keychain — leave blank to keep';

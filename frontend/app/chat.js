@@ -4377,7 +4377,10 @@ const Chat = (() => {
     const key = raw.toLowerCase();
     if (key && typeof Personas !== 'undefined' && Personas.exists && Personas.exists(key)) {
       const id = Personas.resolve ? Personas.resolve(key) : key;
-      if (applyAgentPatch({ personaId: id })) localLine('Personality set to ' + Personas.get(id).name + '.');
+      if (applyAgentPatch({ personaId: id })) {
+        // slash-set skips the create screen's two-press confirm, so the honesty note rides the confirmation line
+        localLine('Personality set to ' + Personas.get(id).name + '.' + (id === 'unhinged' ? ' Heads up: this one swears — for real.' : ''));
+      }
       else localLine('Personality setting is not available yet.');
       return;
     }
