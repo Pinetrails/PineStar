@@ -67,10 +67,10 @@ for (const b of CATALOG) {
    RETIRED outright — envoy, marketer+publisher, and treasurer are their strict supersets, and near-duplicate
    archetypes would shadow the real class in the scout's matcher. */
 const classicons = require('../frontend/app/classicons.js');
-A.eq(builtins.length, 11, 'the curated roster ships exactly 11 classes');
+A.eq(builtins.length, 12, 'the curated roster ships exactly 12 classes');
 A.eq(archetypes.length, 18, 'the archetype pool holds the 18 deep cuts');
-const CURATED = ['strategist', 'researcher', 'engineer', 'analyst', 'marketer', 'publisher', 'producer', 'writer', 'prospector', 'treasurer', 'scout'];
-A.eq(builtins.map(b => b.id).sort().join(','), CURATED.slice().sort().join(','), 'the curated roster is exactly the 11 specialized business classes');
+const CURATED = ['strategist', 'opportunist', 'researcher', 'engineer', 'analyst', 'marketer', 'publisher', 'producer', 'writer', 'prospector', 'treasurer', 'scout'];
+A.eq(builtins.map(b => b.id).sort().join(','), CURATED.slice().sort().join(','), 'the curated roster is exactly the 12 specialized business classes');
 A.eq(builtins[0].id, 'strategist', 'the strategist is the roster\'s first card (the bay\'s default focus)');
 const ARCH_IDS = ['chief', 'operator', 'scribe', 'designer', 'tutor', 'navigator', 'curator', 'muse',
   'reviewer', 'archivist', 'broker', 'auditor', 'translator', 'herald',
@@ -80,7 +80,7 @@ for (const id of ARCH_IDS) A.ok(!builtins.some(b => b.id === id), 'archetype is 
 // the retired near-duplicates must be GONE from both shelves (they would shadow their superset builtins)
 for (const id of ['liaison', 'publicist', 'bookkeeper']) A.ok(!CATALOG.some(b => b.id === id), 'retired class is fully removed: ' + id);
 // no id/name collision across the two shelves (an archetype must never shadow a curated class)
-const NEW_CLASSES = ['strategist', 'marketer', 'publisher', 'producer', 'writer', 'prospector', 'envoy', 'treasurer'];
+const NEW_CLASSES = ['strategist', 'opportunist', 'marketer', 'publisher', 'producer', 'writer', 'prospector', 'envoy', 'treasurer'];
 const byId = new Map(CATALOG.map(b => [b.id, b]));
 for (const id of NEW_CLASSES) {
   const b = byId.get(id);
@@ -222,7 +222,7 @@ const NEW_SKILLS = ['source-triangulation', 'feed-watch', 'adversarial-review-pa
   'announcement-kit', 'study-plan', 'security-sweep', 'ledger-upkeep', 'translation-pass', 'digest-composer',
   'itinerary-planning', 'file-curation',
   // 2026-07-16 business-roster skills
-  'marketing-plan', 'content-calendar', 'ugc-brief', 'short-form-script', 'lead-scouting', 'inbox-triage', 'cost-audit'];
+  'marketing-plan', 'content-calendar', 'ugc-brief', 'short-form-script', 'lead-scouting', 'inbox-triage', 'cost-audit', 'opportunity-scan'];
 for (const slug of NEW_SKILLS) {
   const sk = SLUGS.get(slug);
   A.ok(!!sk, 'S2 new skill authored: ' + slug);

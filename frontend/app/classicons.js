@@ -53,6 +53,8 @@
     // treasurer: the ledger book with ruled lines and a balance mark (inherited from the retired bookkeeper).
     treasurer: '<svg viewBox="0 0 24 24"><rect x="4" y="3" width="15" height="18" rx="1.6" fill="currentColor"/><rect x="4" y="3" width="3" height="18" fill="' + D + '"/><g fill="none" stroke="' + D + '" stroke-width="1.5" stroke-linecap="round"><path d="M9.4 7.4 H16"/><path d="M9.4 10.6 H16"/><path d="M9.4 13.8 H16"/></g><path fill="' + D + '" d="M9.2 16.4 L11 18.2 L15.4 15 L16.4 16 L11 20 L8.2 17.4 Z"/></svg>',
     // ---- 2026-07-16 business-roster seals (same matte engraved-coin style, currentColor + deboss only) ----
+    // opportunist: the cut gem half-buried in ground — value spotted where others walked past.
+    opportunist: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M7 3.4 H17 L21.4 8.6 L12 20.6 L2.6 8.6 Z"/><g fill="none" stroke="' + D + '" stroke-width="1.5" stroke-linejoin="round"><path d="M2.6 8.6 H21.4"/><path d="M7 3.4 L9.6 8.6 L12 20.6"/><path d="M17 3.4 L14.4 8.6 L12 20.6"/></g></svg>',
     // strategist: an arrow striking the target's center — the chosen direction, committed.
     strategist: '<svg viewBox="0 0 24 24"><circle cx="13.4" cy="10.6" r="8.4" fill="currentColor"/><circle cx="13.4" cy="10.6" r="5" fill="' + D + '"/><circle cx="13.4" cy="10.6" r="1.9" fill="currentColor"/><path fill="currentColor" d="M2 22 L11.9 12.1 L13.4 13.6 L3.5 23.5 Z"/><path fill="currentColor" d="M2 17.4 L2 22 L6.6 22 L4.9 20.3 L6.4 18.8 L3.5 18.9 Z"/></svg>',
     // publisher: the calendar grid with one slot lit — the piece scheduled to ship.
@@ -88,7 +90,7 @@
     navigator: 'NAV', curator: 'CUR', muse: 'MUS',
     strategist: 'STG', marketer: 'MKT', publisher: 'PUB', producer: 'PRD', writer: 'WRT',
     prospector: 'PRS', envoy: 'ENV', treasurer: 'TRE',
-    closer: 'CLO', steward: 'STW', optimizer: 'OPT'
+    closer: 'CLO', steward: 'STW', optimizer: 'OPT', opportunist: 'OPP'
   };
 
   // bespoke emblems for the built-in RECIPES (missions) — same matte/debossed style, keyed by recipe id.
