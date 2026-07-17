@@ -2629,6 +2629,38 @@ function saveCronArmed(armed) {   // durable like the jobs file; throws on a rea
   // can be recovered on the next boot instead of silently disarming the scheduler. Same idiom as connectors/cron.jobs.
   saveResilient(CRON_ARMED_FILE, { version: 1, armed: armed === true });
 }
+// ---- Lane 4D: the durable cron E-STOP halt (the routines equivalent of nightshift.engageHalt). ----
+// POST /api/halt used to abort in-flight cron leases but left the TIMER armed, so due routines re-fired
+// unattended right after an E-STOP — and the tray kept reporting "N routines armed" (the close-to-tray
+// decision then kept the process alive AFTER the user paused). The halt flag is SEPARATE from cronArmed so
+// the user's arm intent survives: halt freezes the scheduler durably (survives restart); it lifts only on an
+// explicit resume — POST /api/cron/arm (either direction: a deliberate arm write IS the resume signal) or a
+// re-write of the autonomy dial (the same "autonomy back on" signal that lifts the night-shift halt).
+const CRON_HALT_FILE = path.join(WORKSPACES, 'cron.halt.json');
+function loadCronHalted() {
+  // fail-open-to-false ONLY when the file is genuinely absent; an unreadable existing flag logs (loadResilient
+  // quarantines) and defaults false — the arm flag still gates firing, so a lost halt never invents arming.
+  try {
+    if (fs.existsSync(CRON_HALT_FILE)) {
+      const env = loadResilient(CRON_HALT_FILE, 'cron-halt');
+      return !!(env && env.halted === true);
+    }
+    return false;
+  } catch (_) { return false; }
+}
+function saveCronHalted(halted) {
+  try { saveResilient(CRON_HALT_FILE, { version: 1, halted: halted === true, at: Date.now() }); } catch (_) {}
+}
+let cronHalted = loadCronHalted();
+// The ONE resume seam: clear the durable halt and re-arm the live timer when the user's arm intent says so.
+// Called from every explicit resume path so halt-lift semantics can't drift between them.
+function liftCronHalt() {
+  if (!cronHalted) return false;
+  cronHalted = false;
+  saveCronHalted(false);
+  if (cronArmed) armCron();
+  return true;
+}
 // the LIVE armed state: SKYNET_CRON_ENABLED (env, boot-frozen) OR the persisted runtime flag. Mutated only by
 // armCron()/disarmCron() (below) — never via process.env. GET /api/cron reports THIS so the panel is honest.
 let cronArmed = CRON_ENABLED || loadCronArmed();
@@ -4776,7 +4808,10 @@ server.listen(PORT, '127.0.0.1', () => {
   // skip; never a backlog) — BEFORE arming the interval. Inert when off: no timer, no fire, the browser path is
   // byte-identical for a user who never enables cron (no env var, no cron.armed.json -> cronArmed=false).
   try {
-    if (cronArmed) armCron();
+    // Lane 4D: a durable E-STOP halt (cron.halt.json) freezes the scheduler ACROSS restarts — armed intent is
+    // remembered but the timer stays down until an explicit resume (POST /api/cron/arm or a dial re-write).
+    if (cronArmed && cronHalted) console.log('  · cron is E-STOP halted — timer stays down until resumed (routines panel or autonomy dial)');
+    if (cronArmed && !cronHalted) armCron();
   } catch (e) { console.warn('[cron] start failed:', (e && e.message) || e); }
   // NIGHT SHIFT (OPT-IN, NS-1): arms iff SKYNET_NIGHTSHIFT_ENABLED OR the posture already permits acting at boot
   // (initiative ≥ 'leash'). Inert otherwise — no timer, no fire, byte-identical for a Commander who never dials up.
@@ -5665,7 +5700,9 @@ function handleCronList(req, res) {
     lastTickError: cronHealth.lastTickError,
     healthy: !!(cronArmed && cronTimer && cronHealth.lastSuccessAt != null && (Date.now() - cronHealth.lastSuccessAt) < 3 * CRON_TICK_MS)
   };
-  res.end(JSON.stringify({ jobs: cronJobs, enabled: cronArmed, tickMs: CRON_TICK_MS, health: health }));
+  // `halted` (additive, Lane 4D): the durable E-STOP stand-down — enabled records the user's arm INTENT while
+  // halted says the timer is frozen anyway, so the panel can say "paused by E-STOP" instead of a false "armed".
+  res.end(JSON.stringify({ jobs: cronJobs, enabled: cronArmed, halted: cronHalted, tickMs: CRON_TICK_MS, health: health }));
 }
 
 /* GET /api/lifecycle/armed — Lane 4D: the ONE aggregate the desktop tray supervisor polls to decide whether
@@ -5680,12 +5717,14 @@ function lifecycleArmedSnapshot(now) {
   now = now || Date.now();
   // ROUTINES — armed only when the scheduler is armed AND at least one routine exists to fire. A disarmed
   // scheduler (or an armed one with zero jobs) is honestly not armed: nothing would tick after window close.
-  let routines = { armed: false, count: 0, healthy: false };
+  let routines = { armed: false, count: 0, healthy: false, halted: false };
   try {
     const jobs = Array.isArray(cronJobs) ? cronJobs : [];
-    const armed = !!cronArmed && jobs.length > 0;
+    // A durable E-STOP halt (cron.halt.json) freezes the timer — a halted scheduler is NOT doing background
+    // work, so it must not hold the process alive after window close (same truthfulness rule as night shift).
+    const armed = !!cronArmed && !cronHalted && jobs.length > 0;
     const healthy = !!(cronArmed && cronTimer && cronHealth.lastSuccessAt != null && (now - cronHealth.lastSuccessAt) < 3 * CRON_TICK_MS);
-    routines = { armed: armed, count: armed ? jobs.length : 0, healthy: healthy };
+    routines = { armed: armed, count: armed ? jobs.length : 0, healthy: healthy, halted: !!cronHalted };
   } catch (_) {}
   // CHANNELS — the ids of every messaging channel reporting connected:true (real socket/poll state).
   let channels = { armed: false, connected: [] };
@@ -5808,8 +5847,11 @@ function handleCronArm(req, res) {
     try { saveCronArmed(want); }                       // durable persist FIRST so a crash can't drop the user's intent
     catch (e) { return json(500, { error: 'could not persist the arm flag: ' + ((e && e.message) || e) }); }
     cronArmed = want;                                  // live in-memory state (GET /api/cron reflects this)
+    // Lane 4D: a deliberate arm write IS the resume signal — it lifts a durable E-STOP halt in EITHER direction
+    // (arming resumes; an explicit disarm supersedes the halt, leaving a plain disarmed scheduler).
+    if (cronHalted) { cronHalted = false; saveCronHalted(false); }
     if (want) armCron(); else disarmCron();            // start/stop the live tick NOW — a due job fires within one tick
-    json(200, { ok: true, enabled: cronArmed, tickMs: CRON_TICK_MS });
+    json(200, { ok: true, enabled: cronArmed, halted: cronHalted, tickMs: CRON_TICK_MS });
   }).catch(() => { try { json(400, { error: 'bad request' }); } catch (_) {} });
 }
 
@@ -6202,7 +6244,9 @@ async function armWorkshopShift(agentId) {
     }, { id: jobId, now: Date.now() }));
   } catch (e) { console.warn('[workshop] arm routine failed:', (e && e.message) || e); return false; }
   // arming the shift needs the tick timer running so it actually fires unattended; arm cron if it isn't already.
-  try { if (!cronArmed) { cronArmed = true; saveCronArmed(true); armCron(); } } catch (_) {}
+  // Respect a durable E-STOP halt: record the arm INTENT but never silently restart the timer the Commander
+  // paused — the halt lifts only via the explicit resume paths (POST /api/cron/arm / autonomy-dial write).
+  try { if (!cronArmed) { cronArmed = true; saveCronArmed(true); if (!cronHalted) armCron(); } } catch (_) {}
   return true;
 }
 async function disarmWorkshopShift(agentId) {
@@ -7568,6 +7612,8 @@ async function runOnce(o) {
       const want = enabled === true;
       saveCronArmed(want);
       cronArmed = want;
+      // same resume semantics as POST /api/cron/arm: a deliberate arm write lifts a durable E-STOP halt.
+      if (cronHalted) { cronHalted = false; saveCronHalted(false); }
       if (want) armCron(); else disarmCron();
       return cronArmed;
     }
@@ -8464,6 +8510,9 @@ async function handleAutonomyPosture(req, res) {
   // deliberately re-writing the dial is the Commander's "autonomy back on" signal, so it LIFTS any durable E-STOP
   // halt on the night shift (engaged in handleHalt). Without this an E-STOP would wedge the shift stood-down forever.
   try { if (nightshift.isHalted(nightshiftState)) { nightshiftState = nightshift.clearHalt(nightshiftState, Date.now()); saveNightshiftState(); } } catch (_) {}
+  // Lane 4D symmetry: the same "autonomy back on" signal lifts the durable cron E-STOP halt (engaged in
+  // handleHalt) and re-arms the timer when the user's arm intent still stands — routines resume with no restart.
+  try { liftCronHalt(); } catch (_) {}
   // if the (new) posture permits acting and the timer isn't running yet, arm it NOW (no restart); if it dropped
   // below acting, we LEAVE the timer armed — its own gate returns binding:'posture' and no beat fires, which is
   // cheaper + simpler than tearing the timer down and matches how the driver already no-ops when not permitted.
@@ -8854,6 +8903,11 @@ function handleHalt(req, res) {
   // on their own even though the Commander hit E-STOP. The flag persists (survives restart); it lifts only when the
   // dial is re-written (handleAutonomyPosture → nightshift.clearHalt). Truthful telemetry: status now reports halted.
   try { nightshiftState = nightshift.engageHalt(nightshiftState, Date.now()); saveNightshiftState(); } catch (_) {}
+  // Lane 4D symmetry: ROUTINES get the same durable stand-down the night shift got above. Without this the
+  // cron timer kept re-firing due jobs unattended right after an E-STOP, and the lifecycle aggregate kept
+  // claiming "N routines armed" — so the tray held the process alive AFTER the user paused. The flag persists
+  // (survives restart) and lifts only on an explicit resume (POST /api/cron/arm or an autonomy-dial re-write).
+  try { if (cronArmed && !cronHalted) { cronHalted = true; saveCronHalted(true); disarmCron(); } } catch (_) {}
   try { executionEnvironment.killAllBackground(); } catch (_) {}   // H2.2/Phase 0: E-STOP also reaps backend-owned background processes
   try { inputGuard.observe('halt').catch(() => {}); } catch (_) {}   // diagnostic only: never release an unowned global clip
   try { subagents.interruptAll(); } catch (_) {}   // Phase 1: E-STOP aborts watchable background workers too

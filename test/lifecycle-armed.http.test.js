@@ -6,11 +6,18 @@
        honestly not-armed — so the tray quits the whole app on window close (no hidden daemon).
      - ARMING A ROUTINE FLIPS IT TRUE: create a routine + POST /api/cron/arm {enabled:true} -> armed:true,
        categories.routines.armed:true with the real count, and a human "N routine(s) armed" reason string.
-     - DISARM RETURNS TO INERT: POST /api/cron/arm {enabled:false} -> armed:false again (routines drop out).
+     - NIGHT-SHIFT HALT TRUTHFULNESS: an armed night shift counts as armed work; after POST /api/halt the
+       durable NS halt means it is NOT doing work — nightshift.armed stays true (timer up) but halted:true and
+       the AGGREGATE goes armed:false (the tray must never hold the process for a frozen shift).
+     - CRON E-STOP HALT IS DURABLE (M1): POST /api/halt with an armed recurring routine -> GET /api/cron says
+       enabled:true + halted:true, lifecycle armed:false, no further ticks; RESTART the host -> still halted
+       (armed intent kept, timer down); explicit POST /api/cron/arm {enabled:true} lifts the halt and re-arms.
      - TOKEN GUARD: GET without the X-StarNet-Token header is rejected 403 (GET data routes are token-gated).
 
-   Short tick (SKYNET_CRON_TICK_MS=300) so any live-timer effect settles fast. NOT in test:fast (child-process
-   boot). Run via `npm run test:http`. Mirrors cron.arm.test.js. */
+   NOT covered (honest): a channels-connected reason — connecting a real channel needs a live platform endpoint
+   or a bespoke mock; channel connectivity is covered by channels.telegram.e2e.test.js, and the snapshot reads
+   the same channelStatusPayload those tests prove. Short tick (SKYNET_CRON_TICK_MS=300). NOT in test:fast
+   (child-process boot). Run via `npm run test:http`. Mirrors cron.arm.test.js. */
 'use strict';
 const A = require('./_assert.js');
 const { spawn } = require('child_process');
@@ -47,8 +54,9 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
 
 (async () => {
   const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-lifecycle-'));
-  const booted = await boot(8990 + (process.pid % 40), ws, 20, { SKYNET_CRON_TICK_MS: '300' });
-  const child = booted.child; const port = booted.port;
+  const HALT_FILE = path.join(ws, 'cron.halt.json');
+  let booted = await boot(8990 + (process.pid % 40), ws, 20, { SKYNET_CRON_TICK_MS: '300' });
+  let child = booted.child; let port = booted.port; let getOut = booted.out;
   const B = () => 'http://' + HOST + ':' + port;
   let apiToken = await bootToken(B(), B());
   const j = async (m, p, body) => {
@@ -78,9 +86,9 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     const noTok = await jNoToken('GET', '/api/lifecycle/armed');
     A.eq(noTok.status, 403, 'GET /api/lifecycle/armed without X-StarNet-Token -> 403 (token-gated)');
 
-    // ---- ARMING A ROUTINE FLIPS IT TRUE ----
-    const create = await j('POST', '/api/cron', { name: 'Nightly digest', prompt: 'summarize', schedule: '2020-01-01T00:00:00Z', agentId: 'lc_test' });
-    A.eq(create.status, 200, 'POST /api/cron (valid routine) -> 200');
+    // ---- ARMING A ROUTINE FLIPS IT TRUE (recurring, so ticks never consume it) ----
+    const create = await j('POST', '/api/cron', { name: 'Daily digest', prompt: 'summarize', schedule: '0 9 * * *', agentId: 'lc_test' });
+    A.eq(create.status, 200, 'POST /api/cron (valid recurring routine) -> 200');
     const armOn = await j('POST', '/api/cron/arm', { enabled: true });
     A.eq(armOn.status, 200, 'POST /api/cron/arm {enabled:true} -> 200');
     const on = await j('GET', '/api/lifecycle/armed');
@@ -89,12 +97,55 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     A.ok(on.body.categories.routines.count >= 1, 'routines count reflects the real routine (>=1)');
     A.ok(on.body.reasons.some(r => /routine/.test(r)), 'a human "routine(s) armed" reason is surfaced for the tray');
 
-    // ---- DISARM RETURNS TO INERT ----
-    const armOff = await j('POST', '/api/cron/arm', { enabled: false });
-    A.eq(armOff.status, 200, 'POST /api/cron/arm {enabled:false} -> 200');
-    const back = await j('GET', '/api/lifecycle/armed');
-    A.eq(back.body.armed, false, 'after disarm: armed:false again (nothing ticks -> tray may fully quit)');
-    A.eq(back.body.categories.routines.armed, false, 'routines category back to armed:false');
+    // ---- NIGHT-SHIFT HALT TRUTHFULNESS: an armed-but-HALTED shift is not armed work ----
+    // Arm the night shift by raising the dial (posture write arms the timer with no restart)…
+    const posture = await j('POST', '/api/autonomy/posture', { posture: { initiative: 'leash', reach: 'sandbox', leashPerDay: 2 } });
+    A.eq(posture.status, 200, 'POST /api/autonomy/posture (initiative:leash) -> 200');
+    const nsOn = await j('GET', '/api/lifecycle/armed');
+    A.eq(nsOn.body.categories.nightshift.armed, true, 'raised dial: nightshift.armed:true (timer live)');
+    A.ok(nsOn.body.reasons.some(r => /Night shift/i.test(r)), 'a "Night shift armed" reason is surfaced');
+    // …then E-STOP. The durable NS halt freezes beats while the timer stays armed — the aggregate must NOT
+    // count a frozen shift as armed work. (The same POST also durably halts cron — asserted in the next phase.)
+    const halt = await j('POST', '/api/halt', {});
+    A.eq(halt.status, 200, 'POST /api/halt (E-STOP) -> 200');
+    const nsHalted = await j('GET', '/api/lifecycle/armed');
+    A.eq(nsHalted.body.categories.nightshift.halted, true, 'after E-STOP: nightshift.halted:true (durable stand-down)');
+    A.eq(nsHalted.body.categories.nightshift.armed, true, 'after E-STOP: NS timer still armed (halt freezes beats, not the timer)');
+    A.eq(nsHalted.body.armed, false, 'TRUTHFULNESS: halted night shift + halted routines = armed:false (tray may fully quit)');
+
+    // ---- CRON E-STOP HALT (M1): durable, visible, survives restart, lifts only on explicit resume ----
+    const cronAfterHalt = await j('GET', '/api/cron');
+    A.eq(cronAfterHalt.body.enabled, true, 'after E-STOP: arm INTENT preserved (enabled:true)');
+    A.eq(cronAfterHalt.body.halted, true, 'after E-STOP: GET /api/cron reports halted:true (the panel can say "paused")');
+    A.eq(nsHalted.body.categories.routines.armed, false, 'after E-STOP: routines category armed:false (timer is down)');
+    A.eq(nsHalted.body.categories.routines.halted, true, 'after E-STOP: routines category names the halt');
+    A.ok(fs.existsSync(HALT_FILE), 'after E-STOP: cron.halt.json persisted (halt survives restart)');
+    // no NEW cron tick may run while halted — snapshot the tick-log count, wait > 2 tick windows, assert flat.
+    const ticksBefore = (getOut().match(/\[cron\] cron\.tick/g) || []).length;
+    await sleep(800);
+    const ticksAfter = (getOut().match(/\[cron\] cron\.tick/g) || []).length;
+    A.eq(ticksAfter, ticksBefore, 'halted: the cron timer is genuinely down (no further ticks fire)');
+
+    // ---- RESTART: the halt is durable (armed intent kept, timer stays down) ----
+    try { child.kill(); } catch (_) {} await sleep(250);
+    booted = await boot(port + 100, ws, 20, { SKYNET_CRON_TICK_MS: '300' });
+    child = booted.child; port = booted.port; getOut = booted.out;
+    apiToken = await bootToken(B(), B());
+    const rebootCron = await j('GET', '/api/cron');
+    A.eq(rebootCron.body.enabled, true, 'REBOOT: arm intent persisted (enabled:true)');
+    A.eq(rebootCron.body.halted, true, 'REBOOT: still halted (cron.halt.json read at boot)');
+    const rebootLife = await j('GET', '/api/lifecycle/armed');
+    A.eq(rebootLife.body.armed, false, 'REBOOT: aggregate still armed:false — a halted station never holds the tray open');
+    A.ok(getOut().indexOf('cron tick armed') < 0, 'REBOOT: the timer did NOT arm at boot while halted');
+
+    // ---- EXPLICIT RESUME: POST /api/cron/arm lifts the halt and re-arms NOW ----
+    const resume = await j('POST', '/api/cron/arm', { enabled: true });
+    A.eq(resume.status, 200, 'resume: POST /api/cron/arm {enabled:true} -> 200');
+    A.eq(resume.body.halted, false, 'resume: halt lifted (halted:false in the arm response)');
+    const resumed = await j('GET', '/api/lifecycle/armed');
+    A.eq(resumed.body.categories.routines.armed, true, 'resume: routines armed again');
+    A.eq(resumed.body.categories.routines.halted, false, 'resume: halt flag cleared in the snapshot');
+    A.ok(getOut().indexOf('cron tick armed') >= 0, 'resume: the live timer actually re-armed ("cron tick armed")');
   } finally {
     try { child.kill(); } catch (_) {}
     await sleep(150);
