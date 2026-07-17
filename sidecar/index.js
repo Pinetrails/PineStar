@@ -383,7 +383,7 @@ const CRON_DURABLE_HEARTBEAT_MS = num(ENV('CRON_DURABLE_HEARTBEAT_MS'), Math.max
 // in minutes: SKYNET_NIGHTSHIFT_AWAY_MS / SKYNET_NIGHTSHIFT_BEAT_MS.
 const NIGHTSHIFT_ENABLED = /^(1|true|yes|on)$/i.test(String(ENV('NIGHTSHIFT_ENABLED') || '').trim());
 const NIGHTSHIFT_TICK_MS = num(ENV('NIGHTSHIFT_TICK_MS'), 60000);          // how often the driver re-evaluates the gates
-const NIGHTSHIFT_AWAY_MS = num(ENV('NIGHTSHIFT_AWAY_MS'), nightshift.DEFAULT_AWAY_MS);   // "the Commander is away" threshold (default 15 min)
+const NIGHTSHIFT_AWAY_MS = num(ENV('NIGHTSHIFT_AWAY_MS'), nightshift.DEFAULT_AWAY_MS);   // "the Commander is away" threshold (default 30 min)
 const NIGHTSHIFT_BEAT_MS = num(ENV('NIGHTSHIFT_BEAT_MS'), nightshift.DEFAULT_BEAT_MS);   // steady cadence: one beat per ~45 min
 const NIGHTSHIFT_AGENT = String(ENV('NIGHTSHIFT_AGENT') || 'agent').trim() || 'agent';   // the agent the night shift acts as
 // Stage 2: the lead's team.dispatch awaits full worker agent-loops (minutes), so it CANNOT inherit the 30s
@@ -1260,6 +1260,14 @@ commanderPosture.load();
 // (never "instantly away" on startup). The night-shift driver reads this to decide away = now - it >= threshold.
 let lastUserActivityAt = Date.now();
 function noteUserActivity(now) { lastUserActivityAt = Number.isFinite(now) ? now : Date.now(); }
+// A LIVE user-initiated run IS presence (2026-07-17 idle-detection bug): the /api/run stamp lands once at run
+// START, so a long "watch the model work" session read as away 15 min in and night-shift beats fired WHILE the
+// Commander sat watching their own run. runsMeta already tags every interactive run; away math treats any
+// in-flight one as activity-now, and the run's finally re-stamps so the away clock starts at run END.
+function interactiveRunInFlight() {
+  for (const m of runsMeta.values()) if (m && m.source === 'interactive') return true;
+  return false;
+}
 
 // P1.2 (UPDATE_STATE_SAFETY_AUDIT) — the "merged with ULTRON" lie: a roster/registry gap used to make a
 // specialist SILENTLY answer as the overseer (cron fell back to the station persona + default model, zero logging;
@@ -3782,7 +3790,9 @@ const nightshiftDriver = makeNightshiftDriver({
   getState: () => nightshiftState,
   setState: (s) => { nightshiftState = s; saveNightshiftState(); },
   getPosture: () => commanderPosture.summary(),
-  lastActivity: () => lastUserActivityAt,
+  // presence truth: a LIVE interactive run counts as activity-now — the Commander watching their own run must
+  // never read as "away" no matter how long the run streams (idle-detection bug, 2026-07-17).
+  lastActivity: () => (interactiveRunInFlight() ? Date.now() : lastUserActivityAt),
   // E-STOP awareness: a global halt STAMPS a durable flag on the night-shift state (nightshift.engageHalt, fired
   // from handleHalt), so after an E-STOP EVERY subsequent tick stands down with binding:'halt' — not just the one
   // in-flight beat that abortBeat() cancels. It survives a restart (a reboot must never silently re-enable overnight
@@ -7286,6 +7296,7 @@ async function handleRun(req, res) {
   } finally {
     runs.delete(runId);
     runsMeta.delete(runId);
+    noteUserActivity(Date.now());       // the away clock starts when the user's run ENDS, not when it started (a long run must not read as absence)
     dropSteer(runId, 'handleRun');      // drop any un-drained steering notes so they can't leak to a later run; logs a count if non-empty
     grantsSession.delete(runId);     // drop this run's session-scoped grants
     const p = pendingByRun.get(runId);   // deny any prompt still open (belt-and-suspenders; the loop normally awaits)
@@ -8565,7 +8576,8 @@ function handleNightshiftStatus(req, res) {
   const decision = (() => { try { return nightshiftDriver.statusDecision(now); } catch (_) { return null; } })();
   const summary = commanderPosture.summary() || {};
   const rolled = nightshift.rollDay(nightshiftState, now);
-  const awaySince = lastUserActivityAt + NIGHTSHIFT_AWAY_MS;   // the instant "away" becomes true
+  // presence truth mirrors the driver's lastActivity dep: a LIVE interactive run counts as activity-now.
+  const awaySince = (interactiveRunInFlight() ? now : lastUserActivityAt) + NIGHTSHIFT_AWAY_MS;   // the instant "away" becomes true
   const out = {
     active: !!nightshiftTimer,
     halted: (rolled.haltedAt || 0) > 0,   // NS E-STOP durable halt — true until the Commander re-writes the dial
