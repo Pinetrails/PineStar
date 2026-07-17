@@ -67,20 +67,20 @@ for (const b of CATALOG) {
    RETIRED outright — envoy, marketer+publisher, and treasurer are their strict supersets, and near-duplicate
    archetypes would shadow the real class in the scout's matcher. */
 const classicons = require('../frontend/app/classicons.js');
-A.eq(builtins.length, 12, 'the curated roster ships exactly 12 classes');
-A.eq(archetypes.length, 17, 'the archetype pool holds the 17 deep cuts');
-const CURATED = ['strategist', 'researcher', 'engineer', 'analyst', 'marketer', 'publisher', 'producer', 'scriptwright', 'prospector', 'envoy', 'treasurer', 'scout'];
-A.eq(builtins.map(b => b.id).sort().join(','), CURATED.slice().sort().join(','), 'the curated roster is exactly the 12 specialized business classes');
+A.eq(builtins.length, 11, 'the curated roster ships exactly 11 classes');
+A.eq(archetypes.length, 18, 'the archetype pool holds the 18 deep cuts');
+const CURATED = ['strategist', 'researcher', 'engineer', 'analyst', 'marketer', 'publisher', 'producer', 'writer', 'prospector', 'treasurer', 'scout'];
+A.eq(builtins.map(b => b.id).sort().join(','), CURATED.slice().sort().join(','), 'the curated roster is exactly the 11 specialized business classes');
 A.eq(builtins[0].id, 'strategist', 'the strategist is the roster\'s first card (the bay\'s default focus)');
 const ARCH_IDS = ['chief', 'operator', 'scribe', 'designer', 'tutor', 'navigator', 'curator', 'muse',
   'reviewer', 'archivist', 'broker', 'auditor', 'translator', 'herald',
-  'closer', 'steward', 'optimizer'];
-A.eq(archetypes.map(a => a.id).sort().join(','), ARCH_IDS.slice().sort().join(','), 'the archetype pool is exactly the 17 deep cuts');
+  'closer', 'steward', 'optimizer', 'envoy'];
+A.eq(archetypes.map(a => a.id).sort().join(','), ARCH_IDS.slice().sort().join(','), 'the archetype pool is exactly the 18 deep cuts');
 for (const id of ARCH_IDS) A.ok(!builtins.some(b => b.id === id), 'archetype is OFF the default roster: ' + id);
 // the retired near-duplicates must be GONE from both shelves (they would shadow their superset builtins)
 for (const id of ['liaison', 'publicist', 'bookkeeper']) A.ok(!CATALOG.some(b => b.id === id), 'retired class is fully removed: ' + id);
 // no id/name collision across the two shelves (an archetype must never shadow a curated class)
-const NEW_CLASSES = ['strategist', 'marketer', 'publisher', 'producer', 'scriptwright', 'prospector', 'envoy', 'treasurer'];
+const NEW_CLASSES = ['strategist', 'marketer', 'publisher', 'producer', 'writer', 'prospector', 'envoy', 'treasurer'];
 const byId = new Map(CATALOG.map(b => [b.id, b]));
 for (const id of NEW_CLASSES) {
   const b = byId.get(id);
@@ -238,7 +238,7 @@ const arch = S.get('translator');
 A.ok(arch && arch.id === 'translator' && arch.custom === false, 'Specialties.get resolves an archetype id');
 A.ok(!S.builtins().some(b => b.id === 'translator'), 'builtins() (the default roster) excludes archetypes');
 A.ok(!S.list().some(b => b.id === 'translator'), 'list() (roster + customs) excludes archetypes — they are asked for explicitly');
-A.eq(S.archetypes().length, 17, 'archetypes() exposes the pool');
+A.eq(S.archetypes().length, 18, 'archetypes() exposes the pool');
 const archCompose = S.compose('reviewer');
 A.ok(archCompose && archCompose.purpose.length > 0 && archCompose.manual.length > 0, 'compose() works on an archetype (summonable as-is, same deploy path)');
 // a custom can never shadow an archetype id (uniqueId consults get(), which now spans both shelves)

@@ -53,7 +53,7 @@
     {
       name: 'writing',
       triggers: ['write', 'draft', 'copy', 'post', 'email', 'newsletter', 'document', 'summary', 'script', 'publish'],
-      roles: ['scribe', 'writer', 'editor', 'scriptwright', 'publisher', 'envoy', 'marketer']
+      roles: ['scribe', 'writer', 'editor', 'publisher', 'envoy', 'marketer']
     },
     {
       name: 'ops',

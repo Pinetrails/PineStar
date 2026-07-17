@@ -59,8 +59,8 @@
     publisher: '<svg viewBox="0 0 24 24"><rect x="3" y="4.4" width="18" height="17" rx="1.8" fill="currentColor"/><rect x="5" y="9.2" width="14" height="10.2" fill="' + D + '"/><g fill="currentColor"><rect x="6.6" y="2" width="2.2" height="4.4" rx=".8"/><rect x="15.2" y="2" width="2.2" height="4.4" rx=".8"/><rect x="6.4" y="10.7" width="3.4" height="3.2" rx=".4"/><rect x="10.6" y="10.7" width="3.4" height="3.2" rx=".4"/><rect x="10.6" y="15" width="3.4" height="3.2" rx=".4"/><rect x="14.8" y="10.7" width="3.4" height="3.2" rx=".4"/></g></svg>',
     // producer: the clapperboard — the shoot, ready to roll.
     producer: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M2.6 9.2 L20.2 4 L21.4 8 L3.8 13.2 Z"/><rect x="2.6" y="10.4" width="18.8" height="10.6" rx="1.4" fill="currentColor"/><g fill="' + D + '"><path d="M6.2 8.2 L9.4 7.2 L11.2 9.4 L8 10.4 Z"/><path d="M12.6 6.3 L15.8 5.3 L17.6 7.5 L14.4 8.5 Z"/><path d="M9.6 13.4 L15.6 16 L9.6 18.6 Z"/></g></svg>',
-    // scriptwright: the script page, beat lines marked with the play cue.
-    scriptwright: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M5 2.6 H15.4 L19.6 6.8 V21.4 H5 Z"/><path fill="' + D + '" d="M15.4 2.6 L19.6 6.8 H15.4 Z"/><g fill="none" stroke="' + D + '" stroke-width="1.5" stroke-linecap="round"><path d="M7.6 9.4 H16.8"/><path d="M7.6 12.4 H16.8"/><path d="M7.6 15.4 H12.4"/></g><path fill="' + D + '" d="M14.4 14.2 L17.8 16.2 L14.4 18.2 Z"/></svg>',
+    // writer: the script page, beat lines marked with the play cue.
+    writer: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M5 2.6 H15.4 L19.6 6.8 V21.4 H5 Z"/><path fill="' + D + '" d="M15.4 2.6 L19.6 6.8 H15.4 Z"/><g fill="none" stroke="' + D + '" stroke-width="1.5" stroke-linecap="round"><path d="M7.6 9.4 H16.8"/><path d="M7.6 12.4 H16.8"/><path d="M7.6 15.4 H12.4"/></g><path fill="' + D + '" d="M14.4 14.2 L17.8 16.2 L14.4 18.2 Z"/></svg>',
     // prospector: the funnel — the wide field narrowed to the qualified few.
     prospector: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M2.6 3.6 H21.4 L14.6 12.2 V19.4 L9.4 22.4 V12.2 Z"/><g fill="none" stroke="' + D + '" stroke-width="1.5" stroke-linecap="round"><path d="M6.2 6.4 H17.8"/><path d="M8.8 9.2 H15.2"/></g></svg>',
     // closer: the contract signed and sealed — the deal done.
@@ -86,7 +86,7 @@
     scribe: 'SCR', analyst: 'ANL', scout: 'SCT', archivist: 'ARV', designer: 'DSN',
     broker: 'BRK', tutor: 'TUT', auditor: 'AUD', translator: 'XLT', herald: 'HLD',
     navigator: 'NAV', curator: 'CUR', muse: 'MUS',
-    strategist: 'STG', marketer: 'MKT', publisher: 'PUB', producer: 'PRD', scriptwright: 'WRT',
+    strategist: 'STG', marketer: 'MKT', publisher: 'PUB', producer: 'PRD', writer: 'WRT',
     prospector: 'PRS', envoy: 'ENV', treasurer: 'TRE',
     closer: 'CLO', steward: 'STW', optimizer: 'OPT'
   };
