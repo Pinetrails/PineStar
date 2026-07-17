@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "930f9ebd8a884ddab490b52d0cfa6c1791bf9823",
+    "sourceCommit": "0838321449ec7cc29434ea295166b10f3766318a",
     "pathSetSha256": "9eeefd91d6d300f96627d4a5036f6c767a4a1fe611b7bce6175e1b94964d750f",
     "files": [
       {
@@ -374,7 +374,7 @@
       {
         "path": "frontend/app/nightreportstore.js",
         "bytes": 10907,
-        "sha256": "3919652c6cd90235d9f66d073091960837b70aeaadd0e71dc7b568ad6fb61137"
+        "sha256": "7ba198ef0b5cd5e0aafc2a77865b6e619b971238b600b0d7368033237626e5f0"
       },
       {
         "path": "frontend/app/onboarding.js",
