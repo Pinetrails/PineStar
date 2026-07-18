@@ -36,7 +36,6 @@ now coverage-scores (majority-token rule); prospect directive demands specialize
 kit-grounded skills (+ opportunity-scan). W0 re-stamped post-merge.
 Open follow-ups: regenerate qa/atlas crew evidence (stale "18 builtins" notes); consider a
 first-run default-class experiment (strategist is now the bay's default card).
->>>>>>> feat/harness-backend
 
 ## 2026-07-17 — FULL-RELEASE CAMPAIGN (active; Fable-orchestrated)
 
