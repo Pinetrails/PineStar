@@ -1,6 +1,6 @@
 {
   "area": "routes",
-  "updatedAt": "2026-07-18T01:23:57.953Z",
+  "updatedAt": "2026-07-18T01:29:33.695Z",
   "entries": [
     {
       "id": "route/get-api-agent-skills",
@@ -609,12 +609,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET with no state → 200 HTML 'Sign-in expired' page (the CSRF state fence refuses; auth does not complete). TOKEN_EXEMPT; state is its fence. Guarded by e2e.mcp-connector.test.js."
     },
     {
       "id": "route/get-api-credits",
@@ -1671,13 +1675,24 @@
         ],
         "events": []
       },
-      "coverage": [],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "KNOWN",
+          "ref": "No direct HTTP-path test for GET /api/spotify/callback. EL-3 gap tracked in ledger fp 43edd6f5."
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
+      "findings": [
+        "43edd6f5"
+      ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET with no state → 400 HTML 'Link expired' page (the state fence refuses; tokens not stored). TOKEN_EXEMPT; state is its fence. KNOWN HTTP coverage gap filed to ledger."
     },
     {
       "id": "route/get-api-spotify-status",
@@ -2167,13 +2182,24 @@
         ],
         "events": []
       },
-      "coverage": [],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "KNOWN",
+          "ref": "No direct HTTP-path test for POST /api/agent/delete. EL-3 gap tracked in ledger fp 43edd6f5."
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
+      "findings": [
+        "43edd6f5"
+      ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {agentId:'ghost'} → 200 {ok:true,agentId:'ghost',rosterRemoved:false,archived:[],cronRemoved:0} — truthful zero counts for a non-existent agent. KNOWN HTTP coverage gap filed to ledger."
     },
     {
       "id": "route/post-api-agent-skills-manage",
@@ -2190,13 +2216,24 @@
         ],
         "events": []
       },
-      "coverage": [],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "KNOWN",
+          "ref": "No direct HTTP-path test for POST /api/agent-skills/manage. EL-3 gap tracked in ledger fp 43edd6f5."
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
+      "findings": [
+        "43edd6f5"
+      ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {action:'bogus'} → 400 {error:'no such skill: '} (honest guard). KNOWN HTTP coverage gap filed to ledger."
     },
     {
       "id": "route/post-api-attachments",
@@ -2504,13 +2541,23 @@
         ],
         "events": []
       },
-      "coverage": [],
-      "status": "mapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "autonomy-write.test.js",
+          "gate": "test:fast"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {path:'../../../etc/evil'} → 400 {ok:false,reason:'tool fs.write failed: illegal path: ...'} — the fs jail blocks the escape (the security heart of the promise). Happy in-jail write needs a cabinet:write grant; guarded by autonomy-write.test.js."
     },
     {
       "id": "route/post-api-budget-caps",
@@ -2566,12 +2613,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {scope:'day'} → 200 {resumed:'day',cap:50,status:{...}} (base cap 25 doubled for the session); a bogus scope → 400 {error:'scope must be day or global'}. Guarded by sidecar.http.test.js."
     },
     {
       "id": "route/post-api-cancel",
@@ -2618,13 +2669,24 @@
         ],
         "events": []
       },
-      "coverage": [],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "KNOWN",
+          "ref": "No direct HTTP-path test for POST /api/channels/discord/connect. EL-3 gap tracked in ledger fp 43edd6f5."
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
+      "findings": [
+        "43edd6f5"
+      ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST with no token → 400 {error:'missing bot token — create a bot in the Discord Developer Portal...'} (honest guard, no secret echoed). KNOWN HTTP coverage gap filed to ledger."
     },
     {
       "id": "route/post-api-channels-discord-disconnect",
@@ -2640,13 +2702,24 @@
         ],
         "events": []
       },
-      "coverage": [],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "KNOWN",
+          "ref": "No direct HTTP-path test for POST /api/channels/discord/disconnect. EL-3 gap tracked in ledger fp 43edd6f5."
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
+      "findings": [
+        "43edd6f5"
+      ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST → 200 {connected:false,persisted:true}. KNOWN HTTP coverage gap filed to ledger."
     },
     {
       "id": "route/post-api-channels-discord-sync",
@@ -2662,13 +2735,24 @@
         ],
         "events": []
       },
-      "coverage": [],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "KNOWN",
+          "ref": "No direct HTTP-path test for POST /api/channels/discord/sync. EL-3 gap tracked in ledger fp 43edd6f5."
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
+      "findings": [
+        "43edd6f5"
+      ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {agentId:agent} → 200 {synced:false} (no bot to sync). KNOWN HTTP coverage gap filed to ledger."
     },
     {
       "id": "route/post-api-channels-events",
@@ -2714,13 +2798,24 @@
         ],
         "events": []
       },
-      "coverage": [],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "KNOWN",
+          "ref": "No direct HTTP-path test for POST /api/channels/notify. EL-3 gap tracked in ledger fp 43edd6f5."
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
+      "findings": [
+        "43edd6f5"
+      ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {on:false} → 200 {ok:true,notifyAutonomous:false} (persists the notify flag). KNOWN HTTP coverage gap filed to ledger."
     },
     {
       "id": "route/post-api-channels-telegram-connect",
@@ -2743,12 +2838,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST with no token → 400 {error:'missing bot token — create one with @BotFather...'} (honest guard; no secret echoed). Happy connect guarded by channels.telegram.e2e.test.js."
     },
     {
       "id": "route/post-api-channels-telegram-disconnect",
@@ -2764,13 +2863,24 @@
         ],
         "events": []
       },
-      "coverage": [],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "KNOWN",
+          "ref": "No direct HTTP-path test for POST /api/channels/telegram/disconnect. EL-3 gap tracked in ledger fp 43edd6f5."
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
+      "findings": [
+        "43edd6f5"
+      ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST → 200 {connected:false,persisted:true} (stops the bot, config kept). KNOWN HTTP coverage gap filed to ledger."
     },
     {
       "id": "route/post-api-channels-telegram-sync",
@@ -2793,12 +2903,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {agentId:agent} → 200 {synced:false} (no bot to sync; honest). Guarded by channels.telegram.e2e.test.js."
     },
     {
       "id": "route/post-api-channels-token",
@@ -2822,12 +2936,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — wrong IPC token → 403 forbidden; correct STARNET_IPC_TOKEN → 200 {ok:true,channel:'telegram',configured:false} (empty token clears the runtime token); the token is never echoed. TOKEN_EXEMPT with its own IPC gate. Guarded by sidecar.http.test.js."
     },
     {
       "id": "route/post-api-checkpoint-restore",
@@ -2851,12 +2969,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {id:'nope'} → 400 {error:'bad agentId'} (honest guard). Happy rewind guarded by checkpoint-store.test.js."
     },
     {
       "id": "route/post-api-config-export",
@@ -2879,12 +3001,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST → 200 {starnetExport:1,exportedAt,sections:{budget:{perDay:25},fallback:{...}}} — config envelope with secrets excluded. Guarded by sidecar.http.test.js."
     },
     {
       "id": "route/post-api-config-import",
@@ -2907,12 +3033,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {bundle:'nope'} → 400 {error:'missing or invalid starnetExport version marker'} (honest shaped rejection). Happy fold-in guarded by sidecar.http.test.js."
     },
     {
       "id": "route/post-api-config-reset",
@@ -2935,12 +3065,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {section:'budget'} → 200 {ok:true,section:'budget'} (clears that section's overrides); an empty/unknown section → 400 {error:'unknown or non-resettable section'}. Guarded by sidecar.http.test.js."
     },
     {
       "id": "route/post-api-connectors",
@@ -2963,12 +3097,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST with an invalid connector id → 400 {error:'connector id must be 1-40 chars of [A-Za-z0-9_-]'} (honest validation; no secret echoed). Happy upsert guarded by e2e.mcp-connector.test.js."
     },
     {
       "id": "route/post-api-connectors-oauth-start",
@@ -2984,13 +3122,24 @@
         ],
         "events": []
       },
-      "coverage": [],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "KNOWN",
+          "ref": "No direct HTTP-path test for POST /api/connectors/oauth/start. EL-3 gap tracked in ledger fp 43edd6f5."
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
+      "findings": [
+        "43edd6f5"
+      ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {id:'nope'} → 400 {error:'unknown catalog connector'} (honest guard). KNOWN HTTP coverage gap filed to ledger."
     },
     {
       "id": "route/post-api-connectors-refresh",
@@ -3013,12 +3162,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {id:'nope'} → 200 {ok:false,state:'down',toolCount:0,error:'unknown connector'} (honest). Happy re-probe guarded by e2e.mcp-connector.test.js."
     },
     {
       "id": "route/post-api-connectors-remove",
@@ -3034,13 +3187,24 @@
         ],
         "events": []
       },
-      "coverage": [],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "KNOWN",
+          "ref": "No direct HTTP-path test for POST /api/connectors/remove. EL-3 gap tracked in ledger fp 43edd6f5."
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
+      "findings": [
+        "43edd6f5"
+      ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {id:'probe-c'} → 200 {ok:true} (idempotent remove). KNOWN HTTP coverage gap filed to ledger."
     },
     {
       "id": "route/post-api-consent",
@@ -3063,12 +3227,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {runId:'x',promptId:'y',decision:'allow'} on a stale id → 200 ok (harmless no-op; fail-closed on illegal values). Live mid-run resolve guarded by e2e.worker-access.test.js."
     },
     {
       "id": "route/post-api-consent-ack",
@@ -3129,12 +3297,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {name,prompt,schedule} → 200 {ok:true,job:{id,...}}; GET /api/cron then listed the minted job. Create→list round-trip truthful. Guarded by cron.api.test.js."
     },
     {
       "id": "route/post-api-cron-arm",
@@ -3159,12 +3331,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {enabled:false} → 200 {ok:true,enabled:false,tickMs:60000}; GET /api/cron reflects the disarmed tick. Guarded by cron.arm.test.js."
     },
     {
       "id": "route/post-api-cron-preview",
@@ -3187,12 +3363,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {schedule:'0 9 * * *',tz:'America/New_York'} → 200 {ok:true,next:['2026-07-18T13:00:00.000Z',...]}; bad tz → 400 {ok:false,error:'unknown timezone...'}. Guarded by cron.api.test.js."
     },
     {
       "id": "route/post-api-cron-remove",
@@ -3216,12 +3396,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {id:<minted>} → 200 {ok:true}; the subsequent list omitted the job. Create→remove round-trip proven this session. Guarded by cron.api.test.js."
     },
     {
       "id": "route/post-api-cron-run",
@@ -3275,12 +3459,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {id:'nope',patch} → 404 {error:'no such routine'} (honest). Happy patch guarded by cron.api.test.js."
     },
     {
       "id": "route/post-api-deliverables-cleanup",
@@ -3438,13 +3626,24 @@
         ],
         "events": []
       },
-      "coverage": [],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "KNOWN",
+          "ref": "No direct HTTP-path test for POST /api/dossier. EL-3 gap tracked in ledger fp 43edd6f5."
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
+      "findings": [
+        "43edd6f5"
+      ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {block:'probe dossier'} → 200 {ok:true,chars:13} (persists the dossier block). KNOWN HTTP coverage gap filed to ledger."
     },
     {
       "id": "route/post-api-fallback-chain",
@@ -3466,7 +3665,8 @@
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "AMBIGUITY (not a defect): LIVE :8964 @ HEAD 0a009ec2 — POST {chain:[<model>]} returned 200 {chain:[],saved:false,warnings:[]} for BOTH a plausible id and a bogus id. With a placeholder key no provider catalog is loaded, so every id is dropped as unknown and nothing saves; whether an invalid id surfaces a warning when a real catalog IS present could not be proven headlessly. Re-verify with a loaded catalog before promoting. Handler: sidecar/fallbackchain.js."
     },
     {
       "id": "route/post-api-goals",
@@ -3482,13 +3682,24 @@
         ],
         "events": []
       },
-      "coverage": [],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "KNOWN",
+          "ref": "No direct HTTP-path test for POST /api/goals. EL-3 gap tracked in ledger fp 43edd6f5."
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
+      "findings": [
+        "43edd6f5"
+      ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {goal:'probe goal'} → 200 {ok:true,goal:null} (a bare string is not a valid goal summary, so it stored null — honest, does not fabricate a goal). KNOWN HTTP coverage gap filed to ledger."
     },
     {
       "id": "route/post-api-halt",
@@ -3580,12 +3791,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {reflectEnabled:true} → 200 with the reflection config; GET /api/memory/config reflects it. Guarded by sidecar.http.test.js."
     },
     {
       "id": "route/post-api-memory-declined-restore",
@@ -3608,12 +3823,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {agent,text:'nope'} → 200 {ok:true,removed:false} (honest no-op; nothing to restore). Guarded by sidecar.http.test.js."
     },
     {
       "id": "route/post-api-memory-edit",
@@ -3629,13 +3848,24 @@
         ],
         "events": []
       },
-      "coverage": [],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "KNOWN",
+          "ref": "No direct HTTP-path test for POST /api/memory/edit. EL-3 gap tracked in ledger fp 43edd6f5."
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
+      "findings": [
+        "43edd6f5"
+      ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {id:'nope'} → 404 {error:'no such memory'} (honest). KNOWN HTTP coverage gap filed to ledger."
     },
     {
       "id": "route/post-api-memory-forget",
@@ -3651,13 +3881,24 @@
         ],
         "events": []
       },
-      "coverage": [],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "KNOWN",
+          "ref": "No direct HTTP-path test for POST /api/memory/forget. EL-3 gap tracked in ledger fp 43edd6f5."
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
+      "findings": [
+        "43edd6f5"
+      ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {id:'nope'} → 404 {error:'no such memory'} (honest). KNOWN HTTP coverage gap filed to ledger."
     },
     {
       "id": "route/post-api-memory-pin",
@@ -3673,13 +3914,24 @@
         ],
         "events": []
       },
-      "coverage": [],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "KNOWN",
+          "ref": "No direct HTTP-path test for POST /api/memory/pin. EL-3 gap tracked in ledger fp 43edd6f5."
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
+      "findings": [
+        "43edd6f5"
+      ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {id:'nope'} → 404 {error:'no such memory'} (honest). KNOWN HTTP coverage gap filed to ledger."
     },
     {
       "id": "route/post-api-memory-reset",
@@ -3703,12 +3955,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {agent:'probe-ghost'} → 200 {ok:true,agent:'probe-ghost'} (clears that agent's durable memory). Guarded by sidecar.http.test.js."
     },
     {
       "id": "route/post-api-memory-turnin",
@@ -3732,12 +3988,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {id:'nope',verdict:discard} → 404 {error:'no such proposal (it may have expired)'} (honest). Happy keep/edit/discard guarded by sidecar.http.test.js."
     },
     {
       "id": "route/post-api-nightshift-beat",
@@ -3785,13 +4045,24 @@
         ],
         "events": []
       },
-      "coverage": [],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "KNOWN",
+          "ref": "No direct HTTP-path test for POST /api/notebook/restore. EL-3 gap tracked in ledger fp 43edd6f5."
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
+      "findings": [
+        "43edd6f5"
+      ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {agent:agent,notes:[]} → 200 {ok:true,total:0,added:0} (honest empty merge). KNOWN HTTP coverage gap filed to ledger."
     },
     {
       "id": "route/post-api-permissions-grant",
@@ -4154,12 +4425,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {agents:[{agentId,name,model}]} → 200 {ok:true,count:1,updatedAt}. Server roster upsert truthful. Guarded by roster-envelope.http.test.js."
     },
     {
       "id": "route/post-api-routing",
@@ -4175,13 +4450,24 @@
         ],
         "events": []
       },
-      "coverage": [],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "KNOWN",
+          "ref": "No direct HTTP-path test for POST /api/routing. EL-3 gap tracked in ledger fp 43edd6f5."
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
+      "findings": [
+        "43edd6f5"
+      ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {routing:{}} (malformed) → 422 {ok:false,error:'malformed plan'} (honest validation). KNOWN HTTP coverage gap filed to ledger."
     },
     {
       "id": "route/post-api-run",
@@ -4310,12 +4596,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST <envelope> → 200 {ok:true,updatedAt}; GET /api/save reads the durable envelope back. Restart-survival (the persistence law) is guarded by sidecar.http.test.js; not re-driven with a live restart this session."
     },
     {
       "id": "route/post-api-save-recovery-ack",
@@ -4498,12 +4788,16 @@
           "gate": "test:fast"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {slug:'decision-1-3-1',enabled:false} → 200 {ok:true,slug,enabled:false}; GET /api/skills reflects it. Guarded by skills.test.js."
     },
     {
       "id": "route/post-api-slash-dispatch",
@@ -4556,13 +4850,24 @@
         ],
         "events": []
       },
-      "coverage": [],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "KNOWN",
+          "ref": "No direct HTTP-path test for POST /api/spotify/auth/start. EL-3 gap tracked in ledger fp 43edd6f5."
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
+      "findings": [
+        "43edd6f5"
+      ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST → 400 {error:'A Spotify Client ID is required...'} (honest guard when unconfigured). KNOWN HTTP coverage gap filed to ledger."
     },
     {
       "id": "route/post-api-spotify-disconnect",
@@ -4578,13 +4883,24 @@
         ],
         "events": []
       },
-      "coverage": [],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "KNOWN",
+          "ref": "No direct HTTP-path test for POST /api/spotify/disconnect. EL-3 gap tracked in ledger fp 43edd6f5."
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
+      "findings": [
+        "43edd6f5"
+      ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST → 200 {ok:true,connected:false,hasClientId:false} (idempotent clear). KNOWN HTTP coverage gap filed to ledger."
     },
     {
       "id": "route/post-api-stt",
@@ -4633,13 +4949,24 @@
         ],
         "events": []
       },
-      "coverage": [],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "KNOWN",
+          "ref": "No direct HTTP-path test for POST /api/study/resolve. EL-3 gap tracked in ledger fp 43edd6f5."
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
+      "findings": [
+        "43edd6f5"
+      ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {id:'nope',declined:[]} → 200 {ok:true} (honest no-op on a stale proposal). KNOWN HTTP coverage gap filed to ledger."
     },
     {
       "id": "route/post-api-subagents-interrupt",
@@ -4662,12 +4989,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {id:'nope'} → 200 {ok:false,error:'no such subagent'} (honest). Live interrupt guarded by e2e.subagent-background.test.js."
     },
     {
       "id": "route/post-api-summon-ack",
@@ -4690,12 +5021,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {runId,requestId,agentId} on a stale id → 200 ok (no-op). Live summon resolve guarded by e2e.summon.test.js."
     },
     {
       "id": "route/post-api-threads-turnin",
@@ -4743,13 +5078,24 @@
         ],
         "events": []
       },
-      "coverage": [],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "KNOWN",
+          "ref": "No direct HTTP-path test for POST /api/toolsets/. EL-3 gap tracked in ledger fp 43edd6f5."
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
+      "findings": [
+        "43edd6f5"
+      ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST with no id → 400 {error:'a toolset id is required'} (honest guard). KNOWN HTTP coverage gap filed to ledger."
     },
     {
       "id": "route/post-api-tts",
@@ -4810,12 +5156,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {runId:'nope',decision:'discard'} → 200 {ok:true,decision:'discard'} (idempotent no-op on a stale id). Happy keep→copy path guarded by journey workshop + workshop.e2e.test.js."
     },
     {
       "id": "route/post-api-workshop-grant",
@@ -4842,12 +5192,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {agentId:agent,on:true} → 200 {ok:true,agentId,on:true}; GET /api/workshop/backlog then showed granted:true. Guarded by journey workshop + workshop.e2e.test.js."
     },
     {
       "id": "route/post-api-workshop-open",
@@ -4871,12 +5225,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {path:'../../../etc/passwd'} → 403 {error:'Open this file manually; StarNet cannot launch desktop applications from a run.'} — the shell-open is refused for a non-interactive/escape request. Interactive jailed-open guarded by workshop.e2e.test.js."
     },
     {
       "id": "route/post-api-workshop-queue",
@@ -4903,12 +5261,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {agentId,title:'probe build'} → 200 {ok:true,item:{id,title,...}} queued to the backlog. Guarded by journey workshop + workshop.e2e.test.js."
     },
     {
       "id": "route/post-api-workshop-remove",
@@ -4967,12 +5329,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {agentId:agent} → 200 NDJSON stream beginning {name:'agent.run.start',payload:{agentId,runId}} — one shift fired (placeholder key → the run then fails upstream, no spend). Full deliverable outcome guarded by journey workshop + workshop.e2e.test.js."
     },
     {
       "id": "route/post-api-workshop-undo",
