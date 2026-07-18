@@ -1,6 +1,6 @@
 {
   "area": "build",
-  "updatedAt": "2026-07-18T04:06:59.846Z",
+  "updatedAt": "2026-07-18T04:07:28.538Z",
   "entries": [
     {
       "id": "state/build-connectors",
@@ -181,24 +181,27 @@
       "kind": "ui",
       "area": "build",
       "name": "Close SKILLS & CAPABILITIES",
-      "purpose": "The SKILLS window close control — dismisses the panel and clears its entry in the app open{} map.",
-      "promise": "Clicking it removes the SKILLS window from #terms and runs closeTerm() so the open map clears.",
+      "purpose": "Window chrome for the SKILLS & CAPABILITIES console — close / minimize / resize, following the station window law.",
+      "promise": "Close dismisses the panel; minimize sends it to the minimized strip; resize adjusts the window.",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "audit",
-          "ref": "KNOWN: shared mountConsole primitive; enumerated by Atlas sweep (build-skills state) but no dedicated console tab/search test exists — coverage gap noted, low-risk shared code used by every panel"
+          "ref": "KNOWN: no dedicated machine assertion for the skills window chrome render; skills.library.test.js guards the skill-compose seam, live-proven this session — coverage gap noted (EL-3), routed to skills lane"
         }
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "c06bdef7b3ac60daab6e1b9516c290264b2cec90",
-        "date": "2026-07-18T02:21:47.861Z"
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
@@ -206,7 +209,7 @@
       "missing": false,
       "selector": "button[aria-label=\"Close SKILLS & CAPABILITIES\"]",
       "state": "build-skills",
-      "notes": "Live: button[aria-label=Close SKILLS and CAPABILITIES] present in build-skills state (shared mountConsole close primitive). [live-proof this session @ HEAD c06bdef7 (port 8966/CDP 9366)]"
+      "notes": "Live: SKILLS window close/minimize/resize controls present (shared window primitive). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-close-toolsets-connectors",
@@ -520,24 +523,27 @@
       "kind": "ui",
       "area": "build",
       "name": "Minimize SKILLS & CAPABILITIES",
-      "purpose": "The SKILLS window minimize control — collapses the panel to the minimized-windows strip.",
-      "promise": "Clicking it moves the SKILLS window to the minimized strip with a restore chip.",
+      "purpose": "Window chrome for the SKILLS & CAPABILITIES console — close / minimize / resize, following the station window law.",
+      "promise": "Close dismisses the panel; minimize sends it to the minimized strip; resize adjusts the window.",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "audit",
-          "ref": "KNOWN: shared mountConsole primitive; enumerated by Atlas sweep (build-skills state) but no dedicated console tab/search test exists — coverage gap noted, low-risk shared code used by every panel"
+          "ref": "KNOWN: no dedicated machine assertion for the skills window chrome render; skills.library.test.js guards the skill-compose seam, live-proven this session — coverage gap noted (EL-3), routed to skills lane"
         }
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "c06bdef7b3ac60daab6e1b9516c290264b2cec90",
-        "date": "2026-07-18T02:21:47.861Z"
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
@@ -545,7 +551,7 @@
       "missing": false,
       "selector": "button[aria-label=\"Minimize SKILLS & CAPABILITIES\"]",
       "state": "build-skills",
-      "notes": "Live: button[aria-label=Minimize SKILLS and CAPABILITIES] present in build-skills state. [live-proof this session @ HEAD c06bdef7 (port 8966/CDP 9366)]"
+      "notes": "Live: SKILLS window close/minimize/resize controls present (shared window primitive). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-minimize-toolsets-connectors",
@@ -586,882 +592,1467 @@
       "kind": "ui",
       "area": "build",
       "name": "Read the 1-3-1 Decision Framework recipe",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Open a recipe's full README/body from its library card, so the user can read what the recipe actually instructs before enabling it.",
+      "promise": "Clicking 'Read the <recipe> recipe' expands that card (sk-card on open) and renders the recipe's markdown body.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "audit",
+          "ref": "KNOWN: no dedicated machine assertion for the read-recipe expand/markdown-render render; skills.library.test.js guards the skill-compose seam, live-proven this session — coverage gap noted (EL-3), routed to skills lane"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.716Z",
       "lastSeen": "2026-07-18T00:54:02.716Z",
       "missing": false,
       "selector": "button[aria-label=\"Read the 1-3-1 Decision Framework recipe\"]",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=aria-read-the-1-3-1-decision-framework-recipe. Live: clicked a read button -> card class 'sk-card on open', markdown body ('## ...') rendered. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-read-the-adversarial-review-pass-recipe",
       "kind": "ui",
       "area": "build",
       "name": "Read the Adversarial Review Pass recipe",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Open a recipe's full README/body from its library card, so the user can read what the recipe actually instructs before enabling it.",
+      "promise": "Clicking 'Read the <recipe> recipe' expands that card (sk-card on open) and renders the recipe's markdown body.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "audit",
+          "ref": "KNOWN: no dedicated machine assertion for the read-recipe expand/markdown-render render; skills.library.test.js guards the skill-compose seam, live-proven this session — coverage gap noted (EL-3), routed to skills lane"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.716Z",
       "lastSeen": "2026-07-18T00:54:02.716Z",
       "missing": false,
       "selector": "button[aria-label=\"Read the Adversarial Review Pass recipe\"]",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=aria-read-the-1-3-1-decision-framework-recipe. Live: clicked a read button -> card class 'sk-card on open', markdown body ('## ...') rendered. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-read-the-adversarial-ux-test-recipe",
       "kind": "ui",
       "area": "build",
       "name": "Read the Adversarial UX Test recipe",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Open a recipe's full README/body from its library card, so the user can read what the recipe actually instructs before enabling it.",
+      "promise": "Clicking 'Read the <recipe> recipe' expands that card (sk-card on open) and renders the recipe's markdown body.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "audit",
+          "ref": "KNOWN: no dedicated machine assertion for the read-recipe expand/markdown-render render; skills.library.test.js guards the skill-compose seam, live-proven this session — coverage gap noted (EL-3), routed to skills lane"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.716Z",
       "lastSeen": "2026-07-18T00:54:02.716Z",
       "missing": false,
       "selector": "button[aria-label=\"Read the Adversarial UX Test recipe\"]",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=aria-read-the-1-3-1-decision-framework-recipe. Live: clicked a read button -> card class 'sk-card on open', markdown body ('## ...') rendered. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-read-the-announcement-kit-recipe",
       "kind": "ui",
       "area": "build",
       "name": "Read the Announcement Kit recipe",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Open a recipe's full README/body from its library card, so the user can read what the recipe actually instructs before enabling it.",
+      "promise": "Clicking 'Read the <recipe> recipe' expands that card (sk-card on open) and renders the recipe's markdown body.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "audit",
+          "ref": "KNOWN: no dedicated machine assertion for the read-recipe expand/markdown-render render; skills.library.test.js guards the skill-compose seam, live-proven this session — coverage gap noted (EL-3), routed to skills lane"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "button[aria-label=\"Read the Announcement Kit recipe\"]",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=aria-read-the-1-3-1-decision-framework-recipe. Live: clicked a read button -> card class 'sk-card on open', markdown body ('## ...') rendered. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-read-the-architecture-diagram-recipe",
       "kind": "ui",
       "area": "build",
       "name": "Read the Architecture Diagram recipe",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Open a recipe's full README/body from its library card, so the user can read what the recipe actually instructs before enabling it.",
+      "promise": "Clicking 'Read the <recipe> recipe' expands that card (sk-card on open) and renders the recipe's markdown body.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "audit",
+          "ref": "KNOWN: no dedicated machine assertion for the read-recipe expand/markdown-render render; skills.library.test.js guards the skill-compose seam, live-proven this session — coverage gap noted (EL-3), routed to skills lane"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.716Z",
       "lastSeen": "2026-07-18T00:54:02.716Z",
       "missing": false,
       "selector": "button[aria-label=\"Read the Architecture Diagram recipe\"]",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=aria-read-the-1-3-1-decision-framework-recipe. Live: clicked a read button -> card class 'sk-card on open', markdown body ('## ...') rendered. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-read-the-arxiv-research-recipe",
       "kind": "ui",
       "area": "build",
       "name": "Read the arXiv Research recipe",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Open a recipe's full README/body from its library card, so the user can read what the recipe actually instructs before enabling it.",
+      "promise": "Clicking 'Read the <recipe> recipe' expands that card (sk-card on open) and renders the recipe's markdown body.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "audit",
+          "ref": "KNOWN: no dedicated machine assertion for the read-recipe expand/markdown-render render; skills.library.test.js guards the skill-compose seam, live-proven this session — coverage gap noted (EL-3), routed to skills lane"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "button[aria-label=\"Read the arXiv Research recipe\"]",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=aria-read-the-1-3-1-decision-framework-recipe. Live: clicked a read button -> card class 'sk-card on open', markdown body ('## ...') rendered. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-read-the-ascii-art-recipe",
       "kind": "ui",
       "area": "build",
       "name": "Read the ASCII Art recipe",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Open a recipe's full README/body from its library card, so the user can read what the recipe actually instructs before enabling it.",
+      "promise": "Clicking 'Read the <recipe> recipe' expands that card (sk-card on open) and renders the recipe's markdown body.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "audit",
+          "ref": "KNOWN: no dedicated machine assertion for the read-recipe expand/markdown-render render; skills.library.test.js guards the skill-compose seam, live-proven this session — coverage gap noted (EL-3), routed to skills lane"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.716Z",
       "lastSeen": "2026-07-18T00:54:02.716Z",
       "missing": false,
       "selector": "button[aria-label=\"Read the ASCII Art recipe\"]",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=aria-read-the-1-3-1-decision-framework-recipe. Live: clicked a read button -> card class 'sk-card on open', markdown body ('## ...') rendered. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-read-the-code-review-recipe",
       "kind": "ui",
       "area": "build",
       "name": "Read the Code Review recipe",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Open a recipe's full README/body from its library card, so the user can read what the recipe actually instructs before enabling it.",
+      "promise": "Clicking 'Read the <recipe> recipe' expands that card (sk-card on open) and renders the recipe's markdown body.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "audit",
+          "ref": "KNOWN: no dedicated machine assertion for the read-recipe expand/markdown-render render; skills.library.test.js guards the skill-compose seam, live-proven this session — coverage gap noted (EL-3), routed to skills lane"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.716Z",
       "lastSeen": "2026-07-18T00:54:02.716Z",
       "missing": false,
       "selector": "button[aria-label=\"Read the Code Review recipe\"]",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=aria-read-the-1-3-1-decision-framework-recipe. Live: clicked a read button -> card class 'sk-card on open', markdown body ('## ...') rendered. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-read-the-codebase-inspection-recipe",
       "kind": "ui",
       "area": "build",
       "name": "Read the Codebase Inspection recipe",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Open a recipe's full README/body from its library card, so the user can read what the recipe actually instructs before enabling it.",
+      "promise": "Clicking 'Read the <recipe> recipe' expands that card (sk-card on open) and renders the recipe's markdown body.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "audit",
+          "ref": "KNOWN: no dedicated machine assertion for the read-recipe expand/markdown-render render; skills.library.test.js guards the skill-compose seam, live-proven this session — coverage gap noted (EL-3), routed to skills lane"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "button[aria-label=\"Read the Codebase Inspection recipe\"]",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=aria-read-the-1-3-1-decision-framework-recipe. Live: clicked a read button -> card class 'sk-card on open', markdown body ('## ...') rendered. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-read-the-concept-diagrams-recipe",
       "kind": "ui",
       "area": "build",
       "name": "Read the Concept Diagrams recipe",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Open a recipe's full README/body from its library card, so the user can read what the recipe actually instructs before enabling it.",
+      "promise": "Clicking 'Read the <recipe> recipe' expands that card (sk-card on open) and renders the recipe's markdown body.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "audit",
+          "ref": "KNOWN: no dedicated machine assertion for the read-recipe expand/markdown-render render; skills.library.test.js guards the skill-compose seam, live-proven this session — coverage gap noted (EL-3), routed to skills lane"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.716Z",
       "lastSeen": "2026-07-18T00:54:02.716Z",
       "missing": false,
       "selector": "button[aria-label=\"Read the Concept Diagrams recipe\"]",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=aria-read-the-1-3-1-decision-framework-recipe. Live: clicked a read button -> card class 'sk-card on open', markdown body ('## ...') rendered. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-read-the-creative-ideation-recipe",
       "kind": "ui",
       "area": "build",
       "name": "Read the Creative Ideation recipe",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Open a recipe's full README/body from its library card, so the user can read what the recipe actually instructs before enabling it.",
+      "promise": "Clicking 'Read the <recipe> recipe' expands that card (sk-card on open) and renders the recipe's markdown body.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "audit",
+          "ref": "KNOWN: no dedicated machine assertion for the read-recipe expand/markdown-render render; skills.library.test.js guards the skill-compose seam, live-proven this session — coverage gap noted (EL-3), routed to skills lane"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.716Z",
       "lastSeen": "2026-07-18T00:54:02.716Z",
       "missing": false,
       "selector": "button[aria-label=\"Read the Creative Ideation recipe\"]",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=aria-read-the-1-3-1-decision-framework-recipe. Live: clicked a read button -> card class 'sk-card on open', markdown body ('## ...') rendered. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-read-the-digest-composer-recipe",
       "kind": "ui",
       "area": "build",
       "name": "Read the Digest Composer recipe",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Open a recipe's full README/body from its library card, so the user can read what the recipe actually instructs before enabling it.",
+      "promise": "Clicking 'Read the <recipe> recipe' expands that card (sk-card on open) and renders the recipe's markdown body.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "audit",
+          "ref": "KNOWN: no dedicated machine assertion for the read-recipe expand/markdown-render render; skills.library.test.js guards the skill-compose seam, live-proven this session — coverage gap noted (EL-3), routed to skills lane"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "button[aria-label=\"Read the Digest Composer recipe\"]",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=aria-read-the-1-3-1-decision-framework-recipe. Live: clicked a read button -> card class 'sk-card on open', markdown body ('## ...') rendered. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-read-the-domain-intelligence-recipe",
       "kind": "ui",
       "area": "build",
       "name": "Read the Domain Intelligence recipe",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Open a recipe's full README/body from its library card, so the user can read what the recipe actually instructs before enabling it.",
+      "promise": "Clicking 'Read the <recipe> recipe' expands that card (sk-card on open) and renders the recipe's markdown body.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "audit",
+          "ref": "KNOWN: no dedicated machine assertion for the read-recipe expand/markdown-render render; skills.library.test.js guards the skill-compose seam, live-proven this session — coverage gap noted (EL-3), routed to skills lane"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "button[aria-label=\"Read the Domain Intelligence recipe\"]",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=aria-read-the-1-3-1-decision-framework-recipe. Live: clicked a read button -> card class 'sk-card on open', markdown body ('## ...') rendered. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-read-the-excalidraw-diagrams-recipe",
       "kind": "ui",
       "area": "build",
       "name": "Read the Excalidraw Diagrams recipe",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Open a recipe's full README/body from its library card, so the user can read what the recipe actually instructs before enabling it.",
+      "promise": "Clicking 'Read the <recipe> recipe' expands that card (sk-card on open) and renders the recipe's markdown body.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "audit",
+          "ref": "KNOWN: no dedicated machine assertion for the read-recipe expand/markdown-render render; skills.library.test.js guards the skill-compose seam, live-proven this session — coverage gap noted (EL-3), routed to skills lane"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.716Z",
       "lastSeen": "2026-07-18T00:54:02.716Z",
       "missing": false,
       "selector": "button[aria-label=\"Read the Excalidraw Diagrams recipe\"]",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=aria-read-the-1-3-1-decision-framework-recipe. Live: clicked a read button -> card class 'sk-card on open', markdown body ('## ...') rendered. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-read-the-feed-watch-recipe",
       "kind": "ui",
       "area": "build",
       "name": "Read the Feed Watch recipe",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Open a recipe's full README/body from its library card, so the user can read what the recipe actually instructs before enabling it.",
+      "promise": "Clicking 'Read the <recipe> recipe' expands that card (sk-card on open) and renders the recipe's markdown body.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "audit",
+          "ref": "KNOWN: no dedicated machine assertion for the read-recipe expand/markdown-render render; skills.library.test.js guards the skill-compose seam, live-proven this session — coverage gap noted (EL-3), routed to skills lane"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "button[aria-label=\"Read the Feed Watch recipe\"]",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=aria-read-the-1-3-1-decision-framework-recipe. Live: clicked a read button -> card class 'sk-card on open', markdown body ('## ...') rendered. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-read-the-file-curation-recipe",
       "kind": "ui",
       "area": "build",
       "name": "Read the File Curation recipe",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Open a recipe's full README/body from its library card, so the user can read what the recipe actually instructs before enabling it.",
+      "promise": "Clicking 'Read the <recipe> recipe' expands that card (sk-card on open) and renders the recipe's markdown body.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "audit",
+          "ref": "KNOWN: no dedicated machine assertion for the read-recipe expand/markdown-render render; skills.library.test.js guards the skill-compose seam, live-proven this session — coverage gap noted (EL-3), routed to skills lane"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "button[aria-label=\"Read the File Curation recipe\"]",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=aria-read-the-1-3-1-decision-framework-recipe. Live: clicked a read button -> card class 'sk-card on open', markdown body ('## ...') rendered. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-read-the-humanizer-recipe",
       "kind": "ui",
       "area": "build",
       "name": "Read the Humanizer recipe",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Open a recipe's full README/body from its library card, so the user can read what the recipe actually instructs before enabling it.",
+      "promise": "Clicking 'Read the <recipe> recipe' expands that card (sk-card on open) and renders the recipe's markdown body.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "audit",
+          "ref": "KNOWN: no dedicated machine assertion for the read-recipe expand/markdown-render render; skills.library.test.js guards the skill-compose seam, live-proven this session — coverage gap noted (EL-3), routed to skills lane"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.716Z",
       "lastSeen": "2026-07-18T00:54:02.716Z",
       "missing": false,
       "selector": "button[aria-label=\"Read the Humanizer recipe\"]",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=aria-read-the-1-3-1-decision-framework-recipe. Live: clicked a read button -> card class 'sk-card on open', markdown body ('## ...') rendered. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-read-the-itinerary-planning-recipe",
       "kind": "ui",
       "area": "build",
       "name": "Read the Itinerary Planning recipe",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Open a recipe's full README/body from its library card, so the user can read what the recipe actually instructs before enabling it.",
+      "promise": "Clicking 'Read the <recipe> recipe' expands that card (sk-card on open) and renders the recipe's markdown body.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "audit",
+          "ref": "KNOWN: no dedicated machine assertion for the read-recipe expand/markdown-render render; skills.library.test.js guards the skill-compose seam, live-proven this session — coverage gap noted (EL-3), routed to skills lane"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "button[aria-label=\"Read the Itinerary Planning recipe\"]",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=aria-read-the-1-3-1-decision-framework-recipe. Live: clicked a read button -> card class 'sk-card on open', markdown body ('## ...') rendered. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-read-the-ledger-upkeep-recipe",
       "kind": "ui",
       "area": "build",
       "name": "Read the Ledger Upkeep recipe",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Open a recipe's full README/body from its library card, so the user can read what the recipe actually instructs before enabling it.",
+      "promise": "Clicking 'Read the <recipe> recipe' expands that card (sk-card on open) and renders the recipe's markdown body.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "audit",
+          "ref": "KNOWN: no dedicated machine assertion for the read-recipe expand/markdown-render render; skills.library.test.js guards the skill-compose seam, live-proven this session — coverage gap noted (EL-3), routed to skills lane"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "button[aria-label=\"Read the Ledger Upkeep recipe\"]",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=aria-read-the-1-3-1-decision-framework-recipe. Live: clicked a read button -> card class 'sk-card on open', markdown body ('## ...') rendered. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-read-the-make-a-plan-recipe",
       "kind": "ui",
       "area": "build",
       "name": "Read the Make a Plan recipe",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Open a recipe's full README/body from its library card, so the user can read what the recipe actually instructs before enabling it.",
+      "promise": "Clicking 'Read the <recipe> recipe' expands that card (sk-card on open) and renders the recipe's markdown body.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "audit",
+          "ref": "KNOWN: no dedicated machine assertion for the read-recipe expand/markdown-render render; skills.library.test.js guards the skill-compose seam, live-proven this session — coverage gap noted (EL-3), routed to skills lane"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.716Z",
       "lastSeen": "2026-07-18T00:54:02.716Z",
       "missing": false,
       "selector": "button[aria-label=\"Read the Make a Plan recipe\"]",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=aria-read-the-1-3-1-decision-framework-recipe. Live: clicked a read button -> card class 'sk-card on open', markdown body ('## ...') rendered. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-read-the-meme-generation-recipe",
       "kind": "ui",
       "area": "build",
       "name": "Read the Meme Generation recipe",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Open a recipe's full README/body from its library card, so the user can read what the recipe actually instructs before enabling it.",
+      "promise": "Clicking 'Read the <recipe> recipe' expands that card (sk-card on open) and renders the recipe's markdown body.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "audit",
+          "ref": "KNOWN: no dedicated machine assertion for the read-recipe expand/markdown-render render; skills.library.test.js guards the skill-compose seam, live-proven this session — coverage gap noted (EL-3), routed to skills lane"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.716Z",
       "lastSeen": "2026-07-18T00:54:02.716Z",
       "missing": false,
       "selector": "button[aria-label=\"Read the Meme Generation recipe\"]",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=aria-read-the-1-3-1-decision-framework-recipe. Live: clicked a read button -> card class 'sk-card on open', markdown body ('## ...') rendered. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-read-the-node-js-inspect-debugger-recipe",
       "kind": "ui",
       "area": "build",
       "name": "Read the Node.js Inspect Debugger recipe",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Open a recipe's full README/body from its library card, so the user can read what the recipe actually instructs before enabling it.",
+      "promise": "Clicking 'Read the <recipe> recipe' expands that card (sk-card on open) and renders the recipe's markdown body.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "audit",
+          "ref": "KNOWN: no dedicated machine assertion for the read-recipe expand/markdown-render render; skills.library.test.js guards the skill-compose seam, live-proven this session — coverage gap noted (EL-3), routed to skills lane"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "button[aria-label=\"Read the Node.js Inspect Debugger recipe\"]",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=aria-read-the-1-3-1-decision-framework-recipe. Live: clicked a read button -> card class 'sk-card on open', markdown body ('## ...') rendered. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-read-the-osint-public-records-recipe",
       "kind": "ui",
       "area": "build",
       "name": "Read the OSINT Public Records recipe",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Open a recipe's full README/body from its library card, so the user can read what the recipe actually instructs before enabling it.",
+      "promise": "Clicking 'Read the <recipe> recipe' expands that card (sk-card on open) and renders the recipe's markdown body.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "audit",
+          "ref": "KNOWN: no dedicated machine assertion for the read-recipe expand/markdown-render render; skills.library.test.js guards the skill-compose seam, live-proven this session — coverage gap noted (EL-3), routed to skills lane"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "button[aria-label=\"Read the OSINT Public Records recipe\"]",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=aria-read-the-1-3-1-decision-framework-recipe. Live: clicked a read button -> card class 'sk-card on open', markdown body ('## ...') rendered. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-read-the-p5-js-creative-coding-recipe",
       "kind": "ui",
       "area": "build",
       "name": "Read the p5.js Creative Coding recipe",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Open a recipe's full README/body from its library card, so the user can read what the recipe actually instructs before enabling it.",
+      "promise": "Clicking 'Read the <recipe> recipe' expands that card (sk-card on open) and renders the recipe's markdown body.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "audit",
+          "ref": "KNOWN: no dedicated machine assertion for the read-recipe expand/markdown-render render; skills.library.test.js guards the skill-compose seam, live-proven this session — coverage gap noted (EL-3), routed to skills lane"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.716Z",
       "lastSeen": "2026-07-18T00:54:02.716Z",
       "missing": false,
       "selector": "button[aria-label=\"Read the p5.js Creative Coding recipe\"]",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=aria-read-the-1-3-1-decision-framework-recipe. Live: clicked a read button -> card class 'sk-card on open', markdown body ('## ...') rendered. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-read-the-pdf-document-extraction-recip",
       "kind": "ui",
       "area": "build",
       "name": "Read the PDF & Document Extraction recipe",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Open a recipe's full README/body from its library card, so the user can read what the recipe actually instructs before enabling it.",
+      "promise": "Clicking 'Read the <recipe> recipe' expands that card (sk-card on open) and renders the recipe's markdown body.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "audit",
+          "ref": "KNOWN: no dedicated machine assertion for the read-recipe expand/markdown-render render; skills.library.test.js guards the skill-compose seam, live-proven this session — coverage gap noted (EL-3), routed to skills lane"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "button[aria-label=\"Read the PDF & Document Extraction recipe\"]",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=aria-read-the-1-3-1-decision-framework-recipe. Live: clicked a read button -> card class 'sk-card on open', markdown body ('## ...') rendered. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-read-the-popular-web-designs-recipe",
       "kind": "ui",
       "area": "build",
       "name": "Read the Popular Web Designs recipe",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Open a recipe's full README/body from its library card, so the user can read what the recipe actually instructs before enabling it.",
+      "promise": "Clicking 'Read the <recipe> recipe' expands that card (sk-card on open) and renders the recipe's markdown body.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "audit",
+          "ref": "KNOWN: no dedicated machine assertion for the read-recipe expand/markdown-render render; skills.library.test.js guards the skill-compose seam, live-proven this session — coverage gap noted (EL-3), routed to skills lane"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.716Z",
       "lastSeen": "2026-07-18T00:54:02.716Z",
       "missing": false,
       "selector": "button[aria-label=\"Read the Popular Web Designs recipe\"]",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=aria-read-the-1-3-1-decision-framework-recipe. Live: clicked a read button -> card class 'sk-card on open', markdown body ('## ...') rendered. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-read-the-pre-commit-verification-recipe",
       "kind": "ui",
       "area": "build",
       "name": "Read the Pre-Commit Verification recipe",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Open a recipe's full README/body from its library card, so the user can read what the recipe actually instructs before enabling it.",
+      "promise": "Clicking 'Read the <recipe> recipe' expands that card (sk-card on open) and renders the recipe's markdown body.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "audit",
+          "ref": "KNOWN: no dedicated machine assertion for the read-recipe expand/markdown-render render; skills.library.test.js guards the skill-compose seam, live-proven this session — coverage gap noted (EL-3), routed to skills lane"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "button[aria-label=\"Read the Pre-Commit Verification recipe\"]",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=aria-read-the-1-3-1-decision-framework-recipe. Live: clicked a read button -> card class 'sk-card on open', markdown body ('## ...') rendered. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-read-the-price-watch-recipe",
       "kind": "ui",
       "area": "build",
       "name": "Read the Price Watch recipe",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Open a recipe's full README/body from its library card, so the user can read what the recipe actually instructs before enabling it.",
+      "promise": "Clicking 'Read the <recipe> recipe' expands that card (sk-card on open) and renders the recipe's markdown body.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "audit",
+          "ref": "KNOWN: no dedicated machine assertion for the read-recipe expand/markdown-render render; skills.library.test.js guards the skill-compose seam, live-proven this session — coverage gap noted (EL-3), routed to skills lane"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "button[aria-label=\"Read the Price Watch recipe\"]",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=aria-read-the-1-3-1-decision-framework-recipe. Live: clicked a read button -> card class 'sk-card on open', markdown body ('## ...') rendered. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-read-the-python-debugger-recipe",
       "kind": "ui",
       "area": "build",
       "name": "Read the Python Debugger recipe",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Open a recipe's full README/body from its library card, so the user can read what the recipe actually instructs before enabling it.",
+      "promise": "Clicking 'Read the <recipe> recipe' expands that card (sk-card on open) and renders the recipe's markdown body.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "audit",
+          "ref": "KNOWN: no dedicated machine assertion for the read-recipe expand/markdown-render render; skills.library.test.js guards the skill-compose seam, live-proven this session — coverage gap noted (EL-3), routed to skills lane"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "button[aria-label=\"Read the Python Debugger recipe\"]",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=aria-read-the-1-3-1-decision-framework-recipe. Live: clicked a read button -> card class 'sk-card on open', markdown body ('## ...') rendered. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-read-the-research-paper-writing-recipe",
       "kind": "ui",
       "area": "build",
       "name": "Read the Research Paper Writing recipe",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Open a recipe's full README/body from its library card, so the user can read what the recipe actually instructs before enabling it.",
+      "promise": "Clicking 'Read the <recipe> recipe' expands that card (sk-card on open) and renders the recipe's markdown body.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "audit",
+          "ref": "KNOWN: no dedicated machine assertion for the read-recipe expand/markdown-render render; skills.library.test.js guards the skill-compose seam, live-proven this session — coverage gap noted (EL-3), routed to skills lane"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "button[aria-label=\"Read the Research Paper Writing recipe\"]",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=aria-read-the-1-3-1-decision-framework-recipe. Live: clicked a read button -> card class 'sk-card on open', markdown body ('## ...') rendered. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-read-the-security-sweep-recipe",
       "kind": "ui",
       "area": "build",
       "name": "Read the Security Sweep recipe",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Open a recipe's full README/body from its library card, so the user can read what the recipe actually instructs before enabling it.",
+      "promise": "Clicking 'Read the <recipe> recipe' expands that card (sk-card on open) and renders the recipe's markdown body.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "audit",
+          "ref": "KNOWN: no dedicated machine assertion for the read-recipe expand/markdown-render render; skills.library.test.js guards the skill-compose seam, live-proven this session — coverage gap noted (EL-3), routed to skills lane"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "button[aria-label=\"Read the Security Sweep recipe\"]",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=aria-read-the-1-3-1-decision-framework-recipe. Live: clicked a read button -> card class 'sk-card on open', markdown body ('## ...') rendered. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-read-the-simplify-code-recipe",
       "kind": "ui",
       "area": "build",
       "name": "Read the Simplify Code recipe",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Open a recipe's full README/body from its library card, so the user can read what the recipe actually instructs before enabling it.",
+      "promise": "Clicking 'Read the <recipe> recipe' expands that card (sk-card on open) and renders the recipe's markdown body.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "audit",
+          "ref": "KNOWN: no dedicated machine assertion for the read-recipe expand/markdown-render render; skills.library.test.js guards the skill-compose seam, live-proven this session — coverage gap noted (EL-3), routed to skills lane"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "button[aria-label=\"Read the Simplify Code recipe\"]",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=aria-read-the-1-3-1-decision-framework-recipe. Live: clicked a read button -> card class 'sk-card on open', markdown body ('## ...') rendered. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-read-the-source-triangulation-recipe",
       "kind": "ui",
       "area": "build",
       "name": "Read the Source Triangulation recipe",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Open a recipe's full README/body from its library card, so the user can read what the recipe actually instructs before enabling it.",
+      "promise": "Clicking 'Read the <recipe> recipe' expands that card (sk-card on open) and renders the recipe's markdown body.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "audit",
+          "ref": "KNOWN: no dedicated machine assertion for the read-recipe expand/markdown-render render; skills.library.test.js guards the skill-compose seam, live-proven this session — coverage gap noted (EL-3), routed to skills lane"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "button[aria-label=\"Read the Source Triangulation recipe\"]",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=aria-read-the-1-3-1-decision-framework-recipe. Live: clicked a read button -> card class 'sk-card on open', markdown body ('## ...') rendered. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-read-the-spike-recipe",
       "kind": "ui",
       "area": "build",
       "name": "Read the Spike recipe",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Open a recipe's full README/body from its library card, so the user can read what the recipe actually instructs before enabling it.",
+      "promise": "Clicking 'Read the <recipe> recipe' expands that card (sk-card on open) and renders the recipe's markdown body.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "audit",
+          "ref": "KNOWN: no dedicated machine assertion for the read-recipe expand/markdown-render render; skills.library.test.js guards the skill-compose seam, live-proven this session — coverage gap noted (EL-3), routed to skills lane"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "button[aria-label=\"Read the Spike recipe\"]",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=aria-read-the-1-3-1-decision-framework-recipe. Live: clicked a read button -> card class 'sk-card on open', markdown body ('## ...') rendered. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-read-the-study-plan-recipe",
       "kind": "ui",
       "area": "build",
       "name": "Read the Study Plan recipe",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Open a recipe's full README/body from its library card, so the user can read what the recipe actually instructs before enabling it.",
+      "promise": "Clicking 'Read the <recipe> recipe' expands that card (sk-card on open) and renders the recipe's markdown body.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "audit",
+          "ref": "KNOWN: no dedicated machine assertion for the read-recipe expand/markdown-render render; skills.library.test.js guards the skill-compose seam, live-proven this session — coverage gap noted (EL-3), routed to skills lane"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "button[aria-label=\"Read the Study Plan recipe\"]",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=aria-read-the-1-3-1-decision-framework-recipe. Live: clicked a read button -> card class 'sk-card on open', markdown body ('## ...') rendered. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-read-the-systematic-debugging-recipe",
       "kind": "ui",
       "area": "build",
       "name": "Read the Systematic Debugging recipe",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Open a recipe's full README/body from its library card, so the user can read what the recipe actually instructs before enabling it.",
+      "promise": "Clicking 'Read the <recipe> recipe' expands that card (sk-card on open) and renders the recipe's markdown body.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "audit",
+          "ref": "KNOWN: no dedicated machine assertion for the read-recipe expand/markdown-render render; skills.library.test.js guards the skill-compose seam, live-proven this session — coverage gap noted (EL-3), routed to skills lane"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "button[aria-label=\"Read the Systematic Debugging recipe\"]",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=aria-read-the-1-3-1-decision-framework-recipe. Live: clicked a read button -> card class 'sk-card on open', markdown body ('## ...') rendered. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-read-the-test-driven-development-recipe",
       "kind": "ui",
       "area": "build",
       "name": "Read the Test-Driven Development recipe",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Open a recipe's full README/body from its library card, so the user can read what the recipe actually instructs before enabling it.",
+      "promise": "Clicking 'Read the <recipe> recipe' expands that card (sk-card on open) and renders the recipe's markdown body.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "audit",
+          "ref": "KNOWN: no dedicated machine assertion for the read-recipe expand/markdown-render render; skills.library.test.js guards the skill-compose seam, live-proven this session — coverage gap noted (EL-3), routed to skills lane"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "button[aria-label=\"Read the Test-Driven Development recipe\"]",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=aria-read-the-1-3-1-decision-framework-recipe. Live: clicked a read button -> card class 'sk-card on open', markdown body ('## ...') rendered. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-read-the-translation-pass-recipe",
       "kind": "ui",
       "area": "build",
       "name": "Read the Translation Pass recipe",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Open a recipe's full README/body from its library card, so the user can read what the recipe actually instructs before enabling it.",
+      "promise": "Clicking 'Read the <recipe> recipe' expands that card (sk-card on open) and renders the recipe's markdown body.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "audit",
+          "ref": "KNOWN: no dedicated machine assertion for the read-recipe expand/markdown-render render; skills.library.test.js guards the skill-compose seam, live-proven this session — coverage gap noted (EL-3), routed to skills lane"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "button[aria-label=\"Read the Translation Pass recipe\"]",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=aria-read-the-1-3-1-decision-framework-recipe. Live: clicked a read button -> card class 'sk-card on open', markdown body ('## ...') rendered. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-read-the-ui-sketch-recipe",
       "kind": "ui",
       "area": "build",
       "name": "Read the UI Sketch recipe",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Open a recipe's full README/body from its library card, so the user can read what the recipe actually instructs before enabling it.",
+      "promise": "Clicking 'Read the <recipe> recipe' expands that card (sk-card on open) and renders the recipe's markdown body.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "audit",
+          "ref": "KNOWN: no dedicated machine assertion for the read-recipe expand/markdown-render render; skills.library.test.js guards the skill-compose seam, live-proven this session — coverage gap noted (EL-3), routed to skills lane"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.716Z",
       "lastSeen": "2026-07-18T00:54:02.716Z",
       "missing": false,
       "selector": "button[aria-label=\"Read the UI Sketch recipe\"]",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=aria-read-the-1-3-1-decision-framework-recipe. Live: clicked a read button -> card class 'sk-card on open', markdown body ('## ...') rendered. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-read-the-web-research-recipe",
       "kind": "ui",
       "area": "build",
       "name": "Read the Web Research recipe",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Open a recipe's full README/body from its library card, so the user can read what the recipe actually instructs before enabling it.",
+      "promise": "Clicking 'Read the <recipe> recipe' expands that card (sk-card on open) and renders the recipe's markdown body.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "audit",
+          "ref": "KNOWN: no dedicated machine assertion for the read-recipe expand/markdown-render render; skills.library.test.js guards the skill-compose seam, live-proven this session — coverage gap noted (EL-3), routed to skills lane"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "button[aria-label=\"Read the Web Research recipe\"]",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=aria-read-the-1-3-1-decision-framework-recipe. Live: clicked a read button -> card class 'sk-card on open', markdown body ('## ...') rendered. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-resize-field-manual",
       "kind": "ui",
       "area": "build",
       "name": "Resize FIELD MANUAL",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The FIELD MANUAL window resize control — adjusts the help console window per the station window law.",
+      "promise": "Dragging the resize control adjusts the FIELD MANUAL window size. No backend claim (pure static help).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "audit",
+          "ref": "KNOWN: build3-verify.mjs removed (ledger:0a808216) — no machine assertion guards the FIELD MANUAL surface; live-proven this session, routed to build lane"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.716Z",
       "lastSeen": "2026-07-18T00:54:02.716Z",
       "missing": false,
       "selector": "button[aria-label=\"Resize FIELD MANUAL\"]",
-      "state": "build-manual"
+      "state": "build-manual",
+      "notes": "Live: FIELD MANUAL window resize control present (shared window primitive). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-resize-skills-capabilities",
       "kind": "ui",
       "area": "build",
       "name": "Resize SKILLS & CAPABILITIES",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Window chrome for the SKILLS & CAPABILITIES console — close / minimize / resize, following the station window law.",
+      "promise": "Close dismisses the panel; minimize sends it to the minimized strip; resize adjusts the window.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "audit",
+          "ref": "KNOWN: no dedicated machine assertion for the skills window chrome render; skills.library.test.js guards the skill-compose seam, live-proven this session — coverage gap noted (EL-3), routed to skills lane"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "button[aria-label=\"Resize SKILLS & CAPABILITIES\"]",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Live: SKILLS window close/minimize/resize controls present (shared window primitive). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-resize-toolsets-connectors",
@@ -9863,126 +10454,210 @@
       "kind": "ui",
       "area": "build",
       "name": "Open REFIT to place a NOTEBOOK",
-      "purpose": "",
-      "promise": "",
+      "purpose": "A capability status row in the CAPABILITIES tab (web search / web fetch / read files / write files / terminal / memory) — names the tool and its gating object, showing whether it is live.",
+      "promise": "Each capability row shows the tool name + its backing object; when the object is absent it reads '○ NO <PROP> AT DESK' (capability off), and the header count ('N of 7 live') matches the placed objects.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "audit",
+          "ref": "KNOWN: no dedicated machine assertion for the capability glossary row render; skills.library.test.js guards the skill-compose seam, live-proven this session — coverage gap noted (EL-3), routed to skills lane"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.716Z",
       "lastSeen": "2026-07-18T00:54:02.716Z",
       "missing": false,
       "selector": "div",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=txt-div-terms-web-searchweb-search-no-dish-at-desk-1. Live (CAPABILITIES tab): WEB SEARCH/WEB FETCH show '○ NO DISH AT DESK', READ/WRITE FILES show '○ NO CABINET AT DESK'; header '1 of 7 live' — truthful, driven by placed props. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-div-terms-read-filesfs-read-fs-list-no-cabinet-1",
       "kind": "ui",
       "area": "build",
       "name": "Open REFIT to place a CABINET",
-      "purpose": "",
-      "promise": "",
+      "purpose": "A capability status row in the CAPABILITIES tab (web search / web fetch / read files / write files / terminal / memory) — names the tool and its gating object, showing whether it is live.",
+      "promise": "Each capability row shows the tool name + its backing object; when the object is absent it reads '○ NO <PROP> AT DESK' (capability off), and the header count ('N of 7 live') matches the placed objects.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "audit",
+          "ref": "KNOWN: no dedicated machine assertion for the capability glossary row render; skills.library.test.js guards the skill-compose seam, live-proven this session — coverage gap noted (EL-3), routed to skills lane"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.716Z",
       "lastSeen": "2026-07-18T00:54:02.716Z",
       "missing": false,
       "selector": "div",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=txt-div-terms-web-searchweb-search-no-dish-at-desk-1. Live (CAPABILITIES tab): WEB SEARCH/WEB FETCH show '○ NO DISH AT DESK', READ/WRITE FILES show '○ NO CABINET AT DESK'; header '1 of 7 live' — truthful, driven by placed props. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-div-terms-terminalshell-exec-verify-run-no-wor-1",
       "kind": "ui",
       "area": "build",
       "name": "Open REFIT to place a WORKBENCH",
-      "purpose": "",
-      "promise": "",
+      "purpose": "A capability status row in the CAPABILITIES tab (web search / web fetch / read files / write files / terminal / memory) — names the tool and its gating object, showing whether it is live.",
+      "promise": "Each capability row shows the tool name + its backing object; when the object is absent it reads '○ NO <PROP> AT DESK' (capability off), and the header count ('N of 7 live') matches the placed objects.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "audit",
+          "ref": "KNOWN: no dedicated machine assertion for the capability glossary row render; skills.library.test.js guards the skill-compose seam, live-proven this session — coverage gap noted (EL-3), routed to skills lane"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.716Z",
       "lastSeen": "2026-07-18T00:54:02.716Z",
       "missing": false,
       "selector": "div",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=txt-div-terms-web-searchweb-search-no-dish-at-desk-1. Live (CAPABILITIES tab): WEB SEARCH/WEB FETCH show '○ NO DISH AT DESK', READ/WRITE FILES show '○ NO CABINET AT DESK'; header '1 of 7 live' — truthful, driven by placed props. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-div-terms-web-fetchweb-fetch-no-dish-at-desk-pl-1",
       "kind": "ui",
       "area": "build",
       "name": "Open REFIT to place a DISH",
-      "purpose": "",
-      "promise": "",
+      "purpose": "A capability status row in the CAPABILITIES tab (web search / web fetch / read files / write files / terminal / memory) — names the tool and its gating object, showing whether it is live.",
+      "promise": "Each capability row shows the tool name + its backing object; when the object is absent it reads '○ NO <PROP> AT DESK' (capability off), and the header count ('N of 7 live') matches the placed objects.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "audit",
+          "ref": "KNOWN: no dedicated machine assertion for the capability glossary row render; skills.library.test.js guards the skill-compose seam, live-proven this session — coverage gap noted (EL-3), routed to skills lane"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.716Z",
       "lastSeen": "2026-07-18T00:54:02.716Z",
       "missing": false,
       "selector": "div",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=txt-div-terms-web-searchweb-search-no-dish-at-desk-1. Live (CAPABILITIES tab): WEB SEARCH/WEB FETCH show '○ NO DISH AT DESK', READ/WRITE FILES show '○ NO CABINET AT DESK'; header '1 of 7 live' — truthful, driven by placed props. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-div-terms-web-searchweb-search-no-dish-at-desk-1",
       "kind": "ui",
       "area": "build",
       "name": "Open REFIT to place a DISH",
-      "purpose": "",
-      "promise": "",
+      "purpose": "A capability status row in the CAPABILITIES tab (web search / web fetch / read files / write files / terminal / memory) — names the tool and its gating object, showing whether it is live.",
+      "promise": "Each capability row shows the tool name + its backing object; when the object is absent it reads '○ NO <PROP> AT DESK' (capability off), and the header count ('N of 7 live') matches the placed objects.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "audit",
+          "ref": "KNOWN: no dedicated machine assertion for the capability glossary row render; skills.library.test.js guards the skill-compose seam, live-proven this session — coverage gap noted (EL-3), routed to skills lane"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.716Z",
       "lastSeen": "2026-07-18T00:54:02.716Z",
       "missing": false,
       "selector": "div",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=txt-div-terms-web-searchweb-search-no-dish-at-desk-1. Live (CAPABILITIES tab): WEB SEARCH/WEB FETCH show '○ NO DISH AT DESK', READ/WRITE FILES show '○ NO CABINET AT DESK'; header '1 of 7 live' — truthful, driven by placed props. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-div-terms-write-filesfs-write-append-edit-no-1",
       "kind": "ui",
       "area": "build",
       "name": "Open REFIT to place a CABINET",
-      "purpose": "",
-      "promise": "",
+      "purpose": "A capability status row in the CAPABILITIES tab (web search / web fetch / read files / write files / terminal / memory) — names the tool and its gating object, showing whether it is live.",
+      "promise": "Each capability row shows the tool name + its backing object; when the object is absent it reads '○ NO <PROP> AT DESK' (capability off), and the header count ('N of 7 live') matches the placed objects.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "audit",
+          "ref": "KNOWN: no dedicated machine assertion for the capability glossary row render; skills.library.test.js guards the skill-compose seam, live-proven this session — coverage gap noted (EL-3), routed to skills lane"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.716Z",
       "lastSeen": "2026-07-18T00:54:02.716Z",
       "missing": false,
       "selector": "div",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=txt-div-terms-web-searchweb-search-no-dish-at-desk-1. Live (CAPABILITIES tab): WEB SEARCH/WEB FETCH show '○ NO DISH AT DESK', READ/WRITE FILES show '○ NO CABINET AT DESK'; header '1 of 7 live' — truthful, driven by placed props. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-input-cc-list-1",
