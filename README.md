@@ -5,6 +5,13 @@ pixel-art station, and watch them perform real work with real models and tools. 
 not just decoration: rooms define capability-scoped teams, hallways define handoff paths, and
 placed objects grant bounded tools.
 
+The product contract is literal: **A room is a capability-scoped team**, **a hallway is** an
+authorized handoff lane, and **a placed object is a real capability grant**. **The layout you draw *is* the workflow**
+the agents run. Start with one agent, then place bays or summon
+specialists to run **more, concurrently**—each is a **genuinely distinct, bounded agent run**.
+The harness performs **real model calls, real tools, real cost** rather than animating a
+simulation.
+
 > **Early release:** Windows is the most-tested desktop target. macOS and Linux builds use the
 > same release train but have less real-world coverage. See [INSTALL.md](INSTALL.md) for current
 > platform caveats, including operating-system signing warnings.
@@ -36,9 +43,9 @@ node sidecar/index.js
 ```
 
 Open <http://localhost:8787>, then connect a provider with your own API key or supported OAuth
-sign-in. Provider requests leave your machine when you run an agent; station state, transcripts,
-memory, and ledgers stay in the local StarNet workspace unless you explicitly use a network tool
-or connector.
+sign-in: **bring your own OpenRouter API key (BYOK)** or use a supported OAuth flow. Provider
+requests leave your machine when you run an agent; station state, transcripts, memory, and ledgers
+stay in the local StarNet workspace unless you explicitly use a network tool or connector.
 
 For desktop development:
 
@@ -77,8 +84,7 @@ is that the interface must never assert state the harness cannot prove.
 | `qa/` | Live QA receipts, journeys, findings ledger, and release-readiness authority. |
 
 The frontend consumes real sidecar events over localhost HTTP/NDJSON and SSE. Secrets belong to
-the sidecar or operating-system credential store and are never intentionally returned to the
-renderer.
+the local authority: **Secrets are held by the sidecar / OS keychain, never in the frontend**.
 
 Start with [docs/INDEX.md](docs/INDEX.md) for the living documentation. Older planning documents
 remain in the repository as design history and are labeled accordingly.
