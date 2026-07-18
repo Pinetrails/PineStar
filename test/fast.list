@@ -348,6 +348,7 @@ test/mcp.transport.test.js
 test/mcp.stdio.test.js
 test/mcp.catalog.test.js
 test/mcp.oauth.test.js
+test/mcp-serve.test.js
 test/connectors-ui.test.js
 test/toolsets.test.js
 test/channels.discord-wire.test.js
