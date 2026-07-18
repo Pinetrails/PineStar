@@ -6663,15 +6663,15 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     const fmtDate = at => { if (at == null) return 'date unknown'; try { return new Date(at).toLocaleDateString(); } catch (_) { return 'date unknown'; } };
     const troRow = t =>
       '<div class="gx-tro on">'
-      + '<div style="display:flex;align-items:center;gap:6px;"><span class="gl">&#9733;</span><span class="nm">' + esc(t.title) + '</span>'
-      + '<span class="gx-tag" style="margin-left:auto;">' + esc(KIND[t.kind] || 'HONOUR') + '</span></div>'
+      + '<div class="tro-hd"><span class="gl">&#9733;</span><span class="nm">' + esc(t.title) + '</span>'
+      + '<span class="gx-tag">' + esc(KIND[t.kind] || 'HONOUR') + '</span></div>'
       + '<div class="sub">' + (t.reward ? '&#9656; ' + esc(t.reward) + ' &middot; ' : '')
       + '<span style="opacity:' + (t.dateKnown ? '1' : '.6') + ';">' + esc(fmtDate(t.completedAt)) + '</span></div></div>';
 
     const toolRow = tl =>
       '<div class="gx-tro on">'
-      + '<div style="display:flex;align-items:center;gap:6px;"><span class="gl">&#9670;</span><span class="nm">' + esc(tl.name) + '</span>'
-      + '<span class="gx-tag" style="margin-left:auto;">' + tl.runs + '&times; LIFETIME</span></div>'
+      + '<div class="tro-hd"><span class="gl">&#9670;</span><span class="nm">' + esc(tl.name) + '</span>'
+      + '<span class="gx-tag">' + tl.runs + '&times; LIFETIME</span></div>'
       + '<div class="sub">the seed you saved &middot; ' + tl.sevenDay + '&times; in the last 7 days</div></div>';
 
     const trophiesHtml = surf.trophies.length

@@ -740,7 +740,7 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 
 /* COMMANDER DOSSIER (Phase A): the station-wide glass box — one model of the user, every belief editable */
 .cd-fam { display: inline-flex; align-items: center; gap: 7px; }
-.cd-fk { display: inline-block; width: 120px; height: 6px; border-radius: 3px; background: var(--ph-faint); border: 1px solid var(--ph-dim); overflow: hidden; vertical-align: middle; }
+.cd-fk { display: inline-block; width: 84px; height: 6px; border-radius: 3px; background: var(--ph-faint); border: 1px solid var(--ph-dim); overflow: hidden; vertical-align: middle; }
 .cd-ff { display: block; height: 100%; background: var(--gold); }
 .cd-fpct { color: var(--ph-bright); font-size: 12px; letter-spacing: 0.5px; }
 .cd-sub { font-size: 12px; color: var(--ph-dim); margin: 8px 0 6px; letter-spacing: 0.3px; }
@@ -749,33 +749,14 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
    Reads PrideStore.snapshot(); a counter with no real sample yet shows "—" (never a fabricated 0). */
 .cd-record { margin: 12px 0 4px; padding: 9px 11px; background: var(--ph-faint); border-left: 2px solid var(--gold); border-radius: 0 5px 5px 0; }
 .cd-record-h { font-family: inherit; font-size: 10px; letter-spacing: .16em; color: var(--gold); opacity: .9; margin-bottom: 8px; }
-.cd-record-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px 14px; }   /* 4-up in the widened (760px) dossier; collapses via the narrow fallback below */
+.cd-record-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px 14px; }
 .cd-stat { display: flex; flex-direction: column; gap: 2px; }
 .cd-stat-n { font-size: 21px; line-height: .95; color: var(--ph-bright); letter-spacing: .5px; text-shadow: 0 0 10px var(--ph-glow2); }
 .cd-stat-n.dim { color: var(--ph-dim); text-shadow: none; }
 .cd-stat-l { font-size: 10px; letter-spacing: .1em; color: var(--ph-dim); text-transform: uppercase; }
 .cd-founded { margin-top: 9px; font-size: 11px; color: var(--ph-dim); letter-spacing: .3px; }
 .cd-founded b { color: var(--ph); }
-/* AGENT BRIEFING — the verbatim Commander block agents receive (the panel's practical payoff): a recessed
-   terminal well in the CRT vocabulary; the text glows softly because it IS live prompt material. */
-.cd-brief { margin: 12px 0 2px; padding: 10px 12px; background: var(--ink); border: 1px solid var(--ph-dim); border-radius: 5px; box-shadow: inset 0 0 18px rgba(var(--ph-rgb), .06); }
-.cd-brief-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 7px; }
-.cd-brief-h { font-size: 10px; letter-spacing: .16em; color: var(--ph-bright); }
-.cd-brief-meter { font-size: 10px; color: var(--ph-dim); letter-spacing: .08em; white-space: nowrap; cursor: help; }
-.cd-brief-text { margin: 0; font: inherit; font-size: 13px; line-height: 1.45; color: var(--ph); white-space: pre-wrap; word-break: break-word; max-height: 190px; overflow-y: auto; text-shadow: 0 0 4px var(--ph-glow2); }
-.cd-brief-empty { font-style: italic; color: var(--ph-dim); font-size: 12px; }
-.cd-brief-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 9px; flex-wrap: wrap; }
-.cd-flows { display: flex; flex-wrap: wrap; gap: 5px; }
-.cd-flow { font-size: 10px; letter-spacing: .06em; color: var(--ph-dim); border: 1px solid var(--ph-faint); border-radius: 3px; padding: 1px 7px; cursor: help; }
-.cd-flow:hover { color: var(--ph); border-color: var(--ph-dim); }
-.cd-brief-copy { white-space: nowrap; }
-/* a belief the char cap shortened/dropped from the composed briefing — gold = "needs your attention" */
-.cd-trim-tag { display: inline-block; margin-right: 6px; padding: 0 5px; font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--gold); border: 1px dashed rgba(var(--gold-rgb), .6); border-radius: 2px; cursor: help; }
-/* the dimension sections: a two-column grid in the widened window (single column of short cards wasted it) */
-.cd-dims { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px 22px; align-items: start; }
-.cd-sec { margin-top: 14px; min-width: 0; }
-.cd-sec.known .cd-sech { border-bottom-color: var(--ph-dim); }
-@media (max-width: 820px) { .cd-dims { grid-template-columns: 1fr; } .cd-record-grid { grid-template-columns: repeat(2, 1fr); } }
+.cd-sec { margin-top: 14px; }
 .cd-sech { display: flex; align-items: baseline; gap: 8px; margin-bottom: 6px; border-bottom: 1px solid var(--ph-faint); padding-bottom: 3px; }
 .cd-dim { color: var(--ph-bright); font-size: 13px; letter-spacing: 0.5px; text-transform: uppercase; }
 .cd-dn { color: var(--ph-dim); font-size: 11px; }
@@ -793,10 +774,6 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 .cd-meta { margin-top: 6px; font-size: 11px; color: var(--ph-dim); letter-spacing: 0.3px; }
 .cd-observed-tag { display: inline-block; margin-right: 6px; padding: 0 5px; font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--ink); background: var(--ph-dim); border-radius: 2px; vertical-align: 1px; }
 .cd-acts { margin-top: 8px; }
-/* guided starter chips (empty dims + the add editor): tap → the editor opens with the sentence started */
-.cd-starters { display: flex; flex-wrap: wrap; gap: 5px; margin: 2px 0 7px; }
-.cd-starter { font: inherit; font-size: 11px; letter-spacing: 0.4px; cursor: pointer; color: var(--ph-dim); background: transparent; border: 1px dashed var(--ph-faint); border-radius: 3px; padding: 2px 8px; }
-.cd-starter:hover { color: var(--ph); border-color: var(--ph-dim); border-style: solid; }
 .cd-add { margin: 2px 0 4px; }
 .cd-addbtn { font: inherit; font-size: 12px; color: var(--ph-dim); background: transparent; border: 1px dashed var(--ph-dim); border-radius: 3px; padding: 3px 10px; cursor: pointer; letter-spacing: 0.5px; }
 .cd-addbtn:hover { color: var(--ph); border-color: var(--ph); }
@@ -837,21 +814,6 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
   box-shadow: inset 0 1px 0 rgba(var(--gold-rgb),.15), 0 0 9px rgba(var(--gold-rgb), .35), 0 1px 0 rgba(0,0,0,.35);
 }
 .tq-reason { font-size: 12px; color: var(--ph-dim); letter-spacing: 0.3px; margin-top: 3px; }
-/* TASTE EXTRACTION — the announce-and-act READ card: the model's settled read of the task, shown while
-   the run keeps working. Assumptions are correctable chips; the inline input steers the LIVE run. */
-.tb-read { border-left: 2px solid var(--ph-dim); padding-left: 9px; }
-.tb-read-head { color: var(--ph-bright); }
-.tb-read-meta { font-size: 12px; color: var(--ph-dim); letter-spacing: 0.3px; margin-top: 2px; }
-.tb-read-assumps { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 5px; }
-.tb-read-assump { font: inherit; font-size: 12px; letter-spacing: 0.3px; cursor: pointer; color: var(--ph-dim);
-  background: transparent; border: 1px dashed var(--ph-faint); border-radius: 4px; padding: 2px 8px; }
-.tb-read-assump:hover { color: var(--ph-bright); border-color: var(--ph-dim); border-style: solid; }
-.tb-read-fix { margin-top: 5px; }
-.tb-read-in { font: inherit; font-size: 12.5px; width: 100%; max-width: 380px; color: var(--ph);
-  background: rgba(0,0,0,.25); border: 1px solid var(--ph-faint); border-radius: 4px; padding: 3px 8px; }
-.tb-read-in:focus { outline: none; border-color: var(--ph-dim); }
-.tb-read-ack { font-size: 12px; color: var(--gold); }
-.tb-read-ack.err { color: var(--ph-dim); }
 
 /* ===== THE DIALOGUE MODE (dialogue.js) — Fallout-style focused first-run conversation =====
    Mounts as a child overlay of #chat-panel, covering COMMS while the awakening/tutorial runs. One short
@@ -1875,23 +1837,53 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
   background: transparent; border: 1px solid rgba(0,0,0,.45); cursor: pointer; padding: 0 6px;
 }
 #ws-new:hover { background: rgba(0,0,0,.2); }
-/* RAIL SEARCH — a slim always-there line under the SESSIONS head (the SESSION TOOLS window was
-   retired 2026-07-17; search is the one capability no other surface covered). Quiet until focused;
-   hits reuse the phosphor row vocabulary. PROJECTS view hides the whole block (setRailView). */
-.ws-rail-search { display: flex; flex-direction: column; font-size: 12px; color: var(--ph-dim); }
-#ws-rail-search[hidden] { display: none; }
-.ws-rail-search input {
-  box-sizing: border-box; width: 100%; min-width: 0; font: inherit; color: var(--ph-bright);
-  background: rgba(0,0,0,.28); border: 0; border-left: 2px solid var(--ph-dim); padding: 4px 8px; outline: none;
+/* SESSION TOOLS — the panel is PARKED hidden in #ws-tools-park (rail markup) and adopted into the
+   SESSION TOOLS floating window's .term-body on open (stationui BUILDERS.sessiontools). Styled for
+   the window: the term chrome owns border/background, so the panel itself stays transparent. */
+#ws-tools-park { display: none; }
+#ws-tools {
+  padding: 2px; display: flex; flex-direction: column; gap: 9px; font-size: 12px; color: var(--ph-dim);
 }
-.ws-rail-search input::placeholder { color: var(--ph-dim); opacity: .8; }
-.ws-rail-search input:focus { border-left-color: var(--ph); box-shadow: inset 0 0 5px var(--ph-glow); }
-#ws-search-results { list-style: none; margin: 0; padding: 2px 0 0; max-height: 150px; overflow-y: auto; }
+#ws-tools[hidden] { display: none; }
+.ws-tools-search input {
+  box-sizing: border-box; width: 100%; min-width: 0; font: inherit; color: var(--ph-bright);
+  background: var(--panel2); border: 1px solid var(--ph-dim); border-radius: 3px; padding: 6px 8px; outline: none;
+}
+.ws-tools-search input:focus { border-color: var(--ph); box-shadow: 0 0 5px var(--ph-glow); }
+#ws-search-results { list-style: none; margin: 0; padding: 0; max-height: 150px; overflow-y: auto; }
 #ws-search-results:empty { display: none; }
 .ws-search-hit { display: flex; flex-direction: column; gap: 1px; padding: 4px 7px; cursor: pointer; border-left: 2px solid var(--ph-dim); }
 .ws-search-hit:hover, .ws-search-hit:focus { color: var(--ph); background: var(--ph-faint); border-left-color: var(--ph); outline: 0; }
 .ws-search-hit b { color: var(--ph); font-weight: normal; }
 .ws-search-hit small { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.ws-tools-row { display: flex; align-items: center; gap: 6px; }
+.ws-tools-row span { flex: 1; letter-spacing: 1px; min-width: 0; }
+#ws-tools-active { color: var(--ph); font-weight: normal; letter-spacing: 0; overflow-wrap: anywhere; }
+.ws-tools-hint { margin-top: -4px; line-height: 1.3; opacity: .75; }
+/* the archived-mirror door reads QUIET like the rail footer it mirrors — a pointer, not a primary action */
+#ws-tools-archived { border-style: dashed; color: var(--ph-dim); }
+#ws-tools-archived:hover:not(:disabled) { border-style: solid; }
+#ws-tools button, .ws-bulk select {
+  font: inherit; color: var(--ph); background: transparent; border: 1px solid var(--ph-dim); border-radius: 2px; padding: 4px 8px; cursor: pointer;
+}
+#ws-tools button:hover:not(:disabled) { color: var(--ph-bright); border-color: var(--ph); background: var(--ph-faint); }
+#ws-tools button:disabled { opacity: .4; cursor: default; }
+#ws-tools button.danger { color: var(--warn); border-color: var(--warn); }
+.ws-tools-wide { width: 100%; }
+.ws-bulk { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin: 0; padding: 8px; border: 1px solid var(--ph-faint); border-radius: 3px; }
+.ws-bulk legend { letter-spacing: 1px; padding: 0 4px; }
+.ws-bulk label { white-space: nowrap; display: inline-flex; align-items: center; gap: 4px; }
+.ws-bulk input[type="checkbox"] { accent-color: var(--ph); }   /* phosphor check, not the browser-blue default */
+
+/* Diagnostics on-screen report block (Settings → SYSTEM, clipboard-failure fallback): the raw <pre>
+   and its button bar previously rendered with browser defaults. Same well + border language as the
+   other settings panels; buttons are the shared .bb.sm skin. */
+.diag-block { margin-top: 8px; }
+.diag-pre { font-family: inherit; font-size: 11px; line-height: 1.4; color: var(--ph); margin: 0;
+  padding: 8px 10px; border: 1px solid var(--ph-dim); border-radius: 2px; background: rgba(0,0,0,.25); }
+.diag-block-bar { display: flex; gap: 8px; margin-top: 6px; }
+.ws-bulk button { margin-left: auto; }
+#ws-bulk-status { min-height: 2.4em; line-height: 1.3; }
 #workstreams {
   list-style: none; margin: 0; padding: 6px 0 0; overflow-y: auto; max-height: 40vh;
   display: flex; flex-direction: column; gap: 4px;
@@ -2268,6 +2260,14 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 .q-queue + .q-dismiss { margin-left:2px; }
 .q-queue:hover { color:var(--gold); border-color:var(--gold); opacity:1; }
 .q-queue:disabled { opacity:.4; cursor:default; }
+/* §C — the GO ▸ chip: routes to the real surface this quest is done on (task board / dossier / REFIT).
+   A quiet phosphor chip in the header row, never a raw browser button; nowrap so the label can't
+   fold into the title. First of the header's right-aligned trio (GO ▸ · ◈ queue · ✕ dismiss). */
+.q-go { margin-left:auto; flex:0 0 auto; background:none; border:1px solid var(--ph-glow2); border-radius:2px;
+  color:var(--ph-dim); opacity:.8; font-family:inherit; font-size:9px; letter-spacing:.08em;
+  text-transform:uppercase; white-space:nowrap; line-height:1.5; padding:1px 6px; cursor:pointer; }
+.q-go:hover { color:var(--gold); border-color:var(--gold); opacity:1; }
+.q-go + .q-queue, .q-go + .q-dismiss { margin-left:2px; }
 /* shared quest-row vocabulary (F-lane hygiene): the inline styles the rows used to carry, hoisted to classes so the
    markup reads structural and every row speaks one visual language. No behavior change — geometry is identical. */
 .q-hd { display:flex; align-items:center; gap:6px; }        /* the glyph + title header row */
@@ -2308,6 +2308,13 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 .q-oc-none   { color:var(--ph); border-color:var(--ph-glow2); }
 .q-oc-skipped, .q-oc-rejected { color:var(--ph-dim); }
 .q-oc-error  { color:#e88; border-color:#e88; }
+
+/* TROPHY CASE card header — the kind tag (DOSSIER / MILESTONE / n× LIFETIME) pins to the top-right
+   corner and never shrinks, so a long title wraps cleanly under it instead of jamming the tag
+   mid-text in the narrow grid columns. */
+.gx-tro .tro-hd { display:flex; align-items:flex-start; gap:6px; }
+.tro-hd .nm { min-width:0; }
+.tro-hd .gx-tag { margin-left:auto; flex:0 0 auto; white-space:nowrap; }
 
 .gx-station { border:1px solid var(--gold); border-radius:2px; background:var(--ph-faint); padding:12px 14px; margin-top:6px; }
 .gx-station .hd { display:flex; align-items:center; gap:8px; margin-bottom:11px; }
