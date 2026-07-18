@@ -87,6 +87,12 @@ const SECRET = 'rk-live-verySECRET-9876';
     A.eq((await j('POST', '/api/servicekeys', { name: '', key: 'x' })).status, 400, 'empty name -> 400');
     A.eq((await j('POST', '/api/servicekeys', { name: 'A', key: 'two words' })).status, 400, 'space in key -> 400');
     A.eq((await j('POST', '/api/servicekeys', { name: 'A', key: 'x', docsUrl: 'ftp://n' })).status, 400, 'non-http docsUrl -> 400');
+    // provider-shaped names are refused: 'OpenRouter' would derive OPENROUTER_API_KEY, which the provider
+    // credential resolver reads from process.env — a KEYS paste must never become billing credentials.
+    const prov = await j('POST', '/api/servicekeys', { name: 'OpenRouter', key: 'sk-or-nope' });
+    A.eq(prov.status, 400, 'provider-shaped name -> 400');
+    A.ok(/model provider/i.test(String(prov.body.error || '')), 'refusal points at the SETTINGS surface');
+    A.eq((await j('POST', '/api/servicekeys', { name: 'Anthropic', key: 'sk-ant-nope' })).status, 400, 'Anthropic likewise refused');
     A.eq((await j('POST', '/api/servicekeys/toggle', { id: 'nope', enabled: false })).status, 404, 'toggle unknown id -> 404');
     A.eq((await j('POST', '/api/servicekeys/remove', { id: 'nope' })).status, 404, 'remove unknown id -> 404');
 

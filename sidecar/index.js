@@ -2463,13 +2463,25 @@ function saveConnectorConfigs() {
    servicekeys.applyEnv's ownership guard so an operator-exported ambient var is never clobbered. The prompt
    seam advertises the env-var NAMES only, gated on shell.exec being in the run's resolved tools. ---- */
 const SERVICEKEYS_FILE = path.join(CONNECTORS_DIR, 'servicekeys.json');
+// Every model-provider keyEnv name (+ its STARNET_/SKYNET_ scoped forms, which ENV() also reads): a KEYS
+// paste deriving one of these would silently become billing credentials via providerRuntimeKey → envFirst.
+// upsert refuses them; applyEnv skips them (belt for pre-guard persisted records).
+const SERVICEKEYS_RESERVED_ENV = (() => {
+  const names = new Set();
+  try {
+    for (const p of listProviderProfiles({ includeInactive: true, public: false })) {
+      for (const n of (p.keyEnv || [])) { names.add(n); names.add('STARNET_' + n); names.add('SKYNET_' + n); }
+    }
+  } catch (e) { console.warn('[servicekeys] reserved-env build failed:', (e && e.message) || e); }
+  return names;
+})();
 function loadServiceKeys() {
   try { const raw = loadResilient(SERVICEKEYS_FILE, 'servicekeys'); return (raw && Array.isArray(raw.keys)) ? raw.keys : []; }
   catch (_) { return []; }
 }
 let serviceKeys = loadServiceKeys();
 let serviceKeysOwnedEnv = {};   // env vars WE set (the applyEnv clobber guard) — rebuilt on every apply
-function applyServiceKeysEnv() { serviceKeysOwnedEnv = serviceKeysMod.applyEnv(serviceKeys, process.env, serviceKeysOwnedEnv); }
+function applyServiceKeysEnv() { serviceKeysOwnedEnv = serviceKeysMod.applyEnv(serviceKeys, process.env, serviceKeysOwnedEnv, { reservedEnv: SERVICEKEYS_RESERVED_ENV }); }
 applyServiceKeysEnv();          // boot: persisted keys are live for the first run without any UI touch
 // Verified persist (secret-durability law): ok ONLY when a read-back proves the write reached disk. On
 // ok:false the in-memory list stays live but the route reports the failure — never a false "saved".
@@ -5459,7 +5471,7 @@ function handleServiceKeysList(req, res) {
 async function handleServiceKeyUpsert(req, res) {
   const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
   let body; try { body = JSON.parse(await readBody(req, 1 << 14)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
-  const r = serviceKeysMod.upsert(serviceKeys, { name: body.name, key: body.key, docsUrl: body.docsUrl }, Date.now());
+  const r = serviceKeysMod.upsert(serviceKeys, { name: body.name, key: body.key, docsUrl: body.docsUrl }, Date.now(), { reservedEnv: SERVICEKEYS_RESERVED_ENV });
   if (r.error) return json(400, { error: r.error });
   serviceKeys = r.list;
   applyServiceKeysEnv();

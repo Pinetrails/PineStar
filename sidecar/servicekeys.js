@@ -14,13 +14,18 @@
      validate({name,key,docsUrl})        -> { ok } | { ok:false, error }
      mask(key)                           -> '····abcd' (never more than the last 4 chars)
      toPublic(record)                    -> the list-response shape: NO key, masked last4
-     upsert(list, {name,key,docsUrl})    -> { list, record } | { error }   (same name = update in place;
-                                            an empty key on update KEEPS the saved key, like mc-token)
+     upsert(list, {name,key,docsUrl}, now, {reservedEnv})
+                                         -> { list, record } | { error }   (same name = update in place;
+                                            an empty key on update KEEPS the saved key, like mc-token;
+                                            a name deriving a RESERVED env var — a model-provider keyEnv —
+                                            is refused: a KEYS paste must never become billing credentials)
      setEnabled(list, id, enabled)       -> { list, record } | { error }
      remove(list, id)                    -> { list, removed } | { error }
-     applyEnv(list, env, owned)          -> owned'  — writes enabled keys into `env`, removes vars WE set
+     applyEnv(list, env, owned, {reservedEnv})
+                                         -> owned'  — writes enabled keys into `env`, removes vars WE set
                                             that are gone/disabled, and NEVER clobbers a var that already
-                                            existed but isn't ours (a real deployment env wins over a paste)
+                                            existed but isn't ours (a real deployment env wins over a paste).
+                                            Reserved (provider) vars are never written — belt to upsert's braces
      promptBlock(list)                   -> the <service_keys> system-prompt block naming env vars (no values);
                                             '' when nothing is enabled (byte-identical no-op for the seam) */
 'use strict';
@@ -96,8 +101,18 @@
 
   function cleanList(list) { return (Array.isArray(list) ? list : []).filter(isRecord); }
 
+  // normalize a caller-supplied reserved-env option (array or Set of var names) to a lookup Set.
+  function reservedSet(opts) {
+    const raw = opts && opts.reservedEnv;
+    if (raw instanceof Set) return raw;
+    return new Set(Array.isArray(raw) ? raw : []);
+  }
+
   // add-or-update by name-slug. Never mutates the input list. `now` injected (no ambient clock).
-  function upsert(list, input, now) {
+  // opts.reservedEnv = the host's model-provider keyEnv names (plus STARNET_/SKYNET_ scoped forms):
+  // a KEYS paste deriving one of those would silently become BILLING credentials via envFirst()'s
+  // process.env read — refused here with a pointer to the right surface instead.
+  function upsert(list, input, now, opts) {
     const v = validate(input);
     if (!v.ok) return { error: v.error };
     const src = cleanList(list);
@@ -108,6 +123,9 @@
     if (!key) return { error: 'key is required' };
     if (!prev && src.length >= LIST_MAX) return { error: 'too many service keys (max ' + LIST_MAX + ')' };
     const envVar = deriveEnvVar(name);
+    if (reservedSet(opts).has(envVar)) {
+      return { error: name + ' is a model provider — add model keys under SETTINGS, not here' };
+    }
     // a rename collision (two names deriving the same env var under different ids) would silently
     // shadow one key with the other in the run env — refuse it instead.
     if (src.some(r => r.id !== id && r.envVar === envVar)) return { error: 'another entry already uses ' + envVar };
@@ -140,13 +158,15 @@
      apply (`owned`), so a var the operator exported before launch (a real RESEND_API_KEY in the shell
      env) always wins over a pasted one — the paste is simply skipped and stays skipped until the
      ambient var goes away. Disabled/removed keys we own are scrubbed from env. */
-  function applyEnv(list, env, owned) {
+  function applyEnv(list, env, owned, opts) {
     const e = env || {};
     const prevOwned = (owned && typeof owned === 'object') ? owned : {};
     const nextOwned = {};
     const want = {};
+    const reserved = reservedSet(opts);
     for (const r of cleanList(list)) {
       if (r.enabled === false) continue;
+      if (reserved.has(r.envVar)) continue;   // a pre-guard persisted record must still never shadow a provider key
       if (r.envVar && r.key) want[r.envVar] = String(r.key);
     }
     for (const k of Object.keys(want)) {

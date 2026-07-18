@@ -5815,7 +5815,6 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       const btn = ev.target.closest('button[data-ky-act]'); if (!btn) return;
       const rowEl = ev.target.closest('.mc-row'); const id = rowEl && rowEl.dataset.id; if (!id) return;
       if (btn.dataset.kyAct === 'remove') {
-        if (!confirm('Remove this key? Agents lose access to it immediately.')) return;
         try {
           const j = await (await postJSON('/api/servicekeys/remove', { id })).json().catch(() => ({}));
           if (j.error && !j.ok) { kyMsgEl.classList.remove('ok'); kyMsgEl.textContent = '✕ ' + j.error; sfx('bad'); }
@@ -5838,6 +5837,10 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     });
     kyPlatformsRefresh();
     kyRefresh();
+    // panes mount once and tab clicks only toggle visibility — re-poll both lists when the Commander
+    // lands on KEYS, so a connector keyed on the CATALOG tab moments ago shows up without a window reopen.
+    const kyTab = body.querySelector('#con-tab-connectors-keys');
+    if (kyTab) kyTab.addEventListener('click', () => { kyPlatformsRefresh(); kyRefresh(); });
   }
 
   /* ---- SPOTIFY connect (OAuth PKCE): open the consent window, then poll /api/spotify/status until the

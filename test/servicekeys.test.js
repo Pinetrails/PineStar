@@ -114,6 +114,24 @@ const K = require('../sidecar/servicekeys.js');
   A.ok(/never print, echo/i.test(block), 'block instructs the model not to leak the value');
 }
 
+// ---- G2. reserved provider env vars: a KEYS paste must never become billing credentials ----
+{
+  const reserved = ['OPENROUTER_API_KEY', 'ANTHROPIC_API_KEY', 'SKYNET_OPENROUTER_API_KEY'];
+  // 'OpenRouter' derives OPENROUTER_API_KEY — exactly what providerRuntimeKey reads from process.env
+  const r1 = K.upsert([], { name: 'OpenRouter', key: 'sk-or-x' }, 1, { reservedEnv: reserved });
+  A.ok(r1.error && /model provider/i.test(r1.error), 'provider-shaped name refused with a pointer to SETTINGS');
+  // the scoped desktop form is reserved too ('Skynet OpenRouter' -> SKYNET_OPENROUTER_API_KEY)
+  A.ok(K.upsert([], { name: 'Skynet OpenRouter', key: 'k' }, 1, { reservedEnv: reserved }).error, 'scoped provider var refused');
+  // a Set works as well as an array, and a non-reserved name still passes with the option present
+  A.ok(!K.upsert([], { name: 'Resend', key: 'k' }, 1, { reservedEnv: new Set(reserved) }).error, 'non-provider name unaffected by the guard');
+  // applyEnv belt: a PRE-GUARD persisted record with a reserved var is skipped, never written
+  const legacy = [{ id: 'openrouter', name: 'OpenRouter', envVar: 'OPENROUTER_API_KEY', key: 'sk-paste', enabled: true }];
+  const env = {};
+  const owned = K.applyEnv(legacy, env, {}, { reservedEnv: reserved });
+  A.ok(!('OPENROUTER_API_KEY' in env), 'applyEnv never writes a reserved provider var (legacy record)');
+  A.ok(!owned.OPENROUTER_API_KEY, 'and never claims ownership of it');
+}
+
 // ---- G. setEnabled / remove ----
 {
   const l = K.upsert([], { name: 'X', key: 'k1' }, 1).list;
