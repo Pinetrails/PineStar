@@ -17,6 +17,9 @@ const SIDECAR = path.join(REPO, 'sidecar', 'index.js');
 const PORT = String(process.env.SKYNET_PORT || '8921');
 const REPLY = process.env.SKYNET_MOCK_REPLY || 'Acknowledged. Work complete: reviewed the request and produced the answer.';
 const FOLLOWUP_REPLY = process.env.SKYNET_MOCK_FOLLOWUP_REPLY || REPLY;
+// stream pacing knobs (concurrent-sessions proof needs run A to stay LIVE while session B is driven by hand)
+const FIRST_MS = Number(process.env.SKYNET_MOCK_FIRST_MS) > 0 ? Number(process.env.SKYNET_MOCK_FIRST_MS) : 2500;
+const DONE_MS = Number(process.env.SKYNET_MOCK_DONE_MS) > 0 ? Number(process.env.SKYNET_MOCK_DONE_MS) : 1500;
 
 function startMock() {
   return new Promise(resolve => {
@@ -40,8 +43,8 @@ function startMock() {
             setTimeout(() => {
               res.write('data: ' + JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop' }], usage: { prompt_tokens: 5, completion_tokens: 6, total_tokens: 11 } }) + '\n\n');
               res.write('data: [DONE]\n\n'); res.end();
-            }, 1500);
-          }, 2500);
+            }, DONE_MS);
+          }, FIRST_MS);
         });
         return;
       }
