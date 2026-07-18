@@ -101,6 +101,7 @@ test/manual.test.js
 test/permissions.test.js
 test/workshop-permissions.test.js
 test/workshop-store.test.js
+test/workshop-undo.e2e.test.js
 test/workshop-visibility.test.js
 test/quest-store.test.js
 test/questinject.test.js
