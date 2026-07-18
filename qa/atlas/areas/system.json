@@ -1,6 +1,6 @@
 {
   "area": "system",
-  "updatedAt": "2026-07-18T01:31:50.639Z",
+  "updatedAt": "2026-07-18T01:34:24.576Z",
   "entries": [
     {
       "id": "state/sys-logbook",
@@ -1367,21 +1367,36 @@
       "kind": "ui",
       "area": "system",
       "name": "Resize NOTIFICATIONS",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Resize the NOTIFICATIONS window — the shared term-resize grip, aria-labelled for screen readers.",
+      "promise": "Dragging (pointer/touch/pen) or arrow-keying it resizes the NOTIFICATIONS window within clamped min/max; the aria-label reads \"Resize NOTIFICATIONS\".",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/terminal-resize.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-notifs"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:34:24.576Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.719Z",
       "lastSeen": "2026-07-18T00:54:02.719Z",
       "missing": false,
       "selector": "button[aria-label=\"Resize NOTIFICATIONS\"]",
-      "state": "sys-notifs"
+      "state": "sys-notifs",
+      "notes": "Proven live @ HEAD 0a009ec2 (sidecar :8961/CDP :9361): button[aria-label=\"Resize NOTIFICATIONS\"] (class term-resize) present + visible in the NOTIFICATIONS window. terminal-resize.test.js:21-25 source-locks the one shared term-resize affordance (pointer+keyboard+clamp) with an explicit accessible name. Evidence .uiatlas/system-evidence/last2.json."
     },
     {
       "id": "ui/system/aria-resize-restore-points",
@@ -5892,21 +5907,37 @@
       "kind": "ui",
       "area": "system",
       "name": "the highest rung: unattended actions may leave the machine — send, publish, or contact external services",
-      "purpose": "",
-      "promise": "",
+      "purpose": "SEND & PUBLISH — the outermost REACH rung of the autonomy dial (the agent may act externally: send messages / publish).",
+      "promise": "Selecting it sets the autonomy REACH level to reach-out (data-reach=\"reach\"); the dial persists the choice and the engine gates external actions on it.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/autonomy.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/autonomy-ui.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:34:24.576Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.718Z",
       "lastSeen": "2026-07-18T00:54:02.718Z",
       "missing": false,
       "selector": "button",
-      "state": "sys-settings"
+      "state": "sys-settings",
+      "notes": "Proven live @ HEAD 0a009ec2: the REACH row renders [data-reach=\"reach\"] labelled \"SEND & PUBLISH\" alongside OBSERVE/SANDBOX (last2.json). autonomy-ui.test.js:18 source-locks a Reach button for EVERY Au.REACH engine enum level, so this rung can never silently vanish. Held perfected; note the entry carries a POSITIONAL harvest key (txt-button-...-1) that may re-mint on a dial reorder (peer to the perfected observe/sandbox rungs). Evidence last2.json."
     },
     {
       "id": "ui/system/txt-button-key-edit-0-save-1",
