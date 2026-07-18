@@ -3113,14 +3113,21 @@ async function nightshiftChat(o) {
     if (name === 'agent.token') { state.buf += (p.delta || ''); return; }
     if (name === 'agent.run.error') state.err = p.message || 'run error';
   };
+  // VISIBLE WHILE THINKING (2026-07-18): the beat's broadcast opt-in (driver + force route both pass it) used to
+  // reach only the ACT path — these reason-only runs ran with a local sink and NO SSE tee, so the station floor sat
+  // idle while the harness provably worked (the inverted truthful-telemetry violation: asserting idle over a live
+  // run). Forward the flag so run.start/cost/end tee to the floor (runTeeView policy — tokens never leave), and
+  // register in runsMeta for the run's lifetime so a reconnect snapshot lights the working pose too.
+  runsMeta.set(runId, { agentId: agentId, startedAt: Date.now(), source: 'nightshift' });
   try {
     await runOnce({
       key: key, model: model, provider: provider,
       system: (o && o.system) || (ident.system && String(ident.system)) || cronSystemFor(agentId),
       messages: o.messages, agentId: agentId, isTask: false, emit: sink, signal: o && o.signal,
-      runId: runId, streamId: 'nightshift-' + runId, surface: 'autonomous', trigger: 'nightshift'
+      runId: runId, streamId: 'nightshift-' + runId, surface: 'autonomous', trigger: 'nightshift', broadcast: !!(o && o.broadcast)
     });
   } catch (e) { return { error: (e && e.message) || 'run failed' }; }
+  finally { runsMeta.delete(runId); }
   if (state.err) return { error: state.err };
   return { text: state.buf };
 }
@@ -3646,7 +3653,7 @@ async function runNightshiftBeat(opts) {
 
   // 1) PROPOSE — the directive LEADS with the focus, then the OPEN-THREADS + recent-activity blocks; the grounding
   //    veto's evidence pool = beliefs + activity + thread texts (a thread-tag citation is the preferred grounding).
-  const cRes = await nightshiftChat({ agentId, system, signal, messages: [{ role: 'user', content: Autopilot.buildCandidateDirective({ beliefs, activity, threads, eligible, focusHeader, priorTonight }) }] });
+  const cRes = await nightshiftChat({ agentId, system, signal, broadcast: !!opts.broadcast, messages: [{ role: 'user', content: Autopilot.buildCandidateDirective({ beliefs, activity, threads, eligible, focusHeader, priorTonight }) }] });
   if (cRes.error) return { delivered: false, reason: cRes.error };
   const candidates = Autopilot.parseCandidates(cRes.text, { eligible, beliefs, activity, threads });
   // 2) SELECT (confidence gate + the learned per-archetype bias — NS-3 wires the server LEARN store in here)
@@ -3654,15 +3661,23 @@ async function runNightshiftBeat(opts) {
   if (!sel.selected) return { delivered: false, reason: sel.reason };
   // NS-6 writeback: the selected candidate cited an open thread → mark it PICKED (it's being worked this beat).
   if (sel.selected.threadId) { try { await threadsStore.pick(sel.selected.threadId, Date.now()); } catch (_) {} }
+  // CONVEYOR TRUTH (2026-07-18): the crate used to be dropped AFTER the draft landed, keyed to a runId no run.end
+  // ever settles — so the floor showed no pending work WHILE the beat actually worked, and the queue depth leaked
+  // +1 per delivered draft until restart. Place it NOW (a job was selected — work genuinely starts) and settle it
+  // on every exit below, exactly like the act/workshop/cron paths do.
+  const beatItemId = 'nsbeat-' + crypto.randomUUID();
+  try { placeCronWorkitem(agentId, '✦ night-shift: ' + String(sel.selected.title || 'draft'), beatItemId); } catch (_) {}
+  let beatDelivered = false;
+  try {
   // 3) DO — the do directive stays on the declared focus too.
-  const dRes = await nightshiftChat({ agentId, system, signal, messages: [{ role: 'user', content: Autopilot.buildDoDirective(sel.selected, { name, focusHeader }) }] });
+  const dRes = await nightshiftChat({ agentId, system, signal, broadcast: !!opts.broadcast, messages: [{ role: 'user', content: Autopilot.buildDoDirective(sel.selected, { name, focusHeader }) }] });
   if (dRes.error) return { delivered: false, reason: dRes.error };
   let deliverable = Autopilot.parseDeliverable(dRes.text, { fallbackTitle: sel.selected.title });
   if (!deliverable) return { delivered: false, reason: 'no-deliverable' };
   // 3b) SELF-CRITIQUE
   const style = (beliefs.style || []).join('; ');
   const standingOrders = (beliefs.standing_orders || []).join('; ');
-  const qRes = await nightshiftChat({ agentId, system, signal, messages: [{ role: 'user', content: Autopilot.buildCritiqueDirective(deliverable, sel.selected, { style, standingOrders }) }] });
+  const qRes = await nightshiftChat({ agentId, system, signal, broadcast: !!opts.broadcast, messages: [{ role: 'user', content: Autopilot.buildCritiqueDirective(deliverable, sel.selected, { style, standingOrders }) }] });
   const crit = (qRes && !qRes.error) ? Autopilot.parseCritique(qRes.text, { fallbackTitle: deliverable.title }) : { verdict: 'ship', note: '' };
   if (crit.verdict === 'drop') return { delivered: false, reason: 'self-rejected' };
   if (crit.verdict === 'revise' && crit.revised) deliverable = crit.revised;
@@ -3677,8 +3692,12 @@ async function runNightshiftBeat(opts) {
   // registered bare-string bus event with no other emitter; the station HUD toasts it on arrival. (The
   // built-artifact path needs no twin: workshop.built already fires there and the HUD presents that card.)
   try { chanEmit('notify', '✦ night shift — drafted “' + entry.title + '” while you were away · review it in the NIGHT SHIFT panel'); } catch (_) {}
-  try { placeCronWorkitem(agentId, '✦ night-shift: ' + deliverable.title, crypto.randomUUID()); } catch (_) {}
+  beatDelivered = true;
   return { delivered: true, reason: 'delivered', title: deliverable.title, archetype: sel.selected.archetype, verdict: crit.verdict };
+  } finally {
+    // 'done' only on a genuinely delivered draft — a stood-down/errored beat just drains its queue slot.
+    try { settleCronWorkitem(beatItemId, beatDelivered ? 'done' : null); } catch (_) {}
+  }
 }
 
 /* ============================ NS-3: the REACH-GATED REAL ACT (reach ≥ sandbox) ============================
@@ -3732,7 +3751,7 @@ async function runNightshiftActShift(opts) {
     } catch (_) { projectSnapshot = ''; targetRoot = ''; }
   }
 
-  const cRes = await nightshiftChat({ agentId, system, signal, messages: [{ role: 'user', content: Autopilot.buildCandidateDirectiveV2({ beliefs, activity, threads, eligible, focusHeader, priorTonight, projectSnapshot }) }] });
+  const cRes = await nightshiftChat({ agentId, system, signal, broadcast: !!opts.broadcast, messages: [{ role: 'user', content: Autopilot.buildCandidateDirectiveV2({ beliefs, activity, threads, eligible, focusHeader, priorTonight, projectSnapshot }) }] });
   if (cRes.error) return { delivered: false, reason: cRes.error };
   // NS-5b: the PROJECT SNAPSHOT lines (real git status / TODO markers the harness READ) join the grounding-veto
   // evidence pool, so a candidate that grounds itself in the actual repo state (e.g. a planted TODO) survives the

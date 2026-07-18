@@ -5327,7 +5327,7 @@ const World = (() => {
     U.bus.on('agent.run.start', p => {
       if (!p || !p.agentId) return;
       const trig = String(p.trigger || '').toLowerCase();
-      const tag = (trig === 'schedule') ? ' · ROUTINE' : (trig === 'event') ? ' · EVENT' : '';
+      const tag = (trig === 'schedule') ? ' · ROUTINE' : (trig === 'event') ? ' · EVENT' : (trig === 'nightshift') ? ' · NIGHT SHIFT' : '';
       pushTicker(tickerName(p.agentId) + ' ▸ RUN INITIATED' + tag, '', tickerSuit(p.agentId));
     });
     U.bus.on('agent.tool_call', p => {
@@ -5440,13 +5440,16 @@ const World = (() => {
     U.bus.on('agent.run.start', p => { if (p && p.agentId) noteRunStart(p.agentId, p.runId); });
     U.bus.on('agent.run.start', p => { if (p && delegateLead) { const b = bodyForAgent(p.agentId); if (b && b !== agent) handoff(delegateLead, p.agentId, 'spawned'); } });
     U.bus.on('agent.run.end', p => { if (p) { const b = bodyForAgent(p.agentId); if (b && b !== agent && !noteRunEnd(p.agentId, p.runId)) handoff(null, p.agentId, 'done'); } });
-    // AUTONOMOUS WORK (cron / channel): a server-initiated run has no in-app chat driving its body, so bind its
-    // run lifecycle to the work pose HERE — the agent goes to its workstation and works for the run's REAL
-    // duration, then stands when it ends. This is what makes a scheduled routine VISIBLE: the conveyor box rides
+    // AUTONOMOUS WORK (cron / channel / night shift): a server-initiated run has no in-app chat driving its body,
+    // so bind its run lifecycle to the work pose HERE — the agent goes to its workstation and works for the run's
+    // REAL duration, then stands when it ends. This is what makes an unattended run VISIBLE: the conveyor box rides
     // in (kind 'cron'/'telegram') AND the agent actually runs to its PC and types until done. Interactive chat
     // (trigger 'directive') drives its own body via chat.js and is excluded; a delegated worker (also 'directive')
-    // is handled by the handoff bindings above — so this never double-drives a body.
-    U.bus.on('agent.run.start', p => { if (p && p.agentId && (p.trigger === 'schedule' || p.trigger === 'event')) { serverLit.add(p.agentId); if (agent && p.agentId === agent.id) agent.taskViaConveyor = true; setActivityFor(p.agentId, 'task'); } });
+    // is handled by the handoff bindings above — so this never double-drives a body. Any OTHER trigger is by
+    // construction server-initiated (schedule/event/nightshift today) and takes the pose — the old
+    // schedule|event whitelist silently dropped trigger 'nightshift', so a self-initiated task ran while the
+    // body wandered idle (2026-07-18: the app asserting idle over a provably live run).
+    U.bus.on('agent.run.start', p => { if (p && p.agentId && p.trigger && p.trigger !== 'directive') { serverLit.add(p.agentId); if (agent && p.agentId === agent.id) agent.taskViaConveyor = true; setActivityFor(p.agentId, 'task'); } });
     U.bus.on('agent.run.end', p => { if (p && p.agentId && !noteRunEnd(p.agentId, p.runId) && serverLit.has(p.agentId)) { serverLit.delete(p.agentId); setActivityFor(p.agentId, 'idle'); } });
     // M-mem.4: a real auto-compaction fired (the loop folded older context into a summary) — raise a
     // one-line notify. Truthful: driven by the event's own before/after token counts. The bottom-bar
