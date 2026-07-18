@@ -151,7 +151,7 @@ own runner (Q1 Guardian, Q2 Beginner Run, Q4 Janitor) or the Overseer digest; th
 | Visual Auditor | Is the rendered game coherent? (needs eyes) | — (local /loop; not headless) | — | 0 |
 | Overseer | What broke today, what needs Andrew? | 2026-07-01 (digest rendered) | 0 P0 · 106 P2 | — |
 | Janitor | What's rotting in the workshop? | 2026-07-01 | 106 findings | 106 |
-| Cartographer | Is every surface element mapped and perfected? | 2026-07-15 17:13Z @ b857fa61 | PERFECTED-fresh 0 / total 1410 (0%) | 123 |
+| Cartographer | Is every surface element mapped and perfected? | 2026-07-18 00:57Z @ b8c3977e | PERFECTED-fresh 0 / total 1786 (0%) | 482 |
 | Dogfood | Does StarNet survive being USED like a real user uses it? | 2026-07-07 (proof shift · mock) @ e01831ab | SURVIVED — 0 anomalies (mock seam shift) | 0 |
 
 _The rows above are the Q5 **movie test** (2026-07-01): one real cycle of every headless
