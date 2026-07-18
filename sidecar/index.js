@@ -21,6 +21,7 @@ const { makeCredits } = require('./credits.js');   // managed-credit backend ada
 const budgetCaps = require('./budgetcaps.js');   // pure resolve(env,overrides) + validate patch — SETTINGS→Budget (P0-2)
 const fallbackChain = require('./fallbackchain.js');   // pure resolve(env,saved) + validate patch — SETTINGS→Models fallback chain (P0-3)
 const { makeConcurrencyGate } = require('./concurrency.js');
+const { makeWorkspaceLease } = require('./workspace-lease.js');
 const { makeConsentWait } = require('./consentwait.js');   // EL-11: fail-closed consent timer + human-visible ack extension
 const { killAll } = require('./halt.js');
 const { makeRegistry } = require('./tools/registry.js');
@@ -4047,6 +4048,12 @@ function armQuestRefresh() {
    the git/fs is here, the one ambient-I/O edge. ---- */
 const CHECKPOINTS_ENABLED = /^(1|true|yes|on)$/i.test(String(ENV('CHECKPOINTS') || '').trim());
 const mutatesWorkspace = (name) => /^fs\.(write|append|edit)$/.test(name) || /^(shell|verify)\./.test(name);
+// WORKSPACE LEASE (concurrent-sessions lane): same-agent runs are now admitted concurrently; the ONE thing
+// they can't share — the workspace dir + shadow-git checkpoint repo — is guarded here instead, at the first
+// workspace-MUTATING tool call. Held from first touch until run end (checkpoint chain stays contiguous per
+// run); a sibling's mutating tool waits up to WORKSPACE_LEASE_WAIT_MS then fails truthfully naming the holder.
+const _leaseWaitMs = Number(ENV('WORKSPACE_LEASE_WAIT_MS'));
+const workspaceLease = makeWorkspaceLease((_leaseWaitMs >= 0 && isFinite(_leaseWaitMs)) ? { waitMs: Math.floor(_leaseWaitMs) } : {});
 function runGit(args, opts) {   // resolves (never rejects); a missing/failing git becomes a fail-open skip upstream
   return new Promise((resolve) => {
     try {
@@ -7501,31 +7508,14 @@ async function runOnce(o) {
       }
     : rawEmit;
 
-  // ---- same-agent run mutex (workspace/shadow-git collision guard) ----
-  // The concurrency gate DELIBERATELY lets a 2nd run of an already-admitted agent through (it's the FAN-OUT of
-  // distinct agents it bounds, not a single agent's back-to-back work). But two runs of the SAME agentId race on
-  // ONE thing they can't share: the agent's single workspace directory + its shadow-git checkpoint repo — a file
-  // clobber and a `git index.lock` fight (one run's checkpoint commit aborts because the other holds the lock).
-  // So before admission, refuse a run whose agentId ALREADY has one in flight. Marked transient (the client
-  // retries transients) because the collision is momentary — the first run finishes and the slot frees. This is
-  // scoped to agentId-and-therefore-workspace: every team worker / ephemeral clone takes a DISTINCT agentId
-  // (orchestration.js validates worker.agentId !== leadId; team.spawn mints 'sub-'+uuid), so a lead fanning out
-  // to its crew is never self-blocked — only two runs literally sharing one agent's desk collide here.
-  if (concurrencyGate.inFlight(agentId) > 0) {
-    // NAME THE HOLDER (2026-07-07 escape: 27 minutes of "already running" with NOTHING visibly running —
-    // the app asserted a state the user couldn't see). runsMeta knows every route-level run (interactive /
-    // cron run-now / nightshift / workshop); a scheduled-cron fire may not be in it, so fall back honestly.
-    let holder = '';
-    try {
-      const h = [...runsMeta.values()].filter(m => m && m.agentId === agentId).sort((a, b) => a.startedAt - b.startedAt)[0];
-      holder = h ? ('The run holding it started ' + formatRunHolderAge(Date.now() - h.startedAt) + ' (source: ' + (h.source || 'unknown') + (h.streamId ? ', session: ' + h.streamId : '') + ').')
-                 : 'The run holding it is a background one (a scheduled routine or delegated worker).';
-    } catch (_) {}
-    emit('agent.run.start', { agentId, runId, trigger: trigger, model });
-    emit('agent.run.error', { agentId, runId, transient: true, message: 'That agent is already running a task — one run at a time per agent (they share a workspace). ' + holder + ' Wait for it to finish, check ROUTINES for a recurring job on this agent, or press E-STOP (the red control in the top bar, or Alt+H) to stop everything.' });
-    emit('agent.run.end', { agentId, runId, reason: 'error', turns: 0, usd: 0 });
-    return;   // no slot was taken (we checked BEFORE tryEnter), so nothing to leave; the outer finally is a no-op here
-  }
+  // ---- same-agent concurrency (concurrent-sessions lane, 2026-07-18) ----
+  // Concurrent runs of ONE agent are ADMITTED (multiple COMMS sessions can drive the same agent at once; the
+  // world's overlap refcount — world.js liveRunsByAgent — keeps the desk pose/screens truthful until the LAST
+  // run ends). The old admission-time refusal ("already running a task — one run at a time per agent") guarded
+  // the workspace dir + shadow-git checkpoint repo; that collision is now guarded WHERE it happens instead:
+  // `workspaceLease` in dispatch — taken at the first workspace-MUTATING tool, held until run end, so pure
+  // chat/reasoning runs never block and never wait. The concurrency gate below still bounds the fan-out of
+  // DISTINCT agents (a 2nd run of an admitted agent consumes no new slot — see concurrency.js).
 
   // ---- concurrency admission (multi-agent fan-out guard) ----
   // Refuse a run only when a NEW distinct agent would exceed the in-flight cap; a 2nd run of an already-
@@ -8010,6 +8000,23 @@ async function runOnce(o) {
     // never blocked, and any success RESETS the streak. Only a run stuck repeating the SAME failing call is broken.
     const sig = c.name + '|' + crypto.createHash('sha1').update(String(c.argsRaw || '')).digest('hex');
     if ((seen.get(sig) || 0) > CAPS.maxRepeat) return { ok: false, isError: true, content: 'repeated identical FAILING call blocked (loop guard)', summary: 'loop-break' };
+    // WORKSPACE LEASE: same-agent runs execute concurrently, but the workspace dir + shadow-git checkpoint
+    // repo have ONE writer at a time. First mutating tool takes the agent's lease (held until run end — the
+    // release lives in the same finally as concurrencyGate.leave); a sibling run's mutating tool waits here
+    // (bounded, visible as its in-flight agent.tool_call), then fails truthfully naming the holder. Re-entrant:
+    // the holding run's later tools never re-wait.
+    if (mutatesWorkspace(c.name)) {
+      const lease = await workspaceLease.acquire(agentId, runId);
+      if (!lease.ok) {
+        let holderNote = 'another live run of this agent holds the workspace.';
+        try {
+          const hid = lease.holder && lease.holder.runId;
+          const h = hid ? runsMeta.get(hid) : null;
+          if (h) holderNote = 'another live run of this agent holds the workspace — it started ' + formatRunHolderAge(Date.now() - h.startedAt) + ' (source: ' + (h.source || 'unknown') + (h.streamId ? ', session: ' + h.streamId : '') + ').';
+        } catch (_) {}
+        return { ok: false, isError: true, content: 'workspace busy — ' + holderNote + ' The workspace frees when that run ends. Retry this tool call to keep waiting, or finish this task without workspace changes.', summary: 'workspace-busy' };
+      }
+    }
     // CHECKPOINT NET: snapshot the workspace BEFORE a mutating tool so the turn is one rollback away. The general
     // fs.* net is opt-in (SKYNET_CHECKPOINTS); a shell.* call is ALWAYS snapshotted (the safety coupling that makes
     // command execution undo-able, independent of the flag). Content-deduped + fail-open: an unchanged workspace
@@ -8518,6 +8525,8 @@ async function runOnce(o) {
     // broken page cannot retain any browser-level state after the task finishes.
     if (runBrowser) { try { await runBrowser.session.close(); } catch (_) {} }
     concurrencyGate.leave(agentId);   // release the admission slot on EVERY exit (normal, early-return, or throw)
+    workspaceLease.release(agentId, runId);   // free (or withdraw the queued wait for) this run's workspace lease — same guarantee
+
   }
 }
 
