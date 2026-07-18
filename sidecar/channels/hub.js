@@ -41,14 +41,12 @@
     return '\n\n(stopped: ' + reason + ')';
   }
 
-  // The ONE transient refusal the messaging bridge retries: the host's same-agent workspace mutex (index.js's
-  // `concurrencyGate.inFlight(agentId) > 0` guard) refuses a run whose agentId already has one in flight. When a
-  // second message ABORTS this chat's prior run and we immediately start the replacement, the aborted run's slot may
-  // not have released yet (its `concurrencyGate.leave` runs in an async finally as the aborted run unwinds), so the
-  // replacement momentarily loses that race and is refused. The refusal is marked transient by the host and clears
-  // as soon as the prior run finishes unwinding — so we retry ONLY this class (never a budget/config/capdenied
-  // error, never the distinct 'too many agents' cap refusal). Matched on transient + the distinctive phrase so a
-  // different transient never gets silently looped. Kept as a narrow regex, not a substring, to avoid false hits.
+  // HISTORICAL COMPAT (concurrent-sessions lane, 2026-07-18): the host's admission-time same-agent mutex
+  // ("already running a task…") is RETIRED — a current sidecar ADMITS the replacement run even while the aborted
+  // one unwinds, so this retry class simply never fires against it. The classifier + bounded retry are KEPT as
+  // defense in depth for a version-skewed host (an older sidecar behind a newer bridge) where the supersede race
+  // can still surface that transient refusal. Matched on transient + the distinctive phrase so a different
+  // transient never gets silently looped. Kept as a narrow regex, not a substring, to avoid false hits.
   const SUPERSEDE_REFUSAL_RE = /already running a task/i;
   function isSupersedeRaceRefusal(transient, message) {
     return !!transient && SUPERSEDE_REFUSAL_RE.test(String(message == null ? '' : message));

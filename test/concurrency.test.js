@@ -50,20 +50,24 @@ const { makeConcurrencyGate } = require('../sidecar/concurrency.js');
   A.eq(u.max(), 0, 'max 0 reports unlimited');
 }
 
-// ---- same-agent run mutex predicate (index.js runOnce admission): a run is refused iff the agent ALREADY
-//      has one in flight. The mutex is `inFlight(agentId) > 0` checked BEFORE tryEnter, so two concurrent runs
-//      of ONE agentId (which share a workspace + shadow-git repo) can never both admit, while a fresh agent and
-//      a strictly-sequential re-run of the same agent both pass. ----
+// ---- inFlight() as TELEMETRY (concurrent-sessions lane, 2026-07-18): the old admission-time same-agent
+//      mutex (`inFlight(agentId) > 0` refused a 2nd run) is RETIRED — concurrent same-agent runs are admitted,
+//      and the workspace/shadow-git collision is guarded by workspace-lease.js at the mutating-tool seam.
+//      inFlight survives as the honest run counter behind `concurrencyFree` (nightshift defers its autonomous
+//      beats while the agent has ANY live run) — lock that reading here. ----
 {
-  const g = makeConcurrencyGate({ max: 0 });   // unlimited fan-out; the mutex is orthogonal to the distinct-agent cap
-  const mutexBlocks = (id) => g.inFlight(id) > 0;   // the exact predicate runOnce evaluates before admission
+  const g = makeConcurrencyGate({ max: 0 });   // unlimited fan-out; the counter is orthogonal to the distinct-agent cap
+  const concurrencyFree = (id) => g.inFlight(id) === 0;   // the exact predicate index.js hands nightshift
 
-  A.eq(mutexBlocks('hero'), false, 'a fresh agent is NOT mutex-blocked (first run admits)');
-  g.tryEnter('hero');                                // first run admitted
-  A.eq(mutexBlocks('hero'), true, "hero's SECOND concurrent run IS mutex-blocked (shared workspace)");
-  A.eq(mutexBlocks('other'), false, 'a DIFFERENT agent is never blocked by hero (distinct workspace) — team workers stay parallel');
-  g.leave('hero');                                   // first run finishes
-  A.eq(mutexBlocks('hero'), false, 'after the run finishes, a SEQUENTIAL re-run of the same agent admits again');
+  A.eq(concurrencyFree('hero'), true, 'a fresh agent reads free (nightshift may beat)');
+  g.tryEnter('hero'); g.tryEnter('hero');            // two CONCURRENT runs of one agent — both admitted now
+  A.eq(g.inFlight('hero'), 2, 'inFlight counts every concurrent run of the agent honestly');
+  A.eq(concurrencyFree('hero'), false, 'nightshift defers while the agent has live runs');
+  A.eq(concurrencyFree('other'), true, 'a DIFFERENT agent is unaffected — team workers stay parallel');
+  g.leave('hero');
+  A.eq(concurrencyFree('hero'), false, 'still not free while ONE of the concurrent runs lives');
+  g.leave('hero');
+  A.eq(concurrencyFree('hero'), true, 'free again only after the LAST run leaves');
 }
 
 A.report('concurrency.test');
