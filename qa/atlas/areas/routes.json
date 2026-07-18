@@ -1,6 +1,6 @@
 {
   "area": "routes",
-  "updatedAt": "2026-07-18T01:12:24.806Z",
+  "updatedAt": "2026-07-18T01:21:14.587Z",
   "entries": [
     {
       "id": "route/get-api-agent-skills",
@@ -103,114 +103,186 @@
       "kind": "route",
       "area": "routes",
       "name": "GET /api/auth/grok/models",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The signed-in Grok account's real model list, live-discovered with a fresh token.",
+      "promise": "GET returns 200 with the live catalog for the connected account, or a static roster + {error} when discovery fails / not connected.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/providers"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "KNOWN",
+          "ref": "Live network catalog discovery — not asserted headlessly; the fallback-roster+error shape is exercised by oauthsignin.test.js. EL-3 gap tracked in ledger."
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.712Z",
       "lastSeen": "2026-07-18T00:54:02.712Z",
-      "missing": false
+      "missing": false,
+      "notes": "Handler traced (handleOAuthModels('grok')). Not driven live this session (network model discovery). KNOWN coverage gap filed to ledger."
     },
     {
       "id": "route/get-api-auth-grok-status",
       "kind": "route",
       "area": "routes",
       "name": "GET /api/auth/grok/status",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Grok (xAI) subscription sign-in status — booleans/strings only, never the tokens.",
+      "promise": "GET returns 200 {connected,expired,reason,expiredAt,last_refresh,persistError}; the OAuth tokens are never echoed.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/apiauth.js",
+          "sidecar/providers"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "oauthsignin.test.js",
+          "gate": "test:fast"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:19:52.950Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.712Z",
       "lastSeen": "2026-07-18T00:54:02.712Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET → 200 {connected:false,expired:false,reason:'',last_refresh:''} — booleans/strings only, no tokens. Guarded by oauthsignin.test.js (status payload)."
     },
     {
       "id": "route/get-api-auth-kimi-models",
       "kind": "route",
       "area": "routes",
       "name": "GET /api/auth/kimi/models",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The signed-in Kimi account's real model list, live-discovered with a fresh token.",
+      "promise": "GET returns 200 with the live catalog for the connected account, or a static roster + {error} when discovery fails / not connected.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/providers"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "KNOWN",
+          "ref": "Live network catalog discovery — not asserted headlessly; fallback shape exercised by oauthsignin.test.js. EL-3 gap tracked in ledger."
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.712Z",
       "lastSeen": "2026-07-18T00:54:02.712Z",
-      "missing": false
+      "missing": false,
+      "notes": "Handler traced (handleOAuthModels('kimi')). Not driven live this session (network model discovery). KNOWN coverage gap filed to ledger."
     },
     {
       "id": "route/get-api-auth-kimi-status",
       "kind": "route",
       "area": "routes",
       "name": "GET /api/auth/kimi/status",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Kimi (Moonshot) subscription sign-in status — booleans/strings only, never the tokens.",
+      "promise": "GET returns 200 {connected,expired,reason,expiredAt,last_refresh,persistError}; the OAuth tokens are never echoed.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/apiauth.js",
+          "sidecar/providers"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "oauthsignin.test.js",
+          "gate": "test:fast"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:19:52.950Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.712Z",
       "lastSeen": "2026-07-18T00:54:02.712Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET → 200 {connected:false,expired:false,reason:'',last_refresh:''} — booleans/strings only. Guarded by oauthsignin.test.js."
     },
     {
       "id": "route/get-api-autonomy-ledger",
       "kind": "route",
       "area": "routes",
       "name": "GET /api/autonomy/ledger",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Recent autonomy decision ledger (cron / night-shift fire/skip/defer), newest-first, for the autonomy surface.",
+      "promise": "GET returns 200 {entries:[...]} of real recorded decisions (empty when none); a THROWN store read is 500 {error} so auth/crash is distinguishable from a genuinely-empty log — it deliberately does NOT fail-open.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/autonomy-ledger.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "autonomy-ledger.e2e.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:19:52.950Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-08T21:11:49.342Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET → 200 {entries:[]} (truthful empty on a fresh seed). Guarded by autonomy-ledger.e2e.test.js."
     },
     {
       "id": "route/get-api-autonomy-posture",
       "kind": "route",
       "area": "routes",
       "name": "GET /api/autonomy/posture",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Report the server's copy of the autonomy posture summary plus whether a beliefs snapshot is present.",
+      "promise": "GET returns 200 {summary:{initiative,reach,leashPerDay,enabled,...}, beliefs:{known,at}|null}; never echoes raw beliefs text.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/commander-context.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "lifecycle-armed.http.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:19:52.950Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-08T21:11:49.342Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET → 200 {summary:{initiative:wait,reach:sandbox,leashPerDay:3,enabled:false,...}} from the durable posture object. Guarded by lifecycle-armed.http.test.js + nightshift e2e suite."
     },
     {
       "id": "route/get-api-budget-status",
@@ -316,7 +388,9 @@
         "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
         "date": "2026-07-18T01:12:24.806Z"
       },
-      "findings": [],
+      "findings": [
+        "15d5b43c"
+      ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": true,
@@ -346,13 +420,13 @@
       "status": "audited",
       "auditedAt": {
         "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
-        "date": "2026-07-18T01:12:24.806Z"
+        "date": "2026-07-18T01:19:52.950Z"
       },
       "findings": [],
       "firstSeen": "2026-07-10T05:18:57.443Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
-      "notes": "LIVE :8964 @ HEAD 0a009ec2 — 200 {telegram:{connected:false,configured:false,state:down,...},discord:{...}} — booleans only, no secrets echoed. Guarded by channels.generic-wire.test.js."
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET → 200 {telegram:{connected:false,configured:false,state:down},discord:{...}} — booleans only, no secrets echoed. Guarded by channels.generic-wire.test.js."
     },
     {
       "id": "route/get-api-channels-telegram-status",
@@ -788,19 +862,31 @@
       "kind": "route",
       "area": "routes",
       "name": "GET /api/lifecycle/armed",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Snapshot of what autonomy is currently armed (routines/channels/nightshift/workshop) — the tray supervisor's close-decision truth.",
+      "promise": "GET returns 200 lifecycleArmedSnapshot(now) with honest armed/count/healthy/halted flags from live in-memory state; never asserts armed state the harness can't prove.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "lifecycle-armed.http.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:19:52.950Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.712Z",
       "lastSeen": "2026-07-18T00:54:02.712Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET → 200 {armed:false,categories:{routines:{armed:false,count:0},channels:{connected:[]},nightshift:{...}}} matching the seed's dormant autonomy. Guarded by lifecycle-armed.http.test.js."
     },
     {
       "id": "route/get-api-limits",
@@ -949,57 +1035,98 @@
       "kind": "route",
       "area": "routes",
       "name": "GET /api/nightshift/drafts",
-      "purpose": "",
-      "promise": "",
+      "purpose": "List the drafts night-shift beats left on the desk for the morning report, newest-first.",
+      "promise": "GET (?since,?limit) returns 200 {drafts:[...]} incl. empty; a store read error is 500 {error}.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "KNOWN",
+          "ref": "No direct HTTP-path assertion in test/; the capped in-index draft store is exercised indirectly by nightshift e2e run assertions. EL-3 gap tracked in ledger."
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:19:52.950Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-08T21:11:49.342Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET → 200 {drafts:[]} (truthful empty). KNOWN coverage gap: no direct HTTP test asserts this route; filed to ledger."
     },
     {
       "id": "route/get-api-nightshift-focus",
       "kind": "route",
       "area": "routes",
       "name": "GET /api/nightshift/focus",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Durable single-priority STEER for night-shift that outranks derived evidence (grants nothing).",
+      "promise": "GET returns 200 {ok,focus,steer}; POST {kind,...} returns 200 {ok,focus,steered,resolved} or a validation 400/403/404 (kind/thread-open/goal-exists/path-trust checks); DELETE returns 200 {ok,cleared,focus}.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/nightfocus.js",
+          "sidecar/pathtrust.js",
+          "sidecar/threads-store.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "nightshift-focus.e2e.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:19:52.950Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-08T21:11:49.342Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET ?agent=agent → 200 {ok:true,focus:null,steer:null} (truthful no-steer). POST/DELETE mutation paths not driven live this session but guarded by nightshift-focus.e2e.test.js."
     },
     {
       "id": "route/get-api-nightshift-status",
       "kind": "route",
       "area": "routes",
       "name": "GET /api/nightshift/status",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Truthful night-shift telemetry — status equals what the next tick would actually do.",
+      "promise": "GET returns 200 with fully provable fields (active/halted/away/beatsUsedToday/leashPerDay/binding/buildMode/readiness/focus); no decorative values.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/nightshift-driver.js",
+          "sidecar/nightshift.js",
+          "sidecar/nightfocus.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "nightshift-grant.e2e.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:19:52.950Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-08T21:11:49.342Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET → 200 {active:false,halted:true,away:false,beatsUsedToday:0,leashPerDay:3,lastBeatAt:0,...} — truthful dormant state. Guarded by nightshift-grant/halt/presence/focus e2e suite."
     },
     {
       "id": "route/get-api-notebook",
@@ -1072,19 +1199,38 @@
       "kind": "route",
       "area": "routes",
       "name": "GET /api/projects",
-      "purpose": "",
-      "promise": "",
+      "purpose": "List every blessed project root for the Projects rail (the known autonomy surface).",
+      "promise": "GET returns 200 {projects:[{...,blessed}]}; blessed is live-joined from the standing path grants so a revoked-but-remembered root reads blessed:false; no-token → 403.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/projects-store.js",
+          "sidecar/pathtrust.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "projectbless.test.js",
+          "gate": "test:fast"
+        },
+        {
+          "kind": "test",
+          "ref": "e2e.pathtrust.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:19:52.950Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-08T21:11:49.342Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET → 200 {projects:[]} on a fresh seed; no-token → 403 forbidden token. Guarded by projectbless.test.js + e2e.pathtrust.test.js."
     },
     {
       "id": "route/get-api-providers",
@@ -1120,38 +1266,63 @@
       "kind": "route",
       "area": "routes",
       "name": "GET /api/quests",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Read the quest ledger for the quest board.",
+      "promise": "GET returns 200 {ok:true,quests:[...]}; a store throw is 500 {ok:false,error}.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/quest-store.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "KNOWN",
+          "ref": "quest-store.js is exercised at store level (quests.test.js, stationquests/workquests/maintquests.test.js) but no test asserts the GET /api/quests HTTP path. EL-3 gap tracked in ledger."
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:19:52.950Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-08T21:11:49.342Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET → 200 {ok:true,quests:[]}. KNOWN HTTP-path coverage gap filed to ledger."
     },
     {
       "id": "route/get-api-quests-refresh",
       "kind": "route",
       "area": "routes",
       "name": "GET /api/quests/refresh",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Quest-refresh engine status — north star, last cycle, due state, refresh ledger.",
+      "promise": "GET returns 200 with real engine state {enabled,northStar,northStarProposed,lastCycleAt,dueAt,due,why,binding}; never a fabricated due/northStar.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/questrefresh.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "questrefresh.e2e.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:19:52.950Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.712Z",
       "lastSeen": "2026-07-18T00:54:02.712Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET → 200 {ok:true,enabled:true,northStar:null,northStarProposed:false,lastCycleAt:...,due:false}. Guarded by questrefresh.e2e.test.js."
     },
     {
       "id": "route/get-api-runs",
@@ -1248,19 +1419,33 @@
       "kind": "route",
       "area": "routes",
       "name": "GET /api/scout",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Scout bay status — warmth, mint gate, interests, staged drafts, ledger, usage.",
+      "promise": "GET returns 200 with real engine state; it runs a scoutSweep() first so aged drafts are purged even when idle; never fabricates warmth/interest values.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/scout.js",
+          "sidecar/interests.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "scout.http.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:19:52.950Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-08T21:11:49.342Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET → 200 {warm:false,gate:{fire:false,binding:cold,mintEveryRuns:3},interests:[],staged:[],ledger:[]} — truthful cold state. Guarded by scout.http.test.js."
     },
     {
       "id": "route/get-api-skills",
@@ -1471,57 +1656,96 @@
       "kind": "route",
       "area": "routes",
       "name": "GET /api/task-briefs",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Durable task-brief intent state (real only — the route can't fabricate a brief).",
+      "promise": "GET returns 200 {briefs:[...],patterns:[...]} incl. empty; any read error fails open to 200 empty (never a 500).",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/taskbrief-store.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "threads.e2e.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:19:52.950Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.712Z",
       "lastSeen": "2026-07-18T00:54:02.712Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET ?agent=agent → 200 {briefs:[],patterns:[]} (truthful empty). Read surface guarded within threads.e2e.test.js; store logic in taskbrief-*.test units."
     },
     {
       "id": "route/get-api-threads",
       "kind": "route",
       "area": "routes",
       "name": "GET /api/threads",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The durable thread ledger read surface (default state=open), real state only.",
+      "promise": "GET (?agent,?state) returns 200 {threads,counts,state} incl. empty; any error fails open to 200 empty (never a 500).",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/threads-store.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "threads.e2e.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:19:52.950Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-08T21:11:49.342Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET ?agent=agent → 200 {threads:[],counts:{open:0,picked:0,delivered:0,declined:0},state:open}. Guarded by threads.e2e.test.js."
     },
     {
       "id": "route/get-api-threads-proposals",
       "kind": "route",
       "area": "routes",
       "name": "GET /api/threads/proposals",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Pending mined thread candidates for a run (each with an evidence quote) for turn-in.",
+      "promise": "GET ?agent=<id>&run=<id> returns 200 {runId,agentId,proposals:[...]}; a bad agentId is 403; any error fails open to 200 empty.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/threads-store.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "threads.e2e.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:19:52.950Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-08T21:11:49.342Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET ?agent=agent&run=none → 200 {runId:none,agentId:agent,proposals:[]}. Guarded by threads.e2e.test.js."
     },
     {
       "id": "route/get-api-toolsets",
@@ -1709,19 +1933,30 @@
       "kind": "route",
       "area": "routes",
       "name": "POST /api/activity",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Throttled presence beacon — the arrival IS the signal; the body is ignored.",
+      "promise": "POST returns 200 {ok:true,at} always and never blocks the UI; updates the last-user-activity clock. Cron/night-shift never call it.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "KNOWN",
+          "ref": "No direct HTTP test asserts this beacon; behavior is a single clock write. EL-3 gap tracked in ledger."
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:19:52.950Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-08T21:11:49.342Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {} → 200 {ok:true,at:1784337298558}. KNOWN coverage gap filed to ledger."
     },
     {
       "id": "route/post-api-agent-delete",
@@ -1773,19 +2008,32 @@
       "kind": "route",
       "area": "routes",
       "name": "POST /api/attachments",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Save (or op:'delete') a composer attachment into the agent workspace.",
+      "promise": "POST {dataUrl,...} returns 200 {ok:true,...} on save/delete; a failure is {ok:false,error} at the store's status (default 400); an unparseable body is 400.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/attachments.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "e2e.attachments.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:19:52.950Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-10T05:18:57.443Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST with no dataUrl → 400 {ok:false,error:'bad or missing dataUrl'} (honest guard). Save/delete happy path guarded by e2e.attachments.test.js."
     },
     {
       "id": "route/post-api-auth-codex-poll",
@@ -1836,133 +2084,215 @@
       "kind": "route",
       "area": "routes",
       "name": "POST /api/auth/grok/logout",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Forget stored Grok credentials.",
+      "promise": "POST clears the Grok tokens and returns 200 {connected:false}; status then reports disconnected.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/providers"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "oauthsignin.test.js",
+          "gate": "test:fast"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:19:52.950Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.712Z",
       "lastSeen": "2026-07-18T00:54:02.712Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST → 200 {connected:false} (idempotent clear). Guarded by oauthsignin.test.js."
     },
     {
       "id": "route/post-api-auth-grok-poll",
       "kind": "route",
       "area": "routes",
       "name": "POST /api/auth/grok/poll",
-      "purpose": "",
-      "promise": "",
+      "purpose": "One Grok device-auth poll tick until the user finishes in the browser.",
+      "promise": "POST {login_id} returns 200 {status:'pending'} until authorized, then {status:'connected'}; an unknown/expired login is 400 {status:'error',code:'login_not_found'}; upstream failure is 502.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/providers"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "oauthsignin.test.js",
+          "gate": "test:fast"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:19:52.950Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.712Z",
       "lastSeen": "2026-07-18T00:54:02.712Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {login_id:nope} → 400 {status:'error',error:'unknown or expired sign-in — start again',code:'login_not_found'} (honest). Guarded by oauthsignin.test.js."
     },
     {
       "id": "route/post-api-auth-grok-start",
       "kind": "route",
       "area": "routes",
       "name": "POST /api/auth/grok/start",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Begin Grok device-code sign-in (RFC 8628): ask xAI for a device/user code.",
+      "promise": "POST returns 200 {login_id,user_code,verification_uri,interval,expires_in} to show the user, or 502 {error,code} on an upstream failure; the opaque device_code stays server-side keyed by login_id.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/providers"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "oauthsignin.test.js",
+          "gate": "test:fast"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.712Z",
       "lastSeen": "2026-07-18T00:54:02.712Z",
-      "missing": false
+      "missing": false,
+      "notes": "Handler traced (handleOAuthStart('grok')). Not driven live this session (calls xAI to mint a device code). Guarded by oauthsignin.test.js."
     },
     {
       "id": "route/post-api-auth-kimi-logout",
       "kind": "route",
       "area": "routes",
       "name": "POST /api/auth/kimi/logout",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Forget stored Kimi credentials.",
+      "promise": "POST clears the Kimi tokens and returns 200 {connected:false}; status then reports disconnected.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/providers"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "oauthsignin.test.js",
+          "gate": "test:fast"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:19:52.950Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.712Z",
       "lastSeen": "2026-07-18T00:54:02.712Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST → 200 {connected:false} (idempotent clear). Guarded by oauthsignin.test.js."
     },
     {
       "id": "route/post-api-auth-kimi-poll",
       "kind": "route",
       "area": "routes",
       "name": "POST /api/auth/kimi/poll",
-      "purpose": "",
-      "promise": "",
+      "purpose": "One Kimi device-auth poll tick until the user finishes in the browser.",
+      "promise": "POST {login_id} returns 200 {status:'pending'} then {status:'connected'}; an unknown/expired login is 400 {status:'error',code:'login_not_found'}; upstream failure is 502.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/providers"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "oauthsignin.test.js",
+          "gate": "test:fast"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.712Z",
       "lastSeen": "2026-07-18T00:54:02.712Z",
-      "missing": false
+      "missing": false,
+      "notes": "Handler traced (handleOAuthPoll('kimi')). Not driven live this session; the honest login_not_found guard is shared with the grok/poll handler proven this session. Guarded by oauthsignin.test.js."
     },
     {
       "id": "route/post-api-auth-kimi-start",
       "kind": "route",
       "area": "routes",
       "name": "POST /api/auth/kimi/start",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Begin Kimi device-code sign-in (RFC 8628): ask Moonshot for a device/user code.",
+      "promise": "POST returns 200 {login_id,user_code,verification_uri,interval,expires_in}, or 502 {error,code} on upstream failure; the opaque device_code stays server-side keyed by login_id.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/providers"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "oauthsignin.test.js",
+          "gate": "test:fast"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.712Z",
       "lastSeen": "2026-07-18T00:54:02.712Z",
-      "missing": false
+      "missing": false,
+      "notes": "Handler traced (handleOAuthStart('kimi')). Not driven live this session (calls Moonshot to mint a device code). Guarded by oauthsignin.test.js."
     },
     {
       "id": "route/post-api-autonomy-posture",
       "kind": "route",
       "area": "routes",
       "name": "POST /api/autonomy/posture",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Mirror the autonomy dial to the server so the night-shift driver owns the truth; the dial IS the unattended-build consent.",
+      "promise": "POST {initiative,reach,...} returns 200 {ok:true, summary, nightshiftArmed, workshopGranted}; a grant hiccup degrades workshopGranted:null (honest unknown) rather than failing the write; side-effects lift the nightshift/cron E-STOP halt and arm the timer.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/nightshift.js",
+          "sidecar/nightshift-driver.js",
+          "sidecar/workshop-store.js",
+          "sidecar/autonomy-ledger.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "nightshift-grant.e2e.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-08T21:11:49.342Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "Handler traced (index.js:8612 handleAutonomyPosture). Happy path mutates posture + lifts halt + arms nightshift; not driven live this session to avoid arming the autonomy timer in the probe workspace. Guarded by nightshift-grant.e2e.test.js."
     },
     {
       "id": "route/post-api-autonomy-write",
@@ -2150,19 +2480,29 @@
       "kind": "route",
       "area": "routes",
       "name": "POST /api/channels/events",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Phantom skeleton — there is NO POST handler for /api/channels/events; only the GET SSE stream is dispatched (index.js:4597). The harvester over-minted this method variant.",
+      "promise": "POST /api/channels/events has no route and returns 404 \"not found\" (verified live). It is not a real surface; the only /api/channels/events contract is the GET EventSource stream.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "KNOWN",
+          "ref": "Not a real route — 404. No test should assert it. Phantom-skeleton harvest bug tracked in ledger fp 15d5b43c."
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
-      "findings": [],
+      "findings": [
+        "15d5b43c"
+      ],
       "firstSeen": "2026-07-10T05:18:57.443Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST → 404 not found (no handler). Cartographer phantom: it minted a POST skeleton for a GET-only SSE path. Left mapped with the honest 404 promise + finding attached; retirement needs the harvester to stop over-minting method variants for path-match routes."
     },
     {
       "id": "route/post-api-channels-notify",
@@ -2540,19 +2880,36 @@
       "kind": "route",
       "area": "routes",
       "name": "POST /api/consent/ack",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Extend a pending consent prompt's deadline (EL-11: the browser attests the prompt is human-visible).",
+      "promise": "POST {runId,promptId} returns 200 {ok:true,extended} where extended reflects whether a live pending finisher was found; a stale id is a harmless {extended:false}; unparseable body is 400.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "consentwait.test.js",
+          "gate": "test:fast"
+        },
+        {
+          "kind": "test",
+          "ref": "consent-visibility.test.js",
+          "gate": "test:fast"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:19:52.950Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-10T05:18:57.443Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST with no live prompt → 200 {ok:true,extended:false} (honest no-op). Guarded by consentwait.test.js + consent-visibility.test.js."
     },
     {
       "id": "route/post-api-cron",
@@ -2846,19 +3203,31 @@
       "kind": "route",
       "area": "routes",
       "name": "POST /api/dev/inbound",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Dev-only inbound message injector that mimics the Telegram ingress wiring (for local testing).",
+      "promise": "POST {chatId,text,...} returns 200 {ok,chatId,agentId,isTask,workitemId,replies} when DEV_MODE is on; a 404 {error:'not found'} when DEV_MODE is off; empty text or bad json is 400.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/channels"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "KNOWN",
+          "ref": "Dev-mode-gated route with no direct HTTP-path test in test/; the ingress it mimics is covered by channels.telegram.e2e.test.js. EL-3 gap tracked in ledger."
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:19:52.950Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-08T21:11:49.342Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 (DEV_MODE on) — POST {text:''} → 400 {error:'text required'} (honest; NOT the 404 dev-off path, confirming DEV gating is active). KNOWN coverage gap filed to ledger."
     },
     {
       "id": "route/post-api-dossier",
@@ -3180,19 +3549,31 @@
       "kind": "route",
       "area": "routes",
       "name": "POST /api/nightshift/beat",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Force-fire ONE night-shift beat now (attended test of the unattended path), reach-gated live.",
+      "promise": "POST {agentId} streams NDJSON; the final line is {name:'nightshift.beat.result', payload:{delivered,reason}}; an abort/disconnect ends {delivered:false,reason:'aborted'}; a bad agentId is 400 {error}.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/nightshift-driver.js",
+          "sidecar/workshop-store.js",
+          "sidecar/deliverable-store.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "nightshift-act.e2e.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-08T21:11:49.342Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "Handler traced (index.js:8723 handleNightshiftBeatNow). Not driven live this session: firing a beat drives a real agent run (would attempt a provider call). Guarded by nightshift-beat-halt/act/contextpack/focus e2e tests."
     },
     {
       "id": "route/post-api-notebook-restore",
@@ -3286,171 +3667,276 @@
       "kind": "route",
       "area": "routes",
       "name": "POST /api/projects/bless",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Bless a user-picked folder as a trusted root via the same standing path-grant machinery.",
+      "promise": "POST {path} for an interactive request grants the root and returns 200 {ok:true,...}; a torn durable write fails closed; bad input is 400 {ok:false,reason}. Autonomous fs writes NEVER pass through here — they go through pathTrustCore.guard.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/projectbless.js",
+          "sidecar/projects-store.js",
+          "sidecar/pathtrust.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "projectbless.test.js",
+          "gate": "test:fast"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-08T21:11:49.342Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "Handler traced (index.js:8550 handleProjectBless, surface:'interactive'). Not driven live this session (would mint a standing path grant). Guarded by projectbless.test.js."
     },
     {
       "id": "route/post-api-projects-pickfolder",
       "kind": "route",
       "area": "routes",
       "name": "POST /api/projects/pickfolder",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Open the native OS folder chooser and return the picked path (grants nothing).",
+      "promise": "POST returns 200 {ok,path} on pick or {ok,cancelled} on cancel; failure 400 {ok:false,reason}; the call blocks while the human browses.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/folderpick.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "KNOWN",
+          "ref": "Native OS dialog cannot be driven headlessly — no automated HTTP assertion possible; the grant-nothing contract is guarded by the pathtrust/projectbless units. EL-3 gap tracked in ledger."
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.712Z",
       "lastSeen": "2026-07-18T00:54:02.712Z",
-      "missing": false
+      "missing": false,
+      "notes": "Handler traced (index.js:8563 handleProjectPickFolder). Cannot prove live headlessly (blocks on a native folder dialog). KNOWN coverage gap filed to ledger."
     },
     {
       "id": "route/post-api-providers-probe",
       "kind": "route",
       "area": "routes",
       "name": "POST /api/providers/probe",
-      "purpose": "",
-      "promise": "",
+      "purpose": "No-generation provider round-trip for truthful Settings telemetry; a BYOK key is consumed in-memory, never persisted or echoed.",
+      "promise": "ALWAYS 200 {provider,reachable,catalogAvailable,credentialVerified}; an honest failure (unknown provider, unreachable, bad json) is carried as {reachable:false,...,error,code} INSIDE the 200 — never a 5xx.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "sidecar.http.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:19:52.950Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.712Z",
       "lastSeen": "2026-07-18T00:54:02.712Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST → 200 {provider:openrouter,reachable:true,catalogAvailable:true,credentialVerified:false} (placeholder key correctly reports unverified without echoing it). Always-200 telemetry law holds. Guarded by sidecar.http.test.js."
     },
     {
       "id": "route/post-api-quests-confirm",
       "kind": "route",
       "area": "routes",
       "name": "POST /api/quests/confirm",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The Commander's verdict on an agent attest (yes → done / no → decline note).",
+      "promise": "POST {id,verdict,...} returns 200 {ok:bool} and fires an early quest-refresh tick when it lands; a missing id is 400; a store throw is 500.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/quest-store.js",
+          "sidecar/questrefresh.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "KNOWN",
+          "ref": "Store-level only (quest-store.confirmAttest); no HTTP-path assertion. EL-3 gap tracked in ledger."
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:19:52.950Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-08T21:11:49.342Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {} (no id) → 400 {ok:false,error:'which quest?'}. KNOWN HTTP coverage gap filed to ledger."
     },
     {
       "id": "route/post-api-quests-dismiss",
       "kind": "route",
       "area": "routes",
       "name": "POST /api/quests/dismiss",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Wave a quest off forever (denylists the title — the anti-nag law).",
+      "promise": "POST {id} returns 200 {ok:bool}; a missing id is 400; a store throw is 500.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/quest-store.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "KNOWN",
+          "ref": "Store-level only (quest-store.dismiss); no HTTP-path assertion. EL-3 gap tracked in ledger."
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:19:52.950Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-08T21:11:49.342Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {} (no id) → 400 {ok:false,error:'which quest?'}. KNOWN HTTP coverage gap filed to ledger."
     },
     {
       "id": "route/post-api-quests-mint",
       "kind": "route",
       "area": "routes",
       "name": "POST /api/quests/mint",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Mint a quest (the completion-contract rule is enforced in the store).",
+      "promise": "POST {contract,...} returns 200 {ok:true,id}; a mint with no valid completion contract is 400 {ok:false,error}; a store throw is 500.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/quest-store.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "KNOWN",
+          "ref": "Store-level only (quests.test.js exercises quest-store.mint); no HTTP-path assertion for POST /api/quests/mint. EL-3 gap tracked in ledger."
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:19:52.950Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-08T21:11:49.342Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {title:x} (no contract) → 400 {ok:false,error:'a quest needs a valid completion contract'} (honest guard). KNOWN HTTP coverage gap filed to ledger."
     },
     {
       "id": "route/post-api-quests-refresh-northstar",
       "kind": "route",
       "area": "routes",
       "name": "POST /api/quests/refresh/northstar",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The Commander's verdict on a PROPOSED (inferred) north star (confirm adopts / decline denylists).",
+      "promise": "POST {decision:confirm|decline} returns 200 {ok:true,applied,decision,northStar,northStarProposed}; any other decision is 400 {ok:false,error}.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/questrefresh.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "questrefresh.e2e.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:19:52.950Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.712Z",
       "lastSeen": "2026-07-18T00:54:02.712Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {decision:maybe} → 400 {ok:false,error:'decision must be confirm or decline'}. Guarded by questrefresh.e2e.test.js."
     },
     {
       "id": "route/post-api-quests-refresh-run",
       "kind": "route",
       "area": "routes",
       "name": "POST /api/quests/refresh/run",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Force a quest-refresh cycle now (bypasses due gates; respects in-flight + opt-out).",
+      "promise": "POST returns 200 {ok:true,started:true} when a cycle launches, else a truthful 200 {ok:false,started:false,error} (disabled / already running).",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/questrefresh.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "questrefresh.e2e.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.712Z",
       "lastSeen": "2026-07-18T00:54:02.712Z",
-      "missing": false
+      "missing": false,
+      "notes": "Handler traced (index.js:6346 handleQuestsRefreshRun). Not driven live this session (launching a cycle runs the refresh engine). Guarded by questrefresh.e2e.test.js."
     },
     {
       "id": "route/post-api-quests-update",
       "kind": "route",
       "area": "routes",
       "name": "POST /api/quests/update",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Tick a step or agent-attest completion (neither completes the quest by itself).",
+      "promise": "POST {id,op,...} returns 200 {ok:bool} (an attest failure is returned as a truthful 200 {ok:false,error}); an unknown op or missing id is 400; a store throw is 500.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/quest-store.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "KNOWN",
+          "ref": "Store-level only (quest-store.tickStep/attest); no HTTP-path assertion. EL-3 gap tracked in ledger."
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:19:52.950Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-08T21:11:49.342Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {op:tickStep} (no id) → 400 {ok:false,error:'which quest?'}. KNOWN HTTP coverage gap filed to ledger."
     },
     {
       "id": "route/post-api-roster",
@@ -3641,76 +4127,125 @@
       "kind": "route",
       "area": "routes",
       "name": "POST /api/save/recovery-ack",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Clear the quarantine/recovery marker so the honest recovery notice shows only once — never touches the save itself.",
+      "promise": "POST {agent} returns 200 {ok:true,cleared}; an ack failure is surfaced as a truthful 200 {ok:false,error}; bad json/agentId is 400.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/savestore.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "save.test.js",
+          "gate": "test:fast"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:19:52.950Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-10T05:18:57.443Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {agent:agent} → 200 {ok:true,cleared:false} (no marker to clear on a fresh seed; honest). Guarded by save.test.js."
     },
     {
       "id": "route/post-api-scout-context",
       "kind": "route",
       "area": "routes",
       "name": "POST /api/scout/context",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The browser pushes facts only it knows (custom classes/recipes, worksignal, recruiter pick) for server-side dedupe.",
+      "promise": "POST {...} returns 200 {ok:true} and persists into scout state; an unparseable body is 400.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/scout.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "scout.http.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-08T21:11:49.342Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "Handler traced (handleScoutContext → Scout.setContext). Not driven live this session (would seed scout context). Guarded by scout.http.test.js."
     },
     {
       "id": "route/post-api-scout-decide",
       "kind": "route",
       "area": "routes",
       "name": "POST /api/scout/decide",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The Commander's verdict on a staged Scout draft (accept retires it / dismiss denylists the fingerprint).",
+      "promise": "POST {id,decision} returns 200 {ok:true,item}; an unknown id is a harmless 200 {ok:false,error:'unknown id'} (stale shelf, not a throw); a missing decision is 400.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/scout.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "scout.http.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:19:52.950Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-08T21:11:49.342Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {id} with no decision → 400 {ok:false,error:'decision must be accept|dismiss'} (honest failure). Guarded by scout.http.test.js."
     },
     {
       "id": "route/post-api-scout-telemetry",
       "kind": "route",
       "area": "routes",
       "name": "POST /api/scout/telemetry",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Scout engagement counters only (recipe.launch / recipe.rated) — no content.",
+      "promise": "POST {kind,id,...} returns 200 {ok:true}; a bad kind or an out-of-enum verdict is 400 {ok:false,error}.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/scout.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "scout.http.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:19:52.950Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-08T21:11:49.342Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {kind:bogus} → 400 {ok:false,error:'kind must be recipe.launch or recipe.rated with an id'}. Guarded by scout.http.test.js."
     },
     {
       "id": "route/post-api-session",
@@ -3972,19 +4507,32 @@
       "kind": "route",
       "area": "routes",
       "name": "POST /api/threads/turnin",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Resolve one mined thread candidate — keep/edit commits an open thread; discard permanently denies the fingerprint.",
+      "promise": "POST {agentId,runId,id,verdict} returns 200 {ok:true,reason}; a stale/unknown id is a harmless 200 {ok:true,reason:'unknown'} no-op; a store error is 200 {ok:false,error}; a bad agentId is 403.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/threads-store.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "threads.e2e.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:19:52.950Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-08T21:11:49.342Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {id:nope,verdict:discard} → 200 {ok:true,reason:'unknown'} (honest no-op on a stale id). Guarded by threads.e2e.test.js."
     },
     {
       "id": "route/post-api-toolsets",
@@ -4172,19 +4720,31 @@
       "kind": "route",
       "area": "routes",
       "name": "POST /api/workshop/remove",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Drop an un-built idea from the away-build queue.",
+      "promise": "POST {agentId,id} returns 200 {ok:true,removed:true}; an already-built item is 409; a not-on-queue id is 404 {ok:false,error}; bad agentId/json is 400; a store throw is 500.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/workshop-store.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "KNOWN",
+          "ref": "No direct HTTP-path test for POST /api/workshop/remove; the workshop queue flow is covered indirectly by workshop.e2e.test.js + workshop-store units. EL-3 gap tracked in ledger."
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:19:52.950Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.712Z",
       "lastSeen": "2026-07-18T00:54:02.712Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {id:nope} → 404 {ok:false,error:'that idea is no longer on the queue'} (honest). KNOWN HTTP coverage gap filed to ledger."
     },
     {
       "id": "route/post-api-workshop-shift",
@@ -4224,19 +4784,33 @@
       "kind": "route",
       "area": "routes",
       "name": "POST /api/workshop/undo",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Reverse a KEPT deliverable's copy-out — delete only the files the keep wrote (EL-11 #8).",
+      "promise": "POST {agentId,runId} returns 200 {...,removed:[],missing:[]} deleting only the containment-checked out-of-jail copies and restoring the pending row; no kept row is 404; a missing destPath or bad ids is 400.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/deliverable-store.js",
+          "sidecar/workshop-store.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "workshop-undo.e2e.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:19:52.950Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.712Z",
       "lastSeen": "2026-07-18T00:54:02.712Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {runId:nope} (no kept copy) → 404 {ok:false,error:'no kept copy to undo for that build'} (honest guard). Happy delete-the-copy path guarded by workshop-undo.e2e.test.js."
     }
   ]
 }
