@@ -18,8 +18,8 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "82638a26a010b17c7ee9adb43fb9e79cc5d44405",
-    "pathSetSha256": "9eeefd91d6d300f96627d4a5036f6c767a4a1fe611b7bce6175e1b94964d750f",
+    "sourceCommit": "430450a16f13909e53d4025349c8d65657d54a6f",
+    "pathSetSha256": "b42fc8968bd9ea83635667209ba4d6e8006645e600aee2323874ba4fcda2f603",
     "files": [
       {
         "path": "INSTALL.md",
@@ -633,8 +633,8 @@
       },
       {
         "path": "frontend/app/stationui.js",
-        "bytes": 535304,
-        "sha256": "d079c174731750abe73f53a1dc0e56109d9a1186eba1bb969fb501a6fe4f0264"
+        "bytes": 398240,
+        "sha256": "2d06f8f0de6e24f8272c4fb6db7f63ecba2561db609f13fc2e40145f500cb2d7"
       },
       {
         "path": "frontend/app/study.js",
@@ -745,6 +745,41 @@
         "path": "frontend/app/widgets.js",
         "bytes": 29084,
         "sha256": "7fd3dfc6c1ade132d1c060d9d1cf3de49c2a6ad4d62b1d80278f108891172cea"
+      },
+      {
+        "path": "frontend/app/windows/connectors.js",
+        "bytes": 51351,
+        "sha256": "22bfe18484581d1bc95c29ae44794ea76c39f41cd5b9c1e6431a9b9b3a507c8e"
+      },
+      {
+        "path": "frontend/app/windows/logbook.js",
+        "bytes": 12810,
+        "sha256": "b55d4b6ae8bc7bd5caca4711c1c79e71decd266a97f83c2de0e59ba86aa1a028"
+      },
+      {
+        "path": "frontend/app/windows/messaging.js",
+        "bytes": 33425,
+        "sha256": "90894efd2c3082b42d3e438f71dccb2bfe0e8e935c9a1ccfbbb1ae10cd2696c5"
+      },
+      {
+        "path": "frontend/app/windows/outbox.js",
+        "bytes": 11000,
+        "sha256": "2193ed1aff46128597e9685cdd36d67a47e8eabaa56014d2c1435506e5c420e1"
+      },
+      {
+        "path": "frontend/app/windows/rewind.js",
+        "bytes": 5856,
+        "sha256": "40e05e394d89ad3aad1ec5c5707905824fe0462e456a2c78603713c2e555bdb6"
+      },
+      {
+        "path": "frontend/app/windows/routines.js",
+        "bytes": 24533,
+        "sha256": "1e43a49ff74df394982c0fd9ee0d2232e782c482898977862e5d40d63804a8a7"
+      },
+      {
+        "path": "frontend/app/windows/trophies.js",
+        "bytes": 4462,
+        "sha256": "4cacf2a0d12a89d445823f579122d244344ddc07357c1c11a95ce42c06ff6ce7"
       },
       {
         "path": "frontend/app/workquests.js",
@@ -868,8 +903,8 @@
       },
       {
         "path": "frontend/index.html",
-        "bytes": 60870,
-        "sha256": "37c76071fd529fb85f9974de0759013100e6d9b19e6ded09ae3716012b8b9783"
+        "bytes": 61976,
+        "sha256": "0f32c9d01018ee2590960291cfede8cbf0b110109b823650a8e70e0027ddff4c"
       },
       {
         "path": "frontend/js/arcade.js",
