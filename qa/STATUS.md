@@ -1,5 +1,13 @@
 # QA STATION — dashboard
 
+**2026-07-18 Atlas Perfectionist wave 2 + tooling cleanup (release-polish lane, 5 parallel agents):** gauge 12% → **PERFECTED-fresh 274/1523 (18%)** + 478 audited; missing cruft 277→15; registry 1786→1523 after verified retirements. Per-area digests:
+- Atlas events — audited +44 (5 live-proven run-lifecycle stream on :8968, 39 trace+gate) · perfected 0 (consumer-render journeys absent, uniform honest cap) · 2 stale dead-contract notes CORRECTED (notify + workshop.built are live-wired) · findings 40203e5e workitem.superseded + cf61a8e9 workshop.decided gate gaps.
+- Atlas props — 95/95 judged (desk perfected, 94 audited-by-trace) · object=capability spine verified honest end-to-end · findings 818768f7 JUKEBOX tier:cosmetic grants real spotify_* tools (taxonomy call for owner) + e08db5b6 only studio has per-id CAP_PROP_MAP test.
+- Atlas build — stale 25→0 all re-proven live (refit undo/redo = real cap revoke/regrant) · build-manual DEMOTED perfected→audited (its only guard was a deleted script — stale-confidence catch) · retired 112 dup positional orphans (408→296) · findings 0a808216 dead coverage ref + cea0899f skill-card buttons lack anchors + b2420742 refit EL-3 gaps.
+- Atlas world — 74 real distinct overlay controls: 42 perfected-fresh + 31 audited (chat send, 16 data terminals, model dock filter, bays, voice toggles, session-tools) · retired 28 superseded · finding e9d24ac6 model-picker over-harvest (~397 non-unique button artifacts → tooling lane to collapse) + 5 coverage gaps.
+- Tooling cleanup — states.mjs walks work-deliverables (18 states) · route harvester binds method+path within ONE guard (SSE GET /api/channels/events captured, 2 phantoms killed, test-locked 126 assertions) · 123 superseded positional entries retired across wave-1 shards.
+**Two-wave verdict: 1,200+ entries judged live; product truthfulness defects = 0. Product findings = 2 taxonomy/coverage-adjacent (jukebox tier, missing ui anchors); everything else = QA coverage or atlas tooling.** Wave 3 queue: build connectors tail (136 unmapped), model-harvest collapse, coverage wave (convert 478 audited → perfected by writing the missing machine assertions).
+
 **2026-07-18 Atlas Perfectionist wave 1 (release-polish lane, 5 parallel area agents):** gauge 0% → **PERFECTED-fresh 212/1786 (12%)** + 285 audited. Per-area digests:
 - Atlas commands — perfected +40 (area 40/40) · findings 0 · all 40 slash commands driven through the real #chat-input on :8965, honest catalog-derived output incl. /model warn-on-garbage LOCKED.
 - Atlas system — perfected-fresh 78/221 (35%) · unmapped 0 (was 76) · audited 125 · findings 3 (custom-phosphor no behavior test d87c49c9 · minimize unguarded e9e4fab6 · nightshift-steer UI no DOM assertion bec0f139) · full settings/providers/channels/dial surface re-proven live @ HEAD.
@@ -159,7 +167,7 @@ own runner (Q1 Guardian, Q2 Beginner Run, Q4 Janitor) or the Overseer digest; th
 | Visual Auditor | Is the rendered game coherent? (needs eyes) | — (local /loop; not headless) | — | 0 |
 | Overseer | What broke today, what needs Andrew? | 2026-07-01 (digest rendered) | 0 P0 · 106 P2 | — |
 | Janitor | What's rotting in the workshop? | 2026-07-01 | 106 findings | 106 |
-| Cartographer | Is every surface element mapped and perfected? | 2026-07-18 01:59Z @ 1465e35d | PERFECTED-fresh 212 / total 1786 (12%) | 298 |
+| Cartographer | Is every surface element mapped and perfected? | 2026-07-18 02:49Z @ 129d1b8d | PERFECTED-fresh 274 / total 1523 (18%) | 187 |
 | Dogfood | Does StarNet survive being USED like a real user uses it? | 2026-07-07 (proof shift · mock) @ e01831ab | SURVIVED — 0 anomalies (mock seam shift) | 0 |
 
 _The rows above are the Q5 **movie test** (2026-07-01): one real cycle of every headless
