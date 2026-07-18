@@ -1,5 +1,24 @@
 # NEXT.md — current priorities & task queue
 
+## 2026-07-18 — CONCURRENT SESSIONS ON ONE AGENT (branch `claude/multiple-concurrent-sessions-736e68`)
+
+Andrew's ask: multiple COMMS sessions may drive the SAME agent at once (Hermes parity), with the
+agent staying at its workstation until the LAST run ends. Shipped:
+- **Admission mutex retired** (sidecar/index.js): same-agent runs are ADMITTED concurrently; the
+  distinct-agent fan-out cap is unchanged. The workspace/shadow-git collision moved to a
+  **run-scoped workspace lease** (`sidecar/workspace-lease.js`, unit-locked): taken at the first
+  workspace-MUTATING tool, held to run end (contiguous checkpoint chains); a sibling's mutating
+  tool waits (`STARNET_WORKSPACE_LEASE_WAIT_MS`, default 45s) then fails truthfully naming the
+  holder session. Chat/reasoning runs never touch the lease.
+- **COMMS soft gate** (chat.js): composer never disabled by a peer run; idle session reads
+  `online · also running in <session>` + ALSO RUNNING IN row with VIEW ACTIVE RUN. Per-stream
+  one-run gate intact. Old `agent_busy` refusal handling kept as defense vs old sidecars.
+- **Proof**: e2e (two same-agent runs both end `done`), 362/362 fast + test:http green, live
+  seeded-app run: refcount 2 while both stream, one ends → agent STAYS working, last ends → idle.
+  World needed no change (liveRunsByAgent overlap refcount already only extinguishes on last end).
+- [ ] Follow-up candidates: crew-panel ×N run marker; lease-wait surfaced as a COMMS beat;
+  hub.js supersede-retry comment is now historical (behavior unaffected).
+
 ## 2026-07-17 — AUTONOMY TUNING (direction dial) — merging this pass (claude/agent-autonomy-tuning-89786e)
 
 Andrew's ask: let users guide WHERE the agent's autonomous work goes, as a release cherry-on-top.

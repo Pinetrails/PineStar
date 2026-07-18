@@ -60,17 +60,24 @@ A.eq(C.elapsedOf('w', 7800), 3000, 'elapsed excludes the 3s approval pause (6s w
 C.end('w');
 A.eq(C.elapsedOf('w', 9000), 0, 'end zeroes the honest elapsed');
 
-/* ---------- 5. availability is agent-global, not merely workstream-local ---------- */
+/* ---------- 5. concurrent sessions: a peer run is a SOFT indicator, never a send gate ----------
+   (concurrent-sessions lane, 2026-07-18: the sidecar admits concurrent same-agent runs — the workspace
+   is guarded by a run-scoped lease backend-side. COMMS must SHOW the peer run truthfully but must not
+   re-become the old hard gate: no disabled composer, no preflight refusal.) */
 A.ok(/function\s+busyPeerFor\s*\(ws\)[\s\S]{0,700}Workstreams\.list[\s\S]{0,1200}Channels\.isBusy/.test(src),
-  'COMMS resolves another busy workstream for the same agent before claiming availability');
-A.ok(/BUSY IN/.test(src) && /VIEW ACTIVE RUN/.test(src),
-  'a blocked session names the busy session and offers a route to its active run');
+  'COMMS still resolves a same-agent peer run (the soft indicator\'s source of truth)');
+A.ok(/ALSO RUNNING IN/.test(src) && /VIEW ACTIVE RUN/.test(src),
+  'a session with a busy peer names it and offers a route to the active run');
 A.ok(/function\s+maybeEmptyState[\s\S]{0,300}busyPeerFor\(activeWs\)/.test(src),
-  'the blocked session cannot also render the contradictory COMMS-online empty hint');
-A.ok(/function\s+updateControls[\s\S]{0,700}busyPeerFor[\s\S]{0,700}disabled/.test(src),
-  'the normal composer/send controls are disabled while that agent is busy elsewhere');
-A.ok(/async function\s+send[\s\S]{0,3200}busyPeerFor\(ws\)/.test(src),
-  'send rechecks agent-global availability before creating a turn');
+  'an empty busy-peer session shows the peer row, not competing starter chips');
+// the OLD hard gate must stay dead: nothing may disable the composer off a peer run…
+const uc = /function\s+updateControls\s*\(\)\s*\{([\s\S]*?)\n  \}/.exec(src);
+A.ok(uc, 'updateControls() exists');
+A.ok(!/disabled\s*=\s*!!peer/.test(uc[1]), 'the composer is never disabled because a peer session is running');
+A.ok(/input\.disabled\s*=\s*false/.test(uc[1]), 'the input is explicitly kept live under a peer run');
+// …and send() must not refuse a turn because of one (the per-STREAM one-run gate stays).
+A.ok(!/preflightPeer/.test(src), 'send has no agent-global preflight refusal (the old blocked-return is gone)');
+A.ok(/Channels\.isBusy\(ws\.id\)\)\s*return/.test(src), 'the per-stream one-run-per-session gate still holds');
 
 /* ---------- 6. a disconnect durably keeps real partial output before its marker ---------- */
 A.ok(/function\s+persistPartial[\s\S]{0,700}role:\s*'assistant'[\s\S]{0,220}content:/.test(src),

@@ -20,6 +20,7 @@ test/fallback-chain.test.js
 test/configexport.test.js
 test/settings-p1-backend.test.js
 test/concurrency.test.js
+test/workspace-lease.test.js
 test/durable-store.test.js
 test/todo.durability.test.js
 test/halt.test.js

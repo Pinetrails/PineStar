@@ -27,6 +27,13 @@ function startMockOpenRouter() {
       if (req.url.indexOf('/chat/completions') >= 0) {
         let body = ''; req.on('data', d => { body += d; }); req.on('end', () => {
           try { requests.push(JSON.parse(body)); } catch (_) {}
+          // KABOOM sentinel: a hard non-retryable provider failure (401 auth) whose message carries a
+          // distinctive needle — used to provoke a REAL recorded run error for the diagnostics-tail tests.
+          if (body.indexOf('KABOOM') >= 0) {
+            res.writeHead(401, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: { message: 'KABOOM-DIAG-NEEDLE: mock provider rejected this run', code: 401 } }));
+            return;
+          }
           res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' });
           const write = () => {
             res.write('data: ' + JSON.stringify({ choices: [{ delta: { content: 'Hello' } }] }) + '\n\n');
@@ -171,21 +178,34 @@ function boot(port, env, attemptsLeft) {
       A.ok(evs.some(e => e.name === 'agent.run.end' && e.payload.reason === 'done'), 'the heartbeated run still streams and completes clean');
     }
 
-    // ---- diagnostics error tail SURVIVES A RESTART (2026-07-07 escape: run failed -> user restarted ->
-    //      "Recent errors: (none recorded this session)" — the one artifact that explained the failure was
-    //      RAM-only). Provoke a recorded run error (same-agent mutex), reboot on the same workspace, and
-    //      the error must still be in the report. ----
+    // ---- CONCURRENT SAME-AGENT SESSIONS (2026-07-18 lane): the old admission mutex is GONE — two runs of
+    //      one agent must now run side by side and BOTH complete clean (the workspace lease only engages on
+    //      mutating tools, which neither of these chat runs uses). ----
     {
       const drive2 = (agentId, text, streamId) => fetch(B + '/api/run', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-StarNet-Token': token, Origin: B },
         body: JSON.stringify({ key: 'sk-or-v1-e2e-fake', model: 'test/model', agentId, streamId, messages: [{ role: 'user', content: text }] }) });
-      const slow = drive2('dup-agent', 'SLOWPOKE hold the desk', 'dup-session-a'); // holds dup-agent in flight ~300ms
+      const slow = drive2('dup-agent', 'SLOWPOKE hold the desk', 'dup-session-a'); // in flight ~300ms
       await new Promise(r => setTimeout(r, 60));                            // let the first run be admitted
-      const clash = await drive2('dup-agent', 'collide');                    // same agent -> run.error (mutex)
-      const clashText = await clash.text(); await (await slow).text();        // drain both
-      A.ok(/started just now/.test(clashText), 'sub-minute mutex age says just now (never fabricates one minute)');
-      A.ok(/session: dup-session-a/.test(clashText), 'mutex refusal names the holding interactive session');
+      const second = await drive2('dup-agent', 'concurrent question', 'dup-session-b');   // same agent, second session
+      const secondText = await second.text(); const slowText = await (await slow).text();  // drain both
+      A.ok(secondText.indexOf('already running a task') < 0, 'a second same-agent run is ADMITTED (no mutex refusal)');
+      const endsOf = raw => raw.split('\n').map(l => l.trim()).filter(Boolean).map(l => { try { return JSON.parse(l); } catch (_) { return null; } })
+        .filter(e => e && e.name === 'agent.run.end').map(e => e.payload.reason);
+      A.eq(endsOf(secondText)[0], 'done', 'the second session\'s concurrent run completed clean');
+      A.eq(endsOf(slowText)[0], 'done', 'the first session\'s run ALSO completed clean (undisturbed by the overlap)');
+    }
+
+    // ---- diagnostics error tail SURVIVES A RESTART (2026-07-07 escape: run failed -> user restarted ->
+    //      "Recent errors: (none recorded this session)" — the one artifact that explained the failure was
+    //      RAM-only). Provoke a recorded run error (KABOOM: a hard 401 from the mock provider), reboot on
+    //      the same workspace, and the error must still be in the report. ----
+    {
+      const r = await fetch(B + '/api/run', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-StarNet-Token': token, Origin: B },
+        body: JSON.stringify({ key: 'sk-or-v1-e2e-fake', model: 'test/model', agentId: 'diag-agent', messages: [{ role: 'user', content: 'KABOOM please' }] }) });
+      const rawErr = await r.text();
+      A.ok(rawErr.indexOf('KABOOM-DIAG-NEEDLE') >= 0, 'the provider failure surfaced on the run stream (agent.run.error carries the provider message)');
       const d1 = await (await fetch(B + '/api/diagnostics', { headers: { 'X-StarNet-Token': token, Origin: B } })).json();
-      A.ok(d1.text.indexOf('already running a task') >= 0, 'the run error is in this session\'s diagnostics tail');
+      A.ok(d1.text.indexOf('KABOOM-DIAG-NEEDLE') >= 0, 'the run error is in this session\'s diagnostics tail');
     }
 
     // ---- F1 escape (2026-07-14 adversarial sweep): a client that VANISHES mid-stream (reload / tab close /
@@ -237,7 +257,7 @@ function boot(port, env, attemptsLeft) {
     try {
       const token2 = await bootToken(B2, B2);
       const d2 = await (await fetch(B2 + '/api/diagnostics', { headers: { 'X-StarNet-Token': token2, Origin: B2 } })).json();
-      A.ok(d2.text.indexOf('already running a task') >= 0, 'RESTART-SAFE: the error tail survived the sidecar restart (diag.errors.json)');
+      A.ok(d2.text.indexOf('KABOOM-DIAG-NEEDLE') >= 0, 'RESTART-SAFE: the error tail survived the sidecar restart (diag.errors.json)');
       A.ok(d2.text.indexOf('(none recorded)') < 0, 'the report no longer claims an empty tail after restart');
     } finally {
       try { boot2.child.kill(); } catch (_) {}
