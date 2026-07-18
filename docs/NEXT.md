@@ -285,8 +285,10 @@ the launch-integrity guarantees. Live-proven on a real booted sidecar, zero spen
 - [ ] OPEN (audit gap 1, CRITICAL, product-level): routines are not 24/7 — the sidecar dies with
       the desktop process. Needs a supervised background lifecycle (launch-at-login / detached
       sidecar / tray supervisor — Tauri + product decision, Andrew's call on UX).
-- [ ] OPEN (audit gap 6b): transient delivery-failure RETRY (outcomes are now recorded; a bounded
-      resend on retryable channel errors is the remaining half).
+- [x] CLOSED 2026-07-18 (audit gap 6b): transient delivery-failure RETRY was already implemented in
+      the shared channel adapter (exactly one resend for `retryable:true`, honoring `retry_after` up
+      to 30s). `autonotify.test.js` now composes the real adapter -> cron notifier -> `markDelivery`
+      seam and proves the final success is recorded once without rerunning the routine.
 - [ ] OPEN: ROUTINES panel could surface the new health + lastDelivery fields (GA-9 adjacent).
 
 

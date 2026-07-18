@@ -601,6 +601,13 @@ if (INVOKED_DIRECTLY) {
 
   async function runStep(step, cycleDir, sha) {
     const env = Object.assign({}, process.env, PORTS[step.id] || {});
+    // The golden child runs in the immutable pin, whose ignored qa/findings directory is empty.
+    // Route the Guardian repo's operational ledger explicitly so already-triaged frame noise is
+    // review-clean there too. Novel fingerprints remain absent and therefore still fail closed.
+    if (step.id === 'golden') {
+      env.STARNET_QA_FINDINGS_DIR = path.join(QA_DIR, 'findings');
+      env.STARNET_QA_KNOWN_FILE = path.join(QA_DIR, 'KNOWN_ISSUES.md');
+    }
     const logFile = path.join(cycleDir, step.id + '.log');
     log(step.id + ' — ' + step.title);
     const res = await runBoundedCommand({

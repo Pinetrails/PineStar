@@ -61,6 +61,11 @@ export async function runShoot({ port, cdpPort, outDir, win = '1440,900', only =
         let driveResult = 'n/a';
         if (st.drive) { try { driveResult = await evalJS(cdp, st.drive); } catch (e) { driveResult = 'DRIVE_ERR:' + e.message; } }
         await sleep(st.wait ?? 1400);
+        // Golden frames represent durable panel layout, not timing-dependent transient toasts.
+        // A BUILD STATION close emits "Station layout saved"; depending on capture speed it used
+        // to overlap a later panel and poison the blessed signature. Remove only the ephemeral DOM
+        // stack immediately before capture; persistent notification records remain untouched.
+        try { await evalJS(cdp, `(() => { const s = document.getElementById('toast-stack'); if (s) s.remove(); return 'toasts-cleared'; })()`); } catch {}
         const { kb } = await capture(cdp, outDir, st.name);
         const bad = /^(NOTFOUND|CLICK_ERR|DRIVE_ERR)/.test(String(driveResult));
         if (bad) exitCode = 3;

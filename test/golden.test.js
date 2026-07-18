@@ -12,7 +12,10 @@
    Guardian's per-frame fingerprint), never an ad-hoc match. */
 'use strict';
 const A = require('./_assert.js');
-const { classifyFrames, goldenFrameFingerprint } = require('../scripts/golden.mjs');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const { classifyFrames, goldenFrameFingerprint, dismissedFingerprints } = require('../scripts/golden.mjs');
 const { fingerprintOf } = require('../scripts/qa/ledger.mjs');
 
 // Build a signature array of a constant byte value, length SIG_W*SIG_H (64*40) so sigDiff is
@@ -91,6 +94,37 @@ const sig = (v) => Array.from({ length: SIG_LEN }, () => v);
   const { flagged, excused } = classifyFrames({ sigs, golden, thr: 1.5, suppressed: new Set() });
   A.eq(flagged.length, 0, 'no diffs → nothing flagged');
   A.eq(excused.length, 0, 'no diffs → nothing excused');
+}
+
+// A pinned checkout must be able to read Guardian's explicitly supplied operational ledger.
+{
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'starnet-golden-ledger-'));
+  const findingsDir = path.join(dir, 'findings');
+  const knownFile = path.join(dir, 'KNOWN_ISSUES.md');
+  fs.mkdirSync(findingsDir);
+  fs.writeFileSync(path.join(findingsDir, 'dismissed.json'), JSON.stringify({
+    id: 'dismissed', fingerprint: goldenFrameFingerprint('sys-rewind'), status: 'dismissed'
+  }));
+  fs.writeFileSync(knownFile, '# none\n');
+  try {
+    const suppressed = dismissedFingerprints({ findingsDir, knownFile });
+    A.ok(suppressed.has(goldenFrameFingerprint('sys-rewind')), 'explicit operational ledger path supplies dismissed fingerprints to a pinned checkout');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// Source lock the composition root: the immutable pin cannot infer ignored operational files.
+{
+  const guardian = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'qa', 'guardian.mjs'), 'utf8');
+  A.ok(/STARNET_QA_FINDINGS_DIR/.test(guardian) && /STARNET_QA_KNOWN_FILE/.test(guardian),
+    'Guardian passes operational findings + known-issues paths into the pinned golden gate');
+}
+
+// Golden frames describe stable panels, never whichever transient toast happened to overlap capture.
+{
+  const shoot = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'lib', 'shootRun.mjs'), 'utf8');
+  A.ok(/toast-stack/.test(shoot) && /remove\(\)/.test(shoot), 'shared screenshot runner clears transient toasts before each frame');
 }
 
 A.report('golden.test');
