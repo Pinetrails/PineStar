@@ -1816,14 +1816,15 @@ const Marketplace = (() => {
      fallback reuses the existing POST /api/projects/pickfolder. If a route is missing the flow degrades to an honest
      empty/error state — it never fakes a detection or a scan. */
   const up = s => String(s == null ? '' : s).toUpperCase();
-  // Is this scan's provider a StarNet provider id we can actually pin to? ModelDock.normalizeProvider maps every
+  // Is this scan's provider a StarNet provider id we can actually pin to? ModelDock.labels.normProvider maps every
   // known alias to its canonical id and buckets anything unknown into 'openrouter' — so 'openrouter' only counts
   // when the raw string literally names it, otherwise an unknown provider would be silently mis-pinned. Returns the
   // canonical id or null (→ no pin; the station's default model runs instead). No ModelDock → null (honest: can't verify).
   function recognizeProvider(raw) {
     const r = String(raw || '').trim().toLowerCase();
-    if (!r || typeof ModelDock === 'undefined' || !ModelDock.normalizeProvider) return null;
-    const norm = ModelDock.normalizeProvider(r);
+    const norm0 = (typeof ModelDock !== 'undefined' && ModelDock.labels && ModelDock.labels.normProvider) ? ModelDock.labels.normProvider : null;
+    if (!r || !norm0) return null;
+    const norm = norm0(r);
     if (norm === 'openrouter' && !/^open[\s_-]?router$/.test(r)) return null;
     return norm;
   }
@@ -1950,7 +1951,7 @@ const Marketplace = (() => {
     const m = s.model || {};
     const rec = recognizeProvider(m.provider);
     if (rec) {
-      const lbl = (typeof ModelDock !== 'undefined' && ModelDock.providerLabel) ? ModelDock.providerLabel(rec) : up(rec);
+      const lbl = (typeof ModelDock !== 'undefined' && ModelDock.labels && ModelDock.labels.provider) ? ModelDock.labels.provider(rec) : up(rec);
       transfers += t('MODEL', esc(lbl) + ' · ' + esc(String(m.model || m.raw || '')));
     } else {
       transfers += t('MODEL', esc(String(m.raw || 'unknown')) + ' <span class="mkt-imp-dim">— unrecognized here; station default model will be used</span>');
@@ -2012,7 +2013,10 @@ const Marketplace = (() => {
     const editedName = (nameIn && nameIn.value) || importName || s.name || '';
     const m = s.model || {};
     const rec = recognizeProvider(m.provider);
-    const modelId = String(m.model || m.raw || '').trim();
+    let modelId = String(m.model || m.raw || '').trim();
+    // direct providers take a BARE model id (anthropic.js passes req.model straight to the API) — only
+    // openrouter keeps the 'vendor/model' slug shape. Strip a prefix that just restates the pinned provider.
+    if (rec && rec !== 'openrouter' && modelId.toLowerCase().indexOf(rec + '/') === 0) modelId = modelId.slice(rec.length + 1);
     const modelPin = (rec && modelId) ? { model: modelId, provider: rec, effort: '' } : null;
     const spec = {
       name: s.name || harnessLabel,
