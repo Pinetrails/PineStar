@@ -10455,7 +10455,7 @@ function serveRuns(req, res) {
     const agent = u.searchParams.get('agent') || 'agent';
     if (agent !== '*' && !/^[A-Za-z0-9_-]{1,40}$/.test(agent)) return json(403, { error: 'forbidden' });
     const runId = u.searchParams.get('runId') || '';
-    if (runId) return json(200, { runs: runStore.list(agent, { limit: 1000 }).filter(r => r.runId === runId) });
+    if (runId) return json(200, { runs: runStore.list(agent === '*' ? null : agent, { limit: 1000 }).filter(r => r.runId === runId) });
     const limit = Math.max(1, Math.min(500, Number(u.searchParams.get('limit')) || 100));
     const since = Math.max(0, Number(u.searchParams.get('since')) || 0);
     let rows = runStore.list(agent === '*' ? null : agent, { limit });
