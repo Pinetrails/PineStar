@@ -483,9 +483,9 @@ function makeOpenAiCompat(deps) {
     runs.set(runId, rec);
 
     // async task: drive the run; feed lifecycle events; record terminal status. Does NOT block the 202.
+    // run.started is emitted by mapRunEvent when runOnce fires agent.run.start (single source — no duplicate).
     inFlight++;
     rec.status = 'running';
-    pushRunEvent(runId, { event: 'run.started', run_id: runId, timestamp: now() });
     startRun({
       runId, agentId, model: runModel, provider, system: sys, messages, signal: ac.signal,
       onEvent: (name, p) => { const ev = mapRunEvent(name, p, runId, now()); if (ev) pushRunEvent(runId, ev); }
