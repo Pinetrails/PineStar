@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "3ef5da0a48d88d038bb4e5958c4ce352c332bc83",
+    "sourceCommit": "439153dd176be873e40c7af227832e56827e0925",
     "pathSetSha256": "9eeefd91d6d300f96627d4a5036f6c767a4a1fe611b7bce6175e1b94964d750f",
     "files": [
       {
@@ -33,13 +33,13 @@
       },
       {
         "path": "README.md",
-        "bytes": 4769,
-        "sha256": "2231630e6ceb8953cf695939d296dad8f965a2cdfa70b93ac099fe2e374f720a"
+        "bytes": 4415,
+        "sha256": "fa80cbf5195412303ea241667cc2bc23eacdf763b593d34e5d1dcbe32648b8eb"
       },
       {
         "path": "RELEASE_NOTES.md",
-        "bytes": 2675,
-        "sha256": "9e9fa37825dc5953fb76c84609de6936678efbb2b773f05db07aaf70103cc7f5"
+        "bytes": 2638,
+        "sha256": "a44dec70a71fcaf13917cff8b9f5515ca81b7f7e67cd623f98b5ec7284e6abfc"
       },
       {
         "path": "TERMS.md",
@@ -63,8 +63,8 @@
       },
       {
         "path": "frontend/app/app.js",
-        "bytes": 267987,
-        "sha256": "b6bcbfbcc3d17a0204b7a08f3f1c625a58259826e4fa2554a6844e944dc3d712"
+        "bytes": 262403,
+        "sha256": "358e5fbc97fcb43d46a8e0598ac0eda3a561e2eeec38ea6bcf3747e2ca167484"
       },
       {
         "path": "frontend/app/armconfirm.js",
@@ -633,8 +633,8 @@
       },
       {
         "path": "frontend/app/stationui.js",
-        "bytes": 507294,
-        "sha256": "18f08052b98f9f66c8ecc0653c96c226def99783927b2b7254e885dadae36bc3"
+        "bytes": 506139,
+        "sha256": "e08d0e8e9cdbb1157451a21b99f081dbe8b5575afada02f880529176fff9a550"
       },
       {
         "path": "frontend/app/study.js",
@@ -803,8 +803,8 @@
       },
       {
         "path": "frontend/css/app.css",
-        "bytes": 198708,
-        "sha256": "217407594d6f98bddc070624f44ac2e2163af5cd1bd9bfe8a6e7a6a846ae12ef"
+        "bytes": 197316,
+        "sha256": "0f97347a3434292fe6b2e3ca1a247d31f7afdab212c4dbd20eaf903896fac374"
       },
       {
         "path": "frontend/css/asciifx.css",
@@ -868,8 +868,8 @@
       },
       {
         "path": "frontend/index.html",
-        "bytes": 62961,
-        "sha256": "b008de4d8ca4ffaf125fa19b2ce9d5358b536c43bbc486883836984e487248ce"
+        "bytes": 60870,
+        "sha256": "37c76071fd529fb85f9974de0759013100e6d9b19e6ded09ae3716012b8b9783"
       },
       {
         "path": "frontend/js/arcade.js",

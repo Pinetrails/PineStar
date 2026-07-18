@@ -1,5 +1,17 @@
 # NEXT.md — current priorities & task queue
 
+## 2026-07-17 — SESSION TOOLS window retired (branch `claude/sessions-panel-removal-b3278e`)
+
+Andrew's directive. The SYSTEM ▸ SESSION TOOLS window + parked `#ws-tools` panel are removed;
+clear/bulk-archive/undo UI died with it (the pure `workstreams.js` store keeps every invariant;
+`/clear` + per-row archive cover the real needs). Survivors: **title+transcript search now lives
+directly on the sessions rail** (`#ws-rail-search`; PROJECTS view hides it; hit-click opens the
+session) and **export .md/.json moved into the row ⋯ menu** (targets the exact row session).
+QA followed: journey rewritten (10/10 live PASS on seed :9095), `sys-sessiontools` shooter state +
+golden dropped, atlas retired-control entries deleted + ws-search/ws-export re-pointed, wiring test
+re-pinned, v0.5.2 release-notes bullet updated, in-branch W0 re-stamps over `83292661` and the
+trunk-sync. Merging to trunk this pass (digest in qa/STATUS.md); next desktop exe rebuild picks it up.
+
 ## 2026-07-16 — CLASS ROSTER REDESIGN LANDED (agent-class-redesign lane)
 
 The recruit catalog is now 12 SPECIALIZED business-grade builtins (strategist · opportunist ·
