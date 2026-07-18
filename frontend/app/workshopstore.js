@@ -357,9 +357,70 @@ const WorkshopStore = (() => {
     if (id.indexOf(SESSION_PREFIX) !== 0) return;
     if (typeof Chat === 'undefined' || !Chat.workshopReturn) return;
     const runId = id.slice(SESSION_PREFIX.length);
-    const m = (await fetchRaw()).find(x => x && String(x.runId) === runId) || null;
-    if (!m) return;   // decided (or unreadable) — the session keeps its durable sys-marker history, no live card
-    presentCard(m);
+    // Probe the OWNING agent directly (the session records it), not just the live-roster sweep — a deliverable
+    // built by an agent that later left the roster must still resolve when its session is opened.
+    const ws = (typeof Workstreams !== 'undefined' && Workstreams.get) ? Workstreams.get(id) : null;
+    const aid = (ws && ws.agentId) || 'agent';
+    let pending = null;   // null = station unreachable (stay silent); [] = the server ANSWERED
+    try {
+      const r = await fetch('/api/workshop/pending?agent=' + encodeURIComponent(aid), { cache: 'no-store' });
+      if (r.ok) { const j = await r.json().catch(() => null); pending = (j && Array.isArray(j.pending)) ? j.pending : []; }
+    } catch (_) { pending = null; }
+    if (pending === null) {
+      // unreachable/odd response → the old fail-open read across the roster; an error here stays silent
+      // (never assert a resolution the server didn't prove).
+      const m0 = (await fetchRaw()).find(x => x && String(x.runId) === runId) || null;
+      if (m0) presentCard(m0);
+      return;
+    }
+    const m = pending.find(x => x && String(x.runId) === runId) || null;
+    if (m) { if (!m.agentId) m.agentId = aid; presentCard(m); return; }
+    // THE SERVER ANSWERED and this run is NOT pending. The old behavior was total silence — the session kept
+    // its stub line promising "open any time to review and decide" with nothing to review or decide (looked
+    // like a broken/old UI). Resolve the session honestly, once, from the deliverable library's server truth.
+    await noteResolved(aid, runId);
+  }
+
+  // RESOLUTION MARKER (2026-07-18): a deliverable session whose run is no longer pending gets ONE durable,
+  // honest sys line stating what actually happened — read from GET /api/deliverables (the lifecycle library,
+  // server truth), never guessed. Skipped when the session already tells the story (a live-card decision
+  // marker ✓/✕/⚠ patch, or a prior resolution line). Fail-open: an unreadable library still yields the
+  // honest "no record" line ONLY because the pending probe above already proved the run isn't reviewable.
+  const RESOLVED_MARK = '◈ decided — ';
+  const GONE_MARK = '◈ nothing left to review — ';
+  function historyTellsTheStory(ws) {
+    if (!ws || !Array.isArray(ws.history)) return true;   // no history to annotate → nothing to do
+    return ws.history.some(x => {
+      if (!x || !x.sys || typeof x.content !== 'string') return false;
+      const c = x.content;
+      return c.indexOf(RESOLVED_MARK) === 0 || c.indexOf(GONE_MARK) === 0
+        || c.indexOf('✓') === 0 || c.indexOf('✕') === 0 || c.indexOf('⚠ patch') === 0;
+    });
+  }
+  async function noteResolved(agentId, runId) {
+    try {
+      const ws = (typeof Workstreams !== 'undefined' && Workstreams.get) ? Workstreams.get(sessionIdOf(runId)) : null;
+      if (!ws || historyTellsTheStory(ws)) return;
+      let row = null;
+      try {
+        const r = await fetch('/api/deliverables?query=' + encodeURIComponent(runId), { cache: 'no-store' });
+        if (r.ok) {
+          const j = await r.json().catch(() => null);
+          const items = (j && Array.isArray(j.items)) ? j.items : [];
+          row = items.find(x => x && String(x.runId) === String(runId) && String(x.agentId) === String(agentId)) || null;
+        }
+      } catch (_) { row = null; }
+      let line;
+      if (row && row.status === 'kept') line = RESOLVED_MARK + 'this build was KEPT — its files were implemented/saved. find it in the DELIVERABLES library.';
+      else if (row && row.status === 'discarded') line = RESOLVED_MARK + 'this build was DISCARDED — its files were removed and it won’t be rebuilt.';
+      else if (row && row.status === 'failed') line = RESOLVED_MARK + 'this build FAILED — it never produced a reviewable deliverable.';
+      else line = GONE_MARK + 'this build is no longer awaiting a decision and its files are gone from the agent’s workshop.';
+      ws.history.push({ role: 'system', sys: true, content: line });
+      try { if (typeof App !== 'undefined' && App.persist) App.persist(); } catch (_) {}
+      // if the Commander is looking at this session right now, repaint it so the truth appears immediately.
+      // (Chat.load re-fires presentFor; historyTellsTheStory now stops the chain, so this can't loop.)
+      try { if (typeof Chat !== 'undefined' && Chat.load && typeof Workstreams !== 'undefined' && Workstreams.activeId && Workstreams.activeId() === ws.id) Chat.load(ws); } catch (_) {}
+    } catch (_) {}
   }
 
   // auto-poll on attach: give EVERY undecided deliverable its own unread session, then REVEAL the newest

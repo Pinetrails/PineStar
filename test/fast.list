@@ -104,6 +104,7 @@ test/workshop-permissions.test.js
 test/workshop-store.test.js
 test/workshop-undo.e2e.test.js
 test/workshop-visibility.test.js
+test/workshop-resolution.test.js
 test/workshop-toggle-ui.test.js
 test/quest-store.test.js
 test/questinject.test.js
