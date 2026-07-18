@@ -8,10 +8,12 @@
  * docs/RELEASE_TRAIN_BUILD_PLAN_2026-07-06.md, contract C1).
  *
  * WHAT IT TOUCHES (and ONLY these — commit uses explicit pathspecs, never `git add -A`):
- *   1. src-tauri/tauri.conf.json  — .version
- *   2. src-tauri/Cargo.toml       — [package] version = "..."
- *   3. src-tauri/Cargo.lock       — the app package's version pin (textual patch, no network)
- *   4. RELEASE_NOTES.md           — overwritten with a fresh header + TODO bullet
+ *   1. package.json               — public project metadata version
+ *   2. package-lock.json          — root package version pins
+ *   3. src-tauri/tauri.conf.json  — .version
+ *   4. src-tauri/Cargo.toml       — [package] version = "..."
+ *   5. src-tauri/Cargo.lock       — the app package's version pin (textual patch, no network)
+ *   6. RELEASE_NOTES.md           — overwritten with a fresh header + TODO bullet
  *
  * WHY A TEXTUAL Cargo.lock PATCH: `release-cut.mjs` preflight fails if Cargo.toml and
  * tauri.conf.json disagree, and a stale lockfile pin trips `cargo build --locked` in CI.
@@ -176,6 +178,28 @@ function planTauriConf(version) {
   return { path, before, after, current, label: 'tauri.conf.json .version' };
 }
 
+function planPackageJson(version) {
+  const path = join(ROOT, 'package.json');
+  const before = readText(path);
+  const pkg = JSON.parse(before);
+  const current = pkg.version;
+  pkg.version = version;
+  const after = JSON.stringify(pkg, null, 2) + '\n';
+  return { path, before, after, current, label: 'package.json .version' };
+}
+
+function planPackageLock(version) {
+  const path = join(ROOT, 'package-lock.json');
+  if (!existsSync(path)) return null;
+  const before = readText(path);
+  const lock = JSON.parse(before);
+  const current = lock.version;
+  lock.version = version;
+  if (lock.packages && lock.packages['']) lock.packages[''].version = version;
+  const after = JSON.stringify(lock, null, 2) + '\n';
+  return { path, before, after, current, label: 'package-lock.json root version' };
+}
+
 function planCargoToml(version) {
   const path = join(ROOT, 'src-tauri', 'Cargo.toml');
   const before = readText(path);
@@ -267,6 +291,8 @@ function main() {
   log('  tag             : ' + (NO_TAG ? '(skipped, --no-tag)' : 'v' + version));
 
   const plans = [
+    planPackageJson(version),
+    planPackageLock(version),
     planTauriConf(version),
     planCargoToml(version),
     planCargoLock(version),
@@ -293,7 +319,7 @@ function main() {
   }
   log('\n== wrote ' + changedPaths.length + ' file(s) ==');
 
-  // Commit ONLY our four files, by pathspec (never -A).
+  // Commit ONLY the planned release files, by pathspec (never -A).
   const pathspecs = plans
     .filter(p => p.before !== p.after)
     .map(p => p.path);

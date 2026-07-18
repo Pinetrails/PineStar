@@ -3744,6 +3744,21 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         '<button class="set-theme" data-pace="6" title="a busier station — up to 6 jobs a day">BUSY</button>' +
         '<button class="set-theme" data-pace="12" title="as much as it&#39;s allowed — up to 12 jobs a day">MAX</button>' +
       '</div>' +
+      // DIRECTION (autonomy-tuning 2026-07-17) — the dial says HOW MUCH it may run on its own; this block says
+      // WHERE that work should go. Same server truth the Night Shift panel reads (GET/POST/DELETE
+      // /api/nightshift/focus + POST/DELETE /api/nightshift/avoid) — one directive, surfaced where the user tunes
+      // autonomy, so "tune it" and "aim it" live together. Every line maps to a route field; the cold states are
+      // honest, never an invented priority or a fake learned profile.
+      '<div class="set-row"><span class="dim">DIRECTION — where its unattended work should go</span></div>' +
+      '<div class="set-row"><span class="dim">FOCUS</span> <span id="auto-focus" class="dim">…</span></div>' +
+      '<div class="set-row"><input id="auto-steer" class="key-input" type="text" autocomplete="off" placeholder="point it at a project folder, thread:&lt;id&gt;, or goal"><button class="bb xs" id="auto-steer-set">STEER</button><button class="bb xs" id="auto-steer-clear" style="display:none">CLEAR</button></div>' +
+      '<div class="mc-hint">a steer outranks learned evidence (~7 days, or until cleared). It only redirects the unattended priority — no new access.</div>' +
+      '<div class="set-row"><span class="dim">OFF-LIMITS — it will never pick these on its own</span></div>' +
+      '<div class="key-list" id="auto-avoid"><p class="set-about">reading directives…</p></div>' +
+      '<div class="set-row"><input id="auto-avoid-ref" class="key-input" type="text" autocomplete="off" placeholder="a project folder, thread:&lt;id&gt;, or goal to rule out"><button class="bb xs" id="auto-avoid-add">RULE OUT</button></div>' +
+      '<div class="mc-hint">off-limits holds until you remove it. You can still work there yourself — it only stops the station choosing it unattended.</div>' +
+      '<div class="set-row"><span class="dim">LEARNED INTERESTS — what it thinks you keep coming back to</span></div>' +
+      '<div class="key-list" id="auto-interests"><p class="set-about">reading interests…</p></div>' +
       // LIVE HELPERS — the real background sub-agents (team.spawn) running RIGHT NOW, from GET /api/subagents
       // (server truth; the floor's ghost sprites are the same ledger). STOP rides POST /api/subagents/interrupt —
       // before this row a runaway helper could not be stopped from anywhere in the UI.
@@ -4103,6 +4118,133 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       if (paceWrap) paceWrap.querySelectorAll('[data-pace]').forEach(b => b.addEventListener('click', () => { AutonomyStore.setLeash(Number(b.dataset.pace)); paintAuto(); sfx('click'); }));
       repaintAutonomyDial = paintAuto;   // GROWTH Tier 3: let an accepted trust offer repaint the open panel's EARNED badge live
       paintAuto();
+    }
+    // DIRECTION (autonomy-tuning) — focus/steer/off-limits/learned-interests, every value painted from a route's
+    // response (server truth, never an optimistic local flip). Shares the Night Shift panel's directive routes so
+    // both surfaces always tell the SAME story; interests ride GET /api/scout (evidence-cited or honestly empty).
+    {
+      const dFocus = host.querySelector('#auto-focus'), dSteer = host.querySelector('#auto-steer'),
+            dSteerSet = host.querySelector('#auto-steer-set'), dSteerClear = host.querySelector('#auto-steer-clear'),
+            dAvoid = host.querySelector('#auto-avoid'), dAvoidRef = host.querySelector('#auto-avoid-ref'),
+            dAvoidAdd = host.querySelector('#auto-avoid-add'), dInterests = host.querySelector('#auto-interests');
+      const dMsg = (t) => { if (dFocus) dFocus.textContent = t; };
+      // "thread:<id>" and the literal "goal" select their kinds; anything else is a project path (the same grammar
+      // as the Night Shift steer box, so the two inputs never disagree).
+      const parseRef = (raw) => {
+        if (raw.toLowerCase() === 'goal') return { ref: 'goal', kind: 'goal' };
+        if (/^thread:/i.test(raw)) return { ref: raw.slice(7).trim(), kind: 'thread' };
+        return { ref: raw };
+      };
+      const paintAvoid = (list) => {
+        if (!dAvoid) return;
+        if (!Array.isArray(list)) { dAvoid.innerHTML = '<p class="set-about">directives unreachable right now.</p>'; return; }
+        if (!list.length) { dAvoid.innerHTML = '<p class="set-about">nothing ruled out — it may pick any trusted project, open thread, or your goal.</p>'; return; }
+        dAvoid.textContent = '';
+        for (const e of list) {
+          const row = document.createElement('div');
+          row.className = 'set-row';
+          const label = document.createElement('span');
+          label.className = 'dim';
+          label.textContent = String(e.label || e.ref) + (e.kind !== 'project' ? ' [' + e.kind + ']' : '');
+          label.title = String(e.ref);
+          const rm = document.createElement('button');
+          rm.className = 'bb xs';
+          rm.textContent = 'ALLOW AGAIN';
+          rm.title = 'remove this boundary — the station may pick it unattended again';
+          rm.addEventListener('click', () => {
+            rm.disabled = true;
+            fetch('/api/nightshift/avoid?ref=' + encodeURIComponent(e.ref), { method: 'DELETE' })
+              .then(r => r.json().then(j => ({ ok: r.ok, j })))
+              .then(({ ok, j }) => {
+                if (!ok || !j || j.ok === false) { label.textContent = String(e.label || e.ref) + ' — could not remove: ' + ((j && j.error) || 'error'); sfx('bad'); rm.disabled = false; return; }
+                sfx('click'); refreshDirection();   // repaint from the route's truth
+              })
+              .catch(() => { label.textContent = String(e.label || e.ref) + ' — could not reach the sidecar'; sfx('bad'); rm.disabled = false; });
+          });
+          row.appendChild(label); row.appendChild(rm);
+          dAvoid.appendChild(row);
+        }
+      };
+      const paintDirection = (j) => {
+        if (!j || j.ok === false) { dMsg('directives unreachable right now'); paintAvoid(null); return; }
+        const f = j.focus;
+        const liveSteer = !!(j.steer && j.steer.ref);
+        if (dFocus) {
+          if (f && (f.label || f.ref)) {
+            const why = Array.isArray(f.why) ? f.why.filter(Boolean).join('; ') : '';
+            dFocus.textContent = String(f.label || f.ref) + (liveSteer ? ' · you steered this' : '') + (why ? ' — ' + why : '');
+          } else {
+            dFocus.textContent = 'none declared — it improvises from evidence';
+          }
+        }
+        if (dSteerClear) dSteerClear.style.display = liveSteer ? '' : 'none';
+        paintAvoid(Array.isArray(j.avoid) ? j.avoid : []);
+      };
+      const refreshDirection = () => {
+        fetch('/api/nightshift/focus', { cache: 'no-store' })
+          .then(r => r.ok ? r.json() : null).catch(() => null)
+          .then(paintDirection);
+      };
+      if (dSteerSet) dSteerSet.addEventListener('click', () => {
+        const raw = dSteer ? String(dSteer.value).trim() : '';
+        if (!raw) { dMsg('enter a trusted project path, thread:<id>, or goal'); sfx('bad'); return; }
+        dMsg('steering…');
+        fetch('/api/nightshift/focus', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(parseRef(raw)) })
+          .then(r => r.json().then(j => ({ ok: r.ok, j })))
+          .then(({ ok, j }) => {
+            if (!ok || !j || j.ok === false) { dMsg((j && j.error) || 'could not steer'); sfx('bad'); return; }
+            if (dSteer) dSteer.value = '';
+            sfx('click'); refreshDirection();
+          })
+          .catch(() => { dMsg('could not reach the sidecar'); sfx('bad'); });
+      });
+      if (dSteerClear) dSteerClear.addEventListener('click', () => {
+        dMsg('clearing…');
+        fetch('/api/nightshift/focus', { method: 'DELETE' })
+          .then(r => r.json().then(j => ({ ok: r.ok, j })))
+          .then(({ ok, j }) => {
+            if (!ok || !j || j.ok === false) { dMsg((j && j.error) || 'could not clear the steer'); sfx('bad'); return; }
+            sfx('click'); refreshDirection();
+          })
+          .catch(() => { dMsg('could not reach the sidecar'); sfx('bad'); });
+      });
+      if (dAvoidAdd) dAvoidAdd.addEventListener('click', () => {
+        const raw = dAvoidRef ? String(dAvoidRef.value).trim() : '';
+        if (!raw) { sfx('bad'); if (dAvoid) dAvoid.innerHTML = '<p class="set-about">enter a trusted project path, thread:&lt;id&gt;, or goal to rule out.</p>'; return; }
+        dAvoidAdd.disabled = true;
+        fetch('/api/nightshift/avoid', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(parseRef(raw)) })
+          .then(r => r.json().then(j => ({ ok: r.ok, j })))
+          .then(({ ok, j }) => {
+            dAvoidAdd.disabled = false;
+            if (!ok || !j || j.ok === false) { if (dAvoid) dAvoid.innerHTML = '<p class="set-about">' + esc((j && j.error) || 'could not rule that out') + '</p>'; sfx('bad'); return; }
+            if (dAvoidRef) dAvoidRef.value = '';
+            sfx('click'); refreshDirection();   // the avoid may have dethroned the focus — repaint both from truth
+          })
+          .catch(() => { dAvoidAdd.disabled = false; if (dAvoid) dAvoid.innerHTML = '<p class="set-about">could not reach the sidecar.</p>'; sfx('bad'); });
+      });
+      // LEARNED INTERESTS — GET /api/scout's evidence-cited topic histogram. Every row shows the count it earned
+      // and quotes the real activity behind it; an empty histogram renders the honest cold state, never a fake profile.
+      const paintInterests = (rows) => {
+        if (!dInterests) return;
+        if (!Array.isArray(rows)) { dInterests.innerHTML = '<p class="set-about">interests unreachable right now.</p>'; return; }
+        if (!rows.length) { dInterests.innerHTML = '<p class="set-about">nothing learned yet — it only counts what you actually work on.</p>'; return; }
+        dInterests.textContent = '';
+        for (const r of rows.slice(0, 8)) {
+          const row = document.createElement('div');
+          row.className = 'set-row';
+          const label = document.createElement('span');
+          label.className = 'dim';
+          label.textContent = String(r.label || '') + ' · seen ' + (Number(r.count) || 0) + '×';
+          const ev = Array.isArray(r.evidence) ? r.evidence.filter(Boolean) : [];
+          if (ev.length) label.title = 'because you said: ' + ev.map(q => '"' + q + '"').join(' · ');
+          row.appendChild(label);
+          dInterests.appendChild(row);
+        }
+      };
+      fetch('/api/scout', { cache: 'no-store' })
+        .then(r => r.ok ? r.json() : null).catch(() => null)
+        .then(j => paintInterests(j && Array.isArray(j.interests) ? j.interests : null));
+      refreshDirection();
     }
     // LIVE HELPERS — the running team.spawn sub-agents, straight from GET /api/subagents?status=running (server
     // truth: the same ledger the floor's ghost sprites fold). One row per live worker + STOP → POST
@@ -6809,26 +6951,6 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     wireVerdict(nsNo, 'decline', 'warn');
   }
 
-  /* ============== SESSION TOOLS ==============
-     Search/export/clear/bulk-archive for conversations. The controls live in ONE parked DOM node
-     (#ws-tools in index.html) that App wires exactly once at init; this window ADOPTS that node into
-     its body on open and re-parks it hidden on close, so the wiring (and any armed confirm state)
-     survives open/close cycles. Rail head stays SESSIONS/PROJECTS + NEW (Commander directive). */
-  function parkSessionTools() {
-    const panel = document.getElementById('ws-tools'), park = document.getElementById('ws-tools-park');
-    if (!panel) return;
-    panel.hidden = true;
-    if (park) park.appendChild(panel);
-  }
-  function buildSessionTools(body) {
-    const panel = document.getElementById('ws-tools'); if (!panel) return;
-    panel.hidden = false;
-    body.appendChild(panel);
-    if (typeof App !== 'undefined' && App.sessionToolsShown) App.sessionToolsShown();
-    const q = panel.querySelector('#ws-search');
-    if (q) setTimeout(() => { try { q.focus(); } catch (_) {} }, 0);
-  }
-
   /* ============== OUTBOX — the finished-work window (accordion redesign, 2026-07-16 round 4) ==============
      Andrew's spec, exactly: an EXTREMELY simple list. Collapsed row = the task's TITLE + a small
      description that is what the agent ACTUALLY DID (its real recorded output — never the prompt,
@@ -6976,7 +7098,6 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     connectors:['TOOLSETS & CONNECTORS', buildConnectors,{ console: true }],
     routines: ['ROUTINES',               buildRoutines,  { console: true }],
     rewind:   ['RESTORE POINTS',         buildRewind,    { w: '520px' }],
-    sessiontools: ['SESSION TOOLS',      buildSessionTools, { w: '440px', onClose: parkSessionTools }],
     logbook:  ['LOGBOOK',                buildLogbook,   { console: true }],
     notifs:   ['NOTIFICATIONS',          buildNotifs,    { w: '460px' }],
     // the FIELD MANUAL codex is owned by tutorial.js (P3); this term just hosts its builder

@@ -1,6 +1,6 @@
 {
   "area": "routes",
-  "updatedAt": "2026-07-10T05:18:57.442Z",
+  "updatedAt": "2026-07-18T04:04:22.614Z",
   "entries": [
     {
       "id": "route/get-api-agent-skills",
@@ -24,12 +24,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:23:57.953Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET ?agent=agent → 200 {agentId:agent,skills:[]} from the skill store. Guarded by sidecar.http.test.js."
     },
     {
       "id": "route/get-api-auth-codex-logout",
@@ -45,13 +49,29 @@
         ],
         "events": []
       },
-      "coverage": [],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "KNOWN",
+          "ref": "Method-label harvest artifact (see note); the real POST logout is exercised by codexsignin.test.js + codex-status.e2e.test.js. EL-3 gap tracked in ledger fp 43edd6f5."
+        },
+        {
+          "kind": "test",
+          "ref": "codex-status.e2e.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:32:01.449Z"
+      },
+      "findings": [
+        "43edd6f5"
+      ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "RECONCILE: the harvester labeled this GET, but the real route is POST /api/auth/codex/logout. LIVE :8964 @ HEAD 0a009ec2 — GET → 404 not found (phantom GET); POST → 200 {connected:false} (real token clear, no secret echoed). The entry documents the codex logout contract; the GET method label is a Cartographer method-variant artifact (same class as fp 15d5b43c). [retire-pass: HARVESTER FIXED this lane — the route harvester now mints the correct POST /api/auth/codex/logout variant (no more phantom GET label); the orchestrator's next sweep reconciles this GET-labelled entry accordingly.]"
     },
     {
       "id": "route/get-api-auth-codex-models",
@@ -67,13 +87,22 @@
         ],
         "events": []
       },
-      "coverage": [],
-      "status": "mapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "KNOWN",
+          "ref": "Live network catalog discovery — not asserted headlessly; the not-signed-in fallback is covered by codexsignin.test.js. EL-3 gap tracked in ledger."
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:23:57.953Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET → 200 {models:[],default:null,error:'Not signed in to ChatGPT — connect a ChatGPT subscription first.',code:...} (honest not-connected). KNOWN HTTP coverage gap filed to ledger."
     },
     {
       "id": "route/get-api-auth-codex-status",
@@ -90,51 +119,209 @@
         ],
         "events": []
       },
-      "coverage": [],
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "routes-coverage.http.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "c3ec18964ddfaa94b093be20f01139dbc7ceac69",
+        "date": "2026-07-18T04:04:22.614Z"
+      },
+      "findings": [],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "HTTP-path guarded by routes-coverage.http.test.js (happy + honest-failure over real sockets, zero model spend). Atlas finding 43edd6f5 remediated."
+    },
+    {
+      "id": "route/get-api-auth-grok-models",
+      "kind": "route",
+      "area": "routes",
+      "name": "GET /api/auth/grok/models",
+      "purpose": "The signed-in Grok account's real model list, live-discovered with a fresh token.",
+      "promise": "GET returns 200 with the live catalog for the connected account, or a static roster + {error} when discovery fails / not connected.",
+      "wiring": {
+        "files": [
+          "sidecar/index.js",
+          "sidecar/providers"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "KNOWN",
+          "ref": "Live network catalog discovery — not asserted headlessly; the fallback-roster+error shape is exercised by oauthsignin.test.js. EL-3 gap tracked in ledger."
+        }
+      ],
       "status": "mapped",
       "auditedAt": null,
       "findings": [],
-      "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "firstSeen": "2026-07-18T00:54:02.712Z",
+      "lastSeen": "2026-07-18T00:54:02.712Z",
+      "missing": false,
+      "notes": "Handler traced (handleOAuthModels('grok')). Not driven live this session (network model discovery). KNOWN coverage gap filed to ledger."
+    },
+    {
+      "id": "route/get-api-auth-grok-status",
+      "kind": "route",
+      "area": "routes",
+      "name": "GET /api/auth/grok/status",
+      "purpose": "Grok (xAI) subscription sign-in status — booleans/strings only, never the tokens.",
+      "promise": "GET returns 200 {connected,expired,reason,expiredAt,last_refresh,persistError}; the OAuth tokens are never echoed.",
+      "wiring": {
+        "files": [
+          "sidecar/index.js",
+          "sidecar/apiauth.js",
+          "sidecar/providers"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "oauthsignin.test.js",
+          "gate": "test:fast"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:19:52.950Z"
+      },
+      "findings": [],
+      "firstSeen": "2026-07-18T00:54:02.712Z",
+      "lastSeen": "2026-07-18T00:54:02.712Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET → 200 {connected:false,expired:false,reason:'',last_refresh:''} — booleans/strings only, no tokens. Guarded by oauthsignin.test.js (status payload)."
+    },
+    {
+      "id": "route/get-api-auth-kimi-models",
+      "kind": "route",
+      "area": "routes",
+      "name": "GET /api/auth/kimi/models",
+      "purpose": "The signed-in Kimi account's real model list, live-discovered with a fresh token.",
+      "promise": "GET returns 200 with the live catalog for the connected account, or a static roster + {error} when discovery fails / not connected.",
+      "wiring": {
+        "files": [
+          "sidecar/index.js",
+          "sidecar/providers"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "KNOWN",
+          "ref": "Live network catalog discovery — not asserted headlessly; fallback shape exercised by oauthsignin.test.js. EL-3 gap tracked in ledger."
+        }
+      ],
+      "status": "mapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-18T00:54:02.712Z",
+      "lastSeen": "2026-07-18T00:54:02.712Z",
+      "missing": false,
+      "notes": "Handler traced (handleOAuthModels('kimi')). Not driven live this session (network model discovery). KNOWN coverage gap filed to ledger."
+    },
+    {
+      "id": "route/get-api-auth-kimi-status",
+      "kind": "route",
+      "area": "routes",
+      "name": "GET /api/auth/kimi/status",
+      "purpose": "Kimi (Moonshot) subscription sign-in status — booleans/strings only, never the tokens.",
+      "promise": "GET returns 200 {connected,expired,reason,expiredAt,last_refresh,persistError}; the OAuth tokens are never echoed.",
+      "wiring": {
+        "files": [
+          "sidecar/index.js",
+          "sidecar/apiauth.js",
+          "sidecar/providers"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "oauthsignin.test.js",
+          "gate": "test:fast"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:19:52.950Z"
+      },
+      "findings": [],
+      "firstSeen": "2026-07-18T00:54:02.712Z",
+      "lastSeen": "2026-07-18T00:54:02.712Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET → 200 {connected:false,expired:false,reason:'',last_refresh:''} — booleans/strings only. Guarded by oauthsignin.test.js."
     },
     {
       "id": "route/get-api-autonomy-ledger",
       "kind": "route",
       "area": "routes",
       "name": "GET /api/autonomy/ledger",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Recent autonomy decision ledger (cron / night-shift fire/skip/defer), newest-first, for the autonomy surface.",
+      "promise": "GET returns 200 {entries:[...]} of real recorded decisions (empty when none); a THROWN store read is 500 {error} so auth/crash is distinguishable from a genuinely-empty log — it deliberately does NOT fail-open.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/autonomy-ledger.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "autonomy-ledger.e2e.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:19:52.950Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-08T21:11:49.342Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET → 200 {entries:[]} (truthful empty on a fresh seed). Guarded by autonomy-ledger.e2e.test.js."
     },
     {
       "id": "route/get-api-autonomy-posture",
       "kind": "route",
       "area": "routes",
       "name": "GET /api/autonomy/posture",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Report the server's copy of the autonomy posture summary plus whether a beliefs snapshot is present.",
+      "promise": "GET returns 200 {summary:{initiative,reach,leashPerDay,enabled,...}, beliefs:{known,at}|null}; never echoes raw beliefs text.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/commander-context.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "lifecycle-armed.http.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:19:52.950Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-08T21:11:49.342Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET → 200 {summary:{initiative:wait,reach:sandbox,leashPerDay:3,enabled:false,...}} from the durable posture object. Guarded by lifecycle-armed.http.test.js + nightshift e2e suite."
     },
     {
       "id": "route/get-api-budget-status",
@@ -164,16 +351,16 @@
           "gate": "test:fast"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:12:24.806Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
+      "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
-      "notes": "LIVE 8968: 200 with spentToday:0, day.cap:40/global.cap:100 (env defaults). After POST caps perDay=25 the status truthfully showed day.cap:25. [wave-7 final-a re-stale: re-proven over HTTP on :8966. Evidence http-result.json.]"
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — 200 truthful {caps:{agent:5,day:40,global:100},spentToday:0,lifetime:0,runs:0}; after POST /api/budget/caps perDay:25 the status day.cap flipped to 25 (real ledger-derived); no-token → 403 forbidden token. Re-proven fresh; guarded by sidecar.http.test.js + budget.test.js."
     },
     {
       "id": "route/get-api-channels-discord-status",
@@ -196,12 +383,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:23:57.953Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET → 200 {connected:false,configured:false,state:down,...} — booleans/state only, no token/key. Guarded by sidecar.http.test.js."
     },
     {
       "id": "route/get-api-channels-events",
@@ -221,35 +412,64 @@
       "coverage": [
         {
           "kind": "test",
+          "ref": "apiauth.test.js",
+          "gate": "test:fast"
+        },
+        {
+          "kind": "test",
+          "ref": "boot-security.test.js",
+          "gate": "test:fast"
+        },
+        {
+          "kind": "test",
           "ref": "channels.telegram.e2e.test.js",
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:12:24.806Z"
+      },
+      "findings": [
+        "15d5b43c"
+      ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-08T21:11:49.341Z",
-      "missing": true
+      "missing": true,
+      "notes": "MISSING RECONCILE: route is NOT removed and NOT regressed — it LIVES at sidecar/index.js:4597 (SSE path-match). LIVE :8964 @ HEAD 0a009ec2 — GET ?token=wrong → 403 forbidden token; GET ?token=<valid> → 200 text/event-stream (retry:3000, keepalive). The missing:true flag is a Cartographer harvest blind spot (an SSE path-match route the live DOM walk cannot enumerate); it will re-clear only if the harvester learns SSE routes. Filed tooling finding. TOKEN_EXEMPT from the header gate; validates ?token= in-handler via apiauth.queryTokenOk(req, API_TOKEN). [retire-pass: HARVESTER FIXED this lane — harvestRoutes() now binds method+path within one guard, so the GET SSE path-match route (index.js:4597, req.url.split('?')[0]===) is enumerated; the next full sweep clears missing:true. KEPT (real route).]"
     },
     {
       "id": "route/get-api-channels-status",
       "kind": "route",
       "area": "routes",
       "name": "GET /api/channels/status",
-      "purpose": "",
-      "promise": "",
+      "purpose": "One bulk poll that paints the whole CHANNELS panel — booleans + poll state for every registered channel, never the token/key.",
+      "promise": "GET returns 200 {<channelId>:{connected,configured,state,detail,notifyAutonomous,ownerLocked,agentName}} for every registered channel; secrets stay server-side.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/channels"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "channels.generic-wire.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:19:52.950Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-10T05:18:57.443Z",
-      "lastSeen": "2026-07-10T05:18:57.443Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET → 200 {telegram:{connected:false,configured:false,state:down},discord:{...}} — booleans only, no secrets echoed. Guarded by channels.generic-wire.test.js."
     },
     {
       "id": "route/get-api-channels-telegram-status",
@@ -265,13 +485,23 @@
         ],
         "events": []
       },
-      "coverage": [],
-      "status": "mapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "routes-coverage.http.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "c3ec18964ddfaa94b093be20f01139dbc7ceac69",
+        "date": "2026-07-18T04:04:22.614Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "HTTP-path guarded by routes-coverage.http.test.js (happy + honest-failure over real sockets, zero model spend). Atlas finding 43edd6f5 remediated."
     },
     {
       "id": "route/get-api-checkpoint",
@@ -300,12 +530,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:23:57.953Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET ?agent=agent → 200 {enabled:false,snapshots:[]} (checkpoint index). Guarded by checkpoint-store.test.js + sidecar.http.test.js."
     },
     {
       "id": "route/get-api-connectors",
@@ -328,12 +562,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:23:57.953Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET → 200 {connectors:[]} (no secrets). Guarded by e2e.mcp-connector.test.js."
     },
     {
       "id": "route/get-api-connectors-catalog",
@@ -356,12 +594,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:23:57.953Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET → 200 {categories:[...]} curated catalog. Guarded by sidecar.http.test.js."
     },
     {
       "id": "route/get-api-connectors-oauth-callback",
@@ -385,12 +627,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET with no state → 200 HTML 'Sign-in expired' page (the CSRF state fence refuses; auth does not complete). TOKEN_EXEMPT; state is its fence. Guarded by e2e.mcp-connector.test.js."
     },
     {
       "id": "route/get-api-credits",
@@ -414,12 +660,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:23:57.953Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET → 404 {configured:false} (managed credits NOT wired → no surface). Honesty law (a control that does nothing must not render) HOLDS. Guarded by sidecar.http.test.js."
     },
     {
       "id": "route/get-api-cron",
@@ -444,12 +694,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:23:57.953Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET → 200 {jobs:[],enabled:false,halted:false,tickMs:60000,health:{...}} — enabled honestly reflects the disarmed tick. Guarded by cron.api.test.js."
     },
     {
       "id": "route/get-api-deliverables",
@@ -477,16 +731,16 @@
           "gate": "qa:journeys"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "04f842188765e8ae3f58ff9d387935756b9a8c4f",
-        "date": "2026-07-16T08:05:11.987Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:12:24.806Z"
       },
       "findings": [],
       "firstSeen": "2026-07-16T08:05:11.987Z",
-      "lastSeen": "2026-07-16T08:05:11.987Z",
+      "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
-      "notes": "Wave 4C live J4 proof covered the physical library, real pending row, filters, lifecycle actions, and safe open path; HTTP restart proof covered durable projection."
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET ?agent=agent → 200 {ok:true,items:[],total:0,previewLimits:{...}} projected from real store. Guarded by workshop.e2e.test.js + journey J4."
     },
     {
       "id": "route/get-api-diagnostics",
@@ -516,16 +770,16 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:12:24.806Z"
       },
       "findings": [
         "6887ef72"
       ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
+      "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
-      "notes": "LIVE 8968 with fake key sk-fake-probe-key seeded: report showed keyPresent:true but the literal key appears NOWHERE in the payload (grep count 0). Secret-free law PROVEN. [wave-7 final-a re-stale: re-proven over HTTP on :8966. Evidence http-result.json.]"
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — 200 {report:{app,harness,node,platform,provider,model,keyPresent:true,agentCount,uptime}}; keyPresent is a boolean only, no key/token content in the payload. Carries prior finding 6887ef72 (kept audited). Guarded by diagnostics.test.js + diagnostics-support-email.test.js."
     },
     {
       "id": "route/get-api-execution",
@@ -541,13 +795,23 @@
         ],
         "events": []
       },
-      "coverage": [],
-      "status": "mapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "routes-coverage.http.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "c3ec18964ddfaa94b093be20f01139dbc7ceac69",
+        "date": "2026-07-18T04:04:22.614Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "HTTP-path guarded by routes-coverage.http.test.js (happy + honest-failure over real sockets, zero model spend). Atlas finding 43edd6f5 remediated."
     },
     {
       "id": "route/get-api-fallback-chain",
@@ -563,13 +827,23 @@
         ],
         "events": []
       },
-      "coverage": [],
-      "status": "mapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "routes-coverage.http.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "c3ec18964ddfaa94b093be20f01139dbc7ceac69",
+        "date": "2026-07-18T04:04:22.614Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "HTTP-path guarded by routes-coverage.http.test.js (happy + honest-failure over real sockets, zero model spend). Atlas finding 43edd6f5 remediated."
     },
     {
       "id": "route/get-api-file",
@@ -597,12 +871,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:23:57.953Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET ?path=../../../../etc/passwd → 403 forbidden (path escape blocked at the fs jail). Happy jailed-stream path guarded by sidecar.http.test.js + e2e.worker-access.test.js."
     },
     {
       "id": "route/get-api-fs-dirstat",
@@ -617,13 +895,23 @@
         ],
         "events": []
       },
-      "coverage": [],
-      "status": "mapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "routes-coverage.http.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "c3ec18964ddfaa94b093be20f01139dbc7ceac69",
+        "date": "2026-07-18T04:04:22.614Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "HTTP-path guarded by routes-coverage.http.test.js (happy + honest-failure over real sockets, zero model spend). Atlas finding 43edd6f5 remediated."
     },
     {
       "id": "route/get-api-health",
@@ -645,12 +933,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:23:57.953Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET → 200 ok with no token (TOKEN_EXEMPT liveness). Guarded by sidecar.http.test.js."
     },
     {
       "id": "route/get-api-insights",
@@ -673,12 +965,47 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:23:57.953Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET ?agent=agent → 200 {totalRuns:0,meteredRuns:0,totalUsd:0,...} aggregate fold, fail-open empty. Guarded by sidecar.http.test.js."
+    },
+    {
+      "id": "route/get-api-lifecycle-armed",
+      "kind": "route",
+      "area": "routes",
+      "name": "GET /api/lifecycle/armed",
+      "purpose": "Snapshot of what autonomy is currently armed (routines/channels/nightshift/workshop) — the tray supervisor's close-decision truth.",
+      "promise": "GET returns 200 lifecycleArmedSnapshot(now) with honest armed/count/healthy/halted flags from live in-memory state; never asserts armed state the harness can't prove.",
+      "wiring": {
+        "files": [
+          "sidecar/index.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "lifecycle-armed.http.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:19:52.950Z"
+      },
+      "findings": [],
+      "firstSeen": "2026-07-18T00:54:02.712Z",
+      "lastSeen": "2026-07-18T00:54:02.712Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET → 200 {armed:false,categories:{routines:{armed:false,count:0},channels:{connected:[]},nightshift:{...}}} matching the seed's dormant autonomy. Guarded by lifecycle-armed.http.test.js."
     },
     {
       "id": "route/get-api-limits",
@@ -700,12 +1027,16 @@
           "ref": "summon"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:23:57.953Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET → 200 {maxConcurrentAgents:3} from the real concurrency gate. Guarded by journey summon."
     },
     {
       "id": "route/get-api-memory-config",
@@ -729,12 +1060,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:23:57.953Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET → 200 {reflectEnabled:true,reflectCooldownMs:180000,scopeNote:...} driving the memory-controls panel. Guarded by sidecar.http.test.js."
     },
     {
       "id": "route/get-api-memory-declined",
@@ -757,12 +1092,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:23:57.953Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET ?agent=agent → 200 {agentId:agent,declined:[]}. Guarded by sidecar.http.test.js."
     },
     {
       "id": "route/get-api-memory-proposals",
@@ -786,12 +1125,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:23:57.953Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET ?agent=agent&run=none → 200 {runId:none,agentId:agent,proposals:[]}. Guarded by sidecar.http.test.js."
     },
     {
       "id": "route/get-api-memory-records",
@@ -815,69 +1158,115 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:23:57.953Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET ?agent=agent → 200 {agentId:agent,records:[]}. Guarded by sidecar.http.test.js."
     },
     {
       "id": "route/get-api-nightshift-drafts",
       "kind": "route",
       "area": "routes",
       "name": "GET /api/nightshift/drafts",
-      "purpose": "",
-      "promise": "",
+      "purpose": "List the drafts night-shift beats left on the desk for the morning report, newest-first.",
+      "promise": "GET (?since,?limit) returns 200 {drafts:[...]} incl. empty; a store read error is 500 {error}.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "routes-coverage.http.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "c3ec18964ddfaa94b093be20f01139dbc7ceac69",
+        "date": "2026-07-18T04:04:22.614Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-08T21:11:49.342Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "HTTP-path guarded by routes-coverage.http.test.js (happy + honest-failure over real sockets, zero model spend). Atlas finding 43edd6f5 remediated."
     },
     {
       "id": "route/get-api-nightshift-focus",
       "kind": "route",
       "area": "routes",
       "name": "GET /api/nightshift/focus",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Durable single-priority STEER for night-shift that outranks derived evidence (grants nothing).",
+      "promise": "GET returns 200 {ok,focus,steer}; POST {kind,...} returns 200 {ok,focus,steered,resolved} or a validation 400/403/404 (kind/thread-open/goal-exists/path-trust checks); DELETE returns 200 {ok,cleared,focus}.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/nightfocus.js",
+          "sidecar/pathtrust.js",
+          "sidecar/threads-store.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "nightshift-focus.e2e.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:19:52.950Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-08T21:11:49.342Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET ?agent=agent → 200 {ok:true,focus:null,steer:null} (truthful no-steer). POST/DELETE mutation paths not driven live this session but guarded by nightshift-focus.e2e.test.js."
     },
     {
       "id": "route/get-api-nightshift-status",
       "kind": "route",
       "area": "routes",
       "name": "GET /api/nightshift/status",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Truthful night-shift telemetry — status equals what the next tick would actually do.",
+      "promise": "GET returns 200 with fully provable fields (active/halted/away/beatsUsedToday/leashPerDay/binding/buildMode/readiness/focus); no decorative values.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/nightshift-driver.js",
+          "sidecar/nightshift.js",
+          "sidecar/nightfocus.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "nightshift-grant.e2e.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:19:52.950Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-08T21:11:49.342Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET → 200 {active:false,halted:true,away:false,beatsUsedToday:0,leashPerDay:3,lastBeatAt:0,...} — truthful dormant state. Guarded by nightshift-grant/halt/presence/focus e2e suite."
     },
     {
       "id": "route/get-api-notebook",
@@ -900,12 +1289,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:23:57.953Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET ?agent=agent → 200 {notes:[]} (agent notebook view). Guarded by sidecar.http.test.js."
     },
     {
       "id": "route/get-api-permissions",
@@ -934,35 +1327,54 @@
           "gate": "test:fast"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:12:24.806Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
+      "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
-      "notes": "LIVE 8968: 200 {grants:[],grantable:[\"cabinet:write\"],meta:{}}; after grant reflected cabinet:write + grantedAt ts; after revoke back to empty (store round-trip truthful). [wave-7 final-a re-stale: re-proven over HTTP on :8966. Evidence http-result.json.]"
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — 200 {grants:[],grantable:[cabinet:write],meta:{}}; after grant meta.cabinet:write.grantedAt appeared; after revoke back to empty. Store round-trip truthful. Guarded by permissions.test.js + permissionsstore.test.js."
     },
     {
       "id": "route/get-api-projects",
       "kind": "route",
       "area": "routes",
       "name": "GET /api/projects",
-      "purpose": "",
-      "promise": "",
+      "purpose": "List every blessed project root for the Projects rail (the known autonomy surface).",
+      "promise": "GET returns 200 {projects:[{...,blessed}]}; blessed is live-joined from the standing path grants so a revoked-but-remembered root reads blessed:false; no-token → 403.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/projects-store.js",
+          "sidecar/pathtrust.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "projectbless.test.js",
+          "gate": "test:fast"
+        },
+        {
+          "kind": "test",
+          "ref": "e2e.pathtrust.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:19:52.950Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-08T21:11:49.342Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET → 200 {projects:[]} on a fresh seed; no-token → 403 forbidden token. Guarded by projectbless.test.js + e2e.pathtrust.test.js."
     },
     {
       "id": "route/get-api-providers",
@@ -986,31 +1398,80 @@
           "gate": "test:fast"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:23:57.953Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET → 200 {providers:[{id:codex,...,configured},...],keychainMode} — configured tracks a real credential. Guarded by modelpicker.test.js."
     },
     {
       "id": "route/get-api-quests",
       "kind": "route",
       "area": "routes",
       "name": "GET /api/quests",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Read the quest ledger for the quest board.",
+      "promise": "GET returns 200 {ok:true,quests:[...]}; a store throw is 500 {ok:false,error}.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/quest-store.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "routes-coverage.http.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "c3ec18964ddfaa94b093be20f01139dbc7ceac69",
+        "date": "2026-07-18T04:04:22.614Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-08T21:11:49.342Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "HTTP-path guarded by routes-coverage.http.test.js (happy + honest-failure over real sockets, zero model spend). Atlas finding 43edd6f5 remediated."
+    },
+    {
+      "id": "route/get-api-quests-refresh",
+      "kind": "route",
+      "area": "routes",
+      "name": "GET /api/quests/refresh",
+      "purpose": "Quest-refresh engine status — north star, last cycle, due state, refresh ledger.",
+      "promise": "GET returns 200 with real engine state {enabled,northStar,northStarProposed,lastCycleAt,dueAt,due,why,binding}; never a fabricated due/northStar.",
+      "wiring": {
+        "files": [
+          "sidecar/index.js",
+          "sidecar/questrefresh.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "questrefresh.e2e.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:19:52.950Z"
+      },
+      "findings": [],
+      "firstSeen": "2026-07-18T00:54:02.712Z",
+      "lastSeen": "2026-07-18T00:54:02.712Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET → 200 {ok:true,enabled:true,northStar:null,northStarProposed:false,lastCycleAt:...,due:false}. Guarded by questrefresh.e2e.test.js."
     },
     {
       "id": "route/get-api-runs",
@@ -1038,12 +1499,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:23:57.953Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET ?agent=agent → 200 {runs:[]} (newest-first run history). Guarded by e2e.run.test.js + sidecar.http.test.js."
     },
     {
       "id": "route/get-api-runtime-knobs",
@@ -1066,12 +1531,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:23:57.953Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET → 200 {fields:{maxIters:{effective:40,envLocked:false,min:1,max:200},...}} with per-knob envLocked flags. Guarded by sidecar.http.test.js."
     },
     {
       "id": "route/get-api-save",
@@ -1095,31 +1564,49 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:23:57.953Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET ?agent=agent → 200 {save:{schema:starnet.save,version:5,agent:{...}}} durable save envelope. Guarded by sidecar.http.test.js."
     },
     {
       "id": "route/get-api-scout",
       "kind": "route",
       "area": "routes",
       "name": "GET /api/scout",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Scout bay status — warmth, mint gate, interests, staged drafts, ledger, usage.",
+      "promise": "GET returns 200 with real engine state; it runs a scoutSweep() first so aged drafts are purged even when idle; never fabricates warmth/interest values.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/scout.js",
+          "sidecar/interests.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "scout.http.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:19:52.950Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-08T21:11:49.342Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET → 200 {warm:false,gate:{fire:false,binding:cold,mintEveryRuns:3},interests:[],staged:[],ledger:[]} — truthful cold state. Guarded by scout.http.test.js."
     },
     {
       "id": "route/get-api-skills",
@@ -1148,16 +1635,16 @@
           "gate": "test:fast"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:12:24.806Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
+      "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
-      "notes": "LIVE 8968: 200, 82KB catalog payload. [wave-7 final-a re-stale: re-proven over HTTP on :8966. Evidence http-result.json.]"
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — 200 catalog {skills:[...]} from the skill store (decision-1-3-1 etc). Guarded by skills.test.js + skills.library.test.js."
     },
     {
       "id": "route/get-api-slash-catalog",
@@ -1185,16 +1672,16 @@
           "gate": "test:fast"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:12:24.806Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
+      "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
-      "notes": "LIVE 8968: 200, 20KB catalog. [wave-7 final-a re-stale: re-proven over HTTP on :8966. Evidence http-result.json.]"
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — 200 {commands:[{name,aliases,category,action,dispatch}...]}; each entry carries its dispatch target. Guarded by slash.test.js + slash.palette.test.js."
     },
     {
       "id": "route/get-api-spotify-callback",
@@ -1211,13 +1698,24 @@
         ],
         "events": []
       },
-      "coverage": [],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "KNOWN",
+          "ref": "No direct HTTP-path test for GET /api/spotify/callback. EL-3 gap tracked in ledger fp 43edd6f5."
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
+      "findings": [
+        "43edd6f5"
+      ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET with no state → 400 HTML 'Link expired' page (the state fence refuses; tokens not stored). TOKEN_EXEMPT; state is its fence. KNOWN HTTP coverage gap filed to ledger."
     },
     {
       "id": "route/get-api-spotify-status",
@@ -1233,13 +1731,23 @@
         ],
         "events": []
       },
-      "coverage": [],
-      "status": "mapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "routes-coverage.http.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "c3ec18964ddfaa94b093be20f01139dbc7ceac69",
+        "date": "2026-07-18T04:04:22.614Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "HTTP-path guarded by routes-coverage.http.test.js (happy + honest-failure over real sockets, zero model spend). Atlas finding 43edd6f5 remediated."
     },
     {
       "id": "route/get-api-state-snapshot",
@@ -1264,16 +1772,16 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:12:24.806Z"
       },
       "findings": [
         "6887ef72"
       ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
+      "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
-      "notes": "LIVE 8969: empty {runs:[]} before AND after a completed run — settled run correctly absent from live snapshot and instead present in /api/runs history. Snapshot == store state proven. [wave-7 final-a re-stale: re-proven over HTTP on :8966. Evidence http-result.json.]"
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — 200 {ts,runs:[],prompts:[],summons:[],queues:[]} equal to empty in-memory run maps. Carries prior finding 6887ef72 (kept audited). Guarded by sidecar.http.test.js."
     },
     {
       "id": "route/get-api-study-proposals",
@@ -1289,13 +1797,23 @@
         ],
         "events": []
       },
-      "coverage": [],
-      "status": "mapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "routes-coverage.http.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "c3ec18964ddfaa94b093be20f01139dbc7ceac69",
+        "date": "2026-07-18T04:04:22.614Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "HTTP-path guarded by routes-coverage.http.test.js (happy + honest-failure over real sockets, zero model spend). Atlas finding 43edd6f5 remediated."
     },
     {
       "id": "route/get-api-subagents",
@@ -1318,50 +1836,112 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:23:57.953Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET → 200 {records:[]} sub-agent worker list. Guarded by e2e.subagent-background.test.js."
+    },
+    {
+      "id": "route/get-api-task-briefs",
+      "kind": "route",
+      "area": "routes",
+      "name": "GET /api/task-briefs",
+      "purpose": "Durable task-brief intent state (real only — the route can't fabricate a brief).",
+      "promise": "GET returns 200 {briefs:[...],patterns:[...]} incl. empty; any read error fails open to 200 empty (never a 500).",
+      "wiring": {
+        "files": [
+          "sidecar/index.js",
+          "sidecar/taskbrief-store.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "threads.e2e.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:19:52.950Z"
+      },
+      "findings": [],
+      "firstSeen": "2026-07-18T00:54:02.712Z",
+      "lastSeen": "2026-07-18T00:54:02.712Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET ?agent=agent → 200 {briefs:[],patterns:[]} (truthful empty). Read surface guarded within threads.e2e.test.js; store logic in taskbrief-*.test units."
     },
     {
       "id": "route/get-api-threads",
       "kind": "route",
       "area": "routes",
       "name": "GET /api/threads",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The durable thread ledger read surface (default state=open), real state only.",
+      "promise": "GET (?agent,?state) returns 200 {threads,counts,state} incl. empty; any error fails open to 200 empty (never a 500).",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/threads-store.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "threads.e2e.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:19:52.950Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-08T21:11:49.342Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET ?agent=agent → 200 {threads:[],counts:{open:0,picked:0,delivered:0,declined:0},state:open}. Guarded by threads.e2e.test.js."
     },
     {
       "id": "route/get-api-threads-proposals",
       "kind": "route",
       "area": "routes",
       "name": "GET /api/threads/proposals",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Pending mined thread candidates for a run (each with an evidence quote) for turn-in.",
+      "promise": "GET ?agent=<id>&run=<id> returns 200 {runId,agentId,proposals:[...]}; a bad agentId is 403; any error fails open to 200 empty.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/threads-store.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "threads.e2e.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:19:52.950Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-08T21:11:49.342Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET ?agent=agent&run=none → 200 {runId:none,agentId:agent,proposals:[]}. Guarded by threads.e2e.test.js."
     },
     {
       "id": "route/get-api-toolsets",
@@ -1377,13 +1957,23 @@
         ],
         "events": []
       },
-      "coverage": [],
-      "status": "mapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "routes-coverage.http.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "c3ec18964ddfaa94b093be20f01139dbc7ceac69",
+        "date": "2026-07-18T04:04:22.614Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "HTTP-path guarded by routes-coverage.http.test.js (happy + honest-failure over real sockets, zero model spend). Atlas finding 43edd6f5 remediated."
     },
     {
       "id": "route/get-api-transcript",
@@ -1406,12 +1996,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:23:57.953Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET ?agent=agent&stream=main → 200 {stream:main,turns:[]} durable transcript. Guarded by cron.session-transcript.e2e.test.js."
     },
     {
       "id": "route/get-api-version",
@@ -1434,16 +2028,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:12:24.806Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
+      "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
-      "notes": "LIVE 8968: 200 {\"harness\":\"0.0.0\",\"app\":\"0.2.2\",\"node\":\"v22.23.0\",\"appSource\":\"conf\"}. [wave-7 final-a re-stale: re-proven over HTTP on :8966. Evidence http-result.json.]"
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — 200 {harness:v0.5.2-79-g0a009ec2, app:0.5.2, node, appSource:conf, buildSha:0a009ec2...} — appSource names the origin, never a silent blank. Guarded by sidecar.http.test.js."
     },
     {
       "id": "route/get-api-widgets",
@@ -1459,13 +2053,23 @@
         ],
         "events": []
       },
-      "coverage": [],
-      "status": "mapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "routes-coverage.http.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "c3ec18964ddfaa94b093be20f01139dbc7ceac69",
+        "date": "2026-07-18T04:04:22.614Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "HTTP-path guarded by routes-coverage.http.test.js (happy + honest-failure over real sockets, zero model spend). Atlas finding 43edd6f5 remediated."
     },
     {
       "id": "route/get-api-workshop-backlog",
@@ -1488,12 +2092,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:23:57.953Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET ?agent=agent → 200 {ok:true,granted:false,backlog:[],nextShiftAt:null}. Guarded by workshop.e2e.test.js."
     },
     {
       "id": "route/get-api-workshop-pending",
@@ -1516,12 +2124,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:23:57.953Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET ?agent=agent → 200 {ok:true,pending:[]} undecided manifests. Guarded by workshop.e2e.test.js."
     },
     {
       "id": "route/get-api-workspace-dir",
@@ -1536,32 +2148,54 @@
         ],
         "events": []
       },
-      "coverage": [],
-      "status": "mapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "routes-coverage.http.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "c3ec18964ddfaa94b093be20f01139dbc7ceac69",
+        "date": "2026-07-18T04:04:22.614Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "HTTP-path guarded by routes-coverage.http.test.js (happy + honest-failure over real sockets, zero model spend). Atlas finding 43edd6f5 remediated."
     },
     {
       "id": "route/post-api-activity",
       "kind": "route",
       "area": "routes",
       "name": "POST /api/activity",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Throttled presence beacon — the arrival IS the signal; the body is ignored.",
+      "promise": "POST returns 200 {ok:true,at} always and never blocks the UI; updates the last-user-activity clock. Cron/night-shift never call it.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "routes-coverage.http.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "c3ec18964ddfaa94b093be20f01139dbc7ceac69",
+        "date": "2026-07-18T04:04:22.614Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-08T21:11:49.342Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "HTTP-path guarded by routes-coverage.http.test.js (happy + honest-failure over real sockets, zero model spend). Atlas finding 43edd6f5 remediated."
     },
     {
       "id": "route/post-api-agent-delete",
@@ -1577,13 +2211,24 @@
         ],
         "events": []
       },
-      "coverage": [],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "KNOWN",
+          "ref": "No direct HTTP-path test for POST /api/agent/delete. EL-3 gap tracked in ledger fp 43edd6f5."
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
+      "findings": [
+        "43edd6f5"
+      ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {agentId:'ghost'} → 200 {ok:true,agentId:'ghost',rosterRemoved:false,archived:[],cronRemoved:0} — truthful zero counts for a non-existent agent. KNOWN HTTP coverage gap filed to ledger."
     },
     {
       "id": "route/post-api-agent-skills-manage",
@@ -1600,32 +2245,56 @@
         ],
         "events": []
       },
-      "coverage": [],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "KNOWN",
+          "ref": "No direct HTTP-path test for POST /api/agent-skills/manage. EL-3 gap tracked in ledger fp 43edd6f5."
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
+      "findings": [
+        "43edd6f5"
+      ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {action:'bogus'} → 400 {error:'no such skill: '} (honest guard). KNOWN HTTP coverage gap filed to ledger."
     },
     {
       "id": "route/post-api-attachments",
       "kind": "route",
       "area": "routes",
       "name": "POST /api/attachments",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Save (or op:'delete') a composer attachment into the agent workspace.",
+      "promise": "POST {dataUrl,...} returns 200 {ok:true,...} on save/delete; a failure is {ok:false,error} at the store's status (default 400); an unparseable body is 400.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/attachments.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "e2e.attachments.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:19:52.950Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-10T05:18:57.443Z",
-      "lastSeen": "2026-07-10T05:18:57.443Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST with no dataUrl → 400 {ok:false,error:'bad or missing dataUrl'} (honest guard). Save/delete happy path guarded by e2e.attachments.test.js."
     },
     {
       "id": "route/post-api-auth-codex-poll",
@@ -1646,7 +2315,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
+      "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false
     },
     {
@@ -1668,27 +2337,223 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
+      "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false
+    },
+    {
+      "id": "route/post-api-auth-grok-logout",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/auth/grok/logout",
+      "purpose": "Forget stored Grok credentials.",
+      "promise": "POST clears the Grok tokens and returns 200 {connected:false}; status then reports disconnected.",
+      "wiring": {
+        "files": [
+          "sidecar/index.js",
+          "sidecar/providers"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "oauthsignin.test.js",
+          "gate": "test:fast"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:19:52.950Z"
+      },
+      "findings": [],
+      "firstSeen": "2026-07-18T00:54:02.712Z",
+      "lastSeen": "2026-07-18T00:54:02.712Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST → 200 {connected:false} (idempotent clear). Guarded by oauthsignin.test.js."
+    },
+    {
+      "id": "route/post-api-auth-grok-poll",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/auth/grok/poll",
+      "purpose": "One Grok device-auth poll tick until the user finishes in the browser.",
+      "promise": "POST {login_id} returns 200 {status:'pending'} until authorized, then {status:'connected'}; an unknown/expired login is 400 {status:'error',code:'login_not_found'}; upstream failure is 502.",
+      "wiring": {
+        "files": [
+          "sidecar/index.js",
+          "sidecar/providers"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "oauthsignin.test.js",
+          "gate": "test:fast"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:19:52.950Z"
+      },
+      "findings": [],
+      "firstSeen": "2026-07-18T00:54:02.712Z",
+      "lastSeen": "2026-07-18T00:54:02.712Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {login_id:nope} → 400 {status:'error',error:'unknown or expired sign-in — start again',code:'login_not_found'} (honest). Guarded by oauthsignin.test.js."
+    },
+    {
+      "id": "route/post-api-auth-grok-start",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/auth/grok/start",
+      "purpose": "Begin Grok device-code sign-in (RFC 8628): ask xAI for a device/user code.",
+      "promise": "POST returns 200 {login_id,user_code,verification_uri,interval,expires_in} to show the user, or 502 {error,code} on an upstream failure; the opaque device_code stays server-side keyed by login_id.",
+      "wiring": {
+        "files": [
+          "sidecar/index.js",
+          "sidecar/providers"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "oauthsignin.test.js",
+          "gate": "test:fast"
+        }
+      ],
+      "status": "mapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-18T00:54:02.712Z",
+      "lastSeen": "2026-07-18T00:54:02.712Z",
+      "missing": false,
+      "notes": "Handler traced (handleOAuthStart('grok')). Not driven live this session (calls xAI to mint a device code). Guarded by oauthsignin.test.js."
+    },
+    {
+      "id": "route/post-api-auth-kimi-logout",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/auth/kimi/logout",
+      "purpose": "Forget stored Kimi credentials.",
+      "promise": "POST clears the Kimi tokens and returns 200 {connected:false}; status then reports disconnected.",
+      "wiring": {
+        "files": [
+          "sidecar/index.js",
+          "sidecar/providers"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "oauthsignin.test.js",
+          "gate": "test:fast"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:19:52.950Z"
+      },
+      "findings": [],
+      "firstSeen": "2026-07-18T00:54:02.712Z",
+      "lastSeen": "2026-07-18T00:54:02.712Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST → 200 {connected:false} (idempotent clear). Guarded by oauthsignin.test.js."
+    },
+    {
+      "id": "route/post-api-auth-kimi-poll",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/auth/kimi/poll",
+      "purpose": "One Kimi device-auth poll tick until the user finishes in the browser.",
+      "promise": "POST {login_id} returns 200 {status:'pending'} then {status:'connected'}; an unknown/expired login is 400 {status:'error',code:'login_not_found'}; upstream failure is 502.",
+      "wiring": {
+        "files": [
+          "sidecar/index.js",
+          "sidecar/providers"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "oauthsignin.test.js",
+          "gate": "test:fast"
+        }
+      ],
+      "status": "mapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-18T00:54:02.712Z",
+      "lastSeen": "2026-07-18T00:54:02.712Z",
+      "missing": false,
+      "notes": "Handler traced (handleOAuthPoll('kimi')). Not driven live this session; the honest login_not_found guard is shared with the grok/poll handler proven this session. Guarded by oauthsignin.test.js."
+    },
+    {
+      "id": "route/post-api-auth-kimi-start",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/auth/kimi/start",
+      "purpose": "Begin Kimi device-code sign-in (RFC 8628): ask Moonshot for a device/user code.",
+      "promise": "POST returns 200 {login_id,user_code,verification_uri,interval,expires_in}, or 502 {error,code} on upstream failure; the opaque device_code stays server-side keyed by login_id.",
+      "wiring": {
+        "files": [
+          "sidecar/index.js",
+          "sidecar/providers"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "oauthsignin.test.js",
+          "gate": "test:fast"
+        }
+      ],
+      "status": "mapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-18T00:54:02.712Z",
+      "lastSeen": "2026-07-18T00:54:02.712Z",
+      "missing": false,
+      "notes": "Handler traced (handleOAuthStart('kimi')). Not driven live this session (calls Moonshot to mint a device code). Guarded by oauthsignin.test.js."
     },
     {
       "id": "route/post-api-autonomy-posture",
       "kind": "route",
       "area": "routes",
       "name": "POST /api/autonomy/posture",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Mirror the autonomy dial to the server so the night-shift driver owns the truth; the dial IS the unattended-build consent.",
+      "promise": "POST {initiative,reach,...} returns 200 {ok:true, summary, nightshiftArmed, workshopGranted}; a grant hiccup degrades workshopGranted:null (honest unknown) rather than failing the write; side-effects lift the nightshift/cron E-STOP halt and arm the timer.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/nightshift.js",
+          "sidecar/nightshift-driver.js",
+          "sidecar/workshop-store.js",
+          "sidecar/autonomy-ledger.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "nightshift-grant.e2e.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-08T21:11:49.342Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "Handler traced (index.js:8612 handleAutonomyPosture). Happy path mutates posture + lifts halt + arms nightshift; not driven live this session to avoid arming the autonomy timer in the probe workspace. Guarded by nightshift-grant.e2e.test.js."
     },
     {
       "id": "route/post-api-autonomy-write",
@@ -1705,13 +2570,23 @@
         ],
         "events": []
       },
-      "coverage": [],
-      "status": "mapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "autonomy-write.test.js",
+          "gate": "test:fast"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {path:'../../../etc/evil'} → 400 {ok:false,reason:'tool fs.write failed: illegal path: ...'} — the fs jail blocks the escape (the security heart of the promise). Happy in-jail write needs a cabinet:write grant; guarded by autonomy-write.test.js."
     },
     {
       "id": "route/post-api-budget-caps",
@@ -1735,16 +2610,16 @@
           "gate": "test:fast"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:12:24.806Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
+      "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
-      "notes": "LIVE 8968: POST {perDay:25} → 200, saved:{perDay:25}, status day.cap flipped to 25. TRUTHFUL persistence. [wave-7 final-a re-stale: re-proven over HTTP on :8966. Evidence http-result.json.]"
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {perDay:25} → 200 saved:{perDay:25}, caps.day:25; GET /api/budget/status immediately reflected day.cap:25. Truthful persistence over env defaults. Guarded by budget-caps.test.js."
     },
     {
       "id": "route/post-api-budget-resume",
@@ -1767,12 +2642,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {scope:'day'} → 200 {resumed:'day',cap:50,status:{...}} (base cap 25 doubled for the session); a bogus scope → 400 {error:'scope must be day or global'}. Guarded by sidecar.http.test.js."
     },
     {
       "id": "route/post-api-cancel",
@@ -1796,14 +2675,14 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:12:24.806Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
+      "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
-      "notes": "LIVE 8968: POST unknown runId → 200 \"ok\" (idempotent). [wave-7 final-a re-stale: re-proven over HTTP on :8966. Evidence http-result.json.]"
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {runId:nope} (unknown) → 200 \"ok\" (idempotent no-op). Abort-of-live-run happy path is guarded by e2e.run.test.js."
     },
     {
       "id": "route/post-api-channels-discord-connect",
@@ -1819,13 +2698,24 @@
         ],
         "events": []
       },
-      "coverage": [],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "KNOWN",
+          "ref": "No direct HTTP-path test for POST /api/channels/discord/connect. EL-3 gap tracked in ledger fp 43edd6f5."
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
+      "findings": [
+        "43edd6f5"
+      ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST with no token → 400 {error:'missing bot token — create a bot in the Discord Developer Portal...'} (honest guard, no secret echoed). KNOWN HTTP coverage gap filed to ledger."
     },
     {
       "id": "route/post-api-channels-discord-disconnect",
@@ -1841,13 +2731,24 @@
         ],
         "events": []
       },
-      "coverage": [],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "KNOWN",
+          "ref": "No direct HTTP-path test for POST /api/channels/discord/disconnect. EL-3 gap tracked in ledger fp 43edd6f5."
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
+      "findings": [
+        "43edd6f5"
+      ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST → 200 {connected:false,persisted:true}. KNOWN HTTP coverage gap filed to ledger."
     },
     {
       "id": "route/post-api-channels-discord-sync",
@@ -1863,32 +2764,24 @@
         ],
         "events": []
       },
-      "coverage": [],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
-    },
-    {
-      "id": "route/post-api-channels-events",
-      "kind": "route",
-      "area": "routes",
-      "name": "POST /api/channels/events",
-      "purpose": "",
-      "promise": "",
-      "wiring": {
-        "files": [],
-        "events": []
+      "coverage": [
+        {
+          "kind": "KNOWN",
+          "ref": "No direct HTTP-path test for POST /api/channels/discord/sync. EL-3 gap tracked in ledger fp 43edd6f5."
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-10T05:18:57.443Z",
-      "lastSeen": "2026-07-10T05:18:57.443Z",
-      "missing": false
+      "findings": [
+        "43edd6f5"
+      ],
+      "firstSeen": "2026-07-07T08:09:25.409Z",
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {agentId:agent} → 200 {synced:false} (no bot to sync). KNOWN HTTP coverage gap filed to ledger."
     },
     {
       "id": "route/post-api-channels-notify",
@@ -1905,13 +2798,24 @@
         ],
         "events": []
       },
-      "coverage": [],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "KNOWN",
+          "ref": "No direct HTTP-path test for POST /api/channels/notify. EL-3 gap tracked in ledger fp 43edd6f5."
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
+      "findings": [
+        "43edd6f5"
+      ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {on:false} → 200 {ok:true,notifyAutonomous:false} (persists the notify flag). KNOWN HTTP coverage gap filed to ledger."
     },
     {
       "id": "route/post-api-channels-telegram-connect",
@@ -1934,12 +2838,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST with no token → 400 {error:'missing bot token — create one with @BotFather...'} (honest guard; no secret echoed). Happy connect guarded by channels.telegram.e2e.test.js."
     },
     {
       "id": "route/post-api-channels-telegram-disconnect",
@@ -1955,13 +2863,24 @@
         ],
         "events": []
       },
-      "coverage": [],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "KNOWN",
+          "ref": "No direct HTTP-path test for POST /api/channels/telegram/disconnect. EL-3 gap tracked in ledger fp 43edd6f5."
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
+      "findings": [
+        "43edd6f5"
+      ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST → 200 {connected:false,persisted:true} (stops the bot, config kept). KNOWN HTTP coverage gap filed to ledger."
     },
     {
       "id": "route/post-api-channels-telegram-sync",
@@ -1984,12 +2903,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {agentId:agent} → 200 {synced:false} (no bot to sync; honest). Guarded by channels.telegram.e2e.test.js."
     },
     {
       "id": "route/post-api-channels-token",
@@ -2013,12 +2936,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — wrong IPC token → 403 forbidden; correct STARNET_IPC_TOKEN → 200 {ok:true,channel:'telegram',configured:false} (empty token clears the runtime token); the token is never echoed. TOKEN_EXEMPT with its own IPC gate. Guarded by sidecar.http.test.js."
     },
     {
       "id": "route/post-api-checkpoint-restore",
@@ -2042,12 +2969,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {id:'nope'} → 400 {error:'bad agentId'} (honest guard). Happy rewind guarded by checkpoint-store.test.js."
     },
     {
       "id": "route/post-api-config-export",
@@ -2070,12 +3001,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST → 200 {starnetExport:1,exportedAt,sections:{budget:{perDay:25},fallback:{...}}} — config envelope with secrets excluded. Guarded by sidecar.http.test.js."
     },
     {
       "id": "route/post-api-config-import",
@@ -2098,12 +3033,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {bundle:'nope'} → 400 {error:'missing or invalid starnetExport version marker'} (honest shaped rejection). Happy fold-in guarded by sidecar.http.test.js."
     },
     {
       "id": "route/post-api-config-reset",
@@ -2126,12 +3065,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {section:'budget'} → 200 {ok:true,section:'budget'} (clears that section's overrides); an empty/unknown section → 400 {error:'unknown or non-resettable section'}. Guarded by sidecar.http.test.js."
     },
     {
       "id": "route/post-api-connectors",
@@ -2154,12 +3097,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST with an invalid connector id → 400 {error:'connector id must be 1-40 chars of [A-Za-z0-9_-]'} (honest validation; no secret echoed). Happy upsert guarded by e2e.mcp-connector.test.js."
     },
     {
       "id": "route/post-api-connectors-oauth-start",
@@ -2175,13 +3122,24 @@
         ],
         "events": []
       },
-      "coverage": [],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "KNOWN",
+          "ref": "No direct HTTP-path test for POST /api/connectors/oauth/start. EL-3 gap tracked in ledger fp 43edd6f5."
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
+      "findings": [
+        "43edd6f5"
+      ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {id:'nope'} → 400 {error:'unknown catalog connector'} (honest guard). KNOWN HTTP coverage gap filed to ledger."
     },
     {
       "id": "route/post-api-connectors-refresh",
@@ -2204,12 +3162,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {id:'nope'} → 200 {ok:false,state:'down',toolCount:0,error:'unknown connector'} (honest). Happy re-probe guarded by e2e.mcp-connector.test.js."
     },
     {
       "id": "route/post-api-connectors-remove",
@@ -2225,13 +3187,24 @@
         ],
         "events": []
       },
-      "coverage": [],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "KNOWN",
+          "ref": "No direct HTTP-path test for POST /api/connectors/remove. EL-3 gap tracked in ledger fp 43edd6f5."
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
+      "findings": [
+        "43edd6f5"
+      ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {id:'probe-c'} → 200 {ok:true} (idempotent remove). KNOWN HTTP coverage gap filed to ledger."
     },
     {
       "id": "route/post-api-consent",
@@ -2254,31 +3227,52 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {runId:'x',promptId:'y',decision:'allow'} on a stale id → 200 ok (harmless no-op; fail-closed on illegal values). Live mid-run resolve guarded by e2e.worker-access.test.js."
     },
     {
       "id": "route/post-api-consent-ack",
       "kind": "route",
       "area": "routes",
       "name": "POST /api/consent/ack",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Extend a pending consent prompt's deadline (EL-11: the browser attests the prompt is human-visible).",
+      "promise": "POST {runId,promptId} returns 200 {ok:true,extended} where extended reflects whether a live pending finisher was found; a stale id is a harmless {extended:false}; unparseable body is 400.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "consentwait.test.js",
+          "gate": "test:fast"
+        },
+        {
+          "kind": "test",
+          "ref": "consent-visibility.test.js",
+          "gate": "test:fast"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:19:52.950Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-10T05:18:57.443Z",
-      "lastSeen": "2026-07-10T05:18:57.443Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST with no live prompt → 200 {ok:true,extended:false} (honest no-op). Guarded by consentwait.test.js + consent-visibility.test.js."
     },
     {
       "id": "route/post-api-cron",
@@ -2303,12 +3297,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {name,prompt,schedule} → 200 {ok:true,job:{id,...}}; GET /api/cron then listed the minted job. Create→list round-trip truthful. Guarded by cron.api.test.js."
     },
     {
       "id": "route/post-api-cron-arm",
@@ -2333,12 +3331,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {enabled:false} → 200 {ok:true,enabled:false,tickMs:60000}; GET /api/cron reflects the disarmed tick. Guarded by cron.arm.test.js."
     },
     {
       "id": "route/post-api-cron-preview",
@@ -2361,12 +3363,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {schedule:'0 9 * * *',tz:'America/New_York'} → 200 {ok:true,next:['2026-07-18T13:00:00.000Z',...]}; bad tz → 400 {ok:false,error:'unknown timezone...'}. Guarded by cron.api.test.js."
     },
     {
       "id": "route/post-api-cron-remove",
@@ -2390,12 +3396,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {id:<minted>} → 200 {ok:true}; the subsequent list omitted the job. Create→remove round-trip proven this session. Guarded by cron.api.test.js."
     },
     {
       "id": "route/post-api-cron-run",
@@ -2420,12 +3430,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:32:01.449Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {id:<minted>} → 200 NDJSON stream beginning {name:'agent.run.start',payload:{agentId,runId,trigger:'schedule',model}} (fires the job immediately; placeholder key → the run then fails upstream, no spend); an unknown id → 404 {error:'no such routine'}. Full recorded-run outcome guarded by cron.run-now.e2e.test.js."
     },
     {
       "id": "route/post-api-cron-update",
@@ -2449,12 +3463,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {id:'nope',patch} → 404 {error:'no such routine'} (honest). Happy patch guarded by cron.api.test.js."
     },
     {
       "id": "route/post-api-deliverables-cleanup",
@@ -2484,13 +3502,14 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "04f842188765e8ae3f58ff9d387935756b9a8c4f",
-        "date": "2026-07-16T08:05:11.987Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:12:24.806Z"
       },
       "findings": [],
       "firstSeen": "2026-07-16T08:05:11.987Z",
-      "lastSeen": "2026-07-16T08:05:11.987Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "Re-stamped @ HEAD 0a009ec2. Preview seam re-proven live (see cleanup-preview). Apply-with-fingerprint mutation + undo-token protection guarded by workshop.e2e.test.js + deliverable-store.test.js; not re-driven live (no seeded deliverable to clean)."
     },
     {
       "id": "route/post-api-deliverables-cleanup-preview",
@@ -2518,15 +3537,16 @@
           "gate": "test:fast"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "04f842188765e8ae3f58ff9d387935756b9a8c4f",
-        "date": "2026-07-16T08:05:11.987Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:12:24.806Z"
       },
       "findings": [],
       "firstSeen": "2026-07-16T08:05:11.987Z",
-      "lastSeen": "2026-07-16T08:05:11.987Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {agent} → 200 {ok:true,statuses:[discarded,failed],targets:[],protected:[],note:\"...files are never deleted...\"} — pure preview, no mutation. Guarded by workshop.e2e.test.js + deliverable-store.test.js."
     },
     {
       "id": "route/post-api-deliverables-cleanup-undo",
@@ -2556,32 +3576,46 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "04f842188765e8ae3f58ff9d387935756b9a8c4f",
-        "date": "2026-07-16T08:05:11.987Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:12:24.806Z"
       },
       "findings": [],
       "firstSeen": "2026-07-16T08:05:11.987Z",
-      "lastSeen": "2026-07-16T08:05:11.987Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "Re-stamped @ HEAD 0a009ec2. Undo-token restore guarded by workshop.e2e.test.js + deliverable-store.test.js; not re-driven live (no prior cleanup to undo this session)."
     },
     {
       "id": "route/post-api-dev-inbound",
       "kind": "route",
       "area": "routes",
       "name": "POST /api/dev/inbound",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Dev-only inbound message injector that mimics the Telegram ingress wiring (for local testing).",
+      "promise": "POST {chatId,text,...} returns 200 {ok,chatId,agentId,isTask,workitemId,replies} when DEV_MODE is on; a 404 {error:'not found'} when DEV_MODE is off; empty text or bad json is 400.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/channels"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "routes-coverage.http.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "c3ec18964ddfaa94b093be20f01139dbc7ceac69",
+        "date": "2026-07-18T04:04:22.614Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-08T21:11:49.342Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "HTTP path now guarded by routes-coverage.http.test.js: the non-dev 404 gate is asserted (the production contract). The dev-only happy path (mimics ingress, drives a real run) stays dev-gated by nature — audited, not machine-asserted."
     },
     {
       "id": "route/post-api-dossier",
@@ -2597,13 +3631,24 @@
         ],
         "events": []
       },
-      "coverage": [],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "KNOWN",
+          "ref": "No direct HTTP-path test for POST /api/dossier. EL-3 gap tracked in ledger fp 43edd6f5."
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
+      "findings": [
+        "43edd6f5"
+      ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {block:'probe dossier'} → 200 {ok:true,chars:13} (persists the dossier block). KNOWN HTTP coverage gap filed to ledger."
     },
     {
       "id": "route/post-api-fallback-chain",
@@ -2624,8 +3669,9 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "AMBIGUITY (not a defect): LIVE :8964 @ HEAD 0a009ec2 — POST {chain:[<model>]} returned 200 {chain:[],saved:false,warnings:[]} for BOTH a plausible id and a bogus id. With a placeholder key no provider catalog is loaded, so every id is dropped as unknown and nothing saves; whether an invalid id surfaces a warning when a real catalog IS present could not be proven headlessly. Re-verify with a loaded catalog before promoting. Handler: sidecar/fallbackchain.js."
     },
     {
       "id": "route/post-api-goals",
@@ -2641,13 +3687,24 @@
         ],
         "events": []
       },
-      "coverage": [],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "KNOWN",
+          "ref": "No direct HTTP-path test for POST /api/goals. EL-3 gap tracked in ledger fp 43edd6f5."
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
+      "findings": [
+        "43edd6f5"
+      ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {goal:'probe goal'} → 200 {ok:true,goal:null} (a bare string is not a valid goal summary, so it stored null — honest, does not fabricate a goal). KNOWN HTTP coverage gap filed to ledger."
     },
     {
       "id": "route/post-api-halt",
@@ -2671,16 +3728,16 @@
           "ref": "halt-interrupt"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:12:24.806Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
+      "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
-      "notes": "LIVE 8968: POST with no runs → 200 {halted:0,cronAborted:0} (truthful zero counts). Journey corps exercises the interrupt path. [wave-7 final-a re-stale: re-proven over HTTP on :8966. Evidence http-result.json.]"
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST with no runs → 200 {halted:0,cronAborted:0,beatAborted:0} (truthful zero counts, idempotent). Guarded by journey halt-interrupt."
     },
     {
       "id": "route/post-api-key",
@@ -2706,16 +3763,16 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:12:24.806Z"
       },
       "findings": [
         "6887ef72"
       ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
+      "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
-      "notes": "LIVE 8970 (fresh instance with STARNET_IPC_TOKEN): wrong IPC → 403; correct IPC → 200 {ok:true,configured:true}; /api/providers then showed openrouter configured:true. TOKEN_EXEMPT from the API token by design (own IPC gate). [wave-7 final-a re-stale: re-proven over HTTP on :8966. Evidence http-result.json.]"
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — wrong IPC token → 403 forbidden; correct STARNET_IPC_TOKEN (x-starnet-token) → 200 {ok:true,provider:openrouter,configured:true}; the key is never echoed back (booleans only). TOKEN_EXEMPT from the API token by design (own IPC gate). Carries prior finding 6887ef72. Guarded by sidecar.http.test.js."
     },
     {
       "id": "route/post-api-memory-config",
@@ -2739,12 +3796,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {reflectEnabled:true} → 200 with the reflection config; GET /api/memory/config reflects it. Guarded by sidecar.http.test.js."
     },
     {
       "id": "route/post-api-memory-declined-restore",
@@ -2767,12 +3828,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {agent,text:'nope'} → 200 {ok:true,removed:false} (honest no-op; nothing to restore). Guarded by sidecar.http.test.js."
     },
     {
       "id": "route/post-api-memory-edit",
@@ -2788,13 +3853,24 @@
         ],
         "events": []
       },
-      "coverage": [],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "KNOWN",
+          "ref": "No direct HTTP-path test for POST /api/memory/edit. EL-3 gap tracked in ledger fp 43edd6f5."
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
+      "findings": [
+        "43edd6f5"
+      ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {id:'nope'} → 404 {error:'no such memory'} (honest). KNOWN HTTP coverage gap filed to ledger."
     },
     {
       "id": "route/post-api-memory-forget",
@@ -2810,13 +3886,24 @@
         ],
         "events": []
       },
-      "coverage": [],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "KNOWN",
+          "ref": "No direct HTTP-path test for POST /api/memory/forget. EL-3 gap tracked in ledger fp 43edd6f5."
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
+      "findings": [
+        "43edd6f5"
+      ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {id:'nope'} → 404 {error:'no such memory'} (honest). KNOWN HTTP coverage gap filed to ledger."
     },
     {
       "id": "route/post-api-memory-pin",
@@ -2832,13 +3919,24 @@
         ],
         "events": []
       },
-      "coverage": [],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "KNOWN",
+          "ref": "No direct HTTP-path test for POST /api/memory/pin. EL-3 gap tracked in ledger fp 43edd6f5."
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
+      "findings": [
+        "43edd6f5"
+      ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {id:'nope'} → 404 {error:'no such memory'} (honest). KNOWN HTTP coverage gap filed to ledger."
     },
     {
       "id": "route/post-api-memory-reset",
@@ -2862,12 +3960,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {agent:'probe-ghost'} → 200 {ok:true,agent:'probe-ghost'} (clears that agent's durable memory). Guarded by sidecar.http.test.js."
     },
     {
       "id": "route/post-api-memory-turnin",
@@ -2891,31 +3993,50 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {id:'nope',verdict:discard} → 404 {error:'no such proposal (it may have expired)'} (honest). Happy keep/edit/discard guarded by sidecar.http.test.js."
     },
     {
       "id": "route/post-api-nightshift-beat",
       "kind": "route",
       "area": "routes",
       "name": "POST /api/nightshift/beat",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Force-fire ONE night-shift beat now (attended test of the unattended path), reach-gated live.",
+      "promise": "POST {agentId} streams NDJSON; the final line is {name:'nightshift.beat.result', payload:{delivered,reason}}; an abort/disconnect ends {delivered:false,reason:'aborted'}; a bad agentId is 400 {error}.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/nightshift-driver.js",
+          "sidecar/workshop-store.js",
+          "sidecar/deliverable-store.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "nightshift-act.e2e.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:32:01.449Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-08T21:11:49.342Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST → 200 {name:'nightshift.beat.result',payload:{delivered:false,reason:'not-ready:cold'}} — the beat fired and honestly reported not-ready (dormant/cold, no run spent). The delivered:true build path (away+warm) is guarded by nightshift-act/beat-halt/contextpack/focus e2e tests."
     },
     {
       "id": "route/post-api-notebook-restore",
@@ -2932,13 +4053,24 @@
         ],
         "events": []
       },
-      "coverage": [],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "KNOWN",
+          "ref": "No direct HTTP-path test for POST /api/notebook/restore. EL-3 gap tracked in ledger fp 43edd6f5."
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
+      "findings": [
+        "43edd6f5"
+      ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {agent:agent,notes:[]} → 200 {ok:true,total:0,added:0} (honest empty merge). KNOWN HTTP coverage gap filed to ledger."
     },
     {
       "id": "route/post-api-permissions-grant",
@@ -2961,16 +4093,16 @@
           "gate": "test:fast"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:12:24.806Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
+      "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
-      "notes": "LIVE 8968: grant cabinet:write → 200 {ok:true,grants:[\"cabinet:write\"]}; list reflected it. TRUTHFUL round-trip. [wave-7 final-a re-stale: re-proven over HTTP on :8966. Evidence http-result.json.]"
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {key:cabinet:write} → 200 {ok:true,grants:[cabinet:write]}; GET /api/permissions then listed it with meta.grantedAt. Truthful round-trip. Guarded by permissions.test.js."
     },
     {
       "id": "route/post-api-permissions-revoke",
@@ -2993,111 +4125,296 @@
           "gate": "test:fast"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:12:24.806Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
+      "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
-      "notes": "LIVE 8968: revoke → 200 {ok:true,grants:[]}; list confirmed empty. TRUTHFUL. [wave-7 final-a re-stale: re-proven over HTTP on :8966. Evidence http-result.json.]"
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {key:cabinet:write} → 200 {ok:true,grants:[]}; next GET confirmed empty. Guarded by permissions.test.js."
     },
     {
       "id": "route/post-api-projects-bless",
       "kind": "route",
       "area": "routes",
       "name": "POST /api/projects/bless",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Bless a user-picked folder as a trusted root via the same standing path-grant machinery.",
+      "promise": "POST {path} for an interactive request grants the root and returns 200 {ok:true,...}; a torn durable write fails closed; bad input is 400 {ok:false,reason}. Autonomous fs writes NEVER pass through here — they go through pathTrustCore.guard.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/projectbless.js",
+          "sidecar/projects-store.js",
+          "sidecar/pathtrust.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "projectbless.test.js",
+          "gate": "test:fast"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-08T21:11:49.342Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "Handler traced (index.js:8550 handleProjectBless, surface:'interactive'). Not driven live this session (would mint a standing path grant). Guarded by projectbless.test.js."
+    },
+    {
+      "id": "route/post-api-projects-pickfolder",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/projects/pickfolder",
+      "purpose": "Open the native OS folder chooser and return the picked path (grants nothing).",
+      "promise": "POST returns 200 {ok,path} on pick or {ok,cancelled} on cancel; failure 400 {ok:false,reason}; the call blocks while the human browses.",
+      "wiring": {
+        "files": [
+          "sidecar/index.js",
+          "sidecar/folderpick.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "KNOWN",
+          "ref": "Native OS dialog cannot be driven headlessly — no automated HTTP assertion possible; the grant-nothing contract is guarded by the pathtrust/projectbless units. EL-3 gap tracked in ledger."
+        }
+      ],
+      "status": "mapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-18T00:54:02.712Z",
+      "lastSeen": "2026-07-18T00:54:02.712Z",
+      "missing": false,
+      "notes": "Handler traced (index.js:8563 handleProjectPickFolder). Cannot prove live headlessly (blocks on a native folder dialog). KNOWN coverage gap filed to ledger."
+    },
+    {
+      "id": "route/post-api-providers-probe",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/providers/probe",
+      "purpose": "No-generation provider round-trip for truthful Settings telemetry; a BYOK key is consumed in-memory, never persisted or echoed.",
+      "promise": "ALWAYS 200 {provider,reachable,catalogAvailable,credentialVerified}; an honest failure (unknown provider, unreachable, bad json) is carried as {reachable:false,...,error,code} INSIDE the 200 — never a 5xx.",
+      "wiring": {
+        "files": [
+          "sidecar/index.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "sidecar.http.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:19:52.950Z"
+      },
+      "findings": [],
+      "firstSeen": "2026-07-18T00:54:02.712Z",
+      "lastSeen": "2026-07-18T00:54:02.712Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST → 200 {provider:openrouter,reachable:true,catalogAvailable:true,credentialVerified:false} (placeholder key correctly reports unverified without echoing it). Always-200 telemetry law holds. Guarded by sidecar.http.test.js."
     },
     {
       "id": "route/post-api-quests-confirm",
       "kind": "route",
       "area": "routes",
       "name": "POST /api/quests/confirm",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The Commander's verdict on an agent attest (yes → done / no → decline note).",
+      "promise": "POST {id,verdict,...} returns 200 {ok:bool} and fires an early quest-refresh tick when it lands; a missing id is 400; a store throw is 500.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/quest-store.js",
+          "sidecar/questrefresh.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "routes-coverage.http.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "c3ec18964ddfaa94b093be20f01139dbc7ceac69",
+        "date": "2026-07-18T04:04:22.614Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-08T21:11:49.342Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "HTTP-path guarded by routes-coverage.http.test.js (happy + honest-failure over real sockets, zero model spend). Atlas finding 43edd6f5 remediated."
     },
     {
       "id": "route/post-api-quests-dismiss",
       "kind": "route",
       "area": "routes",
       "name": "POST /api/quests/dismiss",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Wave a quest off forever (denylists the title — the anti-nag law).",
+      "promise": "POST {id} returns 200 {ok:bool}; a missing id is 400; a store throw is 500.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/quest-store.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "routes-coverage.http.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "c3ec18964ddfaa94b093be20f01139dbc7ceac69",
+        "date": "2026-07-18T04:04:22.614Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-08T21:11:49.342Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "HTTP-path guarded by routes-coverage.http.test.js (happy + honest-failure over real sockets, zero model spend). Atlas finding 43edd6f5 remediated."
     },
     {
       "id": "route/post-api-quests-mint",
       "kind": "route",
       "area": "routes",
       "name": "POST /api/quests/mint",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Mint a quest (the completion-contract rule is enforced in the store).",
+      "promise": "POST {contract,...} returns 200 {ok:true,id}; a mint with no valid completion contract is 400 {ok:false,error}; a store throw is 500.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/quest-store.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "routes-coverage.http.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "c3ec18964ddfaa94b093be20f01139dbc7ceac69",
+        "date": "2026-07-18T04:04:22.614Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-08T21:11:49.342Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "HTTP-path guarded by routes-coverage.http.test.js (happy + honest-failure over real sockets, zero model spend). Atlas finding 43edd6f5 remediated."
+    },
+    {
+      "id": "route/post-api-quests-refresh-northstar",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/quests/refresh/northstar",
+      "purpose": "The Commander's verdict on a PROPOSED (inferred) north star (confirm adopts / decline denylists).",
+      "promise": "POST {decision:confirm|decline} returns 200 {ok:true,applied,decision,northStar,northStarProposed}; any other decision is 400 {ok:false,error}.",
+      "wiring": {
+        "files": [
+          "sidecar/index.js",
+          "sidecar/questrefresh.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "questrefresh.e2e.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:19:52.950Z"
+      },
+      "findings": [],
+      "firstSeen": "2026-07-18T00:54:02.712Z",
+      "lastSeen": "2026-07-18T00:54:02.712Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {decision:maybe} → 400 {ok:false,error:'decision must be confirm or decline'}. Guarded by questrefresh.e2e.test.js."
+    },
+    {
+      "id": "route/post-api-quests-refresh-run",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/quests/refresh/run",
+      "purpose": "Force a quest-refresh cycle now (bypasses due gates; respects in-flight + opt-out).",
+      "promise": "POST returns 200 {ok:true,started:true} when a cycle launches, else a truthful 200 {ok:false,started:false,error} (disabled / already running).",
+      "wiring": {
+        "files": [
+          "sidecar/index.js",
+          "sidecar/questrefresh.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "questrefresh.e2e.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "mapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-18T00:54:02.712Z",
+      "lastSeen": "2026-07-18T00:54:02.712Z",
+      "missing": false,
+      "notes": "Handler traced (index.js:6346 handleQuestsRefreshRun). Not driven live this session (launching a cycle runs the refresh engine). Guarded by questrefresh.e2e.test.js."
     },
     {
       "id": "route/post-api-quests-update",
       "kind": "route",
       "area": "routes",
       "name": "POST /api/quests/update",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Tick a step or agent-attest completion (neither completes the quest by itself).",
+      "promise": "POST {id,op,...} returns 200 {ok:bool} (an attest failure is returned as a truthful 200 {ok:false,error}); an unknown op or missing id is 400; a store throw is 500.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/quest-store.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "routes-coverage.http.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "c3ec18964ddfaa94b093be20f01139dbc7ceac69",
+        "date": "2026-07-18T04:04:22.614Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-08T21:11:49.342Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "HTTP-path guarded by routes-coverage.http.test.js (happy + honest-failure over real sockets, zero model spend). Atlas finding 43edd6f5 remediated."
     },
     {
       "id": "route/post-api-roster",
@@ -3120,12 +4437,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {agents:[{agentId,name,model}]} → 200 {ok:true,count:1,updatedAt}. Server roster upsert truthful. Guarded by roster-envelope.http.test.js."
     },
     {
       "id": "route/post-api-routing",
@@ -3141,13 +4462,24 @@
         ],
         "events": []
       },
-      "coverage": [],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "KNOWN",
+          "ref": "No direct HTTP-path test for POST /api/routing. EL-3 gap tracked in ledger fp 43edd6f5."
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
+      "findings": [
+        "43edd6f5"
+      ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {routing:{}} (malformed) → 422 {ok:false,error:'malformed plan'} (honest validation). KNOWN HTTP coverage gap filed to ledger."
     },
     {
       "id": "route/post-api-run",
@@ -3185,14 +4517,14 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:12:24.806Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
+      "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
-      "notes": "LIVE 8969 (mock provider): 200, streamed 5 NDJSON lines incl \"Hello from mock\", run recorded in /api/runs history (reason:done turns:1 tokens:8). 400 on missing model verified. [wave-7 final-a re-stale: re-proven over HTTP on :8966. Evidence http-result.json.]"
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST with no model → 400 \"missing key/model\" (honest, no provider hit). Streaming happy-path (NDJSON run.start→token→cost→run.end) is guarded by e2e.run.test.js + runroute.test.js; not re-driven this session to avoid a paid provider call."
     },
     {
       "id": "route/post-api-run-steer",
@@ -3217,14 +4549,14 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:12:24.806Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
+      "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
-      "notes": "LIVE 8968: POST unknown runId → 404 with honest error shape. Live-note injection on an active run is covered by the e2e run suite. [wave-7 final-a re-stale: re-proven over HTTP on :8966. Evidence http-result.json.]"
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {runId:nope} → 404 {error:\"no in-flight run for that id\"} (honest error shape). Live-note injection on an active run is guarded by e2e.run.test.js."
     },
     {
       "id": "route/post-api-runtime-knobs",
@@ -3247,12 +4579,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:32:01.449Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {maxIters:55} → 200 with saved:55/effective:55 (envLocked:false so overridable); GET /api/runtime/knobs reflected saved:55. Env-locked knobs are not overridable. Guarded by sidecar.http.test.js."
     },
     {
       "id": "route/post-api-save",
@@ -3276,88 +4612,141 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST <envelope> → 200 {ok:true,updatedAt}; GET /api/save reads the durable envelope back. Restart-survival (the persistence law) is guarded by sidecar.http.test.js; not re-driven with a live restart this session."
     },
     {
       "id": "route/post-api-save-recovery-ack",
       "kind": "route",
       "area": "routes",
       "name": "POST /api/save/recovery-ack",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Clear the quarantine/recovery marker so the honest recovery notice shows only once — never touches the save itself.",
+      "promise": "POST {agent} returns 200 {ok:true,cleared}; an ack failure is surfaced as a truthful 200 {ok:false,error}; bad json/agentId is 400.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/savestore.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "save.test.js",
+          "gate": "test:fast"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:19:52.950Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-10T05:18:57.443Z",
-      "lastSeen": "2026-07-10T05:18:57.443Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {agent:agent} → 200 {ok:true,cleared:false} (no marker to clear on a fresh seed; honest). Guarded by save.test.js."
     },
     {
       "id": "route/post-api-scout-context",
       "kind": "route",
       "area": "routes",
       "name": "POST /api/scout/context",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The browser pushes facts only it knows (custom classes/recipes, worksignal, recruiter pick) for server-side dedupe.",
+      "promise": "POST {...} returns 200 {ok:true} and persists into scout state; an unparseable body is 400.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/scout.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "scout.http.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-08T21:11:49.342Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "Handler traced (handleScoutContext → Scout.setContext). Not driven live this session (would seed scout context). Guarded by scout.http.test.js."
     },
     {
       "id": "route/post-api-scout-decide",
       "kind": "route",
       "area": "routes",
       "name": "POST /api/scout/decide",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The Commander's verdict on a staged Scout draft (accept retires it / dismiss denylists the fingerprint).",
+      "promise": "POST {id,decision} returns 200 {ok:true,item}; an unknown id is a harmless 200 {ok:false,error:'unknown id'} (stale shelf, not a throw); a missing decision is 400.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/scout.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "scout.http.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:19:52.950Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-08T21:11:49.342Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {id} with no decision → 400 {ok:false,error:'decision must be accept|dismiss'} (honest failure). Guarded by scout.http.test.js."
     },
     {
       "id": "route/post-api-scout-telemetry",
       "kind": "route",
       "area": "routes",
       "name": "POST /api/scout/telemetry",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Scout engagement counters only (recipe.launch / recipe.rated) — no content.",
+      "promise": "POST {kind,id,...} returns 200 {ok:true}; a bad kind or an out-of-enum verdict is 400 {ok:false,error}.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/scout.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "scout.http.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:19:52.950Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-08T21:11:49.342Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {kind:bogus} → 400 {ok:false,error:'kind must be recipe.launch or recipe.rated with an id'}. Guarded by scout.http.test.js."
     },
     {
       "id": "route/post-api-session",
@@ -3382,17 +4771,17 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:12:24.806Z"
       },
       "findings": [
         "b1248295",
         "6887ef72"
       ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
+      "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
-      "notes": "LIVE 8968: POST returned 200 {ok:true}; no-token/bad-token 403. Handler is a pure no-op stub (index.js:2924) with no store effect and no current frontend caller — its only contract is the token gate. See finding routes-session-noop. [wave-7 final-a re-stale: re-proven over HTTP on :8966. Evidence http-result.json.]"
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST valid token → 200 {ok:true}; bad token → 403 forbidden token. Pure token-gate handshake stub. Carries prior findings b1248295 + 6887ef72 (kept audited). Guarded by sidecar.http.test.js."
     },
     {
       "id": "route/post-api-skills-toggle",
@@ -3415,12 +4804,16 @@
           "gate": "test:fast"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {slug:'decision-1-3-1',enabled:false} → 200 {ok:true,slug,enabled:false}; GET /api/skills reflects it. Guarded by skills.test.js."
     },
     {
       "id": "route/post-api-slash-dispatch",
@@ -3448,16 +4841,16 @@
           "gate": "test:fast"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:12:24.806Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
+      "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
-      "notes": "LIVE 8968: /help → 200 with resolved builtin help directive (dispatch:client). [wave-7 final-a re-stale: re-proven over HTTP on :8966. Evidence http-result.json.]"
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {input:/help} → 200 {ok:true, command:{name:help,...}, directive:{type:client,action:help}}. Guarded by slash.test.js + slash.config.test.js."
     },
     {
       "id": "route/post-api-spotify-auth-start",
@@ -3473,13 +4866,24 @@
         ],
         "events": []
       },
-      "coverage": [],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "KNOWN",
+          "ref": "No direct HTTP-path test for POST /api/spotify/auth/start. EL-3 gap tracked in ledger fp 43edd6f5."
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
+      "findings": [
+        "43edd6f5"
+      ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST → 400 {error:'A Spotify Client ID is required...'} (honest guard when unconfigured). KNOWN HTTP coverage gap filed to ledger."
     },
     {
       "id": "route/post-api-spotify-disconnect",
@@ -3495,13 +4899,24 @@
         ],
         "events": []
       },
-      "coverage": [],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "KNOWN",
+          "ref": "No direct HTTP-path test for POST /api/spotify/disconnect. EL-3 gap tracked in ledger fp 43edd6f5."
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
+      "findings": [
+        "43edd6f5"
+      ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST → 200 {ok:true,connected:false,hasClientId:false} (idempotent clear). KNOWN HTTP coverage gap filed to ledger."
     },
     {
       "id": "route/post-api-stt",
@@ -3525,16 +4940,16 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:12:24.806Z"
       },
       "findings": [
         "6887ef72"
       ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
+      "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
-      "notes": "LIVE 8968: with a fake key the upstream 401'd, yet the route returned 200 application/json {text:\"\",reason:\"...openrouter 401...\"}. 200-always law HOLDS. [wave-7 final-a re-stale: re-proven over HTTP on :8966. Evidence http-result.json.]"
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — with a placeholder key the upstream 401'd yet the route returned 200 application/json {text:\"\",reason:\"...openrouter 401...\"}. 200-ALWAYS law HOLDS. Carries prior finding 6887ef72. Guarded by sidecar.http.test.js."
     },
     {
       "id": "route/post-api-study-resolve",
@@ -3550,13 +4965,24 @@
         ],
         "events": []
       },
-      "coverage": [],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "KNOWN",
+          "ref": "No direct HTTP-path test for POST /api/study/resolve. EL-3 gap tracked in ledger fp 43edd6f5."
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
+      "findings": [
+        "43edd6f5"
+      ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {id:'nope',declined:[]} → 200 {ok:true} (honest no-op on a stale proposal). KNOWN HTTP coverage gap filed to ledger."
     },
     {
       "id": "route/post-api-subagents-interrupt",
@@ -3579,12 +5005,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {id:'nope'} → 200 {ok:false,error:'no such subagent'} (honest). Live interrupt guarded by e2e.subagent-background.test.js."
     },
     {
       "id": "route/post-api-summon-ack",
@@ -3607,31 +5037,48 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {runId,requestId,agentId} on a stale id → 200 ok (no-op). Live summon resolve guarded by e2e.summon.test.js."
     },
     {
       "id": "route/post-api-threads-turnin",
       "kind": "route",
       "area": "routes",
       "name": "POST /api/threads/turnin",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Resolve one mined thread candidate — keep/edit commits an open thread; discard permanently denies the fingerprint.",
+      "promise": "POST {agentId,runId,id,verdict} returns 200 {ok:true,reason}; a stale/unknown id is a harmless 200 {ok:true,reason:'unknown'} no-op; a store error is 200 {ok:false,error}; a bad agentId is 403.",
       "wiring": {
-        "files": [],
+        "files": [
+          "sidecar/index.js",
+          "sidecar/threads-store.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "threads.e2e.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:19:52.950Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-08T21:11:49.342Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {id:nope,verdict:discard} → 200 {ok:true,reason:'unknown'} (honest no-op on a stale id). Guarded by threads.e2e.test.js."
     },
     {
       "id": "route/post-api-toolsets",
@@ -3647,13 +5094,24 @@
         ],
         "events": []
       },
-      "coverage": [],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "KNOWN",
+          "ref": "No direct HTTP-path test for POST /api/toolsets/. EL-3 gap tracked in ledger fp 43edd6f5."
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
+      "findings": [
+        "43edd6f5"
+      ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST with no id → 400 {error:'a toolset id is required'} (honest guard). KNOWN HTTP coverage gap filed to ledger."
     },
     {
       "id": "route/post-api-tts",
@@ -3677,16 +5135,16 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:12:24.806Z"
       },
       "findings": [
         "6887ef72"
       ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
+      "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
-      "notes": "LIVE 8968: with a fake key the upstream 401'd, yet the route returned 200 application/json {fallback:true,reason:\"openrouter 401 ...\"}. Locked voice law HOLDS. [wave-7 final-a re-stale: re-proven over HTTP on :8966. Evidence http-result.json.]"
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {text} → 200 audio/mpeg (real MP3/LAME bytes); a failing upstream would degrade to 200 {fallback:true,reason}, NEVER a 5xx. 200-ALWAYS voice law HOLDS. Carries prior finding 6887ef72. Guarded by sidecar.http.test.js."
     },
     {
       "id": "route/post-api-workshop-decide",
@@ -3714,12 +5172,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {runId:'nope',decision:'discard'} → 200 {ok:true,decision:'discard'} (idempotent no-op on a stale id). Happy keep→copy path guarded by journey workshop + workshop.e2e.test.js."
     },
     {
       "id": "route/post-api-workshop-grant",
@@ -3746,12 +5208,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {agentId:agent,on:true} → 200 {ok:true,agentId,on:true}; GET /api/workshop/backlog then showed granted:true. Guarded by journey workshop + workshop.e2e.test.js."
     },
     {
       "id": "route/post-api-workshop-open",
@@ -3775,12 +5241,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {path:'../../../etc/passwd'} → 403 {error:'Open this file manually; StarNet cannot launch desktop applications from a run.'} — the shell-open is refused for a non-interactive/escape request. Interactive jailed-open guarded by workshop.e2e.test.js."
     },
     {
       "id": "route/post-api-workshop-queue",
@@ -3807,12 +5277,48 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {agentId,title:'probe build'} → 200 {ok:true,item:{id,title,...}} queued to the backlog. Guarded by journey workshop + workshop.e2e.test.js."
+    },
+    {
+      "id": "route/post-api-workshop-remove",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/workshop/remove",
+      "purpose": "Drop an un-built idea from the away-build queue.",
+      "promise": "POST {agentId,id} returns 200 {ok:true,removed:true}; an already-built item is 409; a not-on-queue id is 404 {ok:false,error}; bad agentId/json is 400; a store throw is 500.",
+      "wiring": {
+        "files": [
+          "sidecar/index.js",
+          "sidecar/workshop-store.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "routes-coverage.http.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "c3ec18964ddfaa94b093be20f01139dbc7ceac69",
+        "date": "2026-07-18T04:04:22.614Z"
+      },
+      "findings": [],
+      "firstSeen": "2026-07-18T00:54:02.712Z",
+      "lastSeen": "2026-07-18T00:54:02.712Z",
+      "missing": false,
+      "notes": "HTTP path now guarded by routes-coverage.http.test.js: the honest-failure branches (invalid agentId 400, unknown idea 404) are asserted. The happy 200 remove needs a seeded workshop backlog idea — covered indirectly by workshop.e2e.test.js, not by this direct test."
     },
     {
       "id": "route/post-api-workshop-shift",
@@ -3840,12 +5346,49 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:29:33.695Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
-      "lastSeen": "2026-07-10T05:18:57.442Z",
-      "missing": false
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {agentId:agent} → 200 NDJSON stream beginning {name:'agent.run.start',payload:{agentId,runId}} — one shift fired (placeholder key → the run then fails upstream, no spend). Full deliverable outcome guarded by journey workshop + workshop.e2e.test.js."
+    },
+    {
+      "id": "route/post-api-workshop-undo",
+      "kind": "route",
+      "area": "routes",
+      "name": "POST /api/workshop/undo",
+      "purpose": "Reverse a KEPT deliverable's copy-out — delete only the files the keep wrote (EL-11 #8).",
+      "promise": "POST {agentId,runId} returns 200 {...,removed:[],missing:[]} deleting only the containment-checked out-of-jail copies and restoring the pending row; no kept row is 404; a missing destPath or bad ids is 400.",
+      "wiring": {
+        "files": [
+          "sidecar/index.js",
+          "sidecar/deliverable-store.js",
+          "sidecar/workshop-store.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "workshop-undo.e2e.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:19:52.950Z"
+      },
+      "findings": [],
+      "firstSeen": "2026-07-18T00:54:02.712Z",
+      "lastSeen": "2026-07-18T00:54:02.712Z",
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {runId:nope} (no kept copy) → 404 {ok:false,error:'no kept copy to undo for that build'} (honest guard). Happy delete-the-copy path guarded by workshop-undo.e2e.test.js."
     }
   ]
 }
