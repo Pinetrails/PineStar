@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>StarNet — Give your AI a world to work in</title>
+<meta name="description" content="StarNet is a local-first desktop harness where you recruit AI agents into a living pixel-art station and watch them do real work with real models and tools. Open source. Windows, macOS, Linux.">
+<meta property="og:title" content="StarNet — Give your AI a world to work in">
+<meta property="og:description" content="Recruit AI agents into a living station on your machine, put them to work, and build your empire. Local-first. Open source. BYOK.">
+<meta property="og:image" content="assets/station-iso.png">
+<meta property="og:type" content="website">
+<link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- boot sequence overlay -->
+<div id="boot" aria-hidden="true">
+  <div class="boot-inner">
+    <div id="boot-lines"></div>
+    <span class="boot-cursor"></span>
+    <div class="boot-skip">// click anywhere to skip</div>
+  </div>
+</div>
+<div id="boot-flash" aria-hidden="true" hidden></div>
+
+<!-- CRT overlays -->
+<div class="crt-scan" aria-hidden="true"></div>
+<div class="crt-vignette" aria-hidden="true"></div>
+<div class="crt-flicker" aria-hidden="true"></div>
+
+<!-- HUD corner ticks -->
+<div class="tick tick-tl" aria-hidden="true"></div>
+<div class="tick tick-tr" aria-hidden="true"></div>
+<div class="tick tick-bl" aria-hidden="true"></div>
+<div class="tick tick-br" aria-hidden="true"></div>
+
+<!-- passing agent blips -->
+<div class="blips" aria-hidden="true">
+  <div class="blip" style="top:12%; width:5px; height:5px; animation-duration:13s; animation-delay:-2s;"><span style="width:42px;"></span></div>
+  <div class="blip" style="top:22%; width:3px; height:3px; animation-duration:21s; animation-delay:-9s;"><span style="width:26px;"></span></div>
+  <div class="blip" style="top:33%; width:6px; height:6px; animation-duration:10s; animation-delay:-5s;"><span style="width:54px;"></span></div>
+  <div class="blip" style="top:42%; width:2px; height:2px; animation-duration:26s; animation-delay:-14s;"><span style="width:20px;"></span></div>
+  <div class="blip" style="top:18%; width:3px; height:3px; animation-duration:17s; animation-delay:-11s;"><span style="width:32px;"></span></div>
+  <div class="blip" style="top:50%; width:4px; height:4px; animation-duration:15s; animation-delay:-7s;"><span style="width:38px;"></span></div>
+</div>
+
+<header class="topbar">
+  <a class="brand" href="#top">STARNET TERMLINK</a>
+  <nav class="topnav">
+    <a href="#station">STATION</a>
+    <a href="#features">FEATURES</a>
+    <a href="#start">GET STARTED</a>
+    <a href="#download">DOWNLOAD</a>
+    <a href="https://github.com/nonfungiblefunyuns-ship-it/skynet-harness" target="_blank" rel="noopener">GITHUB</a>
+  </nav>
+  <span class="live-dot"><span class="dot"></span>OPEN SOURCE</span>
+</header>
+
+<main id="top">
+
+  <!-- ===== hero ===== -->
+  <section class="hero">
+    <div class="grid-floor" aria-hidden="true"><div></div></div>
+    <div class="ember" aria-hidden="true"></div>
+    <div class="hero-inner">
+      <img class="hero-logo" src="assets/starnet-logo-glow.png" alt="StarNet">
+      <p class="tagline">Give your AI a world to work in.<span class="cursor"></span></p>
+      <p class="subline">Recruit AI agents into a living pixel-art station on your machine, connect real tools and real models, and watch your workforce think, build, research, and solve &mdash; for your goals.</p>
+      <div class="cta-row">
+        <a id="cta-download" class="btn btn-primary" href="#download">[ DOWNLOAD ]</a>
+        <a class="btn" href="https://github.com/nonfungiblefunyuns-ship-it/skynet-harness" target="_blank" rel="noopener">[ VIEW SOURCE ]</a>
+      </div>
+      <div class="hero-meta"><span id="ver-badge">v0.5.2</span> &middot; MIT open source &middot; Windows / macOS / Linux &middot; bring your own keys</div>
+    </div>
+  </section>
+
+  <!-- ===== station / product contract ===== -->
+  <section id="station" class="section">
+    <div class="section-head">
+      <span class="section-no">01</span>
+      <h2>THE STATION IS THE WORKFLOW</h2>
+    </div>
+    <div class="split">
+      <div class="split-copy">
+        <p class="lead">StarNet's product contract is literal. The station is not decoration &mdash; it is the harness, rendered.</p>
+        <ul class="contract">
+          <li><b>A room is a capability-scoped team.</b> Agents in a room share its tools and its mission.</li>
+          <li><b>A hallway is an authorized handoff lane.</b> Work moves between teams only where you drew a path.</li>
+          <li><b>A placed object is a real capability grant.</b> Put a terminal on a desk and that agent can really use it.</li>
+          <li><b>The layout you draw <i>is</i> the workflow the agents run.</b></li>
+        </ul>
+        <p>Start with one agent. Place bays or summon specialists to run more, concurrently &mdash; each one a genuinely distinct, bounded agent run. Real model calls, real tools, real cost. Never an animation of work; always the work itself.</p>
+      </div>
+      <figure class="bezel">
+        <img src="assets/station-iso.png" alt="Isometric artwork of a StarNet station: rooms of agents at workstations, connected by hallways">
+        <figcaption>// station artwork &mdash; your station is yours to draw</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- ===== features ===== -->
+  <section id="features" class="section">
+    <div class="section-head">
+      <span class="section-no">02</span>
+      <h2>COMMAND YOUR AI WORKFORCE</h2>
+    </div>
+    <div class="cards">
+      <article class="card">
+        <img src="assets/vig-recruit.png" alt="" aria-hidden="true">
+        <h3>REAL AGENTS. REAL WORK.</h3>
+        <p>Deploy specialized agents that use real tools and connectors. They adapt, collaborate, and get real work done &mdash; with or without you.</p>
+      </article>
+      <article class="card">
+        <img src="assets/vig-tools.png" alt="" aria-hidden="true">
+        <h3>TOOLS THAT MATTER.</h3>
+        <p>Files, browsers, APIs, MCP connectors, skills. Your agents use real capabilities on your machine &mdash; not simulations of them.</p>
+      </article>
+      <article class="card">
+        <h3>WATCH. DIRECT. TRUST.</h3>
+        <p>Everything happens in plain sight inside your station. The world only ever renders what the harness can prove &mdash; if the station shows an agent working, it is working.</p>
+      </article>
+      <article class="card">
+        <h3>LOCAL-FIRST. BYOK.</h3>
+        <p>Runs on your machine. Station state, transcripts, memory, and ledgers stay in your local workspace. Bring your own OpenRouter key or sign in to a supported provider &mdash; your keys, your data, your infrastructure.</p>
+      </article>
+      <article class="card">
+        <img src="assets/vig-away.png" alt="" aria-hidden="true">
+        <h3>BUILT FOR AUTONOMY.</h3>
+        <p>Set goals, define the leash, and step away. Night Shift keeps your station working while you're gone &mdash; and reports back honestly on what it actually did.</p>
+      </article>
+      <article class="card">
+        <img src="assets/vig-adapt.png" alt="" aria-hidden="true">
+        <h3>GAME SKIN. REAL SUBSTANCE.</h3>
+        <p>It looks like a game. It feels alive. Underneath, it's a serious multi-agent harness built to get things done.</p>
+      </article>
+    </div>
+  </section>
+
+  <!-- ===== get started ===== -->
+  <section id="start" class="section">
+    <div class="section-head">
+      <span class="section-no">03</span>
+      <h2>GET STARTED</h2>
+    </div>
+    <ol class="steps">
+      <li>
+        <span class="step-no">STEP 1</span>
+        <h3>INSTALL THE STATION</h3>
+        <p><a href="#download">Download</a> the desktop build for your platform and run the installer. Early builds are not yet OS code-signed, so Windows and macOS will warn you first &mdash; the <a href="https://github.com/nonfungiblefunyuns-ship-it/skynet-harness/blob/main/INSTALL.md" target="_blank" rel="noopener">install guide</a> walks you through exactly what you'll see.</p>
+      </li>
+      <li>
+        <span class="step-no">STEP 2</span>
+        <h3>CONNECT A PROVIDER</h3>
+        <p>Bring your own OpenRouter API key, or use a supported OAuth sign-in. Provider requests leave your machine only when an agent runs; everything else stays local.</p>
+      </li>
+      <li>
+        <span class="step-no">STEP 3</span>
+        <h3>RECRUIT YOUR FIRST AGENT</h3>
+        <p>Awaken your first crew member, give it work, and watch it move to its desk and do it. Then draw more rooms, grant more tools, and scale up.</p>
+      </li>
+    </ol>
+    <div class="source-run">
+      <div class="source-run-head">// prefer to run from source? node 18+ is all you need</div>
+      <pre><code id="src-cmd">git clone https://github.com/nonfungiblefunyuns-ship-it/skynet-harness.git
+cd skynet-harness
+node sidecar/index.js</code></pre>
+      <button class="btn btn-small" data-copy="#src-cmd">[ COPY ]</button>
+      <span class="source-run-note">then open localhost:8787</span>
+    </div>
+  </section>
+
+  <!-- ===== download ===== -->
+  <section id="download" class="section">
+    <div class="section-head">
+      <span class="section-no">04</span>
+      <h2>DOWNLOAD STARNET</h2>
+    </div>
+    <p class="dl-sub">Desktop builds for every platform, published on the <a id="rel-page" href="https://github.com/nonfungiblefunyuns-ship-it/starnet-releases/releases/latest" target="_blank" rel="noopener">releases page</a> and updated through a signed feed. Current version: <span class="ver">v0.5.2</span>.</p>
+    <div class="dl-grid">
+      <article class="dl-card" data-os="windows">
+        <div class="dl-os">WINDOWS</div>
+        <div class="dl-req">Windows 10 / 11 &middot; 64-bit</div>
+        <a class="btn btn-primary dl-btn" data-asset="x64-setup.exe" href="https://github.com/nonfungiblefunyuns-ship-it/starnet-releases/releases/latest" target="_blank" rel="noopener">[ .EXE INSTALLER ]</a>
+        <div class="dl-note">SmartScreen will warn (unsigned): More info &rarr; Run anyway.</div>
+      </article>
+      <article class="dl-card" data-os="mac-arm">
+        <div class="dl-os">MACOS &middot; APPLE SILICON</div>
+        <div class="dl-req">M1 / M2 / M3 / M4</div>
+        <a class="btn btn-primary dl-btn" data-asset="aarch64.dmg" href="https://github.com/nonfungiblefunyuns-ship-it/starnet-releases/releases/latest" target="_blank" rel="noopener">[ .DMG ]</a>
+        <div class="dl-note">Gatekeeper warning expected: right-click &rarr; Open.</div>
+      </article>
+      <article class="dl-card" data-os="mac-intel">
+        <div class="dl-os">MACOS &middot; INTEL</div>
+        <div class="dl-req">About This Mac says "Intel"</div>
+        <a class="btn btn-primary dl-btn" data-asset="x64.dmg" href="https://github.com/nonfungiblefunyuns-ship-it/starnet-releases/releases/latest" target="_blank" rel="noopener">[ .DMG ]</a>
+        <div class="dl-note">Gatekeeper warning expected: right-click &rarr; Open.</div>
+      </article>
+      <article class="dl-card" data-os="linux-deb">
+        <div class="dl-os">LINUX &middot; DEB</div>
+        <div class="dl-req">Debian / Ubuntu</div>
+        <a class="btn btn-primary dl-btn" data-asset="amd64.deb" href="https://github.com/nonfungiblefunyuns-ship-it/starnet-releases/releases/latest" target="_blank" rel="noopener">[ .DEB ]</a>
+        <div class="dl-note">sudo apt install ./StarNet_*.deb</div>
+      </article>
+      <article class="dl-card" data-os="linux-appimage">
+        <div class="dl-os">LINUX &middot; APPIMAGE</div>
+        <div class="dl-req">Everything else</div>
+        <a class="btn btn-primary dl-btn" data-asset="amd64.AppImage" href="https://github.com/nonfungiblefunyuns-ship-it/starnet-releases/releases/latest" target="_blank" rel="noopener">[ .APPIMAGE ]</a>
+        <div class="dl-note">chmod +x, then run.</div>
+      </article>
+    </div>
+    <p class="dl-honesty">// honesty note: builds are cryptographically signed for auto-updates, but not yet OS code-signed (no Authenticode / Apple notarization). Your OS will warn you before first run &mdash; the <a href="https://github.com/nonfungiblefunyuns-ship-it/skynet-harness/blob/main/INSTALL.md" target="_blank" rel="noopener">install guide</a> shows exactly what to expect on each platform. Windows is the most-tested target at launch; macOS and Linux ship from the same release train with less real-world coverage. Something broken? Tell us: <a href="mailto:androo.agi@gmail.com">androo.agi@gmail.com</a>.</p>
+  </section>
+
+  <!-- ===== FAQ ===== -->
+  <section id="faq" class="section">
+    <div class="section-head">
+      <span class="section-no">05</span>
+      <h2>TRANSMISSION LOG // FAQ</h2>
+    </div>
+    <div class="faq">
+      <details>
+        <summary>Is StarNet free?</summary>
+        <p>The software is MIT-licensed open source and free to run. Model usage costs whatever your provider charges &mdash; you bring your own API key (or OAuth account), and StarNet shows you real cost per run. No markup, no subscription required to use your own keys.</p>
+      </details>
+      <details>
+        <summary>Is the work actually real?</summary>
+        <p>Yes &mdash; that's the whole point. Every agent run is a real model call with real tools; files get written, browsers get driven, and the ledger records real cost. The station never renders state the harness can't prove. If it looks like an agent is working, it is.</p>
+      </details>
+      <details>
+        <summary>Where does my data live?</summary>
+        <p>On your machine. Station state, transcripts, memory, and ledgers live in your local StarNet workspace. Requests go to your model provider only when an agent runs, and to the wider network only when you explicitly grant a network tool or connector.</p>
+      </details>
+      <details>
+        <summary>What do I need to start?</summary>
+        <p>A Windows, macOS, or Linux machine and one model provider: an OpenRouter API key works everywhere, or use a supported OAuth sign-in. That's it &mdash; full power from minute one, nothing gated behind progression.</p>
+      </details>
+      <details>
+        <summary>Why does my OS warn me during install?</summary>
+        <p>Early builds aren't yet code-signed with a paid OS certificate, so SmartScreen and Gatekeeper flag them as "unknown publisher." The <a href="https://github.com/nonfungiblefunyuns-ship-it/skynet-harness/blob/main/INSTALL.md" target="_blank" rel="noopener">install guide</a> documents every warning honestly, including the one Windows 11 Smart App Control case we can't bypass.</p>
+      </details>
+    </div>
+  </section>
+
+</main>
+
+<footer class="footer">
+  <div class="footer-line">STARNET &middot; a living station of AI agents, doing real work in the dark</div>
+  <div class="footer-links">
+    <a href="https://github.com/nonfungiblefunyuns-ship-it/skynet-harness" target="_blank" rel="noopener">GITHUB</a>
+    <a href="https://github.com/nonfungiblefunyuns-ship-it/starnet-releases/releases/latest" target="_blank" rel="noopener">RELEASES</a>
+    <a href="https://github.com/nonfungiblefunyuns-ship-it/skynet-harness/blob/main/INSTALL.md" target="_blank" rel="noopener">INSTALL GUIDE</a>
+    <a href="mailto:androo.agi@gmail.com">CONTACT</a>
+  </div>
+  <div class="footer-fine">MIT license &middot; <span id="ver-foot">v0.5.2</span> &middot; &copy; <span id="year">2026</span> StarNet</div>
+</footer>
+
+<script src="site.js"></script>
+</body>
+</html>
